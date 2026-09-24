@@ -21,7 +21,7 @@ use lettuce_memory::{
 use lettuce_types::{ConversationId, GenerationAttemptId, GenerationTurnId, JobId};
 use lettuce_usage::{JobInferenceUsageResult, JobUsageLedger, UsageEvent, UsageLedger};
 
-use crate::conversation_generation::{ConversationGenerationOperation, operation_token};
+use crate::generation::conversation_generation::{ConversationGenerationOperation, operation_token};
 use crate::{
     ConversationGenerationCancellationOutcome, ConversationGenerationClaimedWork,
     ConversationGenerationDispatchCoordinator, ConversationGenerationDispatchError,

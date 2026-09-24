@@ -110,7 +110,10 @@ pub(crate) fn companion_prompt<S: PromptRepository + ?Sized>(
             return Ok(Some(document));
         }
     }
-    crate::built_in_prompts::active_built_in_prompt(sources, crate::BuiltInPromptId::Companion)
+    crate::generation::built_in_prompts::active_built_in_prompt(
+        sources,
+        crate::BuiltInPromptId::Companion,
+    )
 }
 
 /// The purposes a one-to-one chat's own prompt selection admits: legacy set a
@@ -168,7 +171,10 @@ pub(crate) fn direct_app_default_prompt<S: PromptRepository + ?Sized>(
             return Ok(Some(document));
         }
     }
-    crate::built_in_prompts::active_built_in_prompt(sources, crate::BuiltInPromptId::AppDefault)
+    crate::generation::built_in_prompts::active_built_in_prompt(
+        sources,
+        crate::BuiltInPromptId::AppDefault,
+    )
 }
 
 pub(crate) const fn memory_mode(defaults: &CharacterDefaults) -> MemoryModeSnapshot {

@@ -676,9 +676,9 @@ impl lettuce_creation::LorebookEntryRunRepository for FailingUsageRepository<'_>
     }
 }
 
-impl crate::runtime_text::RuntimeTextSource for FailingUsageRepository<'_> {
+impl crate::generation::runtime_text::RuntimeTextSource for FailingUsageRepository<'_> {
     fn runtime_text_document(&self, id: crate::BuiltInPromptId) -> Result<Option<lettuce_context::PromptDocument>, lettuce_context::PromptRepositoryError> {
-        crate::runtime_text::RuntimeTextSource::runtime_text_document(self.database, id)
+        crate::generation::runtime_text::RuntimeTextSource::runtime_text_document(self.database, id)
     }
 }
 
@@ -773,7 +773,7 @@ fn a_time_aware_companion_starts_its_new_conversations_time_aware() {
         let conversation = ConversationReader::get(&database, launched.conversation.id)
             .expect("conversation")
             .conversation;
-        crate::companion_clock::companion_clock_context(&database, &conversation)
+        crate::companion::companion_clock::companion_clock_context(&database, &conversation)
             .expect("clock context")
             .clock
     };
@@ -1865,13 +1865,13 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         }])),
         requests: Mutex::new(Vec::new()),
     };
-    crate::job_inference_usage::run_job_inference(&database, &failed_response, interrupted_writer.job.id, retry_request.clone(), NOW)
+    crate::jobs::job_inference_usage::run_job_inference(&database, &failed_response, interrupted_writer.job.id, retry_request.clone(), NOW)
         .await.expect("retain error response before validation");
     let cancelled_response = FallibleScriptedInference {
         outcomes: Mutex::new(VecDeque::from([Err(PortError::Cancelled)])),
         requests: Mutex::new(Vec::new()),
     };
-    assert!(matches!(crate::job_inference_usage::run_job_inference(&database, &cancelled_response, interrupted_writer.job.id, retry_request.clone(), NOW).await.map_err(PortError::from), Err(PortError::Cancelled)));
+    assert!(matches!(crate::jobs::job_inference_usage::run_job_inference(&database, &cancelled_response, interrupted_writer.job.id, retry_request.clone(), NOW).await.map_err(PortError::from), Err(PortError::Cancelled)));
     let retries = database.job_usage(interrupted_writer.job.id).expect("retry usage");
     assert_eq!(retries.len(), 4);
     assert_eq!(retries.iter().filter(|entry| entry.logical_attempt_id == retry_request.attempt_id).count(), 4);
@@ -3340,7 +3340,7 @@ async fn companion_context_assembles_live_prompt_state_deterministically() {
         })
         .collect::<Vec<_>>()
         .join("\n");
-    let stamp = crate::companion_memory_inference::format_message_timestamp(TimestampMillis::new(
+    let stamp = crate::companion::companion_memory_inference::format_message_timestamp(TimestampMillis::new(
         NOW.get() + 10,
     ));
     assert!(stamped_text.contains(&format!("{stamp} Stay with me.")));
@@ -9323,7 +9323,7 @@ async fn companion_memory_loop_replays_two_round_checkpoint_without_duplicate_wo
                 start: 0,
                 end: 1,
             },
-            tool_request: crate::companion_memory_run::test_memory_tool_request(false, false),
+            tool_request: crate::companion::companion_memory_run::test_memory_tool_request(false, false),
             job_id,
             now: TimestampMillis::new(1_010),
         })

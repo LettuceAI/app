@@ -20,7 +20,7 @@ pub struct AppBackend {
     inference_runtime: Arc<InferenceRuntime>,
     whisper_runtime: Arc<WhisperCppRuntime<Database>>,
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    local_llama: crate::local_diffusion::SharedLocalLlama,
+    local_llama: crate::image::local_diffusion::SharedLocalLlama,
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     llama_events: Option<crate::LlamaEventSink>,
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -94,7 +94,7 @@ impl AppBackend {
         paths: lettuce_image_generation::sd_runtime::layout::DiffusionPaths,
         progress: Arc<dyn lettuce_image_generation::sd_runtime::output::GenerationProgressSink>,
     ) -> Result<Self, lettuce_network::JsonClientError> {
-        self.local_diffusion = Some(crate::local_diffusion::start_engine(
+        self.local_diffusion = Some(crate::image::local_diffusion::start_engine(
             paths,
             progress,
             Arc::clone(&self.local_llama),
@@ -146,7 +146,9 @@ impl AppBackend {
                         );
                         Some(match &self.local_diffusion {
                             Some(engine) => llama.with_exclusion(Arc::new(
-                                crate::local_diffusion::DiffusionExclusion(Arc::clone(engine)),
+                                crate::image::local_diffusion::DiffusionExclusion(Arc::clone(
+                                    engine,
+                                )),
                             )),
                             None => llama,
                         })

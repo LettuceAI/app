@@ -737,7 +737,7 @@ where
         built_in: BuiltInPromptId,
         purpose: PromptPurpose,
     ) -> Result<PromptDocument, ConversationLaunchError> {
-        crate::built_in_prompts::active_built_in_prompt(self.sources, built_in)
+        crate::generation::built_in_prompts::active_built_in_prompt(self.sources, built_in)
             .map_err(LaunchSourceError::Prompt)?
             .ok_or(ConversationLaunchError::BuiltInPromptMissing { purpose })
     }

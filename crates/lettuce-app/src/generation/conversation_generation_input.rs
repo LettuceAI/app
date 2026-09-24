@@ -1,0 +1,2961 @@
+use std::{
+    collections::{HashMap, HashSet},
+    time::Duration,
+};
+
+use lettuce_characters::{CharacterRepository, PersonaRepository};
+use lettuce_companions::{
+    CompanionScheduledNoteRepository, CompanionStateRepository, SoulRepository,
+};
+use lettuce_conversations::{
+    ContextAssembler, ContextAssemblyError, ContextRequest, ConversationKind, ConversationReader,
+    ConversationRepository, ConversationRepositoryError, ConversationSnapshotMaterializer,
+    DynamicMemoryPolicySnapshot, GenerationCheckpointEnvelope, GenerationCheckpointEvent,
+    GenerationInput, GenerationTarget, GenerationTurnStatus, InferencePort, InferenceRequest,
+    MemoryAttribution, MemoryContribution, MemoryModeSnapshot, MemoryRetrievalStrategySnapshot,
+    MessageRole, OutputPolicy, PromptRuntimeFacts, PromptRuntimeValues, ProviderContextPart,
+    ProviderNeutralContext, ProviderNeutralMessage, ResolveGroupSpeaker, ResolvedInferenceProfile,
+    SafetyContext, SelectedSpeakerDecision, SpeakerDecisionMethod, SpeakerDecisionReference,
+    SpeakerFallback, SpeakerInferenceBinding, SpeakerInferenceRepository, SpeakerParticipantState,
+    SpeakerPolicyRequest, ToolChoice, ToolDefinition, ToolPolicy, ToolRequest,
+    select_group_speaker,
+};
+use lettuce_embeddings::{EmbeddingRequest, MemoryEmbeddingRepository};
+use lettuce_inference::{InferenceRuntime, InferenceRuntimeError};
+use lettuce_jobs::{
+    CancellationReason, Clock, JobKind, JobQuery, JobState, ResourceAvailability, WorkerId,
+    events::JobEvent, handle::CancellationToken,
+};
+use lettuce_memory::{
+    MemoryRepository, MemoryRepositoryError, MemoryRetrievalAccess, MemoryRetrievalRepository,
+    MemorySpaceSnapshot, MemorySummaryRepository, memory_revision_id,
+};
+use lettuce_models::{
+    CapabilityStatus, ChatParameterResolutionInput, ChatProfileResolutionError, ChatRequirements,
+    ModelProfileRepository, ModelRepositoryError, ProviderAccountRepository,
+};
+use lettuce_types::{PageLimit, PageRequest, RequestId, TimestampMillis, UsageEventId};
+use lettuce_usage::JobUsageLedger;
+
+use crate::{
+    ConversationContextAssembler, ConversationGenerationClaimContext,
+    ConversationGenerationClaimedWork, ConversationGenerationDispatchCoordinator,
+    ConversationGenerationDispatchError, ConversationGenerationInput,
+    ConversationGenerationJobRunner, ConversationGenerationOperation,
+    ConversationGenerationRunError, ConversationGenerationRunResult,
+    ConversationGenerationSettledWork, EmbeddingGenerationError, MemoryEmbeddingEngine,
+    operation_token,
+};
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ConversationGenerationRuntimeInput {
+    pub stream_sink: Option<RequestId>,
+    pub prompt_values: PromptRuntimeValues,
+}
+
+#[derive(Debug, Clone)]
+pub struct ConversationGenerationExecutionRequest {
+    pub conversation_id: lettuce_types::ConversationId,
+    pub turn_id: lettuce_types::GenerationTurnId,
+    pub attempt_id: lettuce_types::GenerationAttemptId,
+    pub worker_id: WorkerId,
+    pub lease_for: Duration,
+    pub resources: ResourceAvailability,
+    pub runtime: ConversationGenerationRuntimeInput,
+    pub cancellation: CancellationToken,
+    pub cancellation_reason: CancellationReason,
+}
+
+#[derive(Debug)]
+pub enum ConversationGenerationExecutionOutcome {
+    Settled(ConversationGenerationSettledWork),
+    Replayed {
+        result: Box<ConversationGenerationRunResult>,
+        job: lettuce_jobs::JobSnapshot,
+    },
+    Terminal(crate::ConversationGenerationAdmission),
+    NotClaimed(crate::ConversationGenerationAdmission),
+}
+
+#[derive(Debug, Clone)]
+pub struct ConversationGenerationWorkerRequest {
+    pub worker_id: WorkerId,
+    pub lease_for: Duration,
+    pub resources: ResourceAvailability,
+}
+
+#[derive(Debug)]
+pub enum ConversationGenerationWorkerOutcome {
+    Idle,
+    Executed(Box<ConversationGenerationExecutionOutcome>),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ConversationGenerationWorkerError {
+    #[error("conversation generation worker storage failed: {0}")]
+    Store(#[from] lettuce_jobs::StoreError),
+    #[error("conversation generation worker found invalid durable work")]
+    InvalidWork,
+    #[error("conversation generation execution failed: {0}")]
+    Execution(#[from] ConversationGenerationExecutionError),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ConversationGenerationExecutionError {
+    #[error("conversation generation dispatch failed: {0}")]
+    Dispatch(#[from] ConversationGenerationDispatchError),
+    #[error("conversation generation replay failed: {0}")]
+    Replay(#[from] ConversationGenerationRunError),
+    #[error("conversation generation inference runtime failed: {0}")]
+    Runtime(#[from] InferenceRuntimeError),
+}
+
+#[derive(Debug)]
+struct ConversationGenerationCancellationRegistration<'a> {
+    runtime: &'a InferenceRuntime,
+    job_id: lettuce_types::JobId,
+}
+
+impl<'a> ConversationGenerationCancellationRegistration<'a> {
+    fn register(
+        runtime: &'a InferenceRuntime,
+        job_id: lettuce_types::JobId,
+        token: CancellationToken,
+    ) -> Result<Self, InferenceRuntimeError> {
+        runtime.register_cancellation(job_id, token)?;
+        Ok(Self { runtime, job_id })
+    }
+}
+
+impl Drop for ConversationGenerationCancellationRegistration<'_> {
+    fn drop(&mut self) {
+        let _ = self.runtime.unregister_cancellation(self.job_id);
+    }
+}
+
+#[derive(Debug)]
+pub(crate) enum ConversationGenerationInputError {
+    Repository(ConversationRepositoryError),
+    ModelRepository(ModelRepositoryError),
+    MissingModel,
+    Profile(ChatProfileResolutionError),
+    Context(ContextAssemblyError),
+    Memory(MemoryRepositoryError),
+    Settings(lettuce_settings::GlobalSettingsStoreError),
+    Embedding,
+    Cancelled,
+    MemoryInputUnavailable,
+    SpeakerUnavailable,
+    SpeakerPending(UsageEventId),
+    InvalidTurn,
+}
+
+#[derive(Debug)]
+pub struct PreparedConversationGenerationJobRunner<'a, E: ?Sized, R: ?Sized, I: ?Sized> {
+    embedding: &'a E,
+    repository: &'a R,
+    inference: &'a I,
+    inference_runtime: Option<&'a InferenceRuntime>,
+}
+
+impl<'a, E: ?Sized, R: ?Sized, I: ?Sized> PreparedConversationGenerationJobRunner<'a, E, R, I> {
+    pub fn new(embedding: &'a E, repository: &'a R, inference: &'a I) -> Self {
+        Self {
+            embedding,
+            repository,
+            inference,
+            inference_runtime: None,
+        }
+    }
+
+    pub(crate) const fn with_inference_runtime(
+        mut self,
+        inference_runtime: &'a InferenceRuntime,
+    ) -> Self {
+        self.inference_runtime = Some(inference_runtime);
+        self
+    }
+}
+
+impl<E, R, I> PreparedConversationGenerationJobRunner<'_, E, R, I>
+where
+    E: MemoryEmbeddingEngine + ?Sized,
+    R: ConversationRepository
+        + ConversationSnapshotMaterializer
+        + CharacterRepository
+        + PersonaRepository
+        + SoulRepository
+        + CompanionStateRepository
+        + CompanionScheduledNoteRepository
+        + ModelProfileRepository
+        + lettuce_models::GlobalModelSettingsRepository
+        + lettuce_models::ModelCatalog
+        + lettuce_image_generation::sd_runtime::lora_library::LoraLibraryRepository
+        + ProviderAccountRepository
+        + lettuce_conversations::InitialInferenceRepository
+        + SpeakerInferenceRepository
+        + lettuce_conversations::ToolExecutionRepository
+        + lettuce_conversations::ProviderReplayArtifactPort
+        + JobUsageLedger
+        + lettuce_conversations::UsagePort
+        + MemoryEmbeddingRepository
+        + MemoryRepository
+        + MemoryRetrievalRepository
+        + MemorySummaryRepository
+        + lettuce_settings::GlobalSettingsStore
+        + lettuce_context::PromptRepository,
+    I: InferencePort + ?Sized,
+{
+    pub async fn execute_next<C>(
+        &self,
+        request: ConversationGenerationWorkerRequest,
+        clock: &C,
+    ) -> Result<ConversationGenerationWorkerOutcome, ConversationGenerationWorkerError>
+    where
+        C: Clock + ?Sized,
+        R: lettuce_jobs::JobStore + lettuce_usage::UsageLedger,
+    {
+        let mut page_request = PageRequest {
+            cursor: None,
+            limit: PageLimit::new(200),
+        };
+        let job = loop {
+            let page = lettuce_jobs::JobStore::list(
+                self.repository,
+                JobQuery {
+                    state: Some(JobState::Queued),
+                    kind: Some(JobKind::ConversationGeneration),
+                    subject: None,
+                    page: page_request.clone(),
+                },
+            )?;
+            if let Some(job) = page.items.into_iter().find(|job| {
+                job.resources
+                    .iter()
+                    .all(|resource| request.resources.allows(*resource))
+            }) {
+                break Some(job);
+            }
+            let Some(cursor) = page.next_cursor else {
+                break None;
+            };
+            page_request.cursor = Some(cursor);
+        };
+        let Some(job) = job else {
+            return Ok(ConversationGenerationWorkerOutcome::Idle);
+        };
+        let events = lettuce_jobs::JobStore::events_since(self.repository, job.id, None, 1)?;
+        let Some(JobEvent::Created {
+            input_ref: lettuce_jobs::OutcomeRef::GenerationTurn(turn_id),
+            ..
+        }) = events.first().map(|event| &event.event)
+        else {
+            return Err(ConversationGenerationWorkerError::InvalidWork);
+        };
+        let turn = ConversationReader::get_turn(self.repository, *turn_id)
+            .map_err(|_| ConversationGenerationWorkerError::InvalidWork)?;
+        let attempt = turn
+            .attempts
+            .iter()
+            .find(|attempt| attempt.job_id == Some(job.id))
+            .ok_or(ConversationGenerationWorkerError::InvalidWork)?;
+        let outcome = self
+            .execute(
+                ConversationGenerationExecutionRequest {
+                    conversation_id: turn.conversation_id,
+                    turn_id: turn.id,
+                    attempt_id: attempt.id,
+                    worker_id: request.worker_id,
+                    lease_for: request.lease_for,
+                    resources: request.resources,
+                    runtime: ConversationGenerationRuntimeInput::default(),
+                    cancellation: CancellationToken::new(),
+                    cancellation_reason: CancellationReason::Shutdown,
+                },
+                clock,
+            )
+            .await?;
+        Ok(ConversationGenerationWorkerOutcome::Executed(Box::new(
+            outcome,
+        )))
+    }
+
+    pub async fn execute<C>(
+        &self,
+        request: ConversationGenerationExecutionRequest,
+        clock: &C,
+    ) -> Result<ConversationGenerationExecutionOutcome, ConversationGenerationExecutionError>
+    where
+        C: Clock + ?Sized,
+        R: lettuce_jobs::JobStore + lettuce_usage::UsageLedger,
+    {
+        let dispatcher =
+            ConversationGenerationDispatchCoordinator::new(self.repository, self.repository);
+        let mut admission = dispatcher.admit(
+            request.conversation_id,
+            request.turn_id,
+            request.attempt_id,
+            clock.now(),
+        )?;
+        if admission.job.state == lettuce_jobs::JobState::Succeeded {
+            let result = ConversationGenerationJobRunner::new(self.repository, self.inference)
+                .replay_succeeded_attempt(
+                    request.conversation_id,
+                    request.turn_id,
+                    request.attempt_id,
+                    admission.job.id,
+                )?;
+            return Ok(ConversationGenerationExecutionOutcome::Replayed {
+                result: Box::new(result),
+                job: admission.job,
+            });
+        }
+        if admission.job.state.is_terminal() {
+            return Ok(ConversationGenerationExecutionOutcome::Terminal(admission));
+        }
+        let _registration = self
+            .inference_runtime
+            .map(|runtime| {
+                ConversationGenerationCancellationRegistration::register(
+                    runtime,
+                    admission.job.id,
+                    request.cancellation.clone(),
+                )
+            })
+            .transpose()?;
+        if _registration.is_some() {
+            admission.job = lettuce_jobs::JobStore::get(self.repository, admission.job.id)
+                .map_err(ConversationGenerationDispatchError::Jobs)?
+                .ok_or(ConversationGenerationDispatchError::InvalidWork)?;
+            if admission.job.state == lettuce_jobs::JobState::Succeeded {
+                let result = ConversationGenerationJobRunner::new(self.repository, self.inference)
+                    .replay_succeeded_attempt(
+                        request.conversation_id,
+                        request.turn_id,
+                        request.attempt_id,
+                        admission.job.id,
+                    )?;
+                return Ok(ConversationGenerationExecutionOutcome::Replayed {
+                    result: Box::new(result),
+                    job: admission.job,
+                });
+            }
+            if admission.job.state.is_terminal() {
+                return Ok(ConversationGenerationExecutionOutcome::Terminal(admission));
+            }
+        }
+        let Some(work) = dispatcher.claim_with_cancellation(
+            request.turn_id,
+            request.attempt_id,
+            ConversationGenerationClaimContext {
+                worker_id: request.worker_id,
+                cancellation: request.cancellation,
+            },
+            clock.now(),
+            request.lease_for,
+            &request.resources,
+        )?
+        else {
+            admission.job = lettuce_jobs::JobStore::get(self.repository, admission.job.id)
+                .map_err(ConversationGenerationDispatchError::Jobs)?
+                .ok_or(ConversationGenerationDispatchError::InvalidWork)?;
+            if admission.job.state.is_terminal() {
+                return Ok(ConversationGenerationExecutionOutcome::Terminal(admission));
+            }
+            return Ok(ConversationGenerationExecutionOutcome::NotClaimed(
+                admission,
+            ));
+        };
+        let result = self.run(&work, request.runtime, clock.now()).await;
+        let settled = dispatcher.settle(work, result, request.cancellation_reason, clock.now())?;
+        Ok(ConversationGenerationExecutionOutcome::Settled(settled))
+    }
+
+    pub async fn run(
+        &self,
+        work: &ConversationGenerationClaimedWork,
+        runtime: ConversationGenerationRuntimeInput,
+        now: TimestampMillis,
+    ) -> Result<ConversationGenerationRunResult, ConversationGenerationRunError> {
+        let runner = ConversationGenerationJobRunner::new(self.repository, self.inference);
+        if let Some(replay) = runner.replay_terminal(work)? {
+            return Ok(replay);
+        }
+        if let Some(input) = self
+            .durable_generation_input(work, runtime.stream_sink)
+            .map_err(ConversationGenerationInputError::into_run_error)?
+        {
+            return runner.run(work, input, now).await;
+        }
+        self.resolve_automatic_speaker(work, now)
+            .await
+            .map_err(ConversationGenerationInputError::into_run_error)?;
+        let input = self
+            .build_input(work, runtime, now)
+            .await
+            .map_err(ConversationGenerationInputError::into_run_error)?;
+        runner.run(work, input, now).await
+    }
+
+    fn durable_generation_input(
+        &self,
+        work: &ConversationGenerationClaimedWork,
+        stream_sink: Option<RequestId>,
+    ) -> Result<Option<ConversationGenerationInput>, ConversationGenerationInputError> {
+        let turn = ConversationReader::get_turn(self.repository, work.turn_id)
+            .map_err(ConversationGenerationInputError::Repository)?;
+        let attempt = turn
+            .attempts
+            .iter()
+            .find(|attempt| attempt.id == work.attempt_id)
+            .ok_or(ConversationGenerationInputError::InvalidTurn)?;
+        let mut record = self
+            .repository
+            .initial_inference_for_attempt(
+                work.conversation_id,
+                work.turn_id,
+                work.attempt_id,
+                work.handle.id(),
+            )
+            .map_err(ConversationGenerationInputError::Repository)?;
+        if record.is_none()
+            && let Some(parent) = attempt.parent_attempt_id.and_then(|parent_id| {
+                turn.attempts.iter().find(|candidate| {
+                    candidate.id == parent_id
+                        && candidate.status
+                            == lettuce_conversations::GenerationAttemptStatus::Interrupted
+                })
+            })
+            && let Some(parent_job_id) = parent.job_id
+        {
+            record = self
+                .repository
+                .initial_inference_for_attempt(
+                    work.conversation_id,
+                    work.turn_id,
+                    parent.id,
+                    parent_job_id,
+                )
+                .map_err(ConversationGenerationInputError::Repository)?;
+        }
+        let Some(record) = record else {
+            return Ok(None);
+        };
+        let model = turn
+            .resolved_model
+            .clone()
+            .ok_or(ConversationGenerationInputError::MissingModel)?;
+        let aggregate = ConversationReader::get(self.repository, work.conversation_id)
+            .map_err(ConversationGenerationInputError::Repository)?;
+        let strip_time_stamps = match crate::companion::companion_clock::companion_clock_context(
+            self.repository,
+            &aggregate.conversation,
+        ) {
+            Ok(clock) => clock.time_awareness_enabled(),
+            Err(crate::companion::companion_clock::CompanionClockError::MissingCharacter) => false,
+            Err(_) => {
+                return Err(ConversationGenerationInputError::Context(
+                    ContextAssemblyError::ConversationUnavailable,
+                ));
+            }
+        };
+        let reply_images = match aggregate.conversation.kind {
+            ConversationKind::Direct(_) => crate::image::reply_images::reply_image_facts(
+                self.repository,
+                &lettuce_settings::GlobalSettingsStore::load(self.repository)
+                    .map_err(ConversationGenerationInputError::Settings)?
+                    .settings,
+                &aggregate.conversation,
+            ),
+            ConversationKind::Group(_) => None,
+        };
+        let mut request = record.request;
+        request.attempt_id = work.attempt_id;
+        request.cancellation = Some(work.handle.id());
+        request.stream_sink = stream_sink;
+        Ok(Some(ConversationGenerationInput {
+            model,
+            attributions: request.context.attributions.clone(),
+            profile: request.profile,
+            context: request.context,
+            media_grants: request.media_grants,
+            stream_sink: request.stream_sink,
+            strip_time_stamps,
+            reply_images,
+        }))
+    }
+
+    async fn resolve_automatic_speaker(
+        &self,
+        work: &ConversationGenerationClaimedWork,
+        now: TimestampMillis,
+    ) -> Result<(), ConversationGenerationInputError> {
+        let aggregate = ConversationReader::get(self.repository, work.conversation_id)
+            .map_err(ConversationGenerationInputError::Repository)?;
+        let ConversationKind::Group(details) = &aggregate.conversation.kind else {
+            return Ok(());
+        };
+        let speaker_selection =
+            lettuce_conversations::effective_speaker_selection(&aggregate.conversation)
+                .unwrap_or(details.group.speaker_selection);
+        let mut turn = ConversationReader::get_turn(self.repository, work.turn_id)
+            .map_err(ConversationGenerationInputError::Repository)?;
+        if turn.selected_speaker.is_some()
+            || turn.forced_speaker.is_some()
+            || matches!(turn.target, GenerationTarget::ExistingCandidate { .. })
+        {
+            return Ok(());
+        }
+        if matches!(
+            speaker_selection,
+            lettuce_conversations::GroupSpeakerSelectionSnapshot::Director
+                | lettuce_conversations::GroupSpeakerSelectionSnapshot::DirectorAction
+        ) {
+            return Ok(());
+        }
+        let stages = match turn.status {
+            GenerationTurnStatus::Created => vec![
+                (
+                    GenerationTurnStatus::Preparing,
+                    ConversationGenerationOperation::StagePreparing,
+                ),
+                (
+                    GenerationTurnStatus::SelectingSpeaker,
+                    ConversationGenerationOperation::StageSelectingSpeaker,
+                ),
+            ],
+            GenerationTurnStatus::Preparing => vec![(
+                GenerationTurnStatus::SelectingSpeaker,
+                ConversationGenerationOperation::StageSelectingSpeaker,
+            )],
+            GenerationTurnStatus::SelectingSpeaker => Vec::new(),
+            _ => return Err(ConversationGenerationInputError::InvalidTurn),
+        };
+        for (status, operation) in stages {
+            let sequence = self
+                .repository
+                .latest_checkpoint_sequence(work.turn_id, work.attempt_id)
+                .map_err(ConversationGenerationInputError::Repository)?
+                .unwrap_or(0)
+                .checked_add(1)
+                .ok_or(ConversationGenerationInputError::InvalidTurn)?;
+            turn = self
+                .repository
+                .append_event(
+                    work.turn_id,
+                    turn.revision,
+                    &operation_token(
+                        work.conversation_id,
+                        work.turn_id,
+                        work.attempt_id,
+                        work.handle.id(),
+                        operation,
+                    ),
+                    GenerationCheckpointEnvelope {
+                        turn_id: work.turn_id,
+                        attempt_id: work.attempt_id,
+                        job_id: Some(work.handle.id()),
+                        correlation_id: None,
+                        sequence,
+                        event: GenerationCheckpointEvent::Stage { status },
+                    },
+                    now,
+                )
+                .map_err(ConversationGenerationInputError::Repository)?
+                .value;
+        }
+        let source_message_id = match turn.input {
+            GenerationInput::UserMessage { message_id } => message_id,
+            GenerationInput::ExistingHead { head_message_id } => head_message_id,
+            GenerationInput::ExistingCandidate { message_id, .. } => message_id,
+        };
+        let mut timeline = self.timeline(work.conversation_id, turn.branch_id)?;
+        retain_source_ancestry(&mut timeline.items, source_message_id)?;
+        let prior_speaker = timeline.items.iter().rev().find_map(|item| {
+            (item.message.role == MessageRole::Assistant)
+                .then_some(item.message.author_participant_id)
+                .flatten()
+        });
+        let profiles = self.current_character_profiles(&aggregate.conversation)?;
+        let participants = aggregate
+            .conversation
+            .participants
+            .iter()
+            .filter(|participant| {
+                participant.role == lettuce_conversations::ParticipantRole::Character
+            })
+            .map(|participant| SpeakerParticipantState {
+                id: participant.id,
+                eligible: participant.enabled && profiles.contains_key(&participant.id),
+                muted: participant.muted,
+                speak_count: u32::try_from(
+                    timeline
+                        .items
+                        .iter()
+                        .filter(|item| {
+                            item.message.role == MessageRole::Assistant
+                                && item.message.author_participant_id == Some(participant.id)
+                        })
+                        .count(),
+                )
+                .unwrap_or(u32::MAX),
+                last_spoke_turn: None,
+                last_spoke_at: None,
+            })
+            .collect();
+        let mention_source = match turn.input {
+            GenerationInput::UserMessage { message_id } => user_message_mention(
+                &aggregate.conversation,
+                &timeline.items,
+                message_id,
+                &profiles,
+            ),
+            GenerationInput::ExistingHead { .. } | GenerationInput::ExistingCandidate { .. } => {
+                None
+            }
+        };
+        let policy_request = SpeakerPolicyRequest {
+            conversation_id: work.conversation_id,
+            branch_id: turn.branch_id,
+            operation: turn.operation,
+            forced_speaker: None,
+            mention_source,
+            participants,
+            prior_speaker,
+            timeline: timeline.items,
+        };
+        let selected_speaker = if mention_source.is_none()
+            && speaker_selection == lettuce_conversations::GroupSpeakerSelectionSnapshot::Llm
+        {
+            self.select_speaker_via_llm(
+                work,
+                &aggregate.conversation,
+                &profiles,
+                &turn,
+                &policy_request,
+                now,
+            )
+            .await?
+        } else {
+            select_group_speaker(&policy_request, speaker_selection)
+                .map_err(|_| ConversationGenerationInputError::SpeakerUnavailable)?
+        };
+        self.repository
+            .resolve_group_speaker(
+                &ResolveGroupSpeaker {
+                    conversation_id: work.conversation_id,
+                    turn_id: work.turn_id,
+                    expected_turn_revision: turn.revision,
+                    operation: operation_token(
+                        work.conversation_id,
+                        work.turn_id,
+                        work.attempt_id,
+                        work.handle.id(),
+                        ConversationGenerationOperation::ResolveSpeaker,
+                    ),
+                    selected_speaker,
+                },
+                now,
+            )
+            .map_err(ConversationGenerationInputError::Repository)?;
+        Ok(())
+    }
+
+    fn current_character_profiles(
+        &self,
+        conversation: &lettuce_conversations::Conversation,
+    ) -> Result<
+        HashMap<lettuce_types::ConversationParticipantId, lettuce_characters::CharacterProfile>,
+        ConversationGenerationInputError,
+    > {
+        let mut profiles = HashMap::new();
+        for participant in &conversation.participants {
+            let lettuce_conversations::ParticipantSource::Character(character_id) =
+                participant.source
+            else {
+                continue;
+            };
+            let character =
+                CharacterRepository::get(self.repository, character_id).map_err(|_| {
+                    ConversationGenerationInputError::Repository(
+                        ConversationRepositoryError::Storage,
+                    )
+                })?;
+            if let Some(details) = character {
+                profiles.insert(participant.id, details.character.profile);
+            }
+        }
+        Ok(profiles)
+    }
+
+    async fn select_speaker_via_llm(
+        &self,
+        work: &ConversationGenerationClaimedWork,
+        conversation: &lettuce_conversations::Conversation,
+        profiles: &HashMap<
+            lettuce_types::ConversationParticipantId,
+            lettuce_characters::CharacterProfile,
+        >,
+        turn: &lettuce_conversations::GenerationTurn,
+        policy: &SpeakerPolicyRequest,
+        now: TimestampMillis,
+    ) -> Result<SelectedSpeakerDecision, ConversationGenerationInputError> {
+        let ConversationKind::Group(details) = &conversation.kind else {
+            return Err(ConversationGenerationInputError::SpeakerUnavailable);
+        };
+        let selection_model = details.group.speaker_selection_model.as_ref();
+        let available = conversation
+            .participants
+            .iter()
+            .filter(|participant| {
+                participant.role == lettuce_conversations::ParticipantRole::Character
+                    && participant.enabled
+                    && !participant.muted
+                    && profiles.contains_key(&participant.id)
+            })
+            .collect::<Vec<_>>();
+        if available.is_empty() {
+            return Err(ConversationGenerationInputError::SpeakerUnavailable);
+        }
+        let model_id = match selection_model {
+            Some(snapshot) => snapshot.source_id,
+            None => {
+                let settings = lettuce_settings::GlobalSettingsStore::load(self.repository)
+                    .map_err(ConversationGenerationInputError::Settings)?;
+                let Some(id) = settings
+                    .group_speaker_model_profile_id
+                    .or(settings.default_model_profile_id)
+                else {
+                    return heuristic_fallback(policy, None, None);
+                };
+                id
+            }
+        };
+        let Some(model) = ModelProfileRepository::get(self.repository, model_id)
+            .map_err(ConversationGenerationInputError::ModelRepository)?
+        else {
+            return heuristic_fallback(policy, selection_model, None);
+        };
+        let Some(account) =
+            ProviderAccountRepository::get(self.repository, model.provider_account_id)
+                .map_err(ConversationGenerationInputError::ModelRepository)?
+        else {
+            return heuristic_fallback(policy, None, None);
+        };
+        let expected = selection_model.map_or_else(
+            || lettuce_models::ExpectedModelIdentity {
+                model_profile_id: model.id,
+                model_revision: model.revision,
+                provider_account_id: account.id,
+                provider_account_revision: account.revision,
+                external_model_id: model.external_model_id.clone(),
+                display_name: model.display_name.clone(),
+                provider_protocol: account.protocol,
+                model_kind: model.kind,
+            },
+            lettuce_conversations::ModelSelectionSnapshot::expected_chat_identity,
+        );
+        let global_model_settings =
+            lettuce_models::GlobalModelSettingsRepository::global_model_settings(self.repository)
+                .map(|(settings, _)| settings)
+                .unwrap_or_default();
+        let profile = match lettuce_models::resolve_chat_profile(
+            &expected,
+            &model,
+            &account,
+            &crate::feature_parameter_input(
+                &model.config.feature_parameters.group_speaker_selection,
+                crate::GROUP_SPEAKER_SELECTION_DEFAULTS,
+                crate::FeatureRequestFields::Sampling,
+                account.protocol,
+                &global_model_settings,
+            ),
+            &ChatRequirements {
+                require_tools: true,
+                ..Default::default()
+            },
+        ) {
+            Ok(profile) => profile,
+            Err(_) => return heuristic_fallback(policy, None, None),
+        };
+        let selection_text = crate::generation::runtime_text::RuntimeText::load(
+            self.repository,
+            crate::BuiltInPromptId::GroupSpeakerSelection,
+        )
+        .and_then(|text| {
+            Ok((
+                speaker_selection_prompt(&text, profiles, policy, &available)?,
+                speaker_selection_tools(&text, &available)?,
+            ))
+        });
+        let (prompt, tools) = match selection_text {
+            Ok(selection_text) => selection_text,
+            Err(error) => {
+                tracing::warn!(
+                    ?error,
+                    "speaker selection prompt text failed; using heuristic"
+                );
+                return heuristic_fallback(policy, None, None);
+            }
+        };
+        let request = InferenceRequest {
+            turn_id: turn.id,
+            attempt_id: work.attempt_id,
+            operation: turn.operation,
+            profile: ResolvedInferenceProfile {
+                chat_profile: profile,
+                tool_policy: ToolPolicy::Allowed,
+                output_policy: OutputPolicy::Plain,
+                safety_policy: SafetyContext::Standard,
+                correlation_id: None,
+            },
+            context: ProviderNeutralContext {
+                messages: vec![ProviderNeutralMessage {
+                    role: MessageRole::User,
+                    parts: vec![ProviderContextPart::Text { text: prompt }],
+                }],
+                attributions: Default::default(),
+                budget: Default::default(),
+            },
+            cancellation: Some(work.handle.id()),
+            stream_sink: None,
+            media_grants: Vec::new(),
+            tools: Some(tools),
+            prompt_cache_key: None,
+        };
+        let binding = SpeakerInferenceBinding::from_request(work.conversation_id, &request)
+            .map_err(|_| ConversationGenerationInputError::InvalidTurn)?;
+        if let Some(record) = self
+            .repository
+            .speaker_inference(&binding)
+            .map_err(ConversationGenerationInputError::Repository)?
+        {
+            return record
+                .decision
+                .ok_or(ConversationGenerationInputError::SpeakerPending(
+                    record.usage_event_id,
+                ));
+        }
+        let admission = self
+            .repository
+            .admit_speaker_inference(work.conversation_id, &request, now)
+            .map_err(ConversationGenerationInputError::Repository)?;
+        if !admission.created {
+            return admission.record.decision.ok_or(
+                ConversationGenerationInputError::SpeakerPending(admission.record.usage_event_id),
+            );
+        }
+        let outcome = crate::jobs::job_inference_usage::run_job_inference_with_id(
+            self.repository,
+            self.inference,
+            work.handle.id(),
+            request,
+            now,
+            admission.record.usage_event_id,
+        )
+        .await;
+        let mut decision = match outcome {
+            Ok(ref outcome) => llm_speaker_decision(
+                outcome,
+                &available,
+                selection_model,
+                admission.record.usage_event_id,
+            )
+            .unwrap_or_else(|| {
+                heuristic_fallback(
+                    policy,
+                    selection_model,
+                    Some(admission.record.usage_event_id),
+                )
+                .expect("available speaker has a heuristic fallback")
+            }),
+            Err(crate::jobs::job_inference_usage::JobInferenceError::Provider(
+                lettuce_conversations::PortError::Cancelled,
+            )) => return Err(ConversationGenerationInputError::Cancelled),
+            Err(crate::jobs::job_inference_usage::JobInferenceError::Provider(_)) => {
+                heuristic_fallback(
+                    policy,
+                    selection_model,
+                    Some(admission.record.usage_event_id),
+                )?
+            }
+            Err(crate::jobs::job_inference_usage::JobInferenceError::Evidence) => {
+                return Err(ConversationGenerationInputError::Repository(
+                    ConversationRepositoryError::Storage,
+                ));
+            }
+        };
+        if let Ok(outcome) = outcome {
+            crate::cleanup_outcome_replays(self.repository, &outcome).map_err(|_| {
+                ConversationGenerationInputError::Repository(ConversationRepositoryError::Storage)
+            })?;
+        }
+        decision.usage_event_id = Some(admission.record.usage_event_id);
+        self.repository
+            .settle_speaker_inference(&binding, &decision, now)
+            .map_err(ConversationGenerationInputError::Repository)?;
+        Ok(decision)
+    }
+
+    pub(crate) async fn build_input(
+        &self,
+        work: &ConversationGenerationClaimedWork,
+        runtime: ConversationGenerationRuntimeInput,
+        now: TimestampMillis,
+    ) -> Result<ConversationGenerationInput, ConversationGenerationInputError> {
+        let aggregate = ConversationReader::get(self.repository, work.conversation_id)
+            .map_err(ConversationGenerationInputError::Repository)?;
+        let turn = ConversationReader::get_turn(self.repository, work.turn_id)
+            .map_err(ConversationGenerationInputError::Repository)?;
+        if turn.conversation_id != work.conversation_id
+            || turn.branch_id != aggregate.conversation.active_branch_id
+        {
+            return Err(ConversationGenerationInputError::InvalidTurn);
+        }
+        let selected_speaker = self.generation_speaker(&aggregate.conversation, &turn)?;
+        let settings = lettuce_conversations::resolve_effective_settings(
+            &aggregate.conversation,
+            selected_speaker
+                .as_ref()
+                .map(|speaker| speaker.participant_id),
+        )
+        .map_err(|_| ConversationGenerationInputError::InvalidTurn)?;
+        let memory_settings = settings.memory.as_ref();
+        if memory_settings.is_some_and(|memory| !memory.selected_revision_ids.is_empty()) {
+            return Err(ConversationGenerationInputError::MemoryInputUnavailable);
+        }
+        let global_settings = lettuce_settings::GlobalSettingsStore::load(self.repository)
+            .map_err(ConversationGenerationInputError::Settings)?
+            .settings;
+        let group = matches!(aggregate.conversation.kind, ConversationKind::Group(_));
+        let clock = crate::companion::companion_clock::companion_clock_context(
+            self.repository,
+            &aggregate.conversation,
+        )
+        .map_err(|_| {
+            ConversationGenerationInputError::Context(ContextAssemblyError::ConversationUnavailable)
+        })?;
+        let reference_now = clock.effective_now(now);
+        let memory_mode = match memory_settings.map(|memory| memory.mode) {
+            Some(MemoryModeSnapshot::Dynamic)
+                if !group && !global_settings.dynamic_memory.enabled =>
+            {
+                MemoryModeSnapshot::Manual
+            }
+            Some(mode) => mode,
+            None => MemoryModeSnapshot::Disabled,
+        };
+        let dynamic_memory = memory_mode == MemoryModeSnapshot::Dynamic;
+        let model = turn
+            .resolved_model
+            .clone()
+            .or(turn.requested_model_override.clone())
+            .or(settings.model)
+            .ok_or(ConversationGenerationInputError::MissingModel)?;
+        let stored_model = ModelProfileRepository::get(self.repository, model.source_id)
+            .map_err(ConversationGenerationInputError::ModelRepository)?
+            .ok_or(ConversationGenerationInputError::MissingModel)?;
+        let account = ProviderAccountRepository::get(self.repository, model.provider_account_id)
+            .map_err(ConversationGenerationInputError::ModelRepository)?
+            .ok_or(ConversationGenerationInputError::MissingModel)?;
+        let (global_model_settings, _) =
+            lettuce_models::GlobalModelSettingsRepository::global_model_settings(self.repository)
+                .map_err(ConversationGenerationInputError::ModelRepository)?;
+        let session_layer = aggregate
+            .conversation
+            .current_settings
+            .as_ref()
+            .map(|current| &current.model_settings);
+        let parameters = ChatParameterResolutionInput {
+            session: session_layer
+                .map(|layer| layer.chat_overrides())
+                .unwrap_or_default(),
+            operation: Default::default(),
+            llama_cpp: Box::new(lettuce_models::LlamaResolutionInput {
+                global: global_model_settings.llama_cpp,
+                session: session_layer
+                    .map(|layer| layer.llama_cpp.clone())
+                    .unwrap_or_default(),
+                memory_sampler: None,
+            }),
+            global: global_model_settings.chat_parameters,
+        };
+        let profile = lettuce_models::resolve_chat_profile(
+            &model.expected_chat_identity(),
+            &stored_model,
+            &account,
+            &parameters,
+            &ChatRequirements {
+                require_streaming: runtime.stream_sink.is_some(),
+                ..Default::default()
+            },
+        )
+        .map_err(ConversationGenerationInputError::Profile)?;
+        let source_message_id = match turn.input {
+            GenerationInput::UserMessage { message_id } => message_id,
+            GenerationInput::ExistingHead { head_message_id } => head_message_id,
+            GenerationInput::ExistingCandidate { message_id, .. } => message_id,
+        };
+        let mut timeline = self.timeline(work.conversation_id, turn.branch_id)?;
+        retain_source_ancestry(&mut timeline.items, source_message_id)?;
+        let memory_contribution = match memory_mode {
+            MemoryModeSnapshot::Dynamic => {
+                let companion = clock.companion;
+                let policy = memory_settings
+                    .and_then(|memory| memory.dynamic_policy.as_ref())
+                    .ok_or(ConversationGenerationInputError::MemoryInputUnavailable)?;
+                self.dynamic_memory_input(
+                    work,
+                    &timeline.items,
+                    policy,
+                    MemoryPromptShape {
+                        operation: turn.operation,
+                        group,
+                        companion,
+                        clock,
+                        source_message_id,
+                    },
+                    now,
+                )
+                .await?
+            }
+            MemoryModeSnapshot::Manual => self.manual_memory_input(work.conversation_id, group)?,
+            MemoryModeSnapshot::Disabled => None,
+        };
+        let conversation_message_count =
+            conversation_message_count(&timeline.items, turn.operation, source_message_id);
+        let images = &global_settings.image_generation;
+        let scene_model_is_local = !group && {
+            let mut resolving = global_settings.clone();
+            resolving.image_generation.scene_enabled = true;
+            crate::image_feature_model(self.repository, &resolving, crate::ImageFeature::Scene)
+                .is_ok_and(|model| model.is_local_diffusion())
+        };
+        let scene_image_protocol = (!group && images.scene_enabled)
+            .then(|| {
+                crate::image_feature_model(
+                    self.repository,
+                    &global_settings,
+                    crate::ImageFeature::Scene,
+                )
+                .ok()
+            })
+            .flatten()
+            .map(|model| {
+                if model.is_local_diffusion() {
+                    lettuce_conversations::SceneImageProtocol::Local
+                } else {
+                    lettuce_conversations::SceneImageProtocol::Remote
+                }
+            });
+        let prompt_runtime = PromptRuntimeFacts {
+            provider_id: Some(account.provider_kind),
+            provider_label: Some(account.label),
+            input_scopes: modality_scopes(profile.capabilities.input_modalities),
+            output_scopes: modality_scopes(profile.capabilities.output_modalities),
+            scene_generation_enabled: images.scene_enabled,
+            avatar_generation_enabled: images.avatar_enabled,
+            is_scene_generation_local_image_model: scene_model_is_local,
+            scene_image_protocol,
+            dynamic_memory_enabled: dynamic_memory,
+            time_awareness_enabled: clock.time_awareness_enabled(),
+            conversation_message_count: Some(conversation_message_count),
+            ..Default::default()
+        };
+        let context_window = history_window(&global_settings, dynamic_memory, group);
+        let mut prompt_values = runtime.prompt_values;
+        if scene_model_is_local
+            && let ConversationKind::Direct(details) = &aggregate.conversation.kind
+        {
+            let (character_lora, persona_lora) = crate::image::scene_loras::subject_loras(
+                self.repository,
+                details.character.source_id,
+                settings.persona.as_ref().map(|persona| persona.source_id),
+            );
+            prompt_values.character_scene_lora = Some(crate::image::scene_loras::subject_binding(
+                character_lora.as_ref(),
+            ));
+            prompt_values.persona_scene_lora =
+                persona_lora.map(|lora| crate::image::scene_loras::subject_binding(lora.as_ref()));
+        }
+        prompt_values.content_rules = Some(crate::generation::pure_mode_rules::content_rules(
+            self.repository,
+            global_settings.pure_mode,
+        ));
+        crate::companion::companion_clock::fill_time_values(&mut prompt_values, reference_now);
+        let context = ConversationContextAssembler::new(self.repository)
+            .assemble(ContextRequest {
+                conversation_id: work.conversation_id,
+                branch_id: turn.branch_id,
+                branch_path: timeline
+                    .branch_path
+                    .iter()
+                    .map(|branch| branch.id)
+                    .collect(),
+                source_message_id,
+                operation: turn.operation,
+                swap_roles: turn.swap_roles,
+                guidance: turn.guidance.clone(),
+                window: context_window,
+                selected_speaker,
+                capabilities: profile.capabilities.clone(),
+                safety: SafetyContext::Standard,
+                prompt_runtime,
+                prompt_values,
+                memory: memory_contribution,
+                timeline: context_timeline(timeline.items, context_window, source_message_id),
+            })
+            .await
+            .map_err(ConversationGenerationInputError::Context)?;
+        let mut seen_media = HashSet::<lettuce_types::AssetId>::new();
+        let media_grants = context
+            .messages
+            .iter()
+            .flat_map(|message| &message.parts)
+            .filter_map(|part| match part {
+                ProviderContextPart::MediaAsset { asset_id, .. }
+                    if seen_media.insert(*asset_id) =>
+                {
+                    Some(*asset_id)
+                }
+                _ => None,
+            })
+            .collect();
+        let attributions = context.attributions.clone();
+        Ok(ConversationGenerationInput {
+            model,
+            attributions,
+            profile: ResolvedInferenceProfile {
+                chat_profile: profile,
+                tool_policy: ToolPolicy::Disabled,
+                output_policy: OutputPolicy::Plain,
+                safety_policy: SafetyContext::Standard,
+                correlation_id: turn.correlation_id,
+            },
+            context,
+            media_grants,
+            stream_sink: runtime.stream_sink,
+            strip_time_stamps: clock.time_awareness_enabled(),
+            reply_images: crate::image::reply_images::reply_image_facts(
+                self.repository,
+                &global_settings,
+                &aggregate.conversation,
+            ),
+        })
+    }
+
+    fn generation_speaker(
+        &self,
+        conversation: &lettuce_conversations::Conversation,
+        turn: &lettuce_conversations::GenerationTurn,
+    ) -> Result<Option<SelectedSpeakerDecision>, ConversationGenerationInputError> {
+        let ConversationKind::Group(details) = &conversation.kind else {
+            return Ok(None);
+        };
+        if let Some(decision) = &turn.selected_speaker {
+            return Ok(Some(decision.clone()));
+        }
+        let (participant_id, method, reference) = if let Some(participant_id) = turn.forced_speaker
+        {
+            let method = match lettuce_conversations::effective_speaker_selection(conversation)
+                .unwrap_or(details.group.speaker_selection)
+            {
+                lettuce_conversations::GroupSpeakerSelectionSnapshot::Director => {
+                    SpeakerDecisionMethod::Director
+                }
+                lettuce_conversations::GroupSpeakerSelectionSnapshot::DirectorAction => {
+                    SpeakerDecisionMethod::DirectorAction
+                }
+                _ => SpeakerDecisionMethod::Explicit,
+            };
+            (participant_id, method, None)
+        } else if let GenerationTarget::ExistingCandidate {
+            message_id,
+            prior_candidate_id,
+        } = turn.target
+        {
+            let candidate = self
+                .repository
+                .get_candidate(prior_candidate_id)
+                .map_err(ConversationGenerationInputError::Repository)?;
+            if candidate.message_id != message_id {
+                return Err(ConversationGenerationInputError::SpeakerUnavailable);
+            }
+            (
+                candidate.author_participant_id,
+                SpeakerDecisionMethod::Explicit,
+                Some(SpeakerDecisionReference::Message(message_id)),
+            )
+        } else {
+            return Err(ConversationGenerationInputError::SpeakerUnavailable);
+        };
+        Ok(Some(SelectedSpeakerDecision {
+            participant_id,
+            method,
+            fallback: SpeakerFallback::None,
+            reference,
+            rationale_summary: None,
+            decision_model: None,
+            usage_event_id: None,
+        }))
+    }
+
+    async fn dynamic_memory_input(
+        &self,
+        work: &ConversationGenerationClaimedWork,
+        timeline: &[lettuce_conversations::TimelineItem],
+        settings: &DynamicMemoryPolicySnapshot,
+        shape: MemoryPromptShape,
+        now: TimestampMillis,
+    ) -> Result<Option<MemoryContribution>, ConversationGenerationInputError> {
+        let prior_access = MemoryRetrievalRepository::get_retrieval_access(
+            self.repository,
+            work.conversation_id,
+            work.turn_id,
+            work.attempt_id,
+        )
+        .map_err(ConversationGenerationInputError::Memory)?;
+        let memory = match &prior_access {
+            Some(receipt) => MemoryRepository::get(self.repository, receipt.access.space_id),
+            None => MemoryRepository::get_for_conversation(self.repository, work.conversation_id),
+        }
+        .map_err(ConversationGenerationInputError::Memory)?
+        .ok_or(ConversationGenerationInputError::MemoryInputUnavailable)?;
+        let summary = MemorySummaryRepository::get_summary(self.repository, memory.id)
+            .map_err(ConversationGenerationInputError::Memory)?
+            .map(|summary| summary.text);
+        let (selected, revision, effective_now) = if let Some(receipt) = prior_access {
+            if receipt.access.space_id != memory.id || receipt.resulting_revision != memory.revision
+            {
+                return Err(ConversationGenerationInputError::MemoryInputUnavailable);
+            }
+            let selected = receipt
+                .access
+                .selected_memory_ids
+                .iter()
+                .map(|id| {
+                    memory
+                        .items
+                        .iter()
+                        .find(|item| item.id == *id && item.superseded_by.is_none())
+                        .cloned()
+                        .ok_or(ConversationGenerationInputError::MemoryInputUnavailable)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            (
+                selected,
+                receipt.resulting_revision,
+                receipt.access.accessed_at,
+            )
+        } else {
+            let selected = self
+                .retrieve_memories(work, timeline, &memory, settings, shape, now)
+                .await?;
+            let revision = if selected.is_empty() {
+                memory.revision
+            } else {
+                MemoryRetrievalRepository::apply_retrieval_access(
+                    self.repository,
+                    MemoryRetrievalAccess {
+                        conversation_id: work.conversation_id,
+                        turn_id: work.turn_id,
+                        attempt_id: work.attempt_id,
+                        space_id: memory.id,
+                        expected_revision: memory.revision,
+                        selected_memory_ids: selected.iter().map(|item| item.id).collect(),
+                        accessed_at: now,
+                    },
+                )
+                .map_err(ConversationGenerationInputError::Memory)?
+                .resulting_revision
+            };
+            (selected, revision, now)
+        };
+        let effective_now = shape.clock.effective_now(effective_now);
+        let key_memories = selected
+            .iter()
+            .map(|item| crate::memory::memory_prompt::memory_prompt_line(item, effective_now))
+            .collect::<Vec<_>>();
+        let contribution =
+            (summary.is_some() || !key_memories.is_empty()).then(|| MemoryContribution {
+                attribution: MemoryAttribution {
+                    revision_id: memory_revision_id(memory.id, revision),
+                },
+                summary,
+                key_memories,
+            });
+        Ok(contribution)
+    }
+
+    fn manual_memory_input(
+        &self,
+        conversation_id: lettuce_types::ConversationId,
+        group: bool,
+    ) -> Result<Option<MemoryContribution>, ConversationGenerationInputError> {
+        let memory = MemoryRepository::get_for_conversation(self.repository, conversation_id)
+            .map_err(ConversationGenerationInputError::Memory)?
+            .ok_or(ConversationGenerationInputError::MemoryInputUnavailable)?;
+        let summary = if group {
+            MemorySummaryRepository::get_summary(self.repository, memory.id)
+                .map_err(ConversationGenerationInputError::Memory)?
+                .map(|summary| summary.text)
+        } else {
+            None
+        };
+        let key_memories = memory
+            .items
+            .iter()
+            .filter(|item| item.superseded_by.is_none())
+            .map(|item| lettuce_conversations::MemoryPromptLine {
+                text: item.text.clone(),
+                observed: None,
+            })
+            .collect::<Vec<_>>();
+        Ok(
+            (summary.is_some() || !key_memories.is_empty()).then(|| MemoryContribution {
+                attribution: MemoryAttribution {
+                    revision_id: memory_revision_id(memory.id, memory.revision),
+                },
+                summary,
+                key_memories,
+            }),
+        )
+    }
+
+    /// Embeds the memories that have no ready vector for the current
+    /// embedding model and text (new, edited, synced or from an older
+    /// model), as legacy migrated session memories before retrieval.
+    fn embed_pending_memories(
+        &self,
+        work: &ConversationGenerationClaimedWork,
+        memory: &MemorySpaceSnapshot,
+        now: TimestampMillis,
+    ) -> Result<(), ConversationGenerationInputError> {
+        crate::embed_missing_memories(
+            self.embedding,
+            self.repository,
+            memory,
+            &work.handle.cancellation_token(),
+            now,
+        )
+        .map(|_| ())
+        .map_err(|error| match error {
+            crate::MemoryEmbeddingBackfillError::Cancelled => {
+                ConversationGenerationInputError::Cancelled
+            }
+            crate::MemoryEmbeddingBackfillError::Repository => {
+                ConversationGenerationInputError::Embedding
+            }
+        })
+    }
+
+    async fn retrieve_memories(
+        &self,
+        work: &ConversationGenerationClaimedWork,
+        timeline: &[lettuce_conversations::TimelineItem],
+        memory: &MemorySpaceSnapshot,
+        settings: &DynamicMemoryPolicySnapshot,
+        shape: MemoryPromptShape,
+        now: TimestampMillis,
+    ) -> Result<Vec<lettuce_memory::MemoryItem>, ConversationGenerationInputError> {
+        let active = memory
+            .items
+            .iter()
+            .filter(|item| item.superseded_by.is_none())
+            .collect::<Vec<_>>();
+        if active.is_empty() {
+            return Ok(Vec::new());
+        }
+        let query = memory_query(
+            timeline.iter().filter(|item| {
+                !(shape.group
+                    && shape.operation == lettuce_conversations::GenerationOperation::Regenerate
+                    && item.message.id == shape.source_message_id)
+            }),
+            settings.context_enrichment_enabled,
+        );
+        if query.is_empty() {
+            return Ok(Vec::new());
+        }
+        let temporal_range = if shape.clock.time_awareness_enabled() {
+            crate::memory::temporal_query::detect_temporal_query_range(
+                &query,
+                shape.clock.effective_now(now),
+            )
+        } else {
+            None
+        };
+        let active = match temporal_range {
+            Some(range) => {
+                let candidates = temporal_candidates(&active, range);
+                if candidates.is_empty() {
+                    return Ok(Vec::new());
+                }
+                candidates
+            }
+            None => active,
+        };
+        self.embed_pending_memories(work, memory, now)?;
+        let query_embedding = match self.embedding.embed_memory(
+            &EmbeddingRequest {
+                text: query.clone(),
+                dimensions: self.embedding.dimensions(),
+            },
+            &work.handle.cancellation_token(),
+        ) {
+            Ok(vector) => vector,
+            Err(EmbeddingGenerationError::Cancelled) => {
+                return Err(ConversationGenerationInputError::Cancelled);
+            }
+            Err(EmbeddingGenerationError::Unavailable) => {
+                tracing::warn!("dynamic-memory retrieval embedding is unavailable");
+                return Ok(Vec::new());
+            }
+        };
+        let projections = self
+            .repository
+            .list_ready(
+                memory.id,
+                self.embedding.source_revision(),
+                self.embedding.dimensions(),
+            )
+            .map_err(|_| ConversationGenerationInputError::Embedding)?;
+        let limit = usize::from(settings.retrieval_limit);
+        let threshold = if temporal_range.is_some() {
+            Some(-1.0)
+        } else {
+            settings
+                .min_similarity_basis_points
+                .map(|basis_points| f32::from(basis_points) / 10_000.0)
+        };
+        let selected = select_memories(
+            &query,
+            &query_embedding,
+            &projections,
+            &active,
+            limit,
+            threshold,
+            &self.embedding.calibration(),
+            settings.retrieval_strategy,
+            shape.group,
+            shape.companion,
+            temporal_range.is_some(),
+        );
+        Ok(selected.into_iter().cloned().collect())
+    }
+
+    fn timeline(
+        &self,
+        conversation_id: lettuce_types::ConversationId,
+        branch_id: lettuce_types::ConversationBranchId,
+    ) -> Result<lettuce_conversations::TimelinePage, ConversationGenerationInputError> {
+        let mut request = PageRequest {
+            cursor: None,
+            limit: PageLimit::new(200),
+        };
+        let mut complete = self
+            .repository
+            .timeline_page(conversation_id, branch_id, &request)
+            .map_err(ConversationGenerationInputError::Repository)?;
+        while let Some(cursor) = complete.next_cursor.take() {
+            request.cursor = Some(cursor);
+            let page = self
+                .repository
+                .timeline_page(conversation_id, branch_id, &request)
+                .map_err(ConversationGenerationInputError::Repository)?;
+            if page.branch_path != complete.branch_path {
+                return Err(ConversationGenerationInputError::Context(
+                    ContextAssemblyError::SizeLimit,
+                ));
+            }
+            complete.items.extend(page.items);
+            complete.boundary_parent_id = page.boundary_parent_id;
+            complete.next_cursor = page.next_cursor;
+        }
+        complete.items.reverse();
+        Ok(complete)
+    }
+}
+
+pub(crate) fn modality_scopes(capabilities: lettuce_models::ModalityCapabilities) -> Vec<String> {
+    [
+        ("text", capabilities.text),
+        ("image", capabilities.image),
+        ("audio", capabilities.audio),
+    ]
+    .into_iter()
+    .filter(|(_, status)| *status == CapabilityStatus::Supported)
+    .map(|(name, _)| name.into())
+    .collect()
+}
+
+#[derive(Debug, Clone, Copy)]
+struct MemoryPromptShape {
+    source_message_id: lettuce_types::MessageId,
+    operation: lettuce_conversations::GenerationOperation,
+    group: bool,
+    companion: bool,
+    clock: crate::companion::companion_clock::CompanionClockContext,
+}
+
+fn history_window(
+    settings: &lettuce_settings::GlobalSettings,
+    dynamic_memory: bool,
+    group: bool,
+) -> lettuce_conversations::ContextWindowPolicy {
+    let messages = match (dynamic_memory, group) {
+        (true, true) => {
+            settings
+                .effective_group_dynamic_memory()
+                .summary_message_interval
+        }
+        (true, false) => settings.dynamic_memory.summary_message_interval,
+        (false, _) => settings.manual_mode_context_window,
+    };
+    lettuce_conversations::ContextWindowPolicy {
+        recent_non_pinned_limit: usize::try_from(messages).unwrap_or(usize::MAX).clamp(
+            1,
+            lettuce_conversations::ContextWindowPolicy::MAX_RECENT_NON_PINNED,
+        ),
+    }
+}
+
+fn conversation_message_count(
+    items: &[lettuce_conversations::TimelineItem],
+    operation: lettuce_conversations::GenerationOperation,
+    source_message_id: lettuce_types::MessageId,
+) -> usize {
+    items
+        .iter()
+        .filter(|item| {
+            !(operation == lettuce_conversations::GenerationOperation::Regenerate
+                && item.message.id == source_message_id)
+                && item.message.visibility != lettuce_conversations::MessageVisibility::Tombstoned
+                && !timeline_item_text(item).is_empty()
+        })
+        .count()
+}
+
+fn context_timeline(
+    items: Vec<lettuce_conversations::TimelineItem>,
+    window: lettuce_conversations::ContextWindowPolicy,
+    source_message_id: lettuce_types::MessageId,
+) -> Vec<lettuce_conversations::TimelineItem> {
+    let mut remaining = window
+        .recent_non_pinned_limit
+        .saturating_add(1)
+        .max(lettuce_context::LEGACY_RECENT_MESSAGE_LIMIT);
+    let mut latest_user_kept = false;
+    let mut kept = items
+        .into_iter()
+        .rev()
+        .filter(|item| {
+            if item.message.id == source_message_id {
+                latest_user_kept |= item.message.role == MessageRole::User;
+                return true;
+            }
+            if matches!(
+                item.message.visibility,
+                lettuce_conversations::MessageVisibility::Hidden
+                    | lettuce_conversations::MessageVisibility::Tombstoned
+            ) {
+                return false;
+            }
+            if item.message.pinned || item.message.role == MessageRole::Scene {
+                return true;
+            }
+            let latest_user = !latest_user_kept && item.message.role == MessageRole::User;
+            latest_user_kept |= item.message.role == MessageRole::User;
+            if remaining == 0 {
+                return latest_user;
+            }
+            remaining -= 1;
+            true
+        })
+        .collect::<Vec<_>>();
+    kept.reverse();
+    kept
+}
+
+fn retain_source_ancestry(
+    timeline: &mut Vec<lettuce_conversations::TimelineItem>,
+    source_message_id: lettuce_types::MessageId,
+) -> Result<(), ConversationGenerationInputError> {
+    let parents = timeline
+        .iter()
+        .map(|item| (item.message.id, item.message.parent_message_id))
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut retained = HashSet::new();
+    let mut current = Some(source_message_id);
+    while let Some(message_id) = current {
+        if !retained.insert(message_id) {
+            return Err(ConversationGenerationInputError::InvalidTurn);
+        }
+        current = *parents
+            .get(&message_id)
+            .ok_or(ConversationGenerationInputError::InvalidTurn)?;
+    }
+    timeline.retain(|item| retained.contains(&item.message.id));
+    Ok(())
+}
+
+impl ConversationGenerationInputError {
+    fn into_run_error(self) -> ConversationGenerationRunError {
+        match self {
+            Self::Repository(error) => ConversationGenerationRunError::Repository(error),
+            Self::ModelRepository(ModelRepositoryError::Storage) => {
+                ConversationGenerationRunError::Repository(ConversationRepositoryError::Storage)
+            }
+            Self::Context(error) => {
+                tracing::warn!(?error, "conversation context preparation failed");
+                ConversationGenerationRunError::PreparationFailed {
+                    code: lettuce_conversations::GenerationFailureCode::ContextUnavailable,
+                }
+            }
+            Self::Settings(lettuce_settings::GlobalSettingsStoreError::Storage) => {
+                ConversationGenerationRunError::Repository(ConversationRepositoryError::Storage)
+            }
+            Self::Settings(error) => {
+                tracing::warn!(?error, "conversation settings could not be read");
+                ConversationGenerationRunError::PreparationFailed {
+                    code: lettuce_conversations::GenerationFailureCode::ContextUnavailable,
+                }
+            }
+            Self::Memory(error) => {
+                tracing::warn!(?error, "dynamic-memory state preparation failed");
+                ConversationGenerationRunError::PreparationFailed {
+                    code: lettuce_conversations::GenerationFailureCode::ContextUnavailable,
+                }
+            }
+            Self::Embedding => {
+                tracing::warn!("dynamic-memory projection preparation failed");
+                ConversationGenerationRunError::PreparationFailed {
+                    code: lettuce_conversations::GenerationFailureCode::ContextUnavailable,
+                }
+            }
+            Self::Cancelled => ConversationGenerationRunError::Cancelled {
+                evidence: crate::GenerationUsageEvidence::None,
+            },
+            Self::Profile(error) => {
+                tracing::warn!(?error, "conversation model profile resolution failed");
+                ConversationGenerationRunError::PreparationFailed {
+                    code: lettuce_conversations::GenerationFailureCode::MissingModel,
+                }
+            }
+            Self::MissingModel | Self::ModelRepository(_) => {
+                ConversationGenerationRunError::PreparationFailed {
+                    code: lettuce_conversations::GenerationFailureCode::MissingModel,
+                }
+            }
+            Self::SpeakerUnavailable => ConversationGenerationRunError::PreparationFailed {
+                code: lettuce_conversations::GenerationFailureCode::SpeakerUnavailable,
+            },
+            Self::SpeakerPending(usage_event_id) => ConversationGenerationRunError::Pending {
+                evidence: crate::GenerationUsageEvidence::Dispatch(usage_event_id),
+            },
+            Self::MemoryInputUnavailable | Self::InvalidTurn => {
+                ConversationGenerationRunError::InvalidInput
+            }
+        }
+    }
+}
+
+fn memory_query<'a>(
+    timeline: impl DoubleEndedIterator<Item = &'a lettuce_conversations::TimelineItem>,
+    enriched: bool,
+) -> String {
+    let mut candidates = timeline.rev().filter(|item| {
+        !matches!(
+            item.message.visibility,
+            lettuce_conversations::MessageVisibility::Hidden
+                | lettuce_conversations::MessageVisibility::Tombstoned
+        )
+    });
+    if !enriched {
+        return candidates
+            .find(|item| item.message.role == MessageRole::User)
+            .map(timeline_item_text)
+            .unwrap_or_default();
+    }
+    let mut messages = candidates
+        .filter(|item| {
+            matches!(
+                item.message.role,
+                MessageRole::User | MessageRole::Assistant
+            )
+        })
+        .map(timeline_item_text)
+        .filter(|text| !text.is_empty())
+        .take(2)
+        .collect::<Vec<_>>();
+    messages.reverse();
+    messages.join("\n")
+}
+
+fn user_message_mention(
+    conversation: &lettuce_conversations::Conversation,
+    timeline: &[lettuce_conversations::TimelineItem],
+    message_id: lettuce_types::MessageId,
+    profiles: &HashMap<
+        lettuce_types::ConversationParticipantId,
+        lettuce_characters::CharacterProfile,
+    >,
+) -> Option<lettuce_types::ConversationParticipantId> {
+    let text = timeline
+        .iter()
+        .find(|item| item.message.id == message_id)?
+        .active_revision
+        .as_ref()?
+        .parts
+        .iter()
+        .filter_map(|part| match part {
+            lettuce_conversations::MessagePart::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mentionable = conversation
+        .participants
+        .iter()
+        .filter(|participant| {
+            participant.role == lettuce_conversations::ParticipantRole::Character
+                && participant.enabled
+        })
+        .filter_map(|participant| {
+            profiles
+                .get(&participant.id)
+                .map(|profile| (participant.id, profile))
+        })
+        .collect::<Vec<_>>();
+    let display_names = mentionable.iter().map(|(id, profile)| {
+        (
+            *id,
+            profile.nickname.as_deref().unwrap_or(profile.name.as_str()),
+        )
+    });
+    let names = mentionable
+        .iter()
+        .map(|(id, profile)| (*id, profile.name.as_str()));
+    let candidates = display_names.chain(names).collect::<Vec<_>>();
+    lettuce_conversations::mentioned_participant(&text, &candidates)
+}
+
+fn speaker_selection_prompt(
+    text: &crate::generation::runtime_text::RuntimeText,
+    profiles: &HashMap<
+        lettuce_types::ConversationParticipantId,
+        lettuce_characters::CharacterProfile,
+    >,
+    policy: &SpeakerPolicyRequest,
+    available: &[&lettuce_conversations::ConversationParticipant],
+) -> Result<String, crate::generation::runtime_text::RuntimeTextError> {
+    use lettuce_context::PromptVariable as Variable;
+    let quote = |value: &str| serde_json::to_string(value).unwrap_or_default();
+    let label = |key: &str| text.render_with(key, []);
+    let total = policy
+        .participants
+        .iter()
+        .map(|participant| u64::from(participant.speak_count))
+        .sum::<u64>();
+    let new_user_message = (policy.operation == lettuce_conversations::GenerationOperation::Send)
+        .then(|| policy.timeline.last())
+        .flatten()
+        .filter(|item| item.message.role == MessageRole::User);
+    let recent_end = policy.timeline.len() - usize::from(new_user_message.is_some());
+    let recent = &policy.timeline[..recent_end];
+    let spoken = recent
+        .iter()
+        .filter(|item| item.message.role != MessageRole::Scene)
+        .collect::<Vec<_>>();
+    let mut participants = String::new();
+    for participant in available {
+        let speak_count = policy
+            .participants
+            .iter()
+            .find(|state| state.id == participant.id)
+            .map_or(0, |state| state.speak_count);
+        let share = if total == 0 {
+            0
+        } else {
+            (f64::from(speak_count) / total as f64 * 100.0).round() as u64
+        };
+        let turns_ago = spoken
+            .iter()
+            .rposition(|item| {
+                item.message.role == MessageRole::Assistant
+                    && item.message.author_participant_id == Some(participant.id)
+            })
+            .map(|index| (spoken.len() - 1 - index).to_string())
+            .unwrap_or_default();
+        let profile = profiles.get(&participant.id);
+        let definition = profile
+            .and_then(|profile| {
+                [
+                    profile.definition.as_deref(),
+                    profile.description.as_deref(),
+                ]
+                .into_iter()
+                .flatten()
+                .map(str::trim)
+                .find(|value| !value.is_empty())
+            })
+            .unwrap_or_default();
+        let summary = if definition.len() > 200 {
+            let truncated = definition.chars().take(200).collect::<String>();
+            if truncated.len() < definition.len() {
+                format!("{truncated}{}", label("selection_summary_truncation")?)
+            } else {
+                truncated
+            }
+        } else {
+            String::new()
+        };
+        participants.push_str(&text.render_with(
+            "selection_participant",
+            [
+                (
+                    Variable::ParticipantName,
+                    quote(profile.map_or("", |profile| profile.name.as_str())),
+                ),
+                (Variable::ParticipantId, quote(&participant.id.to_string())),
+                (
+                    Variable::ParticipantDefinition,
+                    if definition.is_empty() {
+                        String::new()
+                    } else {
+                        quote(definition)
+                    },
+                ),
+                (
+                    Variable::ParticipantSummary,
+                    if summary.is_empty() {
+                        summary
+                    } else {
+                        quote(&summary)
+                    },
+                ),
+                (Variable::ParticipantMessages, speak_count.to_string()),
+                (Variable::ParticipantShare, share.to_string()),
+                (Variable::ParticipantTurnsAgo, turns_ago),
+            ],
+        )?);
+    }
+    let mut recent_messages = String::new();
+    for item in recent.iter().rev().take(10).rev() {
+        let speaker = if item.message.role == MessageRole::User {
+            label("selection_user_speaker")?
+        } else {
+            match item
+                .message
+                .author_participant_id
+                .and_then(|id| profiles.get(&id))
+            {
+                Some(profile) => profile.name.clone(),
+                None => label("selection_unknown_speaker")?,
+            }
+        };
+        let content = timeline_item_text(item);
+        let content = if content.chars().count() > 512 {
+            format!(
+                "{}{}",
+                content.chars().take(512).collect::<String>(),
+                label("selection_preview_truncation")?
+            )
+        } else {
+            content
+        };
+        recent_messages.push_str(&text.render_with(
+            "selection_recent_entry",
+            [
+                (Variable::SpeakerName, quote(&speaker)),
+                (Variable::MessageText, quote(&content)),
+            ],
+        )?);
+    }
+    let muted = policy
+        .participants
+        .iter()
+        .filter(|participant| participant.muted)
+        .filter_map(|participant| profiles.get(&participant.id))
+        .map(|profile| profile.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    text.render_with(
+        "selection_prompt",
+        [
+            (Variable::SelectionParticipants, participants),
+            (Variable::SelectionRecentMessages, recent_messages),
+            (
+                Variable::SelectionUserMessage,
+                quote(&new_user_message.map(timeline_item_text).unwrap_or_default()),
+            ),
+            (Variable::MutedParticipants, muted),
+        ],
+    )
+}
+
+fn timeline_item_text(item: &lettuce_conversations::TimelineItem) -> String {
+    item.active_revision
+        .as_ref()
+        .map(|revision| revision.parts.as_slice())
+        .or_else(|| {
+            item.active_candidate
+                .as_ref()
+                .map(|candidate| candidate.parts.as_slice())
+        })
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|part| match part {
+            lettuce_conversations::MessagePart::Text { text } => Some(text.trim()),
+            _ => None,
+        })
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn speaker_selection_tools(
+    text: &crate::generation::runtime_text::RuntimeText,
+    available: &[&lettuce_conversations::ConversationParticipant],
+) -> Result<ToolRequest, crate::generation::runtime_text::RuntimeTextError> {
+    Ok(ToolRequest {
+        definitions: vec![ToolDefinition {
+            name: "select_next_speaker".into(),
+            description: Some(text.render_with("selection_tool_description", [])?),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "character_id": {
+                        "type": "string",
+                        "description": text.render_with("selection_tool_character_id", [])?,
+                        "enum": available.iter().map(|participant| participant.id.to_string()).collect::<Vec<_>>()
+                    },
+                    "reasoning": {
+                        "type": "string",
+                        "description": text.render_with("selection_tool_reasoning", [])?
+                    }
+                },
+                "required": ["character_id"]
+            }),
+            version: 1,
+        }],
+        choice: ToolChoice::Required,
+    })
+}
+
+fn llm_speaker_decision(
+    outcome: &lettuce_conversations::InferenceOutcome,
+    available: &[&lettuce_conversations::ConversationParticipant],
+    selection_model: Option<&lettuce_conversations::ModelSelectionSnapshot>,
+    usage_event_id: UsageEventId,
+) -> Option<SelectedSpeakerDecision> {
+    for call in outcome
+        .candidates
+        .iter()
+        .flat_map(|candidate| &candidate.tool_calls)
+    {
+        if call.name != "select_next_speaker" {
+            continue;
+        }
+        let Some(participant_id) = call
+            .arguments
+            .get("character_id")
+            .and_then(|value| value.as_str())
+            .and_then(|value| value.parse().ok())
+        else {
+            continue;
+        };
+        if !available
+            .iter()
+            .any(|participant| participant.id == participant_id)
+        {
+            continue;
+        }
+        let rationale_summary = call
+            .arguments
+            .get("reasoning")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty() && value.len() <= 4_096)
+            .map(str::to_owned);
+        return Some(SelectedSpeakerDecision {
+            participant_id,
+            method: SpeakerDecisionMethod::Llm,
+            fallback: SpeakerFallback::None,
+            reference: None,
+            rationale_summary,
+            decision_model: selection_model.cloned(),
+            usage_event_id: Some(usage_event_id),
+        });
+    }
+    None
+}
+
+fn heuristic_fallback(
+    policy: &SpeakerPolicyRequest,
+    selection_model: Option<&lettuce_conversations::ModelSelectionSnapshot>,
+    usage_event_id: Option<UsageEventId>,
+) -> Result<SelectedSpeakerDecision, ConversationGenerationInputError> {
+    let mut decision = select_group_speaker(
+        policy,
+        lettuce_conversations::GroupSpeakerSelectionSnapshot::Heuristic,
+    )
+    .map_err(|_| ConversationGenerationInputError::SpeakerUnavailable)?;
+    decision.method = SpeakerDecisionMethod::Llm;
+    decision.fallback = SpeakerFallback::Heuristic;
+    decision.decision_model = selection_model.cloned();
+    decision.usage_event_id = usage_event_id;
+    Ok(decision)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn select_memories<'a>(
+    query_text: &str,
+    query: &lettuce_embeddings::EmbeddingVector,
+    projections: &[lettuce_embeddings::MemoryEmbeddingProjection],
+    active: &[&'a lettuce_memory::MemoryItem],
+    limit: usize,
+    threshold: Option<f32>,
+    calibration: &lettuce_embeddings::SimilarityCalibration,
+    strategy: MemoryRetrievalStrategySnapshot,
+    group: bool,
+    companion: bool,
+    temporal: bool,
+) -> Vec<&'a lettuce_memory::MemoryItem> {
+    let projections = projections
+        .iter()
+        .map(|projection| (projection.memory_id, projection))
+        .collect::<HashMap<_, _>>();
+    let dimensions = lettuce_embeddings::EmbeddingDimensions::from_len(query.values.len());
+    let candidates = active
+        .iter()
+        .copied()
+        .filter_map(|item| {
+            let projection = projections.get(&item.id)?;
+            let raw = legacy_cosine(query, &projection.vector)?;
+            let shown = dimensions.map_or(raw, |dimensions| calibration.score(raw, dimensions));
+            let score = if item.is_cold && !item.is_pinned {
+                shown * 0.7
+            } else {
+                shown
+            };
+            Some((score, item))
+        })
+        .collect::<Vec<_>>();
+    let threshold = calibration.retrieval_threshold(
+        threshold,
+        f32::from(lettuce_settings::DEFAULT_MIN_SIMILARITY_BASIS_POINTS) / 10_000.0,
+        candidates.iter().map(|(score, _)| *score),
+    );
+    let mut scored = candidates
+        .into_iter()
+        .filter(|(score, _)| *score >= threshold)
+        .collect::<Vec<_>>();
+    scored.sort_by(|(left_score, _), (right_score, _)| right_score.total_cmp(left_score));
+    let smart = strategy == MemoryRetrievalStrategySnapshot::Smart;
+    let semantic_limit = if smart && group {
+        limit.saturating_sub(2).max(1).min(limit)
+    } else {
+        limit
+    };
+    let mut selected = Vec::new();
+    if smart {
+        let mut categories = HashMap::new();
+        for (_, item) in &scored {
+            let count = categories.entry(item.category).or_insert(0usize);
+            if *count < 2 && selected.len() < semantic_limit {
+                *count += 1;
+                selected.push(*item);
+            }
+        }
+    } else {
+        selected.extend(scored.iter().take(limit).map(|(_, item)| *item));
+    }
+    if smart {
+        for (_, item) in &scored {
+            if selected.len() == semantic_limit {
+                break;
+            }
+            if !selected.iter().any(|selected| selected.id == item.id) {
+                selected.push(*item);
+            }
+        }
+        if !group {
+            let adjusted_score = |item: &lettuce_memory::MemoryItem| {
+                let score = scored
+                    .iter()
+                    .find(|(_, candidate)| candidate.id == item.id)
+                    .map_or(0.0, |(score, _)| *score);
+                score
+                    + if companion {
+                        lexical_anchor_boost(query_text, &item.text)
+                    } else {
+                        0.0
+                    }
+            };
+            selected.sort_by(|left, right| adjusted_score(right).total_cmp(&adjusted_score(left)));
+        }
+        for recent in [true, false] {
+            if temporal || selected.len() == limit {
+                break;
+            }
+            let candidates = active.iter().copied().filter(|item| {
+                !item.is_cold && !selected.iter().any(|selected| selected.id == item.id)
+            });
+            let item = if recent {
+                candidates.max_by_key(|item| item.created_at)
+            } else {
+                candidates
+                    .filter(|item| item.access_count > 0)
+                    .max_by_key(|item| item.access_count)
+            };
+            if let Some(item) = item {
+                selected.push(item);
+            }
+        }
+        if group && selected.len() < limit {
+            let mut categories = HashMap::new();
+            let mut extra = Vec::new();
+            for (_, item) in &scored {
+                let count = categories.entry(item.category).or_insert(0usize);
+                if *count < 2 && extra.len() < limit {
+                    *count += 1;
+                    extra.push(*item);
+                }
+            }
+            for (_, item) in &scored {
+                if extra.len() == limit {
+                    break;
+                }
+                if !extra.iter().any(|candidate| candidate.id == item.id) {
+                    extra.push(item);
+                }
+            }
+            for item in extra {
+                if selected.len() == limit {
+                    break;
+                }
+                if !selected.iter().any(|candidate| candidate.id == item.id) {
+                    selected.push(item);
+                }
+            }
+        }
+    }
+    if strategy == MemoryRetrievalStrategySnapshot::Smart && selected.is_empty() {
+        let keywords = keywords(query_text);
+        let mut cold = active
+            .iter()
+            .copied()
+            .filter(|item| item.is_cold)
+            .filter_map(|item| {
+                let normalized = normalize_memory_text(&item.text);
+                let matches = keywords
+                    .iter()
+                    .filter(|keyword| normalized.contains(keyword.as_str()))
+                    .count();
+                (matches > 0).then_some((matches, item))
+            })
+            .collect::<Vec<_>>();
+        cold.sort_by(|(left_count, _), (right_count, _)| right_count.cmp(left_count));
+        selected.extend(cold.into_iter().take(limit).map(|(_, item)| item));
+    }
+    selected
+}
+
+/// Legacy scored a zero-norm vector as 0 instead of skipping it, while a NaN
+/// component still failed every threshold comparison.
+fn legacy_cosine(
+    query: &lettuce_embeddings::EmbeddingVector,
+    memory: &lettuce_embeddings::EmbeddingVector,
+) -> Option<f32> {
+    query.cosine_similarity(memory).or_else(|| {
+        (query.source_revision == memory.source_revision
+            && query.values.len() == memory.values.len()
+            && !memory.values.is_empty()
+            && query
+                .values
+                .iter()
+                .chain(&memory.values)
+                .all(|value| value.is_finite()))
+        .then_some(0.0)
+    })
+}
+
+/// Legacy temporal candidates: only memories observed inside the queried
+/// window take part, and a memory without an observation time never does.
+fn temporal_candidates<'a>(
+    active: &[&'a lettuce_memory::MemoryItem],
+    range: crate::memory::temporal_query::TemporalRange,
+) -> Vec<&'a lettuce_memory::MemoryItem> {
+    active
+        .iter()
+        .copied()
+        .filter(|item| {
+            item.observed_at
+                .is_some_and(|observed_at| range.contains(observed_at))
+        })
+        .collect()
+}
+
+fn lexical_anchor_boost(query: &str, memory_text: &str) -> f32 {
+    let query = query.to_ascii_lowercase();
+    let memory = memory_text.to_ascii_lowercase();
+    let tokens = |text: &str| {
+        text.split(|ch: char| !ch.is_ascii_alphanumeric())
+            .filter(|token| token.len() >= 3)
+            .map(str::to_owned)
+            .collect::<Vec<_>>()
+    };
+    let query_tokens = tokens(&query);
+    if query_tokens.is_empty() {
+        return 0.0;
+    }
+    let overlap = query_tokens
+        .iter()
+        .filter(|token| memory.contains(token.as_str()))
+        .count() as f32
+        / query_tokens.len() as f32;
+    let sequence = query.split("after ").nth(1).map_or(0.0, |anchor| {
+        let anchor_tokens = tokens(anchor);
+        if anchor_tokens.is_empty()
+            || !anchor_tokens
+                .iter()
+                .all(|token| memory.contains(token.as_str()))
+        {
+            0.0
+        } else if ["then ", "after ", "afterward"]
+            .iter()
+            .any(|marker| memory.contains(marker))
+        {
+            0.35
+        } else {
+            0.15
+        }
+    });
+    overlap * 0.2 + sequence
+}
+
+fn normalize_memory_text(value: &str) -> String {
+    let mut normalized = String::with_capacity(value.len());
+    let mut last_space = false;
+    for character in value.chars() {
+        if character.is_alphanumeric() {
+            normalized.extend(character.to_lowercase());
+            last_space = false;
+        } else if !last_space {
+            normalized.push(' ');
+            last_space = true;
+        }
+    }
+    normalized.trim().to_owned()
+}
+
+fn keywords(value: &str) -> Vec<String> {
+    let mut seen = HashSet::new();
+    normalize_memory_text(value)
+        .split_whitespace()
+        .filter(|word| word.len() >= 3)
+        .filter(|word| seen.insert((*word).to_owned()))
+        .map(str::to_owned)
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use lettuce_conversations::{
+        ContextWindowPolicy, Message, MessagePart, MessageRenderSource, MessageRevision,
+        MessageRole, MessageVisibility, TimelineItem,
+    };
+    use lettuce_types::{
+        ConversationBranchId, ConversationId, MessageCandidateId, MessageId, MessageRevisionId,
+        Revision, TimestampMillis,
+    };
+
+    use super::{context_timeline, conversation_message_count, history_window, memory_query};
+
+    fn retrieval_memory(
+        index: i64,
+        category: lettuce_memory::MemoryCategory,
+    ) -> lettuce_memory::MemoryItem {
+        use lettuce_memory::{MemoryItem, MemoryShortId, Score};
+        let id = lettuce_types::MemoryId::new();
+        MemoryItem {
+            id,
+            short_id: MemoryShortId::derived(id),
+            text: format!("Harbor fact {index}"),
+            category,
+            source_message_id: None,
+            source_role: None,
+            observed_at: None,
+            observed_time_precision: None,
+            superseded_by: None,
+            superseded_at: None,
+            supersedes: Vec::new(),
+            token_count: 3,
+            is_cold: false,
+            is_pinned: false,
+            importance: Score::FULL,
+            persistence_importance: Score::FULL,
+            prompt_importance: Score::FULL,
+            volatility: Score::LEGACY_VOLATILITY,
+            access_count: 0,
+            created_at: TimestampMillis::new(index),
+            last_accessed_at: TimestampMillis::new(index),
+        }
+    }
+
+    fn retrieve_ids(
+        items: &[lettuce_memory::MemoryItem],
+        scores: &[f32],
+        limit: usize,
+        group: bool,
+        strategy: lettuce_conversations::MemoryRetrievalStrategySnapshot,
+    ) -> Vec<lettuce_types::MemoryId> {
+        retrieval_results(items, scores, limit, group, strategy, "harbor", false)
+    }
+
+    fn retrieval_results(
+        items: &[lettuce_memory::MemoryItem],
+        scores: &[f32],
+        limit: usize,
+        group: bool,
+        strategy: lettuce_conversations::MemoryRetrievalStrategySnapshot,
+        query: &str,
+        companion: bool,
+    ) -> Vec<lettuce_types::MemoryId> {
+        use lettuce_embeddings::{EmbeddingDimensions, EmbeddingVector, MemoryEmbeddingProjection};
+        let vector = |score: f32| {
+            let mut values = vec![0.0; 64];
+            values[0] = score;
+            values[1] = (1.0 - score * score).sqrt();
+            EmbeddingVector {
+                values,
+                source_revision: "retrieval-test".into(),
+            }
+        };
+        let space_id = lettuce_types::MemorySpaceId::new();
+        let projections = items
+            .iter()
+            .zip(scores)
+            .map(|(item, score)| MemoryEmbeddingProjection {
+                space_id,
+                memory_id: item.id,
+                source_text: item.text.clone(),
+                vector: vector(*score),
+                dimensions: EmbeddingDimensions::D64,
+                updated_at: item.created_at,
+            })
+            .rev()
+            .collect::<Vec<_>>();
+        super::select_memories(
+            query,
+            &vector(1.0),
+            &projections,
+            &items.iter().collect::<Vec<_>>(),
+            limit,
+            Some(0.35),
+            &lettuce_embeddings::SimilarityCalibration::RawCosine,
+            strategy,
+            group,
+            companion,
+            false,
+        )
+        .into_iter()
+        .map(|item| item.id)
+        .collect()
+    }
+
+    #[test]
+    fn temporal_retrieval_keeps_only_observed_memories_in_range_without_fill() {
+        use lettuce_conversations::MemoryRetrievalStrategySnapshot::Smart;
+        use lettuce_embeddings::{EmbeddingDimensions, EmbeddingVector, MemoryEmbeddingProjection};
+        use lettuce_memory::MemoryCategory::Other;
+        let mut items = [
+            retrieval_memory(1, Other),
+            retrieval_memory(2, Other),
+            retrieval_memory(3, Other),
+            retrieval_memory(4, Other),
+        ];
+        items[0].observed_at = Some(TimestampMillis::new(150));
+        items[1].observed_at = Some(TimestampMillis::new(250));
+        items[2].observed_at = None;
+        items[3].observed_at = Some(TimestampMillis::new(199));
+        items[3].access_count = 40;
+        let range = crate::memory::temporal_query::TemporalRange {
+            start: TimestampMillis::new(100),
+            end: TimestampMillis::new(200),
+        };
+        let active = items.iter().collect::<Vec<_>>();
+        let candidates = super::temporal_candidates(&active, range);
+        assert_eq!(
+            candidates.iter().map(|item| item.id).collect::<Vec<_>>(),
+            vec![items[0].id, items[3].id]
+        );
+        let vector = |score: f32| {
+            let mut values = vec![0.0; 64];
+            values[0] = score;
+            values[1] = (1.0 - score * score).sqrt();
+            EmbeddingVector {
+                values,
+                source_revision: "retrieval-test".into(),
+            }
+        };
+        let space_id = lettuce_types::MemorySpaceId::new();
+        let projections = [(0, -0.2), (3, 0.05)]
+            .into_iter()
+            .map(|(index, score): (usize, f32)| MemoryEmbeddingProjection {
+                space_id,
+                memory_id: items[index].id,
+                source_text: items[index].text.clone(),
+                vector: vector(score),
+                dimensions: EmbeddingDimensions::D64,
+                updated_at: items[index].created_at,
+            })
+            .collect::<Vec<_>>();
+        let temporal = super::select_memories(
+            "what happened last week",
+            &vector(1.0),
+            &projections,
+            &candidates[..1],
+            3,
+            Some(-1.0),
+            &lettuce_embeddings::SimilarityCalibration::RawCosine,
+            Smart,
+            false,
+            true,
+            true,
+        );
+        assert_eq!(
+            temporal.iter().map(|item| item.id).collect::<Vec<_>>(),
+            vec![items[0].id]
+        );
+        let ordinary = super::select_memories(
+            "what happened last week",
+            &vector(1.0),
+            &projections,
+            &active,
+            3,
+            Some(-1.0),
+            &lettuce_embeddings::SimilarityCalibration::RawCosine,
+            Smart,
+            false,
+            true,
+            false,
+        );
+        assert!(ordinary.len() > temporal.len());
+    }
+
+    #[test]
+    fn zero_norm_memories_score_zero_and_nan_vectors_never_match() {
+        use lettuce_conversations::MemoryRetrievalStrategySnapshot::Cosine;
+        use lettuce_embeddings::{EmbeddingDimensions, EmbeddingVector, MemoryEmbeddingProjection};
+        use lettuce_memory::MemoryCategory::Other;
+        let items = [retrieval_memory(1, Other), retrieval_memory(2, Other)];
+        let vector = |values: Vec<f32>| EmbeddingVector {
+            values,
+            source_revision: "retrieval-test".into(),
+        };
+        let mut query = vec![0.0; 64];
+        query[0] = 1.0;
+        let mut nan = vec![0.0; 64];
+        nan[0] = f32::NAN;
+        let space_id = lettuce_types::MemorySpaceId::new();
+        let projections = [(0, vec![0.0; 64]), (1, nan)]
+            .into_iter()
+            .map(|(index, values)| MemoryEmbeddingProjection {
+                space_id,
+                memory_id: items[index].id,
+                source_text: items[index].text.clone(),
+                vector: vector(values),
+                dimensions: EmbeddingDimensions::D64,
+                updated_at: items[index].created_at,
+            })
+            .collect::<Vec<_>>();
+        let active = items.iter().collect::<Vec<_>>();
+        let select = |threshold| {
+            super::select_memories(
+                "harbor",
+                &vector(query.clone()),
+                &projections,
+                &active,
+                2,
+                Some(threshold),
+                &lettuce_embeddings::SimilarityCalibration::RawCosine,
+                Cosine,
+                false,
+                false,
+                false,
+            )
+            .into_iter()
+            .map(|item| item.id)
+            .collect::<Vec<_>>()
+        };
+        assert_eq!(select(-1.0), vec![items[0].id]);
+        assert!(select(0.35).is_empty());
+    }
+
+    #[test]
+    fn eidos_retrieval_thresholds_the_calibrated_score_with_the_published_or_set_threshold() {
+        use lettuce_conversations::MemoryRetrievalStrategySnapshot::Cosine;
+        use lettuce_embeddings::{
+            EmbeddingDimensions, EmbeddingVector, MemoryEmbeddingProjection, SimilarityCalibration,
+        };
+        use lettuce_memory::MemoryCategory::Other;
+        let eidos = SimilarityCalibration::from_json(
+            br#"{"default_threshold": 0.5, "fallback_threshold": 0.35, "dims": {
+                "768": {"a": 2.381, "b": -1.381}, "512": {"a": 2.2901, "b": -1.2863},
+                "256": {"a": 2.2388, "b": -1.244}, "128": {"a": 2.2388, "b": -1.2664},
+                "64": {"a": 1.9481, "b": -1.0058}}}"#,
+        )
+        .expect("calibration");
+        let mut items = [
+            retrieval_memory(1, Other),
+            retrieval_memory(2, Other),
+            retrieval_memory(3, Other),
+            retrieval_memory(4, Other),
+        ];
+        items[3].is_cold = true;
+        let vector = |score: f32| {
+            let mut values = vec![0.0; 64];
+            values[0] = score;
+            values[1] = (1.0 - score * score).sqrt();
+            EmbeddingVector {
+                values,
+                source_revision: "v5".into(),
+            }
+        };
+        let space_id = lettuce_types::MemorySpaceId::new();
+        let select = |raw: &[f32], calibration: &SimilarityCalibration, threshold: Option<f32>| {
+            let projections = items
+                .iter()
+                .zip(raw)
+                .map(|(item, raw)| MemoryEmbeddingProjection {
+                    space_id,
+                    memory_id: item.id,
+                    source_text: item.text.clone(),
+                    vector: vector(*raw),
+                    dimensions: EmbeddingDimensions::D64,
+                    updated_at: item.created_at,
+                })
+                .collect::<Vec<_>>();
+            super::select_memories(
+                "harbor",
+                &vector(1.0),
+                &projections,
+                &items.iter().collect::<Vec<_>>(),
+                4,
+                threshold,
+                calibration,
+                Cosine,
+                false,
+                false,
+                false,
+            )
+            .into_iter()
+            .map(|item| item.id)
+            .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            select(&[0.85, 0.75, 0.6, 0.85], &eidos, None),
+            vec![items[0].id]
+        );
+        assert_eq!(
+            select(&[0.75, 0.72, 0.6, 0.2], &eidos, None),
+            vec![items[0].id, items[1].id]
+        );
+        assert_eq!(
+            select(&[0.75, 0.72, 0.6, 0.2], &eidos, Some(0.4)),
+            vec![items[0].id]
+        );
+        assert!(select(&[0.85, 0.75, 0.6, 0.85], &eidos, Some(0.9)).is_empty());
+        assert_eq!(
+            select(
+                &[0.75, 0.72, 0.6, 0.2],
+                &SimilarityCalibration::RawCosine,
+                None
+            ),
+            vec![items[0].id, items[1].id, items[2].id]
+        );
+        assert_eq!(
+            select(
+                &[0.75, 0.72, 0.6, 0.2],
+                &SimilarityCalibration::RawCosine,
+                Some(0.73)
+            ),
+            vec![items[0].id]
+        );
+    }
+
+    #[test]
+    fn companion_retrieval_boosts_sequence_anchors_only_after_semantic_selection() {
+        use lettuce_conversations::MemoryRetrievalStrategySnapshot::{Cosine, Smart};
+        use lettuce_memory::MemoryCategory::Other;
+        let mut items = vec![
+            retrieval_memory(1, Other),
+            retrieval_memory(2, Other),
+            retrieval_memory(3, Other),
+        ];
+        items[0].text = "Mira enjoys the mountains.".into();
+        items[1].text = "After the harbor visit, Mira went home.".into();
+        items[2].text = "After the harbor visit, Mira then called home.".into();
+        let query = "What happened after the harbor visit?";
+        let scores = [0.9, 0.7, 0.1];
+        assert_eq!(
+            retrieval_results(&items, &scores, 2, false, Smart, query, true),
+            vec![items[1].id, items[0].id],
+        );
+        assert_eq!(
+            retrieval_results(&items, &scores, 2, false, Smart, query, false),
+            vec![items[0].id, items[1].id],
+        );
+        assert_eq!(
+            retrieval_results(&items, &scores, 2, false, Cosine, query, true),
+            vec![items[0].id, items[1].id],
+        );
+        assert_eq!(
+            retrieval_results(&items, &scores, 1, false, Smart, query, true),
+            vec![items[0].id],
+        );
+        assert_eq!(
+            super::lexical_anchor_boost("?!", "After the harbor visit."),
+            0.0
+        );
+        assert!(
+            (super::lexical_anchor_boost("after harbor", "Harbor then home") - 0.45).abs() < 0.0001
+        );
+        assert!(
+            (super::lexical_anchor_boost("after harbor", "Harbor visit") - 0.25).abs() < 0.0001
+        );
+    }
+
+    #[test]
+    fn retrieval_preserves_direct_score_order_and_group_recent_frequency_slots() {
+        use lettuce_conversations::MemoryRetrievalStrategySnapshot::Smart;
+        use lettuce_memory::MemoryCategory::{Other, PlotEvent};
+        let mut items = vec![
+            retrieval_memory(1, Other),
+            retrieval_memory(2, Other),
+            retrieval_memory(3, Other),
+            retrieval_memory(4, PlotEvent),
+            retrieval_memory(5, Other),
+            retrieval_memory(6, Other),
+        ];
+        items[4].access_count = 20;
+        let scores = [0.95, 0.9, 0.85, 0.8, 0.1, 0.1];
+        let expected = |indices: &[usize]| {
+            indices
+                .iter()
+                .map(|index| items[*index].id)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            retrieve_ids(&items, &scores, 4, false, Smart),
+            expected(&[0, 1, 2, 3])
+        );
+        assert_eq!(
+            retrieve_ids(&items, &scores, 4, true, Smart),
+            expected(&[0, 1, 5, 4])
+        );
+        assert!(retrieve_ids(&items, &scores, 0, true, Smart).is_empty());
+        assert_eq!(
+            retrieve_ids(&items, &[0.8; 6], 2, false, Smart),
+            expected(&[0, 1])
+        );
+        for item in &mut items {
+            item.is_cold = true;
+        }
+        assert_eq!(
+            retrieve_ids(&items, &scores, 4, true, Smart),
+            vec![items[0].id, items[1].id, items[3].id, items[2].id],
+        );
+    }
+
+    #[test]
+    fn retrieval_fallbacks_skip_selected_memories_and_keep_cold_score_penalty() {
+        use lettuce_conversations::MemoryRetrievalStrategySnapshot::{Cosine, Smart};
+        use lettuce_memory::MemoryCategory::Other;
+        let mut items = vec![
+            retrieval_memory(3, Other),
+            retrieval_memory(2, Other),
+            retrieval_memory(1, Other),
+        ];
+        items[0].access_count = 30;
+        items[1].access_count = 20;
+        items[2].access_count = 10;
+        let expected = items.iter().map(|item| item.id).collect::<Vec<_>>();
+        assert_eq!(
+            retrieve_ids(&items, &[0.9, 0.1, 0.1], 3, false, Smart),
+            expected
+        );
+        items[0].is_cold = true;
+        assert_eq!(
+            retrieve_ids(&items, &[0.9, 0.8, 0.7], 3, false, Cosine),
+            vec![items[1].id, items[2].id, items[0].id]
+        );
+        assert_eq!(
+            retrieve_ids(&items, &[0.4, 0.1, 0.1], 3, false, Cosine),
+            Vec::new()
+        );
+        items[1].is_cold = true;
+        items[2].is_cold = true;
+        assert_eq!(
+            retrieve_ids(&items, &[0.1, 0.1, 0.1], 3, true, Smart),
+            expected
+        );
+    }
+
+    #[test]
+    fn direct_smart_top_up_takes_the_newest_hot_memory_and_a_previously_accessed_one() {
+        use lettuce_conversations::MemoryRetrievalStrategySnapshot::Smart;
+        use lettuce_memory::MemoryCategory::Other;
+        let mut items = vec![
+            retrieval_memory(1, Other),
+            retrieval_memory(3, Other),
+            retrieval_memory(2, Other),
+            retrieval_memory(9, Other),
+        ];
+        items[3].is_cold = true;
+        items[3].access_count = 50;
+        let scores = [0.9, 0.1, 0.1, 0.1];
+        assert_eq!(
+            retrieve_ids(&items, &scores, 4, false, Smart),
+            vec![items[0].id, items[1].id]
+        );
+        items[2].access_count = 1;
+        assert_eq!(
+            retrieve_ids(&items, &scores, 4, false, Smart),
+            vec![items[0].id, items[1].id, items[2].id]
+        );
+        assert_eq!(
+            retrieve_ids(&items, &scores, 2, false, Smart),
+            vec![items[0].id, items[1].id]
+        );
+        assert_eq!(
+            retrieve_ids(&items, &scores, 1, false, Smart),
+            vec![items[0].id]
+        );
+    }
+
+    #[test]
+    fn direct_smart_category_cap_skips_a_third_memory_of_one_category_when_the_limit_is_full() {
+        use lettuce_conversations::MemoryRetrievalStrategySnapshot::{Cosine, Smart};
+        use lettuce_memory::MemoryCategory::{Other, PlotEvent};
+        let items = vec![
+            retrieval_memory(1, Other),
+            retrieval_memory(2, Other),
+            retrieval_memory(3, Other),
+            retrieval_memory(4, PlotEvent),
+        ];
+        let scores = [0.95, 0.9, 0.85, 0.5];
+        assert_eq!(
+            retrieve_ids(&items, &scores, 3, false, Smart),
+            vec![items[0].id, items[1].id, items[3].id]
+        );
+        assert_eq!(
+            retrieve_ids(&items, &scores, 3, false, Cosine),
+            vec![items[0].id, items[1].id, items[2].id]
+        );
+    }
+
+    #[test]
+    fn direct_smart_keyword_search_runs_over_cold_memories_only_when_nothing_was_selected() {
+        use lettuce_conversations::MemoryRetrievalStrategySnapshot::{Cosine, Smart};
+        use lettuce_memory::MemoryCategory::Other;
+        let mut items = vec![
+            retrieval_memory(1, Other),
+            retrieval_memory(2, Other),
+            retrieval_memory(3, Other),
+        ];
+        items[0].text = "Harbor fact".into();
+        items[1].text = "The harbor lantern hangs at the harbor gate.".into();
+        items[2].text = "A mountain path.".into();
+        for item in &mut items {
+            item.is_cold = true;
+        }
+        let scores = [0.1, 0.1, 0.1];
+        let query = "Harbor lantern?";
+        assert_eq!(
+            retrieval_results(&items, &scores, 3, false, Smart, query, false),
+            vec![items[1].id, items[0].id]
+        );
+        assert_eq!(
+            retrieval_results(&items, &scores, 1, false, Smart, query, false),
+            vec![items[1].id]
+        );
+        assert!(retrieval_results(&items, &scores, 3, false, Cosine, query, false).is_empty());
+        assert!(retrieval_results(&items, &scores, 3, false, Smart, "an ox", false).is_empty());
+        items[2].is_cold = false;
+        assert_eq!(
+            retrieval_results(&items, &scores, 3, false, Smart, query, false),
+            vec![items[2].id]
+        );
+    }
+
+    fn item(
+        index: i64,
+        role: MessageRole,
+        visibility: MessageVisibility,
+        pinned: bool,
+    ) -> TimelineItem {
+        TimelineItem {
+            message: Message {
+                id: MessageId::new(),
+                conversation_id: ConversationId::new(),
+                branch_id: ConversationBranchId::new(),
+                parent_message_id: None,
+                author_participant_id: None,
+                role,
+                logical_time: TimestampMillis::new(index),
+                effective_time: TimestampMillis::new(index),
+                visibility,
+                pinned,
+                scene_edited: false,
+                active_render_source: MessageRenderSource::Candidate(MessageCandidateId::new()),
+                revision: Revision::INITIAL,
+                created_at: TimestampMillis::new(index),
+                updated_at: TimestampMillis::new(index),
+            },
+            active_revision: None,
+            active_candidate: None,
+            initial_origin: None,
+        }
+    }
+
+    fn text_item(index: i64, role: MessageRole, text: &str) -> TimelineItem {
+        let mut item = item(index, role, MessageVisibility::Visible, false);
+        item.active_revision = Some(MessageRevision {
+            id: MessageRevisionId::new(),
+            message_id: item.message.id,
+            sequence: Revision::INITIAL,
+            parts: vec![MessagePart::Text { text: text.into() }],
+            authored_at: TimestampMillis::new(index),
+            source_turn_id: None,
+            provider_replay: None,
+        });
+        item
+    }
+
+    #[test]
+    fn plain_memory_query_uses_the_latest_user_message() {
+        let mut hidden = text_item(3, MessageRole::User, "Ignore this aside.");
+        hidden.message.visibility = MessageVisibility::Hidden;
+        let timeline = [
+            text_item(1, MessageRole::User, "Where is the lighthouse?"),
+            text_item(2, MessageRole::Assistant, "North of the harbor."),
+            hidden,
+        ];
+        assert_eq!(
+            memory_query(timeline.iter(), false),
+            "Where is the lighthouse?"
+        );
+        assert_eq!(
+            memory_query(timeline.iter(), true),
+            "Where is the lighthouse?\nNorth of the harbor."
+        );
+        let image_only = item(4, MessageRole::User, MessageVisibility::Visible, false);
+        assert_eq!(
+            memory_query(timeline.iter().chain([&image_only]), false),
+            ""
+        );
+    }
+
+    #[test]
+    fn history_windows_follow_memory_mode_and_the_group_override() {
+        let mut settings = lettuce_settings::GlobalSettings::default();
+        settings.dynamic_memory.summary_message_interval = 20;
+        settings.manual_mode_context_window = 50;
+        let mut group = settings.dynamic_memory.clone();
+        group.summary_message_interval = 8;
+        settings.group_dynamic_memory = Some(group);
+        let limit = |settings: &lettuce_settings::GlobalSettings, dynamic, group| {
+            history_window(settings, dynamic, group).recent_non_pinned_limit
+        };
+        assert_eq!(limit(&settings, true, false), 20);
+        assert_eq!(limit(&settings, true, true), 8);
+        assert_eq!(limit(&settings, false, true), 50);
+        settings.manual_mode_context_window = 0;
+        assert_eq!(limit(&settings, false, false), 1);
+        settings.manual_mode_context_window = 4_000;
+        assert_eq!(
+            limit(&settings, false, false),
+            ContextWindowPolicy::MAX_RECENT_NON_PINNED
+        );
+    }
+
+    #[test]
+    fn narrow_windows_keep_the_lorebook_scan_and_count_the_whole_branch() {
+        let mut items = vec![text_item(
+            0,
+            MessageRole::User,
+            "The harbor floods at dusk.",
+        )];
+        items.extend((1..=20).map(|index| text_item(index, MessageRole::Assistant, "Waves.")));
+        items.push(item(
+            21,
+            MessageRole::Assistant,
+            MessageVisibility::Tombstoned,
+            false,
+        ));
+        let source = items[20].message.id;
+        assert_eq!(
+            conversation_message_count(
+                &items,
+                lettuce_conversations::GenerationOperation::Continue,
+                source
+            ),
+            21
+        );
+        assert_eq!(
+            conversation_message_count(
+                &items,
+                lettuce_conversations::GenerationOperation::Regenerate,
+                source
+            ),
+            20
+        );
+        items.pop();
+        let kept = context_timeline(
+            items,
+            ContextWindowPolicy {
+                recent_non_pinned_limit: 1,
+            },
+            source,
+        );
+        let indices = kept
+            .iter()
+            .map(|item| item.message.created_at.get())
+            .collect::<Vec<_>>();
+        let mut expected = vec![0];
+        expected.extend(10..=20);
+        assert_eq!(indices, expected);
+    }
+
+    #[test]
+    fn long_timelines_keep_pinned_scene_source_and_the_recent_window() {
+        let items = (0..600_i64)
+            .map(|index| match index {
+                5 => item(index, MessageRole::Scene, MessageVisibility::Visible, false),
+                598 => item(
+                    index,
+                    MessageRole::Assistant,
+                    MessageVisibility::Hidden,
+                    false,
+                ),
+                _ if index % 100 == 0 => {
+                    item(index, MessageRole::User, MessageVisibility::Visible, true)
+                }
+                _ => item(index, MessageRole::User, MessageVisibility::Visible, false),
+            })
+            .collect::<Vec<_>>();
+        let source = items[599].message.id;
+        let kept = context_timeline(items, ContextWindowPolicy::default(), source);
+        let indices = kept
+            .iter()
+            .map(|item| item.message.created_at.get())
+            .collect::<Vec<_>>();
+        let mut expected = vec![0, 5, 100, 200, 300, 400, 500];
+        expected.extend(533..=597);
+        expected.push(599);
+        assert_eq!(indices, expected);
+    }
+}
