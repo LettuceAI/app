@@ -374,6 +374,12 @@ where
         )
     }
 
+    /// A session imported as a companion chat (its character is a companion,
+    /// so the import seeds companion state and every turn runs on the
+    /// companion prompt chain) imports no prompt override, since legacy never
+    /// consulted a companion session's prompt template; the value stays only
+    /// in the legacy source. A session whose own mode alone was companion
+    /// runs as a direct chat and keeps its override.
     fn map_session(
         &self,
         session: &LegacyBackupDirectSession,
@@ -427,6 +433,7 @@ where
         let companion_time_awareness = launch_companion
             .as_ref()
             .is_some_and(|(_, _, time_awareness)| *time_awareness);
+        let companion_session = launch_companion.is_some();
         let companion = launch_companion.map(|(owner, initial, _)| {
             let owner = CompanionStateOwner {
                 conversation_id,
@@ -491,7 +498,10 @@ where
             context,
             SessionSettingsSource {
                 author_note: session.author_note.as_deref(),
-                prompt_source_id: session.prompt_source_id.as_deref(),
+                prompt_source_id: session
+                    .prompt_source_id
+                    .as_deref()
+                    .filter(|_| !companion_session),
                 prompt_purposes: &[
                     lettuce_context::PromptPurpose::DirectChat,
                     lettuce_context::PromptPurpose::CompanionChat,

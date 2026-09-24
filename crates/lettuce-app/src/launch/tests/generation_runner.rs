@@ -68,13 +68,13 @@ fn scenario_with_resolvable_profile(
             .expect("resolvable model profile");
     }
     set_application_default_model(database, model_id);
-    let character_id = if dynamic_memory {
-        seed_character(database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
+    let empty_prompt = seed_prompt(database, "Scenario prompt", PromptPurpose::DirectChat);
+    let character_id = seed_character(database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
+        defaults.direct_prompt_id = Some(empty_prompt);
+        if dynamic_memory {
             defaults.memory_policy = MemoryPolicy::Dynamic;
-        })
-    } else {
-        plain_character(database)
-    };
+        }
+    });
     let launched = ConversationLaunchPlanner::new(database)
         .launch_direct(&request(character_id, &format!("{prefix}-launch")), NOW)
         .expect("launch")

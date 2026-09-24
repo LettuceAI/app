@@ -2,7 +2,11 @@ use lettuce_characters::{
     Character, CharacterDefaults, ChatMode, ConversationStarter, GroupMember, InteractionMode,
     MemoryPolicy, Scene, ScenePart, SceneVariant, Selection, SpeakerSelection,
 };
-use lettuce_context::LorebookBinding;
+use lettuce_companions::CompanionSoulConfig;
+use lettuce_context::{
+    LorebookBinding, PromptDocument, PromptLookupResult, PromptPurpose, PromptRepository,
+    PromptRepositoryError,
+};
 use lettuce_conversations::{
     GroupChatModeSnapshot, GroupSpeakerSelectionSnapshot, MemoryModeSnapshot, SnapshotSelection,
     SnapshotSource,
@@ -87,6 +91,44 @@ pub(crate) fn character_display_name(character: &Character) -> String {
 
 pub(crate) const fn is_companion(defaults: &CharacterDefaults) -> bool {
     matches!(defaults.interaction_mode, InteractionMode::Companion)
+}
+
+/// The companion prompt chain (legacy `build_system_prompt_entries` in
+/// companion mode): the character's companion template, then the app default
+/// prompt, each only when it is an active companion-chat document, then the
+/// bundled companion prompt. `None` only when the bundled prompt is missing.
+pub(crate) fn companion_prompt<S: PromptRepository + ?Sized>(
+    sources: &S,
+    config: Option<&CompanionSoulConfig>,
+    app_default: Option<PromptDocumentId>,
+) -> Result<Option<PromptDocument>, PromptRepositoryError> {
+    let template = config.and_then(|config| config.prompting.prompt_template_id);
+    for prompt_id in [template, app_default].into_iter().flatten() {
+        if let PromptLookupResult::Available { document } =
+            sources.lookup_exact(prompt_id, PromptPurpose::CompanionChat)?
+        {
+            return Ok(Some(document));
+        }
+    }
+    crate::built_in_prompts::active_built_in_prompt(sources, crate::BuiltInPromptId::Companion)
+}
+
+/// The tail of the direct-chat chain (legacy `get_app_default_template_content`
+/// outside companion mode): the app default prompt when it is an active
+/// direct-chat document, else the bundled app default prompt. `None` only when
+/// the bundled prompt is missing.
+pub(crate) fn direct_app_default_prompt<S: PromptRepository + ?Sized>(
+    sources: &S,
+    app_default: Option<PromptDocumentId>,
+) -> Result<Option<PromptDocument>, PromptRepositoryError> {
+    if let Some(prompt_id) = app_default {
+        if let PromptLookupResult::Available { document } =
+            sources.lookup_exact(prompt_id, PromptPurpose::DirectChat)?
+        {
+            return Ok(Some(document));
+        }
+    }
+    crate::built_in_prompts::active_built_in_prompt(sources, crate::BuiltInPromptId::AppDefault)
 }
 
 pub(crate) const fn memory_mode(defaults: &CharacterDefaults) -> MemoryModeSnapshot {

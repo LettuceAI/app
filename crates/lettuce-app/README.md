@@ -135,7 +135,10 @@ partial legacy run completed only once every stage in `LegacyImportStage::ALL`
 has committed. Memories in an incompatible shape stay in sealed evidence. Session settings become
 current conversation settings: the author note, the session prompt override
 (snapshotted when the imported prompt is available with the conversation's
-purpose, otherwise the launch prompt stays like legacy's fallback), the lorebook
+purpose, otherwise the launch prompt stays like legacy's fallback; a session
+imported as a companion chat, because its character is a companion, imports none
+since release 2.2.5 never read it, while a session whose own mode alone was
+companion runs as a direct chat and keeps it), the lorebook
 override (an empty legacy list disables lorebooks) and, for groups, a speaker
 selection that differs from the profile. Legacy per-session sampler values,
 background, voice autoplay and group chat mode or starting scene differing from
@@ -342,11 +345,34 @@ use the legacy neutral update; cancellation stops before persistence. Exact
 send replay bypasses classification and never reapplies state. Roleplay and
 group sends retain the ordinary conversation repository path.
 
-Direct companion launch now selects the authored nested companion prompt
-template after any explicit starter template and otherwise falls back to the
-bundled companion prompt; a missing or archived inherited companion template
-also falls back without borrowing the ordinary direct-chat prompt. Context
-assembly reads the current authored Soul/prompting config, character-owned
+Prompt launch follows legacy `build_system_prompt_entries`. A companion
+character resolves the companion chain (`launch::policy::companion_prompt`): its
+companion template, then the app default prompt (`default_prompt_document_id`),
+each only when it is an active companion-chat document (legacy accepted an
+app-wide template in companion mode only when its type was companion chat), then
+the bundled companion prompt; a starter's prompt is ignored (release 2.2.5
+`221fe1aa`: the companion template wins over any session template). A direct
+character uses the starter's prompt, then its direct prompt, then
+`launch::policy::direct_app_default_prompt`: the app default prompt when it is
+an active direct-chat document, else the bundled app default prompt (disabled
+only when that is missing too). The strict launch rule stays: an explicit
+starter prompt fails on any resolution error and an inherited direct prompt
+fails when dangling or of another purpose, while an archived inherited one now
+falls through to the app default like legacy's not-found fallback instead of
+disabling the prompt. Legacy used an app-wide template of any type in a direct
+chat; only a direct-chat document is used here. Context assembly resolves the
+companion chain from the live character and app settings on every turn of a
+companion chat (`companion_clock` decides companion mode), so a chat launched
+before its character became a companion and a template changed after launch
+both follow the current template; the conversation prompt override and the
+launch prompt snapshot are not used, while the stored override is left in place.
+The live document goes through the launch snapshot conversion, and prompt
+attribution carries its current id and revision. Because the companion prompt is
+live, a companion turn whose template (or the app default it fell back to)
+changed between its first context assembly and inference admission is
+reassembled with a different context, conflicts with the admitted request and
+fails closed, as a turn does when its model profile changed; this is intended.
+Context assembly reads the current authored Soul/prompting config, character-owned
 Soul state, conversation/persona-scoped runtime state, and current persona
 name, then renders the legacy prompt-state block with the stored continuity
 episode at the source message's effective clock through the existing typed

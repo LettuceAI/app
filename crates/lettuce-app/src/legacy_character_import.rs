@@ -645,7 +645,7 @@ mod tests {
             persona_source_id: None,
             persona_disabled: false,
             voice_autoplay: None,
-            prompt_source_id: None,
+            prompt_source_id: Some(prompt_source.clone()),
             lorebook_source_ids_override: Some(vec![legacy_lorebook.to_string()]),
             generation_settings: lettuce_transfer::LegacyBackupSessionGenerationSettings {
                 model_settings: Default::default(),
@@ -786,9 +786,21 @@ mod tests {
             )],
             ..session.clone()
         };
+        let mode_only_session_id = lettuce_types::ConversationId::new();
+        let mode_only_session = lettuce_transfer::LegacyBackupDirectSession {
+            source_id: mode_only_session_id.to_string(),
+            root_session_source_id: mode_only_session_id.to_string(),
+            mode: "companion".to_owned(),
+            lorebook_source_ids_override: None,
+            created_at: 700,
+            updated_at: 710,
+            messages: vec![message("user", 0, "Still on shift", 701, Vec::new(), None)],
+            ..session.clone()
+        };
         let direct_sessions = vec![
             session.clone(),
             scene_session,
+            mode_only_session,
             companion_session(companion_first_id, 300, Some(legacy_state.to_owned())),
             companion_session(companion_second_id, 400, None),
             companion_session(companion_third_id, 500, None),
@@ -843,7 +855,7 @@ mod tests {
                 TimestampMillis::new(57),
             )
             .expect("materialize direct conversations");
-        assert_eq!(conversation_receipt.record_count, 5);
+        assert_eq!(conversation_receipt.record_count, 6);
         let graph =
             lettuce_transfer::ProviderBackupSource::read_provider_backup_graph(backend.database())
                 .expect("backup graph");
@@ -862,6 +874,51 @@ mod tests {
             .as_ref()
             .expect("session settings");
         assert_eq!(settings.author_note.as_deref(), Some("Keep replies short"));
+        assert_eq!(
+            settings.prompt.as_ref().map(|prompt| prompt.source_id),
+            Some(prompt_id)
+        );
+        assert_eq!(
+            settings.prompt_provenance,
+            lettuce_conversations::SettingProvenance::CurrentOverride
+        );
+        let mode_only_settings = graph
+            .conversation_history
+            .conversations
+            .iter()
+            .find(|history| history.aggregate.conversation.id == conv(mode_only_session_id))
+            .expect("mode-only companion session history")
+            .aggregate
+            .conversation
+            .current_settings
+            .as_ref()
+            .expect("mode-only session settings");
+        assert_eq!(
+            mode_only_settings
+                .prompt
+                .as_ref()
+                .map(|prompt| prompt.source_id),
+            Some(prompt_id),
+            "a companion-mode session of a roleplay character runs as a direct chat and keeps its prompt"
+        );
+        for id in [companion_first_id, companion_second_id, companion_third_id] {
+            let companion_settings = graph
+                .conversation_history
+                .conversations
+                .iter()
+                .find(|history| history.aggregate.conversation.id == conv(id))
+                .expect("companion conversation history")
+                .aggregate
+                .conversation
+                .current_settings
+                .as_ref();
+            assert!(
+                companion_settings.is_none_or(|settings| settings.prompt.is_none()
+                    && settings.prompt_provenance
+                        == lettuce_conversations::SettingProvenance::LaunchInherited),
+                "a companion session never imports its session prompt"
+            );
+        }
         assert_eq!(
             settings
                 .lorebooks

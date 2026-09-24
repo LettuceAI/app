@@ -62,7 +62,8 @@ where
         + SoulRepository
         + CompanionStateRepository
         + CompanionScheduledNoteRepository
-        + PromptRepository,
+        + PromptRepository
+        + lettuce_settings::GlobalSettingsStore,
 {
     async fn assemble(
         &self,
@@ -77,7 +78,7 @@ where
         validate_timeline_items(&request)?;
         validate_message_ancestry(&aggregate.branches, &request)?;
 
-        let settings = lettuce_conversations::resolve_effective_settings(
+        let mut settings = lettuce_conversations::resolve_effective_settings(
             &aggregate.conversation,
             request
                 .selected_speaker
@@ -97,7 +98,11 @@ where
             }
         })?;
 
-        let snapshot = SnapshotBundle::load(
+        let companion_prompt = self.companion_prompt(&aggregate.conversation)?;
+        if companion_prompt.is_some() {
+            settings.prompt = None;
+        }
+        let mut snapshot = SnapshotBundle::load(
             self.sources,
             &aggregate,
             request.conversation_id,
@@ -107,6 +112,9 @@ where
                 .as_ref()
                 .map(|speaker| speaker.participant_id),
         )?;
+        if let Some(prompt) = companion_prompt {
+            snapshot.prompt = Some(prompt);
+        }
         let TimelineSelection {
             window: selected_window,
             omitted_messages,
@@ -267,8 +275,7 @@ where
             },
         )?;
 
-        let (prompt, rendered_prompt) = if let Some((reference, body)) = snapshot.prompt.as_ref() {
-            let document = body.clone();
+        let (prompt, rendered_prompt) = if let Some(document) = snapshot.prompt.as_ref() {
             let mut values = prompt_values(
                 &aggregate,
                 &snapshot,
@@ -310,11 +317,11 @@ where
                 _ => key_lines.clone(),
             };
             let render_context = PromptRenderContext { conditions, values };
-            let rendered = render_prompt_snapshot(&document, &render_context).map_err(|error| {
+            let rendered = render_prompt_snapshot(document, &render_context).map_err(|error| {
                 tracing::warn!(?error, "prompt snapshot rendering failed");
                 ContextAssemblyError::PromptRender
             })?;
-            (Some((reference.clone(), document)), rendered)
+            (Some(document), rendered)
         } else {
             (None, Default::default())
         };
@@ -335,8 +342,8 @@ where
         if !relevant_memories.is_empty() {
             place(runtime.section("runtime_retrieved_memories"), true);
         }
-        let summary_placeholder = template_has_placeholder(prompt.as_ref(), "{{context_summary}}");
-        let keys_placeholder = template_has_placeholder(prompt.as_ref(), "{{key_memories}}");
+        let summary_placeholder = template_has_placeholder(prompt, "{{context_summary}}");
+        let keys_placeholder = template_has_placeholder(prompt, "{{key_memories}}");
         let memory_used = if group {
             (!memory_summary.is_empty() && summary_placeholder)
                 || (!key_lines.is_empty() && keys_placeholder)
@@ -349,15 +356,11 @@ where
         if !group && !key_lines.is_empty() && !keys_placeholder {
             place(runtime.section("runtime_key_memories"), false);
         }
-        if !lorebook_text.trim().is_empty()
-            && !template_has_placeholder(prompt.as_ref(), "{{lorebook}}")
-        {
+        if !lorebook_text.trim().is_empty() && !template_has_placeholder(prompt, "{{lorebook}}") {
             place(runtime.section("runtime_world_information"), false);
         }
         let author_note = settings.author_note.as_deref().unwrap_or_default();
-        if !author_note.trim().is_empty()
-            && !template_has_placeholder(prompt.as_ref(), "{{author_note}}")
-        {
+        if !author_note.trim().is_empty() && !template_has_placeholder(prompt, "{{author_note}}") {
             place(
                 runtime.section(if group {
                     "runtime_group_author_note"
@@ -367,20 +370,13 @@ where
                 false,
             );
         }
-        if companion_state.is_some()
-            && !template_has_placeholder(prompt.as_ref(), "{{companion_state}}")
-        {
+        if companion_state.is_some() && !template_has_placeholder(prompt, "{{companion_state}}") {
             place(runtime.section("runtime_companion_state"), false);
         }
-        if scheduled_notes.is_some()
-            && !template_has_placeholder(prompt.as_ref(), "{{scheduled_notes}}")
-        {
+        if scheduled_notes.is_some() && !template_has_placeholder(prompt, "{{scheduled_notes}}") {
             place(runtime.section("runtime_scheduled_notes"), false);
         }
-        if prompt
-            .as_ref()
-            .is_some_and(|(_, document)| document.condense)
-        {
+        if prompt.is_some_and(|document| document.condense) {
             condense_prompt_messages(&mut messages);
         }
         if request.swap_roles && !group {
@@ -444,9 +440,9 @@ where
         insert_in_chat_messages(&mut messages, in_chat_messages);
 
         let attributions = ContextAttributions {
-            prompt: prompt.map(|(reference, _document)| PromptAttribution {
-                document_id: reference.source_id,
-                revision: reference.source_revision,
+            prompt: prompt.map(|document| PromptAttribution {
+                document_id: document.id,
+                revision: document.revision,
                 selected_entry_ids: rendered_prompt
                     .relative
                     .iter()
@@ -482,8 +478,50 @@ where
         + SoulRepository
         + CompanionStateRepository
         + CompanionScheduledNoteRepository
-        + PromptRepository,
+        + PromptRepository
+        + lettuce_settings::GlobalSettingsStore,
 {
+    /// The prompt of a companion chat, resolved from the live character and
+    /// app settings on every turn through the launch's companion chain; a
+    /// conversation prompt override never applies. `None` when the chat is
+    /// not a companion chat.
+    fn companion_prompt(
+        &self,
+        conversation: &lettuce_conversations::Conversation,
+    ) -> Result<Option<PromptSnapshot>, ContextAssemblyError> {
+        let ConversationKind::Direct(details) = &conversation.kind else {
+            return Ok(None);
+        };
+        if !crate::companion_clock::companion_clock_context(self.sources, conversation)
+            .map_err(|_| ContextAssemblyError::ConversationUnavailable)?
+            .companion
+        {
+            return Ok(None);
+        }
+        let character = CharacterRepository::get(self.sources, details.character.source_id)
+            .map_err(|_| ContextAssemblyError::ConversationUnavailable)?
+            .ok_or(ContextAssemblyError::ConversationUnavailable)?;
+        let unavailable = ContextAssemblyError::SnapshotUnavailable {
+            kind: SnapshotDocumentKind::Prompt,
+        };
+        let app_default = lettuce_settings::GlobalSettingsStore::load(self.sources)
+            .map_err(|_| unavailable)?
+            .default_prompt_document_id;
+        let document = crate::launch::policy::companion_prompt(
+            self.sources,
+            character.character.defaults.companion_soul.as_ref(),
+            app_default,
+        )
+        .map_err(|_| unavailable)?
+        .ok_or(unavailable)?;
+        prompt_document(
+            document.id,
+            document.revision,
+            &crate::launch::documents::prompt_body(&document),
+        )
+        .map(Some)
+    }
+
     fn companion_prompt_state(
         &self,
         aggregate: &ConversationAggregate,
@@ -1006,7 +1044,7 @@ fn message_order(
 struct SnapshotBundle {
     characters: Vec<(ConversationParticipant, CharacterSnapshotBodyV1)>,
     persona: Option<PersonaSnapshotBodyV1>,
-    prompt: Option<(PromptLaunchSnapshot, PromptSnapshot)>,
+    prompt: Option<PromptSnapshot>,
     scene: Option<(SceneLaunchSnapshot, SceneSnapshotBodyV1)>,
     lorebooks: Vec<(LorebookLaunchSnapshot, LorebookSnapshotBodyV1)>,
 }
@@ -1077,9 +1115,9 @@ impl SnapshotBundle {
             .prompt
             .as_ref()
             .map(|snapshot| {
-                materialize_prompt(materializer, conversation_id, snapshot)
-                    .and_then(|body| prompt_document(snapshot, &body))
-                    .map(|document| (snapshot.clone(), document))
+                materialize_prompt(materializer, conversation_id, snapshot).and_then(|body| {
+                    prompt_document(snapshot.source_id, snapshot.source_revision, &body)
+                })
             })
             .transpose()?;
         let scene = settings
@@ -1366,7 +1404,8 @@ fn lorebook_source(
 }
 
 fn prompt_document(
-    reference: &PromptLaunchSnapshot,
+    id: lettuce_types::PromptDocumentId,
+    revision: lettuce_types::Revision,
     body: &PromptSnapshotBodyV1,
 ) -> Result<PromptSnapshot, ContextAssemblyError> {
     let entries = body
@@ -1375,7 +1414,7 @@ fn prompt_document(
         .map(prompt_entry)
         .collect::<Result<Vec<_>, _>>()?;
     let document = PromptSnapshot {
-        id: reference.source_id,
+        id,
         purpose: prompt_purpose(body.purpose),
         entries,
         condense: body.condense,
@@ -1387,7 +1426,7 @@ fn prompt_document(
                 PromptBehaviorVersion::DeterministicV2
             }
         },
-        revision: reference.source_revision,
+        revision,
     };
     document
         .validate()
@@ -2084,11 +2123,8 @@ pub(crate) fn condense_prompt_messages(messages: &mut Vec<ProviderNeutralMessage
     *messages = condensed;
 }
 
-fn template_has_placeholder(
-    prompt: Option<&(PromptLaunchSnapshot, PromptSnapshot)>,
-    placeholder: &str,
-) -> bool {
-    prompt.is_some_and(|(_, document)| {
+fn template_has_placeholder(prompt: Option<&PromptSnapshot>, placeholder: &str) -> bool {
+    prompt.is_some_and(|document| {
         document
             .entries
             .iter()

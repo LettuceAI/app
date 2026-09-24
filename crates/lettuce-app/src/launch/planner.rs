@@ -239,7 +239,14 @@ where
         }
         let persona = self.resolve_persona(request.persona)?;
         let companion_persona_id = persona.value().map(|value| value.id);
-        let prompt = self.resolve_prompt(&defaults, companion_config.as_ref(), starter)?;
+        let global_settings =
+            GlobalSettingsStore::load(self.sources).map_err(LaunchSourceError::Settings)?;
+        let prompt = self.resolve_prompt(
+            &defaults,
+            companion_config.as_ref(),
+            starter,
+            global_settings.default_prompt_document_id,
+        )?;
 
         let character_bindings = CharacterLorebookBindingRepository::list_character_bindings(
             self.sources,
@@ -282,8 +289,6 @@ where
         let kept: Vec<LorebookId> = books.iter().map(|book| book.book.id).collect();
         let conversation_lorebooks = conversation_lorebooks.map(|ids| retain(ids, &kept));
         let persona_lorebooks = persona_lorebooks.map(|ids| retain(ids, &kept));
-        let global_settings =
-            GlobalSettingsStore::load(self.sources).map_err(LaunchSourceError::Settings)?;
         let model = self.resolve_model(&defaults, global_settings.default_model_profile_id)?;
 
         let mut character_drafts = Vec::new();
@@ -672,68 +677,56 @@ where
         }
     }
 
+    /// A companion character always launches on the companion prompt chain
+    /// (`policy::companion_prompt`) and ignores a starter's prompt. A direct
+    /// character follows legacy's order: the starter's prompt, the character's
+    /// direct prompt, then `policy::direct_app_default_prompt`. An explicit
+    /// prompt fails on any resolution error; an inherited one fails when it is
+    /// missing or of another purpose and falls through when it is archived.
     fn resolve_prompt(
         &self,
         defaults: &lettuce_characters::CharacterDefaults,
         companion: Option<&lettuce_companions::CompanionSoulConfig>,
         starter: Selected<&ConversationStarter>,
+        app_default: Option<PromptDocumentId>,
     ) -> Result<Selected<PromptDocument>, ConversationLaunchError> {
-        let purpose = if companion.is_some() {
-            PromptPurpose::CompanionChat
-        } else {
-            PromptPurpose::DirectChat
+        if companion.is_some() {
+            return policy::companion_prompt(self.sources, companion, app_default)
+                .map_err(LaunchSourceError::Prompt)?
+                .map(Selected::Inherited)
+                .ok_or(ConversationLaunchError::BuiltInPromptMissing {
+                    purpose: PromptPurpose::CompanionChat,
+                });
+        }
+        let choice = match starter.value().and_then(|value| value.prompt_id) {
+            Some(id) => Some((id, true)),
+            None => defaults.direct_prompt_id.map(|id| (id, false)),
         };
-        let choice: Selected<PromptDocumentId> =
-            match starter.value().and_then(|value| value.prompt_id) {
-                Some(id) => Selected::Explicit(id),
-                None => match companion {
-                    Some(config) => match config.prompting.prompt_template_id {
-                        Some(id) => Selected::Inherited(id),
-                        None => {
-                            return Ok(Selected::Inherited(self.built_in_prompt(
-                                BuiltInPromptId::Companion,
-                                PromptPurpose::CompanionChat,
-                            )?));
-                        }
-                    },
-                    None => match defaults.direct_prompt_id {
-                        Some(id) => Selected::Inherited(id),
-                        None => Selected::Disabled,
-                    },
-                },
-            };
-        let Some(prompt_id) = choice.value().copied() else {
-            return Ok(Selected::Disabled);
-        };
-        let authored = matches!(choice, Selected::Explicit(_));
-        let document = match PromptRepository::lookup_exact(self.sources, prompt_id, purpose)
+        if let Some((prompt_id, authored)) = choice {
+            match PromptRepository::lookup_exact(self.sources, prompt_id, PromptPurpose::DirectChat)
+                .map_err(LaunchSourceError::Prompt)?
+            {
+                PromptLookupResult::Missing => {
+                    return Err(ConversationLaunchError::PromptNotFound { prompt_id });
+                }
+                PromptLookupResult::Archived { .. } if authored => {
+                    return Err(ConversationLaunchError::PromptArchived { prompt_id });
+                }
+                PromptLookupResult::Archived { .. } => {}
+                PromptLookupResult::PurposeMismatch { .. } => {
+                    return Err(ConversationLaunchError::PromptWrongPurpose { prompt_id });
+                }
+                PromptLookupResult::Available { document } if authored => {
+                    return Ok(Selected::Explicit(document));
+                }
+                PromptLookupResult::Available { document } => {
+                    return Ok(Selected::Inherited(document));
+                }
+            }
+        }
+        Ok(policy::direct_app_default_prompt(self.sources, app_default)
             .map_err(LaunchSourceError::Prompt)?
-        {
-            PromptLookupResult::Missing if companion.is_some() && !authored => {
-                return Ok(Selected::Inherited(self.built_in_prompt(
-                    BuiltInPromptId::Companion,
-                    PromptPurpose::CompanionChat,
-                )?));
-            }
-            PromptLookupResult::Missing => {
-                return Err(ConversationLaunchError::PromptNotFound { prompt_id });
-            }
-            PromptLookupResult::Archived { .. } if authored => {
-                return Err(ConversationLaunchError::PromptArchived { prompt_id });
-            }
-            PromptLookupResult::Archived { .. } if companion.is_some() => {
-                return Ok(Selected::Inherited(self.built_in_prompt(
-                    BuiltInPromptId::Companion,
-                    PromptPurpose::CompanionChat,
-                )?));
-            }
-            PromptLookupResult::Archived { .. } => return Ok(Selected::Disabled),
-            PromptLookupResult::PurposeMismatch { .. } => {
-                return Err(ConversationLaunchError::PromptWrongPurpose { prompt_id });
-            }
-            PromptLookupResult::Available { document } => document,
-        };
-        Ok(choice.with(document))
+            .map_or(Selected::Disabled, Selected::Inherited))
     }
 
     /// Scans the purpose-filtered library for the bundled document, which is

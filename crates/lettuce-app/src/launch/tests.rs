@@ -3390,6 +3390,248 @@ async fn companion_context_fails_closed_when_runtime_state_is_missing() {
     );
 }
 
+fn override_conversation_prompt(
+    database: &Database,
+    conversation_id: lettuce_types::ConversationId,
+    prompt_id: lettuce_types::PromptDocumentId,
+    operation_key: &str,
+) {
+    let document =
+        match PromptRepository::lookup_exact(database, prompt_id, PromptPurpose::DirectChat)
+            .expect("lookup override prompt")
+        {
+            lettuce_context::PromptLookupResult::Available { document } => document,
+            other => panic!("expected an available override prompt, got {other:?}"),
+        };
+    let draft = super::documents::draft(
+        lettuce_types::SnapshotArtifactId::new(),
+        document.revision,
+        super::documents::prompt_body(&document),
+    )
+    .expect("override prompt draft");
+    let prompt = lettuce_conversations::PromptLaunchSnapshot {
+        snapshot_ref: draft.reference(),
+        source_id: document.id,
+        source_revision: document.revision,
+        title: document.name.clone(),
+        purpose: PromptPurposeSnapshot::Direct,
+    };
+    database
+        .update_settings(
+            lettuce_conversations::PreparedConversationSettingsUpdate::new(
+                lettuce_conversations::UpdateConversationSettings {
+                    conversation_id,
+                    expected_settings_revision: None,
+                    operation: OperationToken {
+                        key: IdempotencyKey::new(operation_key).expect("key"),
+                        request_digest: ContentHash::parse("cd".repeat(32)).expect("digest"),
+                    },
+                    patch: lettuce_conversations::CurrentConversationSettingsPatch {
+                        prompt: lettuce_conversations::PatchValue::Set(prompt),
+                        ..lettuce_conversations::CurrentConversationSettingsPatch::default()
+                    },
+                },
+                vec![draft],
+            )
+            .expect("prepared prompt override"),
+            TimestampMillis::new(NOW.get() + 5),
+        )
+        .expect("override conversation prompt");
+}
+
+#[tokio::test]
+async fn a_companion_turn_uses_its_companion_prompt_over_a_conversation_override() {
+    let database = database_with_builtins();
+    let companion_template = seed_prompt(
+        &database,
+        "Companion template",
+        PromptPurpose::CompanionChat,
+    );
+    let override_prompt = seed_prompt(&database, "Session template", PromptPurpose::DirectChat);
+    let companion = seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
+        defaults.interaction_mode = InteractionMode::Companion;
+        let mut config = lettuce_companions::CompanionSoulConfig::default();
+        config.prompting.prompt_template_id = Some(companion_template);
+        defaults.companion_soul = Some(config);
+    });
+    let launched = ConversationLaunchPlanner::new(&database)
+        .launch_direct(&request(companion, "companion-override-launch"), NOW)
+        .expect("launch companion");
+    let conversation_id = launched.value.conversation.id;
+    override_conversation_prompt(
+        &database,
+        conversation_id,
+        override_prompt,
+        "companion-override-settings",
+    );
+    let conversation = ConversationReader::get(&database, conversation_id)
+        .expect("read companion conversation")
+        .conversation;
+    assert_eq!(
+        lettuce_conversations::resolve_effective_settings(&conversation, None)
+            .expect("effective settings")
+            .prompt
+            .map(|prompt| prompt.source_id),
+        Some(override_prompt),
+        "the stored override is kept"
+    );
+    let sent = CompanionTurnCoordinator::<_, ScenarioEmotionEngine>::new(&database, None)
+        .begin_send(
+            &direct_send_command(&conversation, "companion-override-send", "Hello."),
+            TimestampMillis::new(NOW.get() + 10),
+            &CancellationToken::new(),
+        )
+        .expect("send companion message");
+    let source_message_id = match sent.value.turn.input {
+        GenerationInput::UserMessage { message_id } => message_id,
+        ref other => panic!("expected user-message input, got {other:?}"),
+    };
+    let context = crate::ConversationContextAssembler::new(&database)
+        .assemble(context_request_for(
+            &database,
+            conversation_id,
+            source_message_id,
+        ))
+        .await
+        .expect("assemble companion context");
+    assert_eq!(
+        context.attributions.prompt.map(|prompt| prompt.document_id),
+        Some(companion_template)
+    );
+
+    let changed_template = seed_prompt(&database, "Changed template", PromptPurpose::CompanionChat);
+    set_companion_template(&database, companion, Some(changed_template));
+    assert_eq!(
+        assembled_prompt(&database, conversation_id, source_message_id).await,
+        Some(changed_template),
+        "a template changed after launch is followed on the next turn"
+    );
+    let built_in = BuiltInPromptService::new(&database)
+        .expect("prompt service")
+        .bootstrap(NOW)
+        .expect("prompt ids")
+        .get(BuiltInPromptId::Companion);
+    PromptRepository::archive(&database, changed_template, Revision::INITIAL, NOW)
+        .expect("archive changed template");
+    assert_eq!(
+        assembled_prompt(&database, conversation_id, source_message_id).await,
+        Some(built_in),
+        "an archived template falls back to the bundled companion prompt"
+    );
+
+    let direct = seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |_| {});
+    let launched = ConversationLaunchPlanner::new(&database)
+        .launch_direct(&request(direct, "direct-override-launch"), NOW)
+        .expect("launch direct");
+    let conversation_id = launched.value.conversation.id;
+    override_conversation_prompt(
+        &database,
+        conversation_id,
+        override_prompt,
+        "direct-override-settings",
+    );
+    let conversation = ConversationReader::get(&database, conversation_id)
+        .expect("read direct conversation")
+        .conversation;
+    let sent = ConversationRepository::begin_send(
+        &database,
+        &direct_send_command(&conversation, "direct-override-send", "Hello."),
+        TimestampMillis::new(NOW.get() + 10),
+    )
+    .expect("send direct message");
+    let source_message_id = match sent.value.turn.input {
+        GenerationInput::UserMessage { message_id } => message_id,
+        ref other => panic!("expected user-message input, got {other:?}"),
+    };
+    let context = crate::ConversationContextAssembler::new(&database)
+        .assemble(context_request_for(
+            &database,
+            conversation_id,
+            source_message_id,
+        ))
+        .await
+        .expect("assemble direct context");
+    assert_eq!(
+        context.attributions.prompt.map(|prompt| prompt.document_id),
+        Some(override_prompt)
+    );
+}
+
+fn set_companion_template(
+    database: &Database,
+    character_id: CharacterId,
+    template: Option<lettuce_types::PromptDocumentId>,
+) {
+    let character = CharacterRepository::get(database, character_id)
+        .expect("character")
+        .expect("exists")
+        .character;
+    let mut defaults = character.defaults.clone();
+    defaults.interaction_mode = InteractionMode::Companion;
+    defaults
+        .companion_soul
+        .get_or_insert_with(Default::default)
+        .prompting
+        .prompt_template_id = template;
+    CharacterRepository::update_defaults(database, character_id, character.revision, defaults, NOW)
+        .expect("update companion template");
+}
+
+async fn assembled_prompt(
+    database: &Database,
+    conversation_id: lettuce_types::ConversationId,
+    source_message_id: MessageId,
+) -> Option<lettuce_types::PromptDocumentId> {
+    crate::ConversationContextAssembler::new(database)
+        .assemble(context_request_for(
+            database,
+            conversation_id,
+            source_message_id,
+        ))
+        .await
+        .expect("assemble context")
+        .attributions
+        .prompt
+        .map(|prompt| prompt.document_id)
+}
+
+#[tokio::test]
+async fn a_chat_launched_before_its_character_became_a_companion_uses_the_companion_prompt() {
+    let database = database_with_builtins();
+    let direct_prompt = seed_prompt(&database, "Direct prompt", PromptPurpose::DirectChat);
+    let companion_template = seed_prompt(
+        &database,
+        "Companion template",
+        PromptPurpose::CompanionChat,
+    );
+    let character_id = seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
+        defaults.direct_prompt_id = Some(direct_prompt);
+    });
+    let launched = ConversationLaunchPlanner::new(&database)
+        .launch_direct(&request(character_id, "late-companion-launch"), NOW)
+        .expect("launch direct");
+    let conversation = launched.value.conversation;
+    let sent = ConversationRepository::begin_send(
+        &database,
+        &direct_send_command(&conversation, "late-companion-send", "Hello."),
+        TimestampMillis::new(NOW.get() + 10),
+    )
+    .expect("send direct message");
+    let source_message_id = match sent.value.turn.input {
+        GenerationInput::UserMessage { message_id } => message_id,
+        ref other => panic!("expected user-message input, got {other:?}"),
+    };
+    assert_eq!(
+        assembled_prompt(&database, conversation.id, source_message_id).await,
+        Some(direct_prompt)
+    );
+    set_companion_template(&database, character_id, Some(companion_template));
+    assert_eq!(
+        assembled_prompt(&database, conversation.id, source_message_id).await,
+        Some(companion_template)
+    );
+}
+
 #[test]
 fn scene_only_launch_materializes_one_trimmed_scene_message() {
     let database = database();
@@ -3970,6 +4212,172 @@ fn companion_prompt_prefers_authored_config_and_falls_back_to_built_in() {
     {
         SnapshotSelection::Inherited(prompt) => assert_eq!(prompt.source_id, built_in),
         other => panic!("expected built-in companion prompt, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_companion_launch_ignores_the_starter_prompt_for_its_companion_chain() {
+    let database = database_with_builtins();
+    let built_in = BuiltInPromptService::new(&database)
+        .expect("prompt service")
+        .bootstrap(NOW)
+        .expect("prompt ids")
+        .get(BuiltInPromptId::Companion);
+    let authored = seed_prompt(
+        &database,
+        "Companion template",
+        PromptPurpose::CompanionChat,
+    );
+    let direct_prompt = seed_prompt(&database, "Starter prompt", PromptPurpose::DirectChat);
+    let companion_prompt =
+        seed_prompt(&database, "Starter companion", PromptPurpose::CompanionChat);
+    let starters = || {
+        [direct_prompt, companion_prompt]
+            .into_iter()
+            .zip(0..)
+            .map(|(prompt_id, ordinal)| {
+                let mut starter = starter_with(CharacterId::new(), ordinal, "Hello", Vec::new());
+                starter.prompt_id = Some(prompt_id);
+                starter
+            })
+            .collect::<Vec<_>>()
+    };
+    let configured_starters = starters();
+    let unconfigured_starters = starters();
+    let configured = seed_character(
+        &database,
+        Vec::new(),
+        Vec::new(),
+        configured_starters.clone(),
+        |defaults| {
+            defaults.interaction_mode = InteractionMode::Companion;
+            let mut config = lettuce_companions::CompanionSoulConfig::default();
+            config.prompting.prompt_template_id = Some(authored);
+            defaults.companion_soul = Some(config);
+        },
+    );
+    let unconfigured = seed_character(
+        &database,
+        Vec::new(),
+        Vec::new(),
+        unconfigured_starters.clone(),
+        |defaults| defaults.interaction_mode = InteractionMode::Companion,
+    );
+
+    for (character_id, starters, expected) in [
+        (configured, configured_starters, authored),
+        (unconfigured, unconfigured_starters, built_in),
+    ] {
+        for starter in starters {
+            let launch = request_with_starter(
+                character_id,
+                &format!("companion-starter-{}", starter.id),
+                starter.id,
+            );
+            match &direct_details(&plan_for(&database, &launch)).prompt {
+                SnapshotSelection::Inherited(prompt) => assert_eq!(prompt.source_id, expected),
+                other => panic!("expected the companion chain prompt, got {other:?}"),
+            }
+        }
+    }
+}
+
+#[test]
+fn the_companion_chain_prefers_the_template_then_the_app_default_then_the_bundled_prompt() {
+    let without_built_ins = database();
+    let database = database_with_builtins();
+    let built_in = BuiltInPromptService::new(&database)
+        .expect("prompt service")
+        .bootstrap(NOW)
+        .expect("prompt ids")
+        .get(BuiltInPromptId::Companion);
+    let template = seed_prompt(
+        &database,
+        "Companion template",
+        PromptPurpose::CompanionChat,
+    );
+    let app_default = seed_prompt(&database, "App companion", PromptPurpose::CompanionChat);
+    let direct = seed_prompt(&database, "Direct prompt", PromptPurpose::DirectChat);
+    let missing = lettuce_types::PromptDocumentId::new();
+    let config = |template| {
+        let mut config = lettuce_companions::CompanionSoulConfig::default();
+        config.prompting.prompt_template_id = template;
+        config
+    };
+    let resolve = |template, app_default| {
+        policy::companion_prompt(&database, Some(&config(template)), app_default)
+            .expect("companion chain")
+            .map(|document| document.id)
+    };
+    assert_eq!(resolve(Some(template), Some(app_default)), Some(template));
+    assert_eq!(resolve(None, Some(app_default)), Some(app_default));
+    assert_eq!(resolve(Some(missing), Some(app_default)), Some(app_default));
+    assert_eq!(resolve(Some(direct), Some(app_default)), Some(app_default));
+    assert_eq!(resolve(None, Some(direct)), Some(built_in));
+    assert_eq!(resolve(None, Some(missing)), Some(built_in));
+    assert_eq!(resolve(None, None), Some(built_in));
+    PromptRepository::archive(&database, template, Revision::INITIAL, NOW)
+        .expect("archive template");
+    PromptRepository::archive(&database, app_default, Revision::INITIAL, NOW)
+        .expect("archive app default");
+    assert_eq!(resolve(Some(template), Some(app_default)), Some(built_in));
+    assert_eq!(
+        policy::companion_prompt(&database, None, None)
+            .expect("companion chain")
+            .map(|document| document.id),
+        Some(built_in)
+    );
+    assert_eq!(
+        policy::companion_prompt(&without_built_ins, None, None).expect("companion chain"),
+        None
+    );
+}
+
+#[test]
+fn the_direct_chain_ends_in_the_app_default_then_the_bundled_prompt() {
+    let without_built_ins = database();
+    let database = database_with_builtins();
+    let built_in = BuiltInPromptService::new(&database)
+        .expect("prompt service")
+        .bootstrap(NOW)
+        .expect("prompt ids")
+        .get(BuiltInPromptId::AppDefault);
+    let app_default = seed_prompt(&database, "App default", PromptPurpose::DirectChat);
+    let companion = seed_prompt(&database, "Companion prompt", PromptPurpose::CompanionChat);
+    let resolve = |app_default| {
+        policy::direct_app_default_prompt(&database, app_default)
+            .expect("direct chain")
+            .map(|document| document.id)
+    };
+    assert_eq!(resolve(Some(app_default)), Some(app_default));
+    assert_eq!(resolve(Some(companion)), Some(built_in));
+    assert_eq!(
+        resolve(Some(lettuce_types::PromptDocumentId::new())),
+        Some(built_in)
+    );
+    assert_eq!(resolve(None), Some(built_in));
+    PromptRepository::archive(&database, app_default, Revision::INITIAL, NOW)
+        .expect("archive app default");
+    assert_eq!(resolve(Some(app_default)), Some(built_in));
+    assert_eq!(
+        policy::direct_app_default_prompt(&without_built_ins, None).expect("direct chain"),
+        None
+    );
+
+    let character_prompt = seed_prompt(&database, "Character prompt", PromptPurpose::DirectChat);
+    let plain = plain_character(&database);
+    match &direct_details(&plan_for(&database, &request(plain, "direct-bundled"))).prompt {
+        SnapshotSelection::Inherited(prompt) => assert_eq!(prompt.source_id, built_in),
+        other => panic!("expected the bundled app default prompt, got {other:?}"),
+    }
+    let archived = seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
+        defaults.direct_prompt_id = Some(character_prompt);
+    });
+    PromptRepository::archive(&database, character_prompt, Revision::INITIAL, NOW)
+        .expect("archive character prompt");
+    match &direct_details(&plan_for(&database, &request(archived, "direct-archived"))).prompt {
+        SnapshotSelection::Inherited(prompt) => assert_eq!(prompt.source_id, built_in),
+        other => panic!("expected the bundled app default prompt, got {other:?}"),
     }
 }
 
