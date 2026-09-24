@@ -150,10 +150,10 @@ impl ArtifactSourceClient for ArtifactDownloadClient {
                 repository,
                 revision,
                 path,
-            } => {
-                self.open_hugging_face(repository, revision, path, offset, expected_size)
-                    .await
-            }
+            } => match lettuce_model_hub::pinned_resolve_url(repository, revision, path) {
+                Ok(url) => self.open_hugging_face(&url, offset, expected_size).await,
+                Err(_) => Err(ArtifactDownloadError::InvalidRequest),
+            },
             ArtifactSource::Https { url } => self.open_https(url, offset, expected_size).await,
         };
         stream

@@ -1650,6 +1650,7 @@ dependencies = [
  "lettuce-conversations",
  "lettuce-jobs",
  "lettuce-media",
+ "lettuce-model-hub",
  "lettuce-models",
  "lettuce-network",
  "lettuce-settings",

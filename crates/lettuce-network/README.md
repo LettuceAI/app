@@ -44,16 +44,12 @@ validation boundary without constructing a separate HTTP client; response
 bodies, request identifiers and retry metadata remain redacted from debug output.
 
 `ArtifactDownloadClient` is the narrow unauthenticated Hugging Face transport
-for large pinned artifacts. It constructs the repository URL from validated
-segments, sends an optional byte range, accepts only coherent complete or
+for large pinned artifacts. It takes the file URL `lettuce-model-hub` builds
+(`resolve_url` / `pinned_resolve_url`), sends an optional byte range, accepts only coherent complete or
 partial responses, limits redirects to five HTTPS locations, applies a
 per-chunk idle timeout, and leaves backpressure and cancellation with the
 caller. The model-hub layer owns expected-size and digest verification.
 
-Artifact paths may have several segments (`onnx/model.onnx`,
-`split_files/vae/ae.safetensors`); each segment keeps the strict character
-set and `.`/`..` are refused. The earlier single-segment check rejected
-Kokoro's pinned `onnx/` and `voices/` files, so real Kokoro installs failed.
 `open_https` serves pinned HTTPS artifacts such as GitHub release assets with
 the same range handling.
 

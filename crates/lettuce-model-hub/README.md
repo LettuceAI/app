@@ -171,6 +171,19 @@ name was hidden. Importance-matrix quants (`i1-`, `imat`, `imatrix` parts) are
 now listed and flagged `imatrix`; only the importance-matrix data file itself
 is dropped.
 
+Every Hugging Face host and path the app uses is built here. The pin requests
+(`model_pin_request` for the current head, `model_revision_pin_request` for a
+fixed revision) are read by `parse_pin_listing`, which returns every listed
+file unvalidated; `pinned_files` and the Whisper and Kokoro catalogs apply
+their own checks on top of it. `resolve_url` (a branch or commit) and
+`pinned_resolve_url` (a 40-hex commit only) build a file's download URL from a
+validated `owner/name`, revision and file path. Artifact paths may have several
+segments (`onnx/model.onnx`, `split_files/vae/ae.safetensors`); each segment
+keeps the strict character set and `.`/`..` are refused. Segments are
+percent-encoded exactly as the URL path-segment setter does.
+`strip_endpoint_prefix` removes a leading `https://huggingface.co/` from a
+pasted model URL.
+
 ## Runnability
 
 `gguf_runnability` reads the model shape from a GGUF header (two passes, the

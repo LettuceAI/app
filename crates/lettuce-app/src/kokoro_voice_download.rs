@@ -126,14 +126,14 @@ impl KokoroVoiceDownloadSource for HuggingFaceKokoroVoiceDownloadSource {
         voice: &RemoteKokoroVoice,
         offset: u64,
     ) -> Result<Box<dyn KokoroVoiceDownloadBody>, KokoroVoiceDownloadSourceError> {
+        let url = lettuce_model_hub::pinned_resolve_url(
+            KOKORO_REPOSITORY,
+            &voice.source_revision,
+            &voice.remote_path,
+        )
+        .map_err(|_| map_source_error(ArtifactDownloadError::InvalidRequest))?;
         self.client
-            .open_hugging_face(
-                KOKORO_REPOSITORY,
-                &voice.source_revision,
-                &voice.remote_path,
-                offset,
-                voice.byte_size,
-            )
+            .open_hugging_face(&url, offset, voice.byte_size)
             .await
             .map(|stream| Box::new(stream) as Box<dyn KokoroVoiceDownloadBody>)
             .map_err(map_source_error)

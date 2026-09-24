@@ -60,14 +60,14 @@ impl WhisperDownloadSource for HuggingFaceWhisperDownloadSource {
         model: &RemoteWhisperModel,
         offset: u64,
     ) -> Result<Box<dyn WhisperDownloadBody>, WhisperDownloadSourceError> {
+        let url = lettuce_model_hub::pinned_resolve_url(
+            WHISPER_REPOSITORY,
+            &model.source_revision,
+            &model.filename,
+        )
+        .map_err(|_| map_source_error(ArtifactDownloadError::InvalidRequest))?;
         self.client
-            .open_hugging_face(
-                WHISPER_REPOSITORY,
-                &model.source_revision,
-                &model.filename,
-                offset,
-                model.byte_size,
-            )
+            .open_hugging_face(&url, offset, model.byte_size)
             .await
             .map(|stream| Box::new(stream) as Box<dyn WhisperDownloadBody>)
             .map_err(map_source_error)

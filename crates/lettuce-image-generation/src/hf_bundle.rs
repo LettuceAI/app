@@ -13,9 +13,7 @@ use crate::{DiffusionComponentRole, DiffusionProfile};
 #[must_use]
 pub fn parse_bundle_model_id(value: &str) -> Option<String> {
     let trimmed = value.trim().trim_end_matches('/');
-    let path = trimmed
-        .strip_prefix("https://huggingface.co/")
-        .unwrap_or(trimmed)
+    let path = lettuce_model_hub::strip_endpoint_prefix(trimmed)
         .split(['?', '#'])
         .next()?;
     let parts = path

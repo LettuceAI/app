@@ -196,7 +196,7 @@ pub enum ArtifactProbeError {
 #[derive(Clone)]
 pub struct ArtifactDownloadClient {
     client: reqwest::Client,
-    hugging_face_token: Option<std::sync::Arc<SecretValue>>,
+    hugging_face_token: Option<(std::sync::Arc<SecretValue>, Url)>,
     civitai_token: Option<std::sync::Arc<SecretValue>>,
 }
 
@@ -250,10 +250,15 @@ impl ArtifactDownloadClient {
     }
 
     /// Signs Hugging Face downloads in with `token`, for gated repositories.
-    #[must_use]
-    pub fn with_hugging_face_token(mut self, token: SecretValue) -> Self {
-        self.hugging_face_token = Some(std::sync::Arc::new(token));
-        self
+    /// The token is only sent to URLs of `endpoint`'s origin.
+    pub fn with_hugging_face_token(
+        mut self,
+        token: SecretValue,
+        endpoint: &str,
+    ) -> Result<Self, ArtifactDownloadError> {
+        let origin = https_url(endpoint)?;
+        self.hugging_face_token = Some((std::sync::Arc::new(token), origin));
+        Ok(self)
     }
 
     /// Signs downloads from civitai.com in with `token`; it is not sent on to
@@ -316,63 +321,44 @@ impl ArtifactDownloadClient {
         Ok(value)
     }
 
+    /// Opens a Hugging Face file at `url`, signed in with the Hugging Face
+    /// token when one is set.
     pub async fn open_hugging_face(
         &self,
-        repository: &str,
-        revision: &str,
-        filename: &str,
+        url: &str,
         offset: u64,
         expected_size: u64,
     ) -> Result<ArtifactDownloadStream, ArtifactDownloadError> {
-        if !valid_repository(repository)
-            || revision.len() != 40
-            || !revision.bytes().all(|byte| byte.is_ascii_hexdigit())
-            || !valid_artifact_filename(filename)
-            || expected_size == 0
-            || offset > expected_size
-        {
+        if expected_size == 0 || offset > expected_size {
             return Err(ArtifactDownloadError::InvalidRequest);
         }
-        let mut url = Url::parse("https://huggingface.co")
-            .map_err(|_| ArtifactDownloadError::InvalidRequest)?;
-        url.path_segments_mut()
-            .map_err(|_| ArtifactDownloadError::InvalidRequest)?
-            .extend(repository.split('/'))
-            .push("resolve")
-            .push(revision)
-            .extend(filename.split('/'));
-        let token = self.hugging_face_token.clone();
+        let url = https_url(url)?;
+        let token = self
+            .hugging_face_token
+            .as_ref()
+            .filter(|(_, origin)| same_origin(&url, origin))
+            .map(|(token, _)| std::sync::Arc::clone(token));
         self.open(url, offset, expected_size, token.as_deref())
             .await
     }
 
-    /// Up to `length` leading bytes of a file of a Hugging Face repository at
-    /// `revision` (a branch or commit), signed in with `token` when one is
-    /// given; the token is not sent on to another host a redirect leads to.
+    /// Up to `length` leading bytes of the Hugging Face file at `url`, signed
+    /// in with `token` when one is given and `url` has `endpoint`'s origin;
+    /// the token is not sent on to another host a redirect leads to.
     pub async fn read_hugging_face_prefix(
         &self,
-        repository: &str,
-        revision: &str,
-        filename: &str,
+        url: &str,
+        endpoint: &str,
         length: u64,
         token: Option<&SecretValue>,
     ) -> Result<Vec<u8>, ArtifactDownloadError> {
-        if !valid_repository(repository)
-            || !valid_path_segment(revision)
-            || !valid_artifact_filename(filename)
-            || length == 0
-        {
+        if length == 0 {
             return Err(ArtifactDownloadError::InvalidRequest);
         }
         let limit = usize::try_from(length).map_err(|_| ArtifactDownloadError::InvalidRequest)?;
-        let mut url = Url::parse("https://huggingface.co")
-            .map_err(|_| ArtifactDownloadError::InvalidRequest)?;
-        url.path_segments_mut()
-            .map_err(|_| ArtifactDownloadError::InvalidRequest)?
-            .extend(repository.split('/'))
-            .push("resolve")
-            .push(revision)
-            .extend(filename.split('/'));
+        let url = https_url(url)?;
+        let token =
+            token.filter(|_| https_url(endpoint).is_ok_and(|origin| same_origin(&url, &origin)));
         let mut request = self
             .client
             .get(url)
@@ -497,30 +483,23 @@ impl ArtifactDownloadStream {
     }
 }
 
-fn valid_repository(repository: &str) -> bool {
-    let mut segments = repository.split('/');
-    matches!((segments.next(), segments.next(), segments.next()), (Some(owner), Some(name), None) if valid_path_segment(owner) && valid_path_segment(name))
-}
-
-fn valid_artifact_filename(filename: &str) -> bool {
-    filename.len() <= MAX_PATH_BYTES
-        && filename.split('/').all(|segment| {
-            !segment.is_empty()
-                && segment.len() <= MAX_METADATA_BYTES
-                && segment != "."
-                && segment != ".."
-                && !segment.contains(['\\', ':'])
-                && !segment.ends_with(['.', ' '])
-                && !segment.chars().any(char::is_control)
+fn https_url(value: &str) -> Result<Url, ArtifactDownloadError> {
+    Url::parse(value)
+        .ok()
+        .filter(|url| {
+            url.scheme() == "https"
+                && url.has_host()
+                && url.username().is_empty()
+                && url.password().is_none()
+                && url.fragment().is_none()
         })
+        .ok_or(ArtifactDownloadError::InvalidRequest)
 }
 
-fn valid_path_segment(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= MAX_METADATA_BYTES
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+fn same_origin(left: &Url, right: &Url) -> bool {
+    left.scheme() == right.scheme()
+        && left.host_str() == right.host_str()
+        && left.port_or_known_default() == right.port_or_known_default()
 }
 
 fn parse_content_range(
@@ -2007,6 +1986,23 @@ mod tests {
     }
 
     #[test]
+    fn hugging_face_urls_must_be_https_and_the_token_stays_on_its_origin() {
+        assert!(https_url("http://huggingface.co/a/b/resolve/main/f").is_err());
+        assert!(https_url("https://user@huggingface.co/a").is_err());
+        assert!(https_url("https://huggingface.co/a#x").is_err());
+        let endpoint = https_url("https://huggingface.co").expect("endpoint");
+        let file = https_url("https://huggingface.co/a/b/resolve/main/f").expect("file");
+        assert!(same_origin(&file, &endpoint));
+        for other in [
+            "https://huggingface.co.evil.test/a",
+            "https://evil.test/a",
+            "https://huggingface.co:8443/a",
+        ] {
+            assert!(!same_origin(&https_url(other).expect("url"), &endpoint));
+        }
+    }
+
+    #[test]
     fn artifact_ranges_require_coherent_pinned_totals() {
         let mut headers = header::HeaderMap::new();
         headers.insert(
@@ -2026,14 +2022,6 @@ mod tests {
             parse_content_range(&headers, 10),
             Err(ArtifactDownloadError::InvalidResponse)
         );
-        assert!(valid_repository("ggerganov/whisper.cpp"));
-        assert!(!valid_repository("ggerganov/whisper.cpp/extra"));
-        assert!(!valid_artifact_filename("../ggml-base.bin"));
-        assert!(valid_artifact_filename("onnx/model_quantized.onnx"));
-        assert!(valid_artifact_filename("split_files/vae/ae.safetensors"));
-        assert!(!valid_artifact_filename("split_files/../ae.safetensors"));
-        assert!(!valid_artifact_filename("/ae.safetensors"));
-        assert!(!valid_artifact_filename("split_files//ae.safetensors"));
     }
 
     #[tokio::test]

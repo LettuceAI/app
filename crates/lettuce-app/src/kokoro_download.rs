@@ -60,14 +60,14 @@ impl KokoroDownloadSource for HuggingFaceKokoroDownloadSource {
         artifact: &RemoteKokoroArtifact,
         offset: u64,
     ) -> Result<Box<dyn KokoroDownloadBody>, KokoroDownloadSourceError> {
+        let url = lettuce_model_hub::pinned_resolve_url(
+            KOKORO_REPOSITORY,
+            model.source_revision,
+            artifact.remote_path,
+        )
+        .map_err(|_| map_source_error(ArtifactDownloadError::InvalidRequest))?;
         self.client
-            .open_hugging_face(
-                KOKORO_REPOSITORY,
-                model.source_revision,
-                artifact.remote_path,
-                offset,
-                artifact.byte_size,
-            )
+            .open_hugging_face(&url, offset, artifact.byte_size)
             .await
             .map(|stream| Box::new(stream) as Box<dyn KokoroDownloadBody>)
             .map_err(map_source_error)

@@ -38,7 +38,13 @@ impl GgufHeaderSource for ArtifactDownloadClient {
         length: u64,
         token: Option<&SecretValue>,
     ) -> Option<Vec<u8>> {
-        self.read_hugging_face_prefix(model_id, revision, filename, length, token)
+        let url = lettuce_model_hub::resolve_url(model_id, revision, filename).ok()?;
+        self.read_hugging_face_prefix(
+            &url,
+            lettuce_model_hub::HUGGING_FACE_ENDPOINT,
+            length,
+            token,
+        )
             .await
             .ok()
     }

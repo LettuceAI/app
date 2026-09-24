@@ -524,6 +524,12 @@ pub fn model_pin_request(model_id: &str) -> HfRequest {
     model_detail_request(model_id).with("blobs", "true")
 }
 
+/// The repository at `revision` with every file's size and digest.
+#[must_use]
+pub fn model_revision_pin_request(model_id: &str, revision: &str) -> HfRequest {
+    HfRequest::new(format!("/api/models/{model_id}/revision/{revision}")).with("blobs", "true")
+}
+
 /// A repository file pinned for download.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HfPinnedFile {
@@ -541,11 +547,41 @@ pub struct HfPinnedFiles {
     pub files: Vec<HfPinnedFile>,
 }
 
+/// A pin response as Hugging Face sends it: the revision and every listed
+/// file, unvalidated.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HfPinListing {
+    pub revision: String,
+    /// `None` when the response has no `siblings` field.
+    pub siblings: Option<Vec<HfListedFile>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HfListedFile {
+    pub path: String,
+    pub size: Option<u64>,
+    pub blob_id: Option<String>,
+    pub lfs: Option<HfLfsObject>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HfLfsObject {
+    pub size: u64,
+    pub sha256: String,
+}
+
 #[derive(Deserialize)]
 struct PinDetail {
     sha: String,
-    #[serde(default)]
-    siblings: Vec<PinSibling>,
+    #[serde(default, deserialize_with = "present_siblings")]
+    siblings: Option<Vec<PinSibling>>,
+}
+
+fn present_siblings<'de, D>(deserializer: D) -> Result<Option<Vec<PinSibling>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Vec::deserialize(deserializer).map(Some)
 }
 
 #[derive(Deserialize)]
@@ -565,6 +601,28 @@ struct PinLfs {
     sha256: String,
 }
 
+/// Parses a `model_pin_request` or `model_revision_pin_request` response.
+pub fn parse_pin_listing(body: &[u8]) -> Result<HfPinListing, serde_json::Error> {
+    let detail: PinDetail = serde_json::from_slice(body)?;
+    Ok(HfPinListing {
+        revision: detail.sha,
+        siblings: detail.siblings.map(|siblings| {
+            siblings
+                .into_iter()
+                .map(|sibling| HfListedFile {
+                    path: sibling.rfilename,
+                    size: sibling.size,
+                    blob_id: sibling.blob_id,
+                    lfs: sibling.lfs.map(|lfs| HfLfsObject {
+                        size: lfs.size,
+                        sha256: lfs.sha256,
+                    }),
+                })
+                .collect()
+        }),
+    })
+}
+
 /// `filenames` of `model_id` at the revision the pin response names, with the
 /// size and SHA-256 Hugging Face lists for each, or the git blob id of a file
 /// stored without LFS.
@@ -573,21 +631,26 @@ pub fn pinned_files(
     body: &[u8],
     filenames: &[&str],
 ) -> Result<HfPinnedFiles, HfBrowseError> {
-    let detail: PinDetail = serde_json::from_slice(body).map_err(|error| {
+    let listing = parse_pin_listing(body).map_err(|error| {
         HfBrowseError::Message(format!("Failed to parse model detail: {error}"))
     })?;
-    if detail.sha.len() != 40 || !detail.sha.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+    if listing.revision.len() != 40
+        || !listing
+            .revision
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit())
+    {
         return Err(HfBrowseError::Message(format!(
             "Hugging Face returned no revision for {model_id}."
         )));
     }
+    let siblings = listing.siblings.unwrap_or_default();
     let files = filenames
         .iter()
         .map(|filename| {
-            let sibling = detail
-                .siblings
+            let sibling = siblings
                 .iter()
-                .find(|sibling| sibling.rfilename == *filename)
+                .find(|sibling| sibling.path == *filename)
                 .ok_or_else(|| {
                     HfBrowseError::Message(format!("{filename} is not in {model_id}."))
                 })?;
@@ -619,9 +682,126 @@ pub fn pinned_files(
         })
         .collect::<Result<Vec<_>, _>>()?;
     Ok(HfPinnedFiles {
-        revision: detail.sha.to_ascii_lowercase(),
+        revision: listing.revision.to_ascii_lowercase(),
         files,
     })
+}
+
+const MAX_RESOLVE_SEGMENT_BYTES: usize = 256;
+const MAX_RESOLVE_FILENAME_BYTES: usize = 1024;
+const HEX_DIGITS: &[u8; 16] = b"0123456789ABCDEF";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("the Hugging Face file reference is invalid")]
+pub struct HfInvalidFileReference;
+
+/// The download URL of `filename` in `repository` at `revision`, a branch or
+/// commit.
+pub fn resolve_url(
+    repository: &str,
+    revision: &str,
+    filename: &str,
+) -> Result<String, HfInvalidFileReference> {
+    if !valid_repository(repository)
+        || !valid_path_segment(revision)
+        || !valid_artifact_filename(filename)
+    {
+        return Err(HfInvalidFileReference);
+    }
+    Ok(resolve_url_unchecked(repository, revision, filename))
+}
+
+/// `resolve_url` for a full 40-hex commit id.
+pub fn pinned_resolve_url(
+    repository: &str,
+    commit: &str,
+    filename: &str,
+) -> Result<String, HfInvalidFileReference> {
+    if !valid_repository(repository)
+        || commit.len() != 40
+        || !commit.bytes().all(|byte| byte.is_ascii_hexdigit())
+        || !valid_artifact_filename(filename)
+    {
+        return Err(HfInvalidFileReference);
+    }
+    Ok(resolve_url_unchecked(repository, commit, filename))
+}
+
+/// Joins the segments as a WHATWG URL path-segment setter does: `.` and `..`
+/// segments are dropped and every other segment is percent-encoded with the
+/// special-scheme path-segment set.
+fn resolve_url_unchecked(repository: &str, revision: &str, filename: &str) -> String {
+    let segments = repository
+        .split('/')
+        .chain(["resolve", revision])
+        .chain(filename.split('/'))
+        .filter(|segment| !matches!(*segment, "." | ".."));
+    let mut url = format!("{HUGGING_FACE_ENDPOINT}/");
+    for (index, segment) in segments.enumerate() {
+        if index > 0 {
+            url.push('/');
+        }
+        for byte in segment.bytes() {
+            if !(0x20..0x7f).contains(&byte)
+                || matches!(
+                    byte,
+                    b' ' | b'"'
+                        | b'<'
+                        | b'>'
+                        | b'`'
+                        | b'#'
+                        | b'?'
+                        | b'{'
+                        | b'}'
+                        | b'/'
+                        | b'%'
+                        | b'\\'
+                )
+            {
+                url.push('%');
+                url.push(char::from(HEX_DIGITS[usize::from(byte >> 4)]));
+                url.push(char::from(HEX_DIGITS[usize::from(byte & 0x0f)]));
+            } else {
+                url.push(char::from(byte));
+            }
+        }
+    }
+    url
+}
+
+fn valid_repository(repository: &str) -> bool {
+    let mut segments = repository.split('/');
+    matches!((segments.next(), segments.next(), segments.next()), (Some(owner), Some(name), None) if valid_path_segment(owner) && valid_path_segment(name))
+}
+
+fn valid_artifact_filename(filename: &str) -> bool {
+    filename.len() <= MAX_RESOLVE_FILENAME_BYTES
+        && filename.split('/').all(|segment| {
+            !segment.is_empty()
+                && segment.len() <= MAX_RESOLVE_SEGMENT_BYTES
+                && segment != "."
+                && segment != ".."
+                && !segment.contains(['\\', ':'])
+                && !segment.ends_with(['.', ' '])
+                && !segment.chars().any(char::is_control)
+        })
+}
+
+fn valid_path_segment(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_RESOLVE_SEGMENT_BYTES
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+}
+
+/// `value` without a leading `https://huggingface.co/`.
+#[must_use]
+pub fn strip_endpoint_prefix(value: &str) -> &str {
+    value
+        .strip_prefix(HUGGING_FACE_ENDPOINT)
+        .and_then(|rest| rest.strip_prefix('/'))
+        .unwrap_or(value)
 }
 
 #[must_use]
@@ -1181,6 +1361,77 @@ mod tests {
             ))
         );
         assert_eq!(query(&model_pin_request("org/m")), vec![("blobs", "true")]);
+    }
+
+    #[test]
+    fn pin_listings_keep_every_sibling_as_listed() {
+        let listing = parse_pin_listing(
+            br#"{"sha": "AB", "siblings": [
+                {"rfilename": "a.bin", "size": 5, "lfs": {"size": 5, "sha256": "CD"}},
+                {"rfilename": "b.json", "blobId": "EF"}
+            ]}"#,
+        )
+        .expect("listing");
+        assert_eq!(listing.revision, "AB");
+        let siblings = listing.siblings.expect("siblings");
+        assert_eq!(
+            siblings[0].lfs,
+            Some(HfLfsObject {
+                size: 5,
+                sha256: "CD".to_owned()
+            })
+        );
+        assert_eq!(siblings[1].size, None);
+        assert_eq!(siblings[1].blob_id.as_deref(), Some("EF"));
+        assert_eq!(
+            parse_pin_listing(br#"{"sha": "AB"}"#)
+                .expect("listing")
+                .siblings,
+            None
+        );
+        assert!(parse_pin_listing(br#"{"sha": "AB", "siblings": null}"#).is_err());
+        let request = model_revision_pin_request("org/m", "abc");
+        assert_eq!(request.path, "/api/models/org/m/revision/abc");
+        assert_eq!(query(&request), vec![("blobs", "true")]);
+    }
+
+    #[test]
+    fn resolve_urls_validate_and_encode_like_a_url_path_setter() {
+        let commit = "0123456789abcdef0123456789abcdef01234567";
+        assert_eq!(
+            pinned_resolve_url("ggerganov/whisper.cpp", commit, "ggml-base.bin"),
+            Ok(format!(
+                "https://huggingface.co/ggerganov/whisper.cpp/resolve/{commit}/ggml-base.bin"
+            ))
+        );
+        assert_eq!(
+            pinned_resolve_url("org/m", "main", "a.bin"),
+            Err(HfInvalidFileReference)
+        );
+        assert_eq!(
+            resolve_url("org/m", "main", "dir/a b#?%2e{}ü.gguf"),
+            Ok(
+                "https://huggingface.co/org/m/resolve/main/dir/a%20b%23%3F%252e%7B%7D%C3%BC.gguf"
+                    .to_owned()
+            )
+        );
+        assert_eq!(
+            resolve_url("../m", "..", "a.bin"),
+            Ok("https://huggingface.co/m/resolve/a.bin".to_owned())
+        );
+        assert!(valid_repository("ggerganov/whisper.cpp"));
+        assert!(!valid_repository("ggerganov/whisper.cpp/extra"));
+        assert!(!valid_artifact_filename("../ggml-base.bin"));
+        assert!(valid_artifact_filename("onnx/model_quantized.onnx"));
+        assert!(valid_artifact_filename("split_files/vae/ae.safetensors"));
+        assert!(!valid_artifact_filename("split_files/../ae.safetensors"));
+        assert!(!valid_artifact_filename("/ae.safetensors"));
+        assert!(!valid_artifact_filename("split_files//ae.safetensors"));
+        assert_eq!(
+            strip_endpoint_prefix("https://huggingface.co/org/m"),
+            "org/m"
+        );
+        assert_eq!(strip_endpoint_prefix("org/m"), "org/m");
     }
 
     #[test]

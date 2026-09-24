@@ -1,14 +1,13 @@
 use lettuce_model_hub::{
-    KOKORO_REPOSITORY, KOKORO_SOURCE_REVISION, KokoroInstallError, RemoteKokoroVoice,
+    HUGGING_FACE_ENDPOINT, HfPinListing, KOKORO_REPOSITORY, KOKORO_SOURCE_REVISION,
+    KokoroInstallError, RemoteKokoroVoice,
 };
 use lettuce_network::{JsonAuth, JsonClient, JsonClientError, JsonQueryParameter, RequestPolicy};
-use serde::Deserialize;
 
 use crate::{
     KokoroAssetInventoryCoordinator, KokoroAssetInventoryError, KokoroInstalledVoiceSummary,
 };
 
-const HUGGING_FACE_ENDPOINT: &str = "https://huggingface.co";
 const MAX_REPOSITORY_SIBLINGS: usize = 1_024;
 const MAX_REMOTE_VOICES: usize = 512;
 
@@ -66,15 +65,21 @@ impl KokoroRemoteVoiceCatalog {
         let installed = inventory
             .installed_voices()
             .map_err(KokoroCatalogError::Inventory)?;
+        let request = lettuce_model_hub::model_revision_pin_request(
+            KOKORO_REPOSITORY,
+            KOKORO_SOURCE_REVISION,
+        );
+        let query = request
+            .query
+            .iter()
+            .map(|(name, value)| JsonQueryParameter { name, value })
+            .collect::<Vec<_>>();
         let response = self
             .client
             .get_json_with_query(
                 HUGGING_FACE_ENDPOINT,
-                &catalog_path(),
-                &[JsonQueryParameter {
-                    name: "blobs",
-                    value: "true",
-                }],
+                &request.path,
+                &query,
                 &[],
                 JsonAuth::None,
                 Vec::new(),
@@ -85,43 +90,27 @@ impl KokoroRemoteVoiceCatalog {
         if response.status != 200 {
             return Err(KokoroCatalogError::Response);
         }
-        let detail: ModelDetail =
-            serde_json::from_slice(&response.body).map_err(|_| KokoroCatalogError::InvalidData)?;
-        parse_detail(detail, &installed)
+        let listing = lettuce_model_hub::parse_pin_listing(&response.body)
+            .map_err(|_| KokoroCatalogError::InvalidData)?;
+        parse_listing(listing, &installed)
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct ModelDetail {
-    sha: String,
-    siblings: Vec<ModelSibling>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ModelSibling {
-    rfilename: String,
-    size: u64,
-    lfs: Option<ModelLfs>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ModelLfs {
-    size: u64,
-    sha256: String,
-}
-
-fn catalog_path() -> String {
-    format!("/api/models/{KOKORO_REPOSITORY}/revision/{KOKORO_SOURCE_REVISION}")
-}
-
-fn parse_detail(
-    detail: ModelDetail,
+fn parse_listing(
+    listing: HfPinListing,
     installed: &[KokoroInstalledVoiceSummary],
 ) -> Result<Vec<KokoroAvailableVoice>, KokoroCatalogError> {
-    if detail.sha != KOKORO_SOURCE_REVISION {
+    let siblings = listing
+        .siblings
+        .ok_or(KokoroCatalogError::InvalidData)?
+        .into_iter()
+        .map(|sibling| sibling.size.map(|size| (sibling, size)))
+        .collect::<Option<Vec<_>>>()
+        .ok_or(KokoroCatalogError::InvalidData)?;
+    if listing.revision != KOKORO_SOURCE_REVISION {
         return Err(KokoroCatalogError::InvalidData);
     }
-    if detail.siblings.len() > MAX_REPOSITORY_SIBLINGS {
+    if siblings.len() > MAX_REPOSITORY_SIBLINGS {
         return Err(KokoroCatalogError::LimitExceeded);
     }
     let installed_ids = installed
@@ -129,18 +118,18 @@ fn parse_detail(
         .map(|voice| voice.id.as_str())
         .collect::<std::collections::HashSet<_>>();
     let mut voices = Vec::new();
-    for sibling in detail.siblings {
-        let Some(filename) = sibling.rfilename.strip_prefix("voices/") else {
+    for (sibling, size) in siblings {
+        let Some(filename) = sibling.path.strip_prefix("voices/") else {
             continue;
         };
         let Some(id) = filename.strip_suffix(".bin") else {
             continue;
         };
         let lfs = sibling.lfs.ok_or(KokoroCatalogError::InvalidData)?;
-        if lfs.size != sibling.size {
+        if lfs.size != size {
             return Err(KokoroCatalogError::InvalidData);
         }
-        let remote = RemoteKokoroVoice::pinned(id, detail.sha.as_str(), sibling.size, lfs.sha256)
+        let remote = RemoteKokoroVoice::pinned(id, listing.revision.as_str(), size, lfs.sha256)
             .map_err(map_manifest_error)?;
         voices.push(KokoroAvailableVoice {
             installed: installed_ids.contains(remote.id.as_str()),
@@ -174,6 +163,10 @@ mod tests {
 
     use super::*;
 
+    fn listing(detail: serde_json::Value) -> HfPinListing {
+        lettuce_model_hub::parse_pin_listing(detail.to_string().as_bytes()).expect("model detail")
+    }
+
     fn installed(id: &str) -> KokoroInstalledVoiceSummary {
         KokoroInstalledVoiceSummary {
             id: id.to_owned(),
@@ -186,7 +179,7 @@ mod tests {
 
     #[test]
     fn catalog_keeps_safe_voice_ids_and_merges_installed_state() {
-        let detail: ModelDetail = serde_json::from_value(serde_json::json!({
+        let detail = listing(serde_json::json!({
             "sha": KOKORO_SOURCE_REVISION,
             "siblings": [
                 { "rfilename": "README.md", "size": 10, "lfs": null },
@@ -207,9 +200,8 @@ mod tests {
                 },
                 { "rfilename": "voices/not-a-voice.txt", "size": 1, "lfs": null }
             ]
-        }))
-        .expect("model detail");
-        let voices = parse_detail(detail, &[installed("af_heart")]).expect("voice catalog");
+        }));
+        let voices = parse_listing(detail, &[installed("af_heart")]).expect("voice catalog");
         assert_eq!(voices.len(), 2);
         assert_eq!(voices[0].id, "af_heart");
         assert!(voices[0].installed);
@@ -242,9 +234,8 @@ mod tests {
                 }]
             }),
         ] {
-            let detail: ModelDetail = serde_json::from_value(detail).expect("model detail");
             assert_eq!(
-                parse_detail(detail, &[]),
+                parse_listing(listing(detail), &[]),
                 Err(KokoroCatalogError::InvalidData)
             );
         }

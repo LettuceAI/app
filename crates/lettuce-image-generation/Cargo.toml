@@ -20,6 +20,7 @@ image.workspace = true
 lettuce-conversations.workspace = true
 lettuce-jobs.workspace = true
 lettuce-media.workspace = true
+lettuce-model-hub.workspace = true
 lettuce-models.workspace = true
 lettuce-network.workspace = true
 lettuce-types.workspace = true

@@ -111,10 +111,14 @@ impl HuggingFaceBrowser {
         let client = lettuce_network::ArtifactDownloadClient::new().map_err(|error| {
             HfBrowseError::Message(format!("Failed to build download client: {error}"))
         })?;
-        Ok(match Self::saved_token(secrets).await? {
-            Some(token) => client.with_hugging_face_token(token),
-            None => client,
-        })
+        match Self::saved_token(secrets).await? {
+            Some(token) => client
+                .with_hugging_face_token(token, lettuce_model_hub::HUGGING_FACE_ENDPOINT)
+                .map_err(|error| {
+                    HfBrowseError::Message(format!("Failed to build download client: {error}"))
+                }),
+            None => Ok(client),
+        }
     }
 
     /// The download pinned to the repository's current revision, sizes and

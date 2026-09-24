@@ -1372,7 +1372,10 @@ the real learning and Whisper adapters to a claimed transcription. Host
 scheduling and microphone IPC remain later integration work.
 
 The remote Whisper catalog resolves the current Hugging Face repository head to
-an immutable commit before reading its file tree. It exposes only bounded model
+an immutable commit before reading its file tree, through the shared
+`model_pin_request` and `parse_pin_listing`; Whisper, Kokoro, artifact-install
+and GGUF-header downloads build their file URLs with the shared
+`pinned_resolve_url` / `resolve_url`. It exposes only bounded model
 metadata with coherent LFS size and SHA-256 evidence, retains the legacy
 recommendation classifications, and rejects mutable or incomplete entries
 before download admission.
@@ -1471,7 +1474,8 @@ Cancellation remains available until the first verified file commit, after
 which the job finishes or retries the remaining bundle under its irreversible
 stage.
 The Kokoro voice catalog reads the same immutable repository revision through
-the central JSON client. It accepts only bounded `voices/<safe-id>.bin` entries
+the central JSON client, with the shared `model_revision_pin_request` and
+`parse_pin_listing`. It accepts only bounded `voices/<safe-id>.bin` entries
 with coherent LFS size and SHA-256 metadata, sorts and deduplicates IDs, and
 merges exact installed flags from the managed inventory. Catalog reads do not
 download, remove or expose native voice paths.
