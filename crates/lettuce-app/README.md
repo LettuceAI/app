@@ -809,6 +809,11 @@ view rendered from `prompt_app_creation_runtime` fragments, then every earlier
 turn that succeeded (its user message and the trimmed visible text segments of
 its attempt joined with blank lines; reasoning is not replayed), then the
 current message; in-chat entries of an edited document go in at their depth.
+When the resolved profile uses the local llama.cpp protocol, every entry
+(relative, then in-chat) is trimmed, empty ones are dropped and the rest are
+joined with a blank line into one leading system message, as release 2.2.5
+does, because chat templates such as Gemma reject a second system message;
+remote providers, Ollama included, keep one message per entry.
 Lorebook drafts also list their entries with ids, which legacy never showed
 because its entries were written straight to the database, and a lorebook
 description is never shown (legacy showed `<unset>`). Not yet shown: the

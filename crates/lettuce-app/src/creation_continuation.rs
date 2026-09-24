@@ -519,6 +519,7 @@ fn build_creation_inference_request(
         &base.draft,
         &text.dialogue,
         &turn.user_message,
+        profile.chat_profile.provider_protocol,
     )
     .map_err(|error| match error {
         crate::runtime_text::RuntimeTextError::Unavailable => {

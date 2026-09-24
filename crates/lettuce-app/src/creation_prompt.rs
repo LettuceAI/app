@@ -10,6 +10,7 @@ use lettuce_creation::{
     CreationDialogueTurn, CreationDraft, CreationOperation, CreationOperationError,
     CreationOperationOutcome, CreationRejection, CreationTargetKind, MAX_CREATION_INFERENCE_ROUNDS,
 };
+use lettuce_models::ProviderProtocol;
 use serde_json::Value;
 
 use crate::runtime_text::{RuntimeText, RuntimeTextError};
@@ -78,12 +79,17 @@ const ITEM_PREVIEW_CHARS: usize = 60;
 /// The creation helper's system messages (the `prompt_app_creation_helper`
 /// entries with the target label and draft view), the earlier dialogue and the
 /// current user message, in the legacy order.
+///
+/// For the local llama.cpp engine every entry is trimmed and the non-empty ones
+/// are joined with a blank line into one leading system message, because chat
+/// templates such as Gemma reject a second system message.
 pub(crate) fn creation_context_messages(
     helper: &RuntimeText,
     runtime: &RuntimeText,
     draft: &CreationDraft,
     dialogue: &[CreationDialogueTurn],
     user_message: &str,
+    protocol: ProviderProtocol,
 ) -> Result<Vec<ProviderNeutralMessage>, RuntimeTextError> {
     let mut values = PromptRenderValues::default();
     values
@@ -104,16 +110,32 @@ pub(crate) fn creation_context_messages(
         (entry.payload.is_none() && !entry.content.trim().is_empty())
             .then(|| text_message(entry_role(entry.role), entry.content.clone()))
     };
-    let mut messages = rendered
-        .relative
-        .iter()
-        .filter_map(prompt_message)
-        .collect::<Vec<_>>();
-    let in_chat = rendered
-        .in_chat
-        .iter()
-        .filter_map(|entry| prompt_message(entry).map(|message| (entry.depth, message)))
-        .collect::<Vec<_>>();
+    let (mut messages, in_chat) = if protocol == ProviderProtocol::LlamaCpp {
+        let merged = rendered
+            .relative
+            .iter()
+            .chain(&rendered.in_chat)
+            .filter(|entry| entry.payload.is_none())
+            .map(|entry| entry.content.trim())
+            .filter(|content| !content.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        let leading = (!merged.is_empty()).then(|| text_message(MessageRole::System, merged));
+        (leading.into_iter().collect::<Vec<_>>(), Vec::new())
+    } else {
+        (
+            rendered
+                .relative
+                .iter()
+                .filter_map(prompt_message)
+                .collect::<Vec<_>>(),
+            rendered
+                .in_chat
+                .iter()
+                .filter_map(|entry| prompt_message(entry).map(|message| (entry.depth, message)))
+                .collect::<Vec<_>>(),
+        )
+    };
     let budget = MAX_PROVIDER_CONTEXT_MESSAGES
         .saturating_sub(messages.len() + in_chat.len() + 1)
         .saturating_sub(2 * usize::from(MAX_CREATION_INFERENCE_ROUNDS));
@@ -453,6 +475,7 @@ mod tests {
     use lettuce_creation::{
         CreationDialogueTurn, CreationDraft, CreationLorebookEntry, CreationScene,
     };
+    use lettuce_models::ProviderProtocol;
     use lettuce_types::{CreationTurnId, LorebookEntryId, SceneId};
 
     use super::{creation_context_messages, render_draft_view};
@@ -554,6 +577,7 @@ mod tests {
                 },
             ],
             "You decide.",
+            ProviderProtocol::OpenAiCompatible,
         )
         .expect("context");
         assert_eq!(messages.len(), 11);
@@ -584,6 +608,58 @@ mod tests {
     }
 
     #[test]
+    fn llama_cpp_gets_one_leading_system_message_and_remote_providers_keep_entries() {
+        let helper = RuntimeText::from_seed(BuiltInPromptId::CreationHelper);
+        let runtime = RuntimeText::from_seed(BuiltInPromptId::CreationRuntime);
+        let draft = CreationDraft::Persona {
+            name: Some("Ari".into()),
+            description: None,
+        };
+        let dialogue = [CreationDialogueTurn {
+            turn_id: CreationTurnId::new(),
+            user_message: "Hi.".into(),
+            assistant_parts: vec![MessagePart::Text {
+                text: "Hello.".into(),
+            }],
+        }];
+        let build = |protocol| {
+            creation_context_messages(&helper, &runtime, &draft, &dialogue, "Go.", protocol)
+                .expect("context")
+        };
+        let remote = build(ProviderProtocol::OpenAiCompatible);
+        let entries = remote
+            .iter()
+            .take_while(|message| message.role == MessageRole::System)
+            .map(text_of)
+            .collect::<Vec<_>>();
+        assert_eq!(entries.len(), 7);
+        for protocol in [
+            ProviderProtocol::Anthropic,
+            ProviderProtocol::Gemini,
+            ProviderProtocol::Ollama,
+        ] {
+            assert_eq!(build(protocol), remote);
+        }
+        let local = build(ProviderProtocol::LlamaCpp);
+        assert_eq!(local.len(), remote.len() - 6);
+        assert_eq!(local[0].role, MessageRole::System);
+        assert_eq!(
+            text_of(&local[0]),
+            entries
+                .iter()
+                .map(|entry| entry.trim())
+                .collect::<Vec<_>>()
+                .join("\n\n")
+        );
+        assert!(
+            local[1..]
+                .iter()
+                .all(|message| message.role != MessageRole::System)
+        );
+        assert_eq!(local[1..], remote[7..]);
+    }
+
+    #[test]
     fn oldest_turns_are_dropped_to_leave_room_for_eight_rounds() {
         let helper = RuntimeText::from_seed(BuiltInPromptId::CreationHelper);
         let runtime = RuntimeText::from_seed(BuiltInPromptId::CreationRuntime);
@@ -605,6 +681,7 @@ mod tests {
             },
             &dialogue,
             "latest",
+            ProviderProtocol::OpenAiCompatible,
         )
         .expect("context");
         assert_eq!(
