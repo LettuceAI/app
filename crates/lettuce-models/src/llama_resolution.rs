@@ -98,6 +98,10 @@ pub fn resolve_llama_settings(
         mtp_placement: pick!(mtp_placement),
         mtp_draft_tokens: pick!(mtp_draft_tokens),
         mtp_model_path: pick!(mtp_model_path),
+        dflash_enabled: pick!(dflash_enabled),
+        dflash_draft_tokens: pick!(dflash_draft_tokens),
+        dflash_min_probability: pick!(dflash_min_probability),
+        dflash_model_path: pick!(dflash_model_path),
         streaming_enabled: pick!(streaming_enabled),
         force_gemma4_reasoning: model
             .force_gemma4_reasoning
@@ -225,6 +229,44 @@ mod tests {
         assert_eq!(resolved.threads, Some(8));
         assert_eq!(resolved.ubatch_size, Some(256));
         assert_eq!(resolved.gpu_device_ids, Some(vec![]));
+    }
+
+    #[test]
+    fn dflash_settings_resolve_field_by_field_from_session_to_app() {
+        let model = LlamaCppSettings {
+            dflash_enabled: Some(true),
+            dflash_min_probability: Some(0.7),
+            ..LlamaCppSettings::default()
+        };
+        let input = LlamaResolutionInput {
+            global: LlamaCppSettings {
+                dflash_enabled: Some(false),
+                dflash_draft_tokens: Some(6),
+                dflash_min_probability: Some(0.3),
+                dflash_model_path: Some("/app/drafter.gguf".into()),
+                ..LlamaCppSettings::default()
+            },
+            session: LlamaCppSettings {
+                dflash_model_path: Some("/session/drafter.gguf".into()),
+                ..LlamaCppSettings::default()
+            },
+            memory_sampler: None,
+        };
+        let resolved = resolve_llama_settings(&model, &input).settings;
+        assert_eq!(resolved.dflash_enabled, Some(true));
+        assert_eq!(resolved.dflash_draft_tokens, Some(6));
+        assert_eq!(resolved.dflash_min_probability, Some(0.7));
+        assert_eq!(
+            resolved.dflash_model_path.as_deref(),
+            Some("/session/drafter.gguf")
+        );
+        let unset = resolve_llama_settings(
+            &LlamaCppSettings::default(),
+            &LlamaResolutionInput::default(),
+        )
+        .settings;
+        assert_eq!(unset.dflash_enabled, None);
+        assert_eq!(unset.dflash_draft_tokens, None);
     }
 
     #[test]

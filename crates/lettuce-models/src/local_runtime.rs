@@ -306,6 +306,14 @@ pub struct LlamaCppSettings {
     #[serde(default)]
     pub mtp_model_path: Option<String>,
     #[serde(default)]
+    pub dflash_enabled: Option<bool>,
+    #[serde(default)]
+    pub dflash_draft_tokens: Option<u32>,
+    #[serde(default)]
+    pub dflash_min_probability: Option<f64>,
+    #[serde(default)]
+    pub dflash_model_path: Option<String>,
+    #[serde(default)]
     pub streaming_enabled: Option<bool>,
     /// Gemma4-series forced reasoning; the model's value wins over the
     /// session's and app settings have none.
@@ -343,6 +351,13 @@ impl LlamaCppSettings {
         check_u32("llama_batch_size", self.batch_size, 1, 8192)?;
         check_u32("llama_ubatch_size", self.ubatch_size, 1, 8192)?;
         check_u32("llama_mtp_draft_tokens", self.mtp_draft_tokens, 1, 8)?;
+        check_u32("llama_dflash_draft_tokens", self.dflash_draft_tokens, 1, 15)?;
+        check_f64(
+            "llama_dflash_min_probability",
+            self.dflash_min_probability,
+            0.0,
+            1.0,
+        )?;
         if self.kv_type_k.is_some() != self.kv_type_v.is_some() {
             return Err(invalid("llama_kv_type_split"));
         }
@@ -359,6 +374,7 @@ impl LlamaCppSettings {
         )?;
         check_text("llama_mmproj_path", self.mmproj_path.as_deref())?;
         check_text("llama_mtp_model_path", self.mtp_model_path.as_deref())?;
+        check_text("llama_dflash_model_path", self.dflash_model_path.as_deref())?;
         self.sampler.validate()
     }
 }
@@ -788,6 +804,60 @@ pub const UNPICKED_LOCAL_MODEL_FILE: &str = "unpicked-local-model-file";
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dflash_settings_keep_the_legacy_editor_bounds() {
+        let valid = LlamaCppSettings {
+            dflash_enabled: Some(true),
+            dflash_draft_tokens: Some(15),
+            dflash_min_probability: Some(0.0),
+            dflash_model_path: Some("/models/drafter-dflash.gguf".into()),
+            ..LlamaCppSettings::default()
+        };
+        assert!(valid.validate().is_ok());
+        for (settings, field) in [
+            (
+                LlamaCppSettings {
+                    dflash_draft_tokens: Some(0),
+                    ..LlamaCppSettings::default()
+                },
+                "llama_dflash_draft_tokens",
+            ),
+            (
+                LlamaCppSettings {
+                    dflash_draft_tokens: Some(16),
+                    ..LlamaCppSettings::default()
+                },
+                "llama_dflash_draft_tokens",
+            ),
+            (
+                LlamaCppSettings {
+                    dflash_min_probability: Some(1.01),
+                    ..LlamaCppSettings::default()
+                },
+                "llama_dflash_min_probability",
+            ),
+            (
+                LlamaCppSettings {
+                    dflash_min_probability: Some(f64::NAN),
+                    ..LlamaCppSettings::default()
+                },
+                "llama_dflash_min_probability",
+            ),
+            (
+                LlamaCppSettings {
+                    dflash_model_path: Some("  ".into()),
+                    ..LlamaCppSettings::default()
+                },
+                "llama_dflash_model_path",
+            ),
+        ] {
+            assert_eq!(
+                settings.validate(),
+                Err(ParameterValidationError::InvalidValue(field))
+            );
+        }
+    }
 
     #[test]
     fn split_kv_cache_types_need_both_halves_and_no_shared_type() {

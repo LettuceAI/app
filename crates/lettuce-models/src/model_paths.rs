@@ -17,9 +17,9 @@ pub fn rewrite_path_prefix(path: &str, old_prefix: &str, new_prefix: &str) -> Op
 }
 
 /// Rewrites every file path the profile stores (a local model's own file,
-/// its llama.cpp projector and MTP draft model, its stable-diffusion.cpp
-/// components and base LoRAs) that `relocate` maps; reports whether any
-/// changed.
+/// its llama.cpp projector and MTP and DFlash draft models, its
+/// stable-diffusion.cpp components and base LoRAs) that `relocate` maps;
+/// reports whether any changed.
 pub fn relocate_profile_paths(
     profile: &mut ModelProfile,
     protocol: ProviderProtocol,
@@ -45,6 +45,7 @@ pub fn relocate_profile_paths(
     for path in [
         &mut llama.mmproj_path,
         &mut llama.mtp_model_path,
+        &mut llama.dflash_model_path,
         &mut diffusion.cpp.text_encoder_path,
         &mut diffusion.cpp.vae_path,
         &mut diffusion.cpp.vision_encoder_path,
@@ -74,6 +75,47 @@ pub trait ModelPathRelocation: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn draft_model_paths_move_with_the_folder() {
+        let mut profile = ModelProfile {
+            id: crate::ModelProfileId::new(),
+            provider_account_id: crate::ProviderAccountId::new(),
+            external_model_id: "/models/m.gguf".into(),
+            display_name: "Local".into(),
+            kind: crate::ModelKind::Chat,
+            config: crate::ModelProfileConfig {
+                llama_cpp: crate::LlamaCppSettings {
+                    mtp_model_path: Some("/models/mtp-m.gguf".into()),
+                    dflash_model_path: Some("/models/m-dflash.gguf".into()),
+                    ..crate::LlamaCppSettings::default()
+                },
+                stable_diffusion: Default::default(),
+                feature_parameters: Default::default(),
+                chat_parameters: Default::default(),
+                capabilities: crate::ModelCapabilities::unknown(crate::CapabilityEvidence {
+                    source: crate::CapabilityEvidenceSource::ProviderReported,
+                    source_version: 1,
+                    observed_at: lettuce_types::TimestampMillis::new(1),
+                }),
+            },
+            revision: lettuce_types::Revision::INITIAL,
+            created_at: lettuce_types::TimestampMillis::new(1),
+            updated_at: lettuce_types::TimestampMillis::new(1),
+        };
+        let moved = relocate_profile_paths(&mut profile, ProviderProtocol::LlamaCpp, &|path| {
+            path.strip_prefix("/models/")
+                .map(|rest| format!("/new/{rest}"))
+        });
+        assert!(moved);
+        let llama = &profile.config.llama_cpp;
+        assert_eq!(profile.external_model_id, "/new/m.gguf");
+        assert_eq!(llama.mtp_model_path.as_deref(), Some("/new/mtp-m.gguf"));
+        assert_eq!(
+            llama.dflash_model_path.as_deref(),
+            Some("/new/m-dflash.gguf")
+        );
+    }
 
     #[test]
     fn only_paths_inside_the_old_folder_move() {

@@ -1,8 +1,9 @@
 //! One local generation request and the legacy rules that turn its raw
 //! settings into the values a run uses: sampler profile defaults, range
-//! filters, deduplicated device lists, MTP draft bounds, the thinking switch
-//! (a trailing `/think` or `/no_think` wins over the explicit flag, which wins
-//! over "a reasoning format was asked for") and the incremental stop matcher.
+//! filters, deduplicated device lists, MTP and DFlash draft bounds, the
+//! thinking switch (a trailing `/think` or `/no_think` wins over the explicit
+//! flag, which wins over "a reasoning format was asked for") and the
+//! incremental stop matcher.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -10,9 +11,13 @@ use std::time::Duration;
 
 use serde_json::{Map, Value, json};
 
-use crate::mtp::{MTP_DRAFT_DEFAULT, MTP_DRAFT_MAX};
 use crate::offload::{FlashAttentionPolicy, KvCacheTypes};
 
+pub const MTP_DRAFT_DEFAULT: u32 = 4;
+pub const MTP_DRAFT_MAX: u32 = 8;
+pub const DFLASH_DRAFT_DEFAULT: u32 = 4;
+pub const DFLASH_DRAFT_MAX: u32 = 15;
+pub const DFLASH_P_MIN_DEFAULT: f32 = 0.55;
 pub const DEFAULT_MAX_TOKENS: u32 = 512;
 pub const DEFAULT_BATCH_SIZE: u32 = 512;
 pub const STREAM_EMIT_INTERVAL: Duration = Duration::from_millis(32);
@@ -108,6 +113,10 @@ pub struct LlamaRuntimeInput {
     pub mtp_draft_tokens: Option<u32>,
     pub mtp_model_path: Option<String>,
     pub mtp_placement: Option<String>,
+    pub dflash_enabled: bool,
+    pub dflash_draft_tokens: Option<u32>,
+    pub dflash_min_probability: Option<f64>,
+    pub dflash_model_path: Option<String>,
 }
 
 /// The sampler values the run uses after profile defaults and filters.
@@ -170,6 +179,10 @@ pub struct ResolvedRuntime {
     pub mtp_draft_tokens: u32,
     pub mtp_model_path: Option<String>,
     pub mtp_placement: String,
+    pub dflash_enabled: bool,
+    pub dflash_draft_tokens: u32,
+    pub dflash_min_probability: f32,
+    pub dflash_model_path: Option<String>,
 }
 
 /// The chat template options the prompt builder receives.
@@ -268,7 +281,7 @@ impl LlamaGenerationRequest {
     pub fn resolve_sampling(&self) -> ResolvedSampling {
         let input = &self.sampling;
         let defaults = if input.disable_profile_defaults {
-            crate::sampler::SamplerProfileDefaults {
+            crate::sampler_profile::SamplerProfileDefaults {
                 name: "custom",
                 temperature: 0.8,
                 top_p: 0.95,
@@ -279,11 +292,11 @@ impl LlamaGenerationRequest {
                 presence_penalty: None,
             }
         } else {
-            crate::sampler::sampler_profile_defaults(
+            crate::sampler_profile::sampler_profile_defaults(
                 input
                     .profile
                     .as_deref()
-                    .and_then(crate::sampler::normalize_sampler_profile),
+                    .and_then(crate::sampler_profile::normalize_sampler_profile),
             )
         };
         ResolvedSampling {
@@ -402,6 +415,18 @@ impl LlamaGenerationRequest {
                 .map(|value| value.trim().to_ascii_lowercase())
                 .filter(|value| matches!(value.as_str(), "auto" | "gpu" | "cpu"))
                 .unwrap_or_else(|| "auto".to_string()),
+            dflash_enabled: input.dflash_enabled,
+            dflash_draft_tokens: input
+                .dflash_draft_tokens
+                .filter(|value| *value > 0)
+                .unwrap_or(DFLASH_DRAFT_DEFAULT)
+                .min(DFLASH_DRAFT_MAX),
+            dflash_min_probability: input
+                .dflash_min_probability
+                .map(|value| value as f32)
+                .filter(|value| (0.0..=1.0).contains(value))
+                .unwrap_or(DFLASH_P_MIN_DEFAULT),
+            dflash_model_path: trimmed_non_empty(input.dflash_model_path.as_deref()),
         }
     }
 }
@@ -591,6 +616,8 @@ pub struct TextContextShape<'a> {
     pub rope_freq_scale: Option<f64>,
     pub mtp_active: bool,
     pub mtp_draft_tokens: u32,
+    pub dflash_active: bool,
+    pub dflash_draft_tokens: u32,
 }
 
 impl TextContextShape<'_> {
@@ -602,7 +629,7 @@ impl TextContextShape<'_> {
             FlashAttentionPolicy::Enabled => "enabled",
         };
         format!(
-            "ctx={};batch={};ubatch={:?};outputs={};threads={:?};threads_batch={:?};kqv={:?};swa={:?};kv={};flash={flash};rope_base={:?};rope_scale={:?};mtp={};mtp_n={}",
+            "ctx={};batch={};ubatch={:?};outputs={};threads={:?};threads_batch={:?};kqv={:?};swa={:?};kv={};flash={flash};rope_base={:?};rope_scale={:?};mtp={};mtp_n={};dflash={};dflash_n={}",
             self.n_ctx,
             self.n_batch,
             self.n_ubatch,
@@ -616,8 +643,23 @@ impl TextContextShape<'_> {
             self.rope_freq_scale,
             self.mtp_active,
             self.mtp_draft_tokens,
+            self.dflash_active,
+            self.dflash_draft_tokens,
         )
     }
+}
+
+/// llama-server's rule for reusing a cached sequence from `resume_at`: with
+/// a windowed sliding-window cache (`n_swa` > 0, the model's window unless
+/// the SWA layers get a full-size cache) the cells the window needs may be
+/// gone, and a recurrent state only holds its latest position. The cache is
+/// unusable when its oldest position `pos_min` lies after
+/// `resume_at - n_swa`; an empty cache (`pos_min` -1) or a resume at 0 never
+/// blocks.
+#[must_use]
+pub fn prompt_cache_reuse_blocked(pos_min: i32, resume_at: i32, n_swa: u32) -> bool {
+    let n_swa = i32::try_from(n_swa).unwrap_or(i32::MAX);
+    pos_min >= 0 && resume_at > 0 && pos_min > resume_at.saturating_sub(n_swa).max(0)
 }
 
 #[cfg(test)]
@@ -685,7 +727,7 @@ mod tests {
         request.sampling.n_pen_range = Some(300_000);
         request.sampling.dry_sequence_breakers = Some(vec!["\\n".into(), "  ".into()]);
         let sampling = request.resolve_sampling();
-        let defaults = crate::sampler::sampler_profile_defaults(Some("creative"));
+        let defaults = crate::sampler_profile::sampler_profile_defaults(Some("creative"));
         assert_eq!(sampling.profile, defaults.name);
         assert_eq!(sampling.temperature, defaults.temperature);
         assert_eq!(sampling.top_k, defaults.top_k);
@@ -728,6 +770,48 @@ mod tests {
             request.resolve_runtime().mtp_draft_tokens,
             MTP_DRAFT_DEFAULT
         );
+    }
+
+    #[test]
+    fn prompt_cache_reuse_needs_the_sliding_window_still_cached() {
+        assert!(!prompt_cache_reuse_blocked(0, 900, 0));
+        assert!(!prompt_cache_reuse_blocked(0, 900, 512));
+        assert!(!prompt_cache_reuse_blocked(388, 900, 512));
+        assert!(prompt_cache_reuse_blocked(389, 900, 512));
+        assert!(!prompt_cache_reuse_blocked(0, 300, 512));
+        assert!(prompt_cache_reuse_blocked(10, 300, 512));
+        assert!(prompt_cache_reuse_blocked(950, 900, 0));
+        assert!(!prompt_cache_reuse_blocked(-1, 900, 512));
+        assert!(!prompt_cache_reuse_blocked(5, 0, 512));
+    }
+
+    #[test]
+    fn dflash_settings_resolve_with_the_legacy_bounds() {
+        let mut request = LlamaGenerationRequest::default();
+        let runtime = request.resolve_runtime();
+        assert!(!runtime.dflash_enabled);
+        assert_eq!(runtime.dflash_draft_tokens, DFLASH_DRAFT_DEFAULT);
+        assert!((runtime.dflash_min_probability - DFLASH_P_MIN_DEFAULT).abs() < f32::EPSILON);
+        assert_eq!(runtime.dflash_model_path, None);
+        request.runtime.dflash_enabled = true;
+        request.runtime.dflash_draft_tokens = Some(99);
+        request.runtime.dflash_min_probability = Some(0.8);
+        request.runtime.dflash_model_path = Some("  /m/drafter-dflash.gguf ".into());
+        let runtime = request.resolve_runtime();
+        assert!(runtime.dflash_enabled);
+        assert_eq!(runtime.dflash_draft_tokens, DFLASH_DRAFT_MAX);
+        assert!((runtime.dflash_min_probability - 0.8).abs() < f32::EPSILON);
+        assert_eq!(
+            runtime.dflash_model_path.as_deref(),
+            Some("/m/drafter-dflash.gguf")
+        );
+        request.runtime.dflash_draft_tokens = Some(0);
+        request.runtime.dflash_min_probability = Some(1.5);
+        request.runtime.dflash_model_path = Some("   ".into());
+        let runtime = request.resolve_runtime();
+        assert_eq!(runtime.dflash_draft_tokens, DFLASH_DRAFT_DEFAULT);
+        assert!((runtime.dflash_min_probability - DFLASH_P_MIN_DEFAULT).abs() < f32::EPSILON);
+        assert_eq!(runtime.dflash_model_path, None);
     }
 
     #[test]
@@ -787,10 +871,12 @@ mod tests {
             rope_freq_scale: Some(1.0),
             mtp_active: false,
             mtp_draft_tokens: 4,
+            dflash_active: true,
+            dflash_draft_tokens: 6,
         };
         assert_eq!(
             shape.key(),
-            "ctx=4096;batch=512;ubatch=Some(256);outputs=1;threads=None;threads_batch=Some(8);kqv=Some(true);swa=None;kv=f16;flash=auto;rope_base=None;rope_scale=Some(1.0);mtp=false;mtp_n=4"
+            "ctx=4096;batch=512;ubatch=Some(256);outputs=1;threads=None;threads_batch=Some(8);kqv=Some(true);swa=None;kv=f16;flash=auto;rope_base=None;rope_scale=Some(1.0);mtp=false;mtp_n=4;dflash=true;dflash_n=6"
         );
         assert_eq!(common_token_prefix(&[1, 2, 3], &[1, 2, 4, 5]), 2);
         assert_eq!(common_token_prefix::<u8>(&[], &[1]), 0);

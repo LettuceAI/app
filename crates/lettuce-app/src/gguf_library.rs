@@ -21,8 +21,20 @@ pub struct DownloadedGguf {
     pub quantization: String,
     pub is_mmproj: bool,
     pub is_mtp: bool,
+    /// A DFlash drafter by its GGUF metadata; always false on mobile.
+    pub is_dflash: bool,
     pub architecture: Option<String>,
     pub context_length: Option<u64>,
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn is_dflash_drafter(path: &str) -> bool {
+    lettuce_local_llm::dflash::model_is_dflash(path)
+}
+
+#[cfg(any(target_os = "android", target_os = "ios"))]
+fn is_dflash_drafter(_path: &str) -> bool {
+    false
 }
 
 fn created(root: &Path) -> Result<(), String> {
@@ -53,9 +65,11 @@ pub fn downloaded_ggufs(root: &Path) -> Result<Vec<DownloadedGguf>, String> {
             }
             let meta = crate::model_runnability::local_gguf_meta(&path);
             let path_text = path.to_string_lossy().into_owned();
+            let is_mmproj = filename.to_lowercase().contains("mmproj");
             found.push(DownloadedGguf {
                 model_id: model_id.clone(),
-                is_mmproj: filename.to_lowercase().contains("mmproj"),
+                is_mmproj,
+                is_dflash: !is_mmproj && is_dflash_drafter(&path_text),
                 is_mtp: lettuce_model_hub::is_mtp_asset(&filename),
                 size: file.metadata().map_or(0, |metadata| metadata.len()),
                 quantization: lettuce_model_hub::extract_quantization(&path_text),
@@ -468,6 +482,41 @@ mod tests {
             delete_downloaded_model(&root, &[], &moved_download.model_path),
             Err("Cannot delete files outside the models directory".to_owned())
         );
+        std::fs::remove_dir_all(&app).expect("cleanup");
+    }
+
+    fn gguf_with_u32(path: &Path, key: &str, value: u32) {
+        let mut out = b"GGUF".to_vec();
+        out.extend(3_u32.to_le_bytes());
+        out.extend(0_u64.to_le_bytes());
+        out.extend(1_u64.to_le_bytes());
+        out.extend((key.len() as u64).to_le_bytes());
+        out.extend(key.as_bytes());
+        out.extend(4_u32.to_le_bytes());
+        out.extend(value.to_le_bytes());
+        std::fs::write(path, out).expect("gguf");
+    }
+
+    #[test]
+    fn dflash_drafters_are_flagged_by_their_gguf_key() {
+        let app = scratch("dflash");
+        let folder = app.join("org--m");
+        std::fs::create_dir_all(&folder).expect("folder");
+        gguf_with_u32(&folder.join("m-Q4_K_M.gguf"), "llama.block_count", 32);
+        gguf_with_u32(&folder.join("drafter.gguf"), "dflash.block_size", 16);
+        gguf_with_u32(&folder.join("mmproj-m.gguf"), "dflash.block_size", 16);
+        let listed = downloaded_ggufs(&app).expect("list");
+        let flag = |name: &str| {
+            listed
+                .iter()
+                .find(|file| file.filename == name)
+                .map(|file| file.is_dflash)
+                .expect("listed")
+        };
+        assert_eq!(listed.len(), 3);
+        assert!(flag("drafter.gguf"));
+        assert!(!flag("m-Q4_K_M.gguf"));
+        assert!(!flag("mmproj-m.gguf"));
         std::fs::remove_dir_all(&app).expect("cleanup");
     }
 

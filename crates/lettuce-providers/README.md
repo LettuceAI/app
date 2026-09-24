@@ -58,7 +58,9 @@ legacy-style delegation:
   tools are offered, output cap plus reasoning budget (4096 fallback), the
   reasoning request turning on the template's reasoning format, the thinking
   switch only with `send_thinking_state`, the per-field llama settings from the
-  chat profile, the conversation as prompt cache key for chat turns. Local
+  chat profile (DFlash included: legacy's field allowlist dropped the
+  `llamaDflash*` keys, so chat never enabled it), the conversation as prompt
+  cache key for chat turns. Local
   failures are non-retryable `LOCAL_INFERENCE_FAILED`; metrics, the runtime
   report and UI events go to the app's `LlamaHost`. User attachments are
   inlined like legacy `build_multimodal_content` (text first, then images as

@@ -10,6 +10,8 @@ pub mod context;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod context_info;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub mod dflash;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod engine;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod generation;
@@ -25,4 +27,5 @@ pub mod prompt;
 pub mod request;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod sampler;
+pub mod sampler_profile;
 pub mod tool_calls;

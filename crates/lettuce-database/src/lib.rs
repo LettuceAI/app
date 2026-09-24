@@ -1688,6 +1688,7 @@ pub(crate) fn sync_exchanged_model_profile(
     let llama = &mut profile.config.llama_cpp;
     llama.mmproj_path = None;
     llama.mtp_model_path = None;
+    llama.dflash_model_path = None;
     let diffusion = &mut profile.config.stable_diffusion;
     diffusion.base_loras = None;
     let binding = &mut diffusion.cpp;
@@ -1705,6 +1706,7 @@ fn keep_device_paths(incoming: &mut ModelProfile, local: &ModelProfile) {
     let (llama, local_llama) = (&mut incoming.config.llama_cpp, &local.config.llama_cpp);
     llama.mmproj_path.clone_from(&local_llama.mmproj_path);
     llama.mtp_model_path.clone_from(&local_llama.mtp_model_path);
+    llama.dflash_model_path.clone_from(&local_llama.dflash_model_path);
     let (diffusion, local_diffusion) = (
         &mut incoming.config.stable_diffusion,
         &local.config.stable_diffusion,
@@ -2622,6 +2624,67 @@ mod tests {
         assert_eq!(ModelProfileRepository::get(&b, second.id).expect("b"), None);
         assert_eq!(sync_to(&a, &b, 240), 0);
         assert_eq!(sync_to(&b, &a, 250), 0);
+    }
+
+    #[test]
+    fn draft_model_paths_stay_on_their_device_while_the_profile_syncs() {
+        let a = Database::open_in_memory().expect("a");
+        let b = Database::open_in_memory().expect("b");
+        let account = ProviderAccountRepository::upsert(
+            &a,
+            ProviderAccount {
+                provider_kind: "llamacpp".into(),
+                protocol: ProviderProtocol::LlamaCpp,
+                label: "Local".into(),
+                endpoint: None,
+                allow_invalid_tls: false,
+                api_key_ref: None,
+                secret_headers: Vec::new(),
+                config: ProviderConfig::Standard,
+                ..provider()
+            },
+            None,
+        )
+        .expect("account");
+        let mut local = profile(account.id);
+        local.external_model_id = "/home/a/models/mira-8b.gguf".into();
+        let llama = &mut local.config.llama_cpp;
+        llama.mtp_model_path = Some("/home/a/models/mtp-mira-8b.gguf".into());
+        llama.dflash_enabled = Some(true);
+        llama.dflash_model_path = Some("/home/a/models/mira-8b-dflash.gguf".into());
+        let on_a = ModelProfileRepository::upsert(&a, local, None).expect("model on a");
+
+        sync_to(&a, &b, 100);
+        let on_b = ModelProfileRepository::get(&b, on_a.id)
+            .expect("b model")
+            .expect("present");
+        assert_eq!(on_b.config.llama_cpp.dflash_model_path, None);
+        assert_eq!(on_b.config.llama_cpp.mtp_model_path, None);
+        assert_eq!(on_b.config.llama_cpp.dflash_enabled, Some(true));
+
+        let edited = ModelProfileRepository::upsert(
+            &b,
+            ModelProfile {
+                display_name: "Edited on b".into(),
+                updated_at: TimestampMillis::new(120),
+                ..on_b.clone()
+            },
+            Some(on_b.revision),
+        )
+        .expect("edit on b");
+        sync_to(&b, &a, 130);
+        let after = ModelProfileRepository::get(&a, on_a.id)
+            .expect("a model")
+            .expect("present");
+        assert_eq!(after.display_name, edited.display_name);
+        assert_eq!(
+            after.config.llama_cpp.dflash_model_path,
+            on_a.config.llama_cpp.dflash_model_path
+        );
+        assert_eq!(
+            after.config.llama_cpp.mtp_model_path,
+            on_a.config.llama_cpp.mtp_model_path
+        );
     }
 
     #[test]

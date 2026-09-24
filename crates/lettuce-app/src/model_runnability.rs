@@ -256,20 +256,37 @@ pub(crate) fn local_gguf_meta(path: &Path) -> Option<GgufModelMeta> {
     lettuce_model_hub::gguf_meta_with_retry(&probe, || read_prefix(path, GGUF_HEADER_RETRY_BYTES))
 }
 
-/// Files loaded next to a model: its projector, and its MTP draft model
-/// unless that runs on the CPU.
+/// Files loaded next to a model: its projector, and its draft model (the
+/// DFlash drafter when DFlash is enabled, else the MTP one) unless the draft
+/// placement is the CPU.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LocalModelSidecars<'a> {
     pub mmproj_path: Option<&'a str>,
     pub mtp_enabled: bool,
     pub mtp_on_cpu: bool,
     pub mtp_model_path: Option<&'a str>,
+    pub dflash_enabled: bool,
+    pub dflash_model_path: Option<&'a str>,
 }
 
 fn file_size(path: Option<&str>) -> u64 {
     path.filter(|path| !path.trim().is_empty())
         .and_then(|path| std::fs::metadata(path).ok())
         .map_or(0, |metadata| metadata.len())
+}
+
+fn sidecar_bytes(sidecars: &LocalModelSidecars<'_>) -> u64 {
+    let drafter = if sidecars.mtp_on_cpu {
+        0
+    } else {
+        file_size(lettuce_local_llm::offload::drafter_reserve_path(
+            sidecars.dflash_enabled,
+            sidecars.dflash_model_path,
+            sidecars.mtp_enabled,
+            sidecars.mtp_model_path,
+        ))
+    };
+    file_size(sidecars.mmproj_path).saturating_add(drafter)
 }
 
 /// The score of a downloaded GGUF file on `hardware`.
@@ -286,12 +303,7 @@ pub fn local_file_runnability(
     let size = std::fs::metadata(path)
         .map(|metadata| metadata.len())
         .map_err(|error| format!("Failed to read file metadata: {error}"))?;
-    let mtp = if sidecars.mtp_enabled && !sidecars.mtp_on_cpu {
-        file_size(sidecars.mtp_model_path)
-    } else {
-        0
-    };
-    let sidecar_bytes = file_size(sidecars.mmproj_path).saturating_add(mtp);
+    let sidecar_bytes = sidecar_bytes(sidecars);
     Ok(lettuce_model_hub::local_runnability(
         file_path,
         size,
@@ -566,6 +578,63 @@ mod tests {
             )
             .map(|_| ()),
             Err("File does not exist".to_owned())
+        );
+        std::fs::remove_dir_all(&dir).expect("cleanup");
+    }
+
+    #[test]
+    fn local_runnability_counts_the_dflash_drafter_in_the_mtp_slot() {
+        let dir = std::env::temp_dir().join(format!(
+            "lettuce-runnability-drafter-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).expect("dir");
+        let write = |name: &str, size: usize| {
+            let path = dir.join(name);
+            std::fs::write(&path, vec![0_u8; size]).expect("file");
+            path.to_string_lossy().into_owned()
+        };
+        let mmproj = write("mmproj.gguf", 10);
+        let mtp = write("mtp-m.gguf", 100);
+        let dflash = write("m-dflash.gguf", 1000);
+        let both = LocalModelSidecars {
+            mmproj_path: Some(&mmproj),
+            mtp_enabled: true,
+            mtp_on_cpu: false,
+            mtp_model_path: Some(&mtp),
+            dflash_enabled: true,
+            dflash_model_path: Some(&dflash),
+        };
+        assert_eq!(sidecar_bytes(&both), 1010);
+        assert_eq!(
+            sidecar_bytes(&LocalModelSidecars {
+                dflash_model_path: None,
+                mtp_enabled: false,
+                ..both.clone()
+            }),
+            110
+        );
+        assert_eq!(
+            sidecar_bytes(&LocalModelSidecars {
+                dflash_enabled: false,
+                ..both.clone()
+            }),
+            110
+        );
+        assert_eq!(
+            sidecar_bytes(&LocalModelSidecars {
+                dflash_enabled: false,
+                mtp_enabled: false,
+                ..both.clone()
+            }),
+            10
+        );
+        assert_eq!(
+            sidecar_bytes(&LocalModelSidecars {
+                mtp_on_cpu: true,
+                ..both
+            }),
+            10
         );
         std::fs::remove_dir_all(&dir).expect("cleanup");
     }

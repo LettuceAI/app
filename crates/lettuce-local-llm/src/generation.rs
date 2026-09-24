@@ -1,11 +1,11 @@
 //! One local llama.cpp generation, carried over from the legacy request
 //! handler: planning (smart offload with its per-model cache, llama.cpp's
-//! own fitter behind its gate, multi-GPU distribution, MTP drafter
-//! placement), loading, the prompt, the context attempt ladder with the KV
-//! cache falling back to RAM (after one reload at the KV-aware layer
-//! estimate), the prompt prefix cache, prefill, generation with MTP, stop
-//! sequences and streaming, the structured tool-call parse, the runtime
-//! report and the metrics.
+//! own fitter behind its gate, multi-GPU distribution, MTP or DFlash
+//! drafter placement), loading, the prompt, the context attempt ladder with
+//! the KV cache falling back to RAM (after one reload at the KV-aware layer
+//! estimate), the prompt prefix cache, prefill, generation with MTP or
+//! DFlash, stop sequences and streaming, the structured tool-call parse, the
+//! runtime report and the metrics.
 //!
 //! Runs execute on one worker thread that owns the loaded model and the hot
 //! context cache, as in legacy.
@@ -36,6 +36,7 @@ use crate::context::{
     compute_recommended_context, context_attempt_candidates, context_error_detail,
     is_likely_context_oom_error,
 };
+use crate::dflash::{DflashRuntime, resolve_drafter};
 use crate::engine::{
     BackendPath, EngineLoadRequest, EngineObserver, LlamaEngine, LlamaEngineError, LlamaGpuConfig,
     NativeFitPlan, emit_model_load_complete, emit_model_load_failed, emit_model_load_finalizing,
@@ -60,7 +61,8 @@ use crate::prompt::{
 };
 use crate::request::{
     IncrementalStopMatcher, LlamaGenerationRequest, ResolvedRuntime, ResolvedSampling,
-    TextContextShape, cache_eviction_count, common_token_prefix, should_flush_stream,
+    TextContextShape, cache_eviction_count, common_token_prefix, prompt_cache_reuse_blocked,
+    should_flush_stream,
 };
 use crate::sampler::{
     ResolvedSamplerConfig, build_sampler, flash_attention_policy_label, kv_type_label,
@@ -155,6 +157,40 @@ pub struct LlamaMtpStats {
 }
 
 impl LlamaMtpStats {
+    /// The stats of a speculative run from its round counters: tokens per
+    /// round, and the share of drafted tokens accepted beyond each round's
+    /// own target token.
+    #[must_use]
+    pub fn from_rounds(
+        draft_tokens: u32,
+        final_draft_n: usize,
+        adaptation_count: u32,
+        rounds: u64,
+        drafted: u64,
+        accepted: u64,
+    ) -> Self {
+        let tokens_per_round = if rounds > 0 {
+            accepted as f64 / rounds as f64
+        } else {
+            0.0
+        };
+        let draft_acceptance = if drafted > 0 {
+            accepted.saturating_sub(rounds) as f64 / drafted as f64
+        } else {
+            0.0
+        };
+        Self {
+            draft_tokens,
+            final_draft_tokens: u32::try_from(final_draft_n).ok(),
+            adaptation_count: Some(adaptation_count),
+            rounds,
+            drafted,
+            accepted,
+            tokens_per_round,
+            draft_acceptance,
+        }
+    }
+
     #[must_use]
     pub fn to_json(&self) -> Value {
         let mut value = json!({
@@ -237,6 +273,12 @@ impl From<crate::prompt::PromptError> for LlamaGenerationError {
 
 impl From<crate::mtp::MtpError> for LlamaGenerationError {
     fn from(error: crate::mtp::MtpError) -> Self {
+        Self::Failed(error.to_string())
+    }
+}
+
+impl From<crate::dflash::DflashError> for LlamaGenerationError {
+    fn from(error: crate::dflash::DflashError) -> Self {
         Self::Failed(error.to_string())
     }
 }
@@ -341,10 +383,11 @@ struct WorkerState {
 }
 
 /// A context kept after a run for prompt-prefix reuse. The contexts borrow
-/// the models stored beside them; field order drops both contexts (draft
+/// the models stored beside them; field order drops the contexts (drafts
 /// first) before either model.
 struct HotTextContext {
     mtp_runtime: Option<MtpRuntime<'static>>,
+    dflash_runtime: Option<DflashRuntime<'static>>,
     context: Option<LlamaContext<'static>>,
     model: Arc<LlamaModel>,
     draft_model: Arc<LlamaModel>,
@@ -358,6 +401,7 @@ struct HotTextContext {
 type TakenContext = (
     LlamaContext<'static>,
     Option<MtpRuntime<'static>>,
+    Option<DflashRuntime<'static>>,
     Vec<LlamaToken>,
 );
 
@@ -437,7 +481,13 @@ impl HotContextCache {
         self.allocated_bytes = self.allocated_bytes.saturating_sub(cached.allocated_bytes);
         let context = cached.context.take()?;
         let mtp_runtime = cached.mtp_runtime.take();
-        Some((context, mtp_runtime, std::mem::take(&mut cached.tokens)))
+        let dflash_runtime = cached.dflash_runtime.take();
+        Some((
+            context,
+            mtp_runtime,
+            dflash_runtime,
+            std::mem::take(&mut cached.tokens),
+        ))
     }
 
     #[expect(
@@ -448,6 +498,7 @@ impl HotContextCache {
         &mut self,
         context: LlamaContext<'_>,
         mtp_runtime: Option<MtpRuntime<'_>>,
+        dflash_runtime: Option<DflashRuntime<'_>>,
         model: Arc<LlamaModel>,
         draft_model: Arc<LlamaModel>,
         model_path: &str,
@@ -463,6 +514,11 @@ impl HotContextCache {
                 .saturating_add(runtime.h_last.capacity() * std::mem::size_of::<f32>())
                 .saturating_add(runtime.pending.capacity() * std::mem::size_of::<LlamaToken>());
         }
+        if let Some(runtime) = dflash_runtime.as_ref() {
+            allocated_bytes = allocated_bytes
+                .saturating_add(runtime.draft.allocated_memory_size())
+                .saturating_add(runtime.pending.capacity() * std::mem::size_of::<LlamaToken>());
+        }
         allocated_bytes =
             allocated_bytes.saturating_add(tokens.capacity() * std::mem::size_of::<LlamaToken>());
         if allocated_bytes == 0 || allocated_bytes > HOT_CONTEXT_CACHE_MAX_BYTES {
@@ -472,6 +528,9 @@ impl HotContextCache {
             unsafe { std::mem::transmute::<LlamaContext<'_>, LlamaContext<'static>>(context) };
         let mtp_runtime = mtp_runtime.map(|runtime| unsafe {
             std::mem::transmute::<MtpRuntime<'_>, MtpRuntime<'static>>(runtime)
+        });
+        let dflash_runtime = dflash_runtime.map(|runtime| unsafe {
+            std::mem::transmute::<DflashRuntime<'_>, DflashRuntime<'static>>(runtime)
         });
         if let Some(index) = self
             .entries
@@ -494,6 +553,7 @@ impl HotContextCache {
         self.allocated_bytes = self.allocated_bytes.saturating_add(allocated_bytes);
         self.entries.push_back(HotTextContext {
             mtp_runtime,
+            dflash_runtime,
             context: Some(context),
             model,
             draft_model,
@@ -1161,8 +1221,17 @@ impl Run<'_> {
             effective_gpu_layers = Some(normalized);
         }
         let active_mmproj_path = rt.mmproj_path.as_deref().filter(|_| media_requested);
-        let mtp_bundled = rt.mtp_enabled && !media_requested && model_has_mtp(model_path);
-        let mtp_external_path = if rt.mtp_enabled && !media_requested && !mtp_bundled {
+        let dflash_external_path = if rt.dflash_enabled && !media_requested {
+            resolve_drafter(rt.dflash_model_path.as_deref(), model_path)
+        } else {
+            None
+        };
+        let dflash_requested = dflash_external_path.is_some();
+        let mtp_bundled =
+            !dflash_requested && rt.mtp_enabled && !media_requested && model_has_mtp(model_path);
+        let mtp_external_path = if dflash_requested {
+            dflash_external_path
+        } else if rt.mtp_enabled && !media_requested && !mtp_bundled {
             rt.mtp_model_path
                 .clone()
                 .or_else(|| discover_external_mtp(model_path))
@@ -1170,7 +1239,11 @@ impl Run<'_> {
             None
         };
         if let Some(external) = mtp_external_path.as_deref() {
-            tracing::info!(external, "MTP external draft model resolved");
+            if dflash_requested {
+                tracing::info!(external, "DFlash external draft model resolved");
+            } else {
+                tracing::info!(external, "MTP external draft model resolved");
+            }
         }
         let planned_mtp_context = self.requested_context.unwrap_or(16_384).max(1);
         let mtp_gpu_reserve_bytes = mtp_external_path
@@ -1698,7 +1771,14 @@ impl Run<'_> {
             }
         }
         let use_vision = media_requested && mtmd_ctx.is_some();
+        let dflash_active = dflash_requested && !use_vision && mtp_draft_model.is_some();
+        if dflash_active && rt.mtp_enabled {
+            tracing::warn!(
+                "DFlash and MTP are both enabled but they share one draft slot; continuing with DFlash only"
+            );
+        }
         let mtp_active = rt.mtp_enabled
+            && !dflash_active
             && !use_vision
             && {
                 let capable = mtp_bundled || mtp_draft_model.is_some();
@@ -2080,6 +2160,7 @@ impl Run<'_> {
         }
         let mut ctx: Option<LlamaContext<'_>> = None;
         let mut reused_mtp_runtime: Option<MtpRuntime<'_>> = None;
+        let mut reused_dflash_runtime: Option<DflashRuntime<'_>> = None;
         let mut cached_context_tokens = None;
         let mut active_context_key = None;
         self.failure_stage = "create_context";
@@ -2107,6 +2188,8 @@ impl Run<'_> {
                 let attempt_ubatch = rt.ubatch_size.map(|value| value.min(attempt_batch));
                 let n_outputs_max = if mtp_active {
                     rt.mtp_draft_tokens.saturating_add(1).min(attempt_batch)
+                } else if dflash_active {
+                    rt.dflash_draft_tokens.saturating_add(1).min(attempt_batch)
                 } else {
                     1
                 };
@@ -2121,6 +2204,8 @@ impl Run<'_> {
                     .with_flash_attention_policy(flash_attention_type(flash_policy));
                 if mtp_active {
                     ctx_params = ctx_params.with_n_rs_seq(rt.mtp_draft_tokens);
+                } else if dflash_active {
+                    ctx_params = ctx_params.with_n_rs_seq(rt.dflash_draft_tokens);
                 }
                 tracing::info!(
                     ctx = attempt_ctx,
@@ -2147,22 +2232,26 @@ impl Run<'_> {
                     rope_freq_scale: rt.rope_freq_scale,
                     mtp_active,
                     mtp_draft_tokens: rt.mtp_draft_tokens,
+                    dflash_active,
+                    dflash_draft_tokens: rt.dflash_draft_tokens,
                 }
                 .key();
                 if !use_vision
                     && let Some(cache_key) = self.prompt_cache_key.as_deref()
-                    && let Some((cached_ctx, cached_mtp, cached_tokens)) = worker.hot.take(
-                        &engine.model,
-                        &hot_draft_model,
-                        cache_key,
-                        &attempt_context_key,
-                    )
+                    && let Some((cached_ctx, cached_mtp, cached_dflash, cached_tokens)) =
+                        worker.hot.take(
+                            &engine.model,
+                            &hot_draft_model,
+                            cache_key,
+                            &attempt_context_key,
+                        )
                 {
                     self.prompt_cache_hit = true;
                     resolved_ctx_size = attempt_ctx;
                     resolved_n_batch = attempt_batch;
                     resolved_kqv = attempt_kqv;
                     reused_mtp_runtime = cached_mtp;
+                    reused_dflash_runtime = cached_dflash;
                     cached_context_tokens = Some(cached_tokens);
                     active_context_key = Some(attempt_context_key);
                     ctx = Some(cached_ctx);
@@ -2246,13 +2335,20 @@ impl Run<'_> {
         let context_fallback_activated = (ctx_size, n_batch) != (requested_ctx_size, initial_batch);
 
         let draft_source = mtp_draft_model.as_deref().unwrap_or(model);
-        let mut mtp_runtime = if let Some(runtime) = reused_mtp_runtime {
-            Some(runtime)
-        } else if mtp_active {
+        let swa_window = |model: &LlamaModel| {
+            if rt.swa_full == Some(true) {
+                0
+            } else {
+                model.kv_geometry().map_or(0, |geometry| geometry.n_swa)
+            }
+        };
+        let target_n_swa = swa_window(model);
+        let draft_n_swa = swa_window(draft_source);
+        let draft_context_params = |n_rs_seq: u32| {
             let mut draft_params = LlamaContextParams::default()
                 .with_n_ctx(NonZeroU32::new(resolved_ctx_size))
                 .with_n_batch(resolved_n_batch)
-                .with_n_rs_seq(rt.mtp_draft_tokens)
+                .with_n_rs_seq(n_rs_seq)
                 .with_flash_attention_policy(flash_attention_type(flash_policy));
             if let Some(n_threads) = rt.threads {
                 draft_params = draft_params.with_n_threads(n_threads as i32);
@@ -2281,6 +2377,12 @@ impl Run<'_> {
             if let Some(scale) = rt.rope_freq_scale {
                 draft_params = draft_params.with_rope_freq_scale(scale as f32);
             }
+            draft_params
+        };
+        let mut mtp_runtime = if let Some(runtime) = reused_mtp_runtime {
+            Some(runtime)
+        } else if mtp_active {
+            let draft_params = draft_context_params(rt.mtp_draft_tokens);
             let mode = if mtp_draft_model.is_some() {
                 "external"
             } else {
@@ -2326,6 +2428,47 @@ impl Run<'_> {
                     tracing::warn!(
                         %error,
                         "MTP draft context creation failed, continuing without MTP"
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        let mut dflash_runtime = if let Some(mut runtime) = reused_dflash_runtime {
+            runtime.refresh_settings(rt.dflash_min_probability);
+            Some(runtime)
+        } else if dflash_active {
+            match DflashRuntime::new(
+                model,
+                draft_source,
+                &ctx,
+                backend,
+                draft_context_params(0),
+                rt.dflash_draft_tokens as usize,
+                rt.dflash_min_probability,
+            ) {
+                Ok(mut runtime) => match runtime.enable_feature_extraction(&mut ctx) {
+                    Ok(()) => {
+                        tracing::info!(
+                            draft_tokens = runtime.draft_n,
+                            block_size = runtime.block_size,
+                            p_min = runtime.p_min,
+                            target_layers = ?runtime.target_layers,
+                            ctx = resolved_ctx_size,
+                            "DFlash active"
+                        );
+                        Some(runtime)
+                    }
+                    Err(error) => {
+                        tracing::warn!(%error, "DFlash setup failed, continuing without DFlash");
+                        None
+                    }
+                },
+                Err(error) => {
+                    tracing::warn!(
+                        %error,
+                        "DFlash draft context creation failed, continuing without DFlash"
                     );
                     None
                 }
@@ -2464,6 +2607,9 @@ impl Run<'_> {
         if let Some(runtime) = mtp_runtime.as_mut() {
             runtime.draft.reset_timings();
         }
+        if let Some(runtime) = dflash_runtime.as_mut() {
+            runtime.draft.reset_timings();
+        }
         let batch_capacity = n_batch as usize;
         let mut batch = LlamaBatch::new(batch_capacity, 1);
         let mut global_pos: i32 = 0;
@@ -2475,8 +2621,31 @@ impl Run<'_> {
                 if let Some(cached_tokens) = cached_context_tokens.take() {
                     let common_prefix = common_token_prefix(&cached_tokens, &tokens);
                     let mut rewind_from = common_prefix.saturating_sub(1);
+                    let mtp_carry = mtp_runtime.as_ref().is_some_and(|runtime| !runtime.shared)
+                        && common_prefix >= 2;
+                    let resume_at = if mtp_carry {
+                        common_prefix - 2
+                    } else {
+                        rewind_from
+                    } as i32;
+                    let window_blocked = |cache: &LlamaContext<'_>, n_swa: u32| {
+                        prompt_cache_reuse_blocked(cache.kv_cache_seq_pos_min(0), resume_at, n_swa)
+                    };
+                    let swa_blocked = window_blocked(&ctx, target_n_swa)
+                        || mtp_runtime.as_ref().is_some_and(|runtime| {
+                            !runtime.shared && window_blocked(&runtime.draft, draft_n_swa)
+                        })
+                        || dflash_runtime
+                            .as_ref()
+                            .is_some_and(|runtime| window_blocked(&runtime.draft, draft_n_swa));
                     let rewind_succeeded;
-                    if let Some(runtime) = mtp_runtime.as_mut() {
+                    if swa_blocked {
+                        tracing::info!(
+                            resume_at,
+                            "prompt cache no longer holds the sliding window before the new tokens"
+                        );
+                        rewind_succeeded = false;
+                    } else if let Some(runtime) = mtp_runtime.as_mut() {
                         if !runtime.shared && common_prefix >= 2 {
                             let carry_position = common_prefix - 2;
                             rewind_from = common_prefix - 1;
@@ -2521,6 +2690,9 @@ impl Run<'_> {
                                 failed(format!("Failed to rewind prompt KV cache: {error}"))
                             })?;
                         if rewind_succeeded {
+                            if let Some(runtime) = dflash_runtime.as_mut() {
+                                runtime.reset_for_prompt_reuse(rewind_from as u32)?;
+                            }
                             self.cached_prompt_tokens = rewind_from as u64;
                         }
                     }
@@ -2530,6 +2702,9 @@ impl Run<'_> {
                     } else {
                         ctx.clear_kv_cache();
                         if let Some(runtime) = mtp_runtime.as_mut() {
+                            runtime.reset_for_prompt_reuse(0)?;
+                        }
+                        if let Some(runtime) = dflash_runtime.as_mut() {
                             runtime.reset_for_prompt_reuse(0)?;
                         }
                         self.cached_prompt_tokens = 0;
@@ -2565,6 +2740,9 @@ impl Run<'_> {
                             global_pos,
                             chunk_end == tokens_len,
                         )?;
+                    }
+                    if let Some(runtime) = dflash_runtime.as_mut() {
+                        runtime.inject(&ctx, chunk_end - chunk_start, global_pos)?;
                     }
                     self.check_abort()?;
                     global_pos += (chunk_end - chunk_start) as i32;
@@ -2616,12 +2794,20 @@ impl Run<'_> {
         self.native_prompt_eval_tokens = Some(prompt_eval_tokens);
         self.native_prompt_eval_tps = (prompt_eval_ms > 0.0 && prompt_eval_tokens > 0)
             .then(|| prompt_eval_tokens as f64 * 1_000.0 / prompt_eval_ms);
-        self.native_draft_prompt_eval_ms = mtp_runtime.as_mut().map(|runtime| {
-            let timings = runtime.draft.timings();
-            (timings.t_p_eval_ms() + timings.t_eval_ms()).max(0.0)
-        });
+        self.native_draft_prompt_eval_ms = mtp_runtime
+            .as_mut()
+            .map(|runtime| runtime.draft.timings())
+            .or_else(|| {
+                dflash_runtime
+                    .as_mut()
+                    .map(|runtime| runtime.draft.timings())
+            })
+            .map(|timings| (timings.t_p_eval_ms() + timings.t_eval_ms()).max(0.0));
         ctx.reset_timings();
         if let Some(runtime) = mtp_runtime.as_mut() {
+            runtime.draft.reset_timings();
+        }
+        if let Some(runtime) = dflash_runtime.as_mut() {
             runtime.draft.reset_timings();
         }
 
@@ -2704,6 +2890,16 @@ impl Run<'_> {
         while n_cur < target_len {
             self.check_abort()?;
             let token = if let Some(runtime) = mtp_runtime.as_mut() {
+                if runtime.pending.is_empty() {
+                    let accepted =
+                        runtime.round(&mut ctx, &mut sampler, model, n_cur, target_len)?;
+                    runtime.pending.extend(accepted);
+                }
+                match runtime.pending.pop_front() {
+                    Some(token) => token,
+                    None => break,
+                }
+            } else if let Some(runtime) = dflash_runtime.as_mut() {
                 if runtime.pending.is_empty() {
                     let accepted =
                         runtime.round(&mut ctx, &mut sampler, model, n_cur, target_len)?;
@@ -2820,7 +3016,7 @@ impl Run<'_> {
                 });
             }
 
-            if mtp_runtime.is_some() {
+            if mtp_runtime.is_some() || dflash_runtime.is_some() {
                 if let Some(tokens) = context_tokens.as_mut() {
                     tokens.push(token);
                 }
@@ -2858,10 +3054,15 @@ impl Run<'_> {
         self.generation_elapsed_seconds = Some(generation_elapsed.as_secs_f64());
         let target_timings = ctx.timings();
         let target_compute_ms = target_timings.t_p_eval_ms() + target_timings.t_eval_ms();
-        let draft_compute_ms = mtp_runtime.as_mut().map_or(0.0, |runtime| {
-            let timings = runtime.draft.timings();
-            timings.t_p_eval_ms() + timings.t_eval_ms()
-        });
+        let draft_compute_ms = mtp_runtime
+            .as_mut()
+            .map(|runtime| runtime.draft.timings())
+            .or_else(|| {
+                dflash_runtime
+                    .as_mut()
+                    .map(|runtime| runtime.draft.timings())
+            })
+            .map_or(0.0, |timings| timings.t_p_eval_ms() + timings.t_eval_ms());
         let compute_ms = (target_compute_ms + draft_compute_ms).max(0.0);
         self.native_generation_compute_ms = Some(compute_ms);
         self.native_generation_tps = (compute_ms > 0.0 && self.completion_tokens > 0)
@@ -2870,38 +3071,49 @@ impl Run<'_> {
             Some((generation_elapsed.as_secs_f64() * 1_000.0 - compute_ms).max(0.0));
 
         if let Some(runtime) = mtp_runtime.as_ref() {
-            let tokens_per_round = if runtime.rounds > 0 {
-                runtime.accepted as f64 / runtime.rounds as f64
-            } else {
-                0.0
-            };
-            let draft_acceptance = if runtime.drafted > 0 {
-                runtime.accepted.saturating_sub(runtime.rounds) as f64 / runtime.drafted as f64
-            } else {
-                0.0
-            };
+            let stats = LlamaMtpStats::from_rounds(
+                rt.mtp_draft_tokens,
+                runtime.draft_n,
+                runtime.adaptation_count,
+                runtime.rounds,
+                runtime.drafted,
+                runtime.accepted,
+            );
             tracing::info!(
                 rounds = runtime.rounds,
                 drafted = runtime.drafted,
                 accepted = runtime.accepted,
-                tokens_per_round,
-                draft_acceptance,
+                tokens_per_round = stats.tokens_per_round,
+                draft_acceptance = stats.draft_acceptance,
                 configured_draft_n = runtime.draft_n_max,
                 final_draft_n = runtime.draft_n,
                 adaptations = runtime.adaptation_count,
                 "MTP stats"
             );
-            let stats = LlamaMtpStats {
-                draft_tokens: rt.mtp_draft_tokens,
-                final_draft_tokens: u32::try_from(runtime.draft_n).ok(),
-                adaptation_count: Some(runtime.adaptation_count),
-                rounds: runtime.rounds,
-                drafted: runtime.drafted,
-                accepted: runtime.accepted,
-                tokens_per_round,
-                draft_acceptance,
-            };
             set_field(&mut self.report, "mtpStats", stats.to_json());
+            self.mtp_stats = Some(stats);
+        }
+        if let Some(runtime) = dflash_runtime.as_ref() {
+            let stats = LlamaMtpStats::from_rounds(
+                rt.dflash_draft_tokens,
+                runtime.draft_n,
+                runtime.adaptation_count,
+                runtime.rounds,
+                runtime.drafted,
+                runtime.accepted,
+            );
+            tracing::info!(
+                rounds = runtime.rounds,
+                drafted = runtime.drafted,
+                accepted = runtime.accepted,
+                tokens_per_round = stats.tokens_per_round,
+                draft_acceptance = stats.draft_acceptance,
+                configured_draft_n = runtime.draft_n_max,
+                final_draft_n = runtime.draft_n,
+                adaptations = runtime.adaptation_count,
+                "DFlash stats"
+            );
+            set_field(&mut self.report, "dflashStats", stats.to_json());
             self.mtp_stats = Some(stats);
         }
 
@@ -3036,9 +3248,24 @@ impl Run<'_> {
         if let (Some(tokens), Some(context_key)) =
             (context_tokens.take(), active_context_key.take())
         {
-            let cache_ready = if mtp_active && mtp_runtime.is_none() {
+            let cache_ready = if mtp_active && mtp_runtime.is_none()
+                || dflash_active && dflash_runtime.is_none()
+            {
                 false
             } else if let Some(runtime) = mtp_runtime.as_mut() {
+                match u32::try_from(tokens.len()) {
+                    Ok(token_count) => {
+                        match runtime.truncate_for_prompt_cache(&mut ctx, token_count) {
+                            Ok(()) => true,
+                            Err(error) => {
+                                tracing::warn!(%error, "discarding unusable prompt cache");
+                                false
+                            }
+                        }
+                    }
+                    Err(_) => false,
+                }
+            } else if let Some(runtime) = dflash_runtime.as_mut() {
                 match u32::try_from(tokens.len()) {
                     Ok(token_count) => {
                         match runtime.truncate_for_prompt_cache(&mut ctx, token_count) {
@@ -3058,6 +3285,7 @@ impl Run<'_> {
                 let evicted = worker.hot.store(
                     ctx,
                     mtp_runtime.take(),
+                    dflash_runtime.take(),
                     engine.model.clone(),
                     hot_draft_model.clone(),
                     model_path,
@@ -3394,6 +3622,52 @@ mod tests {
     }
 
     #[test]
+    fn kv_cache_type_errors_fail_fast_with_their_own_text() {
+        use llama_cpp_2::{KvCacheTypeError, LlamaContextLoadError};
+        for error in [
+            KvCacheTypeError::QuantizedVNeedsFlashAttention,
+            KvCacheTypeError::MixedTypesUnsupported,
+            KvCacheTypeError::KBlockSize {
+                layer: 3,
+                block_size: 32,
+                n_embd_head: 80,
+            },
+            KvCacheTypeError::VBlockSize {
+                layer: 0,
+                block_size: 256,
+                n_embd_head: 128,
+            },
+        ] {
+            let raw = LlamaContextLoadError::from(error).to_string();
+            assert!(!is_likely_context_oom_error(&raw), "{raw}");
+            for kv_label in [Some("k=q8_0,v=q4_0"), None] {
+                let detail =
+                    context_error_detail(&raw, 4096, 512, Some(true), None, Some(2048), kv_label);
+                assert!(detail.ends_with(&raw), "{detail}");
+            }
+        }
+    }
+
+    #[test]
+    fn speculative_stats_count_accepted_drafts_beyond_each_round() {
+        let stats = LlamaMtpStats::from_rounds(6, 4, 2, 4, 10, 12);
+        assert_eq!(stats.draft_tokens, 6);
+        assert_eq!(stats.final_draft_tokens, Some(4));
+        assert_eq!(stats.adaptation_count, Some(2));
+        assert!((stats.tokens_per_round - 3.0).abs() < f64::EPSILON);
+        assert!((stats.draft_acceptance - 0.8).abs() < f64::EPSILON);
+        let idle = LlamaMtpStats::from_rounds(4, 4, 0, 0, 0, 0);
+        assert!(idle.tokens_per_round.abs() < f64::EPSILON);
+        assert!(idle.draft_acceptance.abs() < f64::EPSILON);
+        let primed_only = LlamaMtpStats::from_rounds(4, 4, 0, 3, 0, 1);
+        assert!(primed_only.draft_acceptance.abs() < f64::EPSILON);
+        assert_eq!(
+            LlamaMtpStats::from_rounds(4, 4, 0, 2, 4, 1).draft_acceptance,
+            0.0
+        );
+    }
+
+    #[test]
     fn inline_media_rejects_remote_urls_and_missing_audio() {
         let remote = vec![json!({"role": "user", "content": [
             {"type": "image_url", "image_url": {"url": "https://x/y.png"}}
@@ -3494,7 +3768,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "needs a local GGUF model in LETTUCE_PLAN_MODEL"]
+    #[ignore = "needs a local GGUF model in LETTUCE_PLAN_MODEL (drafters in LETTUCE_MTP_MODEL, LETTUCE_DFLASH_MODEL)"]
     fn generates_on_cpu_and_reuses_the_prompt_cache() {
         let Ok(path) = std::env::var("LETTUCE_PLAN_MODEL") else {
             return;
@@ -3600,6 +3874,61 @@ mod tests {
             .expect("stored report");
         assert_eq!(report["actualKvTypeUsed"], json!("k=q8_0,v=q4_0"));
 
+        if let Ok(drafter) = std::env::var("LETTUCE_DFLASH_MODEL") {
+            let mut counting = base.clone();
+            counting.prompt_cache_key = None;
+            counting.max_tokens = Some(48);
+            counting.messages = vec![json!({
+                "role": "user",
+                "content": "Count from 1 to 15 in words, separated by commas. /no_think"
+            })];
+            let started = Instant::now();
+            let plain = run_blocking(
+                &runtime,
+                counting.clone(),
+                Arc::new(Recorder::default()),
+                reports.clone(),
+            )
+            .expect("plain counting run");
+            eprintln!(
+                "plain: {:?} {:?} {:?}",
+                plain.content,
+                plain.usage,
+                started.elapsed()
+            );
+            let mut dflash = counting;
+            dflash.runtime.dflash_enabled = true;
+            dflash.runtime.dflash_model_path = Some(drafter);
+            let started = Instant::now();
+            let with_dflash = run_blocking(
+                &runtime,
+                dflash,
+                Arc::new(Recorder::default()),
+                reports.clone(),
+            )
+            .expect("dflash run");
+            eprintln!(
+                "dflash: {:?} {:?} {:?}",
+                with_dflash.content,
+                with_dflash.usage,
+                started.elapsed()
+            );
+            assert_eq!(with_dflash.content, plain.content);
+            let stats = with_dflash.usage.mtp_stats.expect("dflash stats");
+            assert!(stats.accepted > stats.rounds);
+            assert!(
+                stats.draft_acceptance >= 0.5,
+                "draft acceptance {} is too low for a counting prompt",
+                stats.draft_acceptance
+            );
+            let report = reports
+                .0
+                .lock()
+                .expect("report")
+                .clone()
+                .expect("stored report");
+            assert!(report.get("dflashStats").is_some());
+        }
         if let Ok(draft) = std::env::var("LETTUCE_MTP_MODEL") {
             let mut mtp = base;
             mtp.prompt_cache_key = None;

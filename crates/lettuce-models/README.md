@@ -66,7 +66,8 @@ Soul writer, companion memory, lorebook entry generator, lorebook generator,
 scene writer, help-me-reply, group speaker selection, creation helper, each with
 chat parameter overrides and llama.cpp sampler overrides), `llama_cpp`
 (`LlamaCppSettings`: GPU/CPU placement and distribution, KV type and placement,
-threads, batching, RoPE, flash attention, chat template, mmproj, MTP, streaming
+threads, batching, RoPE, flash attention, chat template, mmproj, MTP, DFlash
+(enabled, draft tokens 1-15, minimum draft probability 0-1, drafter path), streaming
 and the `LlamaSamplerSettings`) and `stable_diffusion` (`StableDiffusionSettings`:
 generation defaults, hires, SLG, cache, VAE tiling, LoRAs and the
 stable-diffusion.cpp binding). Enum values and ranges mirror the legacy editor.
@@ -107,7 +108,7 @@ budget with reasoning off.
 
 Model paths: `rewrite_path_prefix` and `relocate_profile_paths` rewrite the
 absolute file paths a profile stores (a local model's own file, llama.cpp
-projector and MTP draft, stable-diffusion.cpp components and base LoRAs);
+projector, MTP and DFlash drafts, stable-diffusion.cpp components and base LoRAs);
 `ModelPathRelocation` applies them to every profile in one transaction.
 
 Ollama accounts may carry `ProviderConfig::Ollama` with the Sprout hardware

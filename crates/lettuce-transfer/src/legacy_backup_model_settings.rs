@@ -422,6 +422,10 @@ fn llama_cpp(reader: &mut Reader<'_>) -> LlamaCppSettings {
         }),
         mtp_draft_tokens: reader.u32("llamaMtpDraftTokens", 1, 8),
         mtp_model_path: reader.text("llamaMtpModelPath"),
+        dflash_enabled: reader.bool("llamaDflashEnabled"),
+        dflash_draft_tokens: reader.u32("llamaDflashDraftTokens", 1, 15),
+        dflash_min_probability: reader.f64("llamaDflashMinProbability", 0.0, 1.0),
+        dflash_model_path: reader.text("llamaDflashModelPath"),
         streaming_enabled: reader.bool("llamaStreamingEnabled"),
         force_gemma4_reasoning: reader.bool("forceGemma4Reasoning"),
         sampler: llama_sampler(reader),
@@ -959,6 +963,10 @@ pub fn legacy_advanced_model_settings(
     );
     writer.put("llamaMtpDraftTokens", llama.mtp_draft_tokens);
     writer.put("llamaMtpModelPath", llama.mtp_model_path.clone());
+    writer.put("llamaDflashEnabled", llama.dflash_enabled);
+    writer.put("llamaDflashDraftTokens", llama.dflash_draft_tokens);
+    writer.put("llamaDflashMinProbability", llama.dflash_min_probability);
+    writer.put("llamaDflashModelPath", llama.dflash_model_path.clone());
     writer.put("llamaStreamingEnabled", llama.streaming_enabled);
     writer.put("forceGemma4Reasoning", llama.force_gemma4_reasoning);
     write_sampler(&mut writer, &llama.sampler);
@@ -1100,6 +1108,8 @@ mod tests {
             "llamaRawCompletionFallback": true, "llamaStrictMode": false,
             "llamaMtpEnabled": true, "llamaMtpPlacement": "gpu", "llamaMtpDraftTokens": 3,
             "llamaMtpModelPath": "/mtp.gguf", "llamaStreamingEnabled": true,
+            "llamaDflashEnabled": true, "llamaDflashDraftTokens": 6,
+            "llamaDflashMinProbability": 0.7, "llamaDflashModelPath": "/d-dflash.gguf",
             "llamaSamplerProfile": "creative", "llamaSamplerOrder": ["top_k", "temp"],
             "llamaMinP": 0.1, "llamaDryMultiplier": 0.8, "llamaDrySequenceBreakers": ["\\n"],
             "llamaSeed": 42,
@@ -1117,6 +1127,13 @@ mod tests {
         let object = legacy.as_object().expect("object");
         let first = legacy_model_parameters("openai", object);
         assert!(first.lossy_fields.is_empty(), "{:?}", first.lossy_fields);
+        assert_eq!(first.llama_cpp.dflash_enabled, Some(true));
+        assert_eq!(first.llama_cpp.dflash_draft_tokens, Some(6));
+        assert_eq!(first.llama_cpp.dflash_min_probability, Some(0.7));
+        assert_eq!(
+            first.llama_cpp.dflash_model_path.as_deref(),
+            Some("/d-dflash.gguf")
+        );
         assert!(
             first.unknown_fields.is_empty(),
             "{:?}",
@@ -1136,5 +1153,29 @@ mod tests {
             second.unknown_fields
         );
         assert_eq!(second, first);
+    }
+
+    #[test]
+    fn dflash_values_outside_the_editor_bounds_are_lossy() {
+        let legacy = serde_json::json!({
+            "llamaDflashDraftTokens": 16,
+            "llamaDflashMinProbability": 1.5,
+            "llamaDflashModelPath": "  ",
+            "llamaDflashEnabled": "yes",
+        });
+        let parsed = legacy_model_parameters("llamacpp", legacy.as_object().expect("object"));
+        assert_eq!(parsed.llama_cpp.dflash_draft_tokens, None);
+        assert_eq!(parsed.llama_cpp.dflash_min_probability, None);
+        assert_eq!(parsed.llama_cpp.dflash_model_path, None);
+        assert_eq!(parsed.llama_cpp.dflash_enabled, None);
+        assert_eq!(
+            parsed.lossy_fields,
+            vec![
+                "llamaDflashDraftTokens".to_owned(),
+                "llamaDflashEnabled".to_owned(),
+                "llamaDflashMinProbability".to_owned(),
+                "llamaDflashModelPath".to_owned(),
+            ]
+        );
     }
 }

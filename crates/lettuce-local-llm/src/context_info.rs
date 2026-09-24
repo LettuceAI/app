@@ -1,7 +1,8 @@
 //! The model editor's fit estimate for a local model: context limits, the
 //! machine's memory, how many layers the GPU would take and, with several
 //! GPUs, how they would be split. It plans with an unset context and a batch
-//! of 512, as legacy did.
+//! of 512, as legacy did. The draft model reserve counts the DFlash drafter
+//! when DFlash is enabled, else the MTP draft model.
 
 use std::path::Path;
 
@@ -19,7 +20,7 @@ use crate::llama::{
 use crate::mtp::model_has_mtp;
 use crate::offload::{
     FlashAttentionPolicy, KvCacheTypes, OffloadRequest, compute_recommended_context_for_gpu_layers,
-    plan_multi_gpu_distribution, reserve_device_vram, select_mtp_gpu_device,
+    drafter_reserve_path, plan_multi_gpu_distribution, reserve_device_vram, select_mtp_gpu_device,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -47,6 +48,8 @@ pub struct ContextInfoRequest {
     pub llama_mtp_enabled: Option<bool>,
     pub llama_mtp_placement: Option<String>,
     pub llama_mtp_model_path: Option<String>,
+    pub llama_dflash_enabled: Option<bool>,
+    pub llama_dflash_model_path: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -143,14 +146,14 @@ pub fn context_info(request: ContextInfoRequest) -> Result<LlamaCppContextInfo, 
         .map_or("auto", str::trim)
         .to_ascii_lowercase();
     let bundled_mtp_draft = request.llama_mtp_enabled == Some(true) && model_has_mtp(&model_path);
-    let mtp_requested_reserve_bytes = if supports_gpu_offload
-        && request.llama_mtp_enabled == Some(true)
-        && mtp_placement != "cpu"
-    {
-        request
-            .llama_mtp_model_path
-            .as_deref()
-            .filter(|path| !path.trim().is_empty())
+    let drafter_path = drafter_reserve_path(
+        request.llama_dflash_enabled == Some(true),
+        request.llama_dflash_model_path.as_deref(),
+        request.llama_mtp_enabled == Some(true),
+        request.llama_mtp_model_path.as_deref(),
+    );
+    let mtp_requested_reserve_bytes = if supports_gpu_offload && mtp_placement != "cpu" {
+        drafter_path
             .map(|path| estimate_mtp_gpu_reserve_bytes(path, 16_384, 512, kv_types))
             .transpose()?
             .unwrap_or(0)

@@ -15,8 +15,7 @@ use llama_cpp_2::model::LlamaModel;
 use llama_cpp_2::sampling::LlamaSampler;
 use llama_cpp_2::token::LlamaToken;
 
-pub const MTP_DRAFT_DEFAULT: u32 = 4;
-pub const MTP_DRAFT_MAX: u32 = 8;
+pub use crate::request::{MTP_DRAFT_DEFAULT, MTP_DRAFT_MAX};
 const MTP_DRAFT_TOP_K: usize = 10;
 const MTP_DRAFT_P_MIN: f32 = 0.75;
 const MTP_ADAPT_WINDOW_ROUNDS: u32 = 8;
@@ -40,6 +39,7 @@ pub struct MtpRuntime<'m> {
     adaptive_drafted: u64,
     adaptive_matched: u64,
     pub max_batch: usize,
+    verify_limit: usize,
     pub n_embd: usize,
     pub carry_hidden: Vec<f32>,
     pub h_last: Vec<f32>,
@@ -108,6 +108,7 @@ impl<'m> MtpRuntime<'m> {
             .map_err(|_| MtpError("model n_embd does not fit into usize".to_string()))?;
 
         let draft_n = draft_n.max(1);
+        let verify_limit = verify_limit(target_ctx.n_batch() as usize, shared);
         Ok(Self {
             draft,
             shared,
@@ -119,6 +120,7 @@ impl<'m> MtpRuntime<'m> {
             adaptive_drafted: 0,
             adaptive_matched: 0,
             max_batch: max_batch as usize,
+            verify_limit,
             n_embd,
             carry_hidden: vec![0.0; n_embd],
             h_last: vec![0.0; n_embd],
@@ -341,7 +343,7 @@ impl<'m> MtpRuntime<'m> {
         self.rounds += 1;
         let prefix_hidden = self.carry_hidden.clone();
         let budget = (max_pos - pos - 1).max(0) as usize;
-        let steps = self.draft_n.min(budget);
+        let steps = self.draft_n.min(budget).min(self.verify_limit);
 
         let mut drafted: Vec<LlamaToken> = Vec::with_capacity(steps);
         if steps > 0 {
@@ -447,7 +449,10 @@ impl<'m> MtpRuntime<'m> {
             return Ok(vec![first]);
         }
 
-        let steps = self.draft_n.min((max_pos - pos).max(0) as usize);
+        let steps = self
+            .draft_n
+            .min((max_pos - pos).max(0) as usize)
+            .min(self.verify_limit);
 
         let mut drafted: Vec<LlamaToken> = Vec::with_capacity(steps);
         let mut input = self.last_token;
@@ -584,6 +589,17 @@ impl<'m> MtpRuntime<'m> {
     }
 }
 
+/// How many drafts one verification batch can carry within the target's
+/// `n_batch`: the drafts alone with an own KV cache, the drafts after the
+/// last accepted token with a shared hidden state.
+fn verify_limit(target_batch: usize, shared: bool) -> usize {
+    if shared {
+        target_batch.saturating_sub(1)
+    } else {
+        target_batch
+    }
+}
+
 fn adjusted_draft_length(current: usize, maximum: usize, drafted: u64, matched: u64) -> usize {
     if drafted == 0 || matched.saturating_mul(2) < drafted {
         return (current / 2).max(1);
@@ -594,7 +610,8 @@ fn adjusted_draft_length(current: usize, maximum: usize, drafted: u64, matched: 
     current
 }
 
-fn greedy_token_with_prob(logits: &[f32]) -> Option<(LlamaToken, f32)> {
+/// The arg-max token and its softmax probability over the top ten logits.
+pub(crate) fn greedy_token_with_prob(logits: &[f32]) -> Option<(LlamaToken, f32)> {
     let mut top: Vec<(usize, f32)> = Vec::with_capacity(MTP_DRAFT_TOP_K + 1);
     for (i, &logit) in logits.iter().enumerate() {
         if top.len() < MTP_DRAFT_TOP_K || top.last().is_some_and(|&(_, lowest)| logit > lowest) {
@@ -678,6 +695,15 @@ mod tests {
     fn adaptive_draft_length_grows_high_acceptance_to_configured_limit() {
         assert_eq!(adjusted_draft_length(3, 6, 10, 8), 4);
         assert_eq!(adjusted_draft_length(6, 6, 10, 10), 6);
+    }
+
+    #[test]
+    fn verification_batches_fit_the_target_batch() {
+        assert_eq!(verify_limit(512, false), 512);
+        assert_eq!(verify_limit(8, false), 8);
+        assert_eq!(verify_limit(8, true), 7);
+        assert_eq!(verify_limit(1, true), 0);
+        assert_eq!(verify_limit(0, true), 0);
     }
 
     #[test]

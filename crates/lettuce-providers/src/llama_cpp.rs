@@ -438,6 +438,10 @@ fn runtime_input(settings: &LlamaCppSettings) -> LlamaRuntimeInput {
             }
             .to_owned()
         }),
+        dflash_enabled: settings.dflash_enabled.unwrap_or(false),
+        dflash_draft_tokens: settings.dflash_draft_tokens,
+        dflash_min_probability: settings.dflash_min_probability,
+        dflash_model_path: settings.dflash_model_path.clone(),
     }
 }
 
@@ -858,6 +862,10 @@ mod tests {
     #[test]
     fn requests_carry_tools_budget_thinking_and_the_cache_key() {
         let mut inference = llama_request(LlamaCppSettings {
+            dflash_enabled: Some(true),
+            dflash_draft_tokens: Some(6),
+            dflash_min_probability: Some(0.7),
+            dflash_model_path: Some("/models/local-dflash.gguf".to_owned()),
             kv_type_k: Some(LlamaKvType::Q80),
             kv_type_v: Some(LlamaKvType::Q40),
             gpu_distribution_mode: Some(LlamaGpuDistributionMode::Manual),
@@ -903,6 +911,13 @@ mod tests {
             )
         );
         assert_eq!(generation.prompt_cache_key.as_deref(), Some("conversation"));
+        assert!(generation.runtime.dflash_enabled);
+        assert_eq!(generation.runtime.dflash_draft_tokens, Some(6));
+        assert_eq!(generation.runtime.dflash_min_probability, Some(0.7));
+        assert_eq!(
+            generation.runtime.dflash_model_path.as_deref(),
+            Some("/models/local-dflash.gguf")
+        );
         assert_eq!(generation.runtime.kv_type_k.as_deref(), Some("q8_0"));
         assert_eq!(generation.runtime.kv_type_v.as_deref(), Some("q4_0"));
         assert_eq!(

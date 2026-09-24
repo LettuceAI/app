@@ -443,6 +443,26 @@ pub fn estimate_mtp_gpu_reserve_bytes(
     metadata.model_size_bytes.saturating_add(draft_kv_bytes)
 }
 
+/// The draft model file the sidecar reserve counts: with DFlash enabled its
+/// drafter (the MTP path when none is set), else the MTP draft model when
+/// MTP is enabled. A set but blank DFlash path does not fall back.
+#[must_use]
+pub fn drafter_reserve_path<'a>(
+    dflash_enabled: bool,
+    dflash_model_path: Option<&'a str>,
+    mtp_enabled: bool,
+    mtp_model_path: Option<&'a str>,
+) -> Option<&'a str> {
+    let path = if dflash_enabled {
+        dflash_model_path.or(mtp_model_path)
+    } else if mtp_enabled {
+        mtp_model_path
+    } else {
+        None
+    };
+    path.filter(|path| !path.trim().is_empty())
+}
+
 pub fn select_mtp_gpu_device(
     selected_device_ids: &[usize],
     device_free_vram: &[u64],
@@ -1242,6 +1262,23 @@ mod tests {
         assert_eq!(dist.n_gpu_layers, 16);
         assert_eq!(dist.per_device_layers, vec![4, 12]);
         assert_eq!(dist.tensor_split, vec![0.25, 0.75]);
+    }
+}
+
+#[cfg(test)]
+mod drafter_reserve_tests {
+    use super::drafter_reserve_path;
+
+    #[test]
+    fn dflash_takes_the_reserve_slot_before_mtp() {
+        let dflash = Some("/m/d-dflash.gguf");
+        let mtp = Some("/m/mtp-d.gguf");
+        assert_eq!(drafter_reserve_path(true, dflash, true, mtp), dflash);
+        assert_eq!(drafter_reserve_path(true, None, false, mtp), mtp);
+        assert_eq!(drafter_reserve_path(true, Some("  "), true, mtp), None);
+        assert_eq!(drafter_reserve_path(false, dflash, true, mtp), mtp);
+        assert_eq!(drafter_reserve_path(false, dflash, false, mtp), None);
+        assert_eq!(drafter_reserve_path(false, None, true, Some(" ")), None);
     }
 }
 

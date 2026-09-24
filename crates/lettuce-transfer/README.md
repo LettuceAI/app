@@ -920,7 +920,9 @@ is written with its id as its name, which legacy required). A reasoning
 budget under 1024 or a repeat penalty over 2.0, which the domain allows but
 legacy's editor did not, is written and reads back as lossy under the legacy
 rules. A model file's `llamaLastRuntimeReport` is ignored like legacy's upsert
-ignored it. Reading takes a USC
+ignored it. The 2.2.5 DFlash keys (`llamaDflashEnabled`,
+`llamaDflashDraftTokens` 1-15, `llamaDflashMinProbability` 0-1,
+`llamaDflashModelPath`) read and write like the MTP ones. Reading takes a USC
 card or a model object: name and provider id required and trimmed, label and
 display name default to them, scopes keep text/image/audio in that order
 (text when none), and advanced settings are taken when they are an object.
