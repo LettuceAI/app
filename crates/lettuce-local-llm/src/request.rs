@@ -45,6 +45,9 @@ pub struct LlamaReasoningInput {
     pub enable_thinking: Option<bool>,
     pub chat_template_kwargs: Option<Map<String, Value>>,
     pub parallel_tool_calls: bool,
+    /// Gemma4-series forced reasoning: the system prompt opens with the think
+    /// marker and the reply starts inside the thought channel.
+    pub force_gemma4_reasoning: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -69,6 +72,8 @@ pub struct LlamaSamplingInput {
     pub xtc_probability: Option<f64>,
     pub xtc_threshold: Option<f64>,
     pub seed: Option<u32>,
+    pub adaptive_target: Option<f64>,
+    pub adaptive_decay: Option<f64>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -127,6 +132,8 @@ pub struct ResolvedSampling {
     pub xtc_probability: Option<f64>,
     pub xtc_threshold: Option<f64>,
     pub seed: Option<u32>,
+    pub adaptive_target: Option<f64>,
+    pub adaptive_decay: Option<f64>,
 }
 
 /// The runtime values the run uses after the legacy filters.
@@ -316,6 +323,8 @@ impl LlamaGenerationRequest {
             xtc_probability: input.xtc_probability,
             xtc_threshold: input.xtc_threshold,
             seed: input.seed,
+            adaptive_target: input.adaptive_target,
+            adaptive_decay: input.adaptive_decay,
         }
     }
 

@@ -114,3 +114,12 @@ Ollama accounts may carry `ProviderConfig::Ollama` with the Sprout hardware
 probe next to a remote server (`enabled`, `url`, `api_key_ref` into the
 account's `SproutApiKey` secret); `active_sprout` is the probe when switched on
 with a URL. Everything that accepts a standard Ollama account accepts it.
+
+`LlamaSamplerSettings.adaptive_target` / `adaptive_decay` resolve session,
+model, app like the other sampler fields; a target of 0 turns adaptive-p off
+and masks lower layers, as legacy's post-lookup filter did. Feature slots now
+apply them (the old app showed them per slot but never copied them: corrected);
+they do not count as a slot override that keeps the fixed dynamic-memory
+sampler from applying (`overrides_memory_sampler`), as legacy's check ignored
+them. `LlamaCppSettings.force_gemma4_reasoning` resolves model first, then
+session, with no app layer, as legacy did.

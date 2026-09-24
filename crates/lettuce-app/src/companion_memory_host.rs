@@ -744,7 +744,7 @@ fn memory_parameter_input(
     );
     if protocol == ProviderProtocol::LlamaCpp
         && overwrite_llama_sampler
-        && slot.llama_sampler.is_empty()
+        && !slot.llama_sampler.overrides_memory_sampler()
     {
         input.operation.top_k = Set(40);
         input.operation.frequency_penalty = Set(0.0);

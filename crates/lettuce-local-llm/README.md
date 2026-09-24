@@ -142,3 +142,12 @@ heartbeats, notices, report updates). The provider adapter lives in
 Next: report/metrics storage and host events in the app, the runtime
 commands (devices, embedded template, unload, context info), then
 stable-diffusion.cpp.
+
+Release 2.2.5 additions: the adaptive-p sampler (`adaptive_p` is the tenth
+default stage; its place in the order is ignored, and when the order asks for
+it and the target is in (0, 1] it replaces the final `dist`/`greedy` step with
+`LlamaSampler::adaptive_p(target, decay or 0.95 clamped to 0..=0.99, seed)`),
+and Gemma4 forced reasoning (`<|think|>\n` opens the first system message, or
+a system message is added; `<|channel>thought\n` is appended to the built
+prompt; streamed and final text are split starting inside reasoning that ends
+at `<channel|>`). The llama-cpp-rs fork is pinned to the revision 2.2.5 ships.

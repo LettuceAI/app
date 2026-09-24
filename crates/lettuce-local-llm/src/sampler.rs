@@ -2,8 +2,9 @@
 //! named profiles and their defaults, the stage order (default or the
 //! user's, deduplicated, an explicit empty list meaning no stages), the
 //! penalties/DRY/XTC/typical/min-p parameters, the template's (lazy) grammar
-//! forced to the front, and `dist` when the temperature is positive,
-//! `greedy` otherwise.
+//! forced to the front, and last adaptive-p when the order asks for it and a
+//! target is set, else `dist` when the temperature is positive, `greedy`
+//! otherwise.
 
 use llama_cpp_2::model::{AddBos, LlamaModel};
 use llama_cpp_2::sampling::LlamaSampler;
@@ -16,7 +17,7 @@ use crate::offload::FlashAttentionPolicy;
 pub struct SamplerError(pub String);
 
 pub const DEFAULT_LLAMA_SAMPLER_PROFILE: &str = "balanced";
-pub const DEFAULT_LLAMA_SAMPLER_ORDER: [&str; 9] = [
+pub const DEFAULT_LLAMA_SAMPLER_ORDER: [&str; 10] = [
     "penalties",
     "grammar",
     "top_k",
@@ -26,6 +27,7 @@ pub const DEFAULT_LLAMA_SAMPLER_ORDER: [&str; 9] = [
     "typical",
     "xtc",
     "temp",
+    "adaptive_p",
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -59,6 +61,8 @@ pub struct ResolvedSamplerConfig {
     pub dry_sequence_breakers: Option<Vec<String>>,
     pub xtc_probability: Option<f64>,
     pub xtc_threshold: Option<f64>,
+    pub adaptive_target: Option<f64>,
+    pub adaptive_decay: Option<f64>,
     pub frequency_penalty: Option<f64>,
     pub presence_penalty: Option<f64>,
     pub seed: Option<u32>,
@@ -200,6 +204,7 @@ fn normalize_sampler_stage(value: &str) -> Option<&'static str> {
         "typical" | "typ_p" | "typical_p" => Some("typical"),
         "xtc" => Some("xtc"),
         "temp" | "temperature" => Some("temp"),
+        "adaptive_p" | "adaptivep" | "adaptive" => Some("adaptive_p"),
         _ => None,
     }
 }
@@ -427,6 +432,7 @@ pub fn build_sampler(
             )
         });
 
+    let mut adaptive_requested = false;
     for stage in requested_order {
         match stage {
             "penalties" => {
@@ -481,6 +487,7 @@ pub fn build_sampler(
                 order.push("temp");
                 samplers.push(LlamaSampler::temp(config.temperature as f32));
             }
+            "adaptive_p" => adaptive_requested = true,
             _ => {}
         }
     }
@@ -490,7 +497,21 @@ pub fn build_sampler(
         samplers.insert(0, sampler);
     }
 
-    if config.temperature > 0.0 {
+    let adaptive_target = config
+        .adaptive_target
+        .filter(|_| adaptive_requested)
+        .filter(|target| *target > 0.0 && *target <= 1.0);
+    if let Some(target) = adaptive_target {
+        let decay = config.adaptive_decay.unwrap_or(0.95).clamp(0.0, 0.99);
+        active_params.insert("adaptive_target".to_string(), json!(target));
+        active_params.insert("adaptive_decay".to_string(), json!(decay));
+        order.push("adaptive_p");
+        samplers.push(LlamaSampler::adaptive_p(
+            target as f32,
+            decay as f32,
+            config.seed.unwrap_or_else(rand::random::<u32>),
+        ));
+    } else if config.temperature > 0.0 {
         order.push("dist");
         samplers.push(LlamaSampler::dist(
             config.seed.unwrap_or_else(rand::random::<u32>),
@@ -532,6 +553,16 @@ mod tests {
 
         assert!(normalize_sampler_order(Some(&configured)).is_empty());
         assert_eq!(normalize_sampler_order(None), DEFAULT_LLAMA_SAMPLER_ORDER);
+    }
+
+    #[test]
+    fn adaptive_p_is_part_of_the_default_order_and_accepts_its_aliases() {
+        assert_eq!(DEFAULT_LLAMA_SAMPLER_ORDER.last(), Some(&"adaptive_p"));
+        let configured = vec!["Adaptive".to_string(), "adaptivep".to_string()];
+        assert_eq!(
+            normalize_sampler_order(Some(&configured)),
+            vec!["adaptive_p"]
+        );
     }
 
     #[test]

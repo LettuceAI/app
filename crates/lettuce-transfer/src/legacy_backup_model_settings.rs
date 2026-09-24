@@ -165,30 +165,39 @@ fn sampler_profile(value: &str) -> Option<LlamaSamplerProfile> {
 }
 
 fn sampler_stage(value: &str) -> Option<LlamaSamplerStage> {
-    match value {
+    match value.trim().to_ascii_lowercase().as_str() {
         "penalties" => Some(LlamaSamplerStage::Penalties),
         "grammar" => Some(LlamaSamplerStage::Grammar),
-        "top_k" => Some(LlamaSamplerStage::TopK),
-        "top_p" => Some(LlamaSamplerStage::TopP),
-        "min_p" => Some(LlamaSamplerStage::MinP),
+        "top_k" | "topk" => Some(LlamaSamplerStage::TopK),
+        "top_p" | "topp" => Some(LlamaSamplerStage::TopP),
+        "min_p" | "minp" => Some(LlamaSamplerStage::MinP),
         "dry" => Some(LlamaSamplerStage::Dry),
-        "typical" => Some(LlamaSamplerStage::Typical),
+        "typical" | "typ_p" | "typical_p" => Some(LlamaSamplerStage::Typical),
         "xtc" => Some(LlamaSamplerStage::Xtc),
-        "temp" => Some(LlamaSamplerStage::Temp),
+        "temp" | "temperature" => Some(LlamaSamplerStage::Temp),
+        "adaptive_p" | "adaptivep" | "adaptive" => Some(LlamaSamplerStage::AdaptiveP),
         _ => None,
     }
+}
+
+/// The stages the old runtime ran for a saved order: names normalized,
+/// unknown or non-text entries skipped, repeats dropped.
+fn sampler_order(value: &Value) -> Option<Vec<LlamaSamplerStage>> {
+    let mut order = Vec::new();
+    for stage in value.as_array()?.iter().filter_map(Value::as_str) {
+        if let Some(stage) = sampler_stage(stage)
+            && !order.contains(&stage)
+        {
+            order.push(stage);
+        }
+    }
+    Some(order)
 }
 
 fn llama_sampler(reader: &mut Reader<'_>) -> LlamaSamplerSettings {
     LlamaSamplerSettings {
         profile: reader.choice("llamaSamplerProfile", sampler_profile),
-        order: reader.parse("llamaSamplerOrder", |value| {
-            value
-                .as_array()?
-                .iter()
-                .map(|stage| stage.as_str().and_then(sampler_stage))
-                .collect()
-        }),
+        order: reader.parse("llamaSamplerOrder", sampler_order),
         min_p: reader.f64("llamaMinP", 0.0, 1.0),
         typical_p: reader.f64("llamaTypicalP", 0.0, 1.0),
         repeat_penalty: reader.f64("llamaRepeatPenalty", 0.0, 2.0),
@@ -203,6 +212,8 @@ fn llama_sampler(reader: &mut Reader<'_>) -> LlamaSamplerSettings {
         seed: reader
             .u64("llamaSeed", 0, SEED_MAX)
             .and_then(|value| u32::try_from(value).ok()),
+        adaptive_target: reader.f64("llamaAdaptiveTarget", 0.0, 1.0),
+        adaptive_decay: reader.f64("llamaAdaptiveDecay", 0.0, 0.99),
     }
 }
 
@@ -412,6 +423,7 @@ fn llama_cpp(reader: &mut Reader<'_>) -> LlamaCppSettings {
         mtp_draft_tokens: reader.u32("llamaMtpDraftTokens", 1, 8),
         mtp_model_path: reader.text("llamaMtpModelPath"),
         streaming_enabled: reader.bool("llamaStreamingEnabled"),
+        force_gemma4_reasoning: reader.bool("forceGemma4Reasoning"),
         sampler: llama_sampler(reader),
     }
 }
@@ -633,6 +645,7 @@ pub(crate) fn legacy_settings_layer(
     let present = |key: &str| object.get(key).is_some_and(|value| !value.is_null());
     let mut lossy = parameters.lossy_fields;
     let mut chat_parameters = parameters.chat_parameters;
+    let mut llama_cpp = parameters.llama_cpp;
     let mut ignored = vec![
         "promptCachingEnabled",
         "promptCachingTtl",
@@ -649,7 +662,9 @@ pub(crate) fn legacy_settings_layer(
             "reasoningEnabled",
             "reasoningEffort",
             "reasoningBudgetTokens",
+            "forceGemma4Reasoning",
         ]);
+        llama_cpp.force_gemma4_reasoning = None;
         chat_parameters.send_thinking_state = None;
         chat_parameters.top_k = None;
         chat_parameters.frequency_penalty = None;
@@ -678,7 +693,7 @@ pub(crate) fn legacy_settings_layer(
     (
         lettuce_models::ModelSettingsLayer {
             chat_parameters,
-            llama_cpp: parameters.llama_cpp,
+            llama_cpp,
             stable_diffusion: StableDiffusionSettings::default(),
         },
         lossy,
@@ -722,6 +737,7 @@ fn sampler_stage_name(stage: LlamaSamplerStage) -> &'static str {
         LlamaSamplerStage::Typical => "typical",
         LlamaSamplerStage::Xtc => "xtc",
         LlamaSamplerStage::Temp => "temp",
+        LlamaSamplerStage::AdaptiveP => "adaptive_p",
     }
 }
 
@@ -754,6 +770,8 @@ fn write_sampler(writer: &mut Writer, sampler: &LlamaSamplerSettings) {
     writer.put("llamaXtcProbability", sampler.xtc_probability);
     writer.put("llamaXtcThreshold", sampler.xtc_threshold);
     writer.put("llamaSeed", sampler.seed);
+    writer.put("llamaAdaptiveTarget", sampler.adaptive_target);
+    writer.put("llamaAdaptiveDecay", sampler.adaptive_decay);
 }
 
 fn feature_slot_value(slot: &FeatureGenerationParameters) -> Option<Value> {
@@ -942,6 +960,7 @@ pub fn legacy_advanced_model_settings(
     writer.put("llamaMtpDraftTokens", llama.mtp_draft_tokens);
     writer.put("llamaMtpModelPath", llama.mtp_model_path.clone());
     writer.put("llamaStreamingEnabled", llama.streaming_enabled);
+    writer.put("forceGemma4Reasoning", llama.force_gemma4_reasoning);
     write_sampler(&mut writer, &llama.sampler);
     writer.put("sdSteps", sd.steps);
     writer.put("sdCfgScale", sd.cfg_scale);

@@ -99,6 +99,9 @@ pub fn resolve_llama_settings(
         mtp_draft_tokens: pick!(mtp_draft_tokens),
         mtp_model_path: pick!(mtp_model_path),
         streaming_enabled: pick!(streaming_enabled),
+        force_gemma4_reasoning: model
+            .force_gemma4_reasoning
+            .or(input.session.force_gemma4_reasoning),
         sampler: LlamaSamplerSettings {
             profile: pick!(sampler.profile),
             order: pick!(sampler.order),
@@ -114,6 +117,8 @@ pub fn resolve_llama_settings(
             xtc_probability: pick!(sampler.xtc_probability),
             xtc_threshold: pick!(sampler.xtc_threshold),
             seed: pick!(sampler.seed),
+            adaptive_target: pick!(sampler.adaptive_target),
+            adaptive_decay: pick!(sampler.adaptive_decay),
         },
     };
     let Some(memory) = input.memory_sampler else {
@@ -152,6 +157,8 @@ pub fn resolve_llama_settings(
         xtc_probability,
         xtc_threshold,
         seed,
+        adaptive_target: None,
+        adaptive_decay: None,
     };
     ResolvedLlamaSettings {
         settings,
@@ -163,6 +170,34 @@ pub fn resolve_llama_settings(
 mod tests {
     use super::*;
     use crate::{LlamaKvType, LlamaSamplerProfile};
+
+    #[test]
+    fn forced_gemma4_reasoning_takes_the_model_then_the_session_and_never_the_app() {
+        let resolve = |model: Option<bool>, session: Option<bool>, global: Option<bool>| {
+            resolve_llama_settings(
+                &LlamaCppSettings {
+                    force_gemma4_reasoning: model,
+                    ..LlamaCppSettings::default()
+                },
+                &LlamaResolutionInput {
+                    session: LlamaCppSettings {
+                        force_gemma4_reasoning: session,
+                        ..LlamaCppSettings::default()
+                    },
+                    global: LlamaCppSettings {
+                        force_gemma4_reasoning: global,
+                        ..LlamaCppSettings::default()
+                    },
+                    memory_sampler: None,
+                },
+            )
+            .settings
+            .force_gemma4_reasoning
+        };
+        assert_eq!(resolve(Some(false), Some(true), None), Some(false));
+        assert_eq!(resolve(None, Some(true), None), Some(true));
+        assert_eq!(resolve(None, None, Some(true)), None);
+    }
 
     #[test]
     fn fields_resolve_session_then_model_then_app() {

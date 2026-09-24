@@ -20,7 +20,9 @@ use std::sync::mpsc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use base64::Engine as _;
-use lettuce_inference::thinking::{ThinkingTagParser, normalize_thinking_content};
+use lettuce_inference::thinking::{
+    ThinkingTagParser, normalize_thinking_content, normalize_thinking_content_starting_in_reasoning,
+};
 use llama_cpp_2::context::LlamaContext;
 use llama_cpp_2::context::params::{KvCacheType, LlamaContextParams};
 use llama_cpp_2::llama_batch::LlamaBatch;
@@ -51,8 +53,9 @@ use crate::offload::{
     select_mtp_gpu_device,
 };
 use crate::prompt::{
-    BuiltPrompt, OpenAICompatPromptOptions, PromptRequest, add_bos_label, build_prompt,
-    inject_media_markers, model_tokenizer_add_bos_label, model_tokenizer_adds_bos,
+    BuiltPrompt, GEMMA4_REASONING_CLOSE, GEMMA4_REASONING_PREFILL, OpenAICompatPromptOptions,
+    PromptRequest, add_bos_label, build_prompt, inject_media_markers,
+    model_tokenizer_add_bos_label, model_tokenizer_adds_bos, prepend_reasoning_system_prefix,
     prompt_add_bos_reason, prompt_mode_label, resolve_prompt_add_bos, token_piece_bytes,
 };
 use crate::request::{
@@ -794,11 +797,14 @@ fn generate(
             "llama.cpp multimodal requests require `llamaMmprojPath` (or `llama_mmproj_path`) to load the multimodal projector".to_string(),
         ));
     }
-    let prompt_messages = if media.is_empty() {
+    let mut prompt_messages = if media.is_empty() {
         Cow::Borrowed(request.messages.as_slice())
     } else {
         Cow::Owned(inject_media_markers(&request.messages))
     };
+    if request.reasoning.force_gemma4_reasoning {
+        prompt_messages = Cow::Owned(prepend_reasoning_system_prefix(&prompt_messages));
+    }
     let requested_context = request.requested_context();
     let max_tokens = request.max_tokens();
     tracing::info!(
@@ -1883,7 +1889,7 @@ impl Run<'_> {
         );
 
         self.failure_stage = "build_prompt";
-        let built_prompt = build_prompt(
+        let mut built_prompt = build_prompt(
             model,
             &PromptRequest {
                 messages: &self.prompt_messages,
@@ -1895,6 +1901,13 @@ impl Run<'_> {
                 options: &self.options,
             },
         )?;
+        if self.request.reasoning.force_gemma4_reasoning {
+            built_prompt.prompt.push_str(GEMMA4_REASONING_PREFILL);
+            tracing::info!(
+                prefill = GEMMA4_REASONING_PREFILL,
+                "forced reasoning prefill appended to prompt"
+            );
+        }
         if built_prompt.chat_template_result.is_some() {
             tracing::debug!(
                 payload = %self.structured_debug_payload(&built_prompt),
@@ -2638,6 +2651,8 @@ impl Run<'_> {
             frequency_penalty: self.sampling.frequency_penalty,
             presence_penalty: self.sampling.presence_penalty,
             seed: self.sampling.seed,
+            adaptive_target: self.sampling.adaptive_target,
+            adaptive_decay: self.sampling.adaptive_decay,
         };
         self.check_abort()?;
         let built_sampler = build_sampler(
@@ -2654,7 +2669,11 @@ impl Run<'_> {
         );
         let mut sampler = built_sampler.sampler;
         let stream = self.request.stream;
-        let mut thinking = ThinkingTagParser::default();
+        let mut thinking = if self.request.reasoning.force_gemma4_reasoning {
+            ThinkingTagParser::starting_in_reasoning(GEMMA4_REASONING_CLOSE)
+        } else {
+            ThinkingTagParser::default()
+        };
         let mut structured_parser = if stream && built_prompt.native_tool_parse_supported {
             built_prompt
                 .chat_template_result
@@ -2982,10 +3001,16 @@ impl Run<'_> {
             .and_then(Value::as_str)
             .map(ToOwned::to_owned);
         let raw_content = extract_text_content(self.final_message.get("content"));
-        let normalized = normalize_thinking_content(
-            raw_content.as_deref().filter(|value| !value.is_empty()),
-            explicit_reasoning.as_deref(),
-        );
+        let content = raw_content.as_deref().filter(|value| !value.is_empty());
+        let normalized = if self.request.reasoning.force_gemma4_reasoning {
+            normalize_thinking_content_starting_in_reasoning(
+                content,
+                explicit_reasoning.as_deref(),
+                GEMMA4_REASONING_CLOSE,
+            )
+        } else {
+            normalize_thinking_content(content, explicit_reasoning.as_deref())
+        };
         if let Some(message) = self.final_message.as_object_mut() {
             message.insert("content".to_string(), json!(normalized.content));
             message.remove("reasoning_content");

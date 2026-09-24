@@ -293,6 +293,7 @@ fn generation_request(
             enable_thinking,
             chat_template_kwargs,
             parallel_tool_calls: tools.is_some(),
+            force_gemma4_reasoning: llama.settings.force_gemma4_reasoning == Some(true),
         },
         sampling: sampling(parameters, llama),
         runtime: runtime_input(settings),
@@ -330,6 +331,7 @@ fn sampling(
                         LlamaSamplerStage::Typical => "typical",
                         LlamaSamplerStage::Xtc => "xtc",
                         LlamaSamplerStage::Temp => "temp",
+                        LlamaSamplerStage::AdaptiveP => "adaptive_p",
                     }
                     .to_owned()
                 })
@@ -352,6 +354,8 @@ fn sampling(
         xtc_probability: sampler.xtc_probability,
         xtc_threshold: sampler.xtc_threshold,
         seed: sampler.seed,
+        adaptive_target: sampler.adaptive_target,
+        adaptive_decay: sampler.adaptive_decay,
     }
 }
 

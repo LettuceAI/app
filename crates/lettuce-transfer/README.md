@@ -933,3 +933,11 @@ legacy database and the legacy backup paths, and the plain-text key becomes a
 `SproutApiKey` secret (pending source kind `provider_sprout_api_key`); a URL
 that is not http(s) is left out with a lossy notice. Provider backups list and
 rebind the Sprout secret with the account's other secrets.
+
+Legacy llama sampler orders import as the old runtime read them: names are
+trimmed and lowercased, aliases accepted (`topk`, `typ_p`, `temperature`,
+`adaptive`, ...), unknown entries skipped and repeats dropped. Before, one
+unknown entry dropped the whole order, which lost every order saved by 2.2.5
+(whose default includes `adaptive_p`). `llamaAdaptiveTarget`,
+`llamaAdaptiveDecay` (also in feature slots) and `forceGemma4Reasoning` map to
+typed settings.

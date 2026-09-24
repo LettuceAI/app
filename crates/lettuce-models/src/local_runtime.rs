@@ -72,6 +72,7 @@ pub enum LlamaSamplerStage {
     Typical,
     Xtc,
     Temp,
+    AdaptiveP,
 }
 
 /// llama.cpp sampler settings. Every field is optional; an unset field leaves
@@ -107,11 +108,29 @@ pub struct LlamaSamplerSettings {
     pub xtc_threshold: Option<f64>,
     #[serde(default)]
     pub seed: Option<u32>,
+    /// The adaptive-p target probability; the sampler replaces the final
+    /// `dist`/`greedy` step when the order includes `adaptive_p` and the
+    /// target is above zero, and zero turns it off.
+    #[serde(default)]
+    pub adaptive_target: Option<f64>,
+    #[serde(default)]
+    pub adaptive_decay: Option<f64>,
 }
 
 impl LlamaSamplerSettings {
     pub fn is_empty(&self) -> bool {
         *self == Self::default()
+    }
+
+    /// Whether a feature slot changes the sampler in a way that keeps the
+    /// fixed memory sampler from applying; the adaptive-p values do not.
+    #[must_use]
+    pub fn overrides_memory_sampler(&self) -> bool {
+        Self {
+            adaptive_target: None,
+            adaptive_decay: None,
+            ..self.clone()
+        } != Self::default()
     }
 
     pub fn validate(&self) -> Result<(), ParameterValidationError> {
@@ -130,6 +149,8 @@ impl LlamaSamplerSettings {
         )?;
         check_f64("llama_xtc_probability", self.xtc_probability, 0.0, 1.0)?;
         check_f64("llama_xtc_threshold", self.xtc_threshold, 0.0, 1.0)?;
+        check_f64("llama_adaptive_target", self.adaptive_target, 0.0, 1.0)?;
+        check_f64("llama_adaptive_decay", self.adaptive_decay, 0.0, 0.99)?;
         check_u32("llama_seed", self.seed, 0, SEED_MAX)
     }
 }
@@ -286,6 +307,10 @@ pub struct LlamaCppSettings {
     pub mtp_model_path: Option<String>,
     #[serde(default)]
     pub streaming_enabled: Option<bool>,
+    /// Gemma4-series forced reasoning; the model's value wins over the
+    /// session's and app settings have none.
+    #[serde(default)]
+    pub force_gemma4_reasoning: Option<bool>,
     #[serde(default)]
     pub sampler: LlamaSamplerSettings,
 }

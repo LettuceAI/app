@@ -25,6 +25,17 @@ const TAG_PAIRS: [(&str, &str); 6] = [
 ];
 
 impl ThinkingTagParser {
+    /// A parser that starts inside reasoning ending at `close_tag`, for a
+    /// reply prefilled with the reasoning opener.
+    #[must_use]
+    pub fn starting_in_reasoning(close_tag: &'static str) -> Self {
+        Self {
+            in_think: true,
+            close_tag: Some(close_tag),
+            pending: String::new(),
+        }
+    }
+
     /// Feeds one chunk; a possible partial tag at the end is held back.
     pub fn feed(&mut self, chunk: &str) -> ThinkingSplit {
         self.pending.push_str(chunk);
@@ -103,7 +114,35 @@ pub fn normalize_thinking_content(
     content: Option<&str>,
     explicit_reasoning: Option<&str>,
 ) -> ThinkingSplit {
-    let mut split = content.map(split_thinking_tags).unwrap_or_default();
+    merge_explicit_reasoning(
+        content.map(split_thinking_tags).unwrap_or_default(),
+        explicit_reasoning,
+    )
+}
+
+/// [`normalize_thinking_content`] for a reply that starts inside reasoning
+/// ending at `close_tag`.
+#[must_use]
+pub fn normalize_thinking_content_starting_in_reasoning(
+    content: Option<&str>,
+    explicit_reasoning: Option<&str>,
+    close_tag: &'static str,
+) -> ThinkingSplit {
+    let split = content.map(|text| {
+        let mut parser = ThinkingTagParser::starting_in_reasoning(close_tag);
+        let mut split = parser.feed(text);
+        let tail = parser.finish();
+        split.content.push_str(&tail.content);
+        split.reasoning.push_str(&tail.reasoning);
+        split
+    });
+    merge_explicit_reasoning(split.unwrap_or_default(), explicit_reasoning)
+}
+
+fn merge_explicit_reasoning(
+    mut split: ThinkingSplit,
+    explicit_reasoning: Option<&str>,
+) -> ThinkingSplit {
     if let Some(reasoning) = explicit_reasoning
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -143,6 +182,22 @@ fn earliest_open_tag(buffer: &str) -> Option<(usize, &'static str, &'static str)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_prefilled_reply_starts_inside_reasoning() {
+        let mut parser = ThinkingTagParser::starting_in_reasoning("<channel|>");
+        let first = parser.feed("weighing it<chan");
+        assert_eq!(first.reasoning, "weighing it");
+        let second = parser.feed("nel|>Answer");
+        assert_eq!(second.content, "Answer");
+        let whole = normalize_thinking_content_starting_in_reasoning(
+            Some(" plan <channel|> reply "),
+            Some("plan"),
+            "<channel|>",
+        );
+        assert_eq!(whole.reasoning, "plan");
+        assert_eq!(whole.content, "reply");
+    }
 
     #[test]
     fn streamed_tags_split_across_chunks() {

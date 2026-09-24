@@ -116,6 +116,45 @@ pub struct BuiltPrompt {
     pub tool_template_diagnostics: Option<String>,
 }
 
+/// The reply prefill that opens Gemma4's thought channel.
+pub const GEMMA4_REASONING_PREFILL: &str = "<|channel>thought\n";
+
+/// The marker that closes Gemma4's thought channel.
+pub const GEMMA4_REASONING_CLOSE: &str = "<channel|>";
+
+/// The messages with the think marker at the start of the first system
+/// message, which is added when there is none: Gemma templates accept only
+/// one leading system message.
+#[must_use]
+pub fn prepend_reasoning_system_prefix(messages: &[Value]) -> Vec<Value> {
+    const THINK_OPENER: &str = "<|think|>\n";
+    let mut out = messages.to_vec();
+    if let Some(system) = out
+        .iter_mut()
+        .find(|message| message.get("role").and_then(Value::as_str) == Some("system"))
+    {
+        match system.get("content").cloned() {
+            Some(Value::String(text)) => {
+                system["content"] = Value::String(format!("{THINK_OPENER}{text}"));
+            }
+            Some(Value::Array(mut parts)) => {
+                parts.insert(
+                    0,
+                    serde_json::json!({ "type": "text", "text": THINK_OPENER }),
+                );
+                system["content"] = Value::Array(parts);
+            }
+            _ => system["content"] = Value::String(THINK_OPENER.to_string()),
+        }
+    } else {
+        out.insert(
+            0,
+            serde_json::json!({ "role": "system", "content": THINK_OPENER }),
+        );
+    }
+    out
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct OpenAICompatPromptOptions {
     pub reasoning_format: Option<String>,
@@ -680,6 +719,27 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn the_think_marker_opens_the_first_system_message() {
+        let text = prepend_reasoning_system_prefix(&[
+            json!({"role": "user", "content": "hi"}),
+            json!({"role": "system", "content": "Be kind."}),
+            json!({"role": "system", "content": "Second."}),
+        ]);
+        assert_eq!(text[1]["content"], "<|think|>\nBe kind.");
+        assert_eq!(text[2]["content"], "Second.");
+        let parts = prepend_reasoning_system_prefix(&[json!({
+            "role": "system",
+            "content": [{"type": "text", "text": "Be kind."}]
+        })]);
+        assert_eq!(parts[0]["content"][0]["text"], "<|think|>\n");
+        assert_eq!(parts[0]["content"][1]["text"], "Be kind.");
+        let none = prepend_reasoning_system_prefix(&[json!({"role": "user", "content": "hi"})]);
+        assert_eq!(none[0], json!({"role": "system", "content": "<|think|>\n"}));
+        let empty = prepend_reasoning_system_prefix(&[json!({"role": "system", "content": null})]);
+        assert_eq!(empty[0]["content"], "<|think|>\n");
+    }
 
     #[test]
     fn detects_gemma_style_tool_markers() {

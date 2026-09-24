@@ -4878,7 +4878,10 @@ mod tests {
             "llamaKvPlacement": "systemRam",
             "llamaThreads": 999,
             "llamaSamplerProfile": " Creative ",
-            "llamaSamplerOrder": ["top_k", "temp"],
+            "llamaSamplerOrder": ["TopK", "adaptive", "bogus", "temperature", "top_k"],
+            "llamaAdaptiveTarget": 0.4,
+            "llamaAdaptiveDecay": 1.5,
+            "forceGemma4Reasoning": true,
             "llamaMtpModelPath": null,
             "llamaLastRuntimeReport": {"backend": "vulkan"},
             "sdSteps": 28,
@@ -4917,8 +4920,15 @@ mod tests {
         assert_eq!(llama.sampler.profile, Some(LlamaSamplerProfile::Creative));
         assert_eq!(
             llama.sampler.order,
-            Some(vec![LlamaSamplerStage::TopK, LlamaSamplerStage::Temp])
+            Some(vec![
+                LlamaSamplerStage::TopK,
+                LlamaSamplerStage::AdaptiveP,
+                LlamaSamplerStage::Temp
+            ])
         );
+        assert_eq!(llama.sampler.adaptive_target, Some(0.4));
+        assert_eq!(llama.sampler.adaptive_decay, None);
+        assert_eq!(llama.force_gemma4_reasoning, Some(true));
         let diffusion = &parameters.stable_diffusion;
         assert_eq!(diffusion.steps, Some(28));
         assert_eq!(
@@ -4952,6 +4962,7 @@ mod tests {
             parameters.lossy_fields,
             vec![
                 "featureGenerationSettings.helpMeReply.ollamaStop".to_owned(),
+                "llamaAdaptiveDecay".to_owned(),
                 "llamaLastRuntimeReport".to_owned(),
                 "llamaThreads".to_owned(),
                 "ollamaRepeatPenalty".to_owned(),
