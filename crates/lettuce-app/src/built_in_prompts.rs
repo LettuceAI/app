@@ -749,7 +749,6 @@ fn is_registered_legacy_variable(value: &str) -> bool {
             | "lora_keywords[character]"
             | "lora_keywords[persona]"
             | "image_model_instructions"
-            | "retrieved_memories"
             | "regenerate_guidance"
             | "selection_participants"
             | "selection_recent_messages"

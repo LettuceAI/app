@@ -53,6 +53,22 @@ fn scenario_with_resolvable_profile(
     prefix: &str,
     persist_resolvable_profile: bool,
 ) -> Scenario {
+    direct_scenario(
+        database,
+        dynamic_memory,
+        prefix,
+        persist_resolvable_profile,
+        true,
+    )
+}
+
+fn direct_scenario(
+    database: &Database,
+    dynamic_memory: bool,
+    prefix: &str,
+    persist_resolvable_profile: bool,
+    character_prompt: bool,
+) -> Scenario {
     let model_id = seed_model(database, ProviderProtocol::Ollama, "ollama");
     if persist_resolvable_profile {
         let mut model = ModelProfileRepository::get(database, model_id)
@@ -68,9 +84,10 @@ fn scenario_with_resolvable_profile(
             .expect("resolvable model profile");
     }
     set_application_default_model(database, model_id);
-    let empty_prompt = seed_prompt(database, "Scenario prompt", PromptPurpose::DirectChat);
+    let empty_prompt = character_prompt
+        .then(|| seed_prompt(database, "Scenario prompt", PromptPurpose::DirectChat));
     let character_id = seed_character(database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
-        defaults.direct_prompt_id = Some(empty_prompt);
+        defaults.direct_prompt_id = empty_prompt;
         if dynamic_memory {
             defaults.memory_policy = MemoryPolicy::Dynamic;
         }
@@ -300,6 +317,24 @@ fn group_scenario_with_message(
     mute_second: bool,
     message: &str,
 ) -> (Scenario, Vec<lettuce_types::ConversationParticipantId>) {
+    group_scenario_with(
+        backend,
+        prefix,
+        speaker_selection,
+        mute_second,
+        message,
+        |_| {},
+    )
+}
+
+fn group_scenario_with(
+    backend: &AppBackend,
+    prefix: &str,
+    speaker_selection: lettuce_characters::SpeakerSelection,
+    mute_second: bool,
+    message: &str,
+    configure: impl FnOnce(&mut GroupProfile),
+) -> (Scenario, Vec<lettuce_types::ConversationParticipantId>) {
     let database = backend.database();
     let model_id = seed_model(database, ProviderProtocol::Ollama, "ollama");
     set_application_default_model(database, model_id);
@@ -340,6 +375,7 @@ fn group_scenario_with_message(
     muted.muted = mute_second;
     let group_id = seed_group(database, vec![member(first, 0), muted], None, |group| {
         group.speaker_selection = speaker_selection;
+        configure(group);
     });
     let launched = ConversationLaunchPlanner::new(database)
         .launch_group(&group_request(group_id, &format!("{prefix}-launch")), NOW)
@@ -2313,8 +2349,7 @@ async fn app_backend_builds_dynamic_memory_input_and_replays_exactly() {
         assert_eq!(
             system_texts,
             [
-                "Relevant memories:\n- Mira prefers tea by the harbor.",
-                "# Key Memories\nImportant facts to remember in this conversation:\n- Mira catalogued the northern lighthouse.",
+                "# Key Memories\nImportant facts to remember in this conversation:\n- Mira prefers tea by the harbor."
             ]
         );
         assert!(requests[0].context.messages.iter().any(|message| {
@@ -2422,6 +2457,277 @@ async fn app_backend_builds_dynamic_memory_input_and_replays_exactly() {
             .expect("memory after replay")
             .expect("memory exists after replay"),
         accessed
+    );
+}
+
+fn enable_retrieval_only_dynamic_memory(database: &Database) {
+    let stored = GlobalSettingsStore::load(database).expect("settings");
+    let mut settings = stored.settings;
+    settings.dynamic_memory.enabled = true;
+    settings.dynamic_memory.retrieval_limit = 1;
+    settings.dynamic_memory.min_similarity_basis_points = 5_000;
+    GlobalSettingsStore::save(
+        database,
+        settings,
+        stored.default_model_profile_id,
+        stored.revision,
+    )
+    .expect("enable dynamic memory");
+}
+
+fn seed_retrieved_and_hot_memories(database: &Database, space_id: MemorySpaceId) {
+    let stored = MemoryRepository::get(database, space_id)
+        .expect("memory")
+        .expect("memory exists");
+    let memory = |text: &str, is_cold: bool, observed_at: Option<TimestampMillis>| {
+        let id = MemoryId::new();
+        MemoryItem {
+            id,
+            short_id: lettuce_memory::MemoryShortId::derived(id),
+            text: text.into(),
+            category: MemoryCategory::WorldDetail,
+            source_message_id: observed_at.map(|_| lettuce_types::MessageId::new()),
+            source_role: observed_at.map(|_| MessageRole::User),
+            observed_at,
+            observed_time_precision: observed_at.map(|_| "turn".into()),
+            superseded_by: None,
+            superseded_at: None,
+            supersedes: vec![],
+            token_count: 6,
+            is_cold,
+            is_pinned: false,
+            importance: Score::from_basis_points(4_000).expect("score"),
+            persistence_importance: Score::from_basis_points(4_000).expect("score"),
+            prompt_importance: Score::from_basis_points(4_000).expect("score"),
+            volatility: Score::LEGACY_VOLATILITY,
+            access_count: 0,
+            created_at: TimestampMillis::new(900),
+            last_accessed_at: TimestampMillis::new(900),
+        }
+    };
+    let retrieved = memory(
+        "Mira prefers tea by the harbor.",
+        true,
+        Some(TimestampMillis::new(1_000)),
+    );
+    let hot = memory("Mira catalogued the northern lighthouse.", false, None);
+    MemoryRepository::compare_and_apply(
+        database,
+        MemoryChangeSet {
+            space_id,
+            expected_revision: stored.revision,
+            items: vec![retrieved.clone(), hot.clone()],
+        },
+    )
+    .expect("seed memories");
+    for (item, axis) in [(&retrieved, 0), (&hot, 1)] {
+        let mut values = vec![0.0; 128];
+        values[axis] = 1.0;
+        MemoryEmbeddingRepository::put_ready(
+            database,
+            MemoryEmbeddingProjection {
+                space_id,
+                memory_id: item.id,
+                source_text: item.text.clone(),
+                vector: EmbeddingVector {
+                    source_revision: "scenario-v1".into(),
+                    values,
+                },
+                dimensions: EmbeddingDimensions::D128,
+                updated_at: TimestampMillis::new(1_012),
+            },
+        )
+        .expect("seed projection");
+    }
+}
+
+fn request_system_texts(inference: &ScriptedInference) -> Vec<String> {
+    inference.requests.lock().expect("requests")[0]
+        .context
+        .messages
+        .iter()
+        .filter(|message| message.role == MessageRole::System)
+        .flat_map(|message| &message.parts)
+        .filter_map(|part| match part {
+            ProviderContextPart::Text { text } => Some(text.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn bundled_default_prompt_renders_only_retrieved_memories_in_a_dynamic_direct_chat() {
+    use chrono::TimeZone;
+
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    enable_retrieval_only_dynamic_memory(backend.database());
+    let scenario = direct_scenario(backend.database(), true, "bundled-dynamic", true, false);
+    let conversation = ConversationReader::get(backend.database(), scenario.conversation_id)
+        .expect("conversation")
+        .conversation;
+    let ConversationKind::Direct(details) = &conversation.kind else {
+        panic!("expected a direct conversation");
+    };
+    match &details.prompt {
+        SnapshotSelection::Inherited(prompt) => assert_eq!(
+            prompt.source_id,
+            backend
+                .built_in_prompt_ids()
+                .get(crate::BuiltInPromptId::AppDefault)
+        ),
+        other => panic!("expected the bundled app default prompt, got {other:?}"),
+    }
+    seed_retrieved_and_hot_memories(
+        backend.database(),
+        scenario.space_id.expect("dynamic memory space"),
+    );
+    let observed = chrono::Local
+        .timestamp_millis_opt(1_000)
+        .single()
+        .expect("local observation time")
+        .format("%Y-%m-%d %H:%M");
+    let key_memories = format!(
+        "# Key Memories\nImportant facts to remember in this conversation:\n- Mira prefers tea by the harbor. (observed {observed}, just now)"
+    );
+    let assert_retrieved_only = |system_texts: &[String]| {
+        assert!(
+            system_texts
+                .iter()
+                .any(|text| text.starts_with("# Your Character: ")),
+            "{system_texts:?}"
+        );
+        assert_eq!(
+            system_texts
+                .iter()
+                .filter(|text| text.contains("Mira"))
+                .collect::<Vec<_>>(),
+            [&key_memories],
+            "{system_texts:?}"
+        );
+        assert!(
+            system_texts
+                .iter()
+                .all(|text| !text.contains("Relevant memories")
+                    && !text.contains("northern lighthouse")),
+            "{system_texts:?}"
+        );
+    };
+    let engine = ScenarioEmbeddingEngine;
+    let work = admit_and_claim(backend.database(), &scenario, 1_015);
+    let inference = scripted(vec![text_outcome(
+        "bundled-dynamic-response",
+        "Tea it is.",
+        9,
+        3,
+    )]);
+    let sent = backend
+        .prepared_conversation_generation_runner(&engine, &inference)
+        .run(
+            &work,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_020),
+        )
+        .await
+        .expect("send in a bundled-prompt dynamic chat");
+    assert_retrieved_only(&request_system_texts(&inference));
+
+    let current = ConversationReader::get(backend.database(), scenario.conversation_id)
+        .expect("conversation after send")
+        .conversation;
+    let regenerated = backend
+        .database()
+        .begin_regenerate(
+            &lettuce_conversations::RegenerateCandidate {
+                conversation_id: current.id,
+                branch_id: current.active_branch_id,
+                message_id: sent.candidate.message_id,
+                turn_id: sent.turn.id,
+                expected_revision: current.revision,
+                expected_turn_revision: sent.turn.revision,
+                operation: OperationToken {
+                    key: key("bundled-dynamic-regenerate"),
+                    request_digest: ContentHash::parse("cf".repeat(32)).expect("digest"),
+                },
+                active_candidate_id: sent.candidate.id,
+                guidance: None,
+                model_override: None,
+                forced_speaker: None,
+                swap_roles: false,
+            },
+            TimestampMillis::new(1_021),
+        )
+        .expect("begin regeneration")
+        .value;
+    let regenerated_scenario = Scenario {
+        turn_id: regenerated.turn.id,
+        attempt_id: regenerated.attempt.id,
+        ..scenario
+    };
+    let regenerated_work = admit_and_claim(backend.database(), &regenerated_scenario, 1_022);
+    let regenerated_inference = scripted(vec![text_outcome(
+        "bundled-dynamic-regenerate-response",
+        "Tea again.",
+        9,
+        3,
+    )]);
+    backend
+        .prepared_conversation_generation_runner(&engine, &regenerated_inference)
+        .run(
+            &regenerated_work,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_024),
+        )
+        .await
+        .expect("regenerate in a bundled-prompt dynamic chat");
+    assert_retrieved_only(&request_system_texts(&regenerated_inference));
+}
+
+#[tokio::test]
+async fn dynamic_group_chats_keep_retrieved_key_memories_without_observation_notes() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    enable_retrieval_only_dynamic_memory(backend.database());
+    let (scenario, _) = group_scenario_with(
+        &backend,
+        "group-dynamic",
+        lettuce_characters::SpeakerSelection::Heuristic,
+        false,
+        "Remember tea.",
+        |group| group.memory_policy = MemoryPolicy::Dynamic,
+    );
+    let space =
+        MemoryRepository::get_for_conversation(backend.database(), scenario.conversation_id)
+            .expect("group memory space")
+            .expect("group memory exists");
+    seed_retrieved_and_hot_memories(backend.database(), space.id);
+    let work = admit_and_claim(backend.database(), &scenario, 1_015);
+    let inference = scripted(vec![text_outcome(
+        "group-dynamic-response",
+        "Ada nods.",
+        9,
+        3,
+    )]);
+    let engine = ScenarioEmbeddingEngine;
+    backend
+        .prepared_conversation_generation_runner(&engine, &inference)
+        .run(
+            &work,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_020),
+        )
+        .await
+        .expect("run a dynamic group turn");
+    let system_texts = request_system_texts(&inference);
+    assert!(
+        system_texts.iter().any(|text| text.contains(
+            "# Key Memories\nImportant facts to remember in this conversation:\n- Mira prefers tea by the harbor."
+        )),
+        "{system_texts:?}"
+    );
+    assert!(
+        system_texts.iter().all(|text| !text.contains("(observed ")
+            && !text.contains("Relevant memories")
+            && !text.contains("northern lighthouse")),
+        "{system_texts:?}"
     );
 }
 

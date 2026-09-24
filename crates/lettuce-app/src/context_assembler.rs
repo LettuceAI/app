@@ -180,9 +180,7 @@ where
         let memory_text = request
             .memory
             .as_ref()
-            .filter(|memory| {
-                !memory.key_memories.is_empty() || !memory.relevant_memories.is_empty()
-            })
+            .filter(|memory| !memory.key_memories.is_empty())
             .map(|_| {
                 crate::runtime_text::RuntimeText::load(
                     self.sources,
@@ -211,20 +209,7 @@ where
         let key_lines = request
             .memory
             .as_ref()
-            .map(|memory| memory_lines(&memory.key_memories, false))
-            .transpose()?
-            .unwrap_or_default();
-        let observed_key_lines = request
-            .memory
-            .as_ref()
-            .map(|memory| memory_lines(&memory.key_memories, true))
-            .transpose()?
-            .unwrap_or_default();
-        let relevant_memories = request
-            .memory
-            .as_ref()
-            .filter(|_| !group)
-            .map(|memory| memory_lines(&memory.relevant_memories, true))
+            .map(|memory| memory_lines(&memory.key_memories, !group))
             .transpose()?
             .unwrap_or_default();
         let memory_summary = request
@@ -248,14 +233,7 @@ where
         );
         runtime_values.author_note = runtime_values.author_note.trim().to_owned();
         runtime_values.context_summary = memory_summary.clone();
-        runtime_values.key_memories = if group {
-            key_lines.clone()
-        } else {
-            observed_key_lines.clone()
-        };
-        runtime_values
-            .purpose_values
-            .insert(PromptVariable::RetrievedMemories, relevant_memories.clone());
+        runtime_values.key_memories = key_lines.clone();
         let guidance = request
             .guidance
             .as_deref()
@@ -328,59 +306,51 @@ where
 
         let (mut messages, mut in_chat_messages) = prompt_messages(&rendered_prompt)?;
         let mut runtime_relative = Vec::new();
-        let mut place = |section: Option<RuntimeSection>, first: bool| {
+        let mut place = |section: Option<RuntimeSection>| {
             let Some(section) = section else {
                 return;
             };
-            match (section.depth, first) {
-                (None, true) => runtime_relative.insert(0, section.message),
-                (None, false) => runtime_relative.push(section.message),
-                (Some(depth), true) => in_chat_messages.insert(0, (depth, section.message)),
-                (Some(depth), false) => in_chat_messages.push((depth, section.message)),
+            match section.depth {
+                None => runtime_relative.push(section.message),
+                Some(depth) => in_chat_messages.push((depth, section.message)),
             }
         };
-        if !relevant_memories.is_empty() {
-            place(runtime.section("runtime_retrieved_memories"), true);
-        }
         let summary_placeholder = template_has_placeholder(prompt, "{{context_summary}}");
         let keys_placeholder = template_has_placeholder(prompt, "{{key_memories}}");
         let memory_used = if group {
             (!memory_summary.is_empty() && summary_placeholder)
                 || (!key_lines.is_empty() && keys_placeholder)
         } else {
-            !memory_summary.is_empty() || !key_lines.is_empty() || !relevant_memories.is_empty()
+            !memory_summary.is_empty() || !key_lines.is_empty()
         };
         if !group && !memory_summary.is_empty() && !summary_placeholder {
-            place(runtime.section("runtime_context_summary"), false);
+            place(runtime.section("runtime_context_summary"));
         }
         if !group && !key_lines.is_empty() && !keys_placeholder {
-            place(runtime.section("runtime_key_memories"), false);
+            place(runtime.section("runtime_key_memories"));
         }
         if !lorebook_text.trim().is_empty() && !template_has_placeholder(prompt, "{{lorebook}}") {
-            place(runtime.section("runtime_world_information"), false);
+            place(runtime.section("runtime_world_information"));
         }
         let author_note = settings.author_note.as_deref().unwrap_or_default();
         if !author_note.trim().is_empty() && !template_has_placeholder(prompt, "{{author_note}}") {
-            place(
-                runtime.section(if group {
-                    "runtime_group_author_note"
-                } else {
-                    "runtime_author_note"
-                }),
-                false,
-            );
+            place(runtime.section(if group {
+                "runtime_group_author_note"
+            } else {
+                "runtime_author_note"
+            }));
         }
         if companion_state.is_some() && !template_has_placeholder(prompt, "{{companion_state}}") {
-            place(runtime.section("runtime_companion_state"), false);
+            place(runtime.section("runtime_companion_state"));
         }
         if scheduled_notes.is_some() && !template_has_placeholder(prompt, "{{scheduled_notes}}") {
-            place(runtime.section("runtime_scheduled_notes"), false);
+            place(runtime.section("runtime_scheduled_notes"));
         }
         if prompt.is_some_and(|document| document.condense) {
             condense_prompt_messages(&mut messages);
         }
         if request.swap_roles && !group {
-            place(runtime.section("runtime_swap_places"), false);
+            place(runtime.section("runtime_swap_places"));
         }
         let selected_speaker = request
             .selected_speaker
@@ -393,7 +363,7 @@ where
             .find(|message| message.role != MessageRole::Scene);
         if group {
             if selected_window.is_empty() {
-                place(runtime.section("runtime_group_begin"), false);
+                place(runtime.section("runtime_group_begin"));
             }
             if request.operation == GenerationOperation::Continue
                 && last_message.is_some_and(|message| {
@@ -401,18 +371,15 @@ where
                         && message.author_participant_id == selected_speaker
                 })
             {
-                place(
-                    runtime.section("runtime_group_continue_same_speaker"),
-                    false,
-                );
+                place(runtime.section("runtime_group_continue_same_speaker"));
             }
         } else if request.operation == GenerationOperation::Continue
             && last_message.is_none_or(|message| message.role != MessageRole::User)
         {
-            place(runtime.section("runtime_continue_instruction"), false);
+            place(runtime.section("runtime_continue_instruction"));
         }
         if guidance.is_some() {
-            place(runtime.section("runtime_regenerate_instruction"), false);
+            place(runtime.section("runtime_regenerate_instruction"));
         }
         messages.append(&mut runtime_relative);
 

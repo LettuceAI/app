@@ -31,8 +31,8 @@ return the complete document with one root revision bump.
 
 `PromptPurpose::RuntimeText` holds catalog-owned fragments that the runtime
 injects by entry key (for example chat fallbacks and operation notes); every
-render variable is allowed there, including `{{retrieved_memories}}` and
-`{{regenerate_guidance}}`, and such a document is never a chat template.
+render variable is allowed there, including `{{regenerate_guidance}}`, and
+such a document is never a chat template.
 Placeholders are replaced in one pass: a substituted value (lorebook text, an
 author note, a summary) is never scanned again, so tokens inside it reach the
 model verbatim. Name tokens (`{{char}}`, `{{persona}}`, `{{user}}`) inside

@@ -1006,13 +1006,15 @@ threshold while reordering its prompt lines and recorded IDs. This follows the
 live character's companion mode; roleplay, group and Cosine queries receive no
 bonus. Companion temporal-range filtering remains pending with effective-clock
 parity; these retrieval checks do not establish temporal-query parity. Memory
-reaches the prompt as in legacy: `{{key_memories}}` and `HasKeyMemories` use
-every hot or pinned active memory (on send taken before retrieval promotes cold
-items, on continue and regenerate after), a send also adds a first depth-0
-`Relevant memories:` message with the retrieved items, and templates without
-the placeholders get depth-0 `# Context Summary` and `# Key Memories` fallbacks
-(with legacy observed-at suffixes) suppressed by any raw template entry that
-names the placeholder. Memory bullets, the `observed DATE, RELATIVE` note and
+reaches the prompt as in release 2.2.5: in a dynamic direct or companion chat
+`{{key_memories}}` and `HasKeyMemories` use only the memories retrieved for the
+attempt (send, continue and regenerate all retrieve), each with its legacy
+observed-at suffix, and no separate retrieved-memory message is sent; 2.2.0
+filled them with every hot or pinned memory and added a `Relevant memories:`
+block on send. Templates without the placeholders get depth-0
+`# Context Summary` and `# Key Memories` fallbacks, the latter holding the
+same retrieved lines, suppressed by any raw template entry that names the
+placeholder. Memory bullets, the `observed DATE, RELATIVE` note and
 the relative-time words (`just now`, `yesterday`, `N units ago`, ...) render
 from `prompt_app_memory_runtime`; the legacy buckets are computed as a typed
 `RelativeTime`, and the lorebook entry writer uses the same note through its
@@ -1024,14 +1026,13 @@ fallbacks. A group's `{{context_summary}}` is the stored summary in manual
 mode too, as legacy group chats always used it. Manual memories render once
 (legacy duplicated them in a relevant block); pinned history messages stay chronological. A stable identity derived
 from the exact space revision enters the context. A rebuild of the same
-attempt after its retrieval access restores the pre-access key set from the
-receipt's `promoted_memory_ids`, so the rebuilt context matches the first
-build.
+attempt after its retrieval access reads the selection back from the
+receipt, so the rebuilt context matches the first build.
 
 Every section the turn injects outside the selected template comes from the
 required built-in `prompt_app_chat_runtime` document (purpose `runtimeText`),
-read live and rendered once per turn: relevant memories, the summary, key
-memory, world information, author note, companion state and scheduled-note
+read live and rendered once per turn: the summary, key memory, world
+information, author note, companion state and scheduled-note
 fallbacks (a group-chat author-note variant as legacy had), swap places, and
 the regenerate, continue, group begin and group continue-same-speaker
 instructions, all with legacy wording. It renders with the turn's swapped

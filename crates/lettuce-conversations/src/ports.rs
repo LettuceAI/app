@@ -1604,7 +1604,6 @@ pub struct MemoryContribution {
     pub attribution: MemoryAttribution,
     pub summary: Option<String>,
     pub key_memories: Vec<MemoryPromptLine>,
-    pub relevant_memories: Vec<MemoryPromptLine>,
 }
 
 impl MemoryContribution {
@@ -1617,33 +1616,25 @@ impl MemoryContribution {
                 false,
             )?;
         }
-        for (field, lines) in [
-            ("memory_contribution.key_memories", &self.key_memories),
-            (
-                "memory_contribution.relevant_memories",
-                &self.relevant_memories,
-            ),
-        ] {
-            crate::validation::validate_collection(
-                field,
-                lines,
-                crate::validation::MAX_MEMORY_PROMPT_LINES,
+        crate::validation::validate_collection(
+            "memory_contribution.key_memories",
+            &self.key_memories,
+            crate::validation::MAX_MEMORY_PROMPT_LINES,
+        )?;
+        for line in &self.key_memories {
+            crate::validation::validate_text(
+                "memory_contribution.memory",
+                &line.text,
+                crate::validation::MAX_REASONING_BYTES,
+                false,
             )?;
-            for line in lines {
+            if let Some(observed) = &line.observed {
                 crate::validation::validate_text(
-                    "memory_contribution.memory",
-                    &line.text,
-                    crate::validation::MAX_REASONING_BYTES,
+                    "memory_contribution.observed",
+                    &observed.local_time,
+                    crate::validation::MAX_DISPLAY_CHARS,
                     false,
                 )?;
-                if let Some(observed) = &line.observed {
-                    crate::validation::validate_text(
-                        "memory_contribution.observed",
-                        &observed.local_time,
-                        crate::validation::MAX_DISPLAY_CHARS,
-                        false,
-                    )?;
-                }
             }
         }
         Ok(())
@@ -2494,7 +2485,6 @@ mod tests {
                     },
                 }),
             }],
-            relevant_memories: Vec::new(),
         };
         assert!(memory.validate().is_ok());
     }

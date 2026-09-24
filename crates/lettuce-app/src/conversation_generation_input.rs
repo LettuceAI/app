@@ -1221,9 +1221,7 @@ where
         let summary = MemorySummaryRepository::get_summary(self.repository, memory.id)
             .map_err(ConversationGenerationInputError::Memory)?
             .map(|summary| summary.text);
-        let (selected, revision, restored_promotions, effective_now) = if let Some(receipt) =
-            prior_access
-        {
+        let (selected, revision, effective_now) = if let Some(receipt) = prior_access {
             if receipt.access.space_id != memory.id || receipt.resulting_revision != memory.revision
             {
                 return Err(ConversationGenerationInputError::MemoryInputUnavailable);
@@ -1244,7 +1242,6 @@ where
             (
                 selected,
                 receipt.resulting_revision,
-                Some(receipt.promoted_memory_ids),
                 receipt.access.accessed_at,
             )
         } else {
@@ -1269,55 +1266,21 @@ where
                 .map_err(ConversationGenerationInputError::Memory)?
                 .resulting_revision
             };
-            (selected, revision, None, now)
+            (selected, revision, now)
         };
         let effective_now = shape.clock.effective_now(effective_now);
-        let retrieved = selected
+        let key_memories = selected
             .iter()
             .map(|item| crate::memory_prompt::memory_prompt_line(item, effective_now))
             .collect::<Vec<_>>();
-        let send = shape.operation == lettuce_conversations::GenerationOperation::Send;
-        let (key_memories, relevant_memories) = if shape.group {
-            (retrieved, Vec::new())
-        } else {
-            let reloaded;
-            let (key_source, cold_before_access) = match restored_promotions {
-                Some(promoted) if send => (&memory.items, promoted),
-                Some(_) => (&memory.items, Vec::new()),
-                None if send || revision == memory.revision => (&memory.items, Vec::new()),
-                None => {
-                    reloaded = MemoryRepository::get_for_conversation(
-                        self.repository,
-                        work.conversation_id,
-                    )
-                    .map_err(ConversationGenerationInputError::Memory)?
-                    .filter(|space| space.id == memory.id && space.revision == revision)
-                    .ok_or(ConversationGenerationInputError::MemoryInputUnavailable)?;
-                    (&reloaded.items, Vec::new())
-                }
-            };
-            let key_memories = key_source
-                .iter()
-                .filter(|item| {
-                    ((!item.is_cold && !cold_before_access.contains(&item.id)) || item.is_pinned)
-                        && item.superseded_by.is_none()
-                })
-                .map(|item| crate::memory_prompt::memory_prompt_line(item, effective_now))
-                .collect::<Vec<_>>();
-            let relevant = if send { retrieved } else { Vec::new() };
-            (key_memories, relevant)
-        };
-        let contribution = (summary.is_some()
-            || !key_memories.is_empty()
-            || !relevant_memories.is_empty())
-        .then(|| MemoryContribution {
-            attribution: MemoryAttribution {
-                revision_id: memory_revision_id(memory.id, revision),
-            },
-            summary,
-            key_memories,
-            relevant_memories,
-        });
+        let contribution =
+            (summary.is_some() || !key_memories.is_empty()).then(|| MemoryContribution {
+                attribution: MemoryAttribution {
+                    revision_id: memory_revision_id(memory.id, revision),
+                },
+                summary,
+                key_memories,
+            });
         Ok(contribution)
     }
 
@@ -1352,7 +1315,6 @@ where
                 },
                 summary,
                 key_memories,
-                relevant_memories: Vec::new(),
             }),
         )
     }

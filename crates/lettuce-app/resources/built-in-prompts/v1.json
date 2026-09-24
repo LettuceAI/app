@@ -2923,20 +2923,6 @@
       "protected": true,
       "entries": [
         {
-          "key": "runtime_retrieved_memories",
-          "name": "Retrieved Memories",
-          "role": "system",
-          "content": "Relevant memories:\n{{retrieved_memories}}",
-          "enabled": true,
-          "injectionPosition": "inChat",
-          "injectionDepth": 0,
-          "conditionalMinMessages": null,
-          "intervalTurns": null,
-          "systemPrompt": false,
-          "conditions": null,
-          "promptEntryPayload": null
-        },
-        {
           "key": "runtime_context_summary",
           "name": "Context Summary",
           "role": "system",
