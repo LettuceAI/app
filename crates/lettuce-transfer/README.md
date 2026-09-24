@@ -941,3 +941,17 @@ unknown entry dropped the whole order, which lost every order saved by 2.2.5
 (whose default includes `adaptive_p`). `llamaAdaptiveTarget`,
 `llamaAdaptiveDecay` (also in feature slots) and `forceGemma4Reasoning` map to
 typed settings.
+
+Legacy `llm_generation_metrics` (2026-09-24) is read only from the live legacy
+database (archives never carried it; old backups have no metrics to import) as
+the `LlmGenerationMetrics` document, and planned beside the compatibility chain
+(`plan.llm_metrics`, sealed by its content hash and re-derived by
+`verify_seal`). Installs without the table import no metrics and installs from
+before the `message_id` column no message links. Each row keeps its id,
+`created_at`, `model_name` (as the model path) and legacy message id; a
+summary that is not a JSON object becomes `{}` and samples that are not an
+array `[]` (how legacy read them back), recorded as legacy-value skips, as are
+rows without a usable id or integer timestamp. Only the newest 500 by
+`created_at` are kept, as both apps retain; dropping older rows is a `Lossy`
+notice. The `llm_metrics` import stage receives each row with its imported
+message id (`LegacyIdScope::source` of the legacy direct or group message id).

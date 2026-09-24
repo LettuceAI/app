@@ -1256,6 +1256,79 @@ impl LegacyImportRepository for Database {
         Ok(receipt)
     }
 
+    /// Legacy metrics rows keep their legacy ids, except the newest row
+    /// attached to each imported message: it is stored under the attempt of
+    /// the message's selected candidate, where a message's metrics are looked
+    /// up, unless a different row already holds that id. Rows already present
+    /// are kept.
+    fn materialize_llm_metrics(
+        &self,
+        request: lettuce_transfer::LegacyLlmMetricsMaterializationRequest,
+    ) -> Result<LegacyImportStageReceipt, LegacyImportRepositoryError> {
+        let mut connection = self
+            .connection()
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        let record_count = u64::try_from(request.metrics.len())
+            .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+        if let StageStart::Replayed(receipt) = start_stage(
+            &transaction,
+            request.run_id,
+            (&request.plan_fingerprint, &request.source_fingerprint),
+            LegacyImportStage::LlmMetrics,
+            record_count,
+            Some(LegacyImportStage::GroupConversations),
+        )? {
+            transaction
+                .commit()
+                .map_err(|_| LegacyImportRepositoryError::Storage)?;
+            return Ok(receipt);
+        }
+        if load_stage_receipt(
+            &transaction,
+            request.run_id,
+            LegacyImportStage::DirectConversations,
+        )?
+        .is_none()
+        {
+            return Err(LegacyImportRepositoryError::Conflict);
+        }
+        let ids = legacy_llm_metric_ids(&transaction, &request.metrics)?;
+        for (entry, id) in request.metrics.iter().zip(ids) {
+            let metric = &entry.metric;
+            transaction
+                .execute(
+                    "INSERT OR IGNORE INTO llm_generation_metrics
+                        (id, created_at, model_path, summary_json, samples_json)
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![
+                        id,
+                        metric.created_at,
+                        metric.model_path,
+                        metric.summary_json,
+                        metric.samples_json,
+                    ],
+                )
+                .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+        }
+        insert_stage_result(
+            &transaction,
+            request.run_id,
+            LegacyImportStage::LlmMetrics,
+            record_count,
+            request.completed_at,
+        )?;
+        let receipt =
+            load_stage_receipt(&transaction, request.run_id, LegacyImportStage::LlmMetrics)?
+                .ok_or(LegacyImportRepositoryError::Storage)?;
+        transaction
+            .commit()
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        Ok(receipt)
+    }
+
     fn materialize_group_conversations(
         &self,
         request: lettuce_transfer::LegacyDirectConversationMaterializationRequest,
@@ -2540,6 +2613,104 @@ fn materialize_conversations(
     Ok(receipt)
 }
 
+type HeldLlmMetric = (i64, Option<String>, String, String);
+
+/// The id each legacy metrics row is stored under, in request order.
+fn legacy_llm_metric_ids(
+    transaction: &Transaction<'_>,
+    metrics: &[lettuce_transfer::LegacyLlmMetricImport],
+) -> Result<Vec<String>, LegacyImportRepositoryError> {
+    let wanted = metrics
+        .iter()
+        .filter_map(|entry| entry.message_id.map(|id| id.to_string()))
+        .collect::<BTreeSet<_>>();
+    let mut attempts = BTreeMap::<String, Vec<String>>::new();
+    if !wanted.is_empty() {
+        let mut statement = transaction
+            .prepare(
+                "SELECT message.id, candidate.attempt_id
+                 FROM conversation_messages message
+                 JOIN conversation_message_candidates candidate
+                   ON candidate.conversation_id = message.conversation_id
+                  AND candidate.id = message.active_candidate_id
+                  AND candidate.message_id = message.id
+                 WHERE message.active_candidate_id IS NOT NULL",
+            )
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        for row in rows {
+            let (message_id, attempt_id) = row.map_err(|_| LegacyImportRepositoryError::Storage)?;
+            if wanted.contains(&message_id) {
+                attempts.entry(message_id).or_default().push(attempt_id);
+            }
+        }
+    }
+    choose_llm_metric_ids(metrics, &attempts, |id| {
+        transaction
+            .query_row(
+                "SELECT created_at, model_path, summary_json, samples_json
+                 FROM llm_generation_metrics WHERE id = ?1",
+                [id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .optional()
+            .map_err(|_| LegacyImportRepositoryError::Storage)
+    })
+}
+
+/// Keeps each row's legacy id except for the newest row of each message with
+/// exactly one selected-candidate attempt: that row takes the attempt id,
+/// unless a different row already holds it (in the table or in this import).
+fn choose_llm_metric_ids(
+    metrics: &[lettuce_transfer::LegacyLlmMetricImport],
+    attempts: &BTreeMap<String, Vec<String>>,
+    mut held: impl FnMut(&str) -> Result<Option<HeldLlmMetric>, LegacyImportRepositoryError>,
+) -> Result<Vec<String>, LegacyImportRepositoryError> {
+    let mut ids = metrics
+        .iter()
+        .map(|entry| entry.metric.id.clone())
+        .collect::<Vec<_>>();
+    let mut newest = BTreeMap::<String, usize>::new();
+    for (index, entry) in metrics.iter().enumerate() {
+        let Some(message_id) = entry.message_id else {
+            continue;
+        };
+        let key = (entry.metric.created_at, &entry.metric.id);
+        newest
+            .entry(message_id.to_string())
+            .and_modify(|current| {
+                let kept = &metrics[*current].metric;
+                if key > (kept.created_at, &kept.id) {
+                    *current = index;
+                }
+            })
+            .or_insert(index);
+    }
+    let mut taken = ids.iter().cloned().collect::<BTreeSet<_>>();
+    for (message_id, index) in newest {
+        let Some([attempt_id]) = attempts.get(&message_id).map(Vec::as_slice) else {
+            continue;
+        };
+        let metric = &metrics[index].metric;
+        let same_row = held(attempt_id)?.is_none_or(|held| {
+            held == (
+                metric.created_at,
+                metric.model_path.clone(),
+                metric.summary_json.clone(),
+                metric.samples_json.clone(),
+            )
+        });
+        if same_row && taken.insert(attempt_id.clone()) {
+            ids[index].clone_from(attempt_id);
+        }
+    }
+    Ok(ids)
+}
+
 const fn stage_name(stage: LegacyImportStage) -> &'static str {
     match stage {
         LegacyImportStage::Characters => "characters",
@@ -2551,6 +2722,7 @@ const fn stage_name(stage: LegacyImportStage) -> &'static str {
         LegacyImportStage::UsageRecords => "usage_records",
         LegacyImportStage::CreationHelper => "creation_helper",
         LegacyImportStage::Images => "images",
+        LegacyImportStage::LlmMetrics => "llm_metrics",
     }
 }
 
@@ -3974,5 +4146,62 @@ mod tests {
         drop(connection);
         drop(database);
         fs::remove_file(path).expect("remove database");
+    }
+
+    #[test]
+    fn metrics_take_the_attempt_id_only_when_no_different_row_holds_it() {
+        let metric = |id: &str, created_at: i64, message: Option<u128>| {
+            lettuce_transfer::LegacyLlmMetricImport {
+                metric: lettuce_transfer::LegacyLlmMetricRecord {
+                    id: id.to_owned(),
+                    created_at,
+                    model_path: None,
+                    summary_json: format!("{{\"n\":{created_at}}}"),
+                    samples_json: "[]".to_owned(),
+                    message_source_id: None,
+                },
+                message_id: message
+                    .map(|value| lettuce_types::MessageId::from_uuid(uuid::Uuid::from_u128(value))),
+            }
+        };
+        let message = |value: u128| uuid::Uuid::from_u128(value).to_string();
+        let metrics = [
+            metric("older", 1, Some(1)),
+            metric("newer", 2, Some(1)),
+            metric("held-elsewhere", 3, Some(2)),
+            metric("already-imported", 4, Some(3)),
+            metric("ambiguous", 5, Some(4)),
+            metric("unlinked", 6, None),
+            metric("no-candidate", 7, Some(5)),
+        ];
+        let attempts = std::collections::BTreeMap::from([
+            (message(1), vec!["attempt-1".to_owned()]),
+            (message(2), vec!["attempt-2".to_owned()]),
+            (message(3), vec!["attempt-3".to_owned()]),
+            (
+                message(4),
+                vec!["attempt-4a".to_owned(), "attempt-4b".to_owned()],
+            ),
+        ]);
+        let ids = super::choose_llm_metric_ids(&metrics, &attempts, |id| {
+            Ok(match id {
+                "attempt-2" => Some((3, None, "{\"other\":true}".to_owned(), "[]".to_owned())),
+                "attempt-3" => Some((4, None, "{\"n\":4}".to_owned(), "[]".to_owned())),
+                _ => None,
+            })
+        })
+        .expect("ids");
+        assert_eq!(
+            ids,
+            [
+                "older",
+                "attempt-1",
+                "held-elsewhere",
+                "attempt-3",
+                "ambiguous",
+                "unlinked",
+                "no-candidate"
+            ]
+        );
     }
 }

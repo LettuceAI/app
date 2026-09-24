@@ -150,6 +150,12 @@ pub fn read_legacy_database_documents(
             Value::Array(playground_generations(&connection)?),
         )?);
     }
+    if table_exists(&connection, "llm_generation_metrics")? {
+        documents.push(document(
+            LegacyBackupDocumentKind::LlmGenerationMetrics,
+            Value::Array(llm_generation_metrics(&connection)?),
+        )?);
+    }
     documents.sort_by_key(|document| document.kind);
     Ok(documents)
 }
@@ -1157,6 +1163,54 @@ fn playground_generations(
     )
 }
 
+/// Every column is read as SQLite stored it, so a value of an unexpected type
+/// reaches the planner (which records it) instead of failing the import;
+/// installs from before the `message_id` column have no message links.
+fn llm_generation_metrics(
+    connection: &Connection,
+) -> Result<Vec<Value>, LegacyDatabasePreflightError> {
+    let message_column = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('llm_generation_metrics') WHERE name = 'message_id')",
+            [],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
+    let sql = if message_column {
+        "SELECT id, created_at, model_name, summary_json, samples_json, message_id FROM llm_generation_metrics ORDER BY created_at DESC, id DESC"
+    } else {
+        "SELECT id, created_at, model_name, summary_json, samples_json, NULL FROM llm_generation_metrics ORDER BY created_at DESC, id DESC"
+    };
+    rows(connection, sql, [], |r| {
+        let mut row = Map::new();
+        for (index, column) in [
+            "id",
+            "created_at",
+            "model_name",
+            "summary_json",
+            "samples_json",
+            "message_id",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            row.insert(column.to_owned(), stored_value(r.get_ref(index)?));
+        }
+        Ok(Value::Object(row))
+    })
+}
+
+fn stored_value(value: rusqlite::types::ValueRef<'_>) -> Value {
+    match value {
+        rusqlite::types::ValueRef::Integer(value) => Value::from(value),
+        rusqlite::types::ValueRef::Real(value) => Value::from(value),
+        rusqlite::types::ValueRef::Text(value) => {
+            Value::String(String::from_utf8_lossy(value).into_owned())
+        }
+        rusqlite::types::ValueRef::Null | rusqlite::types::ValueRef::Blob(_) => Value::Null,
+    }
+}
+
 fn image_loras(connection: &Connection) -> Result<Vec<Value>, LegacyDatabasePreflightError> {
     rows(
         connection,
@@ -1381,6 +1435,8 @@ mod tests {
         CREATE TABLE asr_voice_examples (id INTEGER PRIMARY KEY, audio_path TEXT NOT NULL, expected_text TEXT NOT NULL, normalized_expected_text TEXT NOT NULL, whisper_output TEXT, normalized_whisper_output TEXT, language TEXT, scope TEXT NOT NULL, term_id INTEGER, correction_id INTEGER, created_at TEXT NOT NULL);
         CREATE TABLE image_loras (path TEXT PRIMARY KEY, filename TEXT NOT NULL, bytes_on_disk INTEGER NOT NULL DEFAULT 0, modified_at INTEGER NOT NULL DEFAULT 0, sha256 TEXT, keywords TEXT NOT NULL DEFAULT '[]', keyword_source TEXT NOT NULL DEFAULT 'none', architecture TEXT, architecture_source TEXT NOT NULL DEFAULT 'none', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
         INSERT INTO image_loras (path, filename, bytes_on_disk, modified_at, keywords, keyword_source, created_at, updated_at) VALUES ('/loras/ink.safetensors', 'ink.safetensors', 64, 9, '[\"ink\"]', 'manual', 1, 2);
+        CREATE TABLE llm_generation_metrics (id TEXT PRIMARY KEY, created_at INTEGER NOT NULL, model_name TEXT, summary_json TEXT NOT NULL, samples_json TEXT NOT NULL DEFAULT '[]', message_id TEXT);
+        INSERT INTO llm_generation_metrics VALUES ('gen-1', 5, '/models/a.gguf', '{\"completionTokens\":3}', '[]', 'message-1'), ('gen-2', 6, NULL, 'not json', '[1]', NULL);
     ";
 
     fn id(value: u128) -> String {
@@ -1513,7 +1569,10 @@ mod tests {
 
         let documents = read_legacy_database_documents(&path).expect("legacy documents");
 
-        assert_eq!(documents.len(), 23);
+        assert_eq!(documents.len(), 24);
+        let metrics = document_value(&documents, LegacyBackupDocumentKind::LlmGenerationMetrics);
+        assert_eq!(metrics[0]["id"], "gen-2");
+        assert_eq!(metrics[1]["message_id"], "message-1");
         let loras = document_value(&documents, LegacyBackupDocumentKind::ImageLoras);
         assert_eq!(loras[0]["keywords"], "[\"ink\"]");
         assert_eq!(loras[0]["keyword_source"], "manual");
@@ -1563,8 +1622,51 @@ mod tests {
             media: Vec::new(),
         })
         .expect("compatibility plan");
-        assert_eq!(plan.coverage.present_document_count, 23);
+        assert_eq!(plan.coverage.present_document_count, 24);
         assert_eq!(plan.images.loras[0].keywords, vec!["ink".to_owned()]);
+        assert_eq!(plan.llm_metrics.metrics.len(), 2);
+        assert_eq!(plan.llm_metrics.metrics[0].summary_json, "{}");
+        assert_eq!(
+            plan.llm_metrics.metrics[1].message_source_id.as_deref(),
+            Some("message-1")
+        );
+        std::fs::remove_file(path).expect("remove fixture");
+    }
+
+    #[test]
+    fn metrics_of_installs_without_the_message_column_or_the_table_are_read_as_such() {
+        let path = legacy_database();
+        let connection = Connection::open(&path).expect("open legacy database");
+        connection
+            .execute_batch(
+                "DROP TABLE llm_generation_metrics;
+                 CREATE TABLE llm_generation_metrics (id TEXT PRIMARY KEY, created_at INTEGER NOT NULL, model_name TEXT, summary_json TEXT NOT NULL, samples_json TEXT NOT NULL DEFAULT '[]');
+                 INSERT INTO llm_generation_metrics VALUES ('gen-1', 'soon', 3, X'00', '[]');",
+            )
+            .expect("older metrics table");
+        let documents = read_legacy_database_documents(&path).expect("legacy documents");
+        let metrics = document_value(&documents, LegacyBackupDocumentKind::LlmGenerationMetrics);
+        assert_eq!(
+            metrics,
+            json!([{
+                "id": "gen-1",
+                "created_at": "soon",
+                "model_name": "3",
+                "summary_json": null,
+                "samples_json": "[]",
+                "message_id": null
+            }])
+        );
+        connection
+            .execute_batch("DROP TABLE llm_generation_metrics")
+            .expect("drop metrics table");
+        drop(connection);
+        let documents = read_legacy_database_documents(&path).expect("legacy documents");
+        assert!(
+            documents
+                .iter()
+                .all(|document| document.kind != LegacyBackupDocumentKind::LlmGenerationMetrics)
+        );
         std::fs::remove_file(path).expect("remove fixture");
     }
 

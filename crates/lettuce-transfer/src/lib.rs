@@ -42,6 +42,7 @@ mod legacy_backup_scheduled_notes;
 mod legacy_backup_sessions;
 mod legacy_backup_attachments;
 mod legacy_backup_images;
+mod legacy_backup_llm_metrics;
 mod legacy_backup_usage;
 mod playground_history_backup;
 mod legacy_import_backup;
@@ -88,6 +89,7 @@ pub use legacy_backup_scheduled_notes::*;
 pub use legacy_backup_sessions::*;
 pub use legacy_backup_attachments::*;
 pub use legacy_backup_images::*;
+pub use legacy_backup_llm_metrics::*;
 pub use legacy_backup_usage::*;
 pub use playground_history_backup::*;
 pub use legacy_import_backup::*;
@@ -1225,11 +1227,12 @@ pub enum LegacyImportStage {
     UsageRecords,
     CreationHelper,
     Images,
+    LlmMetrics,
 }
 
 impl LegacyImportStage {
     /// Every stage a legacy run needs before it counts as a completed import.
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::Characters,
         Self::Groups,
         Self::Audio,
@@ -1239,6 +1242,7 @@ impl LegacyImportStage {
         Self::UsageRecords,
         Self::CreationHelper,
         Self::Images,
+        Self::LlmMetrics,
     ];
 }
 
@@ -1346,6 +1350,24 @@ pub struct LegacyImageMaterializationRequest {
     pub loras: Vec<LegacyImageLoraRecord>,
     pub playground: Vec<LegacyPlaygroundImport>,
     pub completed_at: TimestampMillis,
+}
+
+/// The legacy local generation metrics of one admitted run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyLlmMetricsMaterializationRequest {
+    pub run_id: LegacyImportRunId,
+    pub plan_fingerprint: ContentHash,
+    pub source_fingerprint: ContentHash,
+    pub metrics: Vec<LegacyLlmMetricImport>,
+    pub completed_at: TimestampMillis,
+}
+
+/// A legacy metrics row with the imported message it was attached to, when
+/// that message was imported.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyLlmMetricImport {
+    pub metric: LegacyLlmMetricRecord,
+    pub message_id: Option<lettuce_types::MessageId>,
 }
 
 /// A legacy playground entry with the imported asset of each image (none
@@ -1484,6 +1506,11 @@ pub trait LegacyImportRepository: Send + Sync {
     fn materialize_creation_helper(
         &self,
         request: LegacyCreationMaterializationRequest,
+    ) -> Result<LegacyImportStageReceipt, LegacyImportRepositoryError>;
+
+    fn materialize_llm_metrics(
+        &self,
+        request: LegacyLlmMetricsMaterializationRequest,
     ) -> Result<LegacyImportStageReceipt, LegacyImportRepositoryError>;
 
     /// Marks a partial run completed once every later stage has its result.

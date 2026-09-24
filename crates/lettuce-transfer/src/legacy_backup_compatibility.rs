@@ -18,7 +18,7 @@ use crate::{
     plan_legacy_backup_scheduled_notes, plan_legacy_backup_usage,
 };
 
-const DOCUMENT_KINDS: [LegacyBackupDocumentKind; 25] = [
+const DOCUMENT_KINDS: [LegacyBackupDocumentKind; 26] = [
     LegacyBackupDocumentKind::Meta,
     LegacyBackupDocumentKind::Settings,
     LegacyBackupDocumentKind::ProviderCredentials,
@@ -44,6 +44,7 @@ const DOCUMENT_KINDS: [LegacyBackupDocumentKind; 25] = [
     LegacyBackupDocumentKind::CharacterLorebooks,
     LegacyBackupDocumentKind::ImageLoras,
     LegacyBackupDocumentKind::PlaygroundGenerations,
+    LegacyBackupDocumentKind::LlmGenerationMetrics,
 ];
 const META_ENTRY_LIMIT: usize = 10_000;
 const META_TEXT_LIMIT: usize = 1_000_000;
@@ -55,6 +56,7 @@ pub struct LegacyBackupCompatibilityPlan {
     pub notices: Vec<LegacyBackupConversionNotice>,
     pub creation_helpers: LegacyBackupCreationHelperPlan,
     pub images: crate::LegacyBackupImagePlan,
+    pub llm_metrics: crate::LegacyBackupLlmMetricsPlan,
 }
 
 impl LegacyBackupCompatibilityPlan {
@@ -102,6 +104,7 @@ impl LegacyBackupCompatibilityPlan {
             .chain(&direct_sessions.skipped)
             .chain(&group_sessions.skipped)
             .chain(&self.images.skipped)
+            .chain(&self.llm_metrics.skipped)
             .filter(|skip| !sealed.contains(&(skip.kind, skip.source_key.clone())))
             .cloned()
             .collect::<Vec<_>>();
@@ -215,9 +218,11 @@ impl LegacyBackupCompatibilityPlan {
     pub(crate) fn verify_seal(&self) -> Result<(), LegacyBackupCompatibilityError> {
         let coverage = build_coverage(self.inventory())?;
         let images = crate::plan_legacy_backup_images(self.inventory())?;
+        let llm_metrics = crate::plan_legacy_backup_llm_metrics(self.inventory())?;
         let mut notices = validate_meta(self.inventory())?;
         notices.extend(self.creation_helpers.notices.iter().cloned());
         notices.extend(images.notices.iter().cloned());
+        notices.extend(llm_metrics.notices.iter().cloned());
         notices.sort();
         notices.dedup();
         let fingerprint = fingerprint(&self.creation_helpers, &coverage, &notices)?;
@@ -225,6 +230,7 @@ impl LegacyBackupCompatibilityPlan {
             || notices != self.notices
             || fingerprint != self.fingerprint
             || images != self.images
+            || llm_metrics != self.llm_metrics
         {
             return Err(LegacyBackupCompatibilityError::InvalidSeal);
         }
@@ -294,6 +300,8 @@ pub enum LegacyBackupCompatibilityError {
     CreationHelpers(#[from] LegacyBackupCreationHelperError),
     #[error(transparent)]
     Images(#[from] crate::LegacyBackupImageError),
+    #[error(transparent)]
+    LlmMetrics(#[from] crate::LegacyBackupLlmMetricsError),
 }
 
 pub fn plan_legacy_backup_compatibility(
@@ -302,6 +310,7 @@ pub fn plan_legacy_backup_compatibility(
     let coverage = build_coverage(&inventory)?;
     let mut meta_notices = validate_meta(&inventory)?;
     let images = crate::plan_legacy_backup_images(&inventory)?;
+    let llm_metrics = crate::plan_legacy_backup_llm_metrics(&inventory)?;
     let configuration = plan_legacy_backup_configuration(inventory)?;
     let authored = plan_legacy_backup_authored(configuration)?;
     let media = plan_legacy_backup_authored_media(authored)?;
@@ -316,6 +325,7 @@ pub fn plan_legacy_backup_compatibility(
     let creation_helpers = plan_legacy_backup_creation_helpers(embeddings)?;
     meta_notices.extend(creation_helpers.notices.iter().cloned());
     meta_notices.extend(images.notices.iter().cloned());
+    meta_notices.extend(llm_metrics.notices.iter().cloned());
     meta_notices.sort();
     meta_notices.dedup();
     let notices = meta_notices;
@@ -326,6 +336,7 @@ pub fn plan_legacy_backup_compatibility(
         notices,
         creation_helpers,
         images,
+        llm_metrics,
     })
 }
 
@@ -575,6 +586,7 @@ fn document_name(kind: LegacyBackupDocumentKind) -> &'static str {
         LegacyBackupDocumentKind::CharacterLorebooks => "character_lorebooks",
         LegacyBackupDocumentKind::ImageLoras => "image_loras",
         LegacyBackupDocumentKind::PlaygroundGenerations => "playground_generations",
+        LegacyBackupDocumentKind::LlmGenerationMetrics => "llm_generation_metrics",
     }
 }
 
@@ -603,7 +615,7 @@ mod tests {
 
         assert_eq!(plan.coverage.documents.len(), DOCUMENT_KINDS.len());
         assert_eq!(plan.coverage.present_document_count, 0);
-        assert_eq!(plan.coverage.absent_document_count, 25);
+        assert_eq!(plan.coverage.absent_document_count, 26);
         assert_eq!(plan.coverage.media_object_count, 0);
         assert_eq!(plan.coverage.media_byte_count, 0);
         assert!(plan.coverage.documents.iter().all(|item| !item.present));

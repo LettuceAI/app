@@ -1577,8 +1577,9 @@ place. Either way the whole legacy import chain runs into a new database file in
 stage order: admission against the derived source counts, media from the planned
 source's retained bytes, provider secrets from the planned configuration, the
 authored graph, ASR learning, provider models and prompts, characters, groups,
-audio, settings, direct and group conversations, usage records and creation
-helper sessions. Only a run that completes carries device-local state from the
+audio, settings, direct and group conversations, usage records, creation
+helper sessions, images (LoRA library and playground history) and local
+generation metrics. Only a run that completes carries device-local state from the
 previous database, records the backup admission and switches the active database
 pointer; the previous file is never deleted. Each restore stages into its own
 `<workspace>/<restore_id>` directory, so a later restore of a different backup

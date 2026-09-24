@@ -222,6 +222,8 @@ pub enum LegacyBackupDocumentKind {
     ImageLoras,
     /// Only the live legacy database holds it; archives never did.
     PlaygroundGenerations,
+    /// Only the live legacy database holds it; archives never did.
+    LlmGenerationMetrics,
 }
 
 impl LegacyBackupDocumentKind {
@@ -253,6 +255,7 @@ impl LegacyBackupDocumentKind {
             Self::CharacterLorebooks => "character_lorebooks",
             Self::ImageLoras => "image_loras",
             Self::PlaygroundGenerations => "playground_generations",
+            Self::LlmGenerationMetrics => "llm_generation_metrics",
         }
     }
 }

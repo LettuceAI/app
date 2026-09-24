@@ -339,6 +339,13 @@ impl AppBackend {
     }
 
     #[must_use]
+    pub fn legacy_llm_metrics_importer(
+        &self,
+    ) -> crate::LegacyLlmMetricsImportCoordinator<'_, Database> {
+        crate::LegacyLlmMetricsImportCoordinator::new(self.database.as_ref())
+    }
+
+    #[must_use]
     pub fn legacy_settings_importer(&self) -> crate::LegacySettingsImportCoordinator<'_, Database> {
         crate::LegacySettingsImportCoordinator::new(self.database.as_ref())
     }

@@ -373,6 +373,10 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
             .legacy_image_importer()
             .execute_database_import(&admission, import, at)
             .map_err(stage("images"))?;
+        backend
+            .legacy_llm_metrics_importer()
+            .execute_database_import(&admission, import, at)
+            .map_err(stage("local generation metrics"))?;
         match backend
             .complete_legacy_import(run_id, at)
             .map_err(stage("completion"))?
@@ -826,6 +830,384 @@ mod tests {
         assert_eq!(
             lettuce_transfer::backup_sql_text(&graph.legacy_imports.runs[0].run, "status"),
             Some("completed")
+        );
+    }
+
+    #[tokio::test]
+    async fn legacy_metrics_follow_their_direct_and_group_messages_and_survive_a_second_restore() {
+        let root = std::env::temp_dir().join(format!("legacy-restore-{}", OperationId::new()));
+        std::fs::create_dir_all(&root).expect("fixture root");
+        let authority = FilesystemAuthority::new(&DirectorySnapshot::new(&root).expect("snapshot"))
+            .expect("filesystem authority");
+        let location = AppDatabaseLocation::new(root.join("private-persistent-v2"), &authority)
+            .expect("database location");
+        let secrets = InMemorySecretStore::new();
+        let workspace = root.join("legacy-restore-workspace");
+        let coordinator =
+            LegacyRestoreCoordinator::new(&location, &authority, &workspace, &secrets);
+        let id = |value: u128| uuid::Uuid::from_u128(value).to_string();
+        let (provider, model, ada, grace, session, group, group_session) =
+            (id(1), id(2), id(3), id(4), id(5), id(6), id(7));
+        let (greeting, reply, group_greeting, group_reply) = (id(10), id(11), id(12), id(13));
+        let document = |kind, value: serde_json::Value| lettuce_transfer::LegacyBackupDocument {
+            kind,
+            bytes: zeroize::Zeroizing::new(serde_json::to_vec(&value).expect("document")),
+        };
+        let variant = |variant: &str, created_at: i64| {
+            serde_json::json!({
+                "id": variant,
+                "content": format!("take {variant}"),
+                "speaker_character_id": ada,
+                "created_at": created_at,
+                "attachments": "[]"
+            })
+        };
+        let mut direct_reply =
+            legacy_message(&reply, "assistant", Some(&greeting), "take variant-a");
+        direct_reply["variants"] =
+            serde_json::json!([variant("variant-a", 12), variant("variant-b", 13)]);
+        direct_reply["selected_variant_id"] = "variant-a".into();
+        let group_message = |message: &str, role: &str, parent: Option<&str>, variants| {
+            serde_json::json!({
+                "id": message,
+                "role": role,
+                "content": "hello",
+                "speaker_character_id": (role == "assistant").then_some(&ada),
+                "turn_number": 1,
+                "created_at": 20,
+                "selected_variant_id": (role == "assistant").then_some("group-variant"),
+                "is_pinned": false,
+                "attachments": "[]",
+                "used_lorebook_entries": "[]",
+                "memory_refs": "[]",
+                "parent_message_id": parent,
+                "variants": variants
+            })
+        };
+        let members = serde_json::to_string(&[&ada, &grace]).expect("members");
+        let metric = |metric: &str, created_at: i64, message: Option<&str>| {
+            serde_json::json!({
+                "id": metric,
+                "created_at": created_at,
+                "model_name": "/models/local.gguf",
+                "summary_json": format!("{{\"completionTokens\":{created_at}}}"),
+                "samples_json": "[]",
+                "message_id": message
+            })
+        };
+        let source = |title: &str| {
+            lettuce_transfer::plan_legacy_backup_compatibility(LegacyBackupInventory {
+                version: 1,
+                created_at: 1,
+                app_version: "legacy".into(),
+                source_hash: ContentHash::parse("ef".repeat(32)).expect("source hash"),
+                documents: vec![
+                    document(
+                        lettuce_transfer::LegacyBackupDocumentKind::ProviderCredentials,
+                        serde_json::json!([{
+                            "id": provider,
+                            "provider_id": "openrouter",
+                            "label": "Router",
+                            "api_key_ref": null,
+                            "api_key": "provider-secret",
+                            "base_url": "https://openrouter.ai/api/v1",
+                            "default_model": null,
+                            "headers": null,
+                            "config": null
+                        }]),
+                    ),
+                    document(
+                        lettuce_transfer::LegacyBackupDocumentKind::Models,
+                        serde_json::json!([{
+                            "id": model,
+                            "name": "gpt-4o",
+                            "provider_id": "openrouter",
+                            "provider_credential_id": provider,
+                            "provider_label": "Router",
+                            "display_name": "GPT-4o",
+                            "created_at": 1,
+                            "model_type": "chat",
+                            "input_scopes": "[\"text\"]",
+                            "output_scopes": "[\"text\"]"
+                        }]),
+                    ),
+                    document(
+                        lettuce_transfer::LegacyBackupDocumentKind::Settings,
+                        serde_json::json!({
+                            "default_provider_credential_id": provider,
+                            "default_model_id": model,
+                            "app_state": {},
+                            "advanced_model_settings": null,
+                            "prompt_template_id": null,
+                            "system_prompt": null,
+                            "migration_version": 92,
+                            "advanced_settings": null,
+                            "created_at": 1,
+                            "updated_at": 1
+                        }),
+                    ),
+                    document(
+                        lettuce_transfer::LegacyBackupDocumentKind::Characters,
+                        serde_json::json!([
+                            {"id": ada, "name": "Ada", "created_at": 1, "updated_at": 1},
+                            {"id": grace, "name": "Grace", "created_at": 1, "updated_at": 1}
+                        ]),
+                    ),
+                    document(
+                        lettuce_transfer::LegacyBackupDocumentKind::Sessions,
+                        serde_json::json!([{
+                            "id": session,
+                            "character_id": ada,
+                            "title": title,
+                            "mode": "roleplay",
+                            "persona_disabled": false,
+                            "lorebook_ids_override": "[]",
+                            "memories": "[]",
+                            "memory_embeddings": "[]",
+                            "memory_summary_token_count": 0,
+                            "memory_tool_events": "[]",
+                            "archived": false,
+                            "created_at": 1,
+                            "updated_at": 20,
+                            "messages": [
+                                legacy_message(&greeting, "user", None, "Hello Ada"),
+                                direct_reply.clone()
+                            ]
+                        }]),
+                    ),
+                    document(
+                        lettuce_transfer::LegacyBackupDocumentKind::GroupCharacters,
+                        serde_json::json!([{
+                            "id": group,
+                            "name": "Room",
+                            "character_ids": members,
+                            "muted_character_ids": "[]",
+                            "created_at": 1,
+                            "updated_at": 1,
+                            "archived": false,
+                            "chat_type": "conversation",
+                            "lorebook_ids": "[]",
+                            "disable_character_lorebooks": false,
+                            "speaker_selection_method": "llm",
+                            "memory_type": "manual"
+                        }]),
+                    ),
+                    document(
+                        lettuce_transfer::LegacyBackupDocumentKind::GroupSessions,
+                        serde_json::json!([{
+                            "id": group_session,
+                            "group_character_id": group,
+                            "name": "Room chat",
+                            "character_ids": members,
+                            "muted_character_ids": "[]",
+                            "created_at": 1,
+                            "updated_at": 1,
+                            "archived": false,
+                            "chat_type": "conversation",
+                            "lorebook_ids": "[]",
+                            "disable_character_lorebooks": false,
+                            "memories": "[]",
+                            "memory_embeddings": "[]",
+                            "memory_summary": "",
+                            "memory_summary_token_count": 0,
+                            "memory_tool_events": "[]",
+                            "speaker_selection_method": "llm",
+                            "memory_type": "manual",
+                            "config_overrides": "{\"version\":1}",
+                            "character_model_overrides": "{}",
+                            "participation": [],
+                            "messages": [
+                                group_message(&group_greeting, "user", None, serde_json::json!([])),
+                                group_message(
+                                    &group_reply,
+                                    "assistant",
+                                    Some(&group_greeting),
+                                    serde_json::json!([variant("group-variant", 21)])
+                                )
+                            ]
+                        }]),
+                    ),
+                    document(
+                        lettuce_transfer::LegacyBackupDocumentKind::LlmGenerationMetrics,
+                        serde_json::json!([
+                            metric("reply-old", 30, Some(&reply)),
+                            metric("reply-new", 31, Some(&reply)),
+                            metric("group-reply", 32, Some(&group_reply)),
+                            metric("greeting", 33, Some(&greeting)),
+                            metric("gone", 34, Some("deleted-message")),
+                            metric("free", 35, None)
+                        ]),
+                    ),
+                ],
+                media: Vec::new(),
+            })
+            .expect("compatibility plan")
+        };
+        let import_of = |title: &str| {
+            let compatibility = source(title);
+            assert_eq!(compatibility.llm_metrics.metrics.len(), 6);
+            let plan = compatibility.legacy_import_plan();
+            let scope = lettuce_transfer::LegacyIdScope::new(
+                plan.source_fingerprint
+                    .as_ref()
+                    .expect("source fingerprint"),
+            );
+            (
+                LegacyDatabaseImportPlan {
+                    compatibility,
+                    plan,
+                },
+                scope,
+            )
+        };
+        let (import, scope) = import_of("Conversation");
+        let (changed, changed_scope) = import_of("Renamed conversation");
+        assert_ne!(scope, changed_scope);
+        let check = |database: &Database, scope: lettuce_transfer::LegacyIdScope| {
+            let graph = database
+                .read_provider_backup_graph()
+                .expect("restored graph");
+            let found = |legacy: &str| {
+                let message_id = lettuce_types::MessageId::from_uuid(scope.source(legacy));
+                let conversation = graph
+                    .conversation_history
+                    .conversations
+                    .iter()
+                    .find(|conversation| {
+                        conversation
+                            .messages
+                            .iter()
+                            .any(|message| message.message.id == message_id)
+                    })
+                    .expect("imported message");
+                let message = conversation
+                    .messages
+                    .iter()
+                    .find(|message| message.message.id == message_id)
+                    .expect("imported message");
+                let attempt = match message.message.active_render_source {
+                    lettuce_conversations::MessageRenderSource::Candidate(active) => message
+                        .candidates
+                        .iter()
+                        .find(|candidate| candidate.id == active)
+                        .map(|candidate| candidate.attempt_id.to_string()),
+                    lettuce_conversations::MessageRenderSource::Revision(_) => None,
+                };
+                let metric = database
+                    .llm_generation_metric_for_message(
+                        &conversation.aggregate.conversation.id.to_string(),
+                        &message_id.to_string(),
+                    )
+                    .expect("metric by message");
+                if let Some(metric) = &metric {
+                    assert_eq!(Some(&metric.id), attempt.as_ref());
+                }
+                metric
+            };
+            let reply_metric = found(&reply).expect("the reply's metric");
+            assert_eq!(reply_metric.created_at, 31);
+            assert_eq!(
+                reply_metric.summary,
+                serde_json::json!({"completionTokens": 31})
+            );
+            assert_eq!(
+                reply_metric.id,
+                lettuce_types::GenerationAttemptId::from_uuid(
+                    scope.derived("variant-a", "attempt")
+                )
+                .to_string()
+            );
+            let group_metric = found(&group_reply).expect("the group reply's metric");
+            assert_eq!(group_metric.created_at, 32);
+            assert_ne!(group_metric.id, "group-reply");
+            assert_eq!(found(&greeting), None);
+            let mut ids = database
+                .llm_generation_metrics(None)
+                .expect("metrics")
+                .into_iter()
+                .map(|metric| metric.id)
+                .collect::<Vec<_>>();
+            ids.sort();
+            let mut expected = vec![
+                "free".to_owned(),
+                "gone".to_owned(),
+                "greeting".to_owned(),
+                "reply-old".to_owned(),
+                reply_metric.id,
+                group_metric.id,
+            ];
+            expected.sort();
+            assert_eq!(ids, expected);
+        };
+        let first = coordinator
+            .replace(
+                OperationId::new(),
+                &import,
+                None,
+                None,
+                TimestampMillis::new(1_700_000_000_100),
+            )
+            .await
+            .expect("replace with legacy source");
+        let restored = Database::open(&first.database_path).expect("restored database");
+        check(&restored, scope);
+        let backend = AppBackend::open(
+            &first.database_path,
+            TimestampMillis::new(1_700_000_000_200),
+        )
+        .expect("reopen backend");
+        let admission = backend
+            .legacy_import_admission()
+            .admit(
+                first.run_id,
+                &import.compatibility.database_inventory(),
+                &import.plan,
+                TimestampMillis::new(1_700_000_000_200),
+            )
+            .expect("replayed admission");
+        assert!(
+            backend
+                .legacy_llm_metrics_importer()
+                .execute_database_import(
+                    &admission,
+                    &import,
+                    TimestampMillis::new(1_700_000_000_200)
+                )
+                .expect("replayed metrics")
+                .replayed
+        );
+        drop(backend);
+        check(&restored, scope);
+        drop(restored);
+        let second = coordinator
+            .replace(
+                OperationId::new(),
+                &import,
+                None,
+                None,
+                TimestampMillis::new(1_700_000_000_300),
+            )
+            .await
+            .expect("second replace carries the first database's metrics");
+        assert_eq!(second.previous_database_path, first.database_path);
+        check(
+            &Database::open(&second.database_path).expect("second database"),
+            scope,
+        );
+        let third = coordinator
+            .replace(
+                OperationId::new(),
+                &changed,
+                None,
+                None,
+                TimestampMillis::new(1_700_000_000_400),
+            )
+            .await
+            .expect("a changed source replaces the second database");
+        assert_eq!(third.previous_database_path, second.database_path);
+        check(
+            &Database::open(&third.database_path).expect("third database"),
+            changed_scope,
         );
     }
 

@@ -1041,6 +1041,20 @@ first, without samples, limit defaulting to 500 within 1..=5000),
 message)` and `clear_llm_generation_metrics`, as the old `llm_metrics_*`
 commands. A local generation records its metrics under its attempt id, so a
 message's metrics are found through its candidates' attempts; the old
-frontend's `llm_metrics_attach_message` call has nothing left to do. Legacy
-metric rows are not imported (device-local diagnostics whose message links
-point at legacy ids).
+frontend's `llm_metrics_attach_message` call has nothing left to do.
+
+Legacy metric rows are imported by the `llm_metrics` stage of a legacy
+database import, after both conversation stages: rows keep their legacy id,
+timestamp, summary and samples (`model_name` becomes `model_path`), except
+that the newest row attached to each imported message is stored under the
+attempt id of that message's selected candidate so
+`llm_generation_metric_for_message` finds it. A message imported without
+candidates, a link to a message that was not imported, or an attempt id a
+different row already holds leaves the legacy id. Inserts ignore rows that
+already exist. Carrying device-local state into a restored file keeps the new
+file's rows: a previous metric is skipped when the new file has its id or a
+row with the same `created_at`, `model_path` and `summary_json` (the same
+legacy generation re-keyed under an attempt id derived from a changed source
+fingerprint), and a LoRA path both files have keeps the more recently updated
+row, the rule the legacy images stage uses. Metrics of messages imported without candidates keep their legacy id and
+lose the message link.
