@@ -119,6 +119,13 @@ pub trait MediaBlobRepository: Send + Sync {
         id: MediaBlobId,
         updated_at: TimestampMillis,
     ) -> Result<MediaBlob, MediaBlobRepositoryError>;
+    /// Makes a missing row ready again after its bytes were committed anew;
+    /// idempotent for a ready row.
+    fn restore_missing_to_ready(
+        &self,
+        id: MediaBlobId,
+        updated_at: TimestampMillis,
+    ) -> Result<MediaBlob, MediaBlobRepositoryError>;
     fn get(&self, id: MediaBlobId) -> Result<Option<MediaBlob>, MediaBlobRepositoryError>;
     fn find_by_hash(
         &self,

@@ -1,10 +1,10 @@
 use std::str::FromStr;
 
 use lettuce_speech::{
-    SynthesisRecord, SynthesisRepository, SynthesisRepositoryError, SynthesisResult,
-    SynthesisState, TtsOutputPolicy,
+    CachedSpeechBlob, SpeechCacheRepository, SynthesisRecord, SynthesisRepository,
+    SynthesisRepositoryError, SynthesisResult, SynthesisReuseKey, SynthesisState, TtsOutputPolicy,
 };
-use lettuce_types::{AssetId, AudioProviderId, JobId, RequestId, TimestampMillis};
+use lettuce_types::{AssetId, AudioProviderId, JobId, MediaBlobId, RequestId, TimestampMillis};
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
 
 use crate::{Database, decode_versioned, encode_versioned};
@@ -235,5 +235,163 @@ impl SynthesisRepository for Database {
         let stored = load_in(&transaction, job_id)?.ok_or(SynthesisRepositoryError::Storage)?;
         transaction.commit().map_err(storage)?;
         Ok(stored)
+    }
+}
+
+fn other_asset_references(
+    transaction: &Transaction<'_>,
+) -> Result<Vec<String>, SynthesisRepositoryError> {
+    let references = transaction
+        .prepare(
+            "SELECT m.name, f.\"from\"
+               FROM sqlite_schema AS m
+               JOIN pragma_foreign_key_list(m.name) AS f
+              WHERE m.type = 'table'
+                AND f.\"table\" = 'media_assets'
+                AND (f.\"to\" IS NULL OR f.\"to\" = 'id')
+              ORDER BY m.name, f.\"from\"",
+        )
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })?
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .map_err(storage)?;
+    Ok(references
+        .into_iter()
+        .filter(|(table, column)| !(table == "speech_syntheses" && column == "result_asset_id"))
+        .map(|(table, column)| {
+            format!(
+                "SELECT \"{}\" FROM \"{}\"",
+                column.replace('"', "\"\""),
+                table.replace('"', "\"\"")
+            )
+        })
+        .collect())
+}
+
+fn cached_blob_filter(transaction: &Transaction<'_>) -> Result<String, SynthesisRepositoryError> {
+    let others = other_asset_references(transaction)?;
+    let referenced = if others.is_empty() {
+        String::new()
+    } else {
+        format!(" OR a.id IN ({})", others.join(" UNION ALL "))
+    };
+    Ok(format!(
+        "b.state = 'ready'
+         AND EXISTS (
+             SELECT 1 FROM media_assets AS a
+               JOIN speech_syntheses AS s ON s.result_asset_id = a.id
+              WHERE a.blob_id = b.id)
+         AND NOT EXISTS (
+             SELECT 1 FROM media_assets AS a
+              WHERE a.blob_id = b.id
+                AND (a.kind <> 'synthesized_speech'
+                     OR a.retention = 'library'
+                     OR NOT EXISTS (
+                         SELECT 1 FROM speech_syntheses AS s WHERE s.result_asset_id = a.id){referenced}))"
+    ))
+}
+
+impl SpeechCacheRepository for Database {
+    fn find_reusable(
+        &self,
+        key: &SynthesisReuseKey,
+        now: TimestampMillis,
+    ) -> Result<Option<SynthesisRecord>, SynthesisRepositoryError> {
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Deferred)
+            .map_err(storage)?;
+        let job_id = transaction
+            .query_row(
+                "SELECT s.job_id
+                   FROM speech_syntheses AS s
+                   JOIN media_assets AS a ON a.id = s.result_asset_id
+                   JOIN media_blobs AS b ON b.id = a.blob_id
+                  WHERE s.provider_id = ?1
+                    AND json_extract(s.request_json, '$.value.text') = ?2
+                    AND json_extract(s.request_json, '$.value.model_id') = ?3
+                    AND json_extract(s.request_json, '$.value.voice_id') = ?4
+                    AND COALESCE(json_extract(s.request_json, '$.value.prompt'), '') = ?5
+                    AND s.result_json IS NOT NULL
+                    AND s.output_retention = 'persistent'
+                    AND b.state = 'ready'
+                    AND (a.expires_at IS NULL OR a.expires_at > ?6)
+                  ORDER BY s.completed_at DESC, s.job_id DESC
+                  LIMIT 1",
+                params![
+                    key.provider_id.to_string(),
+                    key.text,
+                    key.model_id,
+                    key.voice_id,
+                    key.prompt.as_deref().unwrap_or(""),
+                    now.get(),
+                ],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(storage)?;
+        let record = match job_id {
+            Some(job_id) => load_in(&transaction, JobId::from_str(&job_id).map_err(corrupt)?)?,
+            None => None,
+        };
+        transaction.commit().map_err(storage)?;
+        Ok(record)
+    }
+
+    fn cached_blobs(&self) -> Result<Vec<CachedSpeechBlob>, SynthesisRepositoryError> {
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Deferred)
+            .map_err(storage)?;
+        let filter = cached_blob_filter(&transaction)?;
+        let rows = transaction
+            .prepare(&format!(
+                "SELECT b.id, b.byte_size FROM media_blobs AS b WHERE {filter} ORDER BY b.id"
+            ))
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], |row| {
+                        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+                    })?
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .map_err(storage)?;
+        transaction.commit().map_err(storage)?;
+        rows.into_iter()
+            .map(|(id, size)| {
+                Ok(CachedSpeechBlob {
+                    blob_id: MediaBlobId::from_str(&id).map_err(corrupt)?,
+                    byte_size: u64::try_from(size).map_err(corrupt)?,
+                })
+            })
+            .collect()
+    }
+
+    fn release(
+        &self,
+        blob_id: MediaBlobId,
+        now: TimestampMillis,
+    ) -> Result<bool, SynthesisRepositoryError> {
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(storage)?;
+        let filter = cached_blob_filter(&transaction)?;
+        let released = transaction
+            .execute(
+                &format!(
+                    "UPDATE media_blobs SET state = 'missing', updated_at = ?2
+                      WHERE id = ?1
+                        AND id IN (SELECT b.id FROM media_blobs AS b WHERE {filter})"
+                ),
+                params![blob_id.to_string(), now.get()],
+            )
+            .map_err(storage)?;
+        transaction.commit().map_err(storage)?;
+        Ok(released == 1)
     }
 }

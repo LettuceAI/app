@@ -401,3 +401,24 @@ fn confined_install_resumes_and_commits_only_complete_caller_verified_bytes() {
     assert_eq!(installed.len(), 6);
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn remove_file_deletes_regular_files_only() {
+    let (root, authority, files) = files();
+    let write = authority.write_capability(ManagedRoot::MediaBlobs).unwrap();
+    let read = authority.read_capability(ManagedRoot::MediaBlobs).unwrap();
+    let key = ObjectKey::new(["ab", "value"]).unwrap();
+    assert_eq!(files.remove_file(&write, &key), Ok(false));
+    files.write_atomic(&write, key.clone(), b"bytes").unwrap();
+    assert_eq!(files.remove_file(&write, &key), Ok(true));
+    assert_eq!(files.read(&read, &key), Err(PlatformError::NotFound));
+    assert_eq!(files.remove_file(&write, &key), Ok(false));
+    let private = authority
+        .write_capability(ManagedRoot::PrivatePersistent)
+        .unwrap();
+    assert_eq!(
+        files.remove_file(&private, &ObjectKey::single("value").unwrap()),
+        Err(PlatformError::Unsupported)
+    );
+    fs::remove_dir_all(root).unwrap();
+}

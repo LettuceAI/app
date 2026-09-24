@@ -270,3 +270,13 @@ Voice search: `VoiceSearch` (ElevenLabs) searches the account's voice library
 by text (`/v1/voices?search=`); unlike the cached refresh, a search result may
 be one page of more. `TtsVoiceRefreshCoordinator::search` returns the matches
 without caching them, nothing for an OpenAI-compatible provider, like legacy.
+
+Speech cache: `SpeechCacheRepository` finds the most recent finished Retained
+synthesis with the same provider, model, voice, text and prompt (no prompt and
+an empty prompt are the same, as the old cache key was) whose audio is still
+stored and unexpired, and lists the synthesized audio blobs nothing but their
+syntheses keep (every asset on the blob is non-library `synthesized_speech`
+bound to a synthesis, and no other table refers to any of them). The old
+per-file disk cache becomes these durable syntheses; its files were never in
+backups and their keys cannot be recomputed after the audio provider ids are
+remapped on import, so they are not imported.

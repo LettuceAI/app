@@ -79,3 +79,6 @@ BEFORE DELETE ON speech_syntheses
 BEGIN
     SELECT RAISE(ABORT, 'speech synthesis evidence is immutable');
 END;
+
+CREATE INDEX speech_syntheses_reuse_idx
+    ON speech_syntheses(provider_id, json_extract(request_json, '$.value.text'));

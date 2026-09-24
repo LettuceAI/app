@@ -138,6 +138,37 @@ impl ManagedFiles {
             .ok_or(PlatformError::InvalidRoot)
     }
 
+    /// Deletes one regular file; `false` when there was none. The private
+    /// persistent root is not deletable through this facade.
+    pub fn remove_file(
+        &self,
+        capability: &WriteCapability,
+        key: &ObjectKey,
+    ) -> Result<bool, PlatformError> {
+        if capability.root == ManagedRoot::PrivatePersistent {
+            return Err(PlatformError::Unsupported);
+        }
+        let _guard = self.mutation_guard()?;
+        let root = self.check_write(capability)?;
+        let (parent, name) = match resolve_parent(root, &key.segments, false) {
+            Ok(resolved) => resolved,
+            Err(PlatformError::NotFound) => return Ok(false),
+            Err(error) => return Err(error),
+        };
+        match parent.symlink_metadata(&name) {
+            Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
+                Err(PlatformError::SymlinkEscape)
+            }
+            Ok(_) => {
+                parent.remove_file(&name).map_err(PlatformError::from)?;
+                let _ = sync_directory(&parent);
+                Ok(true)
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(PlatformError::from(error)),
+        }
+    }
+
     pub(crate) fn check_write(
         &self,
         capability: &WriteCapability,

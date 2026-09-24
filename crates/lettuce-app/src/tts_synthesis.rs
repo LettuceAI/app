@@ -879,4 +879,162 @@ mod tests {
         assert_eq!(*calls.lock().expect("calls"), 2);
         std::fs::remove_dir_all(root).expect("cleanup");
     }
+
+    async fn synthesize_once(
+        database: &Database,
+        media: &LocalMediaBlobStore<Database, Database>,
+        request: SynthesisRequest,
+        at: TimestampMillis,
+    ) -> lettuce_speech::SynthesisResult {
+        let coordinator = TtsSynthesisCoordinator::new(database, database);
+        let secrets = secret_store(&request).await;
+        let admitted = coordinator.admit(request).expect("admitted");
+        let work = coordinator
+            .claim(
+                admitted.job.id,
+                WorkerId::new(),
+                NOW,
+                Duration::from_secs(30),
+                &ResourceAvailability::all(),
+            )
+            .expect("claim")
+            .expect("work");
+        let outcome = coordinator
+            .run(
+                work,
+                &secrets,
+                &Runtime {
+                    calls: Arc::new(Mutex::new(0)),
+                    outcome: Ok(()),
+                    cancel_after_response: false,
+                },
+                media,
+                CancellationReason::User,
+                at,
+            )
+            .await
+            .expect("run");
+        let TtsSynthesisRunResult::Succeeded(success) = outcome else {
+            panic!("expected success");
+        };
+        let SynthesisState::Succeeded { result } = success.record.state else {
+            panic!("expected result");
+        };
+        result
+    }
+
+    #[tokio::test]
+    async fn the_speech_cache_reuses_counts_clears_and_refills() {
+        use lettuce_speech::SynthesisReuseKey;
+
+        let root = std::env::temp_dir().join(format!("lettuce-tts-{}", RequestId::new()));
+        std::fs::create_dir_all(&root).expect("create root");
+        let path = root.join("app.sqlite3");
+        let database = Database::open(&path).expect("database");
+        let media = media_store(&path, &root.join("media"));
+        let base = request(SecretRef::new(), TtsOutputPolicy::Retained);
+        let key = SynthesisReuseKey::of(&base);
+        let at = TimestampMillis::new(2_000);
+        assert_eq!(
+            crate::reusable_tts_synthesis(&database, &key, at).expect("lookup"),
+            None
+        );
+
+        let first = synthesize_once(&database, &media, base.clone(), at).await;
+        let reused = crate::reusable_tts_synthesis(&database, &key, at)
+            .expect("lookup")
+            .expect("a reusable synthesis");
+        assert!(matches!(
+            reused.state,
+            SynthesisState::Succeeded { ref result } if result.audio_asset_id == first.audio_asset_id
+        ));
+        let mut other_voice = key.clone();
+        other_voice.voice_id = "echo".into();
+        assert_eq!(
+            crate::reusable_tts_synthesis(&database, &other_voice, at).expect("lookup"),
+            None
+        );
+        let mut no_prompt = key.clone();
+        no_prompt.prompt = None;
+        assert_eq!(
+            crate::reusable_tts_synthesis(&database, &no_prompt, at).expect("lookup"),
+            None
+        );
+
+        let mut preview = base.clone();
+        preview.id = RequestId::new();
+        preview.output_asset_id = AssetId::new();
+        preview.provider.id = AudioProviderId::new();
+        preview.output_policy = TtsOutputPolicy::Preview {
+            expires_at: TimestampMillis::new(10_000),
+        };
+        let preview_key = SynthesisReuseKey::of(&preview);
+        synthesize_once(&database, &media, preview, at).await;
+        assert_eq!(
+            crate::reusable_tts_synthesis(&database, &preview_key, TimestampMillis::new(9_000))
+                .expect("lookup"),
+            None
+        );
+
+        let wav = u64::try_from(wav_fixture().len()).expect("size");
+        assert_eq!(
+            crate::tts_audio_cache_stats(&database).expect("stats"),
+            crate::TtsAudioCacheStats {
+                count: 1,
+                size_bytes: wav
+            }
+        );
+        assert_eq!(
+            crate::clear_tts_audio_cache(&database, &media, TimestampMillis::new(3_000))
+                .expect("clear"),
+            1
+        );
+        assert_eq!(
+            crate::tts_audio_cache_stats(&database).expect("stats"),
+            crate::TtsAudioCacheStats::default()
+        );
+        assert_eq!(
+            crate::reusable_tts_synthesis(&database, &key, at).expect("lookup"),
+            None
+        );
+        assert!(matches!(
+            media.open_ready(first.audio_asset_id),
+            Err(lettuce_media::MediaStoreError::NotReady)
+        ));
+        crate::backup_restore::assert_backup_round_trip(&database);
+
+        let mut again = base.clone();
+        again.id = RequestId::new();
+        again.output_asset_id = AssetId::new();
+        synthesize_once(&database, &media, again, TimestampMillis::new(4_000)).await;
+        assert!(media.open_ready(first.audio_asset_id).is_ok());
+        assert!(
+            crate::reusable_tts_synthesis(&database, &key, TimestampMillis::new(4_000))
+                .expect("lookup")
+                .is_some()
+        );
+
+        media
+            .ingest(
+                wav_fixture().as_slice(),
+                lettuce_media::IngestRequest::new(
+                    lettuce_media::AssetKind::MessageAudio,
+                    lettuce_media::AssetOrigin::Upload,
+                    RetentionClass::Persistent,
+                    lettuce_media::AssetProvenanceV1::default(),
+                ),
+            )
+            .expect("message audio with the same bytes");
+        assert_eq!(
+            crate::tts_audio_cache_stats(&database).expect("stats"),
+            crate::TtsAudioCacheStats::default()
+        );
+        assert_eq!(
+            crate::clear_tts_audio_cache(&database, &media, TimestampMillis::new(5_000))
+                .expect("clear"),
+            0
+        );
+        assert!(media.open_ready(first.audio_asset_id).is_ok());
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
 }

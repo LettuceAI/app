@@ -1026,3 +1026,11 @@ assets from being deleted while the row exists. Terminal rows may be deleted
 (playground history, taking their output links with them), pending rows may
 not. Job pruning keeps jobs an image generation
 still binds, and backups carry the rows with the job backup.
+
+Speech cache: `SpeechCacheRepository` for `Database` (lookup through
+`speech_syntheses_reuse_idx`; cached blobs exclude any blob one of whose
+assets is referenced from a foreign key column other than
+`speech_syntheses.result_asset_id`, discovered from the schema so new
+referencing tables are covered). The restore writer inserts `missing` blobs
+as `ready` so their assets pass `media_assets_require_ready_blob`, then marks
+them `missing` again.

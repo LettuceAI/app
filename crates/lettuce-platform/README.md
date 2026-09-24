@@ -75,3 +75,7 @@ persistent root permits known-key reads and atomic writes for a settings-owned
 secret adapter, but generic listing/export is unavailable. Root construction
 uses a no-follow final open; ambient ancestor attestation remains the
 application adapter's responsibility.
+
+`ManagedFiles::remove_file` deletes one regular file under a write
+capability (never in the private persistent root) and reports whether one
+was there.

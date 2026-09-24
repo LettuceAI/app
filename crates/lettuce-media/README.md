@@ -65,3 +65,13 @@ content-addressed object key through its own hash-owned `restore/` partial, so i
 never truncates a concurrent sync download of the same blob. An object
 that is already installed must match size and BLAKE3; catalog rows are not
 touched, because the restored database carries its own blob and asset rows.
+
+Releasing bytes: `LocalMediaBlobStore::release_blob` deletes a ready blob's
+content-addressed object after the caller's callback has marked its catalog
+row `missing` (the callback decides whether the blob may go). Ingest, sync
+install and release are serialized by one process-wide lifecycle lock, and an
+ingest or sync of the same bytes restores a `missing` row to `ready`
+(`MediaBlobRepository::restore_missing_to_ready`). Asset rows stay, so
+evidence that refers to them is kept; `open_ready` reports `NotReady`. A crash
+between the catalog commit and the file deletion leaves the file on disk
+until the same bytes are ingested again.

@@ -25,6 +25,14 @@ pub const MAX_SYNC_MEDIA_CHUNK_BYTES: usize = 1024 * 1024;
 const MAX_IMAGE_PIXELS: u64 = 100_000_000;
 const BLOB_VALIDATION_VERSION: u32 = 1;
 
+static BLOB_LIFECYCLE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn blob_lifecycle() -> std::sync::MutexGuard<'static, ()> {
+    BLOB_LIFECYCLE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// Input metadata supplied by the logical asset owner.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IngestRequest {
@@ -266,6 +274,7 @@ where
         now: TimestampMillis,
     ) -> Result<IngestedMedia, MediaStoreError> {
         value.validate()?;
+        let _lifecycle = blob_lifecycle();
         match self.prepare(value)? {
             InstallPreparation::Installed(mut file) => {
                 if file.len() != value.blob.byte_size
@@ -304,12 +313,16 @@ where
         {
             return Err(MediaStoreError::CatalogFailure);
         }
-        let blob = if registered.state == BlobState::Ready {
-            registered
-        } else {
-            self.blobs
+        let blob = match registered.state {
+            BlobState::Ready => registered,
+            BlobState::Missing => self
+                .blobs
+                .restore_missing_to_ready(registered.id, now)
+                .map_err(|_| MediaStoreError::CatalogFailure)?,
+            _ => self
+                .blobs
                 .finalize_staged_to_ready(registered.id, now)
-                .map_err(|_| MediaStoreError::CatalogFailure)?
+                .map_err(|_| MediaStoreError::CatalogFailure)?,
         };
         let mut asset = value.asset.clone();
         asset.blob_id = blob.id;
@@ -442,6 +455,7 @@ where
             }
         }
 
+        let _lifecycle = blob_lifecycle();
         let now = TimestampMillis::now().map_err(|_| MediaStoreError::Clock)?;
         let hash = blake3::hash(&bytes);
         let content_hash = content_hash(hash);
@@ -528,7 +542,11 @@ where
                 .blobs
                 .finalize_staged_to_ready(registered.id, now)
                 .map_err(|_| MediaStoreError::CatalogFailure)?,
-            BlobState::Quarantined | BlobState::Missing => {
+            BlobState::Missing => self
+                .blobs
+                .restore_missing_to_ready(registered.id, now)
+                .map_err(|_| MediaStoreError::CatalogFailure)?,
+            BlobState::Quarantined => {
                 return Err(MediaStoreError::CatalogFailure);
             }
         };
@@ -568,6 +586,32 @@ where
             Err(_) => return Err(MediaStoreError::CatalogFailure),
         };
         Ok(IngestedMedia { asset, blob })
+    }
+
+    /// Deletes a ready blob's bytes once `release` has marked its catalog row
+    /// missing, returning the freed size; `release` answers `false` when the
+    /// blob must stay. Serialized with ingestion, so no asset gains the blob
+    /// while its bytes go, and a later ingest of the same bytes restores it.
+    pub fn release_blob(
+        &self,
+        blob_id: MediaBlobId,
+        release: impl FnOnce(&MediaBlob) -> Result<bool, MediaStoreError>,
+    ) -> Result<Option<u64>, MediaStoreError> {
+        let _lifecycle = blob_lifecycle();
+        let blob = self
+            .blobs
+            .get(blob_id)
+            .map_err(|_| MediaStoreError::RepositoryData)?
+            .ok_or(MediaStoreError::BlobNotFound)?;
+        if blob.state != BlobState::Ready || !release(&blob)? {
+            return Ok(None);
+        }
+        let key = object_key(&blob.content_hash)?;
+        let removed = self
+            .files
+            .remove_file(&self.write_capability, &key)
+            .map_err(MediaStoreError::File)?;
+        Ok(removed.then_some(blob.byte_size))
     }
 
     /// Opens only a ready catalog asset and returns a descriptor-backed reader.
@@ -1204,9 +1248,9 @@ mod tests {
 
     use super::*;
 
-    #[derive(Default)]
+    #[derive(Default, Clone)]
     struct BlobMemory {
-        values: Mutex<BTreeMap<MediaBlobId, MediaBlob>>,
+        values: std::sync::Arc<Mutex<BTreeMap<MediaBlobId, MediaBlob>>>,
     }
 
     impl MediaBlobRepository for BlobMemory {
@@ -1248,6 +1292,29 @@ mod tests {
             }
             blob.state = BlobState::Ready;
             blob.updated_at = updated_at;
+            Ok(blob.clone())
+        }
+
+        fn restore_missing_to_ready(
+            &self,
+            id: MediaBlobId,
+            updated_at: TimestampMillis,
+        ) -> Result<MediaBlob, MediaBlobRepositoryError> {
+            let mut values = self
+                .values
+                .lock()
+                .map_err(|_| MediaBlobRepositoryError::Storage)?;
+            let blob = values
+                .get_mut(&id)
+                .ok_or(MediaBlobRepositoryError::NotFound)?;
+            match blob.state {
+                BlobState::Ready => {}
+                BlobState::Missing => {
+                    blob.state = BlobState::Ready;
+                    blob.updated_at = updated_at;
+                }
+                _ => return Err(MediaBlobRepositoryError::InvalidState),
+            }
             Ok(blob.clone())
         }
 
@@ -1421,6 +1488,65 @@ mod tests {
                     .is_err()
             );
         }
+        drop(store);
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn released_bytes_are_deleted_and_restored_by_a_later_ingest() {
+        let root = std::env::temp_dir().join(format!("lettuce-media-{}", AssetId::new()));
+        let snapshot = DirectorySnapshot::new(&root).expect("snapshot");
+        let authority = FilesystemAuthority::new(&snapshot).expect("authority");
+        let blobs = BlobMemory::default();
+        let store = LocalMediaBlobStore::new(
+            authority.managed_files(),
+            authority
+                .read_capability(ManagedRoot::MediaBlobs)
+                .expect("read capability"),
+            authority
+                .write_capability(ManagedRoot::MediaBlobs)
+                .expect("write capability"),
+            blobs.clone(),
+            AssetMemory::default(),
+        );
+        let input = png_fixture();
+        let request = || {
+            IngestRequest::new(
+                AssetKind::OtherImage,
+                AssetOrigin::Upload,
+                RetentionClass::Persistent,
+                AssetProvenanceV1::default(),
+            )
+        };
+        let first = store
+            .ingest(input.as_slice(), request())
+            .expect("first ingest");
+        assert_eq!(store.release_blob(first.blob.id, |_| Ok(false)), Ok(None));
+        assert!(store.open_ready(first.asset.id).is_ok());
+        let released = store.release_blob(first.blob.id, |blob| {
+            let mut values = blobs.values.lock().expect("blobs");
+            let stored = values.get_mut(&blob.id).expect("blob");
+            stored.state = BlobState::Missing;
+            Ok(true)
+        });
+        assert_eq!(released, Ok(Some(input.len() as u64)));
+        assert!(matches!(
+            store.open_ready(first.asset.id),
+            Err(MediaStoreError::NotReady)
+        ));
+        assert_eq!(
+            store.release_blob(first.blob.id, |_| panic!("not ready")),
+            Ok(None)
+        );
+        let again = store
+            .ingest(input.as_slice(), request())
+            .expect("ingest restores the blob");
+        assert_eq!(again.blob.id, first.blob.id);
+        assert_eq!(again.blob.state, BlobState::Ready);
+        let mut opened = store.open_ready(first.asset.id).expect("restored bytes");
+        let mut read_back = Vec::new();
+        opened.reader.read_to_end(&mut read_back).expect("read");
+        assert_eq!(read_back, input);
         drop(store);
         fs::remove_dir_all(root).expect("cleanup");
     }

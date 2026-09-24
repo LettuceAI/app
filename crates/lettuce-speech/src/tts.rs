@@ -6,8 +6,8 @@ use lettuce_media::{
 };
 use lettuce_settings::{SecretOwnerId, SecretRef, SecretValue};
 use lettuce_types::{
-    AssetId, AudioProviderId, ContentHash, JobId, RequestId, Revision, TimestampMillis,
-    VoiceProfileId,
+    AssetId, AudioProviderId, ContentHash, JobId, MediaBlobId, RequestId, Revision,
+    TimestampMillis, VoiceProfileId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -410,6 +410,58 @@ pub trait SynthesisRepository: Send + Sync {
         job_id: JobId,
         result: SynthesisResult,
     ) -> Result<SynthesisRecord, SynthesisRepositoryError>;
+}
+
+/// What a reusable synthesis must match: the same provider, model, voice,
+/// text and prompt.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SynthesisReuseKey {
+    pub provider_id: AudioProviderId,
+    pub model_id: String,
+    pub voice_id: String,
+    pub text: String,
+    pub prompt: Option<String>,
+}
+
+impl SynthesisReuseKey {
+    #[must_use]
+    pub fn of(request: &SynthesisRequest) -> Self {
+        Self {
+            provider_id: request.provider.id,
+            model_id: request.model_id.clone(),
+            voice_id: request.voice_id.clone(),
+            text: request.text.clone(),
+            prompt: request.prompt.clone(),
+        }
+    }
+}
+
+/// Synthesized audio whose bytes nothing but its synthesis keeps.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CachedSpeechBlob {
+    pub blob_id: MediaBlobId,
+    pub byte_size: u64,
+}
+
+/// The synthesized speech cache: finished syntheses whose audio is still
+/// stored, and the audio that can be dropped because only its synthesis
+/// refers to it.
+pub trait SpeechCacheRepository: Send + Sync {
+    /// The most recently completed synthesis for `key` whose audio is still
+    /// stored and not expired at `now`.
+    fn find_reusable(
+        &self,
+        key: &SynthesisReuseKey,
+        now: TimestampMillis,
+    ) -> Result<Option<SynthesisRecord>, SynthesisRepositoryError>;
+    fn cached_blobs(&self) -> Result<Vec<CachedSpeechBlob>, SynthesisRepositoryError>;
+    /// Marks the blob's bytes missing if it is still cached audio; `false`
+    /// when something else now keeps it.
+    fn release(
+        &self,
+        blob_id: MediaBlobId,
+        now: TimestampMillis,
+    ) -> Result<bool, SynthesisRepositoryError>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]

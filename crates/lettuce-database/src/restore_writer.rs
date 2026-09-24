@@ -53,10 +53,24 @@ impl ProviderBackupRestoreWriter for Database {
             .map_err(storage)?;
         let authored = &graph.authored;
         for blob in &authored.media_blobs {
-            crate::insert_media_blob_row(&transaction, blob).map_err(invalid)?;
+            let mut row = blob.clone();
+            if row.state == lettuce_media::BlobState::Missing {
+                row.state = lettuce_media::BlobState::Ready;
+            }
+            crate::insert_media_blob_row(&transaction, &row).map_err(invalid)?;
         }
         for asset in &authored.media_assets {
             crate::insert_media_asset_row(&transaction, asset).map_err(invalid)?;
+        }
+        for blob in &authored.media_blobs {
+            if blob.state == lettuce_media::BlobState::Missing {
+                transaction
+                    .execute(
+                        "UPDATE media_blobs SET state = 'missing' WHERE id = ?1",
+                        [blob.id.to_string()],
+                    )
+                    .map_err(storage)?;
+            }
         }
         for account in &graph.accounts {
             crate::insert_provider_account_row(&transaction, account).map_err(invalid)?;

@@ -2004,6 +2004,47 @@ impl MediaBlobRepository for Database {
         transaction.commit().map_err(media_error)?;
         Ok(finalized)
     }
+    fn restore_missing_to_ready(
+        &self,
+        id: MediaBlobId,
+        updated_at: TimestampMillis,
+    ) -> Result<MediaBlob, MediaBlobRepositoryError> {
+        let mut connection = self
+            .connection()
+            .map_err(|_| MediaBlobRepositoryError::Storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(media_error)?;
+        let current = transaction
+            .query_row(
+                &format!("SELECT {MEDIA_BLOB_COLUMNS} FROM media_blobs WHERE id=?1"),
+                [id.to_string()],
+                media_from_row,
+            )
+            .optional()
+            .map_err(media_error)?
+            .ok_or(MediaBlobRepositoryError::NotFound)?;
+        match current.state {
+            BlobState::Ready => return Ok(current),
+            BlobState::Missing => {}
+            _ => return Err(MediaBlobRepositoryError::InvalidState),
+        }
+        transaction
+            .execute(
+                "UPDATE media_blobs SET state='ready', updated_at=?2 WHERE id=?1 AND state='missing'",
+                params![id.to_string(), updated_at.get()],
+            )
+            .map_err(media_error)?;
+        let restored = transaction
+            .query_row(
+                &format!("SELECT {MEDIA_BLOB_COLUMNS} FROM media_blobs WHERE id=?1"),
+                [id.to_string()],
+                media_from_row,
+            )
+            .map_err(media_error)?;
+        transaction.commit().map_err(media_error)?;
+        Ok(restored)
+    }
     fn get(&self, id: MediaBlobId) -> Result<Option<MediaBlob>, MediaBlobRepositoryError> {
         self.connection()
             .map_err(|_| MediaBlobRepositoryError::Storage)?
