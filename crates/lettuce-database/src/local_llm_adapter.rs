@@ -4,6 +4,40 @@ use serde_json::Value;
 use crate::{Database, DatabaseError};
 
 const LLM_METRICS_RETENTION: i64 = 500;
+const LLM_METRICS_DEFAULT_LIMIT: usize = 500;
+const LLM_METRICS_MAX_LIMIT: usize = 5000;
+
+/// One local generation's recorded metrics.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LlmGenerationMetric {
+    pub id: String,
+    pub created_at: i64,
+    pub model_path: Option<String>,
+    pub summary: Value,
+    /// Present when one metric is read; lists leave the samples out.
+    pub samples: Option<Vec<Value>>,
+}
+
+fn json_or(text: &str, fallback: Value) -> Value {
+    serde_json::from_str(text).unwrap_or(fallback)
+}
+
+fn metric_with_samples(row: &rusqlite::Row<'_>) -> rusqlite::Result<LlmGenerationMetric> {
+    let samples: String = row.get(4)?;
+    Ok(LlmGenerationMetric {
+        id: row.get(0)?,
+        created_at: row.get(1)?,
+        model_path: row.get(2)?,
+        summary: json_or(
+            &row.get::<_, String>(3)?,
+            Value::Object(serde_json::Map::new()),
+        ),
+        samples: Some(match json_or(&samples, Value::Array(Vec::new())) {
+            Value::Array(samples) => samples,
+            _ => Vec::new(),
+        }),
+    })
+}
 
 const NEWEST_LLAMA_MODEL: &str = "SELECT model.id FROM model_profiles model
      JOIN provider_accounts account ON account.id = model.provider_account_id
@@ -110,6 +144,84 @@ impl Database {
     }
 }
 
+impl Database {
+    /// The newest recorded metrics, without samples; `limit` defaults to 500
+    /// and is kept within 1..=5000.
+    pub fn llm_generation_metrics(
+        &self,
+        limit: Option<usize>,
+    ) -> Result<Vec<LlmGenerationMetric>, DatabaseError> {
+        let limit = limit
+            .unwrap_or(LLM_METRICS_DEFAULT_LIMIT)
+            .clamp(1, LLM_METRICS_MAX_LIMIT);
+        let connection = self.connection()?;
+        let mut statement = connection.prepare(
+            "SELECT id, created_at, model_path, summary_json FROM llm_generation_metrics
+             ORDER BY created_at DESC, id DESC LIMIT ?1",
+        )?;
+        let rows =
+            statement.query_map(params![i64::try_from(limit).unwrap_or(i64::MAX)], |row| {
+                Ok(LlmGenerationMetric {
+                    id: row.get(0)?,
+                    created_at: row.get(1)?,
+                    model_path: row.get(2)?,
+                    summary: json_or(
+                        &row.get::<_, String>(3)?,
+                        Value::Object(serde_json::Map::new()),
+                    ),
+                    samples: None,
+                })
+            })?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    pub fn llm_generation_metric(
+        &self,
+        id: &str,
+    ) -> Result<Option<LlmGenerationMetric>, DatabaseError> {
+        Ok(self
+            .connection()?
+            .query_row(
+                "SELECT id, created_at, model_path, summary_json, samples_json
+                 FROM llm_generation_metrics WHERE id = ?1",
+                params![id],
+                metric_with_samples,
+            )
+            .optional()?)
+    }
+
+    /// The newest metrics of any generation that produced a candidate of the
+    /// message: a local generation records its metrics under its attempt id.
+    pub fn llm_generation_metric_for_message(
+        &self,
+        conversation_id: &str,
+        message_id: &str,
+    ) -> Result<Option<LlmGenerationMetric>, DatabaseError> {
+        Ok(self
+            .connection()?
+            .query_row(
+                "SELECT metric.id, metric.created_at, metric.model_path, metric.summary_json,
+                        metric.samples_json
+                 FROM llm_generation_metrics metric
+                 JOIN conversation_message_candidates candidate
+                   ON candidate.attempt_id = metric.id
+                 WHERE candidate.conversation_id = ?1 AND candidate.message_id = ?2
+                 ORDER BY metric.created_at DESC, metric.id DESC
+                 LIMIT 1",
+                params![conversation_id, message_id],
+                metric_with_samples,
+            )
+            .optional()?)
+    }
+
+    /// Deletes every recorded metric; returns how many there were.
+    pub fn clear_llm_generation_metrics(&self) -> Result<usize, DatabaseError> {
+        Ok(self
+            .connection()?
+            .execute("DELETE FROM llm_generation_metrics", [])?)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -130,8 +242,9 @@ mod tests {
                 )
                 .expect("record");
         }
-        let connection = database.connection().expect("connection");
-        let (count, oldest): (i64, i64) = connection
+        let (count, oldest): (i64, i64) = database
+            .connection()
+            .expect("connection")
             .query_row(
                 "SELECT count(*), min(created_at) FROM llm_generation_metrics",
                 [],
@@ -139,6 +252,34 @@ mod tests {
             )
             .expect("count");
         assert_eq!((count, oldest), (500, 2));
+        let newest = database.llm_generation_metrics(Some(0)).expect("list");
+        assert_eq!(newest.len(), 1);
+        assert_eq!(newest[0].id, "gen-501");
+        assert_eq!(newest[0].samples, None);
+        assert_eq!(
+            database.llm_generation_metrics(None).expect("list").len(),
+            500
+        );
+        let one = database
+            .llm_generation_metric("gen-501")
+            .expect("get")
+            .expect("metric");
+        assert_eq!(one.summary, json!({"completionTokens": 501}));
+        assert_eq!(one.samples, Some(vec![json!({"tMs": 1})]));
+        assert_eq!(database.llm_generation_metric("gen-0").expect("get"), None);
+        assert_eq!(
+            database
+                .llm_generation_metric_for_message("conversation", "message")
+                .expect("by message"),
+            None
+        );
+        assert_eq!(database.clear_llm_generation_metrics().expect("clear"), 500);
+        assert!(
+            database
+                .llm_generation_metrics(None)
+                .expect("list")
+                .is_empty()
+        );
     }
 
     #[test]

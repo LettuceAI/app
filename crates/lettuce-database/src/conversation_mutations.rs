@@ -7965,6 +7965,25 @@ mod tests {
 
         assert_eq!(result.value.assistant_message.id, reserved);
         assert_eq!(result.value.candidate.message_id, reserved);
+        fixture
+            .database
+            .record_llm_generation_metrics(
+                &attempt_id.to_string(),
+                Some("/models/a.gguf"),
+                &serde_json::json!({"completionTokens": 3}),
+                &[],
+                31,
+            )
+            .expect("metrics");
+        let metric = fixture
+            .database
+            .llm_generation_metric_for_message(
+                &fixture.conversation_id.to_string(),
+                &reserved.to_string(),
+            )
+            .expect("metric by message")
+            .expect("the message's metric");
+        assert_eq!(metric.id, attempt_id.to_string());
         assert_eq!(result.value.candidate.turn_id, turn_id);
         assert_eq!(result.value.candidate.attempt_id, attempt_id);
         assert_eq!(

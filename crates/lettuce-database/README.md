@@ -1034,3 +1034,13 @@ assets is referenced from a foreign key column other than
 referencing tables are covered). The restore writer inserts `missing` blobs
 as `ready` so their assets pass `media_assets_require_ready_blob`, then marks
 them `missing` again.
+
+Local generation metrics readers: `llm_generation_metrics(limit)` (newest
+first, without samples, limit defaulting to 500 within 1..=5000),
+`llm_generation_metric(id)`, `llm_generation_metric_for_message(conversation,
+message)` and `clear_llm_generation_metrics`, as the old `llm_metrics_*`
+commands. A local generation records its metrics under its attempt id, so a
+message's metrics are found through its candidates' attempts; the old
+frontend's `llm_metrics_attach_message` call has nothing left to do. Legacy
+metric rows are not imported (device-local diagnostics whose message links
+point at legacy ids).

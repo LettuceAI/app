@@ -19,6 +19,7 @@ mod conversation_vertical_slice;
 mod creation_adapter;
 mod device_local_adapter;
 mod local_llm_adapter;
+pub use local_llm_adapter::LlmGenerationMetric;
 mod model_lookup_adapter;
 mod dynamic_memory_rewind_adapter;
 mod dynamic_memory_run_adapter;
