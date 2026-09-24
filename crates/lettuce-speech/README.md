@@ -280,3 +280,4 @@ bound to a synthesis, and no other table refers to any of them). The old
 per-file disk cache becomes these durable syntheses; its files were never in
 backups and their keys cannot be recomputed after the audio provider ids are
 remapped on import, so they are not imported.
+Not importing the legacy `tts_audio` files is an approved removal.
