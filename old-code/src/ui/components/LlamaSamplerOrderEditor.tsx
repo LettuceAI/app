@@ -66,6 +66,10 @@ const STAGE_META: Record<
     labelKey: "samplerOrder.stages.temp.label",
     descriptionKey: "samplerOrder.stages.temp.desc",
   },
+  adaptive_p: {
+    labelKey: "samplerOrder.stages.adaptiveP.label",
+    descriptionKey: "samplerOrder.stages.adaptiveP.desc",
+  },
 };
 
 const PRESET_META: Record<

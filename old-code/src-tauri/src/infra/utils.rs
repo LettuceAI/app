@@ -138,56 +138,59 @@ fn should_downgrade_to_debug(component: &str, message: &str) -> bool {
     false
 }
 
-fn redact_param_value(message: &str, param: &str) -> String {
-    let mut output = String::with_capacity(message.len());
-    let lower = message.to_lowercase();
-    let needle = format!("{}=", param);
-    let mut i = 0;
-    while let Some(pos) = lower[i..].find(&needle) {
-        let start = i + pos;
-        output.push_str(&message[i..start]);
-        let value_start = start + needle.len();
-        output.push_str(&message[start..value_start]);
-        let mut end = value_start;
-        let bytes = message.as_bytes();
-        while end < message.len() {
-            let b = bytes[end] as char;
-            if b.is_whitespace() || b == '&' || b == '"' || b == '\'' || b == ')' || b == ']' {
-                break;
-            }
-            end += 1;
+fn find_ascii_ignore_case(message: &str, needle: &str, from: usize) -> Option<usize> {
+    let haystack = message.as_bytes();
+    let pattern = needle.as_bytes();
+    if pattern.is_empty() || from + pattern.len() > haystack.len() {
+        return None;
+    }
+    (from..=haystack.len() - pattern.len()).find(|&start| {
+        haystack[start..start + pattern.len()]
+            .iter()
+            .zip(pattern)
+            .all(|(candidate, expected)| candidate.eq_ignore_ascii_case(expected))
+    })
+}
+
+fn scan_value_end(message: &str, from: usize, delimiters: &[u8]) -> usize {
+    let bytes = message.as_bytes();
+    let mut end = from;
+    while end < bytes.len() {
+        let byte = bytes[end];
+        if byte.is_ascii_whitespace() || delimiters.contains(&byte) {
+            break;
         }
+        end += 1;
+    }
+    end
+}
+
+fn redact_param_value(message: &str, param: &str) -> String {
+    let needle = format!("{}=", param);
+    let mut output = String::with_capacity(message.len());
+    let mut i = 0;
+    while let Some(start) = find_ascii_ignore_case(message, &needle, i) {
+        let value_start = start + needle.len();
+        output.push_str(&message[i..value_start]);
         output.push_str("***");
-        i = end;
+        i = scan_value_end(message, value_start, &[b'&', b'"', b'\'', b')', b']']);
     }
     output.push_str(&message[i..]);
     output
 }
 
 fn redact_authorization(message: &str) -> String {
-    let lower = message.to_lowercase();
-    if !lower.contains("authorization") && !lower.contains("bearer") {
+    let Some(idx) = find_ascii_ignore_case(message, "bearer ", 0) else {
         return message.to_string();
-    }
+    };
+    let start = idx + "bearer ".len();
+    let end = scan_value_end(message, start, &[b'"', b'\'', b',']);
     let mut out = message.to_string();
-    if let Some(idx) = lower.find("bearer ") {
-        let start = idx + "bearer ".len();
-        let mut end = start;
-        let bytes = message.as_bytes();
-        while end < message.len() {
-            let c = bytes[end] as char;
-            if c.is_whitespace() || c == '"' || c == '\'' || c == ',' {
-                break;
-            }
-            end += 1;
-        }
-        out.replace_range(start..end, "***");
-    }
+    out.replace_range(start..end, "***");
     out
 }
 
 fn redact_body_payload(message: &str) -> Option<String> {
-    let lower = message.to_lowercase();
     let markers = [
         "request body:",
         "response body:",
@@ -195,9 +198,8 @@ fn redact_body_payload(message: &str) -> Option<String> {
         "request body",
     ];
     for marker in markers {
-        if let Some(pos) = lower.find(marker) {
-            let split_at = pos + marker.len();
-            let (prefix, rest) = message.split_at(split_at);
+        if let Some(pos) = find_ascii_ignore_case(message, marker, 0) {
+            let (prefix, rest) = message.split_at(pos + marker.len());
             let len = rest.len();
             return Some(format!("{} <redacted body len={}>", prefix.trim_end(), len));
         }
@@ -667,5 +669,56 @@ pub fn developer_force_crash(app: AppHandle) -> Result<(), String> {
     #[cfg(not(target_os = "android"))]
     {
         std::process::abort();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{redact_authorization, redact_body_payload, redact_param_value, sanitize_message};
+
+    #[test]
+    fn redacts_param_values_without_touching_multibyte_text() {
+        let message = "İstanbul çağrısı api_key=secret123&model=gpt";
+        assert_eq!(
+            redact_param_value(message, "api_key"),
+            "İstanbul çağrısı api_key=***&model=gpt"
+        );
+    }
+
+    #[test]
+    fn param_value_scan_skips_multibyte_characters_whole() {
+        let message = "token=şşşşş trailing";
+        assert_eq!(redact_param_value(message, "token"), "token=*** trailing");
+    }
+
+    #[test]
+    fn redacts_bearer_token_after_multibyte_prefix() {
+        let message = "İ Authorization: Bearer abc.def, next";
+        assert_eq!(
+            redact_authorization(message),
+            "İ Authorization: Bearer ***, next"
+        );
+    }
+
+    #[test]
+    fn leaves_message_untouched_without_bearer_prefix() {
+        let message = "authorization header missing";
+        assert_eq!(redact_authorization(message), message);
+    }
+
+    #[test]
+    fn redacts_body_payload_after_length_changing_lowercase() {
+        let message = "İ Request body: {\"prompt\":\"héllo\"}";
+        assert_eq!(
+            redact_body_payload(message),
+            Some("İ Request body: <redacted body len=20>".to_string())
+        );
+    }
+
+    #[test]
+    fn sanitizes_multibyte_messages_without_panicking() {
+        let message = "İİİ response body: 안녕하세요 key=ünïcode ✨";
+        let sanitized = sanitize_message("storage", message);
+        assert!(sanitized.contains("<redacted body len="));
     }
 }

@@ -673,14 +673,16 @@ export function GroupSettingsPage() {
               </AnimatePresence>
             </div>
 
-            {groupCharacters.length <= 2 && (
-              <p className="mt-2 text-xs text-fg/40 text-center">
-                {t("groupChats.groupSettings.groupMinCharacters")}
+            <div className="mt-3 space-y-1.5 px-1">
+              {groupCharacters.length <= 2 && (
+                <p className={cn(typography.caption.size, "text-fg/45")}>
+                  {t("groupChats.groupSettings.groupMinCharacters")}
+                </p>
+              )}
+              <p className={cn(typography.caption.size, "text-fg/45")}>
+                {t("groupChats.groupSettings.mutedCharactersNote")}
               </p>
-            )}
-            <p className="mt-2 text-xs text-fg/40 text-center">
-              {t("groupChats.groupSettings.mutedCharactersNote")}
-            </p>
+            </div>
           </section>
 
           <section className={spacing.item}>

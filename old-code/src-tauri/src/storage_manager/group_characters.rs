@@ -504,6 +504,7 @@ pub fn group_create(
     starting_scene_json: Option<String>,
     background_image_path: Option<String>,
     speaker_selection_method: Option<String>,
+    memory_type: Option<String>,
     app: tauri::AppHandle,
     pool: State<'_, SwappablePool>,
 ) -> Result<String, String> {
@@ -523,11 +524,15 @@ pub fn group_create(
     let chat_type_value = chat_type.unwrap_or_else(default_chat_type);
     let selection_method =
         speaker_selection_method.unwrap_or_else(default_speaker_selection_method);
+    let memory_type_value = memory_type.unwrap_or_else(default_memory_type);
+    if memory_type_value != "manual" && memory_type_value != "dynamic" {
+        return Err("Invalid memory_type. Must be 'manual' or 'dynamic'".to_string());
+    }
     let lorebook_ids_json = "[]".to_string();
 
     conn.execute(
-        "INSERT INTO group_characters (id, name, character_ids, muted_character_ids, persona_id, created_at, updated_at, archived, chat_type, starting_scene, background_image_path, lorebook_ids, disable_character_lorebooks, speaker_selection_method)
-         VALUES (?1, ?2, ?3, '[]', ?4, ?5, ?5, 0, ?6, ?7, ?8, ?9, 0, ?10)",
+        "INSERT INTO group_characters (id, name, character_ids, muted_character_ids, persona_id, created_at, updated_at, archived, chat_type, starting_scene, background_image_path, lorebook_ids, disable_character_lorebooks, speaker_selection_method, memory_type)
+         VALUES (?1, ?2, ?3, '[]', ?4, ?5, ?5, 0, ?6, ?7, ?8, ?9, 0, ?10, ?11)",
         params![
             id,
             name,
@@ -538,7 +543,8 @@ pub fn group_create(
             starting_scene_json.as_deref(),
             background_image_path,
             lorebook_ids_json,
-            selection_method
+            selection_method,
+            memory_type_value
         ],
     )
     .map_err(|e| crate::utils::err_to_string(module_path!(), line!(), e))?;
@@ -559,7 +565,7 @@ pub fn group_create(
         lorebook_ids: Vec::new(),
         disable_character_lorebooks: false,
         speaker_selection_method: selection_method,
-        memory_type: "manual".to_string(),
+        memory_type: memory_type_value,
         chat_appearance: None,
         character_model_overrides: BTreeMap::new(),
         group_chat_prompt_template_id: None,

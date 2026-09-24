@@ -130,6 +130,7 @@ type DownloadedGgufModel = {
   quantization: string;
   isMmproj?: boolean;
   isMtp?: boolean;
+  isDflash?: boolean;
 };
 
 type SdcppComponentLibraryEntry = {
@@ -179,6 +180,11 @@ type SdcppDownloadedFile = {
 
 
 import { SDCPP_SAMPLERS, SDCPP_SCHEDULERS } from "../../../core/image-generation/sdcpp-options";
+import {
+  clearMovePromptDismissal,
+  dismissMovePrompt,
+  isMovePromptDismissed,
+} from "../../../core/models/moveModelPrompt";
 
 const SDCPP_HIRES_UPSCALERS = [
   "Lanczos",
@@ -191,7 +197,7 @@ const SDCPP_HIRES_UPSCALERS = [
   "Latent (bicubic antialiased)",
 ] as const;
 
-type LocalLibraryPickerMode = "model" | "mmproj" | "mtp";
+type LocalLibraryPickerMode = "model" | "mmproj" | "mtp" | "dflash";
 
 type OpenRouterEndpoint = {
   id: string;
@@ -602,7 +608,7 @@ export function EditModelPage() {
   const [movingModel, setMovingModel] = useState(false);
   const [moveError, setMoveError] = useState<string | null>(null);
   const [movePromptPath, setMovePromptPath] = useState<string | null>(null);
-  const [skippedMovePromptPath, setSkippedMovePromptPath] = useState<string | null>(null);
+  const [movingAllModelFiles, setMovingAllModelFiles] = useState(false);
   const [pendingReturnAfterMovePrompt, setPendingReturnAfterMovePrompt] = useState<string | null>(
     null,
   );
@@ -681,6 +687,8 @@ export function EditModelPage() {
     handleLlamaNPenRangeChange,
     handleLlamaXtcProbabilityChange,
     handleLlamaXtcThresholdChange,
+    handleLlamaAdaptiveTargetChange,
+    handleLlamaAdaptiveDecayChange,
     handleLlamaDryMultiplierChange,
     handleLlamaDryBaseChange,
     handleLlamaDryAllowedLengthChange,
@@ -695,6 +703,10 @@ export function EditModelPage() {
     handleLlamaMtpPlacementChange,
     handleLlamaMtpDraftTokensChange,
     handleLlamaMtpModelPathChange,
+    handleLlamaDflashEnabledChange,
+    handleLlamaDflashDraftTokensChange,
+    handleLlamaDflashMinProbabilityChange,
+    handleLlamaDflashModelPathChange,
     handleLlamaStreamingEnabledChange,
     handleOllamaNumCtxChange,
     handleOllamaNumPredictChange,
@@ -715,6 +727,7 @@ export function EditModelPage() {
     handleReasoningEffortChange,
     handleReasoningBudgetChange,
     handleForceSendThinkingStateChange,
+    handleForceGemma4ReasoningChange,
     handlePromptCachingEnabledChange,
     handlePromptCachingTtlChange,
     applyLlamaRuntimeSuggestion,
@@ -1007,6 +1020,8 @@ export function EditModelPage() {
 
   const openLocalMtpPicker = async () => openDownloadedLibraryPicker("mtp");
 
+  const openLocalDflashPicker = async () => openDownloadedLibraryPicker("dflash");
+
   const syncImageInputScope = (mmprojPath: string | null) => {
     if (!editorModel) return;
     const currentScopes = (editorModel.inputScopes ?? ["text"]) as Array<
@@ -1042,6 +1057,8 @@ export function EditModelPage() {
       syncImageInputScope(model.path);
     } else if (localLibraryPickerMode === "mtp") {
       handleLlamaMtpModelPathChange(model.path);
+    } else if (localLibraryPickerMode === "dflash") {
+      handleLlamaDflashModelPathChange(model.path);
     } else {
       handleModelNameChange(model.path);
       if (!editorModel?.displayName?.trim()) {
@@ -1065,7 +1082,7 @@ export function EditModelPage() {
       if (!editorModel?.displayName?.trim()) {
         handleDisplayNameChange(deriveDisplayNameFromPath(selected));
       }
-      if (isPathOutsideGgufDir(selected) && skippedMovePromptPath !== selected) {
+      if (isPathOutsideGgufDir(selected) && !isMovePromptDismissed(selected)) {
         setMovePromptSource("browse");
         setMovePromptPath(selected);
         setPendingReturnAfterMovePrompt(null);
@@ -1287,7 +1304,7 @@ export function EditModelPage() {
     }
 
     const modelPath = editorModel.name.trim();
-    if (!isPathOutsideGgufDir(modelPath) || skippedMovePromptPath === modelPath) {
+    if (!isPathOutsideGgufDir(modelPath) || isMovePromptDismissed(modelPath)) {
       const success = await saveModel();
       if (success && shouldNavigateAfterSave) {
         editNavigate(returnTo!);
@@ -1301,7 +1318,6 @@ export function EditModelPage() {
       setMovePromptSource("save");
       setMovePromptPath(modelPath);
       setPendingReturnAfterMovePrompt(shouldNavigateAfterSave ? returnTo! : null);
-      setSkippedMovePromptPath(null);
       setMoveError(null);
       setShowMovePrompt(true);
     }
@@ -1333,7 +1349,7 @@ export function EditModelPage() {
         updateEditorModel({ name: newPath });
       }
 
-      setSkippedMovePromptPath(null);
+      clearMovePromptDismissal(editorModel.name.trim());
       const nextReturnTo = pendingReturnAfterMovePrompt;
       setPendingReturnAfterMovePrompt(null);
       setShowMovePrompt(false);
@@ -1351,9 +1367,86 @@ export function EditModelPage() {
     }
   };
 
+  const modelSidecarPaths = useMemo(
+    () =>
+      [
+        modelAdvancedDraft.llamaMmprojPath,
+        modelAdvancedDraft.llamaMtpModelPath,
+        modelAdvancedDraft.llamaDflashModelPath,
+      ]
+        .map((path) => path?.trim() || null)
+        .filter((path): path is string => !!path),
+    [
+      modelAdvancedDraft.llamaMmprojPath,
+      modelAdvancedDraft.llamaMtpModelPath,
+      modelAdvancedDraft.llamaDflashModelPath,
+    ],
+  );
+
+  const modelFilesOutsideLibrary = useMemo(
+    () =>
+      [editorModel?.name?.trim() || null, ...modelSidecarPaths]
+        .filter((path): path is string => !!path)
+        .filter((path) => isPathOutsideGgufDir(path)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [editorModel?.name, modelSidecarPaths, ggufModelsDir],
+  );
+
+  const handleMoveAllModelFilesToLibrary = async () => {
+    if (!editorModel || modelFilesOutsideLibrary.length === 0) return;
+    setMovingAllModelFiles(true);
+    try {
+      try {
+        await invoke("llamacpp_unload");
+      } catch {
+        // May not be loaded, that's fine
+      }
+
+      const folderName = editorModel.displayName?.trim() || null;
+      const movePath = async (path: string | null | undefined): Promise<string | null> => {
+        const trimmed = path?.trim();
+        if (!trimmed) return null;
+        if (!isPathOutsideGgufDir(trimmed)) return trimmed;
+        return await invoke<string>("hf_move_model_to_gguf_dir", {
+          sourcePath: trimmed,
+          modelName: folderName,
+        });
+      };
+
+      const movedModelPath = await movePath(editorModel.name);
+      const movedMmproj = await movePath(modelAdvancedDraft.llamaMmprojPath);
+      const movedMtp = await movePath(modelAdvancedDraft.llamaMtpModelPath);
+      const movedDflash = await movePath(modelAdvancedDraft.llamaDflashModelPath);
+
+      if (movedMmproj !== (modelAdvancedDraft.llamaMmprojPath?.trim() || null)) {
+        handleLlamaMmprojPathChange(movedMmproj);
+      }
+      if (movedMtp !== (modelAdvancedDraft.llamaMtpModelPath?.trim() || null)) {
+        handleLlamaMtpModelPathChange(movedMtp);
+      }
+      if (movedDflash !== (modelAdvancedDraft.llamaDflashModelPath?.trim() || null)) {
+        handleLlamaDflashModelPathChange(movedDflash);
+      }
+      if (movedModelPath) {
+        clearMovePromptDismissal(editorModel.name.trim());
+        updateEditorModel({ name: movedModelPath });
+      }
+
+      toast.success(t("editModel.moveModel.movedAllTitle"), t("editModel.moveModel.movedAllBody"));
+    } catch (err: any) {
+      console.error("Failed to move model files", err);
+      toast.error(
+        t("hfBrowser.moveToLibraryFailed"),
+        typeof err === "string" ? err : err?.message || "",
+      );
+    } finally {
+      setMovingAllModelFiles(false);
+    }
+  };
+
   const handleSkipMove = () => {
     if (movePromptPath) {
-      setSkippedMovePromptPath(movePromptPath);
+      dismissMovePrompt(movePromptPath);
     }
     const nextReturnTo = pendingReturnAfterMovePrompt;
     setPendingReturnAfterMovePrompt(null);
@@ -1613,30 +1706,46 @@ export function EditModelPage() {
       }),
     [downloadedModels],
   );
+  const dflashLibraryModels = useMemo(
+    () =>
+      downloadedModels.filter((model) => {
+        if (model.isDflash !== undefined) return model.isDflash;
+        return model.filename.toLowerCase().includes("dflash");
+      }),
+    [downloadedModels],
+  );
   const localLibraryModels =
     localLibraryPickerMode === "mmproj"
       ? mmprojLibraryModels
       : localLibraryPickerMode === "mtp"
         ? mtpLibraryModels
-        : downloadedModels;
+        : localLibraryPickerMode === "dflash"
+          ? dflashLibraryModels
+          : downloadedModels;
   const localLibraryTitle =
     localLibraryPickerMode === "mmproj"
       ? t("editModel.localLibrary.mmprojTitle")
       : localLibraryPickerMode === "mtp"
         ? "Select MTP Draft File"
-        : t("hfBrowser.libraryTitle");
+        : localLibraryPickerMode === "dflash"
+          ? "Select DFlash Draft File"
+          : t("hfBrowser.libraryTitle");
   const localLibraryEmptyLabel =
     localLibraryPickerMode === "mmproj"
       ? t("editModel.localLibrary.mmprojEmpty")
       : localLibraryPickerMode === "mtp"
         ? "No MTP files downloaded"
-        : t("hfBrowser.libraryEmpty");
+        : localLibraryPickerMode === "dflash"
+          ? "No DFlash files downloaded"
+          : t("hfBrowser.libraryEmpty");
   const localLibraryEmptyHint =
     localLibraryPickerMode === "mmproj"
       ? t("editModel.localLibrary.mmprojEmptyHint")
       : localLibraryPickerMode === "mtp"
         ? "Download the mtp-*.gguf sidecar from the model's repository in the model browser."
-        : t("hfBrowser.libraryEmptyHint");
+        : localLibraryPickerMode === "dflash"
+          ? "Download the *dflash*.gguf drafter for this model in the model browser."
+          : t("hfBrowser.libraryEmptyHint");
   const isAutomatic1111Provider = editorModel?.providerId === "automatic1111";
   const isSdcppModel = editorModel?.providerId === "sdcpp";
   const isFixedImageProvider = isAutomatic1111Provider || isSdcppModel;
@@ -2640,6 +2749,8 @@ export function EditModelPage() {
     modelAdvancedDraft.llamaMtpEnabled,
     modelAdvancedDraft.llamaMtpPlacement,
     modelAdvancedDraft.llamaMtpModelPath,
+    modelAdvancedDraft.llamaDflashEnabled,
+    modelAdvancedDraft.llamaDflashModelPath,
   ]);
 
   useEffect(() => {
@@ -2687,6 +2798,8 @@ export function EditModelPage() {
             llamaMtpEnabled: modelAdvancedDraft.llamaMtpEnabled ?? null,
             llamaMtpPlacement: modelAdvancedDraft.llamaMtpPlacement ?? null,
             llamaMtpModelPath: modelAdvancedDraft.llamaMtpModelPath ?? null,
+            llamaDflashEnabled: modelAdvancedDraft.llamaDflashEnabled ?? null,
+            llamaDflashModelPath: modelAdvancedDraft.llamaDflashModelPath ?? null,
           },
         );
         if (!cancelled) {
@@ -2714,6 +2827,8 @@ export function EditModelPage() {
     modelAdvancedDraft.llamaMtpEnabled,
     modelAdvancedDraft.llamaMtpPlacement,
     modelAdvancedDraft.llamaMtpModelPath,
+    modelAdvancedDraft.llamaDflashEnabled,
+    modelAdvancedDraft.llamaDflashModelPath,
   ]);
 
   const scopeOrder = ["text", "image", "audio"] as const;
@@ -3034,7 +3149,10 @@ export function EditModelPage() {
                                           ? modelAdvancedDraft.llamaMmprojPath === model.path
                                           : localLibraryPickerMode === "mtp"
                                             ? modelAdvancedDraft.llamaMtpModelPath === model.path
-                                            : editorModel.name === model.path
+                                            : localLibraryPickerMode === "dflash"
+                                              ? modelAdvancedDraft.llamaDflashModelPath ===
+                                                model.path
+                                              : editorModel.name === model.path
                                       ) ? (
                                         <Check className="h-4 w-4 text-accent" />
                                       ) : (
@@ -4569,6 +4687,48 @@ export function EditModelPage() {
                                   <div className="space-y-4">
                                     <div className="space-y-0.5">
                                       <span className="block text-[13px] font-medium text-fg/70">
+                                        {t("editModel.llamaSampler.adaptiveTarget")}
+                                      </span>
+                                      <span className="block text-[13px] text-fg/40">
+                                        {t("editModel.llamaSampler.adaptiveTargetDescription")}
+                                      </span>
+                                    </div>
+                                    <NumberInput
+                                      min={0}
+                                      max={1}
+                                      step={0.01}
+                                      value={modelAdvancedDraft.llamaAdaptiveTarget ?? null}
+                                      onChange={(next) => handleLlamaAdaptiveTargetChange(next)}
+                                      placeholder={t("editModel.placeholders.default")}
+                                      className={numberInputClassName}
+                                    />
+                                  </div>
+
+                                  <div className="space-y-4">
+                                    <div className="space-y-0.5">
+                                      <span className="block text-[13px] font-medium text-fg/70">
+                                        {t("editModel.llamaSampler.adaptiveDecay")}
+                                      </span>
+                                      <span className="block text-[13px] text-fg/40">
+                                        {t("editModel.llamaSampler.adaptiveDecayDescription")}
+                                      </span>
+                                    </div>
+                                    <NumberInput
+                                      min={0}
+                                      max={0.99}
+                                      step={0.01}
+                                      value={modelAdvancedDraft.llamaAdaptiveDecay ?? null}
+                                      onChange={(next) => handleLlamaAdaptiveDecayChange(next)}
+                                      placeholder="0.90"
+                                      className={numberInputClassName}
+                                    />
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-6">
+                                  <div className="space-y-4">
+                                    <div className="space-y-0.5">
+                                      <span className="block text-[13px] font-medium text-fg/70">
                                         {t("editModel.llamaSampler.dryMultiplier")}
                                       </span>
                                       <span className="block text-[13px] text-fg/40">
@@ -5396,6 +5556,34 @@ export function EditModelPage() {
                             <p className="text-[12px] text-fg/45">
                               {runtimePanelTitle} · {runtimeSummary}
                             </p>
+
+                            <div className="flex items-start justify-between gap-3 rounded-lg border border-fg/8 bg-fg/[0.02] px-3 py-3">
+                              <div className="space-y-0.5">
+                                <span className="block text-[13px] font-medium text-fg/70">
+                                  {t("editModel.moveModel.moveAllTitle")}
+                                </span>
+                                <span className="block text-[13px] text-fg/40">
+                                  {t("editModel.moveModel.moveAllDescription")}
+                                </span>
+                              </div>
+                              {modelFilesOutsideLibrary.length === 0 ? (
+                                <span className="shrink-0 text-[12px] text-fg/40">
+                                  {t("editModel.moveModel.moveAllDone")}
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={handleMoveAllModelFilesToLibrary}
+                                  disabled={movingAllModelFiles}
+                                  className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-fg/10 bg-fg/5 px-2.5 py-1.5 text-[12px] font-medium text-fg/68 transition hover:border-fg/20 hover:bg-fg/10 hover:text-fg disabled:opacity-50"
+                                >
+                                  <FolderOpen className="h-3.5 w-3.5 text-accent/70" />
+                                  {movingAllModelFiles
+                                    ? t("editModel.moveModel.moveAllMoving")
+                                    : `${t("editModel.moveModel.moveAllAction")} (${modelFilesOutsideLibrary.length})`}
+                                </button>
+                              )}
+                            </div>
 
                             <div className="grid grid-cols-1 gap-6 xl:grid-cols-2 xl:items-start">
                               {/* 1. Memory & Context */}
@@ -7087,6 +7275,191 @@ export function EditModelPage() {
                                       </div>
                                     )}
                                   </div>
+
+                                  <div className="space-y-4 border-t border-fg/8 pt-4">
+                                    <div className="flex items-center justify-between gap-4">
+                                      <div className="space-y-0.5">
+                                        <span className="block text-[13px] font-medium text-fg/70">
+                                          {t("editModel.dflash.title")}
+                                        </span>
+                                        <span className="block text-[13px] text-fg/40">
+                                          {t("editModel.dflash.description")}
+                                        </span>
+                                      </div>
+                                      <div className="flex shrink-0 items-center gap-3">
+                                        <span
+                                          className={cn(
+                                            "text-[12px] font-medium transition",
+                                            modelAdvancedDraft.llamaDflashEnabled === true
+                                              ? "text-accent/80"
+                                              : "text-fg/42",
+                                          )}
+                                        >
+                                          {modelAdvancedDraft.llamaDflashEnabled === true
+                                            ? t("common.labels.on")
+                                            : t("common.labels.off")}
+                                        </span>
+                                        <Switch
+                                          id="llama-dflash-enabled"
+                                          checked={modelAdvancedDraft.llamaDflashEnabled === true}
+                                          onChange={(next) =>
+                                            handleLlamaDflashEnabledChange(next ? true : null)
+                                          }
+                                          aria-label={t("editModel.dflash.toggle")}
+                                        />
+                                      </div>
+                                    </div>
+
+                                    {modelAdvancedDraft.llamaDflashEnabled === true && (
+                                      <div className="space-y-4">
+                                        {modelAdvancedDraft.llamaMmprojPath?.trim() && (
+                                          <div className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2.5">
+                                            <div className="flex items-start gap-2">
+                                              <AlertTriangle
+                                                size={14}
+                                                className="mt-0.5 shrink-0 text-warning"
+                                              />
+                                              <div className="space-y-0.5">
+                                                <p className="text-[12px] font-medium text-warning">
+                                                  {t("editModel.dflash.visionWarningTitle")}
+                                                </p>
+                                                <p className="text-[12px] leading-relaxed text-warning/80">
+                                                  {t("editModel.dflash.visionWarningDescription")}
+                                                </p>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        )}
+
+                                        <div className="flex items-center justify-between gap-4">
+                                          <div className="space-y-0.5">
+                                            <span className="block text-[13px] font-medium text-fg/70">
+                                              {t("editModel.dflash.placement")}
+                                            </span>
+                                            <span className="block text-[13px] text-fg/40">
+                                              {t("editModel.dflash.placementDescription")}
+                                            </span>
+                                          </div>
+                                          <div className="w-36 shrink-0">
+                                            <select
+                                              value={modelAdvancedDraft.llamaMtpPlacement ?? "auto"}
+                                              onChange={(event) => {
+                                                const value = event.target.value;
+                                                handleLlamaMtpPlacementChange(
+                                                  value === "auto"
+                                                    ? null
+                                                    : (value as "gpu" | "cpu"),
+                                                );
+                                              }}
+                                              className={selectInputClassName}
+                                              aria-label={t("editModel.dflash.placement")}
+                                            >
+                                              <option value="auto" className="bg-[#16171d]">
+                                                {t("common.labels.auto")}
+                                              </option>
+                                              <option value="gpu" className="bg-[#16171d]">
+                                                {t("editModel.dflash.placementGpu")}
+                                              </option>
+                                              <option value="cpu" className="bg-[#16171d]">
+                                                {t("editModel.dflash.placementCpu")}
+                                              </option>
+                                            </select>
+                                          </div>
+                                        </div>
+
+                                        <div className="flex items-center justify-between">
+                                          <div className="space-y-0.5">
+                                            <span className="block text-[13px] font-medium text-fg/70">
+                                              {t("editModel.dflash.draftTokens")}
+                                            </span>
+                                            <span className="block text-[13px] text-fg/40">
+                                              {t("editModel.dflash.draftTokensDescription")}
+                                            </span>
+                                          </div>
+                                          <span className="font-mono text-[13px] text-fg/55">
+                                            {modelAdvancedDraft.llamaDflashDraftTokens ??
+                                              t("common.labels.auto")}
+                                          </span>
+                                        </div>
+                                        <NumberInput
+                                          min={1}
+                                          max={15}
+                                          step={1}
+                                          value={modelAdvancedDraft.llamaDflashDraftTokens ?? null}
+                                          onChange={(next) =>
+                                            handleLlamaDflashDraftTokensChange(
+                                              next === null || next <= 0
+                                                ? null
+                                                : Math.min(15, Math.trunc(next)),
+                                            )
+                                          }
+                                          placeholder={t("common.labels.auto")}
+                                          className={numberInputClassName}
+                                        />
+
+                                        <div className="flex items-center justify-between">
+                                          <div className="space-y-0.5">
+                                            <span className="block text-[13px] font-medium text-fg/70">
+                                              {t("editModel.dflash.minProbability")}
+                                            </span>
+                                            <span className="block text-[13px] text-fg/40">
+                                              {t("editModel.dflash.minProbabilityDescription")}
+                                            </span>
+                                          </div>
+                                          <span className="font-mono text-[13px] text-fg/55">
+                                            {modelAdvancedDraft.llamaDflashMinProbability ??
+                                              t("common.labels.auto")}
+                                          </span>
+                                        </div>
+                                        <NumberInput
+                                          min={0}
+                                          max={1}
+                                          step={0.05}
+                                          value={
+                                            modelAdvancedDraft.llamaDflashMinProbability ?? null
+                                          }
+                                          onChange={(next) =>
+                                            handleLlamaDflashMinProbabilityChange(
+                                              next === null ? null : Math.min(1, Math.max(0, next)),
+                                            )
+                                          }
+                                          placeholder={t("common.labels.auto")}
+                                          className={numberInputClassName}
+                                        />
+
+                                        <div className="flex items-start justify-between gap-3">
+                                          <div className="space-y-0.5">
+                                            <span className="block text-[13px] font-medium text-fg/70">
+                                              {t("editModel.dflash.draftFile")}
+                                            </span>
+                                            <span className="block text-[13px] text-fg/40">
+                                              {t("editModel.dflash.draftFileDescription")}
+                                            </span>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={openLocalDflashPicker}
+                                            className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-fg/10 bg-fg/5 px-2.5 py-1.5 text-[12px] font-medium text-fg/68 transition hover:border-fg/20 hover:bg-fg/10 hover:text-fg"
+                                          >
+                                            <FolderOpen className="h-3.5 w-3.5 text-accent/70" />
+                                            {t("hfBrowser.selectFromLibrary")}
+                                          </button>
+                                        </div>
+                                        <input
+                                          type="text"
+                                          value={modelAdvancedDraft.llamaDflashModelPath ?? ""}
+                                          onChange={(e) =>
+                                            handleLlamaDflashModelPathChange(
+                                              e.target.value === "" ? null : e.target.value,
+                                            )
+                                          }
+                                          placeholder={t("editModel.dflash.draftFilePlaceholder")}
+                                          className={selectInputClassName}
+                                          spellCheck={false}
+                                        />
+                                      </div>
+                                    )}
+                                  </div>
                                   </div>
                                 </div>
                                 </div>
@@ -7390,6 +7763,26 @@ export function EditModelPage() {
                                   onChange={handleForceSendThinkingStateChange}
                                 />
                               </div>
+
+                              {editorModel?.providerId === "llamacpp" && (
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-3 border-l-2 border-warning/40 pl-3">
+                                    <Sparkles size={16} className="text-warning/80" />
+                                    <div className="space-y-0.5">
+                                      <span className="block text-[13px] font-medium text-fg/70">
+                                        {t("editModel.reasoning.forceGemma4Reasoning")}
+                                      </span>
+                                      <span className="block text-[13px] text-fg/40">
+                                        {t("editModel.reasoning.forceGemma4ReasoningDescription")}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <Switch
+                                    checked={modelAdvancedDraft.forceGemma4Reasoning || false}
+                                    onChange={handleForceGemma4ReasoningChange}
+                                  />
+                                </div>
+                              )}
                             </div>
                           </div>
                         )}

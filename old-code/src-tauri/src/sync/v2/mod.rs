@@ -24,12 +24,13 @@ pub use blob_store::{
     write_blob_chunk, BlobError, BlobReceiveState,
 };
 pub use capture::{
-    capture_local_string_transaction, capture_local_transaction, capture_transaction,
-    ensure_current_database_seeded, CaptureError, CapturedTransaction,
+    capture_local_revision, capture_local_string_transaction, capture_local_transaction,
+    capture_transaction, ensure_current_database_seeded, local_capture_armed, CaptureError,
+    CapturedTransaction,
 };
 pub use catalog::{
-    audit_sync_catalog, cached_schema_fingerprint, schema_fingerprint,
-    syncable_tables, CatalogError, TableInfo,
+    audit_sync_catalog, cached_schema_fingerprint, is_syncable_table,
+    schema_fingerprint, syncable_tables, CatalogError, TableInfo,
 };
 pub use model::{ApplyOutcome, ApplyResult, ChangeRevision, Frontier, HybridTimestamp};
 pub use identity::get_or_create_device_id;

@@ -570,6 +570,11 @@ fn resolve_group_session_config(
     };
     session.starting_scene = match value("startingScene") {
         Some(value) if value.is_null() => None,
+        Some(serde_json::Value::String(encoded)) => {
+            serde_json::from_str::<serde_json::Value>(encoded)
+                .ok()
+                .filter(|decoded| decoded.is_object())
+        }
         Some(value) => Some(value.clone()),
         None => profile.4.and_then(|raw| serde_json::from_str(&raw).ok()),
     };
@@ -3961,5 +3966,50 @@ mod group_config_tests {
             Some(&"session-model".to_string())
         );
         assert_eq!(resolved.group_chat_roleplay_prompt_template_id, None);
+    }
+
+    #[test]
+    fn double_encoded_starting_scene_resolves_to_an_object() {
+        let resolved = resolve_group_session_config(
+            &connection(),
+            session(serde_json::json!({
+                "version": 1,
+                "startingScene": "{\"id\":\"11111111-1111-4111-8111-111111111111\",\"content\":\"A quiet room\",\"createdAt\":10}"
+            })),
+        )
+        .unwrap()
+        .0;
+        let scene = resolved.starting_scene.expect("scene should resolve");
+        assert!(scene.is_object());
+        assert_eq!(scene["content"], "A quiet room");
+    }
+
+    #[test]
+    fn undecodable_starting_scene_override_resolves_to_none() {
+        let resolved = resolve_group_session_config(
+            &connection(),
+            session(serde_json::json!({
+                "version": 1,
+                "startingScene": "a plain sentence, not json"
+            })),
+        )
+        .unwrap()
+        .0;
+        assert_eq!(resolved.starting_scene, None);
+    }
+
+    #[test]
+    fn object_starting_scene_override_is_passed_through() {
+        let resolved = resolve_group_session_config(
+            &connection(),
+            session(serde_json::json!({
+                "version": 1,
+                "startingScene": { "id": "22222222-2222-4222-8222-222222222222", "content": "Direct", "createdAt": 20 }
+            })),
+        )
+        .unwrap()
+        .0;
+        let scene = resolved.starting_scene.expect("scene should resolve");
+        assert_eq!(scene["content"], "Direct");
     }
 }

@@ -15,8 +15,8 @@ use crate::storage_manager::{
 use crate::chat_manager::prompt_engine;
 use crate::chat_manager::types::{
     AccessibilitySettings, AccessibilitySoundSettings, AdvancedModelSettings, AdvancedSettings,
-    Character, DynamicMemoryStructuredFallbackFormat, Model, Persona, ProviderCredential, Session,
-    Settings, StoredMessage, SystemPromptEntry,
+    Character, DynamicMemoryStructuredFallbackFormat, MemoryEmbedding, Model, Persona,
+    ProviderCredential, Session, Settings, StoredMessage, SystemPromptEntry,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -528,8 +528,17 @@ pub fn build_system_prompt(
     persona: Option<&Persona>,
     session: &Session,
     settings: &Settings,
+    retrieved_memories: &[MemoryEmbedding],
 ) -> Vec<SystemPromptEntry> {
-    prompt_engine::build_system_prompt_entries(app, character, model, persona, session, settings)
+    prompt_engine::build_system_prompt_entries(
+        app,
+        character,
+        model,
+        persona,
+        session,
+        settings,
+        retrieved_memories,
+    )
 }
 
 pub fn recent_messages(session: &Session, limit: usize) -> Vec<StoredMessage> {

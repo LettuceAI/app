@@ -834,6 +834,11 @@ pub fn render_prompt_state(
         .filter(|value| !value.is_empty())
         .unwrap_or("the current conversation partner");
 
+    let (closeness_label, closeness_gloss) = closeness_band(rel.closeness);
+    let (trust_label, trust_gloss) = trust_band(rel.trust);
+    let (affection_label, affection_gloss) = affection_band(rel.affection);
+    let (tension_label, tension_gloss) = tension_band(rel.tension);
+
     let mut lines = vec![
         format!(
             "The following relationship and emotional state describes {}'s live relationship with {}, the person currently speaking in this chat.",
@@ -852,12 +857,20 @@ pub fn render_prompt_state(
             },
         ),
         format!(
-            "Current {} <-> {} relationship stance: closeness {}, trust {}, affection {}; tension {:.0}%.",
+            "Current {} <-> {} relationship stance: closeness: {} - {} ({:.0} on a scale from -100 to 100), trust: {} - {} ({:.0} on a scale from -100 to 100), affection: {} - {} ({:.0} on a scale from -100 to 100); tension: {} - {} ({:.0} on a scale from 0 to 100).",
             character.name,
             partner_name,
-            closeness_band(rel.closeness),
-            trust_band(rel.trust),
-            affection_band(rel.affection),
+            closeness_label,
+            closeness_gloss,
+            rel.closeness * 100.0,
+            trust_label,
+            trust_gloss,
+            rel.trust * 100.0,
+            affection_label,
+            affection_gloss,
+            rel.affection * 100.0,
+            tension_label,
+            tension_gloss,
             rel.tension * 100.0,
         ),
         format!(
@@ -1664,45 +1677,71 @@ fn clamp01(value: f64) -> f64 {
     value.clamp(0.0, 1.0)
 }
 
-fn affection_band(value: f64) -> &'static str {
-    if value < -0.5 {
-        "hostile"
-    } else if value < -0.15 {
-        "cold/irritated"
-    } else if value <= 0.15 {
-        "neutral"
-    } else if value <= 0.5 {
-        "warm"
+fn tension_band(value: f64) -> (&'static str, &'static str) {
+    if value <= 0.15 {
+        ("calm", "at ease, no friction between them")
+    } else if value <= 0.40 {
+        ("mild friction", "minor irritation, easily smoothed over")
+    } else if value <= 0.65 {
+        ("tense", "noticeable strain, guarded exchanges")
+    } else if value <= 0.85 {
+        ("strained", "conflict simmering, hard to ignore")
     } else {
-        "deeply affectionate"
+        ("at breaking point", "on the verge of rupture")
     }
 }
 
-fn trust_band(value: f64) -> &'static str {
-    if value < -0.5 {
-        "distrustful/guarded"
-    } else if value < -0.15 {
-        "wary"
-    } else if value <= 0.15 {
-        "neutral"
+fn affection_band(value: f64) -> (&'static str, &'static str) {
+    if value < -0.75 {
+        ("hostile", "actively dislikes them, wishes them ill")
+    } else if value < -0.5 {
+        ("cold/irritated", "annoyed by them, feels aversion")
+    } else if value < -0.25 {
+        ("indifferent", "indifferent to them, they don't matter")
+    } else if value <= 0.25 {
+        ("neutral", "no strong feeling either way")
     } else if value <= 0.5 {
-        "trusting"
+        ("warm", "genuine fondness, enjoys their company")
+    } else if value <= 0.75 {
+        ("affectionate", "cares for them, feels real warmth")
     } else {
-        "deeply trusting"
+        ("deeply affectionate", "cherishes them, strong emotional attachment")
     }
 }
 
-fn closeness_band(value: f64) -> &'static str {
-    if value < -0.5 {
-        "withdrawing/wants distance"
+fn trust_band(value: f64) -> (&'static str, &'static str) {
+    if value < -0.75 {
+        ("paranoid", "assumes hostile intent, treats everything as a threat")
+    } else if value < -0.5 {
+        ("suspicious", "expects deception, looks for hidden motives")
     } else if value < -0.15 {
-        "distant"
-    } else if value <= 0.15 {
-        "acquainted"
+        ("wary", "on guard, expects to be let down")
+    } else if value <= 0.25 {
+        ("neutral", "no strong lean either way")
     } else if value <= 0.5 {
-        "close"
+        ("open", "no active suspicion, but trust not yet earned")
+    } else if value <= 0.75 {
+        ("trusting", "relies on them, gives the benefit of the doubt")
     } else {
-        "intimate"
+        ("deeply trusting", "trusts them unconditionally")
+    }
+}
+
+fn closeness_band(value: f64) -> (&'static str, &'static str) {
+    if value < -0.75 {
+        ("distant", "fully checked out, no connection")
+    } else if value < -0.5 {
+        ("avoidant", "actively keeps them at arm's length")
+    } else if value < -0.15 {
+        ("withdrawing", "pulling back, wants space")
+    } else if value <= 0.25 {
+        ("neutral", "neither seeks nor avoids them")
+    } else if value <= 0.5 {
+        ("acquainted", "comfortable, but keeps some distance")
+    } else if value <= 0.75 {
+        ("close", "seeks them out, at ease together")
+    } else {
+        ("intimate", "deeply bonded, wants closeness")
     }
 }
 

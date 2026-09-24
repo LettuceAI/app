@@ -26,6 +26,7 @@ const SCHEMA_FINGERPRINT_ALGORITHM: &str = "2";
 pub fn is_syncable_table(table: &str) -> bool {
     !table.starts_with("sqlite_")
         && !table.starts_with("sync_")
+        && !table.starts_with("legacy_")
         && !LOCAL_ONLY_TABLES.contains(&table)
 }
 
@@ -214,6 +215,7 @@ mod tests {
         assert_eq!(tables[0].name, "chats");
         assert!(is_syncable_table("new_user_feature"));
         assert!(!is_syncable_table("sync_v2_changes"));
+        assert!(!is_syncable_table("legacy_old_feature"));
     }
 
     #[test]

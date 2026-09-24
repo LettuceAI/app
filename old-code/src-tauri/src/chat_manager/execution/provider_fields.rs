@@ -9,6 +9,9 @@ use super::{
     resolve_llama_chat_template_override, resolve_llama_chat_template_preset,
     resolve_llama_dry_allowed_length, resolve_llama_dry_base, resolve_llama_dry_multiplier,
     resolve_llama_dry_penalty_last_n, resolve_llama_dry_sequence_breakers,
+    resolve_llama_adaptive_decay, resolve_llama_adaptive_target,
+    resolve_llama_dflash_draft_tokens, resolve_llama_dflash_enabled,
+    resolve_llama_dflash_min_probability, resolve_llama_dflash_model_path,
     resolve_llama_flash_attention, resolve_llama_gpu_device_ids,
     resolve_llama_gpu_distribution_mode, resolve_llama_gpu_layers, resolve_llama_gpu_manual_layers,
     resolve_llama_kv_placement, resolve_llama_kv_type, resolve_llama_main_gpu,
@@ -137,6 +140,18 @@ fn build_llama_extra_fields(
     if let Some(v) = resolve_llama_mtp_model_path(session, model, settings) {
         extra.insert("llamaMtpModelPath".to_string(), json!(v));
     }
+    if let Some(v) = resolve_llama_dflash_enabled(session, model, settings) {
+        extra.insert("llamaDflashEnabled".to_string(), json!(v));
+    }
+    if let Some(v) = resolve_llama_dflash_draft_tokens(session, model, settings) {
+        extra.insert("llamaDflashDraftTokens".to_string(), json!(v));
+    }
+    if let Some(v) = resolve_llama_dflash_min_probability(session, model, settings) {
+        extra.insert("llamaDflashMinProbability".to_string(), json!(v));
+    }
+    if let Some(v) = resolve_llama_dflash_model_path(session, model, settings) {
+        extra.insert("llamaDflashModelPath".to_string(), json!(v));
+    }
     if let Some(v) = sampler_profile {
         extra.insert("llamaSamplerProfile".to_string(), json!(v));
     }
@@ -175,6 +190,12 @@ fn build_llama_extra_fields(
     }
     if let Some(v) = resolve_llama_xtc_threshold(session, model, settings) {
         extra.insert("llamaXtcThreshold".to_string(), json!(v));
+    }
+    if let Some(v) = resolve_llama_adaptive_target(session, model, settings) {
+        extra.insert("llamaAdaptiveTarget".to_string(), json!(v));
+    }
+    if let Some(v) = resolve_llama_adaptive_decay(session, model, settings) {
+        extra.insert("llamaAdaptiveDecay".to_string(), json!(v));
     }
 
     if extra.is_empty() {
@@ -240,6 +261,8 @@ mod tests {
             llama_dry_sequence_breakers: Some(vec![":".to_string()]),
             llama_xtc_probability: Some(0.5),
             llama_xtc_threshold: Some(0.1),
+            llama_adaptive_target: Some(0.3),
+            llama_adaptive_decay: Some(0.95),
             ..Default::default()
         };
         let model = Model {
@@ -284,7 +307,7 @@ mod tests {
         assert_eq!(extra.get("llamaNPenRange"), Some(&json!(64)));
         assert_eq!(
             extra.len(),
-            42,
+            44,
             "unexpected llama extra-body key count; a resolver stopped emitting or a new field was added without updating this fixture: {:?}",
             extra.keys().collect::<Vec<_>>()
         );
@@ -685,6 +708,27 @@ pub(crate) fn build_provider_extra_fields(
             "chat_template_kwargs".to_string(),
             json!({ "enable_thinking": enabled }),
         );
+    }
+
+    // Force reasoning on Gemma4-series models by prefilling the assistant reply
+    // with an opening thought channel. Only meaningful for the local llama.cpp
+    // engine, which builds the prompt itself and can carry the prefill.
+    if provider_id == "llamacpp" {
+        let force_gemma4_reasoning = model
+            .advanced_model_settings
+            .as_ref()
+            .and_then(|cfg| cfg.force_gemma4_reasoning)
+            .or_else(|| {
+                session
+                    .advanced_model_settings
+                    .as_ref()
+                    .and_then(|cfg| cfg.force_gemma4_reasoning)
+            })
+            .unwrap_or(false);
+
+        if force_gemma4_reasoning {
+            extra.insert("forceGemma4Reasoning".to_string(), json!(true));
+        }
     }
 
     // ─────────────────────────────────────────────────────────────

@@ -548,6 +548,7 @@ pub fn merge_continuity_into_state(
     character_id: &str,
     persona_id: Option<&str>,
     state: Option<JsonValue>,
+    pull_relationship: bool,
 ) -> Result<Option<JsonValue>, String> {
     let Some(mut state) = state else {
         return Ok(None);
@@ -585,14 +586,21 @@ pub fn merge_continuity_into_state(
         state_object.insert("soulGrowth".to_string(), JsonValue::Array(merged));
     }
 
-    let relationship_states =
-        serde_json::from_str::<JsonValue>(&continuity.relationship_states_json)
-            .unwrap_or_else(|_| JsonValue::Object(Default::default()));
-    if let Some(relationship) = relationship_states
-        .get(relationship_key(persona_id))
-        .filter(|value| value.is_object())
-    {
-        state_object.insert("relationshipState".to_string(), relationship.clone());
+    // Only pull the shared relationship state in when the caller wants it (i.e.
+    // on load, or when a fresh session should inherit the shared bond). On save
+    // of a session that already carries its own — possibly freshly evolved —
+    // relationship state, pulling here would overwrite it with the stale stored
+    // value before it can be persisted, permanently freezing the bond.
+    if pull_relationship {
+        let relationship_states =
+            serde_json::from_str::<JsonValue>(&continuity.relationship_states_json)
+                .unwrap_or_else(|_| JsonValue::Object(Default::default()));
+        if let Some(relationship) = relationship_states
+            .get(relationship_key(persona_id))
+            .filter(|value| value.is_object())
+        {
+            state_object.insert("relationshipState".to_string(), relationship.clone());
+        }
     }
     if let Some(episode) = session_id
         .map(str::trim)
@@ -731,6 +739,7 @@ mod tests {
             "character-1",
             Some("persona-1"),
             Some(fresh_session),
+            true,
         )
         .unwrap()
         .unwrap();
@@ -739,6 +748,58 @@ mod tests {
         assert_eq!(hydrated["relationshipState"]["trust"], 0.82);
         assert_eq!(hydrated["relationshipState"]["interactionCount"], 14);
         assert_eq!(hydrated["emotionalState"]["felt"]["calm"], 0.9);
+    }
+
+    #[test]
+    fn saving_keeps_the_sessions_evolved_relationship_over_stored_continuity() {
+        let conn = connection();
+        // Stored continuity holds an older/default bond.
+        persist_continuity_from_state(
+            &conn,
+            None,
+            "character-1",
+            Some("persona-1"),
+            &json!({"relationshipState": {"trust": 0.25, "interactionCount": 0}}),
+        )
+        .unwrap();
+
+        // A session that evolved its own bond this turn.
+        let evolved = json!({
+            "relationshipState": {"trust": 0.6, "interactionCount": 42},
+            "emotionalState": {"felt": {"calm": 0.5}}
+        });
+
+        // The save-side merge (pull_relationship = false) must NOT overwrite the
+        // evolved bond with the stale stored value — that was the freeze bug.
+        let merged = merge_continuity_into_state(
+            &conn,
+            None,
+            "character-1",
+            Some("persona-1"),
+            Some(evolved),
+            false,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(merged["relationshipState"]["trust"], 0.6);
+        assert_eq!(merged["relationshipState"]["interactionCount"], 42);
+
+        // Persisting it promotes the evolved bond to the shared store, so a fresh
+        // load then sees it.
+        persist_continuity_from_state(&conn, None, "character-1", Some("persona-1"), &merged)
+            .unwrap();
+        let reloaded = merge_continuity_into_state(
+            &conn,
+            None,
+            "character-1",
+            Some("persona-1"),
+            Some(json!({"relationshipState": {"trust": 0.0, "interactionCount": 0}})),
+            true,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(reloaded["relationshipState"]["trust"], 0.6);
+        assert_eq!(reloaded["relationshipState"]["interactionCount"], 42);
     }
 
     #[test]
@@ -767,6 +828,7 @@ mod tests {
             "character-1",
             Some("persona-1"),
             Some(json!({"relationshipState": {"trust": 0.0}})),
+            true,
         )
         .unwrap()
         .unwrap();
@@ -776,6 +838,7 @@ mod tests {
             "character-1",
             Some("persona-2"),
             Some(json!({"relationshipState": {"trust": 0.0}})),
+            true,
         )
         .unwrap()
         .unwrap();
@@ -829,6 +892,7 @@ mod tests {
             "character-1",
             None,
             Some(json!({"soulGrowth": []})),
+            true,
         )
         .unwrap()
         .unwrap();
@@ -872,6 +936,7 @@ mod tests {
             "character-1",
             Some("persona-1"),
             Some(json!({"relationshipState": {"trust": 0.0}})),
+            true,
         )
         .unwrap()
         .unwrap();

@@ -48,6 +48,20 @@ export interface ChatMessageDebugSnapshot {
   requestMessages: unknown[];
   requestBody: unknown;
   notes: string[];
+  // Raw contents of the individual prompt placeholders (empty when unused),
+  // so the token breakdown can attribute inline-rendered sources.
+  characterProfileContent: string;
+  personaContent: string;
+  memoryEntryCount: number;
+  lorebookContent: string;
+  contextSummaryContent: string;
+  keyMemoriesContent: string;
+  authorNoteContent: string;
+  companionStateContent: string;
+  scheduledNotesContent: string;
+  // Group chat only: the {{group_characters}} cast block (empty for 1:1 chats).
+  groupCastContent: string;
+  groupCastCount: number;
 }
 
 export interface LorebookEntryDraft {
@@ -316,6 +330,18 @@ export async function getMessageDebugSnapshot(params: {
   messageId: string;
 }): Promise<ChatMessageDebugSnapshot> {
   return invoke<ChatMessageDebugSnapshot>("chat_message_debug_snapshot", {
+    args: {
+      sessionId: params.sessionId,
+      messageId: params.messageId,
+    },
+  });
+}
+
+export async function getGroupChatMessageDebugSnapshot(params: {
+  sessionId: string;
+  messageId: string;
+}): Promise<ChatMessageDebugSnapshot> {
+  return invoke<ChatMessageDebugSnapshot>("group_chat_message_debug_snapshot", {
     args: {
       sessionId: params.sessionId,
       messageId: params.messageId,

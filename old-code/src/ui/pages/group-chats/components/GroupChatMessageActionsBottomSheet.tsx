@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Copy, Trash2, RotateCcw, Edit3, Users, Pin, PinOff, BookOpen, Brain, Paintbrush, GitBranch } from "lucide-react";
+import { Copy, Trash2, RotateCcw, Edit3, Users, Pin, PinOff, BookOpen, Brain, Paintbrush, GitBranch, Activity } from "lucide-react";
 
 import type { Character, Settings, Model } from "../../../../core/storage/schemas";
 import { useAvatar } from "../../../hooks/useAvatar";
@@ -10,6 +10,11 @@ import { MarkdownRenderer } from "../../chats/components/MarkdownRenderer";
 import { radius, cn, interactive } from "../../../design-tokens";
 import type { MessageActionState } from "../reducers/groupChatReducer";
 import { readSettings } from "../../../../core/storage/repo";
+import {
+  useMessageDebugSnapshot,
+  useTokenBreakdown,
+  PromptTokenBreakdownBars,
+} from "../../chats/components/PromptTokenBreakdown";
 
 function ActionRow({
   icon: Icon,
@@ -71,6 +76,7 @@ export function GroupChatMessageActionsBottomSheet({
   onBranchToCharacter,
   onOpenChatAppearance,
   characters,
+  sessionId,
 }: {
   messageAction: MessageActionState | null;
   actionError: string | null;
@@ -91,6 +97,7 @@ export function GroupChatMessageActionsBottomSheet({
   onBranchToCharacter?: (characterId: string) => void;
   onOpenChatAppearance?: () => void;
   characters: Character[];
+  sessionId?: string | null;
 }) {
   const { t } = useI18n();
   const [characterPickerMode, setCharacterPickerMode] = useState<"regenerate" | "branch" | null>(
@@ -106,6 +113,16 @@ export function GroupChatMessageActionsBottomSheet({
 
   const isAssistant = messageAction?.message.role === "assistant";
   const isScene = messageAction?.message.role === "scene";
+
+  // Prompt / context breakdown bars for assistant messages — reuses the shared
+  // component, loading the group-chat variant of the reconstructed snapshot.
+  const breakdownSnapshot = useMessageDebugSnapshot(
+    sessionId,
+    messageAction?.message.id ?? null,
+    Boolean(isAssistant && sessionId),
+    "group",
+  );
+  const breakdownData = useTokenBreakdown(breakdownSnapshot, messageAction?.message ?? null);
 
   useEffect(() => {
     readSettings().then(setSettings).catch(console.error);
@@ -263,6 +280,18 @@ export function GroupChatMessageActionsBottomSheet({
                         </div>
                       ))}
                     </div>
+                  </div>
+                )}
+
+                {!isScene && isAssistant && (breakdownData.breakdown || breakdownData.loading) && (
+                  <div className="mb-3 rounded-lg border border-fg/10 bg-fg/5 p-3">
+                    <div className="mb-2 flex items-center gap-2">
+                      <Activity size={14} className="text-fg/60" />
+                      <span className="text-xs font-medium text-fg/80">
+                        {t("chats.debugPage.tokenBreakdown")}
+                      </span>
+                    </div>
+                    <PromptTokenBreakdownBars data={breakdownData} />
                   </div>
                 )}
 

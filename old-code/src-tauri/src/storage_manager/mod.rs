@@ -19,6 +19,7 @@ pub mod models;
 pub mod personas;
 pub mod playground;
 pub mod providers;
+pub mod schema_canonicalizer;
 pub mod sessions;
 pub mod settings;
 pub mod system_cards;

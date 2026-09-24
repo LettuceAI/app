@@ -55,7 +55,13 @@ pub async fn run_agent_turn(
     emit_creation_helper_turn_start(app, &session_id, stream_request_id);
 
     let system_role = system_role_for(&ctx.cred);
-    let mut api_messages = build_initial_messages(session, target, fallback_format, &system_role);
+    let mut api_messages = build_initial_messages(
+        session,
+        target,
+        fallback_format,
+        &system_role,
+        &ctx.provider_id,
+    );
 
     let tool_config = if fallback_format.is_native() {
         Some(ToolConfig {
@@ -408,6 +414,7 @@ fn build_initial_messages(
     target: TargetKind,
     fallback: CreationHelperFallbackFormat,
     system_role: &str,
+    provider_id: &str,
 ) -> Vec<Value> {
     let mut conversation_messages = Vec::new();
     let view = build_draft_view(session);
@@ -429,6 +436,23 @@ fn build_initial_messages(
             fallback_addendum,
         ));
     }
+
+    // llama.cpp expects a single system message at the start for some templates (e.g. Gemma), so merge system sections here. Remote providers can keep them separate.
+    let prompt_entries = if crate::llama_cpp::is_llama_cpp(Some(provider_id)) {
+        let merged_system = prompt_entries
+            .iter()
+            .map(|entry| entry.content.trim())
+            .filter(|content| !content.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        vec![relative_system_entry(
+            "creation_helper_system",
+            "Creation Helper System",
+            merged_system,
+        )]
+    } else {
+        prompt_entries
+    };
 
     for msg in &session.messages {
         let role = match msg.role {

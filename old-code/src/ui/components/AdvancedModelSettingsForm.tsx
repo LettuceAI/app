@@ -59,6 +59,8 @@ export const ADVANCED_LLAMA_DRY_ALLOWED_LENGTH_RANGE = { min: 0, max: 128 };
 export const ADVANCED_LLAMA_DRY_PENALTY_LAST_N_RANGE = { min: -1, max: 262_144 };
 export const ADVANCED_LLAMA_XTC_PROBABILITY_RANGE = { min: 0, max: 1 };
 export const ADVANCED_LLAMA_XTC_THRESHOLD_RANGE = { min: 0, max: 1 };
+export const ADVANCED_LLAMA_ADAPTIVE_TARGET_RANGE = { min: 0, max: 1 };
+export const ADVANCED_LLAMA_ADAPTIVE_DECAY_RANGE = { min: 0, max: 0.99 };
 export const ADVANCED_LLAMA_REPEAT_PENALTY_RANGE = { min: 0, max: 2 };
 export const ADVANCED_LLAMA_N_PEN_RANGE = { min: -1, max: 262_144 };
 export const ADVANCED_OLLAMA_NUM_CTX_RANGE = { min: 0, max: 262_144 };
@@ -102,6 +104,8 @@ const FEATURE_GENERATION_NUMBER_RANGES = {
   llamaNPenRange: ADVANCED_LLAMA_N_PEN_RANGE,
   llamaXtcProbability: ADVANCED_LLAMA_XTC_PROBABILITY_RANGE,
   llamaXtcThreshold: ADVANCED_LLAMA_XTC_THRESHOLD_RANGE,
+  llamaAdaptiveTarget: ADVANCED_LLAMA_ADAPTIVE_TARGET_RANGE,
+  llamaAdaptiveDecay: ADVANCED_LLAMA_ADAPTIVE_DECAY_RANGE,
   llamaDryMultiplier: ADVANCED_LLAMA_DRY_MULTIPLIER_RANGE,
   llamaDryBase: ADVANCED_LLAMA_DRY_BASE_RANGE,
   llamaDryAllowedLength: ADVANCED_LLAMA_DRY_ALLOWED_LENGTH_RANGE,
@@ -387,6 +391,10 @@ export function sanitizeAdvancedModelSettings(input: AdvancedModelSettings): Adv
     llamaMtpPlacement: input.llamaMtpPlacement ?? null,
     llamaMtpDraftTokens: sanitize(input.llamaMtpDraftTokens, { min: 1, max: 8 }, true),
     llamaMtpModelPath: input.llamaMtpModelPath?.trim() || null,
+    llamaDflashEnabled: input.llamaDflashEnabled ?? null,
+    llamaDflashDraftTokens: sanitize(input.llamaDflashDraftTokens, { min: 1, max: 15 }, true),
+    llamaDflashMinProbability: sanitize(input.llamaDflashMinProbability, { min: 0, max: 1 }),
+    llamaDflashModelPath: input.llamaDflashModelPath?.trim() || null,
     llamaChatTemplatePreset: input.llamaChatTemplatePreset?.trim() || null,
     llamaRawCompletionFallback: input.llamaRawCompletionFallback ?? null,
     llamaStrictMode: input.llamaStrictMode ?? null,
@@ -424,6 +432,16 @@ export function sanitizeAdvancedModelSettings(input: AdvancedModelSettings): Adv
       false,
     ),
     llamaXtcThreshold: sanitize(input.llamaXtcThreshold, ADVANCED_LLAMA_XTC_THRESHOLD_RANGE, false),
+    llamaAdaptiveTarget: sanitize(
+      input.llamaAdaptiveTarget,
+      ADVANCED_LLAMA_ADAPTIVE_TARGET_RANGE,
+      false,
+    ),
+    llamaAdaptiveDecay: sanitize(
+      input.llamaAdaptiveDecay,
+      ADVANCED_LLAMA_ADAPTIVE_DECAY_RANGE,
+      false,
+    ),
     llamaLastRuntimeReport: input.llamaLastRuntimeReport ?? null,
     ollamaNumCtx: sanitize(input.ollamaNumCtx, ADVANCED_OLLAMA_NUM_CTX_RANGE, true),
     ollamaNumPredict: sanitize(input.ollamaNumPredict, ADVANCED_OLLAMA_NUM_PREDICT_RANGE, true),
@@ -452,6 +470,7 @@ export function sanitizeAdvancedModelSettings(input: AdvancedModelSettings): Adv
       true,
     ),
     forceSendThinkingState: input.forceSendThinkingState ?? null,
+    forceGemma4Reasoning: input.forceGemma4Reasoning ?? null,
     promptCachingEnabled: input.promptCachingEnabled ?? null,
     promptCachingTtl: input.promptCachingTtl ?? "5min",
     openRouterProvider: input.openRouterProvider

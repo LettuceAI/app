@@ -255,7 +255,7 @@ pub fn resolve_conflict(
         _ => return Err(ConflictError::AlreadyResolved(conflict_id.to_string())),
     };
 
-    let captured = super::capture_local_transaction(conn, now_ms, |tx| {
+    let captured = super::capture_local_revision(conn, now_ms, |tx| {
         restore_selected_row(tx, &table_name, &selected, now_ms)
     })
     .map_err(|error| ConflictError::InvalidSnapshot(error.to_string()))?;

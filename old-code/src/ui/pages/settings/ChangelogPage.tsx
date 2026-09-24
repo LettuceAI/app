@@ -26,6 +26,118 @@ export interface ChangelogEntry {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: "2.2.5 / 2.2.5",
+    date: "2026-09-10",
+    title: "2.2.5 — Context Usage Breakdown & Leaner Dynamic Memory",
+    description:
+      "Every assistant message now shows how much of the context window its prompt used and what filled it, in 1-on-1 and group chats alike. Dynamic memory in 1-on-1 chats stops sending the whole memory bank on every turn, and embeddings start again on macOS.",
+    changes: [
+      {
+        type: "feature",
+        description:
+          "A Context Usage panel in the message actions of assistant replies shows the context window split into occupied, reserved for the response, and free, plus a breakdown of what fills the prompt: system, character, persona, memories, lorebook, author's note, companion state, and chat history. Shares are estimated with tiktoken and scaled onto the prompt tokens the provider actually reported.",
+      },
+      {
+        type: "feature",
+        description:
+          "Group chat messages get the same panel, rebuilt from the stored message without re-running retrieval, with a Group cast category that counts the other participants' profiles.",
+      },
+      {
+        type: "improvement",
+        description:
+          "On llama.cpp and Ollama, the reserved response budget (response plus reasoning) is read from the real request, and a warning appears when the prompt and that reservation together exceed the context window, so you can lower max tokens or trim context before the prompt gets truncated or the reply is cut short.",
+      },
+      {
+        type: "improvement",
+        description:
+          "The developer message debug page includes the same per-category token breakdown, with totals and context-window usage.",
+      },
+      {
+        type: "bugfix",
+        description:
+          "Dynamic memory in 1-on-1 chats no longer fills {{key_memories}} with the entire hot memory bank on every prompt on top of the retrieved memories. Only the memories retrieved for that turn are sent, for roleplay characters and companions alike, across new replies, regenerations, and continuations.",
+      },
+      {
+        type: "bugfix",
+        description:
+          "Embeddings no longer fail to start on macOS with a \"different Team IDs\" error. The ONNX Runtime downloaded at runtime is signed by Microsoft, which macOS refused to load into the app, and it is now re-signed locally before it is loaded.",
+      },
+    ],
+  },
+  {
+    version: "2.2.4 / 2.2.4",
+    date: "2026-09-06",
+    title: "2.2.4 — Hotfix for Companion-Relationships",
+    description:
+    "Companion-relationships evolve again, instead of remaining static.",
+    changes: [
+      {
+        type: "bugfix",
+        description:
+        "There was an error that prevented the companions current relationship metrics (Trust, Closeness, Affection, Tension) to change, rendering them in a static, default state. This bug was fixed.",
+      }
+    ],
+  },
+  {
+    version: "2.2.3 / 2.2.3",
+    date: "2026-09-02",
+    title: "2.2.3 — Companion Prompt Fixes & Richer Relationship State",
+    description:
+      "A companion's own prompt template now wins over the session template, the relationship state handed to the model spells out what each band means alongside the raw score, and character generation works again on local models whose chat template only accepts a single system message. Gemma4 models on llama.cpp can be forced to reason before answering, and OpenRouter image generation moves to the Image API with clearer errors and automatic downsizing of oversized reference images.",
+    changes: [
+      {
+        type: "feature",
+        description:
+          "A new Force Reasoning toggle in the Reasoning section of the model settings makes Gemma4-series models on the local llama.cpp engine open a thinking block before they answer. The opener is injected into the prompt automatically and the thought is routed to the reasoning view instead of leaking into the reply.",
+      },
+      {
+        type: "improvement",
+        description:
+          "OpenRouter image generation now uses OpenRouter's Image API, which returns the image directly instead of wrapping it in a chat completion. Models that are not served there fall back to the chat endpoint automatically. This fixes OpenAI image models such as gpt-5.4-image-2 finishing without an image.",
+      },
+      {
+        type: "bugfix",
+        description:
+          "Image generation reports the provider's own error when it arrives inside a successful response, such as an upstream 504, instead of failing with a parse error. Transient server errors are retried once, and an oversized request now explains that the reference image is too large instead of showing a bare 413.",
+      },
+      {
+        type: "improvement",
+        description:
+          "Reference images sent to remote image providers are downsized to 2048 px on the longest edge and re-encoded when they are larger than 4 MB, with the inpainting mask resized to match. Upscaled sources no longer push the request past the provider's size limit.",
+      },
+      {
+        type: "bugfix",
+        description:
+          "The adaptive-p sampler on llama.cpp now receives its target and decay values. They were dropped from every request, so the sampler ran without its controls.",
+      },
+      {
+        type: "bugfix",
+        description:
+          "The debug view no longer shows an OpenAI endpoint for local llama.cpp requests. Unregistered providers default to a localhost URL instead of the OpenAI API.",
+      },
+      {
+        type: "bugfix",
+        description:
+          "Companion mode resolves the character's companion prompt template before the session template, so an active session template no longer overwrites the companion prompt. The prompt debugger reports the same source.",
+      },
+      {
+        type: "improvement",
+        description:
+          "The relationship-state line sent to the model now shows each axis as a band, a short behavioral gloss, and the raw score on its scale, instead of a single word per axis. Trust, closeness, and affection use a seven-step scale, and tension has named bands instead of a bare percentage.",
+      },
+      {
+        type: "bugfix",
+        description:
+          "Smart Creator on llama.cpp merges its system entries into one leading system message, so models with strict chat templates such as Gemma no longer fail with \"System message must be at the beginning\". Remote providers keep the entries separate.",
+      },
+      {
+        type: "bugfix",
+        description:
+          "Choosing dynamic memory while creating a group chat now sticks. The group is created with that memory mode instead of defaulting to manual, so there is no need to switch it again from group settings.",
+      },
+    ],
+  },
+  {
     version: "2.2.0 / 2.2.0",
     date: "2026-08-13",
     title: "2.2.0 — Local Image Generation, Transactional Sync & Companion Continuity",

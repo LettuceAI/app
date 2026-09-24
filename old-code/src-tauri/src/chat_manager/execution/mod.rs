@@ -799,6 +799,89 @@ pub(super) fn resolve_llama_mtp_model_path(
         .filter(|v| !v.is_empty())
 }
 
+pub(super) fn resolve_llama_dflash_enabled(
+    session: &Session,
+    model: &Model,
+    settings: &Settings,
+) -> Option<bool> {
+    session
+        .advanced_model_settings
+        .as_ref()
+        .and_then(|cfg| cfg.llama_dflash_enabled)
+        .or_else(|| {
+            model
+                .advanced_model_settings
+                .as_ref()
+                .and_then(|cfg| cfg.llama_dflash_enabled)
+        })
+        .or(settings.advanced_model_settings.llama_dflash_enabled)
+}
+
+pub(super) fn resolve_llama_dflash_draft_tokens(
+    session: &Session,
+    model: &Model,
+    settings: &Settings,
+) -> Option<u32> {
+    session
+        .advanced_model_settings
+        .as_ref()
+        .and_then(|cfg| cfg.llama_dflash_draft_tokens)
+        .or_else(|| {
+            model
+                .advanced_model_settings
+                .as_ref()
+                .and_then(|cfg| cfg.llama_dflash_draft_tokens)
+        })
+        .or(settings.advanced_model_settings.llama_dflash_draft_tokens)
+        .filter(|v| *v > 0)
+}
+
+pub(super) fn resolve_llama_dflash_min_probability(
+    session: &Session,
+    model: &Model,
+    settings: &Settings,
+) -> Option<f32> {
+    session
+        .advanced_model_settings
+        .as_ref()
+        .and_then(|cfg| cfg.llama_dflash_min_probability)
+        .or_else(|| {
+            model
+                .advanced_model_settings
+                .as_ref()
+                .and_then(|cfg| cfg.llama_dflash_min_probability)
+        })
+        .or(settings
+            .advanced_model_settings
+            .llama_dflash_min_probability)
+        .filter(|v| (0.0..=1.0).contains(v))
+}
+
+pub(super) fn resolve_llama_dflash_model_path(
+    session: &Session,
+    model: &Model,
+    settings: &Settings,
+) -> Option<String> {
+    session
+        .advanced_model_settings
+        .as_ref()
+        .and_then(|cfg| cfg.llama_dflash_model_path.clone())
+        .or_else(|| {
+            model
+                .advanced_model_settings
+                .as_ref()
+                .and_then(|cfg| cfg.llama_dflash_model_path.clone())
+        })
+        .or_else(|| {
+            settings
+                .advanced_model_settings
+                .llama_dflash_model_path
+                .clone()
+        })
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+}
+
 pub(super) fn resolve_llama_flash_attention(
     session: &Session,
     model: &Model,
@@ -1112,6 +1195,44 @@ pub(super) fn resolve_llama_xtc_threshold(
                 .and_then(|cfg| cfg.llama_xtc_threshold)
         })
         .or(settings.advanced_model_settings.llama_xtc_threshold)
+}
+
+pub(super) fn resolve_llama_adaptive_target(
+    session: &Session,
+    model: &Model,
+    settings: &Settings,
+) -> Option<f64> {
+    session
+        .advanced_model_settings
+        .as_ref()
+        .and_then(|cfg| cfg.llama_adaptive_target)
+        .or_else(|| {
+            model
+                .advanced_model_settings
+                .as_ref()
+                .and_then(|cfg| cfg.llama_adaptive_target)
+        })
+        .or(settings.advanced_model_settings.llama_adaptive_target)
+        .filter(|value| *value > 0.0 && *value <= 1.0)
+}
+
+pub(super) fn resolve_llama_adaptive_decay(
+    session: &Session,
+    model: &Model,
+    settings: &Settings,
+) -> Option<f64> {
+    session
+        .advanced_model_settings
+        .as_ref()
+        .and_then(|cfg| cfg.llama_adaptive_decay)
+        .or_else(|| {
+            model
+                .advanced_model_settings
+                .as_ref()
+                .and_then(|cfg| cfg.llama_adaptive_decay)
+        })
+        .or(settings.advanced_model_settings.llama_adaptive_decay)
+        .filter(|value| (0.0..=0.99).contains(value))
 }
 
 pub(super) fn resolve_llama_dry_allowed_length(

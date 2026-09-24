@@ -23,6 +23,8 @@ import {
   ADVANCED_LLAMA_N_PEN_RANGE,
   ADVANCED_LLAMA_XTC_PROBABILITY_RANGE,
   ADVANCED_LLAMA_XTC_THRESHOLD_RANGE,
+  ADVANCED_LLAMA_ADAPTIVE_TARGET_RANGE,
+  ADVANCED_LLAMA_ADAPTIVE_DECAY_RANGE,
 } from "../../../components/AdvancedModelSettingsForm";
 
 interface ParameterFieldProps {
@@ -368,6 +370,28 @@ export function SessionAdvancedSettings({
                                 max={ADVANCED_LLAMA_XTC_THRESHOLD_RANGE.max}
                                 step={0.01}
                                 onChange={(v) => update({ llamaXtcThreshold: v })}
+                              />
+
+                              <ParameterField
+                                label={t("sessionAdvanced.samplingMemory.adaptiveTarget")}
+                                description={t("sessionAdvanced.samplingMemory.adaptiveTargetDesc")}
+                                value={draft.llamaAdaptiveTarget}
+                                placeholder={t("sessionAdvanced.defaultPlaceholder")}
+                                min={ADVANCED_LLAMA_ADAPTIVE_TARGET_RANGE.min}
+                                max={ADVANCED_LLAMA_ADAPTIVE_TARGET_RANGE.max}
+                                step={0.01}
+                                onChange={(v) => update({ llamaAdaptiveTarget: v })}
+                              />
+
+                              <ParameterField
+                                label={t("sessionAdvanced.samplingMemory.adaptiveDecay")}
+                                description={t("sessionAdvanced.samplingMemory.adaptiveDecayDesc")}
+                                value={draft.llamaAdaptiveDecay}
+                                placeholder="0.95"
+                                min={ADVANCED_LLAMA_ADAPTIVE_DECAY_RANGE.min}
+                                max={ADVANCED_LLAMA_ADAPTIVE_DECAY_RANGE.max}
+                                step={0.01}
+                                onChange={(v) => update({ llamaAdaptiveDecay: v })}
                               />
 
                               <ParameterField

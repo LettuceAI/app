@@ -5104,6 +5104,21 @@ fn render_group_author_note_text(
     }
 }
 
+/// Raw placeholder texts computed while assembling the group system prompt.
+///
+/// These mirror the exact strings substituted into `{{...}}` placeholders inside
+/// `build_group_system_prompt` so the debug snapshot can attribute tokens to each
+/// section even when a template renders them inline.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct DebugGroupPromptSources {
+    pub char_desc: String,
+    pub persona_desc: String,
+    pub group_chars: String,
+    pub context_summary: String,
+    pub key_memories: String,
+    pub author_note: String,
+}
+
 fn build_group_system_prompt(
     app: &AppHandle,
     character: &Character,
@@ -5115,7 +5130,7 @@ fn build_group_system_prompt(
     settings: &Settings,
     retrieved_memories: &[MemoryEmbedding],
     lorebook_text: &str,
-) -> Vec<SystemPromptEntry> {
+) -> (Vec<SystemPromptEntry>, DebugGroupPromptSources) {
     use crate::chat_manager::storage::{get_base_prompt, get_base_prompt_entries, PromptType};
     use crate::chat_manager::types::PromptTemplateType;
 
@@ -5513,11 +5528,21 @@ fn build_group_system_prompt(
         }
     }
 
-    if condense_prompt_entries {
+    let debug_sources = DebugGroupPromptSources {
+        char_desc: char_desc.to_string(),
+        persona_desc: persona_desc.to_string(),
+        group_chars: group_chars.clone(),
+        context_summary: context_summary_text.clone(),
+        key_memories: key_memories_text.clone(),
+        author_note: author_note_text.clone().unwrap_or_default(),
+    };
+
+    let entries = if condense_prompt_entries {
         condense_entries_into_single_system_message(rendered_entries)
     } else {
         rendered_entries
-    }
+    };
+    (entries, debug_sources)
 }
 
 /// Replace character name placeholders in scene content
@@ -5962,7 +5987,8 @@ async fn generate_character_response(
         settings,
         &retrieved_memories,
         &lorebook_text,
-    );
+    )
+    .0;
     let used_lorebook_entries = resolve_group_used_lorebook_entries(
         &conn,
         &active_lorebook_entries,
@@ -6086,6 +6112,285 @@ async fn generate_character_response(
         gemini_content: execution.gemini_content,
     });
 
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GroupChatMessageDebugSnapshotArgs {
+    pub session_id: String,
+    pub message_id: String,
+}
+
+/// Strip an optional leading `<score>::` prefix from a stored group memory ref,
+/// returning the underlying memory text. Refs are persisted either as plain text
+/// or as `"{match_score}::{text}"` (see `generate_character_response`).
+fn group_memory_ref_text(reference: &str) -> &str {
+    if let Some((prefix, rest)) = reference.split_once("::") {
+        if prefix.trim().parse::<f64>().is_ok() {
+            return rest;
+        }
+    }
+    reference
+}
+
+/// Synchronous debug reconstruction for a group-chat assistant message. Mirrors
+/// the 1:1 `chat_message_debug_snapshot` command so the frontend token breakdown
+/// works unchanged. Everything is rebuilt from stored session/message data (stored
+/// `memory_refs` instead of a live retrieval) so the command stays synchronous.
+#[tauri::command]
+pub fn group_chat_message_debug_snapshot(
+    app: AppHandle,
+    args: GroupChatMessageDebugSnapshotArgs,
+) -> Result<crate::chat_manager::ChatMessageDebugSnapshot, String> {
+    let settings = load_settings(&app)?;
+    let pool = app.state::<SwappablePool>();
+    let conn = pool.get_connection()?;
+
+    let session = group_sessions::group_session_get_internal_typed(&conn, &args.session_id)?;
+
+    let all_messages = load_recent_group_messages(&conn, &args.session_id, i32::MAX)?;
+    let target_index = all_messages
+        .iter()
+        .position(|message| message.id == args.message_id)
+        .ok_or_else(|| "Message not found".to_string())?;
+    let target_message = all_messages[target_index].clone();
+
+    if target_message.role != "assistant" {
+        return Err(
+            "Group debug snapshot currently supports assistant messages only".to_string(),
+        );
+    }
+    let speaker_id = target_message
+        .speaker_character_id
+        .clone()
+        .ok_or_else(|| "Message has no speaker character".to_string())?;
+
+    let character = load_character(&conn, &speaker_id)?;
+    let persona = if let Some(ref persona_id) = session.persona_id {
+        load_persona(&app, persona_id)?
+    } else {
+        None
+    };
+    let characters = load_characters_info(&conn, &session.character_ids)?;
+
+    // Model + credential: prefer the model actually stored on the message, then
+    // fall back to the per-character override / default (mirrors generation).
+    let (model, credential) = if let Some(model_id) = target_message.model_id.as_ref() {
+        let model = settings
+            .models
+            .iter()
+            .find(|candidate| candidate.id == *model_id)
+            .ok_or_else(|| "Stored model not found".to_string())?;
+        let credential = resolve_credential_for_model(&settings, model)
+            .ok_or_else(|| "Provider credential not found".to_string())?;
+        (model, credential)
+    } else {
+        let session_model_override = session
+            .character_model_overrides
+            .get(&speaker_id)
+            .map(String::as_str)
+            .filter(|id| settings.models.iter().any(|model| model.id == *id));
+        select_model_with_credential(&settings, &character, session_model_override)?
+    };
+
+    // Reconstruct the memories that were injected from the stored refs instead of
+    // running a live (async) retrieval.
+    let retrieved_memories: Vec<MemoryEmbedding> = target_message
+        .memory_refs
+        .iter()
+        .filter_map(|reference| {
+            let text = group_memory_ref_text(reference);
+            session
+                .memory_embeddings
+                .iter()
+                .find(|memory| memory.id == *reference || memory.text == text)
+                .cloned()
+                .or_else(|| {
+                    serde_json::from_value(json!({
+                        "id": reference,
+                        "text": text,
+                        "embedding": Vec::<f32>::new(),
+                    }))
+                    .ok()
+                })
+        })
+        .collect();
+
+    // Conversation history up to (but not including) the target message.
+    let recent_messages: Vec<GroupMessage> = all_messages[..target_index].to_vec();
+
+    let active_lorebook_entries =
+        get_group_active_lorebook_entries(&conn, &session, &character.id, &recent_messages)?;
+    let lorebook_text = format_group_lorebook_content(&app, &character.id, &active_lorebook_entries);
+
+    let (mut system_prompt_entries, debug_sources) = build_group_system_prompt(
+        &app,
+        &character,
+        persona.as_ref(),
+        &session,
+        &recent_messages,
+        &characters,
+        model,
+        &settings,
+        &retrieved_memories,
+        &lorebook_text,
+    );
+
+    // Recreate the conversation window the generator would have used.
+    let dynamic_settings = effective_group_dynamic_memory_settings(&settings);
+    let messages_for_generation = if session.memory_type == "dynamic" {
+        let window_size = dynamic_settings.summary_message_interval.max(1) as usize;
+        conversation_window(&recent_messages, window_size)
+    } else {
+        let manual_window = manual_window_size(&settings).max(1);
+        conversation_window(&recent_messages, manual_window)
+    };
+
+    let selected_char_info = characters
+        .iter()
+        .find(|candidate| candidate.id == speaker_id)
+        .ok_or_else(|| "Selected character not found".to_string())?;
+
+    let api_messages = build_messages_for_api(
+        &app,
+        &messages_for_generation,
+        &characters,
+        selected_char_info,
+        persona.as_ref(),
+        true,
+        model.input_scopes.iter().any(|scope| scope == "image"),
+        model.input_scopes.iter().any(|scope| scope == "audio"),
+    );
+    let system_role = crate::chat_manager::request_builder::system_role_for(credential);
+
+    if messages_for_generation.is_empty() {
+        system_prompt_entries.push(in_chat_user_entry(
+            "runtime_group_begin",
+            "Begin Group Conversation",
+            format!(
+                "[Begin the conversation. Respond as {}.]",
+                selected_char_info.name
+            ),
+            0,
+        ));
+    }
+
+    let prompt_entries = system_prompt_entries.clone();
+    let (relative_entries, in_chat_entries) =
+        crate::chat_manager::turn_builder::partition_prompt_entries(prompt_entries.clone());
+    let request_messages =
+        assemble_prompt_messages(system_prompt_entries, api_messages, &system_role);
+
+    // Build the outbound request body exactly like execute_group_generation does.
+    let request_session: crate::chat_manager::types::Session =
+        serde_json::from_value(json!({
+            "id": session.id,
+            "characterId": character.id,
+            "title": session.name,
+            "createdAt": session.created_at.max(0) as u64,
+            "updatedAt": session.updated_at.max(0) as u64
+        }))
+        .map_err(|error| format!("Failed to prepare group request settings: {error}"))?;
+
+    let request_settings = crate::chat_manager::execution::RequestSettings::resolve(
+        &request_session,
+        model,
+        &settings,
+    );
+    let extra_body_fields = crate::chat_manager::execution::build_provider_extra_fields(
+        &credential.provider_id,
+        &request_session,
+        model,
+        &settings,
+        &request_settings,
+    );
+    let built = crate::chat_manager::request_builder::build_chat_request(
+        credential,
+        "",
+        &model.name,
+        &request_messages,
+        None,
+        request_settings.temperature,
+        request_settings.top_p,
+        request_settings.max_tokens,
+        request_settings.context_length,
+        true,
+        None,
+        request_settings.frequency_penalty,
+        request_settings.presence_penalty,
+        request_settings.top_k,
+        None,
+        request_settings.reasoning_enabled,
+        request_settings.reasoning_effort.clone(),
+        request_settings.reasoning_budget,
+        request_settings.prompt_caching_enabled.unwrap_or(false),
+        extra_body_fields,
+    );
+
+    let request_settings_value = json!({
+        "temperature": request_settings.temperature,
+        "topP": request_settings.top_p,
+        "maxTokens": request_settings.max_tokens,
+        "contextLength": request_settings.context_length,
+        "frequencyPenalty": request_settings.frequency_penalty,
+        "presencePenalty": request_settings.presence_penalty,
+        "topK": request_settings.top_k,
+        "reasoningEnabled": request_settings.reasoning_enabled,
+        "reasoningEffort": request_settings.reasoning_effort,
+        "reasoningBudget": request_settings.reasoning_budget,
+    });
+
+    let prompt_template_source = if session.chat_type == "roleplay" {
+        "group_chat_roleplay_template".to_string()
+    } else {
+        "group_chat_template".to_string()
+    };
+
+    let mut notes = vec![
+        "Reconstructed from current group session state; live retrieval, retry timing and the exact provider response still come from the in-memory trace.".to_string(),
+    ];
+    if target_message.model_id.is_none() {
+        notes.push("This message had no stored model id, so the current character/default model configuration was used for reconstruction.".to_string());
+    }
+
+    Ok(crate::chat_manager::ChatMessageDebugSnapshot {
+        source: "reconstructed".to_string(),
+        session_id: args.session_id,
+        message_id: args.message_id,
+        role: target_message.role,
+        operation: "completion".to_string(),
+        provider_id: credential.provider_id.clone(),
+        credential_id: credential.id.clone(),
+        model_id: model.id.clone(),
+        model: model.name.clone(),
+        model_display_name: model.display_name.clone(),
+        endpoint: built.url,
+        stream: built.stream,
+        request_settings: request_settings_value,
+        prompt_template_source,
+        prompt_template_id: None,
+        prompt_template_name: None,
+        prompt_entries,
+        relative_prompt_entries: relative_entries,
+        in_chat_prompt_entries: in_chat_entries,
+        request_messages,
+        request_body: built.body,
+        notes,
+        character_profile_content: debug_sources.char_desc,
+        persona_content: debug_sources.persona_desc,
+        memory_entry_count: retrieved_memories.len() as u32,
+        lorebook_content: lorebook_text,
+        context_summary_content: debug_sources.context_summary,
+        key_memories_content: debug_sources.key_memories,
+        author_note_content: debug_sources.author_note,
+        companion_state_content: String::new(),
+        scheduled_notes_content: String::new(),
+        group_cast_content: debug_sources.group_chars,
+        group_cast_count: characters
+            .iter()
+            .filter(|other| other.id != character.id)
+            .count() as u32,
+    })
 }
 
 #[tauri::command]

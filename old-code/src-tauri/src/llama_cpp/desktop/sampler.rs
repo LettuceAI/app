@@ -1,7 +1,7 @@
 use super::*;
 
 pub(super) const DEFAULT_LLAMA_SAMPLER_PROFILE: &str = "balanced";
-pub(super) const DEFAULT_LLAMA_SAMPLER_ORDER: [&str; 9] = [
+pub(super) const DEFAULT_LLAMA_SAMPLER_ORDER: [&str; 10] = [
     "penalties",
     "grammar",
     "top_k",
@@ -11,6 +11,7 @@ pub(super) const DEFAULT_LLAMA_SAMPLER_ORDER: [&str; 9] = [
     "typical",
     "xtc",
     "temp",
+    "adaptive_p",
 ];
 
 #[derive(Clone, Copy)]
@@ -45,6 +46,8 @@ pub(super) struct ResolvedSamplerConfig {
     pub(super) xtc_threshold: Option<f64>,
     pub(super) frequency_penalty: Option<f64>,
     pub(super) presence_penalty: Option<f64>,
+    pub(super) adaptive_target: Option<f64>,
+    pub(super) adaptive_decay: Option<f64>,
     pub(super) seed: Option<u32>,
 }
 
@@ -174,6 +177,7 @@ fn normalize_sampler_stage(value: &str) -> Option<&'static str> {
         "typical" | "typ_p" | "typical_p" => Some("typical"),
         "xtc" => Some("xtc"),
         "temp" | "temperature" => Some("temp"),
+        "adaptive_p" | "adaptivep" | "adaptive" => Some("adaptive_p"),
         _ => None,
     }
 }
@@ -413,6 +417,7 @@ pub(super) fn build_sampler(
             )
         });
 
+    let mut adaptive_requested = false;
     for stage in requested_order {
         match stage {
             "penalties" => {
@@ -469,6 +474,9 @@ pub(super) fn build_sampler(
                     samplers.push(LlamaSampler::temp(config.temperature as f32));
                 }
             }
+            "adaptive_p" => {
+                adaptive_requested = true;
+            }
             _ => {}
         }
     }
@@ -478,7 +486,21 @@ pub(super) fn build_sampler(
         samplers.insert(0, sampler);
     }
 
-    if config.temperature > 0.0 {
+    let adaptive_target = config
+        .adaptive_target
+        .filter(|_| adaptive_requested)
+        .filter(|target| *target > 0.0 && *target <= 1.0);
+    if let Some(target) = adaptive_target {
+        let decay = config.adaptive_decay.unwrap_or(0.95).clamp(0.0, 0.99);
+        active_params.insert("adaptive_target".to_string(), json!(target));
+        active_params.insert("adaptive_decay".to_string(), json!(decay));
+        order.push("adaptive_p");
+        samplers.push(LlamaSampler::adaptive_p(
+            target as f32,
+            decay as f32,
+            config.seed.unwrap_or_else(rand::random::<u32>),
+        ));
+    } else if config.temperature > 0.0 {
         order.push("dist");
         samplers.push(LlamaSampler::dist(
             config.seed.unwrap_or_else(rand::random::<u32>),

@@ -4,10 +4,10 @@ use tauri::AppHandle;
 
 use crate::chat_manager::prompts;
 use crate::storage_manager::settings::{read_settings_typed, write_settings_typed};
-use crate::utils::log_info;
+use crate::utils::{log_info, log_warn};
 
 /// Current migration version
-pub const CURRENT_MIGRATION_VERSION: u32 = 92;
+pub const CURRENT_MIGRATION_VERSION: u32 = 96;
 
 pub fn run_migrations(app: &AppHandle) -> Result<(), String> {
     log_info(app, "migrations", "Starting migration check");
@@ -967,6 +967,37 @@ pub fn run_migrations(app: &AppHandle) -> Result<(), String> {
         );
         migrate_v93_to_v94(app)?;
         version = 94;
+    }
+
+    if version < 95 {
+        log_info(
+            app,
+            "migrations",
+            "Running migration v94 -> v95: Repair group session config overrides",
+        );
+        migrate_v94_to_v95(app)?;
+        version = 95;
+    }
+
+    if version < 96 {
+        log_info(
+            app,
+            "migrations",
+            "Running migration v95 -> v96: Canonicalize table layouts so sync schema fingerprints match across devices",
+        );
+        migrate_v95_to_v96(app)?;
+        version = 96;
+    }
+
+    if version != CURRENT_MIGRATION_VERSION {
+        log_warn(
+            app,
+            "migrations",
+            format!(
+                "Migration chain stopped at {} but the current version is {}; later migrations will be skipped",
+                version, CURRENT_MIGRATION_VERSION
+            ),
+        );
     }
 
     // Update the stored version
@@ -4370,6 +4401,9 @@ pub(crate) fn run_preflight_migrations(
     if version >= 93 && version < 94 {
         migrate_v93_to_v94_conn(conn)?;
     }
+    if version >= 94 && version < 95 {
+        migrate_v94_to_v95_conn(conn)?;
+    }
     Ok(())
 }
 
@@ -4539,6 +4573,92 @@ fn migrate_v93_to_v94(app: &AppHandle) -> Result<(), String> {
 
 fn migrate_v93_to_v94_conn(conn: &rusqlite::Connection) -> Result<(), String> {
     ensure_group_message_columns(conn)
+}
+
+fn migrate_v94_to_v95(app: &AppHandle) -> Result<(), String> {
+    let conn = crate::storage_manager::db::open_db(app)?;
+    migrate_v94_to_v95_conn(&conn)
+}
+
+fn migrate_v95_to_v96(app: &AppHandle) -> Result<(), String> {
+    let conn = crate::storage_manager::db::open_db(app)?;
+    let report = crate::storage_manager::schema_canonicalizer::canonicalize_schema(&conn)?;
+    if !report.rebuilt.is_empty() {
+        log_info(
+            app,
+            "migrations",
+            format!("Canonicalized tables: {}", report.rebuilt.join(", ")),
+        );
+    }
+    if !report.renamed_legacy.is_empty() {
+        log_info(
+            app,
+            "migrations",
+            format!(
+                "Renamed leftover tables out of the sync catalog: {}",
+                report.renamed_legacy.join(", ")
+            ),
+        );
+    }
+    for warning in &report.warnings {
+        log_warn(app, "migrations", format!("Canonicalization warning: {warning}"));
+    }
+    migrate_sync_v2_schema(&conn)
+}
+
+fn migrate_v94_to_v95_conn(conn: &rusqlite::Connection) -> Result<(), String> {
+    use rusqlite::params;
+
+    let rows = {
+        let mut statement = conn
+            .prepare("SELECT id, config_overrides FROM group_sessions")
+            .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))?
+    };
+
+    for (session_id, raw_overrides) in rows {
+        let Some(mut overrides) = serde_json::from_str::<Value>(&raw_overrides)
+            .ok()
+            .and_then(|value| value.as_object().cloned())
+        else {
+            continue;
+        };
+
+        let mut repaired = false;
+
+        if let Some(Value::String(encoded)) = overrides.get("startingScene") {
+            let decoded = serde_json::from_str::<Value>(encoded).unwrap_or(Value::Null);
+            overrides.insert("startingScene".to_string(), decoded);
+            repaired = true;
+        }
+
+        if let Some(Value::Number(flag)) = overrides.get("disableCharacterLorebooks") {
+            let enabled = flag.as_i64().unwrap_or(0) != 0;
+            overrides.insert(
+                "disableCharacterLorebooks".to_string(),
+                serde_json::json!(enabled),
+            );
+            repaired = true;
+        }
+
+        if !repaired {
+            continue;
+        }
+
+        conn.execute(
+            "UPDATE group_sessions SET config_overrides = ?1 WHERE id = ?2",
+            params![Value::Object(overrides).to_string(), session_id],
+        )
+        .map_err(|error| crate::utils::err_to_string(module_path!(), line!(), error))?;
+    }
+
+    Ok(())
 }
 
 fn migrate_v90_to_v91_conn(conn: &rusqlite::Connection) -> Result<(), String> {
@@ -5444,7 +5564,16 @@ fn migrate_v77_to_v78(app: &AppHandle) -> Result<(), String> {
         }
         add_override!("personaId", session.3, profile.2);
         add_override!("chatType", session.4, profile.3);
-        add_override!("startingScene", session.5, profile.4);
+        if session.5 != profile.4 {
+            overrides.insert(
+                "startingScene".to_string(),
+                session
+                    .5
+                    .as_deref()
+                    .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
+                    .unwrap_or(Value::Null),
+            );
+        }
         add_override!("backgroundImagePath", session.6, profile.5);
         if session.7 != profile.6 {
             overrides.insert(
@@ -5452,7 +5581,12 @@ fn migrate_v77_to_v78(app: &AppHandle) -> Result<(), String> {
                 serde_json::from_str(&session.7).unwrap_or_else(|_| serde_json::json!([])),
             );
         }
-        add_override!("disableCharacterLorebooks", session.8, profile.7);
+        if session.8 != profile.7 {
+            overrides.insert(
+                "disableCharacterLorebooks".to_string(),
+                serde_json::json!(session.8 != 0),
+            );
+        }
         add_override!("speakerSelectionMethod", session.9, profile.8);
         add_override!("memoryType", session.10, profile.9);
         conn.execute(
@@ -5582,12 +5716,88 @@ mod tests {
     use super::{
         migrate_image_lora_metadata_columns, migrate_sync_v2_schema,
         migrate_v88_to_v89_conn, migrate_v89_to_v90_conn,
-        migrate_v90_to_v91_conn,
+        migrate_v90_to_v91_conn, migrate_v94_to_v95_conn,
         run_preflight_migrations,
         table_column_names,
         GROUP_MESSAGE_COLUMNS, GROUP_MESSAGE_VARIANT_COLUMNS, GROUP_SESSIONS_V88_COLUMNS,
         IMAGE_LORAS_V88_COLUMNS, LOREBOOK_ENTRIES_V88_COLUMNS,
     };
+
+    #[test]
+    fn v95_decodes_double_encoded_group_session_overrides() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            r#"
+            CREATE TABLE group_sessions (
+              id TEXT PRIMARY KEY,
+              config_overrides TEXT NOT NULL DEFAULT '{"version":1}'
+            );
+            INSERT INTO group_sessions (id, config_overrides) VALUES (
+              'broken',
+              '{"version":1,"startingScene":"{\"id\":\"11111111-1111-4111-8111-111111111111\",\"content\":\"A quiet room\",\"createdAt\":10}","disableCharacterLorebooks":1}'
+            );
+            INSERT INTO group_sessions (id, config_overrides) VALUES (
+              'healthy',
+              '{"version":1,"startingScene":{"id":"22222222-2222-4222-8222-222222222222","content":"Already fine","createdAt":20},"disableCharacterLorebooks":false}'
+            );
+            INSERT INTO group_sessions (id, config_overrides) VALUES ('empty', '{"version":1}');
+            "#,
+        )
+        .unwrap();
+
+        migrate_v94_to_v95_conn(&conn).unwrap();
+
+        let overrides = |id: &str| -> serde_json::Value {
+            let raw: String = conn
+                .query_row(
+                    "SELECT config_overrides FROM group_sessions WHERE id = ?1",
+                    rusqlite::params![id],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            serde_json::from_str(&raw).unwrap()
+        };
+
+        let repaired = overrides("broken");
+        assert_eq!(repaired["startingScene"]["content"], "A quiet room");
+        assert_eq!(repaired["disableCharacterLorebooks"], serde_json::json!(true));
+
+        let healthy = overrides("healthy");
+        assert_eq!(healthy["startingScene"]["content"], "Already fine");
+        assert_eq!(healthy["disableCharacterLorebooks"], serde_json::json!(false));
+
+        assert_eq!(overrides("empty"), serde_json::json!({"version": 1}));
+    }
+
+    #[test]
+    fn v95_clears_group_session_scenes_that_cannot_be_decoded() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            r#"
+            CREATE TABLE group_sessions (
+              id TEXT PRIMARY KEY,
+              config_overrides TEXT NOT NULL DEFAULT '{"version":1}'
+            );
+            INSERT INTO group_sessions (id, config_overrides) VALUES (
+              'legacy',
+              '{"version":1,"startingScene":"a plain sentence, not json"}'
+            );
+            "#,
+        )
+        .unwrap();
+
+        migrate_v94_to_v95_conn(&conn).unwrap();
+
+        let raw: String = conn
+            .query_row(
+                "SELECT config_overrides FROM group_sessions WHERE id = 'legacy'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let repaired: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(repaired["startingScene"], serde_json::Value::Null);
+    }
 
     #[test]
     fn v89_backfills_latest_soul_growth_and_persona_relationships() {

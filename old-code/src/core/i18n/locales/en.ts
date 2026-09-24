@@ -1562,6 +1562,34 @@ export const enMessages = {
       fullSessionJson: "Full Session JSON",
       storedMessageJson: "Stored Message JSON",
       fullTraceEvents: "Full Trace Events",
+      tokenBreakdown: "Context Usage",
+      tokenBreakdownEstimate: "Estimate — tiktoken o200k (approximate; the model's own tokenizer will differ)",
+      tokenBreakdownCalibrated: "Breakdown",
+      tokenBreakdownTotal: "Total prompt",
+      tokenBreakdownContext: "Context window",
+      tokenBreakdownFree: "Free",
+      tokenBreakdownReserved: "Reserved for response",
+      tokenBreakdownReservedSplit: "(response: {{response}} / reasoning: {{reasoning}})",
+      tokenBreakdownOccupied: "Occupied",
+      tokenBreakdownOverReserved:
+        "Over-reservation: prompt + reserved response exceed the context window by {{overflow}} tokens. The model will truncate the prompt or cut the response short — reduce max tokens or context content.",
+      tokenBreakdownUsage: "{{used}} / {{limit}} ({{percent}}%)",
+      tokenBreakdownComputing: "Counting tokens…",
+      tokenBreakdownCompanionSuffix: "(inner life / scheduled notes)",
+      tokenBreakdownHistorySuffix: "(last {{count}} messages)",
+      tokenBreakdownEntriesSuffix: "({{count}} entries)",
+      tokenBreakdownCharactersSuffix: "({{count}} characters)",
+      tokenBreakdownCat: {
+        system: "System",
+        character: "Character",
+        persona: "Persona",
+        groupCast: "Group cast",
+        memory: "Memories",
+        lorebook: "Lorebook",
+        authorNote: "Author's Note",
+        companion: "Companion State",
+        history: "Chat History",
+      },
     },
     companionMemoryPage: {
       backLabel: "Back",
@@ -2176,6 +2204,7 @@ export const enMessages = {
       useGroupDefault: "Use group default",
       participantsOverridden: "Participants changed for this chat",
       mutedOverridden: "Muted participants changed for this chat",
+      participantsAndMutedOverridden: "Participants and mutes changed for this chat",
     },
     modelOverrides: {
       title: "Character models",
@@ -2184,7 +2213,7 @@ export const enMessages = {
       overrideBadge: "Override",
       selectFor: "Model for {name}",
       useCharacterDefault: "Use the character's model",
-      inheritedValue: "{model} (character default)",
+      inheritedValue: "{{model}} (character default)",
       missingModel: "Selected model is missing",
       noModel: "No model configured",
     },
@@ -2404,7 +2433,7 @@ export const enMessages = {
       removeCharacter: "Remove character",
       groupMinCharacters: "A group requires at least 2 characters",
       mutedCharactersNote:
-        "Muted characters are skipped by auto speaker selection, but can still respond via explicit `@mention`.",
+        "Muted characters are skipped by auto speaker selection, but can still respond via explicit @mention.",
       addCharacterTitle: "Add Character",
       allCharactersInGroup: "All characters are already in this group.",
       removeCharacterTitle: "Remove Character?",
@@ -2477,7 +2506,7 @@ export const enMessages = {
       removeCharacter: "Remove character",
       groupMinCharacters: "A group chat requires at least 2 characters",
       mutedCharactersNote:
-        "Muted characters are skipped by auto speaker selection, but can still respond via explicit `@mention`.",
+        "Muted characters are skipped by auto speaker selection, but can still respond via explicit @mention.",
       data: "Data",
       dataSubtitle: "Export or import conversations",
       export: "Export",
@@ -4395,6 +4424,9 @@ export const enMessages = {
       forceSend: "Force send thinking state",
       forceSendDescription:
         "Explicitly send enable_thinking to the model instead of omitting it. Helps local models that default to thinking when no value is sent.",
+      forceGemma4Reasoning: "Force Reasoning in Gemma4-series models",
+      forceGemma4ReasoningDescription:
+        "Injects a reasoning prefill so Gemma4-series models open their reply with a thinking block, forcing them to reason before answering.",
     },
     runtimeFacts: {
       updated: "Updated",
@@ -4781,6 +4813,14 @@ export const enMessages = {
     },
     moveModel: {
       title: "Move Model File",
+      moveAllTitle: "Store Files in Library",
+      moveAllDescription:
+        "Move this model and its draft and vision files into the LettuceAI GGUF library folder.",
+      moveAllAction: "Move to library",
+      moveAllMoving: "Moving files...",
+      moveAllDone: "All files are in the library",
+      movedAllTitle: "Files moved",
+      movedAllBody: "This model and its sidecar files now live in the GGUF library.",
     },
     parameterSupport: {
       title: "Parameter Support",
@@ -4962,6 +5002,11 @@ export const enMessages = {
         "Recent tokens used by repeat, frequency, and presence penalties; `-1` uses the full context",
       xtcProbability: "XTC Probability",
       xtcThreshold: "XTC Threshold",
+      adaptiveTarget: "Adaptive-P Target",
+      adaptiveTargetDescription:
+        "Target probability for Adaptive-P; leave empty to keep the standard final sampling step",
+      adaptiveDecay: "Adaptive-P Target Decay",
+      adaptiveDecayDescription: "Lower reacts faster to recent tokens, higher stays steadier",
       localOverride: "Local override",
       dryMultiplier: "DRY Multiplier",
       dryMultiplierDescription: "`0` disables sequence repetition control",
@@ -4993,6 +5038,28 @@ export const enMessages = {
       draftFile: "MTP Draft File",
       draftFileDescription:
         "Optional external draft GGUF. Auto-discovered from a sibling mtp-*.gguf when empty.",
+      draftFilePlaceholder: "Auto-discover",
+    },
+    dflash: {
+      title: "DFlash Speculative Decoding",
+      description:
+        "Drafts a whole block of tokens per step using a DFlash draft file. Takes priority over MTP when a draft file is available.",
+      toggle: "Toggle DFlash speculative decoding",
+      visionWarningTitle: "DFlash is unavailable for vision",
+      visionWarningDescription:
+        "Image requests will continue without DFlash while an MMProj vision file is configured.",
+      placement: "Draft Model Placement",
+      placementDescription: "Auto keeps the draft model on the fastest GPU that has room",
+      placementGpu: "GPU",
+      placementCpu: "CPU",
+      draftTokens: "Draft Tokens",
+      draftTokensDescription:
+        "Tokens drafted per block, capped by the draft file's trained block size (1 to 15)",
+      minProbability: "Minimum Confidence",
+      minProbabilityDescription: "Drafting stops at the first token below this confidence (0 to 1)",
+      draftFile: "DFlash Draft File",
+      draftFileDescription:
+        "DFlash draft GGUF trained for this model. Auto-discovered from a sibling *dflash*.gguf when empty.",
       draftFilePlaceholder: "Auto-discover",
     },
     templates: {
@@ -9427,6 +9494,10 @@ export const enMessages = {
       xtcProbabilityDesc: "Chance of excluding top tokens (0 = off). Boosts variety.",
       xtcThreshold: "XTC Threshold",
       xtcThresholdDesc: "Min probability a token needs to be eligible for XTC removal.",
+      adaptiveTarget: "Adaptive-P Target",
+      adaptiveTargetDesc: "Aim for tokens near this probability. Empty keeps normal sampling.",
+      adaptiveDecay: "Adaptive-P Target Decay",
+      adaptiveDecayDesc: "How steady the target adaptation is. Lower reacts faster.",
       seed: "Seed",
       seedDesc: "Random seed. Leave blank for random.",
       ropeBase: "RoPE Base",
@@ -9584,6 +9655,8 @@ export const enMessages = {
     penaltyRange: "Penalty Range",
     xtcProbability: "XTC Probability",
     xtcThreshold: "XTC Threshold",
+    adaptiveTarget: "Adaptive-P Target",
+    adaptiveDecay: "Adaptive-P Target Decay",
     dryMultiplier: "DRY Multiplier",
     dryBase: "DRY Base",
     dryAllowedLength: "DRY Allowed Length",
@@ -9667,6 +9740,10 @@ export const enMessages = {
       temp: {
         label: "Temperature",
         desc: "Flatten or sharpen the final distribution before selection.",
+      },
+      adaptiveP: {
+        label: "Adaptive-P",
+        desc: "Picks tokens near a target probability and adapts over time. Always runs last, and only when its target is set.",
       },
       dry: {
         label: "DRY",

@@ -30,8 +30,8 @@ use super::types::{
     ChatGenerateLorebookEntryDraftArgs, ChatGenerateLorebookKeywordDraftArgs,
     ChatGenerateSceneImageArgs, ChatGenerateScenePromptArgs, ChatRegenerateArgs, ChatTurnResult,
     ContinueResult, ImageAttachment, LorebookEntryDraftResult, LorebookKeywordDraftResult,
-    PromptTemplateType, RegenerateResult, Session, Settings, StoredMessage, SystemPromptEntry,
-    SystemPromptTemplate,
+    MemoryEmbedding, PromptTemplateType, RegenerateResult, Session, Settings, StoredMessage,
+    SystemPromptEntry, SystemPromptTemplate,
 };
 use crate::storage_manager::sessions::{messages_upsert_batch_typed, session_upsert_meta_typed};
 
@@ -67,6 +67,26 @@ pub struct ChatMessageDebugSnapshot {
     pub request_messages: Vec<Value>,
     pub request_body: Value,
     pub notes: Vec<String>,
+    // Raw contents of the individual prompt placeholders. Present so the frontend
+    // token breakdown can attribute tokens to character profile / persona /
+    // lorebook / memories / author note / companion state / scheduled notes even
+    // when a template renders them inline (i.e. they never appear as standalone
+    // prompt entries).
+    pub character_profile_content: String,
+    pub persona_content: String,
+    pub memory_entry_count: u32,
+    pub lorebook_content: String,
+    pub context_summary_content: String,
+    pub key_memories_content: String,
+    pub author_note_content: String,
+    pub companion_state_content: String,
+    pub scheduled_notes_content: String,
+    // Raw text of the `{{group_characters}}` cast block. Only populated for group
+    // chat snapshots; empty for 1:1 chats where that placeholder does not exist.
+    pub group_cast_content: String,
+    // Group chat only: number of other participants whose profiles are in the
+    // group cast block (0 for 1:1 chats).
+    pub group_cast_count: u32,
 }
 
 #[derive(Clone, Copy)]
@@ -128,7 +148,21 @@ fn resolve_debug_prompt_template(
     character: &super::types::Character,
     settings: &Settings,
 ) -> (String, Option<String>, Option<String>) {
-    if let Some(session_template_id) = &session.prompt_template_id {
+    if super::companion::is_companion_mode(session, character) {
+        if let Some(companion_template_id) =
+            super::companion::companion_prompt_template_id(character)
+        {
+            if let Ok(Some(template)) = prompts::get_template(app, &companion_template_id) {
+                return (
+                    "character_companion_template".to_string(),
+                    Some(template.id),
+                    Some(template.name),
+                );
+            }
+        }
+        // Companion mode without a resolvable companion template falls through to the
+        // app-wide / app-default template below, mirroring build_system_prompt_entries.
+    } else if let Some(session_template_id) = &session.prompt_template_id {
         if let Ok(Some(template)) = prompts::get_template(app, session_template_id) {
             return (
                 "session_template".to_string(),
@@ -441,6 +475,18 @@ pub async fn chat_continue(
         .await
 }
 
+/// Strip an optional leading `<score>::` prefix from a stored memory ref,
+/// returning the underlying memory text. Refs are persisted either as plain text
+/// or as `"{match_score}::{text}"` (see completion/regenerate memory_refs).
+fn memory_ref_text(reference: &str) -> &str {
+    if let Some((prefix, rest)) = reference.split_once("::") {
+        if prefix.trim().parse::<f64>().is_ok() {
+            return rest;
+        }
+    }
+    reference
+}
+
 #[tauri::command]
 pub fn chat_message_debug_snapshot(
     app: AppHandle,
@@ -496,13 +542,53 @@ pub fn chat_message_debug_snapshot(
         }
     };
 
+    // Reconstruct the memories that were injected into {{key_memories}} from the
+    // stored refs instead of running a live (async) retrieval, so the debug
+    // snapshot mirrors what generation actually shipped. Refs are persisted as
+    // plain text or as `"{match_score}::{text}"` (see completion/regenerate).
+    let retrieved_memories: Vec<MemoryEmbedding> = target_message
+        .memory_refs
+        .iter()
+        .filter_map(|reference| {
+            let text = memory_ref_text(reference);
+            prompt_session
+                .memory_embeddings
+                .iter()
+                .find(|memory| memory.id == *reference || memory.text == text)
+                .cloned()
+                .or_else(|| {
+                    serde_json::from_value(json!({
+                        "id": reference,
+                        "text": text,
+                        "embedding": Vec::<f32>::new(),
+                    }))
+                    .ok()
+                })
+        })
+        .collect();
+
     let prompt_entries = append_image_directive_instructions(
-        context.build_system_prompt(&character, &model, persona.as_ref(), &prompt_session),
+        context.build_system_prompt(
+            &character,
+            &model,
+            persona.as_ref(),
+            &prompt_session,
+            &retrieved_memories,
+        ),
         &context.settings,
     );
     let (prompt_template_source, prompt_template_id, prompt_template_name) =
         resolve_debug_prompt_template(&app, &prompt_session, &character, &context.settings);
     let (relative_entries, in_chat_entries) = partition_prompt_entries(prompt_entries.clone());
+
+    let prompt_sources = prompt_engine::debug_prompt_source_contents(
+        &app,
+        &character,
+        persona.as_ref(),
+        &prompt_session,
+        &context.settings,
+        &retrieved_memories,
+    );
 
     let system_role = crate::chat_manager::request_builder::system_role_for(&credential);
     let character_name = character.name.as_str();
@@ -627,6 +713,17 @@ pub fn chat_message_debug_snapshot(
         request_messages,
         request_body: built.body,
         notes,
+        character_profile_content: prompt_sources.character_profile,
+        persona_content: prompt_sources.persona_description,
+        memory_entry_count: prompt_sources.memory_entry_count,
+        lorebook_content: prompt_sources.lorebook,
+        context_summary_content: prompt_sources.context_summary,
+        key_memories_content: prompt_sources.key_memories,
+        author_note_content: prompt_sources.author_note,
+        companion_state_content: prompt_sources.companion_state,
+        scheduled_notes_content: prompt_sources.scheduled_notes,
+        group_cast_content: String::new(),
+        group_cast_count: 0,
     })
 }
 

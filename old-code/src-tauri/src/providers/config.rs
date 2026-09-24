@@ -72,6 +72,8 @@ fn supported_extra_body_keys(provider_id: &str) -> &'static [&'static str] {
             "llamaDrySequenceBreakers",
             "llamaXtcProbability",
             "llamaXtcThreshold",
+            "llamaAdaptiveTarget",
+            "llamaAdaptiveDecay",
             "llamaDisableSamplerProfileDefaults",
             "min_p",
             "typical_p",
@@ -81,6 +83,7 @@ fn supported_extra_body_keys(provider_id: &str) -> &'static [&'static str] {
             "presence_penalty",
             "enable_thinking",
             "chat_template_kwargs",
+            "forceGemma4Reasoning",
         ],
         "ollama" => &["options"],
         // express omitted on purpose — it uses Gemini's implicit caching, no explicit toggle
@@ -249,9 +252,14 @@ pub fn resolve_base_url(provider_id: &ProviderId, custom_base_url: Option<&str>)
         }
     }
 
+    // Every real HTTP provider (OpenAI included) has its own entry with an
+    // explicit default_base_url, so this fallback only fires for providers that
+    // are not in the config list — most notably the embedded llama.cpp engine,
+    // which never performs an HTTP call. Default to a localhost placeholder so
+    // the debug view does not misleadingly imply that traffic goes to OpenAI.
     get_provider_config(provider_id)
         .map(|cfg| cfg.default_base_url)
-        .unwrap_or_else(|| "https://api.openai.com".to_string())
+        .unwrap_or_else(|| "http://localhost".to_string())
 }
 
 #[allow(dead_code)]

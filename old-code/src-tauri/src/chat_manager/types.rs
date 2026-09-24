@@ -519,6 +519,10 @@ pub struct FeatureGenerationSettings {
     #[serde(default)]
     pub llama_xtc_threshold: Option<f64>,
     #[serde(default)]
+    pub llama_adaptive_target: Option<f64>,
+    #[serde(default)]
+    pub llama_adaptive_decay: Option<f64>,
+    #[serde(default)]
     pub llama_dry_multiplier: Option<f64>,
     #[serde(default)]
     pub llama_dry_base: Option<f64>,
@@ -838,6 +842,14 @@ pub struct AdvancedModelSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub llama_mtp_model_path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llama_dflash_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llama_dflash_draft_tokens: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llama_dflash_min_probability: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llama_dflash_model_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub llama_streaming_enabled: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub llama_sampler_profile: Option<String>,
@@ -866,6 +878,10 @@ pub struct AdvancedModelSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub llama_xtc_threshold: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llama_adaptive_target: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llama_adaptive_decay: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub llama_last_runtime_report: Option<serde_json::Value>,
     pub ollama_num_ctx: Option<u32>,
     pub ollama_num_predict: Option<u32>,
@@ -891,6 +907,8 @@ pub struct AdvancedModelSettings {
     pub reasoning_budget_tokens: Option<u32>,
     #[serde(default)]
     pub force_send_thinking_state: Option<bool>,
+    #[serde(default)]
+    pub force_gemma4_reasoning: Option<bool>,
     // Caching settings
     #[serde(default)]
     pub prompt_caching_enabled: Option<bool>,
@@ -996,6 +1014,10 @@ impl Default for AdvancedModelSettings {
             llama_mtp_placement: None,
             llama_mtp_draft_tokens: None,
             llama_mtp_model_path: None,
+            llama_dflash_enabled: None,
+            llama_dflash_draft_tokens: None,
+            llama_dflash_min_probability: None,
+            llama_dflash_model_path: None,
             llama_streaming_enabled: None,
             llama_sampler_profile: None,
             llama_sampler_order: None,
@@ -1010,6 +1032,8 @@ impl Default for AdvancedModelSettings {
             llama_dry_sequence_breakers: None,
             llama_xtc_probability: None,
             llama_xtc_threshold: None,
+            llama_adaptive_target: None,
+            llama_adaptive_decay: None,
             llama_last_runtime_report: None,
             ollama_num_ctx: None,
             ollama_num_predict: None,
@@ -1030,6 +1054,7 @@ impl Default for AdvancedModelSettings {
             reasoning_effort: None,
             reasoning_budget_tokens: None,
             force_send_thinking_state: None,
+            force_gemma4_reasoning: None,
             prompt_caching_enabled: Some(false),
             prompt_caching_ttl: Some("5min".to_string()),
             open_router_provider: None,

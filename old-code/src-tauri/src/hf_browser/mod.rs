@@ -179,6 +179,7 @@ pub struct DownloadedGgufModel {
     pub quantization: String,
     pub is_mmproj: bool,
     pub is_mtp: bool,
+    pub is_dflash: bool,
     pub architecture: Option<String>,
     pub context_length: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -3038,6 +3039,8 @@ pub async fn hf_list_downloaded_models(app: AppHandle) -> Result<Vec<DownloadedG
                     let is_mtp = is_mtp_asset(&fname);
                     let size = file_entry.metadata().map(|m| m.len()).unwrap_or(0);
                     let meta = read_local_gguf_meta(&file_path);
+                    let is_dflash = !is_mmproj
+                        && crate::llama_cpp::is_dflash_drafter(&file_path.to_string_lossy());
                     results.push(DownloadedGgufModel {
                         model_id: dir_name.replace("--", "/"),
                         filename: fname,
@@ -3046,6 +3049,7 @@ pub async fn hf_list_downloaded_models(app: AppHandle) -> Result<Vec<DownloadedG
                         quantization: extract_quantization(&file_path.to_string_lossy()),
                         is_mmproj,
                         is_mtp,
+                        is_dflash,
                         architecture: meta.as_ref().and_then(|value| value.architecture.clone()),
                         context_length: meta.as_ref().and_then(|value| value.context_length),
                         image_role: None,
@@ -3189,6 +3193,7 @@ pub async fn hf_list_downloaded_image_models(
                     quantization: extract_quantization(&path_string),
                     is_mmproj: lower.contains("mmproj"),
                     is_mtp: false,
+                    is_dflash: false,
                     architecture: meta.as_ref().and_then(|value| value.architecture.clone()),
                     context_length: None,
                     image_role: Some(image_role),
@@ -3730,6 +3735,8 @@ pub async fn hf_compute_local_runability(
     llama_mtp_enabled: Option<bool>,
     llama_mtp_placement: Option<String>,
     llama_mtp_model_path: Option<String>,
+    llama_dflash_enabled: Option<bool>,
+    llama_dflash_model_path: Option<String>,
 ) -> Result<LocalRunabilityResult, String> {
     let path = PathBuf::from(&file_path);
     if !path.exists() {
@@ -3757,11 +3764,17 @@ pub async fn hf_compute_local_runability(
             .and_then(|path| std::fs::metadata(path).ok())
             .map(|meta| meta.len())
             .unwrap_or(0);
-        let mtp_reserve = if llama_mtp_enabled == Some(true)
-            && llama_mtp_placement.as_deref() != Some("cpu")
-        {
-            llama_mtp_model_path
+        let drafter_path = if llama_dflash_enabled == Some(true) {
+            llama_dflash_model_path
                 .as_deref()
+                .or(llama_mtp_model_path.as_deref())
+        } else if llama_mtp_enabled == Some(true) {
+            llama_mtp_model_path.as_deref()
+        } else {
+            None
+        };
+        let mtp_reserve = if llama_mtp_placement.as_deref() != Some("cpu") {
+            drafter_path
                 .filter(|path| !path.trim().is_empty())
                 .and_then(|path| std::fs::metadata(path).ok())
                 .map(|meta| meta.len())

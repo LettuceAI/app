@@ -26,9 +26,7 @@ use crate::chat_manager::service::{
     record_failed_usage, record_usage_if_available, ChatService, PreparedChatTurn,
 };
 use crate::chat_manager::storage::recent_messages;
-use crate::chat_manager::temporal::{
-    companion_effective_now, companion_time_awareness_enabled, format_memory_for_prompt,
-};
+use crate::chat_manager::temporal::{companion_effective_now, companion_time_awareness_enabled};
 use crate::chat_manager::turn_builder::{
     append_image_directive_instructions, assemble_prompt_messages, build_enriched_query,
     conversation_window_with_pinned, is_dynamic_memory_active, manual_window_size,
@@ -202,44 +200,10 @@ impl CompletionFlow {
             }),
         );
 
-        let mut prompt_entries = if swap_places {
-            let (prompt_character, prompt_persona) =
-                swapped_prompt_entities(&character, persona.as_ref());
-            append_image_directive_instructions(
-                context.build_system_prompt(
-                    &prompt_character,
-                    &model,
-                    prompt_persona.as_ref(),
-                    &session,
-                ),
-                settings,
-            )
-        } else {
-            append_image_directive_instructions(
-                context.build_system_prompt(&character, &model, persona.as_ref(), &session),
-                settings,
-            )
-        };
-
-        let used_lorebook_entries =
-            crate::chat_manager::prompt_engine::resolve_used_lorebook_entries(
-                &app,
-                &character.id,
-                persona.as_ref(),
-                &session,
-                &prompt_entries,
-            );
-        let (pinned_msgs, recent_msgs) = if dynamic_memory_enabled {
-            let (pinned, unpinned) =
-                conversation_window_with_pinned(&session.messages, dynamic_window);
-            (pinned, unpinned)
-        } else {
-            (
-                Vec::new(),
-                recent_messages(&session, manual_window_size(settings)),
-            )
-        };
-
+        // Dynamic memory retrieval runs before build_system_prompt so the
+        // retrieved relevant memories fill {{key_memories}} (instead of shipping
+        // the entire hot memory bank). Retrieval also mutates session state
+        // (pin/promote/access bookkeeping), which build_system_prompt then reads.
         let relevant_memories = if dynamic_memory_enabled && !session.memory_embeddings.is_empty() {
             let fixed = ensure_pinned_hot(&mut session.memory_embeddings);
             if fixed > 0 {
@@ -328,6 +292,51 @@ impl CompletionFlow {
             }
         }
 
+        let mut prompt_entries = if swap_places {
+            let (prompt_character, prompt_persona) =
+                swapped_prompt_entities(&character, persona.as_ref());
+            append_image_directive_instructions(
+                context.build_system_prompt(
+                    &prompt_character,
+                    &model,
+                    prompt_persona.as_ref(),
+                    &session,
+                    &relevant_memories,
+                ),
+                settings,
+            )
+        } else {
+            append_image_directive_instructions(
+                context.build_system_prompt(
+                    &character,
+                    &model,
+                    persona.as_ref(),
+                    &session,
+                    &relevant_memories,
+                ),
+                settings,
+            )
+        };
+
+        let used_lorebook_entries =
+            crate::chat_manager::prompt_engine::resolve_used_lorebook_entries(
+                &app,
+                &character.id,
+                persona.as_ref(),
+                &session,
+                &prompt_entries,
+            );
+        let (pinned_msgs, recent_msgs) = if dynamic_memory_enabled {
+            let (pinned, unpinned) =
+                conversation_window_with_pinned(&session.messages, dynamic_window);
+            (pinned, unpinned)
+        } else {
+            (
+                Vec::new(),
+                recent_messages(&session, manual_window_size(settings)),
+            )
+        };
+
         let system_role = crate::chat_manager::request_builder::system_role_for(&credential);
         if swap_places {
             let persona_title = persona
@@ -337,19 +346,11 @@ impl CompletionFlow {
             prompt_entries.push(swap_places_entry(&character.name, &persona_title));
         }
 
+        // In dynamic mode the retrieved memories are now injected inline via
+        // {{key_memories}} inside build_system_prompt, so no separate block is
+        // needed here. The manual-memory path is unchanged.
         let memory_block = if dynamic_memory_enabled {
-            if relevant_memories.is_empty() {
-                None
-            } else {
-                let memory_now = companion_effective_now(&session);
-                Some(
-                    relevant_memories
-                        .iter()
-                        .map(|mem| format_memory_for_prompt(mem, memory_now))
-                        .collect::<Vec<_>>()
-                        .join("\n"),
-                )
-            }
+            None
         } else if has_manual_memories(&session.memories) {
             Some(render_manual_memory_lines(&session.memories))
         } else {

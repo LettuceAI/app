@@ -239,6 +239,7 @@ async fn resolve_or_download_onnxruntime(app: &AppHandle) -> Result<PathBuf, Str
             }
         } else if cfg!(target_os = "macos") {
             if is_valid_macos_ort_dylib(&dest_path) {
+                adhoc_sign_macos_ort_dylibs(app, &ort_dir);
                 log_missing_macos_provider_dylibs(app, &ort_dir, &dest_path);
                 return Ok(dest_path);
             }
@@ -326,6 +327,8 @@ async fn resolve_or_download_onnxruntime(app: &AppHandle) -> Result<PathBuf, Str
 
     #[cfg(target_os = "macos")]
     {
+        adhoc_sign_macos_ort_dylibs(app, &ort_dir);
+
         let shared = ort_dir.join("libonnxruntime_providers_shared.dylib");
         let coreml = ort_dir.join("libonnxruntime_providers_coreml.dylib");
         if !shared.exists() {
@@ -600,6 +603,88 @@ fn preload_macos_provider_dylibs(ort_dir: &Path) {
             let _ = ort::util::preload_dylib(&path);
         }
     }
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn adhoc_sign_macos_ort_dylibs(app: &AppHandle, ort_dir: &Path) {
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, ort_dir);
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let Ok(entries) = fs::read_dir(ort_dir) else {
+            return;
+        };
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|ext| ext.to_str()) != Some("dylib") {
+                continue;
+            }
+            if !macos_dylib_needs_adhoc_signature(&path) {
+                continue;
+            }
+
+            let _ = Command::new("xattr")
+                .arg("-d")
+                .arg("com.apple.quarantine")
+                .arg(&path)
+                .output();
+
+            match Command::new("codesign")
+                .arg("--force")
+                .arg("--sign")
+                .arg("-")
+                .arg(&path)
+                .output()
+            {
+                Ok(output) if output.status.success() => log_info(
+                    app,
+                    "embedding_debug",
+                    format!("Re-signed {} ad-hoc for library validation", path.display()),
+                ),
+                Ok(output) => crate::utils::log_warn(
+                    app,
+                    "embedding_debug",
+                    format!(
+                        "Failed to re-sign {} ad-hoc: {}",
+                        path.display(),
+                        String::from_utf8_lossy(&output.stderr).trim()
+                    ),
+                ),
+                Err(err) => crate::utils::log_warn(
+                    app,
+                    "embedding_debug",
+                    format!("Could not run codesign for {}: {}", path.display(), err),
+                ),
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn macos_dylib_needs_adhoc_signature(path: &Path) -> bool {
+    let Ok(output) = Command::new("codesign")
+        .arg("-d")
+        .arg("--verbose=2")
+        .arg(path)
+        .output()
+    else {
+        return false;
+    };
+    if !output.status.success() {
+        return true;
+    }
+    String::from_utf8_lossy(&output.stderr).lines().any(|line| {
+        line.strip_prefix("TeamIdentifier=")
+            .map(|team| {
+                let team = team.trim();
+                !team.is_empty() && team != "not set"
+            })
+            .unwrap_or(false)
+    })
 }
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]

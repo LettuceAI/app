@@ -35,6 +35,7 @@ export const LLAMA_SAMPLER_ORDER_STAGE_VALUES = [
   "typical",
   "xtc",
   "temp",
+  "adaptive_p",
 ] as const;
 
 export const LlamaSamplerProfileSchema = z.enum(LLAMA_SAMPLER_PROFILE_VALUES);
@@ -60,6 +61,7 @@ export const DEFAULT_LLAMA_SAMPLER_ORDER: readonly LlamaSamplerOrderStage[] = [
   "typical",
   "xtc",
   "temp",
+  "adaptive_p",
 ];
 
 export const LLAMA_SAMPLER_ORDER_PRESETS = {
@@ -457,6 +459,8 @@ export const FeatureGenerationSettingsSchema = z.object({
   llamaNPenRange: z.number().int().min(-1).max(262_144).nullable().optional(),
   llamaXtcProbability: z.number().min(0).max(1).nullable().optional(),
   llamaXtcThreshold: z.number().min(0).max(1).nullable().optional(),
+  llamaAdaptiveTarget: z.number().min(0).max(1).nullable().optional(),
+  llamaAdaptiveDecay: z.number().min(0).max(0.99).nullable().optional(),
   llamaDryMultiplier: z.number().min(0).max(10).nullable().optional(),
   llamaDryBase: z.number().min(0).max(10).nullable().optional(),
   llamaDryAllowedLength: z.number().int().min(0).max(128).nullable().optional(),
@@ -620,6 +624,10 @@ export const AdvancedModelSettingsSchema = z.object({
   llamaMtpPlacement: z.enum(["auto", "gpu", "cpu"]).nullable().optional(),
   llamaMtpDraftTokens: z.number().int().min(1).max(8).nullable().optional(),
   llamaMtpModelPath: z.string().trim().min(1).nullable().optional(),
+  llamaDflashEnabled: z.boolean().nullable().optional(),
+  llamaDflashDraftTokens: z.number().int().min(1).max(15).nullable().optional(),
+  llamaDflashMinProbability: z.number().min(0).max(1).nullable().optional(),
+  llamaDflashModelPath: z.string().trim().min(1).nullable().optional(),
   llamaStreamingEnabled: z.boolean().nullable().optional(),
   llamaSamplerProfile: LlamaSamplerProfileSchema.nullable().optional(),
   llamaSamplerOrder: z.array(LlamaSamplerOrderStageSchema).nullable().optional(),
@@ -634,6 +642,8 @@ export const AdvancedModelSettingsSchema = z.object({
   llamaDrySequenceBreakers: z.array(z.string()).nullable().optional(),
   llamaXtcProbability: z.number().min(0).max(1).nullable().optional(),
   llamaXtcThreshold: z.number().min(0).max(1).nullable().optional(),
+  llamaAdaptiveTarget: z.number().min(0).max(1).nullable().optional(),
+  llamaAdaptiveDecay: z.number().min(0).max(0.99).nullable().optional(),
   llamaLastRuntimeReport: LlamaLastRuntimeReportSchema.nullish().optional(),
   // Ollama specific settings
   ollamaNumCtx: z.number().int().min(0).max(262_144).nullable().optional(),
@@ -656,6 +666,7 @@ export const AdvancedModelSettingsSchema = z.object({
   reasoningEffort: z.enum(["low", "medium", "high"]).nullable().optional(),
   reasoningBudgetTokens: z.number().int().min(1024).nullable().optional(),
   forceSendThinkingState: z.boolean().nullable().optional(),
+  forceGemma4Reasoning: z.boolean().nullable().optional(),
   // Caching settings
   promptCachingEnabled: z.boolean().nullable().optional(),
   promptCachingTtl: z.string().nullish().optional(),
@@ -2226,6 +2237,8 @@ export const PROVIDER_PARAMETER_SUPPORT = {
       llamaDrySequenceBreakers: true,
       llamaXtcProbability: true,
       llamaXtcThreshold: true,
+      llamaAdaptiveTarget: true,
+      llamaAdaptiveDecay: true,
       reasoningEnabled: true,
       reasoningEffort: true,
       reasoningBudgetTokens: true,

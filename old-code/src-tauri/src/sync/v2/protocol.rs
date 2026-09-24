@@ -111,7 +111,7 @@ pub enum HelloError {
     AppVersionMismatch { expected: String, received: String },
     #[error("peer sync protocol {received} does not match {expected}")]
     ProtocolMismatch { expected: u32, received: u32 },
-    #[error("peer database schema does not match this device")]
+    #[error("peer database schema does not match this device; update both devices to the same app version and try again")]
     SchemaMismatch,
     #[error("peer advertised invalid transfer limits")]
     InvalidLimits,

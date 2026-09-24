@@ -288,11 +288,9 @@ export function useGroupChatCreateForm(options: UseGroupChatCreateFormOptions = 
         startingScene,
         state.backgroundImagePath || null,
         state.speakerSelectionMethod,
+        state.memoryType,
       );
       const session = await storageBridge.groupCreateSession(group.id);
-      if (state.memoryType !== "manual") {
-        await storageBridge.groupSessionUpdateMemoryType(session.id, state.memoryType);
-      }
       onCreated?.(session.id);
     } catch (err) {
       console.error("Failed to create group character:", err);

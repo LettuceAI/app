@@ -38,7 +38,38 @@ pub enum CaptureError {
 
 const SEED_ROWS_PER_REVISION: usize = 256;
 
-pub fn capture_local_transaction<T, F>(
+pub fn local_capture_armed(conn: &Connection) -> Result<bool, CaptureError> {
+    let armed = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sync_v2_local_state WHERE key LIKE 'seeded_table:%')",
+        [],
+        |row| row.get::<_, i64>(0),
+    )?;
+    Ok(armed != 0)
+}
+
+fn commit_without_capture<T, F>(
+    conn: &Connection,
+    mutate: F,
+) -> Result<CapturedTransaction<T>, CaptureError>
+where
+    F: FnOnce(&Connection) -> Result<T, CaptureError>,
+{
+    let tx = conn.unchecked_transaction()?;
+    let value = match mutate(&tx) {
+        Ok(value) => value,
+        Err(error) => {
+            tx.rollback()?;
+            return Err(error);
+        }
+    };
+    tx.commit()?;
+    Ok(CapturedTransaction {
+        value,
+        revision: None,
+    })
+}
+
+pub fn capture_local_revision<T, F>(
     conn: &Connection,
     now_ms: i64,
     mutate: F,
@@ -51,6 +82,20 @@ where
     capture_transaction(conn, &device_id, now_ms, mutate)
 }
 
+pub fn capture_local_transaction<T, F>(
+    conn: &Connection,
+    now_ms: i64,
+    mutate: F,
+) -> Result<CapturedTransaction<T>, CaptureError>
+where
+    F: FnOnce(&Connection) -> Result<T, rusqlite::Error>,
+{
+    if !local_capture_armed(conn)? {
+        return commit_without_capture(conn, |tx| mutate(tx).map_err(CaptureError::Database));
+    }
+    capture_local_revision(conn, now_ms, mutate)
+}
+
 pub fn capture_local_string_transaction<T, F>(
     conn: &Connection,
     now_ms: i64,
@@ -59,6 +104,9 @@ pub fn capture_local_string_transaction<T, F>(
 where
     F: FnOnce(&Connection) -> Result<T, String>,
 {
+    if !local_capture_armed(conn)? {
+        return commit_without_capture(conn, |tx| mutate(tx).map_err(CaptureError::Mutation));
+    }
     let device_id = super::identity::get_or_create_device_id(conn)
         .map_err(|error| CaptureError::DeviceIdentity(error.to_string()))?;
     capture_transaction_inner(conn, &device_id, now_ms, |tx| {
@@ -523,6 +571,7 @@ mod tests {
              VALUES ('device_id', 'stable-device');",
         )
         .unwrap();
+        ensure_current_database_seeded(&conn, 50).unwrap();
 
         let captured = capture_local_transaction(&conn, 100, |tx| {
             tx.execute(
@@ -536,6 +585,45 @@ mod tests {
             captured.revision.unwrap().origin_device_id,
             "stable-device"
         );
+    }
+
+    #[test]
+    fn app_writes_skip_capture_until_the_database_is_seeded() {
+        let conn = connection();
+
+        let captured = capture_local_transaction(&conn, 100, |tx| {
+            tx.execute(
+                "INSERT INTO chats (id, title) VALUES ('chat-1', 'Hello')",
+                [],
+            )
+        })
+        .unwrap();
+
+        assert!(captured.revision.is_none());
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM sync_v2_changes", [], |row| row
+                .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            conn.query_row("SELECT title FROM chats WHERE id = 'chat-1'", [], |row| row
+                .get::<_, String>(0))
+                .unwrap(),
+            "Hello"
+        );
+
+        ensure_current_database_seeded(&conn, 150).unwrap();
+
+        let captured = capture_local_transaction(&conn, 200, |tx| {
+            tx.execute(
+                "INSERT INTO chats (id, title) VALUES ('chat-2', 'World')",
+                [],
+            )
+        })
+        .unwrap();
+
+        assert!(captured.revision.is_some());
     }
 
     #[test]
@@ -675,6 +763,7 @@ mod tests {
     #[test]
     fn string_mutation_errors_roll_back_the_tracked_transaction() {
         let conn = connection();
+        ensure_current_database_seeded(&conn, 50).unwrap();
 
         let result = capture_local_string_transaction(&conn, 100, |tx| {
             tx.execute(

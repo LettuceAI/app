@@ -48,8 +48,11 @@ export function useGroupChatSettingsController(
   }, []);
 
   // Only fetch stats + message count (session, characters, personas come from layout)
+  const layoutSessionId = layoutSession?.id ?? null;
+  const layoutSessionName = layoutSession?.name ?? null;
+
   const loadData = useCallback(async () => {
-    if (!groupSessionId || !layoutSession) return;
+    if (!groupSessionId || !layoutSessionId) return;
 
     try {
       setUi({ loading: true, error: null });
@@ -61,20 +64,22 @@ export function useGroupChatSettingsController(
 
       setParticipationStats(stats);
       setMessageCount(msgCount);
-      if (!uiRef.current.editingName) {
-        setUi({ nameDraft: layoutSession.name });
-      }
     } catch (err) {
       console.error("Failed to load group chat settings:", err);
       setUi({ error: t("groupChats.sessionSettingsController.failedToLoad") });
     } finally {
       setUi({ loading: false });
     }
-  }, [groupSessionId, layoutSession, setUi, t]);
+  }, [groupSessionId, layoutSessionId, setUi, t]);
 
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    if (layoutSessionName === null || uiRef.current.editingName) return;
+    setUi({ nameDraft: layoutSessionName });
+  }, [layoutSessionName, setUi]);
 
   const groupCharacters = useMemo(() => {
     if (!session) return [];
@@ -104,6 +109,28 @@ export function useGroupChatSettingsController(
     return currentPersona.isDefault ? `${currentPersona.title} (default)` : currentPersona.title;
   }, [currentPersona, session?.personaId, t]);
 
+  const applyOptimisticSessionUpdate = useCallback(
+    async (
+      patch: Partial<GroupSession>,
+      request: (current: GroupSession) => Promise<GroupSession | null>,
+    ) => {
+      if (!session) return;
+      const previous = session;
+      updateSession?.({ ...previous, ...patch });
+      try {
+        setUi({ saving: true });
+        const updated = await request(previous);
+        if (updated) updateSession?.(updated);
+      } catch (err) {
+        updateSession?.(previous);
+        throw err;
+      } finally {
+        setUi({ saving: false });
+      }
+    },
+    [session, setUi, updateSession],
+  );
+
   const handleSaveName = useCallback(async () => {
     if (!session || !ui.nameDraft.trim()) return;
 
@@ -122,20 +149,16 @@ export function useGroupChatSettingsController(
 
   const handleChangePersona = useCallback(
     async (personaId: string | null) => {
-      if (!session) return;
-
       try {
-        setUi({ saving: true });
-        const updated = await storageBridge.groupSessionUpdatePersona(session.id, personaId);
-        updateSession?.(updated);
+        await applyOptimisticSessionUpdate({ personaId }, (current) =>
+          storageBridge.groupSessionUpdatePersona(current.id, personaId),
+        );
         setUi({ showPersonaSelector: false });
       } catch (err) {
         console.error("Failed to change persona:", err);
-      } finally {
-        setUi({ saving: false });
       }
     },
-    [session, setUi, updateSession],
+    [applyOptimisticSessionUpdate, setUi],
   );
 
   const handleClearOverride = useCallback(
@@ -198,61 +221,63 @@ export function useGroupChatSettingsController(
 
   const handleChangeSpeakerSelectionMethod = useCallback(
     async (method: "llm" | "heuristic" | "round_robin" | "director" | "director_action") => {
-      if (!session) return;
       try {
-        setUi({ saving: true });
-        const updated = await storageBridge.groupSessionUpdateSpeakerSelectionMethod(
-          session.id,
-          method,
+        await applyOptimisticSessionUpdate({ speakerSelectionMethod: method }, (current) =>
+          storageBridge.groupSessionUpdateSpeakerSelectionMethod(current.id, method),
         );
-        updateSession?.(updated);
       } catch (err) {
         console.error("Failed to update speaker selection method:", err);
-      } finally {
-        setUi({ saving: false });
       }
     },
-    [session, setUi, updateSession],
+    [applyOptimisticSessionUpdate],
   );
 
   const handleChangeCharacterModel = useCallback(
     async (characterId: string, modelId: string | null) => {
       if (!session) return;
+      const nextOverrides = { ...(session.characterModelOverrides ?? {}) };
+      if (modelId) {
+        nextOverrides[characterId] = modelId;
+      } else {
+        delete nextOverrides[characterId];
+      }
       try {
-        setUi({ saving: true });
-        const updated = await storageBridge.groupSessionUpdateCharacterModelOverride(
-          session.id,
-          characterId,
-          modelId,
+        await applyOptimisticSessionUpdate(
+          { characterModelOverrides: nextOverrides },
+          (current) =>
+            storageBridge.groupSessionUpdateCharacterModelOverride(
+              current.id,
+              characterId,
+              modelId,
+            ),
         );
-        updateSession?.(updated);
       } catch (err) {
         console.error("Failed to update character model override:", err);
-      } finally {
-        setUi({ saving: false });
       }
     },
-    [session, setUi, updateSession],
+    [applyOptimisticSessionUpdate, session],
   );
 
   const handleChangePromptTemplate = useCallback(
     async (promptTemplateId: string | null) => {
       if (!session) return;
+      const patch: Partial<GroupSession> =
+        session.chatType === "roleplay"
+          ? { groupChatRoleplayPromptTemplateId: promptTemplateId }
+          : { groupChatPromptTemplateId: promptTemplateId };
       try {
-        setUi({ saving: true });
-        const updated = await storageBridge.groupSessionUpdatePromptTemplate(
-          session.id,
-          session.chatType,
-          promptTemplateId,
+        await applyOptimisticSessionUpdate(patch, (current) =>
+          storageBridge.groupSessionUpdatePromptTemplate(
+            current.id,
+            current.chatType,
+            promptTemplateId,
+          ),
         );
-        updateSession?.(updated);
       } catch (err) {
         console.error("Failed to update group prompt template:", err);
-      } finally {
-        setUi({ saving: false });
       }
     },
-    [session, setUi, updateSession],
+    [applyOptimisticSessionUpdate, session],
   );
 
   const handleSetCharacterMuted = useCallback(
@@ -270,60 +295,43 @@ export function useGroupChatSettingsController(
         nextMuted.delete(characterId);
       }
 
+      const mutedCharacterIds = Array.from(nextMuted);
       try {
-        setUi({ saving: true });
-        const updated = await storageBridge.groupSessionUpdateMutedCharacterIds(
-          session.id,
-          Array.from(nextMuted),
+        await applyOptimisticSessionUpdate({ mutedCharacterIds }, (current) =>
+          storageBridge.groupSessionUpdateMutedCharacterIds(current.id, mutedCharacterIds),
         );
-        updateSession?.(updated);
       } catch (err) {
         console.error("Failed to update muted characters:", err);
-      } finally {
-        setUi({ saving: false });
       }
     },
-    [session, setUi, updateSession, t],
+    [applyOptimisticSessionUpdate, session, setUi, t],
   );
 
   const handleUpdateBackgroundImage = useCallback(
     async (backgroundImagePath: string | null) => {
-      if (!session) return;
-
       try {
-        setUi({ saving: true });
-        const updated = await storageBridge.groupSessionUpdateBackgroundImage(
-          session.id,
-          backgroundImagePath,
+        await applyOptimisticSessionUpdate({ backgroundImagePath }, (current) =>
+          storageBridge.groupSessionUpdateBackgroundImage(current.id, backgroundImagePath),
         );
-        updateSession?.(updated);
       } catch (err) {
         console.error("Failed to update background image:", err);
         throw err;
-      } finally {
-        setUi({ saving: false });
       }
     },
-    [session, setUi, updateSession],
+    [applyOptimisticSessionUpdate],
   );
 
   const handleSetDisableCharacterLorebooks = useCallback(
     async (disableCharacterLorebooks: boolean) => {
-      if (!session) return;
       try {
-        setUi({ saving: true });
-        const updated = await updateGroupSessionDisableCharacterLorebooks(
-          session.id,
-          disableCharacterLorebooks,
+        await applyOptimisticSessionUpdate({ disableCharacterLorebooks }, (current) =>
+          updateGroupSessionDisableCharacterLorebooks(current.id, disableCharacterLorebooks),
         );
-        updateSession?.(updated);
       } catch (err) {
         console.error("Failed to update session lorebook behavior:", err);
-      } finally {
-        setUi({ saving: false });
       }
     },
-    [session, setUi, updateSession],
+    [applyOptimisticSessionUpdate],
   );
 
   const getParticipationPercent = useCallback(

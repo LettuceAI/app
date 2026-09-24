@@ -86,6 +86,10 @@ const PARAMETER_LABELS: Record<StaticParameter, string> = {
   llamaMtpPlacement: "llama.cpp MTP Placement",
   llamaMtpDraftTokens: "llama.cpp MTP Draft Tokens",
   llamaMtpModelPath: "llama.cpp MTP Model Path",
+  llamaDflashEnabled: "llama.cpp DFlash Speculative Decoding",
+  llamaDflashDraftTokens: "llama.cpp DFlash Draft Tokens",
+  llamaDflashMinProbability: "llama.cpp DFlash Minimum Confidence",
+  llamaDflashModelPath: "llama.cpp DFlash Model Path",
   llamaStreamingEnabled: "llama.cpp Streaming",
   llamaSamplerProfile: "llama.cpp Sampler Profile",
   llamaSamplerOrder: "llama.cpp Sampler Order",
@@ -99,6 +103,8 @@ const PARAMETER_LABELS: Record<StaticParameter, string> = {
   llamaDrySequenceBreakers: "llama.cpp DRY Sequence Breakers",
   llamaXtcProbability: "llama.cpp XTC Probability",
   llamaXtcThreshold: "llama.cpp XTC Threshold",
+  llamaAdaptiveTarget: "llama.cpp Adaptive-P Target",
+  llamaAdaptiveDecay: "llama.cpp Adaptive-P Target Decay",
   llamaLastRuntimeReport: "llama.cpp Runtime Report",
   ollamaNumCtx: "Ollama Num Ctx",
   ollamaNumPredict: "Ollama Num Predict",
@@ -119,6 +125,7 @@ const PARAMETER_LABELS: Record<StaticParameter, string> = {
   reasoningEffort: "Reasoning Effort",
   reasoningBudgetTokens: "Reasoning Budget",
   forceSendThinkingState: "Force Send Thinking State",
+  forceGemma4Reasoning: "Force Reasoning in Gemma4-series Models",
   promptCachingEnabled: "Prompt Caching",
   promptCachingTtl: "Prompt Caching TTL",
   openRouterProvider: "Pinned OpenRouter Provider",
@@ -200,6 +207,14 @@ const PARAMETER_DESCRIPTIONS: Record<StaticParameter, string> = {
   llamaMtpPlacement: "Automatic, GPU, or CPU placement for the external MTP draft model",
   llamaMtpDraftTokens: "Speculative tokens drafted per MTP step (1 to 8)",
   llamaMtpModelPath: "External MTP draft GGUF path (auto-discovered from sibling mtp-*.gguf when empty)",
+  llamaDflashEnabled:
+    "Block speculative decoding with a DFlash draft file, used instead of MTP when available",
+  llamaDflashDraftTokens:
+    "Tokens drafted per DFlash block, capped by the draft file's trained block size (1 to 15)",
+  llamaDflashMinProbability:
+    "Stop drafting at the first DFlash token below this confidence (0 to 1)",
+  llamaDflashModelPath:
+    "DFlash draft GGUF path (auto-discovered from a sibling *dflash*.gguf when empty)",
   llamaStreamingEnabled: "Disable incremental token streaming for llama.cpp models",
   llamaSamplerProfile:
     "Preset local sampler defaults for chat, creativity, stability, or reasoning",
@@ -214,6 +229,10 @@ const PARAMETER_DESCRIPTIONS: Record<StaticParameter, string> = {
   llamaDrySequenceBreakers: "Sequence boundaries that reset DRY matching",
   llamaXtcProbability: "Chance of excluding top tokens for more variety (0 = off)",
   llamaXtcThreshold: "Minimum probability for a token to be eligible for XTC removal",
+  llamaAdaptiveTarget:
+    "Adaptive-P picks tokens near this probability and replaces the final sampling step (0 to 1)",
+  llamaAdaptiveDecay:
+    "How fast Adaptive-P adapts its target; lower reacts quicker, higher is steadier (0 to 0.99)",
   llamaLastRuntimeReport: "Persisted diagnostics from the last local llama.cpp run",
   ollamaNumCtx: "Ollama context window size",
   ollamaNumPredict: "Max tokens to generate",
@@ -234,6 +253,7 @@ const PARAMETER_DESCRIPTIONS: Record<StaticParameter, string> = {
   reasoningEffort: "Thinking depth - OpenAI/DeepSeek style",
   reasoningBudgetTokens: "Max tokens for extended thinking",
   forceSendThinkingState: "Explicitly send enable_thinking instead of omitting it",
+  forceGemma4Reasoning: "Inject a reasoning prefill to force Gemma4-series models to think before answering",
   promptCachingEnabled: "Enable prompt caching",
   promptCachingTtl: "How long a cached prompt prefix stays reusable",
   openRouterProvider: "Route this model through one OpenRouter endpoint",

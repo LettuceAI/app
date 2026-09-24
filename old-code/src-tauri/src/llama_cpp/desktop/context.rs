@@ -715,6 +715,8 @@ pub(crate) async fn llamacpp_context_info(
     llama_mtp_enabled: Option<bool>,
     llama_mtp_placement: Option<String>,
     llama_mtp_model_path: Option<String>,
+    llama_dflash_enabled: Option<bool>,
+    llama_dflash_model_path: Option<String>,
 ) -> Result<LlamaCppContextInfo, String> {
     let _ = app;
     let _ = llama_main_gpu;
@@ -764,12 +766,17 @@ pub(crate) async fn llamacpp_context_info(
         .to_ascii_lowercase();
     let bundled_mtp_draft =
         llama_mtp_enabled == Some(true) && super::mtp::model_has_mtp(&model_path);
-    let mtp_requested_reserve_bytes = if supports_gpu_offload
-        && llama_mtp_enabled == Some(true)
-        && mtp_placement != "cpu"
-    {
-        llama_mtp_model_path
+    let drafter_path = if llama_dflash_enabled == Some(true) {
+        llama_dflash_model_path
             .as_deref()
+            .or(llama_mtp_model_path.as_deref())
+    } else if llama_mtp_enabled == Some(true) {
+        llama_mtp_model_path.as_deref()
+    } else {
+        None
+    };
+    let mtp_requested_reserve_bytes = if supports_gpu_offload && mtp_placement != "cpu" {
+        drafter_path
             .filter(|path| !path.trim().is_empty())
             .map(|path| estimate_mtp_gpu_reserve_bytes(path, 16_384, 512, llama_kv_type.as_deref()))
             .transpose()?

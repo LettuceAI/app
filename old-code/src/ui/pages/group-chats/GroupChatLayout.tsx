@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Outlet, useOutletContext, useParams } from "react-router-dom";
 import { listen } from "@tauri-apps/api/event";
 import type {
@@ -63,6 +63,7 @@ export function GroupChatLayout() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadCount, setLoadCount] = useState(0);
+  const loadedSessionIdRef = useRef<string | null>(null);
 
   const [bgBrightness, setBgBrightness] = useState<number | null>(null);
   const [baseChatAppearance, setBaseChatAppearance] = useState<ChatAppearanceSettings>(
@@ -91,10 +92,12 @@ export function GroupChatLayout() {
       if (!groupSessionId) {
         setLoading(false);
         setSession(null);
+        loadedSessionIdRef.current = null;
         return;
       }
+      const isFirstLoad = loadedSessionIdRef.current !== groupSessionId;
       try {
-        setLoading(true);
+        if (isFirstLoad) setLoading(true);
         const [sessionData, chars, personaList, settingsData] = await Promise.all([
           storageBridge.groupSessionGet(groupSessionId),
           listCharacters(),
@@ -118,12 +121,16 @@ export function GroupChatLayout() {
           setBaseChatAppearance(
             mergeChatAppearance(globalAppearance, groupData?.chatAppearance ?? undefined),
           );
+          loadedSessionIdRef.current = groupSessionId;
         }
       } catch (err) {
         console.error("GroupChatLayout: failed to load data", err);
-        if (!cancelled) setSession(null);
+        if (!cancelled) {
+          setSession(null);
+          loadedSessionIdRef.current = null;
+        }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && isFirstLoad) setLoading(false);
       }
     })();
     return () => {

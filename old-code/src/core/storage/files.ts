@@ -660,6 +660,7 @@ export const storageBridge = {
     startingScene?: any | null,
     backgroundImagePath?: string | null,
     speakerSelectionMethod?: "llm" | "heuristic" | "round_robin" | "director" | "director_action" | null,
+    memoryType?: "manual" | "dynamic" | null,
   ) =>
     invoke<string>("group_create", {
       name,
@@ -669,6 +670,7 @@ export const storageBridge = {
       startingSceneJson: startingScene ? JSON.stringify(startingScene) : null,
       backgroundImagePath: backgroundImagePath ?? null,
       speakerSelectionMethod: speakerSelectionMethod ?? "llm",
+      memoryType: memoryType ?? "manual",
     }).then((s) => JSON.parse(s)),
   groupGet: (id: string) =>
     invoke<string | null>("group_get", { id }).then((s) =>
