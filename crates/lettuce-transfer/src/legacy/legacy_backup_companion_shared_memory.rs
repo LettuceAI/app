@@ -285,7 +285,7 @@ fn map_states(
             return Err(malformed(format!("{path}.updated_at")));
         }
         let mut repaired = Vec::new();
-        let soul_facts = crate::legacy_backup_json_values::legacy_soul_growth(
+        let soul_facts = crate::legacy::legacy_backup_json_values::legacy_soul_growth(
             &soul_value,
             &character_id.to_string(),
             lettuce_types::TimestampMillis::new(row.updated_at),

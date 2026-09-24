@@ -76,7 +76,7 @@ pub fn current_backup_restore_admission(
     receipt: &BackupRestoreStagingReceipt,
     admitted_at: TimestampMillis,
 ) -> Result<BackupRestoreAdmissionRequest, BackupRestoreAdmissionError> {
-    if *receipt != crate::restore_workspace::staging_receipt(plan) {
+    if *receipt != crate::restore::restore_workspace::staging_receipt(plan) {
         return Err(BackupRestoreAdmissionError::InvalidInput);
     }
     Ok(BackupRestoreAdmissionRequest {

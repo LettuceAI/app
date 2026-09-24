@@ -308,7 +308,7 @@ pub fn decode_provider_backup_restore_plan(
         memory_projections,
         dynamic_memory,
     };
-    crate::backup_graph::canonicalize_and_validate(&mut graph)?;
+    crate::backup::backup_graph::canonicalize_and_validate(&mut graph)?;
     let secrets = decode_secrets(secret_document, &graph)?;
     let media = take_media(sections, &graph)?;
     let artifacts = take_artifacts(sections, &graph)?;
@@ -377,7 +377,7 @@ fn decode_secrets(
     if document.version != PROVIDER_BACKUP_GRAPH_VERSION {
         return Err(ProviderBackupRestorePlanError::InvalidInventory);
     }
-    let expected = crate::backup_graph::expected_secrets(graph)?;
+    let expected = crate::backup::backup_graph::expected_secrets(graph)?;
     if document.secrets.len() != expected.len() {
         return Err(ProviderBackupRestorePlanError::InvalidInventory);
     }
@@ -432,11 +432,11 @@ fn take_artifacts(
     sections: &mut Sections<'_>,
     graph: &ProviderBackupGraph,
 ) -> Result<Vec<BackupConversationArtifact>, ProviderBackupRestorePlanError> {
-    crate::backup_graph::all_conversation_artifact_descriptors(graph)?
+    crate::backup::backup_graph::all_conversation_artifact_descriptors(graph)?
         .into_iter()
         .map(|descriptor| {
             let (name, schema, digest, byte_size) =
-                crate::backup_graph::backup_artifact_section_identity(&descriptor);
+                crate::backup::backup_graph::backup_artifact_section_identity(&descriptor);
             let bytes = sections.read(&name, &schema)?;
             if u64::try_from(bytes.len()).ok() != Some(byte_size) || content_hash(&bytes) != *digest
             {

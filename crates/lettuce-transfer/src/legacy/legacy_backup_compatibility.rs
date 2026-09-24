@@ -157,7 +157,7 @@ impl LegacyBackupCompatibilityPlan {
         self.inventory()
             .media
             .iter()
-            .find(|media| crate::legacy_backup_media::archive_path(media) == relative_path)
+            .find(|media| crate::legacy::legacy_backup_media::archive_path(media) == relative_path)
     }
 
     /// The source counts a legacy import admission validates, derived from the

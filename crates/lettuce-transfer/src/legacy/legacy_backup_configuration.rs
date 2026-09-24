@@ -3445,7 +3445,7 @@ fn legacy_global_model_settings(
         return Default::default();
     };
     let (layer, lossy, unknown) =
-        crate::legacy_backup_model_settings::legacy_settings_layer(object, true);
+        crate::legacy::legacy_backup_model_settings::legacy_settings_layer(object, true);
     for (kind, field) in lossy
         .iter()
         .map(|field| (LegacyBackupConversionNoticeKind::Lossy, field))

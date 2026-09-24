@@ -70,7 +70,7 @@ impl ConversationRuntimeBackup {
                 .into_iter()
                 .flatten()
                 {
-                    crate::conversation_backup::insert_snapshot(
+                    crate::backup::conversation_backup::insert_snapshot(
                         &mut snapshots,
                         &model.snapshot_ref,
                     )
@@ -83,7 +83,7 @@ impl ConversationRuntimeBackup {
                         .and_then(|record| record.decision.as_ref())
                         .and_then(|decision| decision.decision_model.as_ref())
                     {
-                        crate::conversation_backup::insert_snapshot(
+                        crate::backup::conversation_backup::insert_snapshot(
                             &mut snapshots,
                             &model.snapshot_ref,
                         )
@@ -103,14 +103,20 @@ impl ConversationRuntimeBackup {
                                     .filter_map(|call| call.provider_replay.as_ref()),
                             )
                         }) {
-                            crate::conversation_backup::insert_replay(&mut replays, reference)
-                                .map_err(|_| ConversationRuntimeBackupError::InvalidData)?;
+                            crate::backup::conversation_backup::insert_replay(
+                                &mut replays,
+                                reference,
+                            )
+                            .map_err(|_| ConversationRuntimeBackupError::InvalidData)?;
                         }
                     }
                     for tool in &attempt.tools {
                         if let Some(reference) = &tool.provider_replay {
-                            crate::conversation_backup::insert_replay(&mut replays, reference)
-                                .map_err(|_| ConversationRuntimeBackupError::InvalidData)?;
+                            crate::backup::conversation_backup::insert_replay(
+                                &mut replays,
+                                reference,
+                            )
+                            .map_err(|_| ConversationRuntimeBackupError::InvalidData)?;
                         }
                     }
                 }

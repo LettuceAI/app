@@ -186,7 +186,7 @@ pub fn parse_chat_template_import(
         && value.get("kind").and_then(Value::as_str) == Some("chat_template")
         && let Some(payload) = value
             .get("payload")
-            .filter(|payload| crate::prompt_transfer::truthy(payload))
+            .filter(|payload| crate::files::prompt_transfer::truthy(payload))
     {
         let prompt = payload
             .pointer("/systemPromptTemplate/id")
@@ -197,7 +197,7 @@ pub fn parse_chat_template_import(
     if value.get("kind").and_then(Value::as_str) == Some("chat_template")
         && let Some(template) = value
             .get("template")
-            .filter(|template| crate::prompt_transfer::truthy(template))
+            .filter(|template| crate::files::prompt_transfer::truthy(template))
     {
         let prompt = string(template.get("promptTemplateId"));
         return normalized(template, prompt);

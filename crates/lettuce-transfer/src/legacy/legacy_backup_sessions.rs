@@ -745,7 +745,7 @@ fn session_model_settings(
         });
     if let Some(object) = advanced {
         let (layer, lossy, unknown) =
-            crate::legacy_backup_model_settings::legacy_settings_layer(&object, false);
+            crate::legacy::legacy_backup_model_settings::legacy_settings_layer(&object, false);
         for (kind, field) in lossy
             .iter()
             .map(|field| (LegacyBackupConversionNoticeKind::Lossy, field))

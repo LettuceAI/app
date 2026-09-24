@@ -73,7 +73,7 @@ impl SillyTavernPresetTexts {
     /// The texts the old app wrote into every exported preset.
     #[must_use]
     pub fn bundled() -> Self {
-        serde_json::from_str(include_str!("../resources/sillytavern-preset.json"))
+        serde_json::from_str(include_str!("../../resources/sillytavern-preset.json"))
             .expect("bundled SillyTavern preset texts are valid")
     }
 }

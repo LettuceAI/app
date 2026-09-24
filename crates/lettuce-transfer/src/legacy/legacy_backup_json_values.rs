@@ -15,8 +15,8 @@ use uuid::Uuid;
 
 use crate::{
     LegacyBackupConfigurationPlan, LegacyBackupDocumentKind, LegacyImportSkip,
-    LegacyImportSkipKind, LegacyImportSkipReason, legacy_backup_configuration::LEGACY_ID_NAMESPACE,
-    legacy_value_skip,
+    LegacyImportSkipKind, LegacyImportSkipReason,
+    legacy::legacy_backup_configuration::LEGACY_ID_NAMESPACE, legacy_value_skip,
 };
 
 const COMPANION_SECTIONS: [&str; 7] = [

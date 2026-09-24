@@ -20,8 +20,10 @@ use lettuce_types::{
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::legacy_backup_authored::{CharacterRowReferences, map_character_row, map_lorebooks};
-use crate::legacy_backup_json_values::LegacyJsonContext;
+use crate::legacy::legacy_backup_authored::{
+    CharacterRowReferences, map_character_row, map_lorebooks,
+};
+use crate::legacy::legacy_backup_json_values::LegacyJsonContext;
 use crate::{
     CharacterPackage, CompanionScheduledNotePackage, CompanionSharedMemoryPackage,
     LegacyBackupCharacterCandidate, LegacyBackupChatTemplateCandidate,
@@ -539,7 +541,7 @@ fn companion_memory(
         .as_array()
         .filter(|facts| !facts.is_empty())
         .and_then(|_| {
-            crate::legacy_backup_json_values::legacy_soul_growth(
+            crate::legacy::legacy_backup_json_values::legacy_soul_growth(
                 &shared.soul_growth,
                 "character",
                 updated_at,
@@ -563,7 +565,8 @@ fn companion_memory(
                 }
             }
         };
-        match crate::legacy_backup_companion_shared_memory::legacy_relationship_state(value) {
+        match crate::legacy::legacy_backup_companion_shared_memory::legacy_relationship_state(value)
+        {
             Some(state) => relationships.push(CharacterFileRelationship { persona_id, state }),
             None => skipped.push(crate::legacy_value_skip(
                 "companion_shared_memory.relationship_states",

@@ -603,7 +603,7 @@ fn map_sessions(
                 ));
                 return false;
             }
-            *model_id = crate::legacy_backup_configuration::canonical_model_id(
+            *model_id = crate::legacy::legacy_backup_configuration::canonical_model_id(
                 model_id,
                 notices,
                 "group_sessions.character_model_overrides",
@@ -696,7 +696,7 @@ fn map_sessions(
         };
         let starting_scene_override = match scene_overridden
             .then(|| {
-                crate::legacy_backup_authored::map_group_starting_scene(
+                crate::legacy::legacy_backup_authored::map_group_starting_scene(
                     starting_scene_json.as_deref().map(canonical_scene_ids),
                     &session_key,
                     &mut Vec::new(),
@@ -1268,7 +1268,7 @@ fn canonical_scene_ids(raw: &str) -> String {
         {
             *value = Value::String(
                 uuid::Uuid::new_v5(
-                    &crate::legacy_backup_configuration::LEGACY_ID_NAMESPACE,
+                    &crate::legacy::legacy_backup_configuration::LEGACY_ID_NAMESPACE,
                     format!("{kind}:{id}").as_bytes(),
                 )
                 .to_string(),
@@ -1954,7 +1954,7 @@ mod tests {
             models,
         ))
         .expect("session overrides with a legacy model id");
-        let model = crate::legacy_backup_configuration::canonical_model_id(
+        let model = crate::legacy::legacy_backup_configuration::canonical_model_id(
             "legacy-gpt",
             &mut Vec::new(),
             "model",

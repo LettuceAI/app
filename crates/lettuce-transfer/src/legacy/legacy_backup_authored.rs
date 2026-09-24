@@ -533,8 +533,10 @@ pub fn plan_legacy_backup_authored(
     crate::reconcile_legacy_persona_lorebooks(&mut personas, &lorebooks);
     let persona_lorebooks = map_persona_bindings(&personas);
     let mut skipped = Vec::new();
-    let json_context =
-        crate::legacy_backup_json_values::LegacyJsonContext::new(&configuration, &mut skipped);
+    let json_context = crate::legacy::legacy_backup_json_values::LegacyJsonContext::new(
+        &configuration,
+        &mut skipped,
+    );
     let characters = map_characters(
         &configuration.provider_models,
         &configuration.prompts,
@@ -811,7 +813,7 @@ fn map_characters(
     chat_templates: &[crate::LegacyBackupChatTemplateCandidate],
     rows: Vec<CharacterRow>,
     lorebook_ids: &BTreeSet<LorebookId>,
-    json_context: &crate::legacy_backup_json_values::LegacyJsonContext,
+    json_context: &crate::legacy::legacy_backup_json_values::LegacyJsonContext,
     skipped: &mut Vec<crate::LegacyImportSkip>,
     notices: &mut Vec<LegacyBackupConversionNotice>,
 ) -> Result<Vec<LegacyBackupCharacterCandidate>, LegacyBackupAuthoredError> {
@@ -848,7 +850,7 @@ pub(crate) struct CharacterRowReferences<'a> {
     pub(crate) prompt_purposes: BTreeMap<&'a str, PromptPurpose>,
     pub(crate) chat_templates: &'a [crate::LegacyBackupChatTemplateCandidate],
     pub(crate) lorebook_ids: &'a BTreeSet<LorebookId>,
-    pub(crate) json_context: &'a crate::legacy_backup_json_values::LegacyJsonContext,
+    pub(crate) json_context: &'a crate::legacy::legacy_backup_json_values::LegacyJsonContext,
 }
 
 pub(crate) fn map_character_row(
@@ -936,7 +938,7 @@ pub(crate) fn map_character_row(
         ));
     }
     let mut model_profile_id = normalize(row.default_model_id).map(|source_id| {
-        crate::legacy_backup_configuration::canonical_model_id(
+        crate::legacy::legacy_backup_configuration::canonical_model_id(
             &source_id,
             notices,
             "characters.default_model_id",
@@ -1039,7 +1041,7 @@ pub(crate) fn map_character_row(
     if scenes.len() > CHILD_LIMIT {
         return Err(limit(LegacyBackupDocumentKind::Characters));
     }
-    let companion = crate::legacy_backup_json_values::legacy_companion(
+    let companion = crate::legacy::legacy_backup_json_values::legacy_companion(
         row.companion,
         &character_key,
         row.mode == "companion",
@@ -1102,7 +1104,7 @@ pub(crate) fn map_character_row(
         system_prompt: normalize(row.system_prompt),
         companion_soul: companion.soul,
         companion_prompt_source_id,
-        voice: crate::legacy_backup_json_values::legacy_voice(
+        voice: crate::legacy::legacy_backup_json_values::legacy_voice(
             row.voice_config,
             &character_key,
             json_context,
@@ -1136,7 +1138,7 @@ pub(crate) fn map_character_row(
         )?,
         primary_text_color: normalize(row.custom_text_color),
         secondary_text_color: normalize(row.custom_text_secondary),
-        chat_appearance: crate::legacy_backup_json_values::legacy_chat_appearance(
+        chat_appearance: crate::legacy::legacy_backup_json_values::legacy_chat_appearance(
             row.chat_appearance.as_deref(),
             "characters.chat_appearance",
             &character_key,
@@ -1391,7 +1393,7 @@ fn map_groups(
     provider_models: &crate::LegacyProviderModelPlan,
     prompts: &crate::LegacyPromptPlan,
     rows: Vec<GroupRow>,
-    json_context: &crate::legacy_backup_json_values::LegacyJsonContext,
+    json_context: &crate::legacy::legacy_backup_json_values::LegacyJsonContext,
     notices: &mut Vec<LegacyBackupConversionNotice>,
 ) -> Result<
     (
@@ -1499,7 +1501,7 @@ fn map_groups(
                 ));
                 continue;
             }
-            let model = crate::legacy_backup_configuration::canonical_model_id(
+            let model = crate::legacy::legacy_backup_configuration::canonical_model_id(
                 &model_source,
                 notices,
                 "group_characters.character_model_overrides",
@@ -1674,7 +1676,7 @@ fn map_groups(
             disable_character_lorebooks: row.disable_character_lorebooks,
             group_conversation_prompt_source_id,
             group_roleplay_prompt_source_id,
-            chat_appearance: crate::legacy_backup_json_values::legacy_chat_appearance(
+            chat_appearance: crate::legacy::legacy_backup_json_values::legacy_chat_appearance(
                 row.chat_appearance.as_deref(),
                 "group_characters.chat_appearance",
                 &group_key,

@@ -154,7 +154,7 @@ pub fn parse_model_import(json: &str) -> Result<ImportedModel, ModelTransferErro
         && value.get("kind").and_then(Value::as_str) == Some("model_profile"))
     .then(|| value.get("payload"))
     .flatten()
-    .filter(|payload| crate::prompt_transfer::truthy(payload));
+    .filter(|payload| crate::files::prompt_transfer::truthy(payload));
     let input = match payload {
         Some(payload) => payload,
         None if value.is_object() || value.is_array() => &value,
