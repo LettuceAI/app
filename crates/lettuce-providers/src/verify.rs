@@ -4,12 +4,12 @@ use lettuce_models::{ProviderAccount, ProviderConfig, ProviderProtocol};
 use lettuce_network::{JsonClient, JsonResponse};
 use lettuce_settings::{HeaderName, SecretStore};
 
-use crate::anthropic_messages::ANTHROPIC_HEADERS;
 use crate::common::{
     ACCEPT_ONLY, AdapterError, AuthPlan, Credentials, custom_config, load_auth,
     load_secret_headers, probe_policy,
 };
 use crate::descriptor::KeyVerification;
+use crate::providers::anthropic_messages::ANTHROPIC_HEADERS;
 
 enum Probe {
     Get { path: Cow<'static, str> },

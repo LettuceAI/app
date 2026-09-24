@@ -2,48 +2,14 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
-mod anannas;
-mod anthropic;
-mod anthropic_messages;
-mod catalog;
-mod cerebras;
-mod chutes;
-mod common;
-mod custom;
-mod custom_anthropic;
-mod deepseek;
-mod descriptor;
-mod featherless;
-mod gemini;
-mod gemini_cache;
-mod gemini_express;
-mod gemini_generate;
-mod groq;
-mod images;
-mod intenserp;
-mod literouter;
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
-mod llama_cpp;
-mod lmstudio;
-mod media;
-mod mistral;
-mod moonshot;
-mod nanogpt;
-mod nvidia;
-mod ollama;
-mod ollama_hub;
-mod openai;
-mod openai_compatible;
-mod openrouter;
-mod openrouter_pricing;
-mod pollinations;
-mod qwen;
-mod stream_framing;
-mod stream_normalize;
+mod providers;
 mod streaming;
+mod catalog;
+mod common;
+mod descriptor;
+mod images;
+mod media;
 mod verify;
-mod xai;
-mod zai;
 
 pub use catalog::{provider_descriptor, provider_descriptors};
 pub use images::RemoteImageProviders;
@@ -51,12 +17,13 @@ pub use descriptor::{
     ApiKeyRequirement, KeyVerification, ParameterFlags, PromptCachingSupport, ProviderDescriptor,
     ProviderRequestError, ReasoningSupport, RemoteModel,
 };
+pub use providers::*;
 
 use std::{fmt, sync::Arc};
 
-use anthropic_messages::AnthropicWireProvider;
+use providers::anthropic_messages::AnthropicWireProvider;
 use async_trait::async_trait;
-use gemini_generate::GeminiWireProvider;
+use providers::gemini_generate::GeminiWireProvider;
 use lettuce_conversations::{
     InferenceOutcome, InferencePort, InferenceRequest, PortError, ProviderReplayArtifactPort,
 };
@@ -64,11 +31,8 @@ use lettuce_inference::{InferenceRuntime, InferenceRuntimePort};
 use lettuce_models::{ProviderAccount, ProviderProtocol};
 use lettuce_network::JsonClient;
 use lettuce_settings::SecretStore;
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
-pub use llama_cpp::{LocalLlama, LocalRuntimeExclusion};
 pub use media::{ProviderMedia, ProviderMediaError, ProviderMediaSource};
-pub use ollama_hub::{OllamaHubError, OllamaInstalledModel, OllamaPullProgress};
-use openai_compatible::OpenAiWireProvider;
+use providers::openai_compatible::OpenAiWireProvider;
 
 /// Explicit dispatch over every remote chat provider the legacy app shipped.
 /// Each provider is one module implementing its family's wire trait plus one
@@ -78,7 +42,7 @@ pub struct RemoteProviders<S: ?Sized> {
     network: Arc<JsonClient>,
     runtime: Arc<dyn InferenceRuntimePort>,
     replay_artifacts: Option<Arc<dyn ProviderReplayArtifactPort>>,
-    gemini_cache: gemini_cache::GeminiCache,
+    gemini_cache: providers::gemini_cache::GeminiCache,
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     local_llama: Option<LocalLlama>,
     media: Option<Arc<dyn ProviderMediaSource>>,
@@ -96,20 +60,20 @@ impl<S: SecretStore + ?Sized> RemoteProviders<S> {
         let result = match account.protocol {
             ProviderProtocol::OpenAiCompatible => {
                 let provider = provider_for(kind).ok_or(ProviderRequestError::Unsupported)?;
-                openai_compatible::list_models(provider, store, &self.network, account).await
+                providers::openai_compatible::list_models(provider, store, &self.network, account).await
             }
             ProviderProtocol::Anthropic => {
                 let provider =
                     anthropic_provider_for(kind).ok_or(ProviderRequestError::Unsupported)?;
-                anthropic_messages::list_models(provider, store, &self.network, account).await
+                providers::anthropic_messages::list_models(provider, store, &self.network, account).await
             }
             ProviderProtocol::Gemini => {
                 let provider =
                     gemini_provider_for(kind).ok_or(ProviderRequestError::Unsupported)?;
-                gemini_generate::list_models(provider, store, &self.network, account).await
+                providers::gemini_generate::list_models(provider, store, &self.network, account).await
             }
             ProviderProtocol::Ollama if kind.eq_ignore_ascii_case("ollama") => {
-                ollama::list_models(store, &self.network, account).await
+                providers::ollama::list_models(store, &self.network, account).await
             }
             _ => return Err(ProviderRequestError::Unsupported),
         };
@@ -122,7 +86,7 @@ impl<S: SecretStore + ?Sized> RemoteProviders<S> {
         &self,
         account: &ProviderAccount,
     ) -> Result<Vec<OllamaInstalledModel>, OllamaHubError> {
-        ollama_hub::inventory(&*self.secret_store, &self.network, account).await
+        providers::ollama_hub::inventory(&*self.secret_store, &self.network, account).await
     }
 
     /// Deletes a model from an Ollama account's server.
@@ -131,7 +95,7 @@ impl<S: SecretStore + ?Sized> RemoteProviders<S> {
         account: &ProviderAccount,
         model_name: &str,
     ) -> Result<(), OllamaHubError> {
-        ollama_hub::delete(&*self.secret_store, &self.network, account, model_name).await
+        providers::ollama_hub::delete(&*self.secret_store, &self.network, account, model_name).await
     }
 
     /// Pulls a model (`hf.co/<repo>:<quant>` for Hugging Face files) into an
@@ -143,7 +107,7 @@ impl<S: SecretStore + ?Sized> RemoteProviders<S> {
         model_ref: &str,
         on_progress: &mut (dyn FnMut(OllamaPullProgress) + Send),
     ) -> Result<(), OllamaHubError> {
-        ollama_hub::pull(
+        providers::ollama_hub::pull(
             &*self.secret_store,
             &self.network,
             account,
@@ -167,42 +131,42 @@ impl<S: SecretStore + ?Sized> RemoteProviders<S> {
 
 fn anthropic_provider_for(kind: &str) -> Option<&'static dyn AnthropicWireProvider> {
     match kind.to_ascii_lowercase().as_str() {
-        "anthropic" => Some(&anthropic::Anthropic),
-        "custom-anthropic" => Some(&custom_anthropic::CustomAnthropic),
+        "anthropic" => Some(&providers::anthropic::Anthropic),
+        "custom-anthropic" => Some(&providers::custom_anthropic::CustomAnthropic),
         _ => None,
     }
 }
 
 fn gemini_provider_for(kind: &str) -> Option<&'static dyn GeminiWireProvider> {
     match kind.to_ascii_lowercase().as_str() {
-        "gemini" | "google" | "google-gemini" => Some(&gemini::Gemini),
-        "gemini-agent-platform-express" => Some(&gemini_express::GeminiExpress),
+        "gemini" | "google" | "google-gemini" => Some(&providers::gemini::Gemini),
+        "gemini-agent-platform-express" => Some(&providers::gemini_express::GeminiExpress),
         _ => None,
     }
 }
 
 fn provider_for(kind: &str) -> Option<&'static dyn OpenAiWireProvider> {
     match kind.to_ascii_lowercase().as_str() {
-        "openai" => Some(&openai::OpenAi),
-        "openrouter" => Some(&openrouter::OpenRouter),
-        "custom" => Some(&custom::Custom),
-        "cerebras" | "cerebras.ai" => Some(&cerebras::Cerebras),
-        "deepseek" => Some(&deepseek::DeepSeek),
-        "groq" => Some(&groq::Groq),
-        "xai" => Some(&xai::Xai),
-        "mistral" => Some(&mistral::Mistral),
-        "qwen" => Some(&qwen::Qwen),
-        "featherless" => Some(&featherless::Featherless),
-        "chutes" | "chutes.ai" => Some(&chutes::Chutes),
-        "anannas" => Some(&anannas::Anannas),
-        "nanogpt" => Some(&nanogpt::NanoGpt),
-        "nvidia" | "nvidia-nim" => Some(&nvidia::Nvidia),
-        "moonshot" | "moonshot-ai" => Some(&moonshot::Moonshot),
-        "literouter" => Some(&literouter::LiteRouter),
-        "intenserp" => Some(&intenserp::IntenseRp),
-        "pollinations" => Some(&pollinations::Pollinations),
-        "zai" | "z.ai" => Some(&zai::Zai),
-        "lmstudio" => Some(&lmstudio::LmStudio),
+        "openai" => Some(&providers::openai::OpenAi),
+        "openrouter" => Some(&providers::openrouter::OpenRouter),
+        "custom" => Some(&providers::custom::Custom),
+        "cerebras" | "cerebras.ai" => Some(&providers::cerebras::Cerebras),
+        "deepseek" => Some(&providers::deepseek::DeepSeek),
+        "groq" => Some(&providers::groq::Groq),
+        "xai" => Some(&providers::xai::Xai),
+        "mistral" => Some(&providers::mistral::Mistral),
+        "qwen" => Some(&providers::qwen::Qwen),
+        "featherless" => Some(&providers::featherless::Featherless),
+        "chutes" | "chutes.ai" => Some(&providers::chutes::Chutes),
+        "anannas" => Some(&providers::anannas::Anannas),
+        "nanogpt" => Some(&providers::nanogpt::NanoGpt),
+        "nvidia" | "nvidia-nim" => Some(&providers::nvidia::Nvidia),
+        "moonshot" | "moonshot-ai" => Some(&providers::moonshot::Moonshot),
+        "literouter" => Some(&providers::literouter::LiteRouter),
+        "intenserp" => Some(&providers::intenserp::IntenseRp),
+        "pollinations" => Some(&providers::pollinations::Pollinations),
+        "zai" | "z.ai" => Some(&providers::zai::Zai),
+        "lmstudio" => Some(&providers::lmstudio::LmStudio),
         _ => None,
     }
 }
@@ -237,7 +201,7 @@ impl<S: SecretStore + ?Sized> RemoteProviders<S> {
             network,
             runtime,
             replay_artifacts,
-            gemini_cache: gemini_cache::GeminiCache::default(),
+            gemini_cache: providers::gemini_cache::GeminiCache::default(),
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             local_llama: None,
             media: None,
@@ -268,7 +232,7 @@ impl<S: SecretStore + ?Sized> InferencePort for RemoteProviders<S> {
         let result = match profile.provider_protocol {
             ProviderProtocol::OpenAiCompatible => {
                 let provider = provider_for(kind).ok_or(PortError::Rejected)?;
-                openai_compatible::run(
+                providers::openai_compatible::run(
                     provider,
                     &*self.secret_store,
                     &self.network,
@@ -279,7 +243,7 @@ impl<S: SecretStore + ?Sized> InferencePort for RemoteProviders<S> {
             }
             ProviderProtocol::Anthropic => {
                 let provider = anthropic_provider_for(kind).ok_or(PortError::Rejected)?;
-                anthropic_messages::run(
+                providers::anthropic_messages::run(
                     provider,
                     &*self.secret_store,
                     &self.network,
@@ -291,7 +255,7 @@ impl<S: SecretStore + ?Sized> InferencePort for RemoteProviders<S> {
             }
             ProviderProtocol::Gemini => {
                 let provider = gemini_provider_for(kind).ok_or(PortError::Rejected)?;
-                gemini_generate::run(
+                providers::gemini_generate::run(
                     provider,
                     &self.gemini_cache,
                     &*self.secret_store,
@@ -303,12 +267,12 @@ impl<S: SecretStore + ?Sized> InferencePort for RemoteProviders<S> {
                 .await
             }
             ProviderProtocol::Ollama if kind.eq_ignore_ascii_case("ollama") => {
-                ollama::run(&*self.secret_store, &self.network, &*self.runtime, request).await
+                providers::ollama::run(&*self.secret_store, &self.network, &*self.runtime, request).await
             }
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             ProviderProtocol::LlamaCpp => match &self.local_llama {
                 Some(local_llama) => {
-                    llama_cpp::run(local_llama, self.media.clone(), &*self.runtime, request).await
+                    providers::llama_cpp::run(local_llama, self.media.clone(), &*self.runtime, request).await
                 }
                 None => return Err(PortError::Rejected),
             },
