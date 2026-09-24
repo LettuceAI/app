@@ -14,6 +14,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+flate2.workspace = true
 lettuce-companions.workspace = true
 lettuce-jobs.workspace = true
 lettuce-model-hub.workspace = true
@@ -21,9 +22,14 @@ lettuce-types.workspace = true
 ort.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+tar.workspace = true
 thiserror.workspace = true
 tokenizers.workspace = true
 tracing.workspace = true
+zip.workspace = true
 
 [target.'cfg(any(target_os = "ios", target_os = "macos"))'.dependencies]
 ort = { workspace = true, features = ["coreml"] }
+
+[target.'cfg(not(target_os = "ios"))'.dependencies]
+ort = { workspace = true, features = ["load-dynamic"] }

@@ -3,8 +3,8 @@ use lettuce_model_hub::{
     KokoroArtifactRole, KokoroInstallError, KokoroInstallStore, RemoteKokoroModel,
 };
 use lettuce_speech::{
-    KokoroOnnxRuntimeLink, KokoroPhonemization, KokoroRuntimeError, KokoroVoiceBlend,
-    OnnxKokoroRuntime, synthesize_kokoro_tokens,
+    KokoroPhonemization, KokoroRuntimeError, KokoroVoiceBlend, OnnxKokoroRuntime,
+    OnnxRuntimeCommitted, synthesize_kokoro_tokens,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -28,10 +28,10 @@ impl KokoroNativeSynthesisCoordinator {
         Self { installs }
     }
 
-    pub fn synthesize(
+    pub(crate) fn synthesize(
         &self,
         model: &RemoteKokoroModel,
-        runtime_link: &KokoroOnnxRuntimeLink,
+        runtime: OnnxRuntimeCommitted,
         phonemization: &KokoroPhonemization,
         voice: &KokoroVoiceBlend,
         speed: f32,
@@ -49,7 +49,7 @@ impl KokoroNativeSynthesisCoordinator {
             .iter()
             .find(|artifact| artifact.role == KokoroArtifactRole::Model)
             .ok_or(KokoroNativeSynthesisError::MissingAssets)?;
-        let mut runtime = OnnxKokoroRuntime::load(&model.artifact.path, runtime_link)?;
+        let mut runtime = OnnxKokoroRuntime::load(&model.artifact.path, runtime)?;
         synthesize_kokoro_tokens(
             &mut runtime,
             &phonemization.token_ids,
@@ -68,6 +68,9 @@ mod tests {
 
     use super::*;
 
+    /// The runtime evidence is created without a committed environment, which
+    /// is sound here because the missing model bundle is rejected before any
+    /// Kokoro session is built.
     #[test]
     fn rejects_missing_model_bundle_before_runtime_initialization() {
         let root = std::env::temp_dir().join(format!("kokoro-native-{}", AssetId::new()));
@@ -76,7 +79,7 @@ mod tests {
         );
         let result = coordinator.synthesize(
             &pinned_kokoro_model(KokoroModelVariant::Int8),
-            &KokoroOnnxRuntimeLink::Linked,
+            unsafe { OnnxRuntimeCommitted::after_process_commit() },
             &KokoroPhonemization {
                 normalized_text: String::new(),
                 effective_text: String::new(),

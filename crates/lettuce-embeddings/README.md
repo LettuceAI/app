@@ -48,3 +48,47 @@ authoritative memory write depend on ONNX availability.
 Full backup preserves the projection cache byte-for-byte, including ready
 vectors, repair-needed state and stale rows retained after memory changes. Export
 does not invoke the embedding runtime or alter similarity and selection math.
+
+ONNX Runtime provisioning (`ort_runtime`): `ONNX_RUNTIME_VERSION` is 1.22.0
+because `ort` =2.0.0-rc.10 with `load-dynamic` binds C API 22, and a
+compile-time assertion keeps the two in step. `resolve_installed_onnx_runtime`
+keeps legacy's order: a non-empty `ORT_DYLIB_PATH` (Windows also needs
+`onnxruntime_providers_shared.dll`, macOS an `MH_DYLIB` of this architecture
+per `lipo`/`otool`), then the bundled resource names, then the downloaded
+library. A zero-byte or unusable downloaded library is deleted so the next
+download replaces it; override and bundled files are never touched. Every
+check requires a non-empty regular file, never mere existence.
+`install_onnx_runtime_archive` unpacks the release archive: Windows keeps
+every DLL of `lib/`, Linux saves `libonnxruntime.so.1.22.0` as
+`libonnxruntime.so`, macOS keeps every dylib of `lib/`. Symbolic and hard
+links in the tarball become full copies of their target (chains resolved),
+empty entries and dangling links fail, and files are written under a
+temporary name first, so no zero-byte library is ever left behind. Downloaded
+macOS dylibs, existing and new, are re-signed ad hoc (quarantine attribute
+removed, `codesign --force --sign -`) when `codesign -d` shows them unsigned
+or signed with a real `TeamIdentifier`; failures are only logged.
+
+`initialize_process_onnx_runtime` is the process's ONNX Runtime
+initializer; embeddings and the emotion classifier go through it, and the
+composition root calls it first. Kokoro in `lettuce-speech` never commits:
+it requires the `OnnxRuntimeCommitted` evidence the composition root hands
+out after this initializer succeeded. The library is preloaded
+before `ort` sees its path (macOS also preloads the shared and CoreML
+provider dylibs), so a missing or broken file fails with a retryable error.
+The `ort` environment is committed inside `catch_unwind` because `ort`
+panics when loading fails. A failure from that point on is permanent for the
+process and returned to every later call: `init_from` has pinned the path,
+and `ort`'s `OnceLock` marks a failed setup as done, so a retry could report
+success over an uninitialized environment. After the first success every
+other call reuses that environment, and `committed_onnx_runtime` reports it.
+Android preloads the bundled `libonnxruntime.so`. `ort` is built with
+`load-dynamic` on every target but iOS, which links ONNX Runtime statically
+as legacy did; there the dynamic paths are compiled out.
+
+Extraction reads only the entries it keeps (siblings with the archive's
+extension, or the library's own link family on Linux), skips siblings whose
+links cannot be resolved (or are empty) and only requires the library
+itself, which it writes last so an interrupted unpack never leaves a usable
+library without its siblings; Windows also requires
+`onnxruntime_providers_shared.dll`. Extraction polls a cancellation check
+between archive entries and removes its temporary file when a write fails.

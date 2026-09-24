@@ -9,8 +9,8 @@ use lettuce_model_hub::{
 use lettuce_platform::{EspeakNgError, EspeakPhonemizer};
 use lettuce_settings::SecretValue;
 use lettuce_speech::{
-    AudioProviderConfig, AudioProviderKind, KokoroOnnxRuntimeLink, KokoroPhonemizationError,
-    KokoroPhonemizationInput, KokoroRuntimeError, KokoroVoiceBlendSpec, KokoroVoiceError,
+    AudioProviderConfig, AudioProviderKind, KokoroPhonemizationError, KokoroPhonemizationInput,
+    KokoroRuntimeError, KokoroVoiceBlendSpec, KokoroVoiceError, OnnxRuntimeCommitted,
     RuntimeSynthesis, SynthesisRequest, TtsRuntime, TtsRuntimeError, kokoro_voice_language,
     parse_kokoro_lexicon,
 };
@@ -57,11 +57,21 @@ impl TtsRuntime for ApplicationTtsRuntime {
     }
 }
 
+/// The committed ONNX Runtime a Kokoro session needs, committed on first
+/// use when nothing else committed it yet.
+#[async_trait]
+pub trait KokoroOnnxRuntimeProvider: Send + Sync {
+    async fn committed(
+        &self,
+        cancellation: &CancellationToken,
+    ) -> Result<OnnxRuntimeCommitted, TtsRuntimeError>;
+}
+
 pub struct KokoroTtsRuntime {
     models: KokoroInstallStore,
     voices: KokoroVoiceInstallStore,
     phonemizer: Arc<dyn EspeakPhonemizer>,
-    runtime_link: KokoroOnnxRuntimeLink,
+    onnx_runtime: Arc<dyn KokoroOnnxRuntimeProvider>,
 }
 
 impl KokoroTtsRuntime {
@@ -70,13 +80,13 @@ impl KokoroTtsRuntime {
         models: KokoroInstallStore,
         voices: KokoroVoiceInstallStore,
         phonemizer: Arc<dyn EspeakPhonemizer>,
-        runtime_link: KokoroOnnxRuntimeLink,
+        onnx_runtime: Arc<dyn KokoroOnnxRuntimeProvider>,
     ) -> Self {
         Self {
             models,
             voices,
             phonemizer,
-            runtime_link,
+            onnx_runtime,
         }
     }
 }
@@ -114,7 +124,7 @@ impl TtsRuntime for KokoroTtsRuntime {
         let models = self.models.clone();
         let voices = self.voices.clone();
         let phonemizer = Arc::clone(&self.phonemizer);
-        let runtime_link = self.runtime_link.clone();
+        let runtime = self.onnx_runtime.committed(cancellation).await?;
         let cancellation = cancellation.clone();
         tokio::task::spawn_blocking(move || {
             let model = pinned_kokoro_model(variant);
@@ -150,7 +160,7 @@ impl TtsRuntime for KokoroTtsRuntime {
             let bytes = KokoroNativeSynthesisCoordinator::new(models)
                 .synthesize(
                     &model,
-                    &runtime_link,
+                    runtime,
                     &phonemization,
                     &voice,
                     speed,
@@ -349,6 +359,59 @@ mod tests {
         assert_eq!(parse_speed(Some("invalid")), 1.0);
     }
 
+    struct CommittedRuntime;
+
+    /// Hands out runtime evidence without a committed environment, which is
+    /// sound in these tests because each one fails before a Kokoro session
+    /// is built.
+    #[async_trait]
+    impl KokoroOnnxRuntimeProvider for CommittedRuntime {
+        async fn committed(
+            &self,
+            _cancellation: &CancellationToken,
+        ) -> Result<OnnxRuntimeCommitted, TtsRuntimeError> {
+            Ok(unsafe { OnnxRuntimeCommitted::after_process_commit() })
+        }
+    }
+
+    struct FailingRuntime(AtomicUsize);
+
+    #[async_trait]
+    impl KokoroOnnxRuntimeProvider for FailingRuntime {
+        async fn committed(
+            &self,
+            _cancellation: &CancellationToken,
+        ) -> Result<OnnxRuntimeCommitted, TtsRuntimeError> {
+            self.0.fetch_add(1, Ordering::Relaxed);
+            Err(TtsRuntimeError::Unavailable)
+        }
+    }
+
+    #[tokio::test]
+    async fn an_onnx_runtime_that_cannot_start_is_unavailable_before_any_work() {
+        let root = std::env::temp_dir().join(format!(
+            "kokoro-tts-ort-{}",
+            lettuce_types::OperationId::new()
+        ));
+        let phonemizer = Arc::new(CountingPhonemizer(AtomicUsize::new(0)));
+        let onnx_runtime = Arc::new(FailingRuntime(AtomicUsize::new(0)));
+        let runtime = KokoroTtsRuntime::new(
+            KokoroInstallStore::open(&root).expect("model store"),
+            KokoroVoiceInstallStore::open(&root).expect("voice store"),
+            phonemizer.clone(),
+            onnx_runtime.clone(),
+        );
+        assert!(matches!(
+            runtime
+                .synthesize(&request(), None, &CancellationToken::new())
+                .await,
+            Err(TtsRuntimeError::Unavailable)
+        ));
+        assert_eq!(onnx_runtime.0.load(Ordering::Relaxed), 1);
+        assert_eq!(phonemizer.0.load(Ordering::Relaxed), 0);
+        std::fs::remove_dir_all(root).ok();
+    }
+
     #[tokio::test]
     async fn missing_voice_retries_before_phonemization() {
         let root = std::env::temp_dir().join(format!(
@@ -360,7 +423,7 @@ mod tests {
             KokoroInstallStore::open(&root).expect("model store"),
             KokoroVoiceInstallStore::open(&root).expect("voice store"),
             phonemizer.clone(),
-            KokoroOnnxRuntimeLink::Linked,
+            Arc::new(CommittedRuntime),
         );
 
         assert!(matches!(
@@ -403,7 +466,7 @@ mod tests {
             KokoroInstallStore::open(&root).expect("model store"),
             voices,
             phonemizer.clone(),
-            KokoroOnnxRuntimeLink::Linked,
+            Arc::new(CommittedRuntime),
         );
 
         assert!(matches!(

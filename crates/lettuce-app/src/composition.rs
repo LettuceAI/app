@@ -493,14 +493,17 @@ impl AppBackend {
         models: lettuce_model_hub::KokoroInstallStore,
         voices: lettuce_model_hub::KokoroVoiceInstallStore,
         phonemizer: Arc<dyn lettuce_platform::EspeakPhonemizer>,
-        runtime_link: lettuce_speech::KokoroOnnxRuntimeLink,
+        onnx_runtime: crate::OnnxRuntimePaths,
     ) -> Result<crate::ApplicationTtsRuntime, lettuce_network::JsonClientError> {
         let remote = Arc::new(self.remote_tts_runtime(tls_policy)?);
         let kokoro = Arc::new(crate::KokoroTtsRuntime::new(
             models,
             voices,
             phonemizer,
-            runtime_link,
+            Arc::new(crate::ProcessOnnxRuntime::new(
+                Arc::clone(&self.database),
+                onnx_runtime,
+            )),
         ));
         Ok(crate::ApplicationTtsRuntime::new(remote, kokoro))
     }

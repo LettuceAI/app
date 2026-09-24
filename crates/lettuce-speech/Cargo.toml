@@ -39,5 +39,8 @@ tokio.workspace = true
 tracing.workspace = true
 whisper-rs.workspace = true
 
+[target.'cfg(not(target_os = "ios"))'.dependencies]
+ort = { workspace = true, features = ["load-dynamic"] }
+
 [dev-dependencies]
 serde_json.workspace = true

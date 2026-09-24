@@ -297,16 +297,11 @@ fn l2_normalize(values: &mut [f32]) -> Result<(), EmbeddingError> {
 }
 
 pub(crate) fn initialize_onnx_runtime(runtime: &OnnxRuntimeLink) -> Result<(), EmbeddingError> {
-    let result = match runtime {
-        OnnxRuntimeLink::Dynamic(path) => {
-            let path = path.to_str().ok_or(EmbeddingError::RuntimeUnavailable)?;
-            ort::init_from(path)
-                .with_name("lettuce-embeddings")
-                .commit()
-        }
-        OnnxRuntimeLink::Linked => ort::init().with_name("lettuce-embeddings").commit(),
+    let binding = match runtime {
+        OnnxRuntimeLink::Dynamic(path) => crate::OnnxRuntimeBinding::Library(path),
+        OnnxRuntimeLink::Linked => crate::OnnxRuntimeBinding::Linked,
     };
-    result
+    crate::initialize_process_onnx_runtime(binding, "lettuce-embeddings")
         .map(|_| ())
         .map_err(|_| EmbeddingError::RuntimeUnavailable)
 }

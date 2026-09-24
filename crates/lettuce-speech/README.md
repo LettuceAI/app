@@ -265,6 +265,15 @@ style lookup, 240-sample linear crossfade and 24 kHz mono PCM16 WAV encoding
 are preserved. Nonfinite or oversized inference output fails before media
 ingestion. Routing persisted Kokoro TTS requests into this runtime remains the
 application boundary's responsibility.
+ONNX Runtime ownership: Kokoro never initializes ONNX Runtime. The
+composition root (`lettuce-app`'s `OnnxRuntimeReady::initialize`, through
+`lettuce-embeddings`) provisions and commits the process's one environment
+and only then hands out `OnnxRuntimeCommitted`, which `OnnxKokoroRuntime::load`
+requires; its constructor is `unsafe` because evidence created before a
+successful commit lets a session read uninitialized `ort` state. A Kokoro commit of its own could pin a wrong library path for the
+whole process or build a session over an environment whose setup failed.
+`ort` uses `load-dynamic` everywhere except iOS, which links ONNX Runtime
+statically.
 
 Voice search: `VoiceSearch` (ElevenLabs) searches the account's voice library
 by text (`/v1/voices?search=`); unlike the cached refresh, a search result may

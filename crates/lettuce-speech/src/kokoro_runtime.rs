@@ -1,5 +1,5 @@
 use std::{
-    path::{Path, PathBuf},
+    path::Path,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -23,10 +23,22 @@ const KOKORO_CROSSFADE_SAMPLES: usize = 240;
 const PUNCTUATION_TOKEN_IDS: &[i64] = &[1, 2, 3, 4, 5, 6];
 const WAV_HEADER_BYTES: usize = 44;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum KokoroOnnxRuntimeLink {
-    Dynamic(PathBuf),
-    Linked,
+/// Evidence that this process's ONNX Runtime environment is committed. A
+/// Kokoro session can only be built with it, because building one over an
+/// uncommitted environment reads uninitialized `ort` state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OnnxRuntimeCommitted(());
+
+impl OnnxRuntimeCommitted {
+    /// # Safety
+    ///
+    /// May be called only after the process-wide ONNX Runtime environment
+    /// was committed successfully. A Kokoro session built with evidence
+    /// created earlier reads uninitialized `ort` state.
+    #[must_use]
+    pub const unsafe fn after_process_commit() -> Self {
+        Self(())
+    }
 }
 
 #[derive(Debug)]
@@ -39,9 +51,8 @@ pub struct OnnxKokoroRuntime {
 impl OnnxKokoroRuntime {
     pub fn load(
         model_path: &Path,
-        runtime: &KokoroOnnxRuntimeLink,
+        _runtime: OnnxRuntimeCommitted,
     ) -> Result<Self, KokoroRuntimeError> {
-        initialize_onnx_runtime(runtime)?;
         let session = Session::builder()
             .map_err(|_| KokoroRuntimeError::Unavailable)?
             .with_optimization_level(GraphOptimizationLevel::Level3)
@@ -312,17 +323,6 @@ fn detect_speed_uses_int32(inputs: &[Input]) -> bool {
                 }
             )
         })
-}
-
-fn initialize_onnx_runtime(runtime: &KokoroOnnxRuntimeLink) -> Result<(), KokoroRuntimeError> {
-    let result = match runtime {
-        KokoroOnnxRuntimeLink::Dynamic(path) => {
-            let path = path.to_str().ok_or(KokoroRuntimeError::Unavailable)?;
-            ort::init_from(path).with_name("lettuce-speech").commit()
-        }
-        KokoroOnnxRuntimeLink::Linked => ort::init().with_name("lettuce-speech").commit(),
-    };
-    result.map(|_| ()).map_err(|_| KokoroRuntimeError::Unavailable)
 }
 
 fn spawn_canceller(

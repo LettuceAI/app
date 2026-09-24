@@ -2058,6 +2058,43 @@ probe for the remote machine's memory (bearer key from the secret store), so
 Hugging Face runnability and recommendations for that account are judged
 against the remote hardware, as legacy did.
 
+ONNX Runtime: `OnnxRuntimeInstaller::ensure` makes the runtime available
+before embeddings, the companion emotion classifier or Kokoro load, as
+legacy `ensure_ort_init` did: the `ORT_DYLIB_PATH` override, then a bundled
+library in the host's resource folder, then an earlier download in
+`<app folder>/onnxruntime` (legacy's folder, so its download is reused),
+then a fresh download of the official ONNX Runtime 1.22.0 archive. The
+archive is an `ArtifactInstall` job below `<app folder>/downloads/onnxruntime`
+(byte progress on the job, reported through `OnnxRuntimeInstallEvent`;
+cancelled through the caller's token). Unpacking is the job's `install`
+stage (`ArtifactInstallCoordinator::run_then`), so the job succeeds only with
+a usable runtime; the archive is deleted once unpacked and after any unpack
+failure, and macOS then falls back from the architecture archive to
+universal2. Unpacking and the disk lookup (with macOS `lipo`/`otool`/
+`codesign`) run on blocking threads. Calls are serialized per process; once
+the process committed its runtime, `ensure` and `installed` return it without
+looking at the disk. `OnnxRuntimeReady` hands the embeddings/emotion link
+out, and `initialize` commits the process's one ONNX Runtime environment
+and returns the `OnnxRuntimeCommitted` evidence Kokoro sessions require.
+`KokoroTtsRuntime` gets that evidence from a `KokoroOnnxRuntimeProvider`
+before any Kokoro work, as legacy's TTS commands called `ensure_ort_init`
+first on every platform: `ProcessOnnxRuntime` (wired by
+`AppBackend::tts_runtime` with the host's `OnnxRuntimePaths`) reuses a
+committed runtime, else runs `ensure` and `initialize` itself (the linked
+runtime on Android and iOS), and reports the runtime unavailable only when
+that fails. Only lettuce-app creates the evidence (`unsafe`
+`after_process_commit`), in its init code. The install stage renews the
+job lease while it runs. A runtime unpacked before the job record failed is
+still returned, and the job is closed (success, else failure) on a best-effort
+basis so it does not stay running. Android and iOS return the
+linked runtime and never download.
+Microsoft publishes no checksum for these archives (GitHub reports no asset
+digest either), so the download is checked by the size the server reports,
+as legacy checked nothing. For the Tauri host: the macOS bundle needs
+legacy's `entitlements.plist` with
+`com.apple.security.cs.disable-library-validation`, or the hardened app
+refuses the ad-hoc re-signed download.
+
 Image bundles: `HuggingFaceBrowser::bundle_role_search`, `bundle_files`
 (files pinned to the repository's revision; GGUF text encoders checked by
 their header), `bundle_install` (engine estimate gate, every asset re-checked

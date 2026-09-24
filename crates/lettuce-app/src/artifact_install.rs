@@ -11,7 +11,8 @@ use lettuce_jobs::{
     BytesProgress, CancellationPolicy, CancellationReason, Claim, IdempotencyKey, JobError,
     JobErrorCode, JobKind, JobMutation, JobOutcome, JobPriority, JobSnapshot, JobSpec, JobState,
     JobStore, JobSubject, OutcomeRef, ProgressSnapshot, RecoveryPolicy, ResourceAvailability,
-    ResourceClass, StageSnapshot, StoreError, SubjectKind, WorkerId, handle::JobHandle,
+    ResourceClass, StageSnapshot, StoreError, SubjectKind, WorkerId,
+    handle::{CancellationToken, JobHandle},
 };
 use lettuce_model_hub::{
     PinnedArtifact, PinnedArtifactError, PinnedArtifactPreparation, PinnedArtifactStore,
@@ -203,6 +204,8 @@ pub enum ArtifactInstallError {
     InvalidWork,
     #[error("artifact install was cancelled")]
     Cancelled,
+    #[error("artifact install could not be finished: {0}")]
+    Finish(String),
 }
 
 /// Runs installs inline. A crash leaves the job interrupted and the partial
@@ -339,6 +342,140 @@ impl<J: JobStore + ?Sized> ArtifactInstallCoordinator<'_, J> {
         }
         let mut at = now.max(work.job.updated_at);
         let outcome = self.execute(&work, source, &mut at).await;
+        self.settle(work, outcome, cancellation_reason, at)
+    }
+
+    /// Like [`Self::run`], but `finish` completes the install (such as
+    /// unpacking a downloaded archive) as the job's `install` stage before
+    /// the job succeeds. It receives the downloaded files and the job's
+    /// cancellation token; its error fails the job, and
+    /// [`ArtifactInstallError::Cancelled`] cancels it.
+    pub async fn run_then<S, F, Fut>(
+        &self,
+        work: ArtifactInstallClaimedWork,
+        source: &S,
+        cancellation_reason: CancellationReason,
+        now: TimestampMillis,
+        finish: F,
+    ) -> Result<ArtifactInstallRunResult, ArtifactInstallError>
+    where
+        S: ArtifactSourceClient + ?Sized,
+        F: FnOnce(Vec<PathBuf>, CancellationToken) -> Fut,
+        Fut: std::future::Future<Output = Result<(), ArtifactInstallError>>,
+    {
+        validate_job(&work.job, &work.plan)?;
+        if work.job.state != JobState::Running
+            || work.claim.claim.job_id != work.job.id
+            || work.handle.id() != work.job.id
+        {
+            return Err(ArtifactInstallError::InvalidWork);
+        }
+        let mut at = now.max(work.job.updated_at);
+        let outcome = match self.execute(&work, source, &mut at).await {
+            Ok(paths) => {
+                at = at.max(TimestampMillis::now().unwrap_or(at));
+                match self.jobs.append_and_transition(JobMutation::StageChanged {
+                    claim: work.claim.claim.clone(),
+                    stage: StageSnapshot::new("install", false).expect("constant stage"),
+                    at,
+                }) {
+                    Ok(_) => self
+                        .finish_with_lease(
+                            &work,
+                            finish(paths.clone(), work.handle.cancellation_token()),
+                            &mut at,
+                        )
+                        .await
+                        .map(|()| paths),
+                    Err(error) => Err(error.into()),
+                }
+            }
+            Err(error) => Err(error),
+        };
+        at = at.max(TimestampMillis::now().unwrap_or(at));
+        self.settle(work, outcome, cancellation_reason, at)
+    }
+
+    /// Awaits `finishing` while renewing the claim's lease, so a long
+    /// install stage is not recovered as interrupted while it runs.
+    async fn finish_with_lease<Fut>(
+        &self,
+        work: &ArtifactInstallClaimedWork,
+        finishing: Fut,
+        at: &mut TimestampMillis,
+    ) -> Result<(), ArtifactInstallError>
+    where
+        Fut: std::future::Future<Output = Result<(), ArtifactInstallError>>,
+    {
+        let renew_every = (work.lease_for / 3).max(Duration::from_millis(1));
+        tokio::pin!(finishing);
+        loop {
+            tokio::select! {
+                finished = &mut finishing => return finished,
+                () = tokio::time::sleep(renew_every) => {
+                    *at = (*at).max(TimestampMillis::now().unwrap_or(*at));
+                    if let Err(error) =
+                        self.jobs.heartbeat(&work.claim.claim, *at, work.lease_for)
+                    {
+                        tracing::warn!(
+                            install = %work.plan.install_id,
+                            %error,
+                            "could not renew the artifact install lease"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// Closes a job whose files were installed although its outcome could
+    /// not be recorded: records success, else a failure, so the job does
+    /// not stay running until its lease lapses. Failures are only logged.
+    pub fn close_installed(&self, claim: &lettuce_jobs::ClaimRef, plan: &ArtifactInstallPlan) {
+        let job = match self.jobs.get(claim.job_id) {
+            Ok(Some(job)) if !job.state.is_terminal() => job,
+            Ok(_) => return,
+            Err(error) => {
+                tracing::warn!(install = %plan.install_id, %error, "could not read the installed artifact job");
+                return;
+            }
+        };
+        let at = TimestampMillis::now()
+            .unwrap_or(job.updated_at)
+            .max(job.updated_at);
+        let succeeded = self.jobs.append_and_transition(JobMutation::Succeed {
+            claim: claim.clone(),
+            outcome: JobOutcome::Success {
+                result_ref: OutcomeRef::ArtifactInstallation(plan.outcome_asset_id()),
+            },
+            at,
+        });
+        let Err(error) = succeeded else {
+            return;
+        };
+        tracing::warn!(install = %plan.install_id, %error, "could not record the installed artifact job");
+        let failed = self.jobs.append_and_transition(JobMutation::Fail {
+            claim: claim.clone(),
+            error: JobError::new(
+                JobErrorCode::ResourceUnavailable,
+                false,
+                "artifact installed but not recorded",
+            )
+            .expect("constant error label"),
+            at,
+        });
+        if let Err(error) = failed {
+            tracing::warn!(install = %plan.install_id, %error, "could not close the installed artifact job");
+        }
+    }
+
+    fn settle(
+        &self,
+        work: ArtifactInstallClaimedWork,
+        outcome: Result<Vec<PathBuf>, ArtifactInstallError>,
+        cancellation_reason: CancellationReason,
+        at: TimestampMillis,
+    ) -> Result<ArtifactInstallRunResult, ArtifactInstallError> {
         match outcome {
             Ok(paths) => {
                 let job = self.jobs.append_and_transition(JobMutation::Succeed {
@@ -577,6 +714,96 @@ mod tests {
             },
             source,
         }
+    }
+
+    /// The install stage outlasts the original lease and only ends after it
+    /// observed the lease being renewed, so the outcome does not depend on
+    /// how quickly the stage runs.
+    #[tokio::test]
+    async fn the_install_stage_renews_the_lease_and_decides_the_outcome() {
+        let root = std::env::temp_dir().join(format!("artifact-finish-{}", OperationId::new()));
+        let database = Database::open_in_memory().expect("database");
+        let archive = ArtifactSource::Https {
+            url: "https://github.com/owner/repo/releases/download/v1/engine.zip".to_owned(),
+        };
+        let source = Source {
+            files: vec![(archive.clone(), b"zip bytes".to_vec())],
+            opens: Mutex::new(Vec::new()),
+        };
+        const LEASE: Duration = Duration::from_secs(3);
+        let coordinator = ArtifactInstallCoordinator::new(&database);
+        for (install_id, fails) in [("finish:ok", false), ("finish:fails", true)] {
+            let plan = ArtifactInstallPlan {
+                install_id: install_id.to_owned(),
+                root: root.join(install_id.replace(':', "-")),
+                artifacts: vec![planned(archive.clone(), &["engine.zip"], b"zip bytes")],
+            };
+            let admitted = coordinator.admit(&plan).expect("admit");
+            let job_id = admitted.job.id;
+            let database = &database;
+            let now = TimestampMillis::now().expect("now");
+            let work = coordinator
+                .claim(
+                    plan,
+                    admitted.job.id,
+                    WorkerId::new(),
+                    now,
+                    LEASE,
+                    &ResourceAvailability::all(),
+                )
+                .expect("claim")
+                .expect("work");
+            let result = coordinator
+                .run_then(
+                    work,
+                    &source,
+                    CancellationReason::User,
+                    now,
+                    |paths, _| async move {
+                        assert!(paths[0].ends_with("engine.zip"));
+                        let started = std::time::Instant::now();
+                        let expiry = || {
+                            database
+                                .get(job_id)
+                                .expect("job")
+                                .expect("present")
+                                .lease_expires_at
+                        };
+                        let mut last = expiry();
+                        let mut renewals = 0;
+                        while renewals < 3 || started.elapsed() <= LEASE {
+                            assert!(
+                                started.elapsed() < Duration::from_secs(60),
+                                "the lease was not renewed"
+                            );
+                            tokio::time::sleep(Duration::from_millis(5)).await;
+                            let current = expiry();
+                            if current > last {
+                                renewals += 1;
+                                last = current;
+                            }
+                        }
+                        if fails {
+                            Err(ArtifactInstallError::Finish("unpack failed".to_owned()))
+                        } else {
+                            Ok(())
+                        }
+                    },
+                )
+                .await
+                .expect("the lease outlives the install stage");
+            match (fails, result) {
+                (false, ArtifactInstallRunResult::Succeeded { job, .. }) => {
+                    assert_eq!(job.state, JobState::Succeeded);
+                }
+                (true, ArtifactInstallRunResult::Failed { error, job }) => {
+                    assert!(matches!(error, ArtifactInstallError::Finish(_)));
+                    assert_eq!(job.state, JobState::Failed);
+                }
+                (_, other) => panic!("unexpected result: {other:?}"),
+            }
+        }
+        std::fs::remove_dir_all(root).ok();
     }
 
     #[tokio::test]
