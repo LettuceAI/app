@@ -425,6 +425,25 @@ pub(crate) fn get_item_in(
     rows.next().map_err(storage)?.map(item_from_row).transpose()
 }
 
+/// Token counts follow the text alone, so a stored item keeps its count
+/// whenever a writer sends the same text: a recount stored after the
+/// writer's snapshot is never replaced by the snapshot's older count.
+fn stored_token_counts(
+    transaction: &Transaction<'_>,
+    space_id: MemorySpaceId,
+) -> Result<std::collections::HashMap<(String, String), u32>, MemoryRepositoryError> {
+    transaction
+        .prepare("SELECT id, text, token_count FROM memory_items WHERE space_id = ?1")
+        .and_then(|mut statement| {
+            statement
+                .query_map([space_id.to_string()], |row| {
+                    Ok(((row.get(0)?, row.get(1)?), row.get(2)?))
+                })?
+                .collect()
+        })
+        .map_err(storage)
+}
+
 pub(super) fn compare_and_apply_in(
     transaction: &Transaction<'_>,
     change: &MemoryChangeSet,
@@ -446,13 +465,25 @@ pub(super) fn compare_and_apply_in(
     if parse_revision(current_revision)? != change.expected_revision {
         return Err(MemoryRepositoryError::Conflict);
     }
+    let stored_counts = stored_token_counts(transaction, change.space_id)?;
+    let items = change
+        .items
+        .iter()
+        .map(|item| MemoryItem {
+            token_count: stored_counts
+                .get(&(item.id.to_string(), item.text.clone()))
+                .copied()
+                .unwrap_or(item.token_count),
+            ..item.clone()
+        })
+        .collect::<Vec<_>>();
     transaction
         .execute(
             "DELETE FROM memory_items WHERE space_id = ?1",
             [change.space_id.to_string()],
         )
         .map_err(storage)?;
-    insert_items(transaction, change.space_id, &change.items)?;
+    insert_items(transaction, change.space_id, &items)?;
     let updated = transaction
         .execute(
             "UPDATE memory_spaces SET revision = ?2 WHERE id = ?1 AND revision = ?3",

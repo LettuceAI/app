@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use lettuce_embeddings::{
     EmbeddingDimensions, EmbeddingProjectionError, EmbeddingVector, MemoryEmbeddingProjection,
-    MemoryEmbeddingRepair, MemoryEmbeddingRepository,
+    MemoryEmbeddingRepair, MemoryEmbeddingRepository, ProjectionWrite,
 };
 use lettuce_types::{MemoryId, MemorySpaceId, TimestampMillis};
 use rusqlite::{TransactionBehavior, params};
@@ -43,6 +43,60 @@ fn decode(bytes: &[u8]) -> Result<Vec<f32>, EmbeddingProjectionError> {
                 .ok_or_else(|| storage(value))
         })
         .collect()
+}
+
+fn put_current(
+    database: &Database,
+    projection: &MemoryEmbeddingProjection,
+    token_count: Option<u32>,
+) -> Result<ProjectionWrite, EmbeddingProjectionError> {
+    projection.validate()?;
+    let mut connection = database.connection().map_err(storage)?;
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(storage)?;
+    let written = transaction
+        .execute(
+            "INSERT INTO memory_embedding_projections (
+                space_id, memory_id, source_revision, dimensions, source_text, status, vector, updated_at
+             )
+             SELECT ?1, ?2, ?3, ?4, ?5, 'ready', ?6, ?7
+              WHERE EXISTS (
+                    SELECT 1 FROM memory_items WHERE space_id = ?1 AND id = ?2 AND text = ?5
+              )
+             ON CONFLICT(space_id, memory_id, source_revision, dimensions) DO UPDATE SET
+                source_text = excluded.source_text, status = 'ready',
+                vector = excluded.vector, updated_at = excluded.updated_at",
+            params![
+                projection.space_id.to_string(),
+                projection.memory_id.to_string(),
+                projection.vector.source_revision,
+                i64::try_from(projection.dimensions.get()).map_err(storage)?,
+                projection.source_text,
+                encode(&projection.vector.values),
+                projection.updated_at.get(),
+            ],
+        )
+        .map_err(storage)?;
+    if written == 0 {
+        return Ok(ProjectionWrite::Superseded);
+    }
+    if let Some(token_count) = token_count {
+        transaction
+            .execute(
+                "UPDATE memory_items SET token_count = ?4
+                  WHERE space_id = ?1 AND id = ?2 AND text = ?3",
+                params![
+                    projection.space_id.to_string(),
+                    projection.memory_id.to_string(),
+                    projection.source_text,
+                    i64::from(token_count),
+                ],
+            )
+            .map_err(storage)?;
+    }
+    transaction.commit().map_err(storage)?;
+    Ok(ProjectionWrite::Stored)
 }
 
 impl MemoryEmbeddingRepository for Database {
@@ -105,7 +159,8 @@ impl MemoryEmbeddingRepository for Database {
                    LEFT JOIN memory_embedding_projections p
                      ON p.space_id = i.space_id AND p.memory_id = i.id AND p.source_text = i.text
                     AND p.source_revision = ?2 AND p.dimensions = ?3
-                  WHERE i.space_id = ?1 AND (p.status IS NULL OR p.status = 'repair_needed')
+                  WHERE i.space_id = ?1
+                    AND (p.status IS NULL OR p.status = 'repair_needed')
                   ORDER BY i.ordinal",
             )
             .map_err(storage)?;
@@ -136,37 +191,16 @@ impl MemoryEmbeddingRepository for Database {
     fn put_ready(
         &self,
         projection: MemoryEmbeddingProjection,
-    ) -> Result<(), EmbeddingProjectionError> {
-        projection.validate()?;
-        let mut connection = self.connection().map_err(storage)?;
-        let transaction = connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(storage)?;
-        let exists = transaction
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM memory_items WHERE space_id = ?1 AND id = ?2 AND text = ?3)",
-                params![projection.space_id.to_string(), projection.memory_id.to_string(), projection.source_text],
-                |row| row.get::<_, bool>(0),
-            )
-            .map_err(storage)?;
-        if !exists {
-            return Err(storage("projection owner is not live"));
-        }
-        transaction.execute(
-            "INSERT INTO memory_embedding_projections (
-                space_id, memory_id, source_revision, dimensions, source_text, status, vector, updated_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, 'ready', ?6, ?7)
-             ON CONFLICT(space_id, memory_id, source_revision, dimensions) DO UPDATE SET
-                source_text = excluded.source_text, status = 'ready',
-                vector = excluded.vector, updated_at = excluded.updated_at",
-            params![
-                projection.space_id.to_string(), projection.memory_id.to_string(),
-                projection.vector.source_revision,
-                i64::try_from(projection.dimensions.get()).map_err(storage)?,
-                projection.source_text, encode(&projection.vector.values), projection.updated_at.get(),
-            ],
-        ).map_err(storage)?;
-        transaction.commit().map_err(storage)
+    ) -> Result<ProjectionWrite, EmbeddingProjectionError> {
+        put_current(self, &projection, None)
+    }
+
+    fn put_reembedded(
+        &self,
+        projection: MemoryEmbeddingProjection,
+        token_count: u32,
+    ) -> Result<ProjectionWrite, EmbeddingProjectionError> {
+        put_current(self, &projection, Some(token_count))
     }
 
     fn mark_repair_needed(
@@ -282,6 +316,172 @@ mod tests {
                 .expect("repairs")
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn a_model_switch_leaves_every_space_needing_vectors_in_the_new_space() {
+        let database = Database::open_in_memory().expect("database");
+        let space_id = MemorySpaceId::new();
+        let embedded = MemoryId::new();
+        let superseded = MemoryId::new();
+        let mut replaced = item(superseded, "old memory");
+        replaced.superseded_by = Some(embedded);
+        replaced.superseded_at = Some(TimestampMillis::new(1));
+        database
+            .create(MemorySpaceSnapshot {
+                id: space_id,
+                revision: Revision::INITIAL,
+                items: vec![item(embedded, "kept memory"), replaced],
+            })
+            .expect("space");
+        database
+            .put_ready(MemoryEmbeddingProjection {
+                space_id,
+                memory_id: embedded,
+                source_text: "kept memory".to_owned(),
+                vector: EmbeddingVector {
+                    source_revision: "v4".to_owned(),
+                    values: vec![0.5; 768],
+                },
+                dimensions: EmbeddingDimensions::D768,
+                updated_at: TimestampMillis::new(2),
+            })
+            .expect("v4 projection");
+        let needing = |revision: &str, dimensions| {
+            database
+                .list_repairs(space_id, revision, dimensions)
+                .expect("repairs")
+                .into_iter()
+                .map(|repair| repair.memory_id)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(needing("v4", EmbeddingDimensions::D768), vec![superseded]);
+        assert_eq!(
+            needing("v5", EmbeddingDimensions::D768),
+            vec![embedded, superseded]
+        );
+        assert_eq!(
+            needing("v4", EmbeddingDimensions::D256),
+            vec![embedded, superseded]
+        );
+        assert_eq!(
+            database
+                .list_ready(space_id, "v4", EmbeddingDimensions::D768)
+                .expect("v4 kept")
+                .len(),
+            1
+        );
+    }
+
+    fn projection(
+        space_id: MemorySpaceId,
+        memory_id: MemoryId,
+        text: &str,
+        value: f32,
+    ) -> MemoryEmbeddingProjection {
+        MemoryEmbeddingProjection {
+            space_id,
+            memory_id,
+            source_text: text.to_owned(),
+            vector: EmbeddingVector {
+                source_revision: "v4".to_owned(),
+                values: vec![value; 768],
+            },
+            dimensions: EmbeddingDimensions::D768,
+            updated_at: TimestampMillis::new(2),
+        }
+    }
+
+    fn recounted_space(database: &Database) -> (MemorySpaceId, MemorySpaceSnapshot) {
+        let space_id = MemorySpaceId::new();
+        let memory_id = MemoryId::new();
+        let snapshot = database
+            .create(MemorySpaceSnapshot {
+                id: space_id,
+                revision: Revision::INITIAL,
+                items: vec![
+                    item(memory_id, "a memory"),
+                    item(MemoryId::new(), "another"),
+                ],
+            })
+            .expect("space");
+        assert_eq!(
+            database
+                .put_reembedded(projection(space_id, memory_id, "a memory", 0.25), 9)
+                .expect("recount"),
+            lettuce_embeddings::ProjectionWrite::Stored
+        );
+        (space_id, snapshot)
+    }
+
+    #[test]
+    fn a_snapshot_from_before_a_recount_keeps_the_recounted_tokens() {
+        let database = Database::open_in_memory().expect("database");
+        let (space_id, before) = recounted_space(&database);
+        let recounted = database.get(space_id).expect("get").expect("space");
+        assert_eq!(recounted.revision, before.revision);
+        assert_eq!(recounted.items[0].token_count, 9);
+        let mut items = before.items.clone();
+        items[1].text = "another, edited".to_owned();
+        items[1].token_count = 5;
+        let applied = database
+            .compare_and_apply(MemoryChangeSet {
+                space_id,
+                expected_revision: before.revision,
+                items,
+            })
+            .expect("older snapshot still applies");
+        assert_eq!(applied.items[0].token_count, 9);
+        assert_eq!(applied.items[1].token_count, 5);
+    }
+
+    #[test]
+    fn a_synced_item_with_unchanged_text_keeps_the_recounted_tokens() {
+        let database = Database::open_in_memory().expect("database");
+        let (space_id, before) = recounted_space(&database);
+        let conversation_id = lettuce_types::ConversationId::new();
+        {
+            let connection = database.connection().expect("connection");
+            connection
+                .execute_batch("PRAGMA foreign_keys = OFF")
+                .expect("fixture mode");
+            connection
+                .execute(
+                    "INSERT INTO conversation_memory_spaces (conversation_id, space_id) VALUES (?1, ?2)",
+                    rusqlite::params![conversation_id.to_string(), space_id.to_string()],
+                )
+                .expect("binding");
+        }
+        let owner = format!("conversation:{conversation_id}");
+        let put = |item: &lettuce_memory::MemoryItem| {
+            let mut connection = database.connection().expect("connection");
+            let transaction = connection.transaction().expect("transaction");
+            let placed = crate::memory_sync_adapter::sync_put_memory_item(
+                &transaction,
+                &format!("{owner}/{}", item.id),
+                item,
+            )
+            .expect("sync put");
+            transaction.commit().expect("commit");
+            placed
+        };
+        let mut remote = before.items[0].clone();
+        remote.token_count = 2;
+        remote.access_count = 4;
+        assert!(put(&remote));
+        let synced = database.get(space_id).expect("get").expect("space");
+        assert_eq!(synced.items[0].token_count, 9);
+        assert_eq!(synced.items[0].access_count, 4);
+        remote.text = "a memory, edited elsewhere".to_owned();
+        remote.token_count = 6;
+        assert!(put(&remote));
+        let synced = database.get(space_id).expect("get").expect("space");
+        let edited = synced
+            .items
+            .iter()
+            .find(|item| item.id == remote.id)
+            .expect("edited item");
+        assert_eq!(edited.token_count, 6);
     }
 
     #[test]

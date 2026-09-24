@@ -125,17 +125,29 @@ pub(crate) fn sync_put_memory_item(
         items: vec![item.clone()],
     }
     .validate()?;
-    let placed: Option<(String, i64, i64)> = transaction
+    let placed: Option<(String, i64, i64, String, u32)> = transaction
         .query_row(
-            "SELECT space_id, ordinal, short_id FROM memory_items WHERE id = ?1",
+            "SELECT space_id, ordinal, short_id, text, token_count FROM memory_items WHERE id = ?1",
             [item_id.to_string()],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
         )
         .optional()
         .map_err(storage)?;
+    let token_count = match &placed {
+        Some((_, _, _, text, stored)) if *text == item.text => *stored,
+        _ => item.token_count,
+    };
     let (ordinal, short_id) = match placed {
-        Some((space, _, _)) if space != space_id.to_string() => return Ok(false),
-        Some((_, ordinal, short_id)) => {
+        Some((space, _, _, _, _)) if space != space_id.to_string() => return Ok(false),
+        Some((_, ordinal, short_id, _, _)) => {
             transaction
                 .execute(
                     "DELETE FROM memory_items WHERE space_id = ?1 AND id = ?2",
@@ -188,6 +200,7 @@ pub(crate) fn sync_put_memory_item(
         ordinal,
         &MemoryItem {
             short_id,
+            token_count,
             ..item.clone()
         },
     )?;

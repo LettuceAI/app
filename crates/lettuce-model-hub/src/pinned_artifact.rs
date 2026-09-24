@@ -264,6 +264,36 @@ impl PinnedDownload {
     }
 }
 
+/// Checks a downloaded file against the git blob id its repository lists,
+/// for files published without an LFS SHA-256.
+pub fn verify_git_blob(path: &Path, expected: &str) -> Result<(), PinnedArtifactError> {
+    let mut file = std::fs::File::open(path).map_err(|_| PinnedArtifactError::Unreadable)?;
+    let length = file
+        .metadata()
+        .map_err(|_| PinnedArtifactError::Unreadable)?
+        .len();
+    let mut hasher = sha1_smol::Sha1::new();
+    hasher.update(format!("blob {length}\0").as_bytes());
+    let mut total = 0_u64;
+    let mut buffer = vec![0_u8; 1024 * 1024];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|_| PinnedArtifactError::Unreadable)?;
+        if read == 0 {
+            break;
+        }
+        total = total
+            .checked_add(u64::try_from(read).map_err(|_| PinnedArtifactError::Mismatch)?)
+            .ok_or(PinnedArtifactError::Mismatch)?;
+        hasher.update(&buffer[..read]);
+    }
+    if total != length || !hasher.digest().to_string().eq_ignore_ascii_case(expected) {
+        return Err(PinnedArtifactError::Mismatch);
+    }
+    Ok(())
+}
+
 fn verify(file: &mut impl Read, artifact: &PinnedArtifact) -> Result<(), PinnedArtifactError> {
     let mut hasher = Sha256::new();
     let mut total = 0_u64;
@@ -317,6 +347,21 @@ mod tests {
             byte_size: bytes.len() as u64,
             sha256: Some(sha256(bytes)),
         }
+    }
+
+    #[test]
+    fn git_blob_ids_verify_files_published_without_lfs() {
+        let path = std::env::temp_dir().join(format!("pinned-blob-{}", OperationId::new()));
+        std::fs::write(&path, b"hello\n").expect("file");
+        assert_eq!(
+            verify_git_blob(&path, "CE013625030BA8DBA906F756967F9E9CA394464A"),
+            Ok(())
+        );
+        assert_eq!(
+            verify_git_blob(&path, "0000000000000000000000000000000000000000"),
+            Err(PinnedArtifactError::Mismatch)
+        );
+        std::fs::remove_file(path).expect("cleanup");
     }
 
     #[test]

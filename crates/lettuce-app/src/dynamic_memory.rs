@@ -62,8 +62,10 @@ pub(crate) fn persist_created_projections<R: MemoryEmbeddingRepository + ?Sized>
             continue;
         };
         let result = match projection {
-            PreparedMemoryProjection::Ready(projection) => {
-                repository.put_ready(projection.clone()).or_else(|_| {
+            PreparedMemoryProjection::Ready(projection) => repository
+                .put_ready(projection.clone())
+                .map(|_| ())
+                .or_else(|_| {
                     repository.mark_repair_needed(MemoryEmbeddingRepair {
                         space_id: projection.space_id,
                         memory_id: projection.memory_id,
@@ -72,8 +74,7 @@ pub(crate) fn persist_created_projections<R: MemoryEmbeddingRepository + ?Sized>
                         dimensions: projection.dimensions,
                         updated_at: projection.updated_at,
                     })
-                })
-            }
+                }),
             PreparedMemoryProjection::RepairNeeded(repair) => {
                 repository.mark_repair_needed(repair.clone())
             }
@@ -215,6 +216,7 @@ impl<'a, E: MemoryEmbeddingEngine + ?Sized, R: MemoryEmbeddingRepository + ?Size
                         &vector,
                         &existing,
                         duplicate_threshold,
+                        &self.engine.calibration(),
                     ),
                     PreparedMemoryProjection::Ready(MemoryEmbeddingProjection {
                         space_id,

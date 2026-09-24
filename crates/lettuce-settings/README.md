@@ -93,7 +93,11 @@ over-long names are shortened, not dropped; `AppBackend::tls_policy` builds
 the `TlsPolicy` the host passes to provider clients, and a root the TLS stack
 cannot parse is tried alone and skipped with a warning, where legacy's rustls
 build failed every client),
-`embeddingModelVersion`/`embeddingMaxTokens`/`embeddingKeepModelLoaded` and
+`dynamic_memory.min_similarity_basis_points` is optional: unset lets the
+embedding model decide (Eidos's published thresholds, 0.35 on v4); the legacy
+import treats the values legacy wrote on its own (0.32 and 0.35) as unset.
+`embeddingModelVersion` (`v3`/`v4` kept as imported; `v5` is Eidos, and an
+unset version prefers Eidos)/`embeddingMaxTokens`/`embeddingKeepModelLoaded` and
 `customLlmModelsDir`. Legacy synced and backed these up with its settings row;
 they describe one machine (paths, network trust, installed files),
 so the rewrite keeps them per device. `image_generation.scene_default_size` is

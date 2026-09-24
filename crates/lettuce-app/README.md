@@ -465,6 +465,16 @@ legacy `migrate_session_memory_embeddings_if_needed`; an unavailable model
 leaves them for the next retrieval and a failure to store one is only logged.
 Legacy's 90-second per-memory timeout and progress toast are not ported (the
 embedding call follows the job's cancellation instead).
+Retrieval scores go through the active model's `SimilarityCalibration` before
+the cold multiplier and the threshold: v4 keeps raw cosine and the configured
+`min_similarity`; Eidos compares its calibrated score with its published
+default threshold (0.50), falling back to its published fallback (0.35) when no
+memory reaches the default, unless `min_similarity` is set, which is then
+compared with the calibrated score as-is. Unset `min_similarity` on v4 means
+0.35. The temporal -1 threshold is unchanged. The x0.7 cold-memory penalty
+applies to the calibrated score, as legacy applied it to raw cosine. Semantic duplicate evidence also compares
+the calibrated score with the duplicate threshold setting (strictly greater,
+as legacy) and stores that score.
 Calendar arithmetic is checked: an amount that overflows a date yields no range,
 where legacy panicked on inputs like "200000000000 days ago".
 Roleplay and group assembly do not read companion state. Missing or corrupt
@@ -2139,3 +2149,44 @@ Results are cached per process by content hash instead of `gradient-*.json`
 files. Corrected: a single-color image produced `#hex NaN%` (invalid CSS) and
 now spans 0% to 100%; GIF avatars, which failed to decode as `.webp`, now
 decode.
+
+## Embedding models (Lettuce Eidos)
+
+Embedding models (`embedding_models`): `EmbeddingModelCatalog::pin` sends the
+shared `model_pin_request` to `HUGGING_FACE_ENDPOINT` and reads the answer with
+the shared `pinned_files`, pinning the commit it reports; `embedding_install_plan` downloads the family's files below
+`<app folder>/models/embedding/<family>/<revision>/` as one `ArtifactInstall`
+job (progress, cancellation and resume come from that job). LFS files are
+checked against their SHA-256 while downloading; plain git files (Eidos
+`calibration.json`, v4 `tokenizer.json`) by size, then by their git blob id
+(shared `verify_git_blob`) in `finish_embedding_install`, which also parses the calibration and removes a
+file that fails either check before recording the manifest.
+`EmbeddingModelCoordinator` loads the chosen family when installed (unset means
+Eidos), else any installed family, Eidos first; a completed install becomes the
+choice; removing a family keeps the choice so loading falls back.
+`adopt_legacy_install` records the legacy `v4-model.int8.onnx` and
+`v4-tokenizer.json` in place and, on a device that never chose a model, stores
+v4 as the choice so existing v4 users keep v4 until they download Eidos.
+Nothing downloads automatically.
+
+Re-embedding is lazy, as legacy's `migrate_session_memory_embeddings_if_needed`:
+when retrieval needs a memory space, `embed_missing_memories` embeds its active
+memories that have no vector for the active vector-space label and dimension,
+which after a model or dimension switch is every memory of that space. Nothing
+re-embeds the whole library in the background. Imported legacy `v4` vectors
+are kept as they are and stay in use while v4 is the active model. Old vectors
+stay stored and become current again when the user switches back. A vector is
+stored only while its memory still has the embedded text
+(`ProjectionWrite::Superseded` otherwise, embedded by the next retrieval), and
+a re-embedded memory also gets its token count recounted with the embedding
+tokenizer (no special tokens, no cut, as legacy counted). The recount does not
+bump the memory space revision; instead every memory write (change sets and
+sync) keeps the stored token count of an item whose text it leaves unchanged,
+so an older snapshot cannot restore the old count.
+
+Host wiring still required (phase (c)): nothing calls
+`EmbeddingModelCoordinator::adopt_legacy_install`, `load_active` or
+`complete_install`, `EmbeddingModelCatalog::pin` or the embedding
+`ArtifactInstall` job yet. The host must adopt the legacy v4 files at startup,
+load the active service with the device's dimension and token budget, and run
+install jobs from the model hub UI, finishing them with `complete_install`.

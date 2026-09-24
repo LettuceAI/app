@@ -24,6 +24,7 @@ pub use device::{
 };
 pub use global::{
     CompanionSoulWriterSettings, CreationHelperSettings, CreationHelperToolFallback,
+    DEFAULT_MIN_SIMILARITY_BASIS_POINTS,
     DeviceUiStateStore, DynamicMemoryPromptSelection, DynamicMemorySettings, EmbeddingSettings,
     GLOBAL_SETTINGS_FORMAT_VERSION, GlobalSettings, GlobalSettingsStore, GlobalSettingsStoreError,
     HelpMeReplySettings, HelpMeReplyStyle, ImageGenerationSettings, LorebookEntryGeneratorSettings,

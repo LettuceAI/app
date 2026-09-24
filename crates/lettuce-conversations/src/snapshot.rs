@@ -411,7 +411,8 @@ pub enum MemoryRetrievalStrategySnapshot {
 #[serde(deny_unknown_fields)]
 pub struct DynamicMemoryPolicySnapshot {
     pub max_entries: u32,
-    pub min_similarity_basis_points: u16,
+    /// `None` leaves the minimum similarity to the embedding model.
+    pub min_similarity_basis_points: Option<u16>,
     pub retrieval_limit: u16,
     pub retrieval_strategy: MemoryRetrievalStrategySnapshot,
     pub hot_memory_token_budget: u32,
@@ -429,7 +430,7 @@ impl DynamicMemoryPolicySnapshot {
             || self.retrieval_limit == 0
             || self.retrieval_limit > 256
             || [
-                self.min_similarity_basis_points,
+                self.min_similarity_basis_points.unwrap_or(0),
                 self.cold_threshold_basis_points,
                 self.delete_confidence_basis_points,
                 self.max_hard_delete_ratio_basis_points,

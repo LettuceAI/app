@@ -530,6 +530,9 @@ pub struct HfPinnedFile {
     pub path: String,
     pub size: u64,
     pub sha256: Option<String>,
+    /// The git blob id of a file stored without LFS, which checks its
+    /// content once downloaded (`verify_git_blob`).
+    pub git_blob_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -550,6 +553,8 @@ struct PinSibling {
     rfilename: String,
     #[serde(default)]
     size: Option<u64>,
+    #[serde(default, rename = "blobId")]
+    blob_id: Option<String>,
     #[serde(default)]
     lfs: Option<PinLfs>,
 }
@@ -561,7 +566,8 @@ struct PinLfs {
 }
 
 /// `filenames` of `model_id` at the revision the pin response names, with the
-/// size and SHA-256 Hugging Face lists for each.
+/// size and SHA-256 Hugging Face lists for each, or the git blob id of a file
+/// stored without LFS.
 pub fn pinned_files(
     model_id: &str,
     body: &[u8],
@@ -585,9 +591,19 @@ pub fn pinned_files(
                 .ok_or_else(|| {
                     HfBrowseError::Message(format!("{filename} is not in {model_id}."))
                 })?;
-            let (size, sha256) = match &sibling.lfs {
-                Some(lfs) => (lfs.size, Some(lfs.sha256.to_ascii_lowercase())),
-                None => (sibling.size.unwrap_or(0), None),
+            let (size, sha256, git_blob_id) = match &sibling.lfs {
+                Some(lfs) => (lfs.size, Some(lfs.sha256.to_ascii_lowercase()), None),
+                None => (
+                    sibling.size.unwrap_or(0),
+                    None,
+                    sibling
+                        .blob_id
+                        .as_deref()
+                        .filter(|id| {
+                            id.len() == 40 && id.bytes().all(|byte| byte.is_ascii_hexdigit())
+                        })
+                        .map(str::to_ascii_lowercase),
+                ),
             };
             if size == 0 {
                 return Err(HfBrowseError::Message(format!(
@@ -598,6 +614,7 @@ pub fn pinned_files(
                 path: (*filename).to_owned(),
                 size,
                 sha256,
+                git_blob_id,
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -1144,14 +1161,19 @@ mod tests {
     #[test]
     fn downloads_are_pinned_to_the_listed_revision_size_and_digest() {
         let body = br#"{"sha": "D24C4CF2A0CD98A42F23467E27E3D76EE9438B8E", "siblings": [
-            {"rfilename": "m-Q4_K_M.gguf", "size": 5, "lfs": {"size": 5, "sha256": "AB"}},
-            {"rfilename": "config.json", "size": 12}
+            {"rfilename": "m-Q4_K_M.gguf", "size": 5, "blobId": "0123456789012345678901234567890123456789", "lfs": {"size": 5, "sha256": "AB"}},
+            {"rfilename": "config.json", "size": 12, "blobId": "CE013625030BA8DBA906F756967F9E9CA394464A"}
         ]}"#;
         let pinned =
             pinned_files("org/m", body, &["m-Q4_K_M.gguf", "config.json"]).expect("pinned");
         assert_eq!(pinned.revision, "d24c4cf2a0cd98a42f23467e27e3d76ee9438b8e");
         assert_eq!(pinned.files[0].sha256.as_deref(), Some("ab"));
         assert_eq!(pinned.files[1].sha256, None);
+        assert_eq!(pinned.files[0].git_blob_id, None);
+        assert_eq!(
+            pinned.files[1].git_blob_id.as_deref(),
+            Some("ce013625030ba8dba906f756967f9e9ca394464a")
+        );
         assert_eq!(
             pinned_files("org/m", body, &["missing.gguf"]),
             Err(HfBrowseError::Message(

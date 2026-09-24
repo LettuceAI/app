@@ -1322,6 +1322,11 @@ fn map_help_me_reply(
     Ok(result)
 }
 
+/// Values legacy wrote for `minSimilarityThreshold` without the user
+/// choosing one (settings defaults, onboarding, the embedding test), which
+/// therefore read as unset.
+const LEGACY_WRITTEN_MIN_SIMILARITY: [u16; 2] = [3_200, 3_500];
+
 fn map_dynamic_memory(
     value: Option<&Value>,
     path: &str,
@@ -1399,12 +1404,18 @@ fn map_dynamic_memory(
         result.context_enrichment_enabled,
         LegacyBackupDocumentKind::Settings,
     )?;
-    result.min_similarity_basis_points = threshold_basis_points(
-        object.get("minSimilarityThreshold"),
-        &format!("{path}.minSimilarityThreshold"),
-        result.min_similarity_basis_points,
-        notices,
-    )?;
+    result.min_similarity_basis_points = object
+        .get("minSimilarityThreshold")
+        .map(|value| {
+            threshold_basis_points(
+                Some(value),
+                &format!("{path}.minSimilarityThreshold"),
+                0,
+                notices,
+            )
+        })
+        .transpose()?
+        .filter(|basis_points| !LEGACY_WRITTEN_MIN_SIMILARITY.contains(basis_points));
     result.cold_threshold_basis_points = threshold_basis_points(
         object.get("coldThreshold"),
         &format!("{path}.coldThreshold"),
@@ -4381,6 +4392,30 @@ mod tests {
     }
 
     #[test]
+    fn legacy_default_min_similarity_imports_as_unset_and_a_chosen_one_as_set() {
+        for (value, expected) in [
+            (None, None),
+            (Some(json!(0.32)), None),
+            (Some(json!(0.35)), None),
+            (Some(json!(0.5)), Some(5_000)),
+            (Some(json!(0.25)), Some(2_500)),
+        ] {
+            let mut object = json!({"maxEntries": 60});
+            if let Some(value) = value {
+                object["minSimilarityThreshold"] = value;
+            }
+            let mut notices = Vec::new();
+            let settings = super::map_dynamic_memory(
+                Some(&object),
+                "advanced_settings.dynamicMemory",
+                &mut notices,
+            )
+            .expect("dynamic memory");
+            assert_eq!(settings.min_similarity_basis_points, expected);
+        }
+    }
+
+    #[test]
     fn legacy_configuration_maps_graph_secrets_speech_and_retains_source() {
         let provider_id = ProviderAccountId::new();
         let model_id = ModelProfileId::new();
@@ -4635,7 +4670,7 @@ mod tests {
                 .value
                 .dynamic_memory
                 .min_similarity_basis_points,
-            4200
+            Some(4200)
         );
         assert_eq!(plan.settings.value.dynamic_memory.retrieval_limit, 7);
         assert_eq!(

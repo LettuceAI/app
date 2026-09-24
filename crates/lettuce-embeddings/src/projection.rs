@@ -64,6 +64,7 @@ pub trait MemoryEmbeddingRepository: Send + Sync {
         dimensions: EmbeddingDimensions,
     ) -> Result<Vec<MemoryEmbeddingProjection>, EmbeddingProjectionError>;
 
+    /// Live memories whose vector is missing or repair needed.
     fn list_repairs(
         &self,
         space_id: MemorySpaceId,
@@ -71,15 +72,33 @@ pub trait MemoryEmbeddingRepository: Send + Sync {
         dimensions: EmbeddingDimensions,
     ) -> Result<Vec<MemoryEmbeddingRepair>, EmbeddingProjectionError>;
 
+    /// Stores a vector only while its memory still has exactly the embedded
+    /// text; otherwise nothing is written and the write is `Superseded`.
     fn put_ready(
         &self,
         projection: MemoryEmbeddingProjection,
-    ) -> Result<(), EmbeddingProjectionError>;
+    ) -> Result<ProjectionWrite, EmbeddingProjectionError>;
+
+    /// `put_ready` for a re-embedded memory that also stores the memory's
+    /// recounted tokens under the same text check.
+    fn put_reembedded(
+        &self,
+        projection: MemoryEmbeddingProjection,
+        token_count: u32,
+    ) -> Result<ProjectionWrite, EmbeddingProjectionError>;
 
     fn mark_repair_needed(
         &self,
         repair: MemoryEmbeddingRepair,
     ) -> Result<(), EmbeddingProjectionError>;
+}
+
+/// Whether a vector was stored, or its memory's text changed after it was
+/// embedded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectionWrite {
+    Stored,
+    Superseded,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

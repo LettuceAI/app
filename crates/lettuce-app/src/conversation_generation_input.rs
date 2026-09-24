@@ -1321,70 +1321,29 @@ where
 
     /// Embeds the memories that have no ready vector for the current
     /// embedding model and text (new, edited, synced or from an older
-    /// model), as legacy migrated session memories before retrieval. A
-    /// memory that fails is left for the next retrieval and the rest still
-    /// get their vectors; superseded memories are never retrieved and are
-    /// skipped.
+    /// model), as legacy migrated session memories before retrieval.
     fn embed_pending_memories(
         &self,
         work: &ConversationGenerationClaimedWork,
         memory: &MemorySpaceSnapshot,
         now: TimestampMillis,
     ) -> Result<(), ConversationGenerationInputError> {
-        let ready = self
-            .repository
-            .list_ready(
-                memory.id,
-                self.embedding.source_revision(),
-                self.embedding.dimensions(),
-            )
-            .map_err(|_| ConversationGenerationInputError::Embedding)?
-            .into_iter()
-            .map(|projection| (projection.memory_id, projection.source_text))
-            .collect::<HashSet<_>>();
-        let mut failed = 0_usize;
-        for item in &memory.items {
-            if item.superseded_by.is_some() || ready.contains(&(item.id, item.text.clone())) {
-                continue;
+        crate::embed_missing_memories(
+            self.embedding,
+            self.repository,
+            memory,
+            &work.handle.cancellation_token(),
+            now,
+        )
+        .map(|_| ())
+        .map_err(|error| match error {
+            crate::MemoryEmbeddingBackfillError::Cancelled => {
+                ConversationGenerationInputError::Cancelled
             }
-            let vector = match self.embedding.embed_memory(
-                &EmbeddingRequest {
-                    text: item.text.clone(),
-                    dimensions: self.embedding.dimensions(),
-                },
-                &work.handle.cancellation_token(),
-            ) {
-                Ok(vector) => vector,
-                Err(EmbeddingGenerationError::Cancelled) => {
-                    return Err(ConversationGenerationInputError::Cancelled);
-                }
-                Err(EmbeddingGenerationError::Unavailable) => {
-                    failed += 1;
-                    continue;
-                }
-            };
-            if self
-                .repository
-                .put_ready(lettuce_embeddings::MemoryEmbeddingProjection {
-                    space_id: memory.id,
-                    memory_id: item.id,
-                    source_text: item.text.clone(),
-                    vector,
-                    dimensions: self.embedding.dimensions(),
-                    updated_at: now,
-                })
-                .is_err()
-            {
-                failed += 1;
+            crate::MemoryEmbeddingBackfillError::Repository => {
+                ConversationGenerationInputError::Embedding
             }
-        }
-        if failed > 0 {
-            tracing::info!(
-                failed,
-                "pending memory embeddings wait for the next retrieval"
-            );
-        }
-        Ok(())
+        })
     }
 
     async fn retrieve_memories(
@@ -1460,9 +1419,11 @@ where
             .map_err(|_| ConversationGenerationInputError::Embedding)?;
         let limit = usize::from(settings.retrieval_limit);
         let threshold = if temporal_range.is_some() {
-            -1.0
+            Some(-1.0)
         } else {
-            f32::from(settings.min_similarity_basis_points) / 10_000.0
+            settings
+                .min_similarity_basis_points
+                .map(|basis_points| f32::from(basis_points) / 10_000.0)
         };
         let selected = select_memories(
             &query,
@@ -1471,6 +1432,7 @@ where
             &active,
             limit,
             threshold,
+            &self.embedding.calibration(),
             settings.retrieval_strategy,
             shape.group,
             shape.companion,
@@ -2050,7 +2012,8 @@ fn select_memories<'a>(
     projections: &[lettuce_embeddings::MemoryEmbeddingProjection],
     active: &[&'a lettuce_memory::MemoryItem],
     limit: usize,
-    threshold: f32,
+    threshold: Option<f32>,
+    calibration: &lettuce_embeddings::SimilarityCalibration,
     strategy: MemoryRetrievalStrategySnapshot,
     group: bool,
     companion: bool,
@@ -2060,19 +2023,30 @@ fn select_memories<'a>(
         .iter()
         .map(|projection| (projection.memory_id, projection))
         .collect::<HashMap<_, _>>();
-    let mut scored = active
+    let dimensions = lettuce_embeddings::EmbeddingDimensions::from_len(query.values.len());
+    let candidates = active
         .iter()
         .copied()
         .filter_map(|item| {
             let projection = projections.get(&item.id)?;
             let raw = legacy_cosine(query, &projection.vector)?;
+            let shown = dimensions.map_or(raw, |dimensions| calibration.score(raw, dimensions));
             let score = if item.is_cold && !item.is_pinned {
-                raw * 0.7
+                shown * 0.7
             } else {
-                raw
+                shown
             };
-            (score >= threshold).then_some((score, item))
+            Some((score, item))
         })
+        .collect::<Vec<_>>();
+    let threshold = calibration.retrieval_threshold(
+        threshold,
+        f32::from(lettuce_settings::DEFAULT_MIN_SIMILARITY_BASIS_POINTS) / 10_000.0,
+        candidates.iter().map(|(score, _)| *score),
+    );
+    let mut scored = candidates
+        .into_iter()
+        .filter(|(score, _)| *score >= threshold)
         .collect::<Vec<_>>();
     scored.sort_by(|(left_score, _), (right_score, _)| right_score.total_cmp(left_score));
     let smart = strategy == MemoryRetrievalStrategySnapshot::Smart;
@@ -2376,7 +2350,8 @@ mod tests {
             &projections,
             &items.iter().collect::<Vec<_>>(),
             limit,
-            0.35,
+            Some(0.35),
+            &lettuce_embeddings::SimilarityCalibration::RawCosine,
             strategy,
             group,
             companion,
@@ -2440,7 +2415,8 @@ mod tests {
             &projections,
             &candidates[..1],
             3,
-            -1.0,
+            Some(-1.0),
+            &lettuce_embeddings::SimilarityCalibration::RawCosine,
             Smart,
             false,
             true,
@@ -2456,7 +2432,8 @@ mod tests {
             &projections,
             &active,
             3,
-            -1.0,
+            Some(-1.0),
+            &lettuce_embeddings::SimilarityCalibration::RawCosine,
             Smart,
             false,
             true,
@@ -2499,7 +2476,8 @@ mod tests {
                 &projections,
                 &active,
                 2,
-                threshold,
+                Some(threshold),
+                &lettuce_embeddings::SimilarityCalibration::RawCosine,
                 Cosine,
                 false,
                 false,
@@ -2511,6 +2489,98 @@ mod tests {
         };
         assert_eq!(select(-1.0), vec![items[0].id]);
         assert!(select(0.35).is_empty());
+    }
+
+    #[test]
+    fn eidos_retrieval_thresholds_the_calibrated_score_with_the_published_or_set_threshold() {
+        use lettuce_conversations::MemoryRetrievalStrategySnapshot::Cosine;
+        use lettuce_embeddings::{
+            EmbeddingDimensions, EmbeddingVector, MemoryEmbeddingProjection, SimilarityCalibration,
+        };
+        use lettuce_memory::MemoryCategory::Other;
+        let eidos = SimilarityCalibration::from_json(
+            br#"{"default_threshold": 0.5, "fallback_threshold": 0.35, "dims": {
+                "768": {"a": 2.381, "b": -1.381}, "512": {"a": 2.2901, "b": -1.2863},
+                "256": {"a": 2.2388, "b": -1.244}, "128": {"a": 2.2388, "b": -1.2664},
+                "64": {"a": 1.9481, "b": -1.0058}}}"#,
+        )
+        .expect("calibration");
+        let mut items = [
+            retrieval_memory(1, Other),
+            retrieval_memory(2, Other),
+            retrieval_memory(3, Other),
+            retrieval_memory(4, Other),
+        ];
+        items[3].is_cold = true;
+        let vector = |score: f32| {
+            let mut values = vec![0.0; 64];
+            values[0] = score;
+            values[1] = (1.0 - score * score).sqrt();
+            EmbeddingVector {
+                values,
+                source_revision: "v5".into(),
+            }
+        };
+        let space_id = lettuce_types::MemorySpaceId::new();
+        let select = |raw: &[f32], calibration: &SimilarityCalibration, threshold: Option<f32>| {
+            let projections = items
+                .iter()
+                .zip(raw)
+                .map(|(item, raw)| MemoryEmbeddingProjection {
+                    space_id,
+                    memory_id: item.id,
+                    source_text: item.text.clone(),
+                    vector: vector(*raw),
+                    dimensions: EmbeddingDimensions::D64,
+                    updated_at: item.created_at,
+                })
+                .collect::<Vec<_>>();
+            super::select_memories(
+                "harbor",
+                &vector(1.0),
+                &projections,
+                &items.iter().collect::<Vec<_>>(),
+                4,
+                threshold,
+                calibration,
+                Cosine,
+                false,
+                false,
+                false,
+            )
+            .into_iter()
+            .map(|item| item.id)
+            .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            select(&[0.85, 0.75, 0.6, 0.85], &eidos, None),
+            vec![items[0].id]
+        );
+        assert_eq!(
+            select(&[0.75, 0.72, 0.6, 0.2], &eidos, None),
+            vec![items[0].id, items[1].id]
+        );
+        assert_eq!(
+            select(&[0.75, 0.72, 0.6, 0.2], &eidos, Some(0.4)),
+            vec![items[0].id]
+        );
+        assert!(select(&[0.85, 0.75, 0.6, 0.85], &eidos, Some(0.9)).is_empty());
+        assert_eq!(
+            select(
+                &[0.75, 0.72, 0.6, 0.2],
+                &SimilarityCalibration::RawCosine,
+                None
+            ),
+            vec![items[0].id, items[1].id, items[2].id]
+        );
+        assert_eq!(
+            select(
+                &[0.75, 0.72, 0.6, 0.2],
+                &SimilarityCalibration::RawCosine,
+                Some(0.73)
+            ),
+            vec![items[0].id]
+        );
     }
 
     #[test]

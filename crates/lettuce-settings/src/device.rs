@@ -39,11 +39,13 @@ pub struct TrustedCertificate {
 pub enum EmbeddingModelVersion {
     V3,
     V4,
+    /// Lettuce Eidos.
+    V5,
 }
 
-/// Legacy `embeddingModelVersion` (which installed model loads),
-/// `embeddingMaxTokens` (unset means 4096; legacy clamped it to 512..=4096 at
-/// load, and the import stores it clamped) and
+/// Legacy `embeddingModelVersion` (which installed model loads; unset means
+/// Eidos), `embeddingMaxTokens` (unset means 4096; legacy clamped it to
+/// 512..=4096 at load, and the import stores it clamped) and
 /// `embeddingKeepModelLoaded`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -51,6 +53,15 @@ pub struct DeviceEmbeddingSettings {
     pub model_version: Option<EmbeddingModelVersion>,
     pub max_tokens: Option<u16>,
     pub keep_model_loaded: bool,
+}
+
+impl DeviceEmbeddingSettings {
+    /// The model version to load when it is installed: the stored choice,
+    /// or Eidos on a device that never chose one.
+    #[must_use]
+    pub fn preferred_model_version(&self) -> EmbeddingModelVersion {
+        self.model_version.unwrap_or(EmbeddingModelVersion::V5)
+    }
 }
 
 impl DeviceSettings {
@@ -128,5 +139,25 @@ mod tests {
         settings.trusted_certificates.pop();
         settings.llm_models_dir = Some("  ".into());
         assert!(settings.validate().is_err());
+    }
+
+    #[test]
+    fn new_devices_prefer_eidos_and_stored_choices_are_kept() {
+        let fresh = DeviceSettings::default();
+        assert_eq!(fresh.embedding.model_version, None);
+        assert_eq!(
+            fresh.embedding.preferred_model_version(),
+            EmbeddingModelVersion::V5
+        );
+        let stored: DeviceSettings =
+            serde_json::from_str(r#"{"embedding":{"model_version":"v4"}}"#).expect("stored");
+        assert_eq!(
+            stored.embedding.preferred_model_version(),
+            EmbeddingModelVersion::V4
+        );
+        assert_eq!(
+            serde_json::to_string(&EmbeddingModelVersion::V5).expect("json"),
+            "\"v5\""
+        );
     }
 }

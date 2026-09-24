@@ -2186,7 +2186,7 @@ async fn app_backend_builds_dynamic_memory_input_and_replays_exactly() {
     let mut changed_settings = live_settings.settings.clone();
     changed_settings.dynamic_memory.max_entries = 99;
     changed_settings.dynamic_memory.hot_memory_token_budget = 999;
-    changed_settings.dynamic_memory.min_similarity_basis_points = 10_000;
+    changed_settings.dynamic_memory.min_similarity_basis_points = Some(10_000);
     changed_settings.dynamic_memory.retrieval_limit = 2;
     changed_settings
         .dynamic_memory
@@ -2465,7 +2465,7 @@ fn enable_retrieval_only_dynamic_memory(database: &Database) {
     let mut settings = stored.settings;
     settings.dynamic_memory.enabled = true;
     settings.dynamic_memory.retrieval_limit = 1;
-    settings.dynamic_memory.min_similarity_basis_points = 5_000;
+    settings.dynamic_memory.min_similarity_basis_points = Some(5_000);
     GlobalSettingsStore::save(
         database,
         settings,

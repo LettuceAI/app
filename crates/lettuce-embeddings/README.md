@@ -19,9 +19,33 @@ preference means 768. Truncated dimensions are
 L2-normalized; native 768-dimensional output preserves the model result.
 
 The v4 base config is limited to 2,048 trained positions. Legacy settings
-allowed 4,096 while the shipped tokenizer JSON silently truncated at 128; the
-adapter deliberately overrides tokenizer truncation to the verified manifest's
-maximum, bounded at the real 2,048-position model capability.
+allowed 4,096 while the shipped tokenizer JSON silently truncated at 128. The
+runtime now drops any truncation and padding a published `tokenizer.json`
+carries and truncates explicitly: the text (never the special tokens) is cut so
+the whole sequence fits `min(model positions, embeddingMaxTokens)`, where the
+setting is clamped to 512..=4,096 and unset means 4,096
+(`effective_max_sequence_length`). A unit test proves a 300-token text reaches
+the session tensors with 302 tokens through a tokenizer whose JSON truncates at
+128. Token counting is no longer capped either.
+
+Lettuce Eidos (`Zeolit/lettuce-eidos-768d-v5`, ModernBERT, int8
+`onnx/model_quantized.onnx`) loads through the same runtime: `input_ids` and
+`attention_mask` only, the output named `embedding` (CLS pooled and L2
+normalized in the graph; v4 keeps its first output), 4,096 trained positions,
+no prompts. Truncated Matryoshka dimensions are sliced and re-normalized for
+both families. Every vector carries its family's vector-space label (`v4` or
+`v5`, `EmbeddingModelFamily::vector_space`) rather than the download revision,
+so vectors compare only within one model and dimension and imported legacy `v4`
+vectors match any installed v4.
+
+`SimilarityCalibration` turns a raw cosine into the score thresholds apply to.
+v4 stays `RawCosine` (its thresholds were tuned on raw cosine). Eidos requires
+its published `calibration.json`: per dimension `shown = clamp(a * cosine + b,
+0, 1)`, plus `default_threshold` and `fallback_threshold`; the file must carry a
+positive-slope map for 64/128/256/512/768 and `0 < fallback <= default <= 1`,
+or loading fails. `retrieval_threshold` returns the configured threshold for raw
+cosine and, for a published calibration, its default threshold, or its
+fallback when no candidate reaches the default.
 
 The companion emotion auxiliary runtime loads only model-hub-verified model,
 tokenizer, and config artifacts. It copies the legacy GoEmotions path exactly:

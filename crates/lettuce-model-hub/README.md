@@ -21,6 +21,25 @@ The audited v4 upstream revision is
 `8fe12dc548f75865bfb120593fd5a514e9186ca0`; its model config declares 2,048
 trained positions and 768 native dimensions.
 
+`EmbeddingModelFamily` is `LettuceEmbV4` or `LettuceEidosV5`. Each family names
+its repository, repository files, vector-space label (`v4`/`v5`), trained
+positions (2,048/4,096) and whether it needs a calibration. An Eidos manifest
+must carry `calibration.json` and a v4 manifest must not; `verify` hashes it
+like the model and tokenizer. `parse_embedding_pin` maps the shared
+`pinned_files` result onto the family's files and refuses a file with neither
+an LFS SHA-256 nor a git blob id. `pinned_files` now also reports the git blob
+id (`HfPinnedFile::git_blob_id`) of a file stored without LFS, and
+`verify_git_blob` (`pinned_artifact`) checks a downloaded file against it, for
+any installer whose repository has plain JSON files. Files
+land at `<family dir>/<revision>/<file>`, so a newer revision never replaces
+files in use. `EmbeddingInstallStore` keeps one `manifest.json` per family,
+written atomically after verifying the files; removal deletes the family folder
+and any recorded file inside the root, never files outside it.
+`inspect_legacy_embedding_install` describes the legacy `v4-model.int8.onnx`
+and `v4-tokenizer.json` in place (revision `legacy-import:<BLAKE3 prefix>`).
+`select_embedding_family` loads the preferred family when installed, else
+Eidos, else v4.
+
 The companion-emotion installed contract separately verifies the exact model,
 tokenizer, and config triplet used by the GoEmotions auxiliary classifier. It
 also requires an immutable source revision before exposing paths to the runtime;

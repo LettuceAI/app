@@ -361,6 +361,9 @@ pub enum MemoryStructuredFallbackFormat {
     Xml,
 }
 
+/// The minimum raw-cosine similarity when none is set.
+pub const DEFAULT_MIN_SIMILARITY_BASIS_POINTS: u16 = 3_500;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct DynamicMemorySettings {
@@ -368,7 +371,10 @@ pub struct DynamicMemorySettings {
     pub summary_message_interval: u32,
     pub run_mode: MemoryRunMode,
     pub max_entries: u32,
-    pub min_similarity_basis_points: u16,
+    /// The minimum shown similarity a retrieved memory needs. `None` means
+    /// the embedding model's own default: the thresholds a calibrated model
+    /// publishes, or `DEFAULT_MIN_SIMILARITY_BASIS_POINTS` on raw cosine.
+    pub min_similarity_basis_points: Option<u16>,
     pub retrieval_limit: u16,
     pub retrieval_strategy: MemoryRetrievalStrategy,
     pub hot_memory_token_budget: u32,
@@ -390,7 +396,7 @@ impl Default for DynamicMemorySettings {
             summary_message_interval: 20,
             run_mode: MemoryRunMode::Auto,
             max_entries: 50,
-            min_similarity_basis_points: 3_500,
+            min_similarity_basis_points: None,
             retrieval_limit: 5,
             retrieval_strategy: MemoryRetrievalStrategy::Smart,
             hot_memory_token_budget: 2_000,
@@ -546,6 +552,26 @@ pub trait GlobalSettingsStore: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unset_min_similarity_round_trips_apart_from_a_set_one() {
+        let unset = GlobalSettings::default();
+        assert_eq!(unset.dynamic_memory.min_similarity_basis_points, None);
+        let json = serde_json::to_string(&unset).expect("json");
+        let restored: GlobalSettings = serde_json::from_str(&json).expect("restored");
+        assert_eq!(restored.dynamic_memory.min_similarity_basis_points, None);
+        let mut set = GlobalSettings::default();
+        set.dynamic_memory.min_similarity_basis_points = Some(3_500);
+        let restored: GlobalSettings =
+            serde_json::from_str(&serde_json::to_string(&set).expect("json")).expect("restored");
+        assert_eq!(
+            restored.dynamic_memory.min_similarity_basis_points,
+            Some(3_500)
+        );
+        let without_key: DynamicMemorySettings =
+            serde_json::from_str(r#"{"max_entries": 60}"#).expect("older payload");
+        assert_eq!(without_key.min_similarity_basis_points, None);
+    }
 
     #[test]
     fn image_generation_defaults_match_the_legacy_schema_and_older_payloads() {

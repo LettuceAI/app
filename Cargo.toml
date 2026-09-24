@@ -86,6 +86,7 @@ keyring-core = "=0.7.4"
 rusqlite = { version = "0.40.2", default-features = false, features = ["bundled", "backup"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "rustls-tls-native-roots", "multipart"] }
 rand = "0.8"
+sha1_smol = "1"
 sha2 = "0.10"
 tar = "0.4"
 ort = { version = "=2.0.0-rc.10", default-features = false, features = ["std", "half", "ndarray"] }

@@ -68,5 +68,6 @@ image.workspace = true
 
 [dev-dependencies]
 flate2.workspace = true
+sha1_smol.workspace = true
 sha2.workspace = true
 tar.workspace = true

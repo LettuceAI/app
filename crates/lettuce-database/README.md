@@ -313,6 +313,12 @@ stale derived rows cannot affect similarity, while unchanged projections
 survive the complete item-set CAS without rewriting their BLOBs. Repair queries
 also synthesize work for live items with no matching projection, closing the
 crash window between authoritative memory commit and derived-data persistence.
+`put_ready` writes a vector in one statement only while the memory still has
+the embedded text (`Superseded` otherwise), and `put_reembedded` also stores
+the recounted token count under the same check. Change sets and synced items
+keep the stored token count of an item whose text they leave unchanged, so a
+recount needs no revision bump and an older snapshot cannot restore the old
+count.
 Migration 9 also owns background dynamic-memory runs that are intentionally not
 conversation generation turns. The immutable run binds the normalized
 conversation memory space plus its complete starting snapshot, ordered
