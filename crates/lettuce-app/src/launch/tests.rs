@@ -3628,7 +3628,6 @@ async fn a_chat_launched_before_its_character_became_a_companion_uses_the_compan
     );
 }
 
-#[test]
 fn text_entry(text: &str) -> lettuce_context::PromptEntryDraft {
     lettuce_context::PromptEntryDraft {
         built_in_entry_key: None,
@@ -4091,6 +4090,7 @@ async fn a_group_turn_keeps_its_launch_prompt_snapshot() {
     assert!(text.contains("Group voice") && !text.contains("Group voice, edited"));
 }
 
+#[test]
 fn scene_only_launch_materializes_one_trimmed_scene_message() {
     let database = database();
     let scene = text_scene(CharacterId::new(), 0, "  A quiet harbour at dawn.  ");
@@ -4814,7 +4814,6 @@ fn the_direct_chain_ends_in_the_app_default_then_the_bundled_prompt() {
         Some(built_in)
     );
     assert_eq!(resolve(None), Some(built_in));
-    PromptRepository::archive(&database, app_default, Revision::INITIAL, NOW)
     let group = seed_prompt(&database, "Group prompt", PromptPurpose::GroupChatConversational);
     let summarizer = seed_prompt(
         &database,
@@ -4835,6 +4834,7 @@ fn the_direct_chain_ends_in_the_app_default_then_the_bundled_prompt() {
     assert_eq!(chain(Some(group), Some(app_default)), Some(group));
     assert_eq!(chain(Some(summarizer), Some(app_default)), Some(app_default));
     assert_eq!(chain(None, Some(companion)), Some(built_in));
+    PromptRepository::archive(&database, app_default, Revision::INITIAL, NOW)
         .expect("archive app default");
     assert_eq!(resolve(Some(app_default)), Some(built_in));
     assert_eq!(
