@@ -79,7 +79,7 @@ features. whisper.cpp (lettuce-speech) links into the same binary.
   only bounds the drafted count; the draft context is sized as before.
   Greedy MTP output is checked token for token against plain greedy
   decoding on a real model.
-- `dflash` (desktop): DFlash speculative decoding. Settings, the shared
+- `dflash` (desktop): DFlash, DFlash2 and DSpark speculative decoding. Settings, the shared
   draft slot, stats and the adaptive draft length come from release 2.2.5;
   the runtime follows llama.cpp's `common/speculative.cpp` (b11157) because
   legacy's never ran (see below).
@@ -88,8 +88,11 @@ features. whisper.cpp (lettuce-speech) links into the same binary.
   absent). The configured `dflash_model_path` is used only when it is one;
   otherwise a sibling whose stem contains `dflash` is discovered, but only
   when its stem shares the model's once the marker and its separators are
-  dropped (a bare `dflash.gguf` names no model), the first by name. DSpark
-  drafters (a `markov_w1.weight` tensor) are skipped with a warning. The
+  dropped (a bare `dflash.gguf` names no model), the first by name. A
+  drafter carrying `markov_w1.weight` is DSpark (as upstream detects it),
+  else one with a selector (`dflash_selector_top_k` > 0) is DFlash2, else
+  DFlash; DSpark runs through the same runtime with its own block layout,
+  draft limit and truncation. The
   drafter takes the MTP draft slot (placement, VRAM reserve, engine load),
   runs only without media, and wins over MTP (a warning when both are
   enabled). Setup checks, each failing to a warning and a run without
@@ -99,8 +102,10 @@ features. whisper.cpp (lettuce-speech) links into the same binary.
   its vocabulary passes llama.cpp's speculative compatibility check
   (`LlamaModel::is_speculation_compatible`: vocab type, BOS/EOS, sizes at
   most 128 apart, token text from id 5); its mask token lies inside its
-  vocabulary; a DFlash2 selector fits the output rows; and the target batch
-  can verify a draft.
+  vocabulary; a DFlash2 selector fits the output rows; a DSpark drafter
+  with `dflash.has_confidence_head` set to anything but `true` runs only
+  with `dflash_min_probability` 0 (upstream refuses it; a missing key counts
+  as having the head); and the target batch can verify a draft.
   The drafter context is a default context bound to the target
   (`ctx_other`), without recurrent snapshots, sized for one noise block of
   outputs. Every target batch (prefill chunks and verification) writes the
@@ -121,22 +126,41 @@ features. whisper.cpp (lettuce-speech) links into the same binary.
   request's sampler (one sample per row), keeps the accepted prefix in both
   caches and makes the sampled token the next anchor. DFlash2 drafters
   (`dflash_selector_top_k` > 0) read their dense nextn selector lattice
-  instead of logits and walk it slot by slot. `dflash.sample_from_anchor`
-  only changes DSpark's layout upstream and is only logged. Draft length is
-  1 to 15 (default 4), capped below the block and below the target's
-  `n_batch`, and adapts like MTP. The hot context key carries DFlash and its
+  instead of logits and walk it slot by slot. DSpark's Markov head biases
+  the block's logits inside the drafter graph. With
+  `dflash.sample_from_anchor` (default `true`) a DSpark block is `[anchor,
+  mask...]` of exactly the draft length and slot 0 is already a draft;
+  without it, and for DFlash and DFlash2 (which ignore the flag as upstream
+  does), the block is one longer and is read from slot 1. DSpark reads greedy
+  top-10 tokens and stops at the first slot whose confidence (the sigmoid
+  the confidence head writes into the nextn row) falls below
+  `dflash_min_probability`, and reads no confidence at 0; the token's own
+  probability is not checked. Every block stays within the trained
+  `dflash.block_size`, since the Markov bias is skipped for a longer one.
+  Draft length is 1 to 15 (default 4), capped at the block for a DSpark
+  drafter sampling from the anchor and one below it otherwise, and below the
+  target's `n_batch`, and adapts like MTP. The hot context key carries DFlash and its
   draft length; a reused drafter takes the request's
-  `dflash_min_probability`. Stats use the MTP shape: `usage.mtp_stats` and
+  `dflash_min_probability`, and a reused DSpark drafter without a
+  confidence head is dropped for a request above 0. Stats use the MTP shape: `usage.mtp_stats` and
   the runtime report's `dflashStats`.
   Known limits: once a DFlash drafter resolves, bundled MTP is not loaded
   and the drafter holds the draft slot, so if DFlash setup then fails the
-  run has neither; falling back to MTP would need the target reloaded with
+  run has neither (a DSpark drafter without a confidence head at the default
+  `dflash_min_probability` of 0.55 is such a failure, where upstream's
+  default is 0); falling back to MTP would need the target reloaded with
   its NextN layers or the draft slot reloaded with the MTP model and a
   target context built for MTP's draft length, which the run does not do.
   The VRAM reserve keeps legacy's selection (`offload::drafter_reserve_path`):
   with DFlash enabled and no drafter path it reserves the MTP path even with
   MTP off, and the offload plan's `bundled_mtp_draft` still counts bundled
   NextN layers that DFlash keeps from loading, so both can over-reserve.
+  DSpark shares `dflash_min_probability` as its confidence cutoff, so at the
+  default 0.55 it stops drafting earlier than upstream's default of 0.
+  Draft length stops at 15, so a DSpark drafter trained on a 16-token block
+  never drafts its full block. Upstream's backend draft sampler
+  (`llama_set_sampler`) is not used; draft tokens are picked on
+  the CPU. DeepSeek-V4 DSpark drafters are untested.
   Legacy corrections: legacy never reached DFlash from chat (its provider
   field allowlist lacked the `llamaDflash*` keys), and its runtime could not
   have run: it built an MTP-type drafter context (null for a model without
@@ -146,8 +170,11 @@ features. whisper.cpp (lettuce-speech) links into the same binary.
   matched rows twice, wrote only the bonus token's features into the
   drafter, never bounded the draft by the target batch, and discovered any
   `*dflash*.gguf` beside the model. An ignored test compares greedy DFlash
-  output with plain generation when `LETTUCE_DFLASH_MODEL` is set and
-  requires at least half of the drafts accepted.
+  output with plain generation on a counting prompt when
+  `LETTUCE_DFLASH_MODEL` is set, and greedy DSpark output on a 64-token
+  explanation when `LETTUCE_DSPARK_MODEL` is (DeepSeek's Qwen3-4B block-7
+  drafter barely drafts terse counting, upstream included), each requiring
+  at least half of the drafts accepted.
 - `sampler` (desktop): the legacy sampler chain unchanged: profiles
   (balanced/creative/stable/reasoning and their defaults), the stage order
   (default or the user's, deduplicated; an explicit empty list means no

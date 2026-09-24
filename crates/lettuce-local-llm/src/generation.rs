@@ -36,7 +36,7 @@ use crate::context::{
     compute_recommended_context, context_attempt_candidates, context_error_detail,
     is_likely_context_oom_error,
 };
-use crate::dflash::{DflashRuntime, resolve_drafter};
+use crate::dflash::{DflashRuntime, model_is_dspark, resolve_drafter};
 use crate::engine::{
     BackendPath, EngineLoadRequest, EngineObserver, LlamaEngine, LlamaEngineError, LlamaGpuConfig,
     NativeFitPlan, emit_model_load_complete, emit_model_load_failed, emit_model_load_finalizing,
@@ -1227,6 +1227,7 @@ impl Run<'_> {
             None
         };
         let dflash_requested = dflash_external_path.is_some();
+        let dflash_dspark = dflash_external_path.as_deref().is_some_and(model_is_dspark);
         let mtp_bundled =
             !dflash_requested && rt.mtp_enabled && !media_requested && model_has_mtp(model_path);
         let mtp_external_path = if dflash_requested {
@@ -2436,8 +2437,13 @@ impl Run<'_> {
             None
         };
         let mut dflash_runtime = if let Some(mut runtime) = reused_dflash_runtime {
-            runtime.refresh_settings(rt.dflash_min_probability);
-            Some(runtime)
+            match runtime.refresh_settings(rt.dflash_min_probability) {
+                Ok(()) => Some(runtime),
+                Err(error) => {
+                    tracing::warn!(%error, "DFlash drafter unusable, continuing without DFlash");
+                    None
+                }
+            }
         } else if dflash_active {
             match DflashRuntime::new(
                 model,
@@ -2445,12 +2451,14 @@ impl Run<'_> {
                 &ctx,
                 backend,
                 draft_context_params(0),
+                dflash_dspark,
                 rt.dflash_draft_tokens as usize,
                 rt.dflash_min_probability,
             ) {
                 Ok(mut runtime) => match runtime.enable_feature_extraction(&mut ctx) {
                     Ok(()) => {
                         tracing::info!(
+                            kind = runtime.kind.label(),
                             draft_tokens = runtime.draft_n,
                             block_size = runtime.block_size,
                             p_min = runtime.p_min,
@@ -3768,7 +3776,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "needs a local GGUF model in LETTUCE_PLAN_MODEL (drafters in LETTUCE_MTP_MODEL, LETTUCE_DFLASH_MODEL)"]
+    #[ignore = "needs a local GGUF model in LETTUCE_PLAN_MODEL (drafters in LETTUCE_MTP_MODEL, LETTUCE_DFLASH_MODEL, LETTUCE_DSPARK_MODEL)"]
     fn generates_on_cpu_and_reuses_the_prompt_cache() {
         let Ok(path) = std::env::var("LETTUCE_PLAN_MODEL") else {
             return;
@@ -3874,51 +3882,69 @@ mod tests {
             .expect("stored report");
         assert_eq!(report["actualKvTypeUsed"], json!("k=q8_0,v=q4_0"));
 
-        if let Ok(drafter) = std::env::var("LETTUCE_DFLASH_MODEL") {
-            let mut counting = base.clone();
-            counting.prompt_cache_key = None;
-            counting.max_tokens = Some(48);
-            counting.messages = vec![json!({
-                "role": "user",
-                "content": "Count from 1 to 15 in words, separated by commas. /no_think"
-            })];
+        for (label, variable, prompt, max_tokens, min_acceptance) in [
+            (
+                "dflash",
+                "LETTUCE_DFLASH_MODEL",
+                "Count from 1 to 15 in words, separated by commas. /no_think",
+                48,
+                0.5,
+            ),
+            (
+                "dspark",
+                "LETTUCE_DSPARK_MODEL",
+                "Explain how a binary search works, step by step.",
+                64,
+                0.5,
+            ),
+        ] {
+            let Ok(drafter) = std::env::var(variable) else {
+                continue;
+            };
+            let mut plain_request = base.clone();
+            plain_request.prompt_cache_key = None;
+            plain_request.max_tokens = Some(max_tokens);
+            plain_request.messages = vec![json!({"role": "user", "content": prompt})];
             let started = Instant::now();
             let plain = run_blocking(
                 &runtime,
-                counting.clone(),
+                plain_request.clone(),
                 Arc::new(Recorder::default()),
                 reports.clone(),
             )
-            .expect("plain counting run");
+            .expect("plain run");
             eprintln!(
-                "plain: {:?} {:?} {:?}",
+                "plain: {:?} {:?} {:?} {:?}",
+                plain.reasoning,
                 plain.content,
                 plain.usage,
                 started.elapsed()
             );
-            let mut dflash = counting;
-            dflash.runtime.dflash_enabled = true;
-            dflash.runtime.dflash_model_path = Some(drafter);
+            let mut drafted_request = plain_request;
+            drafted_request.runtime.dflash_enabled = true;
+            drafted_request.runtime.dflash_model_path = Some(drafter);
             let started = Instant::now();
-            let with_dflash = run_blocking(
+            let drafted = run_blocking(
                 &runtime,
-                dflash,
+                drafted_request,
                 Arc::new(Recorder::default()),
                 reports.clone(),
             )
-            .expect("dflash run");
+            .expect("drafter run");
             eprintln!(
-                "dflash: {:?} {:?} {:?}",
-                with_dflash.content,
-                with_dflash.usage,
+                "{label}: {:?} {:?} {:?} {:?}",
+                drafted.reasoning,
+                drafted.content,
+                drafted.usage,
                 started.elapsed()
             );
-            assert_eq!(with_dflash.content, plain.content);
-            let stats = with_dflash.usage.mtp_stats.expect("dflash stats");
+            assert_eq!(drafted.reasoning, plain.reasoning);
+            assert_eq!(drafted.content, plain.content);
+            let stats = drafted.usage.mtp_stats.expect("drafter stats");
             assert!(stats.accepted > stats.rounds);
             assert!(
-                stats.draft_acceptance >= 0.5,
-                "draft acceptance {} is too low for a counting prompt",
+                stats.draft_acceptance >= min_acceptance,
+                "{label} draft acceptance {} is below {min_acceptance}",
                 stats.draft_acceptance
             );
             let report = reports
