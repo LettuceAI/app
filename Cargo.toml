@@ -34,7 +34,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 cap-primitives = "3.4"
 cap-std = "3.4"
 flate2 = "1"
-image = { version = "0.25", default-features = false, features = ["webp", "png", "jpeg"] }
+image = { version = "0.25", default-features = false, features = ["webp", "png", "jpeg", "gif"] }
 lettuce-app = { path = "crates/lettuce-app" }
 lettuce-characters = { path = "crates/lettuce-characters" }
 lettuce-companions = { path = "crates/lettuce-companions" }

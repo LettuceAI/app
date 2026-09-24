@@ -2010,3 +2010,17 @@ App version: `app_version(package_version)` appends `-cuda` for the CUDA build
 and nothing otherwise. The old app also marked `-rocm` and `-vulkan` builds;
 the CPU and Vulkan builds are now one normal build and there is no ROCm build.
 The update check itself stays in the frontend.
+
+Avatar gradient: `AvatarGradients::gradient(media, asset, force)` is the old
+`generate_avatar_gradient` extraction (about 100 sampled pixels, median-cut to
+8 colors, dark muted base, muted companion, dark vibrant accent, CSS and text
+colors), proven against the old functions compiled verbatim on 400 sample sets
+(`tests/fixtures/legacy_avatar_gradients.tsv`). The caller picks the image: the
+round avatar was a separate picker output (a zoomed, circle-clipped crop the
+stored crop numbers cannot rebuild), so the round image falls back to the
+square avatar until a round asset exists, as the old command fell back when
+`avatar_round.webp` was missing; legacy round files are not imported yet.
+Results are cached per process by content hash instead of `gradient-*.json`
+files. Corrected: a single-color image produced `#hex NaN%` (invalid CSS) and
+now spans 0% to 100%; GIF avatars, which failed to decode as `.webp`, now
+decode.

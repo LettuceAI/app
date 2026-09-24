@@ -9,6 +9,7 @@
 mod app_active_usage;
 mod app_version;
 mod artifact_install;
+mod avatar_gradient;
 mod avatar_prompt;
 mod asr_learning_transfer;
 mod built_in_prompts;
@@ -155,6 +156,9 @@ mod whisper_catalog;
 mod whisper_download;
 mod whisper_models;
 
+pub use avatar_gradient::{
+    AvatarGradient, AvatarGradientError, AvatarGradients, GradientColor,
+};
 pub use app_version::app_version;
 pub use avatar_prompt::{AvatarPromptError, AvatarPromptRequest, avatar_image_prompt};
 pub use app_active_usage::*;

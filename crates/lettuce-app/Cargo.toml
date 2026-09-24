@@ -64,7 +64,7 @@ chrono.workspace = true
 rand.workspace = true
 uuid.workspace = true
 zeroize.workspace = true
+image.workspace = true
 
 [dev-dependencies]
-image.workspace = true
 sha2.workspace = true
