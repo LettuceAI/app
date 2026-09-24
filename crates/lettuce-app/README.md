@@ -2005,3 +2005,8 @@ Chat and group prompts get the level's `{{content_rules}}` text and
 `default_character_rules` gives a new character the old base and level rules;
 both texts live in the chat runtime catalog. The Low level is kept (it was
 imported as Standard before).
+
+App version: `app_version(package_version)` appends the llama.cpp GPU backend
+the build was compiled for (`-cuda`, `-rocm` or `-vulkan`, in that order, none
+for Metal or mobile), as the old `get_app_version` did; the update check itself
+stays in the frontend.
