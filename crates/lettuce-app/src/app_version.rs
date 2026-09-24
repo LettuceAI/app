@@ -1,8 +1,9 @@
-//! The version the app reports: the package version with the llama.cpp GPU
-//! backend it was built for, so updates can pick the matching build.
+//! The version the app reports: the package version, marked for the CUDA
+//! build so updates pick the matching build. The normal build (CPU with
+//! Vulkan) carries no mark.
 
-/// `package_version` followed by `-cuda`, `-rocm` or `-vulkan` when this
-/// build's local model runtime was compiled for that backend.
+/// `package_version`, followed by `-cuda` when this build's local model
+/// runtime was compiled for CUDA.
 #[must_use]
 pub fn app_version(package_version: &str) -> String {
     let mut version = package_version.to_owned();
@@ -17,7 +18,7 @@ pub fn app_version(package_version: &str) -> String {
 fn gpu_suffix() -> Option<&'static str> {
     lettuce_local_llm::engine::compiled_gpu_backends()
         .into_iter()
-        .find(|backend| matches!(*backend, "cuda" | "rocm" | "vulkan"))
+        .find(|backend| *backend == "cuda")
 }
 
 #[cfg(any(target_os = "android", target_os = "ios"))]

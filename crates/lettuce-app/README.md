@@ -2006,7 +2006,7 @@ Chat and group prompts get the level's `{{content_rules}}` text and
 both texts live in the chat runtime catalog. The Low level is kept (it was
 imported as Standard before).
 
-App version: `app_version(package_version)` appends the llama.cpp GPU backend
-the build was compiled for (`-cuda`, `-rocm` or `-vulkan`, in that order, none
-for Metal or mobile), as the old `get_app_version` did; the update check itself
-stays in the frontend.
+App version: `app_version(package_version)` appends `-cuda` for the CUDA build
+and nothing otherwise. The old app also marked `-rocm` and `-vulkan` builds;
+the CPU and Vulkan builds are now one normal build and there is no ROCm build.
+The update check itself stays in the frontend.
