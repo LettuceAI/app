@@ -1,0 +1,12 @@
+pub(crate) mod chat_import_adapter;
+pub(crate) mod conversation_artifact_adapter;
+pub(crate) mod conversation_creator;
+pub(crate) mod conversation_history_writer;
+pub(crate) mod conversation_mutation_kernel;
+pub(crate) mod conversation_mutations;
+pub(crate) mod conversation_query;
+pub(crate) mod conversation_vertical_slice;
+pub(crate) mod initial_inference_adapter;
+pub(crate) mod speaker_inference_adapter;
+pub(crate) mod state_adapter;
+pub(crate) mod tool_adapter;

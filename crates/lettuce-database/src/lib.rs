@@ -2,73 +2,21 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
-mod backup_adapter;
-mod character_adapter;
-mod character_file_adapter;
-mod chat_import_adapter;
-mod consolidation_adapter;
-mod conversation_artifact_adapter;
-mod conversation_creator;
-mod conversation_history_writer;
-mod conversation_mutation_kernel;
-mod conversation_mutations;
-mod conversation_query;
-mod companion_sync_adapter;
-mod conversation_sync_adapter;
-mod conversation_vertical_slice;
-mod creation_adapter;
-mod device_local_adapter;
-mod local_llm_adapter;
-pub use local_llm_adapter::LlmGenerationMetric;
-mod model_lookup_adapter;
-mod dynamic_memory_rewind_adapter;
-mod dynamic_memory_run_adapter;
-mod group_adapter;
-mod image_generation_adapter;
-mod image_lora_adapter;
-mod growth_adapter;
-mod initial_inference_adapter;
 mod job_adapter;
-mod legacy_import_adapter;
-mod legacy_import_backup_adapter;
-mod playground_history_adapter;
-mod lorebook_adapter;
-mod lorebook_entry_run_adapter;
-mod lorebook_keyword_run_adapter;
-mod legacy_database_documents;
-mod legacy_database_preflight;
-mod memory_adapter;
-mod memory_embedding_adapter;
-mod memory_sync_adapter;
-mod model_path_relocation_adapter;
-mod row_sync_adapter;
-mod secret_sync_adapter;
-mod persona_adapter;
-mod prompt_adapter;
-mod restore_admission_adapter;
-mod restore_writer;
-mod scheduled_note_adapter;
-mod soul_adapter;
-mod soul_writer_adapter;
-mod speech_adapter;
-mod speech_learning_adapter;
-mod speaker_inference_adapter;
-mod staged_lorebook_adapter;
-mod staged_lorebook_writer_adapter;
-mod state_adapter;
-mod sync_adapter;
-mod tool_adapter;
-mod tts_adapter;
-mod tts_synthesis_adapter;
 mod usage_adapter;
-mod whisper_model_adapter;
+mod conversation;
+mod memory;
+mod companion;
+mod lorebook;
+mod catalog;
+mod media;
+mod models;
+mod sync;
+mod backup;
+mod legacy;
 
-pub use legacy_database_documents::read_legacy_database_documents;
-pub use legacy_database_preflight::{
-    LegacyDatabaseProviderSecretSource, plan_legacy_asr, plan_legacy_lorebooks,
-    plan_legacy_personas, plan_legacy_prompts, plan_legacy_provider_models,
-    preflight_legacy_database,
-};
+pub use models::*;
+pub use legacy::*;
 
 use std::{path::Path, str::FromStr, sync::Mutex, time::Duration};
 
@@ -638,7 +586,7 @@ pub(crate) fn sync_write_app_settings(
             |row| row.get(0),
         )?;
         let kind = if table == "model_profiles" { "model_profile" } else { "prompt" };
-        if !exists && crate::sync_adapter::entity_deferred(connection, kind, &id)? {
+        if !exists && crate::sync::sync_adapter::entity_deferred(connection, kind, &id)? {
             return Err(rusqlite::Error::QueryReturnedNoRows);
         }
         Ok(exists.then_some(id))
@@ -2531,7 +2479,7 @@ impl MediaSyncRepository for Database {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|_| MediaSyncError::Storage)?;
-        let settled = crate::sync_adapter::retry_deferred_changes_in(&transaction, now)
+        let settled = crate::sync::sync_adapter::retry_deferred_changes_in(&transaction, now)
             .map_err(|_| MediaSyncError::Storage)?;
         transaction.commit().map_err(|_| MediaSyncError::Storage)?;
         Ok(settled)
