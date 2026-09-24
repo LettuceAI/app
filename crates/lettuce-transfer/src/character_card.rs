@@ -269,7 +269,7 @@ pub struct CharaCardCharacterBookEntry {
     #[serde(default)]
     pub constant: Option<bool>,
     #[serde(default)]
-    pub position: Option<String>,
+    pub position: Option<Value>,
 }
 
 fn is_spec(value: &Value, spec: &str) -> bool {
@@ -899,7 +899,10 @@ mod tests {
                     {"type": "icon", "uri": "data:image/png;base64,AA==", "name": "main"},
                     {"type": "background", "uri": "https://example.test/bg.png", "name": "main"}
                 ],
-                "character_book": {"entries": [{"keys": ["k"], "content": "c", "use_regex": true}]}
+                "character_book": {"entries": [
+                    {"keys": ["k"], "content": "c", "use_regex": true, "position": 0},
+                    {"keys": ["j"], "content": "d", "position": "after_char"}
+                ]}
             }
         }))
         .expect("parse")
@@ -920,6 +923,8 @@ mod tests {
             serde_json::to_value(&book.entries[0]).expect("entry")["keys"],
             json!(["k"])
         );
+        assert_eq!(book.entries[0].position, Some(json!(0)));
+        assert_eq!(book.entries[1].position, Some(json!("after_char")));
     }
 
     #[test]
