@@ -167,7 +167,10 @@ state transition. Classification and transition preparation are application
 work rather than storage behavior and are now wired for direct user sends.
 
 The pure prompt-state function (`prompt_state`) holds no model-facing text: it
-decides the legacy relationship bands, top expressed/blocked dimensions (0.08
+decides the legacy relationship bands (release 2.2.5: seven steps for
+closeness, trust and affection, with a -0.15 neutral floor for closeness and
+trust and -0.25 for affection, plus five tension steps) and keeps each raw
+value for the stance line's score, top expressed/blocked dimensions (0.08
 floor), continuity episode, all twelve authored Soul categories with effective
 durable facts ordered by clamped weight-times-confidence, style notes, active
 signals and the regulation/reassurance branches, and returns them as typed

@@ -3,7 +3,7 @@ use std::cell::Cell;
 use lettuce_companions::{
     CompanionPromptState, CompanionScheduledNote, ConsolidationPromptFacts, EmotionDimension,
     EmotionReading, GrowthPromptFacts, ReassuranceCue, RegulationCue, RelationshipBand,
-    SoulCategory, SoulFactLine, policy_name, scheduled_note_lines,
+    SoulCategory, SoulFactLine, TensionBand, policy_name, scheduled_note_lines,
 };
 use lettuce_context::{PromptRenderValues, PromptVariable as Variable};
 
@@ -55,17 +55,24 @@ pub(crate) fn render_companion_state(
         vec![
             (
                 Variable::ClosenessBand,
-                text.render_with(&band_key("closeness", state.closeness), [])?,
+                text.render_with(&band_key("closeness", state.closeness.band), [])?,
             ),
+            (Variable::ClosenessScore, percent(state.closeness.value)),
             (
                 Variable::TrustBand,
-                text.render_with(&band_key("trust", state.trust), [])?,
+                text.render_with(&band_key("trust", state.trust.band), [])?,
             ),
+            (Variable::TrustScore, percent(state.trust.value)),
             (
                 Variable::AffectionBand,
-                text.render_with(&band_key("affection", state.affection), [])?,
+                text.render_with(&band_key("affection", state.affection.band), [])?,
             ),
-            (Variable::TensionPercent, percent(state.tension)),
+            (Variable::AffectionScore, percent(state.affection.value)),
+            (
+                Variable::TensionBand,
+                text.render_with(tension_key(state.tension.band), [])?,
+            ),
+            (Variable::TensionScore, percent(state.tension.value)),
         ],
     )?;
     line(
@@ -353,12 +360,24 @@ fn emotion_list(
 fn band_key(metric: &str, band: RelationshipBand) -> String {
     let suffix = match band {
         RelationshipBand::Lowest => "lowest",
+        RelationshipBand::Lower => "lower",
         RelationshipBand::Low => "low",
         RelationshipBand::Neutral => "neutral",
         RelationshipBand::High => "high",
+        RelationshipBand::Higher => "higher",
         RelationshipBand::Highest => "highest",
     };
     format!("companion_{metric}_{suffix}")
+}
+
+const fn tension_key(band: TensionBand) -> &'static str {
+    match band {
+        TensionBand::Calm => "companion_tension_calm",
+        TensionBand::MildFriction => "companion_tension_mild_friction",
+        TensionBand::Tense => "companion_tension_tense",
+        TensionBand::Strained => "companion_tension_strained",
+        TensionBand::BreakingPoint => "companion_tension_breaking_point",
+    }
 }
 
 const fn emotion_key(dimension: EmotionDimension) -> &'static str {
@@ -397,8 +416,9 @@ const fn soul_key(category: SoulCategory) -> &'static str {
 mod tests {
     use lettuce_companions::{
         CompanionPromptState, CompanionScheduledNote, ConsolidationPromptFacts, EmotionDimension,
-        EmotionReading, GrowthPromptFacts, ReassuranceCue, RegulationCue, RelationshipBand,
-        ScheduledNoteRecurrence, SoulCategory, SoulFactLine, SoulFactPolicy,
+        EmotionReading, GrowthPromptFacts, ReassuranceCue, RegulationCue, RelationshipAxis,
+        RelationshipBand, RelationshipReading, ScheduledNoteRecurrence, SoulCategory, SoulFactLine,
+        SoulFactPolicy, TensionBand, TensionReading,
     };
     use lettuce_types::{CharacterId, TimestampMillis};
 
@@ -412,10 +432,10 @@ mod tests {
     fn quiet_state() -> CompanionPromptState {
         CompanionPromptState {
             interaction_count: 0,
-            closeness: RelationshipBand::Neutral,
-            trust: RelationshipBand::Neutral,
-            affection: RelationshipBand::Neutral,
-            tension: 0.0,
+            closeness: RelationshipReading::of(RelationshipAxis::Closeness, 0.1),
+            trust: RelationshipReading::of(RelationshipAxis::Trust, 0.1),
+            affection: RelationshipReading::of(RelationshipAxis::Affection, 0.05),
+            tension: TensionReading::of(0.0),
             expressed: vec![
                 EmotionReading {
                     dimension: EmotionDimension::Calm,
@@ -445,7 +465,7 @@ mod tests {
         let text = RuntimeText::from_seed(BuiltInPromptId::CompanionRuntime);
         assert_eq!(
             render_companion_state(&text, "Mira", Some("  "), &quiet_state()).expect("render"),
-            "The following relationship and emotional state describes Mira's live relationship with the current conversation partner, the person currently speaking in this chat.\nDo not apply these metrics to third-party people mentioned in character definitions, persona descriptions, lore, or memories unless that relationship is explicitly stated.\nCloseness, trust, and affection are bidirectional: they can run negative, meaning the character actively dislikes, distrusts, or wants distance from the partner, not merely feels neutral.\nTreat these metrics as supporting signals, not as permission to contradict the chat history, memories, or established relationship events. Preserve established emotional breakthroughs as settled continuity; never reset or rediscover them merely because a metric band is lower.\nRelationship duration context: this session state has tracked 0 user interactions.\nCurrent Mira <-> the current conversation partner relationship stance: closeness acquainted, trust neutral, affection neutral; tension 0%.\nExpressed tone right now: calm (50%), warmth (34%), trust (30%)."
+            "The following relationship and emotional state describes Mira's live relationship with the current conversation partner, the person currently speaking in this chat.\nDo not apply these metrics to third-party people mentioned in character definitions, persona descriptions, lore, or memories unless that relationship is explicitly stated.\nCloseness, trust, and affection are bidirectional: they can run negative, meaning the character actively dislikes, distrusts, or wants distance from the partner, not merely feels neutral.\nTreat these metrics as supporting signals, not as permission to contradict the chat history, memories, or established relationship events. Preserve established emotional breakthroughs as settled continuity; never reset or rediscover them merely because a metric band is lower.\nRelationship duration context: this session state has tracked 0 user interactions.\nCurrent Mira <-> the current conversation partner relationship stance: closeness: neutral - neither seeks nor avoids them (10 on a scale from -100 to 100), trust: neutral - no strong lean either way (10 on a scale from -100 to 100), affection: neutral - no strong feeling either way (5 on a scale from -100 to 100); tension: calm - at ease, no friction between them (0 on a scale from 0 to 100).\nExpressed tone right now: calm (50%), warmth (34%), trust (30%)."
         );
     }
 
@@ -454,10 +474,10 @@ mod tests {
         let text = RuntimeText::from_seed(BuiltInPromptId::CompanionRuntime);
         let state = CompanionPromptState {
             interaction_count: 1,
-            closeness: RelationshipBand::Lowest,
-            trust: RelationshipBand::Low,
-            affection: RelationshipBand::Highest,
-            tension: 0.456,
+            closeness: RelationshipReading::of(RelationshipAxis::Closeness, -0.51),
+            trust: RelationshipReading::of(RelationshipAxis::Trust, -0.5),
+            affection: RelationshipReading::of(RelationshipAxis::Affection, 0.51),
+            tension: TensionReading::of(0.456),
             expressed: Vec::new(),
             continuity_episode: Some(2),
             soul: vec![
@@ -480,7 +500,7 @@ mod tests {
             tail,
             vec![
                 "Relationship duration context: this session state has tracked 1 user interaction.",
-                "Current Mira <-> Ari relationship stance: closeness withdrawing/wants distance, trust wary, affection deeply affectionate; tension 46%.",
+                "Current Mira <-> Ari relationship stance: closeness: avoidant - actively keeps them at arm's length (-51 on a scale from -100 to 100), trust: wary - on guard, expects to be let down (-50 on a scale from -100 to 100), affection: affectionate - cares for them, feels real warmth (51 on a scale from -100 to 100); tension: tense - noticeable strain, guarded exchanges (46 on a scale from 0 to 100).",
                 "Expressed tone right now: steady and low-intensity.",
                 "Continuity: this chat is episode 2 of one continuous relationship. Treat earlier shared memories and settled milestones as prior episodes, not as events that need to be rediscovered.",
                 "Soul essence: Curious.",
@@ -493,9 +513,9 @@ mod tests {
             ]
         );
         let state = CompanionPromptState {
-            closeness: RelationshipBand::Highest,
-            trust: RelationshipBand::High,
-            affection: RelationshipBand::Low,
+            closeness: RelationshipReading::of(RelationshipAxis::Closeness, 0.9),
+            trust: RelationshipReading::of(RelationshipAxis::Trust, 0.3),
+            affection: RelationshipReading::of(RelationshipAxis::Affection, -0.3),
             regulation: Some(RegulationCue::Transparent),
             reassurance: Some(ReassuranceCue::Avoidant),
             ..quiet_state()
@@ -503,12 +523,60 @@ mod tests {
         let rendered = render_companion_state(&text, "Mira", Some("Ari"), &state).expect("render");
         assert!(
             rendered.contains(
-                "closeness intimate, trust trusting, affection cold/irritated; tension 0%."
+                "closeness: intimate - deeply bonded, wants closeness (90 on a scale from -100 to 100), trust: open - no active suspicion, but trust not yet earned (30 on a scale from -100 to 100), affection: indifferent - indifferent to them, they don't matter (-30 on a scale from -100 to 100); tension: calm - at ease, no friction between them (0 on a scale from 0 to 100)."
             )
         );
         assert!(rendered.ends_with(
             "Regulation: relatively emotionally direct when trust is present.\nWhen unsettled, may avoid asking directly for reassurance."
         ));
+    }
+
+    #[test]
+    fn stance_line_renders_legacy_labels_glosses_and_raw_scores() {
+        let text = RuntimeText::from_seed(BuiltInPromptId::CompanionRuntime);
+        let stance = |closeness: f64, trust: f64, affection: f64, tension: f64| {
+            let state = CompanionPromptState {
+                closeness: RelationshipReading::of(RelationshipAxis::Closeness, closeness),
+                trust: RelationshipReading::of(RelationshipAxis::Trust, trust),
+                affection: RelationshipReading::of(RelationshipAxis::Affection, affection),
+                tension: TensionReading::of(tension),
+                ..quiet_state()
+            };
+            render_companion_state(&text, "Mira", Some("Ari"), &state)
+                .expect("render")
+                .lines()
+                .nth(5)
+                .expect("stance line")
+                .to_owned()
+        };
+        assert_eq!(
+            stance(-0.004, -0.16, -0.25, 0.15),
+            "Current Mira <-> Ari relationship stance: closeness: neutral - neither seeks nor avoids them (-0 on a scale from -100 to 100), trust: wary - on guard, expects to be let down (-16 on a scale from -100 to 100), affection: neutral - no strong feeling either way (-25 on a scale from -100 to 100); tension: calm - at ease, no friction between them (15 on a scale from 0 to 100)."
+        );
+        assert_eq!(
+            stance(-0.76, -0.75, -0.26, 0.85),
+            "Current Mira <-> Ari relationship stance: closeness: distant - fully checked out, no connection (-76 on a scale from -100 to 100), trust: suspicious - expects deception, looks for hidden motives (-75 on a scale from -100 to 100), affection: indifferent - indifferent to them, they don't matter (-26 on a scale from -100 to 100); tension: strained - conflict simmering, hard to ignore (85 on a scale from 0 to 100)."
+        );
+        assert_eq!(
+            stance(0.25, 0.75, 0.76, 0.86),
+            "Current Mira <-> Ari relationship stance: closeness: neutral - neither seeks nor avoids them (25 on a scale from -100 to 100), trust: trusting - relies on them, gives the benefit of the doubt (75 on a scale from -100 to 100), affection: deeply affectionate - cherishes them, strong emotional attachment (76 on a scale from -100 to 100); tension: at breaking point - on the verge of rupture (86 on a scale from 0 to 100)."
+        );
+        assert_eq!(
+            stance(-1.0, 1.0, -0.8, 0.4),
+            "Current Mira <-> Ari relationship stance: closeness: distant - fully checked out, no connection (-100 on a scale from -100 to 100), trust: deeply trusting - trusts them unconditionally (100 on a scale from -100 to 100), affection: hostile - actively dislikes them, wishes them ill (-80 on a scale from -100 to 100); tension: mild friction - minor irritation, easily smoothed over (40 on a scale from 0 to 100)."
+        );
+        assert_eq!(
+            stance(0.26, -0.5, 0.25, 0.41),
+            "Current Mira <-> Ari relationship stance: closeness: acquainted - comfortable, but keeps some distance (26 on a scale from -100 to 100), trust: wary - on guard, expects to be let down (-50 on a scale from -100 to 100), affection: neutral - no strong feeling either way (25 on a scale from -100 to 100); tension: tense - noticeable strain, guarded exchanges (41 on a scale from 0 to 100)."
+        );
+        assert_eq!(
+            stance(0.5, 0.51, 0.5, 0.66),
+            "Current Mira <-> Ari relationship stance: closeness: acquainted - comfortable, but keeps some distance (50 on a scale from -100 to 100), trust: trusting - relies on them, gives the benefit of the doubt (51 on a scale from -100 to 100), affection: warm - genuine fondness, enjoys their company (50 on a scale from -100 to 100); tension: strained - conflict simmering, hard to ignore (66 on a scale from 0 to 100)."
+        );
+        assert_eq!(
+            stance(0.51, -0.51, -0.51, 0.0),
+            "Current Mira <-> Ari relationship stance: closeness: close - seeks them out, at ease together (51 on a scale from -100 to 100), trust: suspicious - expects deception, looks for hidden motives (-51 on a scale from -100 to 100), affection: cold/irritated - annoyed by them, feels aversion (-51 on a scale from -100 to 100); tension: calm - at ease, no friction between them (0 on a scale from 0 to 100)."
+        );
     }
 
     #[test]
@@ -549,14 +617,26 @@ mod tests {
         for metric in ["closeness", "trust", "affection"] {
             for band in [
                 RelationshipBand::Lowest,
+                RelationshipBand::Lower,
                 RelationshipBand::Low,
                 RelationshipBand::Neutral,
                 RelationshipBand::High,
+                RelationshipBand::Higher,
                 RelationshipBand::Highest,
             ] {
                 keys.push(super::band_key(metric, band));
             }
         }
+        keys.extend(
+            [
+                TensionBand::Calm,
+                TensionBand::MildFriction,
+                TensionBand::Tense,
+                TensionBand::Strained,
+                TensionBand::BreakingPoint,
+            ]
+            .map(|band| super::tension_key(band).to_owned()),
+        );
         keys.extend(
             lettuce_companions::SOUL_PROMPT_ORDER.map(|category| soul_key(category).to_owned()),
         );

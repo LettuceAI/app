@@ -1,6 +1,9 @@
 use lettuce_types::TimestampMillis;
 
-use crate::{CompanionRuntimeState, CompanionSoulIdentity, EmotionVector, SoulCategory, SoulState};
+use crate::{
+    CompanionRuntimeState, CompanionSoulIdentity, EmotionVector, RelationshipAxis, SoulCategory,
+    SoulState,
+};
 
 #[derive(Debug)]
 pub struct CompanionPromptStateInput<'a> {
@@ -12,29 +15,105 @@ pub struct CompanionPromptStateInput<'a> {
     pub effective_at: TimestampMillis,
 }
 
-/// The legacy five-step band shared by closeness, trust and affection.
+/// The value below which an axis leaves its neutral zone. Trust and
+/// closeness keep a positive-skewed neutral zone; affection's is symmetric.
+const fn neutral_floor(axis: RelationshipAxis) -> f64 {
+    match axis {
+        RelationshipAxis::Closeness | RelationshipAxis::Trust => -0.15,
+        RelationshipAxis::Affection => -0.25,
+    }
+}
+
+/// The legacy seven-step band of a signed relationship axis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RelationshipBand {
     Lowest,
+    Lower,
     Low,
     Neutral,
     High,
+    Higher,
     Highest,
 }
 
 impl RelationshipBand {
     #[must_use]
-    pub fn of(value: f64) -> Self {
-        if value < -0.5 {
+    pub fn of(axis: RelationshipAxis, value: f64) -> Self {
+        if value < -0.75 {
             Self::Lowest
-        } else if value < -0.15 {
+        } else if value < -0.5 {
+            Self::Lower
+        } else if value < neutral_floor(axis) {
             Self::Low
-        } else if value <= 0.15 {
+        } else if value <= 0.25 {
             Self::Neutral
         } else if value <= 0.5 {
             Self::High
+        } else if value <= 0.75 {
+            Self::Higher
         } else {
             Self::Highest
+        }
+    }
+}
+
+/// The legacy five-step band of the unsigned tension axis.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TensionBand {
+    Calm,
+    MildFriction,
+    Tense,
+    Strained,
+    BreakingPoint,
+}
+
+impl TensionBand {
+    #[must_use]
+    pub fn of(value: f64) -> Self {
+        if value <= 0.15 {
+            Self::Calm
+        } else if value <= 0.40 {
+            Self::MildFriction
+        } else if value <= 0.65 {
+            Self::Tense
+        } else if value <= 0.85 {
+            Self::Strained
+        } else {
+            Self::BreakingPoint
+        }
+    }
+}
+
+/// A relationship axis value together with the band it falls in.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RelationshipReading {
+    pub band: RelationshipBand,
+    pub value: f64,
+}
+
+impl RelationshipReading {
+    #[must_use]
+    pub fn of(axis: RelationshipAxis, value: f64) -> Self {
+        Self {
+            band: RelationshipBand::of(axis, value),
+            value,
+        }
+    }
+}
+
+/// The tension value together with the band it falls in.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TensionReading {
+    pub band: TensionBand,
+    pub value: f64,
+}
+
+impl TensionReading {
+    #[must_use]
+    pub fn of(value: f64) -> Self {
+        Self {
+            band: TensionBand::of(value),
+            value,
         }
     }
 }
@@ -126,10 +205,10 @@ pub const SOUL_PROMPT_ORDER: [SoulCategory; 12] = [
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompanionPromptState {
     pub interaction_count: u32,
-    pub closeness: RelationshipBand,
-    pub trust: RelationshipBand,
-    pub affection: RelationshipBand,
-    pub tension: f64,
+    pub closeness: RelationshipReading,
+    pub trust: RelationshipReading,
+    pub affection: RelationshipReading,
+    pub tension: TensionReading,
     pub expressed: Vec<EmotionReading>,
     pub continuity_episode: Option<u32>,
     pub soul: Vec<(SoulCategory, String)>,
@@ -147,10 +226,10 @@ pub fn prompt_state(input: &CompanionPromptStateInput<'_>) -> CompanionPromptSta
     let rel = &state.relationship_state;
     CompanionPromptState {
         interaction_count: rel.interaction_count,
-        closeness: RelationshipBand::of(rel.closeness),
-        trust: RelationshipBand::of(rel.trust),
-        affection: RelationshipBand::of(rel.affection),
-        tension: rel.tension,
+        closeness: RelationshipReading::of(RelationshipAxis::Closeness, rel.closeness),
+        trust: RelationshipReading::of(RelationshipAxis::Trust, rel.trust),
+        affection: RelationshipReading::of(RelationshipAxis::Affection, rel.affection),
+        tension: TensionReading::of(rel.tension),
         expressed: top_dimensions(&state.emotional_state.expressed, 3),
         continuity_episode: (input.continuity_episode > 0).then_some(input.continuity_episode),
         soul: SOUL_PROMPT_ORDER
@@ -336,10 +415,10 @@ mod tests {
             state,
             CompanionPromptState {
                 interaction_count: 0,
-                closeness: RelationshipBand::Neutral,
-                trust: RelationshipBand::Neutral,
-                affection: RelationshipBand::Neutral,
-                tension: 0.0,
+                closeness: RelationshipReading::of(RelationshipAxis::Closeness, 0.1),
+                trust: RelationshipReading::of(RelationshipAxis::Trust, 0.1),
+                affection: RelationshipReading::of(RelationshipAxis::Affection, 0.05),
+                tension: TensionReading::of(0.0),
                 expressed: Vec::new(),
                 continuity_episode: None,
                 soul: Vec::new(),
@@ -418,9 +497,15 @@ mod tests {
             continuity_episode: 0,
             effective_at: TimestampMillis::new(20),
         });
-        assert_eq!(state.closeness, RelationshipBand::Lowest);
-        assert_eq!(state.trust, RelationshipBand::Low);
-        assert_eq!(state.affection, RelationshipBand::Highest);
+        assert_eq!(
+            state.closeness,
+            RelationshipReading {
+                band: RelationshipBand::Lower,
+                value: -0.51,
+            }
+        );
+        assert_eq!(state.trust.band, RelationshipBand::Low);
+        assert_eq!(state.affection.band, RelationshipBand::Higher);
         assert_eq!(state.blocked, vec![reading(EmotionDimension::Hurt, 0.08)]);
         assert_eq!(state.active_signals, vec!["emotion:conflict".to_owned()]);
         assert_eq!(state.regulation, Some(RegulationCue::Suppressed));
@@ -450,16 +535,60 @@ mod tests {
 
     #[test]
     fn every_relationship_band_boundary_is_exact() {
-        for (value, band) in [
-            (-0.51, RelationshipBand::Lowest),
-            (-0.5, RelationshipBand::Low),
-            (-0.15, RelationshipBand::Neutral),
-            (0.15, RelationshipBand::Neutral),
-            (0.5, RelationshipBand::High),
-            (0.51, RelationshipBand::Highest),
-            (f64::NAN, RelationshipBand::Highest),
+        for (value, signed, affection) in [
+            (-0.76, RelationshipBand::Lowest, RelationshipBand::Lowest),
+            (-0.75, RelationshipBand::Lower, RelationshipBand::Lower),
+            (-0.51, RelationshipBand::Lower, RelationshipBand::Lower),
+            (-0.5, RelationshipBand::Low, RelationshipBand::Low),
+            (-0.26, RelationshipBand::Low, RelationshipBand::Low),
+            (-0.25, RelationshipBand::Low, RelationshipBand::Neutral),
+            (-0.16, RelationshipBand::Low, RelationshipBand::Neutral),
+            (-0.15, RelationshipBand::Neutral, RelationshipBand::Neutral),
+            (0.25, RelationshipBand::Neutral, RelationshipBand::Neutral),
+            (0.26, RelationshipBand::High, RelationshipBand::High),
+            (0.5, RelationshipBand::High, RelationshipBand::High),
+            (0.51, RelationshipBand::Higher, RelationshipBand::Higher),
+            (0.75, RelationshipBand::Higher, RelationshipBand::Higher),
+            (0.76, RelationshipBand::Highest, RelationshipBand::Highest),
+            (
+                f64::NAN,
+                RelationshipBand::Highest,
+                RelationshipBand::Highest,
+            ),
         ] {
-            assert_eq!(RelationshipBand::of(value), band, "{value}");
+            assert_eq!(
+                RelationshipBand::of(RelationshipAxis::Closeness, value),
+                signed,
+                "{value}"
+            );
+            assert_eq!(
+                RelationshipBand::of(RelationshipAxis::Trust, value),
+                signed,
+                "{value}"
+            );
+            assert_eq!(
+                RelationshipBand::of(RelationshipAxis::Affection, value),
+                affection,
+                "{value}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_tension_band_boundary_is_exact() {
+        for (value, band) in [
+            (0.0, TensionBand::Calm),
+            (0.15, TensionBand::Calm),
+            (0.16, TensionBand::MildFriction),
+            (0.40, TensionBand::MildFriction),
+            (0.41, TensionBand::Tense),
+            (0.65, TensionBand::Tense),
+            (0.66, TensionBand::Strained),
+            (0.85, TensionBand::Strained),
+            (0.86, TensionBand::BreakingPoint),
+            (f64::NAN, TensionBand::BreakingPoint),
+        ] {
+            assert_eq!(TensionBand::of(value), band, "{value}");
         }
     }
 
