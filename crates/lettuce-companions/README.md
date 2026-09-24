@@ -148,9 +148,14 @@ a direct conversation. The same launch boundary persists the character/persona
 continuity sequence, and the state repository exposes the stored episode to
 prompt assembly without deriving it from message history.
 
-The pure emotion-classifier reducer copies the legacy GoEmotions behavior
-directly: only the first eight scored labels are considered, per-label
-thresholds remain `0.18`/`0.22`/`0.55`, grouped signal names are deduplicated
+The pure emotion-classifier reducer keeps the legacy GoEmotions behavior with
+one user-approved change: each `EmotionLabelScore` carries the classifier's
+calibrated threshold for its label (Lettuce Thymos's per-class thresholds from
+its `labels.json`, applied when `score >= threshold`) instead of legacy's
+SamLowe thresholds (`neutral` 0.55; love, caring, gratitude, remorse, anger,
+sadness and fear 0.18; others 0.22). The reducer itself stays pure. Only the
+first eight scored labels are considered, the label-to-signal mapping of all 28
+labels is unchanged, grouped signal names are deduplicated
 while their numeric effects still accumulate, and the exact emotion,
 relationship, confidence, clamping, and unavailable-model fallback values are
 preserved. Verified ONNX tokenization/model execution now lives behind the

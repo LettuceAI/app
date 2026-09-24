@@ -40,10 +40,39 @@ and `v4-tokenizer.json` in place (revision `legacy-import:<BLAKE3 prefix>`).
 `select_embedding_family` loads the preferred family when installed, else
 Eidos, else v4.
 
-The companion-emotion installed contract separately verifies the exact model,
-tokenizer, and config triplet used by the GoEmotions auxiliary classifier. It
-also requires an immutable source revision before exposing paths to the runtime;
-model loading and config interpretation remain owned by `lettuce-embeddings`.
+The companion-emotion model is Lettuce Thymos
+(`Zeolit/lettuce-thymos-26m-v1`). `RemoteCompanionEmotionModel::from_pinned_files` takes
+`onnx/model_quantized.onnx`, `tokenizer.json` and `labels.json` from the shared
+`model_pin_request` / `pinned_files` answer: its forty-character commit becomes
+the revision every file is fetched at, the two LFS files must carry their size
+and SHA-256, and the git-stored `labels.json` its size and git blob id; a listing
+with neither digest for a file is refused. The blob id is checked with the
+shared `verify_git_blob` once the download finishes (a mismatching file is
+removed so a retry downloads it again), so every file is digest-verified. No
+revision or digest is compiled in. Files land confined below
+`<root>/revisions/<revision>/<remote path>` through `PinnedArtifactStore`.
+`CompanionEmotionInstallStore::lock` serializes admission, completion and
+removal within the process; under it `active-install.json` names the one
+admitted install job and its pinned revision, so the application admits a
+single Thymos install at a time. `complete` refuses (busy) while another
+revision is the active install, writes `installed.json` (revision plus each
+file's size and BLAKE3) only after the full manifest verification, staging it
+as `installed.json.next` and renaming it over the old record so a crash leaves
+either the old or the new record, clears the active install, then removes the
+Thymos files of every other revision and every partial download below
+`.downloads/`; a failure there leaves the new install valid and is reported as
+`cleanup_pending`. Verification rehashes every file, parses `labels.json` under
+the upstream `inference.py` rules (labels and thresholds of equal length,
+thresholds finite in `[0, 1]`, `max_length` required, window at least 4 with a
+stride below the content length) and, when `labels.json` names a
+`model_sha256`, checks the model's SHA-256 against it. A recorded path outside
+the managed layout is refused. Status reports not installed, installed (files
+present at their recorded sizes) or damaged. Removal deletes the record first,
+then the active-install record, the three Thymos files of every
+`revisions/<revision>/` directory (by layout, not by record, so a corrupt or
+out-of-layout record never strands files) and every partial download; a failed
+sweep is retried by the next removal or install, and nothing outside the layout
+is deleted. The legacy SamLowe triplet contract is deleted.
 
 Installed Whisper models now have a separate immutable manifest with model ID,
 source revision, byte size, BLAKE3 digest, language/quantization facts and

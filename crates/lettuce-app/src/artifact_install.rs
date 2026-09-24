@@ -227,12 +227,36 @@ impl<J: JobStore + ?Sized> ArtifactInstallCoordinator<'_, J> {
         &self,
         plan: &ArtifactInstallPlan,
     ) -> Result<ArtifactInstallAdmission, ArtifactInstallError> {
+        self.admit_with_display(plan, None)
+    }
+
+    /// Like [`Self::admit`], with `label` as the job subject's display, so
+    /// every install of one family (any revision) can be found in the job
+    /// store by that label.
+    pub fn admit_labeled(
+        &self,
+        plan: &ArtifactInstallPlan,
+        label: &str,
+    ) -> Result<ArtifactInstallAdmission, ArtifactInstallError> {
+        self.admit_with_display(plan, Some(label))
+    }
+
+    fn admit_with_display(
+        &self,
+        plan: &ArtifactInstallPlan,
+        display: Option<&str>,
+    ) -> Result<ArtifactInstallAdmission, ArtifactInstallError> {
         if plan.artifacts.is_empty() {
             return Err(ArtifactInstallError::InvalidWork);
         }
         let asset_id = plan.outcome_asset_id();
-        let subject = JobSubject::new(SubjectKind::ArtifactInstall, asset_id.to_string())
+        let mut subject = JobSubject::new(SubjectKind::ArtifactInstall, asset_id.to_string())
             .map_err(|_| ArtifactInstallError::InvalidWork)?;
+        if let Some(display) = display {
+            subject = subject
+                .with_display(display)
+                .map_err(|_| ArtifactInstallError::InvalidWork)?;
+        }
         let mut earlier = 0_usize;
         let mut page = PageRequest::default();
         loop {

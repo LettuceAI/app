@@ -2150,6 +2150,55 @@ files. Corrected: a single-color image produced `#hex NaN%` (invalid CSS) and
 now spans 0% to 100%; GIF avatars, which failed to decode as `.webp`, now
 decode.
 
+## Companion emotion model (Lettuce Thymos)
+
+`companion_emotion_install` replaces legacy's `start_companion_download("emotion")`,
+`delete_companion_model("emotion")` and the `companionEmotionInstalled` flag of
+`get_embedding_model_info`. `HuggingFaceBrowser::companion_emotion_model`
+issues the shared `model_pin_request` for `Zeolit/lettuce-thymos-26m-v1` and
+reads it with the shared `pinned_files`, so the install is pinned to the commit
+Hugging Face reports. `admit_companion_emotion_install` admits one
+`ArtifactInstall` job below `<app folder>/models/thymos` through
+`ArtifactInstallCoordinator::admit_labeled`, whose subject carries the
+`Lettuce Thymos` display label; download progress, resume and cancellation are
+the shared job's. The job store decides whether a Thymos install is active: any
+queued or running job with that label, whatever revision it pins.
+`active-install.json` is only a hint carrying the admitted job id and pinned
+remote, so another request joins that job with its own revision and plan; when
+the hint cannot supply them, the request gets
+`CompanionEmotionDownloadError::InstallInProgress` with the job to wait on. With
+no active Thymos job a corrupt or stale hint is discarded. Two revisions
+therefore never download or complete at once.
+`finish_companion_emotion_install` (refused as busy while a Thymos job is
+active) records the install only after the files, label metadata and optional
+model digest verify, replacing the record atomically, then sweeps other
+revisions and partial downloads (leftovers are logged and swept again by the
+next install or removal). `companion_emotion_status` and admission first
+reconcile: a hint whose job succeeded but was never finished is finished the
+same way (a failed verification is logged and leaves it not installed), and a
+hint whose job ended otherwise is dropped. A succeeded job without a readable
+hint cannot be finished this way, since the job store does not record the
+revision it pinned; the next admission installs again. `remove_companion_emotion`
+is refused as busy while a Thymos job is active and otherwise sweeps the record,
+every revision and every partial download. `load_companion_emotion` returns no
+classifier, with a warning, when Thymos is not installed, is damaged, fails
+verification or ONNX Runtime is unavailable, so companion turns keep legacy's
+neutral update; `try_load_companion_emotion` gives the reason for status
+reporting.
+
+Host wiring requirement for the frontend/command phase: a Thymos job admitted
+but never claimed stays `Queued` (a claimed job that was running at a crash
+becomes `Interrupted` through lease recovery), and a queued Thymos job keeps
+every later admission, completion and removal busy. At startup the host must
+claim and run, or recover, queued `ArtifactInstall` jobs.
+
+Approved removals: the legacy SamLowe `roberta-base-go_emotions-onnx`
+classifier is not ported, and its files under
+`<legacy app folder>/models/embedding/companion-emotion` are neither imported
+nor touched (legacy kept no other companion-model state, so nothing else is
+imported); Thymos must be downloaded. The legacy companion NER and router (NLI)
+models are not ported either.
+
 ## Embedding models (Lettuce Eidos)
 
 Embedding models (`embedding_models`): `EmbeddingModelCatalog::pin` sends the

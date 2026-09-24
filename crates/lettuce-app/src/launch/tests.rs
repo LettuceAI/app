@@ -3108,6 +3108,7 @@ fn companion_turn_coordinator_classifies_once_and_replays_without_state_drift() 
         labels: vec![EmotionLabelScore {
             label: "love".into(),
             score: 1.0,
+            threshold: 0.438_098_16,
         }],
         confidence: 1.0,
     })));

@@ -6,7 +6,8 @@ use lettuce_embeddings::{
 };
 use lettuce_jobs::handle::CancellationToken;
 use lettuce_model_hub::{
-    InstalledCompanionEmotionManifest, InstalledEmbeddingManifest, ModelArtifactError,
+    CompanionEmotionInstallError, InstalledCompanionEmotionManifest, InstalledEmbeddingManifest,
+    ModelArtifactError,
 };
 use lettuce_types::MemoryId;
 
@@ -221,6 +222,8 @@ pub enum CompanionEmotionServiceError {
     Artifacts(#[from] ModelArtifactError),
     #[error("companion emotion runtime failed: {0}")]
     Runtime(#[from] EmotionClassifierError),
+    #[error("companion emotion install is unavailable: {0}")]
+    Install(#[from] CompanionEmotionInstallError),
 }
 
 #[cfg(test)]

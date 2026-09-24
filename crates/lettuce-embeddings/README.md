@@ -47,21 +47,37 @@ or loading fails. `retrieval_threshold` returns the configured threshold for raw
 cosine and, for a published calibration, its default threshold, or its
 fallback when no candidate reaches the default.
 
-The companion emotion auxiliary runtime loads only model-hub-verified model,
-tokenizer, and config artifacts. It copies the legacy GoEmotions path exactly:
-numeric `id2label` sorting with the 28-label fallback, special-token encoding,
-512-token truncation, `input_ids` plus `attention_mask`, sigmoid scoring,
-descending ordering, unknown-index labels, and top-three maximum confidence.
-Blank text returns no classification. Installed artifact/config/tensor errors
-fail closed; the application can preserve legacy's neutral fallback when no
-verified installation is available. A one-megabyte pre-tokenization input cap
-is a deliberate safety correction over legacy's unbounded allocation.
+The companion emotion runtime runs Lettuce Thymos
+(`Zeolit/lettuce-thymos-26m-v1`, int8 ONNX) from model-hub-verified model,
+tokenizer and `labels.json` artifacts. The label order, per-class thresholds and
+window length come from the verified `labels.json`, never from code. Text is
+trimmed (blank returns no classification), tokenized without special tokens and
+split into windows as the upstream `inference.py` does: `max_length` (96) tokens
+per window including the window's own `<s>`/`</s>`, stride
+`max(1, (max_length - 2) * 3 / 4)` (70), stopping at the window that reaches the
+last token, an empty encoding becoming one `<unk>`. Windows are right-padded
+with `<pad>` to the longest window of the whole text and run eight at a time,
+each run keeping that one shared width, with `input_ids` and `attention_mask`.
+Loading checks that the model's `probabilities` output is float with as many
+columns as `labels.json` has labels (a dynamic width is checked with one probe
+window), so a mismatched pair fails at load rather than on the first turn. The `probabilities` output is read by name and is already
+sigmoided; it is never passed through a sigmoid again. Each label keeps its
+maximum across windows. Scores are sorted descending, each carrying its label's
+threshold, and confidence stays legacy's top-three maximum. A non-finite or
+out-of-range probability or a wrong output shape fails closed. The legacy
+SamLowe `roberta-base-go_emotions-onnx` path (`config.json` `id2label`, 512-token
+truncation, sigmoid over logits, fixed thresholds) is deleted. A one-megabyte
+input cap remains a safety correction over legacy. The ignored live test's
+reference probabilities were taken with ONNX Runtime 1.22 (the version this
+build targets); ONNX Runtime 1.23 and later differ by up to about 1.4e-3 on its
+long text.
 
 Inference declares model-load, disk-read, and CPU job resources and cooperates
 with cancellation before tokenization, before execution, during ONNX graph
 execution, and before publishing output. Apple targets attempt CoreML with a
-logged CPU fallback; the actual legacy Android/non-Apple path remains CPU. NER,
-router models, download UI, and retrieval ranking remain outside this slice.
+logged CPU fallback; the actual legacy Android/non-Apple path remains CPU.
+The legacy companion NER and router (NLI) models are not ported (approved
+removal); retrieval ranking remains outside this slice.
 
 Memory projections are rebuildable derived data behind the domain-owned
 `MemoryEmbeddingRepository` port. Ready rows carry exact source text, immutable

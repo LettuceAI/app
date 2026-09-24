@@ -4,6 +4,9 @@ use crate::{EmotionVector, RelationshipDelta};
 pub struct EmotionLabelScore {
     pub label: String,
     pub score: f32,
+    /// The classifier's calibrated decision threshold for this label; the
+    /// label applies when `score >= threshold`.
+    pub threshold: f32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -43,7 +46,7 @@ pub fn signals_from_classification(
     let mut applied_score = 0.0_f64;
 
     for item in classification.labels.iter().take(8) {
-        if item.score < label_threshold(item.label.as_str()) {
+        if item.score < item.threshold {
             continue;
         }
         applied_score = applied_score.max(item.score as f64);
@@ -202,14 +205,6 @@ fn apply_emotion_label(
     }
 }
 
-fn label_threshold(label: &str) -> f32 {
-    match label {
-        "neutral" => 0.55,
-        "love" | "caring" | "gratitude" | "remorse" | "anger" | "sadness" | "fear" => 0.18,
-        _ => 0.22,
-    }
-}
-
 fn push_signal(signals: &mut Vec<String>, label: &str) {
     if !signals.iter().any(|existing| existing == label) {
         signals.push(label.to_string());
@@ -225,9 +220,14 @@ mod tests {
     use super::*;
 
     fn score(label: &str, score: f32) -> EmotionLabelScore {
+        scored(label, score, 0.0)
+    }
+
+    fn scored(label: &str, score: f32, threshold: f32) -> EmotionLabelScore {
         EmotionLabelScore {
             label: label.into(),
             score,
+            threshold,
         }
     }
 
@@ -266,18 +266,85 @@ mod tests {
     }
 
     #[test]
-    fn thresholds_top_eight_and_confidence_copy_legacy_order() {
+    fn every_go_emotions_label_keeps_its_legacy_signal_group() {
+        let cases = [
+            ("admiration", "emotion:appreciation"),
+            ("amusement", "emotion:positive"),
+            ("anger", "emotion:conflict"),
+            ("annoyance", "emotion:conflict"),
+            ("approval", "emotion:appreciation"),
+            ("caring", "emotion:caring"),
+            ("confusion", "emotion:uncertainty"),
+            ("curiosity", "emotion:engagement"),
+            ("desire", "emotion:desire"),
+            ("disappointment", "emotion:distress"),
+            ("disapproval", "emotion:conflict"),
+            ("disgust", "emotion:conflict"),
+            ("embarrassment", "emotion:embarrassment"),
+            ("excitement", "emotion:positive"),
+            ("fear", "emotion:anxiety"),
+            ("gratitude", "emotion:appreciation"),
+            ("grief", "emotion:distress"),
+            ("joy", "emotion:positive"),
+            ("love", "emotion:love"),
+            ("nervousness", "emotion:anxiety"),
+            ("optimism", "emotion:positive"),
+            ("pride", "emotion:pride"),
+            ("realization", "emotion:engagement"),
+            ("relief", "emotion:relief"),
+            ("remorse", "emotion:remorse"),
+            ("sadness", "emotion:distress"),
+            ("surprise", "emotion:engagement"),
+            ("neutral", "emotion:neutral"),
+        ];
+        assert_eq!(cases.len(), 28);
+        for (label, signal) in cases {
+            let bundle = signals_from_classification(&EmotionClassification {
+                labels: vec![score(label, 0.5)],
+                confidence: 0.5,
+            });
+            assert_eq!(bundle.signals, [signal], "label {label}");
+        }
+        for (label, grouped_with) in [
+            ("admiration", "gratitude"),
+            ("approval", "gratitude"),
+            ("amusement", "joy"),
+            ("excitement", "joy"),
+            ("optimism", "joy"),
+            ("grief", "sadness"),
+            ("disappointment", "sadness"),
+            ("nervousness", "fear"),
+            ("annoyance", "anger"),
+            ("disapproval", "anger"),
+            ("disgust", "anger"),
+            ("realization", "curiosity"),
+            ("surprise", "curiosity"),
+        ] {
+            let member = signals_from_classification(&EmotionClassification {
+                labels: vec![score(label, 0.5)],
+                confidence: 0.5,
+            });
+            let leader = signals_from_classification(&EmotionClassification {
+                labels: vec![score(grouped_with, 0.5)],
+                confidence: 0.5,
+            });
+            assert_eq!(member, leader, "{label} applies the {grouped_with} deltas");
+        }
+    }
+
+    #[test]
+    fn each_label_applies_at_its_own_threshold() {
         let bundle = signals_from_classification(&EmotionClassification {
             labels: vec![
-                score("neutral", 0.54),
-                score("love", 0.18),
-                score("caring", 0.17),
-                score("joy", 0.22),
-                score("confusion", 0.21),
-                score("gratitude", 0.19),
-                score("fear", 0.18),
-                score("pride", 0.22),
-                score("anger", 1.0),
+                scored("neutral", 0.54, 0.55),
+                scored("love", 0.438, 0.438),
+                scored("caring", 0.2099, 0.21),
+                scored("joy", 0.28, 0.2738),
+                scored("confusion", 0.21, 0.2494),
+                scored("gratitude", 0.47, 0.4717),
+                scored("fear", 0.27, 0.2665),
+                scored("pride", 0.24, 0.238),
+                scored("anger", 1.0, 0.0),
             ],
             confidence: 0.8,
         });
@@ -286,13 +353,27 @@ mod tests {
             [
                 "emotion:love",
                 "emotion:positive",
-                "emotion:appreciation",
                 "emotion:anxiety",
                 "emotion:pride"
             ]
         );
-        assert!((bundle.confidence - 0.655).abs() < 1e-8);
+        assert!((bundle.confidence - (0.8 * 0.75 + f64::from(0.438_f32) * 0.25)).abs() < 1e-12);
         assert_eq!(bundle.relationship_delta.tension, 0.0);
+    }
+
+    #[test]
+    fn confidence_blends_the_classifier_confidence_with_the_best_applied_score() {
+        let bundle = signals_from_classification(&EmotionClassification {
+            labels: vec![scored("joy", 0.3, 0.5), scored("love", 0.6, 0.4)],
+            confidence: 0.9,
+        });
+        assert_eq!(bundle.signals, ["emotion:love"]);
+        assert!((bundle.confidence - (0.9 * 0.75 + f64::from(0.6_f32) * 0.25)).abs() < 1e-12);
+        let clamped = signals_from_classification(&EmotionClassification {
+            labels: vec![score("love", 3.0)],
+            confidence: 2.0,
+        });
+        assert_eq!(clamped.confidence, 1.0);
     }
 
     #[test]
@@ -308,7 +389,7 @@ mod tests {
     #[test]
     fn no_applied_label_and_unavailable_model_keep_distinct_legacy_fallbacks() {
         let empty = signals_from_classification(&EmotionClassification {
-            labels: vec![score("neutral", 0.54), score("unknown", 1.0)],
+            labels: vec![scored("neutral", 0.54, 0.55), score("unknown", 1.0)],
             confidence: 0.9,
         });
         assert!(empty.signals.is_empty());
@@ -319,6 +400,20 @@ mod tests {
         assert!(unavailable.signals.is_empty());
         assert_eq!(unavailable.relationship_delta.stability, 0.01);
         assert_eq!(unavailable.confidence, 0.2);
+    }
+
+    #[test]
+    fn only_the_top_eight_labels_are_considered() {
+        let mut labels = (0..8)
+            .map(|index| scored("unknown", 0.9 - 0.01 * index as f32, 0.0))
+            .collect::<Vec<_>>();
+        labels.push(score("love", 0.5));
+        let bundle = signals_from_classification(&EmotionClassification {
+            labels,
+            confidence: 0.9,
+        });
+        assert!(bundle.signals.is_empty());
+        assert_eq!(bundle.confidence, 0.25);
     }
 
     #[test]
