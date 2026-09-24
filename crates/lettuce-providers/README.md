@@ -211,8 +211,14 @@ Gemini with the key as `?key=`, Gemini Express with `x-goog-api-key`,
 Stability, xAI, NanoGPT, LiteRouter binary responses, Automatic1111,
 Diffusers) with their endpoints, fields, defaults and parsers, and ComfyUI
 (upload, legacy `%TOKEN%` substitution, `/prompt`, `/history` polled every
-1.5 s up to 400 times, `/view`). One request per generation over
-`BulkHttpClient`, never retried; error texts are legacy's. Linked results are
+1.5 s up to 400 times, `/view`). Requests go over `BulkHttpClient`
+(release 2.2.5 behavior): reference images and mask are shrunk first
+(`shrink_for_upload`); OpenRouter posts to its Image API (`{base}/v1/images`,
+nearest legacy aspect ratio, `input_references`) and falls back to chat
+completions on 404, or 400/422 naming the model/endpoint; an HTTP 5xx or a
+transient `error` in a 2xx body (500/502/503/504/529) is retried once after
+1.5 s, other body errors fail as `Provider error {code}: {message}`, and 413
+gets a readable detail; error texts are legacy's. Linked results are
 downloaded, data URLs and raw base64 decoded, usage found the way legacy's
 `extract_usage` did. The job's cancellation token ends the request. ComfyUI
 workflows are the account's `ProviderConfig::ComfyUi` (both legacy importers

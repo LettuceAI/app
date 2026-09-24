@@ -43,6 +43,7 @@ pub(crate) struct ImageResponseData {
 pub(crate) enum Adapter {
     OpenAi,
     OpenRouter,
+    OpenRouterChat,
     Pollinations,
     Gemini,
     GeminiExpress,
@@ -147,6 +148,14 @@ impl Adapter {
         !matches!(self, Self::Automatic1111 | Self::Diffusers)
     }
 
+    /// The adapter to retry with when the provider rejects the request with
+    /// this status and body: OpenRouter's Image API does not serve every image
+    /// model, and chat completions still do for chat-style ones.
+    pub(crate) fn fallback(self, status: u16, body: &str) -> Option<Self> {
+        (self == Self::OpenRouter && should_fall_back_to_chat(status, body))
+            .then_some(Self::OpenRouterChat)
+    }
+
     pub(crate) fn call(
         self,
         base_url: &str,
@@ -217,7 +226,12 @@ impl Adapter {
                     json_call(path, ImageAuth::Bearer, Value::Object(body))
                 }
             }
-            Self::OpenRouter => {
+            Self::OpenRouter => json_call(
+                v1_path(base, "/images"),
+                ImageAuth::Bearer,
+                openrouter_image_payload(request),
+            ),
+            Self::OpenRouterChat => {
                 let content = if has_images {
                     let mut parts = vec![json!({"type": "text", "text": request.prompt})];
                     parts.extend(request.input_images.iter().map(
@@ -232,7 +246,7 @@ impl Adapter {
                     modalities.push("text");
                 }
                 json_call(
-                    "/v1/chat/completions".to_owned(),
+                    v1_path(base, "/chat/completions"),
                     ImageAuth::Bearer,
                     json!({
                         "model": request.external_model_id,
@@ -585,7 +599,8 @@ impl Adapter {
                     })
                     .collect()
             }
-            Self::OpenRouter => parse_openrouter(response),
+            Self::OpenRouter => parse_openrouter_images(response),
+            Self::OpenRouterChat => parse_openrouter(response),
             Self::Automatic1111 => {
                 #[derive(serde::Deserialize)]
                 struct Response {
@@ -703,6 +718,144 @@ fn gemini_aspect_ratio(size: Option<&str>) -> Option<String> {
     .then_some(ratio)
 }
 
+const OPENROUTER_ASPECT_RATIOS: [(&str, f64); 11] = [
+    ("1:1", 1.0),
+    ("4:5", 0.8),
+    ("5:4", 1.25),
+    ("3:4", 0.75),
+    ("4:3", 4.0 / 3.0),
+    ("2:3", 2.0 / 3.0),
+    ("3:2", 1.5),
+    ("9:16", 9.0 / 16.0),
+    ("16:9", 16.0 / 9.0),
+    ("9:21", 9.0 / 21.0),
+    ("21:9", 21.0 / 9.0),
+];
+
+const OPENROUTER_QUALITIES: [&str; 4] = ["auto", "low", "medium", "high"];
+
+pub(crate) fn nearest_aspect_ratio(size: Option<&str>) -> Option<&'static str> {
+    let (width, height) = parse_size_dimensions(Some(size?), 0, 0);
+    if width == 0 || height == 0 {
+        return None;
+    }
+    let ratio = f64::from(width) / f64::from(height);
+    OPENROUTER_ASPECT_RATIOS
+        .iter()
+        .min_by(|(_, a), (_, b)| (a - ratio).abs().total_cmp(&(b - ratio).abs()))
+        .map(|(label, _)| *label)
+}
+
+fn openrouter_quality(quality: Option<&str>) -> Option<&'static str> {
+    let quality = quality?.trim().to_ascii_lowercase();
+    OPENROUTER_QUALITIES
+        .into_iter()
+        .find(|candidate| *candidate == quality)
+}
+
+pub(crate) fn openrouter_image_payload(request: &ProviderImageRequest) -> Value {
+    let mut body = Map::new();
+    body.insert("model".into(), json!(request.external_model_id));
+    body.insert("prompt".into(), json!(request.prompt));
+    if request.count > 0 {
+        body.insert("n".into(), json!(request.count));
+    }
+    if let Some(aspect_ratio) = nearest_aspect_ratio(request.size.as_deref()) {
+        body.insert("aspect_ratio".into(), json!(aspect_ratio));
+    }
+    if let Some(quality) = openrouter_quality(request.quality.as_deref()) {
+        body.insert("quality".into(), json!(quality));
+    }
+    if !request.input_images.is_empty() {
+        body.insert(
+            "input_references".into(),
+            Value::Array(
+                request
+                    .input_images
+                    .iter()
+                    .map(
+                        |image| json!({"type": "image_url", "image_url": {"url": data_url(image)}}),
+                    )
+                    .collect(),
+            ),
+        );
+    }
+    Value::Object(body)
+}
+
+pub(crate) fn should_fall_back_to_chat(status: u16, body: &str) -> bool {
+    match status {
+        404 => true,
+        400 | 422 => {
+            let body = body.to_ascii_lowercase();
+            [
+                "model",
+                "endpoint",
+                "not supported",
+                "unsupported",
+                "not available",
+            ]
+            .iter()
+            .any(|needle| body.contains(needle))
+        }
+        _ => false,
+    }
+}
+
+fn parse_openrouter_images(response: Value) -> Result<Vec<ImageResponseData>, String> {
+    #[derive(serde::Deserialize)]
+    struct Image {
+        #[serde(default)]
+        b64_json: Option<String>,
+        #[serde(default)]
+        url: Option<String>,
+        #[serde(default)]
+        media_type: Option<String>,
+        #[serde(default)]
+        revised_prompt: Option<String>,
+    }
+    #[derive(serde::Deserialize)]
+    struct Response {
+        #[serde(default)]
+        data: Vec<Image>,
+    }
+    let parsed =
+        serde_json::from_value::<Response>(response).map_err(|error| parse_error(&error))?;
+    let mut results = Vec::new();
+    for image in parsed.data {
+        let text = image
+            .revised_prompt
+            .filter(|value| !value.trim().is_empty());
+        if let Some(encoded) = image.b64_json.filter(|value| !value.is_empty()) {
+            let b64_json = if encoded.starts_with("data:") {
+                encoded
+            } else {
+                let media_type = image
+                    .media_type
+                    .as_deref()
+                    .filter(|value| value.starts_with("image/"))
+                    .unwrap_or("image/png");
+                format!("data:{media_type};base64,{encoded}")
+            };
+            results.push(ImageResponseData {
+                url: None,
+                b64_json: Some(b64_json),
+                text,
+            });
+        } else if let Some(url) = image.url.filter(|value| !value.is_empty()) {
+            results.push(ImageResponseData {
+                url: Some(url),
+                b64_json: None,
+                text,
+            });
+        }
+    }
+    if results.is_empty() {
+        return Err("No images generated in response".to_owned());
+    }
+    Ok(results)
+}
+
 fn parse_openrouter(response: Value) -> Result<Vec<ImageResponseData>, String> {
     #[derive(serde::Deserialize)]
     struct ImageUrl {
@@ -759,7 +912,10 @@ fn parse_openrouter(response: Value) -> Result<Vec<ImageResponseData>, String> {
         }
     }
     if results.is_empty() {
-        return Err("No images or text generated in response".to_owned());
+        return Err(
+            "The model finished without returning an image. Try the request again or pick a different model."
+                .to_owned(),
+        );
     }
     Ok(results)
 }

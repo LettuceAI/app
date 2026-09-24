@@ -33,6 +33,15 @@ Domain core (legacy `image_generator/commands.rs` + `types.rs`):
   settings, merged LoRAs and input bytes; outputs come back as bytes (adapters
   fetch URLs), with optional token usage. `ImageProviderError` keeps the
   message legacy showed.
+- `shrink_for_upload` (legacy `input_images`): reference images past 2048 px
+  (Lanczos3) or 4 MiB are re-encoded, PNG when any pixel is transparent,
+  else JPEG at quality 90/82/74 until it fits; whenever the first image is
+  resized or re-encoded the mask follows its upright size (Nearest, PNG).
+  GIFs pass through untouched, as in legacy. Corrections: pixels are turned
+  upright by their EXIF orientation before resizing (legacy ignored it and
+  dropped the EXIF on re-encode, so rotated photos went out sideways and the
+  mask followed the sideways size), and a same-size re-encode that is not
+  smaller keeps the original bytes.
 - `ImageMedia` for `LocalMediaBlobStore`: reads input images and ingests each
   output as a `GeneratedImage` asset with producing-job and model provenance.
 - `ImageGenerationRecord` / `ImageGenerationRepository`: the durable request

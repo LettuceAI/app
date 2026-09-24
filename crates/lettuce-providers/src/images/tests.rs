@@ -179,6 +179,7 @@ async fn keyed() -> (Arc<InMemorySecretStore>, SecretOwnerId, SecretRef) {
 
 fn providers(store: Arc<InMemorySecretStore>) -> RemoteImageProviders<InMemorySecretStore> {
     RemoteImageProviders::new(store, BulkHttpClient::new().expect("client"))
+        .with_retry_delay(std::time::Duration::ZERO)
 }
 
 fn encoded(bytes: &[u8]) -> String {
@@ -371,9 +372,12 @@ async fn linked_images_are_downloaded() {
 #[tokio::test]
 async fn text_only_answers_explain_what_the_provider_said() {
     let (store, owner, key) = keyed().await;
-    let (base, recorded) = server(vec![json_response(&json!({
-        "choices": [{"message": {"content": "I cannot draw that."}}]
-    }))])
+    let (base, recorded) = server(vec![
+        response("404 Not Found", "application/json", b"{}"),
+        json_response(&json!({
+            "choices": [{"message": {"content": "I cannot draw that."}}]
+        })),
+    ])
     .await;
     let message = failure(
         providers(store)
@@ -385,11 +389,12 @@ async fn text_only_answers_explain_what_the_provider_said() {
         "No image URL or data in response. Provider returned text instead: I cannot draw that."
     );
     let recorded = recorded.await.expect("requests");
+    assert_eq!(recorded[0].request_line(), "POST /v1/images HTTP/1.1");
     assert_eq!(
-        recorded[0].request_line(),
+        recorded[1].request_line(),
         "POST /v1/chat/completions HTTP/1.1"
     );
-    assert_eq!(recorded[0].json()["modalities"], json!(["image"]));
+    assert_eq!(recorded[1].json()["modalities"], json!(["image"]));
 }
 
 #[tokio::test]
@@ -706,4 +711,361 @@ fn automatic1111_keeps_the_legacy_invalid_tls_opt_in() {
     assert!(!super::allow_invalid_tls(&opted_in, "diffusers"));
     opted_in.account.allow_invalid_tls = false;
     assert!(!super::allow_invalid_tls(&opted_in, "automatic1111"));
+}
+
+fn png_input(image: &image::DynamicImage) -> ImageInput {
+    let mut bytes = std::io::Cursor::new(Vec::new());
+    image
+        .write_to(&mut bytes, image::ImageFormat::Png)
+        .expect("encode png");
+    ImageInput {
+        mime_type: "image/png".to_owned(),
+        bytes: bytes.into_inner(),
+    }
+}
+
+#[tokio::test]
+async fn openrouter_uses_the_image_api_and_reads_data_urls() {
+    let (store, owner, key) = keyed().await;
+    let (base, recorded) = server(vec![json_response(&json!({
+        "data": [
+            {"b64_json": encoded(PNG), "media_type": "image/webp", "revised_prompt": "a harbor"},
+            {"url": "data:image/png;base64,QUJD"},
+            {"b64_json": ""}
+        ],
+        "usage": {"total_tokens": 12}
+    }))])
+    .await;
+    let mut generation = request(account(
+        "openrouter",
+        &format!("{base}/api/v1/"),
+        Some(key),
+        owner,
+    ));
+    generation.size = Some("832x1216".to_owned());
+    generation.quality = Some(" High ".to_owned());
+    generation.input_images = vec![ImageInput {
+        mime_type: "image/png".to_owned(),
+        bytes: PNG.to_vec(),
+    }];
+    let output = providers(store)
+        .generate(generation)
+        .await
+        .expect("generate");
+    assert_eq!(output.images.len(), 2);
+    assert_eq!(output.images[0].bytes, PNG);
+    assert_eq!(
+        output.images[0].declared_mime_type.as_deref(),
+        Some("image/webp")
+    );
+    assert_eq!(output.images[0].text.as_deref(), Some("a harbor"));
+    assert_eq!(output.images[1].bytes, b"ABC");
+    assert!(output.usage.is_some());
+    let recorded = recorded.await.expect("requests");
+    assert_eq!(recorded[0].request_line(), "POST /api/v1/images HTTP/1.1");
+    assert_eq!(
+        recorded[0].header("authorization").as_deref(),
+        Some("Bearer key-canary")
+    );
+    assert_eq!(
+        recorded[0].json(),
+        json!({
+            "model": "image-model",
+            "prompt": "a \"quiet\" harbor",
+            "n": 1,
+            "aspect_ratio": "2:3",
+            "quality": "high",
+            "input_references": [{
+                "type": "image_url",
+                "image_url": {"url": format!("data:image/png;base64,{}", encoded(PNG))}
+            }]
+        })
+    );
+}
+
+#[test]
+fn openrouter_image_payload_leaves_out_unknown_and_absent_fields() {
+    let mut generation = request(account(
+        "openrouter",
+        "http://x",
+        None,
+        SecretOwnerId::new(),
+    ));
+    generation.size = Some("auto".to_owned());
+    generation.quality = Some("hd".to_owned());
+    generation.count = 0;
+    assert_eq!(
+        super::adapters::openrouter_image_payload(&generation),
+        json!({"model": "image-model", "prompt": "a \"quiet\" harbor"})
+    );
+}
+
+#[test]
+fn openrouter_sizes_map_to_the_nearest_supported_aspect_ratio() {
+    use super::adapters::nearest_aspect_ratio;
+    assert_eq!(nearest_aspect_ratio(Some("1024x1024")), Some("1:1"));
+    assert_eq!(nearest_aspect_ratio(Some("832x1216")), Some("2:3"));
+    assert_eq!(nearest_aspect_ratio(Some("1920x1080")), Some("16:9"));
+    assert_eq!(nearest_aspect_ratio(Some("2560x1080")), Some("21:9"));
+    assert_eq!(nearest_aspect_ratio(Some("1080x2560")), Some("9:21"));
+    assert_eq!(nearest_aspect_ratio(Some("1000x1100")), Some("1:1"));
+    assert_eq!(nearest_aspect_ratio(Some("1180x1000")), Some("5:4"));
+    assert_eq!(nearest_aspect_ratio(Some("0x1024")), None);
+    assert_eq!(nearest_aspect_ratio(Some("wide")), None);
+    assert_eq!(nearest_aspect_ratio(None), None);
+}
+
+#[test]
+fn only_model_or_endpoint_rejections_fall_back_to_chat() {
+    use super::adapters::{Adapter, should_fall_back_to_chat};
+    assert!(should_fall_back_to_chat(404, ""));
+    assert!(should_fall_back_to_chat(400, "Model is not served here"));
+    assert!(should_fall_back_to_chat(422, "Unsupported ENDPOINT"));
+    assert!(should_fall_back_to_chat(400, "image output not available"));
+    assert!(!should_fall_back_to_chat(400, "prompt too long"));
+    assert!(!should_fall_back_to_chat(401, "unauthorized"));
+    assert!(!should_fall_back_to_chat(500, "model failed"));
+    assert_eq!(
+        Adapter::OpenRouter.fallback(404, ""),
+        Some(Adapter::OpenRouterChat)
+    );
+    assert_eq!(Adapter::OpenRouterChat.fallback(404, ""), None);
+    assert_eq!(Adapter::OpenAi.fallback(404, ""), None);
+}
+
+#[tokio::test]
+async fn an_unsupported_model_is_retried_through_chat_completions() {
+    let (store, owner, key) = keyed().await;
+    let (base, recorded) = server(vec![
+        response(
+            "400 Bad Request",
+            "application/json",
+            b"{\"error\":{\"message\":\"model does not support the images endpoint\"}}",
+        ),
+        json_response(&json!({
+            "choices": [{"message": {"content": "done", "images": [
+                {"image_url": {"url": format!("data:image/png;base64,{}", encoded(PNG))}}
+            ]}}]
+        })),
+    ])
+    .await;
+    let output = providers(store)
+        .generate(request(account(
+            "openrouter",
+            &format!("{base}/v1"),
+            Some(key),
+            owner,
+        )))
+        .await
+        .expect("generate");
+    assert_eq!(output.images[0].bytes, PNG);
+    assert_eq!(output.images[0].text.as_deref(), Some("done"));
+    let recorded = recorded.await.expect("requests");
+    assert_eq!(recorded[0].request_line(), "POST /v1/images HTTP/1.1");
+    assert_eq!(
+        recorded[1].request_line(),
+        "POST /v1/chat/completions HTTP/1.1"
+    );
+    assert_eq!(
+        recorded[1].header("authorization").as_deref(),
+        Some("Bearer key-canary")
+    );
+}
+
+#[tokio::test]
+async fn other_rejections_do_not_fall_back() {
+    let (store, owner, key) = keyed().await;
+    let (base, recorded) = server(vec![response(
+        "400 Bad Request",
+        "application/json",
+        b"{\"error\":\"prompt rejected\"}",
+    )])
+    .await;
+    let message = failure(
+        providers(store)
+            .generate(request(account("openrouter", &base, Some(key), owner)))
+            .await,
+    );
+    assert_eq!(
+        message,
+        "API error 400 Bad Request: {\"error\":\"prompt rejected\"}"
+    );
+    assert_eq!(recorded.await.expect("requests").len(), 1);
+}
+
+#[test]
+fn chat_answers_without_images_or_text_report_a_readable_error() {
+    let error = super::adapters::Adapter::OpenRouterChat
+        .parse(json!({"choices": [{"message": {"content": null}}]}))
+        .expect_err("no image");
+    assert_eq!(
+        error,
+        "The model finished without returning an image. Try the request again or pick a different model."
+    );
+    let error = super::adapters::Adapter::OpenRouter
+        .parse(json!({"data": [{"revised_prompt": "only text"}]}))
+        .expect_err("no image");
+    assert_eq!(error, "No images generated in response");
+}
+
+#[test]
+fn body_errors_are_read_from_strings_and_objects() {
+    use super::body_error::extract_body_error;
+    let error = extract_body_error(&json!({
+        "error": {"code": 504, "message": " The operation was aborted "},
+        "id": "gen-1"
+    }))
+    .expect("error");
+    assert_eq!(error.code, Some(504));
+    assert!(error.is_transient());
+    assert_eq!(
+        error.describe(),
+        "Provider error 504: The operation was aborted"
+    );
+    let error = extract_body_error(&json!({"error": "quota exceeded"})).expect("error");
+    assert_eq!(error.code, None);
+    assert!(!error.is_transient());
+    assert_eq!(error.describe(), "Provider error: quota exceeded");
+    let error =
+        extract_body_error(&json!({"error": {"code": "529", "msg": "overloaded"}})).expect("error");
+    assert_eq!(error.code, Some(529));
+    assert!(error.is_transient());
+    assert_eq!(error.message, "overloaded");
+    let error = extract_body_error(&json!({"error": {"code": 70000, "type": "x"}})).expect("error");
+    assert_eq!(error.code, None);
+    assert_eq!(error.message, r#"{"code":70000,"type":"x"}"#);
+    for code in [500, 502, 503] {
+        assert!(
+            extract_body_error(&json!({"error": {"code": code}}))
+                .expect("error")
+                .is_transient()
+        );
+    }
+    assert!(
+        !extract_body_error(&json!({"error": {"code": 501}}))
+            .expect("error")
+            .is_transient()
+    );
+    assert!(extract_body_error(&json!({"choices": []})).is_none());
+    assert!(extract_body_error(&json!({"error": null})).is_none());
+    assert!(extract_body_error(&json!({"error": false})).is_none());
+    assert!(extract_body_error(&json!({"error": "  "})).is_none());
+}
+
+#[tokio::test]
+async fn transient_body_errors_are_retried_once() {
+    let (store, owner, key) = keyed().await;
+    let (base, recorded) = server(vec![
+        json_response(&json!({"error": {"code": 504, "message": "aborted"}})),
+        json_response(&json!({"data": [{"b64_json": encoded(PNG)}]})),
+    ])
+    .await;
+    let output = providers(store)
+        .generate(request(account("openrouter", &base, Some(key), owner)))
+        .await
+        .expect("generate");
+    assert_eq!(output.images[0].bytes, PNG);
+    assert_eq!(recorded.await.expect("requests").len(), 2);
+}
+
+#[tokio::test]
+async fn a_second_transient_failure_is_reported() {
+    let (store, owner, key) = keyed().await;
+    let (base, recorded) = server(vec![
+        response("502 Bad Gateway", "text/plain", b"upstream failed"),
+        json_response(&json!({"error": {"code": 503, "message": "still down"}})),
+    ])
+    .await;
+    let message = failure(
+        providers(store)
+            .generate(request(account("openai", &base, Some(key), owner)))
+            .await,
+    );
+    assert_eq!(message, "Provider error 503: still down");
+    assert_eq!(recorded.await.expect("requests").len(), 2);
+}
+
+#[tokio::test]
+async fn server_errors_are_retried_once_then_reported() {
+    let (store, owner, key) = keyed().await;
+    let (base, recorded) = server(vec![
+        response("500 Internal Server Error", "text/plain", b"first"),
+        response("502 Bad Gateway", "text/plain", b"upstream failed"),
+    ])
+    .await;
+    let message = failure(
+        providers(store)
+            .generate(request(account("openrouter", &base, Some(key), owner)))
+            .await,
+    );
+    assert_eq!(message, "API error 502 Bad Gateway: upstream failed");
+    assert_eq!(recorded.await.expect("requests").len(), 2);
+}
+
+#[tokio::test]
+async fn permanent_body_errors_are_not_retried() {
+    let (store, owner, key) = keyed().await;
+    let (base, recorded) = server(vec![json_response(
+        &json!({"error": {"code": "429", "message": "slow down"}}),
+    )])
+    .await;
+    let message = failure(
+        providers(store)
+            .generate(request(account("openai", &base, Some(key), owner)))
+            .await,
+    );
+    assert_eq!(message, "Provider error 429: slow down");
+    assert_eq!(recorded.await.expect("requests").len(), 1);
+}
+
+#[tokio::test]
+async fn payload_too_large_gets_a_readable_message() {
+    let (store, owner, key) = keyed().await;
+    let (base, _recorded) = server(vec![response(
+        "413 Payload Too Large",
+        "text/html",
+        b"<html>413</html>",
+    )])
+    .await;
+    let message = failure(
+        providers(store)
+            .generate(request(account("openai", &base, Some(key), owner)))
+            .await,
+    );
+    assert_eq!(
+        message,
+        "API error 413 Payload Too Large: the provider rejected the request because it was too large. Use a smaller reference image or fewer reference images."
+    );
+}
+
+#[tokio::test]
+async fn oversized_reference_images_are_shrunk_before_upload() {
+    let (store, owner, key) = keyed().await;
+    let (base, recorded) = server(vec![json_response(&json!({
+        "data": [{"b64_json": encoded(PNG)}]
+    }))])
+    .await;
+    let mut generation = request(account("openrouter", &base, Some(key), owner));
+    generation.input_images = vec![png_input(&image::DynamicImage::ImageRgb8(
+        image::RgbImage::from_fn(2100, 60, |x, y| {
+            image::Rgb([(x % 251) as u8, (y * 3) as u8, ((x + y) % 7) as u8])
+        }),
+    ))];
+    providers(store)
+        .generate(generation)
+        .await
+        .expect("generate");
+    let body = recorded.await.expect("requests")[0].json();
+    let url = body["input_references"][0]["image_url"]["url"]
+        .as_str()
+        .expect("reference url")
+        .to_owned();
+    let encoded_image = url
+        .strip_prefix("data:image/jpeg;base64,")
+        .expect("jpeg data url");
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(encoded_image)
+        .expect("base64");
+    let decoded = image::load_from_memory(&bytes).expect("decode");
+    assert_eq!((decoded.width(), decoded.height()), (2048, 59));
 }

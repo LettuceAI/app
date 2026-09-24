@@ -968,9 +968,9 @@ pub fn status_text(status: u16) -> String {
 }
 
 /// A buffered client for image requests and results, which carry encoded
-/// images: 64 MiB requests, 256 MiB responses and no retries, since legacy
-/// never retried an image request and a retry could run a paid or long
-/// generation twice.
+/// images: 64 MiB requests and 256 MiB responses. The client never retries
+/// on its own, since a retry could run a paid or long generation twice;
+/// callers decide when a request is worth sending again.
 #[derive(Clone)]
 pub struct BulkHttpClient {
     strict: reqwest::Client,

@@ -5,6 +5,7 @@
 mod catalog;
 mod civitai;
 mod hf_bundle;
+mod input_images;
 mod media;
 mod playground;
 mod port;
@@ -16,6 +17,7 @@ pub mod sd_runtime;
 pub use catalog::*;
 pub use civitai::*;
 pub use hf_bundle::*;
+pub use input_images::*;
 pub use media::*;
 pub use playground::*;
 pub use port::*;
