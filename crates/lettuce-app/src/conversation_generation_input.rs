@@ -2701,6 +2701,93 @@ mod tests {
         );
     }
 
+    #[test]
+    fn direct_smart_top_up_takes_the_newest_hot_memory_and_a_previously_accessed_one() {
+        use lettuce_conversations::MemoryRetrievalStrategySnapshot::Smart;
+        use lettuce_memory::MemoryCategory::Other;
+        let mut items = vec![
+            retrieval_memory(1, Other),
+            retrieval_memory(3, Other),
+            retrieval_memory(2, Other),
+            retrieval_memory(9, Other),
+        ];
+        items[3].is_cold = true;
+        items[3].access_count = 50;
+        let scores = [0.9, 0.1, 0.1, 0.1];
+        assert_eq!(
+            retrieve_ids(&items, &scores, 4, false, Smart),
+            vec![items[0].id, items[1].id]
+        );
+        items[2].access_count = 1;
+        assert_eq!(
+            retrieve_ids(&items, &scores, 4, false, Smart),
+            vec![items[0].id, items[1].id, items[2].id]
+        );
+        assert_eq!(
+            retrieve_ids(&items, &scores, 2, false, Smart),
+            vec![items[0].id, items[1].id]
+        );
+        assert_eq!(
+            retrieve_ids(&items, &scores, 1, false, Smart),
+            vec![items[0].id]
+        );
+    }
+
+    #[test]
+    fn direct_smart_category_cap_skips_a_third_memory_of_one_category_when_the_limit_is_full() {
+        use lettuce_conversations::MemoryRetrievalStrategySnapshot::{Cosine, Smart};
+        use lettuce_memory::MemoryCategory::{Other, PlotEvent};
+        let items = vec![
+            retrieval_memory(1, Other),
+            retrieval_memory(2, Other),
+            retrieval_memory(3, Other),
+            retrieval_memory(4, PlotEvent),
+        ];
+        let scores = [0.95, 0.9, 0.85, 0.5];
+        assert_eq!(
+            retrieve_ids(&items, &scores, 3, false, Smart),
+            vec![items[0].id, items[1].id, items[3].id]
+        );
+        assert_eq!(
+            retrieve_ids(&items, &scores, 3, false, Cosine),
+            vec![items[0].id, items[1].id, items[2].id]
+        );
+    }
+
+    #[test]
+    fn direct_smart_keyword_search_runs_over_cold_memories_only_when_nothing_was_selected() {
+        use lettuce_conversations::MemoryRetrievalStrategySnapshot::{Cosine, Smart};
+        use lettuce_memory::MemoryCategory::Other;
+        let mut items = vec![
+            retrieval_memory(1, Other),
+            retrieval_memory(2, Other),
+            retrieval_memory(3, Other),
+        ];
+        items[0].text = "Harbor fact".into();
+        items[1].text = "The harbor lantern hangs at the harbor gate.".into();
+        items[2].text = "A mountain path.".into();
+        for item in &mut items {
+            item.is_cold = true;
+        }
+        let scores = [0.1, 0.1, 0.1];
+        let query = "Harbor lantern?";
+        assert_eq!(
+            retrieval_results(&items, &scores, 3, false, Smart, query, false),
+            vec![items[1].id, items[0].id]
+        );
+        assert_eq!(
+            retrieval_results(&items, &scores, 1, false, Smart, query, false),
+            vec![items[1].id]
+        );
+        assert!(retrieval_results(&items, &scores, 3, false, Cosine, query, false).is_empty());
+        assert!(retrieval_results(&items, &scores, 3, false, Smart, "an ox", false).is_empty());
+        items[2].is_cold = false;
+        assert_eq!(
+            retrieval_results(&items, &scores, 3, false, Smart, query, false),
+            vec![items[2].id]
+        );
+    }
+
     fn item(
         index: i64,
         role: MessageRole,

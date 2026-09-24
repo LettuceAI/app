@@ -69,6 +69,24 @@ fn direct_scenario(
     persist_resolvable_profile: bool,
     character_prompt: bool,
 ) -> Scenario {
+    direct_scenario_with(
+        database,
+        dynamic_memory,
+        prefix,
+        persist_resolvable_profile,
+        character_prompt,
+        |_| {},
+    )
+}
+
+fn direct_scenario_with(
+    database: &Database,
+    dynamic_memory: bool,
+    prefix: &str,
+    persist_resolvable_profile: bool,
+    character_prompt: bool,
+    configure: impl FnOnce(&mut CharacterDefaults),
+) -> Scenario {
     let model_id = seed_model(database, ProviderProtocol::Ollama, "ollama");
     if persist_resolvable_profile {
         let mut model = ModelProfileRepository::get(database, model_id)
@@ -91,6 +109,7 @@ fn direct_scenario(
         if dynamic_memory {
             defaults.memory_policy = MemoryPolicy::Dynamic;
         }
+        configure(defaults);
     });
     let launched = ConversationLaunchPlanner::new(database)
         .launch_direct(&request(character_id, &format!("{prefix}-launch")), NOW)
@@ -2728,6 +2747,514 @@ async fn dynamic_group_chats_keep_retrieved_key_memories_without_observation_not
             && !text.contains("Relevant memories")
             && !text.contains("northern lighthouse")),
         "{system_texts:?}"
+    );
+}
+
+fn observed_note(observed_at: i64) -> String {
+    use chrono::TimeZone;
+
+    chrono::Local
+        .timestamp_millis_opt(observed_at)
+        .single()
+        .expect("local observation time")
+        .format("%Y-%m-%d %H:%M")
+        .to_string()
+}
+
+fn assert_only_the_retrieved_key_memories(system_texts: &[String], key_memories: &str) {
+    assert_eq!(
+        system_texts
+            .iter()
+            .filter(|text| text.contains("Mira"))
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        [key_memories],
+        "{system_texts:?}"
+    );
+    assert!(
+        system_texts.iter().all(
+            |text| !text.contains("Relevant memories") && !text.contains("northern lighthouse")
+        ),
+        "{system_texts:?}"
+    );
+}
+
+#[tokio::test]
+async fn dynamic_direct_continuation_sends_only_the_retrieved_memories_as_key_memories() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    enable_retrieval_only_dynamic_memory(backend.database());
+    let scenario = direct_scenario(backend.database(), true, "continue-dynamic", true, false);
+    seed_retrieved_and_hot_memories(
+        backend.database(),
+        scenario.space_id.expect("dynamic memory space"),
+    );
+    let key_memories = format!(
+        "# Key Memories\nImportant facts to remember in this conversation:\n- Mira prefers tea by the harbor. (observed {}, just now)",
+        observed_note(1_000)
+    );
+    let engine = ScenarioEmbeddingEngine;
+    let work = admit_and_claim(backend.database(), &scenario, 1_015);
+    let inference = scripted(vec![text_outcome(
+        "continue-dynamic-response",
+        "Tea it is.",
+        9,
+        3,
+    )]);
+    backend
+        .prepared_conversation_generation_runner(&engine, &inference)
+        .run(
+            &work,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_020),
+        )
+        .await
+        .expect("send in a dynamic chat");
+    assert_only_the_retrieved_key_memories(&request_system_texts(&inference), &key_memories);
+
+    let current = ConversationReader::get(backend.database(), scenario.conversation_id)
+        .expect("conversation after send")
+        .conversation;
+    let continued = backend
+        .database()
+        .begin_continue(
+            &ContinueConversation {
+                conversation_id: current.id,
+                branch_id: current.active_branch_id,
+                expected_revision: current.revision,
+                forced_speaker: None,
+                swap_roles: false,
+                operation: OperationToken {
+                    key: key("continue-dynamic-continue"),
+                    request_digest: ContentHash::parse("ce".repeat(32)).expect("digest"),
+                },
+            },
+            TimestampMillis::new(1_021),
+        )
+        .expect("begin continuation")
+        .value;
+    let continued_scenario = Scenario {
+        turn_id: continued.turn.id,
+        attempt_id: continued.attempt.id,
+        ..scenario
+    };
+    let continued_work = admit_and_claim(backend.database(), &continued_scenario, 1_022);
+    let continued_inference = scripted(vec![text_outcome(
+        "continue-dynamic-continue-response",
+        "And more tea.",
+        9,
+        3,
+    )]);
+    backend
+        .prepared_conversation_generation_runner(&engine, &continued_inference)
+        .run(
+            &continued_work,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_024),
+        )
+        .await
+        .expect("continue in a dynamic chat");
+    assert_only_the_retrieved_key_memories(
+        &request_system_texts(&continued_inference),
+        &key_memories,
+    );
+    let receipt = MemoryRetrievalRepository::get_retrieval_access(
+        backend.database(),
+        continued_scenario.conversation_id,
+        continued_scenario.turn_id,
+        continued_scenario.attempt_id,
+    )
+    .expect("read continuation retrieval access")
+    .expect("continuation retrieval access exists");
+    assert_eq!(receipt.access.selected_memory_ids.len(), 1);
+    assert_eq!(receipt.access.accessed_at, TimestampMillis::new(1_024));
+}
+
+#[tokio::test]
+async fn dynamic_companion_chat_fills_its_continuity_section_with_only_the_retrieved_memories() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    enable_retrieval_only_dynamic_memory(backend.database());
+    let scenario = direct_scenario_with(
+        backend.database(),
+        true,
+        "companion-dynamic",
+        true,
+        false,
+        |defaults| {
+            defaults.interaction_mode = InteractionMode::Companion;
+            defaults.companion_soul = Some(lettuce_companions::CompanionSoulConfig::default());
+        },
+    );
+    seed_retrieved_and_hot_memories(
+        backend.database(),
+        scenario.space_id.expect("companion memory space"),
+    );
+    let engine = ScenarioEmbeddingEngine;
+    let work = admit_and_claim(backend.database(), &scenario, 1_015);
+    let inference = scripted(vec![text_outcome(
+        "companion-dynamic-response",
+        "Tea it is.",
+        9,
+        3,
+    )]);
+    backend
+        .prepared_conversation_generation_runner(&engine, &inference)
+        .run(
+            &work,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_020),
+        )
+        .await
+        .expect("send in a dynamic companion chat");
+    let system_texts = request_system_texts(&inference);
+    let continuity = system_texts
+        .iter()
+        .filter(|text| text.contains("Mira"))
+        .collect::<Vec<_>>();
+    assert_eq!(continuity.len(), 1, "{system_texts:?}");
+    assert!(
+        continuity[0].starts_with("# Relationship Continuity\n"),
+        "{system_texts:?}"
+    );
+    assert!(
+        continuity[0].ends_with(&format!(
+            "\n\n## Key Memories\nUnless a memory explicitly describes a third-party relationship, interpret relationship, boundary, preference, profile, routine, plan, and milestone memories as continuity between Ada and Traveller.\n- Mira prefers tea by the harbor. (observed {}, just now)\n\n## Relevant Lore",
+            observed_note(1_000)
+        )),
+        "{system_texts:?}"
+    );
+    assert!(
+        system_texts
+            .iter()
+            .all(|text| !text.starts_with("# Key Memories")
+                && !text.contains("Relevant memories")
+                && !text.contains("northern lighthouse")),
+        "{system_texts:?}"
+    );
+}
+
+fn seed_unrelated_cold_memory(database: &Database, space_id: MemorySpaceId) {
+    let stored = MemoryRepository::get(database, space_id)
+        .expect("memory")
+        .expect("memory exists");
+    let id = MemoryId::new();
+    let item = MemoryItem {
+        id,
+        short_id: lettuce_memory::MemoryShortId::derived(id),
+        text: "Mira catalogued the northern lighthouse.".into(),
+        category: MemoryCategory::WorldDetail,
+        source_message_id: None,
+        source_role: None,
+        observed_at: None,
+        observed_time_precision: None,
+        superseded_by: None,
+        superseded_at: None,
+        supersedes: vec![],
+        token_count: 5,
+        is_cold: true,
+        is_pinned: false,
+        importance: Score::from_basis_points(4_000).expect("score"),
+        persistence_importance: Score::from_basis_points(4_000).expect("score"),
+        prompt_importance: Score::from_basis_points(4_000).expect("score"),
+        volatility: Score::LEGACY_VOLATILITY,
+        access_count: 0,
+        created_at: TimestampMillis::new(900),
+        last_accessed_at: TimestampMillis::new(900),
+    };
+    MemoryRepository::compare_and_apply(
+        database,
+        MemoryChangeSet {
+            space_id,
+            expected_revision: stored.revision,
+            items: vec![item.clone()],
+        },
+    )
+    .expect("seed memory");
+    let mut values = vec![0.0; 128];
+    values[1] = 1.0;
+    MemoryEmbeddingRepository::put_ready(
+        database,
+        MemoryEmbeddingProjection {
+            space_id,
+            memory_id: item.id,
+            source_text: item.text.clone(),
+            vector: EmbeddingVector {
+                source_revision: "scenario-v1".into(),
+                values,
+            },
+            dimensions: EmbeddingDimensions::D128,
+            updated_at: TimestampMillis::new(1_012),
+        },
+    )
+    .expect("seed projection");
+}
+
+async fn empty_retrieval_system_texts(
+    prefix: &str,
+    character_prompt: bool,
+    seed_memory: bool,
+) -> Vec<String> {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    enable_retrieval_only_dynamic_memory(backend.database());
+    let scenario = direct_scenario(backend.database(), true, prefix, true, character_prompt);
+    if seed_memory {
+        seed_unrelated_cold_memory(
+            backend.database(),
+            scenario.space_id.expect("dynamic memory space"),
+        );
+    }
+    let engine = ScenarioEmbeddingEngine;
+    let work = admit_and_claim(backend.database(), &scenario, 1_015);
+    let inference = scripted(vec![text_outcome(
+        &format!("{prefix}-response"),
+        "Noted.",
+        5,
+        3,
+    )]);
+    backend
+        .prepared_conversation_generation_runner(&engine, &inference)
+        .run(
+            &work,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_020),
+        )
+        .await
+        .expect("send with nothing retrieved");
+    assert_eq!(
+        MemoryRetrievalRepository::get_retrieval_access(
+            backend.database(),
+            scenario.conversation_id,
+            scenario.turn_id,
+            scenario.attempt_id,
+        )
+        .expect("read retrieval access"),
+        None
+    );
+    request_system_texts(&inference)
+}
+
+#[tokio::test]
+async fn empty_dynamic_retrieval_keeps_the_bundled_heading_without_a_fallback_block() {
+    for (prefix, seed_memory) in [("empty-unmatched", true), ("empty-space", false)] {
+        let bundled = empty_retrieval_system_texts(prefix, false, seed_memory).await;
+        assert!(
+            bundled.iter().any(|text| text.trim_end()
+                == "# Key Memories\nImportant facts to remember in this conversation:"),
+            "{bundled:?}"
+        );
+        assert!(
+            bundled.iter().all(|text| !text.contains("Mira")),
+            "{bundled:?}"
+        );
+        let custom =
+            empty_retrieval_system_texts(&format!("{prefix}-custom"), true, seed_memory).await;
+        assert!(
+            custom
+                .iter()
+                .all(|text| !text.contains("Key Memories") && !text.contains("Mira")),
+            "{custom:?}"
+        );
+    }
+}
+
+struct CalibratedEmbeddingEngine {
+    calibration: lettuce_embeddings::SimilarityCalibration,
+}
+
+impl crate::MemoryEmbeddingEngine for CalibratedEmbeddingEngine {
+    fn source_revision(&self) -> &str {
+        "calibrated-v1"
+    }
+
+    fn dimensions(&self) -> EmbeddingDimensions {
+        EmbeddingDimensions::D128
+    }
+
+    fn calibration(&self) -> lettuce_embeddings::SimilarityCalibration {
+        self.calibration
+    }
+
+    fn count_tokens(&self, text: &str) -> Result<u32, crate::EmbeddingGenerationError> {
+        u32::try_from(text.split_whitespace().count())
+            .map_err(|_| crate::EmbeddingGenerationError::Unavailable)
+    }
+
+    fn embed_memory(
+        &self,
+        request: &EmbeddingRequest,
+        cancellation: &CancellationToken,
+    ) -> Result<EmbeddingVector, crate::EmbeddingGenerationError> {
+        if cancellation.is_cancelled() {
+            return Err(crate::EmbeddingGenerationError::Cancelled);
+        }
+        let cosine = if request.text.contains("harbor") {
+            0.75_f32
+        } else if request.text.contains("lighthouse") {
+            0.7
+        } else {
+            1.0
+        };
+        let mut values = vec![0.0; request.dimensions.get()];
+        values[0] = cosine;
+        values[1] = (1.0 - cosine * cosine).sqrt();
+        Ok(EmbeddingVector {
+            source_revision: self.source_revision().into(),
+            values,
+        })
+    }
+}
+
+fn eidos_calibration() -> lettuce_embeddings::SimilarityCalibration {
+    lettuce_embeddings::SimilarityCalibration::from_json(
+        br#"{"default_threshold": 0.5, "fallback_threshold": 0.35, "dims": {
+            "768": {"a": 2.381, "b": -1.381}, "512": {"a": 2.2901, "b": -1.2863},
+            "256": {"a": 2.2388, "b": -1.244}, "128": {"a": 2.2388, "b": -1.2664},
+            "64": {"a": 1.9481, "b": -1.0058}}}"#,
+    )
+    .expect("calibration")
+}
+
+async fn calibrated_retrieval(
+    prefix: &str,
+    min_similarity_basis_points: Option<u16>,
+) -> (Vec<String>, Vec<MemoryId>, Vec<MemoryId>) {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let stored = GlobalSettingsStore::load(backend.database()).expect("settings");
+    let mut settings = stored.settings;
+    settings.dynamic_memory.enabled = true;
+    settings.dynamic_memory.retrieval_limit = 2;
+    settings.dynamic_memory.retrieval_strategy = lettuce_settings::MemoryRetrievalStrategy::Cosine;
+    settings.dynamic_memory.min_similarity_basis_points = min_similarity_basis_points;
+    GlobalSettingsStore::save(
+        backend.database(),
+        settings,
+        stored.default_model_profile_id,
+        stored.revision,
+    )
+    .expect("configure dynamic memory");
+    let scenario = scenario_with_resolvable_profile(backend.database(), true, prefix, true);
+    let space_id = scenario.space_id.expect("dynamic memory space");
+    let space = MemoryRepository::get(backend.database(), space_id)
+        .expect("memory")
+        .expect("memory exists");
+    let memory = |text: &str| {
+        let id = MemoryId::new();
+        MemoryItem {
+            id,
+            short_id: lettuce_memory::MemoryShortId::derived(id),
+            text: text.into(),
+            category: MemoryCategory::WorldDetail,
+            source_message_id: None,
+            source_role: None,
+            observed_at: None,
+            observed_time_precision: None,
+            superseded_by: None,
+            superseded_at: None,
+            supersedes: vec![],
+            token_count: 6,
+            is_cold: false,
+            is_pinned: false,
+            importance: Score::from_basis_points(4_000).expect("score"),
+            persistence_importance: Score::from_basis_points(4_000).expect("score"),
+            prompt_importance: Score::from_basis_points(4_000).expect("score"),
+            volatility: Score::LEGACY_VOLATILITY,
+            access_count: 0,
+            created_at: TimestampMillis::new(900),
+            last_accessed_at: TimestampMillis::new(900),
+        }
+    };
+    let harbor = memory("Mira prefers tea by the harbor.");
+    let lighthouse = memory("Mira catalogued the northern lighthouse.");
+    MemoryRepository::compare_and_apply(
+        backend.database(),
+        MemoryChangeSet {
+            space_id,
+            expected_revision: space.revision,
+            items: vec![harbor.clone(), lighthouse.clone()],
+        },
+    )
+    .expect("seed memories");
+    let mut stale = vec![0.0; 128];
+    stale[0] = 1.0;
+    MemoryEmbeddingRepository::put_ready(
+        backend.database(),
+        MemoryEmbeddingProjection {
+            space_id,
+            memory_id: lighthouse.id,
+            source_text: lighthouse.text.clone(),
+            vector: EmbeddingVector {
+                source_revision: "scenario-v1".into(),
+                values: stale,
+            },
+            dimensions: EmbeddingDimensions::D128,
+            updated_at: TimestampMillis::new(1_012),
+        },
+    )
+    .expect("seed a vector from another embedding family");
+    let engine = CalibratedEmbeddingEngine {
+        calibration: eidos_calibration(),
+    };
+    let work = admit_and_claim(backend.database(), &scenario, 1_015);
+    let inference = scripted(vec![text_outcome(
+        &format!("{prefix}-response"),
+        "Noted.",
+        5,
+        3,
+    )]);
+    backend
+        .prepared_conversation_generation_runner(&engine, &inference)
+        .run(
+            &work,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_020),
+        )
+        .await
+        .expect("send with a calibrated embedding model");
+    let mut embedded = backend
+        .database()
+        .list_ready(space_id, "calibrated-v1", EmbeddingDimensions::D128)
+        .expect("ready projections")
+        .into_iter()
+        .map(|projection| projection.memory_id)
+        .collect::<Vec<_>>();
+    embedded.sort();
+    let mut expected_embedded = vec![harbor.id, lighthouse.id];
+    expected_embedded.sort();
+    assert_eq!(embedded, expected_embedded);
+    let selected = MemoryRetrievalRepository::get_retrieval_access(
+        backend.database(),
+        scenario.conversation_id,
+        scenario.turn_id,
+        scenario.attempt_id,
+    )
+    .expect("read retrieval access")
+    .map(|receipt| receipt.access.selected_memory_ids)
+    .unwrap_or_default();
+    (request_system_texts(&inference), selected, vec![harbor.id])
+}
+
+#[tokio::test]
+async fn calibrated_retrieval_embeds_missing_vectors_and_falls_back_only_when_unset() {
+    let (system_texts, selected, harbor) = calibrated_retrieval("eidos-unset", None).await;
+    assert_eq!(selected, harbor);
+    assert_eq!(
+        system_texts,
+        [
+            "# Key Memories\nImportant facts to remember in this conversation:\n- Mira prefers tea by the harbor."
+        ]
+    );
+    let (system_texts, selected, _) = calibrated_retrieval("eidos-set", Some(5_000)).await;
+    assert!(selected.is_empty());
+    assert!(
+        system_texts.iter().all(|text| !text.contains("Mira")),
+        "{system_texts:?}"
+    );
+    let (system_texts, selected, harbor) = calibrated_retrieval("eidos-low", Some(4_000)).await;
+    assert_eq!(selected, harbor);
+    assert_eq!(
+        system_texts,
+        [
+            "# Key Memories\nImportant facts to remember in this conversation:\n- Mira prefers tea by the harbor."
+        ]
     );
 }
 
