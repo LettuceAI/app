@@ -1078,6 +1078,128 @@ fn settle_concurrent_message(
     }
 }
 
+/// Shows the losing version of a message two devices changed concurrently as
+/// a fork: a branch from the message's parent holding a copy of the message
+/// with that content, flagged for the user to choose like a synced fork.
+/// Returns whether a fork was written; a message that is missing or has no
+/// parent to fork from gets none.
+pub(crate) fn fork_losing_message_version(
+    transaction: &Transaction<'_>,
+    message_id: MessageId,
+    conflict_key: &str,
+    content: &str,
+    detected_at: TimestampMillis,
+) -> Result<bool, ConversationRepositoryError> {
+    let located = transaction
+        .query_row(
+            "SELECT conversation_id FROM conversation_messages WHERE id = ?1",
+            [message_id.to_string()],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(storage)?;
+    let Some(conversation_id) = located else {
+        return Ok(false);
+    };
+    let conversation_id: ConversationId = conversation_id.parse().map_err(storage)?;
+    let (Some(parent), branch_id, _) = message_link(transaction, conversation_id, message_id)?
+    else {
+        return Ok(false);
+    };
+    let copy_id = MessageId::from_uuid(uuid::Uuid::new_v5(
+        &message_id.as_uuid(),
+        format!("legacy-conflict:{conflict_key}").as_bytes(),
+    ));
+    let fork = fork_branch_id(conversation_id, copy_id);
+    if exists(
+        transaction,
+        "SELECT EXISTS(SELECT 1 FROM conversation_messages WHERE conversation_id = ?1 AND id = ?2)",
+        params![conversation_id.to_string(), copy_id.to_string()],
+    )? {
+        return Ok(false);
+    }
+    let source = crate::backup::backup_adapter::read_conversation_message(
+        transaction,
+        conversation_id,
+        message_id,
+    )
+    .map_err(storage)?
+    .ok_or(ConversationRepositoryError::NotFound)?;
+    let parts = vec![lettuce_conversations::MessagePart::Text {
+        text: content.to_owned(),
+    }];
+    let revision = MessageRevision {
+        id: lettuce_types::MessageRevisionId::from_uuid(uuid::Uuid::new_v5(
+            &copy_id.as_uuid(),
+            &slice::encode(&parts)?.into_bytes(),
+        )),
+        message_id: copy_id,
+        sequence: Revision::INITIAL,
+        parts,
+        authored_at: source.message.created_at,
+        source_turn_id: None,
+        provider_replay: None,
+        supersedes_candidate_id: None,
+    };
+    history::insert_branch(
+        transaction,
+        &ConversationBranch {
+            id: fork,
+            conversation_id,
+            parent_branch_id: Some(branch_id),
+            fork_message_id: Some(parent),
+            head_message_id: None,
+            status: BranchStatus::Active,
+            revision: Revision::INITIAL,
+            created_at: source.message.created_at,
+            updated_at: source.message.created_at,
+        },
+    )?;
+    let next: i64 = transaction
+        .query_row(
+            "SELECT next_timeline_ordinal FROM conversations WHERE id = ?1",
+            [conversation_id.to_string()],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    history::insert_message_with_turns(
+        transaction,
+        &BackupMessage {
+            message: Message {
+                id: copy_id,
+                branch_id: fork,
+                parent_message_id: Some(parent),
+                active_render_source: MessageRenderSource::Revision(revision.id),
+                revision: Revision::INITIAL,
+                updated_at: source.message.created_at,
+                ..source.message.clone()
+            },
+            timeline_ordinal: u64::try_from(next).map_err(storage)?,
+            initial_origin: None,
+            revisions: vec![revision],
+            candidates: Vec::new(),
+            historical_media_revision_ids: Vec::new(),
+            historical_media_candidate_ids: Vec::new(),
+        },
+        &[],
+        &history::Evidence::usage_only(&[]),
+    )?;
+    transaction
+        .execute(
+            "UPDATE conversations SET next_timeline_ordinal = ?1 WHERE id = ?2",
+            params![next + 1, conversation_id.to_string()],
+        )
+        .map_err(storage)?;
+    history::set_branch_head(transaction, conversation_id, fork, Some(copy_id))?;
+    transaction
+        .execute(
+            "INSERT OR IGNORE INTO sync_conversation_forks (conversation_id, branch_id, holds_local, detected_at) VALUES (?1, ?2, 0, ?3)",
+            params![conversation_id.to_string(), fork.to_string(), detected_at.get()],
+        )
+        .map_err(storage)?;
+    Ok(true)
+}
+
 fn authored_locally(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,

@@ -257,6 +257,17 @@ pub struct LegacyPreservedRow {
     pub row_json: String,
 }
 
+/// The losing version of a legacy message that two devices changed
+/// concurrently (a `sync_v2_conflicts` row); the import shows it as a fork of
+/// the conversation for the user to choose.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyMessageConflict {
+    pub conflict_key: String,
+    pub message_id: lettuce_types::MessageId,
+    pub content: String,
+    pub detected_at: TimestampMillis,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LegacyDatabaseInventory {
     pub schema_version: u32,

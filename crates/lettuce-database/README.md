@@ -174,7 +174,14 @@ BLOBs as `{"hex": ...}`, `record_legacy_preserved_rows` stores them
 immutably once per run and key, and v2 backups carry them with the run. An
 effect whose assistant message the import wrote with a generation turn also
 becomes a companion effect record (the newest turn of that message, memory
-changes limited to imported memories); the rest stays only in provenance.
+changes limited to imported memories); the rest stays only in provenance. A
+conflict on a legacy `messages` or `group_messages` row becomes a fork of the
+imported conversation: `legacy_message_conflicts` decodes the recorded
+bincode row snapshots and picks the side whose content differs from the
+imported message, and `fork_legacy_message_conflicts` copies the message with
+that content into a branch from its parent and flags it in
+`sync_conversation_forks` for the user to choose. Conflicts on other tables
+stay only in provenance.
 
 The legacy migration boundary can open an old `app.db` read-only, require the
 actual version-92 schema roots, and return a bounded typed import inventory.

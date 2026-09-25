@@ -80,6 +80,40 @@ impl Database {
     }
 }
 
+impl Database {
+    /// Writes each legacy concurrent message edit as a fork of its imported
+    /// conversation for the user to choose and returns how many it wrote;
+    /// repeating it writes nothing new.
+    pub fn fork_legacy_message_conflicts(
+        &self,
+        conflicts: &[lettuce_transfer::LegacyMessageConflict],
+    ) -> Result<usize, LegacyImportRepositoryError> {
+        let mut connection = self
+            .connection()
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        let mut forked = 0;
+        for conflict in conflicts {
+            forked += usize::from(
+                crate::sync::conversation_sync_adapter::fork_losing_message_version(
+                    &transaction,
+                    conflict.message_id,
+                    &conflict.conflict_key,
+                    &conflict.content,
+                    conflict.detected_at,
+                )
+                .map_err(|_| LegacyImportRepositoryError::InvalidInput)?,
+            );
+        }
+        transaction
+            .commit()
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        Ok(forked)
+    }
+}
+
 impl LegacyImportRepository for Database {
     fn admit(
         &self,
