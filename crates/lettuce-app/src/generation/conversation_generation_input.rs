@@ -897,6 +897,88 @@ where
         Ok(decision)
     }
 
+    /// The chat model of a new turn. A direct chat without its own model
+    /// override follows the live character's default model, then the app
+    /// default model, on every turn; a group, or a chat whose model was
+    /// overridden, keeps its effective model. A live model whose revisions
+    /// differ from the stored snapshot gets a snapshot of its own, attached
+    /// to the conversation when the turn is prepared.
+    fn live_chat_model(
+        &self,
+        conversation: &lettuce_conversations::Conversation,
+        effective: Option<lettuce_conversations::ModelSelectionSnapshot>,
+    ) -> Result<lettuce_conversations::ModelSelectionSnapshot, ConversationGenerationInputError>
+    {
+        let ConversationKind::Direct(details) = &conversation.kind else {
+            return effective.ok_or(ConversationGenerationInputError::MissingModel);
+        };
+        let overridden = conversation
+            .current_settings
+            .as_ref()
+            .is_some_and(|settings| {
+                settings.model_provenance
+                    == lettuce_conversations::SettingProvenance::CurrentOverride
+            });
+        if overridden {
+            return effective.ok_or(ConversationGenerationInputError::MissingModel);
+        }
+        let character = CharacterRepository::get(self.repository, details.character.source_id)
+            .map_err(|_| {
+                ConversationGenerationInputError::Context(
+                    ContextAssemblyError::ConversationUnavailable,
+                )
+            })?
+            .ok_or(ConversationGenerationInputError::Context(
+                ContextAssemblyError::ConversationUnavailable,
+            ))?;
+        let app_default = lettuce_settings::GlobalSettingsStore::load(self.repository)
+            .map_err(ConversationGenerationInputError::Settings)?
+            .default_model_profile_id;
+        let model_profile_id = character
+            .character
+            .defaults
+            .model_profile_id
+            .or(app_default)
+            .ok_or(ConversationGenerationInputError::MissingModel)?;
+        let profile = ModelProfileRepository::get(self.repository, model_profile_id)
+            .map_err(ConversationGenerationInputError::ModelRepository)?
+            .ok_or(ConversationGenerationInputError::MissingModel)?;
+        let account = ProviderAccountRepository::get(self.repository, profile.provider_account_id)
+            .map_err(ConversationGenerationInputError::ModelRepository)?
+            .ok_or(ConversationGenerationInputError::MissingModel)?;
+        if let Some(stored) = effective.filter(|stored| {
+            stored.source_id == profile.id
+                && stored.source_revision == profile.revision
+                && stored.provider_account_id == account.id
+                && stored.provider_account_revision == account.revision
+        }) {
+            return Ok(stored);
+        }
+        let artifact_id = lettuce_types::SnapshotArtifactId::from_uuid(uuid::Uuid::new_v5(
+            &conversation.id.as_uuid(),
+            format!(
+                "live-model:{}:{}:{}:{}",
+                profile.id,
+                profile.revision.get(),
+                account.id,
+                account.revision.get()
+            )
+            .as_bytes(),
+        ));
+        let draft = crate::launch::documents::draft(
+            artifact_id,
+            profile.revision,
+            crate::launch::documents::model_body(&profile, &account),
+        )
+        .map_err(|_| ConversationGenerationInputError::MissingModel)?;
+        let snapshot = crate::launch::planner::model_snapshot(&profile, &account, &draft);
+        self.repository
+            .artifact_store()
+            .put_snapshot(draft)
+            .map_err(|_| ConversationGenerationInputError::MissingModel)?;
+        Ok(snapshot)
+    }
+
     pub(crate) async fn build_input(
         &self,
         work: &ConversationGenerationClaimedWork,
@@ -946,12 +1028,14 @@ where
             None => MemoryModeSnapshot::Disabled,
         };
         let dynamic_memory = memory_mode == MemoryModeSnapshot::Dynamic;
-        let model = turn
+        let model = match turn
             .resolved_model
             .clone()
             .or(turn.requested_model_override.clone())
-            .or(settings.model)
-            .ok_or(ConversationGenerationInputError::MissingModel)?;
+        {
+            Some(model) => model,
+            None => self.live_chat_model(&aggregate.conversation, settings.model)?,
+        };
         let stored_model = ModelProfileRepository::get(self.repository, model.source_id)
             .map_err(ConversationGenerationInputError::ModelRepository)?
             .ok_or(ConversationGenerationInputError::MissingModel)?;

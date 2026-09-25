@@ -21,7 +21,9 @@ use lettuce_memory::{
 use lettuce_types::{ConversationId, GenerationAttemptId, GenerationTurnId, JobId};
 use lettuce_usage::{JobInferenceUsageResult, JobUsageLedger, UsageEvent, UsageLedger};
 
-use crate::generation::conversation_generation::{ConversationGenerationOperation, operation_token};
+use crate::generation::conversation_generation::{
+    ConversationGenerationOperation, operation_token,
+};
 use crate::{
     ConversationGenerationCancellationOutcome, ConversationGenerationClaimedWork,
     ConversationGenerationDispatchCoordinator, ConversationGenerationDispatchError,
@@ -586,6 +588,52 @@ async fn plain_chat_runs_finalizes_settles_and_replays_without_redispatch() {
 }
 
 #[tokio::test]
+async fn a_direct_chat_follows_the_live_default_model_on_each_turn() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let database = backend.database();
+    let scenario = scenario_with_resolvable_profile(database, false, "live-model", true);
+    let switched = seed_model(database, ProviderProtocol::Ollama, "ollama");
+    let mut model = ModelProfileRepository::get(database, switched)
+        .expect("model")
+        .expect("model exists");
+    let revision = model.revision;
+    model.config.chat_parameters.temperature = None;
+    model.config.capabilities.streaming = lettuce_models::CapabilityStatus::Supported;
+    ModelProfileRepository::upsert(database, model, Some(revision)).expect("resolvable model");
+    set_application_default_model(database, switched);
+    let inference = scripted(vec![text_outcome("live-model", "Live reply.", 12, 3)]);
+    let engine = ScenarioEmbeddingEngine;
+    let clock = FakeClock::new(TimestampMillis::new(1_020));
+    let outcome = backend
+        .prepared_conversation_generation_runner(&engine, &inference)
+        .execute(
+            execution_request(&scenario, CancellationToken::new()),
+            &clock,
+        )
+        .await
+        .expect("execute generation");
+    let ConversationGenerationExecutionOutcome::Settled(
+        ConversationGenerationSettledWork::Succeeded { result, .. },
+    ) = outcome
+    else {
+        panic!("generation succeeds");
+    };
+    assert_ne!(switched, scenario.model.source_id);
+    assert_eq!(
+        inference.requests.lock().expect("requests")[0]
+            .profile
+            .chat_profile
+            .model_profile_id,
+        switched,
+        "legacy select_model_with_credential read the default model on every turn"
+    );
+    assert_eq!(
+        result.turn.resolved_model.map(|model| model.source_id),
+        Some(switched)
+    );
+}
+
+#[tokio::test]
 async fn app_backend_executes_and_settles_one_durable_generation_operation() {
     let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
     let scenario = scenario_with_resolvable_profile(backend.database(), false, "scheduled", true);
@@ -818,7 +866,10 @@ async fn app_backend_cancels_queued_and_running_generation_jobs_by_id() {
     ));
     let settled = settled.expect("settle running cancellation");
     let ConversationGenerationExecutionOutcome::Settled(
-        ConversationGenerationSettledWork::Succeeded { ref result, ref job },
+        ConversationGenerationSettledWork::Succeeded {
+            ref result,
+            ref job,
+        },
     ) = settled
     else {
         panic!("legacy useChatAbortController keeps the streamed reply on stop: {settled:?}");
@@ -923,14 +974,16 @@ async fn restart_recovery_settles_every_turn_the_previous_process_left_live() {
         settled(running.turn_id),
         Some(crate::ConversationGenerationRestartSettlement::Interrupted)
     );
-    let turn = |turn_id| {
-        ConversationReader::get_turn(backend.database(), turn_id).expect("settled turn")
-    };
+    let turn =
+        |turn_id| ConversationReader::get_turn(backend.database(), turn_id).expect("settled turn");
     assert_eq!(
         turn(unstarted.turn_id).status,
         GenerationTurnStatus::Cancelled
     );
-    assert_eq!(turn(stopping.turn_id).status, GenerationTurnStatus::Cancelled);
+    assert_eq!(
+        turn(stopping.turn_id).status,
+        GenerationTurnStatus::Cancelled
+    );
     let interrupted = turn(running.turn_id);
     assert_eq!(interrupted.status, GenerationTurnStatus::Interrupted);
     assert_eq!(
@@ -3720,7 +3773,11 @@ async fn post_turn_memory_host_runs_the_plain_cycle_from_live_settings() {
         .next()
         .expect("claimed plain memory work");
     let rescheduled = host
-        .run_claimed(unresolved, CancellationReason::User, TimestampMillis::new(1_031))
+        .run_claimed(
+            unresolved,
+            CancellationReason::User,
+            TimestampMillis::new(1_031),
+        )
         .await
         .expect("settle the unresolved cycle");
     let crate::CompanionMemorySettledWork::RetryScheduled { error, job } = rescheduled else {
@@ -3921,7 +3978,10 @@ async fn restart_resumes_a_memory_job_whose_window_is_still_due() {
     backend
         .recover_after_restart(TimestampMillis::new(1_040))
         .expect("release claims");
-    assert_eq!(persisted_job(backend.database(), job_id).state, JobState::Queued);
+    assert_eq!(
+        persisted_job(backend.database(), job_id).state,
+        JobState::Queued
+    );
     let engine = ScenarioEmbeddingEngine;
     let memory = successful_memory_cycle();
     let cancelled = backend
@@ -3989,7 +4049,10 @@ async fn a_memory_job_the_app_keeps_stopping_during_is_not_run_again() {
         .await
         .expect("resume memory jobs");
     assert!(cancelled.is_empty());
-    assert_eq!(persisted_job(backend.database(), job_id).state, JobState::Failed);
+    assert_eq!(
+        persisted_job(backend.database(), job_id).state,
+        JobState::Failed
+    );
     assert!(memory.requests.lock().expect("memory requests").is_empty());
     assert!(
         host.after_turn(
@@ -4068,9 +4131,13 @@ async fn restart_cancels_a_memory_job_its_conversation_would_no_longer_admit() {
         .next()
         .expect("a fresh job for the same window");
     assert_ne!(retried.handle.id(), job_id);
-    host.run_claimed(retried, CancellationReason::User, TimestampMillis::new(1_051))
-        .await
-        .expect("run the retried window");
+    host.run_claimed(
+        retried,
+        CancellationReason::User,
+        TimestampMillis::new(1_051),
+    )
+    .await
+    .expect("run the retried window");
     assert_eq!(
         stored_summary(database, &scenario).as_deref(),
         Some("The user chose tea.")
@@ -4278,8 +4345,13 @@ async fn post_turn_memory_host_honors_active_prompt_overrides_of_the_right_purpo
         .expect("prompt")
         .expect("override")
         .revision;
-    PromptRepository::archive(database, manager_override, revision, TimestampMillis::new(1_031))
-        .expect("archive the override");
+    PromptRepository::archive(
+        database,
+        manager_override,
+        revision,
+        TimestampMillis::new(1_031),
+    )
+    .expect("archive the override");
     let inputs = host
         .resolve_runtime_inputs(&work.admission)
         .expect("runtime inputs after archiving");
@@ -4344,7 +4416,10 @@ async fn reply_helper_drafts_the_next_user_message_from_live_settings() {
     assert_eq!(sent.profile.chat_profile.parameters.temperature, Some(0.8));
     assert_eq!(sent.profile.chat_profile.parameters.top_p, Some(1.0));
     assert_eq!(
-        sent.profile.chat_profile.parameters.visible_max_output_tokens,
+        sent.profile
+            .chat_profile
+            .parameters
+            .visible_max_output_tokens,
         Some(150)
     );
     let texts = sent
@@ -4375,7 +4450,10 @@ async fn reply_helper_drafts_the_next_user_message_from_live_settings() {
     assert!(input.contains("user: Remember tea."));
     assert!(input.contains("Ada: Tea it is."));
     assert!(input.ends_with("Generate a reply for user to say next."));
-    assert_eq!(sent.context.messages.last().expect("input").role, MessageRole::User);
+    assert_eq!(
+        sent.context.messages.last().expect("input").role,
+        MessageRole::User
+    );
 
     let stored = GlobalSettingsStore::load(database).expect("settings");
     let mut settings = stored.settings;
@@ -4410,7 +4488,12 @@ async fn reply_helper_falls_back_to_a_plain_request_when_the_model_cannot_stream
     let scenario = scenario_with_resolvable_profile(database, false, "reply-helper-plain", true);
     let generation = admit_and_claim(database, &scenario, 1_015);
     let engine = ScenarioEmbeddingEngine;
-    let reply = scripted(vec![text_outcome("reply-helper-plain-reply", "Tea it is.", 5, 3)]);
+    let reply = scripted(vec![text_outcome(
+        "reply-helper-plain-reply",
+        "Tea it is.",
+        5,
+        3,
+    )]);
     backend
         .prepared_conversation_generation_runner(&engine, &reply)
         .run(
@@ -4472,7 +4555,13 @@ async fn reply_helper_never_leaves_an_unclaimable_job_queued() {
         let request = &request;
         async move {
             helper
-                .generate(request, WorkerId::new(), TimestampMillis::new(1_030), LEASE, &allowed)
+                .generate(
+                    request,
+                    WorkerId::new(),
+                    TimestampMillis::new(1_030),
+                    LEASE,
+                    &allowed,
+                )
                 .await
         }
     };
@@ -4583,7 +4672,11 @@ fn companion_conversation_with_processing_effect(
         .expect("launch companion");
     let sent = CompanionTurnCoordinator::<_, ScenarioEmotionEngine>::new(database, None)
         .begin_send(
-            &direct_send_command(&launched.value.conversation, &format!("{prefix}-send"), "I missed you."),
+            &direct_send_command(
+                &launched.value.conversation,
+                &format!("{prefix}-send"),
+                "I missed you.",
+            ),
             TimestampMillis::new(NOW.get() + 1),
             &CancellationToken::new(),
         )
@@ -5582,7 +5675,11 @@ async fn a_synced_delete_moves_the_head_so_later_messages_attach_on_both_devices
             .expect("active branch")
             .head_message_id
     };
-    assert_eq!(head(&b), head(&a), "legacy deleted the reply on every device");
+    assert_eq!(
+        head(&b),
+        head(&a),
+        "legacy deleted the reply on every device"
+    );
     assert_ne!(head(&b), Some(result.candidate.message_id));
     let aggregate = ConversationReader::get(&a, scenario.conversation_id).expect("a");
     let user = aggregate
@@ -5625,11 +5722,19 @@ async fn a_synced_delete_moves_the_head_so_later_messages_attach_on_both_devices
     };
     let next_work = admit_and_claim(&a, &next_scenario, 2_310);
     ConversationGenerationJobRunner::new(&a, &next)
-        .run(&next_work, input(&next_scenario), TimestampMillis::new(2_320))
+        .run(
+            &next_work,
+            input(&next_scenario),
+            TimestampMillis::new(2_320),
+        )
         .await
         .expect("next reply on a");
     sync_prompts(&a, &b, 2_400);
-    assert_eq!(head(&b), head(&a), "the next message extends the retreated head on b");
+    assert_eq!(
+        head(&b),
+        head(&a),
+        "the next message extends the retreated head on b"
+    );
 }
 
 #[tokio::test]
@@ -5684,7 +5789,11 @@ async fn generated_messages_sync_with_their_turns_and_usage() {
         b.job_usage(work.handle.id()).expect("b job usage"),
         a.job_usage(work.handle.id()).expect("a job usage")
     );
-    assert!(!a.job_usage(work.handle.id()).expect("a job usage").is_empty());
+    assert!(
+        !a.job_usage(work.handle.id())
+            .expect("a job usage")
+            .is_empty()
+    );
 
     let conversation = ConversationReader::get(&a, scenario.conversation_id).expect("a");
     let timeline = |database: &Database| {
@@ -5753,7 +5862,12 @@ async fn generated_messages_sync_with_their_turns_and_usage() {
     assert_eq!(edited, shared(&b));
     assert!(edited.last().expect("reply").message.pinned);
     assert_eq!(
-        edited.last().expect("reply").active_revision.as_ref().map(|revision| &revision.parts),
+        edited
+            .last()
+            .expect("reply")
+            .active_revision
+            .as_ref()
+            .map(|revision| &revision.parts),
         Some(&vec![MessagePart::Text {
             text: "Edited on b".into()
         }])
@@ -5891,10 +6005,13 @@ async fn forked_branches_sync_with_their_messages() {
     let b = database();
     let scenario = scenario(&a, false, "synced-fork");
     let work = admit_and_claim(&a, &scenario, 1_015);
-    ConversationGenerationJobRunner::new(&a, &scripted(vec![text_outcome("fork-0", "First", 10, 5)]))
-        .run(&work, input(&scenario), TimestampMillis::new(1_020))
-        .await
-        .expect("run");
+    ConversationGenerationJobRunner::new(
+        &a,
+        &scripted(vec![text_outcome("fork-0", "First", 10, 5)]),
+    )
+    .run(&work, input(&scenario), TimestampMillis::new(1_020))
+    .await
+    .expect("run");
     let conversation = ConversationReader::get(&a, scenario.conversation_id)
         .expect("conversation")
         .conversation;
@@ -5980,7 +6097,11 @@ async fn concurrent_replies_fork_into_a_branch_and_notify_both_devices() {
                 item.active_revision
                     .as_ref()
                     .map(|revision| revision.parts.clone())
-                    .or_else(|| item.active_candidate.as_ref().map(|candidate| candidate.parts.clone()))
+                    .or_else(|| {
+                        item.active_candidate
+                            .as_ref()
+                            .map(|candidate| candidate.parts.clone())
+                    })
             })
             .collect::<Vec<_>>()
     };
@@ -5993,10 +6114,18 @@ async fn concurrent_replies_fork_into_a_branch_and_notify_both_devices() {
     assert_eq!(
         replies,
         vec![
-            vec![MessagePart::Text { text: "Reply to a".into() }],
-            vec![MessagePart::Text { text: "Reply to b".into() }],
-            vec![MessagePart::Text { text: "from-a".into() }],
-            vec![MessagePart::Text { text: "from-b".into() }],
+            vec![MessagePart::Text {
+                text: "Reply to a".into()
+            }],
+            vec![MessagePart::Text {
+                text: "Reply to b".into()
+            }],
+            vec![MessagePart::Text {
+                text: "from-a".into()
+            }],
+            vec![MessagePart::Text {
+                text: "from-b".into()
+            }],
         ]
     );
     let (loser, loser_turn) = if forks_a[0].holds_local {
@@ -6004,9 +6133,10 @@ async fn concurrent_replies_fork_into_a_branch_and_notify_both_devices() {
     } else {
         (&b, turn_b)
     };
-    let GenerationInput::UserMessage { message_id } = ConversationReader::get_turn(loser, loser_turn)
-        .expect("turn")
-        .input
+    let GenerationInput::UserMessage { message_id } =
+        ConversationReader::get_turn(loser, loser_turn)
+            .expect("turn")
+            .input
     else {
         panic!("send turn");
     };
@@ -6039,13 +6169,20 @@ async fn concurrent_replies_fork_into_a_branch_and_notify_both_devices() {
     sync_prompts(&b, &a, 3_500);
     sync_prompts(&a, &b, 3_600);
     let refreshed = branch_timeline(&a, scenario.conversation_id, fork);
-    assert_eq!(refreshed, branch_timeline(&b, scenario.conversation_id, fork));
+    assert_eq!(
+        refreshed,
+        branch_timeline(&b, scenario.conversation_id, fork)
+    );
     assert!(shown(&refreshed).contains(&vec![MessagePart::Text {
         text: "Edited after the fork".into()
     }]));
     a.resolve_conversation_fork(scenario.conversation_id, fork, TimestampMillis::new(4_000))
         .expect("resolve");
-    assert!(a.unresolved_conversation_forks(10).expect("a forks").is_empty());
+    assert!(
+        a.unresolved_conversation_forks(10)
+            .expect("a forks")
+            .is_empty()
+    );
     assert_rescans_are_empty(&[&a, &b], 5_000);
 }
 
@@ -6055,10 +6192,13 @@ async fn memory_spaces_sync_their_items_and_summary_under_their_owner() {
     let b = database();
     let scenario = scenario(&a, false, "synced-memory");
     let work = admit_and_claim(&a, &scenario, 1_015);
-    ConversationGenerationJobRunner::new(&a, &scripted(vec![text_outcome("m-0", "Tea noted", 10, 5)]))
-        .run(&work, input(&scenario), TimestampMillis::new(1_020))
-        .await
-        .expect("run");
+    ConversationGenerationJobRunner::new(
+        &a,
+        &scripted(vec![text_outcome("m-0", "Tea noted", 10, 5)]),
+    )
+    .run(&work, input(&scenario), TimestampMillis::new(1_020))
+    .await
+    .expect("run");
     let space = MemoryRepository::get_for_conversation(&a, scenario.conversation_id)
         .expect("space")
         .expect("space exists");
@@ -6147,8 +6287,12 @@ async fn memory_spaces_sync_their_items_and_summary_under_their_owner() {
         .expect("b summary exists");
     assert_eq!(summary_b.text, "They talked about tea.");
     assert_eq!(
-        lettuce_memory::MemorySummaryRepository::summary_cursor(&b, on_b.id, scenario.conversation_id)
-            .expect("cursor"),
+        lettuce_memory::MemorySummaryRepository::summary_cursor(
+            &b,
+            on_b.id,
+            scenario.conversation_id
+        )
+        .expect("cursor"),
         2
     );
 
@@ -6241,7 +6385,6 @@ async fn memory_spaces_sync_their_items_and_summary_under_their_owner() {
     assert_eq!(ids(&b, on_b.id), expected);
     assert_rescans_are_empty(&[&a, &b], 4_000);
 }
-
 
 #[tokio::test]
 async fn retrieval_embeds_memories_without_a_current_vector_first() {

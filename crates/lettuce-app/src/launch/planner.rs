@@ -1550,7 +1550,7 @@ fn character_snapshot(
     }
 }
 
-fn model_snapshot(
+pub(crate) fn model_snapshot(
     profile: &ModelProfile,
     account: &ProviderAccount,
     draft: &SnapshotArtifactDraft,

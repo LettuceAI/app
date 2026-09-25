@@ -360,7 +360,12 @@ starter prompt fails on any resolution error and an inherited direct prompt
 fails when dangling or of another purpose, while an archived inherited one now
 falls through to the app default like legacy's not-found fallback instead of
 disabling the prompt. Legacy used an app-wide template of any type in a direct
-chat; only a direct-chat document is used here. Launch only chooses and
+chat; only a direct-chat document is used here. A direct chat without its own
+model override resolves its chat model live on every new turn like legacy
+`select_model_with_credential`: the character's current default model, then
+the app default model; a live model whose revisions differ from the launch
+snapshot gets a conversation snapshot that preparation attaches, and the turn
+records the model it used. Launch only chooses and
 validates: context assembly resolves the system prompt of every one-to-one turn
 from live sources (`live_direct_prompt`), so each turn uses the current content
 and revision of the current documents. A companion chat (`companion_clock`

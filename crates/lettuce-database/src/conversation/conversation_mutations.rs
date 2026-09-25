@@ -2751,11 +2751,16 @@ impl ConversationRepository for Database {
                     }
                     resolve_candidate_author(transaction, context.conversation_id, &prior)?;
                 }
-                verify_settings_snapshot(
-                    transaction,
-                    context.conversation_id,
-                    &command.model.snapshot_ref,
-                )?;
+                verify_current_snapshot(transaction, &command.model.snapshot_ref)?;
+                transaction
+                    .execute(
+                        "INSERT OR IGNORE INTO conversation_snapshot_refs (conversation_id, artifact_id) VALUES (?1, ?2)",
+                        params![
+                            context.conversation_id.to_string(),
+                            command.model.snapshot_ref.artifact_id.to_string()
+                        ],
+                    )
+                    .map_err(slice::db)?;
                 if prior.resolved_model.is_some() {
                     if prior.resolved_model.as_ref() != Some(&command.model)
                         || prior.prompt != command.attributions.prompt
@@ -6956,21 +6961,6 @@ mod tests {
             }
             let before =
                 ConversationReader::get_turn(fixture.database.as_ref(), turn_id).expect("before");
-            assert!(matches!(
-                fixture
-                    .database
-                    .prepare_generation(&command, TimestampMillis::new(35)),
-                Err(ConversationRepositoryError::ArtifactReference(_))
-            ));
-            assert_eq!(
-                ConversationReader::get_turn(fixture.database.as_ref(), turn_id)
-                    .expect("unchanged"),
-                before
-            );
-            fixture.database.connection().expect("connection").execute(
-                "INSERT INTO conversation_snapshot_refs (conversation_id, artifact_id) VALUES (?1, ?2)",
-                params![fixture.conversation_id.to_string(), model.snapshot_ref.artifact_id.to_string()],
-            ).expect("attach model provenance");
             let mut forged = command.clone();
             forged.model.snapshot_ref.digest = ContentHash::parse("ef".repeat(32)).expect("digest");
             assert!(matches!(
@@ -6990,6 +6980,20 @@ mod tests {
             assert_eq!(prepared.memory, command.attributions.memory);
             assert_eq!(prepared.resolved_model, Some(model.clone()));
             assert_eq!(prepared.selected_speaker, before.selected_speaker);
+            let attached: i64 = fixture
+                .database
+                .connection()
+                .expect("connection")
+                .query_row(
+                    "SELECT count(*) FROM conversation_snapshot_refs WHERE conversation_id = ?1 AND artifact_id = ?2",
+                    params![
+                        fixture.conversation_id.to_string(),
+                        model.snapshot_ref.artifact_id.to_string()
+                    ],
+                    |row| row.get(0),
+                )
+                .expect("model provenance");
+            assert_eq!(attached, 1, "the turn's live model joins the snapshot refs");
             fixture.database = std::rc::Rc::new(Database::open_in_memory().expect("release file"));
             fixture.database = std::rc::Rc::new(Database::open(&path).expect("reopen prepared"));
             assert_eq!(

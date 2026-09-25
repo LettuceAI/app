@@ -710,7 +710,10 @@ async fn initial_cancellation_during_provider_keeps_the_streamed_reply() {
     let kept = run
         .await
         .expect("legacy useChatAbortController keeps the reply streamed before stop");
-    assert_eq!(kept.finish_reason, lettuce_conversations::FinishReason::Cancelled);
+    assert_eq!(
+        kept.finish_reason,
+        lettuce_conversations::FinishReason::Cancelled
+    );
     assert_eq!(kept.candidates, outcome().candidates);
     let binding =
         InitialInferenceBinding::from_request(conversation_id, &request).expect("binding");
@@ -718,7 +721,10 @@ async fn initial_cancellation_during_provider_keeps_the_streamed_reply() {
         .initial_inference(&binding)
         .expect("record")
         .expect("settled");
-    assert_eq!(record.result, Some(InitialInferenceResult::Response(kept.clone())));
+    assert_eq!(
+        record.result,
+        Some(InitialInferenceResult::Response(kept.clone()))
+    );
     assert!(matches!(
         database.job_usage(handle.id()).expect("response evidence")[0].result,
         Some(JobInferenceUsageResult::Response { .. })

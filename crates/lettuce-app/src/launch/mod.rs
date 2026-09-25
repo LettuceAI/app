@@ -10,7 +10,7 @@ mod digest;
 pub(crate) mod documents;
 mod error;
 mod identity;
-mod planner;
+pub(crate) mod planner;
 pub(crate) mod policy;
 mod request;
 
