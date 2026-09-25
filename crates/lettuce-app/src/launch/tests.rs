@@ -951,6 +951,103 @@ fn the_share_memory_toggle_picks_the_pool_or_each_conversations_own_memory() {
     assert_eq!(space(second), second_own);
 }
 
+/// Taking sharing back picks the conversation Soul that grew last in wall
+/// time, as legacy's single save order did, even when that chat's companion
+/// clock is frozen in the past and stamps its facts there.
+#[test]
+fn the_latest_soul_wins_by_wall_time_when_its_chat_clock_is_frozen_in_the_past() {
+    use lettuce_companions::SoulOwner;
+    let database = database_with_builtins();
+    let character_id = seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
+        defaults.interaction_mode = InteractionMode::Companion;
+        defaults.companion_soul = Some(lettuce_companions::CompanionSoulConfig::default());
+    });
+    let launch = |key: &str| {
+        ConversationLaunchPlanner::new(&database)
+            .launch_direct(&request(character_id, key), NOW)
+            .expect("launch companion")
+            .value
+            .conversation
+            .id
+    };
+    let (live, frozen) = (launch("wall-live"), launch("wall-frozen"));
+    let set_shared = |shared: bool, at: i64| {
+        let character = CharacterRepository::get(&database, character_id)
+            .expect("character")
+            .expect("exists")
+            .character;
+        let mut defaults = character.defaults.clone();
+        defaults
+            .companion_soul
+            .as_mut()
+            .expect("companion config")
+            .share_soul_growth_across_chats = shared;
+        CharacterRepository::update_defaults(
+            &database,
+            character_id,
+            character.revision,
+            defaults,
+            TimestampMillis::new(at),
+        )
+        .expect("update defaults");
+    };
+    let grow = |conversation_id, id: &str, applied_at: i64, recorded_at: i64| {
+        let owner = SoulOwner::Conversation {
+            character_id,
+            conversation_id,
+        };
+        let soul = SoulRepository::get(&database, owner)
+            .expect("soul")
+            .expect("present");
+        let change = lettuce_companions::prepare_growth_change_set(
+            &soul,
+            soul.revision,
+            vec![lettuce_companions::ProposedSoulFact {
+                id: id.to_owned(),
+                category: lettuce_companions::SoulCategory::Likes,
+                value: format!("Likes {id}"),
+                kind: lettuce_companions::SoulFactKind::Add,
+                policy: lettuce_companions::SoulFactPolicy::Adaptive,
+                slot: id.to_owned(),
+                confidence: 0.75,
+                weight: 0.8,
+                valid_until: None,
+                locked: false,
+                source_memory_ids: vec!["memory-a".to_owned()],
+                supersedes: Vec::new(),
+            }],
+            TimestampMillis::new(applied_at),
+        )
+        .expect("growth");
+        SoulRepository::apply(
+            &database,
+            owner,
+            OperationRecordId::new(),
+            lettuce_companions::SoulChangeSet {
+                recorded_at: TimestampMillis::new(recorded_at),
+                ..change
+            },
+        )
+        .expect("grow soul");
+    };
+    set_shared(false, NOW.get() + 1);
+    grow(live, "rain", NOW.get() + 2, NOW.get() + 2);
+    grow(frozen, "snow", 1_000, NOW.get() + 3);
+    set_shared(true, NOW.get() + 4);
+    let shared = SoulRepository::get(&database, SoulOwner::Character(character_id))
+        .expect("soul")
+        .expect("shared soul");
+    assert!(shared.facts.iter().any(|fact| fact.id == "snow"));
+    assert!(shared.facts.iter().all(|fact| fact.id != "rain"));
+    assert!(
+        shared
+            .facts
+            .iter()
+            .filter(|fact| fact.id == "snow")
+            .all(|fact| fact.valid_from == TimestampMillis::new(1_000))
+    );
+}
+
 #[test]
 fn the_share_soul_growth_toggle_copies_out_and_takes_back_the_latest_soul() {
     use lettuce_companions::SoulOwner;
@@ -3583,6 +3680,55 @@ fn companion_turn_uses_the_conversation_clock_for_decay_and_stamps() {
     .expect("companion state");
     assert_eq!(state.state.updated_at, anchor);
     assert_eq!(state.state.relationship_state.last_interaction_at, anchor);
+}
+
+/// Legacy `current_state` fell back to `default_state` on every companion
+/// turn, continue included, so a companion chat without stored state gets it
+/// on its first continue as it does on its first send.
+#[test]
+fn companion_continue_creates_missing_companion_state() {
+    let database = database_with_builtins();
+    let character_id = seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
+        defaults.interaction_mode = InteractionMode::Companion;
+        defaults.companion_soul = Some(lettuce_companions::CompanionSoulConfig::default());
+    });
+    let prepared = ConversationLaunchPlanner::new(&database)
+        .prepare_direct(&request(character_id, "continue-missing-state"))
+        .expect("prepare companion launch");
+    let conversation = ConversationCreator::create(&database, prepared, NOW)
+        .expect("create without companion state")
+        .value
+        .conversation;
+    let owner = CompanionStateOwner {
+        conversation_id: conversation.id,
+        character_id,
+        persona_id: None,
+    };
+    assert!(
+        CompanionStateRepository::get(&database, owner)
+            .expect("state")
+            .is_none()
+    );
+    let _ = CompanionTurnCoordinator::<_, ScenarioEmotionEngine>::new(&database, None)
+        .begin_continue(
+            &ContinueConversation {
+                conversation_id: conversation.id,
+                branch_id: conversation.active_branch_id,
+                expected_revision: conversation.revision,
+                forced_speaker: None,
+                swap_roles: false,
+                operation: OperationToken {
+                    key: key("continue-missing-state"),
+                    request_digest: ContentHash::parse("ab".repeat(32)).expect("digest"),
+                },
+            },
+            TimestampMillis::new(NOW.get() + 1),
+        );
+    assert!(
+        CompanionStateRepository::get(&database, owner)
+            .expect("state")
+            .is_some()
+    );
 }
 
 #[test]

@@ -24,7 +24,10 @@ pub struct CompanionTurnCoordinator<'a, S, E: ?Sized> {
 
 impl<S, E> CompanionTurnCoordinator<'_, S, E>
 where
-    S: ConversationRepository + CompanionStateRepository + CompanionConversationContinuer,
+    S: ConversationRepository
+        + CharacterRepository
+        + CompanionStateRepository
+        + CompanionConversationContinuer,
     E: ?Sized,
 {
     pub fn begin_continue(
@@ -65,7 +68,8 @@ where
                 .begin_continue(command, now)
                 .map_err(Into::into);
         };
-        let companion = CompanionStateRepository::get(self.sources, owner)?.is_some();
+        let companion =
+            companion_state(self.sources, &aggregate.conversation, owner, now)?.is_some();
         let dynamic = resolve_effective_settings(&aggregate.conversation, None)
             .map_err(ConversationRepositoryError::Invalid)?
             .memory
@@ -136,29 +140,16 @@ where
             &aggregate.conversation,
         )
         .map_err(|_| CompanionTurnError::CharacterMissing)?;
-        if !clock.companion {
+        let Some(snapshot) = companion_state(self.sources, &aggregate.conversation, owner, now)?
+        else {
             return self.sources.begin_send(command, now).map_err(Into::into);
-        }
-        let character = CharacterRepository::get(self.sources, owner.character_id)?
-            .ok_or(CompanionTurnError::CharacterMissing)?;
-        let config = character
+        };
+        let config = CharacterRepository::get(self.sources, owner.character_id)?
+            .ok_or(CompanionTurnError::CharacterMissing)?
             .character
             .defaults
             .companion_soul
             .unwrap_or_default();
-        let snapshot = match CompanionStateRepository::get(self.sources, owner)? {
-            Some(snapshot) => snapshot,
-            None => CompanionStateRepository::create(
-                self.sources,
-                owner,
-                lettuce_companions::initial_runtime_state(
-                    &config.soul.baseline_affect,
-                    &config.soul.regulation_style,
-                    &config.relationship_defaults,
-                ),
-                now,
-            )?,
-        };
         let effective_now = clock.effective_now(now);
         let text = classification_text(&command.message.parts);
         let bundle = match self.emotion {
@@ -210,6 +201,47 @@ where
         CompanionConversationSender::begin_companion_send(self.sources, prepared, now)
             .map_err(Into::into)
     }
+}
+
+/// The conversation's companion state, created from the character's companion
+/// settings when a companion chat has none yet (legacy `current_state` falling
+/// back to `default_state`); `None` when the chat is not a companion chat.
+fn companion_state<S>(
+    sources: &S,
+    conversation: &lettuce_conversations::Conversation,
+    owner: lettuce_companions::CompanionStateOwner,
+    now: TimestampMillis,
+) -> Result<Option<lettuce_companions::CompanionStateSnapshot>, CompanionTurnError>
+where
+    S: CharacterRepository + CompanionStateRepository + ?Sized,
+{
+    if let Some(snapshot) = CompanionStateRepository::get(sources, owner)? {
+        return Ok(Some(snapshot));
+    }
+    if !crate::companion::companion_clock::companion_clock_context(sources, conversation)
+        .map_err(|_| CompanionTurnError::CharacterMissing)?
+        .companion
+    {
+        return Ok(None);
+    }
+    let config = CharacterRepository::get(sources, owner.character_id)?
+        .ok_or(CompanionTurnError::CharacterMissing)?
+        .character
+        .defaults
+        .companion_soul
+        .unwrap_or_default();
+    CompanionStateRepository::create(
+        sources,
+        owner,
+        lettuce_companions::initial_runtime_state(
+            &config.soul.baseline_affect,
+            &config.soul.regulation_style,
+            &config.relationship_defaults,
+        ),
+        now,
+    )
+    .map(Some)
+    .map_err(Into::into)
 }
 
 fn classification_text(parts: &[MessagePart]) -> String {
