@@ -413,7 +413,8 @@ pub fn plan_legacy_backup_configuration(
         &settings.extra,
         &mut notices,
     );
-    let settings_candidate = map_settings(&settings, &mut notices)?;
+    let mut skipped = Vec::new();
+    let settings_candidate = map_settings(&settings, &mut notices, &mut skipped)?;
     let provider_rows: Vec<ProviderRow> = array_document(
         &source,
         LegacyBackupDocumentKind::ProviderCredentials,
@@ -505,7 +506,6 @@ pub fn plan_legacy_backup_configuration(
     {
         return Err(malformed(LegacyBackupDocumentKind::Secrets, "reference"));
     }
-    let mut skipped = Vec::new();
     let chat_templates =
         map_chat_templates(chat_rows, &source, &prompts, &mut skipped, &mut notices)?;
     skipped.sort();
@@ -557,9 +557,31 @@ fn array_document<T: for<'de> Deserialize<'de>>(
     Ok(rows)
 }
 
+/// A settings JSON column the live legacy database held as text that does not
+/// parse arrives as that text. Legacy fell back to defaults for it; the
+/// fallback is kept and recorded as a skip.
+fn parsed_settings_json<'a>(
+    value: Option<&'a Value>,
+    field: &str,
+    skipped: &mut Vec<crate::LegacyImportSkip>,
+) -> Option<&'a Value> {
+    match value {
+        Some(Value::String(_)) => {
+            skipped.push(crate::legacy_value_skip(
+                &format!("settings.{field}"),
+                "1",
+                crate::LegacyImportSkipReason::MalformedLegacyValue,
+            ));
+            None
+        }
+        value => value,
+    }
+}
+
 fn map_settings(
     row: &SettingsRow,
     notices: &mut Vec<LegacyBackupConversionNotice>,
+    skipped: &mut Vec<crate::LegacyImportSkip>,
 ) -> Result<LegacyBackupSettingsCandidate, LegacyBackupConfigurationError> {
     let created = row.created_at.unwrap_or(0);
     let updated = row.updated_at.or(row.created_at).unwrap_or(0);
@@ -567,11 +589,13 @@ fn map_settings(
         return Err(malformed(LegacyBackupDocumentKind::Settings, "timestamps"));
     }
     let app = object_or_empty(
-        &row.app_state,
+        parsed_settings_json(Some(&row.app_state), "app_state", skipped).unwrap_or(&Value::Null),
         LegacyBackupDocumentKind::Settings,
         "app_state",
     )?;
-    let advanced_value = row.advanced_settings.as_ref().unwrap_or(&Value::Null);
+    let advanced_value =
+        parsed_settings_json(row.advanced_settings.as_ref(), "advanced_settings", skipped)
+            .unwrap_or(&Value::Null);
     let advanced = object_or_empty(
         advanced_value,
         LegacyBackupDocumentKind::Settings,
@@ -779,8 +803,14 @@ fn map_settings(
             format!("app_state.{field}"),
         ));
     }
-    let model_settings =
-        legacy_global_model_settings(row.advanced_model_settings.as_ref(), notices);
+    let model_settings = legacy_global_model_settings(
+        parsed_settings_json(
+            row.advanced_model_settings.as_ref(),
+            "advanced_model_settings",
+            skipped,
+        ),
+        notices,
+    );
     if row.migration_version.is_some() {
         notices.push(notice(
             LegacyBackupConversionNoticeKind::Unsupported,
@@ -4284,6 +4314,34 @@ mod tests {
         ];
         expected.sort();
         assert_eq!(prompts.skipped, expected);
+    }
+
+    #[test]
+    fn unparsable_settings_json_falls_back_to_defaults_and_is_recorded() {
+        let plan = plan_legacy_backup_configuration(inventory(vec![document(
+            LegacyBackupDocumentKind::Settings,
+            json!({
+                "default_provider_credential_id": null,
+                "default_model_id": null,
+                "app_state": "{broken",
+                "advanced_settings": "not json",
+                "advanced_model_settings": "{",
+                "created_at": 10,
+                "updated_at": 20
+            }),
+        )]))
+        .expect("legacy fell back to defaults");
+        assert_eq!(
+            plan.settings.value.pure_mode,
+            GlobalSettings::default().pure_mode
+        );
+        for field in ["app_state", "advanced_settings", "advanced_model_settings"] {
+            assert!(plan.skipped.contains(&crate::legacy_value_skip(
+                &format!("settings.{field}"),
+                "1",
+                crate::LegacyImportSkipReason::MalformedLegacyValue,
+            )));
+        }
     }
 
     #[test]

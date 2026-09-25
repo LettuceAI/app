@@ -325,8 +325,9 @@ fn meta(connection: &Connection) -> Result<Vec<Value>, LegacyDatabasePreflightEr
 }
 
 fn settings(connection: &Connection) -> Result<Value, LegacyDatabasePreflightError> {
-    let parsed =
-        |raw: Option<String>| raw.and_then(|value| serde_json::from_str::<Value>(&value).ok());
+    let parsed = |raw: Option<String>| {
+        raw.map(|value| serde_json::from_str::<Value>(&value).unwrap_or(Value::String(value)))
+    };
     let mut values = rows(
         connection,
         "SELECT default_provider_credential_id, default_model_id, app_state, advanced_model_settings, prompt_template_id, system_prompt, migration_version, advanced_settings, created_at, updated_at FROM settings WHERE id = 1",
@@ -336,7 +337,7 @@ fn settings(connection: &Connection) -> Result<Value, LegacyDatabasePreflightErr
             Ok(json!({
                 "default_provider_credential_id": r.get::<_, Option<String>>(0)?,
                 "default_model_id": r.get::<_, Option<String>>(1)?,
-                "app_state": serde_json::from_str::<Value>(&app_state).unwrap_or_else(|_| json!({})),
+                "app_state": serde_json::from_str::<Value>(&app_state).unwrap_or(Value::String(app_state)),
                 "advanced_model_settings": parsed(r.get(3)?),
                 "prompt_template_id": r.get::<_, Option<String>>(4)?,
                 "system_prompt": r.get::<_, Option<String>>(5)?,
@@ -1691,7 +1692,7 @@ mod tests {
         assert_eq!(loras[0]["keywords"], "[\"ink\"]");
         assert_eq!(loras[0]["keyword_source"], "manual");
         let settings = document_value(&documents, LegacyBackupDocumentKind::Settings);
-        assert_eq!(settings["app_state"], json!({}));
+        assert_eq!(settings["app_state"], json!("not json"));
         let lorebooks = document_value(&documents, LegacyBackupDocumentKind::Lorebooks);
         assert_eq!(lorebooks[0]["entries"][0]["display_order"], 1);
         let characters = document_value(&documents, LegacyBackupDocumentKind::Characters);
