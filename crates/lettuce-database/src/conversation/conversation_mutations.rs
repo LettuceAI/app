@@ -13028,6 +13028,247 @@ mod tests {
         assert_eq!(assets, 1);
     }
 
+    fn sync_all(from: &Database, to: &Database, at: i64) {
+        use lettuce_sync::{IncomingBatchState, IncomingChangeRepository, LocalChangeJournal};
+        from.journal_current_state(TimestampMillis::new(at))
+            .expect("scan source");
+        to.journal_current_state(TimestampMillis::new(at))
+            .expect("scan target");
+        loop {
+            let batch = from
+                .outbound_changes(
+                    &to.local_frontier().expect("frontier"),
+                    lettuce_sync::MAX_OUTBOUND_CHANGES,
+                    lettuce_sync::MAX_OUTBOUND_PAYLOAD_BYTES,
+                )
+                .expect("outbound");
+            if batch.changes.is_empty() {
+                return;
+            }
+            let id = lettuce_types::OperationId::new();
+            to.stage_incoming_batch(
+                lettuce_sync::SyncDeviceId::new(),
+                id,
+                &lettuce_sync::canonical_batch_hash(&batch.changes),
+                &batch.changes,
+                TimestampMillis::new(at),
+            )
+            .expect("stage");
+            assert_eq!(
+                to.apply_incoming_batch(id, TimestampMillis::new(at))
+                    .expect("apply")
+                    .state,
+                IncomingBatchState::Committed
+            );
+        }
+    }
+
+    fn restart_sync_journal(database: &Database) {
+        database
+            .connection()
+            .expect("connection")
+            .execute(
+                "UPDATE sync_journal_format SET schema_fingerprint = ?1",
+                ["00".repeat(32)],
+            )
+            .expect("an update that changed payload schemas");
+    }
+
+    #[test]
+    fn a_refused_delete_waiting_to_be_sent_back_is_not_carried_across_a_restart() {
+        use lettuce_sync::{
+            CanonicalChange, ChangeOperation, HybridTimestamp, IncomingBatchState,
+            IncomingChangeRepository, LocalChangeJournal, SyncChangeId, SyncDeviceId, SyncEntity,
+        };
+        let fixture = direct_fixture();
+        let asset = stage_media_asset(&fixture.database, "51");
+        let send = fixture
+            .database
+            .begin_send(
+                &send_command(
+                    &fixture,
+                    "refused-carry",
+                    "cd",
+                    vec![MessagePart::MediaAsset {
+                        asset_id: asset,
+                        role: lettuce_conversations::MediaAssetRole::Inline,
+                    }],
+                ),
+                TimestampMillis::new(20),
+            )
+            .expect("send");
+        settle_succeeded(&fixture, &send.value.turn, 21);
+        let id = fixture.conversation_id.to_string();
+        fixture
+            .database
+            .journal_current_state(TimestampMillis::new(100))
+            .expect("journal the chat");
+        let root: String = scalar(
+            &fixture.database,
+            "SELECT payload_hash FROM sync_changes
+             WHERE entity_kind = 'conversation' AND entity_id = ?1",
+            &id,
+        );
+        fixture
+            .database
+            .connection()
+            .expect("connection")
+            .execute(
+                "UPDATE media_blobs SET state = 'missing'
+                 WHERE id = (SELECT blob_id FROM media_assets WHERE id = ?1)",
+                [asset.to_string()],
+            )
+            .expect("lose the blob");
+        let delete = CanonicalChange::new(
+            SyncChangeId::new(),
+            SyncDeviceId::new(),
+            1,
+            HybridTimestamp::new(TimestampMillis::new(10), 0),
+            lettuce_sync::CausalFrontier::new(),
+            SyncEntity::new("conversation", id.clone()).expect("entity"),
+            ChangeOperation::Delete,
+            Some(ContentHash::parse(root).expect("root hash")),
+            None,
+        )
+        .expect("delete");
+        let batch = lettuce_types::OperationId::new();
+        let delivered = [delete];
+        fixture
+            .database
+            .stage_incoming_batch(
+                SyncDeviceId::new(),
+                batch,
+                &lettuce_sync::canonical_batch_hash(&delivered),
+                &delivered,
+                TimestampMillis::new(110),
+            )
+            .expect("stage");
+        assert_eq!(
+            fixture
+                .database
+                .apply_incoming_batch(batch, TimestampMillis::new(110))
+                .expect("apply")
+                .state,
+            IncomingBatchState::Committed
+        );
+        let rejournals: i64 = scalar(
+            &fixture.database,
+            "SELECT count(*) FROM purge_rejournals WHERE entity_id = ?1",
+            &id,
+        );
+        assert_eq!(
+            rejournals, 1,
+            "the refused delete waits to send the chat back"
+        );
+
+        restart_sync_journal(&fixture.database);
+        fixture
+            .database
+            .journal_current_state(TimestampMillis::new(200))
+            .expect("scan after the restart");
+        let deletes: i64 = scalar(
+            &fixture.database,
+            "SELECT count(*) FROM sync_changes WHERE operation = 'delete' AND ?1 <> ''",
+            &id,
+        );
+        assert_eq!(
+            deletes, 0,
+            "a refused delete never goes out as this device's own"
+        );
+        assert!(
+            ConversationReader::get(fixture.database.as_ref(), fixture.conversation_id).is_ok()
+        );
+    }
+
+    #[test]
+    fn a_purged_chat_with_branches_stays_deleted_across_a_restart_on_both_devices() {
+        use lettuce_sync::LocalChangeJournal;
+        let mut fixture = direct_fixture();
+        let messages = conversation_with_two_exchanges(&mut fixture, "restart-chat");
+        let forked = fixture
+            .database
+            .fork_branch(
+                &ForkBranch {
+                    conversation_id: fixture.conversation_id,
+                    source_branch_id: fixture.branch_id,
+                    at_message_id: Some(messages[1]),
+                    expected_revision: fixture.revision,
+                    operation: token("restart-chat-fork", "cd"),
+                },
+                TimestampMillis::new(300),
+            )
+            .expect("fork");
+        fixture.revision = conversation_revision(&fixture);
+        fixture.branch_id = forked.value.branch.id;
+        let send = fixture
+            .database
+            .begin_send(
+                &send_command(
+                    &fixture,
+                    "restart-chat-fork-send",
+                    "cd",
+                    text("on the fork"),
+                ),
+                TimestampMillis::new(310),
+            )
+            .expect("send on the fork");
+        settle_succeeded(&fixture, &send.value.turn, 311);
+        let a = fixture.database.as_ref();
+        let b = Database::open_in_memory().expect("b");
+        sync_all(a, &b, 1_000);
+        sync_all(&b, a, 1_010);
+        let id = fixture.conversation_id.to_string();
+        let held = |database: &Database| -> (i64, i64, i64) {
+            (
+                scalar(
+                    database,
+                    "SELECT count(*) FROM conversations WHERE id = ?1",
+                    &id,
+                ),
+                scalar(
+                    database,
+                    "SELECT count(*) FROM conversation_messages WHERE conversation_id = ?1",
+                    &id,
+                ),
+                scalar(
+                    database,
+                    "SELECT count(*) FROM conversation_branches WHERE conversation_id = ?1",
+                    &id,
+                ),
+            )
+        };
+        let before = held(&b);
+        assert_eq!(before.0, 1);
+        assert!(before.1 >= 6 && before.2 == 2, "{before:?}");
+
+        a.purge_conversation(fixture.conversation_id, TimestampMillis::new(400))
+            .expect("purge on a while b is offline");
+        a.journal_current_state(TimestampMillis::new(1_100))
+            .expect("a journals the delete");
+        restart_sync_journal(a);
+        restart_sync_journal(&b);
+        for (from, to, at) in [
+            (&b, a, 2_000),
+            (a, &b, 2_010),
+            (&b, a, 2_020),
+            (a, &b, 2_030),
+        ] {
+            sync_all(from, to, at);
+        }
+
+        for database in [a, &b] {
+            assert_eq!(held(database), (0, 0, 0));
+            let notices = database.purge_notices().expect("notices");
+            assert!(notices.is_empty(), "{notices:?}");
+            assert_eq!(
+                database
+                    .journal_current_state(TimestampMillis::new(3_000))
+                    .expect("rescan"),
+                0
+            );
+        }
+    }
+
     #[test]
     fn a_re_journal_waiting_for_lost_media_is_sent_without_it_after_bounded_attempts() {
         use lettuce_sync::LocalChangeJournal;

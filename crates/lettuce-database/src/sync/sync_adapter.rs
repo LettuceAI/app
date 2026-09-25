@@ -273,6 +273,13 @@ fn record_local_change_in_skipping(
         });
     }
     let frontier = load_frontier(connection)?;
+    if request.operation() == ChangeOperation::Delete && frontier.is_empty() {
+        tracing::error!(
+            kind = request.entity().kind(),
+            "a local delete without causal dependencies would read as a carried delete"
+        );
+        return Err(LocalChangeJournalError::Corrupt);
+    }
     let (device, sequence, mut timestamp) = next_identity_and_stamp(connection, now, &frontier)?;
     if let Some(source_time) = source_time.filter(|time| *time < timestamp.wall_time()) {
         let source = HybridTimestamp::new(source_time, 0);
@@ -526,7 +533,9 @@ struct CarriedDelete {
 }
 
 /// Every entity whose latest journaled state is a delete that holds here:
-/// the entity is gone, or its received delete waits in the purge queue.
+/// the entity is gone, or its received delete waits in the purge queue. A
+/// delete this device refused (the entity is kept, possibly waiting in
+/// `purge_rejournals` to be sent back) is not carried.
 fn carried_deletes(tx: &Transaction<'_>) -> Result<Vec<CarriedDelete>, LocalChangeJournalError> {
     let ids = tx
         .prepare(
@@ -563,7 +572,17 @@ fn carried_deletes(tx: &Transaction<'_>) -> Result<Vec<CarriedDelete>, LocalChan
         .map_err(|_| LocalChangeJournalError::Storage)?
         .ok_or(LocalChangeJournalError::Corrupt)?;
         let kind = change.entity().kind();
-        let queued = crate::purge::purge_queued(tx, kind, change.entity().id()).map_err(storage)?;
+        let queued = match crate::purge::PurgeKind::from_sync_kind(kind) {
+            Some(purge) => tx
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM purge_queue
+                     WHERE entity_kind = ?1 AND entity_id = ?2)",
+                    params![purge.name(), change.entity().id()],
+                    |row| row.get::<_, bool>(0),
+                )
+                .map_err(storage)?,
+            None => false,
+        };
         let gone = match snapshot_codec(kind) {
             Some(codec) => matches!((codec.current)(tx, change.entity().id()), Ok(None)),
             None => false,
@@ -746,6 +765,8 @@ pub(crate) fn rebaseline_journal_if_format_changed(
             )
             .map_err(storage)?;
         }
+        tx.execute("DELETE FROM sync_deleted_entities", [])
+            .map_err(storage)?;
         tracing::info!(
             carried_deletes = deletes.len(),
             "sync journal started over for changed payload schemas"
@@ -4560,6 +4581,8 @@ impl LocalChangeJournal for Database {
                 }
             }
         }
+        tx.execute("DELETE FROM sync_deleted_entities", [])
+            .map_err(storage)?;
         tx.commit().map_err(storage)?;
         crate::purge::run_queued_purges_on(&mut connection, &self.foreign_keys_lost, now)
             .map_err(storage)?;
@@ -5951,6 +5974,23 @@ mod tests {
             ),
             Some(TimestampMillis::new(44))
         );
+    }
+
+    #[test]
+    fn a_local_delete_without_causal_dependencies_is_refused() {
+        let database = Database::open_in_memory().expect("database");
+        let delete = NewCanonicalChange::new(
+            persona_sync_entity(PersonaId::new()).expect("entity"),
+            ChangeOperation::Delete,
+            Some(ContentHash::parse("11".repeat(32)).expect("base")),
+            None,
+        )
+        .expect("delete");
+        assert_eq!(
+            database.record_local_change(OperationId::new(), delete, TimestampMillis::new(10)),
+            Err(LocalChangeJournalError::Corrupt)
+        );
+        assert!(database.local_frontier().expect("frontier").is_empty());
     }
 
     #[test]

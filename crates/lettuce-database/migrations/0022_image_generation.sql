@@ -163,7 +163,7 @@ AFTER DELETE ON playground_history
 BEGIN
     INSERT INTO sync_deleted_entities (entity_kind, entity_id, deleted_at)
     VALUES ('playground_history', OLD.id, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
-    ON CONFLICT(entity_kind, entity_id) DO UPDATE SET deleted_at = excluded.deleted_at;
+    ON CONFLICT(entity_kind, entity_id) DO NOTHING;
 END;
 
 CREATE TRIGGER sync_deleted_playground_history_images
@@ -171,5 +171,5 @@ AFTER DELETE ON playground_history_images
 BEGIN
     INSERT INTO sync_deleted_entities (entity_kind, entity_id, deleted_at)
     VALUES ('playground_history_image', OLD.history_id || ':' || OLD.ordinal, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
-    ON CONFLICT(entity_kind, entity_id) DO UPDATE SET deleted_at = excluded.deleted_at;
+    ON CONFLICT(entity_kind, entity_id) DO NOTHING;
 END;

@@ -1119,8 +1119,9 @@ impl Database {
     }
 }
 
-/// Records when the user deleted a synced entity, so its sync delete carries
-/// that time.
+/// Records, in the purge's transaction, when the user deleted a synced
+/// entity, so its sync delete carries that time (the delete triggers keep a
+/// time already recorded).
 fn record_deleted_at(
     connection: &Connection,
     kind: &str,
@@ -1147,11 +1148,10 @@ impl Database {
         now: TimestampMillis,
     ) -> Result<PurgeReceipt, PurgeError> {
         let mut connection = self.connection().map_err(storage)?;
-        let receipt = purge_on(&mut connection, &self.foreign_keys_lost, now, |purge| {
+        purge_on(&mut connection, &self.foreign_keys_lost, now, |purge| {
+            record_deleted_at(purge.connection, "conversation", &id.to_string(), now)?;
             purge.conversation_entry(&id.to_string())
-        })?;
-        record_deleted_at(&connection, "conversation", &id.to_string(), now)?;
-        Ok(receipt)
+        })
     }
 
     /// Deletes a character, its direct conversations and its companion
@@ -1163,11 +1163,10 @@ impl Database {
         now: TimestampMillis,
     ) -> Result<PurgeReceipt, PurgeError> {
         let mut connection = self.connection().map_err(storage)?;
-        let receipt = purge_on(&mut connection, &self.foreign_keys_lost, now, |purge| {
+        purge_on(&mut connection, &self.foreign_keys_lost, now, |purge| {
+            record_deleted_at(purge.connection, "character", &id.to_string(), now)?;
             purge.character_entry(&id.to_string())
-        })?;
-        record_deleted_at(&connection, "character", &id.to_string(), now)?;
-        Ok(receipt)
+        })
     }
 
     /// Runs the deletes received through sync that have not run yet.
