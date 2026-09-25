@@ -351,8 +351,8 @@ CREATE TABLE purge_rejournals (
 -- left out when it was sent without it), a received
 -- delete given up after repeated failures, a group a character delete left
 -- with fewer than two members, media collection skipped because another
--- database file could not be read, and a synced entity that cannot be
--- encoded for sync.
+-- database file could not be read, a synced entity that cannot be encoded
+-- for sync, and a conflict kept aside when the sync journal started over.
 CREATE TABLE purge_notices (
     id INTEGER PRIMARY KEY,
     entity_kind TEXT NOT NULL CHECK (entity_kind IN (
@@ -362,7 +362,7 @@ CREATE TABLE purge_notices (
     reason TEXT NOT NULL CHECK (reason IN (
         'kept_unsent_local_changes', 'rejournal_incomplete', 'dropped_after_failures',
         'rejournal_dropped', 'group_below_two_members', 'media_collection_skipped',
-        'not_synced'
+        'not_synced', 'conflict_carried'
     )),
     recorded_at INTEGER NOT NULL,
     dismissed_at INTEGER

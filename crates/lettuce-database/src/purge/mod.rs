@@ -961,10 +961,15 @@ pub enum PurgeNoticeReason {
     /// receive its current state and changes received for it wait. It syncs
     /// again once it can be encoded.
     NotSynced,
+    /// A sync conflict still waited for the user's choice when the sync
+    /// journal started over; both sides are kept in
+    /// `sync_carried_conflicts` and the entity keeps the side that was
+    /// current.
+    ConflictCarried,
 }
 
 impl PurgeNoticeReason {
-    const ALL: [Self; 7] = [
+    const ALL: [Self; 8] = [
         Self::KeptUnsentLocalChanges,
         Self::RejournalIncomplete,
         Self::RejournalDropped,
@@ -972,6 +977,7 @@ impl PurgeNoticeReason {
         Self::GroupBelowTwoMembers,
         Self::MediaCollectionSkipped,
         Self::NotSynced,
+        Self::ConflictCarried,
     ];
 
     const fn name(self) -> &'static str {
@@ -983,6 +989,7 @@ impl PurgeNoticeReason {
             Self::DroppedAfterFailures => "dropped_after_failures",
             Self::GroupBelowTwoMembers => "group_below_two_members",
             Self::NotSynced => "not_synced",
+            Self::ConflictCarried => "conflict_carried",
         }
     }
 }
@@ -1112,6 +1119,25 @@ impl Database {
     }
 }
 
+/// Records when the user deleted a synced entity, so its sync delete carries
+/// that time.
+fn record_deleted_at(
+    connection: &Connection,
+    kind: &str,
+    id: &str,
+    now: TimestampMillis,
+) -> Result<(), PurgeError> {
+    connection
+        .execute(
+            "INSERT INTO sync_deleted_entities (entity_kind, entity_id, deleted_at)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(entity_kind, entity_id) DO UPDATE SET deleted_at = excluded.deleted_at",
+            params![kind, id, now.get()],
+        )
+        .map(|_| ())
+        .map_err(storage)
+}
+
 impl Database {
     /// Deletes a conversation (direct or group) and every row it owns.
     /// Usage events stay. Refused while a generation or memory run is active.
@@ -1121,9 +1147,11 @@ impl Database {
         now: TimestampMillis,
     ) -> Result<PurgeReceipt, PurgeError> {
         let mut connection = self.connection().map_err(storage)?;
-        purge_on(&mut connection, &self.foreign_keys_lost, now, |purge| {
+        let receipt = purge_on(&mut connection, &self.foreign_keys_lost, now, |purge| {
             purge.conversation_entry(&id.to_string())
-        })
+        })?;
+        record_deleted_at(&connection, "conversation", &id.to_string(), now)?;
+        Ok(receipt)
     }
 
     /// Deletes a character, its direct conversations and its companion
@@ -1135,9 +1163,11 @@ impl Database {
         now: TimestampMillis,
     ) -> Result<PurgeReceipt, PurgeError> {
         let mut connection = self.connection().map_err(storage)?;
-        purge_on(&mut connection, &self.foreign_keys_lost, now, |purge| {
+        let receipt = purge_on(&mut connection, &self.foreign_keys_lost, now, |purge| {
             purge.character_entry(&id.to_string())
-        })
+        })?;
+        record_deleted_at(&connection, "character", &id.to_string(), now)?;
+        Ok(receipt)
     }
 
     /// Runs the deletes received through sync that have not run yet.

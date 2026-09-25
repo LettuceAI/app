@@ -409,7 +409,8 @@ fn initialize_settings(connection: &Connection) -> Result<(), DatabaseError> {
 
 fn rebaseline_sync_journal(connection: &mut Connection) -> Result<(), DatabaseError> {
     let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    crate::sync::sync_adapter::rebaseline_journal_if_format_changed(&transaction)?;
+    crate::sync::sync_adapter::rebaseline_journal_if_format_changed(&transaction, now()?)
+        .map_err(|_| rusqlite::Error::InvalidQuery)?;
     transaction.commit()?;
     Ok(())
 }
@@ -5817,12 +5818,14 @@ mod tests {
                 "speech_syntheses",
                 "speech_transcriptions",
                 "starter_messages",
+                "sync_carried_conflicts",
                 "sync_change_frontiers",
                 "sync_changes",
                 "sync_conflicts",
                 "sync_conversation_forks",
                 "sync_conversation_marks",
                 "sync_deferred_changes",
+                "sync_deleted_entities",
                 "sync_frontiers",
                 "sync_incoming_batches",
                 "sync_incoming_changes",

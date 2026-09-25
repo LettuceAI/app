@@ -509,3 +509,113 @@ BEGIN
     VALUES (OLD.conversation_id, 1, 0)
     ON CONFLICT(conversation_id) DO UPDATE SET changed = changed + 1;
 END;
+
+-- Conflicts that still waited for the user's choice when the journal started
+-- over, with both sides kept; a `conflict_carried` notice points at each.
+CREATE TABLE sync_carried_conflicts (
+    conflict_id TEXT PRIMARY KEY CHECK (length(conflict_id) = 36),
+    entity_kind TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    winning_side TEXT NOT NULL CHECK (winning_side IN ('current', 'incoming')),
+    current_payload BLOB NOT NULL,
+    incoming_payload BLOB NOT NULL,
+    detected_at INTEGER NOT NULL,
+    carried_at INTEGER NOT NULL
+) STRICT;
+
+-- When a synced entity was deleted on this device, so the scan stamps its
+-- delete with that time rather than the session's. Device-local.
+CREATE TABLE sync_deleted_entities (
+    entity_kind TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    deleted_at INTEGER NOT NULL,
+    PRIMARY KEY (entity_kind, entity_id)
+) STRICT;
+
+CREATE TRIGGER sync_deleted_provider_accounts
+AFTER DELETE ON provider_accounts
+BEGIN
+    INSERT INTO sync_deleted_entities (entity_kind, entity_id, deleted_at)
+    VALUES ('provider_account', OLD.id, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
+    ON CONFLICT(entity_kind, entity_id) DO UPDATE SET deleted_at = excluded.deleted_at;
+END;
+
+CREATE TRIGGER sync_deleted_model_profiles
+AFTER DELETE ON model_profiles
+BEGIN
+    INSERT INTO sync_deleted_entities (entity_kind, entity_id, deleted_at)
+    VALUES ('model_profile', OLD.id, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
+    ON CONFLICT(entity_kind, entity_id) DO UPDATE SET deleted_at = excluded.deleted_at;
+END;
+
+CREATE TRIGGER sync_deleted_characters
+AFTER DELETE ON characters
+BEGIN
+    INSERT INTO sync_deleted_entities (entity_kind, entity_id, deleted_at)
+    VALUES ('character', OLD.id, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
+    ON CONFLICT(entity_kind, entity_id) DO UPDATE SET deleted_at = excluded.deleted_at;
+END;
+
+CREATE TRIGGER sync_deleted_conversations
+AFTER DELETE ON conversations
+BEGIN
+    INSERT INTO sync_deleted_entities (entity_kind, entity_id, deleted_at)
+    VALUES ('conversation', OLD.id, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
+    ON CONFLICT(entity_kind, entity_id) DO UPDATE SET deleted_at = excluded.deleted_at;
+END;
+
+CREATE TRIGGER sync_deleted_companion_scheduled_notes
+AFTER DELETE ON companion_scheduled_notes
+BEGIN
+    INSERT INTO sync_deleted_entities (entity_kind, entity_id, deleted_at)
+    VALUES ('companion_note', OLD.id, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
+    ON CONFLICT(entity_kind, entity_id) DO UPDATE SET deleted_at = excluded.deleted_at;
+END;
+
+CREATE TRIGGER sync_deleted_audio_providers
+AFTER DELETE ON audio_providers
+BEGIN
+    INSERT INTO sync_deleted_entities (entity_kind, entity_id, deleted_at)
+    VALUES ('audio_provider', OLD.id, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
+    ON CONFLICT(entity_kind, entity_id) DO UPDATE SET deleted_at = excluded.deleted_at;
+END;
+
+CREATE TRIGGER sync_deleted_user_voices
+AFTER DELETE ON user_voices
+BEGIN
+    INSERT INTO sync_deleted_entities (entity_kind, entity_id, deleted_at)
+    VALUES ('user_voice', OLD.id, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
+    ON CONFLICT(entity_kind, entity_id) DO UPDATE SET deleted_at = excluded.deleted_at;
+END;
+
+CREATE TRIGGER sync_deleted_asr_vocabulary_terms
+AFTER DELETE ON asr_vocabulary_terms
+BEGIN
+    INSERT INTO sync_deleted_entities (entity_kind, entity_id, deleted_at)
+    VALUES ('asr_vocabulary_term', OLD.id, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
+    ON CONFLICT(entity_kind, entity_id) DO UPDATE SET deleted_at = excluded.deleted_at;
+END;
+
+CREATE TRIGGER sync_deleted_asr_corrections
+AFTER DELETE ON asr_corrections
+BEGIN
+    INSERT INTO sync_deleted_entities (entity_kind, entity_id, deleted_at)
+    VALUES ('asr_correction', OLD.id, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
+    ON CONFLICT(entity_kind, entity_id) DO UPDATE SET deleted_at = excluded.deleted_at;
+END;
+
+CREATE TRIGGER sync_deleted_asr_ignored_suggestions
+AFTER DELETE ON asr_ignored_suggestions
+BEGIN
+    INSERT INTO sync_deleted_entities (entity_kind, entity_id, deleted_at)
+    VALUES ('asr_ignored_suggestion', OLD.id, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
+    ON CONFLICT(entity_kind, entity_id) DO UPDATE SET deleted_at = excluded.deleted_at;
+END;
+
+CREATE TRIGGER sync_deleted_asr_voice_examples
+AFTER DELETE ON asr_voice_examples
+BEGIN
+    INSERT INTO sync_deleted_entities (entity_kind, entity_id, deleted_at)
+    VALUES ('asr_voice_example', OLD.id, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
+    ON CONFLICT(entity_kind, entity_id) DO UPDATE SET deleted_at = excluded.deleted_at;
+END;

@@ -504,7 +504,7 @@ fn ensure_local_device(
 
 /// Tables that hold journal evidence, emptied together when the journal
 /// starts over. Children come before the tables they reference.
-const JOURNAL_TABLES: [&str; 11] = [
+const JOURNAL_TABLES: [&str; 9] = [
     "sync_change_frontiers",
     "sync_conflicts",
     "sync_deferred_changes",
@@ -514,62 +514,197 @@ const JOURNAL_TABLES: [&str; 11] = [
     "sync_frontiers",
     "sync_peer_frontiers",
     "sync_conversation_marks",
-    "purge_queue",
-    "purge_rejournals",
 ];
+
+/// A delete that is the latest state of its entity here, carried across a
+/// journal restart.
+struct CarriedDelete {
+    entity: SyncEntity,
+    base_revision: Option<ContentHash>,
+    timestamp: HybridTimestamp,
+    previous_change: String,
+}
+
+/// Every entity whose latest journaled state is a delete that holds here:
+/// the entity is gone, or its received delete waits in the purge queue.
+fn carried_deletes(tx: &Transaction<'_>) -> Result<Vec<CarriedDelete>, LocalChangeJournalError> {
+    let ids = tx
+        .prepare(
+            "SELECT change.change_id FROM sync_changes change
+             WHERE change.operation = 'delete'
+               AND NOT EXISTS (
+                 SELECT 1 FROM sync_deferred_changes deferred
+                 WHERE deferred.change_id = change.change_id)
+               AND change.rowid = (
+                 SELECT MAX(other.rowid) FROM sync_changes other
+                 WHERE other.entity_kind = change.entity_kind
+                   AND other.entity_id = change.entity_id
+                   AND NOT EXISTS (
+                     SELECT 1 FROM sync_conflicts conflict
+                     WHERE conflict.incoming_change_id = other.change_id
+                       AND conflict.winning_side = 'current')
+                   AND NOT EXISTS (
+                     SELECT 1 FROM sync_deferred_changes deferred
+                     WHERE deferred.change_id = other.change_id))
+             ORDER BY change.rowid",
+        )
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| row.get::<_, String>(0))?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(storage)?;
+    let mut carried = Vec::with_capacity(ids.len());
+    for id in ids {
+        let change = load_change_by_id(
+            tx,
+            SyncChangeId::from_uuid(Uuid::parse_str(&id).map_err(corrupt)?),
+        )
+        .map_err(|_| LocalChangeJournalError::Storage)?
+        .ok_or(LocalChangeJournalError::Corrupt)?;
+        let kind = change.entity().kind();
+        let queued = crate::purge::purge_queued(tx, kind, change.entity().id()).map_err(storage)?;
+        let gone = match snapshot_codec(kind) {
+            Some(codec) => matches!((codec.current)(tx, change.entity().id()), Ok(None)),
+            None => false,
+        };
+        if gone || queued {
+            carried.push(CarriedDelete {
+                entity: change.entity().clone(),
+                base_revision: change.base_revision().cloned(),
+                timestamp: change.timestamp(),
+                previous_change: id,
+            });
+        }
+    }
+    Ok(carried)
+}
+
+/// Moves every conflict still waiting for the user's choice into
+/// `sync_carried_conflicts` with both sides, and tells the user. A conflict
+/// where one side is an untouched seed or both sides are equal loses nothing
+/// and is not carried.
+fn carry_unresolved_conflicts(
+    tx: &Transaction<'_>,
+    now: TimestampMillis,
+) -> Result<(), LocalChangeJournalError> {
+    let conflicts = tx
+        .prepare(
+            "SELECT conflict_id, entity_kind, entity_id, current_payload, incoming_payload
+             FROM sync_conflicts
+             WHERE status = 'unresolved' ORDER BY detected_at, conflict_id",
+        )
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, Vec<u8>>(3)?,
+                        row.get::<_, Vec<u8>>(4)?,
+                    ))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(storage)?;
+    for (conflict, kind, id, current, incoming) in conflicts {
+        if current == incoming || is_seed(&kind, Some(&current)) || is_seed(&kind, Some(&incoming))
+        {
+            continue;
+        }
+        tx.execute(
+            "INSERT INTO sync_carried_conflicts
+             (conflict_id, entity_kind, entity_id, winning_side, current_payload,
+              incoming_payload, detected_at, carried_at)
+             SELECT conflict_id, entity_kind, entity_id, winning_side, current_payload,
+                    incoming_payload, detected_at, ?2
+             FROM sync_conflicts WHERE conflict_id = ?1",
+            params![conflict, now.get()],
+        )
+        .map_err(storage)?;
+        crate::purge::record_notice(
+            tx,
+            crate::PurgeNoticeEntity::SyncEntity,
+            &format!("{kind}/{id}"),
+            crate::PurgeNoticeReason::ConflictCarried,
+            now,
+        )
+        .map_err(storage)?;
+    }
+    Ok(())
+}
 
 /// Starts the journal over when it was written under other payload schemas
 /// than this build exchanges. Journaled payloads are immutable and bound into
 /// change fingerprints peers have acknowledged, so they are never rewritten:
-/// every journal table is emptied, the device takes a new sync identity (its
+/// the journal tables are emptied, the device takes a new sync identity (its
 /// hybrid clock carries on), and the next scan journals the current state as
-/// inserts stamped with each entity's own change time. Peers updated to the
-/// same build start over the same way and settle the concurrent inserts by
-/// last writer wins; no domain row is touched, so nothing held here is lost.
+/// inserts stamped with each entity's own change time. Three things survive:
+/// every delete that is the latest state of its entity here is journaled
+/// again first under the new identity with its original stamp and no causal
+/// dependencies (which marks it as carried, see `unseen_changes`), queued
+/// purges and re-journals stay as pending work (a queued purge now points at
+/// its carried delete), and conflicts still waiting for the user's choice
+/// move to `sync_carried_conflicts` with a notice. Peers updated to the same
+/// build start over the same way and settle the concurrent inserts by last
+/// writer wins, and a carried delete beats content older than it.
 pub(crate) fn rebaseline_journal_if_format_changed(
-    connection: &Connection,
-) -> rusqlite::Result<bool> {
+    tx: &Transaction<'_>,
+    now: TimestampMillis,
+) -> Result<bool, LocalChangeJournalError> {
     let current = lettuce_sync::current_sync_schema_fingerprint();
-    let stored = connection
+    let stored = tx
         .query_row(
             "SELECT schema_fingerprint FROM sync_journal_format WHERE id = 1",
             [],
             |row| row.get::<_, String>(0),
         )
-        .optional()?;
+        .optional()
+        .map_err(storage)?;
     if stored.as_deref() == Some(current.as_str()) {
         return Ok(false);
     }
-    let clock = connection
+    let clock = tx
         .query_row(
             "SELECT hlc_wall_time, hlc_counter FROM sync_local_state WHERE id = 1",
             [],
             |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
         )
-        .optional()?;
+        .optional()
+        .map_err(storage)?;
     let rebaselined = clock.is_some();
     if let Some((wall_time, counter)) = clock {
+        let deletes = carried_deletes(tx)?;
+        carry_unresolved_conflicts(tx, now)?;
         let mut guarded = JOURNAL_TABLES.to_vec();
         guarded.push("sync_local_state");
         let placeholders = vec!["?"; guarded.len()].join(", ");
-        let triggers = connection
+        let triggers = tx
             .prepare(&format!(
                 "SELECT name, sql FROM sqlite_master
                  WHERE type = 'trigger' AND tbl_name IN ({placeholders})
                  ORDER BY name"
-            ))?
-            .query_map(rusqlite::params_from_iter(&guarded), |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-            })?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
+            ))
+            .and_then(|mut statement| {
+                statement
+                    .query_map(rusqlite::params_from_iter(&guarded), |row| {
+                        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                    })?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+            })
+            .map_err(storage)?;
         for (name, _) in &triggers {
-            connection.execute_batch(&format!("DROP TRIGGER \"{name}\""))?;
+            tx.execute_batch(&format!("DROP TRIGGER \"{name}\""))
+                .map_err(storage)?;
         }
         for table in JOURNAL_TABLES {
-            connection.execute(&format!("DELETE FROM {table}"), [])?;
+            tx.execute(&format!("DELETE FROM {table}"), [])
+                .map_err(storage)?;
         }
-        connection.execute("DELETE FROM sync_local_state", [])?;
-        connection.execute(
+        tx.execute("DELETE FROM sync_local_state", [])
+            .map_err(storage)?;
+        tx.execute(
             "INSERT INTO sync_local_state
              (id, device_id, origin_sequence, hlc_wall_time, hlc_counter)
              VALUES (1, ?1, 0, ?2, ?3)",
@@ -578,17 +713,50 @@ pub(crate) fn rebaseline_journal_if_format_changed(
                 wall_time,
                 counter
             ],
-        )?;
+        )
+        .map_err(storage)?;
         for (_, sql) in &triggers {
-            connection.execute_batch(sql)?;
+            tx.execute_batch(sql).map_err(storage)?;
         }
-        tracing::info!("sync journal started over for changed payload schemas");
+        for carried in &deletes {
+            let frontier = load_frontier(tx)?;
+            let (device, sequence, _) = next_identity_and_stamp(tx, now, &frontier)?;
+            let change = CanonicalChange::new(
+                SyncChangeId::new(),
+                device,
+                sequence,
+                carried.timestamp,
+                CausalFrontier::new(),
+                carried.entity.clone(),
+                ChangeOperation::Delete,
+                carried.base_revision.clone(),
+                None,
+            )
+            .map_err(|_| LocalChangeJournalError::Invalid)?;
+            insert_change(tx, Some(OperationId::new()), &change, now)?;
+            tx.execute(
+                "UPDATE purge_queue SET change_id = ?3
+                 WHERE entity_kind = ?1 AND entity_id = ?2 AND change_id = ?4",
+                params![
+                    carried.entity.kind(),
+                    carried.entity.id(),
+                    change.id().as_uuid().to_string(),
+                    carried.previous_change
+                ],
+            )
+            .map_err(storage)?;
+        }
+        tracing::info!(
+            carried_deletes = deletes.len(),
+            "sync journal started over for changed payload schemas"
+        );
     }
-    connection.execute(
+    tx.execute(
         "INSERT INTO sync_journal_format (id, schema_fingerprint) VALUES (1, ?1)
          ON CONFLICT(id) DO UPDATE SET schema_fingerprint = excluded.schema_fingerprint",
         [current.as_str()],
-    )?;
+    )
+    .map_err(storage)?;
     Ok(rebaselined)
 }
 
@@ -2869,6 +3037,10 @@ fn journal_referenced_media(
     Ok(journaled)
 }
 
+/// Journals one scanned change. An insert or update is stamped with its
+/// content's change time and a delete with the time this device deleted the
+/// entity (recorded by `sync_deleted_entities`), each no earlier than the
+/// entity's latest journaled change.
 fn journal_state_change(
     tx: &Transaction<'_>,
     kind: &str,
@@ -2878,9 +3050,26 @@ fn journal_state_change(
     payload: Option<CanonicalPayload>,
     now: TimestampMillis,
 ) -> Result<(), LocalChangeJournalError> {
-    let source_time = payload
-        .as_ref()
-        .and_then(|payload| snapshot_source_time(kind, payload.bytes()));
+    let source_time = match &payload {
+        Some(payload) => snapshot_source_time(kind, payload.bytes()),
+        None => {
+            let deleted_at = tx
+                .query_row(
+                    "SELECT deleted_at FROM sync_deleted_entities
+                     WHERE entity_kind = ?1 AND entity_id = ?2",
+                    params![kind, id],
+                    |row| row.get::<_, i64>(0),
+                )
+                .optional()
+                .map_err(storage)?;
+            tx.execute(
+                "DELETE FROM sync_deleted_entities WHERE entity_kind = ?1 AND entity_id = ?2",
+                params![kind, id],
+            )
+            .map_err(storage)?;
+            deleted_at.map(TimestampMillis::new)
+        }
+    };
     let request = NewCanonicalChange::new(
         SyncEntity::new(kind, id).map_err(corrupt)?,
         operation,
@@ -3157,7 +3346,10 @@ struct UnseenChanges {
 /// device or another), the current content of every owned entity against
 /// its latest journaled content (edits made since the last scan, including
 /// during an exchange), and a generation still running. Untouched seeds, such
-/// as the Soul a received companion starts with, do not count.
+/// as the Soul a received companion starts with, do not count. A delete
+/// carried across a journal restart (the only delete without causal
+/// dependencies) observes nothing, so against it only changes stamped after
+/// it count: content journaled again by a restart is older and loses.
 fn unseen_changes(
     tx: &Transaction<'_>,
     delete: &CanonicalChange,
@@ -3165,6 +3357,7 @@ fn unseen_changes(
 ) -> Result<UnseenChanges, ApplyOneError> {
     let mut unseen = UnseenChanges::default();
     let device = local_device(tx).map_err(|_| ApplyOneError::Storage)?;
+    let carried = delete.base_frontier().is_empty();
     for owner in &scope.owners {
         let mut statement = tx
             .prepare(
@@ -3207,7 +3400,7 @@ fn unseen_changes(
             )
             .map_err(|_| ApplyOneError::Storage)?
             .ok_or(ApplyOneError::Corrupt)?;
-            if delete.observes(&change) {
+            if delete.observes(&change) || (carried && change.timestamp() < delete.timestamp()) {
                 continue;
             }
             if Some(change.origin_device()) == device {
@@ -4259,7 +4452,7 @@ impl LocalChangeJournal for Database {
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;
-        rebaseline_journal_if_format_changed(&tx).map_err(storage)?;
+        rebaseline_journal_if_format_changed(&tx, now)?;
         retry_pending_rejournals(&tx, now).map_err(journal_apply_error)?;
         let pending_scopes = pending_rejournal_scopes(&tx).map_err(journal_apply_error)?;
         let mut journaled = journal_referenced_media(&tx, now)?;

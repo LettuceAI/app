@@ -4695,6 +4695,70 @@ mod smoke_tests {
     }
 
     #[test]
+    fn a_purge_the_offline_peer_missed_survives_a_journal_restart_on_both_devices() {
+        use lettuce_sync::LocalChangeJournal;
+        let a = Database::open_in_memory().expect("a");
+        let b = Database::open_in_memory().expect("b");
+        let companion = CharacterId::new();
+        CharacterRepository::create(&a, companion_plan(companion)).expect("companion");
+        sync_characters(&a, &b, 100);
+        sync_characters(&b, &a, 110);
+        a.purge_character(companion, TimestampMillis::new(200))
+            .expect("purge on a");
+        a.journal_current_state(TimestampMillis::new(1_000))
+            .expect("a journals the delete");
+        let stamped: i64 = a
+            .connection()
+            .expect("connection")
+            .query_row(
+                "SELECT hlc_wall_time FROM sync_changes
+                 WHERE entity_kind = 'character' AND operation = 'delete'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("delete stamp");
+        assert_eq!(stamped, 200, "the delete carries the time of the purge");
+        for database in [&a, &b] {
+            database
+                .connection()
+                .expect("connection")
+                .execute(
+                    "UPDATE sync_journal_format SET schema_fingerprint = ?1",
+                    ["00".repeat(32)],
+                )
+                .expect("an update that changed payload schemas");
+        }
+
+        for (from, to, at) in [
+            (&b, &a, 1_100),
+            (&a, &b, 1_110),
+            (&b, &a, 1_120),
+            (&a, &b, 1_130),
+        ] {
+            sync_characters(from, to, at);
+        }
+
+        for database in [&a, &b] {
+            assert_eq!(
+                CharacterRepository::get(database, companion).expect("get"),
+                None
+            );
+            assert_eq!(
+                SoulRepository::get(database, SoulOwner::Character(companion)).expect("soul"),
+                None
+            );
+            let notices = database.purge_notices().expect("notices");
+            assert!(notices.is_empty(), "{notices:?}");
+            assert_eq!(
+                database
+                    .journal_current_state(TimestampMillis::new(1_200))
+                    .expect("rescan"),
+                0
+            );
+        }
+    }
+
+    #[test]
     fn a_received_character_delete_keeps_a_character_edited_here_since() {
         use lettuce_sync::LocalChangeJournal;
         let a = Database::open_in_memory().expect("a");
