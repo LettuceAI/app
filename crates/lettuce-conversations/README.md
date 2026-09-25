@@ -223,10 +223,13 @@ lines, the memory cycle's time awareness and temporal-range retrieval. Legacy
 imports of the `timeAwarenessEnabled` and `timeOverride` preferences are still
 missing.
 The heuristic's recency distance counts every visible message after a
-participant's last line, the pending user message included, because legacy
-numbered every stored group message as a turn and scored
-`current_turn - last_spoke_turn`; an explicit speaker missing from the cast is
-an error, never a panic.
+participant's last line, excluding the user message the send is answering,
+because legacy numbered every stored group message as a turn, scored
+`current_turn - last_spoke_turn` and built that context before it saved the new
+user message (`group_chat_manager/mod.rs` 6430-6443); an explicit speaker
+missing from the cast is an error, never a panic. Round robin continues after
+the last speaker when it is still selectable and restarts at the first
+selectable member otherwise (`selection.rs` 449-467).
 An LLM group launch may retain a dedicated speaker-selection model snapshot.
 The optional field is backward-compatible for existing snapshot documents and
 is valid only with the LLM policy. Its protected model artifact freezes the

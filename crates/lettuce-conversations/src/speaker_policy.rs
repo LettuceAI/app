@@ -5,7 +5,7 @@ use lettuce_types::ConversationParticipantId;
 use crate::content::{MessageRole, MessageVisibility};
 use crate::ports::{SpeakerParticipantState, SpeakerPolicyRequest};
 use crate::snapshot::GroupSpeakerSelectionSnapshot;
-use crate::{SelectedSpeakerDecision, SpeakerDecisionMethod, SpeakerFallback};
+use crate::{GenerationOperation, SelectedSpeakerDecision, SpeakerDecisionMethod, SpeakerFallback};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum SpeakerSelectionError {
@@ -233,19 +233,24 @@ fn heuristic_speaker(
     best.map(|(participant_id, _)| participant_id)
 }
 
-/// Legacy numbered every stored group message as a turn and scored
-/// `current_turn - last_spoke_turn`, so the distance counts every visible
-/// message after the participant's last line, the pending user message
-/// included.
+/// The number of visible messages after the participant's last line,
+/// excluding the user message a send answers.
 fn recency_turns_ago(
     request: &SpeakerPolicyRequest,
     participant: &SpeakerParticipantState,
 ) -> Option<u64> {
-    let visible = request
+    let mut visible = request
         .timeline
         .iter()
         .filter(|item| item.message.visibility == MessageVisibility::Visible)
         .collect::<Vec<_>>();
+    if request.operation == GenerationOperation::Send
+        && visible
+            .last()
+            .is_some_and(|item| item.message.role == MessageRole::User)
+    {
+        visible.pop();
+    }
     let last_index = visible.iter().rposition(|item| {
         item.message.role == MessageRole::Assistant
             && item.message.author_participant_id == Some(participant.id)
@@ -267,10 +272,9 @@ fn round_robin_speaker(
     if available.is_empty() {
         return None;
     }
-    let prior_index = request
-        .participants
-        .iter()
-        .position(|participant| Some(participant.id) == request.prior_speaker);
+    let prior_index = request.participants.iter().position(|participant| {
+        Some(participant.id) == request.prior_speaker && participant.eligible && !participant.muted
+    });
     let start = prior_index.map_or(0, |index| index + 1);
     request
         .participants
@@ -290,8 +294,8 @@ mod tests {
     };
 
     use super::*;
+    use crate::TimelineItem;
     use crate::content::{Message, MessageRenderSource, MessageRole, MessageVisibility};
-    use crate::{GenerationOperation, TimelineItem};
 
     fn participant(
         id: ConversationParticipantId,
@@ -352,6 +356,54 @@ mod tests {
             active_candidate: None,
             initial_origin: None,
         }
+    }
+
+    #[test]
+    fn heuristic_recency_ignores_the_user_message_being_answered() {
+        let b = ConversationParticipantId::new();
+        let c = ConversationParticipantId::new();
+        let a = ConversationParticipantId::new();
+        let mut request = request(vec![
+            participant(b, 1, true, false),
+            participant(c, 1, true, false),
+            participant(a, 1, true, false),
+        ]);
+        request.timeline = vec![
+            user_message(1),
+            assistant_message(c, 2),
+            user_message(3),
+            assistant_message(b, 4),
+            user_message(5),
+            assistant_message(a, 6),
+            user_message(7),
+        ];
+        request.prior_speaker = Some(a);
+        let decision = select_group_speaker(&request, GroupSpeakerSelectionSnapshot::Heuristic)
+            .expect("heuristic speaker");
+        assert_eq!(
+            decision.participant_id, c,
+            "legacy group_chat_manager 6430-6443 scored recency before saving the new message"
+        );
+    }
+
+    #[test]
+    fn round_robin_restarts_after_a_muted_speaker() {
+        let a = ConversationParticipantId::new();
+        let b = ConversationParticipantId::new();
+        let c = ConversationParticipantId::new();
+        let mut request = request(vec![
+            participant(a, 0, true, false),
+            participant(b, 1, true, true),
+            participant(c, 0, true, false),
+        ]);
+        request.timeline = vec![user_message(1), assistant_message(b, 2), user_message(3)];
+        request.prior_speaker = Some(b);
+        let decision = select_group_speaker(&request, GroupSpeakerSelectionSnapshot::RoundRobin)
+            .expect("round robin speaker");
+        assert_eq!(
+            decision.participant_id, a,
+            "legacy selection.rs 449-467 restarts at the first unmuted member"
+        );
     }
 
     #[test]
@@ -536,6 +588,11 @@ mod tests {
             user_message(4),
             hidden,
         ];
+        assert_eq!(
+            recency_turns_ago(&request, &request.participants[0]),
+            Some(2)
+        );
+        request.operation = GenerationOperation::Continue;
         assert_eq!(
             recency_turns_ago(&request, &request.participants[0]),
             Some(3)
