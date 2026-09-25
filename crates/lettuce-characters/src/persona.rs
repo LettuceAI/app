@@ -109,11 +109,6 @@ fn validate_authored_fields(
     image_recommendation: Option<&ImageRecommendation>,
 ) -> Result<(), ValidationError> {
     validate_name("persona.title", title)?;
-    if description.trim().is_empty() {
-        return Err(ValidationError::Blank {
-            field: "persona.description",
-        });
-    }
     validate_text("persona.description", description)?;
     if let Some(nickname) = nickname {
         validate_text("persona.nickname", nickname)?;
@@ -264,7 +259,7 @@ mod tests {
     use lettuce_types::{AssetId, PersonaId, Revision, TimestampMillis};
 
     #[test]
-    fn description_is_required() {
+    fn description_may_be_blank_like_legacy_persona_import() {
         let persona = Persona {
             id: PersonaId::new(),
             status: LifecycleStatus::Active,
@@ -279,7 +274,7 @@ mod tests {
             created_at: TimestampMillis::new(0),
             updated_at: TimestampMillis::new(0),
         };
-        assert!(persona.validate().is_err());
+        assert_eq!(persona.validate(), Ok(()));
     }
 
     #[test]
@@ -406,12 +401,7 @@ mod tests {
             avatar_crop: None,
             image_recommendation: None,
         };
-        assert_eq!(
-            draft.validate(),
-            Err(ValidationError::Blank {
-                field: "persona.description"
-            })
-        );
+        assert_eq!(draft.validate(), Ok(()));
     }
 
     #[test]

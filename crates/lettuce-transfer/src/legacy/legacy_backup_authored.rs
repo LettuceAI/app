@@ -574,11 +574,6 @@ fn map_personas(
         let id: PersonaId = parse_id(&row.id, LegacyBackupDocumentKind::Personas, "id")?;
         require_unique(&mut ids, id, LegacyBackupDocumentKind::Personas, "id")?;
         require_nonblank(&row.title, LegacyBackupDocumentKind::Personas, "title")?;
-        require_nonblank(
-            &row.description,
-            LegacyBackupDocumentKind::Personas,
-            "description",
-        )?;
         validate_timestamps(
             row.created_at,
             row.updated_at,

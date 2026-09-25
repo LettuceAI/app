@@ -351,7 +351,7 @@ impl SnapshotDocumentBody for PersonaSnapshotBodyV1 {
             "persona_document.description",
             &self.description,
             MAX_AUTHORED_TEXT_BYTES,
-            false,
+            true,
         )?;
         for value in [self.nickname.as_deref(), self.design_description.as_deref()]
             .into_iter()

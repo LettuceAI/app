@@ -5,7 +5,7 @@ CREATE TABLE personas (
     normalized_title TEXT NOT NULL CHECK (length(normalized_title) > 0),
     nickname TEXT,
     normalized_nickname TEXT,
-    description TEXT NOT NULL CHECK (length(trim(description)) > 0),
+    description TEXT NOT NULL,
     design_description TEXT,
     avatar_crop_json TEXT,
     image_recommendation_json TEXT,
