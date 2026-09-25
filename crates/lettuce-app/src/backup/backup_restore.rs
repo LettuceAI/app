@@ -312,16 +312,16 @@ impl<'a, S: SecretStore + ?Sized> BackupRestoreCoordinator<'a, S> {
         }
         let database = Database::open(database_path)?;
         database.restore_provider_backup_graph(graph, artifacts)?;
+        let mut restored = database.read_provider_backup_graph()?;
+        lettuce_transfer::canonicalize_and_validate(&mut restored)?;
+        if restored != *graph {
+            return Err(BackupRestoreError::VerificationFailed);
+        }
         if previous_database_path
             .try_exists()
             .map_err(|_| BackupRestoreError::TargetDirectory)?
         {
             database.carry_device_local_state_from(previous_database_path)?;
-        }
-        let mut restored = database.read_provider_backup_graph()?;
-        lettuce_transfer::canonicalize_and_validate(&mut restored)?;
-        if restored != *graph {
-            return Err(BackupRestoreError::VerificationFailed);
         }
         Ok(database.admit_backup_restore(admission)?)
     }

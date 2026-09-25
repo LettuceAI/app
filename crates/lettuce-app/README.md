@@ -1931,7 +1931,8 @@ App usage (2026-09-23, redesigned with the user): `AppActiveUsageTracker`
 counts only the time the window is focused (legacy never paused on blur, so it
 counted the time the app was open) and `flush` adds it atomically to the
 device-local `app_usage_days` table (`lettuce_usage::AppUsageRepository`, one
-row per local day; never synced or backed up, carried across a restore). The
+row per local day; never synced; a v2 backup carries the days and a restore
+writes them, then adds the previous file's other days). The
 host flushes every 30 s and on exit like legacy. Legacy kept a total, a day map,
 a started-at and a last-updated field inside the settings JSON with a
 read-modify-write; the import writes `appActiveUsageByDayMs` into the table

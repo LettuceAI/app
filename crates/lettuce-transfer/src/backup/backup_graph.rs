@@ -52,6 +52,25 @@ pub struct BackupGlobalSettings {
     pub updated_at: TimestampMillis,
 }
 
+/// The device settings and history a backup carries to another device: the
+/// trusted root certificates, the embedding model choice and each day of app
+/// usage. The models folder is a path on this device and stays behind.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct BackupDeviceState {
+    pub trusted_certificates: Vec<lettuce_settings::TrustedCertificate>,
+    pub embedding: lettuce_settings::DeviceEmbeddingSettings,
+    pub app_usage_days: Vec<BackupAppUsageDay>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackupAppUsageDay {
+    pub day: String,
+    pub active_ms: u64,
+    pub updated_at: TimestampMillis,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BackupLorebookBindings<Owner> {
@@ -92,6 +111,8 @@ pub struct ProviderBackupGraph {
     pub audio_providers: Vec<AudioProvider>,
     pub user_voices: Vec<UserVoice>,
     pub authored: AuthoredProfileBackup,
+    #[serde(default)]
+    pub device: BackupDeviceState,
     #[serde(skip)]
     pub asr_learning: crate::AsrLearningDocument,
     #[serde(skip)]
@@ -701,6 +722,7 @@ pub fn canonicalize_and_validate(
     if graph.version != PROVIDER_BACKUP_GRAPH_VERSION {
         return Err(ProviderBackupGraphError::InvalidGraph);
     }
+    validate_device_state(&mut graph.device)?;
     graph.accounts.sort_by_key(|account| account.id.to_string());
     graph.profiles.sort_by_key(|profile| profile.id.to_string());
     graph.prompts.sort_by_key(|prompt| prompt.id.to_string());
@@ -1589,6 +1611,38 @@ struct SecretDocument<'a> {
     app: Vec<&'a ProviderBackupSecret>,
 }
 
+fn validate_device_state(device: &mut BackupDeviceState) -> Result<(), ProviderBackupGraphError> {
+    lettuce_settings::DeviceSettings {
+        trusted_certificates: device.trusted_certificates.clone(),
+        embedding: device.embedding,
+        llm_models_dir: None,
+    }
+    .validate()
+    .map_err(|_| ProviderBackupGraphError::InvalidGraph)?;
+    device
+        .app_usage_days
+        .sort_by(|left, right| left.day.cmp(&right.day));
+    let valid_day = |day: &str| {
+        let bytes = day.as_bytes();
+        bytes.len() == 10
+            && bytes.iter().enumerate().all(|(index, byte)| match index {
+                4 | 7 => *byte == b'-',
+                _ => byte.is_ascii_digit(),
+            })
+    };
+    if device
+        .app_usage_days
+        .windows(2)
+        .any(|pair| pair[0].day == pair[1].day)
+        || device.app_usage_days.iter().any(|entry| {
+            !valid_day(&entry.day) || i64::try_from(entry.active_ms).is_err()
+        })
+    {
+        return Err(ProviderBackupGraphError::InvalidGraph);
+    }
+    Ok(())
+}
+
 pub(crate) fn validate_app_secrets(
     secrets: &[ProviderBackupSecret],
 ) -> Result<(), ProviderBackupGraphError> {
@@ -1668,6 +1722,7 @@ mod tests {
             },
             audio_providers: Vec::new(),
             user_voices: Vec::new(),
+            device: BackupDeviceState::default(),
             authored: AuthoredProfileBackup {
                 personas: Vec::new(),
                 persona_default: PersonaDefaultState {

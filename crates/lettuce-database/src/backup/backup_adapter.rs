@@ -1215,6 +1215,7 @@ impl ProviderBackupSource for Database {
             .map_err(backup_error)?;
         let playground_history = crate::media::playground_history_adapter::read_in(&transaction)
             .map_err(backup_error)?;
+        let device = read_device_state(&transaction)?;
         transaction.commit().map_err(backup_error)?;
         Ok(ProviderBackupGraph {
             creation,
@@ -1240,6 +1241,7 @@ impl ProviderBackupSource for Database {
                 media_assets,
                 media_blobs,
             },
+            device,
             asr_learning,
             conversation_history,
             conversation_runtime,
@@ -1253,6 +1255,43 @@ impl ProviderBackupSource for Database {
             dynamic_memory,
         })
     }
+}
+
+fn read_device_state(
+    transaction: &rusqlite::Transaction<'_>,
+) -> Result<lettuce_transfer::BackupDeviceState, ProviderBackupSourceError> {
+    let settings = transaction
+        .query_row(
+            "SELECT settings_json FROM device_settings WHERE id = 1",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(backup_error)?
+        .map(|json| serde_json::from_str::<lettuce_settings::DeviceSettings>(&json))
+        .transpose()
+        .map_err(|_| ProviderBackupSourceError::InvalidData)?
+        .unwrap_or_default();
+    let app_usage_days = transaction
+        .prepare("SELECT day, active_ms, updated_at FROM app_usage_days ORDER BY day")
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| {
+                    Ok(lettuce_transfer::BackupAppUsageDay {
+                        day: row.get(0)?,
+                        active_ms: u64::try_from(row.get::<_, i64>(1)?)
+                            .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                        updated_at: TimestampMillis::new(row.get(2)?),
+                    })
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(backup_error)?;
+    Ok(lettuce_transfer::BackupDeviceState {
+        trusted_certificates: settings.trusted_certificates,
+        embedding: settings.embedding,
+        app_usage_days,
+    })
 }
 
 fn read_conversation_outbox(

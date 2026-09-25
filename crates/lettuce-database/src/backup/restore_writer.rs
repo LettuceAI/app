@@ -51,6 +51,26 @@ impl ProviderBackupRestoreWriter for Database {
         transaction
             .execute_batch("PRAGMA defer_foreign_keys = ON")
             .map_err(storage)?;
+        let device = lettuce_settings::DeviceSettings {
+            trusted_certificates: graph.device.trusted_certificates.clone(),
+            embedding: graph.device.embedding,
+            llm_models_dir: None,
+        };
+        if device != lettuce_settings::DeviceSettings::default() {
+            crate::write_device_settings(&transaction, &device).map_err(invalid)?;
+        }
+        for day in &graph.device.app_usage_days {
+            transaction
+                .execute(
+                    "INSERT INTO app_usage_days (day, active_ms, updated_at) VALUES (?1, ?2, ?3)",
+                    params![
+                        day.day,
+                        i64::try_from(day.active_ms).map_err(|_| Error::InvalidData)?,
+                        day.updated_at.get()
+                    ],
+                )
+                .map_err(invalid)?;
+        }
         let authored = &graph.authored;
         for blob in &authored.media_blobs {
             let mut row = blob.clone();
@@ -801,6 +821,71 @@ pub(crate) mod tests {
             .expect("canonical restored graph");
         assert_eq!(round_trip, graph);
         graph
+    }
+
+    #[test]
+    fn backup_carries_certificates_embedding_choice_and_app_usage_but_not_the_models_folder() {
+        use lettuce_settings::{
+            DeviceEmbeddingSettings, DeviceSettings, DeviceSettingsStore, EmbeddingModelVersion,
+            TrustedCertificate,
+        };
+        use lettuce_usage::AppUsageRepository;
+
+        let root = std::env::temp_dir().join(format!(
+            "device-backup-{}",
+            lettuce_types::OperationId::new()
+        ));
+        std::fs::create_dir_all(&root).expect("fixture root");
+        let source_path = root.join("source.sqlite3");
+        let source = Database::open(&source_path).expect("source database");
+        let settings = DeviceSettings {
+            trusted_certificates: vec![TrustedCertificate {
+                id: uuid::Uuid::from_u128(7),
+                name: "Home lab CA".into(),
+                pem: "-----BEGIN CERTIFICATE-----\nAA==\n-----END CERTIFICATE-----".into(),
+                imported_at: 3,
+            }],
+            embedding: DeviceEmbeddingSettings {
+                model_version: Some(EmbeddingModelVersion::V4),
+                max_tokens: Some(1024),
+                keep_model_loaded: true,
+            },
+            llm_models_dir: Some("/data/models".into()),
+        };
+        source
+            .save_device_settings(settings.clone())
+            .expect("device settings");
+        source
+            .add_app_usage("2026-09-20", 1_000, lettuce_types::TimestampMillis::new(1))
+            .expect("usage");
+        let graph = assert_backup_round_trip(&source);
+        assert_eq!(
+            graph.device.trusted_certificates,
+            settings.trusted_certificates
+        );
+        assert_eq!(graph.device.embedding, settings.embedding);
+        assert_eq!(graph.device.app_usage_days.len(), 1);
+
+        let restored = Database::open(root.join("restored.sqlite3")).expect("restored database");
+        restored
+            .restore_provider_backup_graph(&graph, &[])
+            .expect("restore graph");
+        assert_eq!(
+            restored
+                .load_device_settings()
+                .expect("restored settings")
+                .llm_models_dir,
+            None
+        );
+        restored
+            .carry_device_local_state_from(&source_path)
+            .expect("carry device-local state");
+        assert_eq!(
+            restored.load_device_settings().expect("carried settings"),
+            settings
+        );
+        drop((source, restored));
+        std::fs::remove_dir_all(root).expect("remove fixture");
     }
 
     #[test]

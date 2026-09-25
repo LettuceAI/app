@@ -111,6 +111,8 @@ struct ProviderMetadata {
     legacy_imports: crate::LegacyImportBackup,
     #[serde(default)]
     playground_history: crate::PlaygroundHistoryBackup,
+    #[serde(default)]
+    device: crate::BackupDeviceState,
 }
 
 #[derive(Deserialize)]
@@ -302,6 +304,7 @@ pub fn decode_provider_backup_restore_plan(
         audio_providers: metadata.audio_providers,
         user_voices: metadata.user_voices,
         authored: metadata.authored,
+        device: metadata.device,
         asr_learning,
         conversation_history,
         conversation_runtime,

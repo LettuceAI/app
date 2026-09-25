@@ -86,7 +86,11 @@ counters) in the device-local `device_ui_state` row, which never syncs or
 enters backups; a restore keeps an imported legacy install's state, otherwise
 the previous database's.
 `DeviceSettingsStore` keeps the typed `DeviceSettings` of this device in the
-device-local `device_settings` row (same carry rule): legacy
+device-local `device_settings` row, which never syncs. A v2 backup carries the
+trusted certificates and the embedding choice (user decision 2026-09-25) and a
+restore writes them; the models folder is a path on this device, so the
+restore keeps the previous file's unless the new file names one (an imported
+legacy install's). Legacy
 `trustedCertificates` (checked like legacy's importer: `BEGIN`/`END
 CERTIFICATE` markers, no duplicate PEM, up to 1 MiB each so CA bundles fit;
 over-long names are shortened, not dropped; `AppBackend::tls_policy` builds

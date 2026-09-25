@@ -8,7 +8,8 @@ const DEVICE_LOCAL_TABLES: &[&str] = &["installed_whisper_models"];
 
 impl Database {
     /// Copies device-local state from the previous database file: installed
-    /// Whisper model manifests; the local LoRA library,
+    /// Whisper model manifests; the models folder unless the new file names
+    /// one; the local LoRA library,
     /// the local generation metrics, the app shell's install state, the device
     /// settings and each day of app usage unless the new file already has
     /// them (an imported legacy install's); and the discovered voices and
@@ -79,6 +80,18 @@ impl Database {
             )?;
             transaction.execute(
                 "INSERT OR IGNORE INTO main.device_settings SELECT * FROM previous.device_settings",
+                [],
+            )?;
+            transaction.execute(
+                "UPDATE main.device_settings
+                    SET settings_json = json_set(
+                        settings_json,
+                        '$.llm_models_dir',
+                        (SELECT json_extract(settings_json, '$.llm_models_dir') FROM previous.device_settings WHERE id = 1)
+                    )
+                  WHERE id = 1
+                    AND json_extract(settings_json, '$.llm_models_dir') IS NULL
+                    AND (SELECT json_extract(settings_json, '$.llm_models_dir') FROM previous.device_settings WHERE id = 1) IS NOT NULL",
                 [],
             )?;
             transaction.execute(

@@ -1,6 +1,7 @@
-//! Settings that describe this device rather than the user: they never sync
-//! or enter backups, and a restore keeps the previous file's unless an
-//! imported legacy install brought its own.
+//! Settings that describe this device rather than the user: they never sync.
+//! A backup carries the trusted certificates and the embedding choice; the
+//! models folder is a path on this device, so a restore keeps the previous
+//! file's.
 
 use serde::{Deserialize, Serialize};
 
