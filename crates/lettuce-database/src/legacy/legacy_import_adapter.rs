@@ -82,36 +82,58 @@ impl Database {
 
 impl Database {
     /// Writes each legacy concurrent message edit as a fork of its imported
-    /// conversation for the user to choose and returns how many it wrote;
-    /// repeating it writes nothing new.
+    /// conversation for the user to choose; repeating it writes nothing new.
+    /// A fork that cannot be written is rolled back on its own and counted
+    /// as failed; its legacy row stays in the run's provenance.
     pub fn fork_legacy_message_conflicts(
         &self,
         conflicts: &[lettuce_transfer::LegacyMessageConflict],
-    ) -> Result<usize, LegacyImportRepositoryError> {
+    ) -> Result<LegacyMessageForks, LegacyImportRepositoryError> {
         let mut connection = self
             .connection()
             .map_err(|_| LegacyImportRepositoryError::Storage)?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|_| LegacyImportRepositoryError::Storage)?;
-        let mut forked = 0;
+        let mut forks = LegacyMessageForks::default();
         for conflict in conflicts {
-            forked += usize::from(
-                crate::sync::conversation_sync_adapter::fork_losing_message_version(
-                    &transaction,
-                    conflict.message_id,
-                    &conflict.conflict_key,
-                    &conflict.content,
-                    conflict.detected_at,
-                )
-                .map_err(|_| LegacyImportRepositoryError::InvalidInput)?,
-            );
+            transaction
+                .execute_batch("SAVEPOINT legacy_message_fork")
+                .map_err(|_| LegacyImportRepositoryError::Storage)?;
+            match crate::sync::conversation_sync_adapter::fork_losing_message_version(
+                &transaction,
+                conflict.message_id,
+                &conflict.conflict_key,
+                &conflict.content,
+                conflict.detected_at,
+            ) {
+                Ok(written) => {
+                    forks.written += usize::from(written);
+                    transaction
+                        .execute_batch("RELEASE legacy_message_fork")
+                        .map_err(|_| LegacyImportRepositoryError::Storage)?;
+                }
+                Err(_) => {
+                    forks.failed += 1;
+                    transaction
+                        .execute_batch(
+                            "ROLLBACK TO legacy_message_fork; RELEASE legacy_message_fork",
+                        )
+                        .map_err(|_| LegacyImportRepositoryError::Storage)?;
+                }
+            }
         }
         transaction
             .commit()
             .map_err(|_| LegacyImportRepositoryError::Storage)?;
-        Ok(forked)
+        Ok(forks)
     }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct LegacyMessageForks {
+    pub written: usize,
+    pub failed: usize,
 }
 
 impl LegacyImportRepository for Database {
@@ -3470,6 +3492,7 @@ fn skip_kind_name(kind: lettuce_transfer::LegacyImportSkipKind) -> &'static str 
         lettuce_transfer::LegacyImportSkipKind::GroupMedia => "group_media",
         lettuce_transfer::LegacyImportSkipKind::VoiceReference => "voice_reference",
         lettuce_transfer::LegacyImportSkipKind::SessionLink => "session_link",
+        lettuce_transfer::LegacyImportSkipKind::MessageConflict => "message_conflict",
     }
 }
 
@@ -3499,6 +3522,7 @@ fn skip_reason_name(reason: lettuce_transfer::LegacyImportSkipReason) -> &'stati
         lettuce_transfer::LegacyImportSkipReason::IncompatibleReference => "incompatible_reference",
         lettuce_transfer::LegacyImportSkipReason::MissingSession => "missing_session",
         lettuce_transfer::LegacyImportSkipReason::MissingMessage => "missing_message",
+        lettuce_transfer::LegacyImportSkipReason::NoForkPoint => "no_fork_point",
     }
 }
 
@@ -3562,6 +3586,7 @@ fn load_skips(
                 "group_media" => lettuce_transfer::LegacyImportSkipKind::GroupMedia,
                 "voice_reference" => lettuce_transfer::LegacyImportSkipKind::VoiceReference,
                 "session_link" => lettuce_transfer::LegacyImportSkipKind::SessionLink,
+                "message_conflict" => lettuce_transfer::LegacyImportSkipKind::MessageConflict,
                 _ => return Err(LegacyImportRepositoryError::Storage),
             };
             let reason = match reason.as_str() {
@@ -3601,6 +3626,7 @@ fn load_skips(
                 }
                 "missing_session" => lettuce_transfer::LegacyImportSkipReason::MissingSession,
                 "missing_message" => lettuce_transfer::LegacyImportSkipReason::MissingMessage,
+                "no_fork_point" => lettuce_transfer::LegacyImportSkipReason::NoForkPoint,
                 _ => return Err(LegacyImportRepositoryError::Storage),
             };
             Ok(lettuce_transfer::LegacyImportSkip {

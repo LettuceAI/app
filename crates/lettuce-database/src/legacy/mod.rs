@@ -9,3 +9,4 @@ pub use legacy_database_preflight::{
     plan_legacy_personas, plan_legacy_prompts, plan_legacy_provider_models,
     preflight_legacy_database,
 };
+pub use legacy_import_adapter::LegacyMessageForks;

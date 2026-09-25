@@ -394,6 +394,7 @@ pub enum LegacyImportSkipKind {
     GroupMedia,
     VoiceReference,
     SessionLink,
+    MessageConflict,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -418,6 +419,7 @@ pub enum LegacyImportSkipReason {
     IncompatibleReference,
     MissingSession,
     MissingMessage,
+    NoForkPoint,
 }
 
 pub fn legacy_value_skip(

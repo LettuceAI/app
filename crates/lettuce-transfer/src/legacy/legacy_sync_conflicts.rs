@@ -4,34 +4,48 @@ use serde_json::Value;
 
 use crate::{LegacyBackupCompatibilityPlan, LegacyIdScope, LegacyMessageConflict};
 
-/// The losing message versions among the preserved `sync_v2_conflicts` rows:
-/// for each conflict on `messages` or `group_messages`, the recorded side
-/// whose content differs from what the legacy message shows now. Other
-/// conflicts stay only in the import provenance.
+/// The losing message versions among the preserved `sync_v2_conflicts` rows
+/// the user never resolved: for each conflict on `messages` or
+/// `group_messages`, every recorded side whose content differs from what the
+/// legacy message shows now becomes a fork. A conflict on a chat's first
+/// message has no earlier message to fork from and a conflict on a message the
+/// import does not hold has nothing to fork; both are returned as skips.
+/// Other conflicts stay only in the import provenance.
 #[must_use]
 pub fn legacy_message_conflicts(
     source: &LegacyBackupCompatibilityPlan,
     preserved: &[crate::LegacyPreservedRow],
     scope: LegacyIdScope,
-) -> Vec<LegacyMessageConflict> {
-    let current = source
-        .direct_sessions()
-        .sessions
-        .iter()
-        .flat_map(|session| {
-            session
-                .messages
-                .iter()
-                .map(|message| (message.source_id.as_str(), message.content.as_str()))
-        })
-        .chain(source.group_sessions().sessions.iter().flat_map(|session| {
-            session
-                .messages
-                .iter()
-                .map(|message| (message.source_id.as_str(), message.content.as_str()))
-        }))
-        .collect::<BTreeMap<_, _>>();
+) -> (Vec<LegacyMessageConflict>, Vec<crate::LegacyImportSkip>) {
+    let direct = source.direct_sessions().sessions.iter().map(|session| {
+        session
+            .messages
+            .iter()
+            .enumerate()
+            .map(|(index, message)| {
+                (
+                    message.source_id.as_str(),
+                    (message.content.as_str(), index == 0),
+                )
+            })
+            .collect::<Vec<_>>()
+    });
+    let group = source.group_sessions().sessions.iter().map(|session| {
+        session
+            .messages
+            .iter()
+            .enumerate()
+            .map(|(index, message)| {
+                (
+                    message.source_id.as_str(),
+                    (message.content.as_str(), index == 0),
+                )
+            })
+            .collect::<Vec<_>>()
+    });
+    let current = direct.chain(group).flatten().collect::<BTreeMap<_, _>>();
     let mut conflicts = Vec::new();
+    let mut skipped = Vec::new();
     for row in preserved
         .iter()
         .filter(|row| row.source_table == "sync_v2_conflicts")
@@ -42,7 +56,8 @@ pub fn legacy_message_conflicts(
         if !matches!(
             row.get("table_name").and_then(Value::as_str),
             Some("messages" | "group_messages")
-        ) {
+        ) || row.get("status").and_then(Value::as_str) == Some("resolved")
+        {
             continue;
         }
         let Some(conflict_key) = row.get("conflict_id").and_then(Value::as_str) else {
@@ -52,29 +67,61 @@ pub fn legacy_message_conflicts(
             .get("detected_at")
             .and_then(Value::as_i64)
             .unwrap_or_default();
-        let losing = ["local_row", "incoming_row"]
-            .into_iter()
-            .filter_map(|column| row.get(column)?.get("hex")?.as_str())
-            .filter_map(decode_hex)
-            .filter_map(|bytes| stored_row(&bytes))
-            .find_map(|columns| {
-                let id = columns.get("id")?.as_str()?;
-                let content = columns.get("content")?.as_str()?;
-                (current.get(id).copied() != Some(content))
-                    .then(|| (id.to_owned(), content.to_owned()))
+        let mut versions = Vec::<(&str, String, String)>::new();
+        let mut message = None;
+        for side in ["local", "incoming"] {
+            let Some(columns) = row
+                .get(&format!("{side}_row"))
+                .and_then(|value| value.get("hex"))
+                .and_then(Value::as_str)
+                .and_then(decode_hex)
+                .and_then(|bytes| stored_row(&bytes))
+            else {
+                continue;
+            };
+            let (Some(id), Some(content)) = (
+                columns.get("id").and_then(Value::as_str),
+                columns.get("content").and_then(Value::as_str),
+            ) else {
+                continue;
+            };
+            message = Some(id.to_owned());
+            if current.get(id).map(|(shown, _)| *shown) != Some(content)
+                && versions.iter().all(|(_, _, seen)| seen != content)
+            {
+                versions.push((side, id.to_owned(), content.to_owned()));
+            }
+        }
+        let Some(message) = message else {
+            continue;
+        };
+        let reason = match current.get(message.as_str()) {
+            None => Some(crate::LegacyImportSkipReason::MissingMessage),
+            Some((_, true)) if !versions.is_empty() => {
+                Some(crate::LegacyImportSkipReason::NoForkPoint)
+            }
+            Some(_) => None,
+        };
+        if let Some(reason) = reason {
+            skipped.push(crate::LegacyImportSkip {
+                kind: crate::LegacyImportSkipKind::MessageConflict,
+                source_key: conflict_key.to_owned(),
+                reason,
             });
-        if let Some((id, content)) = losing
-            && current.contains_key(id.as_str())
-        {
+            continue;
+        }
+        for (side, id, content) in versions {
             conflicts.push(LegacyMessageConflict {
-                conflict_key: conflict_key.to_owned(),
+                conflict_key: format!("{conflict_key}:{side}"),
                 message_id: lettuce_types::MessageId::from_uuid(scope.source(&id)),
                 content,
                 detected_at: lettuce_types::TimestampMillis::new(detected_at),
             });
         }
     }
-    conflicts
+    skipped.sort();
+    skipped.dedup();
+    (conflicts, skipped)
 }
 
 fn decode_hex(hex: &str) -> Option<Vec<u8>> {

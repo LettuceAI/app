@@ -175,13 +175,19 @@ immutably once per run and key, and v2 backups carry them with the run. An
 effect whose assistant message the import wrote with a generation turn also
 becomes a companion effect record (the newest turn of that message, memory
 changes limited to imported memories); the rest stays only in provenance. A
-conflict on a legacy `messages` or `group_messages` row becomes a fork of the
-imported conversation: `legacy_message_conflicts` decodes the recorded
-bincode row snapshots and picks the side whose content differs from the
-imported message, and `fork_legacy_message_conflicts` copies the message with
-that content into a branch from its parent and flags it in
-`sync_conversation_forks` for the user to choose. Conflicts on other tables
-stay only in provenance.
+conflict the user never resolved on a legacy `messages` or `group_messages`
+row becomes forks of the imported conversation: `legacy_message_conflicts`
+decodes the recorded bincode row snapshots and takes every side whose content
+differs from the imported message, and `fork_legacy_message_conflicts` copies
+the message with each such content into a branch from its parent and flags it
+in `sync_conversation_forks` for the user to choose. A branch needs an earlier
+message to fork from, so a conflict on a chat's first message (and one on a
+message the import does not hold) is recorded at planning as a
+`message_conflict` skip. A fork that fails to write is rolled back alone,
+counted and logged; the restore continues and the row stays in provenance.
+Conflicts on other tables stay only in provenance. Preserved rows keep a BLOB
+as `{"hex"}`, non-UTF-8 TEXT as `{"text_hex"}` and a non-finite REAL as
+`{"real"}`.
 
 The legacy migration boundary can open an old `app.db` read-only, require the
 actual version-92 schema roots, and return a bounded typed import inventory.

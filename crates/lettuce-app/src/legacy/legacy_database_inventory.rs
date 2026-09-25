@@ -207,6 +207,9 @@ pub struct LegacyDatabaseImportPlan {
     pub plan: LegacyImportPlan,
     /// Legacy rows kept verbatim in the run's provenance.
     pub preserved: Vec<lettuce_transfer::LegacyPreservedRow>,
+    /// Losing versions of concurrently edited legacy messages, written as
+    /// conversation forks after the conversations.
+    pub message_conflicts: Vec<lettuce_transfer::LegacyMessageConflict>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -251,10 +254,25 @@ pub fn plan_legacy_database_import(
     )?;
     merge_media(&mut plan.media, voice_audio)?;
     let preserved = lettuce_database::read_legacy_preserved_rows(storage_root.join("app.db"))?;
+    let message_conflicts = match &plan.source_fingerprint {
+        Some(fingerprint) => {
+            let (conflicts, skipped) = lettuce_transfer::legacy_message_conflicts(
+                &compatibility,
+                &preserved,
+                lettuce_transfer::LegacyIdScope::new(fingerprint),
+            );
+            plan.later_skips.extend(skipped);
+            plan.later_skips.sort();
+            plan.later_skips.dedup();
+            conflicts
+        }
+        None => Vec::new(),
+    };
     Ok(LegacyDatabaseImportPlan {
         compatibility,
         plan,
         preserved,
+        message_conflicts,
     })
 }
 

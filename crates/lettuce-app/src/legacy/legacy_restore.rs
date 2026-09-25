@@ -132,6 +132,7 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
                 compatibility,
                 plan,
                 preserved: Vec::new(),
+                message_conflicts: Vec::new(),
             },
             None,
             Some(admission),
@@ -384,16 +385,15 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
             .legacy_llm_metrics_importer()
             .execute_database_import(&admission, import, at)
             .map_err(stage("local generation metrics"))?;
-        if let Some(fingerprint) = &plan.source_fingerprint {
-            let conflicts = lettuce_transfer::legacy_message_conflicts(
-                source,
-                &import.preserved,
-                lettuce_transfer::LegacyIdScope::new(fingerprint),
+        let forks = backend
+            .database()
+            .fork_legacy_message_conflicts(&import.message_conflicts)
+            .map_err(stage("message conflicts"))?;
+        if forks.failed > 0 {
+            tracing::warn!(
+                failed = forks.failed,
+                "legacy message conflicts kept only in the import provenance"
             );
-            backend
-                .database()
-                .fork_legacy_message_conflicts(&conflicts)
-                .map_err(stage("message conflicts"))?;
         }
         match backend
             .complete_legacy_import(run_id, at)
@@ -461,6 +461,7 @@ mod tests {
                     compatibility,
                     plan,
                     preserved: Vec::new(),
+                    message_conflicts: Vec::new(),
                 },
                 None,
                 None,
@@ -716,6 +717,7 @@ mod tests {
                     compatibility,
                     plan,
                     preserved: Vec::new(),
+                    message_conflicts: Vec::new(),
                 },
                 None,
                 None,
@@ -1129,9 +1131,33 @@ mod tests {
                         "conflict_id": "conflict-0",
                         "table_name": "messages",
                         "local_row": {"hex": legacy_row_hex(&reply, "Edited on the other device")},
-                        "incoming_row": {"hex": legacy_row_hex(&reply, "take variant-a")},
+                        "incoming_row": {"hex": legacy_row_hex(&reply, "Edited here")},
                         "status": "unresolved",
                         "detected_at": 50
+                    })
+                    .to_string(),
+                },
+                lettuce_transfer::LegacyPreservedRow {
+                    source_table: "sync_v2_conflicts".into(),
+                    source_key: "conflict-00".into(),
+                    row_json: serde_json::json!({
+                        "conflict_id": "conflict-00",
+                        "table_name": "messages",
+                        "local_row": {"hex": legacy_row_hex(&reply, "Settled long ago")},
+                        "status": "resolved",
+                        "detected_at": 51
+                    })
+                    .to_string(),
+                },
+                lettuce_transfer::LegacyPreservedRow {
+                    source_table: "sync_v2_conflicts".into(),
+                    source_key: "conflict-01".into(),
+                    row_json: serde_json::json!({
+                        "conflict_id": "conflict-01",
+                        "table_name": "messages",
+                        "local_row": {"hex": legacy_row_hex(&greeting, "A different opening")},
+                        "status": "unresolved",
+                        "detected_at": 52
                     })
                     .to_string(),
                 },
@@ -1147,11 +1173,17 @@ mod tests {
                     .to_string(),
                 },
             ];
+            let mut plan = plan;
+            let (message_conflicts, skipped) =
+                lettuce_transfer::legacy_message_conflicts(&compatibility, &preserved, scope);
+            plan.later_skips.extend(skipped);
+            plan.later_skips.sort();
             (
                 LegacyDatabaseImportPlan {
                     compatibility,
                     plan,
                     preserved,
+                    message_conflicts,
                 },
                 scope,
             )
@@ -1251,11 +1283,11 @@ mod tests {
             .read_provider_backup_graph()
             .expect("restored graph");
         let preserved = &graph.legacy_imports.runs[0].preserved_rows;
-        assert_eq!(preserved.len(), 3);
-        assert_eq!(
-            lettuce_transfer::backup_sql_text(&preserved[2], "row_json"),
-            Some(import.preserved[2].row_json.as_str())
-        );
+        assert_eq!(preserved.len(), 5);
+        assert!(graph.legacy_imports.runs[0].skips.iter().any(|skip| {
+            lettuce_transfer::backup_sql_text(skip, "source_key") == Some("conflict-01")
+                && lettuce_transfer::backup_sql_text(skip, "reason") == Some("no_fork_point")
+        }));
         let reply_id = lettuce_types::MessageId::from_uuid(scope.source(&reply));
         let forked = graph
             .conversation_history
@@ -1268,27 +1300,35 @@ mod tests {
                     .any(|message| message.message.id == reply_id)
             })
             .expect("reply conversation");
-        let fork = forked
+        let mut forked_texts = forked
             .aggregate
             .branches
             .iter()
-            .find(|branch| branch.parent_branch_id.is_some())
-            .expect("fork branch for the losing edit");
-        let copy = forked
-            .messages
-            .iter()
-            .find(|message| message.message.branch_id == fork.id)
-            .expect("losing version in the fork");
+            .filter(|branch| branch.parent_branch_id.is_some())
+            .flat_map(|fork| {
+                forked
+                    .messages
+                    .iter()
+                    .filter(move |message| message.message.branch_id == fork.id)
+            })
+            .flat_map(|message| message.revisions[0].parts.clone())
+            .collect::<Vec<_>>();
+        forked_texts.sort_by_key(|part| format!("{part:?}"));
         assert_eq!(
-            copy.revisions[0].parts,
-            vec![lettuce_conversations::MessagePart::Text {
-                text: "Edited on the other device".into()
-            }]
+            forked_texts,
+            vec![
+                lettuce_conversations::MessagePart::Text {
+                    text: "Edited here".into()
+                },
+                lettuce_conversations::MessagePart::Text {
+                    text: "Edited on the other device".into()
+                },
+            ]
         );
         let forks =
             lettuce_sync::ConversationForkRepository::unresolved_conversation_forks(&restored, 10)
                 .expect("fork notices");
-        assert_eq!(forks.len(), 1);
+        assert_eq!(forks.len(), 2);
         let effect = &graph.companion_effects.effects[0];
         assert_eq!(graph.companion_effects.effects.len(), 1);
         assert_eq!(
@@ -1391,6 +1431,7 @@ mod tests {
                     compatibility,
                     plan,
                     preserved: Vec::new(),
+                    message_conflicts: Vec::new(),
                 },
                 None,
                 None,
