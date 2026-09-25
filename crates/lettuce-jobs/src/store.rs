@@ -205,6 +205,21 @@ impl InMemoryJobStore {
     }
 
     pub fn restore(records: Vec<StoredJobRecord>) -> Result<Self, StoreError> {
+        Self::restore_records(records, false)
+    }
+
+    /// Rebuilds a working set over some durable jobs rather than all of them.
+    ///
+    /// Each record's events may be a trailing window of its history that ends
+    /// at the latest event, and parent or child links may name jobs outside the
+    /// set. Operations only see the loaded jobs, so a caller must load every job
+    /// the operation reads: the target, its parent when creating a child, and
+    /// its children when settling it.
+    pub fn restore_working_set(records: Vec<StoredJobRecord>) -> Result<Self, StoreError> {
+        Self::restore_records(records, true)
+    }
+
+    fn restore_records(records: Vec<StoredJobRecord>, window: bool) -> Result<Self, StoreError> {
         let mut jobs = BTreeMap::new();
         let mut idempotency = HashMap::new();
         for stored in records {
@@ -220,10 +235,15 @@ impl InMemoryJobStore {
             {
                 return Err(StoreError::InvalidData);
             }
+            let first_seq = if window {
+                stored.events[0].seq.get()
+            } else {
+                1
+            };
             for (index, event) in stored.events.iter().enumerate() {
                 let expected = u64::try_from(index)
                     .ok()
-                    .and_then(|value| value.checked_add(1))
+                    .and_then(|value| value.checked_add(first_seq))
                     .ok_or(StoreError::InvalidData)?;
                 if event.job_id != stored.snapshot.id
                     || event.seq != EventSeq::new(expected)
@@ -254,17 +274,19 @@ impl InMemoryJobStore {
                 return Err(StoreError::InvalidData);
             }
         }
-        if jobs.values().any(|record| {
-            record
-                .snapshot
-                .parent_id
-                .is_some_and(|parent_id| !jobs.contains_key(&parent_id))
-                || record
+        if !window
+            && jobs.values().any(|record| {
+                record
                     .snapshot
-                    .children
-                    .iter()
-                    .any(|child| !jobs.contains_key(&child.child_id))
-        }) {
+                    .parent_id
+                    .is_some_and(|parent_id| !jobs.contains_key(&parent_id))
+                    || record
+                        .snapshot
+                        .children
+                        .iter()
+                        .any(|child| !jobs.contains_key(&child.child_id))
+            })
+        {
             return Err(StoreError::InvalidData);
         }
         Ok(Self {
