@@ -4853,11 +4853,11 @@ async fn cancellation_before_dispatch_settles_turn_and_job_without_evidence() {
 }
 
 #[tokio::test]
-async fn cancellation_during_provider_retains_usage_and_settles_cancelled() {
+async fn cancellation_without_streamed_text_retains_usage_and_settles_cancelled() {
     let database = database();
     let scenario = scenario(&database, false, "cancel-late");
     let work = admit_and_claim(&database, &scenario, 1_015);
-    let inference = BlockingInference::new(text_outcome("blocking", "Late answer", 9, 4));
+    let inference = BlockingInference::new(text_outcome("blocking", "  ", 9, 4));
     let runner = ConversationGenerationJobRunner::new(&database, &inference);
     let error = {
         let run = runner.run(&work, input(&scenario), TimestampMillis::new(1_020));
