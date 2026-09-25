@@ -5008,6 +5008,12 @@ impl IncomingChangeRepository for Database {
                 params![batch_id.to_string(), now.get()],
             )
             .map_err(incoming_storage)?;
+        transaction
+            .execute(
+                "DELETE FROM sync_incoming_changes WHERE batch_id = ?1",
+                [batch_id.to_string()],
+            )
+            .map_err(incoming_storage)?;
         transaction.commit().map_err(incoming_storage)?;
         if let Err(error) =
             crate::purge::run_queued_purges_on(&mut connection, &self.foreign_keys_lost, now)

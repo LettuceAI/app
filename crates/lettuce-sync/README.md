@@ -526,3 +526,15 @@ records) and stay device-local: legacy had no such tables (its image history
 was the playground history, now synced, and its voice cache only listed
 provider voices), and generated images reach other devices through the
 playground history and messages. Pricing caches stay local as in legacy.
+
+Journal growth. A committed incoming batch drops its staged copies of the
+changes (they live on as journaled changes), so a received payload is stored
+once; staged changes of batches that never committed stay for their retry.
+The change journal itself is not compacted, as in legacy: a peer receives
+every origin's changes in contiguous sequence (a gap is a causal dependency
+and keeps the batch pending), and devices pair per session with no list of
+known peers, so any device that has not synced yet may still need the whole
+history from sequence one; dropping even changes every known peer has
+acknowledged would strand the next device to pair. A payload schema change
+starts the journal over (see above), which leaves one snapshot per entity.
+Conflict evidence keeps both sides until resolution.

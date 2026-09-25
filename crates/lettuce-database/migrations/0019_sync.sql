@@ -218,8 +218,14 @@ BEGIN
     SELECT RAISE(ABORT, 'incoming sync changes are immutable');
 END;
 
+-- A committed batch's staged changes are copies of journaled changes, so
+-- they are removed once it commits; staged changes of other batches stay.
 CREATE TRIGGER sync_incoming_changes_no_delete
 BEFORE DELETE ON sync_incoming_changes
+WHEN NOT EXISTS (
+    SELECT 1 FROM sync_incoming_batches
+    WHERE batch_id = OLD.batch_id AND state = 'committed'
+)
 BEGIN
     SELECT RAISE(ABORT, 'incoming sync changes are durable');
 END;

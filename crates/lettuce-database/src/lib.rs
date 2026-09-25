@@ -2718,6 +2718,38 @@ mod tests {
     }
 
     #[test]
+    fn a_committed_batch_keeps_no_second_copy_of_its_changes() {
+        use lettuce_sync::IncomingChangeRepository;
+        let a = Database::open_in_memory().expect("a");
+        let b = Database::open_in_memory().expect("b");
+        let account = ProviderAccountRepository::upsert(&a, provider(), None).expect("account");
+        ModelProfileRepository::upsert(&a, profile(account.id), None).expect("model");
+        assert_eq!(sync_to(&a, &b, 100), 2);
+        let (batches, staged): (i64, i64) = b
+            .connection()
+            .expect("connection")
+            .query_row(
+                "SELECT (SELECT COUNT(*) FROM sync_incoming_batches WHERE state = 'committed'),
+                        (SELECT COUNT(*) FROM sync_incoming_changes)",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("counts");
+        assert_eq!((batches, staged), (1, 0));
+        let batch: String = b
+            .connection()
+            .expect("connection")
+            .query_row("SELECT batch_id FROM sync_incoming_batches", [], |row| {
+                row.get(0)
+            })
+            .expect("batch");
+        let replay = b
+            .apply_incoming_batch(batch.parse().expect("id"), TimestampMillis::new(200))
+            .expect("replay");
+        assert_eq!(replay.state, lettuce_sync::IncomingBatchState::Committed);
+    }
+
+    #[test]
     fn an_older_edit_synced_later_loses_to_a_newer_one() {
         use lettuce_sync::LocalChangeJournal;
         let a = Database::open_in_memory().expect("a");
