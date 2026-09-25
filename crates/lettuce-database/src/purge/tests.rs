@@ -87,3 +87,16 @@ fn missing_entities_and_unknown_queue_rows_are_reported_and_dropped() {
         .expect("pragma");
     assert_eq!(foreign_keys, 1, "enforcement is restored after a purge");
 }
+
+#[test]
+fn a_database_that_lost_foreign_key_enforcement_refuses_every_use() {
+    let database = Database::open_in_memory().expect("database");
+    database
+        .foreign_keys_lost
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    assert_eq!(database.purge_notices(), Err(PurgeError::Storage));
+    assert!(matches!(
+        database.connection(),
+        Err(crate::DatabaseError::ForeignKeysLost)
+    ));
+}

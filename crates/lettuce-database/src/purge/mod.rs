@@ -5,6 +5,7 @@
 mod media_gc;
 
 use std::collections::BTreeSet;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use lettuce_types::{CharacterId, ConversationId, TimestampMillis};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params, types::Value};
@@ -17,8 +18,6 @@ pub enum PurgeError {
     NotFound,
     #[error("a generation or memory run is still active")]
     Busy,
-    #[error("a group still lists the character")]
-    InUse,
     #[error("the deletion would leave a dangling reference")]
     Integrity,
     #[error("purge storage failed")]
@@ -48,7 +47,7 @@ impl PurgeKind {
         }
     }
 
-    fn from_sync_kind(kind: &str) -> Option<Self> {
+    pub(crate) fn from_sync_kind(kind: &str) -> Option<Self> {
         match kind {
             lettuce_sync::CONVERSATION_SYNC_KIND => Some(Self::Conversation),
             lettuce_sync::CHARACTER_SYNC_KIND => Some(Self::Character),
@@ -72,10 +71,11 @@ struct Purge<'c> {
     snapshot_artifacts: BTreeSet<String>,
     replay_artifacts: BTreeSet<String>,
     receipt: PurgeReceipt,
+    now: TimestampMillis,
 }
 
 impl<'c> Purge<'c> {
-    fn new(connection: &'c Connection) -> Self {
+    fn new(connection: &'c Connection, now: TimestampMillis) -> Self {
         Self {
             connection,
             tables: BTreeSet::new(),
@@ -83,6 +83,7 @@ impl<'c> Purge<'c> {
             snapshot_artifacts: BTreeSet::new(),
             replay_artifacts: BTreeSet::new(),
             receipt: PurgeReceipt::default(),
+            now,
         }
     }
 
@@ -375,9 +376,6 @@ impl<'c> Purge<'c> {
         if !self.exists("SELECT EXISTS(SELECT 1 FROM characters WHERE id = ?1)", one)? {
             return Err(PurgeError::NotFound);
         }
-        if character_in_group(self.connection, id)? {
-            return Err(PurgeError::InUse);
-        }
         for conversation in direct_conversations(self.connection, id)? {
             if self.conversation_busy(&conversation)? {
                 return Err(PurgeError::Busy);
@@ -395,14 +393,16 @@ impl<'c> Purge<'c> {
         self.character(id)
     }
 
-    /// Deletes a character with its direct
-    /// conversations, its companion pool and companion state, its catalog
-    /// rows (scenes, starters, media links, lorebook bindings). Group
-    /// conversations it took part in stay.
+    /// Deletes a character with its direct conversations, its companion
+    /// pool and companion state, and its catalog rows (scenes, starters,
+    /// media links, lorebook bindings), and takes it out of every group.
+    /// Group conversations it took part in stay readable with it as a past
+    /// participant.
     fn character(&mut self, id: &str) -> Result<(), PurgeError> {
         for conversation in direct_conversations(self.connection, id)? {
             self.conversation(&conversation)?;
         }
+        self.leave_groups(id)?;
         let text = Value::Text(id.to_owned());
         let one = std::slice::from_ref(&text);
         let pools = self.strings(
@@ -452,6 +452,87 @@ impl<'c> Purge<'c> {
             .characters
             .push(id.parse().map_err(|_| PurgeError::Storage)?);
         Ok(())
+    }
+
+    /// Removes the character from each group that lists it: the remaining
+    /// members keep their order, the first is unmuted when all the others
+    /// are muted, and the group's revision moves. A group left with fewer
+    /// than two members cannot exist and is deleted with a notice.
+    fn leave_groups(&mut self, character: &str) -> Result<(), PurgeError> {
+        let groups = self.strings(
+            "SELECT group_id FROM group_members WHERE character_id = ?1 ORDER BY group_id",
+            &[Value::Text(character.to_owned())],
+        )?;
+        for group in groups {
+            let values = [
+                Value::Text(group.clone()),
+                Value::Text(character.to_owned()),
+            ];
+            self.delete(
+                "group_members",
+                "group_id = ?1 AND character_id = ?2",
+                &values,
+            )?;
+            let remaining = self.strings(
+                "SELECT character_id FROM group_members WHERE group_id = ?1 ORDER BY ordinal",
+                &values[..1],
+            )?;
+            if remaining.len() < 2 {
+                self.delete_group(&group)?;
+                continue;
+            }
+            self.connection
+                .execute(
+                    "UPDATE group_members SET ordinal = ordinal + 1000000 WHERE group_id = ?1",
+                    [&group],
+                )
+                .map_err(storage)?;
+            for (ordinal, member) in remaining.iter().enumerate() {
+                self.connection
+                    .execute(
+                        "UPDATE group_members SET ordinal = ?3 WHERE group_id = ?1 AND character_id = ?2",
+                        params![group, member, i64::try_from(ordinal).map_err(storage)?],
+                    )
+                    .map_err(storage)?;
+            }
+            self.connection
+                .execute(
+                    "UPDATE group_members SET muted = 0
+                     WHERE group_id = ?1 AND ordinal = 0
+                       AND NOT EXISTS (SELECT 1 FROM group_members WHERE group_id = ?1 AND muted = 0)",
+                    [&group],
+                )
+                .map_err(storage)?;
+            self.connection
+                .execute(
+                    "UPDATE groups SET revision = revision + 1, updated_at = max(updated_at, ?2) WHERE id = ?1",
+                    params![group, self.now.get()],
+                )
+                .map_err(storage)?;
+        }
+        Ok(())
+    }
+
+    fn delete_group(&mut self, group: &str) -> Result<(), PurgeError> {
+        let one = [Value::Text(group.to_owned())];
+        for table in [
+            "group_members",
+            "group_presentation_asset_refs",
+            "group_scene_assets",
+            "group_scene_variants",
+            "group_starting_scenes",
+            "group_lorebook_bindings",
+        ] {
+            self.delete(table, "group_id = ?1", &one)?;
+        }
+        self.delete("groups", "id = ?1", &one)?;
+        record_notice(
+            self.connection,
+            PurgeNoticeEntity::Group,
+            group,
+            PurgeNoticeReason::GroupRemoved,
+            self.now,
+        )
     }
 
     /// Deletes the launch snapshots and provider replays the deleted rows
@@ -606,19 +687,6 @@ fn direct_conversations(
         .map_err(storage)
 }
 
-pub(crate) fn character_in_group(
-    connection: &Connection,
-    character: &str,
-) -> Result<bool, PurgeError> {
-    connection
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM group_members WHERE character_id = ?1)",
-            [character],
-            |row| row.get(0),
-        )
-        .map_err(storage)
-}
-
 /// Runs `work` in one immediate transaction with foreign key enforcement
 /// off (restrict cycles between branches, messages and turns cannot be
 /// deleted row by row otherwise); `finish` then checks every foreign key into
@@ -626,6 +694,7 @@ pub(crate) fn character_in_group(
 /// whatever happened.
 fn purge_on(
     connection: &mut Connection,
+    foreign_keys_lost: &AtomicBool,
     now: TimestampMillis,
     work: impl FnOnce(&mut Purge<'_>) -> Result<(), PurgeError>,
 ) -> Result<PurgeReceipt, PurgeError> {
@@ -633,14 +702,21 @@ fn purge_on(
         .pragma_update(None, "foreign_keys", false)
         .map_err(storage)?;
     let result = purge_transaction(connection, now, work);
-    if connection
-        .pragma_update(None, "foreign_keys", true)
-        .is_err()
-    {
+    if !restore_foreign_keys(connection) {
+        foreign_keys_lost.store(true, Ordering::SeqCst);
         tracing::error!("foreign key enforcement could not be restored after a purge");
         return Err(PurgeError::Storage);
     }
     result
+}
+
+fn restore_foreign_keys(connection: &Connection) -> bool {
+    (0..3).any(|_| {
+        connection.pragma_update(None, "foreign_keys", true).is_ok()
+            && connection
+                .query_row("PRAGMA foreign_keys", [], |row| row.get::<_, i64>(0))
+                .is_ok_and(|enabled| enabled == 1)
+    })
 }
 
 fn purge_transaction(
@@ -652,7 +728,7 @@ fn purge_transaction(
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(storage)?;
     let receipt = {
-        let mut purge = Purge::new(&transaction);
+        let mut purge = Purge::new(&transaction, now);
         work(&mut purge)?;
         purge.finish(now)?;
         purge.receipt
@@ -693,8 +769,12 @@ pub(crate) fn purge_queued(
 
 /// Runs the purges received through sync. One that finds its entity gone is
 /// dropped; one that is busy or fails stays queued for the next run.
+/// How many times a received delete is tried before it is given up.
+const MAX_QUEUED_PURGE_FAILURES: i64 = 8;
+
 pub(crate) fn run_queued_purges_on(
     connection: &mut Connection,
+    foreign_keys_lost: &AtomicBool,
     now: TimestampMillis,
 ) -> Result<Vec<PurgeReceipt>, PurgeError> {
     let queued: Vec<(String, String)> = connection
@@ -708,9 +788,13 @@ pub(crate) fn run_queued_purges_on(
     let mut receipts = Vec::new();
     for (kind, id) in queued {
         let result = if kind == PurgeKind::Character.name() {
-            purge_on(connection, now, |purge| purge.character_entry(&id))
+            purge_on(connection, foreign_keys_lost, now, |purge| {
+                purge.character_entry(&id)
+            })
         } else {
-            purge_on(connection, now, |purge| purge.conversation_entry(&id))
+            purge_on(connection, foreign_keys_lost, now, |purge| {
+                purge.conversation_entry(&id)
+            })
         };
         match result {
             Ok(receipt) => receipts.push(receipt),
@@ -722,11 +806,187 @@ pub(crate) fn run_queued_purges_on(
                     )
                     .map_err(storage)?;
             }
-            Err(PurgeError::Busy) => {}
-            Err(error) => tracing::warn!(%error, kind, "a received delete could not run yet"),
+            Err(_) if foreign_keys_lost.load(Ordering::SeqCst) => {
+                return Err(PurgeError::Storage);
+            }
+            Err(error) => {
+                tracing::warn!(%error, kind, "a received delete could not run yet");
+                give_up_after_failures(connection, &kind, &id, now)?;
+            }
         }
     }
     Ok(receipts)
+}
+
+/// Counts one more failure of a queued delete; at the limit the delete is
+/// dropped with a notice, and the next scan journals the entity again so
+/// every device keeps it.
+fn give_up_after_failures(
+    connection: &Connection,
+    kind: &str,
+    id: &str,
+    now: TimestampMillis,
+) -> Result<(), PurgeError> {
+    let failures: i64 = connection
+        .query_row(
+            "UPDATE purge_queue SET failures = failures + 1
+             WHERE entity_kind = ?1 AND entity_id = ?2 RETURNING failures",
+            params![kind, id],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    if failures < MAX_QUEUED_PURGE_FAILURES {
+        return Ok(());
+    }
+    connection
+        .execute(
+            "DELETE FROM purge_queue WHERE entity_kind = ?1 AND entity_id = ?2",
+            params![kind, id],
+        )
+        .map_err(storage)?;
+    let entity = if kind == PurgeKind::Character.name() {
+        PurgeNoticeEntity::Character
+    } else {
+        PurgeNoticeEntity::Conversation
+    };
+    record_notice(
+        connection,
+        entity,
+        id,
+        PurgeNoticeReason::DroppedAfterFailures,
+        now,
+    )
+}
+
+/// What a notice is about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PurgeNoticeEntity {
+    Conversation,
+    Character,
+    Group,
+}
+
+impl PurgeNoticeEntity {
+    const ALL: [Self; 3] = [Self::Conversation, Self::Character, Self::Group];
+
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Conversation => "conversation",
+            Self::Character => "character",
+            Self::Group => "group",
+        }
+    }
+}
+
+/// Why a delete needs the user's attention.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PurgeNoticeReason {
+    /// Another device deleted it, but this device had changes that device
+    /// had not seen, so it was kept here and is sent back.
+    KeptUnsentLocalChanges,
+    /// A delete received from another device kept failing here and was
+    /// given up; the entity is kept and sent back.
+    DroppedAfterFailures,
+    /// Deleting a character left a group with fewer than two members, so the
+    /// group was deleted.
+    GroupRemoved,
+}
+
+impl PurgeNoticeReason {
+    const ALL: [Self; 3] = [
+        Self::KeptUnsentLocalChanges,
+        Self::DroppedAfterFailures,
+        Self::GroupRemoved,
+    ];
+
+    const fn name(self) -> &'static str {
+        match self {
+            Self::KeptUnsentLocalChanges => "kept_unsent_local_changes",
+            Self::DroppedAfterFailures => "dropped_after_failures",
+            Self::GroupRemoved => "group_removed",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PurgeNotice {
+    pub id: i64,
+    pub entity: PurgeNoticeEntity,
+    pub entity_id: String,
+    pub reason: PurgeNoticeReason,
+    pub recorded_at: TimestampMillis,
+}
+
+pub(crate) fn record_notice(
+    connection: &Connection,
+    entity: PurgeNoticeEntity,
+    id: &str,
+    reason: PurgeNoticeReason,
+    now: TimestampMillis,
+) -> Result<(), PurgeError> {
+    connection
+        .execute(
+            "INSERT INTO purge_notices (entity_kind, entity_id, reason, recorded_at)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![entity.name(), id, reason.name(), now.get()],
+        )
+        .map(|_| ())
+        .map_err(storage)
+}
+
+impl Database {
+    /// The notices the user has not dismissed yet, oldest first.
+    pub fn purge_notices(&self) -> Result<Vec<PurgeNotice>, PurgeError> {
+        let connection = self.connection().map_err(storage)?;
+        let rows: Vec<(i64, String, String, String, i64)> = connection
+            .prepare(
+                "SELECT id, entity_kind, entity_id, reason, recorded_at FROM purge_notices
+                 WHERE dismissed_at IS NULL ORDER BY id",
+            )
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], |row| {
+                        Ok((
+                            row.get(0)?,
+                            row.get(1)?,
+                            row.get(2)?,
+                            row.get(3)?,
+                            row.get(4)?,
+                        ))
+                    })?
+                    .collect()
+            })
+            .map_err(storage)?;
+        rows.into_iter()
+            .map(|(id, entity, entity_id, reason, recorded_at)| {
+                Ok(PurgeNotice {
+                    id,
+                    entity: PurgeNoticeEntity::ALL
+                        .into_iter()
+                        .find(|value| value.name() == entity)
+                        .ok_or(PurgeError::Storage)?,
+                    entity_id,
+                    reason: PurgeNoticeReason::ALL
+                        .into_iter()
+                        .find(|value| value.name() == reason)
+                        .ok_or(PurgeError::Storage)?,
+                    recorded_at: TimestampMillis::new(recorded_at),
+                })
+            })
+            .collect()
+    }
+
+    /// Marks a notice as seen; `false` when there was no such open notice.
+    pub fn dismiss_purge_notice(&self, id: i64, now: TimestampMillis) -> Result<bool, PurgeError> {
+        self.connection()
+            .map_err(storage)?
+            .execute(
+                "UPDATE purge_notices SET dismissed_at = ?2 WHERE id = ?1 AND dismissed_at IS NULL",
+                params![id, now.get()],
+            )
+            .map(|updated| updated == 1)
+            .map_err(storage)
+    }
 }
 
 impl Database {
@@ -738,13 +998,13 @@ impl Database {
         now: TimestampMillis,
     ) -> Result<PurgeReceipt, PurgeError> {
         let mut connection = self.connection().map_err(storage)?;
-        purge_on(&mut connection, now, |purge| {
+        purge_on(&mut connection, &self.foreign_keys_lost, now, |purge| {
             purge.conversation_entry(&id.to_string())
         })
     }
 
     /// Deletes a character, its direct conversations and its companion
-    /// memory and state. Refused while a group lists the character or one
+    /// memory and state, and takes it out of every group. Refused while one
     /// of its conversations is busy.
     pub fn purge_character(
         &self,
@@ -752,7 +1012,7 @@ impl Database {
         now: TimestampMillis,
     ) -> Result<PurgeReceipt, PurgeError> {
         let mut connection = self.connection().map_err(storage)?;
-        purge_on(&mut connection, now, |purge| {
+        purge_on(&mut connection, &self.foreign_keys_lost, now, |purge| {
             purge.character_entry(&id.to_string())
         })
     }
@@ -760,7 +1020,7 @@ impl Database {
     /// Runs the deletes received through sync that have not run yet.
     pub fn run_queued_purges(&self, now: TimestampMillis) -> Result<Vec<PurgeReceipt>, PurgeError> {
         let mut connection = self.connection().map_err(storage)?;
-        run_queued_purges_on(&mut connection, now)
+        run_queued_purges_on(&mut connection, &self.foreign_keys_lost, now)
     }
 }
 

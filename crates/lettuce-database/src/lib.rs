@@ -18,7 +18,7 @@ mod purge;
 
 pub use models::*;
 pub use legacy::*;
-pub use purge::{PurgeError, PurgeReceipt};
+pub use purge::{PurgeError, PurgeNotice, PurgeNoticeEntity, PurgeNoticeReason, PurgeReceipt};
 
 use std::{path::Path, str::FromStr, sync::Mutex, time::Duration};
 
@@ -245,6 +245,8 @@ pub enum DatabaseError {
     Sql(#[from] rusqlite::Error),
     #[error("database lock is unavailable")]
     Lock,
+    #[error("foreign key enforcement was lost; the database must be reopened")]
+    ForeignKeysLost,
     #[error("applied migration {id} has a different checksum")]
     MigrationChecksum { id: u32 },
     #[error("the database was written by a newer build (migration {id})")]
@@ -253,6 +255,9 @@ pub enum DatabaseError {
 
 pub struct Database {
     connection: Mutex<Connection>,
+    /// Set when foreign key enforcement could not be restored after a purge;
+    /// every later use of the connection then fails.
+    foreign_keys_lost: std::sync::atomic::AtomicBool,
 }
 
 impl std::fmt::Debug for Database {
@@ -270,6 +275,7 @@ impl Database {
         initialize_settings(&connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
+            foreign_keys_lost: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
@@ -281,10 +287,17 @@ impl Database {
         initialize_settings(&connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
+            foreign_keys_lost: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
     fn connection(&self) -> Result<std::sync::MutexGuard<'_, Connection>, DatabaseError> {
+        if self
+            .foreign_keys_lost
+            .load(std::sync::atomic::Ordering::SeqCst)
+        {
+            return Err(DatabaseError::ForeignKeysLost);
+        }
         self.connection.lock().map_err(|_| DatabaseError::Lock)
     }
 }
@@ -5513,6 +5526,7 @@ mod tests {
                 "prompt_entries",
                 "provider_accounts",
                 "purge_authorizations",
+                "purge_notices",
                 "purge_queue",
                 "revision_media_refs",
                 "scene_assets",

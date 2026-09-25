@@ -331,5 +331,21 @@ CREATE TABLE purge_queue (
     entity_kind TEXT NOT NULL CHECK (entity_kind IN ('conversation', 'character')),
     entity_id TEXT NOT NULL CHECK (length(entity_id) > 0),
     queued_at INTEGER NOT NULL,
+    failures INTEGER NOT NULL DEFAULT 0 CHECK (failures >= 0),
     PRIMARY KEY (entity_kind, entity_id)
+) STRICT;
+
+-- Device-local notices about deletes the user should hear of: a received
+-- delete this device refused because it had changes the other device had
+-- not seen, a received delete given up after repeated failures, and a group
+-- removed because a character delete left it with fewer than two members.
+CREATE TABLE purge_notices (
+    id INTEGER PRIMARY KEY,
+    entity_kind TEXT NOT NULL CHECK (entity_kind IN ('conversation', 'character', 'group')),
+    entity_id TEXT NOT NULL CHECK (length(entity_id) > 0),
+    reason TEXT NOT NULL CHECK (reason IN (
+        'kept_unsent_local_changes', 'dropped_after_failures', 'group_removed'
+    )),
+    recorded_at INTEGER NOT NULL,
+    dismissed_at INTEGER
 ) STRICT;
