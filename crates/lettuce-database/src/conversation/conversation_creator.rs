@@ -1089,7 +1089,7 @@ mod tests {
         let conversation_id = ConversationId::new();
         let character_id = CharacterId::new();
         let mut calls = 0;
-        let mut create = |calls: &mut i32| {
+        let create = |calls: &mut i32| {
             create_with_hook(
                 &database,
                 prepared(conversation_id, character_id),

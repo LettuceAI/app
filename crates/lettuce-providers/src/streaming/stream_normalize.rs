@@ -321,7 +321,7 @@ impl StreamNormalizer {
     fn usage(&self) -> Option<InferenceUsage> {
         match (self.input_tokens, self.output_tokens) {
             (Some(input_tokens), Some(output_tokens)) => Some(InferenceUsage {
-                provider_reported_cost: self.provider_reported_cost.clone(),
+                provider_reported_cost: self.provider_reported_cost,
                 cache_write_tokens: self.cache_write_tokens,
                 web_search_requests: self.web_search_requests,
                 image_tokens: self.image_tokens,
