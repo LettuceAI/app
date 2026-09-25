@@ -2902,6 +2902,52 @@ mod tests {
     }
 
     #[test]
+    fn settled_playground_history_syncs_with_its_images_and_deletes() {
+        let a = Database::open_in_memory().expect("a");
+        let b = Database::open_in_memory().expect("b");
+        a.connection()
+            .expect("connection")
+            .execute_batch(
+                "INSERT INTO playground_history (id, origin, job_id, created_at, provider_kind,
+                   model_name, prompt, params_json, status)
+                 VALUES ('entry-done', 'generated', 'job-done', 10, 'openai', 'Model',
+                   'A lighthouse', '{}', 'succeeded'),
+                        ('entry-running', 'generated', 'job-running', 20, 'openai', 'Model',
+                   'A harbor', '{}', 'pending');
+                 INSERT INTO playground_history_images (history_id, ordinal, url, width, height)
+                 VALUES ('entry-done', 0, 'https://example.invalid/a.png', 512, 512);",
+            )
+            .expect("history");
+        sync_to(&a, &b, 100);
+        let rows = |database: &Database| -> Vec<(String, String, i64)> {
+            database
+                .connection()
+                .expect("connection")
+                .prepare(
+                    "SELECT history.id, history.status, count(image.ordinal)
+                     FROM playground_history history
+                     LEFT JOIN playground_history_images image ON image.history_id = history.id
+                     GROUP BY history.id ORDER BY history.id",
+                )
+                .expect("statement")
+                .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+                .expect("rows")
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .expect("collect")
+        };
+        assert_eq!(
+            rows(&b),
+            vec![("entry-done".to_owned(), "succeeded".to_owned(), 1)]
+        );
+        a.connection()
+            .expect("connection")
+            .execute("DELETE FROM playground_history WHERE id = 'entry-done'", [])
+            .expect("delete");
+        sync_to(&a, &b, 200);
+        assert!(rows(&b).is_empty());
+    }
+
+    #[test]
     fn lorebooks_personas_and_their_bindings_converge_through_state_sync() {
         use lettuce_characters::{Persona, PersonaRepository};
         use lettuce_context::{

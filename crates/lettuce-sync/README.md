@@ -503,3 +503,24 @@ cannot be encoded is never skipped silently: the scan records a
 `not_synced` notice for it (once until dismissed) and journals everything
 else, and a received change for it is deferred with the same notice instead
 of failing the batch; both resolve on their own once it fits again.
+
+Playground and Creation Helper. The playground history
+(`playground_history`, deletable) and its images (`playground_history_image`,
+key `<entry>:<ordinal>`, insert-only, waiting for their entry and media) go
+through the row codec, and their images join the media scan. An entry is
+journaled once its generation settled (a pending one stays on the device that
+runs it); two devices that imported the same legacy entry under different ids
+keep the lower one. A Creation Helper session (`creation_workflow`) is one
+snapshot of the workflow with its proposal chain and user turns (the workflow
+revision stays local). Turns and proposals are append-only, so a merge adds
+the ones missing here in turn order and moves the workflow to the synced
+current proposal; a session applied on this device never changes, and one
+where both devices added a different turn at the same position is kept as
+it is here with the other version as conflict evidence. Inference attempts,
+rounds and apply receipts stay on the device that ran them. Image
+generation, speech synthesis and transcription records are job records (they
+belong to a job row of the device that ran them, like conversation runtime
+records) and stay device-local: legacy had no such tables (its image history
+was the playground history, now synced, and its voice cache only listed
+provider voices), and generated images reach other devices through the
+playground history and messages. Pricing caches stay local as in legacy.

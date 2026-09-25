@@ -1,7 +1,8 @@
 //! Plain rows exchanged by sync.
 //!
-//! Tables whose rows stand alone (ASR learning data, audio providers and user
-//! voices) are exchanged row by row: the payload is the row's columns as a
+//! Tables whose rows stand alone (ASR learning data, audio providers, user
+//! voices and the playground history with its images) are exchanged row by
+//! row: the payload is the row's columns as a
 //! JSON object keyed by column name, without the local revision. An update
 //! bumps the local revision and never moves `updated_at` backwards. A row
 //! whose required parent has not arrived waits; an optional reference to a
@@ -27,6 +28,9 @@ pub(crate) struct RowTable {
     pub revision: bool,
     pub identity: &'static [&'static str],
     pub references: &'static [RowReference],
+    /// Rows the scan leaves out while it holds (a pending playground entry
+    /// is still being generated); a row never returns to it once journaled.
+    pub scan_filter: Option<&'static str>,
 }
 
 #[derive(Debug)]
@@ -70,8 +74,9 @@ fn key_values(spec: &RowTable, id: &str) -> Result<Vec<Value>, RowSyncError> {
 pub(crate) fn row_ids(connection: &Connection, spec: &RowTable) -> rusqlite::Result<Vec<String>> {
     connection
         .prepare(&format!(
-            "SELECT {key} FROM {} ORDER BY {key}",
+            "SELECT {key} FROM {} WHERE {} ORDER BY {key}",
             spec.table,
+            spec.scan_filter.unwrap_or("1"),
             key = key_expression(spec)
         ))?
         .query_map([], |row| row.get(0))?
@@ -163,7 +168,8 @@ fn exists(transaction: &Transaction<'_>, table: &str, id: &Value) -> Result<bool
 
 /// Writes a synced row. Returns `false` when a row with the same natural
 /// identity and a lower id already exists here, so the incoming one is not
-/// kept.
+/// kept. A row whose identity columns are all empty has no natural identity
+/// (like a SQL unique constraint over nulls).
 pub(crate) fn row_materialize(
     transaction: &Transaction<'_>,
     spec: &RowTable,
@@ -219,6 +225,9 @@ pub(crate) fn row_materialize(
                     .ok_or(RowSyncError::Corrupt)
             })
             .collect::<Result<Vec<_>, _>>()?;
+        if identity.iter().all(|value| *value == Value::Null) {
+            return insert_or_update(transaction, spec, id, bytes, values);
+        }
         let twins = transaction
             .prepare(&format!(
                 "SELECT id FROM {} WHERE id <> ? AND {condition}",
@@ -241,6 +250,16 @@ pub(crate) fn row_materialize(
                 .map_err(storage)?;
         }
     }
+    insert_or_update(transaction, spec, id, bytes, values)
+}
+
+fn insert_or_update(
+    transaction: &Transaction<'_>,
+    spec: &RowTable,
+    id: &str,
+    bytes: &[u8],
+    values: Vec<Value>,
+) -> Result<bool, RowSyncError> {
     let present: bool = transaction
         .query_row(
             &format!(
@@ -344,6 +363,7 @@ pub(crate) const AUDIO_PROVIDERS: RowTable = RowTable {
     revision: true,
     identity: &[],
     references: &[],
+    scan_filter: None,
 };
 
 pub(crate) const USER_VOICES: RowTable = RowTable {
@@ -366,6 +386,7 @@ pub(crate) const USER_VOICES: RowTable = RowTable {
         table: "audio_providers",
         required: true,
     }],
+    scan_filter: None,
 };
 
 pub(crate) const ASR_VOCABULARY_TERMS: RowTable = RowTable {
@@ -386,6 +407,7 @@ pub(crate) const ASR_VOCABULARY_TERMS: RowTable = RowTable {
     revision: false,
     identity: &[],
     references: &[],
+    scan_filter: None,
 };
 
 pub(crate) const ASR_CORRECTIONS: RowTable = RowTable {
@@ -412,6 +434,7 @@ pub(crate) const ASR_CORRECTIONS: RowTable = RowTable {
     revision: false,
     identity: &[],
     references: &[],
+    scan_filter: None,
 };
 
 pub(crate) const ASR_IGNORED_SUGGESTIONS: RowTable = RowTable {
@@ -438,6 +461,7 @@ pub(crate) const ASR_IGNORED_SUGGESTIONS: RowTable = RowTable {
         "scope",
     ],
     references: &[],
+    scan_filter: None,
 };
 
 pub(crate) const ASR_VOICE_EXAMPLES: RowTable = RowTable {
@@ -477,6 +501,7 @@ pub(crate) const ASR_VOICE_EXAMPLES: RowTable = RowTable {
             required: false,
         },
     ],
+    scan_filter: None,
 };
 
 pub(crate) const USAGE_COSTS: RowTable = RowTable {
@@ -491,6 +516,7 @@ pub(crate) const USAGE_COSTS: RowTable = RowTable {
         table: "usage_events",
         required: true,
     }],
+    scan_filter: None,
 };
 
 pub(crate) const JOB_INFERENCE_USAGE: RowTable = RowTable {
@@ -501,6 +527,7 @@ pub(crate) const JOB_INFERENCE_USAGE: RowTable = RowTable {
     revision: false,
     identity: &[],
     references: &[],
+    scan_filter: None,
 };
 
 pub(crate) const JOB_USAGE_COSTS: RowTable = RowTable {
@@ -515,6 +542,7 @@ pub(crate) const JOB_USAGE_COSTS: RowTable = RowTable {
         table: "job_inference_usage",
         required: true,
     }],
+    scan_filter: None,
 };
 
 pub(crate) const LEGACY_USAGE_RECORDS: RowTable = RowTable {
@@ -551,6 +579,63 @@ pub(crate) const LEGACY_USAGE_RECORDS: RowTable = RowTable {
     revision: false,
     identity: &[],
     references: &[],
+    scan_filter: None,
+};
+
+pub(crate) const PLAYGROUND_HISTORY: RowTable = RowTable {
+    key: &["id"],
+    immutable: false,
+    table: "playground_history",
+    columns: &[
+        "origin",
+        "job_id",
+        "import_run_id",
+        "source_id",
+        "created_at",
+        "provider_kind",
+        "source_model_id",
+        "model_profile_id",
+        "model_name",
+        "prompt",
+        "negative_prompt",
+        "seed",
+        "params_json",
+        "status",
+        "error",
+    ],
+    revision: false,
+    identity: &["import_run_id", "source_id"],
+    references: &[],
+    scan_filter: Some("status <> 'pending'"),
+};
+
+pub(crate) const PLAYGROUND_HISTORY_IMAGES: RowTable = RowTable {
+    key: &["history_id", "ordinal"],
+    immutable: true,
+    table: "playground_history_images",
+    columns: &[
+        "asset_id",
+        "source_asset_id",
+        "mime_type",
+        "url",
+        "width",
+        "height",
+    ],
+    revision: false,
+    identity: &[],
+    references: &[
+        RowReference {
+            column: "history_id",
+            table: "playground_history",
+            required: true,
+        },
+        RowReference {
+            column: "asset_id",
+            table: "media_assets",
+            required: true,
+        },
+    ],
+    scan_filter: None,
 };
 
 #[cfg(test)]

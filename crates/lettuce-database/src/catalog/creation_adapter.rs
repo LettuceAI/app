@@ -1159,6 +1159,238 @@ pub(crate) fn insert_restored_workflow_in(
     Ok(())
 }
 
+/// A Creation Helper session as sync exchanges it: the workflow with its
+/// proposal chain and user turns. Inference attempts, rounds and apply
+/// receipts stay on the device that ran them, and the workflow revision is
+/// local bookkeeping.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct SyncCreationWorkflow {
+    pub workflow: CreationWorkflow,
+    pub proposals: Vec<CreationProposal>,
+    pub turns: Vec<CreationTurn>,
+}
+
+pub(crate) fn sync_workflow_ids(connection: &Connection) -> rusqlite::Result<Vec<String>> {
+    connection
+        .prepare("SELECT id FROM creation_workflows ORDER BY id")?
+        .query_map([], |row| row.get(0))?
+        .collect()
+}
+
+pub(crate) fn sync_load_workflow(
+    transaction: &Transaction<'_>,
+    id: CreationWorkflowId,
+) -> Result<Option<SyncCreationWorkflow>, CreationRepositoryError> {
+    let workflow = match load_workflow_conn(transaction, id) {
+        Ok(workflow) => workflow,
+        Err(CreationRepositoryError::NotFound) => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let proposals = ids_in(
+        transaction,
+        "SELECT id FROM creation_proposals WHERE workflow_id=?1 ORDER BY ordinal, created_at, id",
+        id,
+    )?
+    .into_iter()
+    .map(|proposal| load_proposal_conn(transaction, proposal.parse().map_err(storage)?))
+    .collect::<Result<Vec<_>, _>>()?;
+    let turns = ids_in(
+        transaction,
+        "SELECT id FROM creation_turns WHERE workflow_id=?1 ORDER BY ordinal",
+        id,
+    )?
+    .into_iter()
+    .map(|turn| load_turn_conn(transaction, turn.parse().map_err(storage)?))
+    .collect::<Result<Vec<_>, _>>()?;
+    Ok(Some(SyncCreationWorkflow {
+        workflow: CreationWorkflow {
+            revision: Revision::INITIAL,
+            ..workflow
+        },
+        proposals,
+        turns,
+    }))
+}
+
+/// Merges a synced Creation Helper session. Turns and proposals are
+/// append-only, so the ones missing here are added in turn order and the
+/// workflow moves to the synced current proposal. Returns `false` without
+/// writing when the session cannot be merged: it was applied here (an applied
+/// workflow never changes), or both devices added a different turn at the same
+/// position; the caller keeps the other version as conflict evidence.
+pub(crate) fn sync_merge_workflow(
+    transaction: &Transaction<'_>,
+    incoming: &SyncCreationWorkflow,
+) -> Result<bool, CreationRepositoryError> {
+    let workflow = &incoming.workflow;
+    let id = workflow.id;
+    workflow
+        .target
+        .validate()
+        .map_err(|_| CreationRepositoryError::Invalid)?;
+    for proposal in &incoming.proposals {
+        proposal
+            .validate()
+            .map_err(|_| CreationRepositoryError::Invalid)?;
+    }
+    if incoming.turns.iter().any(|turn| turn.workflow_id != id) {
+        return Err(CreationRepositoryError::Invalid);
+    }
+    let current = incoming
+        .proposals
+        .iter()
+        .find(|proposal| proposal.id == workflow.current_proposal_id)
+        .ok_or(CreationRepositoryError::Invalid)?;
+    if current.stage != workflow.stage {
+        return Err(CreationRepositoryError::Invalid);
+    }
+    let present: bool = transaction
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM creation_workflows WHERE id=?1)",
+            [id.to_string()],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    if !present {
+        let root = incoming
+            .proposals
+            .iter()
+            .find(|proposal| proposal.ordinal == 0 && proposal.parent_id.is_none())
+            .ok_or(CreationRepositoryError::Invalid)?;
+        transaction
+            .execute(
+                "INSERT INTO creation_workflows \
+                 (id,target_json,stage,current_proposal_id,revision,created_at,updated_at) \
+                 VALUES (?1,?2,'drafting',NULL,1,?3,?3)",
+                params![
+                    id.to_string(),
+                    encode(&workflow.target)?,
+                    workflow.created_at.get()
+                ],
+            )
+            .map_err(storage)?;
+        insert_proposal(transaction, id, root)?;
+        transaction
+            .execute(
+                "UPDATE creation_workflows SET current_proposal_id=?2 WHERE id=?1",
+                params![id.to_string(), root.id.to_string()],
+            )
+            .map_err(storage)?;
+    } else if workflow_applied(transaction, id)? {
+        let local = sync_load_workflow(transaction, id)?;
+        return Ok(local.as_ref() == Some(incoming));
+    }
+    let proposal_here = |proposal: CreationProposalId| -> Result<bool, CreationRepositoryError> {
+        transaction
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM creation_proposals WHERE id=?1 AND workflow_id=?2)",
+                params![proposal.to_string(), id.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(storage)
+    };
+    let mut turns = incoming.turns.iter().collect::<Vec<_>>();
+    turns.sort_by_key(|turn| turn.ordinal);
+    for turn in turns {
+        match load_turn_conn(transaction, turn.id) {
+            Ok(local) if local == *turn => {}
+            Ok(_) => return Ok(false),
+            Err(CreationRepositoryError::NotFound) => {
+                let taken: bool = transaction
+                    .query_row(
+                        "SELECT EXISTS(SELECT 1 FROM creation_turns WHERE workflow_id=?1 AND ordinal=?2)",
+                        params![id.to_string(), i64::from(turn.ordinal)],
+                        |row| row.get(0),
+                    )
+                    .map_err(storage)?;
+                let regenerated_here = match turn.regenerated_turn_id {
+                    Some(regenerated) => matches!(
+                        load_turn_conn(transaction, regenerated),
+                        Ok(earlier) if earlier.workflow_id == id
+                    ),
+                    None => true,
+                };
+                if taken || !regenerated_here || !proposal_here(turn.base_proposal_id)? {
+                    return Ok(false);
+                }
+                transaction
+                    .execute(
+                        "INSERT INTO creation_turns \
+                         (id,workflow_id,ordinal,base_proposal_id,user_message,regenerated_turn_id,created_at) \
+                         VALUES (?1,?2,?3,?4,?5,?6,?7)",
+                        params![
+                            turn.id.to_string(),
+                            id.to_string(),
+                            i64::from(turn.ordinal),
+                            turn.base_proposal_id.to_string(),
+                            turn.user_message,
+                            turn.regenerated_turn_id.map(|turn| turn.to_string()),
+                            turn.created_at.get(),
+                        ],
+                    )
+                    .map_err(storage)?;
+            }
+            Err(error) => return Err(error),
+        }
+        let Some(proposal) = incoming
+            .proposals
+            .iter()
+            .find(|proposal| proposal.turn_id == Some(turn.id))
+        else {
+            continue;
+        };
+        if proposal_here(proposal.id)? {
+            if load_proposal_conn(transaction, proposal.id)? != *proposal {
+                return Ok(false);
+            }
+            continue;
+        }
+        let parent = match proposal.parent_id {
+            Some(parent) if parent == turn.base_proposal_id => {
+                load_proposal_conn(transaction, parent)?
+            }
+            _ => return Ok(false),
+        };
+        if parent.ordinal.checked_add(1) != Some(proposal.ordinal) {
+            return Ok(false);
+        }
+        insert_proposal(transaction, id, proposal)?;
+    }
+    if !proposal_here(current.id)? {
+        return Ok(false);
+    }
+    let local_current: String = transaction
+        .query_row(
+            "SELECT current_proposal_id FROM creation_workflows WHERE id=?1",
+            [id.to_string()],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    if local_current != current.id.to_string() {
+        transaction
+            .execute(
+                "UPDATE creation_workflows SET stage=?2,current_proposal_id=?3,\
+                 revision=revision+1,updated_at=max(updated_at,?4) WHERE id=?1",
+                params![
+                    id.to_string(),
+                    stage_name(current.stage),
+                    current.id.to_string(),
+                    workflow.updated_at.get(),
+                ],
+            )
+            .map_err(storage)?;
+    } else {
+        transaction
+            .execute(
+                "UPDATE creation_workflows SET updated_at=max(updated_at,?2) WHERE id=?1",
+                params![id.to_string(), workflow.updated_at.get()],
+            )
+            .map_err(storage)?;
+    }
+    Ok(true)
+}
+
 impl CreationApplyRepository for Database {
     fn apply_new_persona(
         &self,
@@ -3110,6 +3342,120 @@ mod tests {
             provider_request_id: Some(format!("request-{ordinal}")),
             calls,
             admitted_at,
+        }
+    }
+
+    fn sync_once(from: &Database, to: &Database, at: i64) {
+        use lettuce_sync::{IncomingBatchState, IncomingChangeRepository, LocalChangeJournal};
+        from.journal_current_state(TimestampMillis::new(at))
+            .expect("scan source");
+        to.journal_current_state(TimestampMillis::new(at))
+            .expect("scan target");
+        let batch = from
+            .outbound_changes(
+                &to.local_frontier().expect("frontier"),
+                lettuce_sync::MAX_OUTBOUND_CHANGES,
+                lettuce_sync::MAX_OUTBOUND_PAYLOAD_BYTES,
+            )
+            .expect("outbound");
+        if batch.changes.is_empty() {
+            return;
+        }
+        let id = lettuce_types::OperationId::new();
+        to.stage_incoming_batch(
+            lettuce_sync::SyncDeviceId::new(),
+            id,
+            &lettuce_sync::canonical_batch_hash(&batch.changes),
+            &batch.changes,
+            TimestampMillis::new(at),
+        )
+        .expect("stage");
+        assert_eq!(
+            to.apply_incoming_batch(id, TimestampMillis::new(at))
+                .expect("apply")
+                .state,
+            IncomingBatchState::Committed
+        );
+    }
+
+    fn next_turn(database: &Database, workflow: &CreationWorkflow, message: &str, at: i64) {
+        let turn = database
+            .record_user_turn(NewCreationTurn {
+                id: CreationTurnId::new(),
+                workflow_id: workflow.id,
+                base_proposal_id: workflow.current_proposal_id,
+                user_message: message.into(),
+                now: TimestampMillis::new(at),
+            })
+            .expect("record turn");
+        let proposal = database
+            .load_proposal(workflow.current_proposal_id)
+            .expect("current proposal")
+            .apply(
+                CreationProposalId::new(),
+                turn.id,
+                vec![CreationOperation::ShowPreview],
+                TimestampMillis::new(at + 1),
+            )
+            .expect("proposal");
+        database
+            .append_proposal(workflow.id, workflow.revision, proposal)
+            .expect("append proposal");
+    }
+
+    #[test]
+    fn creation_helper_sessions_continue_on_the_other_device() {
+        let a = Database::open_in_memory().expect("a");
+        let b = Database::open_in_memory().expect("b");
+        let workflow_id = CreationWorkflowId::new();
+        let created = a
+            .create_workflow(NewCreationWorkflow {
+                id: workflow_id,
+                initial_proposal_id: CreationProposalId::new(),
+                target: CreationTarget::NewPersona,
+                initial_draft: CreationDraft::Persona {
+                    name: Some("Navigator".into()),
+                    description: None,
+                },
+                now: TimestampMillis::new(10),
+            })
+            .expect("create workflow");
+        next_turn(&a, &created, "Give them a voice", 20);
+        sync_once(&a, &b, 100);
+        let on_a = a.load_workflow(workflow_id).expect("a workflow");
+        let on_b = b.load_workflow(workflow_id).expect("b workflow");
+        assert_eq!(on_b.current_proposal_id, on_a.current_proposal_id);
+        assert_eq!(on_b.stage, on_a.stage);
+        assert_eq!(
+            b.load_proposal(on_b.current_proposal_id)
+                .expect("b proposal"),
+            a.load_proposal(on_a.current_proposal_id)
+                .expect("a proposal")
+        );
+
+        next_turn(&b, &on_b, "Now the backstory", 200);
+        sync_once(&b, &a, 300);
+        let continued = b.load_workflow(workflow_id).expect("b workflow");
+        let on_a = a.load_workflow(workflow_id).expect("a workflow");
+        assert_eq!(on_a.current_proposal_id, continued.current_proposal_id);
+        next_turn(&a, &on_a, "And a name", 400);
+        sync_once(&a, &b, 500);
+        assert_eq!(
+            b.load_workflow(workflow_id)
+                .expect("b workflow")
+                .current_proposal_id,
+            a.load_workflow(workflow_id)
+                .expect("a workflow")
+                .current_proposal_id
+        );
+        use lettuce_sync::LocalChangeJournal;
+        for database in [&a, &b] {
+            assert_eq!(
+                database
+                    .journal_current_state(TimestampMillis::new(600))
+                    .expect("rescan"),
+                0
+            );
         }
     }
 

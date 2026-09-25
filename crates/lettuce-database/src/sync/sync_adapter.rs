@@ -1057,6 +1057,21 @@ fn supported_change(change: &CanonicalChange) -> Result<bool, IncomingChangeErro
             lettuce_sync::LEGACY_USAGE_SYNC_VERSION,
         )
         | (
+            lettuce_sync::PLAYGROUND_HISTORY_SYNC_KIND,
+            lettuce_sync::PLAYGROUND_HISTORY_SYNC_SCHEMA,
+            lettuce_sync::PLAYGROUND_HISTORY_SYNC_VERSION,
+        )
+        | (
+            lettuce_sync::PLAYGROUND_IMAGE_SYNC_KIND,
+            lettuce_sync::PLAYGROUND_IMAGE_SYNC_SCHEMA,
+            lettuce_sync::PLAYGROUND_IMAGE_SYNC_VERSION,
+        )
+        | (
+            lettuce_sync::CREATION_WORKFLOW_SYNC_KIND,
+            lettuce_sync::CREATION_WORKFLOW_SYNC_SCHEMA,
+            lettuce_sync::CREATION_WORKFLOW_SYNC_VERSION,
+        )
+        | (
             lettuce_sync::COMPANION_SOUL_SYNC_KIND,
             lettuce_sync::COMPANION_SOUL_SYNC_SCHEMA,
             lettuce_sync::COMPANION_SOUL_SYNC_VERSION,
@@ -2397,6 +2412,84 @@ row_codec!(
 );
 
 row_codec!(
+    PLAYGROUND_HISTORY_CODEC,
+    lettuce_sync::PLAYGROUND_HISTORY_SYNC_KIND,
+    lettuce_sync::PLAYGROUND_HISTORY_SYNC_SCHEMA,
+    lettuce_sync::PLAYGROUND_HISTORY_SYNC_VERSION,
+    crate::sync::row_sync_adapter::PLAYGROUND_HISTORY,
+    no_assets
+);
+
+row_codec!(
+    PLAYGROUND_IMAGE_CODEC,
+    lettuce_sync::PLAYGROUND_IMAGE_SYNC_KIND,
+    lettuce_sync::PLAYGROUND_IMAGE_SYNC_SCHEMA,
+    lettuce_sync::PLAYGROUND_IMAGE_SYNC_VERSION,
+    crate::sync::row_sync_adapter::PLAYGROUND_HISTORY_IMAGES,
+    |bytes| {
+        serde_json::from_slice::<serde_json::Map<String, serde_json::Value>>(bytes)
+            .ok()
+            .and_then(|row| row.get("asset_id")?.as_str().map(str::to_owned))
+            .into_iter()
+            .collect()
+    }
+);
+
+fn creation_apply_error(error: lettuce_creation::CreationRepositoryError) -> ApplyOneError {
+    match error {
+        lettuce_creation::CreationRepositoryError::Storage => ApplyOneError::Storage,
+        _ => ApplyOneError::Corrupt,
+    }
+}
+
+fn decode_creation_workflow(
+    id: &str,
+    bytes: &[u8],
+) -> Result<crate::catalog::creation_adapter::SyncCreationWorkflow, ApplyOneError> {
+    let workflow: crate::catalog::creation_adapter::SyncCreationWorkflow =
+        serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
+    if workflow.workflow.id.to_string() != id {
+        return Err(ApplyOneError::Corrupt);
+    }
+    Ok(workflow)
+}
+
+const CREATION_WORKFLOW_CODEC: SnapshotCodec = SnapshotCodec {
+    kind: lettuce_sync::CREATION_WORKFLOW_SYNC_KIND,
+    empty: None,
+    seed: None,
+    assets: no_assets,
+    decode: |id, bytes| decode_creation_workflow(id, bytes).map(|_| ()),
+    current: |tx, id| {
+        crate::catalog::creation_adapter::sync_load_workflow(
+            tx,
+            id.parse().map_err(|_| ApplyOneError::Corrupt)?,
+        )
+        .map_err(creation_apply_error)?
+        .map(|workflow| {
+            json_payload(
+                lettuce_sync::CREATION_WORKFLOW_SYNC_SCHEMA,
+                lettuce_sync::CREATION_WORKFLOW_SYNC_VERSION,
+                &workflow,
+            )
+        })
+        .transpose()
+    },
+    materialize: |tx, id, bytes| {
+        crate::catalog::creation_adapter::sync_merge_workflow(
+            tx,
+            &decode_creation_workflow(id, bytes)?,
+        )
+        .map_err(creation_apply_error)
+    },
+    ids: Some(|connection| {
+        crate::catalog::creation_adapter::sync_workflow_ids(connection)
+            .map_err(|_| ApplyOneError::Storage)
+    }),
+    delete: None,
+};
+
+row_codec!(
     USAGE_COST_CODEC,
     lettuce_sync::USAGE_COST_SYNC_KIND,
     lettuce_sync::USAGE_COST_SYNC_SCHEMA,
@@ -2560,7 +2653,7 @@ const CONVERSATION_MESSAGE_CODEC: SnapshotCodec = SnapshotCodec {
 
 /// Aggregates journaled by comparing their current state with the latest
 /// journaled snapshot, in dependency order (deletes run in reverse).
-const SCANNED_CODECS: [&SnapshotCodec; 32] = [
+const SCANNED_CODECS: [&SnapshotCodec; 35] = [
     &PROVIDER_ACCOUNT_CODEC,
     &MODEL_PROFILE_CODEC,
     &PERSONA_CODEC,
@@ -2589,6 +2682,9 @@ const SCANNED_CODECS: [&SnapshotCodec; 32] = [
     &ASR_CORRECTION_CODEC,
     &ASR_IGNORED_SUGGESTION_CODEC,
     &ASR_VOICE_EXAMPLE_CODEC,
+    &PLAYGROUND_HISTORY_CODEC,
+    &PLAYGROUND_IMAGE_CODEC,
+    &CREATION_WORKFLOW_CODEC,
     &USAGE_COST_CODEC,
     &JOB_USAGE_CODEC,
     &JOB_USAGE_COST_CODEC,
@@ -2728,6 +2824,7 @@ fn journal_referenced_media(
              UNION SELECT asset_id FROM candidate_media_refs
              UNION SELECT background_asset_id FROM conversation_settings WHERE background_asset_id IS NOT NULL
              UNION SELECT audio_asset_id FROM asr_voice_examples
+             UNION SELECT asset_id FROM playground_history_images WHERE asset_id IS NOT NULL
              ORDER BY asset_id",
         )
         .and_then(|mut statement| {

@@ -456,6 +456,18 @@ pub fn current_sync_schema_fingerprint() -> ContentHash {
             crate::PROVIDER_ACCOUNT_SYNC_SCHEMA,
             crate::PROVIDER_ACCOUNT_SYNC_VERSION,
         ),
+        (
+            crate::PLAYGROUND_HISTORY_SYNC_SCHEMA,
+            crate::PLAYGROUND_HISTORY_SYNC_VERSION,
+        ),
+        (
+            crate::PLAYGROUND_IMAGE_SYNC_SCHEMA,
+            crate::PLAYGROUND_IMAGE_SYNC_VERSION,
+        ),
+        (
+            crate::CREATION_WORKFLOW_SYNC_SCHEMA,
+            crate::CREATION_WORKFLOW_SYNC_VERSION,
+        ),
     ] {
         hasher.update(&(schema.len() as u64).to_le_bytes());
         hasher.update(schema.as_bytes());
@@ -508,7 +520,7 @@ mod tests {
     fn current_schema_fingerprint_is_stable_and_complete() {
         assert_eq!(
             current_sync_schema_fingerprint().as_str(),
-            "b29e23b88df6ae7eddca98d785596f71abdd2e3552e1e8678947e742fd95d578"
+            "d99766093116e99f9aae68f1ce4e22d4386d33518e530fd8091a33a6a0b450b8"
         );
     }
 

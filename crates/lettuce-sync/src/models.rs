@@ -191,3 +191,15 @@ pub const ASR_IGNORED_SUGGESTION_SYNC_VERSION: u32 = 1;
 pub const ASR_VOICE_EXAMPLE_SYNC_KIND: &str = "asr_voice_example";
 pub const ASR_VOICE_EXAMPLE_SYNC_SCHEMA: &str = "asr.voice_example";
 pub const ASR_VOICE_EXAMPLE_SYNC_VERSION: u32 = 1;
+
+pub const PLAYGROUND_HISTORY_SYNC_KIND: &str = "playground_history";
+pub const PLAYGROUND_HISTORY_SYNC_SCHEMA: &str = "playground.history";
+pub const PLAYGROUND_HISTORY_SYNC_VERSION: u32 = 1;
+
+pub const PLAYGROUND_IMAGE_SYNC_KIND: &str = "playground_history_image";
+pub const PLAYGROUND_IMAGE_SYNC_SCHEMA: &str = "playground.history_image";
+pub const PLAYGROUND_IMAGE_SYNC_VERSION: u32 = 1;
+
+pub const CREATION_WORKFLOW_SYNC_KIND: &str = "creation_workflow";
+pub const CREATION_WORKFLOW_SYNC_SCHEMA: &str = "creation.workflow";
+pub const CREATION_WORKFLOW_SYNC_VERSION: u32 = 1;
