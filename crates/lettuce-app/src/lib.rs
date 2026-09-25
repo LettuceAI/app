@@ -23,6 +23,7 @@ mod backup;
 mod sync;
 mod jobs;
 mod usage;
+mod deletion;
 
 pub use app_version::app_version;
 pub use composition::*;
@@ -41,6 +42,7 @@ pub use backup::*;
 pub use sync::*;
 pub use jobs::*;
 pub use usage::*;
+pub use deletion::*;
 
 #[cfg(test)]
 mod tests {

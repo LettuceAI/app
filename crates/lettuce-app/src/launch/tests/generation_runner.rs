@@ -6598,3 +6598,398 @@ async fn retrieval_embeds_memories_without_a_current_vector_first() {
     assert_eq!(ready[0].memory_id, memory_id);
     assert_eq!(ready[0].source_text, synced.text);
 }
+
+fn hard_delete_root(prefix: &str) -> std::path::PathBuf {
+    let root = std::env::temp_dir().join(format!("lettuce-{prefix}-{}", ConversationId::new()));
+    std::fs::create_dir_all(&root).expect("root");
+    root
+}
+
+fn hard_delete_media(
+    database_path: &std::path::Path,
+    root: &std::path::Path,
+) -> lettuce_media::LocalMediaBlobStore<Database, Database> {
+    use lettuce_platform::{DirectorySnapshot, FilesystemAuthority, ManagedRoot};
+    let snapshot = DirectorySnapshot::new(root).expect("directory snapshot");
+    let authority = FilesystemAuthority::new(&snapshot).expect("filesystem authority");
+    lettuce_media::LocalMediaBlobStore::new(
+        authority.managed_files(),
+        authority
+            .read_capability(ManagedRoot::MediaBlobs)
+            .expect("read capability"),
+        authority
+            .write_capability(ManagedRoot::MediaBlobs)
+            .expect("write capability"),
+        Database::open(database_path).expect("blob database"),
+        Database::open(database_path).expect("asset database"),
+    )
+}
+
+fn media_object(root: &std::path::Path, hash: &ContentHash) -> std::path::PathBuf {
+    root.join("platform-v2")
+        .join("media-blobs")
+        .join("objects")
+        .join(&hash.as_str()[..2])
+        .join(&hash.as_str()[2..4])
+        .join(hash.as_str())
+}
+
+fn chat_image(
+    media: &lettuce_media::LocalMediaBlobStore<Database, Database>,
+    marker: &[u8],
+) -> lettuce_media::IngestedMedia {
+    let mut bytes = b"\x89PNG\r\n\x1a\n".to_vec();
+    bytes.extend_from_slice(&13_u32.to_be_bytes());
+    bytes.extend_from_slice(b"IHDR");
+    bytes.extend_from_slice(&2_u32.to_be_bytes());
+    bytes.extend_from_slice(&3_u32.to_be_bytes());
+    bytes.extend_from_slice(&[8, 6, 0, 0, 0]);
+    bytes.extend_from_slice(marker);
+    media
+        .ingest(
+            bytes.as_slice(),
+            lettuce_media::IngestRequest::new(
+                lettuce_media::AssetKind::MessageImage,
+                lettuce_media::AssetOrigin::Upload,
+                lettuce_media::RetentionClass::Persistent,
+                lettuce_media::AssetProvenanceV1::default(),
+            ),
+        )
+        .expect("ingest image")
+}
+
+async fn generated_direct_chat(database: &Database, prefix: &str) -> (Scenario, MessageId) {
+    let scenario = scenario(database, false, prefix);
+    let work = admit_and_claim(database, &scenario, 1_015);
+    ConversationGenerationJobRunner::new(
+        database,
+        &scripted(vec![text_outcome(prefix, "Reply", 10, 5)]),
+    )
+    .run(&work, input(&scenario), TimestampMillis::new(1_020))
+    .await
+    .expect("run");
+    let conversation = ConversationReader::get(database, scenario.conversation_id)
+        .expect("conversation")
+        .conversation;
+    let reply = branch_timeline(database, conversation.id, conversation.active_branch_id)
+        .last()
+        .expect("reply")
+        .message
+        .id;
+    (scenario, reply)
+}
+
+fn attach_image(
+    database: &Database,
+    conversation_id: ConversationId,
+    message_id: MessageId,
+    asset_id: lettuce_types::AssetId,
+    at: i64,
+) {
+    lettuce_conversations::ConversationRepository::edit_message(
+        database,
+        &lettuce_conversations::EditMessage {
+            conversation_id,
+            message_id,
+            expected_revision: ConversationReader::get(database, conversation_id)
+                .expect("conversation")
+                .conversation
+                .revision,
+            operation: OperationToken {
+                key: key(&format!("attach-{asset_id}")),
+                request_digest: ContentHash::parse("ab".repeat(32)).expect("digest"),
+            },
+            draft: lettuce_conversations::MessageEditDraft {
+                parts: vec![
+                    MessagePart::Text {
+                        text: "Look".into(),
+                    },
+                    MessagePart::MediaAsset {
+                        asset_id,
+                        role: lettuce_conversations::MediaAssetRole::Inline,
+                    },
+                ],
+                visibility: MessageVisibility::Visible,
+                pinned: false,
+                scene_edited: false,
+            },
+        },
+        TimestampMillis::new(at),
+    )
+    .expect("attach image");
+}
+
+fn direct_character(database: &Database, conversation_id: ConversationId) -> CharacterId {
+    ConversationReader::get(database, conversation_id)
+        .expect("conversation")
+        .conversation
+        .participants
+        .iter()
+        .find_map(|participant| match participant.source {
+            lettuce_conversations::ParticipantSource::Character(id) => Some(id),
+            _ => None,
+        })
+        .expect("character participant")
+}
+
+/// Legacy `session_delete` (old-code/src-tauri/src/storage_manager/sessions.rs:3794)
+/// removed a chat for good; usage records outlived it. Its media go once unused, the
+/// peer purges it too, and a file left by an interrupted collection is swept.
+#[tokio::test]
+async fn a_deleted_chat_goes_with_its_media_here_and_on_the_sync_peer() {
+    let root = hard_delete_root("hard-delete-chat");
+    let path = root.join("a.sqlite3");
+    let a = Database::open(&path).expect("a");
+    let b = database();
+    let media = hard_delete_media(&path, &root);
+    let (scenario, reply) = generated_direct_chat(&a, "hard-delete-chat").await;
+    let id = scenario.conversation_id;
+    sync_prompts(&a, &b, 3_000);
+    sync_prompts(&b, &a, 3_100);
+    assert!(ConversationReader::get(&b, id).is_ok());
+    let image = chat_image(&media, b"chat");
+    attach_image(&a, id, reply, image.asset.id, 3_200);
+    let usage_id = ConversationReader::get_turn(&a, scenario.turn_id)
+        .expect("turn")
+        .attempts[0]
+        .usage_event_id
+        .expect("usage");
+    assert!(media_object(&root, &image.blob.content_hash).exists());
+
+    let deletion =
+        crate::delete_conversation(&a, &media, id, TimestampMillis::new(4_000)).expect("delete");
+    assert_eq!(deletion.receipt.conversations, vec![id]);
+    assert_eq!(deletion.media.removed, 1);
+    assert_eq!(deletion.media.failed, 0);
+    assert!(!media_object(&root, &image.blob.content_hash).exists());
+    assert!(ConversationReader::get(&a, id).is_err());
+    assert!(UsageLedger::get(&a, usage_id).expect("usage").is_some());
+    assert_eq!(
+        lettuce_media::MediaAssetRepository::get(&a, image.asset.id).expect("asset"),
+        None
+    );
+
+    sync_prompts(&a, &b, 5_000);
+    assert!(ConversationReader::get(&b, id).is_err());
+    assert!(UsageLedger::get(&b, usage_id).expect("usage").is_some());
+    assert_rescans_are_empty(&[&a, &b], 6_000);
+
+    let stray = ContentHash::parse("ab".repeat(32)).expect("hash");
+    let stray_path = media_object(&root, &stray);
+    std::fs::create_dir_all(stray_path.parent().expect("parent")).expect("stray dir");
+    std::fs::write(&stray_path, b"orphan").expect("stray");
+    let kept = chat_image(&media, b"kept");
+    let swept = crate::sweep_orphan_media_files(&a, &media).expect("sweep");
+    assert_eq!(swept.removed, 1);
+    assert!(!stray_path.exists());
+    assert!(media_object(&root, &kept.blob.content_hash).exists());
+    drop((a, media));
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+/// Legacy `session_delete` dropped only the session's own memories
+/// (sessions.rs:3798); `character_delete` dropped the companion's shared memory and
+/// its soul, notes and episodes (characters.rs:1066-1101, db.rs:803-861).
+#[tokio::test]
+async fn a_companion_pool_outlives_its_chats_and_goes_with_the_companion() {
+    let root = hard_delete_root("hard-delete-companion");
+    let path = root.join("app.sqlite3");
+    let backend = AppBackend::open(&path, TimestampMillis::new(1)).expect("backend");
+    let media = hard_delete_media(&path, &root);
+    let database = backend.database();
+    enable_retrieval_only_dynamic_memory(database);
+    let scenario = direct_scenario_with(
+        database,
+        true,
+        "hard-delete-companion",
+        true,
+        false,
+        |defaults| {
+            defaults.interaction_mode = InteractionMode::Companion;
+            defaults.companion_soul = Some(lettuce_companions::CompanionSoulConfig::default());
+        },
+    );
+    let pool = scenario.space_id.expect("companion pool");
+    seed_retrieved_and_hot_memories(database, pool);
+    let work = admit_and_claim(database, &scenario, 1_015);
+    backend
+        .prepared_conversation_generation_runner(
+            &ScenarioEmbeddingEngine,
+            &scripted(vec![text_outcome("hard-delete-companion", "Tea.", 9, 3)]),
+        )
+        .run(
+            &work,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_020),
+        )
+        .await
+        .expect("companion turn");
+    let character = direct_character(database, scenario.conversation_id);
+
+    crate::delete_conversation(
+        database,
+        &media,
+        scenario.conversation_id,
+        TimestampMillis::new(2_000),
+    )
+    .expect("delete chat");
+    assert!(ConversationReader::get(database, scenario.conversation_id).is_err());
+    assert_eq!(
+        MemoryRepository::get(database, pool)
+            .expect("pool")
+            .expect("pool kept")
+            .items
+            .len(),
+        2
+    );
+    assert!(
+        lettuce_companions::SoulRepository::get(
+            database,
+            lettuce_companions::SoulOwner::Character(character)
+        )
+        .expect("soul")
+        .is_some()
+    );
+
+    let deletion =
+        crate::delete_character(database, &media, character, TimestampMillis::new(3_000))
+            .expect("delete companion");
+    assert_eq!(deletion.receipt.characters, vec![character]);
+    assert_eq!(MemoryRepository::get(database, pool).expect("pool"), None);
+    assert_eq!(
+        lettuce_companions::SoulRepository::get(
+            database,
+            lettuce_companions::SoulOwner::Character(character)
+        )
+        .expect("soul"),
+        None
+    );
+    assert_eq!(
+        CharacterRepository::get(database, character).expect("character"),
+        None
+    );
+    drop((backend, media));
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+/// Legacy `character_delete` cascaded to the character's sessions (db.rs:735) and
+/// left group chats alone; a group that still lists the character keeps it here.
+#[tokio::test]
+async fn deleting_a_character_takes_its_direct_chats_but_not_while_a_group_lists_it() {
+    let root = hard_delete_root("hard-delete-character");
+    let path = root.join("app.sqlite3");
+    let database = Database::open(&path).expect("database");
+    let media = hard_delete_media(&path, &root);
+    let (grouped, _) = generated_direct_chat(&database, "hard-delete-grouped").await;
+    let grouped_character = direct_character(&database, grouped.conversation_id);
+    let other = seed_named_character(&database, "Bea");
+    seed_group(
+        &database,
+        vec![member(grouped_character, 0), member(other, 1)],
+        None,
+        |_| {},
+    );
+    assert_eq!(
+        crate::delete_character(
+            &database,
+            &media,
+            grouped_character,
+            TimestampMillis::new(2_000)
+        ),
+        Err(crate::HardDeleteError::Purge(
+            lettuce_database::PurgeError::InUse
+        ))
+    );
+    assert!(ConversationReader::get(&database, grouped.conversation_id).is_ok());
+
+    let (free, _) = generated_direct_chat(&database, "hard-delete-free").await;
+    let free_character = direct_character(&database, free.conversation_id);
+    let deletion = crate::delete_character(
+        &database,
+        &media,
+        free_character,
+        TimestampMillis::new(3_000),
+    )
+    .expect("delete character");
+    assert_eq!(deletion.receipt.conversations, vec![free.conversation_id]);
+    assert_eq!(deletion.receipt.characters, vec![free_character]);
+    assert!(ConversationReader::get(&database, free.conversation_id).is_err());
+    assert!(ConversationReader::get(&database, grouped.conversation_id).is_ok());
+    drop((database, media));
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+/// Legacy `group_session_delete` (old-code/src-tauri/src/storage_manager/group_sessions.rs:1962)
+/// removed the group session and its messages; the reusable group and its members stayed.
+#[tokio::test]
+async fn a_deleted_group_chat_leaves_its_group_and_members() {
+    let root = hard_delete_root("hard-delete-group");
+    let path = root.join("app.sqlite3");
+    let backend = AppBackend::open(&path, TimestampMillis::new(1)).expect("backend");
+    let media = hard_delete_media(&path, &root);
+    let (scenario, _) = group_scenario(
+        &backend,
+        "hard-delete-group",
+        lettuce_characters::SpeakerSelection::Heuristic,
+        true,
+    );
+    let work = admit_and_claim(backend.database(), &scenario, 1_015);
+    backend
+        .prepared_conversation_generation_runner(
+            &ScenarioEmbeddingEngine,
+            &scripted(vec![text_outcome(
+                "hard-delete-group",
+                "Ada answers.",
+                10,
+                3,
+            )]),
+        )
+        .run(
+            &work,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_020),
+        )
+        .await
+        .expect("group turn");
+    let database = backend.database();
+    let characters: Vec<CharacterId> = ConversationReader::get(database, scenario.conversation_id)
+        .expect("group chat")
+        .conversation
+        .participants
+        .iter()
+        .filter_map(|participant| match participant.source {
+            lettuce_conversations::ParticipantSource::Character(id) => Some(id),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(characters.len(), 2);
+
+    let deletion = crate::delete_conversation(
+        database,
+        &media,
+        scenario.conversation_id,
+        TimestampMillis::new(2_000),
+    )
+    .expect("delete group chat");
+    assert_eq!(
+        deletion.receipt.conversations,
+        vec![scenario.conversation_id]
+    );
+    assert!(deletion.receipt.characters.is_empty());
+    assert!(ConversationReader::get(database, scenario.conversation_id).is_err());
+    for character in characters {
+        assert!(
+            CharacterRepository::get(database, character)
+                .expect("character")
+                .is_some()
+        );
+        assert_eq!(
+            crate::delete_character(database, &media, character, TimestampMillis::new(3_000)),
+            Err(crate::HardDeleteError::Purge(
+                lettuce_database::PurgeError::InUse
+            ))
+        );
+    }
+    drop((backend, media));
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
