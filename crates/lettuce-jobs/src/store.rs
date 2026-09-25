@@ -763,7 +763,10 @@ impl InMemoryJobStore {
                     .get_mut(&claim.job_id)
                     .ok_or(StoreError::NotFound)?;
                 Self::claim_matches(record, &claim, at)?;
-                if record.snapshot.state != JobState::Running {
+                if !matches!(
+                    record.snapshot.state,
+                    JobState::Running | JobState::CancellationRequested
+                ) {
                     return Err(StoreError::IllegalTransition);
                 }
                 let progress = progress.preserving_omitted_from(&record.snapshot.progress);
@@ -1682,6 +1685,61 @@ mod tests {
             .expect("finish");
         assert_eq!(snapshot.state, JobState::Cancelled);
         assert!(store.request_cancel(id, CancellationReason::User).is_err());
+    }
+
+    #[test]
+    fn a_run_that_completes_as_a_stop_arrives_settles_as_its_real_outcome() {
+        for succeed in [true, false] {
+            let store = test_store();
+            let claim = running_job(&store);
+            let id = claim.claim.job_id;
+            store
+                .append_and_transition(JobMutation::RequestCancellation {
+                    id,
+                    reason: CancellationReason::User,
+                    at: Timestamp::new(12),
+                })
+                .expect("cancel request");
+            store
+                .append_and_transition(JobMutation::Progress {
+                    claim: claim.claim.clone(),
+                    progress: ProgressSnapshot {
+                        fraction: Some(FiniteFraction::new(1.0).expect("fraction")),
+                        ..ProgressSnapshot::default()
+                    },
+                    at: Timestamp::new(13),
+                })
+                .expect("progress after stop");
+            let settled = if succeed {
+                store.append_and_transition(JobMutation::Succeed {
+                    claim: claim.claim.clone(),
+                    outcome: JobOutcome::Success {
+                        result_ref: OutcomeRef::ArtifactInstallation(AssetId::from_uuid(
+                            Uuid::nil(),
+                        )),
+                    },
+                    at: Timestamp::new(14),
+                })
+            } else {
+                store.append_and_transition(JobMutation::Fail {
+                    claim: claim.claim.clone(),
+                    error: JobError::new(JobErrorCode::WorkerFailed, false, "worker failed")
+                        .expect("error"),
+                    at: Timestamp::new(14),
+                })
+            }
+            .expect("settle after stop");
+            assert_eq!(
+                settled.state,
+                if succeed {
+                    JobState::Succeeded
+                } else {
+                    JobState::Failed
+                }
+            );
+            assert!(settled.claim.is_none());
+            assert!(settled.cancellation.requested);
+        }
     }
 
     #[test]

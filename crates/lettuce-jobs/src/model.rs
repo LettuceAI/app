@@ -485,7 +485,10 @@ impl JobState {
                     | Self::Queued
                     | Self::Interrupted
             ),
-            Self::CancellationRequested => matches!(next, Self::CleaningUp | Self::Interrupted),
+            Self::CancellationRequested => matches!(
+                next,
+                Self::CleaningUp | Self::Succeeded | Self::Failed | Self::Interrupted
+            ),
             Self::CleaningUp => matches!(next, Self::Cancelled | Self::Failed | Self::Interrupted),
             Self::Succeeded | Self::Failed | Self::Cancelled | Self::Interrupted => false,
         };
@@ -1088,6 +1091,8 @@ mod tests {
             (JobState::Running, JobState::Queued),
             (JobState::Running, JobState::Interrupted),
             (JobState::CancellationRequested, JobState::CleaningUp),
+            (JobState::CancellationRequested, JobState::Succeeded),
+            (JobState::CancellationRequested, JobState::Failed),
             (JobState::CancellationRequested, JobState::Interrupted),
             (JobState::CleaningUp, JobState::Cancelled),
             (JobState::CleaningUp, JobState::Failed),

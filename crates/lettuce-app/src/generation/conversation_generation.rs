@@ -1343,9 +1343,23 @@ impl<
                 {
                     return Err(ConversationGenerationDispatchError::InvalidWork);
                 }
-                let succeeded = self
+                let stopped = self
                     .jobs
-                    .append_and_transition(JobMutation::Progress {
+                    .get(job_id)?
+                    .is_some_and(|job| job.state == JobState::CancellationRequested);
+                let job = if stopped {
+                    self.jobs
+                        .append_and_transition(JobMutation::RequestCleanup {
+                            claim: work.claim.claim.clone(),
+                            at,
+                        })?;
+                    self.jobs
+                        .append_and_transition(JobMutation::FinishCancellation {
+                            claim: work.claim.claim,
+                            at,
+                        })?
+                } else {
+                    self.jobs.append_and_transition(JobMutation::Progress {
                         claim: work.claim.claim.clone(),
                         progress: ProgressSnapshot {
                             fraction: Some(
@@ -1354,36 +1368,14 @@ impl<
                             ..ProgressSnapshot::default()
                         },
                         at,
-                    })
-                    .and_then(|_| {
-                        self.jobs.append_and_transition(JobMutation::Succeed {
-                            claim: work.claim.claim.clone(),
-                            outcome: JobOutcome::Success {
-                                result_ref: OutcomeRef::GenerationTurn(work.turn_id),
-                            },
-                            at,
-                        })
-                    });
-                let job = match succeeded {
-                    Ok(job) => job,
-                    Err(StoreError::IllegalTransition)
-                        if self
-                            .jobs
-                            .get(job_id)?
-                            .is_some_and(|job| job.state == JobState::CancellationRequested) =>
-                    {
-                        self.jobs
-                            .append_and_transition(JobMutation::RequestCleanup {
-                                claim: work.claim.claim.clone(),
-                                at,
-                            })?;
-                        self.jobs
-                            .append_and_transition(JobMutation::FinishCancellation {
-                                claim: work.claim.claim,
-                                at,
-                            })?
-                    }
-                    Err(error) => return Err(error.into()),
+                    })?;
+                    self.jobs.append_and_transition(JobMutation::Succeed {
+                        claim: work.claim.claim,
+                        outcome: JobOutcome::Success {
+                            result_ref: OutcomeRef::GenerationTurn(work.turn_id),
+                        },
+                        at,
+                    })?
                 };
                 return Ok(ConversationGenerationSettledWork::Succeeded {
                     result: Box::new(result),
