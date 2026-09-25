@@ -401,6 +401,10 @@ struct Turn {
     replay_call_ids: Vec<String>,
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each argument is a distinct part of the Messages request"
+)]
 fn encode_request(
     profile: &ResolvedChatProfile,
     context: &ProviderNeutralContext,

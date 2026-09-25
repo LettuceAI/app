@@ -127,6 +127,10 @@ pub(crate) fn validate_model_id(model: &str) -> Result<&str, AdapterError> {
     Ok(model)
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the adapter's collaborators are injected separately by the dispatcher"
+)]
 pub(crate) async fn run<S: SecretStore + ?Sized>(
     provider: &dyn GeminiWireProvider,
     cache: &GeminiCache,
