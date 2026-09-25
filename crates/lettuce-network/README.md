@@ -63,5 +63,9 @@ the same range handling.
 
 `BulkHttpClient` carries image requests and results: 64 MiB requests,
 256 MiB responses and no retries (legacy never retried an image request, and
-a retry could run a paid or long generation twice). `status_text` prints a
+a retry could run a paid or long generation twice). Its request clients
+follow redirects as `JsonClient` does: up to ten, on the request's host only
+and never from HTTPS down to HTTP; a 307 or 308 replays the POST with its
+body (reqwest resends a buffered body), while 301/302/303 turn it into a
+GET. `fetch_url` keeps its own five-redirect limit. `status_text` prints a
 status with its reason phrase as legacy error texts did.

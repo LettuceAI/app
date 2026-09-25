@@ -60,7 +60,15 @@ legacy-style delegation:
   switch only with `send_thinking_state`, the per-field llama settings from the
   chat profile (DFlash included: legacy's field allowlist dropped the
   `llamaDflash*` keys, so chat never enabled it), the conversation as prompt
-  cache key for chat turns. Local
+  cache key for chat turns. Tool calls keep every argument shape legacy
+  executed: `<parameter=k>v</parameter>` bodies become `{"k": v}`, and
+  empty, `null` or non-JSON arguments become `{}`; raw arguments are kept only
+  when they are the JSON form of the arguments. Known gap: legacy's
+  `create_memory` saved a call whose body was plain text by taking the raw
+  text as the memory (`extract_text_argument`, `memory/flow.rs:4498-4507`);
+  the domain contract (`ProposedToolCall` needs object arguments that its raw
+  text parses to) cannot carry non-JSON raw text, so such a call now has no
+  `text` and saves nothing. Local
   failures are non-retryable `LOCAL_INFERENCE_FAILED`; metrics, the runtime
   report and UI events go to the app's `LlamaHost`. User attachments are
   inlined like legacy `build_multimodal_content` (text first, then images as
