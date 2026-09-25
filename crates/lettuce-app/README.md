@@ -2309,15 +2309,24 @@ file is gone or resized is dropped and downloaded again. A Whisper model
 imported from a retained legacy folder can be removed: its file is deleted
 when it is inside the managed folder, and otherwise only the app's record goes.
 
-Hard delete (user decision 2026-09-25: delete like legacy). `delete_conversation`
-and `delete_character` purge the rows (see lettuce-database) and then collect
-media: `collect_media_garbage` runs sync-received deletes still queued, lets
-the catalog release what nothing references and, holding the media store's
-ingestion lock, deletes those object files only after that commit. A file that
-cannot be deleted, or one left by a crash between commit and deletion, is
-removed by `sweep_orphan_media_files`, which only looks at content-addressed
-files under the media root's `objects` tree and deletes those the catalog does
-not keep. Media collection failing after a purge leaves the candidates queued.
-Host wiring still required (phase (c)): the Tauri commands, and running
-`collect_media_garbage` after each sync session and `sweep_orphan_media_files`
-at startup.
+Hard delete. `delete_conversation` and `delete_character` purge the rows
+(see lettuce-database) and then collect media. Every media call takes a
+`MediaGarbageScope`: the media store and the other database files in the
+database directory (`AppDatabaseLocation::other_database_files`, such as the
+previous database a restore keeps). An object any of those files catalogs, in
+any state, is never deleted. `collect_media_garbage` runs sync-received
+deletes still queued, lets the catalog release what nothing references and,
+holding the media store's ingestion lock, deletes those object files only
+after that commit. Objects a backup export (from before it reads the catalog)
+or a restore (for the objects it installs) holds pinned are left for a later
+sweep, and restore installs objects under the same lock. A file that cannot
+be deleted, or one left by a crash between commit and deletion, is removed by
+`sweep_orphan_media_files`, which only looks at content-addressed files under
+the media root's `objects` tree and deletes those neither this catalog (a
+blob in any state, so a `missing` blob can become ready again) nor another
+database file names and no backup has pinned. The sweep is safe at startup
+because of these rules. Media collection failing after a purge
+leaves the candidates queued. Host wiring still required (phase (c)): the
+Tauri commands, the notice list (`Database::purge_notices`), and running
+`collect_media_garbage` after each sync session and
+`sweep_orphan_media_files` at startup.

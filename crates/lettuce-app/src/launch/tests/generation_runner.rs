@@ -6742,6 +6742,10 @@ async fn a_deleted_chat_goes_with_its_media_here_and_on_the_sync_peer() {
     let a = Database::open(&path).expect("a");
     let b = database();
     let media = hard_delete_media(&path, &root);
+    let scope = crate::MediaGarbageScope {
+        store: &media,
+        other_databases: &[],
+    };
     let (scenario, reply) = generated_direct_chat(&a, "hard-delete-chat").await;
     let id = scenario.conversation_id;
     sync_prompts(&a, &b, 3_000);
@@ -6757,7 +6761,7 @@ async fn a_deleted_chat_goes_with_its_media_here_and_on_the_sync_peer() {
     assert!(media_object(&root, &image.blob.content_hash).exists());
 
     let deletion =
-        crate::delete_conversation(&a, &media, id, TimestampMillis::new(4_000)).expect("delete");
+        crate::delete_conversation(&a, &scope, id, TimestampMillis::new(4_000)).expect("delete");
     assert_eq!(deletion.receipt.conversations, vec![id]);
     assert_eq!(deletion.media.removed, 1);
     assert_eq!(deletion.media.failed, 0);
@@ -6779,7 +6783,7 @@ async fn a_deleted_chat_goes_with_its_media_here_and_on_the_sync_peer() {
     std::fs::create_dir_all(stray_path.parent().expect("parent")).expect("stray dir");
     std::fs::write(&stray_path, b"orphan").expect("stray");
     let kept = chat_image(&media, b"kept");
-    let swept = crate::sweep_orphan_media_files(&a, &media).expect("sweep");
+    let swept = crate::sweep_orphan_media_files(&a, &scope).expect("sweep");
     assert_eq!(swept.removed, 1);
     assert!(!stray_path.exists());
     assert!(media_object(&root, &kept.blob.content_hash).exists());
@@ -6796,6 +6800,10 @@ async fn a_companion_pool_outlives_its_chats_and_goes_with_the_companion() {
     let path = root.join("app.sqlite3");
     let backend = AppBackend::open(&path, TimestampMillis::new(1)).expect("backend");
     let media = hard_delete_media(&path, &root);
+    let scope = crate::MediaGarbageScope {
+        store: &media,
+        other_databases: &[],
+    };
     let database = backend.database();
     enable_retrieval_only_dynamic_memory(database);
     let scenario = direct_scenario_with(
@@ -6828,7 +6836,7 @@ async fn a_companion_pool_outlives_its_chats_and_goes_with_the_companion() {
 
     crate::delete_conversation(
         database,
-        &media,
+        &scope,
         scenario.conversation_id,
         TimestampMillis::new(2_000),
     )
@@ -6852,7 +6860,7 @@ async fn a_companion_pool_outlives_its_chats_and_goes_with_the_companion() {
     );
 
     let deletion =
-        crate::delete_character(database, &media, character, TimestampMillis::new(3_000))
+        crate::delete_character(database, &scope, character, TimestampMillis::new(3_000))
             .expect("delete companion");
     assert_eq!(deletion.receipt.characters, vec![character]);
     assert_eq!(MemoryRepository::get(database, pool).expect("pool"), None);
@@ -6872,61 +6880,87 @@ async fn a_companion_pool_outlives_its_chats_and_goes_with_the_companion() {
     std::fs::remove_dir_all(root).expect("cleanup");
 }
 
-/// Legacy `character_delete` cascaded to the character's sessions (db.rs:735) and
-/// left group chats alone; a group that still lists the character keeps it here.
+/// Legacy `character_delete` (old-code/src-tauri/src/storage_manager/characters.rs:1066)
+/// had no group check: it cascaded to the character's sessions (db.rs:735), left group
+/// chats alone and left its id in `group_characters.character_ids`, which group reads
+/// then skipped (useGroupSettingsController.ts:62). Here the character leaves each
+/// group; a group left with one member cannot exist and goes with a notice.
 #[tokio::test]
-async fn deleting_a_character_takes_its_direct_chats_but_not_while_a_group_lists_it() {
+async fn deleting_a_character_takes_its_direct_chats_and_leaves_its_groups() {
     let root = hard_delete_root("hard-delete-character");
     let path = root.join("app.sqlite3");
     let database = Database::open(&path).expect("database");
     let media = hard_delete_media(&path, &root);
-    let (grouped, _) = generated_direct_chat(&database, "hard-delete-grouped").await;
-    let grouped_character = direct_character(&database, grouped.conversation_id);
-    let other = seed_named_character(&database, "Bea");
-    seed_group(
+    let scope = crate::MediaGarbageScope {
+        store: &media,
+        other_databases: &[],
+    };
+    let (chat, _) = generated_direct_chat(&database, "hard-delete-character").await;
+    let character = direct_character(&database, chat.conversation_id);
+    let bea = seed_named_character(&database, "Bea");
+    let cy = seed_named_character(&database, "Cy");
+    let trio = seed_group(
         &database,
-        vec![member(grouped_character, 0), member(other, 1)],
+        vec![member(bea, 0), member(character, 1), member(cy, 2)],
         None,
         |_| {},
     );
-    assert_eq!(
-        crate::delete_character(
-            &database,
-            &media,
-            grouped_character,
-            TimestampMillis::new(2_000)
-        ),
-        Err(crate::HardDeleteError::Purge(
-            lettuce_database::PurgeError::InUse
-        ))
-    );
-    assert!(ConversationReader::get(&database, grouped.conversation_id).is_ok());
-
-    let (free, _) = generated_direct_chat(&database, "hard-delete-free").await;
-    let free_character = direct_character(&database, free.conversation_id);
-    let deletion = crate::delete_character(
+    let pair = seed_group(
         &database,
-        &media,
-        free_character,
-        TimestampMillis::new(3_000),
-    )
-    .expect("delete character");
-    assert_eq!(deletion.receipt.conversations, vec![free.conversation_id]);
-    assert_eq!(deletion.receipt.characters, vec![free_character]);
-    assert!(ConversationReader::get(&database, free.conversation_id).is_err());
-    assert!(ConversationReader::get(&database, grouped.conversation_id).is_ok());
+        vec![member(character, 0), member(bea, 1)],
+        None,
+        |_| {},
+    );
+
+    let deletion =
+        crate::delete_character(&database, &scope, character, TimestampMillis::new(3_000))
+            .expect("delete character");
+    assert_eq!(deletion.receipt.conversations, vec![chat.conversation_id]);
+    assert_eq!(deletion.receipt.characters, vec![character]);
+    assert!(ConversationReader::get(&database, chat.conversation_id).is_err());
+    let trio = lettuce_characters::GroupRepository::get(&database, trio)
+        .expect("trio")
+        .expect("trio kept");
+    assert_eq!(
+        trio.group
+            .members
+            .iter()
+            .map(|member| (member.character_id, member.ordinal))
+            .collect::<Vec<_>>(),
+        vec![(bea, 0), (cy, 1)]
+    );
+    assert_eq!(
+        lettuce_characters::GroupRepository::get(&database, pair).expect("pair"),
+        None
+    );
+    let notices = database.purge_notices().expect("notices");
+    assert_eq!(notices.len(), 1);
+    assert_eq!(
+        notices[0].entity,
+        lettuce_database::PurgeNoticeEntity::Group
+    );
+    assert_eq!(notices[0].entity_id, pair.to_string());
+    assert_eq!(
+        notices[0].reason,
+        lettuce_database::PurgeNoticeReason::GroupRemoved
+    );
     drop((database, media));
     std::fs::remove_dir_all(root).expect("cleanup");
 }
 
 /// Legacy `group_session_delete` (old-code/src-tauri/src/storage_manager/group_sessions.rs:1962)
-/// removed the group session and its messages; the reusable group and its members stayed.
+/// removed the group session and its messages; the reusable group stayed. A group chat
+/// stays readable after one of its characters is deleted.
 #[tokio::test]
-async fn a_deleted_group_chat_leaves_its_group_and_members() {
+async fn a_group_chat_outlives_a_deleted_member_and_is_deleted_on_its_own() {
     let root = hard_delete_root("hard-delete-group");
     let path = root.join("app.sqlite3");
     let backend = AppBackend::open(&path, TimestampMillis::new(1)).expect("backend");
     let media = hard_delete_media(&path, &root);
+    let scope = crate::MediaGarbageScope {
+        store: &media,
+        other_databases: &[],
+    };
     let (scenario, _) = group_scenario(
         &backend,
         "hard-delete-group",
@@ -6952,8 +6986,8 @@ async fn a_deleted_group_chat_leaves_its_group_and_members() {
         .await
         .expect("group turn");
     let database = backend.database();
-    let characters: Vec<CharacterId> = ConversationReader::get(database, scenario.conversation_id)
-        .expect("group chat")
+    let before = ConversationReader::get(database, scenario.conversation_id).expect("group chat");
+    let characters: Vec<CharacterId> = before
         .conversation
         .participants
         .iter()
@@ -6963,33 +6997,147 @@ async fn a_deleted_group_chat_leaves_its_group_and_members() {
         })
         .collect();
     assert_eq!(characters.len(), 2);
+    let branch = before.conversation.active_branch_id;
+    let timeline = branch_timeline(database, scenario.conversation_id, branch);
+
+    let deletion =
+        crate::delete_character(database, &scope, characters[1], TimestampMillis::new(2_000))
+            .expect("delete a member");
+    assert!(deletion.receipt.conversations.is_empty());
+    assert_eq!(
+        ConversationReader::get(database, scenario.conversation_id).expect("still readable"),
+        before
+    );
+    assert_eq!(
+        branch_timeline(database, scenario.conversation_id, branch),
+        timeline
+    );
 
     let deletion = crate::delete_conversation(
         database,
-        &media,
+        &scope,
         scenario.conversation_id,
-        TimestampMillis::new(2_000),
+        TimestampMillis::new(3_000),
     )
     .expect("delete group chat");
     assert_eq!(
         deletion.receipt.conversations,
         vec![scenario.conversation_id]
     );
-    assert!(deletion.receipt.characters.is_empty());
     assert!(ConversationReader::get(database, scenario.conversation_id).is_err());
-    for character in characters {
-        assert!(
-            CharacterRepository::get(database, character)
-                .expect("character")
-                .is_some()
-        );
-        assert_eq!(
-            crate::delete_character(database, &media, character, TimestampMillis::new(3_000)),
-            Err(crate::HardDeleteError::Purge(
-                lettuce_database::PurgeError::InUse
-            ))
-        );
-    }
+    assert!(
+        CharacterRepository::get(database, characters[0])
+            .expect("character")
+            .is_some()
+    );
     drop((backend, media));
     std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+/// A restore keeps the previous database file; media that file catalogs survive
+/// collection and sweeps of the new one.
+#[tokio::test]
+async fn media_a_kept_database_names_survives_collection_and_sweeps() {
+    let root = hard_delete_root("hard-delete-kept-database");
+    let path = root.join("new.sqlite3");
+    let kept_path = root.join("kept.sqlite3");
+    let database = Database::open(&path).expect("database");
+    let kept = Database::open(&kept_path).expect("kept database");
+    let media = hard_delete_media(&path, &root);
+    let kept_media = hard_delete_media(&kept_path, &root);
+    let (scenario, reply) = generated_direct_chat(&database, "hard-delete-kept").await;
+    let image = chat_image(&media, b"shared with the kept database");
+    chat_image(&kept_media, b"shared with the kept database");
+    attach_image(
+        &database,
+        scenario.conversation_id,
+        reply,
+        image.asset.id,
+        2_000,
+    );
+    drop(kept);
+    let other_databases = [kept_path];
+    let scope = crate::MediaGarbageScope {
+        store: &media,
+        other_databases: &other_databases,
+    };
+
+    let deletion = crate::delete_conversation(
+        &database,
+        &scope,
+        scenario.conversation_id,
+        TimestampMillis::new(3_000),
+    )
+    .expect("delete");
+    assert_eq!(deletion.media.removed, 0);
+    assert_eq!(
+        lettuce_media::MediaAssetRepository::get(&database, image.asset.id).expect("asset"),
+        None
+    );
+    assert!(media_object(&root, &image.blob.content_hash).exists());
+    assert_eq!(
+        crate::sweep_orphan_media_files(&database, &scope)
+            .expect("sweep")
+            .removed,
+        0
+    );
+    assert!(media_object(&root, &image.blob.content_hash).exists());
+    let unscoped = crate::MediaGarbageScope {
+        store: &media,
+        other_databases: &[],
+    };
+    assert_eq!(
+        crate::sweep_orphan_media_files(&database, &unscoped)
+            .expect("sweep without the kept database")
+            .removed,
+        1
+    );
+    drop((database, media, kept_media));
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+/// A delete received while this device has messages the deleting device never saw
+/// is refused: the chat stays here, the user is told, and the chat goes back to the
+/// other device whole.
+#[tokio::test]
+async fn a_received_delete_keeps_a_chat_with_unsent_local_messages() {
+    let a = database();
+    let b = database();
+    let (scenario, _) = generated_direct_chat(&a, "hard-delete-unsent").await;
+    let id = scenario.conversation_id;
+    sync_prompts(&a, &b, 3_000);
+    sync_prompts(&b, &a, 3_100);
+    a.purge_conversation(id, TimestampMillis::new(3_200))
+        .expect("delete on a");
+    send_and_generate(&b, &scenario, "hard-delete-unsent-b", "Still here", 3_300).await;
+
+    sync_prompts(&a, &b, 4_000);
+    let kept = ConversationReader::get(&b, id).expect("kept on b");
+    let notices = b.purge_notices().expect("notices");
+    assert_eq!(notices.len(), 1);
+    assert_eq!(
+        notices[0].entity,
+        lettuce_database::PurgeNoticeEntity::Conversation
+    );
+    assert_eq!(notices[0].entity_id, id.to_string());
+    assert_eq!(
+        notices[0].reason,
+        lettuce_database::PurgeNoticeReason::KeptUnsentLocalChanges
+    );
+
+    sync_prompts(&b, &a, 4_100);
+    sync_prompts(&a, &b, 4_200);
+    let back = ConversationReader::get(&a, id).expect("back on a");
+    assert_eq!(back.conversation.title, kept.conversation.title);
+    let branch = kept.conversation.active_branch_id;
+    let texts = |database: &Database| {
+        branch_timeline(database, id, branch)
+            .into_iter()
+            .map(|item| item.message.id)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(texts(&a), texts(&b));
+    assert_eq!(texts(&a).len(), 4);
+    assert!(a.purge_notices().expect("a notices").is_empty());
+    assert_rescans_are_empty(&[&a, &b], 5_000);
 }
