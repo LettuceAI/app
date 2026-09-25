@@ -32,6 +32,7 @@ pub fn select_staged_lorebook_settings(
 
 /// Legacy `LOREBOOK_GENERATOR_DEFAULTS` over the model's lorebook generator
 /// slot; the generator settings' output cap applies where the slot sets none.
+/// llama.cpp gets no context length, so the runtime picks its automatic one.
 pub fn staged_lorebook_parameter_defaults(
     settings: &lettuce_settings::LorebookGeneratorSettings,
     slot: &lettuce_models::FeatureGenerationParameters,
@@ -51,6 +52,9 @@ pub fn staged_lorebook_parameter_defaults(
     ) {
         parameters.operation.max_output_tokens =
             lettuce_models::ParameterOverride::Set(settings.output_tokens());
+    }
+    if protocol == lettuce_models::ProviderProtocol::LlamaCpp {
+        parameters.operation.context_length = lettuce_models::ParameterOverride::Clear;
     }
     parameters
 }
@@ -830,4 +834,41 @@ fn validate_job(
         return Err(StagedLorebookAdmissionError::InvalidInput);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use lettuce_models::{
+        ChatParameterProfile, FeatureGenerationParameters, ModelSettingsLayer, ParameterOverride,
+        ProviderProtocol,
+    };
+
+    use super::staged_lorebook_parameter_defaults;
+
+    #[test]
+    fn llama_cpp_staged_lorebook_runs_leave_the_context_to_the_runtime() {
+        let global = ModelSettingsLayer {
+            chat_parameters: ChatParameterProfile {
+                context_length: Some(4096),
+                ..ChatParameterProfile::default()
+            },
+            ..ModelSettingsLayer::default()
+        };
+        let settings = lettuce_settings::LorebookGeneratorSettings::default();
+        let slot = FeatureGenerationParameters::default();
+        let local = staged_lorebook_parameter_defaults(
+            &settings,
+            &slot,
+            ProviderProtocol::LlamaCpp,
+            &global,
+        );
+        assert_eq!(local.operation.context_length, ParameterOverride::Clear);
+        let remote = staged_lorebook_parameter_defaults(
+            &settings,
+            &slot,
+            ProviderProtocol::OpenAiCompatible,
+            &global,
+        );
+        assert_eq!(remote.operation.context_length, ParameterOverride::Inherit);
+    }
 }

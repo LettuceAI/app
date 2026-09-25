@@ -850,7 +850,7 @@ mod tests {
         );
         assert_eq!(forced.operation.top_p, ParameterOverride::Set(1.0));
         let kept = memory_parameter_input(&slot, ProviderProtocol::LlamaCpp, false, false, &global);
-        assert_eq!(kept.operation.top_k, ParameterOverride::Inherit);
+        assert_eq!(kept.operation.top_k, ParameterOverride::Clear);
         assert_eq!(kept.operation.temperature, ParameterOverride::Set(0.4));
         assert_eq!(kept.llama_cpp.memory_sampler, None);
         let mut own_sampler = slot.clone();
@@ -865,7 +865,7 @@ mod tests {
             )
             .operation
             .top_k,
-            ParameterOverride::Inherit
+            ParameterOverride::Clear
         );
         assert_eq!(
             memory_parameter_input(&slot, ProviderProtocol::Ollama, false, true, &global)

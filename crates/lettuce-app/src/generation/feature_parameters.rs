@@ -50,8 +50,9 @@ pub const CREATION_HELPER_DEFAULTS: FeatureSamplingDefaults =
     FeatureSamplingDefaults::with_max_tokens(0.7, 20480);
 
 /// Which request fields legacy passed for a feature besides temperature,
-/// top_p, the output cap and the context length. Ollama and llama.cpp always
-/// received top_k and the penalties through their request options.
+/// top_p, the output cap and the context length. Ollama always received top_k
+/// and the penalties through its request options; llama.cpp got them only for
+/// `Full` features and otherwise sampled with its sampler-profile defaults.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FeatureRequestFields {
     Sampling,
@@ -92,11 +93,7 @@ pub fn feature_parameter_input(
     operation.reasoning_mode = ParameterOverride::Set(ReasoningMode::Disabled);
     operation.reasoning_effort = ParameterOverride::Clear;
     operation.reasoning_budget_tokens = ParameterOverride::Clear;
-    let request_options = matches!(
-        protocol,
-        ProviderProtocol::Ollama | ProviderProtocol::LlamaCpp
-    );
-    if !request_options {
+    if protocol != ProviderProtocol::Ollama {
         operation.repetition_penalty = ParameterOverride::Clear;
         if fields != FeatureRequestFields::Full {
             operation.top_k = ParameterOverride::Clear;
@@ -194,5 +191,28 @@ mod tests {
         assert_eq!(full.operation.top_k, Set(20));
         assert_eq!(full.operation.repetition_penalty, Clear);
         assert_eq!(full.operation.prompt_caching, Inherit);
+    }
+
+    #[test]
+    fn llama_cpp_features_leave_top_k_and_penalties_to_the_sampler_profile() {
+        let feature = feature_parameter_input(
+            &slot(),
+            DYNAMIC_MEMORY_DEFAULTS,
+            FeatureRequestFields::Sampling,
+            ProviderProtocol::LlamaCpp,
+            &lettuce_models::ModelSettingsLayer::default(),
+        );
+        assert_eq!(feature.operation.top_k, Clear);
+        assert_eq!(feature.operation.frequency_penalty, Clear);
+        assert_eq!(feature.operation.presence_penalty, Clear);
+        let reply = feature_parameter_input(
+            &slot(),
+            HELP_ME_REPLY_DEFAULTS,
+            FeatureRequestFields::Full,
+            ProviderProtocol::LlamaCpp,
+            &lettuce_models::ModelSettingsLayer::default(),
+        );
+        assert_eq!(reply.operation.top_k, Set(20));
+        assert_eq!(reply.operation.frequency_penalty, Set(0.5));
     }
 }
