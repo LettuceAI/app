@@ -1,16 +1,15 @@
 use lettuce_characters::{CharacterRepository, RepositoryError as CharacterRepositoryError};
 use lettuce_companions::{
     CompanionContinueRepositoryError, CompanionConversationContinuer, CompanionConversationSender,
-    CompanionSendRepositoryError, CompanionStateOwner, CompanionStateReplacement,
-    CompanionStateRepository, CompanionStateRepositoryError, CompanionTurnEffectSeed,
-    CompanionTurnInput, PreparedCompanionContinue, PreparedCompanionSend, apply_turn,
-    signals_from_classification, unavailable_signal_bundle,
+    CompanionSendRepositoryError, CompanionStateReplacement, CompanionStateRepository,
+    CompanionStateRepositoryError, CompanionTurnEffectSeed, CompanionTurnInput,
+    PreparedCompanionContinue, PreparedCompanionSend, apply_turn, signals_from_classification,
+    unavailable_signal_bundle,
 };
 use lettuce_conversations::{
-    ContinueConversation, ContinueConversationResult, ConversationKind, ConversationReader,
-    ConversationRepository, ConversationRepositoryError, MemoryModeSnapshot, MessagePart,
-    OperationKind, SendConversation, SendConversationResult, SnapshotSelection,
-    resolve_effective_settings,
+    ContinueConversation, ContinueConversationResult, ConversationReader, ConversationRepository,
+    ConversationRepositoryError, MemoryModeSnapshot, MessagePart, OperationKind, SendConversation,
+    SendConversationResult, resolve_effective_settings,
 };
 use lettuce_jobs::handle::CancellationToken;
 use lettuce_types::TimestampMillis;
@@ -58,21 +57,13 @@ where
             }
             .into());
         }
-        let ConversationKind::Direct(details) = &aggregate.conversation.kind else {
+        let Some(owner) =
+            crate::companion::companion_clock::companion_state_owner(&aggregate.conversation)
+        else {
             return self
                 .sources
                 .begin_continue(command, now)
                 .map_err(Into::into);
-        };
-        let owner = CompanionStateOwner {
-            conversation_id: command.conversation_id,
-            character_id: details.character.source_id,
-            persona_id: match &details.persona {
-                SnapshotSelection::Inherited(persona) | SnapshotSelection::Explicit(persona) => {
-                    Some(persona.source_id)
-                }
-                SnapshotSelection::Disabled => None,
-            },
         };
         let companion = CompanionStateRepository::get(self.sources, owner)?.is_some();
         let dynamic = resolve_effective_settings(&aggregate.conversation, None)
@@ -135,22 +126,19 @@ where
             }
             .into());
         }
-        let ConversationKind::Direct(details) = &aggregate.conversation.kind else {
+        let Some(owner) =
+            crate::companion::companion_clock::companion_state_owner(&aggregate.conversation)
+        else {
             return self.sources.begin_send(command, now).map_err(Into::into);
         };
-        let owner = CompanionStateOwner {
-            conversation_id: command.conversation_id,
-            character_id: details.character.source_id,
-            persona_id: match &details.persona {
-                SnapshotSelection::Inherited(persona) | SnapshotSelection::Explicit(persona) => {
-                    Some(persona.source_id)
-                }
-                SnapshotSelection::Disabled => None,
-            },
-        };
-        let Some(snapshot) = CompanionStateRepository::get(self.sources, owner)? else {
+        let clock = crate::companion::companion_clock::companion_clock_context(
+            self.sources,
+            &aggregate.conversation,
+        )
+        .map_err(|_| CompanionTurnError::CharacterMissing)?;
+        if !clock.companion {
             return self.sources.begin_send(command, now).map_err(Into::into);
-        };
+        }
         let character = CharacterRepository::get(self.sources, owner.character_id)?
             .ok_or(CompanionTurnError::CharacterMissing)?;
         let config = character
@@ -158,6 +146,20 @@ where
             .defaults
             .companion_soul
             .unwrap_or_default();
+        let snapshot = match CompanionStateRepository::get(self.sources, owner)? {
+            Some(snapshot) => snapshot,
+            None => CompanionStateRepository::create(
+                self.sources,
+                owner,
+                lettuce_companions::initial_runtime_state(
+                    &config.soul.baseline_affect,
+                    &config.soul.regulation_style,
+                    &config.relationship_defaults,
+                ),
+                now,
+            )?,
+        };
+        let effective_now = clock.effective_now(now);
         let text = classification_text(&command.message.parts);
         let bundle = match self.emotion {
             Some(engine) => match engine.classify_emotion(&text, cancellation) {
@@ -186,7 +188,7 @@ where
                 emotion_delta: bundle.emotion_delta,
                 relationship_delta: bundle.relationship_delta,
                 confidence: bundle.confidence,
-                now,
+                now: effective_now,
             },
         );
         let effect_seed = resolve_effective_settings(&aggregate.conversation, None)

@@ -10,8 +10,8 @@ use std::collections::{HashMap, HashSet};
 use async_trait::async_trait;
 use lettuce_characters::{CharacterRepository, PersonaRepository};
 use lettuce_companions::{
-    CompanionPromptStateInput, CompanionScheduledNoteRepository, CompanionStateOwner,
-    CompanionStateRepository, SoulOwner, SoulRepository, active_scheduled_notes, prompt_state,
+    CompanionPromptStateInput, CompanionScheduledNoteRepository, CompanionStateRepository,
+    SoulOwner, SoulRepository, active_scheduled_notes, prompt_state,
 };
 use lettuce_context::{
     DetectionPolicy, KeywordMatchMode, LorebookSnapshotActivationEntry,
@@ -123,9 +123,8 @@ where
         } = select_timeline(&aggregate.branches, &request)?;
         let (scene, scene_direction) = snapshot.scene_values(&scene_timeline)?;
         let effective_at = source_effective_time(&request)?;
-        let companion_state = self.companion_prompt_state(&aggregate, &snapshot, effective_at)?;
-        let scheduled_notes =
-            self.companion_scheduled_notes(&aggregate, &snapshot, effective_at)?;
+        let companion_state = self.companion_prompt_state(&aggregate, effective_at)?;
+        let scheduled_notes = self.companion_scheduled_notes(&aggregate, effective_at)?;
 
         let recent_text = history
             .iter()
@@ -538,21 +537,31 @@ where
             .transpose()
     }
 
+    /// The companion state block of a companion chat (legacy
+    /// `is_companion_mode`, see `companion_clock`). The relationship and the
+    /// partner are those of the persona the chat uses now; a chat, Soul or
+    /// episode that has no stored state yet renders the defaults of the
+    /// character's companion settings.
     fn companion_prompt_state(
         &self,
         aggregate: &ConversationAggregate,
-        snapshot: &SnapshotBundle,
         effective_at: TimestampMillis,
     ) -> Result<Option<String>, ContextAssemblyError> {
-        let ConversationKind::Direct(details) = &aggregate.conversation.kind else {
+        let Some(owner) =
+            crate::companion::companion_clock::companion_state_owner(&aggregate.conversation)
+        else {
             return Ok(None);
         };
-        if snapshot.characters.first().is_none_or(|(_, character)| {
-            character.interaction_mode != lettuce_conversations::InteractionModeV1::Companion
-        }) {
+        if !crate::companion::companion_clock::companion_clock_context(
+            self.sources,
+            &aggregate.conversation,
+        )
+        .map_err(|_| ContextAssemblyError::ConversationUnavailable)?
+        .companion
+        {
             return Ok(None);
         }
-        let character = CharacterRepository::get(self.sources, details.character.source_id)
+        let character = CharacterRepository::get(self.sources, owner.character_id)
             .map_err(|_| ContextAssemblyError::ConversationUnavailable)?
             .ok_or(ContextAssemblyError::ConversationUnavailable)?;
         let config = character
@@ -560,31 +569,26 @@ where
             .defaults
             .companion_soul
             .unwrap_or_default();
-        let persona_id = match &details.persona {
-            SnapshotSelection::Inherited(persona) | SnapshotSelection::Explicit(persona) => {
-                Some(persona.source_id)
-            }
-            SnapshotSelection::Disabled => None,
-        };
-        let state = CompanionStateRepository::get(
-            self.sources,
-            CompanionStateOwner {
-                conversation_id: aggregate.conversation.id,
-                character_id: character.character.id,
-                persona_id,
-            },
-        )
-        .map_err(|_| ContextAssemblyError::ConversationUnavailable)?
-        .ok_or(ContextAssemblyError::ConversationUnavailable)?;
-        let episode = CompanionStateRepository::get_continuity_episode(
+        let persona_id = owner.persona_id;
+        let state = CompanionStateRepository::get(self.sources, owner)
+            .map_err(|_| ContextAssemblyError::ConversationUnavailable)?
+            .map_or_else(
+                || {
+                    lettuce_companions::initial_runtime_state(
+                        &config.soul.baseline_affect,
+                        &config.soul.regulation_style,
+                        &config.relationship_defaults,
+                    )
+                },
+                |snapshot| snapshot.state,
+            );
+        let episode_index = CompanionStateRepository::get_continuity_episode(
             self.sources,
             aggregate.conversation.id,
         )
         .map_err(|_| ContextAssemblyError::ConversationUnavailable)?
-        .filter(|episode| {
-            episode.character_id == character.character.id && episode.persona_id == persona_id
-        })
-        .ok_or(ContextAssemblyError::ConversationUnavailable)?;
+        .filter(|episode| episode.character_id == character.character.id)
+        .map_or(0, |episode| episode.episode_index);
         let soul = SoulRepository::get(
             self.sources,
             SoulOwner::for_conversation(
@@ -594,7 +598,11 @@ where
             ),
         )
         .map_err(|_| ContextAssemblyError::ConversationUnavailable)?
-        .ok_or(ContextAssemblyError::ConversationUnavailable)?;
+        .map_or_else(
+            || lettuce_companions::initial_soul_state(Some(&config), effective_at),
+            Ok,
+        )
+        .map_err(|_| ContextAssemblyError::ConversationUnavailable)?;
         let partner_name = persona_id
             .map(|id| PersonaRepository::get(self.sources, id))
             .transpose()
@@ -604,9 +612,9 @@ where
         let facts = prompt_state(&CompanionPromptStateInput {
             soul: &config.soul,
             soul_state: &soul,
-            runtime_state: &state.state,
+            runtime_state: &state,
             style_notes: &config.prompting.style_notes,
-            continuity_episode: episode.episode_index,
+            continuity_episode: episode_index,
             effective_at,
         });
         crate::companion::companion_prompt_text::render_companion_state(
@@ -622,15 +630,18 @@ where
     fn companion_scheduled_notes(
         &self,
         aggregate: &ConversationAggregate,
-        snapshot: &SnapshotBundle,
         effective_at: TimestampMillis,
     ) -> Result<Option<String>, ContextAssemblyError> {
         let ConversationKind::Direct(details) = &aggregate.conversation.kind else {
             return Ok(None);
         };
-        if snapshot.characters.first().is_none_or(|(_, character)| {
-            character.interaction_mode != lettuce_conversations::InteractionModeV1::Companion
-        }) {
+        if !crate::companion::companion_clock::companion_clock_context(
+            self.sources,
+            &aggregate.conversation,
+        )
+        .map_err(|_| ContextAssemblyError::ConversationUnavailable)?
+        .companion
+        {
             return Ok(None);
         }
         let notes = self

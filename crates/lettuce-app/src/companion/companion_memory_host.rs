@@ -1,11 +1,11 @@
 use std::time::Duration;
 
-use lettuce_companions::{CompanionStateOwner, CompanionStateRepository};
+use lettuce_companions::CompanionStateRepository;
 use lettuce_context::{LifecycleStatus, PromptDocument, PromptPurpose, PromptRepository};
 use lettuce_conversations::{
     ConversationKind, ConversationReader, ConversationRepositoryError, GenerationOperation,
     InferencePort, MemoryModeSnapshot, OutputPolicy, ResolvedInferenceProfile, SafetyContext,
-    SnapshotSelection, ToolPolicy, effective_memory,
+    ToolPolicy, effective_memory,
 };
 use lettuce_jobs::{CancellationReason, JobStore, ResourceAvailability, WorkerId};
 use lettuce_memory::{DynamicMemoryRunMode, DynamicMemoryStructuredFallbackFormat, MemoryPolicy};
@@ -660,18 +660,9 @@ where
         &self,
         conversation: &lettuce_conversations::Conversation,
     ) -> Result<bool, CompanionMemoryHostError> {
-        let ConversationKind::Direct(details) = &conversation.kind else {
+        let Some(owner) = crate::companion::companion_clock::companion_state_owner(conversation)
+        else {
             return Ok(false);
-        };
-        let owner = CompanionStateOwner {
-            conversation_id: conversation.id,
-            character_id: details.character.source_id,
-            persona_id: match &details.persona {
-                SnapshotSelection::Inherited(persona) | SnapshotSelection::Explicit(persona) => {
-                    Some(persona.source_id)
-                }
-                SnapshotSelection::Disabled => None,
-            },
         };
         CompanionStateRepository::get(self.repository, owner)
             .map(|state| state.is_some())

@@ -211,6 +211,9 @@ pub(crate) fn read_signals(
         .map_err(corrupt)
 }
 
+/// The conversation's state with the relationship of the owner's persona. A
+/// persona the conversation switched to that has no stored relationship reads
+/// the conversation's current one, which the next write stores under it.
 fn get_in(
     tx: &Transaction<'_>,
     owner: CompanionStateOwner,
@@ -242,35 +245,22 @@ fn get_in(
         .1
         .map(|value| PersonaId::from_str(&value).map_err(corrupt))
         .transpose()?;
-    if stored_character != owner.character_id || stored_persona != owner.persona_id {
+    if stored_character != owner.character_id {
         return Err(Error::Corrupt);
     }
-    let key = persona_key(owner);
-    let relationship = tx
-        .query_row(
-            "SELECT closeness, trust, affection, tension, stability, interaction_count,
-                    last_interaction_at, revision
-             FROM companion_relationship_states
-             WHERE character_id = ?1 AND persona_key = ?2",
-            params![owner.character_id.to_string(), key],
-            |row| {
-                Ok((
-                    RelationshipState {
-                        closeness: row.get(0)?,
-                        trust: row.get(1)?,
-                        affection: row.get(2)?,
-                        tension: row.get(3)?,
-                        stability: row.get(4)?,
-                        interaction_count: row.get(5)?,
-                        last_interaction_at: TimestampMillis::new(row.get(6)?),
-                    },
-                    row.get::<_, i64>(7)?,
-                ))
+    let relationship = read_relationship(tx, owner)?;
+    let relationship = match relationship {
+        Some(relationship) => relationship,
+        None if stored_persona != owner.persona_id => read_relationship(
+            tx,
+            CompanionStateOwner {
+                persona_id: stored_persona,
+                ..owner
             },
-        )
-        .optional()
-        .map_err(corrupt)?
-        .ok_or(Error::Corrupt)?;
+        )?
+        .ok_or(Error::Corrupt)?,
+        None => return Err(Error::Corrupt),
+    };
     let state = CompanionRuntimeState {
         emotional_state: EmotionalState {
             felt: read_vector(tx, owner.conversation_id, "felt")?,
@@ -292,6 +282,37 @@ fn get_in(
         relationship_revision: parse_revision(relationship.1)?,
         state,
     }))
+}
+
+/// The relationship stored for the owner's character and persona.
+fn read_relationship(
+    tx: &Transaction<'_>,
+    owner: CompanionStateOwner,
+) -> Result<Option<(RelationshipState, i64)>, Error> {
+    let key = persona_key(owner);
+    tx.query_row(
+        "SELECT closeness, trust, affection, tension, stability, interaction_count,
+                    last_interaction_at, revision
+             FROM companion_relationship_states
+             WHERE character_id = ?1 AND persona_key = ?2",
+        params![owner.character_id.to_string(), key],
+        |row| {
+            Ok((
+                RelationshipState {
+                    closeness: row.get(0)?,
+                    trust: row.get(1)?,
+                    affection: row.get(2)?,
+                    tension: row.get(3)?,
+                    stability: row.get(4)?,
+                    interaction_count: row.get(5)?,
+                    last_interaction_at: TimestampMillis::new(row.get(6)?),
+                },
+                row.get::<_, i64>(7)?,
+            ))
+        },
+    )
+    .optional()
+    .map_err(corrupt)
 }
 
 fn put_hash_part(hasher: &mut Hasher, value: &[u8]) {
@@ -617,6 +638,39 @@ pub(crate) fn replace_in(
     let next_relationship = current.relationship_revision.next().map_err(corrupt)?;
     let relationship = &replacement.state.relationship_state;
     let key = persona_key(owner);
+    if read_relationship(tx, owner)?.is_none() {
+        tx.execute(
+            "INSERT INTO companion_relationship_states (
+               character_id, persona_key, persona_id, closeness, trust, affection, tension,
+               stability, interaction_count, last_interaction_at, revision, created_at, updated_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12)",
+            params![
+                owner.character_id.to_string(),
+                key,
+                owner.persona_id.map(|id| id.to_string()),
+                relationship.closeness,
+                relationship.trust,
+                relationship.affection,
+                relationship.tension,
+                relationship.stability,
+                i64::from(relationship.interaction_count),
+                relationship.last_interaction_at.get(),
+                sql_revision(current.relationship_revision)?,
+                replacement.applied_at.get()
+            ],
+        )
+        .map_err(failure)?;
+    }
+    tx.execute(
+        "UPDATE companion_session_states SET persona_key = ?2, persona_id = ?3
+         WHERE conversation_id = ?1 AND persona_key <> ?2",
+        params![
+            owner.conversation_id.to_string(),
+            key,
+            owner.persona_id.map(|id| id.to_string())
+        ],
+    )
+    .map_err(failure)?;
     let relationship_updated = tx
         .execute(
             "UPDATE companion_relationship_states SET
@@ -681,6 +735,7 @@ impl CompanionStateRepository for Database {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(failure)?;
         let snapshot = create_in(&tx, owner, &initial, now)?;
+        ensure_continuity_episode_in(&tx, owner, now)?;
         tx.commit().map_err(failure)?;
         Ok(snapshot)
     }
@@ -831,6 +886,12 @@ impl CompanionConversationCreator for Database {
             |tx, _| {
                 create_in(tx, owner, &initial, now).map_err(conversation_state_error)?;
                 ensure_continuity_episode_in(tx, owner, now).map_err(conversation_state_error)?;
+                crate::catalog::character_adapter::ensure_companion_soul_in(
+                    tx,
+                    owner.character_id,
+                    now,
+                )
+                .map_err(|_| lettuce_conversations::ConversationRepositoryError::Storage)?;
                 if !crate::catalog::character_adapter::companion_soul_shared_in(
                     tx,
                     owner.character_id,
@@ -1913,6 +1974,83 @@ mod tests {
         assert_eq!(second.state.emotional_state.felt.calm, 0.9);
         assert_eq!(second.state.relationship_state.trust, 0.8);
         assert_eq!(other.state.relationship_state.trust, -0.3);
+    }
+
+    /// Legacy loaded the relationship stored for the session's current
+    /// persona and saved under that persona's key (sessions.rs 94-117,
+    /// 1265-1269); a persona without one kept the session's relationship.
+    #[test]
+    fn a_persona_switched_mid_chat_reads_and_writes_its_own_relationship() {
+        let database = Database::open_in_memory().expect("open database");
+        let character_id = CharacterId::new();
+        let persona_a = PersonaId::new();
+        let persona_b = PersonaId::new();
+        let persona_c = PersonaId::new();
+        let chat = ConversationId::new();
+        let other = ConversationId::new();
+        insert_character(&database, character_id);
+        insert_conversation(&database, chat, character_id);
+        insert_conversation(&database, other, character_id);
+        database
+            .create(
+                owner(chat, character_id, Some(persona_a)),
+                initial(0.2, 0.1),
+                TimestampMillis::new(10),
+            )
+            .expect("create chat state");
+        database
+            .create(
+                owner(other, character_id, Some(persona_b)),
+                initial(0.5, 0.9),
+                TimestampMillis::new(10),
+            )
+            .expect("create persona B bond");
+        let as_b = database
+            .get(owner(chat, character_id, Some(persona_b)))
+            .expect("read as B")
+            .expect("state");
+        assert_eq!(as_b.state.relationship_state.trust, 0.9);
+        assert_eq!(as_b.state.emotional_state.felt.calm, 0.2);
+
+        let as_c = database
+            .get(owner(chat, character_id, Some(persona_c)))
+            .expect("read as C")
+            .expect("state");
+        assert_eq!(as_c.state.relationship_state.trust, 0.1);
+        let mut next = as_c.state.clone();
+        next.relationship_state.trust = 0.4;
+        database
+            .replace(
+                owner(chat, character_id, Some(persona_c)),
+                OperationRecordId::new(),
+                CompanionStateReplacement {
+                    expected_session_revision: as_c.session_revision,
+                    expected_relationship_revision: as_c.relationship_revision,
+                    state: next,
+                    applied_at: TimestampMillis::new(20),
+                },
+            )
+            .expect("write as C");
+        assert_eq!(
+            database
+                .get(owner(chat, character_id, Some(persona_c)))
+                .expect("reread as C")
+                .expect("state")
+                .state
+                .relationship_state
+                .trust,
+            0.4
+        );
+        assert_eq!(
+            database
+                .get(owner(chat, character_id, Some(persona_a)))
+                .expect("read as A")
+                .expect("state")
+                .state
+                .relationship_state
+                .trust,
+            0.1
+        );
     }
 
     #[test]

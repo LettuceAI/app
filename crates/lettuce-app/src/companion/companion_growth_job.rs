@@ -1,4 +1,4 @@
-use lettuce_characters::{CharacterRepository, InteractionMode, RepositoryError};
+use lettuce_characters::{CharacterRepository, RepositoryError};
 use lettuce_companions::{
     CompanionGrowthRun, CompanionGrowthRunRepository, CompanionGrowthRunRepositoryError,
     GrowthMemoryEvidence, MAX_GROWTH_MEMORIES, SoulOwner, SoulRepository, SoulRepositoryError,
@@ -55,6 +55,7 @@ impl<'a, R: ?Sized, J: ?Sized> CompanionGrowthJobAdmissionCoordinator<'a, R, J> 
 impl<
     R: ConversationReader
         + CharacterRepository
+        + lettuce_companions::CompanionStateRepository
         + SoulRepository
         + CompanionGrowthRunRepository
         + lettuce_models::ModelProfileRepository
@@ -83,20 +84,25 @@ impl<
         }
         let conversation =
             ConversationReader::get(self.sources, result.dispatch.run.conversation_id)?;
-        let ConversationKind::Direct(details) = conversation.conversation.kind else {
+        let ConversationKind::Direct(details) = &conversation.conversation.kind else {
             return Ok(None);
         };
         let character_id = details.character.source_id;
         let character = CharacterRepository::get(self.sources, character_id)?
             .ok_or(CompanionGrowthJobAdmissionError::InvalidSource)?;
-        if character.character.defaults.interaction_mode != InteractionMode::Companion {
+        let clock = crate::companion::companion_clock::companion_clock_context(
+            self.sources,
+            &conversation.conversation,
+        )
+        .map_err(|_| CompanionGrowthJobAdmissionError::InvalidSource)?;
+        if !clock.companion {
             return Ok(None);
         }
         let config = character
             .character
             .defaults
             .companion_soul
-            .ok_or(CompanionGrowthJobAdmissionError::InvalidSource)?;
+            .unwrap_or_default();
         let idempotency_key =
             IdempotencyKey::new(format!("companion-growth-{}", result.dispatch.run.id))
                 .map_err(|_| CompanionGrowthJobAdmissionError::InvalidSource)?;
@@ -143,14 +149,14 @@ impl<
             conversation.conversation.id,
             config.share_soul_growth_across_chats,
         );
-        let soul = SoulRepository::get(self.sources, owner)
-            .map_err(CompanionGrowthJobAdmissionError::Soul)?
-            .ok_or(CompanionGrowthJobAdmissionError::InvalidSource)?;
-        let created_at = result
-            .dispatch
-            .attempt
-            .finished_at
-            .ok_or(CompanionGrowthJobAdmissionError::InvalidSource)?;
+        let created_at = clock.effective_now(
+            result
+                .dispatch
+                .attempt
+                .finished_at
+                .ok_or(CompanionGrowthJobAdmissionError::InvalidSource)?,
+        );
+        let soul = self.soul_or_default(owner, &config, created_at)?;
         let run = self
             .sources
             .admit_companion_growth_run(CompanionGrowthRun {
@@ -185,6 +191,47 @@ impl<
             job: admitted.job,
             created: admitted.created,
         }))
+    }
+
+    /// The Soul the conversation grows, created from the companion settings
+    /// when it has none yet, as legacy fell back to `default_state`; a
+    /// conversation's own Soul starts from the shared one when that exists.
+    fn soul_or_default(
+        &self,
+        owner: SoulOwner,
+        config: &lettuce_companions::CompanionSoulConfig,
+        now: lettuce_types::TimestampMillis,
+    ) -> Result<lettuce_companions::SoulState, CompanionGrowthJobAdmissionError> {
+        if let Some(soul) = SoulRepository::get(self.sources, owner)
+            .map_err(CompanionGrowthJobAdmissionError::Soul)?
+        {
+            return Ok(soul);
+        }
+        let shared = match owner {
+            SoulOwner::Character(_) => None,
+            SoulOwner::Conversation { character_id, .. } => {
+                SoulRepository::get(self.sources, SoulOwner::Character(character_id))
+                    .map_err(CompanionGrowthJobAdmissionError::Soul)?
+            }
+        };
+        let initial = match shared {
+            Some(shared) => lettuce_companions::SoulState {
+                revision: lettuce_types::Revision::INITIAL,
+                facts: shared.facts,
+            },
+            None => lettuce_companions::initial_soul_state(Some(config), now).map_err(|error| {
+                CompanionGrowthJobAdmissionError::Soul(SoulRepositoryError::Invalid(error))
+            })?,
+        };
+        match SoulRepository::create(self.sources, owner, initial, now) {
+            Ok(soul) => Ok(soul),
+            Err(SoulRepositoryError::AlreadyExists) => SoulRepository::get(self.sources, owner)
+                .map_err(CompanionGrowthJobAdmissionError::Soul)?
+                .ok_or(CompanionGrowthJobAdmissionError::Soul(
+                    SoulRepositoryError::NotFound,
+                )),
+            Err(error) => Err(CompanionGrowthJobAdmissionError::Soul(error)),
+        }
     }
 
     /// Legacy ran growth on the summarisation model with its companion

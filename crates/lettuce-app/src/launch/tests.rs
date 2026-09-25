@@ -2813,6 +2813,15 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     assert!(stored_soul.facts.iter().any(|fact| {
         fact.value == "Prefers tea" && fact.source_memory_ids.as_slice() == [memory_id.to_string()]
     }));
+    assert!(
+        stored_soul
+            .facts
+            .iter()
+            .filter(|fact| fact.value == "Prefers tea")
+            .all(|fact| fact.valid_from == growth.run.created_at
+                && fact.created_at == growth.run.created_at),
+        "grown facts take the conversation clock time of admission, not the executor's wall time (legacy companion_growth.rs 51-54, 134)"
+    );
     let settled_growth = growth_dispatch
         .settle(
             growth_work,
@@ -3419,6 +3428,74 @@ fn companion_turn_coordinator_classifies_once_and_replays_without_state_drift() 
     assert_eq!(state.state.relationship_state.interaction_count, 1);
 }
 
+/// Legacy stamped the user message with `companion_effective_now` and passed
+/// that time to `update_state_for_user_message` (completion.rs 150-179), so a
+/// frozen companion clock drives decay and the stored interaction time.
+#[test]
+fn companion_turn_uses_the_conversation_clock_for_decay_and_stamps() {
+    use lettuce_conversations::ConversationRepository as _;
+    let database = database_with_builtins();
+    let character_id = seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
+        defaults.interaction_mode = InteractionMode::Companion;
+        defaults.companion_soul = Some(lettuce_companions::CompanionSoulConfig::default());
+    });
+    let launched = ConversationLaunchPlanner::new(&database)
+        .launch_direct(&request(character_id, "clock-launch"), NOW)
+        .expect("launch");
+    let anchor = TimestampMillis::new(1_700_000_000_000);
+    database
+        .update_settings(
+            lettuce_conversations::PreparedConversationSettingsUpdate::new(
+                lettuce_conversations::UpdateConversationSettings {
+                    conversation_id: launched.value.conversation.id,
+                    expected_settings_revision: None,
+                    operation: OperationToken {
+                        key: key("clock-settings"),
+                        request_digest: ContentHash::parse("ab".repeat(32)).expect("digest"),
+                    },
+                    patch: lettuce_conversations::CurrentConversationSettingsPatch {
+                        companion_clock: lettuce_conversations::PatchValue::Set(
+                            lettuce_conversations::CompanionClockSettings {
+                                time_awareness_enabled: true,
+                                time_override: lettuce_conversations::CompanionTimeOverride::Frozen {
+                                    anchor_at: anchor,
+                                },
+                            },
+                        ),
+                        ..lettuce_conversations::CurrentConversationSettingsPatch::default()
+                    },
+                },
+                Vec::new(),
+            )
+            .expect("prepared clock settings"),
+            TimestampMillis::new(NOW.get() + 1),
+        )
+        .expect("freeze the clock");
+    let conversation = ConversationReader::get(&database, launched.value.conversation.id)
+        .expect("conversation")
+        .conversation;
+    let unavailable = ScenarioEmotionEngine::new(Err(CompanionEmotionGenerationError::Unavailable));
+    CompanionTurnCoordinator::new(&database, Some(&unavailable))
+        .begin_send(
+            &direct_send_command(&conversation, "clock-send", "hello"),
+            TimestampMillis::new(NOW.get() + 3 * 60 * 60 * 1000),
+            &CancellationToken::new(),
+        )
+        .expect("send");
+    let state = CompanionStateRepository::get(
+        &database,
+        CompanionStateOwner {
+            conversation_id: conversation.id,
+            character_id,
+            persona_id: None,
+        },
+    )
+    .expect("state")
+    .expect("companion state");
+    assert_eq!(state.state.updated_at, anchor);
+    assert_eq!(state.state.relationship_state.last_interaction_at, anchor);
+}
+
 #[test]
 fn companion_turn_coordinator_uses_neutral_fallback_and_bypasses_roleplay() {
     let database = database_with_builtins();
@@ -3619,12 +3696,21 @@ async fn companion_context_assembles_live_prompt_state_deterministically() {
     );
 }
 
+/// Legacy `current_state` (companion/mod.rs 1373-1381) falls back to
+/// `default_state` when a companion chat has no stored state, so the turn
+/// renders the default companion block instead of failing.
 #[tokio::test]
-async fn companion_context_fails_closed_when_runtime_state_is_missing() {
+async fn companion_context_renders_defaults_when_state_is_missing() {
     let database = database_with_builtins();
     let character_id = seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
         defaults.interaction_mode = InteractionMode::Companion;
-        defaults.companion_soul = Some(lettuce_companions::CompanionSoulConfig::default());
+        defaults.companion_soul = Some(lettuce_companions::CompanionSoulConfig {
+            soul: lettuce_companions::CompanionSoulIdentity {
+                essence: "Quietly steadfast.".into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        });
     });
     let prepared = ConversationLaunchPlanner::new(&database)
         .prepare_direct(&request(character_id, "companion-context-missing-state"))
@@ -3646,12 +3732,22 @@ async fn companion_context_fails_closed_when_runtime_state_is_missing() {
         ref other => panic!("expected user-message input, got {other:?}"),
     };
     let request = context_request_for(&database, launched.value.conversation.id, source_message_id);
-    assert_eq!(
-        crate::ConversationContextAssembler::new(&database)
-            .assemble(request)
-            .await,
-        Err(lettuce_conversations::ContextAssemblyError::ConversationUnavailable)
-    );
+    let context = crate::ConversationContextAssembler::new(&database)
+        .assemble(request)
+        .await
+        .expect("assemble with default companion state");
+    let text = context
+        .messages
+        .iter()
+        .flat_map(|message| &message.parts)
+        .filter_map(|part| match part {
+            ProviderContextPart::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(text.contains("Soul essence: Quietly steadfast."));
+    assert!(!text.contains("this chat is episode"));
 }
 
 fn override_conversation_prompt(

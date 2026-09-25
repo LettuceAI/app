@@ -110,6 +110,16 @@ fn follow_soul_sharing(
     synced: bool,
     now: TimestampMillis,
 ) -> Result<(), RepositoryError> {
+    if defaults.interaction_mode == lettuce_characters::InteractionMode::Companion {
+        crate::companion::soul_adapter::ensure_character_soul_in(
+            tx,
+            character_id,
+            defaults.companion_soul.as_ref(),
+            !synced,
+            now,
+        )
+        .map_err(|_| RepositoryError::Storage)?;
+    }
     let (Some(was_shared), Some(shared)) = (was_shared, soul_sharing(defaults)) else {
         return Ok(());
     };
@@ -119,6 +129,31 @@ fn follow_soul_sharing(
         was_shared,
         shared,
         synced,
+        now,
+    )
+    .map_err(|_| RepositoryError::Storage)
+}
+
+/// Gives the character of a new companion conversation its shared Soul when
+/// it has none yet.
+pub(crate) fn ensure_companion_soul_in(
+    tx: &Transaction<'_>,
+    character_id: CharacterId,
+    now: TimestampMillis,
+) -> Result<(), RepositoryError> {
+    let defaults: String = tx
+        .query_row(
+            "SELECT defaults_json FROM characters WHERE id = ?1",
+            [character_id.to_string()],
+            |row| row.get(0),
+        )
+        .map_err(db_error)?;
+    let defaults: CharacterDefaults = decode(defaults, DEFAULTS_VERSION).map_err(db_error)?;
+    crate::companion::soul_adapter::ensure_character_soul_in(
+        tx,
+        character_id,
+        defaults.companion_soul.as_ref(),
+        false,
         now,
     )
     .map_err(|_| RepositoryError::Storage)
@@ -2072,6 +2107,18 @@ impl ProfileDuplicateRepository for Database {
         plan.validate()?;
         validate_plan_assets(&tx, &plan)?;
         insert_character(&tx, &plan.character)?;
+        if plan.character.defaults.interaction_mode
+            == lettuce_characters::InteractionMode::Companion
+        {
+            crate::companion::soul_adapter::copy_character_soul_in(
+                &tx,
+                request.source_character_id,
+                plan.character.id,
+                plan.character.defaults.companion_soul.as_ref(),
+                request.now,
+            )
+            .map_err(|_| RepositoryError::Storage)?;
+        }
         replace_character_media(&tx, plan.character.id, &plan.character.media)?;
         insert_character_presentation_refs(&tx, plan.character.id, &plan.character.presentation)?;
         for scene in &plan.scenes {
@@ -3462,6 +3509,122 @@ mod smoke_tests {
                 .find(|fact| fact.category == SoulCategory::Backstory)
                 .expect("backstory")
                 .locked
+        );
+    }
+
+    /// Legacy kept the Soul in the character's companion settings
+    /// (`characters.rs` 387-390, 695), so switching a roleplay character to
+    /// companion, syncing that switch, or duplicating a companion always had
+    /// one; each path here gives the character its shared Soul.
+    #[test]
+    fn switching_syncing_and_duplicating_a_companion_give_it_a_soul() {
+        let database = Database::open_in_memory().expect("database");
+        let character_id = CharacterId::new();
+        let mut plan = companion_plan(character_id);
+        let companion_soul = plan.character.defaults.companion_soul.take();
+        plan.character.defaults.interaction_mode = lettuce_characters::InteractionMode::Roleplay;
+        let created = CharacterRepository::create(&database, plan).expect("create");
+        let defaults = CharacterDefaults {
+            interaction_mode: lettuce_characters::InteractionMode::Companion,
+            companion_soul: companion_soul.clone(),
+            ..created.character.defaults.clone()
+        };
+        CharacterRepository::update_defaults(
+            &database,
+            character_id,
+            created.character.revision,
+            defaults,
+            TimestampMillis::new(20),
+        )
+        .expect("switch to companion");
+        let soul = SoulRepository::get(&database, SoulOwner::Character(character_id))
+            .expect("get soul")
+            .expect("soul after switching");
+        assert_eq!(soul.facts.len(), 12);
+
+        let copy = ProfileDuplicateRepository::duplicate_character(
+            &database,
+            ProfileDuplicateRequest {
+                source_character_id: character_id,
+                destination_character_id: CharacterId::new(),
+                destination_name: None,
+                now: TimestampMillis::new(30),
+            },
+        )
+        .expect("duplicate");
+        assert_eq!(
+            SoulRepository::get(&database, SoulOwner::Character(copy.character_id))
+                .expect("get copied soul")
+                .expect("copied soul")
+                .facts,
+            soul.facts
+        );
+
+        let synced_id = CharacterId::new();
+        let mut synced = companion_plan(synced_id);
+        let synced_soul = synced.character.defaults.companion_soul.take();
+        synced.character.defaults.interaction_mode = lettuce_characters::InteractionMode::Roleplay;
+        let mut details = CharacterRepository::create(&database, synced).expect("synced source");
+        details.character.defaults.interaction_mode =
+            lettuce_characters::InteractionMode::Companion;
+        details.character.defaults.companion_soul = synced_soul;
+        {
+            let mut connection = database.connection().expect("connection");
+            let transaction = connection.transaction().expect("transaction");
+            sync_replace_character(&transaction, &details).expect("sync switch");
+            transaction.commit().expect("commit");
+        }
+        assert!(
+            SoulRepository::get(&database, SoulOwner::Character(synced_id))
+                .expect("get synced soul")
+                .is_some()
+        );
+    }
+
+    /// Legacy merged the current authored facts into the character's fact
+    /// pool by id on the next save (`companion_shared_memory.rs` 618-638), so
+    /// an authored fact saved after creation reaches the Soul.
+    #[test]
+    fn authored_facts_saved_later_join_the_soul_by_id() {
+        let database = Database::open_in_memory().expect("database");
+        let character_id = CharacterId::new();
+        let created =
+            CharacterRepository::create(&database, companion_plan(character_id)).expect("create");
+        let mut config = created
+            .character
+            .defaults
+            .companion_soul
+            .clone()
+            .expect("companion settings");
+        config.authored_facts[0].value = "edited in settings".into();
+        let mut added = config.authored_facts[0].clone();
+        added.id = "grew-up-in-oslo".into();
+        added.value = "Grew up in Oslo".into();
+        config.authored_facts.push(added);
+        CharacterRepository::update_defaults(
+            &database,
+            character_id,
+            created.character.revision,
+            CharacterDefaults {
+                companion_soul: Some(config),
+                ..created.character.defaults.clone()
+            },
+            TimestampMillis::new(20),
+        )
+        .expect("save authored facts");
+        let soul = SoulRepository::get(&database, SoulOwner::Character(character_id))
+            .expect("get soul")
+            .expect("soul");
+        assert_eq!(soul.facts.len(), 13);
+        assert!(
+            soul.facts
+                .iter()
+                .any(|fact| fact.id == "grew-up-in-oslo" && fact.value == "Grew up in Oslo")
+        );
+        assert!(
+            soul.facts
+                .iter()
+                .all(|fact| fact.value != "edited in settings")
         );
     }
 

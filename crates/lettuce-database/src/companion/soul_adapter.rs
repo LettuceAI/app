@@ -428,6 +428,67 @@ pub(crate) fn apply_sharing_change_in(
     Ok(())
 }
 
+/// Gives a companion character its shared Soul when it has none, seeded from
+/// its current settings (legacy `default_state`). With `reconcile_authored`,
+/// an existing Soul also gains every authored fact of the settings whose id it
+/// lacks, as legacy merged a new session's authored facts into the stored
+/// fact pool; facts it already holds keep their stored form.
+pub(crate) fn ensure_character_soul_in(
+    tx: &Transaction<'_>,
+    character_id: CharacterId,
+    config: Option<&lettuce_companions::CompanionSoulConfig>,
+    reconcile_authored: bool,
+    now: TimestampMillis,
+) -> Result<(), SoulRepositoryError> {
+    let owner = SoulOwner::Character(character_id);
+    let Some(current) = get_in(tx, owner)? else {
+        let state = lettuce_companions::initial_soul_state(config, now)
+            .map_err(SoulRepositoryError::Invalid)?;
+        return create_in(tx, owner, &state, now);
+    };
+    let Some(config) = config.filter(|_| reconcile_authored) else {
+        return Ok(());
+    };
+    let known = current
+        .facts
+        .iter()
+        .map(|fact| fact.id.as_str())
+        .collect::<std::collections::HashSet<_>>();
+    let missing = lettuce_companions::CompanionSoulConfig {
+        authored_facts: config
+            .authored_facts
+            .iter()
+            .filter(|fact| !fact.id.trim().is_empty() && !known.contains(fact.id.as_str()))
+            .cloned()
+            .collect(),
+        ..config.clone()
+    };
+    if missing.authored_facts.is_empty() {
+        return Ok(());
+    }
+    let added = lettuce_companions::initial_soul_state(Some(&missing), now)
+        .map_err(SoulRepositoryError::Invalid)?
+        .facts;
+    let mut facts = current.facts;
+    facts.extend(added);
+    overwrite_in(tx, owner, &facts, now)
+}
+
+/// Gives a duplicated companion its own copy of the source character's shared
+/// Soul, or a fresh one from its settings when the source has none.
+pub(crate) fn copy_character_soul_in(
+    tx: &Transaction<'_>,
+    source: CharacterId,
+    destination: CharacterId,
+    config: Option<&lettuce_companions::CompanionSoulConfig>,
+    now: TimestampMillis,
+) -> Result<(), SoulRepositoryError> {
+    match get_in(tx, SoulOwner::Character(source))? {
+        Some(state) => replace_facts_in(tx, SoulOwner::Character(destination), &state.facts, now),
+        None => ensure_character_soul_in(tx, destination, config, false, now),
+    }
+}
+
 pub(crate) fn create_in(
     tx: &Transaction<'_>,
     owner: SoulOwner,
@@ -634,7 +695,7 @@ impl SoulRepository for Database {
         .map_err(failure)?;
         insert_facts(&tx, owner, &next.facts)?;
         let updated = tx.execute(
-            "UPDATE companion_soul_states SET revision = ?2, updated_at = ?3 WHERE character_id = ?1 AND revision = ?4 AND scope = ?5",
+            "UPDATE companion_soul_states SET revision = ?2, updated_at = max(updated_at, ?3) WHERE character_id = ?1 AND revision = ?4 AND scope = ?5",
             params![character_id.to_string(), sql_revision(next.revision)?, change_set.applied_at.get(), sql_revision(change_set.expected_revision)?, scope(owner)],
         ).map_err(failure)?;
         if updated != 1 {

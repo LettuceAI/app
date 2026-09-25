@@ -150,7 +150,7 @@ impl<
                     &candidate.tool_calls,
                     (!fallback.is_empty()).then_some(fallback.as_str()),
                 ),
-                reduced_at: now,
+                reduced_at: run.created_at,
             };
             run = match self
                 .repository

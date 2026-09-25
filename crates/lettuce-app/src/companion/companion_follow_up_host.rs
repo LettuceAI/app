@@ -31,6 +31,7 @@ pub trait CompanionFollowUps: Send + Sync {
 pub trait CompanionFollowUpSources:
     ConversationReader
     + lettuce_characters::CharacterRepository
+    + lettuce_companions::CompanionStateRepository
     + SoulRepository
     + CompanionGrowthRunRepository
     + CompanionConsolidationRunRepository
@@ -48,6 +49,7 @@ pub trait CompanionFollowUpSources:
 impl<T> CompanionFollowUpSources for T where
     T: ConversationReader
         + lettuce_characters::CharacterRepository
+        + lettuce_companions::CompanionStateRepository
         + SoulRepository
         + CompanionGrowthRunRepository
         + CompanionConsolidationRunRepository

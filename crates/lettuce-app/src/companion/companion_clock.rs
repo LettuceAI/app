@@ -6,7 +6,7 @@ use lettuce_companions::{
     CompanionStateOwner, CompanionStateRepository, CompanionStateRepositoryError,
 };
 use lettuce_conversations::{
-    CompanionClockSettings, Conversation, ConversationKind, PromptRuntimeValues, SnapshotSelection,
+    CompanionClockSettings, Conversation, ConversationKind, PromptRuntimeValues,
 };
 use lettuce_types::TimestampMillis;
 use regex::Regex;
@@ -52,26 +52,33 @@ where
         .map_err(CompanionClockError::Character)?
         .ok_or(CompanionClockError::MissingCharacter)?;
     let companion = character.character.defaults.interaction_mode == InteractionMode::Companion
-        || CompanionStateRepository::get(
-            repository,
-            CompanionStateOwner {
-                conversation_id: conversation.id,
-                character_id: details.character.source_id,
-                persona_id: match &details.persona {
-                    SnapshotSelection::Inherited(persona)
-                    | SnapshotSelection::Explicit(persona) => Some(persona.source_id),
-                    SnapshotSelection::Disabled => None,
-                },
-            },
-        )
-        .map_err(CompanionClockError::Companion)?
-        .is_some();
+        || match companion_state_owner(conversation) {
+            Some(owner) => CompanionStateRepository::get(repository, owner)
+                .map_err(CompanionClockError::Companion)?
+                .is_some(),
+            None => false,
+        };
     let clock = conversation
         .current_settings
         .as_ref()
         .and_then(|settings| settings.companion_clock)
         .filter(|clock| companion && clock.time_awareness_enabled);
     Ok(CompanionClockContext { companion, clock })
+}
+
+/// The companion state a direct conversation reads and writes: its character
+/// with the persona the conversation uses now, so a persona switched mid-chat
+/// brings that persona's relationship.
+pub(crate) fn companion_state_owner(conversation: &Conversation) -> Option<CompanionStateOwner> {
+    let ConversationKind::Direct(details) = &conversation.kind else {
+        return None;
+    };
+    Some(CompanionStateOwner {
+        conversation_id: conversation.id,
+        character_id: details.character.source_id,
+        persona_id: lettuce_conversations::effective_persona(conversation)
+            .map(|persona| persona.source_id),
+    })
 }
 
 /// Legacy `time_placeholder_values`: every time placeholder the caller left

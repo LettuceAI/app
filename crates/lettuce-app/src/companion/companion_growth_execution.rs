@@ -159,7 +159,7 @@ impl<
             let checkpoint = CompanionGrowthProposalCheckpoint {
                 usage: outcome.usage.clone(),
                 proposals,
-                reduced_at: now,
+                reduced_at: run.created_at,
             };
             run = match self
                 .repository
