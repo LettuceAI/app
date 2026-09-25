@@ -4625,6 +4625,160 @@ async fn a_group_prompt_lists_the_other_members_and_resolves_scene_mentions() {
     assert!(text.contains("Bea waits for {{@\"Nobody\"}} at the dock."));
 }
 
+async fn assembled_messages_with_prompt(
+    database: &Database,
+    condense: bool,
+    entries: Vec<lettuce_context::PromptEntryDraft>,
+    operation_key: &str,
+) -> Vec<(MessageRole, String)> {
+    let prompt_id = PromptRepository::create_user_draft(
+        database,
+        PromptMetadataDraft {
+            name: operation_key.into(),
+            purpose: PromptPurpose::DirectChat,
+            condense,
+            behavior_version: PromptBehaviorVersion::LegacyV1,
+        },
+        entries,
+        TimestampMillis::new(1),
+    )
+    .expect("prompt")
+    .id;
+    let character_id = seed_character(database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
+        defaults.direct_prompt_id = Some(prompt_id);
+    });
+    let conversation = ConversationLaunchPlanner::new(database)
+        .launch_direct(&request(character_id, operation_key), NOW)
+        .expect("launch direct")
+        .value
+        .conversation;
+    let sent = ConversationRepository::begin_send(
+        database,
+        &direct_send_command(&conversation, &format!("{operation_key}-send"), "Hello."),
+        TimestampMillis::new(NOW.get() + 10),
+    )
+    .expect("send direct message");
+    let source_message_id = match sent.value.turn.input {
+        GenerationInput::UserMessage { message_id } => message_id,
+        ref other => panic!("expected user-message input, got {other:?}"),
+    };
+    crate::ConversationContextAssembler::new(database)
+        .assemble(context_request_for(
+            database,
+            conversation.id,
+            source_message_id,
+        ))
+        .await
+        .expect("assemble context")
+        .messages
+        .into_iter()
+        .map(|message| {
+            let text = message
+                .parts
+                .iter()
+                .filter_map(|part| match part {
+                    ProviderContextPart::Text { text } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<String>();
+            (message.role, text)
+        })
+        .collect()
+}
+
+fn placed_entry(
+    text: &str,
+    role: lettuce_context::PromptEntryRole,
+    position: lettuce_context::PromptEntryPosition,
+    depth: u32,
+) -> lettuce_context::PromptEntryDraft {
+    lettuce_context::PromptEntryDraft {
+        role,
+        injection_position: position,
+        depth,
+        conditional_min_messages: None,
+        ..text_entry(text)
+    }
+}
+
+#[tokio::test]
+async fn in_chat_depth_counts_only_conversation_messages_like_legacy() {
+    let database = database_with_builtins();
+    let messages = assembled_messages_with_prompt(
+        &database,
+        false,
+        vec![
+            text_entry("Base."),
+            placed_entry(
+                "Deep note.",
+                lettuce_context::PromptEntryRole::System,
+                lettuce_context::PromptEntryPosition::InChat,
+                5,
+            ),
+        ],
+        "in-chat-depth",
+    )
+    .await;
+    assert_eq!(
+        messages,
+        vec![
+            (MessageRole::System, "Base.".to_owned()),
+            (MessageRole::System, "Deep note.".to_owned()),
+            (MessageRole::User, "Hello.".to_owned()),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn a_condensed_prompt_merges_like_legacy_condense_entries() {
+    let database = database_with_builtins();
+    let messages = assembled_messages_with_prompt(
+        &database,
+        true,
+        vec![
+            text_entry("System rules."),
+            placed_entry(
+                "User framing.",
+                lettuce_context::PromptEntryRole::User,
+                lettuce_context::PromptEntryPosition::Relative,
+                0,
+            ),
+            placed_entry(
+                "Turn note.",
+                lettuce_context::PromptEntryRole::System,
+                lettuce_context::PromptEntryPosition::InChat,
+                0,
+            ),
+            placed_entry(
+                "Late note.",
+                lettuce_context::PromptEntryRole::User,
+                lettuce_context::PromptEntryPosition::InChat,
+                0,
+            ),
+            placed_entry(
+                "Earlier note.",
+                lettuce_context::PromptEntryRole::System,
+                lettuce_context::PromptEntryPosition::InChat,
+                1,
+            ),
+        ],
+        "condensed-prompt",
+    )
+    .await;
+    assert_eq!(
+        messages,
+        vec![
+            (
+                MessageRole::System,
+                "System rules.\n\nUser framing.".to_owned()
+            ),
+            (MessageRole::System, "Earlier note.".to_owned()),
+            (MessageRole::User, "Hello.".to_owned()),
+            (MessageRole::System, "Turn note.\n\nLate note.".to_owned()),
+        ]
+    );
+}
+
 fn text_entry(text: &str) -> lettuce_context::PromptEntryDraft {
     lettuce_context::PromptEntryDraft {
         built_in_entry_key: None,

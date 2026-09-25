@@ -375,17 +375,31 @@ where
             (None, Default::default())
         };
 
-        let (mut messages, mut in_chat_messages) = prompt_messages(&rendered_prompt)?;
-        let mut runtime_relative = Vec::new();
-        let mut place = |section: Option<RuntimeSection>| {
-            let Some(section) = section else {
-                return;
-            };
-            match section.depth {
-                None => runtime_relative.push(section.message),
-                Some(depth) => in_chat_messages.push((depth, section.message)),
-            }
+        let (mut messages, in_chat) = prompt_messages(&rendered_prompt)?;
+        let mut placement = Placement {
+            turn_context: rendered_prompt
+                .in_chat
+                .iter()
+                .map(|entry| {
+                    !prompt
+                        .and_then(|document| {
+                            document
+                                .entries
+                                .iter()
+                                .find(|authored| authored.id == entry.entry_id)
+                        })
+                        .is_some_and(|authored| {
+                            matches!(
+                                authored.injection_position,
+                                PromptEntryPosition::Conditional | PromptEntryPosition::Interval
+                            )
+                        })
+                })
+                .collect(),
+            in_chat,
+            relative: Vec::new(),
         };
+        let mut place = |section: Option<RuntimeSection>| placement.place(section);
         let summary_placeholder = template_has_placeholder(prompt, "{{context_summary}}");
         let keys_placeholder = template_has_placeholder(prompt, "{{key_memories}}");
         let memory_used = if group {
@@ -417,9 +431,10 @@ where
         if scheduled_notes.is_some() && !template_has_placeholder(prompt, "{{scheduled_notes}}") {
             place(runtime.section("runtime_scheduled_notes"));
         }
-        if prompt.is_some_and(|document| document.condense) {
-            condense_prompt_messages(&mut messages);
-        }
+        let condense_point = prompt
+            .is_some_and(|document| document.condense)
+            .then(|| (placement.relative.len(), placement.in_chat.len()));
+        let mut place = |section: Option<RuntimeSection>| placement.place(section);
         if request.swap_roles && !group {
             place(runtime.section("runtime_swap_places"));
         }
@@ -452,6 +467,34 @@ where
         if guidance.is_some() {
             place(runtime.section("runtime_regenerate_instruction"));
         }
+        let Placement {
+            relative: mut runtime_relative,
+            mut in_chat,
+            turn_context,
+        } = placement;
+        if let Some((relative_end, in_chat_end)) = condense_point {
+            let mut relative = std::mem::take(&mut messages);
+            relative.extend(runtime_relative.drain(..relative_end));
+            let mut late = Vec::new();
+            let mut post = Vec::new();
+            let mut kept = Vec::new();
+            for (index, (depth, message)) in in_chat.drain(..).enumerate() {
+                if index >= in_chat_end {
+                    post.push((depth, message));
+                } else if group || (depth == 0 && turn_context[index]) {
+                    late.push(message);
+                } else {
+                    kept.push((depth, message));
+                }
+            }
+            if group {
+                relative.append(&mut late);
+            }
+            messages.extend(condensed_system_message(relative));
+            in_chat = kept;
+            in_chat.extend(condensed_system_message(late).map(|message| (0, message)));
+            in_chat.extend(post);
+        }
         messages.append(&mut runtime_relative);
 
         let character_names = snapshot
@@ -474,8 +517,8 @@ where
                 transcript.push(message);
             }
         }
+        insert_in_chat_messages(&mut transcript, in_chat);
         messages.append(&mut transcript);
-        insert_in_chat_messages(&mut messages, in_chat_messages);
         if direct {
             for part in messages.iter_mut().flat_map(|message| &mut message.parts) {
                 if let ProviderContextPart::Text { text } = part {
@@ -2292,6 +2335,52 @@ fn selected_character<'a>(
 }
 
 #[allow(clippy::type_complexity)]
+/// Runtime sections a turn injects, collected in placement order.
+/// `turn_context` marks the in-chat messages legacy's condense could merge
+/// into its turn-context message: every one except a conditional or interval
+/// template entry.
+struct Placement {
+    relative: Vec<ProviderNeutralMessage>,
+    in_chat: Vec<(u32, ProviderNeutralMessage)>,
+    turn_context: Vec<bool>,
+}
+
+impl Placement {
+    fn place(&mut self, section: Option<RuntimeSection>) {
+        let Some(section) = section else {
+            return;
+        };
+        match section.depth {
+            None => self.relative.push(section.message),
+            Some(depth) => {
+                self.in_chat.push((depth, section.message));
+                self.turn_context.push(true);
+            }
+        }
+    }
+}
+
+/// Legacy `condense_entries_into_single_system_message`: the non-empty text
+/// of the messages as one system message.
+fn condensed_system_message(
+    messages: Vec<ProviderNeutralMessage>,
+) -> Option<ProviderNeutralMessage> {
+    let text = messages
+        .iter()
+        .flat_map(|message| &message.parts)
+        .filter_map(|part| match part {
+            ProviderContextPart::Text { text } => Some(text.trim()),
+            _ => None,
+        })
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    (!text.is_empty()).then(|| ProviderNeutralMessage {
+        role: MessageRole::System,
+        parts: vec![ProviderContextPart::Text { text }],
+    })
+}
+
 fn prompt_messages(
     rendered: &lettuce_context::RenderedPrompt,
 ) -> Result<
