@@ -454,10 +454,11 @@ impl<'c> Purge<'c> {
         Ok(())
     }
 
-    /// Removes the character from each group that lists it: the remaining
-    /// members keep their order, the first is unmuted when all the others
-    /// are muted, and the group's revision moves. A group left with fewer
-    /// than two members cannot exist and is deleted with a notice.
+    /// Removes the character from each group that lists it, as legacy reads
+    /// skipped a deleted character left in a group's list: the remaining
+    /// members keep their order and mute state, and the group's revision
+    /// moves. A group left with fewer than two members keeps all its settings
+    /// and gets a notice; it takes members again before it can start a chat.
     fn leave_groups(&mut self, character: &str) -> Result<(), PurgeError> {
         let groups = self.strings(
             "SELECT group_id FROM group_members WHERE character_id = ?1 ORDER BY group_id",
@@ -477,10 +478,6 @@ impl<'c> Purge<'c> {
                 "SELECT character_id FROM group_members WHERE group_id = ?1 ORDER BY ordinal",
                 &values[..1],
             )?;
-            if remaining.len() < 2 {
-                self.delete_group(&group)?;
-                continue;
-            }
             self.connection
                 .execute(
                     "UPDATE group_members SET ordinal = ordinal + 1000000 WHERE group_id = ?1",
@@ -497,42 +494,21 @@ impl<'c> Purge<'c> {
             }
             self.connection
                 .execute(
-                    "UPDATE group_members SET muted = 0
-                     WHERE group_id = ?1 AND ordinal = 0
-                       AND NOT EXISTS (SELECT 1 FROM group_members WHERE group_id = ?1 AND muted = 0)",
-                    [&group],
-                )
-                .map_err(storage)?;
-            self.connection
-                .execute(
                     "UPDATE groups SET revision = revision + 1, updated_at = max(updated_at, ?2) WHERE id = ?1",
                     params![group, self.now.get()],
                 )
                 .map_err(storage)?;
+            if remaining.len() < 2 {
+                record_notice(
+                    self.connection,
+                    PurgeNoticeEntity::Group,
+                    &group,
+                    PurgeNoticeReason::GroupBelowTwoMembers,
+                    self.now,
+                )?;
+            }
         }
         Ok(())
-    }
-
-    fn delete_group(&mut self, group: &str) -> Result<(), PurgeError> {
-        let one = [Value::Text(group.to_owned())];
-        for table in [
-            "group_members",
-            "group_presentation_asset_refs",
-            "group_scene_assets",
-            "group_scene_variants",
-            "group_starting_scenes",
-            "group_lorebook_bindings",
-        ] {
-            self.delete(table, "group_id = ?1", &one)?;
-        }
-        self.delete("groups", "id = ?1", &one)?;
-        record_notice(
-            self.connection,
-            PurgeNoticeEntity::Group,
-            group,
-            PurgeNoticeReason::GroupRemoved,
-            self.now,
-        )
     }
 
     /// Deletes the launch snapshots and provider replays the deleted rows
@@ -887,23 +863,23 @@ pub enum PurgeNoticeReason {
     /// A delete received from another device kept failing here and was
     /// given up; the entity is kept and sent back.
     DroppedAfterFailures,
-    /// Deleting a character left a group with fewer than two members, so the
-    /// group was deleted.
-    GroupRemoved,
+    /// Deleting a character left a group with fewer than two members; the
+    /// group keeps its settings and needs members before it can start a chat.
+    GroupBelowTwoMembers,
 }
 
 impl PurgeNoticeReason {
     const ALL: [Self; 3] = [
         Self::KeptUnsentLocalChanges,
         Self::DroppedAfterFailures,
-        Self::GroupRemoved,
+        Self::GroupBelowTwoMembers,
     ];
 
     const fn name(self) -> &'static str {
         match self {
             Self::KeptUnsentLocalChanges => "kept_unsent_local_changes",
             Self::DroppedAfterFailures => "dropped_after_failures",
-            Self::GroupRemoved => "group_removed",
+            Self::GroupBelowTwoMembers => "group_below_two_members",
         }
     }
 }

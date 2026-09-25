@@ -75,10 +75,13 @@ impl GroupProfile {
             created_at,
             updated_at: created_at,
         };
-        group.validate()?;
+        group.validate_membership()?;
         Ok(group)
     }
 
+    /// The rules every stored group keeps. A group whose members were
+    /// deleted keeps its settings with fewer than two members, or with only
+    /// muted ones, until the user adds members again.
     pub fn validate(&self) -> Result<(), ValidationError> {
         validate_revision_timestamps(
             "group.timestamps",
@@ -87,11 +90,6 @@ impl GroupProfile {
             self.updated_at,
         )?;
         validate_name("group.name", &self.name)?;
-        if self.members.len() < 2 {
-            return Err(ValidationError::Invariant {
-                field: "group.minimum_members",
-            });
-        }
         validate_unique(
             "group.member_character_ids",
             self.members.iter().map(|member| member.character_id),
@@ -100,15 +98,27 @@ impl GroupProfile {
             "group.member_order",
             self.members.iter().map(|member| member.ordinal),
         )?;
+        for member in &self.members {
+            member.validate()?;
+        }
+        self.presentation.validate()?;
+        Ok(())
+    }
+
+    /// The stored rules plus the membership a group needs when it is created
+    /// or its members are edited: at least two members, one of them active.
+    pub fn validate_membership(&self) -> Result<(), ValidationError> {
+        self.validate()?;
+        if self.members.len() < 2 {
+            return Err(ValidationError::Invariant {
+                field: "group.minimum_members",
+            });
+        }
         if self.members.iter().all(|member| member.muted) {
             return Err(ValidationError::Invariant {
                 field: "group.active_member",
             });
         }
-        for member in &self.members {
-            member.validate()?;
-        }
-        self.presentation.validate()?;
         Ok(())
     }
 
@@ -166,17 +176,24 @@ mod tests {
 
     #[test]
     fn groups_require_two_members_and_one_active_member() {
-        assert!(group(vec![member(0, false)]).validate().is_err());
+        assert!(group(vec![member(0, false)]).validate_membership().is_err());
         assert!(
             group(vec![member(0, true), member(1, true)])
-                .validate()
+                .validate_membership()
                 .is_err()
         );
         assert!(
             group(vec![member(0, false), member(1, true)])
-                .validate()
+                .validate_membership()
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn a_stored_group_whose_members_were_deleted_stays_valid() {
+        assert!(group(Vec::new()).validate().is_ok());
+        assert!(group(vec![member(0, true)]).validate().is_ok());
+        assert!(group(vec![member(1, false)]).validate().is_err());
     }
 
     #[test]

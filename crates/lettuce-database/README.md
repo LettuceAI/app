@@ -1140,10 +1140,12 @@ event already stored is kept when its conversation comes back through sync.
 pool (`characters.rs:1081`), Soul, facts, receipts, relationships, sessions,
 episodes, scheduled notes, runs, scenes, starters, media links and lorebook
 bindings. It leaves every group that lists it (legacy left the id in the
-group's list and its reads skipped it): the other members keep their order,
-the first is unmuted if all others are muted, the group revision moves, and a
-group left with fewer than two members is deleted with a `group_removed`
-notice. Group conversations it took part in stay readable. Creation apply
+group's list and its reads skipped it): the other members keep their order
+and mute state and the group revision moves. A group left with fewer than two
+members, or with only muted ones, is a valid stored state that keeps all its
+settings and gets a `group_below_two_members` notice; creating a group or
+editing its members still needs two members with one active, and a group
+chat cannot start from it until members are added. Group conversations it took part in stay readable. Creation apply
 receipts keep the character id as a plain value
 (`creation_character_apply_receipts_require_character` checks it on insert),
 and replaying an apply whose character is gone answers `NotFound`. A

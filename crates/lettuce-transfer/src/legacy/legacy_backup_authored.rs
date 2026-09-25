@@ -1597,7 +1597,7 @@ fn map_groups(
             created_at: TimestampMillis::new(row.created_at),
             updated_at: TimestampMillis::new(row.updated_at),
         };
-        if validation.validate().is_err() {
+        if validation.validate_membership().is_err() {
             let undersized = members.len() < 2 || members.iter().all(|member| member.muted);
             if undersized {
                 skipped.push(reference_skip(

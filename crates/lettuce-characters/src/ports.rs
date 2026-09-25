@@ -168,21 +168,28 @@ pub struct CreateGroupPlan {
 
 impl CreateGroupPlan {
     pub fn validate(&self) -> Result<(), ValidationError> {
-        self.group.validate()?;
-        if let Some(starting_scene) = &self.starting_scene {
-            starting_scene.validate(self.group.id)?;
-            if self.group.starting_scene_id != Some(starting_scene.scene.id) {
-                return Err(ValidationError::InvalidReference {
-                    field: "group.starting_scene_id",
-                });
-            }
-        } else if self.group.starting_scene_id.is_some() {
+        self.group.validate_membership()?;
+        validate_group_starting_scene(&self.group, self.starting_scene.as_ref())
+    }
+}
+
+fn validate_group_starting_scene(
+    group: &GroupProfile,
+    starting_scene: Option<&GroupStartingScene>,
+) -> Result<(), ValidationError> {
+    if let Some(starting_scene) = starting_scene {
+        starting_scene.validate(group.id)?;
+        if group.starting_scene_id != Some(starting_scene.scene.id) {
             return Err(ValidationError::InvalidReference {
                 field: "group.starting_scene_id",
             });
         }
-        Ok(())
+    } else if group.starting_scene_id.is_some() {
+        return Err(ValidationError::InvalidReference {
+            field: "group.starting_scene_id",
+        });
     }
+    Ok(())
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -194,11 +201,8 @@ pub struct GroupDetails {
 
 impl GroupDetails {
     pub fn validate(&self) -> Result<(), ValidationError> {
-        CreateGroupPlan {
-            group: self.group.clone(),
-            starting_scene: self.starting_scene.clone(),
-        }
-        .validate()
+        self.group.validate()?;
+        validate_group_starting_scene(&self.group, self.starting_scene.as_ref())
     }
 }
 

@@ -1254,7 +1254,7 @@ impl GroupRepository for Database {
         proposed.members = members.clone();
         proposed.revision = next_revision(expected_revision)?;
         proposed.updated_at = now;
-        proposed.validate()?;
+        proposed.validate_membership()?;
         validate_member_assignments(&tx, &members)?;
         write_members(&tx, id, &members)?;
         bump_group(&tx, id, expected_revision, now)?;
@@ -1402,7 +1402,7 @@ impl Database {
         proposed.members = members.clone();
         proposed.revision = next_revision(expected)?;
         proposed.updated_at = now;
-        proposed.validate()?;
+        proposed.validate_membership()?;
         for member in &members {
             if let Some(model) = member.model_profile_override {
                 ensure_chat_model(&tx, model)?;

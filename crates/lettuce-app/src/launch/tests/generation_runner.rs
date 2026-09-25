@@ -6929,9 +6929,29 @@ async fn deleting_a_character_takes_its_direct_chats_and_leaves_its_groups() {
             .collect::<Vec<_>>(),
         vec![(bea, 0), (cy, 1)]
     );
+    let before_pair = pair;
+    let pair = lettuce_characters::GroupRepository::get(&database, pair)
+        .expect("pair")
+        .expect("a group left with one member keeps its settings");
+    assert_eq!(pair.group.name, "Cast");
     assert_eq!(
-        lettuce_characters::GroupRepository::get(&database, pair).expect("pair"),
-        None
+        pair.group
+            .members
+            .iter()
+            .map(|member| (member.character_id, member.ordinal))
+            .collect::<Vec<_>>(),
+        vec![(bea, 0)]
+    );
+    assert!(
+        lettuce_characters::GroupRepository::rename(
+            &database,
+            before_pair,
+            pair.group.revision,
+            "Renamed cast".into(),
+            TimestampMillis::new(3_100),
+        )
+        .is_ok(),
+        "a degraded group can still be edited"
     );
     let notices = database.purge_notices().expect("notices");
     assert_eq!(notices.len(), 1);
@@ -6939,10 +6959,10 @@ async fn deleting_a_character_takes_its_direct_chats_and_leaves_its_groups() {
         notices[0].entity,
         lettuce_database::PurgeNoticeEntity::Group
     );
-    assert_eq!(notices[0].entity_id, pair.to_string());
+    assert_eq!(notices[0].entity_id, before_pair.to_string());
     assert_eq!(
         notices[0].reason,
-        lettuce_database::PurgeNoticeReason::GroupRemoved
+        lettuce_database::PurgeNoticeReason::GroupBelowTwoMembers
     );
     drop((database, media));
     std::fs::remove_dir_all(root).expect("cleanup");
@@ -7011,6 +7031,23 @@ async fn a_group_chat_outlives_a_deleted_member_and_is_deleted_on_its_own() {
     assert_eq!(
         branch_timeline(database, scenario.conversation_id, branch),
         timeline
+    );
+    let notices = database.purge_notices().expect("notices");
+    assert_eq!(notices.len(), 1);
+    let group = lettuce_characters::GroupRepository::get(
+        database,
+        notices[0].entity_id.parse().expect("group id"),
+    )
+    .expect("group")
+    .expect("the source group stays");
+    assert_eq!(
+        group
+            .group
+            .members
+            .iter()
+            .map(|member| member.character_id)
+            .collect::<Vec<_>>(),
+        vec![characters[0]]
     );
 
     let deletion = crate::delete_conversation(
