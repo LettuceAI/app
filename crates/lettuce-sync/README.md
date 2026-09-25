@@ -116,9 +116,13 @@ with each entity's own change time, like a restored database. Peers on the
 same build start over the same way and settle the concurrent inserts by last
 writer wins. A restart never undoes a delete: before the tables are emptied,
 every delete that is the latest state of its entity here (the entity is gone,
-or its received delete still waits in the purge queue) is collected and
+or its received delete still waits in the purge queue; a delete this device
+refused, even one whose entity still waits in `purge_rejournals` to be sent
+back, is never carried) is collected and
 journaled again first under the new identity with its original stamp and no
-causal dependencies, which is what marks a carried delete. A received
+causal dependencies, which is what marks a carried delete. The journal
+refuses any other delete without causal dependencies (a scanned delete always
+has one: the change it deletes), so the marker cannot be forged locally. A received
 carried delete observes nothing, so it is decided against changes stamped
 after it only: content that a peer journaled again at its own restart is
 older and loses, deterministically, while an edit made after the delete
@@ -160,10 +164,12 @@ entity is compared with the latest journaled one that became local state
 (incoming changes that lost a conflict are skipped), and differences are
 journaled as insert or update; journaled entities that no longer exist are
 journaled as deletes in reverse order, stamped with the time this device
-deleted the entity (`sync_deleted_entities`: triggers on the tables whose
-rows are synced entities record it, and a purge records its own time), like
-legacy's per-write capture; deletes of derived entities (memory items,
-summaries, bindings) fall back to the session time. Edits and imports therefore replicate
+deleted the entity (`sync_deleted_entities`: delete triggers on the tables
+whose rows are synced entities, messages, branches and memory items included,
+record it, and a purge records its own time inside its transaction first),
+like legacy's per-write capture; every scan clears the table, as does a
+journal restart after carrying its deletes, and summaries and bindings fall
+back to the session time. Edits and imports therefore replicate
 with no per-mutation code; a restored database starts with a new device
 identity and an empty journal, so it rejoins as a new device whose state meets
 peers as concurrent inserts, never as deletes. A scanned insert or update
