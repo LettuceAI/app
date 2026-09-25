@@ -257,10 +257,10 @@ fn commit_staged(
 
 /// Publishes a synced stage under a name that must not exist yet.
 ///
-/// The no-replace primitive is `renameat2(RENAME_NOREPLACE)` on Linux and
-/// Android and a hard link elsewhere. When the filesystem or its security
-/// policy refuses that primitive, the name is reserved with an exclusive create
-/// and the stage then replaces that empty reservation.
+/// Desktop Linux uses `renameat2(RENAME_NOREPLACE)`. Android never issues
+/// `renameat2`, which older releases' seccomp policy answers with `SIGSYS`;
+/// there the existence check and a plain rename run under a process-wide lock
+/// for the target directory. Other targets publish through a hard link.
 fn publish_new(
     stage_parent: &cap_std::fs::Dir,
     stage_name: &str,
@@ -270,14 +270,11 @@ fn publish_new(
     match publish_no_replace(stage_parent, stage_name, parent, target_name) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == io::ErrorKind::AlreadyExists => Err(PlatformError::Conflict),
-        Err(error) if no_replace_unavailable(&error) => {
-            reserve_then_replace(stage_parent, stage_name, parent, target_name)
-        }
         Err(error) => Err(map_create_new_error(error)),
     }
 }
 
-#[cfg(any(target_os = "linux", target_os = "android"))]
+#[cfg(target_os = "linux")]
 fn publish_no_replace(
     stage_parent: &cap_std::fs::Dir,
     stage_name: &str,
@@ -294,6 +291,51 @@ fn publish_no_replace(
     .map_err(io::Error::from)
 }
 
+#[cfg(any(target_os = "android", all(test, unix)))]
+type DirectoryLocks =
+    std::sync::Mutex<std::collections::HashMap<(u64, u64), Arc<std::sync::Mutex<()>>>>;
+
+#[cfg(any(target_os = "android", all(test, unix)))]
+fn publish_under_directory_lock(
+    stage_parent: &cap_std::fs::Dir,
+    stage_name: &str,
+    parent: &cap_std::fs::Dir,
+    target_name: &Path,
+) -> io::Result<()> {
+    use std::sync::OnceLock;
+
+    use cap_std::fs::MetadataExt;
+
+    static DIRECTORY_LOCKS: OnceLock<DirectoryLocks> = OnceLock::new();
+    let directory = parent.dir_metadata()?;
+    let lock = {
+        let mut locks = DIRECTORY_LOCKS
+            .get_or_init(DirectoryLocks::default)
+            .lock()
+            .map_err(|_| io::Error::other("directory lock poisoned"))?;
+        Arc::clone(locks.entry((directory.dev(), directory.ino())).or_default())
+    };
+    let _guard = lock
+        .lock()
+        .map_err(|_| io::Error::other("directory lock poisoned"))?;
+    match parent.symlink_metadata(target_name) {
+        Ok(_) => return Err(io::Error::from(io::ErrorKind::AlreadyExists)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
+    stage_parent.rename(Path::new(stage_name), parent, target_name)
+}
+
+#[cfg(target_os = "android")]
+fn publish_no_replace(
+    stage_parent: &cap_std::fs::Dir,
+    stage_name: &str,
+    parent: &cap_std::fs::Dir,
+    target_name: &Path,
+) -> io::Result<()> {
+    publish_under_directory_lock(stage_parent, stage_name, parent, target_name)
+}
+
 #[cfg(not(any(target_os = "linux", target_os = "android")))]
 fn publish_no_replace(
     stage_parent: &cap_std::fs::Dir,
@@ -302,40 +344,6 @@ fn publish_no_replace(
     target_name: &Path,
 ) -> io::Result<()> {
     stage_parent.hard_link(Path::new(stage_name), parent, target_name)
-}
-
-fn no_replace_unavailable(error: &io::Error) -> bool {
-    matches!(
-        error.kind(),
-        io::ErrorKind::Unsupported | io::ErrorKind::InvalidInput | io::ErrorKind::PermissionDenied
-    )
-}
-
-fn reserve_then_replace(
-    stage_parent: &cap_std::fs::Dir,
-    stage_name: &str,
-    parent: &cap_std::fs::Dir,
-    target_name: &Path,
-) -> Result<(), PlatformError> {
-    let reservation = match open_file_nofollow(parent, target_name, false, true) {
-        Ok(file) => file,
-        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
-            return Err(PlatformError::Conflict);
-        }
-        Err(error) => return Err(map_create_new_error(error)),
-    };
-    drop(reservation);
-    stage_parent
-        .rename(Path::new(stage_name), parent, target_name)
-        .map_err(|_| {
-            if parent
-                .symlink_metadata(target_name)
-                .is_ok_and(|metadata| metadata.is_file() && metadata.len() == 0)
-            {
-                let _ = parent.remove_file(target_name);
-            }
-            PlatformError::ReplaceFailed
-        })
 }
 
 pub(crate) fn classify_stage_cleanup(result: io::Result<()>) -> StageCleanupStatus {
@@ -402,17 +410,20 @@ mod tests {
         std::fs::remove_dir_all(path).expect("publish scenario");
     }
 
+    #[cfg(unix)]
     #[test]
-    fn reservation_fallback_publishes_new_names_and_keeps_existing_ones() {
+    fn directory_lock_publishes_new_names_and_keeps_existing_ones() {
         let (path, dir) = scratch();
         dir.write(".stage-a", b"first").expect("publish scenario");
-        reserve_then_replace(&dir, ".stage-a", &dir, Path::new("value")).expect("publish scenario");
+        publish_under_directory_lock(&dir, ".stage-a", &dir, Path::new("value"))
+            .expect("publish scenario");
         assert_eq!(dir.read("value").expect("publish scenario"), b"first");
         assert!(dir.symlink_metadata(".stage-a").is_err());
         dir.write(".stage-b", b"second").expect("publish scenario");
         assert_eq!(
-            reserve_then_replace(&dir, ".stage-b", &dir, Path::new("value")),
-            Err(PlatformError::Conflict)
+            publish_under_directory_lock(&dir, ".stage-b", &dir, Path::new("value"))
+                .map_err(|error| error.kind()),
+            Err(io::ErrorKind::AlreadyExists)
         );
         assert_eq!(dir.read("value").expect("publish scenario"), b"first");
         assert_eq!(dir.read(".stage-b").expect("publish scenario"), b"second");

@@ -20,5 +20,5 @@ lettuce-types.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
 
-[target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies]
+[target.'cfg(target_os = "linux")'.dependencies]
 rustix.workspace = true
