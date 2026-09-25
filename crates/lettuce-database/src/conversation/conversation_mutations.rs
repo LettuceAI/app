@@ -7985,6 +7985,58 @@ mod tests {
             .expect("metric by message")
             .expect("the message's metric");
         assert_eq!(metric.id, attempt_id.to_string());
+        for index in 0..501_i64 {
+            fixture
+                .database
+                .record_llm_generation_metrics(
+                    &format!("feature-{index}"),
+                    Some("/models/a.gguf"),
+                    &serde_json::json!({"completionTokens": 1}),
+                    &[serde_json::json!({"tMs": 1})],
+                    32 + index,
+                )
+                .expect("newer metrics");
+        }
+        let listed = fixture
+            .database
+            .llm_generation_metrics(Some(5000))
+            .expect("list");
+        assert_eq!(listed.len(), 500);
+        assert!(listed.iter().all(|row| row.id != attempt_id.to_string()));
+        let kept = fixture
+            .database
+            .llm_generation_metric_for_message(
+                &fixture.conversation_id.to_string(),
+                &reserved.to_string(),
+            )
+            .expect("metric by message")
+            .expect("the message keeps its stats past the list's retention");
+        assert_eq!(kept.summary, serde_json::json!({"completionTokens": 3}));
+        assert_eq!(kept.samples, Some(Vec::new()));
+        assert_eq!(
+            fixture
+                .database
+                .clear_llm_generation_metrics()
+                .expect("clear"),
+            500
+        );
+        assert!(
+            fixture
+                .database
+                .llm_generation_metrics(None)
+                .expect("list")
+                .is_empty()
+        );
+        assert!(
+            fixture
+                .database
+                .llm_generation_metric_for_message(
+                    &fixture.conversation_id.to_string(),
+                    &reserved.to_string(),
+                )
+                .expect("metric by message")
+                .is_some()
+        );
         assert_eq!(result.value.candidate.turn_id, turn_id);
         assert_eq!(result.value.candidate.attempt_id, attempt_id);
         assert_eq!(
@@ -8082,6 +8134,28 @@ mod tests {
                 TimestampMillis::new(40),
             )
             .expect("the finalized turn is no longer live");
+
+        fixture
+            .database
+            .connection()
+            .expect("connection")
+            .execute(
+                "UPDATE conversation_messages SET visibility = 'tombstoned'
+                 WHERE conversation_id = ?1 AND id = ?2",
+                rusqlite::params![fixture.conversation_id.to_string(), reserved.to_string()],
+            )
+            .expect("tombstone the message");
+        let orphaned: i64 = fixture
+            .database
+            .connection()
+            .expect("connection")
+            .query_row(
+                "SELECT count(*) FROM llm_generation_metrics WHERE id = ?1",
+                [attempt_id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("count");
+        assert_eq!(orphaned, 0, "a tombstoned message drops its kept stats");
     }
 
     #[test]

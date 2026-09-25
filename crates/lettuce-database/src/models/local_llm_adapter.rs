@@ -6,6 +6,10 @@ use crate::{Database, DatabaseError};
 const LLM_METRICS_RETENTION: i64 = 500;
 const LLM_METRICS_DEFAULT_LIMIT: usize = 500;
 const LLM_METRICS_MAX_LIMIT: usize = 5000;
+const LINKED_TO_A_MESSAGE: &str = "EXISTS (
+     SELECT 1 FROM conversation_message_candidates candidate
+     WHERE candidate.attempt_id = llm_generation_metrics.id
+ )";
 
 /// One local generation's recorded metrics.
 #[derive(Debug, Clone, PartialEq)]
@@ -109,8 +113,9 @@ impl Database {
         Ok(true)
     }
 
-    /// Records one local generation's metrics, keeping the newest 500 as
-    /// legacy did.
+    /// Records one local generation's metrics, keeping the newest 500 in the
+    /// list as legacy did. Older rows of a message's generation stay for that
+    /// message without their samples, as legacy kept a message's stats.
     pub fn record_llm_generation_metrics(
         &self,
         id: &str,
@@ -133,10 +138,19 @@ impl Database {
                 Value::Array(samples.to_vec()).to_string()
             ],
         )?;
+        let beyond_retention = "message_stats_only = 0 AND id NOT IN (
+                SELECT id FROM llm_generation_metrics WHERE message_stats_only = 0
+                ORDER BY created_at DESC LIMIT ?1
+             )";
         transaction.execute(
-            "DELETE FROM llm_generation_metrics WHERE id NOT IN (
-                SELECT id FROM llm_generation_metrics ORDER BY created_at DESC LIMIT ?1
-             )",
+            &format!(
+                "UPDATE llm_generation_metrics SET message_stats_only = 1, samples_json = '[]'
+                 WHERE {beyond_retention} AND {LINKED_TO_A_MESSAGE}"
+            ),
+            params![LLM_METRICS_RETENTION],
+        )?;
+        transaction.execute(
+            &format!("DELETE FROM llm_generation_metrics WHERE {beyond_retention}"),
             params![LLM_METRICS_RETENTION],
         )?;
         transaction.commit()?;
@@ -157,6 +171,7 @@ impl Database {
         let connection = self.connection()?;
         let mut statement = connection.prepare(
             "SELECT id, created_at, model_path, summary_json FROM llm_generation_metrics
+             WHERE message_stats_only = 0
              ORDER BY created_at DESC, id DESC LIMIT ?1",
         )?;
         let rows =
@@ -183,7 +198,7 @@ impl Database {
             .connection()?
             .query_row(
                 "SELECT id, created_at, model_path, summary_json, samples_json
-                 FROM llm_generation_metrics WHERE id = ?1",
+                 FROM llm_generation_metrics WHERE id = ?1 AND message_stats_only = 0",
                 params![id],
                 metric_with_samples,
             )
@@ -192,6 +207,8 @@ impl Database {
 
     /// The newest metrics of any generation that produced a candidate of the
     /// message: a local generation records its metrics under its attempt id.
+    /// A message keeps its row's summary (time to first token, tokens per
+    /// second, MTP stats) after the row leaves the metrics list.
     pub fn llm_generation_metric_for_message(
         &self,
         conversation_id: &str,
@@ -214,11 +231,24 @@ impl Database {
             .optional()?)
     }
 
-    /// Deletes every recorded metric; returns how many there were.
+    /// Empties the metrics list; returns how many rows it held. A row of a
+    /// message's generation keeps its summary for that message.
     pub fn clear_llm_generation_metrics(&self) -> Result<usize, DatabaseError> {
-        Ok(self
-            .connection()?
-            .execute("DELETE FROM llm_generation_metrics", [])?)
+        let mut connection = self.connection()?;
+        let transaction = connection.transaction()?;
+        let kept = transaction.execute(
+            &format!(
+                "UPDATE llm_generation_metrics SET message_stats_only = 1, samples_json = '[]'
+                 WHERE message_stats_only = 0 AND {LINKED_TO_A_MESSAGE}"
+            ),
+            [],
+        )?;
+        let deleted = transaction.execute(
+            "DELETE FROM llm_generation_metrics WHERE message_stats_only = 0",
+            [],
+        )?;
+        transaction.commit()?;
+        Ok(kept + deleted)
     }
 }
 
@@ -227,6 +257,40 @@ mod tests {
     use serde_json::json;
 
     use crate::Database;
+
+    #[test]
+    fn deleting_a_candidate_drops_only_its_kept_stats() {
+        let database = Database::open_in_memory().expect("database");
+        let connection = database.connection().expect("connection");
+        connection
+            .execute_batch(
+                "PRAGMA foreign_keys = OFF;
+                 DROP TRIGGER conversation_candidate_author_role;
+                 DROP TRIGGER conversation_candidate_assistant;
+                 DROP TRIGGER conversation_candidate_final_target_insert;
+                 DROP TRIGGER sync_mark_conversation_message_candidates_insert;
+                 DROP TRIGGER sync_mark_conversation_message_candidates_delete;
+                 INSERT INTO conversation_message_candidates
+                    (conversation_id, id, message_id, branch_id, turn_id, attempt_id,
+                     author_participant_id, ordinal, parts_json, model_json, created_at)
+                 VALUES ('c', 'candidate', 'm', 'b', 't', 'attempt', 'p', 0,
+                         '{\"format_version\":1}', '{\"format_version\":1}', 1);
+                 INSERT INTO llm_generation_metrics
+                    (id, created_at, model_path, summary_json, samples_json, message_stats_only)
+                 VALUES ('attempt', 1, NULL, '{}', '[]', 1),
+                        ('listed', 2, NULL, '{}', '[]', 0);
+                 DELETE FROM conversation_message_candidates WHERE id = 'candidate';",
+            )
+            .expect("seed and delete");
+        let remaining: Vec<String> = connection
+            .prepare("SELECT id FROM llm_generation_metrics ORDER BY id")
+            .expect("statement")
+            .query_map([], |row| row.get(0))
+            .expect("rows")
+            .collect::<Result<_, _>>()
+            .expect("ids");
+        assert_eq!(remaining, ["listed"]);
+    }
 
     #[test]
     fn metrics_keep_the_newest_five_hundred() {

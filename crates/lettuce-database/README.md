@@ -1048,6 +1048,18 @@ message)` and `clear_llm_generation_metrics`, as the old `llm_metrics_*`
 commands. A local generation records its metrics under its attempt id, so a
 message's metrics are found through its candidates' attempts; the old
 frontend's `llm_metrics_attach_message` call has nothing left to do.
+Legacy also stored each message's (and variant's) time to first token, tokens
+per second and MTP stats on the message itself, where they outlived the
+500-row metrics list and its "clear". Those stats now live only in the
+metrics row, so the table has `message_stats_only`: a row of a message's
+generation that falls out of the newest 500, or is cleared, keeps its summary
+(samples dropped) and leaves the list, `llm_generation_metric(id)` and the
+count; `llm_generation_metric_for_message` still returns it. Triggers
+delete such a kept row when its candidate is deleted (including a hard-deleted
+conversation) or its message is tombstoned, in the same statement's
+transaction. Not yet carried:
+the per-message stats columns of an imported legacy database or backup, which
+need their variants' attempt ids at import (legacy import follow-up).
 
 Legacy metric rows are imported by the `llm_metrics` stage of a legacy
 database import, after both conversation stages: rows keep their legacy id,
