@@ -323,18 +323,27 @@ impl<J: JobStore + ?Sized> KokoroDownloadCoordinator<'_, J> {
                     self.report_progress(work, completed, now)?;
                 }
                 KokoroArtifactPreparation::Download(mut download) => {
-                    self.download(
-                        work,
-                        source,
-                        &artifact,
-                        &mut download,
-                        KokoroDownloadProgress {
-                            completed_before: completed,
-                            at: now,
-                            cancellable: !irreversible,
-                        },
-                    )
-                    .await?;
+                    if let Err(error) = self
+                        .download(
+                            work,
+                            source,
+                            &artifact,
+                            &mut download,
+                            KokoroDownloadProgress {
+                                completed_before: completed,
+                                at: now,
+                                cancellable: !irreversible,
+                            },
+                        )
+                        .await
+                    {
+                        if abandons_partial(&error)
+                            && let Err(discard) = download.discard()
+                        {
+                            tracing::warn!(error = %discard, "failed to remove a Kokoro partial download");
+                        }
+                        return Err(error);
+                    }
                     if !irreversible {
                         check_cancelled(&work.handle)?;
                         self.jobs.append_and_transition(JobMutation::StageChanged {
@@ -366,6 +375,9 @@ impl<J: JobStore + ?Sized> KokoroDownloadCoordinator<'_, J> {
     ) -> Result<(), KokoroDownloadError> {
         if progress.cancellable {
             check_cancelled(&work.handle)?;
+        }
+        if session.offset() == artifact.byte_size {
+            return Ok(());
         }
         let mut body = source.open(&work.model, artifact, session.offset()).await?;
         if body.start() != session.offset() {
@@ -563,6 +575,12 @@ fn classify_error(error: &KokoroDownloadError) -> (JobErrorCode, bool, &'static 
             "download input is invalid",
         ),
     }
+}
+
+/// A cancelled download, or one that failed for good, leaves no partial
+/// file behind; a retried one resumes from it.
+fn abandons_partial(error: &KokoroDownloadError) -> bool {
+    !classify_error(error).1
 }
 
 fn map_source_error(error: ArtifactDownloadError) -> KokoroDownloadSourceError {

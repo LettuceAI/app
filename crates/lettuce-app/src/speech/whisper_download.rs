@@ -171,7 +171,6 @@ impl<R: WhisperModelRepository + ?Sized, J: JobStore + ?Sized>
         model: RemoteWhisperModel,
     ) -> Result<WhisperDownloadAdmission, WhisperDownloadError> {
         model.validate()?;
-        validate_existing(self.repository, &model)?;
         let asset_id = download_asset_id(&model);
         let subject = JobSubject::new(SubjectKind::ArtifactInstall, asset_id.to_string())
             .map_err(|_| WhisperDownloadError::InvalidWork)?;
@@ -264,8 +263,10 @@ impl<R: WhisperModelRepository + ?Sized, J: JobStore + ?Sized>
         if job.state != JobState::Succeeded {
             return Ok(None);
         }
-        let manifest =
-            matching_manifest(self.repository, model)?.ok_or(WhisperDownloadError::InvalidWork)?;
+        let manifest = self
+            .repository
+            .get_whisper_model(&model.model_id)?
+            .ok_or(WhisperDownloadError::InvalidWork)?;
         Ok(Some(WhisperDownloadSuccess {
             manifest,
             job,
@@ -307,9 +308,11 @@ impl<R: WhisperModelRepository + ?Sized, J: JobStore + ?Sized>
         now: TimestampMillis,
     ) -> Result<(InstalledWhisperManifest, bool), WhisperDownloadError> {
         check_cancelled(&work.handle)?;
-        if let Some(manifest) = matching_manifest(self.repository, &work.model)? {
-            manifest.verify()?;
-            return Ok((manifest, true));
+        if let Some(manifest) = self.repository.get_whisper_model(&work.model.model_id)? {
+            if manifest.verify().is_ok() {
+                return Ok((manifest, true));
+            }
+            self.forget_broken(&manifest)?;
         }
         let preparation = self
             .installs
@@ -317,7 +320,14 @@ impl<R: WhisperModelRepository + ?Sized, J: JobStore + ?Sized>
         let manifest = match preparation {
             WhisperInstallPreparation::Installed(manifest) => manifest,
             WhisperInstallPreparation::Download(mut download) => {
-                self.download(work, source, &mut download, now).await?;
+                if let Err(error) = self.download(work, source, &mut download, now).await {
+                    if abandons_partial(&error, &work.handle)
+                        && let Err(discard) = download.discard()
+                    {
+                        tracing::warn!(error = %discard, "failed to remove a Whisper partial download");
+                    }
+                    return Err(error);
+                }
                 check_cancelled(&work.handle)?;
                 self.jobs.append_and_transition(JobMutation::StageChanged {
                     claim: work.claim.claim.clone(),
@@ -338,6 +348,9 @@ impl<R: WhisperModelRepository + ?Sized, J: JobStore + ?Sized>
         download: &mut WhisperDownloadSession,
         now: TimestampMillis,
     ) -> Result<(), WhisperDownloadError> {
+        if download.offset() == work.model.byte_size {
+            return Ok(());
+        }
         let mut body = source.open(&work.model, download.offset()).await?;
         if body.start() != download.offset() {
             if body.start() != 0 {
@@ -360,6 +373,20 @@ impl<R: WhisperModelRepository + ?Sized, J: JobStore + ?Sized>
         if download.offset() != work.model.byte_size {
             return Err(WhisperDownloadSourceError::Transport.into());
         }
+        Ok(())
+    }
+
+    /// Drops a stored model whose file is gone or no longer its installed
+    /// size, deleting the file when it is inside the managed folder, so the
+    /// download installs it again.
+    fn forget_broken(
+        &self,
+        manifest: &InstalledWhisperManifest,
+    ) -> Result<(), WhisperDownloadError> {
+        if self.installs.validate_managed(manifest).is_ok() {
+            self.installs.remove_managed(manifest)?;
+        }
+        self.repository.remove_whisper_model(manifest)?;
         Ok(())
     }
 
@@ -469,37 +496,12 @@ fn check_cancelled(handle: &JobHandle) -> Result<(), WhisperDownloadError> {
     }
 }
 
-fn validate_existing<R: WhisperModelRepository + ?Sized>(
-    repository: &R,
-    model: &RemoteWhisperModel,
-) -> Result<(), WhisperDownloadError> {
-    if repository
-        .get_whisper_model(&model.model_id)?
-        .is_some_and(|manifest| {
-            manifest.source_revision != model.source_revision
-                || manifest.model.byte_size != model.byte_size
-        })
-    {
-        return Err(WhisperModelRepositoryError::Conflict.into());
-    }
-    Ok(())
-}
-
-fn matching_manifest<R: WhisperModelRepository + ?Sized>(
-    repository: &R,
-    model: &RemoteWhisperModel,
-) -> Result<Option<InstalledWhisperManifest>, WhisperDownloadError> {
-    let manifest = repository.get_whisper_model(&model.model_id)?;
-    match manifest {
-        Some(manifest)
-            if manifest.source_revision == model.source_revision
-                && manifest.model.byte_size == model.byte_size =>
-        {
-            Ok(Some(manifest))
-        }
-        Some(_) => Err(WhisperModelRepositoryError::Conflict.into()),
-        None => Ok(None),
-    }
+/// A cancelled download, or one that failed for good, leaves no partial
+/// file behind; a retried one resumes from it.
+fn abandons_partial(error: &WhisperDownloadError, handle: &JobHandle) -> bool {
+    matches!(error, WhisperDownloadError::Cancelled)
+        || handle.cancellation_token().is_cancelled()
+        || !classify_error(error).1
 }
 
 fn validate_job(job: &JobSnapshot, model: &RemoteWhisperModel) -> Result<(), WhisperDownloadError> {
@@ -799,6 +801,107 @@ mod tests {
         assert!(retried.created);
         assert_ne!(retried.job.id, admitted.job.id);
         assert_eq!(retried.job.state, JobState::Queued);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    async fn run_to_end(
+        coordinator: &WhisperDownloadCoordinator<'_, Database, Database>,
+        model: &RemoteWhisperModel,
+        source: &FixtureSource,
+    ) -> WhisperDownloadRunResult {
+        let admitted = coordinator.admit(model.clone()).expect("admission");
+        let work = coordinator
+            .claim(
+                model.clone(),
+                admitted.job.id,
+                WorkerId::new(),
+                TimestampMillis::new(10),
+                Duration::from_secs(60),
+                &ResourceAvailability::all(),
+            )
+            .expect("claim")
+            .expect("work");
+        coordinator
+            .run(
+                work,
+                source,
+                CancellationReason::User,
+                TimestampMillis::new(11),
+            )
+            .await
+            .expect("run")
+    }
+
+    #[tokio::test]
+    async fn a_complete_partial_installs_without_a_range_request_and_a_moved_head_replays() {
+        let root = std::env::temp_dir().join(format!("whisper-complete-{}", JobId::new()));
+        let database = Database::open_in_memory().expect("database");
+        let bytes = b"downloaded model bytes".to_vec();
+        let model = RemoteWhisperModel::pinned(
+            "ggml-base.bin",
+            "ab".repeat(20),
+            bytes.len() as u64,
+            "ed68e1b9289be4deda8384e06007e492ff725196fba29d1c78ea3280bfa9690c",
+        )
+        .expect("remote model");
+        let WhisperInstallPreparation::Download(mut partial) = WhisperInstallStore::open(&root)
+            .expect("store")
+            .prepare(model.clone(), TimestampMillis::new(10))
+            .expect("prepare")
+        else {
+            panic!("expected a partial download");
+        };
+        partial.append(&bytes).expect("complete partial");
+        drop(partial);
+        let coordinator =
+            WhisperDownloadCoordinator::new(&database, &database, &root).expect("coordinator");
+        let source = FixtureSource {
+            bytes: bytes.clone(),
+            fail_after_first_chunk: false,
+            offsets: Mutex::new(Vec::new()),
+        };
+        let WhisperDownloadRunResult::Succeeded(success) =
+            run_to_end(&coordinator, &model, &source).await
+        else {
+            panic!("expected success");
+        };
+        assert!(!success.replayed);
+        assert!(source.offsets.lock().expect("offsets").is_empty());
+
+        let moved = RemoteWhisperModel::pinned(
+            "ggml-base.bin",
+            "cd".repeat(20),
+            bytes.len() as u64,
+            "ed68e1b9289be4deda8384e06007e492ff725196fba29d1c78ea3280bfa9690c",
+        )
+        .expect("moved head");
+        let WhisperDownloadRunResult::Succeeded(replayed) =
+            run_to_end(&coordinator, &moved, &source).await
+        else {
+            panic!("expected the installed model");
+        };
+        assert!(replayed.replayed);
+        assert_eq!(replayed.manifest, success.manifest);
+
+        std::fs::write(&success.manifest.model.path, b"short").expect("truncate model");
+        let moved = RemoteWhisperModel::pinned(
+            "ggml-base.bin",
+            "ef".repeat(20),
+            bytes.len() as u64,
+            "ed68e1b9289be4deda8384e06007e492ff725196fba29d1c78ea3280bfa9690c",
+        )
+        .expect("moved again");
+        let WhisperDownloadRunResult::Succeeded(reinstalled) =
+            run_to_end(&coordinator, &moved, &source).await
+        else {
+            panic!("expected a reinstall");
+        };
+        assert!(!reinstalled.replayed);
+        assert_eq!(reinstalled.manifest.source_revision, moved.source_revision);
+        assert_eq!(
+            std::fs::read(&reinstalled.manifest.model.path).expect("reinstalled bytes"),
+            bytes
+        );
         let _ = std::fs::remove_dir_all(root);
     }
 }

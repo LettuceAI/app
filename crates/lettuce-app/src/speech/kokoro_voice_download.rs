@@ -379,17 +379,26 @@ impl<J: JobStore + ?Sized> KokoroVoiceDownloadCoordinator<'_, J> {
                     self.report_progress(work, completed, total, now)?;
                 }
                 KokoroVoicePreparation::Download(mut session) => {
-                    self.download(
-                        work,
-                        source,
-                        &voice,
-                        &mut session,
-                        completed,
-                        total,
-                        now,
-                        !irreversible,
-                    )
-                    .await?;
+                    if let Err(error) = self
+                        .download(
+                            work,
+                            source,
+                            &voice,
+                            &mut session,
+                            completed,
+                            total,
+                            now,
+                            !irreversible,
+                        )
+                        .await
+                    {
+                        if !classify_error(&error).1
+                            && let Err(discard) = session.discard()
+                        {
+                            tracing::warn!(error = %discard, "failed to remove a Kokoro voice partial download");
+                        }
+                        return Err(error);
+                    }
                     if !irreversible {
                         check_cancelled(&work.handle)?;
                         self.jobs.append_and_transition(JobMutation::StageChanged {
@@ -427,6 +436,9 @@ impl<J: JobStore + ?Sized> KokoroVoiceDownloadCoordinator<'_, J> {
     ) -> Result<(), KokoroVoiceDownloadError> {
         if cancellable {
             check_cancelled(&work.handle)?;
+        }
+        if session.offset() == voice.byte_size {
+            return Ok(());
         }
         let mut body = source.open(voice, session.offset()).await?;
         if body.start() != session.offset() {

@@ -550,6 +550,8 @@ impl<J: JobStore + ?Sized> ArtifactInstallCoordinator<'_, J> {
 
     /// Every file stays cancellable, as each legacy download was; files
     /// already verified stay installed and are reused by the next install.
+    /// A cancelled or failed file leaves no partial behind, since the job
+    /// fails for good instead of retrying.
     async fn execute<S: ArtifactSourceClient + ?Sized>(
         &self,
         work: &ArtifactInstallClaimedWork,
@@ -570,8 +572,15 @@ impl<J: JobStore + ?Sized> ArtifactInstallCoordinator<'_, J> {
                     paths.push(path);
                 }
                 PinnedArtifactPreparation::Download(mut download) => {
-                    self.download(work, source, planned, &mut download, (completed, total), at)
-                        .await?;
+                    if let Err(error) = self
+                        .download(work, source, planned, &mut download, (completed, total), at)
+                        .await
+                    {
+                        if let Err(discard) = download.discard() {
+                            tracing::warn!(error = %discard, "failed to remove a partial download");
+                        }
+                        return Err(error);
+                    }
                     check_cancelled(&work.handle)?;
                     paths.push(download.finish()?);
                     completed += planned.artifact.byte_size;

@@ -125,11 +125,15 @@ impl KokoroVoiceInstallStore {
         remote: RemoteKokoroVoice,
     ) -> Result<KokoroVoicePreparation, KokoroInstallError> {
         remote.validate()?;
+        let prefix = format!("{}-", blake3::hash(remote.remote_path.as_bytes()).to_hex());
         let partial = ObjectKey::from_segments([
             "downloads",
-            format!("{}.part", voice_identity(&remote).to_hex()).as_str(),
+            format!("{prefix}{}.part", voice_identity(&remote).to_hex()).as_str(),
         ])
         .map_err(KokoroInstallError::Platform)?;
+        if let Err(error) = self.inner.discard_partials_like(&partial, &prefix) {
+            tracing::warn!(%error, "failed to remove stale Kokoro voice partial downloads");
+        }
         let filename = format!("{}.bin", remote.id);
         let target = ObjectKey::from_segments(["voices", filename.as_str()])
             .map_err(KokoroInstallError::Platform)?;
@@ -203,10 +207,17 @@ impl KokoroVoiceInstallStore {
             else {
                 return Ok(None);
             };
-            let mut bytes = Vec::with_capacity(
-                usize::try_from(remote.byte_size).map_err(|_| KokoroInstallError::Mismatch)?,
-            );
-            verify_voice_with(&mut file, remote, |chunk| bytes.extend_from_slice(chunk))?;
+            let capacity =
+                usize::try_from(remote.byte_size).map_err(|_| KokoroInstallError::Mismatch)?;
+            if file.len() != remote.byte_size {
+                return Err(KokoroInstallError::Mismatch);
+            }
+            let mut bytes = Vec::with_capacity(capacity);
+            file.read_to_end(&mut bytes)
+                .map_err(|_| KokoroInstallError::Unreadable)?;
+            if bytes.len() != capacity {
+                return Err(KokoroInstallError::Mismatch);
+            }
             materialized.push(MaterializedKokoroVoice {
                 id: remote.id.clone(),
                 bytes: bytes.into_boxed_slice(),
@@ -234,14 +245,14 @@ impl KokoroVoiceInstallStore {
                 continue;
             };
             let target = voice_target(&remote.id)?;
-            let Some(mut file) = self
+            let Some(file) = self
                 .inner
                 .inspect(&target)
                 .map_err(KokoroInstallError::Platform)?
             else {
                 continue;
             };
-            if verify_voice(&mut file, &remote).is_ok() {
+            if file.len() == remote.byte_size {
                 descriptors.push(remote);
             }
         }
@@ -295,6 +306,11 @@ impl KokoroVoiceDownloadSession {
         self.inner.restart().map_err(KokoroInstallError::Platform)
     }
 
+    /// Deletes the partial download.
+    pub fn discard(self) -> Result<(), KokoroInstallError> {
+        self.inner.discard().map_err(KokoroInstallError::Platform)
+    }
+
     pub fn append(&mut self, bytes: &[u8]) -> Result<u64, KokoroInstallError> {
         self.inner
             .append(bytes)
@@ -307,7 +323,10 @@ impl KokoroVoiceDownloadSession {
         }
         self.inner.sync().map_err(KokoroInstallError::Platform)?;
         self.inner.rewind().map_err(KokoroInstallError::Platform)?;
-        verify_voice(&mut self.inner, &self.remote)?;
+        if let Err(error) = verify_voice(&mut self.inner, &self.remote) {
+            self.inner.discard().map_err(KokoroInstallError::Platform)?;
+            return Err(error);
+        }
         let path = self.inner.commit().map_err(KokoroInstallError::Platform)?;
         let artifact = InstalledModelArtifact::inspect(path).map_err(map_artifact_error)?;
         write_manifest(&self.store, &self.remote)?;
@@ -594,7 +613,7 @@ mod tests {
     }
 
     #[test]
-    fn offline_catalog_rejects_changed_bytes_without_deleting_them() {
+    fn offline_catalog_checks_the_size_without_rehashing_or_deleting() {
         let root = std::env::temp_dir().join(format!(
             "kokoro-voice-changed-{}",
             lettuce_types::OperationId::new()
@@ -619,14 +638,25 @@ mod tests {
         assert_eq!(changed.len(), original.len());
         let path = root.join("voices/af_heart.bin");
         std::fs::write(&path, changed).expect("changed voice");
-
+        assert_eq!(
+            store
+                .installed_descriptors()
+                .expect("offline catalog")
+                .len(),
+            1
+        );
+        let changed = b"a resized voice file";
+        std::fs::write(&path, &changed[..10]).expect("resized voice");
         assert!(
             store
                 .installed_descriptors()
                 .expect("offline catalog")
                 .is_empty()
         );
-        assert_eq!(std::fs::read(&path).expect("retained voice"), changed);
+        assert_eq!(
+            std::fs::read(&path).expect("retained voice"),
+            &changed[..10]
+        );
         std::fs::remove_dir_all(root).expect("cleanup");
     }
 }

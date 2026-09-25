@@ -118,9 +118,20 @@ impl PinnedArtifact {
         hash.update(&self.byte_size.to_le_bytes());
         ObjectKey::from_segments([
             ".downloads".to_owned(),
-            format!("{}.part", hash.finalize().to_hex()),
+            format!("{}{}.part", self.partial_prefix(), hash.finalize().to_hex()),
         ])
         .map_err(PinnedArtifactError::Platform)
+    }
+
+    /// Every partial of one installed file starts with this, whatever
+    /// revision it came from.
+    fn partial_prefix(&self) -> String {
+        let mut hash = blake3::Hasher::new();
+        for segment in &self.local_segments {
+            hash.update(segment.as_bytes());
+            hash.update(&[0]);
+        }
+        format!("{}-", hash.finalize().to_hex())
     }
 }
 
@@ -142,6 +153,12 @@ impl PinnedArtifactStore {
         let target = artifact.validate()?;
         let partial = artifact.partial_key()?;
         let claim = DownloadClaim::take(format!("{}\0{target}", self.root.display()))?;
+        if let Err(error) = self
+            .inner
+            .discard_partials_like(&partial, &artifact.partial_prefix())
+        {
+            tracing::warn!(%error, "failed to remove stale partial downloads");
+        }
         match self
             .inner
             .prepare(partial.clone(), target.clone(), artifact.byte_size)
@@ -240,6 +257,11 @@ impl PinnedDownload {
         self.inner.restart().map_err(PinnedArtifactError::Platform)
     }
 
+    /// Deletes the partial download.
+    pub fn discard(self) -> Result<(), PinnedArtifactError> {
+        self.inner.discard().map_err(PinnedArtifactError::Platform)
+    }
+
     pub fn append(&mut self, bytes: &[u8]) -> Result<u64, PinnedArtifactError> {
         self.inner
             .append(bytes)
@@ -256,7 +278,7 @@ impl PinnedDownload {
         self.inner.rewind().map_err(PinnedArtifactError::Platform)?;
         if let Err(error) = verify(&mut self.inner, &self.artifact) {
             self.inner
-                .restart()
+                .discard()
                 .map_err(PinnedArtifactError::Platform)?;
             return Err(error);
         }
@@ -437,6 +459,42 @@ mod tests {
             store.prepare(expected),
             Ok(PinnedArtifactPreparation::Download(download)) if download.offset() == 0
         ));
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn stale_revision_and_abandoned_partials_are_removed() {
+        let root = std::env::temp_dir().join(format!("pinned-artifact-{}", OperationId::new()));
+        let store = PinnedArtifactStore::open(&root).expect("store");
+        let bytes = b"verified component bytes";
+        let old = artifact(bytes);
+        let PinnedArtifactPreparation::Download(mut download) =
+            store.prepare(old.clone()).expect("prepare")
+        else {
+            panic!("expected a download");
+        };
+        download.append(&bytes[..8]).expect("append");
+        drop(download);
+        let partials = || {
+            std::fs::read_dir(root.join(".downloads"))
+                .expect("downloads")
+                .count()
+        };
+        assert_eq!(partials(), 1);
+        let moved = PinnedArtifact {
+            source_identity: "hf:owner/repo@newrev/split_files/vae/ae.safetensors".to_owned(),
+            ..old
+        };
+        let PinnedArtifactPreparation::Download(mut download) =
+            store.prepare(moved).expect("prepare moved revision")
+        else {
+            panic!("expected a download");
+        };
+        assert_eq!(download.offset(), 0);
+        download.append(&bytes[..4]).expect("append");
+        assert_eq!(partials(), 1);
+        download.discard().expect("discard");
+        assert_eq!(partials(), 0);
         std::fs::remove_dir_all(root).ok();
     }
 

@@ -1,4 +1,9 @@
-use std::{fmt, io::Read, path::Path, sync::Arc};
+use std::{
+    fmt,
+    io::Read,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use lettuce_platform::{ConfinedInstallStore, InstallPreparation, ObjectKey, ResumableInstall};
 use sha2::{Digest, Sha256};
@@ -37,6 +42,12 @@ pub struct RemoteKokoroModel {
 pub struct InstalledKokoroArtifact {
     pub role: KokoroArtifactRole,
     pub artifact: InstalledModelArtifact,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KokoroModelFile {
+    pub role: KokoroArtifactRole,
+    pub path: PathBuf,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -199,6 +210,12 @@ impl KokoroInstallStore {
             partial_name(source_revision, &remote).as_str(),
         ])
         .map_err(KokoroInstallError::Platform)?;
+        if let Err(error) = self
+            .inner
+            .discard_partials_like(&partial, &partial_prefix(remote.remote_path))
+        {
+            tracing::warn!(%error, "failed to remove stale Kokoro partial downloads");
+        }
         let target = ObjectKey::from_segments(remote.local_segments)
             .map_err(KokoroInstallError::Platform)?;
         match self
@@ -250,6 +267,35 @@ impl KokoroInstallStore {
             source_revision: model.source_revision.to_owned(),
             artifacts,
         }))
+    }
+
+    /// The model's files for use: each present at its pinned size. Their
+    /// contents were verified when they were installed.
+    pub fn model_files(
+        &self,
+        model: &RemoteKokoroModel,
+    ) -> Result<Option<Vec<KokoroModelFile>>, KokoroInstallError> {
+        model.validate()?;
+        let mut files = Vec::with_capacity(model.artifacts.len());
+        for remote in &model.artifacts {
+            let target = ObjectKey::from_segments(remote.local_segments)
+                .map_err(KokoroInstallError::Platform)?;
+            let Some(file) = self
+                .inner
+                .inspect(&target)
+                .map_err(KokoroInstallError::Platform)?
+            else {
+                return Ok(None);
+            };
+            if file.len() != remote.byte_size {
+                return Err(KokoroInstallError::Mismatch);
+            }
+            files.push(KokoroModelFile {
+                role: remote.role,
+                path: file.native_path().to_path_buf(),
+            });
+        }
+        Ok(Some(files))
     }
 
     pub fn materialize_lexicon(
@@ -324,6 +370,11 @@ impl KokoroDownloadSession {
         self.inner.restart().map_err(KokoroInstallError::Platform)
     }
 
+    /// Deletes the partial download.
+    pub fn discard(self) -> Result<(), KokoroInstallError> {
+        self.inner.discard().map_err(KokoroInstallError::Platform)
+    }
+
     pub fn append(&mut self, bytes: &[u8]) -> Result<u64, KokoroInstallError> {
         self.inner
             .append(bytes)
@@ -336,7 +387,10 @@ impl KokoroDownloadSession {
         }
         self.inner.sync().map_err(KokoroInstallError::Platform)?;
         self.inner.rewind().map_err(KokoroInstallError::Platform)?;
-        verify(&mut self.inner, &self.remote)?;
+        if let Err(error) = verify(&mut self.inner, &self.remote) {
+            self.inner.discard().map_err(KokoroInstallError::Platform)?;
+            return Err(error);
+        }
         let path = self.inner.commit().map_err(KokoroInstallError::Platform)?;
         InstalledModelArtifact::inspect(path).map_err(map_artifact_error)
     }
@@ -362,7 +416,16 @@ fn partial_name(source_revision: &str, remote: &RemoteKokoroArtifact) -> String 
     hash.update(&[0]);
     hash.update(remote.sha256.as_bytes());
     hash.update(&remote.byte_size.to_le_bytes());
-    format!("{}.part", hash.finalize().to_hex())
+    format!(
+        "{}{}.part",
+        partial_prefix(remote.remote_path),
+        hash.finalize().to_hex()
+    )
+}
+
+/// Every partial of one artifact starts with this, whatever its revision.
+fn partial_prefix(remote_path: &str) -> String {
+    format!("{}-", blake3::hash(remote_path.as_bytes()).to_hex())
 }
 
 fn verify(file: &mut impl Read, remote: &RemoteKokoroArtifact) -> Result<(), KokoroInstallError> {

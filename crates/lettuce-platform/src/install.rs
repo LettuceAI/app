@@ -241,6 +241,35 @@ impl ConfinedInstallStore {
         }
     }
 
+    /// Removes the `.part` files in `partial`'s directory whose names start
+    /// with `prefix`, except `partial` itself; returns how many were removed.
+    pub fn discard_partials_like(
+        &self,
+        partial: &ObjectKey,
+        prefix: &str,
+    ) -> Result<usize, PlatformError> {
+        let Some((own_name, directory)) = partial.segments.split_last() else {
+            return Err(PlatformError::InvalidKey);
+        };
+        let directory =
+            ObjectKey::from_segments(directory).map_err(|_| PlatformError::InvalidKey)?;
+        let mut removed = 0;
+        for entry in self.list(&directory, 1_024)? {
+            if entry.is_file
+                && entry.name != *own_name
+                && entry.name.starts_with(prefix)
+                && entry.name.ends_with(".part")
+            {
+                let mut segments = directory.segments.clone();
+                segments.push(entry.name);
+                if self.discard(&ObjectKey { segments })? {
+                    removed += 1;
+                }
+            }
+        }
+        Ok(removed)
+    }
+
     #[must_use]
     pub fn owns_installed_path(&self, target: &ObjectKey, path: &Path) -> bool {
         self.root_path.join(path_for(target)) == path
@@ -323,6 +352,16 @@ impl ResumableInstall {
         self.file.sync_all().map_err(PlatformError::from)
     }
 
+    /// Deletes the partial file.
+    pub fn discard(self) -> Result<(), PlatformError> {
+        drop(self.file);
+        match self.root.remove_file(path_for(&self.partial)) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(PlatformError::from(error)),
+        }
+    }
+
     pub fn commit(self) -> Result<PathBuf, PlatformError> {
         self.file.sync_all().map_err(PlatformError::from)?;
         drop(self.file);
@@ -391,4 +430,49 @@ fn create_parent(root: &cap_std::fs::Dir, key: &ObjectKey) -> Result<(), Platfor
 
 fn path_for(key: &ObjectKey) -> PathBuf {
     key.segments.iter().collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn key(segments: &[&str]) -> ObjectKey {
+        ObjectKey::from_segments(segments).expect("key")
+    }
+
+    #[test]
+    fn partials_are_discarded_by_prefix_and_on_request() {
+        let root = std::env::temp_dir().join(format!("install-partials-{}", uuid::Uuid::new_v4()));
+        let store = ConfinedInstallStore::open(&root).expect("store");
+        for name in ["a-old.part", "a-new.part", "b-other.part", "a-note.txt"] {
+            let InstallPreparation::Resume(mut partial) = store
+                .prepare(key(&["downloads", name]), key(&["models", name]), 16)
+                .expect("prepare")
+            else {
+                panic!("expected a partial");
+            };
+            partial.append(b"bytes").expect("append");
+        }
+        let removed = store
+            .discard_partials_like(&key(&["downloads", "a-new.part"]), "a-")
+            .expect("discard");
+        assert_eq!(removed, 1);
+        let names = store
+            .list(&key(&["downloads"]), 16)
+            .expect("list")
+            .into_iter()
+            .map(|entry| entry.name)
+            .collect::<Vec<_>>();
+        assert_eq!(names, ["a-new.part", "a-note.txt", "b-other.part"]);
+        let InstallPreparation::Resume(current) = store
+            .prepare(key(&["downloads", "a-new.part"]), key(&["models", "a"]), 16)
+            .expect("prepare")
+        else {
+            panic!("expected a partial");
+        };
+        assert_eq!(current.offset(), 5);
+        current.discard().expect("discard partial");
+        assert!(!root.join("downloads/a-new.part").exists());
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
 }

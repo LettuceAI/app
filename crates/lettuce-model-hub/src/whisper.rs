@@ -15,6 +15,8 @@ pub const MAX_WHISPER_MODEL_BYTES: u64 = 8 * 1024 * 1024 * 1024;
 const MAX_MODEL_ID_SCALARS: usize = 128;
 const MAX_SOURCE_REVISION_BYTES: usize = 128;
 const SHA256_HEX_LENGTH: usize = 64;
+/// The source revision of a model admitted from a retained legacy folder.
+pub const LEGACY_IMPORT_REVISION_PREFIX: &str = "legacy-import:";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -117,6 +119,12 @@ impl WhisperInstallStore {
         let partial_name = partial_name(&remote);
         let partial = ObjectKey::from_segments(["downloads", partial_name.as_str()])
             .map_err(map_platform_error)?;
+        if let Err(error) = self
+            .inner
+            .discard_partials_like(&partial, &partial_prefix(&remote.model_id))
+        {
+            tracing::warn!(%error, "failed to remove stale Whisper partial downloads");
+        }
         let target = ObjectKey::from_segments([remote.model_id.as_str(), remote.filename.as_str()])
             .map_err(map_platform_error)?;
         match self
@@ -162,14 +170,6 @@ impl WhisperInstallStore {
         manifest: &InstalledWhisperManifest,
     ) -> Result<(), WhisperModelError> {
         manifest.validate()?;
-        if manifest.source_revision.len() != 40
-            || !manifest
-                .source_revision
-                .bytes()
-                .all(|byte| byte.is_ascii_hexdigit())
-        {
-            return Err(WhisperModelError::OutsideSource);
-        }
         let target = managed_target(manifest)?;
         if !self
             .inner
@@ -197,6 +197,11 @@ impl WhisperDownloadSession {
         self.inner.restart().map_err(map_platform_error)
     }
 
+    /// Deletes the partial download.
+    pub fn discard(self) -> Result<(), WhisperModelError> {
+        self.inner.discard().map_err(map_platform_error)
+    }
+
     pub fn append(&mut self, bytes: &[u8]) -> Result<u64, WhisperModelError> {
         self.inner.append(bytes).map_err(map_platform_error)
     }
@@ -207,7 +212,12 @@ impl WhisperDownloadSession {
         }
         self.inner.sync().map_err(map_platform_error)?;
         self.inner.rewind().map_err(map_platform_error)?;
-        verify_sha256(&mut self.inner, self.remote.byte_size, &self.remote.sha256)?;
+        if let Err(error) =
+            verify_sha256(&mut self.inner, self.remote.byte_size, &self.remote.sha256)
+        {
+            self.inner.discard().map_err(map_platform_error)?;
+            return Err(error);
+        }
         let path = self.inner.commit().map_err(map_platform_error)?;
         installed_manifest(&path, &self.remote, self.admitted_at)
     }
@@ -224,7 +234,16 @@ fn partial_name(remote: &RemoteWhisperModel) -> String {
         hash.update(&[0]);
     }
     hash.update(&remote.byte_size.to_le_bytes());
-    format!("{}.part", hash.finalize().to_hex())
+    format!(
+        "{}{}.part",
+        partial_prefix(&remote.model_id),
+        hash.finalize().to_hex()
+    )
+}
+
+/// Every partial of one model starts with this, whatever its revision.
+fn partial_prefix(model_id: &str) -> String {
+    format!("{}-", blake3::hash(model_id.as_bytes()).to_hex())
 }
 
 fn verify_sha256(
@@ -318,7 +337,7 @@ impl InstalledWhisperManifest {
         Ok(Self {
             english_only: model_id.contains(".en"),
             quantized: model_id.contains("-q"),
-            source_revision: format!("legacy-import:{hash}"),
+            source_revision: format!("{LEGACY_IMPORT_REVISION_PREFIX}{hash}"),
             model_id,
             model: InstalledModelArtifact {
                 path: model_path.to_path_buf(),
@@ -329,6 +348,8 @@ impl InstalledWhisperManifest {
         })
     }
 
+    /// The use-time check: the model file is present with its installed size.
+    /// Its content was hashed when it was installed.
     pub fn verify(&self) -> Result<VerifiedWhisperArtifacts, WhisperModelError> {
         self.validate()?;
         let metadata =
@@ -336,10 +357,20 @@ impl InstalledWhisperManifest {
         if !metadata.is_file() || metadata.len() != self.model.byte_size {
             return Err(WhisperModelError::Mismatch);
         }
+        Ok(self.artifacts())
+    }
+
+    /// [`Self::verify`] plus a hash of the whole file against the manifest.
+    pub fn verify_contents(&self) -> Result<VerifiedWhisperArtifacts, WhisperModelError> {
+        let artifacts = self.verify()?;
         if hash_file(&self.model.path, self.model.byte_size)? != self.model.blake3 {
             return Err(WhisperModelError::Mismatch);
         }
-        Ok(VerifiedWhisperArtifacts {
+        Ok(artifacts)
+    }
+
+    fn artifacts(&self) -> VerifiedWhisperArtifacts {
+        VerifiedWhisperArtifacts {
             model_id: self.model_id.clone(),
             source_revision: self.source_revision.clone(),
             model_path: self.model.path.clone(),
@@ -347,7 +378,7 @@ impl InstalledWhisperManifest {
             blake3: self.model.blake3.clone(),
             english_only: self.english_only,
             quantized: self.quantized,
-        })
+        }
     }
 
     pub fn validate(&self) -> Result<(), WhisperModelError> {
@@ -737,6 +768,12 @@ mod tests {
         download.append(b"bad").expect("download bytes");
         assert_eq!(download.finish(), Err(WhisperModelError::Mismatch));
         assert!(!root.join("base/ggml-base.bin").exists());
+        assert_eq!(
+            std::fs::read_dir(root.join("downloads"))
+                .expect("downloads")
+                .count(),
+            0
+        );
         std::fs::remove_dir_all(root).expect("cleanup");
     }
 
@@ -769,6 +806,9 @@ mod tests {
                 .expect("manifest");
         std::fs::write(&path, b"changed").expect("tamper model");
         assert_eq!(manifest.verify(), Err(WhisperModelError::Mismatch));
+        std::fs::write(&path, b"altered!").expect("same-size tamper");
+        assert!(manifest.verify().is_ok());
+        assert_eq!(manifest.verify_contents(), Err(WhisperModelError::Mismatch));
         assert_eq!(
             InstalledWhisperManifest::inspect_legacy(
                 &root,

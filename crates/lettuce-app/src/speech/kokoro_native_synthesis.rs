@@ -40,16 +40,15 @@ impl KokoroNativeSynthesisCoordinator {
         if cancellation.is_cancelled() {
             return Err(KokoroRuntimeError::Cancelled.into());
         }
-        let installed = self
+        let files = self
             .installs
-            .installed(model)?
+            .model_files(model)?
             .ok_or(KokoroNativeSynthesisError::MissingAssets)?;
-        let model = installed
-            .artifacts
+        let model = files
             .iter()
-            .find(|artifact| artifact.role == KokoroArtifactRole::Model)
+            .find(|file| file.role == KokoroArtifactRole::Model)
             .ok_or(KokoroNativeSynthesisError::MissingAssets)?;
-        let mut runtime = OnnxKokoroRuntime::load(&model.artifact.path, runtime)?;
+        let mut runtime = OnnxKokoroRuntime::load(&model.path, runtime)?;
         synthesize_kokoro_tokens(
             &mut runtime,
             &phonemization.token_ids,

@@ -33,9 +33,9 @@ impl KokoroPhonemizationCoordinator {
         process: &P,
         input: &KokoroPhonemizationInput,
     ) -> Result<KokoroPhonemization, KokoroPhonemizationCoordinatorError> {
-        let installed = self
+        let files = self
             .installs
-            .installed(model)?
+            .model_files(model)?
             .ok_or(KokoroPhonemizationCoordinatorError::MissingAssets)?;
         for role in [
             KokoroArtifactRole::Config,
@@ -43,11 +43,7 @@ impl KokoroPhonemizationCoordinator {
             KokoroArtifactRole::TokenizerConfig,
             KokoroArtifactRole::Model,
         ] {
-            if !installed
-                .artifacts
-                .iter()
-                .any(|artifact| artifact.role == role)
-            {
+            if !files.iter().any(|file| file.role == role) {
                 return Err(KokoroPhonemizationCoordinatorError::MissingAssets);
             }
         }

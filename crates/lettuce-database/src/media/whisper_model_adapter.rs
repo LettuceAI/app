@@ -87,7 +87,7 @@ impl WhisperModelRepository for Database {
         &self,
         manifest: InstalledWhisperManifest,
     ) -> Result<InstalledWhisperManifest, WhisperModelRepositoryError> {
-        manifest.verify().map_err(corrupt)?;
+        manifest.verify_contents().map_err(corrupt)?;
         let payload =
             encode_versioned(&manifest, WHISPER_MANIFEST_FORMAT_VERSION).map_err(storage)?;
         let path = manifest

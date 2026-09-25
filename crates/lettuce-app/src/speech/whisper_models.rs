@@ -96,9 +96,19 @@ impl<R: WhisperModelRepository + ?Sized> WhisperModelCoordinator<'_, R> {
                 cleared_cached_contexts: 0,
             });
         };
-        installs.validate_managed(&manifest)?;
+        let managed = match installs.validate_managed(&manifest) {
+            Ok(()) => true,
+            Err(lettuce_model_hub::WhisperModelError::OutsideSource)
+                if manifest
+                    .source_revision
+                    .starts_with(lettuce_model_hub::LEGACY_IMPORT_REVISION_PREFIX) =>
+            {
+                false
+            }
+            Err(error) => return Err(error.into()),
+        };
         let cleared_cached_contexts = runtime.clear_cache()?;
-        let file_removed = installs.remove_managed(&manifest)?;
+        let file_removed = managed && installs.remove_managed(&manifest)?;
         let removed = self.repository.remove_whisper_model(&manifest)?;
         Ok(WhisperModelRemoval {
             removed,
@@ -244,29 +254,43 @@ mod tests {
     }
 
     #[test]
-    fn refuses_to_remove_a_retained_legacy_model() {
+    fn legacy_imported_models_can_be_removed_like_legacy_allowed() {
         let root = std::env::temp_dir().join(format!("legacy-whisper-{}", OperationId::new()));
         let legacy_root = root.join("legacy");
-        let folder = legacy_root.join("base");
-        std::fs::create_dir_all(&folder).expect("legacy model directory");
-        let path = folder.join("ggml-base.bin");
-        std::fs::write(&path, b"legacy").expect("legacy model");
-        let manifest =
-            InstalledWhisperManifest::inspect_legacy(&legacy_root, &path, TimestampMillis::new(10))
-                .expect("legacy manifest");
+        let managed_root = root.join("managed");
         let database = Arc::new(Database::open_in_memory().expect("database"));
-        WhisperModelRepository::admit_whisper_model(database.as_ref(), manifest)
-            .expect("admit legacy model");
         let runtime = WhisperCppRuntime::new(database.clone());
         let coordinator = WhisperModelCoordinator::new(database.as_ref());
-        let store = WhisperInstallStore::open(root.join("managed")).expect("install store");
-        assert!(matches!(
-            coordinator.remove_managed(&store, &runtime, "base"),
-            Err(WhisperModelCoordinatorError::Model(
-                WhisperModelError::OutsideSource
-            ))
-        ));
-        assert!(path.exists());
+        let store = WhisperInstallStore::open(&managed_root).expect("install store");
+        let mut paths = Vec::new();
+        for (folder_root, model_id) in [(&legacy_root, "base"), (&managed_root, "tiny")] {
+            let folder = folder_root.join(model_id);
+            std::fs::create_dir_all(&folder).expect("legacy model directory");
+            let path = folder.join(format!("ggml-{model_id}.bin"));
+            std::fs::write(&path, b"legacy").expect("legacy model");
+            let manifest = InstalledWhisperManifest::inspect_legacy(
+                folder_root,
+                &path,
+                TimestampMillis::new(10),
+            )
+            .expect("legacy manifest");
+            WhisperModelRepository::admit_whisper_model(database.as_ref(), manifest)
+                .expect("admit legacy model");
+            paths.push(path);
+        }
+        let outside = coordinator
+            .remove_managed(&store, &runtime, "base")
+            .expect("forget the retained legacy model");
+        assert!(outside.removed);
+        assert!(!outside.file_removed);
+        assert!(paths[0].exists());
+        let inside = coordinator
+            .remove_managed(&store, &runtime, "tiny")
+            .expect("remove the legacy model in the models folder");
+        assert!(inside.removed);
+        assert!(inside.file_removed);
+        assert!(!paths[1].exists());
+        assert!(coordinator.list().expect("models").is_empty());
         std::fs::remove_dir_all(root).expect("cleanup");
     }
 }
