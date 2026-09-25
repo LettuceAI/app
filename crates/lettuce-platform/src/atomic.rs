@@ -380,42 +380,42 @@ mod tests {
 
     fn scratch() -> (std::path::PathBuf, Dir) {
         let path = std::env::temp_dir().join(format!("lettuce-publish-{}", Uuid::new_v4()));
-        std::fs::create_dir_all(&path).unwrap();
-        let dir = Dir::open_ambient_dir(&path, ambient_authority()).unwrap();
+        std::fs::create_dir_all(&path).expect("publish scenario");
+        let dir = Dir::open_ambient_dir(&path, ambient_authority()).expect("publish scenario");
         (path, dir)
     }
 
     #[test]
     fn create_new_publishes_without_hard_links_and_never_clobbers() {
         let (path, dir) = scratch();
-        dir.write(".stage-a", b"first").unwrap();
-        publish_new(&dir, ".stage-a", &dir, Path::new("value")).unwrap();
-        assert_eq!(dir.read("value").unwrap(), b"first");
+        dir.write(".stage-a", b"first").expect("publish scenario");
+        publish_new(&dir, ".stage-a", &dir, Path::new("value")).expect("publish scenario");
+        assert_eq!(dir.read("value").expect("publish scenario"), b"first");
         assert!(dir.symlink_metadata(".stage-a").is_err());
-        dir.write(".stage-b", b"second").unwrap();
+        dir.write(".stage-b", b"second").expect("publish scenario");
         assert_eq!(
             publish_new(&dir, ".stage-b", &dir, Path::new("value")),
             Err(PlatformError::Conflict)
         );
-        assert_eq!(dir.read("value").unwrap(), b"first");
-        assert_eq!(dir.read(".stage-b").unwrap(), b"second");
-        std::fs::remove_dir_all(path).unwrap();
+        assert_eq!(dir.read("value").expect("publish scenario"), b"first");
+        assert_eq!(dir.read(".stage-b").expect("publish scenario"), b"second");
+        std::fs::remove_dir_all(path).expect("publish scenario");
     }
 
     #[test]
     fn reservation_fallback_publishes_new_names_and_keeps_existing_ones() {
         let (path, dir) = scratch();
-        dir.write(".stage-a", b"first").unwrap();
-        reserve_then_replace(&dir, ".stage-a", &dir, Path::new("value")).unwrap();
-        assert_eq!(dir.read("value").unwrap(), b"first");
+        dir.write(".stage-a", b"first").expect("publish scenario");
+        reserve_then_replace(&dir, ".stage-a", &dir, Path::new("value")).expect("publish scenario");
+        assert_eq!(dir.read("value").expect("publish scenario"), b"first");
         assert!(dir.symlink_metadata(".stage-a").is_err());
-        dir.write(".stage-b", b"second").unwrap();
+        dir.write(".stage-b", b"second").expect("publish scenario");
         assert_eq!(
             reserve_then_replace(&dir, ".stage-b", &dir, Path::new("value")),
             Err(PlatformError::Conflict)
         );
-        assert_eq!(dir.read("value").unwrap(), b"first");
-        assert_eq!(dir.read(".stage-b").unwrap(), b"second");
-        std::fs::remove_dir_all(path).unwrap();
+        assert_eq!(dir.read("value").expect("publish scenario"), b"first");
+        assert_eq!(dir.read(".stage-b").expect("publish scenario"), b"second");
+        std::fs::remove_dir_all(path).expect("publish scenario");
     }
 }
