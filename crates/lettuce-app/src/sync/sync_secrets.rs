@@ -65,7 +65,9 @@ pub struct SecretSyncReport {
 /// holds an older version of, is fetched from the peer and written to the
 /// native secret store under the generation seen when the phase began (a key
 /// changed meanwhile is kept); a local value changed since the last session
-/// gets a new version later than any it had. A value this device lost is
+/// gets a new version stamped with the time the store wrote it (the session
+/// time when the store does not record it), never earlier than a version it
+/// had, so the later rotation wins on every device. A value this device lost is
 /// fetched again rather than deleted elsewhere, and a value nothing here
 /// references any more (its provider was deleted) is removed from the store.
 /// A secret the store cannot read or write is skipped and retried next
@@ -220,9 +222,12 @@ where
                         stored.version
                     }
                     earlier => {
+                        let written = status
+                            .set_at
+                            .map_or(now.get(), |set_at| set_at.get().min(now.get()));
                         let version = SyncSecretVersion {
-                            set_at: TimestampMillis::new(earlier.map_or(now.get(), |stored| {
-                                now.get().max(stored.version.set_at.get().saturating_add(1))
+                            set_at: TimestampMillis::new(earlier.map_or(written, |stored| {
+                                written.max(stored.version.set_at.get().saturating_add(1))
                             })),
                             device,
                         };

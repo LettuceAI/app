@@ -149,18 +149,19 @@ journaled as insert or update; journaled entities that no longer exist are
 journaled as deletes in reverse order. Edits and imports therefore replicate
 with no per-mutation code; a restored database starts with a new device
 identity and an empty journal, so it rejoins as a new device whose state meets
-peers as concurrent inserts, never as deletes. A scanned insert (an entity
-this device never journaled) carries its content's latest change time rather
-than the session time: the latest `updated_at` its snapshot records, or for a
+peers as concurrent inserts, never as deletes. A scanned insert or update
+carries its content's latest change time rather than the session time: the latest `updated_at` its snapshot records, or for a
 memory item its creation, last access or supersession, for a Soul the latest
 fact validity, creation or supersession, and for a relationship its last
 interaction. Last-writer-wins therefore keeps a peer's newer edit over an older
-restored version; a snapshot without any timestamp falls back to the session
-time.
+one that synced later, and over an older restored version; a snapshot without
+any timestamp falls back to the session time. A stamp never falls behind a
+change already journaled for the entity (it then takes the next counter after
+it), so an edit always supersedes the state it was based on.
 Because the scan runs before anything
 is received, incoming changes always meet journaled local state. Deviations
 from legacy's per-write capture: edits between sessions collapse into one
-change, and an update's hybrid timestamp is the session's, not the edit's. Scanned
+change. Scanned
 today: provider accounts (`provider_account.snapshot`, secret references travel
 as opaque identifiers, secret values never leave the device) and model
 profiles (`model_profile.snapshot`). Deletes follow legacy: a delete beats a
@@ -424,7 +425,7 @@ PAKE-authenticated, ChaCha20-Poly1305-encrypted channel: each side lists the
 secrets its synced records reference with the version its value was last set
 at (`sync_secret_versions`, device-local: reference, secret-store generation,
 set-at time and device; a changed local generation gets a new version at the
-next session), fetches the values it lacks or holds an older version of and
+next session, stamped with the time the native store wrote the value), fetches the values it lacks or holds an older version of and
 writes them into its native secret store under the generation it saw when
 the phase began (a key changed meanwhile is kept). A value changed locally
 gets a version later than any it had; a peer version more than a day ahead

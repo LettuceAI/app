@@ -484,6 +484,7 @@ mod tests {
                     2
                 },
                 state: SecretState::Present,
+                set_at: None,
             })
         }
 

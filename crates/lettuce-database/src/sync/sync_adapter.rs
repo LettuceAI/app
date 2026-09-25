@@ -275,7 +275,13 @@ fn record_local_change_in_skipping(
     let frontier = load_frontier(connection)?;
     let (device, sequence, mut timestamp) = next_identity_and_stamp(connection, now, &frontier)?;
     if let Some(source_time) = source_time.filter(|time| *time < timestamp.wall_time()) {
-        timestamp = HybridTimestamp::new(source_time, 0);
+        let source = HybridTimestamp::new(source_time, 0);
+        timestamp = match latest_entity_stamp(connection, request.entity())? {
+            Some(latest) if latest >= source => successor_stamp(latest)
+                .filter(|next| *next < timestamp)
+                .unwrap_or(timestamp),
+            _ => source,
+        };
     }
     let change = CanonicalChange::new(
         SyncChangeId::new(),
@@ -300,6 +306,38 @@ fn record_local_change_in_skipping(
         change,
         created: true,
     })
+}
+
+/// The latest hybrid timestamp journaled for an entity, from any device.
+fn latest_entity_stamp(
+    connection: &Connection,
+    entity: &SyncEntity,
+) -> Result<Option<HybridTimestamp>, LocalChangeJournalError> {
+    let latest = connection
+        .query_row(
+            "SELECT hlc_wall_time, hlc_counter FROM sync_changes
+             WHERE entity_kind = ?1 AND entity_id = ?2
+             ORDER BY hlc_wall_time DESC, hlc_counter DESC LIMIT 1",
+            params![entity.kind(), entity.id()],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+        )
+        .optional()
+        .map_err(storage)?;
+    latest
+        .map(|(wall_time, counter)| {
+            Ok(HybridTimestamp::new(
+                TimestampMillis::new(wall_time),
+                u32::try_from(counter).map_err(corrupt)?,
+            ))
+        })
+        .transpose()
+}
+
+fn successor_stamp(stamp: HybridTimestamp) -> Option<HybridTimestamp> {
+    stamp
+        .counter()
+        .checked_add(1)
+        .map(|counter| HybridTimestamp::new(stamp.wall_time(), counter))
 }
 
 fn hydrate_change(
@@ -2705,13 +2743,9 @@ fn journal_state_change(
     payload: Option<CanonicalPayload>,
     now: TimestampMillis,
 ) -> Result<(), LocalChangeJournalError> {
-    let source_time = (operation == ChangeOperation::Insert)
-        .then(|| {
-            payload
-                .as_ref()
-                .and_then(|payload| snapshot_source_time(kind, payload.bytes()))
-        })
-        .flatten();
+    let source_time = payload
+        .as_ref()
+        .and_then(|payload| snapshot_source_time(kind, payload.bytes()));
     let request = NewCanonicalChange::new(
         SyncEntity::new(kind, id).map_err(corrupt)?,
         operation,
@@ -2727,11 +2761,12 @@ fn journal_state_change(
 /// its creation, last access and supersession; for a Soul the latest time a
 /// fact became valid, was created or was superseded; for a relationship its
 /// last interaction; for any other kind the latest `updated_at` (or
-/// `updatedAt`) it records at any depth. A scanned insert (an entity this
-/// device never journaled, such as every entity of a restored database) is
+/// `updatedAt`) it records at any depth. A scanned insert or update is
 /// stamped with it instead of the session time, so against a peer's version
 /// of the same entity the more recently changed content wins rather than
-/// whichever device scanned last.
+/// whichever device scanned last. A stamp never falls behind a change this
+/// device already journaled for the entity: it then takes the next counter
+/// after that change, so an edit always supersedes what it was based on.
 fn snapshot_source_time(kind: &str, bytes: &[u8]) -> Option<TimestampMillis> {
     let newest = |times: &mut dyn Iterator<Item = TimestampMillis>| {
         times.filter(|time| time.get() > 0).max()

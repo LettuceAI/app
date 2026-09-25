@@ -4,6 +4,7 @@ use std::{
 };
 
 use async_trait::async_trait;
+use lettuce_types::TimestampMillis;
 use serde::{Deserialize, Serialize};
 use zeroize::{Zeroize, Zeroizing};
 
@@ -110,6 +111,7 @@ impl NativeSecretStore {
             purpose,
             generation: 0,
             state: SecretState::Missing,
+            set_at: None,
         }
     }
 
@@ -118,12 +120,14 @@ impl NativeSecretStore {
         purpose: SecretPurpose,
         generation: u64,
         state: SecretState,
+        set_at: Option<i64>,
     ) -> SecretStatus {
         SecretStatus {
             reference,
             purpose,
             generation,
             state,
+            set_at: set_at.map(TimestampMillis::new),
         }
     }
 }
@@ -160,6 +164,7 @@ impl SecretStore for NativeSecretStore {
                 1
             }
         };
+        let set_at = TimestampMillis::now().ok().map(TimestampMillis::get);
         let encoded = value
             .with(|secret| {
                 serde_json::to_vec(&SecretEnvelopeRef {
@@ -167,6 +172,7 @@ impl SecretStore for NativeSecretStore {
                     purpose: &record.purpose,
                     generation,
                     value: secret,
+                    set_at,
                 })
             })
             .map(Zeroizing::new)
@@ -182,6 +188,7 @@ impl SecretStore for NativeSecretStore {
             record.purpose,
             generation,
             SecretState::Present,
+            set_at,
         ))
     }
 
@@ -216,6 +223,7 @@ impl SecretStore for NativeSecretStore {
             envelope.purpose.clone(),
             envelope.generation,
             SecretState::Present,
+            envelope.set_at,
         ))
     }
 
@@ -246,6 +254,7 @@ impl SecretStore for NativeSecretStore {
             envelope.purpose.clone(),
             envelope.generation,
             SecretState::Missing,
+            None,
         ))
     }
 }
@@ -256,6 +265,7 @@ struct SecretEnvelopeRef<'a> {
     purpose: &'a SecretPurpose,
     generation: u64,
     value: &'a str,
+    set_at: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -265,6 +275,8 @@ struct SecretEnvelope {
     purpose: SecretPurpose,
     generation: u64,
     value: String,
+    #[serde(default)]
+    set_at: Option<i64>,
 }
 
 impl Drop for SecretEnvelope {

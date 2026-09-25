@@ -1323,6 +1323,74 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_later_key_rotation_wins_whichever_device_syncs_it() {
+        use lettuce_settings::{
+            InMemorySecretStore, SecretOwnerId, SecretPurpose, SecretRecord, SecretRef,
+            SecretStore, SecretValue,
+        };
+        use lettuce_speech::{AudioProvider, AudioProviderConfig, TtsConfigurationRepository};
+        let source = Database::open_in_memory().expect("source");
+        let target = Database::open_in_memory().expect("target");
+        let reference = SecretRef::new();
+        let owner = SecretOwnerId::new();
+        let provider = AudioProvider {
+            id: lettuce_types::AudioProviderId::new(),
+            secret_owner_id: owner,
+            label: "ElevenLabs".to_owned(),
+            api_key_ref: Some(reference),
+            config: AudioProviderConfig::Elevenlabs,
+            revision: Revision::INITIAL,
+            created_at: TimestampMillis::new(1),
+            updated_at: TimestampMillis::new(1),
+        };
+        for database in [&source, &target] {
+            database
+                .upsert_audio_provider(provider.clone(), None)
+                .expect("provider");
+        }
+        let purpose = SecretPurpose::AudioApiKey { owner };
+        let source_secrets = InMemorySecretStore::new();
+        let target_secrets = InMemorySecretStore::new();
+        source_secrets
+            .put(
+                SecretRecord::new(reference, purpose.clone()),
+                SecretValue::new("xi-first").expect("value"),
+                None,
+            )
+            .await
+            .expect("source key");
+        secret_round(&source, &target, &source_secrets, &target_secrets, 10).await;
+        for (store, value, written) in [
+            (&source_secrets, "xi-monday", 300),
+            (&target_secrets, "xi-wednesday", 500),
+        ] {
+            let generation = store
+                .status(&reference, &purpose)
+                .await
+                .expect("status")
+                .generation;
+            store
+                .put(
+                    SecretRecord::new(reference, purpose.clone()),
+                    SecretValue::new(value).expect("value"),
+                    Some(generation),
+                )
+                .await
+                .expect("rotate");
+            store
+                .set_written_at(&reference, Some(TimestampMillis::new(written)))
+                .expect("written at");
+        }
+        secret_round(&source, &target, &source_secrets, &target_secrets, 1_000).await;
+        for store in [&source_secrets, &target_secrets] {
+            assert_eq!(
+                read_secret(store, reference, &purpose).await,
+                "xi-wednesday"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn secret_phase_copies_missing_and_rotated_keys_into_the_secret_store() {
         use lettuce_settings::{
             InMemorySecretStore, SecretOwnerId, SecretPurpose, SecretRecord, SecretRef,

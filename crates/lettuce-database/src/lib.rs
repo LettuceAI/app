@@ -2672,7 +2672,9 @@ mod tests {
             TimestampMillis::new(105),
         )
         .expect("journal a change in a retired payload version");
-        let old_device = a.local_device_id(TimestampMillis::new(106)).expect("device");
+        let old_device = a
+            .local_device_id(TimestampMillis::new(106))
+            .expect("device");
         let model = ModelProfileRepository::upsert(&a, profile(account.id), None).expect("model");
         for database in [&a, &b] {
             database
@@ -2689,7 +2691,8 @@ mod tests {
         sync_to(&b, &a, 210);
 
         assert_ne!(
-            a.local_device_id(TimestampMillis::new(220)).expect("device"),
+            a.local_device_id(TimestampMillis::new(220))
+                .expect("device"),
             old_device
         );
         let stale_left: i64 = a
@@ -2712,6 +2715,56 @@ mod tests {
         );
         assert_eq!(sync_to(&a, &b, 230), 0);
         assert_eq!(sync_to(&b, &a, 240), 0);
+    }
+
+    #[test]
+    fn an_older_edit_synced_later_loses_to_a_newer_one() {
+        use lettuce_sync::LocalChangeJournal;
+        let a = Database::open_in_memory().expect("a");
+        let b = Database::open_in_memory().expect("b");
+        let account = ProviderAccountRepository::upsert(&a, provider(), None).expect("account");
+        let model = ModelProfileRepository::upsert(&a, profile(account.id), None).expect("model");
+        sync_to(&a, &b, 100);
+        let on_b = ModelProfileRepository::get(&b, model.id)
+            .expect("b model")
+            .expect("present");
+        ModelProfileRepository::upsert(
+            &a,
+            ModelProfile {
+                display_name: "Monday on a".into(),
+                updated_at: TimestampMillis::new(300),
+                ..model.clone()
+            },
+            Some(model.revision),
+        )
+        .expect("older edit on a");
+        let newer = ModelProfileRepository::upsert(
+            &b,
+            ModelProfile {
+                display_name: "Wednesday on b".into(),
+                updated_at: TimestampMillis::new(500),
+                ..on_b.clone()
+            },
+            Some(on_b.revision),
+        )
+        .expect("newer edit on b");
+        b.journal_current_state(TimestampMillis::new(1_000))
+            .expect("b scans first");
+        a.journal_current_state(TimestampMillis::new(1_100))
+            .expect("a scans later");
+
+        sync_to(&a, &b, 1_200);
+        sync_to(&b, &a, 1_300);
+
+        for database in [&a, &b] {
+            assert_eq!(
+                ModelProfileRepository::get(database, model.id)
+                    .expect("model")
+                    .expect("present")
+                    .display_name,
+                newer.display_name
+            );
+        }
     }
 
     #[test]

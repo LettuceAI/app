@@ -11,6 +11,7 @@ use std::{
 };
 
 use async_trait::async_trait;
+use lettuce_types::TimestampMillis;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as _};
 use uuid::Uuid;
 use zeroize::{Zeroize, Zeroizing};
@@ -300,6 +301,8 @@ pub struct SecretStatus {
     pub purpose: SecretPurpose,
     pub generation: u64,
     pub state: SecretState,
+    /// When this device last wrote the value, if the store records it.
+    pub set_at: Option<TimestampMillis>,
 }
 
 impl fmt::Display for SecretStatus {
@@ -347,6 +350,7 @@ struct StoredSecret {
     generation: u64,
     value: Zeroizing<String>,
     unavailable: Option<SecretAvailability>,
+    set_at: Option<TimestampMillis>,
 }
 
 impl Drop for StoredSecret {
@@ -399,6 +403,23 @@ impl InMemorySecretStore {
         Ok(())
     }
 
+    /// Test-only write-time injection; the in-memory store records none.
+    pub fn set_written_at(
+        &self,
+        reference: &SecretRef,
+        set_at: Option<TimestampMillis>,
+    ) -> Result<(), SecretStoreError> {
+        let mut entries = self
+            .entries
+            .lock()
+            .map_err(|_| SecretStoreError::Backend(SecretBackendError::Corrupt))?;
+        entries
+            .get_mut(reference)
+            .ok_or(SecretStoreError::Missing)?
+            .set_at = set_at;
+        Ok(())
+    }
+
     fn status_of(entry: &StoredSecret) -> SecretStatus {
         SecretStatus {
             reference: entry.record.reference,
@@ -407,6 +428,7 @@ impl InMemorySecretStore {
             state: entry.unavailable.map_or(SecretState::Present, |reason| {
                 SecretState::Unavailable { reason }
             }),
+            set_at: entry.set_at,
         }
     }
 
@@ -459,6 +481,7 @@ impl SecretStore for InMemorySecretStore {
             generation,
             value: value.into_inner(),
             unavailable: None,
+            set_at: None,
         };
         let status = Self::status_of(&entry);
         entries.insert(reference, entry);
@@ -498,6 +521,7 @@ impl SecretStore for InMemorySecretStore {
                 purpose: purpose.clone(),
                 generation: 0,
                 state: SecretState::Missing,
+                set_at: None,
             });
         };
         Self::ensure_purpose(entry, purpose)?;
@@ -520,6 +544,7 @@ impl SecretStore for InMemorySecretStore {
                 purpose: purpose.clone(),
                 generation: 0,
                 state: SecretState::Missing,
+                set_at: None,
             });
         };
         Self::ensure_purpose(entry, purpose)?;
@@ -533,6 +558,7 @@ impl SecretStore for InMemorySecretStore {
             purpose: purpose.clone(),
             generation,
             state: SecretState::Missing,
+            set_at: None,
         })
     }
 }
