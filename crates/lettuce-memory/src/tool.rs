@@ -456,7 +456,8 @@ pub struct ListedMemory {
 
 /// Reverts the effects of applied memory tool calls on `items`, latest call
 /// first: a created memory is removed (releasing what it superseded), a hard
-/// delete is restored from `before` when absent, a soft delete is made hot at
+/// delete is restored from `before` when absent (with a fresh short id when
+/// another memory took its short id since), a soft delete is made hot at
 /// full importance again, and a pin or unpin is flipped back. Every other
 /// outcome changed nothing and is ignored.
 pub fn undo_memory_tool_outcomes(
@@ -479,7 +480,13 @@ pub fn undo_memory_tool_outcomes(
                 if items.iter().all(|item| item.id != *id)
                     && let Some(restored) = before.iter().find(|item| item.id == *id)
                 {
-                    items.push(restored.clone());
+                    let mut restored = restored.clone();
+                    if items.iter().any(|item| item.short_id == restored.short_id) {
+                        restored.short_id = MemoryShortId::allocate(restored.id, |candidate| {
+                            items.iter().any(|item| item.short_id == candidate)
+                        });
+                    }
+                    items.push(restored);
                 }
             }
             MemoryToolOutcome::SoftDeleted { id, .. } => {
@@ -1285,6 +1292,30 @@ mod tests {
             created_at: TimestampMillis::new(accessed),
             last_accessed_at: TimestampMillis::new(accessed),
         }
+    }
+
+    #[test]
+    fn undo_gives_a_restored_memory_a_fresh_short_id_when_its_own_was_taken() {
+        let deleted = item("User owns a cat", 4, 1, false);
+        let mut taker = item("User owns a dog", 4, 2, false);
+        taker.short_id = deleted.short_id;
+        let mut items = vec![taker.clone()];
+        undo_memory_tool_outcomes(
+            &mut items,
+            std::slice::from_ref(&deleted),
+            &[MemoryToolOutcome::Deleted {
+                id: deleted.id,
+                short_id: deleted.short_id,
+                text: deleted.text.clone(),
+                memories: Vec::new(),
+            }],
+        );
+        let restored = items
+            .iter()
+            .find(|memory| memory.id == deleted.id)
+            .expect("restored");
+        assert_ne!(restored.short_id, taker.short_id);
+        assert!(snapshot(items.clone()).validate().is_ok());
     }
 
     #[test]
