@@ -47,6 +47,15 @@ pub(crate) trait GeminiWireProvider: Sync {
 
     fn generate_path(&self, model: &str) -> Result<String, AdapterError>;
 
+    /// The output modalities a model must be asked for explicitly.
+    fn response_modalities(&self, _model: &str) -> Option<&'static [&'static str]> {
+        None
+    }
+
+    fn streams_model(&self, _model: &str) -> bool {
+        true
+    }
+
     fn models_path(&self) -> Option<&'static str> {
         None
     }
@@ -148,15 +157,18 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
     let path = provider.generate_path(&profile.external_model_id)?;
     let streaming = request.stream_sink.is_some()
         && profile.streaming_enabled
-        && provider.descriptor().streaming;
+        && provider.descriptor().streaming
+        && provider.streams_model(&profile.external_model_id);
     let media = crate::media::RequestMedia::load(&request, media).await?;
-    let uncached = build_request_with_media(
+    let mut uncached = build_request_with_media(
         profile,
         &request.context,
         request.tools.as_ref(),
         replay_artifacts,
         &media,
     )?;
+    uncached.generation_config.response_modalities =
+        provider.response_modalities(&profile.external_model_id);
     let prepared = crate::streaming::streaming::await_cancelable(
         runtime,
         request.cancellation,
@@ -684,6 +696,7 @@ fn build_request_with_media(
             max_output_tokens: max_output_tokens(parameters),
             top_k: parameters.top_k,
             thinking_config: gemini_thinking_config(&profile.external_model_id, parameters),
+            response_modalities: None,
         },
         tools: tools.map(|request| {
             vec![GeminiTool {
@@ -1234,6 +1247,8 @@ struct GenerationConfig {
     top_k: Option<u32>,
     #[serde(rename = "thinkingConfig", skip_serializing_if = "Option::is_none")]
     thinking_config: Option<ThinkingConfig>,
+    #[serde(rename = "responseModalities", skip_serializing_if = "Option::is_none")]
+    response_modalities: Option<&'static [&'static str]>,
 }
 
 #[derive(Clone, Serialize)]
