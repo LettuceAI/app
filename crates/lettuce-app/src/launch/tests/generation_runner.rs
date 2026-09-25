@@ -7413,3 +7413,63 @@ async fn re_sent_chats_meet_a_peer_that_still_holds_them_without_conflicts() {
     );
     assert_rescans_are_empty(&[&a, &b, &c], 4_000);
 }
+
+/// A device that keeps a chat only because of another device's messages sends
+/// the whole chat back too, so the deleting device never gets a bare root.
+#[tokio::test]
+async fn a_chat_kept_for_another_devices_messages_goes_back_whole() {
+    use lettuce_sync::ConversationForkRepository;
+    let a = database();
+    let b = database();
+    let c = database();
+    let (scenario, _) = generated_direct_chat(&a, "hard-delete-relay").await;
+    let id = scenario.conversation_id;
+    for (from, to, at) in [
+        (&a, &b, 3_000),
+        (&b, &a, 3_010),
+        (&b, &c, 3_020),
+        (&c, &b, 3_030),
+    ] {
+        sync_prompts(from, to, at);
+    }
+    send_and_generate(&c, &scenario, "hard-delete-relay-c", "From c", 3_100).await;
+    sync_prompts(&c, &b, 3_200);
+    a.purge_conversation(id, TimestampMillis::new(3_300))
+        .expect("delete on a");
+
+    sync_prompts(&a, &b, 3_400);
+    assert!(
+        ConversationReader::get(&b, id).is_ok(),
+        "kept for c's messages"
+    );
+    assert!(b.purge_notices().expect("b notices").is_empty());
+    sync_prompts(&b, &a, 3_500);
+    let branch = ConversationReader::get(&b, id)
+        .expect("b")
+        .conversation
+        .active_branch_id;
+    let messages = |database: &Database| {
+        branch_timeline(database, id, branch)
+            .into_iter()
+            .map(|item| item.message.id)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(messages(&b).len(), 4);
+    assert_eq!(messages(&a), messages(&b), "a gets the whole chat back");
+    assert!(
+        a.unresolved_conversation_forks(10)
+            .expect("forks")
+            .is_empty()
+    );
+
+    for (from, to, at) in [
+        (&a, &c, 3_600),
+        (&c, &a, 3_610),
+        (&a, &b, 3_620),
+        (&b, &c, 3_630),
+    ] {
+        sync_prompts(from, to, at);
+    }
+    assert_eq!(messages(&c), messages(&a));
+    assert_rescans_are_empty(&[&a, &b, &c], 4_000);
+}
