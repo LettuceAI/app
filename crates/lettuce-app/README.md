@@ -2243,3 +2243,34 @@ Host wiring still required (phase (c)): nothing calls
 `ArtifactInstall` job yet. The host must adopt the legacy v4 files at startup,
 load the active service with the device's dimension and token budget, and run
 install jobs from the model hub UI, finishing them with `complete_install`.
+
+Local stable-diffusion.cpp: placement and auto-fit see discrete GPUs and
+accelerators, as legacy's device list did, plus (user decision) the AMD
+integrated GPU of a unified-memory machine, one whose only GPUs are
+integrated (an AMD APU such as a Ryzen AI handheld; the test llama.cpp's
+`is_unified_memory` makes). That iGPU is budgeted from the memory it reports,
+which follows the user's carve-out, as llama.cpp budgets a selected iGPU; the
+frozen fit formulas are unchanged. Intel and other integrated GPUs, and an AMD
+iGPU next to a discrete GPU, stay excluded as in legacy. Reading the installed list removes the old
+`sdcpp:<profile>:<variant>` models whose variant is not installed (legacy
+purged every such row on that read); an installed variant keeps its row so
+registration adopts its settings. Host wiring still required (phase (c)):
+nothing calls `finish_runtime_install` when a catalog or engine download
+completes, so the host must run it (extract the engine, then
+`register_catalog_model`) from the install job's completion, as legacy's
+`sdcpp.rs` did after each download.
+
+Speech and model downloads: a cancelled download, or one that failed for good,
+deletes its partial file (legacy deleted its `.tmp` on cancel, stall and
+failure); a retried one resumes. Partial names start with a hash of the file
+they become, so preparing a download also deletes that file's partials from
+older revisions, and nothing outside the managed `downloads`/`.downloads`
+folders is touched. A partial that already holds every byte is verified
+without another request, and one that fails verification is deleted. Whisper
+and Kokoro check at use time only what legacy checked, that the files are
+present (here: at their installed size); contents are hashed once, at install.
+A Whisper model installed from an older upstream revision (the whisper.cpp
+repository head moves) is used as installed instead of conflicting; one whose
+file is gone or resized is dropped and downloaded again. A Whisper model
+imported from a retained legacy folder can be removed: its file is deleted
+when it is inside the managed folder, and otherwise only the app's record goes.

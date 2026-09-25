@@ -39,16 +39,7 @@ impl EngineHost for AppEngineHost {
         let devices = tokio::task::spawn_blocking(lettuce_local_llm::hardware::list_gpu_devices)
             .await
             .map_err(|_| "Failed to read GPU memory information.".to_owned())?;
-        Ok(devices
-            .into_iter()
-            .map(|device| HardwareGpu {
-                index: device.index,
-                name: device.name,
-                description: device.description,
-                memory_total: device.memory_total,
-                memory_free: device.memory_free,
-            })
-            .collect())
+        Ok(diffusion_gpus(devices))
     }
 
     fn available_memory_bytes(&self) -> Option<u64> {
@@ -58,6 +49,43 @@ impl EngineHost for AppEngineHost {
     async fn unload_local_llm(&self) -> Result<(), String> {
         unload_started_llama(&self.local_llama).await
     }
+}
+
+const INTEGRATED_GPU: &str = "IntegratedGpu";
+
+/// The devices stable-diffusion.cpp placement considers: discrete GPUs and
+/// accelerators, plus an AMD integrated GPU on a unified-memory machine (an
+/// APU whose only GPUs are integrated, the same test llama.cpp's
+/// `is_unified_memory` makes). Such an iGPU is budgeted from the memory it
+/// reports, as llama.cpp budgets a selected iGPU; other integrated GPUs stay
+/// out.
+fn diffusion_gpus(
+    devices: Vec<lettuce_local_llm::hardware::LlamaGpuDeviceInfo>,
+) -> Vec<HardwareGpu> {
+    let unified_memory = !devices.is_empty()
+        && devices
+            .iter()
+            .all(|device| device.device_type == INTEGRATED_GPU);
+    devices
+        .into_iter()
+        .filter(|device| {
+            device.device_type != INTEGRATED_GPU || (unified_memory && is_amd_gpu(device))
+        })
+        .map(|device| HardwareGpu {
+            index: device.index,
+            name: device.name,
+            description: device.description,
+            memory_total: device.memory_total,
+            memory_free: device.memory_free,
+        })
+        .collect()
+}
+
+fn is_amd_gpu(device: &lettuce_local_llm::hardware::LlamaGpuDeviceInfo) -> bool {
+    [&device.name, &device.description].iter().any(|value| {
+        let value = value.to_ascii_lowercase();
+        value.contains("amd") || value.contains("radeon")
+    })
 }
 
 pub(crate) struct DiffusionExclusion(pub(crate) Arc<LocalDiffusionEngine>);
@@ -165,9 +193,54 @@ impl crate::AppBackend {
         }
     }
 
+    /// Removes the old `sdcpp:<profile>:<variant>` models whose variant is
+    /// not installed, which legacy purged whenever the installed list was
+    /// read. An installed variant's row stays, so registering it adopts the
+    /// row's settings.
+    fn purge_stale_legacy_models(&self, engine: &LocalDiffusionEngine) -> Result<(), String> {
+        use lettuce_models::{ModelCatalog, ModelLookup, ModelProfileRepository};
+        let Some(account) = self
+            .database()
+            .account_by_kind_and_label(
+                LOCAL_DIFFUSION_PROVIDER_KIND,
+                crate::LOCAL_DIFFUSION_PROVIDER_LABEL,
+            )
+            .map_err(|error| error.to_string())?
+        else {
+            return Ok(());
+        };
+        let catalog = lettuce_image_generation::diffusion_catalog();
+        for model in self
+            .database()
+            .model_profiles()
+            .map_err(|error| error.to_string())?
+        {
+            if model.provider_account_id != account.id {
+                continue;
+            }
+            let Some(legacy) = model.external_model_id.strip_prefix("sdcpp:") else {
+                continue;
+            };
+            let installed = legacy
+                .split_once(':')
+                .and_then(|(profile_id, variant_id)| {
+                    catalog.find_variant(profile_id, variant_id).ok()
+                })
+                .is_some_and(|(profile, variant)| engine.variant_installed(profile, variant));
+            if installed {
+                continue;
+            }
+            if let Err(error) = self.database().delete_and_clear_default(model.id) {
+                tracing::warn!(%error, "failed to remove a stale stable-diffusion.cpp model");
+            }
+        }
+        Ok(())
+    }
+
     /// Installed catalog variants with their registered models.
     pub fn installed_local_image_models(&self) -> Result<Vec<InstalledLocalImageModel>, String> {
         let engine = self.engine()?;
+        self.purge_stale_legacy_models(engine)?;
         let paths = engine.paths();
         let mut installed = Vec::new();
         for profile in &lettuce_image_generation::diffusion_catalog().profiles {
@@ -432,6 +505,54 @@ mod tests {
             .expect("engine")
     }
 
+    #[test]
+    fn diffusion_placement_sees_discrete_gpus_only_like_legacy() {
+        let device = |index, device_type: &str| lettuce_local_llm::hardware::LlamaGpuDeviceInfo {
+            index,
+            name: format!("GPU{index}"),
+            description: String::new(),
+            backend: "Vulkan".to_owned(),
+            memory_total: 16,
+            memory_free: 16,
+            device_type: device_type.to_owned(),
+        };
+        let gpus = diffusion_gpus(vec![
+            device(0, "Gpu"),
+            device(1, "IntegratedGpu"),
+            device(2, "Accelerator"),
+        ]);
+        assert_eq!(gpus.iter().map(|gpu| gpu.index).collect::<Vec<_>>(), [0, 2]);
+    }
+
+    #[test]
+    fn an_amd_apu_places_diffusion_on_its_igpu_with_the_reported_memory() {
+        let igpu = |index, description: &str| lettuce_local_llm::hardware::LlamaGpuDeviceInfo {
+            index,
+            name: format!("Vulkan{index}"),
+            description: description.to_owned(),
+            backend: "Vulkan".to_owned(),
+            memory_total: 16 << 30,
+            memory_free: 12 << 30,
+            device_type: "IntegratedGpu".to_owned(),
+        };
+        let apu = diffusion_gpus(vec![igpu(0, "AMD Radeon 890M Graphics")]);
+        assert_eq!(
+            apu,
+            [HardwareGpu {
+                index: 0,
+                name: "Vulkan0".to_owned(),
+                description: "AMD Radeon 890M Graphics".to_owned(),
+                memory_total: 16 << 30,
+                memory_free: 12 << 30,
+            }]
+        );
+        assert!(diffusion_gpus(vec![igpu(0, "Intel(R) Arc(TM) Graphics")]).is_empty());
+        let mut discrete = igpu(0, "NVIDIA GeForce RTX 4060");
+        discrete.device_type = "Gpu".to_owned();
+        let hybrid = diffusion_gpus(vec![discrete, igpu(1, "AMD Radeon 780M Graphics")]);
+        assert_eq!(hybrid.iter().map(|gpu| gpu.index).collect::<Vec<_>>(), [0]);
+    }
+
     #[tokio::test]
     async fn installed_models_register_list_and_uninstall_with_shared_files_kept() {
         let root = std::env::temp_dir().join(format!("sd-installed-{}", OperationId::new()));
@@ -465,8 +586,32 @@ mod tests {
             TimestampMillis::new(2),
         )
         .expect("register");
+        for legacy_name in ["sdcpp:z-image-turbo:q3-k", "sdcpp:z-image-turbo:q8-0"] {
+            lettuce_models::ModelProfileRepository::upsert(
+                backend.database(),
+                lettuce_models::ModelProfile {
+                    id: lettuce_types::ModelProfileId::new(),
+                    external_model_id: legacy_name.to_owned(),
+                    revision: lettuce_types::Revision::INITIAL,
+                    ..model.clone()
+                },
+                None,
+            )
+            .expect("legacy row");
+        }
         let installed = backend.installed_local_image_models().expect("installed");
         assert_eq!(installed.len(), 2);
+        let legacy_rows = lettuce_models::ModelCatalog::model_profiles(backend.database())
+            .expect("models")
+            .into_iter()
+            .filter_map(|model| {
+                model
+                    .external_model_id
+                    .starts_with("sdcpp:")
+                    .then_some(model.external_model_id)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(legacy_rows, ["sdcpp:z-image-turbo:q3-k"]);
         let q4 = installed
             .iter()
             .find(|entry| entry.variant_id == "q4-k")
