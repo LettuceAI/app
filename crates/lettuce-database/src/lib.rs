@@ -5444,6 +5444,7 @@ mod tests {
                 "legacy_import_asr_results",
                 "legacy_import_assignments",
                 "legacy_import_media_completions",
+                "legacy_import_preserved_rows",
                 "legacy_import_provider_model_results",
                 "legacy_import_results",
                 "legacy_import_runs",
