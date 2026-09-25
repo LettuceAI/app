@@ -1152,7 +1152,7 @@ impl SnapshotDocumentBody for GroupSnapshotBodyV1 {
 
     fn validate(&self) -> Result<(), ValidationError> {
         validate_text("group_document.name", &self.name, MAX_NAME_BYTES, false)?;
-        if self.members.len() < 2 {
+        if self.members.is_empty() {
             return Err(ValidationError::Invariant {
                 field: "group_document.members.minimum",
             });
@@ -2007,9 +2007,11 @@ mod tests {
     }
 
     #[test]
-    fn group_body_rejects_a_single_member_and_an_all_muted_cast() {
+    fn group_body_rejects_an_empty_and_an_all_muted_cast() {
         let mut body = group_body();
         body.members.truncate(1);
+        assert_eq!(body.validate(), Ok(()));
+        body.members.clear();
         assert_eq!(
             body.validate(),
             Err(ValidationError::Invariant {

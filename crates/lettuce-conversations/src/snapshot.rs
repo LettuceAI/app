@@ -627,7 +627,7 @@ impl GroupLaunchSnapshot {
             return Err(ValidationError::ZeroRevision);
         }
         validate_text("group.name", &self.name, MAX_DISPLAY_CHARS * 4, false)?;
-        if self.members.len() < 2 {
+        if self.members.is_empty() {
             return Err(ValidationError::Invariant {
                 field: "group.members.minimum",
             });
