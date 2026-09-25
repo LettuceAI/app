@@ -207,6 +207,30 @@ where
         scheduled_notes: &[LegacyBackupScheduledNote],
         completed_at: TimestampMillis,
     ) -> Result<LegacyImportStageReceipt, Error> {
+        self.execute_with_effects(
+            admission,
+            plan,
+            sessions,
+            memories,
+            companions,
+            scheduled_notes,
+            &[],
+            completed_at,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn execute_with_effects(
+        &self,
+        admission: &LegacyImportAdmission,
+        plan: &LegacyImportPlan,
+        sessions: &[LegacyBackupDirectSession],
+        memories: &[LegacyBackupMemoryEmbeddingOwner],
+        companions: &[LegacyBackupCompanionSharedMemory],
+        scheduled_notes: &[LegacyBackupScheduledNote],
+        preserved: &[lettuce_transfer::LegacyPreservedRow],
+        completed_at: TimestampMillis,
+    ) -> Result<LegacyImportStageReceipt, Error> {
         let plan_fingerprint = crate::legacy::legacy_import::plan_fingerprint(plan);
         if plan_fingerprint != admission.plan_fingerprint {
             return Err(Error::Conflict);
@@ -253,6 +277,7 @@ where
             context.scope,
         )?;
         let mut conversations = assign_companion_episodes(mapped)?;
+        attach_companion_effects(&mut conversations, sessions, preserved, context.scope);
         conversations.sort_by_key(|record| {
             let episode = record
                 .companion
@@ -328,13 +353,14 @@ where
         import: &crate::LegacyDatabaseImportPlan,
         completed_at: TimestampMillis,
     ) -> Result<LegacyImportStageReceipt, Error> {
-        self.execute(
+        self.execute_with_effects(
             admission,
             &import.plan,
             &import.compatibility.direct_sessions().sessions,
             &import.compatibility.memory_embeddings().owners,
             &import.compatibility.memory_embeddings().source.states,
             &import.compatibility.memory_embeddings().source.source.notes,
+            &import.preserved,
             completed_at,
         )
     }
@@ -1435,6 +1461,165 @@ fn unembedded_memory_texts(
     unembedded
 }
 
+/// Turns legacy `companion_turn_effects` rows into effect records on the
+/// imported conversations. A row becomes a record only when its assistant
+/// message was imported with a generation turn (the newest one, which is the
+/// generation the row last described) and its deltas are valid; memory
+/// changes keep the memories the import wrote. Every row stays verbatim in
+/// the run's provenance either way.
+fn attach_companion_effects(
+    conversations: &mut [LegacyConversationRecord],
+    sessions: &[LegacyBackupDirectSession],
+    preserved: &[lettuce_transfer::LegacyPreservedRow],
+    scope: LegacyIdScope,
+) {
+    for row in preserved
+        .iter()
+        .filter(|row| row.source_table == "companion_turn_effects")
+    {
+        let Ok(serde_json::Value::Object(row)) = serde_json::from_str(&row.row_json) else {
+            continue;
+        };
+        let text = |column: &str| row.get(column).and_then(serde_json::Value::as_str);
+        let Some(session) = text("session_id")
+            .and_then(|id| sessions.iter().find(|session| session.source_id == id))
+        else {
+            continue;
+        };
+        let conversation_id = ConversationId::from_uuid(scope.source(&session.source_id));
+        let Some(record) = conversations
+            .iter_mut()
+            .find(|record| record.history.aggregate.conversation.id == conversation_id)
+        else {
+            continue;
+        };
+        if let Some(effect) = legacy_companion_effect(&row, record, session, scope) {
+            record.companion_effects.push(effect);
+        }
+    }
+}
+
+fn legacy_companion_effect(
+    row: &serde_json::Map<String, serde_json::Value>,
+    record: &LegacyConversationRecord,
+    session: &LegacyBackupDirectSession,
+    scope: LegacyIdScope,
+) -> Option<lettuce_companions::CompanionTurnEffect> {
+    use lettuce_companions::{
+        CompanionEffectSourceWindow, CompanionEmotionDelta, CompanionMemoryChanges,
+        CompanionSignalChanges, CompanionTurnEffect, CompanionTurnEffectSeed,
+        CompanionTurnEffectStatus, RelationshipDelta,
+    };
+    let text = |column: &str| row.get(column).and_then(serde_json::Value::as_str);
+    let json = |column: &str| {
+        text(column).and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
+    };
+    let integer = |column: &str| row.get(column).and_then(serde_json::Value::as_i64);
+    let conversation_id = record.history.aggregate.conversation.id;
+    let imported = |legacy: &str| {
+        let id = MessageId::from_uuid(scope.source(legacy));
+        record
+            .history
+            .messages
+            .iter()
+            .any(|message| message.message.id == id)
+            .then_some(id)
+    };
+    let assistant_message_id = imported(text("assistant_message_id")?)?;
+    let turn = record
+        .turns
+        .iter()
+        .filter(|turn| match turn.target {
+            GenerationTarget::NewAssistant { message_id, .. }
+            | GenerationTarget::ExistingCandidate { message_id, .. } => {
+                message_id == assistant_message_id
+            }
+        })
+        .max_by_key(|turn| (turn.created_at, turn.id))?;
+    let status = match text("status")? {
+        "processing" => CompanionTurnEffectStatus::Processing,
+        "ready" => CompanionTurnEffectStatus::Ready,
+        "failed" => CompanionTurnEffectStatus::Failed,
+        _ => return None,
+    };
+    let seed = CompanionTurnEffectSeed {
+        relationship_delta: serde_json::from_value::<RelationshipDelta>(json(
+            "relationship_delta",
+        )?)
+        .ok()?,
+        emotion_delta: serde_json::from_value::<CompanionEmotionDelta>(json("emotion_delta")?)
+            .ok()?,
+        signal_changes: serde_json::from_value::<CompanionSignalChanges>(json("signal_changes")?)
+            .ok()?,
+    };
+    seed.validate().ok()?;
+    let memory_ids = record
+        .memory
+        .iter()
+        .chain(&record.pool)
+        .flat_map(|space| space.snapshot.items.iter().map(|item| item.id))
+        .collect::<std::collections::BTreeSet<_>>();
+    let pool = format!("companion-pool:{}", session.character_source_id);
+    let memory_changes = json("memory_changes")?;
+    let changed = |kind: &str| {
+        memory_changes
+            .get(kind)
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|item| item.get("memoryId").and_then(serde_json::Value::as_str))
+            .filter_map(|legacy| {
+                [session.source_id.as_str(), pool.as_str()]
+                    .into_iter()
+                    .map(|source| memory_item_id(scope, source, legacy))
+                    .find(|id| memory_ids.contains(id))
+            })
+            .collect::<Vec<_>>()
+    };
+    let window = json("source_window")?;
+    let source_window = window
+        .get("enqueuedAt")
+        .and_then(serde_json::Value::as_i64)
+        .map(|enqueued_at| CompanionEffectSourceWindow {
+            message_ids: window
+                .get("messageIds")
+                .and_then(serde_json::Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(serde_json::Value::as_str)
+                .filter_map(imported)
+                .collect(),
+            enqueued_at: TimestampMillis::new(enqueued_at),
+        });
+    if status == CompanionTurnEffectStatus::Ready && source_window.is_none() {
+        return None;
+    }
+    let summary = text("summary").map(str::to_owned);
+    if summary.as_ref().is_some_and(|value| value.len() > 8 * 1024) {
+        return None;
+    }
+    let created_at = integer("created_at")?;
+    let updated_at = integer("updated_at")?.max(created_at);
+    Some(CompanionTurnEffect {
+        id: lettuce_types::CompanionEffectId::from_uuid(scope.source(text("id")?)),
+        conversation_id,
+        turn_id: turn.id,
+        user_message_id: text("user_message_id").and_then(imported),
+        assistant_message_id,
+        status,
+        summary,
+        seed,
+        memory_changes: CompanionMemoryChanges {
+            added: changed("added"),
+            updated: changed("updated"),
+            superseded: changed("superseded"),
+        },
+        source_window,
+        created_at: TimestampMillis::new(created_at),
+        updated_at: TimestampMillis::new(updated_at),
+    })
+}
+
 /// Legacy branch sessions copied their parent's memories with the same ids,
 /// and memory ids are unique across spaces, so each owner derives its own.
 fn memory_item_id(scope: LegacyIdScope, source_id: &str, legacy_id: &str) -> MemoryId {
@@ -1623,6 +1808,7 @@ pub(crate) fn conversation_record(
         pool: None,
         memory_projections,
         companion: None,
+        companion_effects: Vec::new(),
     })
 }
 

@@ -246,6 +246,17 @@ impl AsrLearningDocument {
 pub const LEGACY_MEDIA_OBJECT_BYTES_LIMIT: u64 = 64 * 1024 * 1024;
 pub const LEGACY_MEDIA_TOTAL_BYTES_LIMIT: u64 = crate::MAX_BACKUP_TOTAL_BYTES;
 
+/// A legacy row kept verbatim in the import provenance of its run: a JSON
+/// object from column name to value, with a BLOB as `{"hex": "<bytes>"}`.
+/// Rows of `companion_turn_effects` and `sync_v2_conflicts` are kept whole
+/// even where part of them also becomes a current record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegacyPreservedRow {
+    pub source_table: String,
+    pub source_key: String,
+    pub row_json: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LegacyDatabaseInventory {
     pub schema_version: u32,
@@ -1175,6 +1186,9 @@ pub struct LegacyConversationRecord {
     pub pool: Option<BackupMemorySpace>,
     pub memory_projections: Vec<BackupMemoryProjection>,
     pub companion: Option<LegacyCompanionConversation>,
+    /// Legacy per-message companion effects whose generation turn the import
+    /// wrote.
+    pub companion_effects: Vec<lettuce_companions::CompanionTurnEffect>,
 }
 
 /// The companion runtime state a legacy companion session seeds, with its

@@ -131,6 +131,7 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
             &LegacyDatabaseImportPlan {
                 compatibility,
                 plan,
+                preserved: Vec::new(),
             },
             None,
             Some(admission),
@@ -256,6 +257,10 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
             .legacy_import_admission()
             .admit(run_id, &source.database_inventory(), plan, at)
             .map_err(stage("admission"))?;
+        backend
+            .database()
+            .record_legacy_preserved_rows(run_id, &import.preserved)
+            .map_err(stage("preserved legacy rows"))?;
         let owners = admission
             .assignments
             .iter()
@@ -444,6 +449,7 @@ mod tests {
                 &LegacyDatabaseImportPlan {
                     compatibility,
                     plan,
+                    preserved: Vec::new(),
                 },
                 None,
                 None,
@@ -698,6 +704,7 @@ mod tests {
                 &LegacyDatabaseImportPlan {
                     compatibility,
                     plan,
+                    preserved: Vec::new(),
                 },
                 None,
                 None,
@@ -1054,10 +1061,52 @@ mod tests {
                     .as_ref()
                     .expect("source fingerprint"),
             );
+            let preserved = vec![
+                lettuce_transfer::LegacyPreservedRow {
+                    source_table: "companion_turn_effects".into(),
+                    source_key: "effect-1".into(),
+                    row_json: serde_json::json!({
+                        "id": "effect-1",
+                        "session_id": session,
+                        "user_message_id": greeting,
+                        "assistant_message_id": reply,
+                        "created_at": 40,
+                        "updated_at": 41,
+                        "status": "ready",
+                        "summary": "Trust +0.10",
+                        "relationship_delta": serde_json::json!({
+                            "closeness": 0.0, "trust": 0.1, "affection": 0.0,
+                            "tension": 0.0, "stability": 0.0
+                        }).to_string(),
+                        "emotion_delta": serde_json::json!({
+                            "felt": {}, "expressed": {}, "blocked": {}
+                        }).to_string(),
+                        "signal_changes": "{\"added\":[\"curious\"],\"removed\":[]}",
+                        "memory_changes": "{\"added\":[],\"updated\":[],\"superseded\":[]}",
+                        "source_window": serde_json::json!({
+                            "messageIds": [greeting, reply],
+                            "enqueuedAt": 40
+                        }).to_string()
+                    })
+                    .to_string(),
+                },
+                lettuce_transfer::LegacyPreservedRow {
+                    source_table: "sync_v2_conflicts".into(),
+                    source_key: "conflict-1".into(),
+                    row_json: serde_json::json!({
+                        "conflict_id": "conflict-1",
+                        "table_name": "characters",
+                        "local_row": {"hex": "7b7d"},
+                        "status": "unresolved"
+                    })
+                    .to_string(),
+                },
+            ];
             (
                 LegacyDatabaseImportPlan {
                     compatibility,
                     plan,
+                    preserved,
                 },
                 scope,
             )
@@ -1153,6 +1202,27 @@ mod tests {
             .expect("replace with legacy source");
         let restored = Database::open(&first.database_path).expect("restored database");
         check(&restored, scope);
+        let graph = restored
+            .read_provider_backup_graph()
+            .expect("restored graph");
+        let preserved = &graph.legacy_imports.runs[0].preserved_rows;
+        assert_eq!(preserved.len(), 2);
+        assert_eq!(
+            lettuce_transfer::backup_sql_text(&preserved[1], "row_json"),
+            Some(import.preserved[1].row_json.as_str())
+        );
+        let effect = &graph.companion_effects.effects[0];
+        assert_eq!(graph.companion_effects.effects.len(), 1);
+        assert_eq!(
+            effect.assistant_message_id,
+            lettuce_types::MessageId::from_uuid(scope.source(&reply))
+        );
+        assert_eq!(effect.seed.relationship_delta.trust, 0.1);
+        assert_eq!(effect.seed.signal_changes.added, vec!["curious".to_owned()]);
+        assert_eq!(
+            effect.status,
+            lettuce_companions::CompanionTurnEffectStatus::Ready
+        );
         let backend = AppBackend::open(
             &first.database_path,
             TimestampMillis::new(1_700_000_000_200),
@@ -1242,6 +1312,7 @@ mod tests {
                 &LegacyDatabaseImportPlan {
                     compatibility,
                     plan,
+                    preserved: Vec::new(),
                 },
                 None,
                 None,

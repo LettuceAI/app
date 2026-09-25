@@ -1519,6 +1519,64 @@ fn string_field(value: &Value, key: &str) -> Result<String, LegacyDatabasePrefli
         .ok_or(LegacyDatabasePreflightError::InvalidSchema)
 }
 
+/// Reads the legacy `companion_turn_effects` and `sync_v2_conflicts` rows
+/// verbatim, in key order, for the import provenance.
+pub fn read_legacy_preserved_rows(
+    path: impl AsRef<Path>,
+) -> Result<Vec<lettuce_transfer::LegacyPreservedRow>, LegacyDatabasePreflightError> {
+    let connection = open_validated(path)?;
+    let mut preserved = Vec::new();
+    for (table, key) in [
+        ("companion_turn_effects", "id"),
+        ("sync_v2_conflicts", "conflict_id"),
+    ] {
+        if !table_exists(&connection, table)? {
+            continue;
+        }
+        let mut statement = connection
+            .prepare(&format!("SELECT * FROM {table} ORDER BY {key}"))
+            .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
+        let columns = statement
+            .column_names()
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        let rows = statement
+            .query_map([], |row| {
+                let mut object = Map::new();
+                for (index, column) in columns.iter().enumerate() {
+                    let value = match row.get::<_, rusqlite::types::Value>(index)? {
+                        rusqlite::types::Value::Null => Value::Null,
+                        rusqlite::types::Value::Integer(value) => json!(value),
+                        rusqlite::types::Value::Real(value) => json!(value),
+                        rusqlite::types::Value::Text(value) => Value::String(value),
+                        rusqlite::types::Value::Blob(bytes) => json!({
+                            "hex": bytes.iter().map(|byte| format!("{byte:02x}")).collect::<String>()
+                        }),
+                    };
+                    object.insert(column.clone(), value);
+                }
+                Ok(object)
+            })
+            .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
+        for object in rows {
+            let source_key = match object.get(key) {
+                Some(Value::String(value)) => value.clone(),
+                Some(Value::Number(value)) => value.to_string(),
+                _ => return Err(LegacyDatabasePreflightError::InvalidSchema),
+            };
+            preserved.push(lettuce_transfer::LegacyPreservedRow {
+                source_table: table.to_owned(),
+                source_key,
+                row_json: Value::Object(object).to_string(),
+            });
+        }
+    }
+    Ok(preserved)
+}
+
 fn table_exists(
     connection: &Connection,
     table: &str,
@@ -1857,6 +1915,39 @@ mod tests {
         assert_eq!(state["created_at"], 7);
         assert_eq!(state["updated_at"], 9);
         assert_eq!(state["episodes"][0]["session_id"], id(2));
+        std::fs::remove_file(path).expect("remove fixture");
+    }
+
+    #[test]
+    fn companion_effects_and_sync_conflicts_are_read_verbatim_for_provenance() {
+        let path = legacy_database();
+        assert!(
+            read_legacy_preserved_rows(&path)
+                .expect("no tables")
+                .is_empty()
+        );
+        let connection = Connection::open(&path).expect("open legacy database");
+        connection
+            .execute_batch(
+                "CREATE TABLE companion_turn_effects (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL);
+                 INSERT INTO companion_turn_effects VALUES ('effect-1', 'session-1', 'ready', 5);
+                 CREATE TABLE sync_v2_conflicts (conflict_id TEXT PRIMARY KEY, table_name TEXT NOT NULL, local_row BLOB, incoming_row BLOB);
+                 INSERT INTO sync_v2_conflicts VALUES ('conflict-1', 'characters', X'7B7D', NULL);",
+            )
+            .expect("legacy tables");
+        drop(connection);
+        let rows = read_legacy_preserved_rows(&path).expect("preserved rows");
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].source_table, "companion_turn_effects");
+        assert_eq!(
+            serde_json::from_str::<Value>(&rows[0].row_json).expect("row"),
+            json!({"id": "effect-1", "session_id": "session-1", "status": "ready", "created_at": 5})
+        );
+        assert_eq!(rows[1].source_key, "conflict-1");
+        assert_eq!(
+            serde_json::from_str::<Value>(&rows[1].row_json).expect("row"),
+            json!({"conflict_id": "conflict-1", "table_name": "characters", "local_row": {"hex": "7b7d"}, "incoming_row": null})
+        );
         std::fs::remove_file(path).expect("remove fixture");
     }
 

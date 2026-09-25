@@ -233,6 +233,26 @@ BEGIN
     SELECT RAISE(ABORT, 'legacy import skip is immutable');
 END;
 
+CREATE TABLE legacy_import_preserved_rows (
+    run_id TEXT NOT NULL REFERENCES legacy_import_runs(id) ON DELETE RESTRICT,
+    source_table TEXT NOT NULL CHECK (source_table IN ('companion_turn_effects','sync_v2_conflicts')),
+    source_key TEXT NOT NULL CHECK (length(trim(source_key)) > 0),
+    row_json TEXT NOT NULL CHECK (json_valid(row_json) AND json_type(row_json) = 'object'),
+    PRIMARY KEY (run_id, source_table, source_key)
+) STRICT;
+
+CREATE TRIGGER legacy_import_preserved_rows_update_forbidden
+BEFORE UPDATE ON legacy_import_preserved_rows
+BEGIN
+    SELECT RAISE(ABORT, 'legacy import preserved row is immutable');
+END;
+
+CREATE TRIGGER legacy_import_preserved_rows_delete_forbidden
+BEFORE DELETE ON legacy_import_preserved_rows
+BEGIN
+    SELECT RAISE(ABORT, 'legacy import preserved row is immutable');
+END;
+
 CREATE TABLE legacy_import_stage_results (
     run_id TEXT NOT NULL REFERENCES legacy_import_runs(id) ON DELETE RESTRICT,
     stage TEXT NOT NULL CHECK (stage IN ('characters','groups','audio','settings','direct_conversations','group_conversations','usage_records','creation_helper','images','llm_metrics')),

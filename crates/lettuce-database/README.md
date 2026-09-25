@@ -167,6 +167,15 @@ snapshot's latest `updated_at`. Peers settle them by last-writer-wins, so an
 older restored version loses to a newer edit on a peer, and nothing the
 restore lacks reaches a peer as a delete.
 
+Legacy `companion_turn_effects` and `sync_v2_conflicts` rows are kept verbatim
+in the run's provenance (`legacy_import_preserved_rows`, user decision
+2026-09-25): `read_legacy_preserved_rows` reads each row as a JSON object with
+BLOBs as `{"hex": ...}`, `record_legacy_preserved_rows` stores them
+immutably once per run and key, and v2 backups carry them with the run. An
+effect whose assistant message the import wrote with a generation turn also
+becomes a companion effect record (the newest turn of that message, memory
+changes limited to imported memories); the rest stays only in provenance.
+
 The legacy migration boundary can open an old `app.db` read-only, require the
 actual version-92 schema roots, and return a bounded typed import inventory.
 It performs no source migration or destination writes during preflight. It accepts

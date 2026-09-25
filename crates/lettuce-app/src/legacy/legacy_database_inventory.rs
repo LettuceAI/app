@@ -205,6 +205,8 @@ fn add_text(hasher: &mut blake3::Hasher, value: &str) {
 pub struct LegacyDatabaseImportPlan {
     pub compatibility: LegacyBackupCompatibilityPlan,
     pub plan: LegacyImportPlan,
+    /// Legacy rows kept verbatim in the run's provenance.
+    pub preserved: Vec<lettuce_transfer::LegacyPreservedRow>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -248,9 +250,11 @@ pub fn plan_legacy_database_import(
         &plan.asr,
     )?;
     merge_media(&mut plan.media, voice_audio)?;
+    let preserved = lettuce_database::read_legacy_preserved_rows(storage_root.join("app.db"))?;
     Ok(LegacyDatabaseImportPlan {
         compatibility,
         plan,
+        preserved,
     })
 }
 

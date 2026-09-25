@@ -41,6 +41,45 @@ use crate::Database;
 
 const MAX_MEDIA_PATH_BYTES: usize = 1_024;
 
+impl Database {
+    /// Keeps legacy rows verbatim in the provenance of `run_id`. Recording the
+    /// same rows again is a no-op; a different row under a recorded key is a
+    /// conflict.
+    pub fn record_legacy_preserved_rows(
+        &self,
+        run_id: LegacyImportRunId,
+        rows: &[lettuce_transfer::LegacyPreservedRow],
+    ) -> Result<(), LegacyImportRepositoryError> {
+        let mut connection = self
+            .connection()
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| LegacyImportRepositoryError::Storage)?;
+        for row in rows {
+            transaction
+                .execute(
+                    "INSERT INTO legacy_import_preserved_rows (run_id, source_table, source_key, row_json) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(run_id, source_table, source_key) DO NOTHING",
+                    params![run_id.to_string(), row.source_table, row.source_key, row.row_json],
+                )
+                .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+            let stored: String = transaction
+                .query_row(
+                    "SELECT row_json FROM legacy_import_preserved_rows WHERE run_id = ?1 AND source_table = ?2 AND source_key = ?3",
+                    params![run_id.to_string(), row.source_table, row.source_key],
+                    |value| value.get(0),
+                )
+                .map_err(|_| LegacyImportRepositoryError::Storage)?;
+            if stored != row.row_json {
+                return Err(LegacyImportRepositoryError::Conflict);
+            }
+        }
+        transaction
+            .commit()
+            .map_err(|_| LegacyImportRepositoryError::Storage)
+    }
+}
+
 impl LegacyImportRepository for Database {
     fn admit(
         &self,
@@ -2584,6 +2623,10 @@ fn materialize_conversations(
             }
             _ => LegacyImportRepositoryError::Storage,
         })?;
+        for effect in &record.companion_effects {
+            crate::conversation::state_adapter::insert_restored_effect_in(&transaction, effect)
+                .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+        }
     }
     for (character_id, facts) in &request.companion_souls {
         crate::companion::soul_adapter::replace_facts_in(

@@ -36,6 +36,8 @@ pub struct BackupLegacyImportRun {
     pub results: Option<BackupSqlRow>,
     pub provider_model_results: Option<BackupSqlRow>,
     pub asr_results: Option<BackupSqlRow>,
+    #[serde(default)]
+    pub preserved_rows: Vec<BackupSqlRow>,
 }
 
 pub fn backup_sql_text<'a>(row: &'a BackupSqlRow, column: &str) -> Option<&'a str> {
@@ -64,6 +66,7 @@ impl LegacyImportBackup {
                 .chain(&entry.results)
                 .chain(&entry.provider_model_results)
                 .chain(&entry.asr_results)
+                .chain(&entry.preserved_rows)
             {
                 if backup_sql_text(row, "run_id") != Some(run_id) {
                     return Err(LegacyImportBackupError::InvalidData);

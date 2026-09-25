@@ -43,6 +43,7 @@ const MEDIA_COMPLETION_COLUMNS: &[&str] = &[
     "completed_at",
 ];
 const STAGE_RESULT_COLUMNS: &[&str] = &["run_id", "stage", "record_count", "completed_at"];
+const PRESERVED_ROW_COLUMNS: &[&str] = &["run_id", "source_table", "source_key", "row_json"];
 const RESULT_COLUMNS: &[&str] = &[
     "run_id",
     "plan_fingerprint",
@@ -174,6 +175,7 @@ pub(crate) fn read_in(transaction: &Transaction<'_>) -> rusqlite::Result<LegacyI
                     PROVIDER_MODEL_RESULT_COLUMNS,
                 )?,
                 asr_results: single("legacy_import_asr_results", ASR_RESULT_COLUMNS)?,
+                preserved_rows: rows("legacy_import_preserved_rows", PRESERVED_ROW_COLUMNS)?,
                 run,
             })
         })
@@ -250,6 +252,12 @@ fn restore_run(
         "legacy_import_skips",
         SKIP_COLUMNS,
         &entry.skips,
+    )?;
+    insert_rows(
+        transaction,
+        "legacy_import_preserved_rows",
+        PRESERVED_ROW_COLUMNS,
+        &entry.preserved_rows,
     )?;
     if status != "admitting" {
         advance(transaction, run_id, "admitted")?;
