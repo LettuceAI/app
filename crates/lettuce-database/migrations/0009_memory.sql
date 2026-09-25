@@ -138,7 +138,7 @@ CREATE TABLE memory_retrieval_accesses (
     attempt_id TEXT NOT NULL,
     space_id TEXT NOT NULL REFERENCES memory_spaces(id) ON DELETE RESTRICT,
     expected_revision INTEGER NOT NULL CHECK (expected_revision >= 1),
-    resulting_revision INTEGER NOT NULL CHECK (resulting_revision = expected_revision + 1),
+    resulting_revision INTEGER NOT NULL CHECK (resulting_revision >= expected_revision),
     selected_memory_ids_json TEXT NOT NULL CHECK (
         json_valid(selected_memory_ids_json)
         AND json_type(selected_memory_ids_json) = 'array'

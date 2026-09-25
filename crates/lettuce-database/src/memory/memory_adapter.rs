@@ -685,7 +685,36 @@ pub(crate) fn compare_and_apply_summary_in(
     Ok(MemorySummaryCommit { memory, summary })
 }
 
-/// The end of this conversation's latest settled run in the space that no
+/// Verifies the memory-space revision and advances it once without touching
+/// items or the summary.
+pub(crate) fn advance_revision_in(
+    transaction: &Transaction<'_>,
+    space_id: MemorySpaceId,
+    expected_revision: Revision,
+) -> Result<MemorySpaceSnapshot, MemoryRepositoryError> {
+    let next_revision = expected_revision
+        .next()
+        .map_err(|_| MemoryRepositoryError::Conflict)?;
+    let updated = transaction
+        .execute(
+            "UPDATE memory_spaces SET revision = ?2 WHERE id = ?1 AND revision = ?3",
+            params![
+                space_id.to_string(),
+                sql_revision(next_revision)?,
+                sql_revision(expected_revision)?,
+            ],
+        )
+        .map_err(storage)?;
+    if updated != 1 {
+        return match get_in(transaction, space_id)? {
+            Some(_) => Err(MemoryRepositoryError::Conflict),
+            None => Err(MemoryRepositoryError::NotFound),
+        };
+    }
+    get_in(transaction, space_id)?.ok_or(MemoryRepositoryError::NotFound)
+}
+
+/// The end of this conversation's latest succeeded run in the space that no
 /// rewind undid.
 pub(crate) fn run_cursor_in(
     transaction: &Transaction<'_>,
@@ -698,6 +727,10 @@ pub(crate) fn run_cursor_in(
                FROM dynamic_memory_runs run
                JOIN dynamic_memory_summary_checkpoints checkpoint ON checkpoint.run_id = run.id
               WHERE run.space_id = ?1 AND run.conversation_id = ?2
+                AND EXISTS (
+                    SELECT 1 FROM dynamic_memory_run_attempts attempt
+                     WHERE attempt.run_id = run.id AND attempt.status = 'succeeded'
+                )
                 AND NOT EXISTS (
                     SELECT 1 FROM dynamic_memory_suffix_rewinds rewind
                      WHERE rewind.conversation_id = run.conversation_id
@@ -944,7 +977,8 @@ impl MemoryRetrievalRepository for Database {
             .optional()
             .map_err(storage)?
             .ok_or(MemoryRepositoryError::NotFound)?;
-        if parse_revision(current_revision)? != access.expected_revision {
+        let resulting_revision = parse_revision(current_revision)?;
+        if resulting_revision < access.expected_revision {
             return Err(MemoryRepositoryError::Conflict);
         }
         let mut promoted_memory_ids = Vec::new();
@@ -956,15 +990,14 @@ impl MemoryRetrievalRepository for Database {
                     |row| row.get::<_, bool>(0),
                 )
                 .optional()
-                .map_err(storage)?
-                .ok_or(MemoryRepositoryError::Conflict)?;
-            if is_cold {
+                .map_err(storage)?;
+            if is_cold == Some(true) {
                 promoted_memory_ids.push(*id);
             }
         }
         let promoted_json = serde_json::to_string(&promoted_memory_ids).map_err(storage)?;
         for id in &access.selected_memory_ids {
-            let updated = transaction
+            transaction
                 .execute(
                     "UPDATE memory_items
                         SET importance=CASE WHEN is_cold=1 THEN 9000 ELSE min(10000,importance+2000) END,
@@ -975,26 +1008,6 @@ impl MemoryRetrievalRepository for Database {
                     params![access.space_id.to_string(), id.to_string(), access.accessed_at.get()],
                 )
                 .map_err(storage)?;
-            if updated != 1 {
-                return Err(MemoryRepositoryError::Conflict);
-            }
-        }
-        let resulting_revision = access
-            .expected_revision
-            .next()
-            .map_err(|_| MemoryRepositoryError::Conflict)?;
-        let updated = transaction
-            .execute(
-                "UPDATE memory_spaces SET revision=?2 WHERE id=?1 AND revision=?3",
-                params![
-                    access.space_id.to_string(),
-                    sql_revision(resulting_revision)?,
-                    sql_revision(access.expected_revision)?,
-                ],
-            )
-            .map_err(storage)?;
-        if updated != 1 {
-            return Err(MemoryRepositoryError::Conflict);
         }
         transaction
             .execute(
@@ -1272,6 +1285,62 @@ mod tests {
             Err(MemoryRepositoryError::Conflict)
         );
         assert_eq!(database.get(space_id).expect("get"), Some(current));
+    }
+
+    #[test]
+    fn retrieval_access_updates_rows_without_conflicting_with_a_memory_cycle() {
+        use lettuce_memory::{MemoryRetrievalAccess, MemoryRetrievalRepository};
+        let database = Database::open_in_memory().expect("database");
+        database
+            .connection()
+            .expect("connection")
+            .execute_batch("PRAGMA foreign_keys = OFF")
+            .expect("fixture mode");
+        let space_id = MemorySpaceId::new();
+        let kept = MemoryId::new();
+        let mut cold = item(MemoryId::new(), "cold");
+        cold.is_cold = true;
+        let created = database
+            .create(snapshot(space_id, vec![item(kept, "kept"), cold.clone()]))
+            .expect("create");
+        let cycle = database
+            .compare_and_apply(MemoryChangeSet {
+                space_id,
+                expected_revision: created.revision,
+                items: vec![item(kept, "kept"), cold.clone()],
+            })
+            .expect("cycle commit");
+        let removed = MemoryId::new();
+        let receipt = database
+            .apply_retrieval_access(MemoryRetrievalAccess {
+                conversation_id: lettuce_types::ConversationId::new(),
+                turn_id: lettuce_types::GenerationTurnId::new(),
+                attempt_id: lettuce_types::GenerationAttemptId::new(),
+                space_id,
+                expected_revision: created.revision,
+                selected_memory_ids: vec![kept, cold.id, removed],
+                accessed_at: TimestampMillis::new(90),
+            })
+            .expect("stale retrieval access still applies");
+        assert_eq!(receipt.resulting_revision, cycle.revision);
+        assert_eq!(receipt.promoted_memory_ids, vec![cold.id]);
+        let stored = database.get(space_id).expect("get").expect("space");
+        assert_eq!(stored.revision, cycle.revision);
+        let promoted = stored
+            .items
+            .iter()
+            .find(|memory| memory.id == cold.id)
+            .expect("promoted");
+        assert!(!promoted.is_cold);
+        assert_eq!(promoted.access_count, 2);
+        assert_eq!(promoted.last_accessed_at, TimestampMillis::new(90));
+        database
+            .compare_and_apply(MemoryChangeSet {
+                space_id,
+                expected_revision: cycle.revision,
+                items: stored.items.clone(),
+            })
+            .expect("a cycle that read before the retrieval still commits");
     }
 
     #[test]

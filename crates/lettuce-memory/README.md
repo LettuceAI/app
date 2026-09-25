@@ -120,8 +120,11 @@ The retrieval-access port owns the narrow mutation applied after assistant
 generation selects dynamic memories. It binds the exact ordered selection,
 source revision and access time to one conversation turn attempt, promotes
 selected cold items, updates only selected access metadata, and returns the
-resulting root revision plus the ids it promoted from cold. Exact retries return the immutable receipt; stale
-revisions or changed selections conflict before any item changes.
+space revision it saw plus the ids it promoted from cold. Like legacy's narrow
+per-row updates it neither checks nor advances the root revision, so a chat
+turn and a running memory cycle never fail each other; a selected memory that a
+cycle removed meanwhile is skipped. Exact retries return the immutable receipt;
+a changed selection for the same attempt conflicts.
 
 Background post-turn extraction now has a separate memory-owned durable run
 boundary instead of fabricating a visible conversation generation turn. A run
@@ -147,7 +150,10 @@ checkpoint.
 Each run may atomically checkpoint one validated cumulative summary before its
 first memory-tool round. The checkpoint retains the exact provider-neutral
 request, usage, provider request ID, resulting root revision, and summary text;
-an exact replay returns it without a second summary CAS.
+an exact replay returns it without a second summary CAS. The summary and its
+source cursor become the space's summary only when the attempt succeeds, so a
+failed or cancelled tools phase leaves that window unsummarized for the next
+cycle or retry.
 The memory boundary also owns the typed legacy `auto`/`askFirst`/`manual` run
 mode and the conversation-owned pending-approval port. Its prompt threshold is
 the copied interval rule: after one prompt, another is due only when another

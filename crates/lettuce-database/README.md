@@ -732,10 +732,16 @@ the summary's source messages when a space is shared. `summary_cursor` gives eac
 conversation its own cursor inside one read transaction: its own summary
 window; when another conversation of the pool wrote the summary, its latest
 settled run that no later suffix rewind of that conversation invalidated; with no
-summary, 0. A suffix rewind in a pool keeps the pool's memories and summary,
-even with one member (legacy never rewound the shared state; it only rewound
-that session's own tool events), and still records the rewind and invalidates
-the conversation's effects. Rewinds, their prior-summary search and the run
+summary, 0. Only runs with a succeeded attempt count toward that run cursor,
+and a run's summary checkpoint reaches the space's summary row only when its
+attempt succeeds, so a failed or cancelled tools phase leaves the cursor where
+it was (legacy `event_advances_cursor` ignored error events). A suffix rewind
+in a pool keeps the pool's summary and reverts, latest first, only the tool
+results of the conversation's invalid run and its later runs
+(`dynamic_memory_rewind_adapter::undo_pool_runs`, legacy
+`replay_memory_state_after_rewind` over the effective owner's memories), so the
+other members' memories stay; it still records the rewind and invalidates the
+conversation's effects. Rewinds, their prior-summary search and the run
 cursor only look at runs of the space the rewind touches, so a conversation's
 own and pool runs never undo each other. A character stops sharing when it
 leaves companion mode. Backups export a

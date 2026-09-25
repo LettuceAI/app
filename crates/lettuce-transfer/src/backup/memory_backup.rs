@@ -208,11 +208,7 @@ impl MemoryBackup {
                     .collect::<BTreeSet<_>>()
                     .len()
                     != access.selected_memory_ids.len()
-                || receipt.resulting_revision
-                    != access
-                        .expected_revision
-                        .next()
-                        .map_err(|_| MemoryBackupError::InvalidData)?
+                || receipt.resulting_revision < access.expected_revision
                 || self
                     .spaces
                     .iter()

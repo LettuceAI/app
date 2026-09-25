@@ -2439,9 +2439,8 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     ));
     assert_eq!(
         MemorySummaryRepository::get_summary(&database, memory_space.id)
-            .expect("summary after memory failure")
-            .expect("stored summary after memory failure"),
-        summary.checkpoint.summary
+            .expect("summary after memory failure"),
+        None
     );
     let memory_id = MemoryId::new();
     let stored_settings = GlobalSettingsStore::load(&database).expect("settings");

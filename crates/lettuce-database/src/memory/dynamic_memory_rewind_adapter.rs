@@ -162,6 +162,10 @@ fn prior_summary(
                JOIN dynamic_memory_summary_checkpoints checkpoint ON checkpoint.run_id=run.id
               WHERE run.conversation_id=?1 AND run.id<>?2 AND run.summary_window_end<=?3
                 AND run.space_id=?4
+                AND EXISTS (
+                    SELECT 1 FROM dynamic_memory_run_attempts attempt
+                     WHERE attempt.run_id=run.id AND attempt.status='succeeded'
+                )
               ORDER BY run.summary_window_end DESC, run.summary_window_start DESC,
                        checkpoint.settled_at DESC, run.id DESC
               LIMIT 1",
@@ -186,6 +190,88 @@ fn prior_summary(
         })
         .transpose()?;
     Ok((prior_id, summary))
+}
+
+/// Reverts, in a shared companion pool, only what the rewound conversation's
+/// invalid run and its later runs did to the pool, latest first, leaving the
+/// other conversations' changes in place. Runs an earlier rewind already
+/// reverted are skipped.
+pub(crate) fn undo_pool_runs(
+    transaction: &Transaction<'_>,
+    current: &lettuce_memory::MemorySpaceSnapshot,
+    conversation_id: lettuce_types::ConversationId,
+    invalid_run_id: DynamicMemoryRunId,
+) -> Result<lettuce_memory::MemorySpaceSnapshot, DynamicMemorySuffixRewindError> {
+    let run_ids = {
+        let mut statement = transaction
+            .prepare(
+                "SELECT run.id
+                   FROM dynamic_memory_runs run
+                   JOIN dynamic_memory_runs invalid ON invalid.id = ?2
+                  WHERE run.conversation_id = ?1 AND run.space_id = invalid.space_id
+                    AND run.created_at >= invalid.created_at
+                    AND NOT EXISTS (
+                        SELECT 1 FROM dynamic_memory_suffix_rewinds rewind
+                          JOIN dynamic_memory_runs undone ON undone.id = rewind.invalid_run_id
+                         WHERE rewind.conversation_id = run.conversation_id
+                           AND undone.created_at <= run.created_at
+                           AND rewind.applied_at >= run.created_at
+                    )
+                  ORDER BY run.created_at DESC, run.id DESC",
+            )
+            .map_err(storage)?;
+        statement
+            .query_map(
+                params![conversation_id.to_string(), invalid_run_id.to_string()],
+                |row| row.get::<_, String>(0),
+            )
+            .map_err(storage)?
+            .map(|value| parse_id::<DynamicMemoryRunId>(value.map_err(storage)?))
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    let mut items = current.items.clone();
+    for run_id in run_ids {
+        let run = dynamic_memory_run_adapter::load_run_in(transaction, run_id)
+            .map_err(|_| DynamicMemorySuffixRewindError::Storage)?;
+        let outcomes = {
+            let mut statement = transaction
+                .prepare(
+                    "SELECT outcome_json FROM dynamic_memory_background_tool_results
+                      WHERE run_id = ?1
+                      GROUP BY round_ordinal, ordinal
+                      ORDER BY round_ordinal, ordinal",
+                )
+                .map_err(storage)?;
+            statement
+                .query_map([run_id.to_string()], |row| row.get::<_, String>(0))
+                .map_err(storage)?
+                .map(|value| {
+                    decode_versioned::<lettuce_memory::MemoryToolOutcome>(
+                        &value.map_err(storage)?,
+                        JSON_VERSION,
+                    )
+                    .map_err(storage)
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        lettuce_memory::undo_memory_tool_outcomes(
+            &mut items,
+            &run.starting_memory.items,
+            &outcomes,
+        );
+    }
+    if items == current.items {
+        return Ok(current.clone());
+    }
+    memory_adapter::compare_and_apply_in(
+        transaction,
+        &MemoryChangeSet {
+            space_id: current.id,
+            expected_revision: current.revision,
+            items,
+        },
+    )
+    .map_err(memory_error)
 }
 
 impl DynamicMemorySuffixRewindRepository for Database {
@@ -261,8 +347,14 @@ impl DynamicMemorySuffixRewindRepository for Database {
                     return Err(DynamicMemorySuffixRewindError::Conflict);
                 }
                 if shared_pool {
+                    let memory = undo_pool_runs(
+                        &transaction,
+                        &current,
+                        rewind.conversation_id,
+                        invalid_run_id,
+                    )?;
                     (
-                        current.clone(),
+                        memory,
                         None,
                         memory_adapter::get_summary_in(&transaction, space_id)
                             .map_err(memory_error)?,

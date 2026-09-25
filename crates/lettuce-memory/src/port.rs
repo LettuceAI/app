@@ -110,6 +110,11 @@ pub trait MemoryRetrievalRepository: Send + Sync {
         attempt_id: GenerationAttemptId,
     ) -> Result<Option<MemoryRetrievalAccessReceipt>, MemoryRepositoryError>;
 
+    /// Records one turn's retrieval bookkeeping as per-memory updates: access
+    /// count, last access and cold promotion. The memory-space revision is
+    /// neither checked nor advanced, so retrieval never conflicts with a
+    /// running memory cycle; a selected memory removed in the meantime is
+    /// skipped. `resulting_revision` is the space revision the access saw.
     fn apply_retrieval_access(
         &self,
         access: MemoryRetrievalAccess,

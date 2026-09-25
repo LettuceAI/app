@@ -2439,7 +2439,7 @@ async fn app_backend_builds_dynamic_memory_input_and_replays_exactly() {
     }
     let prepared_turn =
         ConversationReader::get_turn(backend.database(), scenario.turn_id).expect("prepared turn");
-    let accessed_revision = stored.revision.next().expect("retrieval revision");
+    let accessed_revision = stored.revision;
     assert_eq!(
         prepared_turn.memory,
         Some(lettuce_conversations::MemoryAttribution {
@@ -2508,7 +2508,7 @@ async fn app_backend_builds_dynamic_memory_input_and_replays_exactly() {
         Err(MemoryRepositoryError::Conflict)
     );
     let mut stale_access = retrieval_access;
-    stale_access.expected_revision = accessed_revision;
+    stale_access.expected_revision = accessed_revision.next().expect("next revision");
     assert_eq!(
         MemoryRetrievalRepository::apply_retrieval_access(backend.database(), stale_access),
         Err(MemoryRepositoryError::Conflict)

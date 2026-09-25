@@ -258,7 +258,13 @@ impl MemoryReference {
         items.iter().position(|item| item.id == id)
     }
 
+    /// A six-digit reference resolves only as a short id; any other
+    /// reference falls back to the exact memory text.
     fn resolve_id_or_text(&self, items: &[MemoryItem]) -> Option<usize> {
+        let cleaned = self.cleaned();
+        if cleaned.len() == 6 && cleaned.bytes().all(|byte| byte.is_ascii_digit()) {
+            return self.resolve_id(items);
+        }
         self.resolve_id(items)
             .or_else(|| items.iter().position(|item| item.text == self.0))
     }
@@ -446,6 +452,60 @@ pub enum MemoryToolRejection {
 pub struct ListedMemory {
     pub short_id: MemoryShortId,
     pub text: String,
+}
+
+/// Reverts the effects of applied memory tool calls on `items`, latest call
+/// first: a created memory is removed (releasing what it superseded), a hard
+/// delete is restored from `before` when absent, a soft delete is made hot at
+/// full importance again, and a pin or unpin is flipped back. Every other
+/// outcome changed nothing and is ignored.
+pub fn undo_memory_tool_outcomes(
+    items: &mut Vec<MemoryItem>,
+    before: &[MemoryItem],
+    outcomes: &[MemoryToolOutcome],
+) {
+    for outcome in outcomes.iter().rev() {
+        match outcome {
+            MemoryToolOutcome::Created { id, .. } => {
+                items.retain(|item| item.id != *id);
+                for item in items.iter_mut() {
+                    if item.superseded_by == Some(*id) {
+                        item.superseded_by = None;
+                        item.superseded_at = None;
+                    }
+                }
+            }
+            MemoryToolOutcome::Deleted { id, .. } => {
+                if items.iter().all(|item| item.id != *id)
+                    && let Some(restored) = before.iter().find(|item| item.id == *id)
+                {
+                    items.push(restored.clone());
+                }
+            }
+            MemoryToolOutcome::SoftDeleted { id, .. } => {
+                if let Some(item) = items.iter_mut().find(|item| item.id == *id) {
+                    item.is_cold = false;
+                    item.importance = Score::FULL;
+                }
+            }
+            MemoryToolOutcome::Pinned { id, .. } => {
+                if let Some(item) = items.iter_mut().find(|item| item.id == *id) {
+                    item.is_pinned = false;
+                }
+            }
+            MemoryToolOutcome::Unpinned { id, .. } => {
+                if let Some(item) = items.iter_mut().find(|item| item.id == *id) {
+                    item.is_pinned = true;
+                }
+            }
+            MemoryToolOutcome::DuplicateSkipped { .. }
+            | MemoryToolOutcome::TargetNotFound { .. }
+            | MemoryToolOutcome::Done { .. }
+            | MemoryToolOutcome::Rejected { .. }
+            | MemoryToolOutcome::Skipped { .. }
+            | MemoryToolOutcome::StoppedAfterDone => {}
+        }
+    }
 }
 
 #[must_use]
@@ -1157,7 +1217,7 @@ mod tests {
         CategoryArgument, CreateMemoryPreparation, DuplicateKind, DynamicMemoryToolOptions,
         MemoryCycleBudget, MemoryReference, MemoryToolArguments, MemoryToolCall, MemoryToolError,
         MemoryToolOutcome, MemoryToolReducer, MemoryToolSkipReason, SoftDeleteReason,
-        dynamic_memory_tool_request_for_run,
+        dynamic_memory_tool_request_for_run, undo_memory_tool_outcomes,
     };
     use crate::{
         MemoryCategory, MemoryItem, MemoryPolicy, MemoryShortId, MemorySpaceSnapshot, Score,
@@ -1225,6 +1285,78 @@ mod tests {
             created_at: TimestampMillis::new(accessed),
             last_accessed_at: TimestampMillis::new(accessed),
         }
+    }
+
+    #[test]
+    fn undo_reverts_dropped_creates_deletes_and_pins() {
+        let kept = item("User lives in Oslo", 4, 1, false);
+        let deleted = item("User owns a cat", 4, 1, false);
+        let mut cooled = item("User likes rain", 4, 1, false);
+        let pinned = item("User is a nurse", 4, 1, false);
+        let before = vec![
+            kept.clone(),
+            deleted.clone(),
+            cooled.clone(),
+            pinned.clone(),
+        ];
+        let mut created = item("User is moving to Berlin", 4, 2, false);
+        created.supersedes = vec![kept.id];
+        let mut superseded = kept.clone();
+        superseded.superseded_by = Some(created.id);
+        superseded.superseded_at = Some(lettuce_types::TimestampMillis::new(2));
+        cooled.is_cold = true;
+        cooled.importance = score(2_000);
+        let mut now_pinned = pinned.clone();
+        now_pinned.is_pinned = true;
+        let mut items = vec![superseded, cooled.clone(), now_pinned, created.clone()];
+        undo_memory_tool_outcomes(
+            &mut items,
+            &before,
+            &[
+                MemoryToolOutcome::Created {
+                    id: created.id,
+                    short_id: created.short_id,
+                    memories: Vec::new(),
+                },
+                MemoryToolOutcome::Deleted {
+                    id: deleted.id,
+                    short_id: deleted.short_id,
+                    text: deleted.text.clone(),
+                    memories: Vec::new(),
+                },
+                MemoryToolOutcome::SoftDeleted {
+                    id: cooled.id,
+                    short_id: cooled.short_id,
+                    text: cooled.text.clone(),
+                    reason: SoftDeleteReason::LowConfidence,
+                    memories: Vec::new(),
+                },
+                MemoryToolOutcome::Pinned {
+                    id: pinned.id,
+                    short_id: pinned.short_id,
+                },
+            ],
+        );
+        assert!(items.iter().all(|memory| memory.id != created.id));
+        let restored_kept = items
+            .iter()
+            .find(|memory| memory.id == kept.id)
+            .expect("kept");
+        assert_eq!(restored_kept.superseded_by, None);
+        assert!(items.iter().any(|memory| memory == &deleted));
+        let hot = items
+            .iter()
+            .find(|memory| memory.id == cooled.id)
+            .expect("cooled");
+        assert!(!hot.is_cold);
+        assert_eq!(hot.importance, Score::FULL);
+        assert!(
+            !items
+                .iter()
+                .find(|memory| memory.id == pinned.id)
+                .expect("pinned")
+                .is_pinned
+        );
     }
 
     fn snapshot(items: Vec<MemoryItem>) -> MemorySpaceSnapshot {
@@ -1970,6 +2102,29 @@ mod tests {
             }
         ));
         assert!(result.change.is_none());
+    }
+
+    #[test]
+    fn six_digit_delete_target_never_falls_back_to_memory_text() {
+        let numeric = item("123456", 2, 1, false);
+        let state = snapshot(vec![numeric.clone()]);
+        let unmatched = if numeric.short_id.to_string() == "123456" {
+            "654321"
+        } else {
+            "123456"
+        };
+        let calls = vec![call(MemoryToolArguments::DeleteMemory {
+            target: MemoryReference(unmatched.to_owned()),
+            confidence: Some(Score::FULL),
+        })];
+        let result = match MemoryToolReducer.reduce(&state, &policy(), &calls) {
+            Ok(result) => result,
+            Err(error) => panic!("reduction failed: {error}"),
+        };
+        assert!(matches!(
+            result.results[0].outcome,
+            MemoryToolOutcome::TargetNotFound { .. }
+        ));
     }
 
     #[test]

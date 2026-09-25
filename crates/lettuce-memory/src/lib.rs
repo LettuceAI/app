@@ -53,4 +53,5 @@ pub use tool::{
     MemoryToolError, MemoryToolOutcome, MemoryToolReducer, MemoryToolRejection, MemoryToolResult,
     MemoryToolSkipReason, SemanticDuplicateEvidence, SoftDeleteReason,
     dynamic_memory_tool_request_for_run, dynamic_memory_tool_shape, list_memories,
+    undo_memory_tool_outcomes,
 };

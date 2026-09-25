@@ -1235,8 +1235,9 @@ the host passes it disabled, as generation does. Retrieval embedding
 unavailability preserves
 the legacy behavior of continuing without retrieved keys. A nonempty selection
 now atomically promotes selected cold items and records the legacy access count,
-time and importance updates exactly once under the preparation attempt. The
-resulting memory revision is the context attribution.
+time and importance updates exactly once under the preparation attempt without
+advancing the memory revision; the revision the retrieval read is the context
+attribution.
 Terminal replay bypasses input reconstruction, so it does not repeat embedding
 or access side effects; changed or stale retrieval input fails closed. Manual
 mode now reads every active item from the conversation-owned memory root in
