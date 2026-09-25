@@ -861,7 +861,7 @@ fn validate_timeline_items(request: &ContextRequest) -> Result<(), ContextAssemb
 /// Prove that the supplied timeline is the exact parent chain ending at the
 /// operation's source/head. Branch IDs alone are insufficient: a sibling or
 /// an ancestor message after a fork can otherwise be smuggled into the
-/// timestamp-sorted window.
+/// window.
 fn validate_message_ancestry(
     branches: &[lettuce_conversations::ConversationBranch],
     request: &ContextRequest,
@@ -979,13 +979,13 @@ fn select_timeline<'a>(
     {
         return Err(ContextAssemblyError::InvalidTimeline);
     }
-    let mut ordered = request.timeline.iter().collect::<Vec<_>>();
-    ordered.sort_by_key(|left| message_order(left));
-    let head_position = ordered
+    let mut ordered = conversation_order(request, request.timeline[head_index].message.id)?;
+    let positions = ordered
         .iter()
-        .position(|item| item.message.id == request.timeline[head_index].message.id)
-        .ok_or(ContextAssemblyError::InvalidTimeline)?;
-    ordered.truncate(head_position + 1);
+        .enumerate()
+        .map(|(position, item)| (item.message.id, position))
+        .collect::<HashMap<_, _>>();
+    let message_order = |item: &&TimelineItem| positions.get(&item.message.id).copied();
     if matches!(request.operation, GenerationOperation::Regenerate) {
         ordered.retain(|item| item.message.id != request.source_message_id);
     }
@@ -1029,7 +1029,7 @@ fn select_timeline<'a>(
         non_pinned = non_pinned.split_off(non_pinned.len() - limit);
     }
     selected.extend(non_pinned);
-    selected.sort_by_key(|left| message_order(left));
+    selected.sort_by_key(message_order);
     selected.dedup_by_key(|item| item.message.id);
     let required_id = match request.operation {
         GenerationOperation::Send => Some(request.source_message_id),
@@ -1051,7 +1051,7 @@ fn select_timeline<'a>(
                 omitted_messages -= 1;
             }
             selected.push(required);
-            selected.sort_by_key(|left| message_order(left));
+            selected.sort_by_key(message_order);
         }
     }
     Ok(TimelineSelection {
@@ -1062,20 +1062,32 @@ fn select_timeline<'a>(
     })
 }
 
-fn message_order(
-    item: &TimelineItem,
-) -> (
-    lettuce_types::TimestampMillis,
-    lettuce_types::TimestampMillis,
-    lettuce_types::TimestampMillis,
-    MessageId,
-) {
-    (
-        item.message.effective_time,
-        item.message.logical_time,
-        item.message.created_at,
-        item.message.id,
-    )
+/// The parent chain ending at `head_id`, root first: the conversation order
+/// legacy sent history in. Message times never reorder it, so a message
+/// stamped earlier by a moved companion clock keeps its place.
+fn conversation_order(
+    request: &ContextRequest,
+    head_id: MessageId,
+) -> Result<Vec<&TimelineItem>, ContextAssemblyError> {
+    let by_id = request
+        .timeline
+        .iter()
+        .map(|item| (item.message.id, item))
+        .collect::<HashMap<_, _>>();
+    let mut chain = Vec::new();
+    let mut current = Some(head_id);
+    while let Some(message_id) = current {
+        if chain.len() >= by_id.len() {
+            return Err(ContextAssemblyError::InvalidTimeline);
+        }
+        let item = *by_id
+            .get(&message_id)
+            .ok_or(ContextAssemblyError::InvalidTimeline)?;
+        chain.push(item);
+        current = item.message.parent_message_id;
+    }
+    chain.reverse();
+    Ok(chain)
 }
 
 struct SnapshotBundle {
@@ -2625,6 +2637,79 @@ mod tests {
                 .map(|item| item.message.id)
                 .collect::<Vec<_>>(),
             vec![user]
+        );
+    }
+
+    #[test]
+    fn a_message_stamped_before_its_history_keeps_the_whole_history() {
+        let conversation_id = ConversationId::new();
+        let branch_id = lettuce_types::ConversationBranchId::new();
+        let ids = [MessageId::new(), MessageId::new(), MessageId::new()];
+        let item = |index: usize, role, at| TimelineItem {
+            message: lettuce_conversations::Message {
+                id: ids[index],
+                conversation_id,
+                branch_id,
+                parent_message_id: index.checked_sub(1).map(|parent| ids[parent]),
+                author_participant_id: None,
+                role,
+                logical_time: lettuce_types::TimestampMillis::new(at),
+                effective_time: lettuce_types::TimestampMillis::new(at),
+                visibility: lettuce_conversations::MessageVisibility::Visible,
+                pinned: false,
+                scene_edited: false,
+                active_render_source: MessageRenderSource::Revision(
+                    lettuce_types::MessageRevisionId::new(),
+                ),
+                revision: lettuce_types::Revision::INITIAL,
+                created_at: lettuce_types::TimestampMillis::new(at),
+                updated_at: lettuce_types::TimestampMillis::new(at),
+            },
+            active_revision: None,
+            active_candidate: None,
+            initial_origin: None,
+        };
+        let request = ContextRequest {
+            conversation_id,
+            branch_id,
+            branch_path: vec![branch_id],
+            source_message_id: ids[2],
+            operation: GenerationOperation::Send,
+            swap_roles: false,
+            guidance: None,
+            window: lettuce_conversations::ContextWindowPolicy::default(),
+            selected_speaker: None,
+            capabilities: lettuce_models::ModelCapabilities::default(),
+            safety: lettuce_conversations::SafetyContext::Standard,
+            prompt_runtime: lettuce_conversations::PromptRuntimeFacts::default(),
+            prompt_values: lettuce_conversations::PromptRuntimeValues::default(),
+            memory: None,
+            timeline: vec![
+                item(0, MessageRole::User, 5_000),
+                item(1, MessageRole::Assistant, 6_000),
+                item(2, MessageRole::User, 1_000),
+            ],
+        };
+        let branches = vec![lettuce_conversations::ConversationBranch {
+            id: branch_id,
+            conversation_id,
+            parent_branch_id: None,
+            fork_message_id: None,
+            head_message_id: Some(ids[2]),
+            status: BranchStatus::Active,
+            revision: lettuce_types::Revision::INITIAL,
+            created_at: lettuce_types::TimestampMillis::UNIX_EPOCH,
+            updated_at: lettuce_types::TimestampMillis::UNIX_EPOCH,
+        }];
+        let selection = select_timeline(&branches, &request)
+            .expect("legacy sent history in conversation order whatever its timestamps");
+        assert_eq!(
+            selection
+                .window
+                .iter()
+                .map(|item| item.message.id)
+                .collect::<Vec<_>>(),
+            ids.to_vec()
         );
     }
 
