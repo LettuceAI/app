@@ -1317,9 +1317,6 @@ fn memory_space(
         }
     }
     for (index, text) in unembedded_memory_texts(owner, texts) {
-        if items.len() == lettuce_memory::MAX_MEMORY_ITEMS {
-            break;
-        }
         let id = memory_item_id(scope, source_id, &format!("text:{index}"));
         let short_id = MemoryShortId::allocate(id, |candidate| {
             items.iter().any(|item| item.short_id == candidate)

@@ -175,9 +175,6 @@ pub(crate) fn sync_put_memory_item(
                         .map_err(storage)
                 };
             let ordinals = used("SELECT ordinal FROM memory_items WHERE space_id = ?1")?;
-            if ordinals.len() >= lettuce_memory::MAX_MEMORY_ITEMS {
-                return Err(MemoryRepositoryError::NotFound);
-            }
             let short_ids = used("SELECT short_id FROM memory_items WHERE space_id = ?1")?;
             let ordinal = (0..)
                 .find(|candidate| !ordinals.contains(candidate))

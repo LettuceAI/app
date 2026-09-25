@@ -6,6 +6,8 @@ use lettuce_types::{
 use serde::{Deserialize, Serialize};
 
 pub const MAX_MEMORY_TEXT_BYTES: usize = 16 * 1024;
+/// The largest `max_entries` a dynamic memory policy may keep; a memory space
+/// itself holds any number of items.
 pub const MAX_MEMORY_ITEMS: usize = 4096;
 pub const MAX_MEMORY_SUMMARY_BYTES: usize = 6000;
 pub const MAX_MEMORY_SUMMARY_SOURCE_MESSAGES: usize = 1024;
@@ -255,9 +257,6 @@ impl MemorySpaceSnapshot {
         if self.revision.get() == 0 {
             return Err(MemoryValidationError::InvalidRevision);
         }
-        if self.items.len() > MAX_MEMORY_ITEMS {
-            return Err(MemoryValidationError::TooManyItems);
-        }
         let mut ids = HashSet::with_capacity(self.items.len());
         let mut short_ids = HashSet::with_capacity(self.items.len());
         for item in &self.items {
@@ -348,8 +347,6 @@ pub enum MemoryValidationError {
     DuplicateShortId,
     #[error("memory short id is outside six digits")]
     InvalidShortId,
-    #[error("memory space contains too many items")]
-    TooManyItems,
     #[error("memory space revision must be positive")]
     InvalidRevision,
     #[error("memory summary is empty")]

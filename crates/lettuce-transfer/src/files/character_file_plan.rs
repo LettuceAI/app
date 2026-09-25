@@ -11,9 +11,7 @@ use lettuce_companions::{
     CompanionScheduledNote, RelationshipState, ScheduledNoteRecurrence, SoulFact,
 };
 use lettuce_context::{LorebookBinding, LorebookDetails, PromptPurpose};
-use lettuce_memory::{
-    MAX_MEMORY_ITEMS, MAX_MEMORY_TEXT_BYTES, MemoryItem, MemoryShortId, MemorySpaceSnapshot,
-};
+use lettuce_memory::{MAX_MEMORY_TEXT_BYTES, MemoryItem, MemoryShortId, MemorySpaceSnapshot};
 use lettuce_types::{
     AssetId, CharacterId, ConversationStarterId, LorebookId, MemoryId, MemorySpaceId,
     ModelProfileId, PersonaId, PromptDocumentId, Revision, SceneId, SceneVariantId,
@@ -639,14 +637,6 @@ fn companion_memory(
             ));
             continue;
         };
-        if items.len() == MAX_MEMORY_ITEMS {
-            skipped.push(crate::legacy_value_skip(
-                "companion_shared_memory.memories",
-                &index.to_string(),
-                crate::LegacyImportSkipReason::MalformedLegacyValue,
-            ));
-            continue;
-        }
         let id = MemoryId::from_uuid(new_id());
         let short_id = MemoryShortId::allocate(id, |candidate| {
             items.iter().any(|item| item.short_id == candidate)
@@ -1004,6 +994,37 @@ mod tests {
         let plan = plan_character_file(&package, &CharacterFileReferences::default(), 50, ids())
             .expect("a non-object note map is dropped");
         assert!(plan.character.provenance.localized_creator_notes.is_empty());
+    }
+
+    #[test]
+    fn every_companion_shared_memory_is_imported_without_a_count_limit() {
+        let mut package = card_package(&json!({
+            "name": "Mira",
+            "description": "Keeper",
+            "first_mes": "Hello"
+        }));
+        package.character.mode = Some("companion".to_owned());
+        package.character.companion = Some(json!({"soul": {"essence": "Warm"}}));
+        package.character.companion_shared_memory = Some(
+            serde_json::from_value(json!({
+                "memories": (0..5_000).map(|index| format!("memory {index}")).collect::<Vec<_>>(),
+                "createdAt": 1,
+                "updatedAt": 2
+            }))
+            .expect("shared memory"),
+        );
+        let references = CharacterFileReferences::default();
+        let plan = plan_character_file(&package, &references, 50, ids()).expect("plan");
+        let import = plan
+            .import(&references, &CharacterFileAssets::default(), 50, ids())
+            .expect("import");
+        let pool = import
+            .companion_memory
+            .and_then(|memory| memory.pool)
+            .expect("memory pool");
+        assert_eq!(pool.items.len(), 5_000);
+        assert_eq!(pool.validate(), Ok(()));
+        assert!(import.skipped.is_empty());
     }
 
     #[test]

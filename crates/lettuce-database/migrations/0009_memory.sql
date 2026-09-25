@@ -62,7 +62,7 @@ CREATE TABLE memory_items (
     space_id TEXT NOT NULL REFERENCES memory_spaces(id) ON DELETE RESTRICT,
     id TEXT NOT NULL UNIQUE,
     short_id INTEGER NOT NULL CHECK (short_id BETWEEN 0 AND 999999),
-    ordinal INTEGER NOT NULL CHECK (ordinal BETWEEN 0 AND 4095),
+    ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
     text TEXT NOT NULL CHECK (
         length(trim(text)) > 0
         AND length(CAST(text AS BLOB)) <= 16384
@@ -361,7 +361,7 @@ CREATE TABLE dynamic_memory_admitted_tool_calls (
     attempt_id TEXT NOT NULL,
     round_ordinal INTEGER NOT NULL CHECK (round_ordinal BETWEEN 0 AND 63),
     id TEXT NOT NULL,
-    ordinal INTEGER NOT NULL CHECK (ordinal BETWEEN 0 AND 4095),
+    ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
     definition_name TEXT NOT NULL CHECK (
         length(definition_name) BETWEEN 1 AND 64
         AND definition_name NOT GLOB '*[^A-Za-z0-9_-]*'
@@ -427,7 +427,7 @@ CREATE TABLE dynamic_memory_background_tool_results (
     attempt_id TEXT NOT NULL,
     round_ordinal INTEGER NOT NULL CHECK (round_ordinal BETWEEN 0 AND 63),
     call_id TEXT NOT NULL,
-    ordinal INTEGER NOT NULL CHECK (ordinal BETWEEN 0 AND 4095),
+    ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
     outcome_json TEXT NOT NULL CHECK (
         json_valid(outcome_json)
         AND json_extract(outcome_json, '$.format_version') = 1

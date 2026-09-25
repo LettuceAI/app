@@ -751,7 +751,6 @@ impl MemoryToolReducer {
         }
 
         ensure_pinned_hot(&mut items);
-        trim_to_capacity(&mut items, crate::model::MAX_MEMORY_ITEMS);
         let change = (items != original_items).then_some(MemoryChangeSet {
             space_id: snapshot.id,
             expected_revision: snapshot.revision,
@@ -2421,7 +2420,7 @@ mod tests {
     }
 
     #[test]
-    fn a_round_never_exceeds_the_storage_item_ceiling() {
+    fn a_round_keeps_every_memory_past_the_dynamic_policy_ceiling() {
         let items = (0..crate::model::MAX_MEMORY_ITEMS)
             .map(|index| {
                 let ordinal = i64::try_from(index).expect("index");
@@ -2466,9 +2465,9 @@ mod tests {
             MemoryToolOutcome::Created { id, .. } if id == create_id
         ));
         let change = result.change.expect("change");
-        assert_eq!(change.items.len(), crate::model::MAX_MEMORY_ITEMS);
+        assert_eq!(change.items.len(), crate::model::MAX_MEMORY_ITEMS + 1);
         assert!(change.items.iter().any(|item| item.id == create_id));
-        assert!(!change.items.iter().any(|item| item.id == weakest_id));
+        assert!(change.items.iter().any(|item| item.id == weakest_id));
     }
 
     #[test]
