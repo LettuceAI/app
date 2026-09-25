@@ -27,6 +27,7 @@ const REFERER_HEADER: &str = "https://github.com/LettuceAI/";
 const TITLE_HEADER: &str = "LettuceAI";
 const ARTIFACT_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_ARTIFACT_REDIRECTS: usize = 5;
+const MAX_JSON_REDIRECTS: usize = 10;
 
 /// A one-shot credential for a JSON POST. It is consumed by the request and
 /// is never installed as a client default.
@@ -240,7 +241,6 @@ impl ArtifactDownloadClient {
         let client = reqwest::Client::builder()
             .redirect(redirect)
             .referer(false)
-            .no_proxy()
             .connect_timeout(CONNECT_TIMEOUT)
             .build()
             .map_err(|_| ArtifactDownloadError::Transport)?;
@@ -579,6 +579,7 @@ impl RequestPolicy {
 pub struct JsonClient {
     strict: reqwest::Client,
     insecure: reqwest::Client,
+    max_response_bytes: usize,
 }
 
 impl fmt::Debug for JsonClient {
@@ -597,7 +598,16 @@ impl JsonClient {
         Ok(Self {
             strict: build_client(&roots, false)?,
             insecure: build_client(&roots, true)?,
+            max_response_bytes: MAX_RESPONSE_BYTES,
         })
+    }
+
+    /// Raises (or lowers) the buffered and streamed response cap from its
+    /// 8 MiB default, for callers whose responses carry media.
+    #[must_use]
+    pub const fn with_max_response_bytes(mut self, max_response_bytes: usize) -> Self {
+        self.max_response_bytes = max_response_bytes;
+        self
     }
 
     fn client(&self, policy: RequestPolicy) -> &reqwest::Client {
@@ -850,7 +860,9 @@ impl JsonClient {
                             attempt += 1;
                             sleep(delay).await;
                         }
-                        None => return read_response(response).await,
+                        None => {
+                            return read_response_limited(response, self.max_response_bytes).await;
+                        }
                     }
                 }
                 Err(error) => {
@@ -884,7 +896,7 @@ impl JsonClient {
                         sleep(delay).await;
                         continue;
                     }
-                    return response_stream(response, idle_timeout);
+                    return response_stream(response, idle_timeout, self.max_response_bytes);
                 }
                 Err(error) => {
                     if attempt < max_retries && (error.is_timeout() || error.is_request()) {
@@ -1156,10 +1168,11 @@ impl BulkHttpClient {
 fn response_stream(
     response: reqwest::Response,
     idle_timeout: Duration,
+    max_bytes: usize,
 ) -> Result<JsonResponseStream, JsonClientError> {
     if response
         .content_length()
-        .is_some_and(|length| length > MAX_RESPONSE_BYTES as u64)
+        .is_some_and(|length| length > max_bytes as u64)
     {
         return Err(JsonClientError::ResponseTooLarge);
     }
@@ -1170,7 +1183,7 @@ fn response_stream(
         retry_after: bounded_header(&response, "retry-after"),
         response,
         received_bytes: 0,
-        size_limit: Some(MAX_RESPONSE_BYTES),
+        size_limit: Some(max_bytes),
         idle_timeout,
     })
 }
@@ -1225,9 +1238,8 @@ fn build_client(
     );
     default_headers.insert("x-title", header::HeaderValue::from_static(TITLE_HEADER));
     let mut builder = reqwest::Client::builder()
-        .redirect(redirect::Policy::none())
+        .redirect(same_host_redirects())
         .referer(false)
-        .no_proxy()
         .default_headers(default_headers)
         .connect_timeout(CONNECT_TIMEOUT)
         .timeout(GENERATION_TIMEOUT)
@@ -1238,6 +1250,26 @@ fn build_client(
     builder
         .build()
         .map_err(|_| JsonClientError::ClientConfiguration)
+}
+
+/// Redirects are followed as legacy's default client followed them (up to
+/// ten), but only on the host the request went to and never from HTTPS back
+/// to HTTP, so no credential header reaches another host.
+fn same_host_redirects() -> redirect::Policy {
+    redirect::Policy::custom(|attempt| {
+        let previous = attempt.previous();
+        let (Some(first), Some(last)) = (previous.first(), previous.last()) else {
+            return attempt.stop();
+        };
+        if previous.len() > MAX_JSON_REDIRECTS
+            || attempt.url().host_str() != first.host_str()
+            || (last.scheme() == "https" && attempt.url().scheme() != "https")
+        {
+            attempt.stop()
+        } else {
+            attempt.follow()
+        }
+    })
 }
 
 /// Legacy verification probes used a bare client with no retry loop.
@@ -1292,10 +1324,6 @@ fn apply_auth(
         }
         JsonAuth::None => request,
     })
-}
-
-async fn read_response(response: reqwest::Response) -> Result<JsonResponse, JsonClientError> {
-    read_response_limited(response, MAX_RESPONSE_BYTES).await
 }
 
 async fn read_response_limited(
@@ -1897,7 +1925,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn preserves_bounded_error_body_and_does_not_follow_redirects() {
+    async fn preserves_bounded_error_body_and_does_not_follow_cross_host_redirects() {
         let (endpoint, request) = test_server(
             "HTTP/1.1 401 Unauthorized\r\nX-Request-Id: request-canary\r\nRetry-After: 4\r\nContent-Length: 17\r\n\r\nerror-canary-body",
         )
@@ -1926,7 +1954,7 @@ mod tests {
         );
 
         let (endpoint, _) = test_server(
-            "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1/other\r\nContent-Length: 0\r\n\r\n",
+            "HTTP/1.1 302 Found\r\nLocation: http://other.invalid/other\r\nContent-Length: 0\r\n\r\n",
         )
         .await;
         let response = client()
@@ -1942,6 +1970,73 @@ mod tests {
             .await
             .expect("redirect response");
         assert_eq!(response.status, 302);
+    }
+
+    #[tokio::test]
+    async fn follows_same_host_redirects_with_the_body_like_legacy() {
+        let (endpoint, requests) = sequence_server(vec![
+            "HTTP/1.1 307 Temporary Redirect\r\nLocation: /moved\r\nConnection: close\r\nContent-Length: 0\r\n\r\n",
+            "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok",
+        ])
+        .await;
+        let response = client()
+            .post_json(
+                &endpoint,
+                "/renamed",
+                br#"{"a":1}"#.to_vec(),
+                &[],
+                JsonAuth::Bearer(SecretValue::new("token-canary").expect("secret")),
+                Vec::new(),
+                RequestPolicy::GENERATION,
+            )
+            .await
+            .expect("redirected response");
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body, b"ok");
+        let requests = requests.await.expect("requests");
+        assert!(requests[1].starts_with("POST /moved HTTP/1.1"));
+    }
+
+    #[tokio::test]
+    async fn a_raised_response_cap_admits_large_media() {
+        let (endpoint, _) = test_server("HTTP/1.1 200 OK\r\nContent-Length: 8388609\r\n\r\n").await;
+        let error = client()
+            .with_max_response_bytes(16)
+            .post_json(
+                &endpoint,
+                "/large",
+                b"{}".to_vec(),
+                &[],
+                JsonAuth::None,
+                Vec::new(),
+                RequestPolicy::GENERATION,
+            )
+            .await
+            .expect_err("still over the lowered cap");
+        assert_eq!(error, JsonClientError::ResponseTooLarge);
+        let body = "a".repeat(9 * 1024 * 1024);
+        let response: &'static str = Box::leak(
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{body}",
+                body.len()
+            )
+            .into_boxed_str(),
+        );
+        let (endpoint, _) = test_server(response).await;
+        let response = client()
+            .with_max_response_bytes(16 * 1024 * 1024)
+            .post_json(
+                &endpoint,
+                "/audio",
+                b"{}".to_vec(),
+                &[],
+                JsonAuth::None,
+                Vec::new(),
+                RequestPolicy::GENERATION,
+            )
+            .await
+            .expect("large media response");
+        assert_eq!(response.body.len(), body.len());
     }
 
     #[tokio::test]

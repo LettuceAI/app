@@ -485,7 +485,10 @@ impl AppBackend {
         &self,
         tls_policy: &lettuce_network::TlsPolicy,
     ) -> Result<lettuce_speech::RemoteTtsRuntime, lettuce_network::JsonClientError> {
-        let network = Arc::new(lettuce_network::JsonClient::with_tls(tls_policy)?);
+        let network = Arc::new(
+            lettuce_network::JsonClient::with_tls(tls_policy)?
+                .with_max_response_bytes(lettuce_speech::MAX_TTS_RESPONSE_BYTES),
+        );
         Ok(lettuce_speech::RemoteTtsRuntime::new(network))
     }
 

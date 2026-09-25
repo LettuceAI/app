@@ -14,8 +14,15 @@ The public surface is intentionally small. Business invariants belong in domain 
 streaming POST requests. Request bodies and cumulative response bytes are
 bounded; streamed bodies retain socket backpressure, apply an idle timeout,
 and are cancelled by dropping their owner instead of a detached reader task.
-Redirects/referers/proxies are disabled, credentials are per-request, and
-diagnostics are redacted. Plain HTTP is allowed for
+Referers are disabled, credentials are per-request, and diagnostics are
+redacted. System proxies (`HTTP(S)_PROXY`, `ALL_PROXY`, `NO_PROXY` and the
+platform settings reqwest reads) are honored and redirects are followed, as
+legacy's default reqwest client did (up to ten), but only on the host the
+request went to and never from HTTPS down to HTTP, so no credential reaches
+another host; a cross-host redirect is returned as the response. The buffered
+and streamed response cap is 8 MiB unless the caller raises it with
+`with_max_response_bytes` (remote TTS uses 256 MiB, since legacy read audio
+responses without a bound). Plain HTTP is allowed for
 user-configured hosts (legacy LAN endpoints). Timeouts and retries follow the
 legacy transport: 10 s connect, 30 min generation total, up to two retries
 with 200/400 ms backoff on 5xx, 429 (honoring `Retry-After` up to 30 s),
@@ -46,7 +53,8 @@ bodies, request identifiers and retry metadata remain redacted from debug output
 `ArtifactDownloadClient` is the narrow unauthenticated Hugging Face transport
 for large pinned artifacts. It takes the file URL `lettuce-model-hub` builds
 (`resolve_url` / `pinned_resolve_url`), sends an optional byte range, accepts only coherent complete or
-partial responses, limits redirects to five HTTPS locations, applies a
+partial responses, limits redirects to five HTTPS locations, honors system
+proxies as legacy's client did, applies a
 per-chunk idle timeout, and leaves backpressure and cancellation with the
 caller. The model-hub layer owns expected-size and digest verification.
 
