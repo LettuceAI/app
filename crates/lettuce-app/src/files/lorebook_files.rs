@@ -130,6 +130,31 @@ mod tests {
     use super::*;
 
     #[test]
+    fn world_info_with_long_keywords_and_titles_imports_like_legacy() {
+        let backend = crate::AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+        let files = backend.lorebook_files();
+        let long_key = format!("({})", "sword|".repeat(400));
+        let long_name = "Chronicle ".repeat(40);
+        let imported = files
+            .import_world_info(
+                &serde_json::json!({
+                    "name": "Epic",
+                    "entries": {
+                        "0": {"keys": [long_key], "content": "A long regex-like key"},
+                        "1": {"name": long_name, "keys": ["short"], "content": "A long title"}
+                    }
+                })
+                .to_string(),
+                TimestampMillis::new(10),
+            )
+            .expect("long world info keys and titles import");
+        assert_eq!(imported.entries.len(), 2);
+        assert_eq!(imported.entries[0].keywords, vec![long_key.clone()]);
+        assert_eq!(imported.entries[0].title, long_key);
+        assert_eq!(imported.entries[1].title, long_name.trim());
+    }
+
+    #[test]
     fn a_world_info_file_round_trips_through_a_new_lorebook() {
         let backend = crate::AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
         let files = backend.lorebook_files();

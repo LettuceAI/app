@@ -11,17 +11,12 @@ use regex::RegexBuilder;
 use serde::{Deserialize, Serialize};
 
 use crate::prompt::{
-    LifecycleFilter, LifecycleStatus, MAX_AUTHORED_BYTES, MAX_LABEL_BYTES, validate_label,
-    validate_optional_label, validate_prose,
+    LifecycleFilter, LifecycleStatus, MAX_AUTHORED_BYTES, MAX_PROSE_BYTES, validate_label,
+    validate_prose,
 };
 
 /// The legacy runtime always inspected this many recent messages.
 pub const LEGACY_RECENT_MESSAGE_LIMIT: usize = 10;
-pub const MAX_LOREBOOK_ENTRIES: usize = 10_000;
-pub const MAX_KEYWORDS_PER_ENTRY: usize = 16_384;
-pub const MAX_REGEX_KEYWORDS_PER_BOOK: usize = 10_000;
-pub const MAX_LOREBOOK_SOURCES: usize = 128;
-pub const MAX_ACTIVE_LOREBOOK_ENTRIES: usize = MAX_LOREBOOK_ENTRIES;
 pub const MAX_ACTIVE_LOREBOOK_CONTENT_BYTES: usize = 4 * 1024 * 1024;
 pub const MAX_MATCH_CONTEXT_BYTES: usize = 1024 * 1024;
 
@@ -198,15 +193,9 @@ impl LorebookEntryMutation {
 pub enum LorebookValidationError {
     #[error("{0}")]
     Prompt(#[from] crate::prompt::PromptValidationError),
-    #[error("lorebook has too many keywords")]
-    TooManyKeywords,
-    #[error("lorebook has too many entries")]
-    TooManyEntries,
-    #[error("lorebook has too many regex keywords")]
-    TooManyRegexKeywords,
-    #[error("lorebook authored payload exceeds 8 MiB")]
+    #[error("lorebook authored payload exceeds 64 MiB")]
     AuthoredPayloadTooLarge,
-    #[error("keyword exceeds the 1 KiB limit")]
+    #[error("keyword exceeds the 8 MiB limit")]
     KeywordTooLarge,
     #[error("regex keyword is invalid: {0}")]
     InvalidRegex(String),
@@ -264,14 +253,11 @@ fn validate_entry_fields(
     case_sensitive: bool,
     content: &str,
 ) -> Result<(), LorebookValidationError> {
-    validate_optional_label(title, "lorebook entry title")?;
+    validate_prose(title, "lorebook entry title")?;
     validate_prose(content, "lorebook entry content")?;
-    if keywords.len() > MAX_KEYWORDS_PER_ENTRY {
-        return Err(LorebookValidationError::TooManyKeywords);
-    }
     if keywords
         .iter()
-        .any(|keyword| keyword.len() > MAX_LABEL_BYTES)
+        .any(|keyword| keyword.len() > MAX_PROSE_BYTES)
     {
         return Err(LorebookValidationError::KeywordTooLarge);
     }
@@ -284,11 +270,7 @@ fn validate_entry_fields(
 }
 
 fn validate_entry_drafts(drafts: &[LorebookEntryDraft]) -> Result<(), LorebookValidationError> {
-    if drafts.len() > MAX_LOREBOOK_ENTRIES {
-        return Err(LorebookValidationError::TooManyEntries);
-    }
     let mut authored_bytes = 0_usize;
-    let mut regex_keywords = 0_usize;
     for draft in drafts {
         draft.validate()?;
         authored_bytes = authored_bytes
@@ -304,14 +286,6 @@ fn validate_entry_drafts(drafts: &[LorebookEntryDraft]) -> Result<(), LorebookVa
         if authored_bytes > MAX_AUTHORED_BYTES {
             return Err(LorebookValidationError::AuthoredPayloadTooLarge);
         }
-        if draft.match_mode == KeywordMatchMode::Regex {
-            regex_keywords = regex_keywords
-                .checked_add(draft.keywords.len())
-                .ok_or(LorebookValidationError::TooManyRegexKeywords)?;
-            if regex_keywords > MAX_REGEX_KEYWORDS_PER_BOOK {
-                return Err(LorebookValidationError::TooManyRegexKeywords);
-            }
-        }
     }
     Ok(())
 }
@@ -320,12 +294,8 @@ pub fn validate_entries(
     lorebook_id: LorebookId,
     entries: &[LorebookEntry],
 ) -> Result<(), LorebookValidationError> {
-    if entries.len() > MAX_LOREBOOK_ENTRIES {
-        return Err(LorebookValidationError::TooManyEntries);
-    }
     let mut ids = std::collections::HashSet::with_capacity(entries.len());
     let mut authored_bytes = 0_usize;
-    let mut regex_keywords = 0_usize;
     for (ordinal, entry) in entries.iter().enumerate() {
         entry.validate()?;
         if entry.lorebook_id != lorebook_id {
@@ -349,14 +319,6 @@ pub fn validate_entries(
             .ok_or(LorebookValidationError::AuthoredPayloadTooLarge)?;
         if authored_bytes > MAX_AUTHORED_BYTES {
             return Err(LorebookValidationError::AuthoredPayloadTooLarge);
-        }
-        if entry.match_mode == KeywordMatchMode::Regex {
-            regex_keywords = regex_keywords
-                .checked_add(entry.keywords.len())
-                .ok_or(LorebookValidationError::TooManyRegexKeywords)?;
-            if regex_keywords > MAX_REGEX_KEYWORDS_PER_BOOK {
-                return Err(LorebookValidationError::TooManyRegexKeywords);
-            }
         }
     }
     Ok(())
@@ -842,12 +804,8 @@ fn validate_snapshot_source(
     if source.root_revision.get() == 0 {
         return Err(LorebookValidationError::ZeroRevision);
     }
-    if source.entries.len() > MAX_LOREBOOK_ENTRIES {
-        return Err(LorebookValidationError::TooManyEntries);
-    }
     let mut ids = std::collections::HashSet::with_capacity(source.entries.len());
     let mut authored_bytes = 0_usize;
-    let mut regex_keywords = 0_usize;
     for (ordinal, entry) in source.entries.iter().enumerate() {
         validate_snapshot_entry(entry)?;
         if !ids.insert(entry.entry_id) {
@@ -869,14 +827,6 @@ fn validate_snapshot_source(
         if authored_bytes > MAX_AUTHORED_BYTES {
             return Err(LorebookValidationError::AuthoredPayloadTooLarge);
         }
-        if entry.match_mode == KeywordMatchMode::Regex {
-            regex_keywords = regex_keywords
-                .checked_add(entry.keywords.len())
-                .ok_or(LorebookValidationError::TooManyRegexKeywords)?;
-            if regex_keywords > MAX_REGEX_KEYWORDS_PER_BOOK {
-                return Err(LorebookValidationError::TooManyRegexKeywords);
-            }
-        }
     }
     Ok(())
 }
@@ -893,10 +843,6 @@ pub fn resolve_lorebook_snapshot_activation(
     recent_messages: &[String],
     latest_user_message: Option<&str>,
 ) -> Result<MultiLorebookSnapshotActivation, MultiLorebookActivationError> {
-    if sources.len() > MAX_LOREBOOK_SOURCES {
-        return Err(MultiLorebookActivationError::TooManySources);
-    }
-
     let mut seen_books = std::collections::HashSet::with_capacity(sources.len());
     let mut resolved_sources = Vec::new();
     let mut active_entries = Vec::new();
@@ -935,9 +881,6 @@ pub fn resolve_lorebook_snapshot_activation(
                 .collect::<Vec<_>>();
             if !entry.always_active && (matched_keywords.is_empty() || entry.keywords.is_empty()) {
                 continue;
-            }
-            if active_entries.len() >= MAX_ACTIVE_LOREBOOK_ENTRIES {
-                return Err(MultiLorebookActivationError::TooManyActiveEntries);
             }
             if active_content_bytes.saturating_add(entry.content.len())
                 > MAX_ACTIVE_LOREBOOK_CONTENT_BYTES
@@ -991,10 +934,6 @@ pub fn resolve_lorebook_snapshot_activation(
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum MultiLorebookActivationError {
-    #[error("too many lorebook sources")]
-    TooManySources,
-    #[error("too many active lorebook entries")]
-    TooManyActiveEntries,
     #[error("active lorebook content exceeds the 4 MiB bound")]
     ActiveContentTooLarge,
     #[error("lorebook validation failed: {0}")]
@@ -1011,9 +950,6 @@ pub fn resolve_lorebook_activation(
     recent_messages: &[String],
     latest_user_message: Option<&str>,
 ) -> Result<MultiLorebookActivation, MultiLorebookActivationError> {
-    if sources.len() > MAX_LOREBOOK_SOURCES {
-        return Err(MultiLorebookActivationError::TooManySources);
-    }
     let matcher = LorebookMatcher::new();
     let mut seen_books = std::collections::HashSet::with_capacity(sources.len());
     let mut resolved_sources = Vec::new();
@@ -1065,9 +1001,6 @@ pub fn resolve_lorebook_activation(
             latest_user_message,
         )?;
         for matched in activation.matches {
-            if active_entries.len() >= MAX_ACTIVE_LOREBOOK_ENTRIES {
-                return Err(MultiLorebookActivationError::TooManyActiveEntries);
-            }
             active_content_bytes = active_content_bytes.saturating_add(matched.entry.content.len());
             if active_content_bytes > MAX_ACTIVE_LOREBOOK_CONTENT_BYTES {
                 return Err(MultiLorebookActivationError::ActiveContentTooLarge);
@@ -1478,13 +1411,13 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_activation_enforces_active_entry_and_content_bounds() {
+    fn snapshot_activation_has_no_entry_count_bound_but_enforces_content_bound() {
         let first_id = LorebookId::new();
         let second_id = LorebookId::new();
-        let first_entries = (0..MAX_LOREBOOK_ENTRIES)
+        let first_entries = (0..10_001)
             .map(|ordinal| snapshot_entry(ordinal as u32, "needle"))
             .collect::<Vec<_>>();
-        let second_entries = (0..MAX_LOREBOOK_ENTRIES)
+        let second_entries = (0..10_001)
             .map(|ordinal| snapshot_entry(ordinal as u32, "needle"))
             .collect::<Vec<_>>();
         let result = resolve_lorebook_snapshot_activation(
@@ -1506,11 +1439,9 @@ mod tests {
             ],
             &[],
             Some("needle"),
-        );
-        assert_eq!(
-            result,
-            Err(MultiLorebookActivationError::TooManyActiveEntries)
-        );
+        )
+        .expect("legacy had no active entry count limit");
+        assert_eq!(result.entries.len(), 20_002);
 
         let oversized = (0..5)
             .map(|ordinal| {
@@ -1605,17 +1536,12 @@ mod tests {
     }
 
     #[test]
-    fn lorebook_limits_regexes_and_context() {
+    fn lorebook_limits_context_bytes_but_not_keyword_or_entry_counts() {
         let book = book(DetectionPolicy::LatestUserMessage);
         let mut entry = entry(&book, 0, "x");
         entry.match_mode = KeywordMatchMode::Regex;
-        entry.keywords = (0..=MAX_REGEX_KEYWORDS_PER_BOOK)
-            .map(|_| "x".to_owned())
-            .collect();
-        assert_eq!(
-            validate_entries(book.id, &[entry]),
-            Err(LorebookValidationError::TooManyRegexKeywords)
-        );
+        entry.keywords = (0..20_000).map(|_| "x".to_owned()).collect();
+        assert_eq!(validate_entries(book.id, &[entry]), Ok(()));
         assert!(matches!(
             LorebookMatcher::new().activate(
                 &book,
@@ -1669,22 +1595,25 @@ mod tests {
         );
         assert_eq!(
             LorebookEntryMutation::Replace {
-                drafts: vec![authored; MAX_LOREBOOK_ENTRIES + 1]
+                drafts: vec![authored; 10_001]
             }
             .validate(),
-            Err(LorebookValidationError::TooManyEntries)
+            Ok(())
         );
     }
 
     #[test]
-    fn blank_legacy_entries_are_valid_but_titles_stay_bounded() {
+    fn blank_entries_and_long_world_info_titles_and_keywords_are_valid_like_legacy() {
         let book = book(DetectionPolicy::LatestUserMessage);
         let mut blank = entry(&book, 0, "needle");
         blank.title = String::new();
         blank.content = String::new();
         blank.keywords = Vec::new();
         assert!(blank.validate().is_ok());
-        blank.title = "x".repeat(MAX_LABEL_BYTES + 1);
+        blank.title = "t".repeat(4096);
+        blank.keywords = vec!["k".repeat(4096)];
+        assert!(blank.validate().is_ok());
+        blank.title = "x".repeat(MAX_PROSE_BYTES + 1);
         assert!(blank.validate().is_err());
     }
 
@@ -1762,9 +1691,9 @@ mod tests {
     }
 
     #[test]
-    fn multi_book_resolution_enforces_active_entry_bound() {
+    fn multi_book_resolution_has_no_active_entry_or_source_count_bound() {
         let first_book = book(DetectionPolicy::LatestUserMessage);
-        let entries = (0..MAX_LOREBOOK_ENTRIES)
+        let entries = (0..10_001)
             .map(|ordinal| entry(&first_book, ordinal as u32, "needle"))
             .collect::<Vec<_>>();
         let details = LorebookDetails {
@@ -1774,10 +1703,30 @@ mod tests {
         let second = book(DetectionPolicy::LatestUserMessage);
         let second_details = LorebookDetails {
             book: second.clone(),
-            entries: (0..MAX_LOREBOOK_ENTRIES)
+            entries: (0..10_001)
                 .map(|ordinal| entry(&second, ordinal as u32, "needle"))
                 .collect(),
         };
+        let many_sources = (0..200)
+            .map(|_| {
+                let book = book(DetectionPolicy::LatestUserMessage);
+                LorebookActivationSource {
+                    provenance: LorebookSourceProvenance::Group { id: GroupId::new() },
+                    lorebook_id: book.id,
+                    details: Some(LorebookDetails {
+                        entries: vec![entry(&book, 0, "needle")],
+                        book,
+                    }),
+                }
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            resolve_lorebook_activation(&many_sources, &[], Some("needle"))
+                .expect("legacy had no active lorebook limit")
+                .entries
+                .len(),
+            200
+        );
         assert_eq!(
             resolve_lorebook_activation(
                 &[
@@ -1796,8 +1745,11 @@ mod tests {
                 ],
                 &[],
                 Some("needle"),
-            ),
-            Err(MultiLorebookActivationError::TooManyActiveEntries)
+            )
+            .expect("legacy had no active entry limit")
+            .entries
+            .len(),
+            20_002
         );
     }
 

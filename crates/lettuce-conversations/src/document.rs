@@ -1018,8 +1018,8 @@ impl SnapshotDocumentBody for LorebookSnapshotBodyV1 {
             validate_text(
                 "lorebook_document.entries.title",
                 &entry.title,
-                MAX_NAME_BYTES,
-                false,
+                MAX_AUTHORED_TEXT_BYTES,
+                true,
             )?;
             validate_text(
                 "lorebook_document.entries.content",
@@ -1036,8 +1036,8 @@ impl SnapshotDocumentBody for LorebookSnapshotBodyV1 {
                 validate_text(
                     "lorebook_document.entries.keywords",
                     keyword,
-                    MAX_NAME_BYTES,
-                    false,
+                    MAX_AUTHORED_TEXT_BYTES,
+                    true,
                 )?;
             }
         }
