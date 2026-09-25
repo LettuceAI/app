@@ -165,7 +165,7 @@ impl<'a, E: MemoryEmbeddingEngine + ?Sized, R: MemoryEmbeddingRepository + ?Size
         let calls = calls.collect::<Vec<_>>();
         let cancellation = handle.cancellation_token();
         let source_revision = self.engine.source_revision();
-        let existing = self
+        let mut existing = self
             .repository
             .list_ready(space_id, source_revision, self.engine.dimensions())?
             .into_iter()
@@ -211,22 +211,28 @@ impl<'a, E: MemoryEmbeddingEngine + ?Sized, R: MemoryEmbeddingRepository + ?Size
                 &cancellation,
             );
             let (semantic_duplicate, projection) = match generated {
-                Ok(vector) => (
-                    EmbeddingService::semantic_duplicate_evidence(
+                Ok(vector) => {
+                    let evidence = EmbeddingService::semantic_duplicate_evidence(
                         &vector,
                         &existing,
                         duplicate_threshold,
                         &self.engine.calibration(),
-                    ),
-                    PreparedMemoryProjection::Ready(MemoryEmbeddingProjection {
-                        space_id,
-                        memory_id: seed.id,
-                        source_text: text,
-                        vector,
-                        dimensions: self.engine.dimensions(),
-                        updated_at: seed.created_at,
-                    }),
-                ),
+                    );
+                    if evidence.is_none() {
+                        existing.push((seed.id, vector.clone()));
+                    }
+                    (
+                        evidence,
+                        PreparedMemoryProjection::Ready(MemoryEmbeddingProjection {
+                            space_id,
+                            memory_id: seed.id,
+                            source_text: text,
+                            vector,
+                            dimensions: self.engine.dimensions(),
+                            updated_at: seed.created_at,
+                        }),
+                    )
+                }
                 Err(EmbeddingGenerationError::Cancelled) => {
                     return Err(DynamicMemoryPreparationError::Cancelled);
                 }
@@ -550,6 +556,44 @@ mod tests {
                 .as_ref()
                 .map(|evidence| evidence.existing_id),
             Some(existing_id)
+        );
+    }
+
+    #[test]
+    fn a_create_is_compared_with_earlier_creates_of_the_same_response() {
+        let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+        let space_id = space(&backend, Vec::new());
+        let engine = FakeEmbeddingEngine { unavailable: false };
+        let first = create_call("User's dog is named Max");
+        let mut second = create_call("The user has a dog called Max");
+        second.run_id = first.run_id;
+        second.attempt_id = first.attempt_id;
+        second.ordinal = 1;
+        let seeds = [&first, &second].map(|call| MemoryCreateSeed {
+            execution_id: call.id,
+            id: MemoryId::new(),
+            token_count: 4,
+            created_at: TimestampMillis::new(4),
+        });
+        let (claim, handle) = admitted_embedding_job();
+        let prepared = DynamicMemoryCreatePreparer::new(&engine, backend.database())
+            .prepare_background_calls(
+                space_id,
+                &[first, second],
+                &seeds,
+                Score::from_basis_points(9_000).expect("score"),
+                &claim,
+                &handle,
+            )
+            .expect("prepare");
+        assert!(prepared[0].preparation.semantic_duplicate.is_none());
+        assert_eq!(
+            prepared[1]
+                .preparation
+                .semantic_duplicate
+                .as_ref()
+                .map(|evidence| evidence.existing_id),
+            Some(seeds[0].id)
         );
     }
 
