@@ -866,13 +866,14 @@ impl PersonaRepository for Database {
         Ok(persona)
     }
 
+    /// A default that names an archived persona reads as no default.
     fn get_default_snapshot(&self) -> Result<PersonaDefaultSnapshot, RepositoryError> {
         let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Deferred)
             .map_err(db_error)?;
-        let state = read_default(&tx).map_err(db_error)?;
-        let persona = state
+        let mut state = read_default(&tx).map_err(db_error)?;
+        let mut persona = state
             .persona_id
             .map(|id| load_persona(&tx, id).map_err(db_error))
             .transpose()?
@@ -883,6 +884,13 @@ impl PersonaRepository for Database {
                     field: "persona.default.persona_id",
                 },
             ));
+        }
+        if persona
+            .as_ref()
+            .is_some_and(|persona| persona.status != LifecycleStatus::Active)
+        {
+            state.persona_id = None;
+            persona = None;
         }
         let snapshot = PersonaDefaultSnapshot { state, persona };
         snapshot.validate()?;
@@ -2315,6 +2323,50 @@ mod tests {
                 .expect("sequence"),
             8
         );
+    }
+
+    #[test]
+    fn a_default_archived_by_sync_reads_as_no_default() {
+        let database = Database::open_in_memory().expect("database");
+        let stored = PersonaRepository::create(
+            &database,
+            Persona::new(
+                PersonaId::new(),
+                "Synced".into(),
+                "Description".into(),
+                TimestampMillis::new(1),
+            )
+            .expect("persona"),
+        )
+        .expect("create");
+        PersonaRepository::set_default(
+            &database,
+            stored.id,
+            Revision::INITIAL,
+            TimestampMillis::new(2),
+        )
+        .expect("set default");
+        let mut archived = stored.clone();
+        archived.status = LifecycleStatus::Archived;
+        archived.revision = Revision::INITIAL.next().expect("revision");
+        archived.updated_at = TimestampMillis::new(3);
+        {
+            let mut connection = database.connection().expect("connection");
+            let tx = connection.transaction().expect("transaction");
+            apply_synced_persona(&tx, archived).expect("archive through sync");
+            tx.commit().expect("commit");
+        }
+        let snapshot = PersonaRepository::get_default_snapshot(&database)
+            .expect("legacy persona_default_get finds no default once the persona is gone");
+        assert_eq!(snapshot.state.persona_id, None);
+        assert_eq!(snapshot.persona, None);
+        let restored = PersonaRepository::set_default(
+            &database,
+            stored.id,
+            snapshot.state.revision,
+            TimestampMillis::new(4),
+        );
+        assert!(restored.is_err());
     }
 
     #[test]
