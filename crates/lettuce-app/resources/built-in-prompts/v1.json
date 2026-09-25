@@ -3119,6 +3119,34 @@
           "promptEntryPayload": null
         },
         {
+          "key": "runtime_group_character_line",
+          "name": "Group Character Line",
+          "role": "system",
+          "content": "- {{character_name}}: {{char.description}}",
+          "enabled": true,
+          "injectionPosition": "relative",
+          "injectionDepth": 0,
+          "conditionalMinMessages": null,
+          "intervalTurns": null,
+          "systemPrompt": false,
+          "conditions": null,
+          "promptEntryPayload": null
+        },
+        {
+          "key": "runtime_group_character_name_line",
+          "name": "Group Character Name Line",
+          "role": "system",
+          "content": "- {{character_name}}",
+          "enabled": true,
+          "injectionPosition": "relative",
+          "injectionDepth": 0,
+          "conditionalMinMessages": null,
+          "intervalTurns": null,
+          "systemPrompt": false,
+          "conditions": null,
+          "promptEntryPayload": null
+        },
+        {
           "key": "runtime_group_unknown_speaker",
           "name": "Unknown Speaker Label",
           "role": "system",

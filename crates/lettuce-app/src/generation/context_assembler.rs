@@ -138,7 +138,10 @@ where
             history,
             visible,
         } = select_timeline(&aggregate.branches, &request)?;
-        let (scene, scene_direction) = snapshot.scene_values(&scene_timeline)?;
+        let (mut scene, scene_direction) = snapshot.scene_values(&scene_timeline)?;
+        if !direct {
+            scene = resolve_member_mentions(&scene, &snapshot.characters);
+        }
         let effective_at = source_effective_time(&request)?;
         let companion_state = self.companion_prompt_state(&aggregate, effective_at)?;
         let scheduled_notes = self.companion_scheduled_notes(&aggregate, effective_at)?;
@@ -327,6 +330,18 @@ where
                 values
                     .purpose_values
                     .retain(|variable, _| variable.is_allowed_for(document.purpose));
+            } else {
+                values.purpose_values.insert(
+                    PromptVariable::GroupCharacters,
+                    group_characters(
+                        &snapshot,
+                        request
+                            .selected_speaker
+                            .as_ref()
+                            .map(|speaker| speaker.participant_id),
+                        &runtime,
+                    )?,
+                );
             }
             resolve_substituted_values(&mut values, group);
             let without_scene;
@@ -2168,18 +2183,71 @@ fn prompt_values(
             values.purpose_values.insert(variable, value);
         }
     }
-    if aggregate.conversation.kind.is_group() {
-        values.purpose_values.insert(
-            PromptVariable::GroupCharacters,
-            snapshot
-                .characters
-                .iter()
-                .map(|(_, body)| body.name.as_str())
-                .collect::<Vec<_>>()
-                .join(", "),
-        );
-    }
     values
+}
+
+/// Legacy `{{group_characters}}` (`group_chat_manager/mod.rs` 5268-5288): one
+/// line per member other than the speaker, with the member's definition, else
+/// its description, else the name alone.
+fn group_characters(
+    snapshot: &SnapshotBundle,
+    speaker: Option<ConversationParticipantId>,
+    runtime: &RuntimeSections,
+) -> Result<String, ContextAssemblyError> {
+    let mut lines = Vec::new();
+    for (participant, body) in &snapshot.characters {
+        if Some(participant.id) == speaker {
+            continue;
+        }
+        let name = (PromptVariable::CharacterName, body.name.clone());
+        let line = match body
+            .definition
+            .as_deref()
+            .or(body.description.as_deref())
+            .filter(|description| !description.is_empty())
+        {
+            Some(description) => runtime.fragment(
+                "runtime_group_character_line",
+                [
+                    name,
+                    (PromptVariable::CharacterDescription, description.to_owned()),
+                ],
+            )?,
+            None => runtime.fragment("runtime_group_character_name_line", [name])?,
+        };
+        lines.extend(line);
+    }
+    Ok(lines.join("\n"))
+}
+
+/// Legacy `replace_character_name_placeholders` (`group_chat_manager/mod.rs`
+/// 5549-5577): a `{{@"Name"}}` token in a group's starting scene becomes the
+/// member's name; a token naming no member stays as written.
+fn resolve_member_mentions(
+    content: &str,
+    characters: &[(ConversationParticipant, CharacterSnapshotBodyV1)],
+) -> String {
+    const OPEN: &str = "{{@\"";
+    const CLOSE: &str = "\"}}";
+    let mut resolved = String::with_capacity(content.len());
+    let mut rest = content;
+    while let Some(start) = rest.find(OPEN) {
+        let name_start = start + OPEN.len();
+        let Some(length) = rest[name_start..].find(CLOSE) else {
+            break;
+        };
+        let name = &rest[name_start..name_start + length];
+        let end = name_start + length + CLOSE.len();
+        resolved.push_str(&rest[..start]);
+        if characters.iter().any(|(_, body)| body.name == name) {
+            resolved.push_str(name);
+        } else {
+            resolved.push_str(&rest[start..end]);
+        }
+        rest = &rest[end..];
+    }
+    resolved.push_str(rest);
+    resolved
 }
 
 /// Identity tokens inside values the renderer substitutes verbatim, resolved

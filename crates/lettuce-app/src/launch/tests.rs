@@ -4564,6 +4564,67 @@ async fn scene_text_triggers_lorebook_keywords_and_entries_order_across_books() 
     assert!(at("First book, second entry.") < at("Harbour lore."));
 }
 
+#[tokio::test]
+async fn a_group_prompt_lists_the_other_members_and_resolves_scene_mentions() {
+    let database = database_with_builtins();
+    let group_prompt = prompt_with_text(
+        &database,
+        "Cast",
+        PromptPurpose::GroupChatRoleplay,
+        "Cast:\n{{group_characters}}\nScene: {{scene}}",
+    );
+    let first = seed_named_character(&database, "Ada");
+    let second = seed_named_character(&database, "Bea");
+    let group_id = seed_group(
+        &database,
+        vec![member(first, 0), member(second, 1)],
+        Some(group_starting_scene(
+            "{{@\"Bea\"}} waits for {{@\"Nobody\"}} at the dock.",
+        )),
+        |group| {
+            group.chat_mode = ChatMode::Roleplay;
+            group.group_roleplay_prompt_id = Some(group_prompt);
+        },
+    );
+    let conversation = ConversationLaunchPlanner::new(&database)
+        .launch_group(&group_request(group_id, "group-cast-launch"), NOW)
+        .expect("launch group")
+        .value
+        .conversation;
+    let sent = ConversationRepository::begin_send(
+        &database,
+        &direct_send_command(&conversation, "group-cast-send", "Hello cast."),
+        TimestampMillis::new(NOW.get() + 10),
+    )
+    .expect("send group message");
+    let source_message_id = match sent.value.turn.input {
+        GenerationInput::UserMessage { message_id } => message_id,
+        ref other => panic!("expected user-message input, got {other:?}"),
+    };
+    let speaker = conversation
+        .participants
+        .iter()
+        .find(|participant| {
+            participant.source == lettuce_conversations::ParticipantSource::Character(first)
+        })
+        .expect("speaker")
+        .id;
+    let mut request = context_request_for(&database, conversation.id, source_message_id);
+    request.selected_speaker = Some(lettuce_conversations::SelectedSpeakerDecision {
+        participant_id: speaker,
+        method: lettuce_conversations::SpeakerDecisionMethod::Explicit,
+        fallback: lettuce_conversations::SpeakerFallback::None,
+        reference: None,
+        rationale_summary: None,
+        decision_model: None,
+        usage_event_id: None,
+    });
+    let (_, text) = assembled_prompt_with_text(&database, request).await;
+    assert!(text.contains("Cast:\n- Bea: A member of the cast\nScene: "));
+    assert!(!text.contains("- Ada"));
+    assert!(text.contains("Bea waits for {{@\"Nobody\"}} at the dock."));
+}
+
 fn text_entry(text: &str) -> lettuce_context::PromptEntryDraft {
     lettuce_context::PromptEntryDraft {
         built_in_entry_key: None,
