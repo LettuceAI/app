@@ -133,6 +133,7 @@ pub fn recover_creation_dispatch<R: CreationAttemptRepository + ?Sized>(
 pub struct CreationContinuationCoordinator<'a, R: ?Sized, I: ?Sized> {
     repository: &'a R,
     inference: &'a I,
+    tool_fallback: Option<lettuce_creation::CreationFallbackFormat>,
 }
 
 impl<
@@ -150,7 +151,28 @@ impl<
         Self {
             repository,
             inference,
+            tool_fallback: None,
         }
+    }
+
+    /// Uses the creation helper's tool-call setting: a JSON or XML fallback
+    /// sends no native tools, adds the fallback protocol to the system prompt
+    /// and reads calls from the reply text when it carries no native calls.
+    #[must_use]
+    pub const fn with_tool_fallback(
+        mut self,
+        setting: lettuce_settings::CreationHelperToolFallback,
+    ) -> Self {
+        self.tool_fallback = match setting {
+            lettuce_settings::CreationHelperToolFallback::Native => None,
+            lettuce_settings::CreationHelperToolFallback::Json => {
+                Some(lettuce_creation::CreationFallbackFormat::Json)
+            }
+            lettuce_settings::CreationHelperToolFallback::Xml => {
+                Some(lettuce_creation::CreationFallbackFormat::Xml)
+            }
+        };
+        self
     }
 
     pub async fn run(
@@ -211,6 +233,7 @@ impl<
                 profile,
                 handle,
                 stream_sink,
+                self.tool_fallback,
             )
             .map(|request| (text, request))
         });
@@ -291,7 +314,12 @@ impl<
                 return Err(CreationContinuationError::Cancelled);
             }
             let candidate = match validate_outcome(&outcome) {
-                Ok(candidate) => candidate,
+                Ok(candidate) => match self.tool_fallback {
+                    Some(format) if candidate.tool_calls.is_empty() => {
+                        structured_fallback_candidate(format, candidate, calls.len())
+                    }
+                    _ => candidate.clone(),
+                },
                 Err(CreationContinuationError::Cancelled) => {
                     cleanup_outcome_replays(self.repository, &outcome)?;
                     self.cancel_attempt(&attempt, now)?;
@@ -307,7 +335,7 @@ impl<
                 u8::try_from(rounds.len()).map_err(|_| CreationContinuationError::RoundLimit)?;
             let next_call_ordinal = u16::try_from(calls.len())
                 .map_err(|_| CreationContinuationError::InvalidRoundHistory)?;
-            let mut new_round = match plan_round(&attempt, round_ordinal, candidate, &outcome, now)
+            let mut new_round = match plan_round(&attempt, round_ordinal, &candidate, &outcome, now)
             {
                 Ok(round) => round,
                 Err(CreationContinuationError::Cancelled) => {
@@ -545,9 +573,32 @@ fn build_creation_inference_request(
     profile: ResolvedInferenceProfile,
     handle: &JobHandle,
     stream_sink: Option<RequestId>,
+    tool_fallback: Option<lettuce_creation::CreationFallbackFormat>,
 ) -> Result<InferenceRequest, CreationContinuationError> {
-    if profile.tool_policy != ToolPolicy::Allowed || base.id != attempt.base_proposal_id {
+    let mut profile = profile;
+    if (tool_fallback.is_none() && profile.tool_policy != ToolPolicy::Allowed)
+        || base.id != attempt.base_proposal_id
+    {
         return Err(CreationContinuationError::InvalidProfile);
+    }
+    let tools = lettuce_creation::describe_creation_tools(&attempt.tool_request, &|key| {
+        text.runtime.render_with(key, []).unwrap_or_default()
+    });
+    let fallback_protocol = tool_fallback
+        .map(|format| {
+            crate::creation::creation_prompt::fallback_protocol(&text.runtime, &tools, format)
+        })
+        .transpose()
+        .map_err(|error| match error {
+            crate::generation::runtime_text::RuntimeTextError::Unavailable => {
+                CreationContinuationError::RuntimeTextUnavailable
+            }
+            crate::generation::runtime_text::RuntimeTextError::Render => {
+                CreationContinuationError::PromptRender
+            }
+        })?;
+    if tool_fallback.is_some() {
+        profile.tool_policy = ToolPolicy::Disabled;
     }
     let messages = crate::creation::creation_prompt::creation_context_messages(
         &text.helper,
@@ -556,6 +607,7 @@ fn build_creation_inference_request(
         &text.dialogue,
         &turn.user_message,
         profile.chat_profile.provider_protocol,
+        fallback_protocol.as_deref(),
     )
     .map_err(|error| match error {
         crate::generation::runtime_text::RuntimeTextError::Unavailable => {
@@ -597,10 +649,7 @@ fn build_creation_inference_request(
         cancellation: Some(handle.id()),
         stream_sink,
         media_grants: Vec::new(),
-        tools: Some(lettuce_creation::describe_creation_tools(
-            &attempt.tool_request,
-            &|key| text.runtime.render_with(key, []).unwrap_or_default(),
-        )),
+        tools: tool_fallback.is_none().then_some(tools),
         prompt_cache_key: None,
     };
     request.validate()?;
@@ -727,9 +776,7 @@ fn replay_round(
         .parts
         .iter()
         .filter_map(|part| match part {
-            MessagePart::Text { text } | MessagePart::ReasoningSummary { text } => {
-                Some(ProviderContextPart::Text { text: text.clone() })
-            }
+            MessagePart::Text { text } => Some(ProviderContextPart::Text { text: text.clone() }),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -774,6 +821,70 @@ fn replay_round(
         calls,
         terminal: round.calls.is_empty(),
     })
+}
+
+/// Reads the calls of a reply without native calls from its text. The parsed
+/// `reply` replaces the envelope as the visible text; a reply that does not
+/// parse, or that yields neither calls nor text, stays as it is and ends the
+/// turn.
+fn structured_fallback_candidate(
+    format: lettuce_creation::CreationFallbackFormat,
+    candidate: &lettuce_conversations::InferenceCandidate,
+    prior_calls: usize,
+) -> lettuce_conversations::InferenceCandidate {
+    let raw = candidate
+        .parts
+        .iter()
+        .filter_map(|part| match part {
+            MessagePart::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<String>();
+    let parsed = match lettuce_creation::parse_creation_fallback(format, &raw) {
+        Ok(parsed) => parsed,
+        Err(error) => {
+            tracing::warn!(?error, "creation fallback reply did not parse");
+            return candidate.clone();
+        }
+    };
+    let mut tool_calls = Vec::with_capacity(parsed.calls.len());
+    for call in parsed.calls {
+        let proposed = lettuce_conversations::ProposedToolCall {
+            provider_call_id: Some(format!("fallback_{}", prior_calls + tool_calls.len() + 1)),
+            name: call.name,
+            arguments: if call.arguments.is_object() {
+                call.arguments
+            } else {
+                serde_json::Value::Object(serde_json::Map::new())
+            },
+            raw_arguments: None,
+            provider_replay: None,
+        };
+        if proposed.validate().is_ok() {
+            tool_calls.push(proposed);
+        } else {
+            tracing::warn!("creation fallback call is not a valid tool call");
+        }
+    }
+    let mut parts = candidate
+        .parts
+        .iter()
+        .filter(|part| !matches!(part, MessagePart::Text { .. }))
+        .cloned()
+        .collect::<Vec<_>>();
+    let reply = parsed.reply.filter(|reply| !reply.trim().is_empty());
+    if tool_calls.is_empty() && reply.is_none() {
+        return candidate.clone();
+    }
+    if let Some(text) = reply {
+        parts.push(MessagePart::Text { text });
+    }
+    lettuce_conversations::InferenceCandidate {
+        ordinal: candidate.ordinal,
+        parts,
+        tool_calls,
+        provider_replay: candidate.provider_replay.clone(),
+    }
 }
 
 fn validate_outcome(
@@ -1694,6 +1805,103 @@ mod tests {
         );
         assert_eq!(first_result.child.status, CreationAttemptStatus::Created);
         let _ = std::fs::remove_file(path);
+    }
+
+    /// Legacy `creation_helper/agent/run.rs` 60-67 and 150-176 with
+    /// `structured_fallback.rs`: a JSON fallback sends no tools, adds the
+    /// protocol to the system prompt and reads calls from the reply text; a
+    /// reply that does not parse ends the turn. The continuation assistant
+    /// message carries only the visible reply (run.rs 342-347).
+    #[tokio::test]
+    async fn json_fallback_reads_calls_from_the_reply_text_without_native_tools() {
+        let database = with_built_ins(Database::open_in_memory().expect("database"));
+        let handle = job_handle(&database);
+        let profile = profile();
+        let attempt_id = setup(&database, &handle, &profile);
+        let inference = ScriptedInference {
+            outcomes: Mutex::new(VecDeque::from([
+                Ok(outcome(
+                    vec![
+                        MessagePart::ReasoningSummary {
+                            text: "private plan".into(),
+                        },
+                        MessagePart::Text {
+                            text: "{\"calls\":[{\"name\":\"set_name\",\"arguments\":{\"name\":\"Ada\"}},\
+                                   {\"name\":\"reply\",\"arguments\":{\"message\":\"Named her Ada.\"}}]}"
+                                .into(),
+                        },
+                    ],
+                    Vec::new(),
+                    5,
+                    2,
+                )),
+                Ok(outcome(
+                    vec![MessagePart::Text {
+                        text: "All set!".into(),
+                    }],
+                    Vec::new(),
+                    6,
+                    2,
+                )),
+            ])),
+            requests: Mutex::new(Vec::new()),
+        };
+        let result = CreationContinuationCoordinator::new(&database, &inference)
+            .with_tool_fallback(lettuce_settings::CreationHelperToolFallback::Json)
+            .run(
+                attempt_id,
+                profile.clone(),
+                &handle,
+                None,
+                TimestampMillis::new(4),
+            )
+            .await
+            .expect("fallback completion");
+        let proposal = result.proposal.expect("fallback calls change the draft");
+        assert!(matches!(
+            proposal.draft,
+            CreationDraft::Persona { name: Some(ref name), .. } if name == "Ada"
+        ));
+        assert!(result.visible_parts.contains(&MessagePart::Text {
+            text: "Named her Ada.".into()
+        }));
+        assert!(result.visible_parts.contains(&MessagePart::Text {
+            text: "All set!".into()
+        }));
+        let requests = inference.requests.lock().expect("requests");
+        assert_eq!(requests.len(), 2);
+        for request in requests.iter() {
+            assert!(request.tools.is_none());
+            assert_eq!(request.profile.tool_policy, ToolPolicy::Disabled);
+        }
+        let texts = |request: &InferenceRequest| {
+            request
+                .context
+                .messages
+                .iter()
+                .flat_map(|message| &message.parts)
+                .filter_map(|part| match part {
+                    ProviderContextPart::Text { text } => Some(text.clone()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let protocol = texts(&requests[0])
+            .into_iter()
+            .find(|text| text.starts_with("Your model does not support native tool calling"))
+            .expect("fallback protocol message");
+        assert!(protocol.contains(
+            "Available tools (call each by its exact name):\n  write_definition \u{2014} "
+        ));
+        assert!(protocol.contains(
+            "  set_name \u{2014} Set the character/persona/lorebook name.\n    args: name"
+        ));
+        assert!(
+            texts(&requests[1])
+                .iter()
+                .all(|text| !text.contains("private plan"))
+        );
+        assert!(texts(&requests[1]).contains(&"Named her Ada.".to_owned()));
     }
 
     #[tokio::test]

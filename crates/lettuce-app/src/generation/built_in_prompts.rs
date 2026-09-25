@@ -808,6 +808,9 @@ fn is_registered_legacy_variable(value: &str) -> bool {
             | "draft_item_id"
             | "tool_name"
             | "tool_error"
+            | "tool_description"
+            | "tool_arguments"
+            | "tool_schema_summary"
             | "memory_categories"
             | "memory_id"
             | "memory_category"
@@ -1498,10 +1501,12 @@ mod tests {
             lettuce_creation::CREATION_TOOL_TEXT_KEYS.len()
                 + crate::creation::creation_prompt::DRAFT_VIEW_KEYS.len()
                 + crate::creation::creation_prompt::RESULT_KEYS.len()
+                + crate::creation::creation_prompt::FALLBACK_KEYS.len()
         );
         for key in crate::creation::creation_prompt::DRAFT_VIEW_KEYS
             .into_iter()
             .chain(crate::creation::creation_prompt::RESULT_KEYS)
+            .chain(crate::creation::creation_prompt::FALLBACK_KEYS)
         {
             creation_text(key);
         }

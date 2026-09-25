@@ -3,6 +3,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 mod attempt;
+mod fallback;
 mod lorebook_entry;
 mod lorebook_keyword;
 mod model;
@@ -21,6 +22,10 @@ pub use attempt::{
     NewCreationAttempt, NewCreationAttemptRecovery, NewCreationInferenceRound,
     NewCreationRegeneration, NewCreationToolCall, NewCreationTurnAttempt,
     creation_inference_profile_fingerprint,
+};
+pub use fallback::{
+    CreationFallbackCall, CreationFallbackError, CreationFallbackFormat, CreationFallbackReply,
+    parse_creation_fallback,
 };
 pub use lorebook_entry::*;
 pub use lorebook_keyword::*;

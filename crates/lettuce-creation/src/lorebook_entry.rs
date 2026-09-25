@@ -496,7 +496,7 @@ fn normalize_entry_draft(
     })
 }
 
-fn normalize_fallback_text(raw: &str) -> String {
+pub(crate) fn normalize_fallback_text(raw: &str) -> String {
     let trimmed = raw.trim();
     if trimmed.starts_with("```") {
         let mut lines = trimmed.lines();
@@ -510,7 +510,7 @@ fn normalize_fallback_text(raw: &str) -> String {
     trimmed.to_owned()
 }
 
-fn json_snippet(raw: &str) -> Option<&str> {
+pub(crate) fn json_snippet(raw: &str) -> Option<&str> {
     let mut start = None;
     let mut stack = Vec::new();
     let mut in_string = false;
@@ -590,7 +590,7 @@ fn parse_json_fallback(
     }
 }
 
-fn xml_attribute(element: &BytesStart<'_>, key: &[u8]) -> Option<String> {
+pub(crate) fn xml_attribute(element: &BytesStart<'_>, key: &[u8]) -> Option<String> {
     element.attributes().flatten().find_map(|attribute| {
         (attribute.key.as_ref() == key)
             .then(|| {

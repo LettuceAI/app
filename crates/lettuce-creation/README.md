@@ -163,6 +163,19 @@ cross-turn owners, version drift, reused jobs and duplicate
 identities fail closed; undeclared tools are admitted and answered with
 `unknown tool: NAME`.
 
+The helper's `tool_fallback` setting (legacy `creationHelperToolFallback`)
+reaches the app coordinator through `with_tool_fallback`. With JSON or XML the
+request carries no native tools, the catalog protocol entry
+(`creation_fallback_json`/`_xml` with the tool summary built from
+`creation_fallback_tool` lines) follows the helper system entries, and a reply
+without native calls is read by `parse_creation_fallback` with legacy's
+envelope aliases; its `reply` call becomes the visible text and the calls get
+attempt-unique `fallback_N` provider ids. A reply that does not parse ends the
+turn with its raw text, like legacy. Deviations: a call whose name is not a
+valid tool name is dropped instead of answered, and an envelope with neither
+calls nor reply keeps its raw text instead of an empty reply. Continuation
+rounds replay only the visible reply and the calls, never reasoning.
+
 Regenerate (legacy `regenerate_response`) is
 `CreationAttemptRepository::admit_creation_regeneration`: only the workflow's
 latest turn with a succeeded attempt, while the workflow still points at that

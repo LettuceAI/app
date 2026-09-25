@@ -73,12 +73,25 @@ pub(crate) const RESULT_KEYS: [&str; 34] = [
     "creation_error_reorder_lore_entries_order",
 ];
 
+/// Every structured-fallback fragment of `prompt_app_creation_runtime`.
+#[cfg(test)]
+pub(crate) const FALLBACK_KEYS: [&str; 5] = [
+    "creation_fallback_json",
+    "creation_fallback_xml",
+    "creation_fallback_tools_header",
+    "creation_fallback_tool",
+    "creation_fallback_no_arguments",
+];
+
 const DEFINITION_PREVIEW_CHARS: usize = 80;
 const ITEM_PREVIEW_CHARS: usize = 60;
 
 /// The creation helper's system messages (the `prompt_app_creation_helper`
 /// entries with the target label and draft view), the earlier dialogue and the
 /// current user message, in the legacy order.
+///
+/// A structured fallback protocol follows the helper entries as one more
+/// system message.
 ///
 /// For the local llama.cpp engine every entry is trimmed and the non-empty ones
 /// are joined with a blank line into one leading system message, because chat
@@ -90,6 +103,7 @@ pub(crate) fn creation_context_messages(
     dialogue: &[CreationDialogueTurn],
     user_message: &str,
     protocol: ProviderProtocol,
+    fallback_protocol: Option<&str>,
 ) -> Result<Vec<ProviderNeutralMessage>, RuntimeTextError> {
     let mut values = PromptRenderValues::default();
     values
@@ -117,6 +131,7 @@ pub(crate) fn creation_context_messages(
             .chain(&rendered.in_chat)
             .filter(|entry| entry.payload.is_none())
             .map(|entry| entry.content.trim())
+            .chain(fallback_protocol.map(str::trim))
             .filter(|content| !content.is_empty())
             .collect::<Vec<_>>()
             .join("\n\n");
@@ -128,6 +143,11 @@ pub(crate) fn creation_context_messages(
                 .relative
                 .iter()
                 .filter_map(prompt_message)
+                .chain(
+                    fallback_protocol
+                        .filter(|text| !text.trim().is_empty())
+                        .map(|text| text_message(MessageRole::System, text.to_owned())),
+                )
                 .collect::<Vec<_>>(),
             rendered
                 .in_chat
@@ -163,6 +183,77 @@ pub(crate) fn creation_context_messages(
     messages.push(text_message(MessageRole::User, user_message.to_owned()));
     crate::companion::companion_memory_inference::insert_in_chat_messages(&mut messages, in_chat);
     Ok(messages)
+}
+
+/// The structured tool-call protocol for a model without native tool calling:
+/// the format's instruction followed by every offered tool with its
+/// description and argument list.
+pub(crate) fn fallback_protocol(
+    text: &RuntimeText,
+    tools: &lettuce_conversations::ToolRequest,
+    format: lettuce_creation::CreationFallbackFormat,
+) -> Result<String, RuntimeTextError> {
+    let mut summary = text.render_with("creation_fallback_tools_header", [])?;
+    summary.push('\n');
+    for definition in &tools.definitions {
+        let properties = definition
+            .parameters
+            .get("properties")
+            .and_then(Value::as_object)
+            .filter(|properties| !properties.is_empty());
+        let arguments = match properties {
+            None => text.render_with("creation_fallback_no_arguments", [])?,
+            Some(properties) => {
+                let required = definition
+                    .parameters
+                    .get("required")
+                    .and_then(Value::as_array)
+                    .map(|names| names.iter().filter_map(Value::as_str).collect::<Vec<_>>())
+                    .unwrap_or_default();
+                properties
+                    .iter()
+                    .map(|(name, schema)| {
+                        format!(
+                            "{name}{}: {}",
+                            if required.contains(&name.as_str()) {
+                                ""
+                            } else {
+                                "?"
+                            },
+                            schema.get("type").and_then(Value::as_str).unwrap_or("any")
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            }
+        };
+        summary.push_str(
+            &text.render_with(
+                "creation_fallback_tool",
+                [
+                    (Variable::ToolName, definition.name.clone()),
+                    (
+                        Variable::ToolDescription,
+                        definition
+                            .description
+                            .as_deref()
+                            .unwrap_or_default()
+                            .trim()
+                            .to_owned(),
+                    ),
+                    (Variable::ToolArguments, arguments),
+                ],
+            )?,
+        );
+        summary.push('\n');
+    }
+    text.render_with(
+        match format {
+            lettuce_creation::CreationFallbackFormat::Json => "creation_fallback_json",
+            lettuce_creation::CreationFallbackFormat::Xml => "creation_fallback_xml",
+        },
+        [(Variable::ToolSchemaSummary, summary)],
+    )
 }
 
 /// The legacy `DRAFT (...)` summary the model reads in `<current_draft>`.
@@ -578,6 +669,7 @@ mod tests {
             ],
             "You decide.",
             ProviderProtocol::OpenAiCompatible,
+            None,
         )
         .expect("context");
         assert_eq!(messages.len(), 11);
@@ -623,7 +715,7 @@ mod tests {
             }],
         }];
         let build = |protocol| {
-            creation_context_messages(&helper, &runtime, &draft, &dialogue, "Go.", protocol)
+            creation_context_messages(&helper, &runtime, &draft, &dialogue, "Go.", protocol, None)
                 .expect("context")
         };
         let remote = build(ProviderProtocol::OpenAiCompatible);
@@ -682,6 +774,7 @@ mod tests {
             &dialogue,
             "latest",
             ProviderProtocol::OpenAiCompatible,
+            None,
         )
         .expect("context");
         assert_eq!(
