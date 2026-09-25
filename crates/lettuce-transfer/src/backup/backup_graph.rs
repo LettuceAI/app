@@ -204,6 +204,80 @@ pub struct ProviderBackupSecret {
     pub value: SecretValue,
 }
 
+/// The secret values an export carries. `missing` names graph references
+/// whose value the store no longer holds: the backup keeps the reference and
+/// restores it without a value, like the device it came from. `app` holds the
+/// app-wide tokens (Hugging Face, CivitAI) at their fixed references.
+#[derive(Default)]
+pub struct ProviderBackupSecretSet {
+    pub secrets: Vec<ProviderBackupSecret>,
+    pub missing: Vec<SecretRef>,
+    pub app: Vec<ProviderBackupSecret>,
+}
+
+impl std::fmt::Debug for ProviderBackupSecretSet {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ProviderBackupSecretSet")
+            .field("missing", &self.missing)
+            .finish_non_exhaustive()
+    }
+}
+
+/// The provider or audio account a graph secret reference belongs to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProviderBackupSecretOwner {
+    ProviderAccount {
+        id: lettuce_types::ProviderAccountId,
+        label: String,
+    },
+    AudioProvider {
+        id: lettuce_types::AudioProviderId,
+        label: String,
+    },
+}
+
+/// Finds the account that references `reference`.
+#[must_use]
+pub fn provider_backup_secret_owner(
+    graph: &ProviderBackupGraph,
+    reference: SecretRef,
+) -> Option<ProviderBackupSecretOwner> {
+    graph
+        .accounts
+        .iter()
+        .find(|account| {
+            account.api_key_ref == Some(reference)
+                || account
+                    .secret_headers
+                    .iter()
+                    .any(|header| header.secret_ref == reference)
+                || matches!(
+                    &account.config,
+                    lettuce_models::ProviderConfig::Ollama(lettuce_models::OllamaConfig {
+                        sprout: Some(lettuce_models::SproutConfig {
+                            api_key_ref: Some(sprout),
+                            ..
+                        }),
+                    }) if *sprout == reference
+                )
+        })
+        .map(|account| ProviderBackupSecretOwner::ProviderAccount {
+            id: account.id,
+            label: account.label.clone(),
+        })
+        .or_else(|| {
+            graph
+                .audio_providers
+                .iter()
+                .find(|provider| provider.api_key_ref == Some(reference))
+                .map(|provider| ProviderBackupSecretOwner::AudioProvider {
+                    id: provider.id,
+                    label: provider.label.clone(),
+                })
+        })
+}
+
 pub struct BackupMediaObject {
     pub content_hash: lettuce_types::ContentHash,
     pub bytes: zeroize::Zeroizing<Vec<u8>>,
@@ -274,7 +348,13 @@ pub fn provider_backup_sections(
     media: Vec<BackupMediaObject>,
     artifacts: Vec<BackupConversationArtifact>,
 ) -> Result<Vec<BackupSection>, ProviderBackupGraphError> {
-    let plan = plan_provider_backup_export(graph, secrets)?;
+    let plan = plan_provider_backup_export(
+        graph,
+        ProviderBackupSecretSet {
+            secrets,
+            ..ProviderBackupSecretSet::default()
+        },
+    )?;
     if plan.media.len() != media.len() || plan.artifacts.len() != artifacts.len() {
         return Err(ProviderBackupGraphError::InvalidGraph);
     }
@@ -302,13 +382,15 @@ pub fn provider_backup_sections(
 
 pub fn plan_provider_backup_export(
     mut graph: ProviderBackupGraph,
-    secrets: Vec<ProviderBackupSecret>,
+    secret_set: ProviderBackupSecretSet,
 ) -> Result<ProviderBackupExportPlan, ProviderBackupGraphError> {
     canonicalize_and_validate(&mut graph)?;
     let expected = expected_secrets(&graph)?;
-    if secrets.len() != expected.len() {
-        return Err(ProviderBackupGraphError::InvalidSecrets);
-    }
+    let ProviderBackupSecretSet {
+        secrets,
+        mut missing,
+        mut app,
+    } = secret_set;
     let mut supplied = BTreeMap::new();
     for secret in &secrets {
         if secret.generation == 0
@@ -318,9 +400,17 @@ pub fn plan_provider_backup_export(
             return Err(ProviderBackupGraphError::InvalidSecrets);
         }
     }
-    if supplied.len() != expected.len() {
+    missing.sort();
+    if missing.windows(2).any(|pair| pair[0] == pair[1])
+        || missing
+            .iter()
+            .any(|reference| supplied.contains_key(reference) || !expected.contains_key(reference))
+        || supplied.len() + missing.len() != expected.len()
+    {
         return Err(ProviderBackupGraphError::InvalidSecrets);
     }
+    validate_app_secrets(&app)?;
+    app.sort_by_key(|secret| secret.reference);
     let media = graph
         .authored
         .media_blobs
@@ -361,11 +451,13 @@ pub fn plan_provider_backup_export(
         .map_err(|_| ProviderBackupGraphError::Serialization)?;
     let ordered_secrets = expected
         .keys()
-        .map(|reference| supplied[reference])
+        .filter_map(|reference| supplied.get(reference).copied())
         .collect::<Vec<_>>();
     let secret_bytes = serde_json::to_vec(&SecretDocument {
         version: PROVIDER_BACKUP_GRAPH_VERSION,
         secrets: ordered_secrets,
+        missing,
+        app: app.iter().collect(),
     })
     .map_err(|_| ProviderBackupGraphError::Serialization)?;
     let mut data_sections = Vec::with_capacity(PROVIDER_BACKUP_FIXED_SECTIONS);
@@ -1297,9 +1389,6 @@ pub fn rebind_provider_backup_secrets(
             }
         }
     }
-    if fresh.len() != secrets.len() {
-        return Err(ProviderBackupGraphError::InvalidSecrets);
-    }
     secrets
         .into_iter()
         .map(|mut secret| {
@@ -1496,6 +1585,23 @@ fn insert_secret(
 struct SecretDocument<'a> {
     version: u32,
     secrets: Vec<&'a ProviderBackupSecret>,
+    missing: Vec<SecretRef>,
+    app: Vec<&'a ProviderBackupSecret>,
+}
+
+pub(crate) fn validate_app_secrets(
+    secrets: &[ProviderBackupSecret],
+) -> Result<(), ProviderBackupGraphError> {
+    let mut purposes = BTreeSet::new();
+    for secret in secrets {
+        if secret.generation == 0
+            || secret.purpose.app_secret_ref() != Some(secret.reference)
+            || !purposes.insert(secret.purpose.clone())
+        {
+            return Err(ProviderBackupGraphError::InvalidSecrets);
+        }
+    }
+    Ok(())
 }
 
 impl Serialize for ProviderBackupSecret {

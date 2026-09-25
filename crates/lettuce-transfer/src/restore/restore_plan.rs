@@ -41,6 +41,8 @@ pub struct ProviderBackupRestorePlan {
     pub source_hash: lettuce_types::ContentHash,
     pub graph: ProviderBackupGraph,
     pub secrets: Vec<ProviderBackupSecret>,
+    /// App-wide tokens at their fixed references.
+    pub app_secrets: Vec<ProviderBackupSecret>,
     pub media: Vec<BackupMediaEntry>,
     pub artifacts: Vec<BackupConversationArtifact>,
     source: Mutex<BackupReader<Box<dyn BackupSource>>>,
@@ -188,6 +190,10 @@ impl From<ModelProfileDocument> for ModelProfile {
 struct SecretDocument {
     version: u32,
     secrets: Vec<DecodedSecret>,
+    #[serde(default)]
+    missing: Vec<SecretRef>,
+    #[serde(default)]
+    app: Vec<DecodedSecret>,
 }
 
 #[derive(Deserialize)]
@@ -309,7 +315,7 @@ pub fn decode_provider_backup_restore_plan(
         dynamic_memory,
     };
     crate::backup::backup_graph::canonicalize_and_validate(&mut graph)?;
-    let secrets = decode_secrets(secret_document, &graph)?;
+    let (secrets, app_secrets) = decode_secrets(secret_document, &graph)?;
     let media = take_media(sections, &graph)?;
     let artifacts = take_artifacts(sections, &graph)?;
     if !sections.sections.is_empty() {
@@ -319,6 +325,7 @@ pub fn decode_provider_backup_restore_plan(
         source_hash,
         graph,
         secrets,
+        app_secrets,
         media,
         artifacts,
         source: Mutex::new(reader),
@@ -387,18 +394,25 @@ fn take_json<T: for<'de> Deserialize<'de>>(
         .map_err(|_| ProviderBackupRestorePlanError::InvalidInventory)
 }
 
+type DecodedSecrets = (Vec<ProviderBackupSecret>, Vec<ProviderBackupSecret>);
+
 fn decode_secrets(
     document: SecretDocument,
     graph: &ProviderBackupGraph,
-) -> Result<Vec<ProviderBackupSecret>, ProviderBackupRestorePlanError> {
+) -> Result<DecodedSecrets, ProviderBackupRestorePlanError> {
     if document.version != PROVIDER_BACKUP_GRAPH_VERSION {
         return Err(ProviderBackupRestorePlanError::InvalidInventory);
     }
     let expected = crate::backup::backup_graph::expected_secrets(graph)?;
-    if document.secrets.len() != expected.len() {
+    if document.secrets.len() + document.missing.len() != expected.len() {
         return Err(ProviderBackupRestorePlanError::InvalidInventory);
     }
     let mut seen = BTreeMap::new();
+    for reference in &document.missing {
+        if !expected.contains_key(reference) || seen.insert(*reference, ()).is_some() {
+            return Err(ProviderBackupRestorePlanError::InvalidInventory);
+        }
+    }
     let mut secrets = Vec::with_capacity(document.secrets.len());
     for secret in document.secrets {
         if secret.generation == 0
@@ -407,16 +421,29 @@ fn decode_secrets(
         {
             return Err(ProviderBackupRestorePlanError::InvalidInventory);
         }
-        secrets.push(ProviderBackupSecret {
-            reference: secret.reference,
-            purpose: secret.purpose,
-            generation: secret.generation,
-            value: SecretValue::new(secret.value)
-                .map_err(|_| ProviderBackupRestorePlanError::InvalidInventory)?,
-        });
+        secrets.push(decoded_secret(secret)?);
     }
     secrets.sort_by_key(|secret| secret.reference);
-    Ok(secrets)
+    let app = document
+        .app
+        .into_iter()
+        .map(decoded_secret)
+        .collect::<Result<Vec<_>, _>>()?;
+    crate::backup::backup_graph::validate_app_secrets(&app)
+        .map_err(|_| ProviderBackupRestorePlanError::InvalidInventory)?;
+    Ok((secrets, app))
+}
+
+fn decoded_secret(
+    secret: DecodedSecret,
+) -> Result<ProviderBackupSecret, ProviderBackupRestorePlanError> {
+    Ok(ProviderBackupSecret {
+        reference: secret.reference,
+        purpose: secret.purpose,
+        generation: secret.generation,
+        value: SecretValue::new(secret.value)
+            .map_err(|_| ProviderBackupRestorePlanError::InvalidInventory)?,
+    })
 }
 
 fn take_media(

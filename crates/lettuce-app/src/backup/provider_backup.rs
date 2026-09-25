@@ -4,13 +4,13 @@ use lettuce_conversations::{
     ArtifactTransferError, ConversationArtifactTransferPort, TrustedArtifactDescriptor,
     TrustedArtifactSink,
 };
-use lettuce_settings::{SecretState, SecretStore};
+use lettuce_settings::{SecretPurpose, SecretState, SecretStore};
 use lettuce_transfer::{
     BACKUP_MEDIA_SECTION_SCHEMA, BackupConversationArtifact, BackupEnvelopeError, BackupWriter,
-    MAX_BACKUP_ENTRIES, PROVIDER_BACKUP_FIXED_SECTIONS, ProviderBackupGraphError,
-    ProviderBackupSecret, ProviderBackupSource, ProviderBackupSourceError,
-    backup_media_section_name, plan_provider_backup_export, provider_backup_secret_requirements,
-    verify_backup_artifact, verify_backup_media,
+    MAX_BACKUP_ENTRIES, ProviderBackupGraphError, ProviderBackupSecret, ProviderBackupSecretOwner,
+    ProviderBackupSecretSet, ProviderBackupSource, ProviderBackupSourceError,
+    backup_media_section_name, plan_provider_backup_export, provider_backup_secret_owner,
+    provider_backup_secret_requirements, verify_backup_artifact, verify_backup_media,
 };
 use lettuce_types::{ContentHash, TimestampMillis};
 use zeroize::Zeroizing;
@@ -37,6 +37,21 @@ where
     ) -> Result<Vec<u8>, lettuce_media::MediaStoreError> {
         self.read_sync_chunk(hash, offset, max_bytes)
     }
+}
+
+/// A finished backup and the account secrets it could not include because
+/// the secret store no longer holds their values. Those accounts restore
+/// without the value and need it entered again.
+#[derive(Debug, PartialEq, Eq)]
+pub struct ProviderBackupExport<W> {
+    pub output: W,
+    pub missing_secrets: Vec<ProviderBackupMissingSecret>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderBackupMissingSecret {
+    pub owner: ProviderBackupSecretOwner,
+    pub purpose: SecretPurpose,
 }
 
 pub struct ProviderBackupCoordinator<'a, R: ?Sized, S: ?Sized, M: ?Sized, A: ?Sized> {
@@ -78,7 +93,7 @@ where
         app_version: impl Into<String>,
         created_at: TimestampMillis,
         password: &str,
-    ) -> Result<Vec<u8>, ProviderBackupError> {
+    ) -> Result<ProviderBackupExport<Vec<u8>>, ProviderBackupError> {
         self.export_to(Vec::new(), app_version, created_at, password)
             .await
     }
@@ -86,44 +101,61 @@ where
     /// Writes the backup to `out` one section at a time: the data sections,
     /// then each media blob and conversation artifact read, checked and
     /// appended before the next is loaded. On error `out` holds an
-    /// incomplete backup and must be discarded.
+    /// incomplete backup and must be discarded. An account secret the store
+    /// reports missing is left out and named in the result instead of failing
+    /// the backup; the Hugging Face and CivitAI tokens are included when set.
     pub async fn export_to<W: std::io::Write>(
         &self,
         out: W,
         app_version: impl Into<String>,
         created_at: TimestampMillis,
         password: &str,
-    ) -> Result<W, ProviderBackupError> {
+    ) -> Result<ProviderBackupExport<W>, ProviderBackupError> {
         let graph = self.source.read_provider_backup_graph()?;
         let requirements = provider_backup_secret_requirements(&graph)?;
-        let mut values = Vec::with_capacity(requirements.len());
+        let mut secret_set = ProviderBackupSecretSet::default();
+        let mut missing_secrets = Vec::new();
         for (reference, purpose) in requirements {
             let before = self.secrets.status(&reference, &purpose).await?;
-            if before.reference != reference
-                || before.purpose != purpose
-                || before.state != SecretState::Present
-                || before.generation == 0
-            {
+            if before.reference != reference || before.purpose != purpose {
                 return Err(ProviderBackupError::SecretChanged);
             }
-            let value = self.secrets.load(&reference, &purpose).await?;
-            let after = self.secrets.status(&reference, &purpose).await?;
-            if after != before {
-                return Err(ProviderBackupError::SecretChanged);
+            if before.state == SecretState::Missing {
+                let owner = provider_backup_secret_owner(&graph, reference)
+                    .ok_or(ProviderBackupGraphError::InvalidGraph)?;
+                missing_secrets.push(ProviderBackupMissingSecret { owner, purpose });
+                secret_set.missing.push(reference);
+                continue;
             }
-            values.push(ProviderBackupSecret {
-                reference,
-                purpose,
-                generation: before.generation,
-                value,
-            });
+            secret_set
+                .secrets
+                .push(self.read_present_secret(before).await?);
         }
-        let plan = plan_provider_backup_export(graph, values)?;
+        for purpose in [
+            SecretPurpose::HuggingFaceAccessToken,
+            SecretPurpose::CivitaiAccessToken,
+        ] {
+            let Some(reference) = purpose.app_secret_ref() else {
+                continue;
+            };
+            let before = self.secrets.status(&reference, &purpose).await?;
+            if before.state != SecretState::Present || before.generation == 0 {
+                continue;
+            }
+            secret_set.app.push(self.read_present_secret(before).await?);
+        }
+        if !missing_secrets.is_empty() {
+            tracing::warn!(
+                count = missing_secrets.len(),
+                "backup leaves out account secrets the store no longer holds"
+            );
+        }
+        let plan = plan_provider_backup_export(graph, secret_set)?;
         if plan
             .media
             .len()
             .checked_add(plan.artifacts.len())
-            .and_then(|count| count.checked_add(PROVIDER_BACKUP_FIXED_SECTIONS))
+            .and_then(|count| count.checked_add(plan.data_sections.len()))
             .is_none_or(|count| count > MAX_BACKUP_ENTRIES)
         {
             return Err(ProviderBackupGraphError::LimitExceeded.into());
@@ -155,7 +187,36 @@ where
             let (name, schema) = verify_backup_artifact(descriptor, &artifact.bytes)?;
             writer.append_bytes(&name, &schema, &artifact.bytes)?;
         }
-        writer.finish().map_err(Into::into)
+        Ok(ProviderBackupExport {
+            output: writer.finish()?,
+            missing_secrets,
+        })
+    }
+
+    async fn read_present_secret(
+        &self,
+        before: lettuce_settings::SecretStatus,
+    ) -> Result<ProviderBackupSecret, ProviderBackupError> {
+        if before.state != SecretState::Present || before.generation == 0 {
+            return Err(ProviderBackupError::SecretChanged);
+        }
+        let value = self
+            .secrets
+            .load(&before.reference, &before.purpose)
+            .await?;
+        let after = self
+            .secrets
+            .status(&before.reference, &before.purpose)
+            .await?;
+        if after != before {
+            return Err(ProviderBackupError::SecretChanged);
+        }
+        Ok(ProviderBackupSecret {
+            reference: before.reference,
+            purpose: before.purpose,
+            generation: before.generation,
+            value,
+        })
     }
 
     fn read_media(
@@ -1846,7 +1907,8 @@ mod tests {
         )
         .export("1.0.0", TimestampMillis::new(4), "backup password")
         .await
-        .expect("export backup");
+        .expect("export backup")
+        .output;
         assert_eq!(
             open_backup(&envelope, "wrong password"),
             Err(BackupEnvelopeError::Authentication)
@@ -2048,7 +2110,7 @@ mod tests {
         );
         assert_eq!(
             restore_admission_request.counts.document_count,
-            PROVIDER_BACKUP_FIXED_SECTIONS as u64
+            lettuce_transfer::PROVIDER_BACKUP_FIXED_SECTIONS as u64
         );
         assert_eq!(
             restore_admission_request.source_version,
@@ -2574,5 +2636,144 @@ mod tests {
                 .await,
             Err(ProviderBackupError::SecretChanged)
         );
+    }
+
+    #[tokio::test]
+    async fn backup_names_accounts_with_missing_keys_and_carries_app_tokens() {
+        let root = std::env::temp_dir().join(format!("provider-backup-{}", OperationId::new()));
+        std::fs::create_dir_all(&root).expect("backup fixture root");
+        let path = root.join("state.sqlite3");
+        let backend = AppBackend::open(&path, TimestampMillis::new(1)).expect("open backend");
+        let owner = SecretOwnerId::new();
+        let provider_account_id = ProviderAccountId::new();
+        ProviderAccountRepository::upsert(
+            backend.database(),
+            ProviderAccount {
+                id: provider_account_id,
+                secret_owner_id: owner,
+                provider_kind: "openai".into(),
+                protocol: ProviderProtocol::OpenAiCompatible,
+                label: "Wiped keyring".into(),
+                endpoint: None,
+                enabled: true,
+                streaming_enabled: true,
+                allow_invalid_tls: false,
+                api_key_ref: Some(SecretRef::new()),
+                secret_headers: Vec::new(),
+                config: ProviderConfig::Standard,
+                revision: Revision::new(1),
+                created_at: TimestampMillis::new(2),
+                updated_at: TimestampMillis::new(2),
+            },
+            None,
+        )
+        .expect("store provider");
+        let source_store = InMemorySecretStore::new();
+        let hugging_face = SecretPurpose::HuggingFaceAccessToken;
+        let hugging_face_ref = hugging_face.app_secret_ref().expect("app secret ref");
+        source_store
+            .put(
+                SecretRecord::new(hugging_face_ref, hugging_face.clone()),
+                SecretValue::new("hf-backup-token").expect("secret"),
+                None,
+            )
+            .await
+            .expect("store token");
+        let media = LocalSyncMediaStore::open(
+            root.join("platform-v2/media-blobs"),
+            Database::open(&path).expect("blob database"),
+            Database::open(&path).expect("asset database"),
+        )
+        .expect("backup media reader");
+        let export = backend
+            .provider_backup(&source_store, &media)
+            .export("1.0.0", TimestampMillis::new(4), "backup password")
+            .await
+            .expect("a missing key does not block the backup");
+        assert_eq!(
+            export.missing_secrets,
+            vec![ProviderBackupMissingSecret {
+                owner: ProviderBackupSecretOwner::ProviderAccount {
+                    id: provider_account_id,
+                    label: "Wiped keyring".into(),
+                },
+                purpose: SecretPurpose::ProviderApiKey { owner },
+            }]
+        );
+        let location_authority =
+            FilesystemAuthority::new(&DirectorySnapshot::new(&root).expect("snapshot"))
+                .expect("filesystem authority");
+        let location = crate::AppDatabaseLocation::new(
+            root.join("private-persistent-v2"),
+            &location_authority,
+        )
+        .expect("database location");
+        let target_store = InMemorySecretStore::new();
+        let restored = crate::BackupRestoreCoordinator::new(
+            &location,
+            &root.join("restore-workspace"),
+            &root.join("platform-v2/media-blobs"),
+            &target_store,
+        )
+        .restore(
+            OperationId::new(),
+            std::io::Cursor::new(export.output.clone()),
+            "backup password",
+            TimestampMillis::new(5),
+        )
+        .await
+        .expect("restore backup");
+        assert!(
+            target_store
+                .load(&hugging_face_ref, &hugging_face)
+                .await
+                .expect("restored token")
+                .with(|value| value == "hf-backup-token")
+        );
+        let graph = lettuce_transfer::ProviderBackupSource::read_provider_backup_graph(
+            &Database::open(&restored.database_path).expect("restored database"),
+        )
+        .expect("restored graph");
+        let restored_ref = graph.accounts[0].api_key_ref.expect("reference kept");
+        assert_eq!(
+            target_store
+                .status(&restored_ref, &SecretPurpose::ProviderApiKey { owner })
+                .await
+                .expect("status")
+                .state,
+            SecretState::Missing
+        );
+
+        let local_store = InMemorySecretStore::new();
+        local_store
+            .put(
+                SecretRecord::new(hugging_face_ref, hugging_face.clone()),
+                SecretValue::new("hf-device-token").expect("secret"),
+                None,
+            )
+            .await
+            .expect("store device token");
+        crate::BackupRestoreCoordinator::new(
+            &location,
+            &root.join("restore-workspace"),
+            &root.join("platform-v2/media-blobs"),
+            &local_store,
+        )
+        .restore(
+            OperationId::new(),
+            std::io::Cursor::new(export.output),
+            "backup password",
+            TimestampMillis::new(6),
+        )
+        .await
+        .expect("restore over a device token");
+        assert!(
+            local_store
+                .load(&hugging_face_ref, &hugging_face)
+                .await
+                .expect("device token")
+                .with(|value| value == "hf-device-token")
+        );
+        std::fs::remove_dir_all(root).expect("remove backup fixture");
     }
 }

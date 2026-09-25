@@ -582,7 +582,10 @@ the backup source is never removed.
 `rebind_provider_backup_secrets` moves every provider API key, secret header and
 audio API key reference of a decoded graph to a fresh `SecretRef` and rebinds the
 decoded secret values to them, so a restore writes new store entries instead of
-overwriting secrets the previous database file still references.
+overwriting secrets the previous database file still references. A reference
+the backup lists as missing gets a fresh reference with no stored value. App
+tokens (`app` in the secret section) keep their fixed references and are
+validated separately from the graph's inventory.
 
 A planned legacy source now serves the import stages without touching its
 origin. `LegacyBackupConfigurationPlan` implements `LegacyProviderSecretSource`

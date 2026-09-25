@@ -218,6 +218,7 @@ impl<'a, S: SecretStore + ?Sized> BackupRestoreCoordinator<'a, S> {
         let ProviderBackupRestorePlan {
             mut graph,
             secrets,
+            app_secrets,
             artifacts,
             ..
         } = plan;
@@ -251,11 +252,40 @@ impl<'a, S: SecretStore + ?Sized> BackupRestoreCoordinator<'a, S> {
                 return Err(error);
             }
         };
+        self.restore_app_secrets(app_secrets).await;
         Ok(BackupRestoreReceipt {
             database_path,
             previous_database_path,
             admission,
         })
+    }
+
+    /// Writes each backed-up app-wide token only where this device has none,
+    /// so a restore never replaces a token entered here. The restore has
+    /// already switched databases, so a failed write is logged, not returned.
+    async fn restore_app_secrets(&self, app_secrets: Vec<ProviderBackupSecret>) {
+        for secret in app_secrets {
+            let missing = self
+                .secrets
+                .status(&secret.reference, &secret.purpose)
+                .await
+                .is_ok_and(|status| status.state == lettuce_settings::SecretState::Missing);
+            if !missing {
+                continue;
+            }
+            if self
+                .secrets
+                .put(
+                    SecretRecord::new(secret.reference, secret.purpose),
+                    secret.value,
+                    None,
+                )
+                .await
+                .is_err()
+            {
+                tracing::warn!("restored backup app token could not be stored");
+            }
+        }
     }
 
     #[allow(clippy::too_many_arguments)]

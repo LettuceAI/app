@@ -1580,15 +1580,23 @@ backend status boundary.
 The provider backup coordinator reads one consistent provider/model/prompt
 snapshot, derives the exact referenced secret inventory, and loads only those
 values from the injected native `SecretStore`. It checks each secret generation
-before and after the read, rejects missing or rotating values, and seals metadata
-and secrets as separate authenticated sections. Secret plaintext is held in
+before and after the read and rejects rotating or unavailable values. A value
+the store reports missing (a wiped keyring, a key sync could not deliver, a
+blank legacy key) no longer blocks the backup: the reference is kept, listed as
+missing in the secret section, and the owning provider or audio account is
+returned in `ProviderBackupExport::missing_secrets`, so the restored account
+asks for its key again like the source device. The Hugging Face and CivitAI
+tokens are carried when set; restore writes each one only when the device has
+none, after the new database is active, so a token entered on this device is
+never replaced. Metadata and secrets are sealed as separate authenticated
+sections. Secret plaintext is held in
 zeroizing buffers and never appears in public backup metadata, errors or Debug
 output.
 
 That coordinator now includes global settings plus audio providers and user
 voices in the same database snapshot. Its derived secret inventory covers both
-provider credentials and every referenced `AudioApiKey`; either family must be
-complete and stable before encryption begins.
+provider credentials and every referenced `AudioApiKey`; every present value
+must be stable before encryption begins.
 
 The same export now carries the complete authored persona, lorebook, character
 and group graph plus all logical media and blob metadata. A file-backed scenario
