@@ -274,6 +274,24 @@ pub struct ChatTemplateMessagePackage {
     pub content: String,
 }
 
+/// Everything a persona file writes: the new persona, the lorebooks it is
+/// bound to in order and whether it becomes the default.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PersonaFileImport {
+    pub persona: lettuce_characters::Persona,
+    pub lorebook_ids: Vec<lettuce_types::LorebookId>,
+    pub make_default: bool,
+}
+
+pub trait PersonaFileRepository: Send + Sync {
+    /// Writes the whole import in one transaction, so a failure leaves nothing
+    /// behind.
+    fn import_persona_file(
+        &self,
+        import: &PersonaFileImport,
+    ) -> Result<lettuce_characters::Persona, lettuce_characters::RepositoryError>;
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PersonaPackage {

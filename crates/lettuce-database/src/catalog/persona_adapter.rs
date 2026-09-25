@@ -10,6 +10,7 @@ use lettuce_characters::{
     PersonaDependencyReader, PersonaDraftUpdate, PersonaMedia, PersonaMediaLink, PersonaMediaSlot,
     PersonaRepository, PersonaSearch, RepositoryError,
 };
+use lettuce_context::BindingRepositoryError;
 use lettuce_sync::{
     ChangeOperation, LocalChangeJournalError, NewCanonicalChange,
     canonical_persona_default_payload, canonical_persona_payload, media_asset_create_operation,
@@ -19,6 +20,7 @@ use lettuce_sync::{
     persona_restore_operation, persona_revise_operation, persona_set_default_operation,
     persona_sync_entity, persona_update_media_operation,
 };
+use lettuce_transfer::{PersonaFileImport, PersonaFileRepository};
 use lettuce_types::{AssetId, Page, PageRequest, PersonaId, Revision, TimestampMillis};
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, TransactionBehavior, params};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -815,43 +817,146 @@ fn load_page(
     Ok(Page { items, next_cursor })
 }
 
-impl PersonaRepository for Database {
-    fn create(&self, persona: Persona) -> Result<Persona, RepositoryError> {
-        let mut canonical = persona.clone();
-        canonical.media = normalize_media(canonical.media)?;
-        canonical.validate()?;
-        let operation = persona_create_operation(canonical.id);
-        let request = persona_insert_change(&canonical)?;
+fn create_persona_in(tx: &Transaction<'_>, persona: Persona) -> Result<Persona, RepositoryError> {
+    let mut canonical = persona.clone();
+    canonical.media = normalize_media(canonical.media)?;
+    canonical.validate()?;
+    let operation = persona_create_operation(canonical.id);
+    let request = persona_insert_change(&canonical)?;
+    let operation = entity_scoped_operation(
+        tx,
+        &persona_sync_entity(canonical.id).map_err(|_| RepositoryError::Storage)?,
+        operation,
+    )
+    .map_err(sync_error)?;
+    record_persona_media_assets(
+        tx,
+        canonical.media.links.iter().map(|link| link.asset_id),
+        canonical.created_at,
+    )?;
+    let admission = record_local_change_in(tx, operation, &request, canonical.created_at)
+        .map_err(sync_error)?;
+    if admission.created {
+        return insert_persona(tx, canonical);
+    }
+    let stored = load_persona(tx, persona.id)
+        .map_err(db_error)?
+        .ok_or(RepositoryError::Storage)?;
+    if canonical_persona_payload(&stored).map_err(|_| RepositoryError::Storage)?
+        != *admission.change.payload().ok_or(RepositoryError::Storage)?
+    {
+        return Err(RepositoryError::Storage);
+    }
+    Ok(stored)
+}
+
+fn set_default_in(
+    tx: &Transaction<'_>,
+    id: PersonaId,
+    expected_default_revision: Revision,
+    now: TimestampMillis,
+) -> Result<PersonaDefaultState, RepositoryError> {
+    let operation = persona_set_default_operation(expected_default_revision, id);
+    let operation = entity_scoped_operation(
+        tx,
+        &persona_default_sync_entity().map_err(|_| RepositoryError::Storage)?,
+        operation,
+    )
+    .map_err(sync_error)?;
+    if let Some(state) =
+        replay_persona_default_change(tx, operation, expected_default_revision, now)?
+    {
+        return Ok(state);
+    }
+    let current = read_default(tx).map_err(db_error)?;
+    if current.revision != expected_default_revision {
+        return Err(RepositoryError::StaleRevision {
+            expected: expected_default_revision,
+            actual: current.revision,
+        });
+    }
+    let persona = load_persona(tx, id)
+        .map_err(db_error)?
+        .ok_or(RepositoryError::NotFound)?;
+    if persona.status != LifecycleStatus::Active {
+        return Err(RepositoryError::Archived);
+    }
+    let next = expected_default_revision
+        .next()
+        .map_err(|_| RepositoryError::Storage)?;
+    let changed = tx
+        .execute(
+            "UPDATE persona_defaults SET default_persona_id=?1,revision=?2,updated_at=?3 WHERE id=1 AND revision=?4",
+            params![
+                id.to_string(),
+                sql_u64(next.get())?,
+                now.get(),
+                sql_u64(expected_default_revision.get())?
+            ],
+        )
+        .map_err(db_error)?;
+    if changed == 0 {
+        let actual = read_default(tx).map_err(db_error)?.revision;
+        return Err(RepositoryError::StaleRevision {
+            expected: expected_default_revision,
+            actual,
+        });
+    }
+    let state = read_default(tx).map_err(db_error)?;
+    let request = persona_default_update_change(&current, &state)?;
+    let admission = record_local_change_in(tx, operation, &request, now).map_err(sync_error)?;
+    if !admission.created {
+        return Err(RepositoryError::Storage);
+    }
+    Ok(state)
+}
+
+impl PersonaFileRepository for Database {
+    fn import_persona_file(&self, import: &PersonaFileImport) -> Result<Persona, RepositoryError> {
         let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
-        let operation = entity_scoped_operation(
-            &tx,
-            &persona_sync_entity(canonical.id).map_err(|_| RepositoryError::Storage)?,
-            operation,
-        )
-        .map_err(sync_error)?;
-        record_persona_media_assets(
-            &tx,
-            canonical.media.links.iter().map(|link| link.asset_id),
-            canonical.created_at,
-        )?;
-        let admission = record_local_change_in(&tx, operation, &request, canonical.created_at)
-            .map_err(sync_error)?;
-        let stored = if admission.created {
-            insert_persona(&tx, canonical)?
-        } else {
-            let stored = load_persona(&tx, persona.id)
-                .map_err(db_error)?
-                .ok_or(RepositoryError::Storage)?;
-            if canonical_persona_payload(&stored).map_err(|_| RepositoryError::Storage)?
-                != *admission.change.payload().ok_or(RepositoryError::Storage)?
-            {
-                return Err(RepositoryError::Storage);
-            }
-            stored
-        };
+        let persona = create_persona_in(&tx, import.persona.clone())?;
+        let mut revision = persona.revision;
+        for lorebook_id in &import.lorebook_ids {
+            revision = crate::lorebook::lorebook_adapter::bind_persona_lorebook_in(
+                &tx,
+                persona.id,
+                revision,
+                *lorebook_id,
+                import.persona.created_at,
+            )
+            .map_err(|error| match error {
+                BindingRepositoryError::NotFound => RepositoryError::NotFound,
+                BindingRepositoryError::Conflict => RepositoryError::AlreadyExists,
+                BindingRepositoryError::Invalid(_) => RepositoryError::Invalid(
+                    lettuce_characters::ValidationError::InvalidReference {
+                        field: "persona.lorebooks",
+                    },
+                ),
+                BindingRepositoryError::Failure(_) => RepositoryError::Storage,
+            })?;
+        }
+        if import.make_default {
+            let current = read_default(&tx).map_err(db_error)?.revision;
+            set_default_in(&tx, persona.id, current, import.persona.created_at)?;
+        }
+        let persona = load_persona(&tx, persona.id)
+            .map_err(db_error)?
+            .ok_or(RepositoryError::Storage)?;
+        tx.commit().map_err(db_error)?;
+        Ok(persona)
+    }
+}
+
+impl PersonaRepository for Database {
+    fn create(&self, persona: Persona) -> Result<Persona, RepositoryError> {
+        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let tx = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(db_error)?;
+        let stored = create_persona_in(&tx, persona)?;
         tx.commit().map_err(db_error)?;
         Ok(stored)
     }
@@ -1361,64 +1466,11 @@ impl PersonaRepository for Database {
         expected_default_revision: Revision,
         now: TimestampMillis,
     ) -> Result<PersonaDefaultState, RepositoryError> {
-        let operation = persona_set_default_operation(expected_default_revision, id);
         let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
-        let operation = entity_scoped_operation(
-            &tx,
-            &persona_default_sync_entity().map_err(|_| RepositoryError::Storage)?,
-            operation,
-        )
-        .map_err(sync_error)?;
-        if let Some(state) =
-            replay_persona_default_change(&tx, operation, expected_default_revision, now)?
-        {
-            tx.commit().map_err(db_error)?;
-            return Ok(state);
-        }
-        let current = read_default(&tx).map_err(db_error)?;
-        if current.revision != expected_default_revision {
-            return Err(RepositoryError::StaleRevision {
-                expected: expected_default_revision,
-                actual: current.revision,
-            });
-        }
-        let persona = load_persona(&tx, id)
-            .map_err(db_error)?
-            .ok_or(RepositoryError::NotFound)?;
-        if persona.status != LifecycleStatus::Active {
-            return Err(RepositoryError::Archived);
-        }
-        let next = expected_default_revision
-            .next()
-            .map_err(|_| RepositoryError::Storage)?;
-        let changed = tx
-            .execute(
-                "UPDATE persona_defaults SET default_persona_id=?1,revision=?2,updated_at=?3 WHERE id=1 AND revision=?4",
-                params![
-                    id.to_string(),
-                    sql_u64(next.get())?,
-                    now.get(),
-                    sql_u64(expected_default_revision.get())?
-                ],
-            )
-            .map_err(db_error)?;
-        if changed == 0 {
-            let actual = read_default(&tx).map_err(db_error)?.revision;
-            return Err(RepositoryError::StaleRevision {
-                expected: expected_default_revision,
-                actual,
-            });
-        }
-        let state = read_default(&tx).map_err(db_error)?;
-        let request = persona_default_update_change(&current, &state)?;
-        let admission =
-            record_local_change_in(&tx, operation, &request, now).map_err(sync_error)?;
-        if !admission.created {
-            return Err(RepositoryError::Storage);
-        }
+        let state = set_default_in(&tx, id, expected_default_revision, now)?;
         tx.commit().map_err(db_error)?;
         Ok(state)
     }
@@ -1856,6 +1908,87 @@ mod tests {
         MediaAssetRepository::create(database, asset)
             .expect("asset create")
             .id
+    }
+
+    #[test]
+    fn a_failed_persona_file_import_leaves_nothing_and_a_retry_writes_one_persona() {
+        let database = Database::open_in_memory().expect("database");
+        let lorebook = lettuce_context::LorebookRepository::create(
+            &database,
+            lettuce_context::LorebookMetadataDraft {
+                name: "Harbour".into(),
+                detection_policy: lettuce_context::DetectionPolicy::RecentMessageWindow,
+                icon_asset_id: None,
+                behavior_version: lettuce_context::LorebookBehaviorVersion::LegacyV1,
+            },
+            Vec::new(),
+            TimestampMillis::new(1),
+        )
+        .expect("lorebook");
+        let count = |database: &Database| {
+            PersonaRepository::list(
+                database,
+                PageRequest {
+                    cursor: None,
+                    limit: PageLimit::new(10),
+                },
+                true,
+            )
+            .expect("personas")
+            .items
+            .len()
+        };
+        let persona = Persona::new(
+            PersonaId::new(),
+            "Wanderer".into(),
+            String::new(),
+            TimestampMillis::new(5),
+        )
+        .expect("a persona may have no description");
+        let failing = PersonaFileImport {
+            persona: persona.clone(),
+            lorebook_ids: vec![lorebook.book.id, lettuce_types::LorebookId::new()],
+            make_default: true,
+        };
+        assert_eq!(
+            database.import_persona_file(&failing),
+            Err(RepositoryError::NotFound)
+        );
+        assert_eq!(count(&database), 0);
+        assert_eq!(
+            PersonaRepository::get_default_snapshot(&database)
+                .expect("default")
+                .state
+                .persona_id,
+            None
+        );
+        let imported = database
+            .import_persona_file(&PersonaFileImport {
+                persona: Persona {
+                    id: PersonaId::new(),
+                    ..persona
+                },
+                lorebook_ids: vec![lorebook.book.id],
+                make_default: true,
+            })
+            .expect("retry");
+        assert_eq!(count(&database), 1);
+        assert_eq!(
+            lettuce_context::PersonaLorebookBindingRepository::list_persona_bindings(
+                &database,
+                imported.id
+            )
+            .expect("bindings")
+            .len(),
+            1
+        );
+        assert_eq!(
+            PersonaRepository::get_default_snapshot(&database)
+                .expect("default")
+                .state
+                .persona_id,
+            Some(imported.id)
+        );
     }
 
     fn persona(id: PersonaId, avatar: AssetId, reference: AssetId) -> Persona {

@@ -1122,6 +1122,29 @@ fn list_bindings(
     Ok(result)
 }
 
+/// Appends a lorebook to a persona's bindings inside `tx` and returns the
+/// persona's next revision.
+pub(crate) fn bind_persona_lorebook_in(
+    tx: &Transaction<'_>,
+    persona_id: PersonaId,
+    expected: Revision,
+    lorebook_id: LorebookId,
+    now: TimestampMillis,
+) -> Result<Revision, BindingRepositoryError> {
+    binding_mutation(
+        tx,
+        OwnerKind::Persona,
+        &persona_id.to_string(),
+        expected,
+        BindingOperation::Bind(LorebookBindingCreate {
+            lorebook_id,
+            target: BindingInsertionTarget::Append,
+        }),
+        now,
+    )
+    .map(|result| result.owner_revision)
+}
+
 fn mutate_bindings(
     database: &Database,
     kind: OwnerKind,

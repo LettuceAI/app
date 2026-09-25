@@ -3,13 +3,13 @@ use lettuce_characters::{
     PersonaRepository, RepositoryError,
 };
 use lettuce_context::{
-    BindingInsertionTarget, BindingRepositoryError, LifecycleStatus as LorebookStatus,
-    LorebookBindingCreate, LorebookRepository, PersonaLorebookBindingRepository,
+    BindingRepositoryError, LifecycleStatus as LorebookStatus, LorebookRepository,
+    PersonaLorebookBindingRepository,
 };
 use lettuce_media::{AssetKind, LocalMediaBlobStore, MediaAssetRepository, MediaBlobRepository};
 use lettuce_transfer::{
     EntityPackageError, LegacyImportSkip, LegacyImportSkipKind, LegacyImportSkipReason,
-    PackageCrop, PersonaPackage, PersonaUecSource,
+    PackageCrop, PersonaFileImport, PersonaFileRepository, PersonaPackage, PersonaUecSource,
 };
 use lettuce_types::{LorebookId, PersonaId, Revision, TimestampMillis};
 
@@ -53,7 +53,11 @@ impl<'a, R: ?Sized, BR, AR> PersonaFileCoordinator<'a, R, BR, AR> {
 
 impl<R, BR, AR> PersonaFileCoordinator<'_, R, BR, AR>
 where
-    R: PersonaRepository + PersonaLorebookBindingRepository + LorebookRepository + ?Sized,
+    R: PersonaRepository
+        + PersonaFileRepository
+        + PersonaLorebookBindingRepository
+        + LorebookRepository
+        + ?Sized,
     BR: MediaBlobRepository,
     AR: MediaAssetRepository,
 {
@@ -111,9 +115,7 @@ where
                 ordinal: 0,
             });
         }
-        let persona = PersonaRepository::create(self.repository, persona)?;
         let mut skipped = Vec::new();
-        let mut revision = persona.revision;
         let mut bound = Vec::new();
         for source_id in &data.active_lorebook_ids {
             let lorebook_id = source_id.parse::<LorebookId>().ok();
@@ -136,26 +138,13 @@ where
                 });
                 continue;
             };
-            revision = self
-                .repository
-                .bind_persona_lorebook(
-                    persona.id,
-                    revision,
-                    LorebookBindingCreate {
-                        lorebook_id: lorebook.book.id,
-                        target: BindingInsertionTarget::Append,
-                    },
-                    now,
-                )?
-                .owner_revision;
             bound.push(lorebook.book.id);
         }
-        if data.is_default == Some(true) {
-            let current = self.repository.get_default_snapshot()?.state.revision;
-            self.repository.set_default(persona.id, current, now)?;
-        }
-        let persona = PersonaRepository::get(self.repository, persona.id)?
-            .ok_or(PersonaFileError::NotFound)?;
+        let persona = self.repository.import_persona_file(&PersonaFileImport {
+            persona,
+            lorebook_ids: bound,
+            make_default: data.is_default == Some(true),
+        })?;
         Ok(ImportedPersonaFile { persona, skipped })
     }
 
@@ -215,6 +204,64 @@ mod tests {
         bytes.extend_from_slice(&[8, 6, 0, 0, 0]);
         bytes.extend_from_slice(b"persona avatar");
         bytes
+    }
+
+    #[test]
+    fn a_persona_uec_without_a_description_imports_like_legacy_parse_uec_persona() {
+        let root = std::env::temp_dir().join(format!("persona-blank-{}", OperationId::new()));
+        std::fs::create_dir_all(&root).expect("root");
+        let path = root.join("state.sqlite3");
+        let backend = crate::AppBackend::open(&path, TimestampMillis::new(1)).expect("backend");
+        let authority = FilesystemAuthority::new(&DirectorySnapshot::new(&root).expect("snapshot"))
+            .expect("authority");
+        let store = LocalMediaBlobStore::new(
+            authority.managed_files(),
+            authority
+                .read_capability(ManagedRoot::MediaBlobs)
+                .expect("read"),
+            authority
+                .write_capability(ManagedRoot::MediaBlobs)
+                .expect("write"),
+            Database::open(&path).expect("blobs"),
+            Database::open(&path).expect("assets"),
+        );
+        let mut uec: serde_json::Value = serde_json::from_str(
+            &lettuce_transfer::build_persona_uec(&PersonaUecSource {
+                id: "persona-1".into(),
+                title: "Wanderer".into(),
+                description: String::new(),
+                nickname: None,
+                is_default: true,
+                created_at: 1,
+                updated_at: 1,
+                avatar: None,
+                avatar_crop: None,
+                active_lorebook_ids: Vec::new(),
+            })
+            .expect("uec"),
+        )
+        .expect("json");
+        uec["payload"]
+            .as_object_mut()
+            .expect("payload")
+            .remove("description");
+        let files = backend.persona_files(&store);
+        let package = files
+            .read(&uec.to_string(), TimestampMillis::new(5))
+            .expect("read");
+        let imported = files
+            .import(&package, TimestampMillis::new(5))
+            .expect("a title-only persona imports");
+        assert_eq!(imported.persona.title, "Wanderer");
+        assert_eq!(imported.persona.description, "");
+        assert_eq!(
+            PersonaRepository::get_default_snapshot(backend.database())
+                .expect("default")
+                .state
+                .persona_id,
+            Some(imported.persona.id)
+        );
+        std::fs::remove_dir_all(&root).ok();
     }
 
     #[test]
