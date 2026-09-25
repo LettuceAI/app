@@ -427,9 +427,21 @@ archiving therefore reach existing chats, and an archived or missing book stops
 injecting. Each tier orders its active entries by legacy display order, then
 creation time, then binding order, and a group turn keeps the first occurrence
 of an entry. The turn records every book it used with the revision it read and
-the activated entry ids. The chat's persona is read live too: its current title,
-description and design notes replace the launch snapshot, which remains only as
-the fallback when the persona no longer exists. The live document goes through the launch
+the activated entry ids. Persona, characters and group are read live too
+(`generation::live_sources`). A one-to-one chat uses its chosen persona, or the
+current default persona when it chose none or its persona no longer exists or is
+archived (legacy `choose_persona`, `storage.rs` 509-521); a disabled persona is
+none, and a launch that found no default persona stays without one. A group
+chat uses its own persona, else its launch's explicit one, else the group's
+current selection, and a persona that no longer exists is none (legacy
+`load_persona`). Every character body is its current record, and
+`{{group_characters}}` and `{{@"Name"}}` mentions use the group's current
+members in cast order. A group's chat mode and character-lorebook switch follow
+the group (`group_sessions.rs` 509-600); a launch bakes a legacy session
+override of either into its snapshot with no separate marker, so the snapshot
+value is used while the group is unchanged since launch and the group's value
+once it changes, which drops such an imported override after the first group
+edit. A group turn in conversation mode sends no scene. The live document goes through the launch
 snapshot conversion, and prompt attribution carries its current id and
 revision. Because the prompt is live, a one-to-one turn whose prompt (or any
 document its chain fell back to) changed between its first context assembly and

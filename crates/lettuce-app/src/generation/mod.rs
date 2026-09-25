@@ -5,6 +5,7 @@ pub(crate) mod conversation_generation_input;
 pub(crate) mod conversation_inference;
 pub(crate) mod feature_parameters;
 pub(crate) mod feature_prompt_entries;
+pub(crate) mod live_sources;
 pub(crate) mod provider_runtime;
 pub(crate) mod pure_mode_rules;
 pub(crate) mod reply_helper;

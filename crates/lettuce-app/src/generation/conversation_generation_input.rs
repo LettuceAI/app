@@ -1165,7 +1165,17 @@ where
             let (character_lora, persona_lora) = crate::image::scene_loras::subject_loras(
                 self.repository,
                 details.character.source_id,
-                settings.persona.as_ref().map(|persona| persona.source_id),
+                crate::generation::live_sources::live_persona(
+                    self.repository,
+                    &aggregate.conversation,
+                    None,
+                )
+                .map_err(|_| {
+                    ConversationGenerationInputError::Context(
+                        ContextAssemblyError::ConversationUnavailable,
+                    )
+                })?
+                .map(|persona| persona.id),
             );
             prompt_values.character_scene_lora = Some(crate::image::scene_loras::subject_binding(
                 character_lora.as_ref(),

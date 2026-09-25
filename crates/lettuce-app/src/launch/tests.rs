@@ -4905,6 +4905,218 @@ fn set_character_texts(
         .expect("revise character profile");
 }
 
+fn set_default_persona(database: &Database, persona_id: PersonaId) {
+    let revision = PersonaRepository::get_default_snapshot(database)
+        .expect("default snapshot")
+        .state
+        .revision;
+    PersonaRepository::set_default(database, persona_id, revision, NOW).expect("set default");
+}
+
+async fn direct_prompt_text(
+    database: &Database,
+    launch: DirectConversationLaunchRequest,
+    key: &str,
+) -> impl AsyncFn() -> String {
+    let conversation = ConversationLaunchPlanner::new(database)
+        .launch_direct(&launch, NOW)
+        .expect("launch direct")
+        .value
+        .conversation;
+    let sent = ConversationRepository::begin_send(
+        database,
+        &direct_send_command(&conversation, &format!("{key}-send"), "Hello."),
+        TimestampMillis::new(NOW.get() + 10),
+    )
+    .expect("send direct message");
+    let source_message_id = match sent.value.turn.input {
+        GenerationInput::UserMessage { message_id } => message_id,
+        ref other => panic!("expected user-message input, got {other:?}"),
+    };
+    let conversation_id = conversation.id;
+    async move || {
+        assembled_prompt_with_text(
+            database,
+            context_request_for(database, conversation_id, source_message_id),
+        )
+        .await
+        .1
+    }
+}
+
+#[tokio::test]
+async fn a_chat_reads_its_persona_and_character_live_like_legacy_choose_persona() {
+    let database = database_with_builtins();
+    let prompt_id = prompt_with_text(
+        &database,
+        "Identity",
+        PromptPurpose::DirectChat,
+        "Char={{char}} Desc={{char.desc}} User={{user}}",
+    );
+    let character_id = seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
+        defaults.direct_prompt_id = Some(prompt_id);
+    });
+    let mara = seed_persona(&database, "Mara");
+    let nia = seed_persona(&database, "Nia");
+    let ola = seed_persona(&database, "Ola");
+    set_default_persona(&database, mara);
+
+    let inherited = direct_prompt_text(
+        &database,
+        request(character_id, "live-default-persona"),
+        "a",
+    )
+    .await;
+    let mut explicit = request(character_id, "live-explicit-persona");
+    explicit.persona = LaunchSelection::Explicit(ola);
+    let explicit = direct_prompt_text(&database, explicit, "b").await;
+    assert!(inherited().await.contains("User=Mara"));
+    assert!(explicit().await.contains("User=Ola"));
+
+    set_default_persona(&database, nia);
+    set_character_texts(&database, character_id, Some("Ada now sails."), None);
+    let text = inherited().await;
+    assert!(text.contains("User=Nia"), "{text}");
+    assert!(text.contains("Desc=Ada now sails."), "{text}");
+    assert!(explicit().await.contains("User=Ola"));
+
+    let persona = PersonaRepository::get(&database, ola)
+        .expect("persona")
+        .expect("exists");
+    PersonaRepository::archive(
+        &database,
+        lettuce_characters::PersonaArchiveRequest {
+            persona_id: ola,
+            expected_persona_revision: persona.revision,
+            expected_default_revision: None,
+            now: NOW,
+        },
+    )
+    .expect("archive persona");
+    assert!(explicit().await.contains("User=Nia"));
+}
+
+#[tokio::test]
+async fn a_group_turn_reads_its_members_mode_and_lorebook_switch_live() {
+    let database = database_with_builtins();
+    let conversational = prompt_with_text(
+        &database,
+        "Talk",
+        PromptPurpose::GroupChatConversational,
+        "Talk cast:\n{{group_characters}}",
+    );
+    let roleplay = prompt_with_text(
+        &database,
+        "Play",
+        PromptPurpose::GroupChatRoleplay,
+        "Play cast:\n{{group_characters}}",
+    );
+    let first = seed_named_character(&database, "Ada");
+    let second = seed_named_character(&database, "Bea");
+    let third = seed_named_character(&database, "Cy");
+    let book = seed_lorebook(&database, "Ada lore");
+    add_lore_entry(&database, book, "Ada's harbour.");
+    CharacterLorebookBindingRepository::bind_character_lorebook(
+        &database,
+        first,
+        Revision::INITIAL,
+        LorebookBindingCreate {
+            lorebook_id: book,
+            target: BindingInsertionTarget::Append,
+        },
+        NOW,
+    )
+    .expect("bind speaker book");
+    let group_id = seed_group(
+        &database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |group| {
+            group.chat_mode = ChatMode::Conversation;
+            group.group_conversation_prompt_id = Some(conversational);
+            group.group_roleplay_prompt_id = Some(roleplay);
+        },
+    );
+    let conversation = ConversationLaunchPlanner::new(&database)
+        .launch_group(&group_request(group_id, "live-group-launch"), NOW)
+        .expect("launch group")
+        .value
+        .conversation;
+    let sent = ConversationRepository::begin_send(
+        &database,
+        &direct_send_command(&conversation, "live-group-send", "Hello cast."),
+        TimestampMillis::new(NOW.get() + 10),
+    )
+    .expect("send group message");
+    let source_message_id = match sent.value.turn.input {
+        GenerationInput::UserMessage { message_id } => message_id,
+        ref other => panic!("expected user-message input, got {other:?}"),
+    };
+    let speaker = conversation
+        .participants
+        .iter()
+        .find(|participant| {
+            participant.source == lettuce_conversations::ParticipantSource::Character(first)
+        })
+        .expect("speaker")
+        .id;
+    let turn = || async {
+        let mut request = context_request_for(&database, conversation.id, source_message_id);
+        request.selected_speaker = Some(lettuce_conversations::SelectedSpeakerDecision {
+            participant_id: speaker,
+            method: lettuce_conversations::SpeakerDecisionMethod::Explicit,
+            fallback: lettuce_conversations::SpeakerFallback::None,
+            reference: None,
+            rationale_summary: None,
+            decision_model: None,
+            usage_event_id: None,
+        });
+        assembled_prompt_with_text(&database, request).await.1
+    };
+    let text = turn().await;
+    assert!(
+        text.contains("Talk cast:\n- Bea: A member of the cast"),
+        "{text}"
+    );
+    assert!(text.contains("Ada's harbour."), "{text}");
+
+    set_character_texts(&database, second, Some("Bea keeps the lighthouse."), None);
+    let group = GroupRepository::get(&database, group_id)
+        .expect("group")
+        .expect("exists")
+        .group;
+    let group = GroupRepository::replace_members(
+        &database,
+        group_id,
+        group.revision,
+        vec![member(first, 0), member(second, 1), member(third, 2)],
+        NOW,
+    )
+    .expect("add a member");
+    let group = GroupRepository::set_chat_mode(
+        &database,
+        group_id,
+        group.revision,
+        ChatMode::Roleplay,
+        NOW,
+    )
+    .expect("switch to roleplay");
+    GroupRepository::set_disable_character_lorebooks(
+        &database,
+        group_id,
+        group.revision,
+        true,
+        NOW,
+    )
+    .expect("disable character lorebooks");
+    let text = turn().await;
+    assert!(
+        text.contains("Play cast:\n- Bea: Bea keeps the lighthouse.\n- Cy: A member of the cast"),
+        "{text}"
+    );
+    assert!(!text.contains("Ada's harbour."), "{text}");
+}
+
 fn text_entry(text: &str) -> lettuce_context::PromptEntryDraft {
     lettuce_context::PromptEntryDraft {
         built_in_entry_key: None,

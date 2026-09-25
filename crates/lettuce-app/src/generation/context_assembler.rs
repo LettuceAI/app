@@ -119,18 +119,24 @@ where
                 .map(|speaker| speaker.participant_id),
         )?;
         let speaker_character = speaker_character(&aggregate.conversation, &request);
-        snapshot.prompt = if direct {
-            self.live_direct_prompt(&aggregate.conversation, &snapshot)?
-        } else {
-            self.live_group_prompt(&aggregate.conversation, speaker_character)?
-        };
-        if let Some(persona) = settings.persona.as_ref() {
-            if let Some(live) = PersonaRepository::get(self.sources, persona.source_id)
-                .map_err(|_| ContextAssemblyError::ConversationUnavailable)?
-            {
-                snapshot.persona = Some(crate::launch::documents::persona_body(&live));
+        let unavailable = |_| ContextAssemblyError::ConversationUnavailable;
+        let live_group =
+            crate::generation::live_sources::live_group(self.sources, &aggregate.conversation)
+                .map_err(unavailable)?;
+        let persona = crate::generation::live_sources::live_persona(
+            self.sources,
+            &aggregate.conversation,
+            live_group.as_ref().and_then(|group| group.profile.as_ref()),
+        )
+        .map_err(unavailable)?;
+        snapshot.persona = persona.as_ref().map(crate::launch::documents::persona_body);
+        snapshot.prompt = match &live_group {
+            None => self.live_direct_prompt(&aggregate.conversation, &snapshot)?,
+            Some(group) => {
+                self.live_group_prompt(&aggregate.conversation, group, speaker_character)?
             }
-        }
+        };
+        snapshot.read_live_characters(self.sources, live_group.as_ref())?;
         let TimelineSelection {
             window: selected_window,
             omitted_messages,
@@ -138,9 +144,13 @@ where
             history,
             visible,
         } = select_timeline(&aggregate.branches, &request)?;
-        let (mut scene, scene_direction) = snapshot.scene_values(&scene_timeline)?;
-        if !direct {
-            scene = resolve_member_mentions(&scene, &snapshot.characters);
+        let (mut scene, mut scene_direction) = snapshot.scene_values(&scene_timeline)?;
+        if let Some(group) = &live_group {
+            if group.chat_mode == lettuce_conversations::GroupChatModeSnapshot::Conversation {
+                scene.clear();
+                scene_direction.clear();
+            }
+            scene = resolve_member_mentions(&scene, &snapshot.group_members);
         }
         let effective_at = source_effective_time(&request)?;
         let companion_state = self.companion_prompt_state(&aggregate, effective_at)?;
@@ -164,7 +174,10 @@ where
         for tier in self.live_lorebook_tiers(
             &aggregate.conversation,
             speaker_character,
-            settings.persona.as_ref().map(|persona| persona.source_id),
+            persona.as_ref().map(|persona| persona.id),
+            live_group
+                .as_ref()
+                .is_some_and(|group| group.disable_character_lorebooks),
         )? {
             let activation =
                 resolve_lorebook_activation(&tier, &recent_text, latest_user_message.as_deref())
@@ -587,8 +600,9 @@ where
     /// a current override, else the launch prompt when the launch pinned one
     /// like legacy's session template: a starter's explicit prompt, or an
     /// inherited prompt that is the character's direct prompt in the launch
-    /// character snapshot. A launch that fell back to the app default chain
-    /// pinned nothing, as legacy left the session template empty.
+    /// character snapshot, so it runs before the bundle's characters are
+    /// replaced with their live records. A launch that fell back to the app
+    /// default chain pinned nothing, as legacy left the session template empty.
     fn live_direct_prompt(
         &self,
         conversation: &lettuce_conversations::Conversation,
@@ -669,11 +683,9 @@ where
     fn live_group_prompt(
         &self,
         conversation: &lettuce_conversations::Conversation,
+        live: &crate::generation::live_sources::LiveGroup,
         speaker: Option<CharacterId>,
     ) -> Result<Option<PromptSnapshot>, ContextAssemblyError> {
-        let ConversationKind::Group(details) = &conversation.kind else {
-            return Ok(None);
-        };
         let unavailable = || ContextAssemblyError::ConversationUnavailable;
         let selected = match conversation
             .current_settings
@@ -686,8 +698,7 @@ where
             }
             _ => None,
         };
-        let roleplay =
-            details.group.chat_mode == lettuce_conversations::GroupChatModeSnapshot::Roleplay;
+        let roleplay = live.chat_mode == lettuce_conversations::GroupChatModeSnapshot::Roleplay;
         let member = speaker
             .map(|id| CharacterRepository::get(self.sources, id))
             .transpose()
@@ -701,29 +712,23 @@ where
                     defaults.group_conversation_prompt_id
                 }
             });
-        let group = GroupRepository::get(self.sources, details.group.source_id)
+        let group = live.profile.as_ref().and_then(|group| {
+            if roleplay {
+                group.group_roleplay_prompt_id
+            } else {
+                group.group_conversation_prompt_id
+            }
+        });
+        crate::launch::policy::group_prompt(self.sources, live.chat_mode, [selected, member, group])
             .map_err(|_| unavailable())?
-            .and_then(|group| {
-                if roleplay {
-                    group.group.group_roleplay_prompt_id
-                } else {
-                    group.group.group_conversation_prompt_id
-                }
-            });
-        crate::launch::policy::group_prompt(
-            self.sources,
-            details.group.chat_mode,
-            [selected, member, group],
-        )
-        .map_err(|_| unavailable())?
-        .map(|document| {
-            prompt_document(
-                document.id,
-                document.revision,
-                &crate::launch::documents::prompt_body(&document),
-            )
-        })
-        .transpose()
+            .map(|document| {
+                prompt_document(
+                    document.id,
+                    document.revision,
+                    &crate::launch::documents::prompt_body(&document),
+                )
+            })
+            .transpose()
     }
 
     /// The lorebooks a turn activates, read live each turn in ordered tiers.
@@ -739,6 +744,7 @@ where
         conversation: &lettuce_conversations::Conversation,
         speaker: Option<CharacterId>,
         persona: Option<PersonaId>,
+        disable_character_lorebooks: bool,
     ) -> Result<Vec<Vec<LorebookActivationSource>>, ContextAssemblyError> {
         let own_provenance = LorebookSourceProvenance::Conversation {
             id: conversation.id,
@@ -810,7 +816,7 @@ where
                     .collect(),
                 };
                 let speaker_books = match speaker {
-                    Some(character) if !details.group.disable_character_lorebook => enabled(
+                    Some(character) if !disable_character_lorebooks => enabled(
                         self.sources
                             .list_character_bindings(character)
                             .map_err(binding_error)?,
@@ -1497,6 +1503,51 @@ impl SnapshotBundle {
         })
     }
 
+    /// Replaces each character body with its current record, as legacy read
+    /// the characters every turn, and lists a group's current members in cast
+    /// order. A record that no longer exists keeps its launch body; a group
+    /// that no longer exists keeps its launch members.
+    fn read_live_characters<S: CharacterRepository + ?Sized>(
+        &mut self,
+        sources: &S,
+        group: Option<&crate::generation::live_sources::LiveGroup>,
+    ) -> Result<(), ContextAssemblyError> {
+        let live = |id: CharacterId| {
+            CharacterRepository::get(sources, id)
+                .map(|details| {
+                    details
+                        .map(|details| crate::launch::documents::character_body(&details.character))
+                })
+                .map_err(|_| ContextAssemblyError::ConversationUnavailable)
+        };
+        for (_, body) in &mut self.characters {
+            if let Some(current) = live(body.character_id)? {
+                *body = current;
+            }
+        }
+        match group.and_then(|group| group.profile.as_ref()) {
+            Some(profile) => {
+                let mut members = profile.members.iter().collect::<Vec<_>>();
+                members.sort_by_key(|member| member.ordinal);
+                self.group_members = members
+                    .into_iter()
+                    .map(|member| live(member.character_id))
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_iter()
+                    .flatten()
+                    .collect();
+            }
+            None => {
+                for body in &mut self.group_members {
+                    if let Some(current) = live(body.character_id)? {
+                        *body = current;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn scene_values(
         &self,
         timeline: &[&TimelineItem],
@@ -2036,7 +2087,7 @@ fn prompt_conditions(
         }),
         has_scene: !scene.trim().is_empty(),
         has_scene_direction: !scene_direction.trim().is_empty(),
-        has_persona: snapshot.persona.is_some() && settings.persona.is_some(),
+        has_persona: snapshot.persona.is_some(),
         message_count: selected_message_count,
         participant_count: aggregate.conversation.participants.len(),
         recent_text: recent,
@@ -2296,10 +2347,7 @@ fn group_characters(
 /// Legacy `replace_character_name_placeholders` (`group_chat_manager/mod.rs`
 /// 5549-5577): a `{{@"Name"}}` token in a group's starting scene becomes the
 /// member's name; a token naming no member stays as written.
-fn resolve_member_mentions(
-    content: &str,
-    characters: &[(ConversationParticipant, CharacterSnapshotBodyV1)],
-) -> String {
+fn resolve_member_mentions(content: &str, members: &[CharacterSnapshotBodyV1]) -> String {
     const OPEN: &str = "{{@\"";
     const CLOSE: &str = "\"}}";
     let mut resolved = String::with_capacity(content.len());
@@ -2312,7 +2360,7 @@ fn resolve_member_mentions(
         let name = &rest[name_start..name_start + length];
         let end = name_start + length + CLOSE.len();
         resolved.push_str(&rest[..start]);
-        if characters.iter().any(|(_, body)| body.name == name) {
+        if members.iter().any(|body| body.name == name) {
             resolved.push_str(name);
         } else {
             resolved.push_str(&rest[start..end]);
