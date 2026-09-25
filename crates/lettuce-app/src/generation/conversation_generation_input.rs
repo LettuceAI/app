@@ -402,6 +402,9 @@ where
         runner.run(work, input, now).await
     }
 
+    /// An attempt that already admitted its request resumes it unchanged. A
+    /// recovery child has no admitted request of its own and builds one from
+    /// what is saved now, as a legacy retry read the current session.
     fn durable_generation_input(
         &self,
         work: &ConversationGenerationClaimedWork,
@@ -409,12 +412,14 @@ where
     ) -> Result<Option<ConversationGenerationInput>, ConversationGenerationInputError> {
         let turn = ConversationReader::get_turn(self.repository, work.turn_id)
             .map_err(ConversationGenerationInputError::Repository)?;
-        let attempt = turn
+        if !turn
             .attempts
             .iter()
-            .find(|attempt| attempt.id == work.attempt_id)
-            .ok_or(ConversationGenerationInputError::InvalidTurn)?;
-        let mut record = self
+            .any(|attempt| attempt.id == work.attempt_id)
+        {
+            return Err(ConversationGenerationInputError::InvalidTurn);
+        }
+        let record = self
             .repository
             .initial_inference_for_attempt(
                 work.conversation_id,
@@ -423,26 +428,6 @@ where
                 work.handle.id(),
             )
             .map_err(ConversationGenerationInputError::Repository)?;
-        if record.is_none()
-            && let Some(parent) = attempt.parent_attempt_id.and_then(|parent_id| {
-                turn.attempts.iter().find(|candidate| {
-                    candidate.id == parent_id
-                        && candidate.status
-                            == lettuce_conversations::GenerationAttemptStatus::Interrupted
-                })
-            })
-            && let Some(parent_job_id) = parent.job_id
-        {
-            record = self
-                .repository
-                .initial_inference_for_attempt(
-                    work.conversation_id,
-                    work.turn_id,
-                    parent.id,
-                    parent_job_id,
-                )
-                .map_err(ConversationGenerationInputError::Repository)?;
-        }
         let Some(record) = record else {
             return Ok(None);
         };
@@ -1033,11 +1018,11 @@ where
             None => MemoryModeSnapshot::Disabled,
         };
         let dynamic_memory = memory_mode == MemoryModeSnapshot::Dynamic;
-        let model = match turn
+        let recorded_model = turn
             .resolved_model
             .clone()
-            .or(turn.requested_model_override.clone())
-        {
+            .filter(|_| turn.status != lettuce_conversations::GenerationTurnStatus::Recovering);
+        let model = match recorded_model.or(turn.requested_model_override.clone()) {
             Some(model) => model,
             None => self.live_chat_model(&aggregate.conversation, settings.model)?,
         };

@@ -5480,6 +5480,53 @@ async fn pending_dispatch_interrupts_recovers_and_finishes_in_the_child() {
     ));
     assert_eq!(inference.requests.lock().expect("requests").len(), 1);
 
+    let character_id = match ConversationReader::get(&database, scenario.conversation_id)
+        .expect("conversation")
+        .conversation
+        .kind
+    {
+        ConversationKind::Direct(details) => details.character.source_id,
+        ConversationKind::Group(_) => panic!("direct scenario"),
+    };
+    let book = LorebookRepository::create(
+        &database,
+        LorebookMetadataDraft {
+            name: "Saved before the retry".into(),
+            detection_policy: DetectionPolicy::RecentMessageWindow,
+            icon_asset_id: None,
+            behavior_version: LorebookBehaviorVersion::LegacyV1,
+        },
+        vec![lettuce_context::LorebookEntryDraft {
+            title: String::new(),
+            enabled: true,
+            always_active: true,
+            keywords: Vec::new(),
+            case_sensitive: false,
+            match_mode: lettuce_context::KeywordMatchMode::Literal,
+            content: "Tide lore saved before the retry.".into(),
+            priority: 0,
+        }],
+        TimestampMillis::new(1_045),
+    )
+    .expect("lorebook")
+    .book
+    .id;
+    let character_revision = CharacterRepository::get(&database, character_id)
+        .expect("character")
+        .expect("exists")
+        .character
+        .revision;
+    CharacterLorebookBindingRepository::bind_character_lorebook(
+        &database,
+        character_id,
+        character_revision,
+        LorebookBindingCreate {
+            lorebook_id: book,
+            target: BindingInsertionTarget::Append,
+        },
+        TimestampMillis::new(1_046),
+    )
+    .expect("bind a lorebook between the attempts");
     let child_work = claim(&database, &scenario, child_attempt_id, 1_050);
     assert_eq!(child_work.handle.id(), child_job.id);
     let result = PreparedConversationGenerationJobRunner::new(&engine, &database, &inference)
@@ -5498,18 +5545,42 @@ async fn pending_dispatch_interrupts_recovers_and_finishes_in_the_child() {
         }]
     );
     assert_eq!(result.candidate.attempt_id, child_attempt_id);
-    assert_eq!(inference.requests.lock().expect("requests").len(), 2);
+    {
+        let requests = inference.requests.lock().expect("requests");
+        assert_eq!(requests.len(), 2);
+        let used = |request: &InferenceRequest| {
+            request.context.messages.iter().any(|message| {
+                message.parts.iter().any(|part| {
+                    matches!(part, ProviderContextPart::Text { text } if text.contains("Tide lore saved before the retry."))
+                })
+            })
+        };
+        assert!(!used(&requests[0]) && used(&requests[1]));
+    }
     request.attempt_id = child_attempt_id;
     request.cancellation = Some(child_job.id);
-    let child_binding =
-        InitialInferenceBinding::from_request(scenario.conversation_id, &request).expect("binding");
+    let child_record = database
+        .initial_inference_for_attempt(
+            scenario.conversation_id,
+            scenario.turn_id,
+            child_attempt_id,
+            child_job.id,
+        )
+        .expect("child record")
+        .expect("child record exists");
     assert!(matches!(
-        database
-            .initial_inference(&child_binding)
-            .expect("child record")
-            .and_then(|record| record.result),
+        child_record.result,
         Some(InitialInferenceResult::Response(_))
     ));
+    assert_eq!(
+        ConversationReader::get_turn(&database, scenario.turn_id)
+            .expect("turn")
+            .lorebooks
+            .iter()
+            .map(|lorebook| lorebook.lorebook_id)
+            .collect::<Vec<_>>(),
+        vec![book]
+    );
     let settled = dispatcher
         .settle(
             child_work,

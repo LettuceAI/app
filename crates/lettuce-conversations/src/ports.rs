@@ -1104,6 +1104,10 @@ pub trait ConversationRepository: ConversationCreator {
         command: &AttachAttemptJob,
         now: TimestampMillis,
     ) -> Result<AttachAttemptJobResult, ConversationRepositoryError>;
+    /// Records the model, prompt, lorebooks and memory the attempt uses. A
+    /// later attempt of the same turn (a recovery child) replaces the record
+    /// with what it reads then, like a legacy retry using what was saved at
+    /// that moment, so the turn records what its running attempt used.
     fn prepare_generation(
         &self,
         command: &PrepareGeneration,

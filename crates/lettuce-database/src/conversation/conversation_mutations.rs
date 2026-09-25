@@ -2761,15 +2761,12 @@ impl ConversationRepository for Database {
                         ],
                     )
                     .map_err(slice::db)?;
-                if prior.resolved_model.is_some() {
-                    if prior.resolved_model.as_ref() != Some(&command.model)
-                        || prior.prompt != command.attributions.prompt
-                        || prior.lorebooks != command.attributions.lorebooks
-                        || prior.memory != command.attributions.memory
-                    {
-                        return Err(ConversationRepositoryError::Conflict);
-                    }
-                } else {
+                let recorded = prior.resolved_model.is_some();
+                let unchanged = prior.resolved_model.as_ref() == Some(&command.model)
+                    && prior.prompt == command.attributions.prompt
+                    && prior.lorebooks == command.attributions.lorebooks
+                    && prior.memory == command.attributions.memory;
+                if !(recorded && unchanged) {
                     let model = slice::encode(&command.model)?;
                     let prompt_id = command
                         .attributions
@@ -2794,38 +2791,55 @@ impl ConversationRepository for Database {
                         .memory
                         .as_ref()
                         .map(|memory| memory.revision_id.to_string());
+                    let sql = if recorded {
+                        "UPDATE conversation_turns SET resolved_model_json = ?3, prompt_document_id = ?4, prompt_revision = ?5, prompt_entry_ids_json = ?6, memory_revision_id = ?7 WHERE conversation_id = ?1 AND id = ?2 AND resolved_model_json IS NOT NULL"
+                    } else {
+                        "UPDATE conversation_turns SET resolved_model_json = ?3, prompt_document_id = ?4, prompt_revision = ?5, prompt_entry_ids_json = ?6, memory_revision_id = ?7 WHERE conversation_id = ?1 AND id = ?2 AND resolved_model_json IS NULL AND prompt_document_id IS NULL AND prompt_revision IS NULL AND prompt_entry_ids_json IS NULL AND memory_revision_id IS NULL AND NOT EXISTS (SELECT 1 FROM turn_lorebooks WHERE conversation_id = ?1 AND turn_id = ?2)"
+                    };
                     let changed = transaction
-                    .execute(
-                        "UPDATE conversation_turns SET resolved_model_json = ?3, prompt_document_id = ?4, prompt_revision = ?5, prompt_entry_ids_json = ?6, memory_revision_id = ?7 WHERE conversation_id = ?1 AND id = ?2 AND resolved_model_json IS NULL AND prompt_document_id IS NULL AND prompt_revision IS NULL AND prompt_entry_ids_json IS NULL AND memory_revision_id IS NULL AND NOT EXISTS (SELECT 1 FROM turn_lorebooks WHERE conversation_id = ?1 AND turn_id = ?2)",
-                        params![
-                            context.conversation_id.to_string(),
-                            command.turn_id.to_string(),
-                            model,
-                            prompt_id,
-                            prompt_revision,
-                            prompt_entries,
-                            memory_revision,
-                        ],
-                    )
-                    .map_err(kernel::map_constraint)?;
-                    if changed != 1 {
-                        return Err(ConversationRepositoryError::Conflict);
-                    }
-                    for (ordinal, lorebook) in command.attributions.lorebooks.iter().enumerate() {
-                        transaction
                         .execute(
-                            "INSERT INTO turn_lorebooks (conversation_id, turn_id, lorebook_id, revision, ordinal, activated_entry_ids_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                            sql,
                             params![
                                 context.conversation_id.to_string(),
                                 command.turn_id.to_string(),
-                                lorebook.lorebook_id.to_string(),
-                                i64::try_from(lorebook.revision.get())
-                                    .map_err(|_| ConversationRepositoryError::Storage)?,
-                                i64::try_from(ordinal).map_err(|_| ConversationRepositoryError::Storage)?,
-                                slice::encode(&lorebook.activated_entry_ids)?,
+                                model,
+                                prompt_id,
+                                prompt_revision,
+                                prompt_entries,
+                                memory_revision,
                             ],
                         )
                         .map_err(kernel::map_constraint)?;
+                    if changed != 1 {
+                        return Err(ConversationRepositoryError::Conflict);
+                    }
+                    if recorded {
+                        transaction
+                            .execute(
+                                "DELETE FROM turn_lorebooks WHERE conversation_id = ?1 AND turn_id = ?2",
+                                params![
+                                    context.conversation_id.to_string(),
+                                    command.turn_id.to_string()
+                                ],
+                            )
+                            .map_err(slice::db)?;
+                    }
+                    for (ordinal, lorebook) in command.attributions.lorebooks.iter().enumerate() {
+                        transaction
+                            .execute(
+                                "INSERT INTO turn_lorebooks (conversation_id, turn_id, lorebook_id, revision, ordinal, activated_entry_ids_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                                params![
+                                    context.conversation_id.to_string(),
+                                    command.turn_id.to_string(),
+                                    lorebook.lorebook_id.to_string(),
+                                    i64::try_from(lorebook.revision.get())
+                                        .map_err(|_| ConversationRepositoryError::Storage)?,
+                                    i64::try_from(ordinal)
+                                        .map_err(|_| ConversationRepositoryError::Storage)?,
+                                    slice::encode(&lorebook.activated_entry_ids)?,
+                                ],
+                            )
+                            .map_err(kernel::map_constraint)?;
                     }
                 }
                 advance_attempt_stage(
@@ -7077,44 +7091,35 @@ mod tests {
             };
             let before_child = ConversationReader::get_turn(fixture.database.as_ref(), turn_id)
                 .expect("child before preparation");
-            for change in 0..6 {
-                let mut changed = child_command.clone();
-                match change {
-                    0 => changed.model.external_model_id = "another-model".into(),
-                    1 => changed
-                        .attributions
-                        .prompt
-                        .as_mut()
-                        .expect("prompt")
-                        .selected_entry_ids
-                        .reverse(),
-                    2 => changed.attributions.lorebooks.reverse(),
-                    3 => changed.attributions.lorebooks[0]
-                        .activated_entry_ids
-                        .reverse(),
-                    4 => changed.attributions.memory = None,
-                    _ => changed.job_id = parent_job,
-                }
-                assert_eq!(
-                    fixture
-                        .database
-                        .prepare_generation(&changed, TimestampMillis::new(56)),
-                    Err(ConversationRepositoryError::Conflict)
-                );
-                assert_eq!(
-                    ConversationReader::get_turn(fixture.database.as_ref(), turn_id)
-                        .expect("child unchanged"),
-                    before_child
-                );
-            }
+            let mut foreign_job = child_command.clone();
+            foreign_job.job_id = parent_job;
+            assert_eq!(
+                fixture
+                    .database
+                    .prepare_generation(&foreign_job, TimestampMillis::new(56)),
+                Err(ConversationRepositoryError::Conflict)
+            );
+            assert_eq!(
+                ConversationReader::get_turn(fixture.database.as_ref(), turn_id)
+                    .expect("child unchanged"),
+                before_child
+            );
+            let mut child_command = child_command;
+            child_command.attributions.lorebooks.reverse();
+            child_command.attributions.memory = None;
             let child_prepared = fixture
                 .database
                 .prepare_generation(&child_command, TimestampMillis::new(57))
-                .expect("reuse preparation")
+                .expect("the child records what it read")
                 .value;
             assert_eq!(child_prepared.resolved_model, prepared.resolved_model);
             assert_eq!(child_prepared.prompt, prepared.prompt);
-            assert_eq!(child_prepared.lorebooks, prepared.lorebooks);
+            assert_eq!(
+                child_prepared.lorebooks,
+                child_command.attributions.lorebooks
+            );
+            assert_ne!(child_prepared.lorebooks, prepared.lorebooks);
+            assert_eq!(child_prepared.memory, None);
             assert_eq!(child_prepared.selected_speaker, prepared.selected_speaker);
             assert_eq!(child_prepared.attempts[0], before_child.attempts[0]);
             assert_eq!(
@@ -7157,7 +7162,7 @@ mod tests {
                 .expect("finalize child")
                 .value;
             assert_eq!(finalized.turn.prompt, prepared.prompt);
-            assert_eq!(finalized.turn.lorebooks, prepared.lorebooks);
+            assert_eq!(finalized.turn.lorebooks, child_prepared.lorebooks);
             if group {
                 assert_eq!(
                     finalized.assistant_message.author_participant_id,

@@ -637,7 +637,14 @@ impl<
                 operation,
             )
         };
-        if turn.status == GenerationTurnStatus::Recovering && turn.resolved_model.is_some() {
+        let recorded = turn.resolved_model.as_ref() == Some(&input.model)
+            && turn.prompt == input.attributions.prompt
+            && turn.lorebooks == input.attributions.lorebooks
+            && turn.memory == input.attributions.memory;
+        if turn.status == GenerationTurnStatus::Recovering
+            && turn.resolved_model.is_some()
+            && recorded
+        {
             turn = self.stage(
                 &turn,
                 work,
@@ -662,9 +669,6 @@ impl<
             turn.status,
             GenerationTurnStatus::Preparing | GenerationTurnStatus::SelectingSpeaker
         ) {
-            if turn.resolved_model.is_some() {
-                return Err(ConversationGenerationRunError::InvalidWork);
-            }
             let aggregate = ConversationReader::get(self.repository, conversation_id)?;
             turn = self
                 .repository

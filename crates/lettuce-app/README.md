@@ -443,11 +443,14 @@ value is used while the group is unchanged since launch and the group's value
 once it changes, which drops such an imported override after the first group
 edit. A group turn in conversation mode sends no scene. The live document goes through the launch
 snapshot conversion, and prompt attribution carries its current id and
-revision. Because the prompt is live, a one-to-one turn whose prompt (or any
-document its chain fell back to) changed between its first context assembly and
-inference admission is reassembled with a different context, conflicts with the
-admitted request and fails closed, as a turn does when its model profile
-changed; this is intended.
+revision. A retry reads whatever is saved when it runs, as legacy did: an
+attempt that already admitted its request resumes that request unchanged, while
+a recovery child (a new attempt after an interruption) resolves its model and
+builds its context afresh and records them on the turn in place of the earlier
+attempt's (`prepare_generation`), so a live edit between the attempts never makes
+the retry conflict. Each attempt's admitted request keeps the model, prompt,
+lorebooks and memory that attempt used, and the turn records those of its
+latest attempt.
 Context assembly reads the current authored Soul/prompting config, character-owned
 Soul state, conversation/persona-scoped runtime state, and current persona
 name, then renders the legacy prompt-state block with the stored continuity
@@ -1151,7 +1154,10 @@ and interval ones into one turn-context message; a condensed group prompt
 merges all of it into one system message (legacy
 `condense_entries_into_single_system_message`, direct and group). A one-to-one
 send outside dynamic memory adds legacy's "Relevant memories" block
-(`runtime_relevant_memories`) first among the depth-zero entries. Identity
+(`runtime_relevant_memories`) first among the depth-zero entries. Legacy sent
+manual memories twice, in the Key Memories section and again in this block
+(`prompt_engine.rs` 3813-3852, `completion.rs` 352-410); the rewrite keeps the
+duplication for parity. Identity
 tokens resolve like legacy: `{{user}}` is the persona title, `{{char.desc}}` the
 definition, else the description, and `{{persona.desc}}` the persona
 description; lorebook text, summaries, memories and author notes resolve their
