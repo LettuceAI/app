@@ -145,6 +145,35 @@ pub(crate) fn direct_prompt<S: PromptRepository + ?Sized>(
     direct_app_default_prompt(sources, app_default)
 }
 
+/// A group speaker's prompt for the chat mode, read live each turn: the
+/// conversation's own selection, the speaker's group prompt, then the group's
+/// prompt, each only when it is an active document of the mode's purpose, else
+/// the bundled group prompt. `None` only when the bundled prompt is missing.
+pub(crate) fn group_prompt<S: PromptRepository + ?Sized>(
+    sources: &S,
+    chat_mode: GroupChatModeSnapshot,
+    candidates: [Option<PromptDocumentId>; 3],
+) -> Result<Option<PromptDocument>, PromptRepositoryError> {
+    let (purpose, built_in) = match chat_mode {
+        GroupChatModeSnapshot::Conversation => (
+            PromptPurpose::GroupChatConversational,
+            crate::BuiltInPromptId::GroupChat,
+        ),
+        GroupChatModeSnapshot::Roleplay => (
+            PromptPurpose::GroupChatRoleplay,
+            crate::BuiltInPromptId::GroupChatRoleplay,
+        ),
+    };
+    for prompt_id in candidates.into_iter().flatten() {
+        if let PromptLookupResult::Available { document } =
+            sources.lookup_exact(prompt_id, purpose)?
+        {
+            return Ok(Some(document));
+        }
+    }
+    crate::generation::built_in_prompts::active_built_in_prompt(sources, built_in)
+}
+
 /// The tail of the direct-chat chain (legacy `get_app_default_template_content`
 /// outside companion mode): the app default prompt when it is an active
 /// direct-chat document, else the bundled app default prompt. `None` only when

@@ -203,7 +203,12 @@ where
         + MemoryRetrievalRepository
         + MemorySummaryRepository
         + lettuce_settings::GlobalSettingsStore
-        + lettuce_context::PromptRepository,
+        + lettuce_context::PromptRepository
+        + lettuce_characters::GroupRepository
+        + lettuce_context::LorebookRepository
+        + lettuce_context::CharacterLorebookBindingRepository
+        + lettuce_context::PersonaLorebookBindingRepository
+        + lettuce_context::GroupLorebookBindingRepository,
     I: InferencePort + ?Sized,
 {
     pub async fn execute_next<C>(

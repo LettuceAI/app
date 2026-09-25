@@ -4,8 +4,8 @@
 use std::cmp::Ordering;
 
 use lettuce_types::{
-    AssetId, CharacterId, ConversationStarterId, GroupId, LorebookEntryId, LorebookId, Page,
-    PageRequest, PersonaId, Revision, TimestampMillis,
+    AssetId, CharacterId, ConversationId, ConversationStarterId, GroupId, LorebookEntryId,
+    LorebookId, Page, PageRequest, PersonaId, Revision, TimestampMillis,
 };
 use regex::RegexBuilder;
 use serde::{Deserialize, Serialize};
@@ -673,6 +673,10 @@ pub enum LorebookSourceProvenance {
     Starter {
         character_id: CharacterId,
         starter_id: ConversationStarterId,
+    },
+    /// A conversation's own selection of books.
+    Conversation {
+        id: ConversationId,
     },
 }
 

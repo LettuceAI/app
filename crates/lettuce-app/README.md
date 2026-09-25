@@ -410,8 +410,26 @@ disabled prompt, a state legacy never had. The launch and override snapshots now
 only record which prompt the chat selected: their content is never rendered for
 a one-to-one turn, the stored override stays as the chat's selection, and a
 legacy session override still imports that way. `Database::set_default_prompt_document`
-selects the app default prompt under the settings revision. Group chats keep rendering their launch
-and override snapshots unchanged. The live document goes through the launch
+selects the app default prompt under the settings revision. A group turn also
+resolves its prompt live (`live_group_prompt`, `launch::policy::group_prompt`):
+the conversation's current override, the speaker's current group prompt for the
+chat mode, then the group's, each only when it is an active document of the
+mode's purpose, else the bundled group prompt; a disabled prompt yields none.
+Lorebooks are read live on every turn the way legacy re-read them
+(`prompt_engine.rs` 2309-2366, `group_chat_manager/mod.rs` 4897-4945): a direct
+chat uses its own selection (a current override, or a starter's explicit books),
+else the character's current enabled bindings followed by the current
+persona's; a group chat activates its own selection or the group's current
+bindings first, then the speaker's current bindings unless the group disables
+character lorebooks, and an empty or disabled group selection (legacy's empty
+`lorebookIds`) removes only the group's books. Entry edits, new bindings and
+archiving therefore reach existing chats, and an archived or missing book stops
+injecting. Each tier orders its active entries by legacy display order, then
+creation time, then binding order, and a group turn keeps the first occurrence
+of an entry. The turn records every book it used with the revision it read and
+the activated entry ids. The chat's persona is read live too: its current title,
+description and design notes replace the launch snapshot, which remains only as
+the fallback when the persona no longer exists. The live document goes through the launch
 snapshot conversion, and prompt attribution carries its current id and
 revision. Because the prompt is live, a one-to-one turn whose prompt (or any
 document its chain fell back to) changed between its first context assembly and

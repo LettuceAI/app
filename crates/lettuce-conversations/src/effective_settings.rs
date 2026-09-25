@@ -116,13 +116,10 @@ pub fn resolve_effective_settings(
                 }
                 SnapshotSelection::Disabled => selection_value(&details.group.model),
             };
-            let launch_lorebooks = if details.group.disable_character_lorebook {
-                selection_value(&details.group.lorebooks).unwrap_or_default()
+            let member_lorebooks = if details.group.disable_character_lorebook {
+                Vec::new()
             } else {
-                merge_lorebooks(
-                    selection_value(&details.group.lorebooks).unwrap_or_default(),
-                    selection_value(&member.lorebooks).unwrap_or_default(),
-                )
+                selection_value(&member.lorebooks).unwrap_or_default()
             };
             let launch_scene = match details.group.chat_mode {
                 GroupChatModeSnapshot::Conversation => None,
@@ -160,7 +157,11 @@ pub fn resolve_effective_settings(
                     |settings| settings.prompt.clone(),
                     launch_prompt,
                 ),
-                lorebooks: current_or_lorebooks_value(conversation, launch_lorebooks),
+                lorebooks: group_lorebooks(
+                    conversation,
+                    selection_value(&details.group.lorebooks).unwrap_or_default(),
+                    member_lorebooks,
+                ),
                 persona: current_or_launch(
                     conversation,
                     |settings| settings.persona_provenance,
@@ -279,6 +280,18 @@ fn current_or_lorebooks_value(
         },
         None => launch,
     }
+}
+
+/// A group conversation's own lorebook selection, an empty one included,
+/// replaces only the group's books; the speaker's books still follow unless
+/// the group disables them, as legacy's session `lorebook_ids` did
+/// (`get_group_active_lorebook_entries`).
+fn group_lorebooks(
+    conversation: &Conversation,
+    group: Vec<LorebookLaunchSnapshot>,
+    member: Vec<LorebookLaunchSnapshot>,
+) -> Vec<LorebookLaunchSnapshot> {
+    merge_lorebooks(current_or_lorebooks_value(conversation, group), member)
 }
 
 fn selection_value<T: Clone>(selection: &SnapshotSelection<T>) -> Option<T> {
@@ -754,6 +767,26 @@ mod tests {
         let disabled = resolve_effective_settings(&disabled_character_books, Some(speaker))
             .expect("disabled member lorebooks");
         assert_eq!(disabled.lorebooks.len(), 2);
+
+        let mut emptied_group_books = conversation.clone();
+        emptied_group_books.current_settings = Some(
+            CurrentConversationSettingsPatch {
+                lorebooks: PatchValue::Clear,
+                ..CurrentConversationSettingsPatch::default()
+            }
+            .apply(None, None)
+            .expect("group lorebook override"),
+        );
+        let emptied = resolve_effective_settings(&emptied_group_books, Some(speaker))
+            .expect("overridden group lorebooks");
+        assert_eq!(
+            emptied
+                .lorebooks
+                .iter()
+                .map(|book| book.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Overlap", "Member"]
+        );
 
         assert_eq!(
             resolve_effective_settings(&conversation, None).expect_err("speaker required"),

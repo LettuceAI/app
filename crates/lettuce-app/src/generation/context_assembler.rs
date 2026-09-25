@@ -1,25 +1,26 @@
 //! Provider-neutral context assembly.
 //!
 //! This module is intentionally the last application-side step before model
-//! admission.  It reads only conversation aggregates and protected launch
-//! snapshots; provider selection, memory retrieval, and inference belong to
-//! later application ports.
+//! admission.  It reads the conversation aggregate, its launch snapshots, and
+//! the live prompts, persona and lorebooks each turn uses; provider selection,
+//! memory retrieval, and inference belong to later application ports.
 
 use std::collections::{HashMap, HashSet};
 
 use async_trait::async_trait;
-use lettuce_characters::{CharacterRepository, PersonaRepository};
+use lettuce_characters::{CharacterRepository, GroupRepository, PersonaRepository};
 use lettuce_companions::{
     CompanionPromptStateInput, CompanionScheduledNoteRepository, CompanionStateRepository,
     SoulOwner, SoulRepository, active_scheduled_notes, prompt_state,
 };
 use lettuce_context::{
-    DetectionPolicy, KeywordMatchMode, LorebookSnapshotActivationEntry,
-    LorebookSnapshotActivationSource, PromptBehaviorVersion, PromptConditionContext, PromptEntry,
-    PromptEntryChatMode, PromptEntryCondition, PromptEntryImageSlot, PromptEntryInfoSource,
-    PromptEntryPayload, PromptEntryPosition, PromptEntryRole, PromptPurpose, PromptRenderContext,
-    PromptRenderValues, PromptSnapshot, PromptVariable, RenderedPromptMessage,
-    render_prompt_snapshot, resolve_lorebook_snapshot_activation,
+    CharacterLorebookBindingRepository, GroupLorebookBindingRepository, LorebookActivationSource,
+    LorebookRepository, LorebookSourceProvenance, PersonaLorebookBindingRepository,
+    PromptBehaviorVersion, PromptConditionContext, PromptEntry, PromptEntryChatMode,
+    PromptEntryCondition, PromptEntryImageSlot, PromptEntryInfoSource, PromptEntryPayload,
+    PromptEntryPosition, PromptEntryRole, PromptPurpose, PromptRenderContext, PromptRenderValues,
+    PromptSnapshot, PromptVariable, RenderedPromptMessage, ResolvedLorebookEntry,
+    render_prompt_snapshot, resolve_lorebook_activation,
 };
 use lettuce_context::{PromptRepository, RenderedPrompt, render_prompt};
 use lettuce_conversations::{
@@ -32,12 +33,14 @@ use lettuce_conversations::{
     SnapshotSelection, TimelineItem,
 };
 use lettuce_conversations::{
-    CharacterSnapshotBodyV1, ConversationParticipant, LorebookLaunchSnapshot,
-    LorebookSnapshotBodyV1, PersonaSnapshotBodyV1, PromptEntryConditionV1, PromptEntryImageSlotV1,
-    PromptEntryPayloadV1, PromptEntryPositionV1, PromptEntryRoleV1, PromptLaunchSnapshot,
-    PromptSnapshotBodyV1, SceneLaunchSnapshot, ScenePartV1, SceneSnapshotBodyV1,
+    CharacterSnapshotBodyV1, ConversationParticipant, PersonaSnapshotBodyV1,
+    PromptEntryConditionV1, PromptEntryImageSlotV1, PromptEntryPayloadV1, PromptEntryPositionV1,
+    PromptEntryRoleV1, PromptLaunchSnapshot, PromptSnapshotBodyV1, SceneLaunchSnapshot,
+    ScenePartV1, SceneSnapshotBodyV1,
 };
-use lettuce_types::{ConversationId, ConversationParticipantId, MessageId, TimestampMillis};
+use lettuce_types::{
+    CharacterId, ConversationId, ConversationParticipantId, MessageId, PersonaId, TimestampMillis,
+};
 
 /// Concrete context assembly service. Its dependency is a set of domain ports;
 /// this type deliberately has no database, provider, model, or memory port.
@@ -63,7 +66,12 @@ where
         + CompanionStateRepository
         + CompanionScheduledNoteRepository
         + PromptRepository
-        + lettuce_settings::GlobalSettingsStore,
+        + lettuce_settings::GlobalSettingsStore
+        + GroupRepository
+        + LorebookRepository
+        + CharacterLorebookBindingRepository
+        + PersonaLorebookBindingRepository
+        + GroupLorebookBindingRepository,
 {
     async fn assemble(
         &self,
@@ -99,9 +107,7 @@ where
         })?;
 
         let direct = matches!(aggregate.conversation.kind, ConversationKind::Direct(_));
-        if direct {
-            settings.prompt = None;
-        }
+        settings.prompt = None;
         let mut snapshot = SnapshotBundle::load(
             self.sources,
             &aggregate,
@@ -112,8 +118,18 @@ where
                 .as_ref()
                 .map(|speaker| speaker.participant_id),
         )?;
-        if direct {
-            snapshot.prompt = self.live_direct_prompt(&aggregate.conversation, &snapshot)?;
+        let speaker_character = speaker_character(&aggregate.conversation, &request);
+        snapshot.prompt = if direct {
+            self.live_direct_prompt(&aggregate.conversation, &snapshot)?
+        } else {
+            self.live_group_prompt(&aggregate.conversation, speaker_character)?
+        };
+        if let Some(persona) = settings.persona.as_ref() {
+            if let Some(live) = PersonaRepository::get(self.sources, persona.source_id)
+                .map_err(|_| ContextAssemblyError::ConversationUnavailable)?
+            {
+                snapshot.persona = Some(crate::launch::documents::persona_body(&live));
+            }
         }
         let TimelineSelection {
             window: selected_window,
@@ -139,20 +155,25 @@ where
             .filter(|item| item.message.role == MessageRole::User)
             .find_map(active_text);
 
-        let lore_sources = snapshot
-            .lorebooks
-            .iter()
-            .enumerate()
-            .map(|(source_order, (reference, body))| lorebook_source(reference, body, source_order))
-            .collect::<Result<Vec<_>, _>>()?;
-        let lore_activation = resolve_lorebook_snapshot_activation(
-            &lore_sources,
-            &recent_text,
-            latest_user_message.as_deref(),
-        )
-        .map_err(|_| ContextAssemblyError::LorebookActivation)?;
-        let lorebook_text = lore_activation
-            .entries
+        let mut lore_entries: Vec<ResolvedLorebookEntry> = Vec::new();
+        for tier in self.live_lorebook_tiers(
+            &aggregate.conversation,
+            speaker_character,
+            settings.persona.as_ref().map(|persona| persona.source_id),
+        )? {
+            let activation =
+                resolve_lorebook_activation(&tier, &recent_text, latest_user_message.as_deref())
+                    .map_err(|_| ContextAssemblyError::LorebookActivation)?;
+            for entry in activation.entries {
+                if !lore_entries
+                    .iter()
+                    .any(|active| active.entry.id == entry.entry.id)
+                {
+                    lore_entries.push(entry);
+                }
+            }
+        }
+        let lorebook_text = lore_entries
             .iter()
             .map(|entry| entry.entry.content.trim())
             .filter(|content| !content.is_empty())
@@ -421,7 +442,7 @@ where
                     .map(|entry| entry.entry_id)
                     .collect(),
             }),
-            lorebooks: lore_attributions(&lore_activation),
+            lorebooks: lore_attributions(&lore_entries),
             memory: memory_used
                 .then(|| {
                     request
@@ -450,7 +471,12 @@ where
         + CompanionStateRepository
         + CompanionScheduledNoteRepository
         + PromptRepository
-        + lettuce_settings::GlobalSettingsStore,
+        + lettuce_settings::GlobalSettingsStore
+        + GroupRepository
+        + LorebookRepository
+        + CharacterLorebookBindingRepository
+        + PersonaLorebookBindingRepository
+        + GroupLorebookBindingRepository,
 {
     /// The system prompt of a direct chat, resolved from live sources on
     /// every turn (legacy `build_system_prompt_entries`); the stored launch
@@ -535,6 +561,183 @@ where
                 )
             })
             .transpose()
+    }
+
+    /// The prompt a group speaker generates with, read live each turn like
+    /// legacy's group template lookup: the conversation's own selection, the
+    /// speaker's group prompt, then the group's (`policy::group_prompt`). A
+    /// prompt the conversation disabled yields none.
+    fn live_group_prompt(
+        &self,
+        conversation: &lettuce_conversations::Conversation,
+        speaker: Option<CharacterId>,
+    ) -> Result<Option<PromptSnapshot>, ContextAssemblyError> {
+        let ConversationKind::Group(details) = &conversation.kind else {
+            return Ok(None);
+        };
+        let unavailable = || ContextAssemblyError::ConversationUnavailable;
+        let selected = match conversation
+            .current_settings
+            .as_ref()
+            .map(|settings| (settings.prompt_provenance, settings.prompt.as_ref()))
+        {
+            Some((SettingProvenance::Disabled, _)) => return Ok(None),
+            Some((SettingProvenance::CurrentOverride, prompt)) => {
+                prompt.map(|prompt| prompt.source_id)
+            }
+            _ => None,
+        };
+        let roleplay =
+            details.group.chat_mode == lettuce_conversations::GroupChatModeSnapshot::Roleplay;
+        let member = speaker
+            .map(|id| CharacterRepository::get(self.sources, id))
+            .transpose()
+            .map_err(|_| unavailable())?
+            .flatten()
+            .and_then(|character| {
+                let defaults = character.character.defaults;
+                if roleplay {
+                    defaults.group_roleplay_prompt_id
+                } else {
+                    defaults.group_conversation_prompt_id
+                }
+            });
+        let group = GroupRepository::get(self.sources, details.group.source_id)
+            .map_err(|_| unavailable())?
+            .and_then(|group| {
+                if roleplay {
+                    group.group.group_roleplay_prompt_id
+                } else {
+                    group.group.group_conversation_prompt_id
+                }
+            });
+        crate::launch::policy::group_prompt(
+            self.sources,
+            details.group.chat_mode,
+            [selected, member, group],
+        )
+        .map_err(|_| unavailable())?
+        .map(|document| {
+            prompt_document(
+                document.id,
+                document.revision,
+                &crate::launch::documents::prompt_body(&document),
+            )
+        })
+        .transpose()
+    }
+
+    /// The lorebooks a turn activates, read live each turn in ordered tiers.
+    /// A direct chat has one tier (legacy `get_lorebook_content`): the chat's
+    /// own selection, else the character's enabled bindings then the persona's.
+    /// A group chat has two (legacy `get_group_active_lorebook_entries`): the
+    /// conversation's own selection, else the group's bindings; then the
+    /// speaker's bindings unless the group disables character lorebooks. A
+    /// disabled selection is an empty own selection, as legacy's empty
+    /// `lorebook_ids`. Missing and archived books are skipped by the activation.
+    fn live_lorebook_tiers(
+        &self,
+        conversation: &lettuce_conversations::Conversation,
+        speaker: Option<CharacterId>,
+        persona: Option<PersonaId>,
+    ) -> Result<Vec<Vec<LorebookActivationSource>>, ContextAssemblyError> {
+        let own_provenance = LorebookSourceProvenance::Conversation {
+            id: conversation.id,
+        };
+        let own = match conversation
+            .current_settings
+            .as_ref()
+            .map(|settings| (settings.lorebooks_provenance, settings.lorebooks.as_ref()))
+        {
+            Some((SettingProvenance::Disabled, _)) => Some(Vec::new()),
+            Some((SettingProvenance::CurrentOverride, books)) => Some(
+                books
+                    .into_iter()
+                    .flatten()
+                    .map(|book| (own_provenance, book.source_id))
+                    .collect::<Vec<_>>(),
+            ),
+            _ => None,
+        };
+        let binding_error = |_| ContextAssemblyError::ConversationUnavailable;
+        let enabled = |bindings: Vec<lettuce_context::LorebookBinding>,
+                       provenance: LorebookSourceProvenance| {
+            crate::launch::policy::enabled_lorebooks(&bindings)
+                .into_iter()
+                .map(move |id| (provenance, id))
+        };
+        let tiers = match &conversation.kind {
+            ConversationKind::Direct(details) => {
+                let books = match (own, &details.lorebooks) {
+                    (Some(books), _) => books,
+                    (None, SnapshotSelection::Disabled) => Vec::new(),
+                    (None, SnapshotSelection::Explicit(books)) => books
+                        .iter()
+                        .map(|book| (own_provenance, book.source_id))
+                        .collect(),
+                    (None, SnapshotSelection::Inherited(_)) => {
+                        let character = details.character.source_id;
+                        let mut books = enabled(
+                            self.sources
+                                .list_character_bindings(character)
+                                .map_err(binding_error)?,
+                            LorebookSourceProvenance::Character { id: character },
+                        )
+                        .collect::<Vec<_>>();
+                        if let Some(persona) = persona {
+                            books.extend(enabled(
+                                self.sources
+                                    .list_persona_bindings(persona)
+                                    .map_err(binding_error)?,
+                                LorebookSourceProvenance::Persona { id: persona },
+                            ));
+                        }
+                        books
+                    }
+                };
+                vec![books]
+            }
+            ConversationKind::Group(details) => {
+                let group_id = details.group.source_id;
+                let group_books = match (own, &details.group.lorebooks) {
+                    (Some(books), _) => books,
+                    (None, SnapshotSelection::Disabled) => Vec::new(),
+                    (None, _) => enabled(
+                        self.sources
+                            .list_group_bindings(group_id)
+                            .map_err(binding_error)?,
+                        LorebookSourceProvenance::Group { id: group_id },
+                    )
+                    .collect(),
+                };
+                let speaker_books = match speaker {
+                    Some(character) if !details.group.disable_character_lorebook => enabled(
+                        self.sources
+                            .list_character_bindings(character)
+                            .map_err(binding_error)?,
+                        LorebookSourceProvenance::Character { id: character },
+                    )
+                    .collect(),
+                    _ => Vec::new(),
+                };
+                vec![group_books, speaker_books]
+            }
+        };
+        tiers
+            .into_iter()
+            .map(|tier| {
+                tier.into_iter()
+                    .map(|(provenance, lorebook_id)| {
+                        Ok(LorebookActivationSource {
+                            provenance,
+                            lorebook_id,
+                            details: LorebookRepository::get(self.sources, lorebook_id)
+                                .map_err(|_| ContextAssemblyError::ConversationUnavailable)?,
+                        })
+                    })
+                    .collect()
+            })
+            .collect()
     }
 
     /// The companion state block of a companion chat (legacy
@@ -1095,7 +1298,6 @@ struct SnapshotBundle {
     persona: Option<PersonaSnapshotBodyV1>,
     prompt: Option<PromptSnapshot>,
     scene: Option<(SceneLaunchSnapshot, SceneSnapshotBodyV1)>,
-    lorebooks: Vec<(LorebookLaunchSnapshot, LorebookSnapshotBodyV1)>,
 }
 
 impl SnapshotBundle {
@@ -1177,20 +1379,11 @@ impl SnapshotBundle {
                     .map(|body| (snapshot.clone(), body))
             })
             .transpose()?;
-        let lorebooks = settings
-            .lorebooks
-            .iter()
-            .map(|snapshot| {
-                materialize_lorebook(materializer, conversation_id, snapshot)
-                    .map(|body| (snapshot.clone(), body))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             characters,
             persona,
             prompt,
             scene,
-            lorebooks,
         })
     }
 
@@ -1366,31 +1559,6 @@ fn materialize_scene<M: ConversationSnapshotMaterializer>(
     Ok(body)
 }
 
-fn materialize_lorebook<M: ConversationSnapshotMaterializer>(
-    materializer: &M,
-    id: ConversationId,
-    snapshot: &LorebookLaunchSnapshot,
-) -> Result<LorebookSnapshotBodyV1, ContextAssemblyError> {
-    snapshot
-        .validate()
-        .map_err(|_| ContextAssemblyError::SnapshotInvalid {
-            kind: SnapshotDocumentKind::Lorebook,
-        })?;
-    let body = materializer
-        .materialize_lorebook(id, snapshot)
-        .map_err(|error| map_snapshot_error(error, SnapshotDocumentKind::Lorebook))?;
-    body.validate()
-        .map_err(|_| ContextAssemblyError::SnapshotInvalid {
-            kind: SnapshotDocumentKind::Lorebook,
-        })?;
-    if body.lorebook_id != snapshot.source_id {
-        return Err(ContextAssemblyError::SnapshotInvalid {
-            kind: SnapshotDocumentKind::Lorebook,
-        });
-    }
-    Ok(body)
-}
-
 fn map_snapshot_error(
     error: lettuce_conversations::ArtifactError,
     kind: SnapshotDocumentKind,
@@ -1402,54 +1570,6 @@ fn map_snapshot_error(
         }
         _ => ContextAssemblyError::SnapshotInvalid { kind },
     }
-}
-
-fn lorebook_source(
-    reference: &LorebookLaunchSnapshot,
-    body: &LorebookSnapshotBodyV1,
-    source_order: usize,
-) -> Result<LorebookSnapshotActivationSource, ContextAssemblyError> {
-    let entries = body
-        .entries
-        .iter()
-        .map(|entry| LorebookSnapshotActivationEntry {
-            entry_id: entry.entry_id,
-            title: entry.title.clone(),
-            enabled: entry.enabled,
-            always_active: entry.always_active,
-            keywords: entry.keywords.clone(),
-            case_sensitive: entry.case_sensitive,
-            match_mode: match entry.match_mode {
-                lettuce_conversations::KeywordMatchModeV1::Literal => KeywordMatchMode::Literal,
-                lettuce_conversations::KeywordMatchModeV1::Regex => KeywordMatchMode::Regex,
-            },
-            content: entry.content.clone(),
-            priority: entry.priority,
-            ordinal: entry.ordinal,
-        })
-        .collect();
-    Ok(LorebookSnapshotActivationSource {
-        lorebook_id: reference.source_id,
-        root_revision: reference.source_revision,
-        source_order,
-        detection_policy: match body.detection_policy {
-            lettuce_conversations::DetectionPolicyV1::RecentMessageWindow => {
-                DetectionPolicy::RecentMessageWindow
-            }
-            lettuce_conversations::DetectionPolicyV1::LatestUserMessage => {
-                DetectionPolicy::LatestUserMessage
-            }
-        },
-        behavior_version: match body.behavior_version {
-            lettuce_conversations::LorebookBehaviorVersionV1::LegacyV1 => {
-                lettuce_context::LorebookBehaviorVersion::LegacyV1
-            }
-            lettuce_conversations::LorebookBehaviorVersionV1::DeterministicV2 => {
-                lettuce_context::LorebookBehaviorVersion::DeterministicV2
-            }
-        },
-        entries,
-    })
 }
 
 fn prompt_document(
@@ -2330,26 +2450,40 @@ fn active_text(item: &&TimelineItem) -> Option<String> {
     (!text.trim().is_empty()).then_some(text)
 }
 
-fn lore_attributions(
-    activation: &lettuce_context::MultiLorebookSnapshotActivation,
-) -> Vec<LorebookAttribution> {
-    activation
-        .sources
+/// The per-turn record of the books used: each book with an activated
+/// entry, at the revision read this turn, in activation order.
+fn lore_attributions(entries: &[ResolvedLorebookEntry]) -> Vec<LorebookAttribution> {
+    let mut attributions: Vec<LorebookAttribution> = Vec::new();
+    for entry in entries {
+        match attributions
+            .iter_mut()
+            .find(|attribution| attribution.lorebook_id == entry.source.lorebook_id)
+        {
+            Some(attribution) => attribution.activated_entry_ids.push(entry.entry.id),
+            None => attributions.push(LorebookAttribution {
+                lorebook_id: entry.source.lorebook_id,
+                revision: entry.source.book_revision,
+                activated_entry_ids: vec![entry.entry.id],
+            }),
+        }
+    }
+    attributions
+}
+
+/// The character a group turn speaks as; `None` for a direct chat.
+fn speaker_character(
+    conversation: &lettuce_conversations::Conversation,
+    request: &ContextRequest,
+) -> Option<CharacterId> {
+    let speaker = request.selected_speaker.as_ref()?.participant_id;
+    conversation
+        .participants
         .iter()
-        .filter_map(|source| {
-            let entries = activation
-                .entries
-                .iter()
-                .filter(|entry| entry.source.lorebook_id == source.lorebook_id)
-                .map(|entry| entry.entry.entry_id)
-                .collect::<Vec<_>>();
-            (!entries.is_empty()).then_some(LorebookAttribution {
-                lorebook_id: source.lorebook_id,
-                revision: source.root_revision,
-                activated_entry_ids: entries,
-            })
+        .find(|participant| participant.id == speaker)
+        .and_then(|participant| match participant.source {
+            lettuce_conversations::ParticipantSource::Character(id) => Some(id),
+            _ => None,
         })
-        .collect()
 }
 
 fn budget_report(
@@ -2494,50 +2628,55 @@ mod tests {
     }
 
     #[test]
-    fn lorebook_attribution_contains_only_activated_entry_ids() {
+    fn lorebook_attribution_groups_activated_entries_by_book() {
         let first_book = LorebookId::new();
         let second_book = LorebookId::new();
-        let first_entry = LorebookEntryId::new();
-        let second_entry = LorebookEntryId::new();
-        let source = |book, order| lettuce_context::ResolvedLorebookSnapshotSource {
-            lorebook_id: book,
-            root_revision: lettuce_types::Revision::INITIAL,
-            source_order: order,
-            detection_policy: DetectionPolicy::RecentMessageWindow,
-            behavior_version: lettuce_context::LorebookBehaviorVersion::LegacyV1,
-        };
-        let first = source(first_book, 0);
-        let second = source(second_book, 1);
-        let entry = |id, source| lettuce_context::ResolvedLorebookSnapshotEntry {
-            entry: LorebookSnapshotActivationEntry {
-                entry_id: id,
+        let entry_ids = [
+            LorebookEntryId::new(),
+            LorebookEntryId::new(),
+            LorebookEntryId::new(),
+        ];
+        let entry = |id, book, revision| ResolvedLorebookEntry {
+            entry: lettuce_context::LorebookEntry {
+                id,
+                lorebook_id: book,
                 title: "entry".into(),
                 enabled: true,
                 always_active: true,
                 keywords: Vec::new(),
                 case_sensitive: false,
-                match_mode: KeywordMatchMode::Literal,
+                match_mode: lettuce_context::KeywordMatchMode::Literal,
                 content: "body".into(),
                 priority: 0,
                 ordinal: 0,
+                revision: lettuce_types::Revision::INITIAL,
+                created_at: lettuce_types::TimestampMillis::UNIX_EPOCH,
+                updated_at: lettuce_types::TimestampMillis::UNIX_EPOCH,
             },
-            source,
+            source: lettuce_context::ResolvedLorebookSource {
+                provenance: LorebookSourceProvenance::Conversation {
+                    id: ConversationId::new(),
+                },
+                lorebook_id: book,
+                book_revision: lettuce_types::Revision::new(revision),
+                source_order: 0,
+            },
             matched_keywords: Vec::new(),
             always_active: true,
         };
-        let activation = lettuce_context::MultiLorebookSnapshotActivation {
-            entries: vec![
-                entry(first_entry, first.clone()),
-                entry(second_entry, second.clone()),
-            ],
-            sources: vec![first, second],
-            activated_lorebook_ids: vec![first_book, second_book],
-            activated_entry_ids: vec![first_entry, second_entry],
-        };
-        let attribution = lore_attributions(&activation);
+        let attribution = lore_attributions(&[
+            entry(entry_ids[0], first_book, 3),
+            entry(entry_ids[1], second_book, 5),
+            entry(entry_ids[2], first_book, 3),
+        ]);
         assert_eq!(attribution.len(), 2);
-        assert_eq!(attribution[0].activated_entry_ids, vec![first_entry]);
-        assert_eq!(attribution[1].activated_entry_ids, vec![second_entry]);
+        assert_eq!(attribution[0].lorebook_id, first_book);
+        assert_eq!(attribution[0].revision.get(), 3);
+        assert_eq!(
+            attribution[0].activated_entry_ids,
+            vec![entry_ids[0], entry_ids[2]]
+        );
+        assert_eq!(attribution[1].activated_entry_ids, vec![entry_ids[1]]);
     }
 
     #[test]
@@ -2888,7 +3027,6 @@ mod tests {
             persona: None,
             prompt: None,
             scene: Some((snapshot, body)),
-            lorebooks: Vec::new(),
         };
         let (scene, direction) = bundle.scene_values(&[&item]).expect("scene");
         assert_eq!(scene, "edited scene");

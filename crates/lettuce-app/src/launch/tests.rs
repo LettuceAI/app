@@ -4223,6 +4223,141 @@ async fn a_chat_launched_before_its_character_became_a_companion_uses_the_compan
     );
 }
 
+fn lore_entry(content: &str) -> lettuce_context::LorebookEntryDraft {
+    lettuce_context::LorebookEntryDraft {
+        title: String::new(),
+        enabled: true,
+        always_active: true,
+        keywords: Vec::new(),
+        case_sensitive: false,
+        match_mode: lettuce_context::KeywordMatchMode::Literal,
+        content: content.into(),
+        priority: 0,
+    }
+}
+
+fn add_lore_entry(database: &Database, lorebook_id: LorebookId, content: &str) {
+    let book = LorebookRepository::get(database, lorebook_id)
+        .expect("lorebook")
+        .expect("exists");
+    LorebookRepository::mutate_entries(
+        database,
+        lorebook_id,
+        book.book.revision,
+        lettuce_context::LorebookEntryMutation::Add {
+            draft: lore_entry(content),
+            target: lettuce_context::LorebookEntryInsertionTarget::Append,
+        },
+        NOW,
+    )
+    .expect("add lorebook entry");
+}
+
+#[tokio::test]
+async fn an_existing_chat_reads_lorebook_edits_bindings_and_archiving_every_turn() {
+    let database = database_with_builtins();
+    let world = seed_lorebook(&database, "World");
+    add_lore_entry(&database, world, "The old harbour.");
+    let late = seed_lorebook(&database, "Late");
+    add_lore_entry(&database, late, "The late tide.");
+    let character_id = plain_character(&database);
+    let bound = CharacterLorebookBindingRepository::bind_character_lorebook(
+        &database,
+        character_id,
+        Revision::INITIAL,
+        LorebookBindingCreate {
+            lorebook_id: world,
+            target: BindingInsertionTarget::Append,
+        },
+        NOW,
+    )
+    .expect("bind world");
+    let launched = ConversationLaunchPlanner::new(&database)
+        .launch_direct(&request(character_id, "live-lorebooks"), NOW)
+        .expect("launch direct");
+    let conversation = launched.value.conversation;
+    let sent = ConversationRepository::begin_send(
+        &database,
+        &direct_send_command(&conversation, "live-lorebooks-send", "Hello."),
+        TimestampMillis::new(NOW.get() + 10),
+    )
+    .expect("send direct message");
+    let source_message_id = match sent.value.turn.input {
+        GenerationInput::UserMessage { message_id } => message_id,
+        ref other => panic!("expected user-message input, got {other:?}"),
+    };
+    let assembled = || async {
+        let context = crate::ConversationContextAssembler::new(&database)
+            .assemble(context_request_for(
+                &database,
+                conversation.id,
+                source_message_id,
+            ))
+            .await
+            .expect("assemble context");
+        let text = context
+            .messages
+            .iter()
+            .flat_map(|message| &message.parts)
+            .filter_map(|part| match part {
+                ProviderContextPart::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        (text, context.attributions.lorebooks)
+    };
+
+    let (text, used) = assembled().await;
+    assert!(text.contains("The old harbour."));
+    assert_eq!(used.len(), 1);
+    assert_eq!(used[0].lorebook_id, world);
+
+    let book = LorebookRepository::get(&database, world)
+        .expect("lorebook")
+        .expect("exists");
+    let entry_id = book.entries[0].id;
+    let edited = LorebookRepository::mutate_entries(
+        &database,
+        world,
+        book.book.revision,
+        lettuce_context::LorebookEntryMutation::Update {
+            entry_id,
+            draft: lore_entry("The new harbour."),
+        },
+        NOW,
+    )
+    .expect("edit entry");
+    CharacterLorebookBindingRepository::bind_character_lorebook(
+        &database,
+        character_id,
+        bound.owner_revision,
+        LorebookBindingCreate {
+            lorebook_id: late,
+            target: BindingInsertionTarget::Append,
+        },
+        NOW,
+    )
+    .expect("bind late book");
+    let (text, used) = assembled().await;
+    assert!(text.contains("The new harbour."));
+    assert!(!text.contains("The old harbour."));
+    assert!(text.contains("The late tide."));
+    assert_eq!(used[0].revision, edited.details.book.revision);
+    assert_eq!(used[1].lorebook_id, late);
+
+    LorebookRepository::archive(&database, world, edited.details.book.revision, NOW)
+        .expect("archive world");
+    let (text, used) = assembled().await;
+    assert!(!text.contains("harbour"));
+    assert_eq!(
+        used.iter()
+            .map(|lorebook| lorebook.lorebook_id)
+            .collect::<Vec<_>>(),
+        vec![late]
+    );
+}
+
 fn text_entry(text: &str) -> lettuce_context::PromptEntryDraft {
     lettuce_context::PromptEntryDraft {
         built_in_entry_key: None,
@@ -4627,7 +4762,7 @@ async fn a_direct_turn_follows_a_starter_prompt_live_and_honors_selection_states
 }
 
 #[tokio::test]
-async fn a_group_turn_keeps_its_launch_prompt_snapshot() {
+async fn a_group_turn_reads_its_prompt_and_lorebooks_live() {
     let database = database_with_builtins();
     let group_prompt = prompt_with_text(
         &database,
@@ -4681,8 +4816,67 @@ async fn a_group_turn_keeps_its_launch_prompt_snapshot() {
     };
     rewrite_prompt(&database, group_prompt, "Group voice, edited");
     let (prompt, text) = assembled_prompt_with_text(&database, turn()).await;
-    assert_eq!(prompt, Some((group_prompt, Revision::INITIAL)));
-    assert!(text.contains("Group voice") && !text.contains("Group voice, edited"));
+    assert_eq!(prompt.map(|(id, _)| id), Some(group_prompt));
+    assert!(text.contains("Group voice, edited"));
+
+    let group_book = seed_lorebook(&database, "Group lore");
+    add_lore_entry(&database, group_book, "The group harbour.");
+    let speaker_book = seed_lorebook(&database, "Speaker lore");
+    add_lore_entry(&database, speaker_book, "The speaker tide.");
+    let group = GroupRepository::get(&database, group_id)
+        .expect("group")
+        .expect("exists");
+    GroupLorebookBindingRepository::bind_group_lorebook(
+        &database,
+        group_id,
+        group.group.revision,
+        LorebookBindingCreate {
+            lorebook_id: group_book,
+            target: BindingInsertionTarget::Append,
+        },
+        NOW,
+    )
+    .expect("bind group book");
+    CharacterLorebookBindingRepository::bind_character_lorebook(
+        &database,
+        first,
+        Revision::INITIAL,
+        LorebookBindingCreate {
+            lorebook_id: speaker_book,
+            target: BindingInsertionTarget::Append,
+        },
+        NOW,
+    )
+    .expect("bind speaker book");
+    let (_, text) = assembled_prompt_with_text(&database, turn()).await;
+    let group_at = text.find("The group harbour.").expect("group lore");
+    let speaker_at = text.find("The speaker tide.").expect("speaker lore");
+    assert!(group_at < speaker_at);
+
+    database
+        .update_settings(
+            lettuce_conversations::PreparedConversationSettingsUpdate::new(
+                lettuce_conversations::UpdateConversationSettings {
+                    conversation_id: conversation.id,
+                    expected_settings_revision: None,
+                    operation: OperationToken {
+                        key: IdempotencyKey::new("empty-group-books").expect("key"),
+                        request_digest: ContentHash::parse("cf".repeat(32)).expect("digest"),
+                    },
+                    patch: lettuce_conversations::CurrentConversationSettingsPatch {
+                        lorebooks: lettuce_conversations::PatchValue::Clear,
+                        ..lettuce_conversations::CurrentConversationSettingsPatch::default()
+                    },
+                },
+                Vec::new(),
+            )
+            .expect("prepared lorebook override"),
+            TimestampMillis::new(NOW.get() + 20),
+        )
+        .expect("empty the group books");
+    let (_, text) = assembled_prompt_with_text(&database, turn()).await;
+    assert!(!text.contains("The group harbour."));
+    assert!(text.contains("The speaker tide."));
 }
 
 #[test]
