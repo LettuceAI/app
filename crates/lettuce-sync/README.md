@@ -135,11 +135,15 @@ journaled as insert or update; journaled entities that no longer exist are
 journaled as deletes in reverse order. Edits and imports therefore replicate
 with no per-mutation code; a restored database starts with a new device
 identity and an empty journal, so it rejoins as a new device whose state meets
-peers as concurrent inserts settled by last-writer-wins, never as deletes.
+peers as concurrent inserts, never as deletes. A scanned insert (an entity
+this device never journaled) carries the latest `updated_at` its snapshot
+records rather than the session time, so last-writer-wins keeps a peer's newer
+edit over an older restored version, and a snapshot without any timestamp
+falls back to the session time.
 Because the scan runs before anything
 is received, incoming changes always meet journaled local state. Deviations
 from legacy's per-write capture: edits between sessions collapse into one
-change, and its hybrid timestamp is the session's, not the edit's. Scanned
+change, and an update's hybrid timestamp is the session's, not the edit's. Scanned
 today: provider accounts (`provider_account.snapshot`, secret references travel
 as opaque identifiers, secret values never leave the device) and model
 profiles (`model_profile.snapshot`). Deletes follow legacy: a delete beats a

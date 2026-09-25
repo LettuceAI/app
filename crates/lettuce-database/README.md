@@ -161,10 +161,11 @@ attaches the previous database file and copies the device-local rows a backup
 never carries: installed Whisper model manifests and the discovered voices of
 audio providers present in the restored database. The sync device identity,
 journal, frontiers and conflicts are not carried (user decision 2026-09-25):
-after any restore, v2 or legacy, the database joins sync as a new device, its
-first scan journals everything it holds as inserts that peers settle by
-last-writer-wins, and nothing the restore lacks reaches a peer as a delete or
-an older revision applied as a plain update.
+after any restore, v2 or legacy, the database joins sync as a new device and
+its first scan journals everything it holds as inserts stamped with each
+snapshot's latest `updated_at`. Peers settle them by last-writer-wins, so an
+older restored version loses to a newer edit on a peer, and nothing the
+restore lacks reaches a peer as a delete.
 
 The legacy migration boundary can open an old `app.db` read-only, require the
 actual version-92 schema roots, and return a bounded typed import inventory.

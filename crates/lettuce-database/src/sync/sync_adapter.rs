@@ -252,7 +252,7 @@ pub(crate) fn record_local_change_in(
     request: &NewCanonicalChange,
     now: TimestampMillis,
 ) -> Result<LocalChangeAdmission, LocalChangeJournalError> {
-    record_local_change_in_skipping(connection, operation_id, request, now, None)
+    record_local_change_in_skipping(connection, operation_id, request, now, None, None)
 }
 
 fn record_local_change_in_skipping(
@@ -261,6 +261,7 @@ fn record_local_change_in_skipping(
     request: &NewCanonicalChange,
     now: TimestampMillis,
     skipped_conflict: Option<OperationId>,
+    source_time: Option<TimestampMillis>,
 ) -> Result<LocalChangeAdmission, LocalChangeJournalError> {
     if let Some(change) = load_local_change_in(connection, operation_id)? {
         if !request_matches(&change, request) {
@@ -272,7 +273,10 @@ fn record_local_change_in_skipping(
         });
     }
     let frontier = load_frontier(connection)?;
-    let (device, sequence, timestamp) = next_identity_and_stamp(connection, now, &frontier)?;
+    let (device, sequence, mut timestamp) = next_identity_and_stamp(connection, now, &frontier)?;
+    if let Some(source_time) = source_time.filter(|time| *time < timestamp.wall_time()) {
+        timestamp = HybridTimestamp::new(source_time, 0);
+    }
     let change = CanonicalChange::new(
         SyncChangeId::new(),
         device,
@@ -2594,6 +2598,13 @@ fn journal_state_change(
     payload: Option<CanonicalPayload>,
     now: TimestampMillis,
 ) -> Result<(), LocalChangeJournalError> {
+    let source_time = (operation == ChangeOperation::Insert)
+        .then(|| {
+            payload
+                .as_ref()
+                .and_then(|payload| snapshot_source_time(payload.bytes()))
+        })
+        .flatten();
     let request = NewCanonicalChange::new(
         SyncEntity::new(kind, id).map_err(corrupt)?,
         operation,
@@ -2601,8 +2612,37 @@ fn journal_state_change(
         payload,
     )
     .map_err(corrupt)?;
-    record_local_change_in(tx, OperationId::new(), &request, now)?;
+    record_local_change_in_skipping(tx, OperationId::new(), &request, now, None, source_time)?;
     Ok(())
+}
+
+/// The latest `updated_at` (or `updatedAt`) a snapshot records at any depth.
+/// A scanned insert (an entity this device never journaled, such as every
+/// entity of a restored database) is stamped with it instead of the session
+/// time, so against a peer's version of the same entity the more recently
+/// edited content wins rather than whichever device scanned last.
+fn snapshot_source_time(bytes: &[u8]) -> Option<TimestampMillis> {
+    fn latest(value: &serde_json::Value) -> Option<i64> {
+        match value {
+            serde_json::Value::Object(map) => map
+                .iter()
+                .filter_map(|(key, value)| {
+                    if key == "updated_at" || key == "updatedAt" {
+                        value.as_i64().filter(|time| *time > 0)
+                    } else {
+                        latest(value)
+                    }
+                })
+                .max(),
+            serde_json::Value::Array(items) => items.iter().filter_map(latest).max(),
+            _ => None,
+        }
+    }
+    serde_json::from_slice::<serde_json::Value>(bytes)
+        .ok()
+        .as_ref()
+        .and_then(latest)
+        .map(TimestampMillis::new)
 }
 
 fn journal_apply_error(error: ApplyOneError) -> LocalChangeJournalError {
@@ -3763,6 +3803,7 @@ impl PersonaConflictRepository for Database {
             &request,
             now,
             Some(conflict_id),
+            None,
         )
         .map_err(map_local_conflict_error)?;
         if !admission.created {
@@ -4637,6 +4678,73 @@ mod tests {
         )
         .expect("edit after the remote winner");
         assert_eq!(edited.title, "Local three");
+    }
+
+    #[test]
+    fn a_restored_old_backup_loses_to_the_newer_peer_edit() {
+        use lettuce_transfer::{ProviderBackupRestoreWriter, ProviderBackupSource};
+
+        let device = Database::open_in_memory().expect("device");
+        let peer = Database::open_in_memory().expect("peer");
+        let send = |from: &Database, to: &Database, at: i64| {
+            let batch = from
+                .outbound_changes(
+                    &to.local_frontier().expect("frontier"),
+                    MAX_OUTBOUND_CHANGES,
+                    MAX_OUTBOUND_PAYLOAD_BYTES,
+                )
+                .expect("outbound");
+            for change in batch.changes {
+                stage_and_apply(to, change, at);
+            }
+        };
+        let persona_id = PersonaId::new();
+        PersonaRepository::create(
+            &device,
+            Persona::new(
+                persona_id,
+                "Backed up".into(),
+                "Old".into(),
+                TimestampMillis::new(1),
+            )
+            .expect("persona"),
+        )
+        .expect("create");
+        send(&device, &peer, 2);
+        let mut backup = device.read_provider_backup_graph().expect("backup");
+        lettuce_transfer::canonicalize_and_validate(&mut backup).expect("canonical backup");
+        PersonaRepository::revise(
+            &peer,
+            persona_id,
+            Revision::INITIAL,
+            PersonaDraftUpdate {
+                title: "Peer edit".into(),
+                description: "Newer".into(),
+                nickname: None,
+                design_description: None,
+                avatar_crop: None,
+                image_recommendation: None,
+            },
+            TimestampMillis::new(100),
+        )
+        .expect("peer edit");
+
+        let restored = Database::open_in_memory().expect("restored");
+        restored
+            .restore_provider_backup_graph(&backup, &[])
+            .expect("restore");
+        restored
+            .journal_current_state(TimestampMillis::now().expect("clock"))
+            .expect("scan the restored state");
+        send(&restored, &peer, 300);
+        send(&peer, &restored, 400);
+
+        for database in [&peer, &restored] {
+            let persona = PersonaRepository::get(database, persona_id)
+                .expect("persona")
+                .expect("present");
+            assert_eq!(persona.title, "Peer edit");
+        }
     }
 
     #[test]

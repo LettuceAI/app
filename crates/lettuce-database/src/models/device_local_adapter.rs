@@ -24,8 +24,9 @@ impl Database {
     ///
     /// The sync device identity, journal, frontiers and conflicts stay
     /// behind: the restored file joins sync as a new device whose first scan
-    /// journals its state as inserts, so peers merge it by last-writer-wins
-    /// and never receive the restore as deletes or rollbacks of their data.
+    /// journals its state as inserts stamped with each snapshot's own
+    /// `updated_at`, so peers never receive the restore as deletes and keep
+    /// their newer edits over older restored versions.
     pub fn carry_device_local_state_from(&self, previous: &Path) -> Result<(), DatabaseError> {
         let previous = previous
             .to_str()
