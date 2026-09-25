@@ -139,8 +139,35 @@ API has no tool-choice field, so only Auto is supported; Required/named choice
 and reasoning-plus-tools remain rejected rather than approximated or replayed
 lossily.
 
-Deferred horizontals: media input, custom-provider reasoning schema, and
-structured output.
+Media input follows legacy `build_multimodal_content`: attachments on user
+messages reach the provider only when the model's image or audio input is
+supported (legacy `inputScopes`), read through the host's
+`ProviderMediaSource`; everything else (assistant reply images, other roles,
+text-only models) is dropped and the text is sent alone, never rejected.
+OpenAI-envelope providers get `image_url` data URLs with `detail: auto` and
+`input_audio`; Anthropic gets base64 `image` blocks (no audio); Gemini gets
+`inline_data` for images and audio (legacy `gemini_audio_mime`); Ollama gets
+the native `images` array (no audio). Multimodal messages are never merged
+with their neighbours, as legacy only merged string contents. Request bodies
+share the 64 MiB bulk bound so phone photos fit.
+
+Deferred horizontals: custom-provider reasoning schema and structured output.
+
+Response parsing is as lenient as legacy (`tooling.rs`, `sse.rs`):
+`tool_calls`/`reasoning`/`error` may be `null`; usage counters that are not
+integers are unknown; a tool call without an id gets `tool_call_{n}` (legacy
+used `tool_call` for every buffered call, which collided; corrected); a streamed
+fragment without an index opens a new call; `<parameter=x>` argument strings
+are parsed, a double-encoded object is unwrapped, and blank or non-object
+arguments become `{}` (legacy passed the raw string to the tool, the domain
+only carries objects); Anthropic `tool_use` blocks count under any
+`stop_reason`; a `tool_calls` finish with no calls keeps the text. OpenAI SSE
+streams may end without `[DONE]` or a final blank line, and a plain JSON body
+answering a stream request is read as one record. Text, reasoning, SSE records
+and the wire byte count of generation streams are not capped (legacy had no
+cap). The stored reply text and reasoning are trimmed like legacy
+`normalize_thinking_content`. Error bodies that are not JSON, or JSON without
+`error`/`message` text (FastAPI `detail`), keep their text as the message.
 
 Explicit prompt caching is executable for Anthropic, custom Anthropic, and
 OpenRouter through typed cache-control annotations, and for OpenAI through its

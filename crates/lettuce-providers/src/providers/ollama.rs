@@ -44,6 +44,7 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
     secret_store: &S,
     network: &JsonClient,
     runtime: &dyn InferenceRuntimePort,
+    media: Option<std::sync::Arc<dyn crate::media::ProviderMediaSource>>,
     request: InferenceRequest,
 ) -> Result<InferenceOutcome, AdapterError> {
     validate_common_request_with_tools(&request)?;
@@ -62,7 +63,14 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
     if streaming && (!profile.streaming_enabled || !DESCRIPTOR.streaming) {
         return Err(AdapterError::Rejected);
     }
-    let body = encode_request(profile, &request.context, request.tools.as_ref(), streaming)?;
+    let media = crate::media::RequestMedia::load(&request, media).await?;
+    let body = encode_request(
+        profile,
+        &request.context,
+        request.tools.as_ref(),
+        streaming,
+        &media,
+    )?;
     let credentials = Credentials::from(profile);
     let auth = load_auth(AuthPlan::OptionalBearer, secret_store, &credentials).await?;
     let secret_headers = load_secret_headers(secret_store, &credentials).await?;
@@ -261,9 +269,14 @@ struct WireMessage {
     tool_calls: Vec<WireToolCall>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tool_name: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    images: Vec<String>,
 }
 
-fn wire_messages(context: &ProviderNeutralContext) -> Result<Vec<WireMessage>, AdapterError> {
+fn wire_messages(
+    context: &ProviderNeutralContext,
+    media: &crate::media::RequestMedia,
+) -> Result<Vec<WireMessage>, AdapterError> {
     let mut out = Vec::new();
     let mut expected_results: Option<Vec<&lettuce_conversations::TranscriptToolCall>> = None;
     for message in &context.messages {
@@ -275,7 +288,7 @@ fn wire_messages(context: &ProviderNeutralContext) -> Result<Vec<WireMessage>, A
                 ProviderContextPart::Text { text } => content.push_str(text),
                 ProviderContextPart::ToolCall(call) => calls.push(call),
                 ProviderContextPart::ToolResult(result) => results.push(result),
-                ProviderContextPart::MediaAsset { .. } => return Err(AdapterError::Rejected),
+                ProviderContextPart::MediaAsset { .. } => {}
             }
         }
         if let Some(expected) = expected_results.take() {
@@ -295,6 +308,7 @@ fn wire_messages(context: &ProviderNeutralContext) -> Result<Vec<WireMessage>, A
                         .map_err(|_| AdapterError::Rejected)?,
                     tool_calls: Vec::new(),
                     tool_name: Some(result.name.clone()),
+                    images: Vec::new(),
                 });
             }
             if !calls.is_empty() {
@@ -332,17 +346,24 @@ fn wire_messages(context: &ProviderNeutralContext) -> Result<Vec<WireMessage>, A
                     })
                     .collect(),
                 tool_name: None,
+                images: Vec::new(),
             });
             continue;
         }
-        out.push(text_wire_message(
+        let mut wire = text_wire_message(
             match message.role {
                 MessageRole::System | MessageRole::Scene => "system",
                 MessageRole::User => "user",
                 MessageRole::Assistant => "assistant",
             },
             content,
-        ));
+        );
+        wire.images = media
+            .images(message)
+            .iter()
+            .map(crate::media::ProviderMedia::base64)
+            .collect();
+        out.push(wire);
     }
     if expected_results.is_some() {
         return Err(AdapterError::Rejected);
@@ -356,6 +377,7 @@ fn text_wire_message(role: &'static str, content: String) -> WireMessage {
         content,
         tool_calls: Vec::new(),
         tool_name: None,
+        images: Vec::new(),
     }
 }
 
@@ -380,6 +402,7 @@ fn normalize_system_messages(messages: Vec<WireMessage>) -> Vec<WireMessage> {
                 content: merged,
                 tool_calls: Vec::new(),
                 tool_name: None,
+                images: Vec::new(),
             },
             false,
         ));
@@ -392,6 +415,7 @@ fn normalize_system_messages(messages: Vec<WireMessage>) -> Vec<WireMessage> {
                     content: message.content,
                     tool_calls: Vec::new(),
                     tool_name: None,
+                    images: Vec::new(),
                 },
                 true,
             ));
@@ -411,6 +435,7 @@ fn normalize_system_messages(messages: Vec<WireMessage>) -> Vec<WireMessage> {
                     previous.content.push_str("\n\n");
                 }
                 previous.content.push_str(&message.content);
+                previous.images.extend(message.images);
             }
             previous_was_demoted |= was_demoted;
         } else {
@@ -426,11 +451,12 @@ fn encode_request(
     context: &ProviderNeutralContext,
     tools: Option<&ToolRequest>,
     streaming: bool,
+    media: &crate::media::RequestMedia,
 ) -> Result<Vec<u8>, AdapterError> {
     let parameters = &profile.parameters;
     let request = ChatRequest {
         model: profile.external_model_id.clone(),
-        messages: normalize_system_messages(wire_messages(context)?),
+        messages: normalize_system_messages(wire_messages(context, media)?),
         stream: streaming,
         think: ollama_think(parameters),
         options: options(parameters),
@@ -729,6 +755,7 @@ mod tests {
             content: content.to_owned(),
             tool_calls: Vec::new(),
             tool_name: None,
+            images: Vec::new(),
         }
     }
 
@@ -965,8 +992,10 @@ mod tests {
         };
         context.validate().expect("tool context");
 
-        let messages = serde_json::to_value(wire_messages(&context).expect("wire messages"))
-            .expect("message json");
+        let messages = serde_json::to_value(
+            wire_messages(&context, &crate::media::RequestMedia::default()).expect("wire messages"),
+        )
+        .expect("message json");
         assert_eq!(
             messages,
             serde_json::json!([
@@ -985,7 +1014,10 @@ mod tests {
             attributions: ContextAttributions::default(),
             budget: ContextBudgetReport::default(),
         };
-        assert_eq!(wire_messages(&incomplete), Err(AdapterError::Rejected));
+        assert_eq!(
+            wire_messages(&incomplete, &crate::media::RequestMedia::default()),
+            Err(AdapterError::Rejected)
+        );
     }
 
     #[test]
@@ -1022,5 +1054,19 @@ mod tests {
                 Err(AdapterError::MalformedResponse)
             );
         }
+    }
+
+    #[test]
+    fn user_images_go_in_the_native_images_field_like_legacy() {
+        let (context, media) = crate::media::RequestMedia::fixture((true, true));
+        let messages =
+            serde_json::to_value(wire_messages(&context, &media).expect("messages")).expect("json");
+        assert_eq!(messages[1]["images"], serde_json::json!(["AQID"]));
+        assert_eq!(messages[1]["content"], "look");
+        assert!(messages[2].get("images").is_none());
+        let (context, media) = crate::media::RequestMedia::fixture((false, false));
+        let messages =
+            serde_json::to_value(wire_messages(&context, &media).expect("messages")).expect("json");
+        assert!(messages[1].get("images").is_none());
     }
 }

@@ -237,6 +237,7 @@ impl<S: SecretStore + ?Sized> InferencePort for RemoteProviders<S> {
                     &*self.secret_store,
                     &self.network,
                     &*self.runtime,
+                    self.media.clone(),
                     request,
                 )
                 .await
@@ -249,6 +250,7 @@ impl<S: SecretStore + ?Sized> InferencePort for RemoteProviders<S> {
                     &self.network,
                     &*self.runtime,
                     self.replay_artifacts.as_deref(),
+                    self.media.clone(),
                     request,
                 )
                 .await
@@ -262,12 +264,13 @@ impl<S: SecretStore + ?Sized> InferencePort for RemoteProviders<S> {
                     &self.network,
                     &*self.runtime,
                     self.replay_artifacts.as_deref(),
+                    self.media.clone(),
                     request,
                 )
                 .await
             }
             ProviderProtocol::Ollama if kind.eq_ignore_ascii_case("ollama") => {
-                providers::ollama::run(&*self.secret_store, &self.network, &*self.runtime, request).await
+                providers::ollama::run(&*self.secret_store, &self.network, &*self.runtime, self.media.clone(), request).await
             }
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             ProviderProtocol::LlamaCpp => match &self.local_llama {

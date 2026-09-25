@@ -125,6 +125,7 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
     network: &JsonClient,
     runtime: &dyn InferenceRuntimePort,
     replay_artifacts: Option<&dyn ProviderReplayArtifactPort>,
+    media: Option<std::sync::Arc<dyn crate::media::ProviderMediaSource>>,
     request: InferenceRequest,
 ) -> Result<InferenceOutcome, AdapterError> {
     validate_common_request_with_tools(&request)?;
@@ -145,11 +146,13 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
     if streaming && (!profile.streaming_enabled || !provider.descriptor().streaming) {
         return Err(AdapterError::Rejected);
     }
-    let uncached = build_request(
+    let media = crate::media::RequestMedia::load(&request, media).await?;
+    let uncached = build_request_with_media(
         profile,
         &request.context,
         request.tools.as_ref(),
         replay_artifacts,
+        &media,
     )?;
     let prepared = crate::streaming::streaming::await_cancelable(
         runtime,
@@ -479,11 +482,28 @@ pub(crate) async fn list_models<S: SecretStore + ?Sized>(
     Ok(provider.parse_models(&decode_json(&response)?))
 }
 
+#[cfg(test)]
 fn build_request(
     profile: &ResolvedChatProfile,
     context: &ProviderNeutralContext,
     tools: Option<&ToolRequest>,
     replay_artifacts: Option<&dyn ProviderReplayArtifactPort>,
+) -> Result<GenerateRequest, AdapterError> {
+    build_request_with_media(
+        profile,
+        context,
+        tools,
+        replay_artifacts,
+        &crate::media::RequestMedia::default(),
+    )
+}
+
+fn build_request_with_media(
+    profile: &ResolvedChatProfile,
+    context: &ProviderNeutralContext,
+    tools: Option<&ToolRequest>,
+    replay_artifacts: Option<&dyn ProviderReplayArtifactPort>,
+    media: &crate::media::RequestMedia,
 ) -> Result<GenerateRequest, AdapterError> {
     let mut system_chunks: Vec<String> = Vec::new();
     let mut contents: Vec<Content> = Vec::new();
@@ -562,8 +582,22 @@ fn build_request(
                         },
                     });
                 }
-                ProviderContextPart::MediaAsset { .. } => return Err(AdapterError::Rejected),
+                ProviderContextPart::MediaAsset { .. } => {}
             }
+        }
+        for attachment in media.readable(message) {
+            let mime_type = if attachment.is_audio() {
+                gemini_audio_mime(crate::media::audio_format_from_mime(&attachment.mime_type))
+                    .to_owned()
+            } else {
+                attachment.mime_type.clone()
+            };
+            parts.push(ContentPart::InlineData {
+                inline_data: InlineData {
+                    mime_type,
+                    data: attachment.base64(),
+                },
+            });
         }
         if parts.is_empty() {
             continue;
@@ -678,6 +712,18 @@ fn build_request(
         cached_content: None,
     };
     Ok(request)
+}
+
+/// Legacy `gemini_audio_mime`.
+fn gemini_audio_mime(format: &str) -> &'static str {
+    match format.to_ascii_lowercase().as_str() {
+        "mp3" | "mpeg" => "audio/mp3",
+        "ogg" => "audio/ogg",
+        "flac" => "audio/flac",
+        "aac" | "m4a" | "mp4" => "audio/aac",
+        "aiff" | "aif" => "audio/aiff",
+        _ => "audio/wav",
+    }
 }
 
 fn gemini_tool_response(result: &lettuce_conversations::TranscriptToolResult) -> serde_json::Value {
@@ -1114,6 +1160,15 @@ enum ContentPart {
         #[serde(rename = "functionResponse")]
         function_response: FunctionResponse,
     },
+    InlineData {
+        inline_data: InlineData,
+    },
+}
+
+#[derive(Clone, Serialize)]
+struct InlineData {
+    mime_type: String,
+    data: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -1915,5 +1970,27 @@ mod tests {
         assert_eq!(validate_model_id("a/b"), Err(AdapterError::Rejected));
         assert_eq!(validate_model_id("a:b"), Err(AdapterError::Rejected));
         assert_eq!(validate_model_id(""), Err(AdapterError::Rejected));
+    }
+
+    #[test]
+    fn user_images_and_audio_become_inline_data_like_legacy() {
+        let (context, media) = crate::media::RequestMedia::fixture((true, true));
+        let body = serde_json::to_value(
+            build_request_with_media(&test_profile(), &context, None, None, &media)
+                .expect("request"),
+        )
+        .expect("json");
+        assert_eq!(
+            body["contents"][0]["parts"],
+            serde_json::json!([
+                {"text": "look"},
+                {"inline_data": {"mime_type": "image/png", "data": "AQID"}},
+                {"inline_data": {"mime_type": "audio/mp3", "data": "CQ=="}}
+            ])
+        );
+        assert_eq!(
+            body["contents"][1]["parts"],
+            serde_json::json!([{"text": "ok"}])
+        );
     }
 }

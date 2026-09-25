@@ -387,9 +387,7 @@ pub(crate) fn validate_common_request_with_tools(
 ) -> Result<(), AdapterError> {
     request.validate().map_err(|_| AdapterError::Rejected)?;
     let profile = &request.profile;
-    if profile.output_policy != lettuce_conversations::OutputPolicy::Plain
-        || !request.media_grants.is_empty()
-    {
+    if profile.output_policy != lettuce_conversations::OutputPolicy::Plain {
         return Err(AdapterError::Rejected);
     }
     Ok(())

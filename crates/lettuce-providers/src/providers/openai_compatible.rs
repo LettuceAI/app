@@ -179,6 +179,7 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
     secret_store: &S,
     network: &JsonClient,
     runtime: &dyn InferenceRuntimePort,
+    media: Option<std::sync::Arc<dyn crate::media::ProviderMediaSource>>,
     request: InferenceRequest,
 ) -> Result<InferenceOutcome, AdapterError> {
     validate_common_request_with_tools(&request)?;
@@ -198,7 +199,14 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
         .ok_or(AdapterError::Rejected)?;
     let endpoint = provider.normalize_endpoint(endpoint);
     let path = provider.chat_path(&endpoint, config)?;
-    let mut messages = wire_messages(&request.context, provider, config)?;
+    let attachments = crate::media::load_attachments(&request, media).await?;
+    let mut messages = wire_messages(
+        &request.context,
+        provider,
+        config,
+        &attachments,
+        crate::media::allowed_inputs(&request),
+    )?;
     if provider.merges_same_role(config) {
         messages = merge_same_role(messages);
     }
@@ -339,6 +347,8 @@ fn wire_messages(
     context: &ProviderNeutralContext,
     provider: &dyn OpenAiWireProvider,
     config: &ProviderConfig,
+    attachments: &crate::media::Attachments,
+    allowed_inputs: (bool, bool),
 ) -> Result<Vec<WireMessage>, AdapterError> {
     let mut messages = Vec::new();
     for message in &context.messages {
@@ -368,6 +378,7 @@ fn wire_messages(
                     tool_calls: Vec::new(),
                     tool_call_id: Some(provider_call_id.to_owned()),
                     cache_control: None,
+                    parts: None,
                 });
             }
             continue;
@@ -399,11 +410,13 @@ fn wire_messages(
                         },
                     });
                 }
-                ProviderContextPart::MediaAsset { .. } | ProviderContextPart::ToolResult(_) => {
-                    return Err(AdapterError::Rejected);
-                }
+                ProviderContextPart::MediaAsset { .. } => {}
+                ProviderContextPart::ToolResult(_) => return Err(AdapterError::Rejected),
             }
         }
+        let media = crate::media::message_attachments(message, attachments, allowed_inputs);
+        let parts = (!media.is_empty())
+            .then(|| crate::media::openai_content_parts(&content, &media, allowed_inputs));
         messages.push(WireMessage {
             role,
             content: if tool_calls.is_empty() || !content.is_empty() {
@@ -414,6 +427,7 @@ fn wire_messages(
             tool_calls,
             tool_call_id: None,
             cache_control: None,
+            parts,
         });
     }
     Ok(messages)
@@ -428,7 +442,9 @@ fn merge_same_role(messages: Vec<WireMessage>) -> Vec<WireMessage> {
                     && last.tool_calls.is_empty()
                     && message.tool_calls.is_empty()
                     && last.tool_call_id.is_none()
-                    && message.tool_call_id.is_none() =>
+                    && message.tool_call_id.is_none()
+                    && last.parts.is_none()
+                    && message.parts.is_none() =>
             {
                 let last_content = last.content.get_or_insert_default();
                 if !last_content.is_empty() {
@@ -832,6 +848,8 @@ pub(crate) struct WireMessage {
     tool_calls: Vec<WireToolCall>,
     tool_call_id: Option<String>,
     cache_control: Option<WireCacheControl>,
+    /// Multimodal content parts, sent instead of `content` when present.
+    parts: Option<serde_json::Value>,
 }
 
 impl WireMessage {
@@ -843,6 +861,7 @@ impl WireMessage {
             tool_calls: Vec::new(),
             tool_call_id: None,
             cache_control: None,
+            parts: None,
         }
     }
 }
@@ -940,7 +959,22 @@ impl Serialize for WireMessage {
         use serde::ser::SerializeStruct;
         let mut state = serializer.serialize_struct("OpenAiMessage", 4)?;
         state.serialize_field("role", self.role.as_ref())?;
-        if let Some(cache_control) = self.cache_control {
+        if let Some(parts) = &self.parts {
+            let mut parts = parts.clone();
+            if let Some(cache_control) = self.cache_control
+                && let Some(last) = parts
+                    .as_array_mut()
+                    .and_then(|parts| parts.last_mut())
+                    .and_then(serde_json::Value::as_object_mut)
+                && last.get("type").and_then(serde_json::Value::as_str) == Some("text")
+            {
+                last.insert(
+                    "cache_control".to_owned(),
+                    serde_json::to_value(cache_control).map_err(serde::ser::Error::custom)?,
+                );
+            }
+            state.serialize_field("content", &parts)?;
+        } else if let Some(cache_control) = self.cache_control {
             let content = self.content.as_deref().unwrap_or_default();
             state.serialize_field(
                 "content",
@@ -1165,6 +1199,8 @@ mod tests {
             &context,
             &crate::providers::openai::OpenAi,
             &ProviderConfig::Standard,
+            &crate::media::Attachments::new(),
+            (false, false),
         )
         .expect("messages");
         let body = encode_request(
@@ -1926,5 +1962,41 @@ mod tests {
             };
             assert_eq!(failure.message.as_deref(), Some(expected));
         }
+    }
+
+    #[test]
+    fn user_attachments_go_to_vision_models_as_legacy_multimodal_content() {
+        let (context, media) = crate::media::RequestMedia::fixture((true, true));
+        let messages = wire_messages(
+            &context,
+            &crate::providers::openai::OpenAi,
+            &ProviderConfig::Standard,
+            media.attachments(),
+            (true, true),
+        )
+        .expect("messages");
+        let messages = serde_json::to_value(&messages).expect("json");
+        assert_eq!(
+            messages[1]["content"],
+            serde_json::json!([
+                {"type": "text", "text": "look"},
+                {"type": "image_url", "image_url": {"url": "data:image/png;base64,AQID", "detail": "auto"}},
+                {"type": "input_audio", "input_audio": {"data": "CQ==", "format": "mp3"}}
+            ])
+        );
+        assert_eq!(messages[2]["content"], "ok");
+
+        let text_only = wire_messages(
+            &context,
+            &crate::providers::openai::OpenAi,
+            &ProviderConfig::Standard,
+            media.attachments(),
+            (false, false),
+        )
+        .expect("text-only model keeps the request");
+        assert_eq!(
+            serde_json::to_value(&text_only).expect("json")[1]["content"],
+            "look"
+        );
     }
 }

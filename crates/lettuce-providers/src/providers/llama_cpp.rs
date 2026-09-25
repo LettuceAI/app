@@ -30,17 +30,18 @@ use lettuce_local_llm::request::{
 };
 use lettuce_local_llm::tool_calls::LocalToolCall;
 use lettuce_models::{
-    CapabilityStatus, LlamaCppSettings, LlamaFlashAttention, LlamaGpuDistributionMode,
-    LlamaKvPlacement, LlamaKvType, LlamaMtpPlacement, LlamaSamplerProfile, LlamaSamplerStage,
-    ReasoningMode, ResolvedLlamaSettings,
+    LlamaCppSettings, LlamaFlashAttention, LlamaGpuDistributionMode, LlamaKvPlacement, LlamaKvType,
+    LlamaMtpPlacement, LlamaSamplerProfile, LlamaSamplerStage, ReasoningMode,
+    ResolvedLlamaSettings,
 };
 use serde_json::{Map, Value, json};
 use tokio::sync::{mpsc, oneshot};
 
-use base64::Engine as _;
-
 use crate::common::{AdapterError, FALLBACK_MAX_OUTPUT_TOKENS};
-use crate::media::{ProviderMedia, ProviderMediaSource};
+use crate::media::{
+    Attachments, ProviderMedia, ProviderMediaSource, allowed_inputs, load_attachments,
+    openai_content_parts,
+};
 use crate::streaming::stream_normalize::StreamDelta;
 
 const LOCAL_FAILURE_CODE: &str = "LOCAL_INFERENCE_FAILED";
@@ -453,124 +454,6 @@ fn wire_role(role: MessageRole) -> &'static str {
     }
 }
 
-/// Legacy `audio_format_from_mime`.
-fn audio_format_from_mime(mime: &str) -> &'static str {
-    let mime = mime.to_ascii_lowercase();
-    if mime.contains("wav") {
-        "wav"
-    } else if mime.contains("mpeg") || mime.contains("mp3") {
-        "mp3"
-    } else if mime.contains("ogg") {
-        "ogg"
-    } else if mime.contains("flac") {
-        "flac"
-    } else if mime.contains("aac") {
-        "aac"
-    } else if mime.contains("aiff") || mime.contains("aif") {
-        "aiff"
-    } else if mime.contains("mp4") || mime.contains("m4a") {
-        "m4a"
-    } else {
-        "wav"
-    }
-}
-
-/// Legacy `build_multimodal_content`: the text first, then each attachment
-/// the model accepts, a single blank text part when nothing remains.
-fn multimodal_content(
-    text: &str,
-    attachments: &[ProviderMedia],
-    allow_image: bool,
-    allow_audio: bool,
-) -> Value {
-    let mut parts = Vec::new();
-    if !text.is_empty() {
-        parts.push(json!({ "type": "text", "text": text }));
-    }
-    for attachment in attachments {
-        if attachment.bytes.is_empty() {
-            continue;
-        }
-        let data = base64::engine::general_purpose::STANDARD.encode(&attachment.bytes);
-        if attachment.mime_type.starts_with("audio/") {
-            if allow_audio {
-                parts.push(json!({
-                    "type": "input_audio",
-                    "input_audio": {
-                        "data": data,
-                        "format": audio_format_from_mime(&attachment.mime_type),
-                    }
-                }));
-            }
-            continue;
-        }
-        if allow_image {
-            parts.push(json!({
-                "type": "image_url",
-                "image_url": {
-                    "url": format!("data:{};base64,{data}", attachment.mime_type),
-                    "detail": "auto",
-                }
-            }));
-        }
-    }
-    if parts.is_empty() {
-        parts.push(json!({ "type": "text", "text": " " }));
-    }
-    Value::Array(parts)
-}
-
-type Attachments = std::collections::HashMap<lettuce_types::AssetId, ProviderMedia>;
-
-fn allowed_inputs(request: &InferenceRequest) -> (bool, bool) {
-    let inputs = &request.profile.chat_profile.capabilities.input_modalities;
-    (
-        inputs.image == CapabilityStatus::Supported,
-        inputs.audio == CapabilityStatus::Supported,
-    )
-}
-
-/// Reads the user attachments the model can take, off the async executor.
-/// Every attachment must be granted; one that cannot be read is left out
-/// and its message keeps its shape, as legacy skipped attachments whose data
-/// was missing.
-async fn load_attachments(
-    request: &InferenceRequest,
-    media: Option<Arc<dyn ProviderMediaSource>>,
-) -> Result<Attachments, AdapterError> {
-    let (allow_image, allow_audio) = allowed_inputs(request);
-    if !allow_image && !allow_audio {
-        return Ok(Attachments::new());
-    }
-    let mut wanted = Vec::new();
-    for message in &request.context.messages {
-        if message.role != MessageRole::User {
-            continue;
-        }
-        for part in &message.parts {
-            if let ProviderContextPart::MediaAsset { asset_id, .. } = part {
-                if !request.media_grants.contains(asset_id) {
-                    return Err(AdapterError::Rejected);
-                }
-                if !wanted.contains(asset_id) {
-                    wanted.push(*asset_id);
-                }
-            }
-        }
-    }
-    let Some(media) = media.filter(|_| !wanted.is_empty()) else {
-        return Ok(Attachments::new());
-    };
-    tokio::task::spawn_blocking(move || {
-        wanted
-            .into_iter()
-            .filter_map(|asset_id| media.load(asset_id).ok().map(|loaded| (asset_id, loaded)))
-            .collect()
-    })
-    .await
-    .map_err(|_| AdapterError::Transport)
-}
-
 fn wire_messages(
     request: &InferenceRequest,
     loaded: &Attachments,
@@ -641,7 +524,7 @@ fn wire_messages(
         if !attachments.is_empty() {
             wire.insert(
                 "content".to_owned(),
-                multimodal_content(&content, &attachments, allow_image, allow_audio),
+                openai_content_parts(&content, &attachments, (allow_image, allow_audio)),
             );
         } else if tool_calls.is_empty() {
             wire.insert("content".to_owned(), json!(content));
@@ -1129,7 +1012,7 @@ mod tests {
                 .chat_profile
                 .capabilities
                 .input_modalities
-                .image = CapabilityStatus::Supported;
+                .image = lettuce_models::CapabilityStatus::Supported;
         }
         let image_id = lettuce_types::AssetId::new();
         let audio_id = lettuce_types::AssetId::new();
@@ -1209,19 +1092,18 @@ mod tests {
             json!({"role": "user", "content": "What color is this?"})
         );
         assert_eq!(
-            multimodal_content(
+            openai_content_parts(
                 "",
                 &[ProviderMedia {
                     mime_type: "audio/x-wav".to_owned(),
                     bytes: vec![9],
                 }],
-                false,
-                true,
+                (false, true),
             ),
             json!([{"type": "input_audio", "input_audio": {"data": "CQ==", "format": "wav"}}])
         );
         assert_eq!(
-            multimodal_content("", &[], true, false),
+            openai_content_parts("", &[], (true, false)),
             json!([{"type": "text", "text": " "}])
         );
     }

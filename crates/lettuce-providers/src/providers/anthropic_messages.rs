@@ -159,6 +159,7 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
     network: &JsonClient,
     runtime: &dyn InferenceRuntimePort,
     replay_artifacts: Option<&dyn ProviderReplayArtifactPort>,
+    media: Option<std::sync::Arc<dyn crate::media::ProviderMediaSource>>,
     request: InferenceRequest,
 ) -> Result<InferenceOutcome, AdapterError> {
     validate_common_request_with_tools(&request)?;
@@ -179,6 +180,7 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
     if streaming && (!profile.streaming_enabled || !provider.supports_streaming(config)) {
         return Err(AdapterError::Rejected);
     }
+    let media = crate::media::RequestMedia::load(&request, media).await?;
     let body = encode_request(
         profile,
         &request.context,
@@ -187,6 +189,7 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
         request.tools.as_ref(),
         replay_artifacts,
         streaming,
+        &media,
     )?;
     let credentials = Credentials::from(profile);
     let auth = load_auth(provider.auth(config)?, secret_store, &credentials).await?;
@@ -399,6 +402,7 @@ fn encode_request(
     tools: Option<&ToolRequest>,
     replay_artifacts: Option<&dyn ProviderReplayArtifactPort>,
     streaming: bool,
+    media: &crate::media::RequestMedia,
 ) -> Result<Vec<u8>, AdapterError> {
     let mut system_parts: Vec<String> = Vec::new();
     let mut turns: Vec<Turn> = Vec::new();
@@ -470,10 +474,23 @@ fn encode_request(
                         is_error: result.output.is_error,
                     });
                 }
-                ProviderContextPart::MediaAsset { .. } => return Err(AdapterError::Rejected),
+                ProviderContextPart::MediaAsset { .. } => {}
             }
         }
         collapse_text_only(&mut content);
+        let images = media.images(message);
+        if !images.is_empty() {
+            content.retain(|block| {
+                !matches!(block, WireContentBlock::Text { text, .. } if text.trim().is_empty())
+            });
+            content.extend(images.into_iter().map(|image| WireContentBlock::Image {
+                source: WireImageSource {
+                    kind: "base64",
+                    data: image.base64(),
+                    media_type: image.mime_type,
+                },
+            }));
+        }
         if content.is_empty() && results.is_empty() {
             continue;
         }
@@ -1127,6 +1144,17 @@ enum WireContentBlock {
         content: String,
         is_error: bool,
     },
+    Image {
+        source: WireImageSource,
+    },
+}
+
+#[derive(Serialize)]
+struct WireImageSource {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    media_type: String,
+    data: String,
 }
 
 impl WireContentBlock {
@@ -1136,7 +1164,7 @@ impl WireContentBlock {
                 text,
                 cache_control,
             } => Some((text, cache_control)),
-            Self::ToolUse { .. } | Self::ToolResult { .. } => None,
+            Self::ToolUse { .. } | Self::ToolResult { .. } | Self::Image { .. } => None,
         }
     }
 }
@@ -1411,6 +1439,7 @@ mod tests {
             Some(&tools),
             None,
             false,
+            &crate::media::RequestMedia::default(),
         )
         .expect("request");
         let body: serde_json::Value = serde_json::from_slice(&body).expect("json");
@@ -1695,6 +1724,7 @@ mod tests {
             Some(&tool_request(ToolChoice::Auto)),
             Some(&artifacts),
             false,
+            &crate::media::RequestMedia::default(),
         )
         .expect("continuation request");
         let body = String::from_utf8(body).expect("request utf8");
@@ -1771,5 +1801,33 @@ mod tests {
         parameters.total_completion_allowance = Some(100);
         assert_eq!(super::anthropic_max_tokens(&parameters), 100);
         assert_eq!(super::anthropic_temperature(&parameters), Some(0.7));
+    }
+
+    #[test]
+    fn user_images_become_base64_image_blocks_like_legacy() {
+        let (context, media) = crate::media::RequestMedia::fixture((true, true));
+        let body = encode_request(
+            &test_profile(),
+            &context,
+            false,
+            (Cow::Borrowed("user"), Cow::Borrowed("assistant")),
+            None,
+            None,
+            false,
+            &media,
+        )
+        .expect("request");
+        let body: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(
+            body["messages"][0]["content"],
+            serde_json::json!([
+                {"type": "text", "text": "look"},
+                {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "AQID"}}
+            ])
+        );
+        assert_eq!(
+            body["messages"][1]["content"],
+            serde_json::json!([{"type": "text", "text": "ok"}])
+        );
     }
 }
