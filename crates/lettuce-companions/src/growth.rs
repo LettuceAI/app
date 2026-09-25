@@ -271,9 +271,11 @@ fn parse_adjustment(item: &Value, memory_ids: &[String]) -> Option<ProposedSoulF
     if value.is_empty() {
         return None;
     }
-    let policy = match item.get("policy").and_then(Value::as_str) {
-        Some("current") => SoulFactPolicy::Current,
-        Some("adaptive") => SoulFactPolicy::Adaptive,
+    let policy = match item.get("policy").and_then(Value::as_str).unwrap_or("") {
+        "current" => SoulFactPolicy::Current,
+        "adaptive" => SoulFactPolicy::Adaptive,
+        "historical" => SoulFactPolicy::Historical,
+        blank if blank.trim().is_empty() => default_policy(category),
         _ => return None,
     };
     let valid_until = item
@@ -316,6 +318,18 @@ fn parse_adjustment(item: &Value, memory_ids: &[String]) -> Option<ProposedSoulF
             })
             .unwrap_or_default(),
     })
+}
+
+/// Legacy `default_soul_fact_policy`, used when a proposal names no policy.
+const fn default_policy(category: SoulCategory) -> SoulFactPolicy {
+    match category {
+        SoulCategory::Appearance
+        | SoulCategory::Goals
+        | SoulCategory::Likes
+        | SoulCategory::Voice
+        | SoulCategory::Boundaries => SoulFactPolicy::Current,
+        _ => SoulFactPolicy::Adaptive,
+    }
 }
 
 fn parse_changeable_category(value: &str) -> Option<SoulCategory> {
@@ -450,6 +464,26 @@ mod tests {
         assert_eq!(proposals[0].category, SoulCategory::Habits);
         assert_eq!(proposals[0].kind, SoulFactKind::Add);
         assert_eq!(proposals[0].source_memory_ids, ["m0"]);
+    }
+
+    /// Legacy `normalize_for_storage` (companion/mod.rs 360-362, 420-425)
+    /// fills a missing policy from the category, and `append_soul_growth_gated`
+    /// accepts "historical".
+    #[test]
+    fn missing_policy_defaults_by_category_and_historical_is_kept() {
+        let text = r#"{"adjustments":[{"category":"likes","value":"jazz","confidence":0.9,"weight":0.8},{"category":"habits","value":"walks","confidence":0.9,"weight":0.8},{"category":"fears","policy":"historical","value":"storms","confidence":0.9,"weight":0.8},{"category":"fears","policy":"bogus","value":"dark","confidence":0.9,"weight":0.8}]}"#;
+        let proposals = parse_growth_proposals(&[], Some(text), &["m0".into()]);
+        assert_eq!(
+            proposals
+                .iter()
+                .map(|proposal| proposal.policy)
+                .collect::<Vec<_>>(),
+            [
+                SoulFactPolicy::Current,
+                SoulFactPolicy::Adaptive,
+                SoulFactPolicy::Historical
+            ]
+        );
     }
 
     #[test]

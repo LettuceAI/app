@@ -662,6 +662,13 @@ pub fn prepare_consolidation_change_set(
     prepare_change_set(state, expected_revision, proposals, retire_ids, now, true)
 }
 
+/// Legacy `append_soul_growth_gated`: each proposal is judged on its own and
+/// a bad one (below the category's confidence, zero weight, a locked current
+/// slot, an unusable validity window, a reused id) is skipped while the rest
+/// apply. A current proposal supersedes the unlocked active facts of its slot
+/// and an explicit `supersedes` id only an unlocked active fact of its
+/// category; other ids are ignored. Facts added earlier in the same batch take
+/// part in both, so a later current proposal supersedes an earlier one.
 fn prepare_change_set(
     state: &SoulState,
     expected_revision: Revision,
@@ -685,57 +692,65 @@ fn prepare_change_set(
         .collect();
     let mut identities: HashSet<String> = existing.keys().map(|id| (*id).to_owned()).collect();
     let mut superseded = HashSet::new();
-    let mut current_slots = HashSet::new();
     let mut supersessions = Vec::new();
-    let mut additions = Vec::new();
+    let mut additions: Vec<SoulFact> = Vec::new();
     for proposal in proposals {
-        let proposal = normalize_proposal(proposal, now)?;
-        if !consolidation && !proposal.category.is_changeable() {
-            return Err(SoulPolicyError::InvalidFact);
-        }
-        if proposal.policy == SoulFactPolicy::Current
-            && !current_slots.insert((proposal.category, proposal.slot.clone()))
+        let Ok(proposal) = normalize_proposal(proposal, now) else {
+            continue;
+        };
+        if (!consolidation && !proposal.category.is_changeable())
+            || identities.contains(&proposal.id)
         {
-            return Err(SoulPolicyError::InvalidSupersession);
+            continue;
         }
-        if !identities.insert(proposal.id.clone()) {
-            return Err(SoulPolicyError::DuplicateIdentity);
+        let same_slot = |category: SoulCategory, slot: &str| {
+            category == proposal.category
+                && (slot == proposal.slot
+                    || (slot.is_empty() && proposal.slot == proposal.category.as_str()))
+        };
+        let current = proposal.policy == SoulFactPolicy::Current;
+        if current
+            && (state.facts.iter().any(|fact| {
+                fact.is_active()
+                    && !superseded.contains(&fact.id)
+                    && fact.locked
+                    && same_slot(fact.category, &fact.slot)
+            }) || additions.iter().any(|fact| {
+                fact.is_active() && fact.locked && same_slot(fact.category, &fact.slot)
+            }))
+        {
+            continue;
         }
-        let mut targets = proposal.supersedes.clone();
-        if proposal.policy == SoulFactPolicy::Current {
-            for fact in &state.facts {
-                if fact.is_active()
-                    && fact.category == proposal.category
-                    && (fact.slot == proposal.slot
-                        || (fact.slot.is_empty() && proposal.slot == proposal.category.as_str()))
-                {
-                    if fact.locked {
-                        return Err(SoulPolicyError::LockedFact);
-                    }
-                    targets.push(fact.id.clone());
-                }
+        let targeted = |category: SoulCategory, slot: &str, id: &str| {
+            (current && same_slot(category, slot))
+                || (category == proposal.category
+                    && proposal.supersedes.iter().any(|target| target == id))
+        };
+        let mut targets = Vec::new();
+        for fact in &state.facts {
+            if fact.is_active()
+                && !fact.locked
+                && !superseded.contains(&fact.id)
+                && targeted(fact.category, &fact.slot, &fact.id)
+            {
+                superseded.insert(fact.id.clone());
+                targets.push(fact.id.clone());
+                supersessions.push(SoulSupersession {
+                    fact_id: fact.id.clone(),
+                    superseded_by: proposal.id.clone(),
+                });
+            }
+        }
+        for fact in &mut additions {
+            if fact.is_active() && !fact.locked && targeted(fact.category, &fact.slot, &fact.id) {
+                targets.push(fact.id.clone());
+                fact.superseded_by = Some(proposal.id.clone());
+                fact.superseded_at = Some(now);
             }
         }
         targets.sort();
         targets.dedup();
-        for target in &targets {
-            let fact = existing
-                .get(target.as_str())
-                .ok_or(SoulPolicyError::InvalidSupersession)?;
-            if !fact.is_active() || fact.category != proposal.category {
-                return Err(SoulPolicyError::InvalidSupersession);
-            }
-            if fact.locked {
-                return Err(SoulPolicyError::LockedFact);
-            }
-            if !superseded.insert(target.clone()) {
-                return Err(SoulPolicyError::InvalidSupersession);
-            }
-            supersessions.push(SoulSupersession {
-                fact_id: target.clone(),
-                superseded_by: proposal.id.clone(),
-            });
-        }
+        identities.insert(proposal.id.clone());
         additions.push(SoulFact {
             id: proposal.id,
             category: proposal.category,
@@ -1054,30 +1069,20 @@ mod tests {
 
         let mut low = proposed("low", SoulCategory::Fears, SoulFactPolicy::Adaptive);
         low.confidence = 0.69;
-        assert_eq!(
-            prepare_growth_change_set(
-                &state,
-                Revision::INITIAL,
-                vec![low],
-                TimestampMillis::new(10)
-            ),
-            Err(SoulPolicyError::InvalidFact)
-        );
         let mut zero = proposed("zero", SoulCategory::Likes, SoulFactPolicy::Adaptive);
         zero.weight = -1.0;
-        assert_eq!(
-            prepare_growth_change_set(
-                &state,
-                Revision::INITIAL,
-                vec![zero],
-                TimestampMillis::new(10)
-            ),
-            Err(SoulPolicyError::InvalidFact)
-        );
+        let change = prepare_growth_change_set(
+            &state,
+            Revision::INITIAL,
+            vec![low, zero],
+            TimestampMillis::new(10),
+        )
+        .expect("bad proposals are skipped");
+        assert!(change.additions.is_empty());
     }
 
     #[test]
-    fn current_same_slot_supersedes_unlocked_and_rejects_locked_atomically() {
+    fn current_same_slot_supersedes_unlocked_and_skips_a_locked_slot() {
         let state = SoulState {
             revision: Revision::INITIAL,
             facts: vec![fact("old", SoulCategory::Likes, "food", false)],
@@ -1100,18 +1105,28 @@ mod tests {
             facts: vec![fact("locked", SoulCategory::Likes, "food", true)],
             ..state
         };
-        assert_eq!(
-            prepare_growth_change_set(
-                &locked,
-                Revision::INITIAL,
-                vec![ProposedSoulFact {
+        let change = prepare_growth_change_set(
+            &locked,
+            Revision::INITIAL,
+            vec![
+                ProposedSoulFact {
                     slot: "food".into(),
                     ..proposed("blocked", SoulCategory::Likes, SoulFactPolicy::Current)
-                }],
-                TimestampMillis::new(2)
-            ),
-            Err(SoulPolicyError::LockedFact)
+                },
+                proposed("kept", SoulCategory::Habits, SoulFactPolicy::Adaptive),
+            ],
+            TimestampMillis::new(2),
+        )
+        .expect("change");
+        assert_eq!(
+            change
+                .additions
+                .iter()
+                .map(|fact| fact.id.as_str())
+                .collect::<Vec<_>>(),
+            ["kept"]
         );
+        assert!(change.supersessions.is_empty());
     }
 
     #[test]
@@ -1186,30 +1201,33 @@ mod tests {
     }
 
     #[test]
-    fn invalid_batches_and_stale_revisions_fail_without_partial_state() {
+    fn invalid_items_are_skipped_and_stale_revisions_fail() {
         let state = SoulState {
             revision: Revision::INITIAL,
             facts: vec![fact("existing", SoulCategory::Likes, "food", false)],
         };
-        let mut invalid = proposed(
-            "invalid",
-            SoulCategory::Backstory,
-            SoulFactPolicy::Historical,
-        );
+        let mut invalid = proposed("invalid", SoulCategory::Likes, SoulFactPolicy::Adaptive);
         invalid.valid_until = Some(TimestampMillis::new(1));
+        let change = prepare_growth_change_set(
+            &state,
+            Revision::INITIAL,
+            vec![
+                proposed("valid", SoulCategory::Likes, SoulFactPolicy::Adaptive),
+                invalid,
+                proposed("valid", SoulCategory::Likes, SoulFactPolicy::Adaptive),
+                proposed("existing", SoulCategory::Likes, SoulFactPolicy::Adaptive),
+            ],
+            TimestampMillis::new(2),
+        )
+        .expect("change");
         assert_eq!(
-            prepare_growth_change_set(
-                &state,
-                Revision::INITIAL,
-                vec![
-                    proposed("valid", SoulCategory::Likes, SoulFactPolicy::Adaptive),
-                    invalid
-                ],
-                TimestampMillis::new(2)
-            ),
-            Err(SoulPolicyError::InvalidFact)
+            change
+                .additions
+                .iter()
+                .map(|fact| fact.id.as_str())
+                .collect::<Vec<_>>(),
+            ["valid"]
         );
-        assert_eq!(state.facts.len(), 1);
         assert_eq!(
             prepare_growth_change_set(
                 &state,
@@ -1219,18 +1237,105 @@ mod tests {
             ),
             Err(SoulPolicyError::StaleRevision)
         );
+    }
+
+    /// Legacy `append_soul_growth_gated` (companion/mod.rs 1182-1246): a
+    /// low-confidence item, an unknown or cross-category `supersedes` id and a
+    /// second current fact in one slot never discard the rest of the batch.
+    #[test]
+    fn growth_batch_skips_bad_items_and_ignores_unusable_supersedes_like_legacy() {
+        let state = SoulState {
+            revision: Revision::INITIAL,
+            facts: vec![
+                fact("likes-old", SoulCategory::Likes, "food", false),
+                fact("fear-old", SoulCategory::Fears, "fears", false),
+            ],
+        };
+        let mut low = proposed("low", SoulCategory::Fears, SoulFactPolicy::Adaptive);
+        low.confidence = 0.6;
+        let mut hallucinated = proposed("adjust", SoulCategory::Habits, SoulFactPolicy::Adaptive);
+        hallucinated.supersedes = vec!["missing".into(), "likes-old".into()];
+        let change = prepare_growth_change_set(
+            &state,
+            Revision::INITIAL,
+            vec![
+                ProposedSoulFact {
+                    slot: "food".into(),
+                    ..proposed("first", SoulCategory::Likes, SoulFactPolicy::Current)
+                },
+                low,
+                hallucinated,
+                ProposedSoulFact {
+                    slot: "food".into(),
+                    ..proposed("second", SoulCategory::Likes, SoulFactPolicy::Current)
+                },
+            ],
+            TimestampMillis::new(5),
+        )
+        .expect("change");
         assert_eq!(
-            prepare_growth_change_set(
-                &state,
-                Revision::INITIAL,
-                vec![
-                    proposed("same", SoulCategory::Likes, SoulFactPolicy::Adaptive),
-                    proposed("same", SoulCategory::Likes, SoulFactPolicy::Adaptive),
-                ],
-                TimestampMillis::new(2)
-            ),
-            Err(SoulPolicyError::DuplicateIdentity)
+            change
+                .additions
+                .iter()
+                .map(|fact| (fact.id.as_str(), fact.superseded_by.as_deref()))
+                .collect::<Vec<_>>(),
+            [
+                ("first", Some("second")),
+                ("adjust", None),
+                ("second", None)
+            ]
         );
+        assert_eq!(
+            change.supersessions,
+            vec![SoulSupersession {
+                fact_id: "likes-old".into(),
+                superseded_by: "first".into(),
+            }]
+        );
+        let applied = apply_change_set(&state, &change).expect("apply");
+        assert_eq!(
+            applied
+                .facts
+                .iter()
+                .filter(|fact| fact.is_active())
+                .map(|fact| fact.id.as_str())
+                .collect::<Vec<_>>(),
+            ["fear-old", "adjust", "second"]
+        );
+    }
+
+    /// Legacy consolidation (companion_consolidation.rs 135-138) retires even
+    /// when its core adjustment is ignored.
+    #[test]
+    fn consolidation_retires_even_when_the_core_item_is_skipped() {
+        let facts = (0..12)
+            .map(|index| {
+                fact(
+                    &format!("growth-{index}"),
+                    SoulCategory::Habits,
+                    "habit",
+                    false,
+                )
+            })
+            .collect::<Vec<_>>();
+        let state = SoulState {
+            revision: Revision::INITIAL,
+            facts,
+        };
+        let mut weak = proposed("core", SoulCategory::Traits, SoulFactPolicy::Adaptive);
+        weak.confidence = 0.8;
+        weak.supersedes = vec!["growth-1".into()];
+        let change = prepare_consolidation_change_set(
+            &state,
+            Revision::INITIAL,
+            vec![weak],
+            vec!["growth-0".into()],
+            TimestampMillis::new(2),
+        )
+        .expect("consolidation");
+        assert!(change.additions.is_empty());
+        assert_eq!(change.supersessions.len(), 1);
+        assert_eq!(change.supersessions[0].fact_id, "growth-0");
     }
 
     #[test]
