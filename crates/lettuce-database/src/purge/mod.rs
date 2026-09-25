@@ -738,7 +738,8 @@ pub(crate) fn queue_purge(
 }
 
 /// Whether a received delete of this synced entity still waits to run, or
-/// the entity was kept and waits to be sent back whole.
+/// the entity was kept and waits to be sent back (the scan also holds back
+/// everything such an entity owns).
 pub(crate) fn purge_queued(
     connection: &Connection,
     sync_kind: &str,
@@ -905,14 +906,20 @@ pub enum PurgeNoticeEntity {
     Group,
     /// Another database file in the app's database directory, by file name.
     DatabaseFile,
+    /// A media asset, by id.
+    MediaAsset,
+    /// A synced entity, as `<kind>/<id>`.
+    SyncEntity,
 }
 
 impl PurgeNoticeEntity {
-    const ALL: [Self; 4] = [
+    const ALL: [Self; 6] = [
         Self::Conversation,
         Self::Character,
         Self::Group,
         Self::DatabaseFile,
+        Self::MediaAsset,
+        Self::SyncEntity,
     ];
 
     const fn name(self) -> &'static str {
@@ -921,6 +928,8 @@ impl PurgeNoticeEntity {
             Self::Character => "character",
             Self::Group => "group",
             Self::DatabaseFile => "database_file",
+            Self::MediaAsset => "media_asset",
+            Self::SyncEntity => "sync_entity",
         }
     }
 }
@@ -935,6 +944,9 @@ pub enum PurgeNoticeReason {
     /// referenced media blob is missing here, or content cannot be encoded.
     /// It is sent once complete.
     RejournalIncomplete,
+    /// A kept entity was sent back without this asset or entity, which was
+    /// still unavailable after repeated attempts.
+    RejournalDropped,
     /// A delete received from another device kept failing here and was
     /// given up; the entity is kept and sent back.
     DroppedAfterFailures,
@@ -947,9 +959,10 @@ pub enum PurgeNoticeReason {
 }
 
 impl PurgeNoticeReason {
-    const ALL: [Self; 5] = [
+    const ALL: [Self; 6] = [
         Self::KeptUnsentLocalChanges,
         Self::RejournalIncomplete,
+        Self::RejournalDropped,
         Self::DroppedAfterFailures,
         Self::GroupBelowTwoMembers,
         Self::MediaCollectionSkipped,
@@ -959,6 +972,7 @@ impl PurgeNoticeReason {
         match self {
             Self::KeptUnsentLocalChanges => "kept_unsent_local_changes",
             Self::RejournalIncomplete => "rejournal_incomplete",
+            Self::RejournalDropped => "rejournal_dropped",
             Self::MediaCollectionSkipped => "media_collection_skipped",
             Self::DroppedAfterFailures => "dropped_after_failures",
             Self::GroupBelowTwoMembers => "group_below_two_members",

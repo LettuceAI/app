@@ -1180,7 +1180,9 @@ so their files are deleted after this commit. `media_object_retained` answers
 the orphan sweep for a blob in any state, and `media_objects_in_file` reads
 the blobs another database file catalogs, read-only. Sync-received deletes
 wait in `purge_queue` with the change that carried them (see lettuce-sync);
-`run_queued_purges` decides each one again before purging it. One that is
+`run_queued_purges` decides each one again before purging it. A kept entity
+waiting to be sent back whole is in `purge_rejournals` with its attempt
+count. One that is
 busy stays queued without counting; one that fails eight times for another
 reason is dropped with a `dropped_after_failures` notice. `purge_notices`
 lists the open notices and `dismiss_purge_notice` closes one.

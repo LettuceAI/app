@@ -3022,11 +3022,11 @@ fn latest_journaled_entity(
 }
 
 /// A received delete of a conversation or character is refused when this
-/// device holds changes to it the deleting device had not seen. When some are
-/// this device's own, the user gets a notice and everything the entity owns is
-/// journaled again as fresh inserts that observe the delete, so the deleting
-/// device receives it back whole; changes only from other devices keep it
-/// here without a notice, since those devices send it back themselves.
+/// device holds changes to it the deleting device had not seen. Everything
+/// the entity owns is then journaled again as fresh inserts that observe the
+/// delete, so the deleting device receives it back whole whichever device it
+/// syncs with next; the user gets a notice when some of those changes are
+/// this device's own.
 fn keep_for_unseen_changes(
     tx: &Transaction<'_>,
     delete: &CanonicalChange,
@@ -3044,6 +3044,8 @@ fn keep_for_unseen_changes(
             now,
         )
         .map_err(|_| ApplyOneError::Storage)?;
+    }
+    if unseen.local || unseen.remote {
         rejournal_scope(tx, &scope, now)?;
     }
     Ok(unseen.local || unseen.remote)
@@ -3078,13 +3080,19 @@ pub(crate) fn keep_queued_delete(
     })
 }
 
-/// Journals the current state of everything the scope owns as fresh inserts,
-/// all or nothing: the launch snapshots and media it references first, then
-/// every owned entity in dependency order. When a snapshot or referenced
-/// asset is missing, a media blob is not ready or a payload cannot be
-/// encoded, nothing is sent: the scope waits in `purge_rejournals` (retried
-/// before every scan, its root skipped by the scan meanwhile) and the user
-/// gets a `rejournal_incomplete` notice.
+/// How many times a re-journal waits for missing snapshots, media or content
+/// before it is sent without them.
+const MAX_REJOURNAL_ATTEMPTS: i64 = 5;
+
+/// Journals the current state of everything the scope owns as fresh inserts:
+/// the launch snapshots and media it references first, then every owned
+/// entity in dependency order. When a snapshot or referenced asset is
+/// missing, a media blob is not ready or a payload cannot be encoded, nothing
+/// is sent yet: the scope waits in `purge_rejournals` (retried before every
+/// scan, which journals nothing it owns meanwhile) and the user gets a
+/// `rejournal_incomplete` notice. After `MAX_REJOURNAL_ATTEMPTS` the scope is
+/// sent without what is still missing, with a `rejournal_dropped` notice
+/// naming each asset or entity left out.
 fn rejournal_scope(
     tx: &Transaction<'_>,
     scope: &PurgeScope,
@@ -3094,7 +3102,17 @@ fn rejournal_scope(
         LocalChangeJournalError::Storage => ApplyOneError::Storage,
         _ => ApplyOneError::Corrupt,
     };
-    let mut complete = true;
+    let key = params![scope.kind.name(), scope.id];
+    let attempts: i64 = tx
+        .query_row(
+            "SELECT attempts FROM purge_rejournals WHERE entity_kind = ?1 AND entity_id = ?2",
+            key,
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|_| ApplyOneError::Storage)?
+        .unwrap_or(0);
+    let mut missing: Vec<(crate::PurgeNoticeEntity, String)> = Vec::new();
     let mut artifacts = Vec::new();
     for conversation in &scope.conversations {
         let ids: Vec<String> = tx
@@ -3124,39 +3142,52 @@ fn rejournal_scope(
             });
             match payload {
                 Some(payload) => artifacts.push((artifact, payload)),
-                None => complete = false,
+                None => missing.push((
+                    crate::PurgeNoticeEntity::SyncEntity,
+                    format!(
+                        "{}/{artifact}",
+                        lettuce_sync::CONVERSATION_SNAPSHOT_SYNC_KIND
+                    ),
+                )),
             }
         }
     }
     let mut entities = Vec::new();
     let mut media = Vec::new();
+    let mut media_ids = std::collections::BTreeSet::new();
     for (codec, id) in scope.entities(tx)? {
         let payload = match (codec.current)(tx, &id) {
             Ok(Some(payload)) => payload,
             Ok(None) => continue,
             Err(ApplyOneError::Corrupt) => {
-                complete = false;
+                missing.push((
+                    crate::PurgeNoticeEntity::SyncEntity,
+                    format!("{}/{id}", codec.kind),
+                ));
                 continue;
             }
             Err(error) => return Err(error),
         };
         for asset in (codec.assets)(payload.bytes()) {
+            if !media_ids.insert(asset.clone()) {
+                continue;
+            }
             match ready_media_asset(tx, &asset)? {
                 Some(request) => media.push(request),
-                None => complete = false,
+                None => missing.push((crate::PurgeNoticeEntity::MediaAsset, asset)),
             }
         }
         entities.push((codec, id, payload));
     }
-    let key = params![scope.kind.name(), scope.id];
-    if !complete {
+    if !missing.is_empty() && attempts + 1 < MAX_REJOURNAL_ATTEMPTS {
         let inserted = tx
             .execute(
-                "INSERT OR IGNORE INTO purge_rejournals (entity_kind, entity_id) VALUES (?1, ?2)",
+                "INSERT INTO purge_rejournals (entity_kind, entity_id, attempts) VALUES (?1, ?2, 1)
+                 ON CONFLICT (entity_kind, entity_id) DO UPDATE SET attempts = attempts + 1",
                 key,
             )
             .map_err(|_| ApplyOneError::Storage)?;
-        if inserted == 1 {
+        if inserted == 1 && attempts == 0 {
             crate::purge::record_notice(
                 tx,
                 notice_entity(scope.kind),
@@ -3167,6 +3198,16 @@ fn rejournal_scope(
             .map_err(|_| ApplyOneError::Storage)?;
         }
         return Ok(false);
+    }
+    for (entity, id) in &missing {
+        crate::purge::record_notice(
+            tx,
+            *entity,
+            id,
+            crate::PurgeNoticeReason::RejournalDropped,
+            now,
+        )
+        .map_err(|_| ApplyOneError::Storage)?;
     }
     for (artifact, payload) in artifacts {
         journal_state_change(
@@ -3200,7 +3241,33 @@ fn rejournal_scope(
         key,
     )
     .map_err(|_| ApplyOneError::Storage)?;
-    Ok(true)
+    Ok(missing.is_empty())
+}
+
+/// The scopes whose re-journal still waits; the scan journals nothing they
+/// own until it is sent.
+fn pending_rejournal_scopes(tx: &Transaction<'_>) -> Result<Vec<PurgeScope>, ApplyOneError> {
+    let pending: Vec<(String, String)> = tx
+        .prepare(
+            "SELECT entity_kind, entity_id FROM purge_rejournals ORDER BY entity_kind, entity_id",
+        )
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+                .collect()
+        })
+        .map_err(|_| ApplyOneError::Storage)?;
+    pending
+        .into_iter()
+        .map(|(kind, id)| {
+            let kind = if kind == crate::purge::PurgeKind::Character.name() {
+                crate::purge::PurgeKind::Character
+            } else {
+                crate::purge::PurgeKind::Conversation
+            };
+            PurgeScope::load(tx, kind, &id)
+        })
+        .collect()
 }
 
 /// Retries the re-journals that waited for media or snapshots; one whose
@@ -3921,6 +3988,7 @@ impl LocalChangeJournal for Database {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;
         retry_pending_rejournals(&tx, now).map_err(journal_apply_error)?;
+        let pending_scopes = pending_rejournal_scopes(&tx).map_err(journal_apply_error)?;
         let mut journaled = journal_referenced_media(&tx, now)?;
         journaled += journal_referenced_snapshots(&tx, now)?;
         let mut present = Vec::with_capacity(SCANNED_CODECS.len());
@@ -3935,6 +4003,9 @@ impl LocalChangeJournal for Database {
                 }
                 if entity_deferred(&tx, codec.kind, id).map_err(storage)?
                     || crate::purge::purge_queued(&tx, codec.kind, id).map_err(storage)?
+                    || pending_scopes
+                        .iter()
+                        .any(|scope| scope.owns(codec.kind, id))
                 {
                     skipped.push(id.clone());
                     continue;

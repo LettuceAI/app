@@ -442,19 +442,19 @@ entity the delete's causal frontier does not include, the current content of
 every owned entity against its latest journaled content (so edits made after
 the session's scan, even during the exchange, count), and a generation still
 running. Untouched seeds such as a received companion's first Soul do not
-count. When the device itself made such changes, the entity stays, a
-`kept_unsent_local_changes` notice is recorded, and everything it owns
-(launch snapshots, referenced media, the root, branches, messages in
+count. When the device holds such changes, the entity stays and everything it
+owns (launch snapshots, referenced media, the root, branches, messages in
 timeline order, memory, companion state, bindings, notes) is journaled again
 as fresh inserts that observe the delete, so the deleting device receives it
-back whole; a peer that still holds the same content takes them as no-ops.
-Re-journaling is all or nothing: when a snapshot or referenced asset is
-missing, a media blob is not ready or content cannot be encoded, nothing is
-sent, the entity waits in `purge_rejournals` (retried before every scan, its
-root skipped by the scan meanwhile) and a `rejournal_incomplete` notice is
-recorded. When only other devices made changes the delete did not see, the
-entity stays without a notice, since those devices send it back themselves.
-Otherwise the delete wins over a concurrent edit like any snapshot delete and
+back whole whichever device it syncs with next; a peer that still holds the
+same content takes them as no-ops. A `kept_unsent_local_changes` notice is
+recorded when some of those changes are the device's own. While a snapshot or
+referenced asset is missing, a media blob is not ready or content cannot be
+encoded, nothing is sent: the entity waits in `purge_rejournals` (retried
+before every scan, which journals nothing it owns meanwhile) with a
+`rejournal_incomplete` notice. After five attempts it is sent without what is
+still missing, and a `rejournal_dropped` notice names each asset or entity
+left out. Otherwise the delete wins over a concurrent edit like any snapshot delete and
 is queued in `purge_queue`; the queue runs right after the batch commits and
 after every scan, deciding each delete again first (the user may have written
 while it waited), then performing the same purge as a local delete. A queued

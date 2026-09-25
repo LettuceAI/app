@@ -13027,4 +13027,91 @@ mod tests {
         );
         assert_eq!(assets, 1);
     }
+
+    #[test]
+    fn a_re_journal_waiting_for_lost_media_is_sent_without_it_after_bounded_attempts() {
+        use lettuce_sync::LocalChangeJournal;
+        let fixture = direct_fixture();
+        let asset = stage_media_asset(&fixture.database, "41");
+        let send = fixture
+            .database
+            .begin_send(
+                &send_command(
+                    &fixture,
+                    "rejournal-media",
+                    "cd",
+                    vec![MessagePart::MediaAsset {
+                        asset_id: asset,
+                        role: lettuce_conversations::MediaAssetRole::Inline,
+                    }],
+                ),
+                TimestampMillis::new(20),
+            )
+            .expect("send");
+        settle_succeeded(&fixture, &send.value.turn, 21);
+        let id = fixture.conversation_id.to_string();
+        {
+            let connection = fixture.database.connection().expect("connection");
+            connection
+                .execute(
+                    "UPDATE media_blobs SET state = 'missing'
+                     WHERE id = (SELECT blob_id FROM media_assets WHERE id = ?1)",
+                    [asset.to_string()],
+                )
+                .expect("lose the blob");
+            connection
+                .execute(
+                    "INSERT INTO purge_rejournals (entity_kind, entity_id) VALUES ('conversation', ?1)",
+                    [&id],
+                )
+                .expect("pending re-journal");
+        }
+        let journaled = || -> i64 {
+            scalar(
+                &fixture.database,
+                "SELECT count(*) FROM sync_changes WHERE entity_id = ?1 OR entity_id LIKE ?1 || ':%'",
+                &id,
+            )
+        };
+        let pending = || -> i64 {
+            scalar(
+                &fixture.database,
+                "SELECT count(*) FROM purge_rejournals WHERE entity_id = ?1",
+                &id,
+            )
+        };
+        for at in 0..4 {
+            fixture
+                .database
+                .journal_current_state(TimestampMillis::new(100 + at))
+                .expect("scan");
+            assert_eq!(journaled(), 0, "nothing the conversation owns goes out yet");
+            assert_eq!(pending(), 1);
+        }
+        let notices = fixture.database.purge_notices().expect("notices");
+        assert_eq!(notices.len(), 1);
+        assert_eq!(
+            notices[0].reason,
+            crate::PurgeNoticeReason::RejournalIncomplete
+        );
+
+        fixture
+            .database
+            .journal_current_state(TimestampMillis::new(200))
+            .expect("scan");
+        assert_eq!(pending(), 0);
+        assert!(journaled() > 0);
+        let notices = fixture.database.purge_notices().expect("notices");
+        assert!(notices.iter().any(|notice| {
+            notice.reason == crate::PurgeNoticeReason::RejournalDropped
+                && notice.entity == crate::PurgeNoticeEntity::MediaAsset
+                && notice.entity_id == asset.to_string()
+        }));
+        let media_changes: i64 = scalar(
+            &fixture.database,
+            "SELECT count(*) FROM sync_changes WHERE entity_kind = 'media_asset' AND entity_id = ?1",
+            &asset.to_string(),
+        );
+        assert_eq!(media_changes, 0);
+    }
 }
