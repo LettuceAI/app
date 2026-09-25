@@ -1213,6 +1213,8 @@ pub(crate) fn load_character_details(
     load_details(connection, id).map_err(db_error)
 }
 
+/// Replaces the profile and scenes; a removed scene is cleared from the
+/// character's default and from every starter that used it.
 pub(crate) fn replace_character_profile_scenes(
     tx: &Transaction<'_>,
     expected_revision: Revision,
@@ -1228,19 +1230,7 @@ pub(crate) fn replace_character_profile_scenes(
         ..current.character.clone()
     };
     let retained_scene_ids: BTreeSet<_> = plan.scenes.iter().map(|scene| scene.id).collect();
-    if current
-        .character
-        .defaults
-        .default_scene_id
-        .is_some_and(|id| !retained_scene_ids.contains(&id))
-        || current.starters.iter().any(|starter| {
-            starter
-                .scene_id
-                .is_some_and(|id| !retained_scene_ids.contains(&id))
-        })
-    {
-        return Err(RepositoryError::HasDependencies);
-    }
+    let removed = |id: Option<SceneId>| id.is_some_and(|id| !retained_scene_ids.contains(&id));
     let expected_variants: Vec<_> = current
         .variants
         .iter()
@@ -1257,8 +1247,48 @@ pub(crate) fn replace_character_profile_scenes(
             },
         ));
     }
+    let mut plan = plan.clone();
+    let clears_default = removed(plan.character.defaults.default_scene_id);
+    if clears_default {
+        plan.character.defaults.default_scene_id = None;
+    }
+    let mut unlinked_starters = Vec::new();
+    for starter in &mut plan.starters {
+        if removed(starter.scene_id) {
+            starter.scene_id = None;
+            starter.revision = starter
+                .revision
+                .next()
+                .map_err(|_| RepositoryError::Storage)?;
+            starter.updated_at = plan.character.updated_at;
+            unlinked_starters.push(starter.clone());
+        }
+    }
+    let plan = &plan;
     plan.validate()?;
     validate_plan_assets(tx, plan)?;
+    if clears_default {
+        tx.execute(
+            "UPDATE characters SET defaults_json=?2,default_scene_id=NULL WHERE id=?1",
+            params![
+                plan.character.id.to_string(),
+                encode(&plan.character.defaults, DEFAULTS_VERSION)?,
+            ],
+        )
+        .map_err(db_error)?;
+    }
+    for starter in &unlinked_starters {
+        tx.execute(
+            "UPDATE conversation_starters SET scene_id=NULL,revision=?3,updated_at=?4 WHERE character_id=?1 AND id=?2",
+            params![
+                plan.character.id.to_string(),
+                starter.id.to_string(),
+                sql_u64(starter.revision.get())?,
+                starter.updated_at.get(),
+            ],
+        )
+        .map_err(db_error)?;
+    }
     let current_by_id: HashMap<_, _> = current
         .scenes
         .iter()

@@ -4271,7 +4271,118 @@ mod tests {
     }
 
     #[test]
-    fn existing_character_apply_rejects_dependent_scene_removal_and_incomplete_drafts() {
+    fn existing_character_apply_clears_the_default_and_starter_links_of_deleted_scenes() {
+        let database = Database::open_in_memory().expect("database");
+        let character_id = CharacterId::new();
+        let first_scene = SceneId::new();
+        let second_scene = SceneId::new();
+        let character = Character::new(
+            character_id,
+            CharacterProfile {
+                name: "Greeter".into(),
+                nickname: None,
+                description: None,
+                definition: Some("Definition".into()),
+                design_description: None,
+                scenario: None,
+                rules: Vec::new(),
+            },
+            CharacterProvenance::default(),
+            CharacterDefaults {
+                default_scene_id: Some(first_scene),
+                ..CharacterDefaults::default()
+            },
+            CharacterPresentationV1::default(),
+            None,
+            CharacterMedia::default(),
+            TimestampMillis::new(1),
+        )
+        .expect("character");
+        let scene = |id, ordinal, text: &str| {
+            Scene::new(
+                id,
+                SceneOwner::Character(character_id),
+                ordinal,
+                SceneDocumentV1::new(vec![ScenePart::Text { text: text.into() }])
+                    .expect("document"),
+                TimestampMillis::new(1),
+            )
+            .expect("scene")
+        };
+        let mut starter = lettuce_characters::ConversationStarter::new(
+            lettuce_types::ConversationStarterId::new(),
+            character_id,
+            "Opening".into(),
+            0,
+            vec![lettuce_characters::StarterMessage {
+                id: lettuce_types::StarterMessageId::new(),
+                role: lettuce_characters::StarterRole::Assistant,
+                content: "Hello".into(),
+            }],
+            TimestampMillis::new(1),
+        )
+        .expect("starter");
+        starter.scene_id = Some(first_scene);
+        let original = CharacterRepository::create(
+            &database,
+            CreateCharacterPlan {
+                character,
+                scenes: vec![
+                    scene(first_scene, 0, "First greeting"),
+                    scene(second_scene, 1, "Second greeting"),
+                ],
+                variants: Vec::new(),
+                starters: vec![starter.clone()],
+            },
+        )
+        .expect("create character");
+        let (workflow, proposal_id) = confirmed_workflow(
+            &database,
+            CreationTarget::ExistingCharacter {
+                id: character_id,
+                revision: original.character.revision,
+            },
+            CreationDraft::Character {
+                name: Some("Greeter".into()),
+                definition: Some("Definition".into()),
+                scenes: vec![CreationScene {
+                    id: second_scene,
+                    content: "Second greeting".into(),
+                    direction: None,
+                }],
+            },
+            10,
+        );
+        let receipt = database
+            .apply_existing_character(ConfirmedCharacterRevisionApply {
+                workflow_id: workflow.id,
+                expected_workflow_revision: workflow.revision,
+                proposal_id,
+                character_id,
+                expected_character_revision: original.character.revision,
+                now: TimestampMillis::new(15),
+            })
+            .expect("apply removes the default scene like legacy delete_scene");
+        let applied = CharacterRepository::get(&database, character_id)
+            .expect("load")
+            .expect("character exists");
+        assert_eq!(applied.character.revision, receipt.character_revision);
+        assert_eq!(applied.character.defaults.default_scene_id, None);
+        assert_eq!(
+            applied
+                .scenes
+                .iter()
+                .map(|scene| scene.id)
+                .collect::<Vec<_>>(),
+            vec![second_scene]
+        );
+        assert_eq!(applied.starters[0].scene_id, None);
+        assert_eq!(applied.starters[0].messages, starter.messages);
+        assert!(applied.starters[0].revision > starter.revision);
+    }
+
+    #[test]
+    fn existing_character_apply_rejects_incomplete_drafts_and_missing_or_archived_targets() {
         let database = Database::open_in_memory().expect("database");
         let character_id = CharacterId::new();
         let scene_id = SceneId::new();
@@ -4319,37 +4430,6 @@ mod tests {
             },
         )
         .expect("create character");
-        let (dependent, dependent_proposal_id) = confirmed_workflow(
-            &database,
-            CreationTarget::ExistingCharacter {
-                id: character_id,
-                revision: original.character.revision,
-            },
-            CreationDraft::Character {
-                name: Some("Dependent edit".into()),
-                definition: Some("Updated".into()),
-                scenes: Vec::new(),
-            },
-            10,
-        );
-        assert_eq!(
-            database.apply_existing_character(ConfirmedCharacterRevisionApply {
-                workflow_id: dependent.id,
-                expected_workflow_revision: dependent.revision,
-                proposal_id: dependent_proposal_id,
-                character_id,
-                expected_character_revision: original.character.revision,
-                now: TimestampMillis::new(15),
-            }),
-            Err(CreationRepositoryError::Conflict)
-        );
-        assert_eq!(
-            CharacterRepository::get(&database, character_id)
-                .expect("load after rejection")
-                .expect("character exists"),
-            original
-        );
-
         let (incomplete, incomplete_proposal_id) = confirmed_workflow(
             &database,
             CreationTarget::ExistingCharacter {
