@@ -198,6 +198,9 @@ impl CompanionSoulWriterRun {
                 if self.fallback_profile.is_none() {
                     return Err(CompanionSoulWriterRunRepositoryError::Invalid);
                 }
+                if !fallback_started {
+                    draft = self.starting_draft.clone();
+                }
                 fallback_started = true;
             } else if fallback_started {
                 return Err(CompanionSoulWriterRunRepositoryError::Invalid);
@@ -242,9 +245,7 @@ impl CompanionSoulWriterRoundCheckpoint {
     fn validate(&self, expected_ordinal: u32) -> Result<(), CompanionSoulWriterRunRepositoryError> {
         if self.ordinal != expected_ordinal
             || self.calls.len() > lettuce_conversations::MAX_TOOL_CALLS_PER_RESPONSE
-            || self.calls.iter().any(|call| {
-                !SOUL_OPERATION_NAMES.contains(&call.name.as_str()) || call.validate().is_err()
-            })
+            || self.calls.iter().any(|call| call.validate().is_err())
             || !self.resulting_draft.is_object()
             || self.reduced_at.get() < 0
         {

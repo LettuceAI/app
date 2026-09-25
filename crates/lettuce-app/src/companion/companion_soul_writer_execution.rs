@@ -1,6 +1,6 @@
 use lettuce_companions::{
     CompanionSoulWriterRoundCheckpoint, CompanionSoulWriterRun, CompanionSoulWriterRunRepository,
-    CompanionSoulWriterRunRepositoryError, SoulWriterProfileTarget, is_soul_writer_operation,
+    CompanionSoulWriterRunRepositoryError, SoulWriterProfileTarget,
     parse_soul_writer_fallback_calls, reduce_soul_writer_calls,
     soul_writer_fact_fallback_prompt_key, soul_writer_fallback_prompt_key,
     soul_writer_tool_request,
@@ -107,15 +107,15 @@ impl<
         if run.rounds.last().is_some_and(|round| round.completed) {
             return completed_result(&run, replayed);
         }
-        if run.rounds.len() >= MAX_SOUL_WRITER_ROUNDS {
-            return Err(CompanionSoulWriterExecutionError::RoundLimit);
-        }
         let target = run
             .rounds
             .last()
             .map_or(SoulWriterProfileTarget::Primary, |round| {
                 round.profile_target
             });
+        if run.rounds.len() >= MAX_SOUL_WRITER_ROUNDS {
+            return draft_result(&run, target, replayed);
+        }
         match self
             .run_target(&mut run, prompt, handle, stream_sink, now, target, replayed)
             .await
@@ -151,6 +151,11 @@ impl<
         }
     }
 
+    /// One model's tool loop (legacy `run_with_target`). Once the model has
+    /// returned tool calls, a later round without calls, a provider failure or
+    /// the round cap ends the loop with the partial draft. A model that never
+    /// returned calls gets one structured-output request on the same model,
+    /// whose parsed operations all apply whether or not they include `done`.
     #[allow(clippy::too_many_arguments)]
     async fn run_target(
         &self,
@@ -166,12 +171,13 @@ impl<
             return Err(CompanionSoulWriterExecutionError::Cancelled);
         }
         let text = SoulWriterRequestText::load(self.repository, run)?;
+        let mut tool_usage = None;
         loop {
             if handle.cancellation_token().is_cancelled() {
                 return Err(CompanionSoulWriterExecutionError::Cancelled);
             }
             if run.rounds.len() >= MAX_SOUL_WRITER_ROUNDS {
-                return Err(CompanionSoulWriterExecutionError::RoundLimit);
+                return draft_result(run, target, replayed);
             }
             let request = build_request(run, prompt, &text, handle, stream_sink, target, false)?;
             let outcome = match crate::jobs::job_inference_usage::run_job_inference(
@@ -195,7 +201,11 @@ impl<
                     return Err(CompanionSoulWriterExecutionError::Cancelled);
                 }
                 Err(crate::jobs::job_inference_usage::JobInferenceError::Provider(error)) => {
-                    return Err(CompanionSoulWriterExecutionError::Inference(error));
+                    tracing::warn!(?error, "Soul writer tool round failed at the provider");
+                    if has_rounds(run, target) {
+                        return draft_result(run, target, replayed);
+                    }
+                    break;
                 }
             };
             if handle.cancellation_token().is_cancelled()
@@ -204,70 +214,19 @@ impl<
                 cleanup(self.repository, &outcome)?;
                 return Err(CompanionSoulWriterExecutionError::Cancelled);
             }
-            let calls = match usable_calls(&outcome) {
-                Ok(calls) => calls,
-                Err(error) => {
-                    cleanup(self.repository, &outcome)?;
-                    return Err(error);
+            let calls = usable_calls(&outcome);
+            cleanup(self.repository, &outcome)?;
+            let calls = match calls {
+                Ok(calls) if !calls.is_empty() => calls,
+                Ok(_) | Err(CompanionSoulWriterExecutionError::InvalidResponse) => {
+                    if has_rounds(run, target) {
+                        return draft_result(run, target, replayed);
+                    }
+                    tool_usage = outcome.usage.clone();
+                    break;
                 }
+                Err(error) => return Err(error),
             };
-            if calls.is_empty() {
-                cleanup(self.repository, &outcome)?;
-                let fallback =
-                    build_request(run, prompt, &text, handle, stream_sink, target, true)?;
-                let fallback_outcome = crate::jobs::job_inference_usage::run_job_inference(
-                    self.repository,
-                    self.inference,
-                    handle.id(),
-                    fallback,
-                    now,
-                )
-                .await
-                .map_err(|error| {
-                    let error = match error {
-                        crate::jobs::job_inference_usage::JobInferenceError::Evidence => {
-                            return CompanionSoulWriterExecutionError::Run(
-                                CompanionSoulWriterRunRepositoryError::Failure,
-                            );
-                        }
-                        crate::jobs::job_inference_usage::JobInferenceError::Provider(error) => {
-                            error
-                        }
-                    };
-                    if matches!(error, PortError::Cancelled) {
-                        CompanionSoulWriterExecutionError::Cancelled
-                    } else {
-                        CompanionSoulWriterExecutionError::Inference(error)
-                    }
-                })?;
-                if handle.cancellation_token().is_cancelled()
-                    || matches!(fallback_outcome.finish_reason, FinishReason::Cancelled)
-                {
-                    cleanup(self.repository, &fallback_outcome)?;
-                    return Err(CompanionSoulWriterExecutionError::Cancelled);
-                }
-                let calls = match fallback_calls(&fallback_outcome, run) {
-                    Ok(calls) => calls,
-                    Err(error) => {
-                        cleanup(self.repository, &fallback_outcome)?;
-                        return Err(error);
-                    }
-                };
-                cleanup(self.repository, &fallback_outcome)?;
-                *run = commit_round(
-                    self.repository,
-                    run,
-                    target,
-                    calls,
-                    now,
-                    outcome.usage.clone(),
-                    fallback_outcome.usage.clone(),
-                )?;
-                if run.rounds.last().is_some_and(|round| round.completed) {
-                    return completed_result(run, replayed);
-                }
-                return Err(CompanionSoulWriterExecutionError::InvalidResponse);
-            }
             *run = commit_round(
                 self.repository,
                 run,
@@ -281,7 +240,76 @@ impl<
                 return completed_result(run, replayed);
             }
         }
+        let fallback = build_request(run, prompt, &text, handle, stream_sink, target, true)?;
+        let fallback_outcome = crate::jobs::job_inference_usage::run_job_inference(
+            self.repository,
+            self.inference,
+            handle.id(),
+            fallback,
+            now,
+        )
+        .await
+        .map_err(|error| {
+            let error = match error {
+                crate::jobs::job_inference_usage::JobInferenceError::Evidence => {
+                    return CompanionSoulWriterExecutionError::Run(
+                        CompanionSoulWriterRunRepositoryError::Failure,
+                    );
+                }
+                crate::jobs::job_inference_usage::JobInferenceError::Provider(error) => error,
+            };
+            if matches!(error, PortError::Cancelled) {
+                CompanionSoulWriterExecutionError::Cancelled
+            } else {
+                CompanionSoulWriterExecutionError::Inference(error)
+            }
+        })?;
+        if handle.cancellation_token().is_cancelled()
+            || matches!(fallback_outcome.finish_reason, FinishReason::Cancelled)
+        {
+            cleanup(self.repository, &fallback_outcome)?;
+            return Err(CompanionSoulWriterExecutionError::Cancelled);
+        }
+        let calls = fallback_calls(&fallback_outcome, run);
+        cleanup(self.repository, &fallback_outcome)?;
+        *run = commit_round(
+            self.repository,
+            run,
+            target,
+            calls?,
+            now,
+            tool_usage,
+            fallback_outcome.usage.clone(),
+        )?;
+        draft_result(run, target, replayed)
     }
+}
+
+fn has_rounds(run: &CompanionSoulWriterRun, target: SoulWriterProfileTarget) -> bool {
+    run.rounds
+        .iter()
+        .any(|round| round.profile_target == target)
+}
+
+/// The draft of the target's latest round, returned when the loop ends
+/// without `done`.
+fn draft_result(
+    run: &CompanionSoulWriterRun,
+    target: SoulWriterProfileTarget,
+    replayed: bool,
+) -> Result<CompanionSoulWriterExecutionResult, CompanionSoulWriterExecutionError> {
+    let round = run
+        .rounds
+        .iter()
+        .rev()
+        .find(|round| round.profile_target == target)
+        .ok_or(CompanionSoulWriterExecutionError::RoundLimit)?;
+    Ok(CompanionSoulWriterExecutionResult {
+        draft: round.resulting_draft.clone(),
+        rounds: u32::try_from(run.rounds.len())
+            .map_err(|_| CompanionSoulWriterExecutionError::RoundLimit)?,
+        replayed,
+    })
 }
 
 fn usable_calls(
@@ -290,7 +318,7 @@ fn usable_calls(
     let candidate = valid_candidate(outcome)?;
     let mut calls = Vec::new();
     for call in &candidate.tool_calls {
-        if is_soul_writer_operation(&call.name) && call.validate().is_ok() {
+        if call.validate().is_ok() {
             calls.push(call.clone());
             if call.name == lettuce_companions::SOUL_WRITER_DONE_TOOL_NAME {
                 break;
@@ -353,7 +381,9 @@ fn commit_round<R: CompanionSoulWriterRunRepository + ?Sized>(
 ) -> Result<CompanionSoulWriterRun, CompanionSoulWriterExecutionError> {
     let current = run
         .rounds
-        .last()
+        .iter()
+        .rev()
+        .find(|round| round.profile_target == profile_target)
         .map_or(&run.starting_draft, |round| &round.resulting_draft);
     let reduction = reduce_soul_writer_calls(Some(current), &calls, now);
     repository
@@ -596,7 +626,11 @@ fn replay_rounds(
     context: &mut ProviderNeutralContext,
 ) -> Result<(), CompanionSoulWriterExecutionError> {
     let mut draft = run.starting_draft.clone();
-    for round in &run.rounds {
+    for round in run
+        .rounds
+        .iter()
+        .filter(|round| round.profile_target == target)
+    {
         let reduction = reduce_soul_writer_calls(Some(&draft), &round.calls, round.reduced_at);
         let executions = round
             .calls
@@ -608,9 +642,7 @@ fn replay_rounds(
                     &run.job_id.as_uuid(),
                     format!("soul-writer-{}-{index}", round.ordinal).as_bytes(),
                 ));
-                let provider_replay = (round.profile_target == target)
-                    .then(|| call.provider_replay.clone())
-                    .flatten();
+                let provider_replay = call.provider_replay.clone();
                 (
                     ProviderContextPart::ToolCall(TranscriptToolCall {
                         execution_id: id,

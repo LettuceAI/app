@@ -1890,6 +1890,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     let alternate_inference = FallibleScriptedInference {
         outcomes: Mutex::new(VecDeque::from([
             Err(PortError::Unavailable),
+            Err(PortError::Unavailable),
             Ok(InferenceOutcome {
                 provider_response_id: None,
                 candidates: vec![InferenceCandidate {
@@ -1926,7 +1927,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     let alternate_usage = database
         .job_usage(alternate_writer.job.id)
         .expect("alternate usage");
-    assert_eq!(alternate_usage.len(), 3);
+    assert_eq!(alternate_usage.len(), 4);
     assert_eq!(
         alternate_usage
             .iter()
@@ -1948,9 +1949,15 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             .requests
             .lock()
             .expect("alternate requests");
-        assert_eq!(alternate_requests.len(), 2);
+        assert_eq!(alternate_requests.len(), 3);
         assert_eq!(
             alternate_requests[1].profile.chat_profile.model_profile_id,
+            profile.chat_profile.model_profile_id,
+            "a primary that fails before any tool call retries structured on the same model (legacy companion_soul_writer.rs 1034-1052, 1149-1252)"
+        );
+        assert_eq!(alternate_requests[1].profile.tool_policy, ToolPolicy::Disabled);
+        assert_eq!(
+            alternate_requests[2].profile.chat_profile.model_profile_id,
             alternate_profile.chat_profile.model_profile_id
         );
     }
@@ -1995,20 +2002,17 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         }])),
         requests: Mutex::new(Vec::new()),
     };
-    assert!(matches!(
-        crate::CompanionSoulWriterExecutionCoordinator::new(&database, &interrupted_inference)
-            .run(
-                interrupted_request_id,
-                &soul_writer_prompt,
-                &JobHandle::new(interrupted_writer.job.id),
-                None,
-                TimestampMillis::new(NOW.get() + 21),
-            )
-            .await,
-        Err(crate::CompanionSoulWriterExecutionError::Inference(
-            PortError::Empty
-        ))
-    ));
+    let partial = crate::CompanionSoulWriterExecutionCoordinator::new(&database, &interrupted_inference)
+        .run(
+            interrupted_request_id,
+            &soul_writer_prompt,
+            &JobHandle::new(interrupted_writer.job.id),
+            None,
+            TimestampMillis::new(NOW.get() + 21),
+        )
+        .await
+        .expect("a provider failure after tool calls keeps the partial draft (legacy companion_soul_writer.rs 1048-1062)");
+    assert_eq!(partial.draft["soul"]["traits"], "Durable partial");
     let interrupted_run = database
         .load_companion_soul_writer_run(interrupted_request_id)
         .expect("load interrupted preview");
@@ -2173,18 +2177,103 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         outcomes: Mutex::new(capped_outcomes),
         requests: Mutex::new(Vec::new()),
     };
-    assert!(matches!(
-        crate::CompanionSoulWriterExecutionCoordinator::new(&database, &capped_inference)
-            .run(
-                capped_request_id,
-                &soul_writer_prompt,
-                &JobHandle::new(capped_writer.job.id),
+    let capped = crate::CompanionSoulWriterExecutionCoordinator::new(&database, &capped_inference)
+        .run(
+            capped_request_id,
+            &soul_writer_prompt,
+            &JobHandle::new(capped_writer.job.id),
+            None,
+            TimestampMillis::new(NOW.get() + 25),
+        )
+        .await
+        .expect("the round cap returns the partial draft (legacy companion_soul_writer.rs 1145-1147)");
+    assert_eq!(capped.draft["soul"]["traits"], "draft-7");
+    let calls_outcome = |calls: Vec<(&str, serde_json::Value)>, text: Option<&str>| InferenceOutcome {
+        provider_response_id: None,
+        candidates: vec![InferenceCandidate {
+            ordinal: 0,
+            parts: text
+                .map(|text| vec![MessagePart::Text { text: text.into() }])
+                .unwrap_or_default(),
+            tool_calls: calls
+                .into_iter()
+                .enumerate()
+                .map(|(index, (name, arguments))| ProposedToolCall {
+                    provider_call_id: Some(format!("{name}-{index}")),
+                    name: name.into(),
+                    arguments,
+                    raw_arguments: None,
+                    provider_replay: None,
+                })
+                .collect(),
+            provider_replay: None,
+        }],
+        usage: None,
+        finish_reason: lettuce_conversations::FinishReason::Stop,
+        provider_finish_reason: None,
+        provider_request_id: None,
+        warning_codes: Vec::new(),
+    };
+    let admit_writer = |offset: i64| {
+        let request_id = RequestId::new();
+        let writer = crate::CompanionSoulWriterAdmissionCoordinator::new(&database, &database)
+            .admit(crate::CompanionSoulWriterAdmissionRequest {
+                request_id,
+                primary_profile: profile.clone(),
+                fallback_profile: None,
+                prompt: &soul_writer_prompt,
+                character_name: "Mira",
+                character_definition: None,
+                character_description: None,
+                opening_context: None,
+                current_soul: None,
+                user_notes: None,
+                fallback_format: lettuce_companions::SoulWriterFallbackFormat::Json,
+                now: TimestampMillis::new(NOW.get() + offset),
+            })
+            .expect("admit Soul writer");
+        (request_id, writer.job.id)
+    };
+    let (chatty_id, chatty_job) = admit_writer(26);
+    let chatty_inference = ScriptedInference {
+        outcomes: Mutex::new(VecDeque::from([
+            calls_outcome(
+                vec![("set_identity", serde_json::json!({"traits": "Round one"}))],
                 None,
-                TimestampMillis::new(NOW.get() + 25),
-            )
-            .await,
-        Err(crate::CompanionSoulWriterExecutionError::RoundLimit)
-    ));
+            ),
+            calls_outcome(Vec::new(), Some("All set!")),
+        ])),
+        requests: Mutex::new(Vec::new()),
+    };
+    let chatty = crate::CompanionSoulWriterExecutionCoordinator::new(&database, &chatty_inference)
+        .run(chatty_id, &soul_writer_prompt, &JobHandle::new(chatty_job), None, NOW)
+        .await
+        .expect("a round without calls after tool calls keeps the draft (legacy companion_soul_writer.rs 1110-1122)");
+    assert_eq!(chatty.draft["soul"]["traits"], "Round one");
+    assert_eq!(chatty_inference.requests.lock().expect("requests").len(), 2);
+
+    let (unknown_id, unknown_job) = admit_writer(27);
+    let unknown_inference = ScriptedInference {
+        outcomes: Mutex::new(VecDeque::from([
+            calls_outcome(vec![("set_mood", serde_json::json!({"mood": "calm"}))], None),
+            calls_outcome(vec![("done", serde_json::json!({}))], None),
+        ])),
+        requests: Mutex::new(Vec::new()),
+    };
+    crate::CompanionSoulWriterExecutionCoordinator::new(&database, &unknown_inference)
+        .run(unknown_id, &soul_writer_prompt, &JobHandle::new(unknown_job), None, NOW)
+        .await
+        .expect("an unknown tool is answered and the loop continues");
+    let unknown_requests = unknown_inference.requests.lock().expect("requests").clone();
+    assert_eq!(unknown_requests.len(), 2);
+    assert!(
+        unknown_requests[1].context.messages.iter().any(|message| message.parts.iter().any(|part| matches!(
+            part,
+            ProviderContextPart::ToolResult(result)
+                if result.name == "set_mood" && result.output.value["error"] == "unknown_tool"
+        ))),
+        "legacy answered an unknown tool with an unknown_tool result (companion_soul_writer.rs 954-958)"
+    );
     assert_eq!(
         database
             .load_companion_soul_writer_run(capped_request_id)
