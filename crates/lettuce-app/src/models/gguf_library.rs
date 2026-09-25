@@ -374,17 +374,66 @@ pub fn move_model_into_library(
     let destination = destination_dir.join(filename);
     let moved = destination.to_string_lossy().into_owned();
     if destination.exists() {
-        let _ = std::fs::remove_file(&source);
+        if !same_contents(&source, &destination)? {
+            return Err(format!(
+                "A different file already exists at {moved}; the original was kept"
+            ));
+        }
+        std::fs::remove_file(&source)
+            .map_err(|error| format!("Failed to remove the duplicate original: {error}"))?;
         return Ok(moved);
     }
     if std::fs::rename(&source, &destination).is_ok() {
         return Ok(moved);
     }
-    std::fs::copy(&source, &destination)
-        .map_err(|error| format!("Failed to copy model file: {error}"))?;
+    if let Err(error) = copy_verified(&source, &destination) {
+        let _ = std::fs::remove_file(&destination);
+        return Err(error);
+    }
     std::fs::remove_file(&source)
         .map_err(|error| format!("File copied but failed to remove original: {error}"))?;
     Ok(moved)
+}
+
+/// Copies `source` to a new `destination`, flushes it to disk and checks that
+/// the copy holds exactly the source's bytes.
+fn copy_verified(source: &Path, destination: &Path) -> Result<(), String> {
+    let expected = std::fs::metadata(source)
+        .map_err(|error| format!("Failed to read the model file: {error}"))?
+        .len();
+    let copied = std::fs::copy(source, destination)
+        .map_err(|error| format!("Failed to copy model file: {error}"))?;
+    std::fs::File::open(destination)
+        .and_then(|file| file.sync_all())
+        .map_err(|error| format!("Failed to flush the copied model file: {error}"))?;
+    if copied != expected || !same_contents(source, destination)? {
+        return Err("The copied model file does not match the original".to_owned());
+    }
+    Ok(())
+}
+
+fn same_contents(left: &Path, right: &Path) -> Result<bool, String> {
+    use std::io::Read;
+    let read_error = |error: std::io::Error| format!("Failed to compare model files: {error}");
+    let mut left = std::fs::File::open(left).map_err(read_error)?;
+    let mut right = std::fs::File::open(right).map_err(read_error)?;
+    if left.metadata().map_err(read_error)?.len() != right.metadata().map_err(read_error)?.len() {
+        return Ok(false);
+    }
+    let mut left_buffer = vec![0_u8; 1 << 20];
+    let mut right_buffer = vec![0_u8; 1 << 20];
+    loop {
+        let read = left.read(&mut left_buffer).map_err(read_error)?;
+        if read == 0 {
+            return Ok(right.read(&mut right_buffer[..1]).map_err(read_error)? == 0);
+        }
+        right
+            .read_exact(&mut right_buffer[..read])
+            .map_err(read_error)?;
+        if left_buffer[..read] != right_buffer[..read] {
+            return Ok(false);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -517,6 +566,41 @@ mod tests {
         assert!(flag("drafter.gguf"));
         assert!(!flag("m-Q4_K_M.gguf"));
         assert!(!flag("mmproj-m.gguf"));
+        std::fs::remove_dir_all(&app).expect("cleanup");
+    }
+
+    #[test]
+    fn a_different_file_at_the_destination_keeps_the_original() {
+        let app = scratch("clash");
+        let root = app.join("library");
+        let source = app.join("Model.gguf");
+        std::fs::write(&source, b"GGUF full model").expect("source");
+        std::fs::create_dir_all(root.join("org--model")).expect("folder");
+        let existing = root.join("org--model").join("Model.gguf");
+        std::fs::write(&existing, b"GGUF trunc").expect("truncated destination");
+        assert!(
+            move_model_into_library(&root, &source.to_string_lossy(), Some("org/model")).is_err(),
+            "legacy hf_browser move deleted the source over any existing destination"
+        );
+        assert_eq!(
+            std::fs::read(&source).expect("source kept"),
+            b"GGUF full model"
+        );
+        assert_eq!(
+            std::fs::read(&existing).expect("destination"),
+            b"GGUF trunc"
+        );
+        std::fs::write(&existing, b"GGUF full model").expect("identical destination");
+        assert_eq!(
+            move_model_into_library(&root, &source.to_string_lossy(), Some("org/model")),
+            Ok(existing.to_string_lossy().into_owned())
+        );
+        assert!(!source.exists());
+        let copy_source = app.join("Copy.gguf");
+        std::fs::write(&copy_source, b"GGUF copy").expect("copy source");
+        let copy_target = root.join("Copy.gguf");
+        copy_verified(&copy_source, &copy_target).expect("verified copy");
+        assert_eq!(std::fs::read(&copy_target).expect("copied"), b"GGUF copy");
         std::fs::remove_dir_all(&app).expect("cleanup");
     }
 
