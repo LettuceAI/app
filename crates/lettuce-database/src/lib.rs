@@ -150,6 +150,31 @@ const MIGRATION_22: Migration = Migration {
     sql: include_str!("../migrations/0022_image_generation.sql"),
 };
 
+const MIGRATIONS: &[Migration] = &[
+    MIGRATION_1,
+    MIGRATION_2,
+    MIGRATION_3,
+    MIGRATION_4,
+    MIGRATION_5,
+    MIGRATION_6,
+    MIGRATION_7,
+    MIGRATION_8,
+    MIGRATION_9,
+    MIGRATION_10,
+    MIGRATION_11,
+    MIGRATION_12,
+    MIGRATION_13,
+    MIGRATION_14,
+    MIGRATION_15,
+    MIGRATION_16,
+    MIGRATION_17,
+    MIGRATION_18,
+    MIGRATION_19,
+    MIGRATION_20,
+    MIGRATION_21,
+    MIGRATION_22,
+];
+
 const PROVIDER_CONFIG_FORMAT_VERSION: u32 = 1;
 const MODEL_PROFILE_CONFIG_FORMAT_VERSION: u32 = 1;
 
@@ -220,6 +245,8 @@ pub enum DatabaseError {
     Lock,
     #[error("applied migration {id} has a different checksum")]
     MigrationChecksum { id: u32 },
+    #[error("the database was written by a newer build (migration {id})")]
+    NewerSchema { id: u32 },
 }
 
 pub struct Database {
@@ -236,33 +263,8 @@ impl Database {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, DatabaseError> {
         let mut connection = Connection::open(path)?;
         configure(&connection, true)?;
-        apply_migrations(
-            &mut connection,
-            &[
-                MIGRATION_1,
-                MIGRATION_2,
-                MIGRATION_3,
-                MIGRATION_4,
-                MIGRATION_5,
-                MIGRATION_6,
-                MIGRATION_7,
-                MIGRATION_8,
-                MIGRATION_9,
-                MIGRATION_10,
-                MIGRATION_11,
-                MIGRATION_12,
-                MIGRATION_13,
-                MIGRATION_14,
-                MIGRATION_15,
-                MIGRATION_16,
-                MIGRATION_17,
-                MIGRATION_18,
-                MIGRATION_19,
-                MIGRATION_20,
-                MIGRATION_21,
-                MIGRATION_22,
-            ],
-        )?;
+        refuse_newer_schema(&connection, MIGRATIONS)?;
+        apply_migrations(&mut connection, MIGRATIONS)?;
         initialize_settings(&connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
@@ -272,33 +274,8 @@ impl Database {
     pub fn open_in_memory() -> Result<Self, DatabaseError> {
         let mut connection = Connection::open_in_memory()?;
         configure(&connection, false)?;
-        apply_migrations(
-            &mut connection,
-            &[
-                MIGRATION_1,
-                MIGRATION_2,
-                MIGRATION_3,
-                MIGRATION_4,
-                MIGRATION_5,
-                MIGRATION_6,
-                MIGRATION_7,
-                MIGRATION_8,
-                MIGRATION_9,
-                MIGRATION_10,
-                MIGRATION_11,
-                MIGRATION_12,
-                MIGRATION_13,
-                MIGRATION_14,
-                MIGRATION_15,
-                MIGRATION_16,
-                MIGRATION_17,
-                MIGRATION_18,
-                MIGRATION_19,
-                MIGRATION_20,
-                MIGRATION_21,
-                MIGRATION_22,
-            ],
-        )?;
+        refuse_newer_schema(&connection, MIGRATIONS)?;
+        apply_migrations(&mut connection, MIGRATIONS)?;
         initialize_settings(&connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
@@ -333,6 +310,35 @@ fn migration_checksum(sql: &str) -> String {
         hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
     }
     format!("fnv1a64:{hash:016x}")
+}
+
+/// Refuses a database that already holds a migration this build does not
+/// know, before anything is written to it.
+fn refuse_newer_schema(
+    connection: &Connection,
+    migrations: &[Migration],
+) -> Result<(), DatabaseError> {
+    let tracked = connection
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'",
+            [],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if !tracked {
+        return Ok(());
+    }
+    let unknown = connection
+        .prepare("SELECT id FROM schema_migrations ORDER BY id")?
+        .query_map([], |row| row.get::<_, u32>(0))?
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .find(|id| !migrations.iter().any(|migration| migration.id == *id));
+    match unknown {
+        Some(id) => Err(DatabaseError::NewerSchema { id }),
+        None => Ok(()),
+    }
 }
 
 fn apply_migrations(
@@ -3006,6 +3012,24 @@ mod tests {
             )
             .expect("group model reference");
         (group_id, character_id)
+    }
+
+    #[test]
+    fn a_database_from_a_newer_build_refuses_to_open() {
+        let path = std::env::temp_dir().join(format!("lettuce-newer-schema-{}.db", AssetId::new()));
+        drop(Database::open(&path).expect("create database"));
+        rusqlite::Connection::open(&path)
+            .expect("raw connection")
+            .execute(
+                "INSERT INTO schema_migrations (id, checksum, applied_at) VALUES (999, 'future', 1)",
+                [],
+            )
+            .expect("future migration");
+        assert!(matches!(
+            Database::open(&path),
+            Err(DatabaseError::NewerSchema { id: 999 })
+        ));
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
