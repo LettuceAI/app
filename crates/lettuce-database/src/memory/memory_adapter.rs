@@ -1097,10 +1097,10 @@ impl MemoryRetrievalRepository for Database {
             .optional()
             .map_err(storage)?
             .ok_or(MemoryRepositoryError::NotFound)?;
-        let resulting_revision = parse_revision(current_revision)?;
-        if resulting_revision < access.expected_revision {
+        if parse_revision(current_revision)? < access.expected_revision {
             return Err(MemoryRepositoryError::Conflict);
         }
+        let resulting_revision = access.expected_revision;
         let mut promoted_memory_ids = Vec::new();
         for id in &access.selected_memory_ids {
             let is_cold = transaction
@@ -1509,7 +1509,7 @@ mod tests {
                 accessed_at: TimestampMillis::new(90),
             })
             .expect("stale retrieval access still applies");
-        assert_eq!(receipt.resulting_revision, cycle.revision);
+        assert_eq!(receipt.resulting_revision, created.revision);
         assert_eq!(receipt.promoted_memory_ids, vec![cold.id]);
         let stored = database.get(space_id).expect("get").expect("space");
         assert_eq!(stored.revision, cycle.revision);

@@ -120,7 +120,7 @@ The retrieval-access port owns the narrow mutation applied after assistant
 generation selects dynamic memories. It binds the exact ordered selection,
 source revision and access time to one conversation turn attempt, promotes
 selected cold items, updates only selected access metadata, and returns the
-space revision it saw plus the ids it promoted from cold. Like legacy's narrow
+space revision the prompt was built from plus the ids it promoted from cold. Like legacy's narrow
 per-row updates it neither checks nor advances the root revision, so a chat
 turn and a running memory cycle never fail each other; a selected memory that a
 cycle removed meanwhile is skipped. Exact retries return the immutable receipt;

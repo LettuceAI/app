@@ -114,7 +114,7 @@ pub trait MemoryRetrievalRepository: Send + Sync {
     /// count, last access and cold promotion. The memory-space revision is
     /// neither checked nor advanced, so retrieval never conflicts with a
     /// running memory cycle; a selected memory removed in the meantime is
-    /// skipped. `resulting_revision` is the space revision the access saw.
+    /// skipped. `resulting_revision` is the revision the prompt was built from.
     fn apply_retrieval_access(
         &self,
         access: MemoryRetrievalAccess,
