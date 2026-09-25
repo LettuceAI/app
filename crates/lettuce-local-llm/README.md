@@ -209,7 +209,12 @@ since the formulas are frozen.
   legacy rules that resolve them (sampler profile defaults and filters,
   deduplicated devices, MTP and DFlash draft bounds, `/think`/`/no_think` over the
   explicit flag over a requested reasoning format), plus the stop matcher,
-  stream flush rule, cache eviction count and context key.
+  stream flush rule, cache eviction count and context key. Fixed legacy bug:
+  DRY sequence breakers are decoded once. Legacy decoded them in the chat
+  layer and again in the runtime, and the second `trim()` turned a decoded
+  newline into an empty breaker that was dropped, so the default
+  `\n, :, ", *` list never had its newline and a `\n`-only list fell back to
+  the four defaults. llama.cpp's own default breakers include the newline.
 - `tool_calls`: the legacy tool-call parser for a local reply, including raw
   text recovery (`<tool_call>` blocks, JSON, `<function=...>` tags,
   `<parameter=...>` arguments).
