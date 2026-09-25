@@ -6324,6 +6324,79 @@ async fn concurrent_replies_fork_into_a_branch_and_notify_both_devices() {
 }
 
 #[tokio::test]
+async fn concurrent_first_messages_fork_the_losing_chain_into_its_own_conversation() {
+    use lettuce_sync::ConversationForkRepository;
+    let a = database();
+    let b = database();
+    let scenario = scenario(&a, false, "synced-first");
+    sync_prompts(&a, &b, 1_012);
+    send_and_generate(&b, &scenario, "first-from-b", "Reply to b", 1_100).await;
+    let work = admit_and_claim(&a, &scenario, 1_200);
+    ConversationGenerationJobRunner::new(
+        &a,
+        &scripted(vec![text_outcome("first-a", "Reply to a", 10, 5)]),
+    )
+    .run(&work, input(&scenario), TimestampMillis::new(1_210))
+    .await
+    .expect("run");
+    sync_prompts(&a, &b, 2_000);
+    sync_prompts(&b, &a, 2_100);
+    sync_prompts(&a, &b, 2_200);
+    sync_prompts(&b, &a, 2_300);
+
+    let root = ConversationReader::get(&a, scenario.conversation_id)
+        .expect("conversation")
+        .conversation
+        .active_branch_id;
+    let path = branch_timeline(&a, scenario.conversation_id, root);
+    assert_eq!(path.len(), 2);
+    assert_eq!(path, branch_timeline(&b, scenario.conversation_id, root));
+    let forks_a = a.unresolved_conversation_forks(10).expect("a forks");
+    let forks_b = b.unresolved_conversation_forks(10).expect("b forks");
+    assert_eq!(forks_a.len(), 1);
+    assert_eq!(forks_b.len(), 1);
+    assert_eq!(forks_a[0].conversation_id, forks_b[0].conversation_id);
+    assert_ne!(forks_a[0].conversation_id, scenario.conversation_id);
+    assert_ne!(forks_a[0].holds_local, forks_b[0].holds_local);
+    let forked = branch_timeline(&a, forks_a[0].conversation_id, forks_a[0].branch_id);
+    assert_eq!(forked.len(), 2);
+    assert_eq!(
+        forked,
+        branch_timeline(&b, forks_b[0].conversation_id, forks_b[0].branch_id)
+    );
+    let mut shown = path
+        .iter()
+        .chain(forked.iter())
+        .filter_map(|item| {
+            item.active_revision
+                .as_ref()
+                .map(|revision| revision.parts.clone())
+                .or_else(|| {
+                    item.active_candidate
+                        .as_ref()
+                        .map(|candidate| candidate.parts.clone())
+                })
+        })
+        .collect::<Vec<_>>();
+    shown.sort_by_key(|parts| format!("{parts:?}"));
+    let text = |text: &str| {
+        vec![MessagePart::Text {
+            text: text.to_owned(),
+        }]
+    };
+    assert_eq!(
+        shown,
+        vec![
+            text("Remember tea."),
+            text("Reply to a"),
+            text("Reply to b"),
+            text("first-from-b"),
+        ]
+    );
+    assert_rescans_are_empty(&[&a, &b], 3_000);
+}
+
+#[tokio::test]
 async fn memory_spaces_sync_their_items_and_summary_under_their_owner() {
     let a = database();
     let b = database();

@@ -332,7 +332,13 @@ path); `ConversationForkRepository` lists and resolves
 them. The user's choices (keep both, make mine main, make theirs main) only
 decide which branch the device shows, through the normal branch selection,
 before the notice is resolved. Two concurrent first messages of an empty
-conversation have no fork point and stay as they are. Known limit: a third device
+conversation have no message to fork from (a fork branch always starts at a
+message), so, like legacy's root siblings, the lower first message keeps the
+conversation and the other chain is copied the same way into a conversation
+of its own, derived from the source conversation and the chain's first
+message (the source's participants, settings and memory binding, no initial
+messages, titled as a branch), with the same notice pointing at it; a later
+message on that chain follows its copies there. Known limit: a third device
 replying inside a chain that later loses (nested concurrency) can leave the
 devices with different sub-forks; the originals are always kept.
 

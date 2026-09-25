@@ -983,20 +983,41 @@ fn fork_copy_id(branch_id: ConversationBranchId, original: MessageId) -> Message
     ))
 }
 
+/// The conversation that holds a chain which lost the start of an empty
+/// conversation, and its root branch, named after the chain's first message
+/// so every device builds the same one.
+fn root_fork_ids(
+    conversation_id: ConversationId,
+    first: MessageId,
+) -> (ConversationId, ConversationBranchId) {
+    let fork = ConversationId::from_uuid(uuid::Uuid::new_v5(
+        &conversation_id.as_uuid(),
+        format!("sync-root-fork:{first}").as_bytes(),
+    ));
+    let branch = ConversationBranchId::from_uuid(uuid::Uuid::new_v5(
+        &fork.as_uuid(),
+        b"sync-root-fork-branch",
+    ));
+    (fork, branch)
+}
+
 /// Resolves a synced message that does not extend its branch head. When it
 /// and the local path answer the same message, the lower message id keeps
 /// the path and the other chain is copied, flattened to what it shows, into
 /// a fork branch named after the chain's first message, so every device
 /// builds the same fork; the user is told when one side is this device's
-/// own. A message that continues a chain already moved to a fork is copied
-/// after its parent's nearest copy. Nothing moves while a generation runs.
+/// own. Two chains that both start an empty conversation have no message to
+/// fork from, so the losing chain is copied into a conversation of its own
+/// (the source's participants and settings, titled as a branch). A message
+/// that continues a chain already moved to a fork is copied after its
+/// parent's nearest copy. Nothing moves while a generation runs.
 fn settle_concurrent_message(
     transaction: &Transaction<'_>,
     message: &Message,
     head: Option<MessageId>,
 ) -> Result<(), ConversationRepositoryError> {
     let conversation_id = message.conversation_id;
-    let (Some(parent), Some(head)) = (message.parent_message_id, head) else {
+    let Some(head) = head else {
         return Ok(());
     };
     if exists(
@@ -1006,6 +1027,9 @@ fn settle_concurrent_message(
     )? {
         return Err(ConversationRepositoryError::NotFound);
     }
+    let Some(parent) = message.parent_message_id else {
+        return settle_concurrent_root(transaction, message, head);
+    };
     let mut path = Vec::new();
     let mut cursor = Some(head);
     while let Some(id) = cursor {
@@ -1073,9 +1097,147 @@ fn settle_concurrent_message(
         }
         match above {
             Some(above) if !on_path(above) => ancestor = above,
-            _ => return Ok(()),
+            Some(_) => return Ok(()),
+            None => {
+                let (fork_conversation, fork_branch) = root_fork_ids(conversation_id, ancestor);
+                let copied_parent = fork_copy_id(fork_branch, parent);
+                if exists(
+                    transaction,
+                    "SELECT EXISTS(SELECT 1 FROM conversation_messages WHERE conversation_id = ?1 AND id = ?2)",
+                    params![fork_conversation.to_string(), copied_parent.to_string()],
+                )? {
+                    return copy_messages_into(
+                        transaction,
+                        conversation_id,
+                        fork_conversation,
+                        fork_branch,
+                        Some(copied_parent),
+                        &[message.id],
+                    );
+                }
+                return Ok(());
+            }
         }
     }
+}
+
+/// A synced first message of a conversation whose path already starts with
+/// another first message: the lower id keeps the path and the other chain
+/// moves to a root fork conversation.
+fn settle_concurrent_root(
+    transaction: &Transaction<'_>,
+    message: &Message,
+    head: MessageId,
+) -> Result<(), ConversationRepositoryError> {
+    let conversation_id = message.conversation_id;
+    let mut contender = Vec::new();
+    let mut cursor = Some(head);
+    while let Some(id) = cursor {
+        let (next, branch, _) = message_link(transaction, conversation_id, id)?;
+        if branch != message.branch_id {
+            return Ok(());
+        }
+        contender.push(id);
+        cursor = next;
+    }
+    contender.reverse();
+    let Some(first) = contender.first().copied() else {
+        return Ok(());
+    };
+    if exists(
+        transaction,
+        "SELECT EXISTS(SELECT 1 FROM conversation_initial_message_origins WHERE conversation_id = ?1 AND message_id = ?2)",
+        params![conversation_id.to_string(), first.to_string()],
+    )? {
+        return Ok(());
+    }
+    let local = authored_locally(transaction, conversation_id, &contender)?;
+    if message.id < first {
+        history::set_branch_head(
+            transaction,
+            conversation_id,
+            message.branch_id,
+            Some(message.id),
+        )?;
+        return copy_root_chain(
+            transaction,
+            conversation_id,
+            &contender,
+            local.then_some(true),
+        );
+    }
+    copy_root_chain(
+        transaction,
+        conversation_id,
+        &[message.id],
+        local.then_some(false),
+    )
+}
+
+/// Copies a chain that lost the start of a conversation into its root fork
+/// conversation, creating that conversation from the source's root (same
+/// participants, settings and memory binding, no initial messages).
+fn copy_root_chain(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    chain: &[MessageId],
+    notice: Option<bool>,
+) -> Result<(), ConversationRepositoryError> {
+    let Some(first) = chain.first().copied() else {
+        return Ok(());
+    };
+    let (fork_conversation, fork_branch) = root_fork_ids(conversation_id, first);
+    if !exists(
+        transaction,
+        "SELECT EXISTS(SELECT 1 FROM conversations WHERE id = ?1)",
+        [fork_conversation.to_string()],
+    )? {
+        let source = sync_load_conversation_root(transaction, &conversation_id.to_string())?
+            .ok_or(ConversationRepositoryError::NotFound)?;
+        let mut conversation = Conversation {
+            id: fork_conversation,
+            active_branch_id: fork_branch,
+            title: format!("{} (branch)", source.conversation.title),
+            ..source.conversation.clone()
+        };
+        if conversation.validate().is_err() {
+            conversation.title.clone_from(&source.conversation.title);
+        }
+        sync_replace_conversation_root(
+            transaction,
+            &SyncConversationRoot {
+                conversation,
+                root_branch: ConversationBranch {
+                    id: fork_branch,
+                    conversation_id: fork_conversation,
+                    ..source.root_branch
+                },
+                memory: source.memory,
+                initial_messages: Vec::new(),
+            },
+        )?;
+    }
+    if let Some(holds_local) = notice {
+        transaction
+            .execute(
+                "INSERT OR IGNORE INTO sync_conversation_forks (conversation_id, branch_id, holds_local, detected_at) VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    fork_conversation.to_string(),
+                    fork_branch.to_string(),
+                    i64::from(holds_local),
+                    TimestampMillis::now().map_err(storage)?.get(),
+                ],
+            )
+            .map_err(storage)?;
+    }
+    copy_messages_into(
+        transaction,
+        conversation_id,
+        fork_conversation,
+        fork_branch,
+        None,
+        chain,
+    )
 }
 
 /// Shows the losing version of a message two devices changed concurrently as
@@ -1329,7 +1491,27 @@ fn copy_messages(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
     fork: ConversationBranchId,
-    mut parent: MessageId,
+    parent: MessageId,
+    chain: &[MessageId],
+) -> Result<(), ConversationRepositoryError> {
+    copy_messages_into(
+        transaction,
+        conversation_id,
+        conversation_id,
+        fork,
+        Some(parent),
+        chain,
+    )
+}
+
+/// Copies originals of `conversation_id` into branch `fork` of `target`, the
+/// first after `parent` (at the start of the branch when `None`).
+fn copy_messages_into(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    target: ConversationId,
+    fork: ConversationBranchId,
+    mut parent: Option<MessageId>,
     chain: &[MessageId],
 ) -> Result<(), ConversationRepositoryError> {
     for original in chain {
@@ -1337,22 +1519,23 @@ fn copy_messages(
         if !exists(
             transaction,
             "SELECT EXISTS(SELECT 1 FROM conversation_messages WHERE conversation_id = ?1 AND id = ?2)",
-            params![conversation_id.to_string(), copy_id.to_string()],
+            params![target.to_string(), copy_id.to_string()],
         )? {
             let (source, revision) =
                 flattened_revision(transaction, conversation_id, *original, copy_id)?;
             let next: i64 = transaction
                 .query_row(
                     "SELECT next_timeline_ordinal FROM conversations WHERE id = ?1",
-                    [conversation_id.to_string()],
+                    [target.to_string()],
                     |row| row.get(0),
                 )
                 .map_err(storage)?;
             let backup = BackupMessage {
                 message: Message {
                     id: copy_id,
+                    conversation_id: target,
                     branch_id: fork,
-                    parent_message_id: Some(parent),
+                    parent_message_id: parent,
                     active_render_source: MessageRenderSource::Revision(revision.id),
                     revision: Revision::INITIAL,
                     updated_at: source.message.created_at,
@@ -1371,11 +1554,11 @@ fn copy_messages(
                 &[],
                 &history::Evidence::usage_only(&[]),
             )?;
-            settle_copy_media(transaction, conversation_id, copy_id)?;
+            settle_copy_media(transaction, target, copy_id)?;
             transaction
                 .execute(
                     "UPDATE conversations SET next_timeline_ordinal = ?1 WHERE id = ?2",
-                    params![next + 1, conversation_id.to_string()],
+                    params![next + 1, target.to_string()],
                 )
                 .map_err(storage)?;
         }
@@ -1384,19 +1567,20 @@ fn copy_messages(
                 "UPDATE conversation_branches SET head_message_id = ?1 WHERE conversation_id = ?2 AND id = ?3 AND (head_message_id IS NULL OR head_message_id = ?4)",
                 params![
                     copy_id.to_string(),
-                    conversation_id.to_string(),
+                    target.to_string(),
                     fork.to_string(),
-                    parent.to_string(),
+                    parent.map(|id| id.to_string()),
                 ],
             )
             .map_err(storage)?;
-        parent = copy_id;
+        parent = Some(copy_id);
     }
     Ok(())
 }
 
-/// Brings every fork copy of a merged original to what the original now
-/// shows, with its flags; a copy's tombstone is never lifted.
+/// Brings every fork copy of a merged original (in a fork branch or a root
+/// fork conversation) to what the original now shows, with its flags; a
+/// copy's tombstone is never lifted.
 fn refresh_copies(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
@@ -1410,15 +1594,20 @@ fn refresh_copies(
                 .collect::<rusqlite::Result<Vec<_>>>()
         })
         .map_err(storage)?;
-    for branch in branches {
-        let branch = branch.parse::<ConversationBranchId>().map_err(storage)?;
+    let mut targets = branches
+        .iter()
+        .map(|branch| Ok((conversation_id, branch.parse().map_err(storage)?)))
+        .collect::<Result<Vec<(ConversationId, ConversationBranchId)>, ConversationRepositoryError>>()?;
+    let mut root = original;
+    while let (Some(parent), _, _) = message_link(transaction, conversation_id, root)? {
+        root = parent;
+    }
+    targets.push(root_fork_ids(conversation_id, root));
+    for (target, branch) in targets {
         let copy_id = fork_copy_id(branch, original);
-        let Some(copy) = crate::backup::backup_adapter::read_conversation_message(
-            transaction,
-            conversation_id,
-            copy_id,
-        )
-        .map_err(storage)?
+        let Some(copy) =
+            crate::backup::backup_adapter::read_conversation_message(transaction, target, copy_id)
+                .map_err(storage)?
         else {
             continue;
         };
@@ -1428,7 +1617,7 @@ fn refresh_copies(
             let last: i64 = transaction
                 .query_row(
                     "SELECT COALESCE(max(sequence), 0) FROM conversation_message_revisions WHERE conversation_id = ?1 AND message_id = ?2",
-                    params![conversation_id.to_string(), copy_id.to_string()],
+                    params![target.to_string(), copy_id.to_string()],
                     |row| row.get(0),
                 )
                 .map_err(storage)?;
@@ -1450,7 +1639,7 @@ fn refresh_copies(
             .execute(
                 "UPDATE conversation_messages SET active_revision_id = ?3, active_candidate_id = NULL, visibility = ?4, pinned = ?5, author_participant_id = ?6, revision = revision + 1 WHERE conversation_id = ?1 AND id = ?2",
                 params![
-                    conversation_id.to_string(),
+                    target.to_string(),
                     copy_id.to_string(),
                     revision.id.to_string(),
                     crate::conversation::conversation_mutation_kernel::message_visibility_name(visibility),
@@ -1459,7 +1648,7 @@ fn refresh_copies(
                 ],
             )
             .map_err(crate::conversation::conversation_mutation_kernel::map_constraint)?;
-        settle_copy_media(transaction, conversation_id, copy_id)?;
+        settle_copy_media(transaction, target, copy_id)?;
     }
     Ok(())
 }
