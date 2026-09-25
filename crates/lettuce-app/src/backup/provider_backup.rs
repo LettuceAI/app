@@ -2638,6 +2638,54 @@ mod tests {
         );
     }
 
+    struct AppTokenFailingStore {
+        inner: InMemorySecretStore,
+        fail_status: bool,
+    }
+
+    #[async_trait::async_trait]
+    impl SecretStore for AppTokenFailingStore {
+        async fn put(
+            &self,
+            record: SecretRecord,
+            value: SecretValue,
+            expected: Option<u64>,
+        ) -> Result<SecretStatus, SecretStoreError> {
+            if record.purpose.app_secret_ref().is_some() {
+                return Err(SecretStoreError::Backend(SecretBackendError::Unavailable));
+            }
+            self.inner.put(record, value, expected).await
+        }
+
+        async fn load(
+            &self,
+            reference: &SecretRef,
+            purpose: &SecretPurpose,
+        ) -> Result<SecretValue, SecretStoreError> {
+            self.inner.load(reference, purpose).await
+        }
+
+        async fn status(
+            &self,
+            reference: &SecretRef,
+            purpose: &SecretPurpose,
+        ) -> Result<SecretStatus, SecretStoreError> {
+            if self.fail_status && purpose.app_secret_ref().is_some() {
+                return Err(SecretStoreError::Backend(SecretBackendError::Unavailable));
+            }
+            self.inner.status(reference, purpose).await
+        }
+
+        async fn delete(
+            &self,
+            reference: &SecretRef,
+            purpose: &SecretPurpose,
+            expected: Option<u64>,
+        ) -> Result<SecretStatus, SecretStoreError> {
+            self.inner.delete(reference, purpose, expected).await
+        }
+    }
+
     #[tokio::test]
     async fn backup_names_accounts_with_missing_keys_and_carries_app_tokens() {
         let root = std::env::temp_dir().join(format!("provider-backup-{}", OperationId::new()));
@@ -2761,7 +2809,7 @@ mod tests {
         )
         .restore(
             OperationId::new(),
-            std::io::Cursor::new(export.output),
+            std::io::Cursor::new(export.output.clone()),
             "backup password",
             TimestampMillis::new(6),
         )
@@ -2774,6 +2822,37 @@ mod tests {
                 .expect("device token")
                 .with(|value| value == "hf-device-token")
         );
+        for (fail_status, stage) in [
+            (false, crate::BackupAppSecretFailureStage::Store),
+            (true, crate::BackupAppSecretFailureStage::Status),
+        ] {
+            let failing = AppTokenFailingStore {
+                inner: InMemorySecretStore::new(),
+                fail_status,
+            };
+            let receipt = crate::BackupRestoreCoordinator::new(
+                &location,
+                &root.join("restore-workspace"),
+                &root.join("platform-v2/media-blobs"),
+                &failing,
+            )
+            .restore(
+                OperationId::new(),
+                std::io::Cursor::new(export.output.clone()),
+                "backup password",
+                TimestampMillis::new(7),
+            )
+            .await
+            .expect("the restore succeeds without the token");
+            assert_eq!(
+                receipt.app_secret_failures,
+                vec![crate::BackupAppSecretFailure {
+                    purpose: hugging_face.clone(),
+                    stage,
+                    error: SecretStoreError::Backend(SecretBackendError::Unavailable),
+                }]
+            );
+        }
         std::fs::remove_dir_all(root).expect("remove backup fixture");
     }
 }

@@ -110,6 +110,24 @@ pub struct BackupRestoreReceipt {
     pub database_path: PathBuf,
     pub previous_database_path: PathBuf,
     pub admission: BackupRestoreAdmission,
+    /// App-wide tokens the backup carried that could not be written; the
+    /// restore itself succeeded and the user enters these again.
+    pub app_secret_failures: Vec<BackupAppSecretFailure>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BackupAppSecretFailure {
+    pub purpose: SecretPurpose,
+    pub stage: BackupAppSecretFailureStage,
+    pub error: lettuce_settings::SecretStoreError,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BackupAppSecretFailureStage {
+    /// The store could not report whether the device already holds a token.
+    Status,
+    /// The store refused to write the token.
+    Store,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -252,28 +270,43 @@ impl<'a, S: SecretStore + ?Sized> BackupRestoreCoordinator<'a, S> {
                 return Err(error);
             }
         };
-        self.restore_app_secrets(app_secrets).await;
+        let app_secret_failures = self.restore_app_secrets(app_secrets).await;
         Ok(BackupRestoreReceipt {
             database_path,
             previous_database_path,
             admission,
+            app_secret_failures,
         })
     }
 
     /// Writes each backed-up app-wide token only where this device has none,
     /// so a restore never replaces a token entered here. The restore has
-    /// already switched databases, so a failed write is logged, not returned.
-    async fn restore_app_secrets(&self, app_secrets: Vec<ProviderBackupSecret>) {
+    /// already switched databases, so a token that cannot be checked or
+    /// written is returned in the receipt instead of failing the restore.
+    async fn restore_app_secrets(
+        &self,
+        app_secrets: Vec<ProviderBackupSecret>,
+    ) -> Vec<BackupAppSecretFailure> {
+        let mut failures = Vec::new();
         for secret in app_secrets {
-            let missing = self
+            match self
                 .secrets
                 .status(&secret.reference, &secret.purpose)
                 .await
-                .is_ok_and(|status| status.state == lettuce_settings::SecretState::Missing);
-            if !missing {
-                continue;
+            {
+                Ok(status) if status.state == lettuce_settings::SecretState::Missing => {}
+                Ok(_) => continue,
+                Err(error) => {
+                    failures.push(BackupAppSecretFailure {
+                        purpose: secret.purpose,
+                        stage: BackupAppSecretFailureStage::Status,
+                        error,
+                    });
+                    continue;
+                }
             }
-            if self
+            let purpose = secret.purpose.clone();
+            if let Err(error) = self
                 .secrets
                 .put(
                     SecretRecord::new(secret.reference, secret.purpose),
@@ -281,11 +314,21 @@ impl<'a, S: SecretStore + ?Sized> BackupRestoreCoordinator<'a, S> {
                     None,
                 )
                 .await
-                .is_err()
             {
-                tracing::warn!("restored backup app token could not be stored");
+                failures.push(BackupAppSecretFailure {
+                    purpose,
+                    stage: BackupAppSecretFailureStage::Store,
+                    error,
+                });
             }
         }
+        if !failures.is_empty() {
+            tracing::warn!(
+                count = failures.len(),
+                "restored backup app tokens could not be stored"
+            );
+        }
+        failures
     }
 
     #[allow(clippy::too_many_arguments)]

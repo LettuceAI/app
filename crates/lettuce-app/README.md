@@ -1588,7 +1588,8 @@ returned in `ProviderBackupExport::missing_secrets`, so the restored account
 asks for its key again like the source device. The Hugging Face and CivitAI
 tokens are carried when set; restore writes each one only when the device has
 none, after the new database is active, so a token entered on this device is
-never replaced. Metadata and secrets are sealed as separate authenticated
+never replaced; a token whose status cannot be read or whose write fails is
+listed in `BackupRestoreReceipt::app_secret_failures`. Metadata and secrets are sealed as separate authenticated
 sections. Secret plaintext is held in
 zeroizing buffers and never appears in public backup metadata, errors or Debug
 output.
