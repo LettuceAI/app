@@ -948,6 +948,63 @@ impl PersonaFileRepository for Database {
         tx.commit().map_err(db_error)?;
         Ok(persona)
     }
+
+    fn discard_unlinked_asset(
+        &self,
+        asset_id: AssetId,
+    ) -> Result<Option<lettuce_types::MediaBlobId>, RepositoryError> {
+        let mut connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let tx = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(db_error)?;
+        let Some(blob_id) = tx
+            .query_row(
+                "SELECT blob_id FROM media_assets WHERE id=?1",
+                [asset_id.to_string()],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(db_error)?
+        else {
+            return Ok(None);
+        };
+        match tx.execute(
+            "DELETE FROM media_assets WHERE id=?1",
+            [asset_id.to_string()],
+        ) {
+            Ok(1) => {}
+            Ok(_) => return Ok(None),
+            Err(error)
+                if error.sqlite_error_code() == Some(rusqlite::ErrorCode::ConstraintViolation) =>
+            {
+                return Ok(None);
+            }
+            Err(error) => return Err(db_error(error)),
+        }
+        tx.commit().map_err(db_error)?;
+        blob_id
+            .parse()
+            .map(Some)
+            .map_err(|_| RepositoryError::Storage)
+    }
+
+    fn release_unused_blob(
+        &self,
+        blob_id: lettuce_types::MediaBlobId,
+        now: TimestampMillis,
+    ) -> Result<bool, RepositoryError> {
+        let connection = self.connection().map_err(|_| RepositoryError::Storage)?;
+        let released = connection
+            .execute(
+                "UPDATE media_blobs SET state='missing', updated_at=?2
+                  WHERE id=?1 AND state='ready'
+                    AND NOT EXISTS (SELECT 1 FROM media_assets WHERE blob_id=?1)
+                    AND NOT EXISTS (SELECT 1 FROM legacy_import_media_completions WHERE blob_id=?1)",
+                params![blob_id.to_string(), now.get()],
+            )
+            .map_err(db_error)?;
+        Ok(released == 1)
+    }
 }
 
 impl PersonaRepository for Database {
@@ -1945,8 +2002,15 @@ mod tests {
             TimestampMillis::new(5),
         )
         .expect("a persona may have no description");
+        let avatar = image_asset(&database, 'a');
+        let mut with_avatar = persona.clone();
+        with_avatar.media.links.push(PersonaMediaLink {
+            asset_id: avatar,
+            slot: PersonaMediaSlot::Avatar,
+            ordinal: 0,
+        });
         let failing = PersonaFileImport {
-            persona: persona.clone(),
+            persona: with_avatar,
             lorebook_ids: vec![lorebook.book.id, lettuce_types::LorebookId::new()],
             make_default: true,
         };
@@ -1955,6 +2019,22 @@ mod tests {
             Err(RepositoryError::NotFound)
         );
         assert_eq!(count(&database), 0);
+        let blob_id = database
+            .discard_unlinked_asset(avatar)
+            .expect("discard")
+            .expect("the unlinked avatar is deleted");
+        assert_eq!(MediaAssetRepository::get(&database, avatar), Ok(None));
+        assert_eq!(
+            database.release_unused_blob(blob_id, TimestampMillis::new(6)),
+            Ok(true)
+        );
+        assert_eq!(
+            MediaBlobRepository::get(&database, blob_id)
+                .expect("blob")
+                .expect("blob row")
+                .state,
+            BlobState::Missing
+        );
         assert_eq!(
             PersonaRepository::get_default_snapshot(&database)
                 .expect("default")
@@ -1988,6 +2068,32 @@ mod tests {
                 .state
                 .persona_id,
             Some(imported.id)
+        );
+        let linked = image_asset(&database, 'b');
+        let mut linked_persona = Persona::new(
+            PersonaId::new(),
+            "Linked".into(),
+            String::new(),
+            TimestampMillis::new(7),
+        )
+        .expect("persona");
+        linked_persona.media.links.push(PersonaMediaLink {
+            asset_id: linked,
+            slot: PersonaMediaSlot::Avatar,
+            ordinal: 0,
+        });
+        database
+            .import_persona_file(&PersonaFileImport {
+                persona: linked_persona,
+                lorebook_ids: Vec::new(),
+                make_default: false,
+            })
+            .expect("linked avatar import");
+        assert_eq!(database.discard_unlinked_asset(linked), Ok(None));
+        assert!(
+            MediaAssetRepository::get(&database, linked)
+                .expect("asset")
+                .is_some()
         );
     }
 

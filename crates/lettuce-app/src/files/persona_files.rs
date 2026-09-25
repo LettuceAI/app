@@ -101,20 +101,6 @@ where
             updated_at: now,
         };
         persona.validate().map_err(RepositoryError::from)?;
-        if let Some(asset_id) = package.avatar_data.as_deref().and_then(|avatar| {
-            store_file_image(
-                self.media_store,
-                avatar,
-                AssetKind::AvatarOriginal,
-                "lettuceai-persona-file",
-            )
-        }) {
-            persona.media.links.push(PersonaMediaLink {
-                asset_id,
-                slot: PersonaMediaSlot::Avatar,
-                ordinal: 0,
-            });
-        }
         let mut skipped = Vec::new();
         let mut bound = Vec::new();
         for source_id in &data.active_lorebook_ids {
@@ -140,12 +126,55 @@ where
             };
             bound.push(lorebook.book.id);
         }
-        let persona = self.repository.import_persona_file(&PersonaFileImport {
+        let avatar = package.avatar_data.as_deref().and_then(|avatar| {
+            store_file_image(
+                self.media_store,
+                avatar,
+                AssetKind::AvatarOriginal,
+                "lettuceai-persona-file",
+            )
+        });
+        if let Some(asset_id) = avatar {
+            persona.media.links.push(PersonaMediaLink {
+                asset_id,
+                slot: PersonaMediaSlot::Avatar,
+                ordinal: 0,
+            });
+        }
+        let imported = self.repository.import_persona_file(&PersonaFileImport {
             persona,
             lorebook_ids: bound,
             make_default: data.is_default == Some(true),
-        })?;
-        Ok(ImportedPersonaFile { persona, skipped })
+        });
+        match imported {
+            Ok(persona) => Ok(ImportedPersonaFile { persona, skipped }),
+            Err(error) => {
+                if let Some(asset_id) = avatar {
+                    self.discard_avatar(asset_id, now);
+                }
+                Err(error.into())
+            }
+        }
+    }
+
+    /// Deletes an avatar stored for an import that failed, so it leaves no
+    /// unused file behind; a failure here is only logged.
+    fn discard_avatar(&self, asset_id: lettuce_types::AssetId, now: TimestampMillis) {
+        let blob_id = match self.repository.discard_unlinked_asset(asset_id) {
+            Ok(Some(blob_id)) => blob_id,
+            Ok(None) => return,
+            Err(error) => {
+                tracing::warn!(%error, "unused persona avatar was not deleted");
+                return;
+            }
+        };
+        if let Err(error) = self.media_store.release_blob(blob_id, |_| {
+            self.repository
+                .release_unused_blob(blob_id, now)
+                .map_err(|_| lettuce_media::MediaStoreError::CatalogFailure)
+        }) {
+            tracing::warn!(%error, "unused persona avatar bytes were not deleted");
+        }
     }
 
     /// The persona written as a v2 persona UEC with its avatar inlined.

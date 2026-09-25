@@ -290,6 +290,21 @@ pub trait PersonaFileRepository: Send + Sync {
         &self,
         import: &PersonaFileImport,
     ) -> Result<lettuce_characters::Persona, lettuce_characters::RepositoryError>;
+
+    /// Deletes an asset stored for an import that did not happen, unless
+    /// something references it, and answers its blob when the asset went.
+    fn discard_unlinked_asset(
+        &self,
+        asset_id: lettuce_types::AssetId,
+    ) -> Result<Option<lettuce_types::MediaBlobId>, lettuce_characters::RepositoryError>;
+
+    /// Marks a blob no asset uses as missing so its bytes can be deleted;
+    /// `false` when the blob is still in use.
+    fn release_unused_blob(
+        &self,
+        blob_id: lettuce_types::MediaBlobId,
+        now: lettuce_types::TimestampMillis,
+    ) -> Result<bool, lettuce_characters::RepositoryError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
