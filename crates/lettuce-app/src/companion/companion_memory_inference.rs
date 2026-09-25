@@ -683,7 +683,7 @@ fn build_first_request(
                         .parameters
                         .reasoning_budget_tokens
                         .is_some(),
-                companion_mode_enabled: !is_group,
+                companion_mode_enabled: run.supersession_enabled,
                 time_awareness_enabled: !is_group && run.time_awareness_enabled,
                 ..Default::default()
             },
@@ -1492,7 +1492,12 @@ mod tests {
                 .any(|(_, text)| { text.contains("Current hot memory usage: 7/128 tokens") })
         );
         assert!(
-            text_messages
+            !text_messages
+                .iter()
+                .any(|(_, text)| text.contains("Companion memory supersession:"))
+        );
+        assert!(
+            !text_messages
                 .iter()
                 .any(|(_, text)| { text.starts_with("Companion memory rules:\n") })
         );
@@ -1621,6 +1626,17 @@ mod tests {
             .find(|text| text.contains("Current local time context:"))
             .expect("companion time awareness entry");
         assert!(!system_text.contains("Current local time context: , , ."));
+        assert!(
+            request
+                .context
+                .messages
+                .iter()
+                .flat_map(|message| &message.parts)
+                .any(|part| matches!(
+                    part,
+                    ProviderContextPart::Text { text } if text.contains("Companion memory supersession:")
+                ))
+        );
         assert_eq!(
             request.tools,
             Some(crate::companion::companion_memory_run::test_memory_tool_request(true, true))

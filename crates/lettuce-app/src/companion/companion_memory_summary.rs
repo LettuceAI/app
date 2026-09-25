@@ -390,7 +390,7 @@ fn build_summary_request(
                         .parameters
                         .reasoning_budget_tokens
                         .is_some(),
-                companion_mode_enabled: !is_group,
+                companion_mode_enabled: run.supersession_enabled,
                 time_awareness_enabled: !is_group && run.time_awareness_enabled,
                 ..Default::default()
             },
