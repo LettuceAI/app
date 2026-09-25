@@ -8379,11 +8379,11 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
             .edit_outline(editable_id, original.project.revision, plans, edit_at)
             .is_err()
     );
-    let mut foreign = edited_plans.clone();
-    foreign[0].source_refs = vec!["foreign".into()];
+    let mut untitled = edited_plans.clone();
+    untitled[0].title = String::new();
     assert!(
         coordinator
-            .edit_outline(editable_id, edited.project.revision, foreign, edit_at)
+            .edit_outline(editable_id, edited.project.revision, untitled, edit_at)
             .is_err()
     );
     let approved = coordinator
