@@ -192,6 +192,120 @@ where
         .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)
 }
 
+/// Builds a select list for a table whose optional columns older installs may
+/// lack: legacy added them with error-ignoring `ALTER TABLE` statements and
+/// repaired them only in later versions, so a missing one reads as the value
+/// that repair would have given it. A column without a default is required.
+fn projection(
+    connection: &Connection,
+    table: &str,
+    columns: &[(&str, Option<&str>)],
+) -> Result<String, LegacyDatabasePreflightError> {
+    let mut statement = connection
+        .prepare(&format!("SELECT name FROM pragma_table_info('{table}')"))
+        .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
+    let present = statement
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?
+        .collect::<Result<std::collections::BTreeSet<_>, _>>()
+        .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
+    columns
+        .iter()
+        .map(|(name, default)| {
+            if present.contains(*name) {
+                Ok((*name).to_owned())
+            } else {
+                default
+                    .map(|value| format!("{value} AS {name}"))
+                    .ok_or(LegacyDatabasePreflightError::InvalidSchema)
+            }
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(|columns| columns.join(", "))
+}
+
+const MESSAGE_COLUMNS: &[(&str, Option<&str>)] = &[
+    ("id", None),
+    ("role", None),
+    ("content", None),
+    ("created_at", None),
+    ("visible_in_chat", Some("0")),
+    ("scene_edited", Some("0")),
+    ("prompt_tokens", Some("NULL")),
+    ("completion_tokens", Some("NULL")),
+    ("total_tokens", Some("NULL")),
+    ("first_token_ms", Some("NULL")),
+    ("tokens_per_second", Some("NULL")),
+    ("mtp_stats", Some("NULL")),
+    ("model_id", Some("NULL")),
+    ("selected_variant_id", Some("NULL")),
+    ("is_pinned", Some("0")),
+    ("memory_refs", Some("'[]'")),
+    ("used_lorebook_entries", Some("'[]'")),
+    ("attachments", Some("'[]'")),
+    ("reasoning", Some("NULL")),
+    ("parent_message_id", Some("NULL")),
+    ("effective_at", Some("NULL")),
+];
+
+const MESSAGE_VARIANT_COLUMNS: &[(&str, Option<&str>)] = &[
+    ("id", None),
+    ("content", None),
+    ("created_at", None),
+    ("prompt_tokens", Some("NULL")),
+    ("completion_tokens", Some("NULL")),
+    ("total_tokens", Some("NULL")),
+    ("first_token_ms", Some("NULL")),
+    ("tokens_per_second", Some("NULL")),
+    ("mtp_stats", Some("NULL")),
+    ("reasoning", Some("NULL")),
+];
+
+const GROUP_MESSAGE_COLUMNS: &[(&str, Option<&str>)] = &[
+    ("id", None),
+    ("role", None),
+    ("content", None),
+    ("speaker_character_id", Some("NULL")),
+    ("turn_number", None),
+    ("created_at", None),
+    ("prompt_tokens", Some("NULL")),
+    ("completion_tokens", Some("NULL")),
+    ("total_tokens", Some("NULL")),
+    ("first_token_ms", Some("NULL")),
+    ("tokens_per_second", Some("NULL")),
+    ("mtp_stats", Some("NULL")),
+    ("selected_variant_id", Some("NULL")),
+    ("is_pinned", Some("0")),
+    ("attachments", Some("'[]'")),
+    ("used_lorebook_entries", Some("'[]'")),
+    ("memory_refs", Some("'[]'")),
+    ("reasoning", Some("NULL")),
+    ("selection_reasoning", Some("NULL")),
+    ("model_id", Some("NULL")),
+    ("gemini_content", Some("NULL")),
+    ("usage_json", Some("NULL")),
+    ("parent_message_id", Some("NULL")),
+];
+
+const GROUP_MESSAGE_VARIANT_COLUMNS: &[(&str, Option<&str>)] = &[
+    ("id", None),
+    ("content", None),
+    ("speaker_character_id", Some("NULL")),
+    ("created_at", None),
+    ("prompt_tokens", Some("NULL")),
+    ("completion_tokens", Some("NULL")),
+    ("total_tokens", Some("NULL")),
+    ("first_token_ms", Some("NULL")),
+    ("tokens_per_second", Some("NULL")),
+    ("mtp_stats", Some("NULL")),
+    ("reasoning", Some("NULL")),
+    ("selection_reasoning", Some("NULL")),
+    ("model_id", Some("NULL")),
+    ("attachments", Some("'[]'")),
+    ("gemini_content", Some("NULL")),
+    ("usage_json", Some("NULL")),
+];
+
 fn flag(row: &Row<'_>, index: usize) -> rusqlite::Result<bool> {
     Ok(row.get::<_, i64>(index)? != 0)
 }
@@ -561,7 +675,7 @@ fn characters(connection: &Connection) -> Result<Vec<Value>, LegacyDatabasePrefl
             let scene_id = string_field(scene, "id")?;
             let variants = rows(
                 connection,
-                "SELECT id, content, direction, created_at FROM scene_variants WHERE scene_id = ?1",
+                "SELECT id, content, direction, created_at FROM scene_variants WHERE scene_id = ?1 ORDER BY created_at ASC, rowid ASC",
                 params![scene_id],
                 |r| {
                     Ok(json!({
@@ -853,6 +967,14 @@ fn sessions(connection: &Connection) -> Result<Vec<Value>, LegacyDatabasePreflig
             }))
         },
     )?;
+    let message_sql = format!(
+        "SELECT {} FROM messages WHERE session_id = ?1 ORDER BY created_at ASC",
+        projection(connection, "messages", MESSAGE_COLUMNS)?
+    );
+    let variant_sql = format!(
+        "SELECT {} FROM message_variants WHERE message_id = ?1 ORDER BY created_at ASC, rowid ASC",
+        projection(connection, "message_variants", MESSAGE_VARIANT_COLUMNS)?
+    );
     for session in &mut sessions {
         let id = string_field(session, "id")?;
         let legacy = session["memory_embeddings"]
@@ -861,57 +983,47 @@ fn sessions(connection: &Connection) -> Result<Vec<Value>, LegacyDatabasePreflig
             .to_owned();
         session["memory_embeddings"] =
             Value::String(canonical_embeddings(connection, &id, "session", &legacy)?);
-        let mut messages = rows(
-            connection,
-            "SELECT id, role, content, created_at, visible_in_chat, scene_edited, prompt_tokens, completion_tokens, total_tokens, first_token_ms, tokens_per_second, mtp_stats, model_id, selected_variant_id, is_pinned, memory_refs, used_lorebook_entries, attachments, reasoning, parent_message_id, effective_at FROM messages WHERE session_id = ?1 ORDER BY created_at ASC",
-            params![id],
-            |r| {
-                Ok(json!({
-                    "id": r.get::<_, String>(0)?,
-                    "role": r.get::<_, String>(1)?,
-                    "content": r.get::<_, String>(2)?,
-                    "created_at": r.get::<_, i64>(3)?,
-                    "visible_in_chat": flag(r, 4)?,
-                    "scene_edited": flag(r, 5)?,
-                    "prompt_tokens": r.get::<_, Option<i64>>(6)?,
-                    "completion_tokens": r.get::<_, Option<i64>>(7)?,
-                    "total_tokens": r.get::<_, Option<i64>>(8)?,
-                    "first_token_ms": r.get::<_, Option<i64>>(9)?,
-                    "tokens_per_second": r.get::<_, Option<f64>>(10)?,
-                    "mtp_stats": r.get::<_, Option<String>>(11)?,
-                    "model_id": r.get::<_, Option<String>>(12)?,
-                    "selected_variant_id": r.get::<_, Option<String>>(13)?,
-                    "is_pinned": flag(r, 14)?,
-                    "memory_refs": r.get::<_, String>(15)?,
-                    "used_lorebook_entries": r.get::<_, String>(16)?,
-                    "attachments": r.get::<_, String>(17)?,
-                    "reasoning": r.get::<_, Option<String>>(18)?,
-                    "parent_message_id": r.get::<_, Option<String>>(19)?,
-                    "effective_at": r.get::<_, Option<i64>>(20)?,
-                }))
-            },
-        )?;
+        let mut messages = rows(connection, &message_sql, params![id], |r| {
+            Ok(json!({
+                "id": r.get::<_, String>(0)?,
+                "role": r.get::<_, String>(1)?,
+                "content": r.get::<_, String>(2)?,
+                "created_at": r.get::<_, i64>(3)?,
+                "visible_in_chat": flag(r, 4)?,
+                "scene_edited": flag(r, 5)?,
+                "prompt_tokens": r.get::<_, Option<i64>>(6)?,
+                "completion_tokens": r.get::<_, Option<i64>>(7)?,
+                "total_tokens": r.get::<_, Option<i64>>(8)?,
+                "first_token_ms": r.get::<_, Option<i64>>(9)?,
+                "tokens_per_second": r.get::<_, Option<f64>>(10)?,
+                "mtp_stats": r.get::<_, Option<String>>(11)?,
+                "model_id": r.get::<_, Option<String>>(12)?,
+                "selected_variant_id": r.get::<_, Option<String>>(13)?,
+                "is_pinned": flag(r, 14)?,
+                "memory_refs": r.get::<_, String>(15)?,
+                "used_lorebook_entries": r.get::<_, String>(16)?,
+                "attachments": r.get::<_, String>(17)?,
+                "reasoning": r.get::<_, Option<String>>(18)?,
+                "parent_message_id": r.get::<_, Option<String>>(19)?,
+                "effective_at": r.get::<_, Option<i64>>(20)?,
+            }))
+        })?;
         for message in &mut messages {
             let message_id = string_field(message, "id")?;
-            let variants = rows(
-                connection,
-                "SELECT id, content, created_at, prompt_tokens, completion_tokens, total_tokens, first_token_ms, tokens_per_second, mtp_stats, reasoning FROM message_variants WHERE message_id = ?1",
-                params![message_id],
-                |r| {
-                    Ok(json!({
-                        "id": r.get::<_, String>(0)?,
-                        "content": r.get::<_, String>(1)?,
-                        "created_at": r.get::<_, i64>(2)?,
-                        "prompt_tokens": r.get::<_, Option<i64>>(3)?,
-                        "completion_tokens": r.get::<_, Option<i64>>(4)?,
-                        "total_tokens": r.get::<_, Option<i64>>(5)?,
-                        "first_token_ms": r.get::<_, Option<i64>>(6)?,
-                        "tokens_per_second": r.get::<_, Option<f64>>(7)?,
-                        "mtp_stats": r.get::<_, Option<String>>(8)?,
-                        "reasoning": r.get::<_, Option<String>>(9)?,
-                    }))
-                },
-            )?;
+            let variants = rows(connection, &variant_sql, params![message_id], |r| {
+                Ok(json!({
+                    "id": r.get::<_, String>(0)?,
+                    "content": r.get::<_, String>(1)?,
+                    "created_at": r.get::<_, i64>(2)?,
+                    "prompt_tokens": r.get::<_, Option<i64>>(3)?,
+                    "completion_tokens": r.get::<_, Option<i64>>(4)?,
+                    "total_tokens": r.get::<_, Option<i64>>(5)?,
+                    "first_token_ms": r.get::<_, Option<i64>>(6)?,
+                    "tokens_per_second": r.get::<_, Option<f64>>(7)?,
+                    "mtp_stats": r.get::<_, Option<String>>(8)?,
+                    "reasoning": r.get::<_, Option<String>>(9)?,
+                }))
+            })?;
             message["variants"] = Value::Array(variants);
         }
         session["messages"] = Value::Array(messages);
@@ -961,6 +1073,18 @@ fn group_sessions(connection: &Connection) -> Result<Vec<Value>, LegacyDatabaseP
             }))
         },
     )?;
+    let message_sql = format!(
+        "SELECT {} FROM group_messages WHERE session_id = ?1 ORDER BY created_at ASC",
+        projection(connection, "group_messages", GROUP_MESSAGE_COLUMNS)?
+    );
+    let variant_sql = format!(
+        "SELECT {} FROM group_message_variants WHERE message_id = ?1 ORDER BY created_at ASC, rowid ASC",
+        projection(
+            connection,
+            "group_message_variants",
+            GROUP_MESSAGE_VARIANT_COLUMNS
+        )?
+    );
     for session in &mut sessions {
         let id = string_field(session, "id")?;
         let legacy = session["memory_embeddings"]
@@ -987,65 +1111,55 @@ fn group_sessions(connection: &Connection) -> Result<Vec<Value>, LegacyDatabaseP
                 }))
             },
         )?;
-        let mut messages = rows(
-            connection,
-            "SELECT id, role, content, speaker_character_id, turn_number, created_at, prompt_tokens, completion_tokens, total_tokens, first_token_ms, tokens_per_second, mtp_stats, selected_variant_id, is_pinned, attachments, used_lorebook_entries, memory_refs, reasoning, selection_reasoning, model_id, gemini_content, usage_json, parent_message_id FROM group_messages WHERE session_id = ?1 ORDER BY created_at ASC",
-            params![id],
-            |r| {
-                Ok(json!({
-                    "id": r.get::<_, String>(0)?,
-                    "role": r.get::<_, String>(1)?,
-                    "content": r.get::<_, String>(2)?,
-                    "speaker_character_id": r.get::<_, Option<String>>(3)?,
-                    "turn_number": r.get::<_, i64>(4)?,
-                    "created_at": r.get::<_, i64>(5)?,
-                    "prompt_tokens": r.get::<_, Option<i64>>(6)?,
-                    "completion_tokens": r.get::<_, Option<i64>>(7)?,
-                    "total_tokens": r.get::<_, Option<i64>>(8)?,
-                    "first_token_ms": r.get::<_, Option<i64>>(9)?,
-                    "tokens_per_second": r.get::<_, Option<f64>>(10)?,
-                    "mtp_stats": r.get::<_, Option<String>>(11)?,
-                    "selected_variant_id": r.get::<_, Option<String>>(12)?,
-                    "is_pinned": flag(r, 13)?,
-                    "attachments": r.get::<_, String>(14)?,
-                    "used_lorebook_entries": r.get::<_, String>(15)?,
-                    "memory_refs": r.get::<_, String>(16)?,
-                    "reasoning": r.get::<_, Option<String>>(17)?,
-                    "selection_reasoning": r.get::<_, Option<String>>(18)?,
-                    "model_id": r.get::<_, Option<String>>(19)?,
-                    "gemini_content": r.get::<_, Option<String>>(20)?,
-                    "usage_json": r.get::<_, Option<String>>(21)?,
-                    "parent_message_id": r.get::<_, Option<String>>(22)?,
-                }))
-            },
-        )?;
+        let mut messages = rows(connection, &message_sql, params![id], |r| {
+            Ok(json!({
+                "id": r.get::<_, String>(0)?,
+                "role": r.get::<_, String>(1)?,
+                "content": r.get::<_, String>(2)?,
+                "speaker_character_id": r.get::<_, Option<String>>(3)?,
+                "turn_number": r.get::<_, i64>(4)?,
+                "created_at": r.get::<_, i64>(5)?,
+                "prompt_tokens": r.get::<_, Option<i64>>(6)?,
+                "completion_tokens": r.get::<_, Option<i64>>(7)?,
+                "total_tokens": r.get::<_, Option<i64>>(8)?,
+                "first_token_ms": r.get::<_, Option<i64>>(9)?,
+                "tokens_per_second": r.get::<_, Option<f64>>(10)?,
+                "mtp_stats": r.get::<_, Option<String>>(11)?,
+                "selected_variant_id": r.get::<_, Option<String>>(12)?,
+                "is_pinned": flag(r, 13)?,
+                "attachments": r.get::<_, String>(14)?,
+                "used_lorebook_entries": r.get::<_, String>(15)?,
+                "memory_refs": r.get::<_, String>(16)?,
+                "reasoning": r.get::<_, Option<String>>(17)?,
+                "selection_reasoning": r.get::<_, Option<String>>(18)?,
+                "model_id": r.get::<_, Option<String>>(19)?,
+                "gemini_content": r.get::<_, Option<String>>(20)?,
+                "usage_json": r.get::<_, Option<String>>(21)?,
+                "parent_message_id": r.get::<_, Option<String>>(22)?,
+            }))
+        })?;
         for message in &mut messages {
             let message_id = string_field(message, "id")?;
-            let variants = rows(
-                connection,
-                "SELECT id, content, speaker_character_id, created_at, prompt_tokens, completion_tokens, total_tokens, first_token_ms, tokens_per_second, mtp_stats, reasoning, selection_reasoning, model_id, attachments, gemini_content, usage_json FROM group_message_variants WHERE message_id = ?1",
-                params![message_id],
-                |r| {
-                    Ok(json!({
-                        "id": r.get::<_, String>(0)?,
-                        "content": r.get::<_, String>(1)?,
-                        "speaker_character_id": r.get::<_, Option<String>>(2)?,
-                        "created_at": r.get::<_, i64>(3)?,
-                        "prompt_tokens": r.get::<_, Option<i64>>(4)?,
-                        "completion_tokens": r.get::<_, Option<i64>>(5)?,
-                        "total_tokens": r.get::<_, Option<i64>>(6)?,
-                        "first_token_ms": r.get::<_, Option<i64>>(7)?,
-                        "tokens_per_second": r.get::<_, Option<f64>>(8)?,
-                        "mtp_stats": r.get::<_, Option<String>>(9)?,
-                        "reasoning": r.get::<_, Option<String>>(10)?,
-                        "selection_reasoning": r.get::<_, Option<String>>(11)?,
-                        "model_id": r.get::<_, Option<String>>(12)?,
-                        "attachments": r.get::<_, Option<String>>(13)?.unwrap_or_else(|| "[]".to_owned()),
-                        "gemini_content": r.get::<_, Option<String>>(14)?,
-                        "usage_json": r.get::<_, Option<String>>(15)?,
-                    }))
-                },
-            )?;
+            let variants = rows(connection, &variant_sql, params![message_id], |r| {
+                Ok(json!({
+                    "id": r.get::<_, String>(0)?,
+                    "content": r.get::<_, String>(1)?,
+                    "speaker_character_id": r.get::<_, Option<String>>(2)?,
+                    "created_at": r.get::<_, i64>(3)?,
+                    "prompt_tokens": r.get::<_, Option<i64>>(4)?,
+                    "completion_tokens": r.get::<_, Option<i64>>(5)?,
+                    "total_tokens": r.get::<_, Option<i64>>(6)?,
+                    "first_token_ms": r.get::<_, Option<i64>>(7)?,
+                    "tokens_per_second": r.get::<_, Option<f64>>(8)?,
+                    "mtp_stats": r.get::<_, Option<String>>(9)?,
+                    "reasoning": r.get::<_, Option<String>>(10)?,
+                    "selection_reasoning": r.get::<_, Option<String>>(11)?,
+                    "model_id": r.get::<_, Option<String>>(12)?,
+                    "attachments": r.get::<_, Option<String>>(13)?.unwrap_or_else(|| "[]".to_owned()),
+                    "gemini_content": r.get::<_, Option<String>>(14)?,
+                    "usage_json": r.get::<_, Option<String>>(15)?,
+                }))
+            })?;
             message["variants"] = Value::Array(variants);
         }
         session["participation"] = Value::Array(participation);
@@ -1630,6 +1744,50 @@ mod tests {
             plan.llm_metrics.metrics[1].message_source_id.as_deref(),
             Some("message-1")
         );
+        std::fs::remove_file(path).expect("remove fixture");
+    }
+
+    #[test]
+    fn optional_message_columns_an_older_install_lacks_read_as_legacy_defaults() {
+        let path = legacy_database();
+        let connection = Connection::open(&path).expect("open legacy database");
+        connection
+            .execute_batch(
+                "ALTER TABLE messages DROP COLUMN mtp_stats;
+                 ALTER TABLE messages DROP COLUMN model_id;
+                 ALTER TABLE messages DROP COLUMN first_token_ms;
+                 ALTER TABLE message_variants DROP COLUMN tokens_per_second;
+                 ALTER TABLE message_variants DROP COLUMN mtp_stats;
+                 ALTER TABLE group_messages DROP COLUMN usage_json;
+                 ALTER TABLE group_messages DROP COLUMN gemini_content;
+                 ALTER TABLE group_messages DROP COLUMN model_id;
+                 ALTER TABLE group_message_variants DROP COLUMN attachments;
+                 ALTER TABLE group_message_variants DROP COLUMN usage_json;",
+            )
+            .expect("drift the schema");
+        connection
+            .execute(
+                "INSERT INTO message_variants (id, message_id, content, created_at) VALUES ('variant-late', ?1, 'Late', 20), ('variant-early', ?1, 'Early', 10)",
+                [id(8)],
+            )
+            .expect("variants");
+        drop(connection);
+
+        let documents = read_legacy_database_documents(&path).expect("legacy documents");
+
+        let sessions = document_value(&documents, LegacyBackupDocumentKind::Sessions);
+        let message = &sessions[0]["messages"][0];
+        assert_eq!(message["mtp_stats"], Value::Null);
+        assert_eq!(message["model_id"], Value::Null);
+        assert_eq!(message["first_token_ms"], Value::Null);
+        let variants = message["variants"]
+            .as_array()
+            .expect("variants")
+            .iter()
+            .map(|variant| variant["id"].as_str().expect("variant id"))
+            .collect::<Vec<_>>();
+        assert_eq!(variants, vec!["variant-early", "variant-late"]);
+        assert_eq!(message["variants"][0]["tokens_per_second"], Value::Null);
         std::fs::remove_file(path).expect("remove fixture");
     }
 
