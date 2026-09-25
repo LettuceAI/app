@@ -39,20 +39,16 @@ impl OpenRouterCostEvidence {
         if response_id != Some(generation.generation_id.as_str())
             || generation.generation_id.trim().is_empty()
             || generation.model.trim().is_empty()
-            || !generation
-                .provider_name
-                .as_deref()
-                .is_some_and(|name| self.endpoint.matches_provider(name))
         {
             return Err(crate::UsageLedgerError::Invalid);
         }
         let mut billing = usage.clone();
         billing.input_tokens = generation
             .native_prompt_tokens
-            .ok_or(crate::UsageLedgerError::Invalid)?;
+            .unwrap_or(usage.input_tokens);
         billing.output_tokens = generation
             .native_completion_tokens
-            .ok_or(crate::UsageLedgerError::Invalid)?;
+            .unwrap_or(usage.output_tokens);
         billing.cached_input_tokens = generation
             .native_cached_tokens
             .or(usage.cached_input_tokens);
@@ -65,12 +61,22 @@ impl OpenRouterCostEvidence {
 }
 
 impl OpenRouterEndpointPricing {
+    /// Compares names by their ASCII letters and digits only, ignoring case,
+    /// so `Deep Infra` matches `deepinfra`.
     pub(crate) fn matches_provider(&self, name: &str) -> bool {
-        !name.trim().is_empty()
-            && (self.provider_name.trim().eq_ignore_ascii_case(name.trim())
+        let target = normalized_provider_name(name);
+        !target.is_empty()
+            && (normalized_provider_name(&self.provider_name) == target
                 || self
                     .provider_display_name
                     .as_deref()
-                    .is_some_and(|display| display.trim().eq_ignore_ascii_case(name.trim())))
+                    .is_some_and(|display| normalized_provider_name(display) == target))
     }
+}
+
+fn normalized_provider_name(name: &str) -> String {
+    name.chars()
+        .filter(char::is_ascii_alphanumeric)
+        .map(|character| character.to_ascii_lowercase())
+        .collect()
 }

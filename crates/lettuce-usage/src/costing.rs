@@ -73,61 +73,46 @@ impl UsageCostBasis {
         if provider_response_id.as_deref() != Some(generation.generation_id.as_str()) {
             return Err(UsageLedgerError::Invalid);
         }
-        let Some(provider) = generation.provider_name.as_deref() else {
+        let matched = generation.provider_name.as_deref().and_then(|provider| {
+            endpoints
+                .iter()
+                .find(|endpoint| endpoint.matches_provider(provider))
+        });
+        let Some(endpoint) = matched.or_else(|| endpoints.first()) else {
             return Ok(None);
         };
-        let mut matches = endpoints
-            .iter()
-            .filter(|endpoint| endpoint.matches_provider(provider));
-        let Some(endpoint) = matches.next() else {
-            return Ok(None);
-        };
-        if matches.next().is_some()
-            || generation.native_prompt_tokens.is_none()
-            || generation.native_completion_tokens.is_none()
-        {
-            return Ok(None);
-        }
+        let fallback = matched.is_none();
         let evidence = crate::OpenRouterCostEvidence {
             generation,
             endpoint: endpoint.clone(),
         };
         let billing = evidence.billing_usage(provider_response_id.as_deref(), usage)?;
-        let (
-            Some(cached_prompt_tokens),
-            Some(cache_write_tokens),
-            Some(reasoning_tokens),
-            Some(web_search_requests),
-        ) = (
-            billing.cached_input_tokens,
-            billing.cache_write_tokens,
-            billing.reasoning_tokens,
-            billing.web_search_requests,
-        )
-        else {
-            return Ok(None);
-        };
         let basis = Self {
             model_profile_id: event.model_profile_id,
             provider_account_id: event.provider_account_id,
             source: format!(
-                "OpenRouter generation {} endpoint {}",
+                "OpenRouter generation {} endpoint {}{}",
                 evidence.generation.generation_id,
                 evidence
                     .endpoint
                     .tag
                     .as_deref()
-                    .unwrap_or(&evidence.endpoint.provider_name)
+                    .unwrap_or(&evidence.endpoint.provider_name),
+                if fallback {
+                    " (first provider fallback)"
+                } else {
+                    ""
+                }
             ),
             captured_at,
             pricing: endpoint.pricing.clone(),
             input: OpenRouterCostInput {
                 prompt_tokens: billing.input_tokens,
                 completion_tokens: billing.output_tokens,
-                cached_prompt_tokens,
-                cache_write_tokens,
-                reasoning_tokens,
-                web_search_requests,
+                cached_prompt_tokens: billing.cached_input_tokens.unwrap_or(0),
+                cache_write_tokens: billing.cache_write_tokens.unwrap_or(0),
+                reasoning_tokens: billing.reasoning_tokens.unwrap_or(0),
+                web_search_requests: billing.web_search_requests.unwrap_or(0),
                 authoritative_total_cost: billing.provider_reported_cost.map(|cost| cost.get()),
             },
             openrouter: Some(evidence),

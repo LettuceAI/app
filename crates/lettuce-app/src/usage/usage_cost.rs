@@ -418,9 +418,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn missing_or_ambiguous_billing_inputs_leave_no_cost_and_can_retry() {
+    async fn missing_billing_inputs_fall_back_like_legacy_and_unfetched_generations_retry() {
         let db = Database::open_in_memory().expect("billing scenario");
-        let (event, mut billing) = fixture(&db);
+        let (event, billing) = fixture(&db);
         let original = billing.generation.lock().expect("generation lock").clone();
         *billing.generation.lock().expect("generation lock") = Ok(None);
         assert!(
@@ -441,48 +441,54 @@ mod tests {
             ))
         ));
         *billing.generation.lock().expect("generation lock") = original.clone();
-        billing.endpoints.push(billing.endpoints[1].clone());
-        assert!(
-            UsageCostCoordinator::new(&db, &billing)
-                .capture_job(event.job_id, event.id, TimestampMillis::new(2))
-                .await
-                .expect("billing scenario")
-                .is_none()
-        );
-        billing.endpoints.pop();
         let generation = original
             .expect("billing scenario")
             .expect("billing scenario");
-        for field in 0..5 {
+        let mut duplicated = billing.endpoints.clone();
+        duplicated.push(OpenRouterEndpointPricing {
+            tag: Some("routed/duplicate".into()),
+            ..billing.endpoints[1].clone()
+        });
+        let basis = UsageCostBasis::from_openrouter_job(
+            &event,
+            generation.clone(),
+            &duplicated,
+            TimestampMillis::new(2),
+        )
+        .expect("billing scenario")
+        .expect("legacy find_openrouter_provider_pricing takes the first matching endpoint");
+        assert_eq!(
+            basis.openrouter.expect("billing scenario").endpoint.tag,
+            Some("routed/fp8".into())
+        );
+        for field in 0..3 {
             let mut changed = generation.clone();
             match field {
                 0 => changed.provider_name = None,
                 1 => changed.provider_name = Some("Unknown".into()),
-                2 => changed.native_prompt_tokens = None,
-                3 => changed.native_completion_tokens = None,
-                _ => changed.native_cached_tokens = None,
+                _ => changed.provider_name = Some("r-o-u-t-e-d".into()),
             }
-            let mut record = event.clone();
-            if let Some(JobInferenceUsageResult::Response {
-                usage: Some(usage), ..
-            }) = &mut record.result
-            {
-                if field == 4 {
-                    usage.cached_input_tokens = None;
-                }
-            }
-            assert!(
-                UsageCostBasis::from_openrouter_job(
-                    &record,
-                    changed,
-                    &billing.endpoints,
-                    TimestampMillis::new(2)
+            let basis = UsageCostBasis::from_openrouter_job(
+                &event,
+                changed,
+                &billing.endpoints,
+                TimestampMillis::new(2),
+            )
+            .expect("billing scenario")
+            .expect("legacy service.rs falls back to the first provider's pricing");
+            assert_eq!(
+                basis.openrouter.expect("billing scenario").endpoint.tag,
+                Some(
+                    if field == 2 {
+                        "routed/fp8"
+                    } else {
+                        "unrelated"
+                    }
+                    .into()
                 )
-                .expect("billing scenario")
-                .is_none()
             );
         }
-        for field in 0..3 {
+        for field in 0..5 {
             let mut record = event.clone();
             let mut generation = generation.clone();
             if let Some(JobInferenceUsageResult::Response {
@@ -492,23 +498,40 @@ mod tests {
                 match field {
                     0 => usage.cache_write_tokens = None,
                     1 => usage.web_search_requests = None,
-                    _ => {
+                    2 => {
                         usage.reasoning_tokens = None;
                         generation.native_reasoning_tokens = None;
                     }
+                    3 => generation.native_prompt_tokens = None,
+                    _ => generation.native_completion_tokens = None,
                 }
             }
-            assert!(
-                UsageCostBasis::from_openrouter_job(
-                    &record,
-                    generation,
-                    &billing.endpoints,
-                    TimestampMillis::new(2)
-                )
-                .expect("billing scenario")
-                .is_none()
-            );
+            let basis = UsageCostBasis::from_openrouter_job(
+                &record,
+                generation,
+                &billing.endpoints,
+                TimestampMillis::new(2),
+            )
+            .expect("billing scenario")
+            .expect("legacy service.rs counts a missing auxiliary count as zero");
+            match field {
+                0 => assert_eq!(basis.input.cache_write_tokens, 0),
+                1 => assert_eq!(basis.input.web_search_requests, 0),
+                2 => assert_eq!(basis.input.reasoning_tokens, 0),
+                _ => {}
+            }
+            assert!(basis.calculate_job(&record).is_ok());
         }
+        assert!(
+            UsageCostBasis::from_openrouter_job(
+                &event,
+                generation.clone(),
+                &[],
+                TimestampMillis::new(2)
+            )
+            .expect("billing scenario")
+            .is_none()
+        );
         assert!(
             db.get_job_cost(event.id)
                 .expect("billing scenario")
