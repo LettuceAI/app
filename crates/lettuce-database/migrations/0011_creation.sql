@@ -165,6 +165,15 @@ BEGIN
     SELECT RAISE(ABORT, 'creation character apply receipts are immutable');
 END;
 
+-- A receipt outlives its character, so the character is required only when
+-- the receipt is written.
+CREATE TRIGGER creation_character_apply_receipts_require_character
+BEFORE INSERT ON creation_character_apply_receipts
+WHEN NOT EXISTS (SELECT 1 FROM characters WHERE id = NEW.character_id)
+BEGIN
+    SELECT RAISE(ABORT, 'creation character apply receipt requires its character');
+END;
+
 CREATE TRIGGER creation_character_apply_receipts_immutable_delete
 BEFORE DELETE ON creation_character_apply_receipts
 BEGIN

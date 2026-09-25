@@ -239,6 +239,26 @@ fn load_character_apply_receipt(
         .map_err(storage)
 }
 
+/// A replayed apply names a character that may have been deleted since; the
+/// replay then reports it as not found.
+fn applied_character_exists(
+    connection: &Connection,
+    character_id: lettuce_types::CharacterId,
+) -> Result<(), CreationRepositoryError> {
+    let exists: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM characters WHERE id = ?1)",
+            [character_id.to_string()],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    if exists {
+        Ok(())
+    } else {
+        Err(CreationRepositoryError::NotFound)
+    }
+}
+
 fn insert_character_apply_receipt(
     transaction: &Transaction<'_>,
     receipt: &CreationCharacterApplyReceipt,
@@ -1297,6 +1317,7 @@ impl CreationApplyRepository for Database {
                 && receipt.proposal_id == request.proposal_id
                 && receipt.character_id == request.destination_character_id
             {
+                applied_character_exists(&transaction, receipt.character_id)?;
                 transaction.commit().map_err(storage)?;
                 return Ok(receipt);
             }
@@ -1414,6 +1435,7 @@ impl CreationApplyRepository for Database {
                 && receipt.character_id == request.character_id
                 && receipt.character_revision == expected_result_revision
             {
+                applied_character_exists(&transaction, receipt.character_id)?;
                 transaction.commit().map_err(storage)?;
                 return Ok(receipt);
             }
