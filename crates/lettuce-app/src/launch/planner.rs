@@ -230,13 +230,6 @@ where
         let scene_text = scene
             .value()
             .and_then(|value| policy::resolve_scene_text(value, &character.variants));
-        let planned_entries = usize::from(scene_text.is_some())
-            + starter.value().map_or(0, |value| value.messages.len());
-        if policy::timeline_bound_exceeded(planned_entries) {
-            return Err(ConversationLaunchError::TooManyInitialMessages {
-                max: policy::MAX_LAUNCH_TIMELINE_ENTRIES,
-            });
-        }
         let persona = self.resolve_persona(request.persona)?;
         let companion_persona_id = persona.value().map(|value| value.id);
         let global_settings =
@@ -275,11 +268,6 @@ where
         }
         for id in persona_lorebooks.value().into_iter().flatten() {
             requested.register(*id);
-        }
-        if policy::lorebook_bound_exceeded(requested.ordered().len()) {
-            return Err(ConversationLaunchError::TooManyLorebooks {
-                max: policy::MAX_LAUNCH_LOREBOOKS,
-            });
         }
         let authored: HashSet<LorebookId> = match &conversation_lorebooks {
             Selected::Explicit(ids) => ids.iter().copied().collect(),
@@ -870,11 +858,6 @@ where
                     min: policy::MIN_GROUP_MEMBERS,
                 });
             }
-            policy::MemberShape::TooMany => {
-                return Err(ConversationLaunchError::TooManyMembers {
-                    max: policy::MAX_GROUP_MEMBERS,
-                });
-            }
             policy::MemberShape::AllMuted => {
                 return Err(ConversationLaunchError::AllMembersMuted { group_id });
             }
@@ -958,17 +941,6 @@ where
                 .collect()
         };
         let mut persona_lorebooks = persona.with(policy::enabled_lorebooks(&persona_bindings));
-        for scope in [group_lorebooks.value(), persona_lorebooks.value()]
-            .into_iter()
-            .flatten()
-            .chain(member_lorebooks.iter().filter_map(Selected::value))
-        {
-            if policy::lorebook_bound_exceeded(scope.len()) {
-                return Err(ConversationLaunchError::TooManyLorebooks {
-                    max: policy::MAX_LAUNCH_LOREBOOKS,
-                });
-            }
-        }
 
         let mut requested = LorebookRegistry::default();
         for id in group_lorebooks
@@ -984,11 +956,6 @@ where
             .chain(persona_lorebooks.value().into_iter().flatten())
         {
             requested.register(*id);
-        }
-        if policy::lorebook_bound_exceeded(requested.ordered().len()) {
-            return Err(ConversationLaunchError::TooManyLorebooks {
-                max: policy::MAX_LAUNCH_LOREBOOKS,
-            });
         }
         let books = self.load_lorebooks(requested.ordered(), &HashSet::new())?;
         let kept: Vec<LorebookId> = books.iter().map(|book| book.book.id).collect();

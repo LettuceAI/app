@@ -55,8 +55,6 @@ pub enum ConversationLaunchError {
     MemberCharacterArchived { character_id: CharacterId },
     #[error("a group launch needs at least {min} members")]
     TooFewMembers { min: usize },
-    #[error("a group launch holds at most {max} members")]
-    TooManyMembers { max: usize },
     #[error("group {group_id} has no unmuted member")]
     AllMembersMuted { group_id: GroupId },
     #[error("scene {scene_id} was not found")]
@@ -106,10 +104,6 @@ pub enum ConversationLaunchError {
     },
     #[error("model profile {model_profile_id} is not a chat model")]
     NonChatModel { model_profile_id: ModelProfileId },
-    #[error("the launch resolves more than {max} lorebooks")]
-    TooManyLorebooks { max: usize },
-    #[error("the launch would open with more than {max} messages")]
-    TooManyInitialMessages { max: usize },
     #[error("launch source {changed:?} changed while the launch was being planned")]
     SourceChanged { changed: SnapshotSource },
     #[error("conversation {conversation_id} was already launched with this operation key")]

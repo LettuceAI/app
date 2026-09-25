@@ -11,8 +11,7 @@ use crate::snapshot::{
     ModelSelectionSnapshot, SnapshotSelection,
 };
 use crate::validation::{
-    MAX_DISPLAY_CHARS, MAX_LOREBOOKS, MAX_PARTICIPANTS, validate_collection,
-    validate_revision_timestamps, validate_text, validate_unique,
+    MAX_DISPLAY_CHARS, validate_revision_timestamps, validate_text, validate_unique,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -279,7 +278,6 @@ impl CurrentConversationSettings {
                     field: "conversation_settings.lorebooks",
                 });
             }
-            validate_collection("conversation_settings.lorebooks", lorebooks, MAX_LOREBOOKS)?;
             validate_unique(
                 "conversation_settings.lorebook_ids",
                 lorebooks.iter().map(|book| book.source_id),
@@ -465,11 +463,6 @@ impl Conversation {
             false,
         )?;
         self.kind.validate()?;
-        validate_collection(
-            "conversation.participants",
-            &self.participants,
-            MAX_PARTICIPANTS,
-        )?;
         validate_unique(
             "conversation.participant_ids",
             self.participants.iter().map(|participant| participant.id),
@@ -624,11 +617,6 @@ pub struct ConversationAggregate {
 impl ConversationAggregate {
     pub fn validate(&self) -> Result<(), ValidationError> {
         self.conversation.validate()?;
-        validate_collection(
-            "conversation.branches",
-            &self.branches,
-            crate::validation::MAX_BRANCHES,
-        )?;
         validate_unique(
             "conversation.branch_ids",
             self.branches.iter().map(|branch| branch.id),
@@ -711,11 +699,6 @@ impl ConversationHistory {
         &self,
         participants: &[ConversationParticipant],
     ) -> Result<(), ValidationError> {
-        validate_collection(
-            "conversation_history.branches",
-            &self.branches,
-            crate::validation::MAX_BRANCHES,
-        )?;
         if self.branches.is_empty() {
             return Err(ValidationError::Invariant {
                 field: "conversation_history.branches",
@@ -782,24 +765,12 @@ impl ConversationHistory {
                 field: "conversation_history.fork",
             });
         }
-        if self.items.len() > crate::validation::MAX_PARTS * 32 {
-            return Err(ValidationError::TooMany {
-                field: "conversation_history.items",
-                max: crate::validation::MAX_PARTS * 32,
-            });
-        }
         let participant_by_id: std::collections::HashMap<_, _> = participants
             .iter()
             .map(|participant| (participant.id, participant))
             .collect();
         let participant_ids: std::collections::HashSet<_> =
             participant_by_id.keys().copied().collect();
-        if self.turns.len() > crate::validation::MAX_ATTEMPTS * 32 {
-            return Err(ValidationError::TooMany {
-                field: "conversation_history.turns",
-                max: crate::validation::MAX_ATTEMPTS * 32,
-            });
-        }
         validate_unique(
             "conversation_history.turn_ids",
             self.turns.iter().map(|turn| turn.id),

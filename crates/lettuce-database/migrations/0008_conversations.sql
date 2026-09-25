@@ -221,8 +221,6 @@ CREATE TABLE conversation_turns (
         json_valid(prompt_entry_ids_json)
         AND json_extract(prompt_entry_ids_json, '$.format_version') = 1
         AND json_type(prompt_entry_ids_json, '$.value') = 'array'
-        AND json_array_length(json_extract(prompt_entry_ids_json, '$.value')) <= 10000
-        AND length(CAST(prompt_entry_ids_json AS BLOB)) <= 1048576
     )),
     memory_revision_id TEXT,
     selected_candidate_id TEXT,
@@ -687,8 +685,6 @@ CREATE TABLE turn_lorebooks (
         json_valid(activated_entry_ids_json)
         AND json_extract(activated_entry_ids_json, '$.format_version') = 1
         AND json_type(activated_entry_ids_json, '$.value') = 'array'
-        AND json_array_length(json_extract(activated_entry_ids_json, '$.value')) <= 10000
-        AND length(CAST(activated_entry_ids_json AS BLOB)) <= 1048576
     ),
     PRIMARY KEY (conversation_id, turn_id, lorebook_id),
     UNIQUE (conversation_id, turn_id, ordinal),

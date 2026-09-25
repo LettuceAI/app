@@ -12,8 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::ValidationError;
 use crate::validation::{
-    MAX_AUTHORED_TEXT_BYTES, MAX_DISPLAY_CHARS, MAX_LOREBOOKS, MAX_PARTICIPANTS, MAX_PARTS,
-    validate_collection, validate_text, validate_unique,
+    MAX_AUTHORED_TEXT_BYTES, MAX_DISPLAY_CHARS, validate_text, validate_unique,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -457,7 +456,6 @@ impl ValidateSnapshot for MemorySettingsSnapshot {
         if self.mode != MemoryModeSnapshot::Dynamic && self.dynamic_policy.is_some() {
             return Err(ValidationError::InvalidReference { field });
         }
-        validate_collection(field, &self.selected_revision_ids, MAX_PARTS)?;
         validate_unique(field, self.selected_revision_ids.iter().copied())?;
         if let Some(policy) = &self.dynamic_policy {
             policy.validate()?;
@@ -629,7 +627,6 @@ impl GroupLaunchSnapshot {
             return Err(ValidationError::ZeroRevision);
         }
         validate_text("group.name", &self.name, MAX_DISPLAY_CHARS * 4, false)?;
-        validate_collection("group.members", &self.members, MAX_PARTICIPANTS)?;
         if self.members.len() < 2 {
             return Err(ValidationError::Invariant {
                 field: "group.members.minimum",
@@ -692,7 +689,6 @@ fn validate_lorebook_values(
     books: &[LorebookLaunchSnapshot],
     field: &'static str,
 ) -> Result<(), ValidationError> {
-    validate_collection(field, books, MAX_LOREBOOKS)?;
     validate_unique(field, books.iter().map(|book| book.source_id))?;
     for book in books {
         book.validate_snapshot(field)?;
@@ -782,11 +778,6 @@ impl GroupParticipantPolicyDocument {
                 field: "group.participant_policy.metadata",
             });
         }
-        validate_collection(
-            "group.participant_policy.members",
-            &self.members,
-            MAX_PARTICIPANTS,
-        )?;
         validate_unique(
             "group.participant_policy.participants",
             self.members.iter().map(|member| member.participant_id),

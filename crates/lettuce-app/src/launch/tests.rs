@@ -10714,18 +10714,11 @@ fn an_image_application_default_model_is_rejected() {
 }
 
 #[test]
-fn the_resolved_lorebook_set_is_bounded_before_loading() {
-    assert!(!policy::lorebook_bound_exceeded(
-        policy::MAX_LAUNCH_LOREBOOKS
-    ));
-    assert!(policy::lorebook_bound_exceeded(
-        policy::MAX_LAUNCH_LOREBOOKS + 1
-    ));
-
+fn a_launch_resolves_any_number_of_lorebooks_like_legacy() {
     let database = database();
     let character_id = plain_character(&database);
     let mut revision = Revision::INITIAL;
-    for index in 0..policy::MAX_LAUNCH_LOREBOOKS {
+    for index in 0..129 {
         let book = seed_lorebook(&database, &format!("Book {index}"));
         revision = CharacterLorebookBindingRepository::bind_character_lorebook(
             &database,
@@ -10740,89 +10733,29 @@ fn the_resolved_lorebook_set_is_bounded_before_loading() {
         .expect("bind")
         .owner_revision;
     }
-    assert!(
-        ConversationLaunchPlanner::new(&database)
-            .prepare_direct(&request(character_id, "lorebooks-at-bound"))
-            .is_ok()
-    );
-
-    let overflow = seed_lorebook(&database, "Book overflow");
-    CharacterLorebookBindingRepository::bind_character_lorebook(
-        &database,
-        character_id,
-        revision,
-        LorebookBindingCreate {
-            lorebook_id: overflow,
-            target: BindingInsertionTarget::Append,
-        },
-        NOW,
-    )
-    .expect("bind overflow");
-    assert_eq!(
-        ConversationLaunchPlanner::new(&database)
-            .prepare_direct(&request(character_id, "lorebooks-over-bound"))
-            .expect_err("lorebook bound"),
-        ConversationLaunchError::TooManyLorebooks {
-            max: policy::MAX_LAUNCH_LOREBOOKS
-        }
-    );
+    ConversationLaunchPlanner::new(&database)
+        .prepare_direct(&request(character_id, "lorebooks-past-old-bound"))
+        .expect("more than 128 lorebooks launch");
 }
 
 #[test]
-fn the_initial_timeline_is_bounded_before_building() {
-    assert!(!policy::timeline_bound_exceeded(
-        policy::MAX_LAUNCH_TIMELINE_ENTRIES
-    ));
-    assert!(policy::timeline_bound_exceeded(
-        policy::MAX_LAUNCH_TIMELINE_ENTRIES + 1
-    ));
-
+fn a_starter_opens_with_any_number_of_messages_like_legacy() {
     let database = database();
-    let at_bound = starter_with(
+    let long = starter_with(
         CharacterId::new(),
         0,
-        "At bound",
-        (0..policy::MAX_LAUNCH_TIMELINE_ENTRIES)
+        "Long",
+        (0..513)
             .map(|_| message(StarterRole::Assistant, "Line."))
             .collect(),
     );
-    let over_bound = starter_with(
-        CharacterId::new(),
-        1,
-        "Over bound",
-        (0..=policy::MAX_LAUNCH_TIMELINE_ENTRIES)
-            .map(|_| message(StarterRole::Assistant, "Line."))
-            .collect(),
-    );
-    let at_bound_id = at_bound.id;
-    let over_bound_id = over_bound.id;
-    let character_id = seed_character(
-        &database,
-        Vec::new(),
-        Vec::new(),
-        vec![at_bound, over_bound],
-        |_| {},
-    );
+    let long_id = long.id;
+    let character_id = seed_character(&database, Vec::new(), Vec::new(), vec![long], |_| {});
     let plan = plan_for(
         &database,
-        &request_with_starter(character_id, "timeline-at-bound", at_bound_id),
+        &request_with_starter(character_id, "timeline-past-old-bound", long_id),
     );
-    assert_eq!(
-        plan.initial_timeline.entries.len(),
-        policy::MAX_LAUNCH_TIMELINE_ENTRIES
-    );
-    assert_eq!(
-        ConversationLaunchPlanner::new(&database)
-            .prepare_direct(&request_with_starter(
-                character_id,
-                "timeline-over-bound",
-                over_bound_id
-            ))
-            .expect_err("timeline bound"),
-        ConversationLaunchError::TooManyInitialMessages {
-            max: policy::MAX_LAUNCH_TIMELINE_ENTRIES
-        }
-    );
+    assert_eq!(plan.initial_timeline.entries.len(), 513);
 }
 
 #[test]
@@ -11401,18 +11334,12 @@ fn a_group_needs_two_members_and_one_unmuted_member() {
         policy::member_shape(&[muted_first, member(second, 1)]),
         policy::MemberShape::Launchable
     );
-    let at_bound: Vec<GroupMember> = (0..policy::MAX_GROUP_MEMBERS)
+    let large_cast: Vec<GroupMember> = (0..300)
         .map(|ordinal| member(CharacterId::new(), ordinal as u32))
         .collect();
     assert_eq!(
-        policy::member_shape(&at_bound),
+        policy::member_shape(&large_cast),
         policy::MemberShape::Launchable
-    );
-    let mut over_bound = at_bound;
-    over_bound.push(member(CharacterId::new(), policy::MAX_GROUP_MEMBERS as u32));
-    assert_eq!(
-        policy::member_shape(&over_bound),
-        policy::MemberShape::TooMany
     );
 }
 
@@ -12118,12 +12045,12 @@ fn a_companion_member_character_joins_as_a_normal_member() {
 }
 
 #[test]
-fn member_lorebook_scopes_are_bounded_in_aggregate() {
+fn member_lorebook_scopes_have_no_aggregate_count_limit() {
     let backend = backend();
     let database = backend.database();
     let first = seed_named_character(database, "Ada");
     let second = seed_named_character(database, "Bea");
-    let per_member = policy::MAX_LAUNCH_LOREBOOKS / 2 + 1;
+    let per_member = 65;
     for (slot, character_id) in [first, second].into_iter().enumerate() {
         let mut revision = Revision::INITIAL;
         for index in 0..per_member {
@@ -12142,22 +12069,15 @@ fn member_lorebook_scopes_are_bounded_in_aggregate() {
             .owner_revision;
         }
     }
-    assert!(!policy::lorebook_bound_exceeded(per_member));
-    assert!(policy::lorebook_bound_exceeded(per_member * 2));
     let group_id = seed_group(
         database,
         vec![member(first, 0), member(second, 1)],
         None,
         |_| {},
     );
-    assert_eq!(
-        ConversationLaunchPlanner::new(database)
-            .prepare_group(&group_request(group_id, "group-books-aggregate"), NOW)
-            .expect_err("aggregate lorebook bound"),
-        ConversationLaunchError::TooManyLorebooks {
-            max: policy::MAX_LAUNCH_LOREBOOKS
-        }
-    );
+    ConversationLaunchPlanner::new(database)
+        .prepare_group(&group_request(group_id, "group-books-aggregate"), NOW)
+        .expect("130 member lorebooks launch");
 }
 
 #[test]

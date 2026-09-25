@@ -14,9 +14,7 @@ use crate::snapshot::{
     LorebookLaunchSnapshot, ModelSelectionSnapshot, PersonaLaunchSnapshot, PromptLaunchSnapshot,
     ProtectedSnapshotRef, SceneLaunchSnapshot, ValidateSnapshot,
 };
-use crate::validation::{
-    MAX_LOREBOOKS, MAX_PARTS, validate_collection, validate_text, validate_unique,
-};
+use crate::validation::{validate_text, validate_unique};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -141,7 +139,6 @@ impl InitialTimelineDraft {
                 version: self.format_version,
             });
         }
-        validate_collection("initial_timeline.entries", &self.entries, 512)?;
         let mut messages = std::collections::HashSet::new();
         let mut revisions = std::collections::HashSet::new();
         let mut starters = std::collections::HashSet::new();
@@ -206,7 +203,6 @@ impl InitialTimelineDraft {
                     snapshot_ref.validate()?;
                 }
             }
-            validate_collection("initial_timeline.parts", &entry.parts, MAX_PARTS)?;
             for part in &entry.parts {
                 part.validate()?;
             }
@@ -225,11 +221,6 @@ impl CreateConversationPlan {
         )?;
         self.kind.validate()?;
         self.initial_timeline.validate()?;
-        validate_collection(
-            "conversation_plan.participants",
-            &self.participants,
-            crate::validation::MAX_PARTICIPANTS,
-        )?;
         for participant in &self.participants {
             participant.validate()?;
         }
@@ -476,7 +467,6 @@ pub struct MessageDraft {
 
 impl MessageDraft {
     pub fn validate(&self) -> Result<(), ValidationError> {
-        validate_collection("message_draft.parts", &self.parts, MAX_PARTS)?;
         for part in &self.parts {
             part.validate()?;
         }
@@ -719,7 +709,6 @@ pub struct MessageEditDraft {
 
 impl MessageEditDraft {
     pub fn validate(&self) -> Result<(), ValidationError> {
-        validate_collection("message_edit.parts", &self.parts, MAX_PARTS)?;
         for part in &self.parts {
             part.validate()?;
         }
@@ -1043,7 +1032,6 @@ impl CurrentConversationSettingsPatch {
                     field: "conversation_settings.lorebooks",
                 });
             }
-            validate_collection("conversation_settings.lorebooks", lorebooks, MAX_LOREBOOKS)?;
             validate_unique(
                 "conversation_settings.lorebook_ids",
                 lorebooks.iter().map(|book| book.source_id),

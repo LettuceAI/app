@@ -1091,6 +1091,142 @@ async fn app_backend_worker_executes_one_durable_generation_job() {
 }
 
 #[tokio::test]
+async fn a_chat_with_a_ten_thousand_entry_lorebook_and_129_lorebooks_runs_a_turn() {
+    let path = std::env::temp_dir().join(format!(
+        "lettuce-large-lorebook-{}.db",
+        ConversationId::new()
+    ));
+    let backend = AppBackend::open(&path, TimestampMillis::new(1)).expect("backend");
+    let database = backend.database();
+    let lorebook = LorebookRepository::create(
+        database,
+        LorebookMetadataDraft {
+            name: "Atlas".into(),
+            detection_policy: DetectionPolicy::RecentMessageWindow,
+            icon_asset_id: None,
+            behavior_version: LorebookBehaviorVersion::LegacyV1,
+        },
+        (0..10_001)
+            .map(|index| lettuce_context::LorebookEntryDraft {
+                title: format!("Entry {index}"),
+                enabled: true,
+                always_active: false,
+                keywords: vec!["tea".into()],
+                case_sensitive: false,
+                match_mode: lettuce_context::KeywordMatchMode::Literal,
+                content: format!("Atlas fact {index}."),
+                priority: 0,
+            })
+            .collect(),
+        TimestampMillis::new(1),
+    )
+    .expect("large lorebook");
+    let persona_id = seed_persona(database, "Traveller");
+    let mut revision = PersonaLorebookBindingRepository::bind_persona_lorebook(
+        database,
+        persona_id,
+        Revision::INITIAL,
+        LorebookBindingCreate {
+            lorebook_id: lorebook.book.id,
+            target: BindingInsertionTarget::Append,
+        },
+        NOW,
+    )
+    .expect("bind lorebook")
+    .owner_revision;
+    for index in 0..129 {
+        let small = LorebookRepository::create(
+            database,
+            LorebookMetadataDraft {
+                name: format!("Shelf {index}"),
+                detection_policy: DetectionPolicy::RecentMessageWindow,
+                icon_asset_id: None,
+                behavior_version: LorebookBehaviorVersion::LegacyV1,
+            },
+            vec![lettuce_context::LorebookEntryDraft {
+                title: format!("Shelf {index}"),
+                enabled: true,
+                always_active: true,
+                keywords: Vec::new(),
+                case_sensitive: false,
+                match_mode: lettuce_context::KeywordMatchMode::Literal,
+                content: format!("Shelf note {index}."),
+                priority: 0,
+            }],
+            TimestampMillis::new(1),
+        )
+        .expect("small lorebook");
+        revision = PersonaLorebookBindingRepository::bind_persona_lorebook(
+            database,
+            persona_id,
+            revision,
+            LorebookBindingCreate {
+                lorebook_id: small.book.id,
+                target: BindingInsertionTarget::Append,
+            },
+            NOW,
+        )
+        .expect("bind small lorebook")
+        .owner_revision;
+    }
+    let default_revision = PersonaRepository::get_default_snapshot(database)
+        .expect("default persona")
+        .state
+        .revision;
+    PersonaRepository::set_default(database, persona_id, default_revision, NOW)
+        .expect("default persona");
+    let scenario = direct_scenario(database, false, "large-lorebook", true, false);
+    let turn = ConversationReader::get_turn(database, scenario.turn_id).expect("scheduled turn");
+    let generation = BeginGeneration {
+        conversation: ConversationReader::get(database, scenario.conversation_id)
+            .expect("scheduled conversation")
+            .conversation,
+        attempt: turn.attempts[0].clone(),
+        turn,
+    };
+    backend
+        .conversation_generation_dispatcher()
+        .schedule(&generation, TimestampMillis::new(1_020))
+        .expect("schedule generation");
+    let inference = scripted(vec![text_outcome("atlas", "Noted.", 12, 3)]);
+    let engine = ScenarioEmbeddingEngine;
+    let clock = FakeClock::new(TimestampMillis::new(1_022));
+    let outcome = backend
+        .prepared_conversation_generation_runner(&engine, &inference)
+        .execute_next(
+            ConversationGenerationWorkerRequest {
+                worker_id: WorkerId::new(),
+                lease_for: LEASE,
+                resources: ResourceAvailability::all(),
+            },
+            &clock,
+        )
+        .await
+        .expect("execute generation");
+    let ConversationGenerationWorkerOutcome::Executed(outcome) = outcome else {
+        panic!("worker executes the turn");
+    };
+    assert!(
+        matches!(
+            *outcome,
+            ConversationGenerationExecutionOutcome::Settled(
+                ConversationGenerationSettledWork::Succeeded { .. }
+            )
+        ),
+        "{outcome:?}"
+    );
+    let requests = inference.requests.lock().expect("requests");
+    assert_eq!(requests.len(), 1);
+    let sent = format!("{:?}", requests[0]);
+    assert!(sent.contains("Atlas fact 0."));
+    assert!(sent.contains("Atlas fact 10000."));
+    assert!(sent.contains("Shelf note 128."));
+    drop(requests);
+    drop(backend);
+    std::fs::remove_file(&path).ok();
+}
+
+#[tokio::test]
 async fn conversation_and_app_model_settings_reach_the_resolved_request() {
     use lettuce_conversations::ConversationRepository as _;
     let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");

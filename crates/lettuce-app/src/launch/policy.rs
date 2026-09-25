@@ -20,17 +20,6 @@ use super::request::LaunchSelection;
 
 const MAX_SCENE_TITLE_CHARS: usize = 96;
 
-pub(crate) const MAX_LAUNCH_LOREBOOKS: usize = 128;
-pub(crate) const MAX_LAUNCH_TIMELINE_ENTRIES: usize = 512;
-
-pub(crate) const fn lorebook_bound_exceeded(count: usize) -> bool {
-    count > MAX_LAUNCH_LOREBOOKS
-}
-
-pub(crate) const fn timeline_bound_exceeded(count: usize) -> bool {
-    count > MAX_LAUNCH_TIMELINE_ENTRIES
-}
-
 /// A resolved slot together with how it was chosen, before it is turned into a
 /// launch snapshot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -221,26 +210,18 @@ pub(crate) fn ordered_members(members: &[GroupMember]) -> Vec<GroupMember> {
 
 pub(crate) const MIN_GROUP_MEMBERS: usize = 2;
 
-/// One participant slot always belongs to the user, so a cast can only fill
-/// the rest of the conversation's participant bound.
-pub(crate) const MAX_GROUP_MEMBERS: usize = 255;
-
 /// The launch document rejects these shapes as well, but a caller deserves a
 /// typed reason before the planner starts drafting snapshots.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MemberShape {
     Launchable,
     TooFew,
-    TooMany,
     AllMuted,
 }
 
 pub(crate) fn member_shape(members: &[GroupMember]) -> MemberShape {
     if members.len() < MIN_GROUP_MEMBERS {
         return MemberShape::TooFew;
-    }
-    if members.len() > MAX_GROUP_MEMBERS {
-        return MemberShape::TooMany;
     }
     if members.iter().all(|member| member.muted) {
         return MemberShape::AllMuted;

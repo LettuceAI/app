@@ -6,16 +6,6 @@ pub(crate) const MAX_DISPLAY_CHARS: usize = 256;
 pub(crate) const MAX_AUTHORED_TEXT_BYTES: usize = 8 * 1024 * 1024;
 pub(crate) const MAX_REASONING_BYTES: usize = 256 * 1024;
 pub(crate) const MAX_ANNOTATION_BYTES: usize = 64 * 1024;
-pub(crate) const MAX_PARTS: usize = 256;
-pub(crate) const MAX_PARTICIPANTS: usize = 256;
-pub(crate) const MAX_BRANCHES: usize = 10_000;
-pub(crate) const MAX_ATTEMPTS: usize = 128;
-pub(crate) const MAX_LOREBOOKS: usize = 128;
-pub(crate) const MAX_MEMORY_REVISIONS: usize = 256;
-pub(crate) const MAX_MEMORY_PROMPT_LINES: usize = 4096;
-pub(crate) const MAX_DOCUMENT_COLLECTION: usize = 10_000;
-pub(crate) const MAX_DOCUMENT_ENTRIES: usize = 10_000;
-pub(crate) const MAX_ENTRY_KEYWORDS: usize = 16_384;
 pub(crate) const MAX_CONDITION_DEPTH: usize = 16;
 pub(crate) const MAX_CONDITION_NODES: usize = 256;
 
@@ -80,17 +70,6 @@ pub(crate) fn validate_text(
     }
     if value.len() > max_bytes {
         return Err(crate::ValidationError::TooLarge { field });
-    }
-    Ok(())
-}
-
-pub(crate) fn validate_collection<T>(
-    field: &'static str,
-    values: &[T],
-    max: usize,
-) -> Result<(), crate::ValidationError> {
-    if values.len() > max {
-        return Err(crate::ValidationError::TooMany { field, max });
     }
     Ok(())
 }

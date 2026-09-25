@@ -239,13 +239,6 @@ fn plan_tool_executions(
     now: TimestampMillis,
 ) -> Result<Vec<ToolExecution>, ConversationServiceError> {
     request.validate()?;
-    if calls.len() > crate::MAX_TOOL_CALLS_PER_RESPONSE {
-        return Err(ValidationError::TooMany {
-            field: "tool_executions",
-            max: crate::MAX_TOOL_CALLS_PER_RESPONSE,
-        }
-        .into());
-    }
     if calls.is_empty() && !matches!(request.choice, ToolChoice::Auto) {
         return Err(ValidationError::InvalidValue {
             field: "tool_executions.required",

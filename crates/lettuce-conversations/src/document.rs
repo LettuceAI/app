@@ -17,8 +17,7 @@ use serde::{Deserialize, Serialize};
 use crate::artifact::MAX_PROTECTED_ARTIFACT_BYTES;
 use crate::validation::{
     MAX_AUTHORED_TEXT_BYTES, MAX_CONDITION_DEPTH, MAX_CONDITION_NODES, MAX_DISPLAY_CHARS,
-    MAX_DOCUMENT_COLLECTION, MAX_DOCUMENT_ENTRIES, MAX_ENTRY_KEYWORDS, MAX_LOREBOOKS,
-    MAX_PARTICIPANTS, validate_collection, validate_text, validate_unique,
+    validate_text, validate_unique,
 };
 use crate::{
     ArtifactCodec, ArtifactError, ArtifactRetention, ProtectedArtifactBytes, SnapshotArtifactDraft,
@@ -271,11 +270,6 @@ impl SnapshotDocumentBody for CharacterSnapshotBodyV1 {
         if let Some(recommendation) = &self.image_recommendation {
             recommendation.validate("character_document.image_recommendation")?;
         }
-        validate_collection(
-            "character_document.media",
-            &self.media,
-            MAX_DOCUMENT_COLLECTION,
-        )?;
         validate_unique(
             "character_document.media.asset_ids",
             self.media.iter().map(|link| link.asset_id),
@@ -298,11 +292,6 @@ impl SnapshotDocumentBody for CharacterSnapshotBodyV1 {
         validate_sorted_ordinals(
             "character_document.media.design_reference.order",
             design_ordinals,
-        )?;
-        validate_collection(
-            "character_document.presentation_asset_ids",
-            &self.presentation_asset_ids,
-            MAX_DOCUMENT_COLLECTION,
         )?;
         validate_unique(
             "character_document.presentation_asset_ids",
@@ -367,11 +356,6 @@ impl SnapshotDocumentBody for PersonaSnapshotBodyV1 {
         if let Some(recommendation) = &self.image_recommendation {
             recommendation.validate("persona_document.image_recommendation")?;
         }
-        validate_collection(
-            "persona_document.media",
-            &self.media,
-            MAX_DOCUMENT_COLLECTION,
-        )?;
         validate_unique(
             "persona_document.media.asset_ids",
             self.media.iter().map(|link| link.asset_id),
@@ -470,11 +454,6 @@ impl SnapshotDocumentBody for SceneSnapshotBodyV1 {
                 true,
             )?;
         }
-        validate_collection(
-            "scene_document.assets",
-            &self.assets,
-            MAX_DOCUMENT_COLLECTION,
-        )?;
         validate_unique(
             "scene_document.assets.link_ids",
             self.assets.iter().map(|link| link.id),
@@ -515,11 +494,6 @@ impl SnapshotDocumentBody for SceneSnapshotBodyV1 {
             "scene_document.content.inline_link_ids",
         )?;
 
-        validate_collection(
-            "scene_document.variants",
-            &self.variants,
-            MAX_DOCUMENT_COLLECTION,
-        )?;
         validate_unique(
             "scene_document.variants.ids",
             self.variants.iter().map(|variant| variant.variant_id),
@@ -564,7 +538,6 @@ impl SnapshotDocumentBody for SceneSnapshotBodyV1 {
 }
 
 fn validate_scene_parts(field: &'static str, parts: &[ScenePartV1]) -> Result<(), ValidationError> {
-    validate_collection(field, parts, MAX_DOCUMENT_COLLECTION)?;
     for part in parts {
         if let ScenePartV1::Text { text } = part {
             validate_text(field, text, MAX_AUTHORED_TEXT_BYTES, true)?;
@@ -630,11 +603,6 @@ impl SnapshotDocumentBody for StarterSnapshotBodyV1 {
 
     fn validate(&self) -> Result<(), ValidationError> {
         validate_text("starter_document.name", &self.name, MAX_NAME_BYTES, false)?;
-        validate_collection(
-            "starter_document.messages",
-            &self.messages,
-            MAX_DOCUMENT_COLLECTION,
-        )?;
         validate_unique(
             "starter_document.messages.ids",
             self.messages.iter().map(|message| message.message_id),
@@ -652,7 +620,6 @@ impl SnapshotDocumentBody for StarterSnapshotBodyV1 {
             )?;
         }
         if let DocumentSelectionV1::Explicit(lorebooks) = &self.lorebooks {
-            validate_collection("starter_document.lorebooks", lorebooks, MAX_LOREBOOKS)?;
             validate_unique("starter_document.lorebooks", lorebooks.iter().copied())?;
         }
         Ok(())
@@ -837,11 +804,6 @@ impl SnapshotDocumentBody for PromptSnapshotBodyV1 {
                 field: "prompt_document.purpose",
             });
         }
-        validate_collection(
-            "prompt_document.entries",
-            &self.entries,
-            MAX_DOCUMENT_ENTRIES,
-        )?;
         validate_unique(
             "prompt_document.entries.ids",
             self.entries.iter().map(|entry| entry.entry_id),
@@ -926,13 +888,11 @@ fn validate_condition(
         | PromptEntryConditionV1::InputScopeAny { values }
         | PromptEntryConditionV1::OutputScopeAny { values }
         | PromptEntryConditionV1::ProviderIdAny { values } => {
-            validate_collection(field, values, MAX_DOCUMENT_COLLECTION)?;
             for value in values {
                 validate_text(field, value, MAX_NAME_BYTES, false)?;
             }
         }
         PromptEntryConditionV1::All { conditions } | PromptEntryConditionV1::Any { conditions } => {
-            validate_collection(field, conditions, MAX_CONDITION_NODES)?;
             for child in conditions {
                 validate_condition(child, field, depth + 1, nodes)?;
             }
@@ -1001,11 +961,6 @@ impl SnapshotDocumentBody for LorebookSnapshotBodyV1 {
 
     fn validate(&self) -> Result<(), ValidationError> {
         validate_text("lorebook_document.name", &self.name, MAX_NAME_BYTES, false)?;
-        validate_collection(
-            "lorebook_document.entries",
-            &self.entries,
-            MAX_DOCUMENT_ENTRIES,
-        )?;
         validate_unique(
             "lorebook_document.entries.ids",
             self.entries.iter().map(|entry| entry.entry_id),
@@ -1026,11 +981,6 @@ impl SnapshotDocumentBody for LorebookSnapshotBodyV1 {
                 &entry.content,
                 MAX_AUTHORED_TEXT_BYTES,
                 true,
-            )?;
-            validate_collection(
-                "lorebook_document.entries.keywords",
-                &entry.keywords,
-                MAX_ENTRY_KEYWORDS,
             )?;
             for keyword in &entry.keywords {
                 validate_text(
@@ -1150,16 +1100,6 @@ impl SnapshotDocumentBody for ModelSnapshotBodyV1 {
                 field: "model_document.output_modalities",
             });
         }
-        validate_collection(
-            "model_document.input_modalities",
-            &self.input_modalities,
-            MAX_DOCUMENT_COLLECTION,
-        )?;
-        validate_collection(
-            "model_document.output_modalities",
-            &self.output_modalities,
-            MAX_DOCUMENT_COLLECTION,
-        )?;
         validate_unique(
             "model_document.input_modalities",
             self.input_modalities.iter().copied(),
@@ -1212,7 +1152,6 @@ impl SnapshotDocumentBody for GroupSnapshotBodyV1 {
 
     fn validate(&self) -> Result<(), ValidationError> {
         validate_text("group_document.name", &self.name, MAX_NAME_BYTES, false)?;
-        validate_collection("group_document.members", &self.members, MAX_PARTICIPANTS)?;
         if self.members.len() < 2 {
             return Err(ValidationError::Invariant {
                 field: "group_document.members.minimum",
@@ -2022,33 +1961,21 @@ mod tests {
     }
 
     #[test]
-    fn lorebook_body_rejects_an_oversized_entry_collection() {
+    fn lorebook_body_has_no_entry_or_keyword_count_limit() {
         let mut body = lorebook_body();
         let template = body.entries[0].clone();
-        body.entries = (0..=MAX_DOCUMENT_ENTRIES)
+        body.entries = (0..10_001)
             .map(|ordinal| LorebookEntryV1 {
                 entry_id: LorebookEntryId::new(),
                 ordinal: u32::try_from(ordinal).expect("ordinal fits"),
                 ..template.clone()
             })
             .collect();
-        assert_eq!(
-            body.validate(),
-            Err(ValidationError::TooMany {
-                field: "lorebook_document.entries",
-                max: MAX_DOCUMENT_ENTRIES
-            })
-        );
+        assert_eq!(body.validate(), Ok(()));
 
         let mut body = lorebook_body();
-        body.entries[0].keywords = vec!["beacon".into(); MAX_ENTRY_KEYWORDS + 1];
-        assert_eq!(
-            body.validate(),
-            Err(ValidationError::TooMany {
-                field: "lorebook_document.entries.keywords",
-                max: MAX_ENTRY_KEYWORDS
-            })
-        );
+        body.entries[0].keywords = vec!["beacon".into(); 16_385];
+        assert_eq!(body.validate(), Ok(()));
     }
 
     #[test]

@@ -5,7 +5,7 @@ use lettuce_types::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::validation::{validate_collection, validate_text, validate_unique};
+use crate::validation::{validate_text, validate_unique};
 use crate::{ReplayArtifactRef, ValidationError};
 
 pub const MAX_TOOL_DEFINITIONS: usize = 64;
@@ -80,11 +80,6 @@ impl ToolRequest {
                 field: "tool_request.definitions",
             });
         }
-        validate_collection(
-            "tool_request.definitions",
-            &self.definitions,
-            MAX_TOOL_DEFINITIONS,
-        )?;
         for definition in &self.definitions {
             definition.validate()?;
         }

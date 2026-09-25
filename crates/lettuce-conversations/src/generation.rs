@@ -8,8 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::ValidationError;
 use crate::snapshot::{ModelSelectionSnapshot, ValidateSnapshot};
 use crate::validation::{
-    MAX_ATTEMPTS, MAX_PARTS, MAX_REASONING_BYTES, validate_collection,
-    validate_revision_timestamps, validate_text, validate_unique,
+    MAX_REASONING_BYTES, validate_revision_timestamps, validate_text, validate_unique,
 };
 
 pub use lettuce_jobs::IdempotencyKey;
@@ -295,11 +294,6 @@ impl GenerationAttempt {
                 field: "generation_attempt.parent",
             });
         }
-        validate_collection(
-            "generation_attempt.candidates",
-            &self.candidate_ids,
-            MAX_PARTS,
-        )?;
         validate_unique(
             "generation_attempt.candidate_ids",
             self.candidate_ids.iter().copied(),
@@ -492,8 +486,6 @@ impl GenerationTurn {
             self.created_at,
             self.updated_at,
         )?;
-        validate_collection("generation_turn.candidates", &self.candidate_ids, MAX_PARTS)?;
-        validate_collection("generation_turn.attempts", &self.attempts, MAX_ATTEMPTS)?;
         validate_unique(
             "generation_turn.candidate_ids",
             self.candidate_ids.iter().copied(),
@@ -609,11 +601,6 @@ impl GenerationTurn {
             if attribution.revision.get() == 0 {
                 return Err(ValidationError::ZeroRevision);
             }
-            validate_collection(
-                "generation_turn.prompt_entry_ids",
-                &attribution.selected_entry_ids,
-                crate::validation::MAX_DOCUMENT_ENTRIES,
-            )?;
             validate_unique(
                 "generation_turn.prompt_entry_ids",
                 attribution.selected_entry_ids.iter().copied(),
@@ -623,11 +610,6 @@ impl GenerationTurn {
             if book.revision.get() == 0 {
                 return Err(ValidationError::ZeroRevision);
             }
-            validate_collection(
-                "generation_turn.lorebook_entry_ids",
-                &book.activated_entry_ids,
-                crate::validation::MAX_DOCUMENT_ENTRIES,
-            )?;
             validate_unique(
                 "generation_turn.lorebook_entry_ids",
                 book.activated_entry_ids.iter().copied(),
@@ -829,13 +811,6 @@ impl GenerationCheckpointEnvelope {
 
 impl GenerationCheckpointEvent {
     pub fn validate(&self) -> Result<(), ValidationError> {
-        if let Self::Progress { emitted_parts } = self {
-            if *emitted_parts > u32::try_from(MAX_PARTS).unwrap_or(u32::MAX) {
-                return Err(ValidationError::OutOfBounds {
-                    field: "generation_checkpoint.emitted_parts",
-                });
-            }
-        }
         Ok(())
     }
 }

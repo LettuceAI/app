@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 use crate::ValidationError;
 use crate::snapshot::{ModelSelectionSnapshot, ValidateSnapshot};
 use crate::validation::{
-    MAX_ANNOTATION_BYTES, MAX_AUTHORED_TEXT_BYTES, MAX_PARTS, MAX_REASONING_BYTES,
-    validate_collection, validate_revision_timestamps, validate_text,
+    MAX_ANNOTATION_BYTES, MAX_AUTHORED_TEXT_BYTES, MAX_REASONING_BYTES,
+    validate_revision_timestamps, validate_text,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -270,7 +270,6 @@ impl MessageRevision {
         if self.sequence.get() == 0 {
             return Err(ValidationError::ZeroRevision);
         }
-        validate_collection("message_revision.parts", &self.parts, MAX_PARTS)?;
         for part in &self.parts {
             part.validate()?;
         }
@@ -306,7 +305,6 @@ pub struct MessageCandidate {
 
 impl MessageCandidate {
     pub fn validate(&self) -> Result<(), ValidationError> {
-        validate_collection("message_candidate.parts", &self.parts, MAX_PARTS)?;
         for part in &self.parts {
             part.validate()?;
         }

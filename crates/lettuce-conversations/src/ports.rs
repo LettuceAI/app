@@ -85,7 +85,6 @@ pub struct TimelinePage {
 impl TimelinePage {
     pub fn validate_page(&self) -> Result<(), crate::ValidationError> {
         if self.branch_path.is_empty()
-            || self.branch_path.len() > crate::validation::MAX_BRANCHES
             || self.branch_path.last().map(|branch| branch.id) != Some(self.selected_branch_id)
         {
             return Err(crate::ValidationError::InvalidReference {
@@ -121,12 +120,6 @@ impl TimelinePage {
         {
             return Err(crate::ValidationError::Invariant {
                 field: "timeline_page.selected_branch_active",
-            });
-        }
-        if self.items.len() > crate::validation::MAX_PARTS * 32 {
-            return Err(crate::ValidationError::TooMany {
-                field: "timeline_page.items",
-                max: crate::validation::MAX_PARTS * 32,
             });
         }
         for item in &self.items {
@@ -747,28 +740,9 @@ impl ConversationOutboxRecord {
             ..
         } = &self.event
         {
-            if *initial_message_count > 512
-                || (*initial_message_count == 0) != head_message_id.is_none()
-            {
+            if (*initial_message_count == 0) != head_message_id.is_none() {
                 return Err(crate::ValidationError::InvalidValue {
                     field: "outbox.conversation_created.initial_timeline",
-                });
-            }
-        }
-        if let ConversationOutboxEvent::MessageTombstoned {
-            affected_message_ids,
-            affected_revision_ids,
-            asset_reference_deltas,
-            ..
-        } = &self.event
-        {
-            if affected_message_ids.len() > crate::validation::MAX_PARTS * 32
-                || affected_revision_ids.len() > crate::validation::MAX_PARTS * 32
-                || asset_reference_deltas.len() > crate::validation::MAX_PARTS * 32
-            {
-                return Err(crate::ValidationError::TooMany {
-                    field: "outbox.tombstone.refs",
-                    max: crate::validation::MAX_PARTS * 32,
                 });
             }
         }
@@ -800,31 +774,6 @@ impl ConversationOutboxRecord {
                 crate::validation::MAX_DISPLAY_CHARS * 4,
                 false,
             )?;
-        }
-        let used_memory_revision_ids = match &self.event {
-            ConversationOutboxEvent::TurnFinalized {
-                used_memory_revision_ids,
-                ..
-            }
-            | ConversationOutboxEvent::TurnFailed {
-                used_memory_revision_ids,
-                ..
-            }
-            | ConversationOutboxEvent::TurnInterrupted {
-                used_memory_revision_ids,
-                ..
-            }
-            | ConversationOutboxEvent::TurnCancelled {
-                used_memory_revision_ids,
-                ..
-            } => used_memory_revision_ids,
-            _ => return Ok(()),
-        };
-        if used_memory_revision_ids.len() > crate::validation::MAX_MEMORY_REVISIONS {
-            return Err(crate::ValidationError::TooMany {
-                field: "outbox.used_memory_revision_ids",
-                max: crate::validation::MAX_MEMORY_REVISIONS,
-            });
         }
         Ok(())
     }
@@ -1274,16 +1223,7 @@ pub struct ContextRequest {
 
 impl ContextRequest {
     pub fn validate(&self) -> Result<(), crate::ValidationError> {
-        if self.timeline.len() > 512 {
-            return Err(crate::ValidationError::TooMany {
-                field: "context_request.timeline",
-                max: 512,
-            });
-        }
-        if self.branch_path.is_empty()
-            || self.branch_path.len() > crate::validation::MAX_BRANCHES
-            || self.branch_path.last().copied() != Some(self.branch_id)
-        {
+        if self.branch_path.is_empty() || self.branch_path.last().copied() != Some(self.branch_id) {
             return Err(crate::ValidationError::InvalidReference {
                 field: "context_request.branch_path",
             });
@@ -1422,14 +1362,7 @@ impl PromptRuntimeFacts {
                 )?;
             }
         }
-        for (field, scopes) in [
-            ("context_runtime.input_scopes", self.input_scopes.as_slice()),
-            (
-                "context_runtime.output_scopes",
-                self.output_scopes.as_slice(),
-            ),
-        ] {
-            crate::validation::validate_collection(field, scopes, 64)?;
+        for scopes in [self.input_scopes.as_slice(), self.output_scopes.as_slice()] {
             for scope in scopes {
                 crate::validation::validate_text(
                     "context_runtime.scope",
@@ -1628,11 +1561,6 @@ impl MemoryContribution {
                 false,
             )?;
         }
-        crate::validation::validate_collection(
-            "memory_contribution.key_memories",
-            &self.key_memories,
-            crate::validation::MAX_MEMORY_PROMPT_LINES,
-        )?;
         for line in &self.key_memories {
             crate::validation::validate_text(
                 "memory_contribution.memory",
@@ -1706,32 +1634,16 @@ pub struct ProviderNeutralContext {
     pub budget: ContextBudgetReport,
 }
 
-/// The most messages one provider-neutral context may carry.
+/// The message window the creation helper fits its transcript into; a
+/// provider-neutral context itself carries any number of messages.
 pub const MAX_PROVIDER_CONTEXT_MESSAGES: usize = 512;
 
 impl ProviderNeutralContext {
     pub fn validate(&self) -> Result<(), crate::ValidationError> {
-        if self.messages.len() > MAX_PROVIDER_CONTEXT_MESSAGES {
-            return Err(crate::ValidationError::TooMany {
-                field: "provider_context.messages",
-                max: MAX_PROVIDER_CONTEXT_MESSAGES,
-            });
-        }
-        if self.attributions.lorebooks.len() > crate::validation::MAX_LOREBOOKS {
-            return Err(crate::ValidationError::TooMany {
-                field: "provider_context.lorebooks",
-                max: crate::validation::MAX_LOREBOOKS,
-            });
-        }
         if let Some(prompt) = &self.attributions.prompt {
             if prompt.revision.get() == 0 {
                 return Err(crate::ValidationError::ZeroRevision);
             }
-            crate::validation::validate_collection(
-                "provider_context.prompt_entry_ids",
-                &prompt.selected_entry_ids,
-                crate::validation::MAX_DOCUMENT_ENTRIES,
-            )?;
             crate::validation::validate_unique(
                 "provider_context.prompt_entry_ids",
                 prompt.selected_entry_ids.iter().copied(),
@@ -1741,11 +1653,6 @@ impl ProviderNeutralContext {
             if lorebook.revision.get() == 0 {
                 return Err(crate::ValidationError::ZeroRevision);
             }
-            crate::validation::validate_collection(
-                "provider_context.lorebook_entry_ids",
-                &lorebook.activated_entry_ids,
-                crate::validation::MAX_DOCUMENT_ENTRIES,
-            )?;
             crate::validation::validate_unique(
                 "provider_context.lorebook_entry_ids",
                 lorebook.activated_entry_ids.iter().copied(),
@@ -1754,12 +1661,6 @@ impl ProviderNeutralContext {
         let mut tool_calls = std::collections::HashMap::new();
         let mut tool_results = std::collections::HashSet::new();
         for message in &self.messages {
-            if message.parts.len() > crate::validation::MAX_PARTS {
-                return Err(crate::ValidationError::TooMany {
-                    field: "provider_context.parts",
-                    max: crate::validation::MAX_PARTS,
-                });
-            }
             for part in &message.parts {
                 part.validate()?;
                 match part {
@@ -1828,21 +1729,11 @@ impl ContextAttributions {
             if prompt.revision.get() == 0 {
                 return Err(crate::ValidationError::ZeroRevision);
             }
-            crate::validation::validate_collection(
-                "context_attributions.prompt_entries",
-                &prompt.selected_entry_ids,
-                crate::validation::MAX_DOCUMENT_ENTRIES,
-            )?;
             crate::validation::validate_unique(
                 "context_attributions.prompt_entries",
                 prompt.selected_entry_ids.iter().copied(),
             )?;
         }
-        crate::validation::validate_collection(
-            "context_attributions.lorebooks",
-            &self.lorebooks,
-            crate::validation::MAX_LOREBOOKS,
-        )?;
         crate::validation::validate_unique(
             "context_attributions.lorebooks",
             self.lorebooks.iter().map(|book| book.lorebook_id),
@@ -1851,11 +1742,6 @@ impl ContextAttributions {
             if book.revision.get() == 0 {
                 return Err(crate::ValidationError::ZeroRevision);
             }
-            crate::validation::validate_collection(
-                "context_attributions.lorebook_entries",
-                &book.activated_entry_ids,
-                crate::validation::MAX_DOCUMENT_ENTRIES,
-            )?;
             crate::validation::validate_unique(
                 "context_attributions.lorebook_entries",
                 book.activated_entry_ids.iter().copied(),
@@ -1986,16 +1872,6 @@ pub struct InferenceCandidate {
 
 impl InferenceCandidate {
     pub fn validate(&self) -> Result<(), crate::ValidationError> {
-        crate::validation::validate_collection(
-            "inference_candidate.parts",
-            &self.parts,
-            crate::validation::MAX_PARTS,
-        )?;
-        crate::validation::validate_collection(
-            "inference_candidate.tool_calls",
-            &self.tool_calls,
-            crate::MAX_TOOL_CALLS_PER_RESPONSE,
-        )?;
         for part in &self.parts {
             part.validate()?;
         }

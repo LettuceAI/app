@@ -1199,9 +1199,6 @@ pub(crate) fn branch_path(
             })?;
         current = branch.parent_branch_id;
         path.push(branch);
-        if path.len() > 10_000 {
-            return Err(ConversationRepositoryError::Storage);
-        }
     }
     path.reverse();
     Ok(path)
@@ -1465,9 +1462,6 @@ pub(crate) fn hydrate_lorebooks(
     {
         values.push(row.map_err(slice::db)?);
     }
-    if values.len() > 64 {
-        return Err(ConversationRepositoryError::Storage);
-    }
     Ok(values)
 }
 
@@ -1486,7 +1480,7 @@ fn hydrate_turn_row_inner(
 ) -> Result<GenerationTurn, ConversationRepositoryError> {
     let conversation_id: ConversationId = parse(row.get::<_, String>(0).map_err(slice::db)?)?;
     let id: GenerationTurnId = parse(row.get::<_, String>(1).map_err(slice::db)?)?;
-    if !visited.insert(id) || visited.len() > 10_000 {
+    if !visited.insert(id) {
         return Err(ConversationRepositoryError::Storage);
     }
     let branch_id: ConversationBranchId = parse(row.get::<_, String>(2).map_err(slice::db)?)?;
