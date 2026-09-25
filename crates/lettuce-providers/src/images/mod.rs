@@ -87,7 +87,7 @@ impl<S: SecretStore + ?Sized> RemoteImageProviders<S> {
             .await
         {
             Ok(key) => Ok(Some(key)),
-            Err(_) if key_is_optional(&request.account.provider_kind) => Ok(None),
+            Err(_) if !key_is_required(&request.account.provider_kind) => Ok(None),
             Err(_) => Err(ImageProviderError::Failed(MISSING_API_KEY.to_owned())),
         }
     }
@@ -267,12 +267,10 @@ impl<S: SecretStore + ?Sized> ImageProviderPort for RemoteImageProviders<S> {
     }
 }
 
-/// The local image servers generate without auth when their optional key
-/// cannot be read.
-fn key_is_optional(kind: &str) -> bool {
-    ["automatic1111", "diffusers", "comfyui"]
-        .iter()
-        .any(|optional| kind.eq_ignore_ascii_case(optional))
+fn key_is_required(kind: &str) -> bool {
+    adapters::image_provider_descriptor(kind).is_none_or(|descriptor| {
+        descriptor.api_key == crate::descriptor::ApiKeyRequirement::Required
+    })
 }
 
 impl<S: SecretStore + ?Sized> RemoteImageProviders<S> {
@@ -294,7 +292,7 @@ impl<S: SecretStore + ?Sized> RemoteImageProviders<S> {
         }
         let adapter =
             adapter_for(&kind).ok_or_else(|| ImageProviderError::Unsupported(kind.clone()))?;
-        if adapter.requires_api_key() && api_key.is_none() {
+        if key_is_required(&kind) && api_key.is_none() {
             return Err(ImageProviderError::Failed(MISSING_API_KEY.to_owned()));
         }
         drop(api_key);

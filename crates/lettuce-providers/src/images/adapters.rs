@@ -39,6 +39,48 @@ pub(crate) struct ImageResponseData {
     pub text: Option<String>,
 }
 
+/// What the app knows about one image provider kind before calling it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ImageProviderDescriptor {
+    pub kind: &'static str,
+    pub api_key: crate::descriptor::ApiKeyRequirement,
+}
+
+const fn image_provider(
+    kind: &'static str,
+    api_key: crate::descriptor::ApiKeyRequirement,
+) -> ImageProviderDescriptor {
+    ImageProviderDescriptor { kind, api_key }
+}
+
+/// Every image provider kind. Local servers take an optional key and run
+/// without auth when it is missing or unreadable.
+pub(crate) const IMAGE_PROVIDERS: &[ImageProviderDescriptor] = {
+    use crate::descriptor::ApiKeyRequirement::{Optional, Required};
+    &[
+        image_provider("openai", Required),
+        image_provider("custom", Required),
+        image_provider("lettuce-host", Required),
+        image_provider("openrouter", Required),
+        image_provider("pollinations", Required),
+        image_provider("gemini", Required),
+        image_provider("gemini-agent-platform-express", Required),
+        image_provider("stability", Required),
+        image_provider("xai", Required),
+        image_provider("nanogpt", Required),
+        image_provider("literouter", Required),
+        image_provider("automatic1111", Optional),
+        image_provider("diffusers", Optional),
+        image_provider("comfyui", Optional),
+    ]
+};
+
+pub(crate) fn image_provider_descriptor(kind: &str) -> Option<&'static ImageProviderDescriptor> {
+    IMAGE_PROVIDERS
+        .iter()
+        .find(|descriptor| descriptor.kind.eq_ignore_ascii_case(kind))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Adapter {
     OpenAi,
@@ -143,11 +185,6 @@ fn size_or_sd_size(request: &ProviderImageRequest) -> Option<&str> {
 }
 
 impl Adapter {
-    /// Legacy asked for an API key unless the adapter sends no auth header.
-    pub(crate) const fn requires_api_key(self) -> bool {
-        !matches!(self, Self::Automatic1111 | Self::Diffusers)
-    }
-
     /// The adapter to retry with when the provider rejects the request with
     /// this status and body: OpenRouter's Image API does not serve every image
     /// model, and chat completions still do for chat-style ones.

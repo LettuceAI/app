@@ -1092,3 +1092,20 @@ async fn oversized_reference_images_are_shrunk_before_upload() {
     let decoded = image::load_from_memory(&bytes).expect("decode");
     assert_eq!((decoded.width(), decoded.height()), (2048, 59));
 }
+
+#[test]
+fn every_image_kind_has_one_descriptor() {
+    let kinds = super::adapters::IMAGE_PROVIDERS
+        .iter()
+        .map(|descriptor| descriptor.kind)
+        .collect::<std::collections::HashSet<_>>();
+    assert_eq!(kinds.len(), super::adapters::IMAGE_PROVIDERS.len());
+    for descriptor in super::adapters::IMAGE_PROVIDERS {
+        assert!(
+            descriptor.kind == "comfyui"
+                || super::adapters::adapter_for(descriptor.kind).is_some(),
+            "{}",
+            descriptor.kind
+        );
+    }
+}
