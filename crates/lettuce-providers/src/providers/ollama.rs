@@ -722,9 +722,6 @@ struct ResponseMessage {
 }
 
 fn parse_tool_calls(calls: Vec<WireToolCall>) -> Result<Vec<ProposedToolCall>, AdapterError> {
-    if calls.len() > lettuce_conversations::MAX_TOOL_CALLS_PER_RESPONSE {
-        return Err(AdapterError::MalformedResponse);
-    }
     calls
         .into_iter()
         .map(|call| {

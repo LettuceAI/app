@@ -244,7 +244,6 @@ pub fn is_soul_writer_operation(name: &str) -> bool {
 impl CompanionSoulWriterRoundCheckpoint {
     fn validate(&self, expected_ordinal: u32) -> Result<(), CompanionSoulWriterRunRepositoryError> {
         if self.ordinal != expected_ordinal
-            || self.calls.len() > lettuce_conversations::MAX_TOOL_CALLS_PER_RESPONSE
             || self.calls.iter().any(|call| call.validate().is_err())
             || !self.resulting_draft.is_object()
             || self.reduced_at.get() < 0

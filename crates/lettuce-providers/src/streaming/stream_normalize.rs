@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use lettuce_conversations::{
     FinishReason, InferenceCandidate, InferenceOutcome, InferenceUsage, InferenceWarningCode,
-    MAX_TOOL_ARGUMENT_BYTES, MAX_TOOL_CALLS_PER_RESPONSE, MessagePart, ProposedToolCall,
+    MAX_TOOL_ARGUMENT_BYTES, MessagePart, ProposedToolCall,
 };
 use lettuce_inference::thinking::{ThinkingSplit, ThinkingTagParser};
 use serde_json::Value;
@@ -535,13 +535,6 @@ impl StreamNormalizer {
                     .unwrap_or(u64::MAX)
                     .saturating_add(1000)
             });
-        if !self.openai_tool_calls.contains_key(&index)
-            && self.openai_tool_calls.len() >= MAX_TOOL_CALLS_PER_RESPONSE
-        {
-            return Err(StreamNormalizeError::OutputTooLarge {
-                field: "tool_calls",
-            });
-        }
         let pending = self.openai_tool_calls.entry(index).or_default();
         merge_fragment(&mut pending.id, value.get("id").and_then(Value::as_str))?;
         let function = value.get("function");
@@ -719,8 +712,7 @@ impl StreamNormalizer {
                 };
                 if block.get("type").and_then(Value::as_str) == Some("tool_use") {
                     let index = anthropic_index(&value)?;
-                    if self.anthropic_tool_calls.len() >= MAX_TOOL_CALLS_PER_RESPONSE
-                        || self.anthropic_tool_calls.contains_key(&index)
+                    if self.anthropic_tool_calls.contains_key(&index)
                         || self.anthropic_server_tool_blocks.contains(&index)
                         || self.anthropic_replay_blocks.contains_key(&index)
                     {
@@ -749,8 +741,7 @@ impl StreamNormalizer {
                         .insert(index, AnthropicReplayBlock::ToolUse);
                 } else if block.get("type").and_then(Value::as_str) == Some("server_tool_use") {
                     let index = anthropic_index(&value)?;
-                    if self.anthropic_server_tool_blocks.len() >= MAX_TOOL_CALLS_PER_RESPONSE
-                        || self.anthropic_tool_calls.contains_key(&index)
+                    if self.anthropic_tool_calls.contains_key(&index)
                         || !self.anthropic_server_tool_blocks.insert(index)
                     {
                         return Err(StreamNormalizeError::MalformedJson);
@@ -929,11 +920,6 @@ impl StreamNormalizer {
     }
 
     fn append_gemini_tool_call(&mut self, call: &Value) -> Result<(), StreamNormalizeError> {
-        if self.gemini_tool_calls.len() >= MAX_TOOL_CALLS_PER_RESPONSE {
-            return Err(StreamNormalizeError::OutputTooLarge {
-                field: "tool_calls",
-            });
-        }
         let name = call
             .get("name")
             .and_then(Value::as_str)
@@ -991,11 +977,6 @@ impl StreamNormalizer {
                     .as_array()
                     .ok_or(StreamNormalizeError::MalformedJson)?;
                 for call in calls {
-                    if self.ollama_tool_calls.len() >= MAX_TOOL_CALLS_PER_RESPONSE {
-                        return Err(StreamNormalizeError::OutputTooLarge {
-                            field: "tool_calls",
-                        });
-                    }
                     let function = call
                         .get("function")
                         .and_then(Value::as_object)
@@ -1332,10 +1313,7 @@ pub(crate) fn merge_complete_reasoning<'a>(
 mod tests {
     use lettuce_conversations::{FinishReason, InferenceWarningCode, MessagePart};
 
-    use super::{
-        MAX_TOOL_CALLS_PER_RESPONSE, StreamDelta, StreamNormalizeError, StreamNormalizer,
-        StreamProtocol,
-    };
+    use super::{StreamDelta, StreamNormalizeError, StreamNormalizer, StreamProtocol};
     use crate::streaming::stream_framing::StreamRecord;
 
     fn record(data: &str) -> StreamRecord {
@@ -1748,17 +1726,29 @@ mod tests {
     }
 
     #[test]
-    fn anthropic_bounds_server_tool_tracking() {
+    fn anthropic_tracks_any_number_of_server_tool_blocks_like_legacy() {
         let mut normalizer = StreamNormalizer::new(StreamProtocol::Anthropic, None);
-        for index in 0..MAX_TOOL_CALLS_PER_RESPONSE {
+        for index in 0..100 {
             normalizer.consume(&event("content_block_start", &format!(r#"{{"type":"content_block_start","index":{index},"content_block":{{"type":"server_tool_use"}}}}"#))).unwrap();
         }
         assert_eq!(
             normalizer
-                .consume(&event("content_block_start", &format!(r#"{{"type":"content_block_start","index":{},"content_block":{{"type":"server_tool_use"}}}}"#, MAX_TOOL_CALLS_PER_RESPONSE)))
+                .consume(&event("content_block_start", r#"{"type":"content_block_start","index":7,"content_block":{"type":"server_tool_use"}}"#))
                 .unwrap_err(),
             StreamNormalizeError::MalformedJson
         );
+    }
+
+    #[test]
+    fn openai_streams_more_than_sixty_four_tool_calls_like_legacy() {
+        let mut normalizer = StreamNormalizer::new(StreamProtocol::OpenAi, None);
+        for index in 0..100 {
+            normalizer
+                .consume(&record(&format!(
+                    r#"{{"choices":[{{"index":0,"delta":{{"tool_calls":[{{"index":{index},"id":"call_{index}","type":"function","function":{{"name":"lookup","arguments":"{{}}"}}}}]}}}}]}}"#
+                )))
+                .unwrap();
+        }
     }
 
     #[test]

@@ -261,14 +261,6 @@ fn validate_new_batch(executions: &[ToolExecution]) -> Result<(), ConversationRe
             },
         ));
     };
-    if executions.len() > lettuce_conversations::MAX_TOOL_CALLS_PER_RESPONSE {
-        return Err(ConversationRepositoryError::Invalid(
-            lettuce_conversations::ValidationError::TooMany {
-                field: "tool_executions",
-                max: lettuce_conversations::MAX_TOOL_CALLS_PER_RESPONSE,
-            },
-        ));
-    }
     let mut ids = std::collections::HashSet::new();
     let mut provider_call_ids = std::collections::HashSet::new();
     for (offset, execution) in executions.iter().enumerate() {

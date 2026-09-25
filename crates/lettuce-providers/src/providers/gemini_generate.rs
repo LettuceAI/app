@@ -2,10 +2,9 @@ use std::borrow::Cow;
 
 use lettuce_conversations::{
     ArtifactCodec, ArtifactRetention, FinishReason, InferenceCandidate, InferenceOutcome,
-    InferenceRequest, InferenceUsage, InferenceWarningCode, MAX_TOOL_CALLS_PER_RESPONSE,
-    MessagePart, MessageRole, ProposedToolCall, ProtectedArtifactBytes, ProviderContextPart,
-    ProviderNeutralContext, ProviderReplayArtifactPort, ReplayArtifactDraft, ReplayArtifactRef,
-    ToolChoice, ToolRequest,
+    InferenceRequest, InferenceUsage, InferenceWarningCode, MessagePart, MessageRole,
+    ProposedToolCall, ProtectedArtifactBytes, ProviderContextPart, ProviderNeutralContext,
+    ProviderReplayArtifactPort, ReplayArtifactDraft, ReplayArtifactRef, ToolChoice, ToolRequest,
 };
 use lettuce_inference::InferenceRuntimePort;
 use lettuce_models::{
@@ -949,9 +948,6 @@ fn parse_response_with_replay(
                 text.push_str(fragment);
             }
             if let Some(call) = &part.function_call {
-                if tool_calls.len() >= MAX_TOOL_CALLS_PER_RESPONSE {
-                    return Err(AdapterError::MalformedResponse);
-                }
                 tool_calls.push(parse_function_call(call.clone())?);
             }
         }

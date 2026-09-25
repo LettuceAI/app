@@ -294,8 +294,6 @@ impl NewCreationInferenceRound {
     pub fn validate(&self) -> Result<(), CreationAttemptError> {
         if self.ordinal >= MAX_CREATION_INFERENCE_ROUNDS
             || (self.parts.is_empty() && self.calls.is_empty())
-            || self.parts.len() > 64
-            || self.calls.len() > lettuce_conversations::MAX_TOOL_CALLS_PER_RESPONSE
         {
             return Err(CreationAttemptError::InvalidRound);
         }

@@ -14,7 +14,6 @@ pub const MAX_TOOL_SCHEMA_BYTES: usize = 64 * 1024;
 pub const MAX_TOOL_REQUEST_BYTES: usize = 1024 * 1024;
 pub const MAX_TOOL_ARGUMENT_BYTES: usize = 256 * 1024;
 pub const MAX_TOOL_RESULT_BYTES: usize = 1024 * 1024;
-pub const MAX_TOOL_CALLS_PER_RESPONSE: usize = 64;
 pub const MAX_PROVIDER_TOOL_CALL_ID_BYTES: usize = 256;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
