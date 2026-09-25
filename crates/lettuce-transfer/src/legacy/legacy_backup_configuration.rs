@@ -567,9 +567,8 @@ fn array_document<T: for<'de> Deserialize<'de>>(
     Ok(rows)
 }
 
-/// A settings JSON column the live legacy database held as text that does not
-/// parse arrives as that text. Legacy fell back to defaults for it; the
-/// fallback is kept and recorded as a skip.
+/// A settings JSON column whose stored text does not parse arrives as that
+/// text; it reads as absent (defaults) and is recorded as a skip.
 fn parsed_settings_json<'a>(
     value: Option<&'a Value>,
     field: &str,

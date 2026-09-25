@@ -192,10 +192,9 @@ where
         .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)
 }
 
-/// Builds a select list for a table whose optional columns older installs may
-/// lack: legacy added them with error-ignoring `ALTER TABLE` statements and
-/// repaired them only in later versions, so a missing one reads as the value
-/// that repair would have given it. A column without a default is required.
+/// Builds a select list for a table whose optional columns an accepted source
+/// may lack; a missing one reads as the given default, the value the column
+/// holds once it exists. A column without a default is required.
 fn projection(
     connection: &Connection,
     table: &str,
