@@ -3,12 +3,12 @@ use lettuce_context::{
     PromptVariable as Variable, render_prompt,
 };
 use lettuce_conversations::{
-    MAX_PROVIDER_CONTEXT_MESSAGES, MessagePart, MessageRole, ProposedToolCall, ProviderContextPart,
-    ProviderNeutralMessage, ToolOutput,
+    MessagePart, MessageRole, ProposedToolCall, ProviderContextPart, ProviderNeutralMessage,
+    ToolOutput,
 };
 use lettuce_creation::{
     CreationDialogueTurn, CreationDraft, CreationOperation, CreationOperationError,
-    CreationOperationOutcome, CreationRejection, CreationTargetKind, MAX_CREATION_INFERENCE_ROUNDS,
+    CreationOperationOutcome, CreationRejection, CreationTargetKind,
 };
 use lettuce_models::ProviderProtocol;
 use serde_json::Value;
@@ -156,11 +156,8 @@ pub(crate) fn creation_context_messages(
                 .collect::<Vec<_>>(),
         )
     };
-    let budget = MAX_PROVIDER_CONTEXT_MESSAGES
-        .saturating_sub(messages.len() + in_chat.len() + 1)
-        .saturating_sub(2 * usize::from(MAX_CREATION_INFERENCE_ROUNDS));
-    let mut history = Vec::new();
-    for turn in dialogue.iter().rev() {
+    for turn in dialogue {
+        messages.push(text_message(MessageRole::User, turn.user_message.clone()));
         let reply = turn
             .assistant_parts
             .iter()
@@ -170,16 +167,10 @@ pub(crate) fn creation_context_messages(
             })
             .collect::<Vec<_>>()
             .join("\n\n");
-        let turn_messages = if reply.is_empty() { 1 } else { 2 };
-        if history.len() + turn_messages > budget {
-            break;
-        }
         if !reply.is_empty() {
-            history.push(text_message(MessageRole::Assistant, reply));
+            messages.push(text_message(MessageRole::Assistant, reply));
         }
-        history.push(text_message(MessageRole::User, turn.user_message.clone()));
     }
-    messages.extend(history.into_iter().rev());
     messages.push(text_message(MessageRole::User, user_message.to_owned()));
     crate::companion::companion_memory_inference::insert_in_chat_messages(&mut messages, in_chat);
     Ok(messages)
@@ -752,7 +743,7 @@ mod tests {
     }
 
     #[test]
-    fn oldest_turns_are_dropped_to_leave_room_for_eight_rounds() {
+    fn the_whole_dialogue_is_sent_like_legacy() {
         let helper = RuntimeText::from_seed(BuiltInPromptId::CreationHelper);
         let runtime = RuntimeText::from_seed(BuiltInPromptId::CreationRuntime);
         let dialogue = (0..300)
@@ -777,11 +768,9 @@ mod tests {
             None,
         )
         .expect("context");
-        assert_eq!(
-            messages.len(),
-            lettuce_conversations::MAX_PROVIDER_CONTEXT_MESSAGES - 16
-        );
-        assert_eq!(text_of(&messages[7]), "turn 56");
+        assert_eq!(messages.len(), 7 + 600 + 1);
+        assert_eq!(text_of(&messages[7]), "turn 0");
+        assert_eq!(text_of(&messages[8]), "reply 0");
         assert_eq!(text_of(&messages[messages.len() - 2]), "reply 299");
         assert_eq!(text_of(messages.last().expect("last")), "latest");
     }

@@ -8,7 +8,6 @@ use serde_json::Value;
 use crate::validation::{validate_text, validate_unique};
 use crate::{ReplayArtifactRef, ValidationError};
 
-pub const MAX_TOOL_DEFINITIONS: usize = 64;
 pub const MAX_TOOL_NAME_BYTES: usize = 64;
 pub const MAX_TOOL_DESCRIPTION_BYTES: usize = 4096;
 pub const MAX_TOOL_SCHEMA_BYTES: usize = 64 * 1024;

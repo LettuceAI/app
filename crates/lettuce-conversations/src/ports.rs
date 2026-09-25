@@ -1620,10 +1620,6 @@ pub struct ProviderNeutralContext {
     pub budget: ContextBudgetReport,
 }
 
-/// The message window the creation helper fits its transcript into; a
-/// provider-neutral context itself carries any number of messages.
-pub const MAX_PROVIDER_CONTEXT_MESSAGES: usize = 512;
-
 impl ProviderNeutralContext {
     pub fn validate(&self) -> Result<(), crate::ValidationError> {
         if let Some(prompt) = &self.attributions.prompt {
