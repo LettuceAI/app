@@ -565,8 +565,7 @@ pub(crate) fn request_target<'a>(
     endpoint: std::borrow::Cow<'a, str>,
     path: std::borrow::Cow<'static, str>,
 ) -> (std::borrow::Cow<'a, str>, std::borrow::Cow<'static, str>) {
-    let lower = path.to_ascii_lowercase();
-    if !(lower.starts_with("http://") || lower.starts_with("https://")) {
+    if !(path.starts_with("http://") || path.starts_with("https://")) {
         return (endpoint, path);
     }
     let authority_start = path.find("://").map_or(0, |index| index + 3);
@@ -1019,6 +1018,13 @@ mod tests {
         assert_eq!(
             target("https://other.host/v1/models"),
             ("https://other.host".to_owned(), "/v1/models".to_owned())
+        );
+        assert_eq!(
+            target("HTTPS://other.host/chat"),
+            (
+                "http://base".to_owned(),
+                "HTTPS://other.host/chat".to_owned()
+            )
         );
         assert_eq!(
             target("https://other.host?x=1"),

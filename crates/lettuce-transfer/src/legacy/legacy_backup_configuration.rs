@@ -3794,9 +3794,10 @@ pub fn legacy_custom_endpoint_path(value: &str) -> Option<String> {
     if trimmed.is_empty() {
         return None;
     }
-    let lower = trimmed.to_ascii_lowercase();
     Some(
-        if lower.starts_with("http://") || lower.starts_with("https://") || trimmed.starts_with('/')
+        if trimmed.starts_with("http://")
+            || trimmed.starts_with("https://")
+            || trimmed.starts_with('/')
         {
             trimmed.to_owned()
         } else {
@@ -3826,6 +3827,7 @@ mod tests {
                 "https://other.host/v1/models",
                 Some("https://other.host/v1/models"),
             ),
+            ("HTTPS://other.host/chat", Some("/HTTPS://other.host/chat")),
             ("  ", None),
         ] {
             assert_eq!(

@@ -533,8 +533,7 @@ fn validate_path(path: &str) -> Result<(), ProviderConnectionValidationError> {
     {
         return Err(ProviderConnectionValidationError::Path);
     }
-    let lower = path.to_ascii_lowercase();
-    if lower.starts_with("http://") || lower.starts_with("https://") {
+    if path.starts_with("http://") || path.starts_with("https://") {
         let authority_start = path.find("://").map_or(0, |index| index + 3);
         let origin_end = path[authority_start..]
             .find(['/', '?'])
