@@ -267,6 +267,11 @@ fn chat_parameters(reader: &mut Reader<'_>, provider_kind: &str) -> ChatParamete
     let gemini = ["gemini", "google", "google-gemini"]
         .iter()
         .any(|kind| provider_kind.eq_ignore_ascii_case(kind));
+    let ttl_is_text = reader
+        .object
+        .get("promptCachingTtl")
+        .and_then(Value::as_str)
+        .is_some();
     let retention = reader.choice("promptCachingTtl", |value| match value {
         "24h" => Some(PromptCacheRetention::TwentyFourHours),
         "in_memory" | "5min" | "1h" if openai => Some(PromptCacheRetention::InMemory),
@@ -276,7 +281,9 @@ fn chat_parameters(reader: &mut Reader<'_>, provider_kind: &str) -> ChatParamete
         _ => None,
     });
     let prompt_caching = caching_enabled.map(|enabled| {
-        if enabled {
+        if enabled && openai && ttl_is_text && retention.is_none() {
+            PromptCaching::Disabled
+        } else if enabled {
             PromptCaching::Enabled {
                 retention: retention.unwrap_or(if openai {
                     PromptCacheRetention::InMemory
@@ -1121,6 +1128,15 @@ mod tests {
                 serde_json::json!({"promptCachingEnabled": true, "promptCachingTtl": "5min"})
             ),
             PromptCacheRetention::InMemory
+        );
+        assert_eq!(
+            imported_chat(
+                "openai",
+                serde_json::json!({"promptCachingEnabled": true, "promptCachingTtl": "30min"})
+            )
+            .prompt_caching,
+            Some(PromptCaching::Disabled),
+            "legacy request_builder.rs:275-282 sent no retention for an unknown TTL"
         );
         assert_eq!(
             retention("gemini", enabled.clone()),
