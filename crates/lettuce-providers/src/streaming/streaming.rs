@@ -37,11 +37,51 @@ pub(crate) async fn consume_stream_with_provider_replay(
             .await
             .map(|outcome| (outcome, None));
     }
-    let mut response = response.without_size_limit();
-    let mut framer = StreamFramer::new(format);
     let provider_request_id = response.request_id.clone();
     let mut normalizer = StreamNormalizer::new(protocol, provider_request_id.clone());
     let mut sequence = 0_u64;
+    match stream_deltas(
+        response,
+        format,
+        runtime,
+        request,
+        &mut normalizer,
+        &mut sequence,
+    )
+    .await
+    {
+        Ok(()) => {}
+        Err(AdapterError::Cancelled) => {
+            return normalizer
+                .cancelled_outcome()
+                .map(|outcome| (outcome, None))
+                .ok_or(AdapterError::Cancelled);
+        }
+        Err(error) => return Err(error),
+    }
+    let completion = normalizer
+        .finish_with_provider_replay()
+        .map_err(|error| map_normalize(error, provider_request_id))?;
+    for delta in completion.tail {
+        sequence = sequence.checked_add(1).ok_or(AdapterError::Transport)?;
+        emit(runtime, request, sequence, delta).await?;
+    }
+    Ok((completion.outcome, completion.provider_replay))
+}
+
+/// Streams every record into `normalizer`, emitting its deltas. A
+/// cancellation leaves the text streamed so far in `normalizer`.
+async fn stream_deltas(
+    response: JsonResponseStream,
+    format: StreamFormat,
+    runtime: &dyn InferenceRuntimePort,
+    request: &InferenceRequest,
+    normalizer: &mut StreamNormalizer,
+    sequence: &mut u64,
+) -> Result<(), AdapterError> {
+    let mut response = response.without_size_limit();
+    let mut framer = StreamFramer::new(format);
+    let provider_request_id = response.request_id.clone();
     loop {
         ensure_not_cancelled(runtime, request)?;
         let Some(chunk) = next_chunk(&mut response, runtime, request.cancellation).await? else {
@@ -52,8 +92,8 @@ pub(crate) async fn consume_stream_with_provider_replay(
                 .consume(&record)
                 .map_err(|error| map_normalize(error, provider_request_id.clone()))?
             {
-                sequence = sequence.checked_add(1).ok_or(AdapterError::Transport)?;
-                emit(runtime, request, sequence, delta).await?;
+                *sequence = sequence.checked_add(1).ok_or(AdapterError::Transport)?;
+                emit(runtime, request, *sequence, delta).await?;
             }
         }
     }
@@ -62,18 +102,11 @@ pub(crate) async fn consume_stream_with_provider_replay(
             .consume(&record)
             .map_err(|error| map_normalize(error, provider_request_id.clone()))?
         {
-            sequence = sequence.checked_add(1).ok_or(AdapterError::Transport)?;
-            emit(runtime, request, sequence, delta).await?;
+            *sequence = sequence.checked_add(1).ok_or(AdapterError::Transport)?;
+            emit(runtime, request, *sequence, delta).await?;
         }
     }
-    let completion = normalizer
-        .finish_with_provider_replay()
-        .map_err(|error| map_normalize(error, provider_request_id))?;
-    for delta in completion.tail {
-        sequence = sequence.checked_add(1).ok_or(AdapterError::Transport)?;
-        emit(runtime, request, sequence, delta).await?;
-    }
-    Ok((completion.outcome, completion.provider_replay))
+    Ok(())
 }
 
 pub(crate) async fn await_cancelable<T, F>(

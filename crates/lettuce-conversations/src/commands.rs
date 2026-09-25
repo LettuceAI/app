@@ -583,8 +583,9 @@ pub struct CancelGeneration {
 }
 
 /// The first half of cancellation.  This mutation only records the user's
-/// intent and makes success finalization impossible.  The job is cancelled
-/// outside the repository before [`SettleCancellation`] is committed.
+/// intent.  A reply that already streamed visible text may still finalize as
+/// the stopped reply; otherwise the job is cancelled outside the repository
+/// before [`SettleCancellation`] is committed.
 pub type RequestCancellation = CancelGeneration;
 
 /// The second half of cancellation, committed after the runtime job has been

@@ -688,7 +688,7 @@ async fn initial_checkpoint_failure_stays_pending_until_a_fresh_recovery_attempt
 }
 
 #[tokio::test]
-async fn initial_cancellation_during_provider_retains_usage_without_response_replay() {
+async fn initial_cancellation_during_provider_keeps_the_streamed_reply() {
     let database = database();
     let (conversation_id, request, handle) = fixture(&database);
     let inference = BlockingInference::new(outcome());
@@ -706,25 +706,23 @@ async fn initial_cancellation_during_provider_retains_usage_without_response_rep
     }
     handle.request_cancel();
     inference.release.notify_one();
-    assert!(matches!(
-        run.await,
-        Err(crate::ConversationInitialInferenceError::Cancelled)
-    ));
+    let kept = run
+        .await
+        .expect("legacy useChatAbortController keeps the reply streamed before stop");
+    assert_eq!(kept.finish_reason, lettuce_conversations::FinishReason::Cancelled);
+    assert_eq!(kept.candidates, outcome().candidates);
     let binding =
         InitialInferenceBinding::from_request(conversation_id, &request).expect("binding");
     let record = database
         .initial_inference(&binding)
         .expect("record")
         .expect("settled");
-    assert_eq!(
-        record.result,
-        Some(InitialInferenceResult::Failed(PortError::Cancelled))
-    );
+    assert_eq!(record.result, Some(InitialInferenceResult::Response(kept.clone())));
     assert!(matches!(
         database.job_usage(handle.id()).expect("response evidence")[0].result,
         Some(JobInferenceUsageResult::Response { .. })
     ));
-    assert!(matches!(
+    assert_eq!(
         coordinator
             .run(
                 conversation_id,
@@ -732,8 +730,9 @@ async fn initial_cancellation_during_provider_retains_usage_without_response_rep
                 request,
                 TimestampMillis::new(1_030)
             )
-            .await,
-        Err(crate::ConversationInitialInferenceError::Cancelled)
-    ));
+            .await
+            .expect("replayed partial reply"),
+        kept
+    );
     assert_eq!(inference.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
 }

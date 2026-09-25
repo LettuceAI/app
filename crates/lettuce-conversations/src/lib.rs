@@ -1328,15 +1328,20 @@ mod tests {
     }
 
     #[test]
-    fn cancellation_and_finalization_are_mutually_exclusive() {
+    fn a_stopped_turn_may_still_finalize_its_streamed_reply() {
         assert!(GenerationTurnStatus::Running.can_transition_to(GenerationTurnStatus::Finalizing));
         assert!(
             GenerationTurnStatus::Running
                 .can_transition_to(GenerationTurnStatus::CancellationRequested)
         );
         assert!(
+            GenerationTurnStatus::CancellationRequested
+                .can_transition_to(GenerationTurnStatus::Finalizing),
+            "legacy useChatAbortController persists the partial reply on stop"
+        );
+        assert!(
             !GenerationTurnStatus::CancellationRequested
-                .can_transition_to(GenerationTurnStatus::Finalizing)
+                .can_transition_to(GenerationTurnStatus::Succeeded)
         );
     }
 

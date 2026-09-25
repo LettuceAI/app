@@ -929,7 +929,10 @@ request's model and context attributions to match the prepared turn.
 Each dispatch is admitted as a durable pending checkpoint before the provider is
 called, using the job usage event that retains the raw response evidence. The
 provider response, an invalid response, a provider failure or a cancellation
-observed after the response settles that checkpoint once; a later call with the
+observed after the response settles that checkpoint once; a cancellation after
+visible text streamed settles the streamed reply with a `Cancelled` finish
+reason (the provider adapters return the text and reasoning emitted before the
+stop), which generation finalizes as the stopped reply; a later call with the
 same request replays the stored outcome or error without another provider
 request, including after the attempt has been finalized or the database was
 reopened. Changed context, profile, tools or media grants conflict with the

@@ -1198,7 +1198,7 @@ mod integration_tests {
     }
 
     #[tokio::test]
-    async fn cancellation_interrupts_a_backpressured_stream_sink() {
+    async fn cancelling_a_stream_keeps_the_text_streamed_so_far() {
         let mut payload = String::new();
         for _ in 0..65 {
             payload.push_str("data: {\"choices\":[{\"delta\":{\"content\":\"x\"}}]}\n\n");
@@ -1239,11 +1239,24 @@ mod integration_tests {
         captured.await.expect("request reached server");
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         handle.request_cancel();
-        let result = tokio::time::timeout(std::time::Duration::from_secs(1), task)
+        let outcome = tokio::time::timeout(std::time::Duration::from_secs(1), task)
             .await
             .expect("cancellation deadline")
-            .expect("provider task");
-        assert_eq!(result, Err(lettuce_conversations::PortError::Cancelled));
+            .expect("provider task")
+            .expect("legacy useChatAbortController keeps the streamed reply on stop");
+        assert_eq!(
+            outcome.finish_reason,
+            lettuce_conversations::FinishReason::Cancelled
+        );
+        let [candidate] = outcome.candidates.as_slice() else {
+            panic!("one partial candidate");
+        };
+        assert!(candidate.tool_calls.is_empty());
+        assert!(matches!(
+            candidate.parts.as_slice(),
+            [lettuce_conversations::MessagePart::Text { text }]
+                if !text.is_empty() && text.len() <= 65 && text.chars().all(|c| c == 'x')
+        ));
     }
 
     #[tokio::test]

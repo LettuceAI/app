@@ -817,19 +817,27 @@ async fn app_backend_cancels_queued_and_running_generation_jobs_by_id() {
             live_execution_signalled: true,
         } if job.state == JobState::CancellationRequested
     ));
-    assert!(matches!(
-        settled.expect("settle running cancellation"),
-        ConversationGenerationExecutionOutcome::Settled(
-            ConversationGenerationSettledWork::Cancelled { ref job, .. }
-        ) if job.state == JobState::Cancelled
-    ));
+    let settled = settled.expect("settle running cancellation");
+    let ConversationGenerationExecutionOutcome::Settled(
+        ConversationGenerationSettledWork::Succeeded { ref result, ref job },
+    ) = settled
+    else {
+        panic!("legacy useChatAbortController keeps the streamed reply on stop: {settled:?}");
+    };
+    assert_eq!(job.state, JobState::Cancelled);
+    assert_eq!(
+        result.candidate.parts,
+        vec![MessagePart::Text {
+            text: "Late reply".into()
+        }]
+    );
     assert_eq!(inference.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
     assert!(!inference_runtime.is_cancelled(running_job.id));
     assert_eq!(
         ConversationReader::get_turn(backend.database(), running.turn_id)
-            .expect("cancelled running turn")
+            .expect("stopped running turn")
             .status,
-        GenerationTurnStatus::Cancelled
+        GenerationTurnStatus::Succeeded
     );
 }
 

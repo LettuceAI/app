@@ -252,6 +252,7 @@ impl StreamNormalizer {
             return Err(StreamNormalizeError::EmptyResponse);
         }
 
+        let usage = self.usage();
         let mut parts = Vec::with_capacity(2);
         if !self.reasoning.is_empty() {
             parts.push(MessagePart::ReasoningSummary {
@@ -261,21 +262,6 @@ impl StreamNormalizer {
         if !self.text.is_empty() {
             parts.push(MessagePart::Text { text: self.text });
         }
-        let usage = match (self.input_tokens, self.output_tokens) {
-            (Some(input_tokens), Some(output_tokens)) => Some(InferenceUsage {
-                provider_reported_cost: self.provider_reported_cost,
-                cache_write_tokens: self.cache_write_tokens,
-                web_search_requests: self.web_search_requests,
-                image_tokens: self.image_tokens,
-                audio_tokens: self.audio_tokens,
-                total_tokens: self.total_tokens,
-                cached_input_tokens: self.cached_input_tokens,
-                reasoning_tokens: self.reasoning_tokens,
-                input_tokens,
-                output_tokens,
-            }),
-            _ => None,
-        };
         let outcome = InferenceOutcome {
             provider_response_id: self.provider_response_id,
             candidates: vec![InferenceCandidate {
@@ -298,6 +284,56 @@ impl StreamNormalizer {
             outcome,
             provider_replay,
         })
+    }
+
+    /// The reply streamed before a cancellation: the text and reasoning already
+    /// emitted as deltas, without tool calls, provider replay or held-back tag
+    /// fragments. `None` when no visible text was streamed.
+    pub(crate) fn cancelled_outcome(self) -> Option<InferenceOutcome> {
+        if self.text.trim().is_empty() {
+            return None;
+        }
+        let usage = self.usage();
+        let mut parts = Vec::with_capacity(2);
+        if !self.reasoning.is_empty() {
+            parts.push(MessagePart::ReasoningSummary {
+                text: self.reasoning,
+            });
+        }
+        parts.push(MessagePart::Text { text: self.text });
+        let outcome = InferenceOutcome {
+            provider_response_id: self.provider_response_id,
+            candidates: vec![InferenceCandidate {
+                ordinal: 0,
+                parts,
+                tool_calls: Vec::new(),
+                provider_replay: None,
+            }],
+            usage,
+            finish_reason: FinishReason::Cancelled,
+            provider_finish_reason: None,
+            provider_request_id: self.provider_request_id,
+            warning_codes: self.warning_codes,
+        };
+        outcome.validate().ok().map(|()| outcome)
+    }
+
+    fn usage(&self) -> Option<InferenceUsage> {
+        match (self.input_tokens, self.output_tokens) {
+            (Some(input_tokens), Some(output_tokens)) => Some(InferenceUsage {
+                provider_reported_cost: self.provider_reported_cost.clone(),
+                cache_write_tokens: self.cache_write_tokens,
+                web_search_requests: self.web_search_requests,
+                image_tokens: self.image_tokens,
+                audio_tokens: self.audio_tokens,
+                total_tokens: self.total_tokens,
+                cached_input_tokens: self.cached_input_tokens,
+                reasoning_tokens: self.reasoning_tokens,
+                input_tokens,
+                output_tokens,
+            }),
+            _ => None,
+        }
     }
 
     fn build_anthropic_replay(&self) -> Result<Option<Vec<u8>>, StreamNormalizeError> {

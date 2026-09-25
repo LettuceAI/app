@@ -2888,7 +2888,9 @@ impl ConversationRepository for Database {
                 let turn = load_turn(transaction, context.conversation_id, turn_id)?;
                 if !matches!(
                     turn.status,
-                    GenerationTurnStatus::Running | GenerationTurnStatus::Finalizing
+                    GenerationTurnStatus::Running
+                        | GenerationTurnStatus::CancellationRequested
+                        | GenerationTurnStatus::Finalizing
                 ) {
                     return Err(ConversationRepositoryError::Conflict);
                 }
@@ -3042,7 +3044,7 @@ impl ConversationRepository for Database {
                     },
                     context.now,
                 )?;
-                if turn.status == GenerationTurnStatus::Running {
+                if turn.status != GenerationTurnStatus::Finalizing {
                     advance_turn(
                         transaction,
                         context.conversation_id,
@@ -8678,6 +8680,59 @@ mod tests {
             )
             .expect("fail after a cancellation request");
         assert_eq!(late.value.turn.status, GenerationTurnStatus::Failed);
+    }
+
+    #[test]
+    fn a_stopped_turn_finalizes_with_the_reply_streamed_before_stop() {
+        let fixture = direct_fixture();
+        let send = fixture
+            .database
+            .begin_send(
+                &send_command(&fixture, "send-stop-partial", "cd", text("hello")),
+                TimestampMillis::new(20),
+            )
+            .expect("send");
+        let revision = drive(
+            &fixture,
+            send.value.turn.id,
+            send.value.attempt.id,
+            &[
+                GenerationTurnStatus::Preparing,
+                GenerationTurnStatus::ContextPrepared,
+                GenerationTurnStatus::Running,
+            ],
+            "drive-stop-partial",
+            21,
+        );
+        let requested = fixture
+            .database
+            .request_cancellation(
+                &CancelGeneration {
+                    conversation_id: fixture.conversation_id,
+                    turn_id: send.value.turn.id,
+                    attempt_id: send.value.attempt.id,
+                    expected_revision: conversation_revision(&fixture),
+                    expected_turn_revision: revision,
+                    operation: token("stop-partial", "cd"),
+                },
+                TimestampMillis::new(30),
+            )
+            .expect("stop");
+        let kept = fixture
+            .database
+            .finalize_generation(
+                send.value.turn.id,
+                send.value.attempt.id,
+                conversation_revision(&fixture),
+                requested.value.revision,
+                &token("finalize-stop-partial", "cd"),
+                finalization_draft(text("half a repl"), 0),
+                recorded_usage(&fixture, send.value.turn.id, send.value.attempt.id, 31),
+                TimestampMillis::new(31),
+            )
+            .expect("legacy useChatAbortController persists the partial reply");
+        assert_eq!(kept.value.turn.status, GenerationTurnStatus::Succeeded);
+        assert_eq!(kept.value.candidate.parts, text("half a repl"));
     }
 
     #[test]

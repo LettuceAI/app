@@ -108,10 +108,19 @@ impl<
         )
         .await;
         let result = match outcome {
-            Ok(outcome) => {
+            Ok(mut outcome) => {
                 if handle.cancellation_token().is_cancelled() {
                     cleanup_provider_replays(self.repository, &outcome)?;
-                    InitialInferenceResult::Failed(PortError::Cancelled)
+                    if has_visible_text(&outcome) {
+                        outcome.finish_reason = lettuce_conversations::FinishReason::Cancelled;
+                        for candidate in &mut outcome.candidates {
+                            candidate.provider_replay = None;
+                            candidate.tool_calls.clear();
+                        }
+                        InitialInferenceResult::Response(outcome)
+                    } else {
+                        InitialInferenceResult::Failed(PortError::Cancelled)
+                    }
                 } else {
                     let result = InitialInferenceResult::Response(outcome);
                     if result.validate().is_err() {
@@ -156,6 +165,15 @@ fn replay(
         }
         None => Err(ConversationInitialInferenceError::Pending),
     }
+}
+
+/// Whether a reply has streamed text worth keeping when the user stops it.
+pub(crate) fn has_visible_text(outcome: &InferenceOutcome) -> bool {
+    outcome.candidates.iter().any(|candidate| {
+        candidate.parts.iter().any(|part| {
+            matches!(part, lettuce_conversations::MessagePart::Text { text } if !text.trim().is_empty())
+        })
+    })
 }
 
 fn cleanup_provider_replays<R: ProviderReplayArtifactPort + ?Sized>(

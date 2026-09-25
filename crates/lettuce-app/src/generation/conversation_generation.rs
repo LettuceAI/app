@@ -746,9 +746,12 @@ impl<
             });
         }
         match outcome.finish_reason {
-            lettuce_conversations::FinishReason::Cancelled => {
+            lettuce_conversations::FinishReason::Cancelled
+                if !super::conversation_inference::has_visible_text(&outcome) =>
+            {
                 return Err(ConversationGenerationRunError::Cancelled { evidence });
             }
+            lettuce_conversations::FinishReason::Cancelled => {}
             lettuce_conversations::FinishReason::Error => {
                 return Err(ConversationGenerationRunError::Provider {
                     error: PortError::Rejected,
@@ -786,14 +789,8 @@ impl<
             crate::image::reply_images::take_scene_image(&mut candidate.parts, facts)
         });
         let usage = self.attempt_job_usage(work, &attempt)?;
-        if work.handle.cancellation_token().is_cancelled() {
-            return Err(ConversationGenerationRunError::Cancelled { evidence });
-        }
         let aggregate = ConversationReader::get(self.repository, conversation_id)?;
         let turn = self.repository.get_turn(work.turn_id)?;
-        if turn.status == GenerationTurnStatus::CancellationRequested {
-            return Err(ConversationGenerationRunError::Cancelled { evidence });
-        }
         candidate.ordinal = match turn.target {
             GenerationTarget::NewAssistant { .. } => 0,
             GenerationTarget::ExistingCandidate {
@@ -1345,6 +1342,27 @@ impl<
                 if result.turn.id != work.turn_id || result.candidate.attempt_id != work.attempt_id
                 {
                     return Err(ConversationGenerationDispatchError::InvalidWork);
+                }
+                let stopped = self
+                    .jobs
+                    .get(job_id)?
+                    .is_some_and(|job| job.state == JobState::CancellationRequested);
+                if stopped {
+                    self.jobs
+                        .append_and_transition(JobMutation::RequestCleanup {
+                            claim: work.claim.claim.clone(),
+                            at,
+                        })?;
+                    let job = self
+                        .jobs
+                        .append_and_transition(JobMutation::FinishCancellation {
+                            claim: work.claim.claim,
+                            at,
+                        })?;
+                    return Ok(ConversationGenerationSettledWork::Succeeded {
+                        result: Box::new(result),
+                        job,
+                    });
                 }
                 self.jobs.append_and_transition(JobMutation::Progress {
                     claim: work.claim.claim.clone(),

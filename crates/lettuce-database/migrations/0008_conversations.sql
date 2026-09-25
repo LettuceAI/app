@@ -318,7 +318,7 @@ WHEN NEW.status <> OLD.status AND NOT (
  (OLD.status = 'selecting_speaker' AND NEW.status IN ('context_prepared','cancellation_requested','failed','interrupted')) OR
  (OLD.status = 'context_prepared' AND NEW.status IN ('running','cancellation_requested','failed','interrupted')) OR
  (OLD.status = 'running' AND NEW.status IN ('finalizing','cancellation_requested','failed','interrupted')) OR
- (OLD.status = 'cancellation_requested' AND NEW.status IN ('cancelled','failed','interrupted')) OR
+ (OLD.status = 'cancellation_requested' AND NEW.status IN ('finalizing','cancelled','failed','interrupted')) OR
  (OLD.status = 'finalizing' AND NEW.status IN ('succeeded','failed','cancelled','interrupted','recovering')) OR
  (OLD.status = 'interrupted' AND NEW.status IN ('recovering','failed','cancelled')) OR
  (OLD.status = 'recovering' AND NEW.status IN ('preparing','running','failed','cancelled'))

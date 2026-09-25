@@ -192,12 +192,17 @@ pub(crate) async fn run(
     );
 
     let mut sequence = 0_u64;
+    let mut streamed = Streamed::default();
     let mut cancel_signalled = false;
     let result = loop {
         tokio::select! {
             biased;
             Some(delta) = deltas.recv(), if streaming => {
-                sequence = emit_delta(runtime, &request, sequence, delta, &cancel).await?;
+                sequence = match emit_delta(runtime, &request, sequence, delta, &cancel, &mut streamed).await {
+                    Ok(next) => next,
+                    Err(AdapterError::Cancelled) => return streamed.stopped(),
+                    Err(error) => return Err(error),
+                };
             }
             result = &mut done => break result,
             cancelled = wait_cancelled(runtime, &request), if !cancel_signalled => {
@@ -209,11 +214,16 @@ pub(crate) async fn run(
         }
     };
     while streaming && let Ok(delta) = deltas.try_recv() {
-        sequence = emit_delta(runtime, &request, sequence, delta, &cancel).await?;
+        sequence =
+            match emit_delta(runtime, &request, sequence, delta, &cancel, &mut streamed).await {
+                Ok(next) => next,
+                Err(AdapterError::Cancelled) => return streamed.stopped(),
+                Err(error) => return Err(error),
+            };
     }
     let output = match result {
         Ok(Ok(output)) => output,
-        Ok(Err(LlamaGenerationError::Aborted)) => return Err(AdapterError::Cancelled),
+        Ok(Err(LlamaGenerationError::Aborted)) => return streamed.stopped(),
         Ok(Err(LlamaGenerationError::WorkerStopped)) | Err(_) => {
             return Err(AdapterError::Transport);
         }
@@ -246,13 +256,62 @@ async fn emit_delta(
     sequence: u64,
     delta: StreamDelta,
     cancel: &AtomicBool,
+    streamed: &mut Streamed,
 ) -> Result<u64, AdapterError> {
     let next = sequence.checked_add(1).ok_or(AdapterError::Transport)?;
-    if let Err(error) = crate::streaming::streaming::emit(runtime, request, next, delta).await {
+    if let Err(error) =
+        crate::streaming::streaming::emit(runtime, request, next, delta.clone()).await
+    {
         cancel.store(true, Ordering::Relaxed);
         return Err(error);
     }
+    match delta {
+        StreamDelta::Text(text) => streamed.text.push_str(&text),
+        StreamDelta::Reasoning(text) => streamed.reasoning.push_str(&text),
+    }
     Ok(next)
+}
+
+/// The text and reasoning a local generation emitted before it stopped.
+#[derive(Debug, Default)]
+struct Streamed {
+    text: String,
+    reasoning: String,
+}
+
+impl Streamed {
+    /// The reply a stopped generation keeps: its streamed text, or a
+    /// cancellation when no visible text was streamed.
+    fn stopped(self) -> Result<InferenceOutcome, AdapterError> {
+        if self.text.trim().is_empty() {
+            return Err(AdapterError::Cancelled);
+        }
+        let mut parts = Vec::with_capacity(2);
+        if !self.reasoning.is_empty() {
+            parts.push(MessagePart::ReasoningSummary {
+                text: self.reasoning,
+            });
+        }
+        parts.push(MessagePart::Text { text: self.text });
+        let outcome = InferenceOutcome {
+            provider_response_id: None,
+            candidates: vec![InferenceCandidate {
+                ordinal: 0,
+                parts,
+                tool_calls: Vec::new(),
+                provider_replay: None,
+            }],
+            usage: None,
+            finish_reason: FinishReason::Cancelled,
+            provider_finish_reason: None,
+            provider_request_id: None,
+            warning_codes: Vec::new(),
+        };
+        outcome
+            .validate()
+            .map_err(|_| AdapterError::MalformedResponse)?;
+        Ok(outcome)
+    }
 }
 
 fn generation_request(
@@ -693,6 +752,36 @@ mod tests {
 
     use super::*;
     use crate::integration_tests::{profile, request};
+
+    #[test]
+    fn a_stopped_local_generation_keeps_its_streamed_text() {
+        let kept = Streamed {
+            text: "Half a rep".into(),
+            reasoning: "thinking".into(),
+        }
+        .stopped()
+        .expect("legacy useChatAbortController keeps the streamed reply on stop");
+        assert_eq!(kept.finish_reason, FinishReason::Cancelled);
+        assert_eq!(
+            kept.candidates[0].parts,
+            vec![
+                MessagePart::ReasoningSummary {
+                    text: "thinking".into()
+                },
+                MessagePart::Text {
+                    text: "Half a rep".into()
+                },
+            ]
+        );
+        assert_eq!(
+            Streamed {
+                text: "  ".into(),
+                reasoning: "thinking".into(),
+            }
+            .stopped(),
+            Err(AdapterError::Cancelled)
+        );
+    }
 
     fn llama_request(settings: LlamaCppSettings) -> InferenceRequest {
         let mut inference = request(profile(

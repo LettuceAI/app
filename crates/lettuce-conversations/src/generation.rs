@@ -119,7 +119,10 @@ impl GenerationTurnStatus {
                     Running,
                     Finalizing | CancellationRequested | Failed | Interrupted
                 )
-                | (CancellationRequested, Cancelled | Failed | Interrupted)
+                | (
+                    CancellationRequested,
+                    Finalizing | Cancelled | Failed | Interrupted
+                )
                 | (
                     Finalizing,
                     Succeeded | Failed | Cancelled | Interrupted | Recovering
