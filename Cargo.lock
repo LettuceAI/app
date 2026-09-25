@@ -1793,6 +1793,7 @@ dependencies = [
  "cap-primitives",
  "cap-std",
  "lettuce-types",
+ "rustix",
  "thiserror 2.0.20",
  "uuid",
 ]

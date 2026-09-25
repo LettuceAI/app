@@ -19,3 +19,6 @@ cap-std.workspace = true
 lettuce-types.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
+
+[target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies]
+rustix.workspace = true

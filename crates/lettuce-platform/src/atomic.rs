@@ -220,16 +220,7 @@ fn commit_staged(
 
     let stage_cleanup = match mode {
         WriteMode::CreateNew => {
-            // cap-std rename replaces an existing destination. Hard-linking a
-            // synced sibling gives create-new no-replace semantics atomically;
-            // filesystems that cannot hard-link report Unsupported.
-            match stage_parent.hard_link(Path::new(stage_name), &parent, &target_name) {
-                Ok(()) => {}
-                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
-                    return Err(PlatformError::Conflict);
-                }
-                Err(error) => return Err(map_create_new_error(error)),
-            }
+            publish_new(&stage_parent, stage_name, &parent, &target_name)?;
             classify_stage_cleanup(stage_parent.remove_file(Path::new(stage_name)))
         }
         WriteMode::Replace => {
@@ -264,6 +255,89 @@ fn commit_staged(
     })
 }
 
+/// Publishes a synced stage under a name that must not exist yet.
+///
+/// The no-replace primitive is `renameat2(RENAME_NOREPLACE)` on Linux and
+/// Android and a hard link elsewhere. When the filesystem or its security
+/// policy refuses that primitive, the name is reserved with an exclusive create
+/// and the stage then replaces that empty reservation.
+fn publish_new(
+    stage_parent: &cap_std::fs::Dir,
+    stage_name: &str,
+    parent: &cap_std::fs::Dir,
+    target_name: &Path,
+) -> Result<(), PlatformError> {
+    match publish_no_replace(stage_parent, stage_name, parent, target_name) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => Err(PlatformError::Conflict),
+        Err(error) if no_replace_unavailable(&error) => {
+            reserve_then_replace(stage_parent, stage_name, parent, target_name)
+        }
+        Err(error) => Err(map_create_new_error(error)),
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn publish_no_replace(
+    stage_parent: &cap_std::fs::Dir,
+    stage_name: &str,
+    parent: &cap_std::fs::Dir,
+    target_name: &Path,
+) -> io::Result<()> {
+    rustix::fs::renameat_with(
+        stage_parent,
+        Path::new(stage_name),
+        parent,
+        target_name,
+        rustix::fs::RenameFlags::NOREPLACE,
+    )
+    .map_err(io::Error::from)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
+fn publish_no_replace(
+    stage_parent: &cap_std::fs::Dir,
+    stage_name: &str,
+    parent: &cap_std::fs::Dir,
+    target_name: &Path,
+) -> io::Result<()> {
+    stage_parent.hard_link(Path::new(stage_name), parent, target_name)
+}
+
+fn no_replace_unavailable(error: &io::Error) -> bool {
+    matches!(
+        error.kind(),
+        io::ErrorKind::Unsupported | io::ErrorKind::InvalidInput | io::ErrorKind::PermissionDenied
+    )
+}
+
+fn reserve_then_replace(
+    stage_parent: &cap_std::fs::Dir,
+    stage_name: &str,
+    parent: &cap_std::fs::Dir,
+    target_name: &Path,
+) -> Result<(), PlatformError> {
+    let reservation = match open_file_nofollow(parent, target_name, false, true) {
+        Ok(file) => file,
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+            return Err(PlatformError::Conflict);
+        }
+        Err(error) => return Err(map_create_new_error(error)),
+    };
+    drop(reservation);
+    stage_parent
+        .rename(Path::new(stage_name), parent, target_name)
+        .map_err(|_| {
+            if parent
+                .symlink_metadata(target_name)
+                .is_ok_and(|metadata| metadata.is_file() && metadata.len() == 0)
+            {
+                let _ = parent.remove_file(target_name);
+            }
+            PlatformError::ReplaceFailed
+        })
+}
+
 pub(crate) fn classify_stage_cleanup(result: io::Result<()>) -> StageCleanupStatus {
     match result {
         Ok(()) => StageCleanupStatus::Cleaned,
@@ -295,5 +369,53 @@ fn remove_stage(
         Ok(()) => Ok(()),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(PlatformError::from(error)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use cap_std::{ambient_authority, fs::Dir};
+
+    use super::*;
+
+    fn scratch() -> (std::path::PathBuf, Dir) {
+        let path = std::env::temp_dir().join(format!("lettuce-publish-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&path).unwrap();
+        let dir = Dir::open_ambient_dir(&path, ambient_authority()).unwrap();
+        (path, dir)
+    }
+
+    #[test]
+    fn create_new_publishes_without_hard_links_and_never_clobbers() {
+        let (path, dir) = scratch();
+        dir.write(".stage-a", b"first").unwrap();
+        publish_new(&dir, ".stage-a", &dir, Path::new("value")).unwrap();
+        assert_eq!(dir.read("value").unwrap(), b"first");
+        assert!(dir.symlink_metadata(".stage-a").is_err());
+        dir.write(".stage-b", b"second").unwrap();
+        assert_eq!(
+            publish_new(&dir, ".stage-b", &dir, Path::new("value")),
+            Err(PlatformError::Conflict)
+        );
+        assert_eq!(dir.read("value").unwrap(), b"first");
+        assert_eq!(dir.read(".stage-b").unwrap(), b"second");
+        std::fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
+    fn reservation_fallback_publishes_new_names_and_keeps_existing_ones() {
+        let (path, dir) = scratch();
+        dir.write(".stage-a", b"first").unwrap();
+        reserve_then_replace(&dir, ".stage-a", &dir, Path::new("value")).unwrap();
+        assert_eq!(dir.read("value").unwrap(), b"first");
+        assert!(dir.symlink_metadata(".stage-a").is_err());
+        dir.write(".stage-b", b"second").unwrap();
+        assert_eq!(
+            reserve_then_replace(&dir, ".stage-b", &dir, Path::new("value")),
+            Err(PlatformError::Conflict)
+        );
+        assert_eq!(dir.read("value").unwrap(), b"first");
+        assert_eq!(dir.read(".stage-b").unwrap(), b"second");
+        std::fs::remove_dir_all(path).unwrap();
     }
 }
