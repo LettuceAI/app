@@ -352,7 +352,7 @@ pub fn reduce_staged_lorebook_planner_calls(
             source_refs,
         });
     }
-    validate_outline(&outline, &project.excerpts)?;
+    validate_outline(&outline)?;
     Ok(outline)
 }
 
@@ -1064,7 +1064,7 @@ impl StagedLorebookPlanningRun {
                 || retry.admitted_at < self.project.created_at
                 || retry.admitted_at > self.project.updated_at
                 || retry.previous_attempt.as_ref().is_some_and(|attempt| {
-                    attempt.validate(&self.project).is_err()
+                    attempt.validate().is_err()
                         || !matches!(attempt.decision, StagedLorebookPlannerDecision::Invalid)
                 })
             {
@@ -1099,7 +1099,7 @@ impl StagedLorebookPlanningRun {
             || self
                 .planner_attempt
                 .as_ref()
-                .is_some_and(|attempt| attempt.validate(&self.project).is_err())
+                .is_some_and(|attempt| attempt.validate().is_err())
             || self.coherence_runs.iter().any(|run| {
                 !coherence_request_ids.insert(run.request_id)
                     || !coherence_job_ids.insert(run.job_id)
@@ -1159,17 +1159,14 @@ impl StagedLorebookCoherenceAttempt {
 }
 
 impl StagedLorebookPlannerAttempt {
-    pub fn validate(
-        &self,
-        project: &StagedLorebookProject,
-    ) -> Result<(), StagedLorebookRepositoryError> {
+    pub fn validate(&self) -> Result<(), StagedLorebookRepositoryError> {
         if self.project_revision.get() == 0
             || self.completed_at.get() < 0
             || self
                 .calls
                 .iter()
                 .any(|call| call.provider_replay.is_some() || call.validate().is_err())
-            || matches!(&self.decision, StagedLorebookPlannerDecision::Outline(outline) if validate_outline(outline, &project.excerpts).is_err())
+            || matches!(&self.decision, StagedLorebookPlannerDecision::Outline(outline) if validate_outline(outline).is_err())
         {
             return Err(StagedLorebookRepositoryError::Invalid);
         }
@@ -1342,7 +1339,7 @@ impl StagedLorebookProject {
         if self.stage != StagedLorebookStage::Planning || now < self.updated_at {
             return Err(StagedLorebookError::InvalidTransition);
         }
-        validate_outline(&outline, &self.excerpts)?;
+        validate_outline(&outline)?;
         let mut next = self.clone();
         next.outline = outline;
         next.stage = StagedLorebookStage::AwaitingOutlineApproval;
@@ -1396,7 +1393,7 @@ impl StagedLorebookProject {
             plan.ordinal =
                 u32::try_from(ordinal).map_err(|_| StagedLorebookError::InvalidOutline)?;
         }
-        validate_outline(&outline, &self.excerpts)?;
+        validate_outline(&outline)?;
         let mut next = self.clone();
         next.outline = outline;
         next.updated_at = now;
@@ -1770,7 +1767,7 @@ impl StagedLorebookProject {
                 Err(StagedLorebookError::InvalidOutline)
             }
             StagedLorebookStage::AwaitingOutlineApproval => {
-                validate_outline(&self.outline, &self.excerpts)?;
+                validate_outline(&self.outline)?;
                 if self.drafts.is_empty() && self.coherence_proposals.is_empty() {
                     Ok(())
                 } else {
@@ -1781,7 +1778,7 @@ impl StagedLorebookProject {
             | StagedLorebookStage::DraftsReady
             | StagedLorebookStage::CoherenceReview
             | StagedLorebookStage::Committed => {
-                validate_outline(&self.outline, &self.excerpts)?;
+                validate_outline(&self.outline)?;
                 validate_drafts(&self.drafts, &self.outline)?;
                 validate_coherence_changes(&self.coherence_proposals, &self.drafts)?;
                 if (self.stage == StagedLorebookStage::DraftsReady
@@ -2006,17 +2003,12 @@ fn apply_coherence_change(
     }
 }
 
-fn validate_outline(
-    outline: &[StagedLorebookEntryPlan],
-    excerpts: &[StagedLorebookSourceExcerpt],
-) -> Result<(), StagedLorebookError> {
+/// Source references are free text: a reference that names no extracted
+/// source is kept, and the writer then reads every excerpt.
+fn validate_outline(outline: &[StagedLorebookEntryPlan]) -> Result<(), StagedLorebookError> {
     if outline.is_empty() {
         return Err(StagedLorebookError::InvalidOutline);
     }
-    let source_ids = excerpts
-        .iter()
-        .map(|excerpt| excerpt.source_id.as_str())
-        .collect::<HashSet<_>>();
     let mut plan_ids = HashSet::with_capacity(outline.len());
     for (ordinal, plan) in outline.iter().enumerate() {
         if usize::try_from(plan.ordinal).ok() != Some(ordinal)
@@ -2026,10 +2018,6 @@ fn validate_outline(
             || plan.category != plan.category.trim()
             || plan.rationale != plan.rationale.trim()
             || !plan_ids.insert(plan.id)
-            || plan
-                .source_refs
-                .iter()
-                .any(|source| !source_ids.contains(source.as_str()))
         {
             return Err(StagedLorebookError::InvalidOutline);
         }
@@ -2107,7 +2095,7 @@ mod tests {
     }
 
     #[test]
-    fn outline_requires_stable_order_and_owned_source_refs() {
+    fn outline_requires_stable_order() {
         let project = StagedLorebookProject::create(
             CreationWorkflowId::new(),
             "World".into(),
@@ -2128,12 +2116,49 @@ mod tests {
                     category: "Fact".into(),
                     proposed_keys: Vec::new(),
                     rationale: "Reason".into(),
-                    source_refs: vec!["foreign".into()],
+                    source_refs: Vec::new(),
                 }],
                 TimestampMillis::new(12),
             ),
             Err(StagedLorebookError::InvalidOutline)
         );
+    }
+
+    /// Legacy `pipeline.rs` 496-566 kept any `sourceRefs` string and the
+    /// writer fell back to every excerpt (392-409).
+    #[test]
+    fn outline_keeps_source_refs_that_name_no_extracted_source() {
+        let project = StagedLorebookProject::create(
+            CreationWorkflowId::new(),
+            "World".into(),
+            None,
+            50,
+            vec![StagedLorebookSourceExcerpt {
+                asset_id: None,
+                source_id: "src_01".into(),
+                label: "Notes".into(),
+                content: "Ada keeps the harbour key.".into(),
+            }],
+            TimestampMillis::new(10),
+        )
+        .expect("create project")
+        .start_planning(TimestampMillis::new(11))
+        .expect("start planning");
+        let reviewed = project
+            .submit_outline(
+                vec![StagedLorebookEntryPlan {
+                    id: LorebookEntryId::new(),
+                    ordinal: 0,
+                    title: "Entry".into(),
+                    category: "Fact".into(),
+                    proposed_keys: Vec::new(),
+                    rationale: "Reason".into(),
+                    source_refs: vec!["brief".into(), "src_3".into()],
+                }],
+                TimestampMillis::new(12),
+            )
+            .expect("unknown source refs are kept");
+        assert_eq!(reviewed.outline[0].source_refs, ["brief", "src_3"]);
     }
 
     #[test]

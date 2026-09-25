@@ -28,7 +28,7 @@ first-slice exclusions are still unimplemented. Current backend coverage:
 | Scenario group | Implemented boundary and evidence |
 | --- | --- |
 | Text/Markdown/PDF sources and byte/excerpt bounds | `staged_lorebook_sources` preserves legacy limits, order and Unicode truncation; PDF text uses the legacy pdf-extract 0.7 implementation. |
-| Planner outline, required tool, approval and edits | `staged_lorebook` reducer/domain tests and app staged SQLite scenario cover nonempty plans, source ownership, stable IDs and review CAS. |
+| Planner outline, required tool, approval and edits | `staged_lorebook` reducer/domain tests and app staged SQLite scenario cover nonempty plans, stable IDs and review CAS. |
 | Three-entry batches, failure/retry and partial recovery | Existing batch checkpoint plus per-entry runs preserve completed drafts, retry failed identities under new jobs, and reject stale batch writes. |
 | Draft edits, refinement/history and coherence acceptance | Domain transitions and the SQLite execution scenario cover reviewed changes, append-only refinement history and selected stable-ID coherence proposals. |
 | Explicit accepted-draft commit | SQLite creation repository applies new/existing book plus accepted entries and receipt in one transaction; stale requests and duplicate commit intent are checked. |
@@ -271,7 +271,7 @@ mutate a lorebook.
 
 The staged generator now has its first pure state slice: the exact legacy
 5-to-50 target clamp, bounded 20,000-character extracted excerpts, stable
-outline identities, owned source references, and legal created-to-planning-to-
+outline identities, free-text source references, and legal created-to-planning-to-
 outline-review transitions. The created/planning project is persisted with its
 planner profile, prompt revision, and generic job identity; exact admission and
 created-to-planning CAS retries are restart-safe. The planner's single native
@@ -282,16 +282,17 @@ final apply remain explicit later slices.
 The planner's exact required `propose_lorebook_outline` declaration and final
 instruction are copied from legacy. Reduction selects the first matching call,
 preserves legacy field aliases/defaults and returned entry count, assigns
-deterministic stable entry IDs, and rejects empty outlines or foreign source
-references before the outline-review transition.
+deterministic stable entry IDs, and rejects empty outlines before the
+outline-review transition. Like legacy, a source reference that names no
+extracted source is kept; the writer then reads every excerpt.
 Outline approval copies the legacy pending-draft initialization exactly: one
 ordered draft per stable plan ID, the plan title and proposed keys, empty
 content, `always_active = false`, pending status, and no revisions. The durable
 project then moves to drafting; writer execution remains separate.
 Before approval, outline edits can replace, add, remove and reorder plans.
 Ordinals are rebuilt from input order while stable plan IDs and field values
-are retained. Existing outline validation checks nonempty plans and owned
-source references; edits after approval are rejected to protect draft identity.
+are retained. Existing outline validation checks nonempty plans and
+stable ordinals; edits after approval are rejected to protect draft identity.
 The staged writer's pure provider contract is also copied from legacy: one
 required `write_lorebook_entry` declaration and exact final instruction, first
 matching-call selection, trimmed nonblank title/content, optional trimmed

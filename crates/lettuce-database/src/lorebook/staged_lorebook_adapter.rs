@@ -668,7 +668,7 @@ impl StagedLorebookRepository for Database {
             .map_err(failure)?;
         let current =
             load_in(&transaction, request_id)?.ok_or(StagedLorebookRepositoryError::NotFound)?;
-        attempt.validate(&current.project)?;
+        attempt.validate()?;
         if let Some(stored) = &current.planner_attempt {
             if stored == &attempt {
                 transaction.commit().map_err(failure)?;
