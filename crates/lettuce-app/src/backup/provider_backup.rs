@@ -111,7 +111,16 @@ where
         created_at: TimestampMillis,
         password: &str,
     ) -> Result<ProviderBackupExport<W>, ProviderBackupError> {
-        let graph = self.source.read_provider_backup_graph()?;
+        let (graph, _media_pin) = lettuce_media::pin_media_objects(|| {
+            let graph = self.source.read_provider_backup_graph()?;
+            let hashes = graph
+                .authored
+                .media_blobs
+                .iter()
+                .map(|blob| blob.content_hash.clone())
+                .collect();
+            Ok::<_, ProviderBackupError>((graph, hashes))
+        })?;
         let requirements = provider_backup_secret_requirements(&graph)?;
         let mut secret_set = ProviderBackupSecretSet::default();
         let mut missing_secrets = Vec::new();

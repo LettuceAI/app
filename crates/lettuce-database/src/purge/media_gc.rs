@@ -1,17 +1,19 @@
 //! Reference-counted collection of the media a purge stopped referencing.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 
 use lettuce_media::ReleasedMediaObject;
 use lettuce_types::{ContentHash, TimestampMillis};
-use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, TransactionBehavior, params};
 
 use super::{PurgeError, storage, text_columns};
 use crate::Database;
 
 /// Tables whose text is bookkeeping about media or history, not a use of it:
 /// the media catalog itself, purge and sync journals, legacy import
-/// evidence, job execution logs and provider replay caches.
+/// evidence, job logs and provider replay caches. Sync changes still waiting
+/// to apply and unfinished jobs are probed separately.
 const UNSCANNED_TABLES: [&str; 9] = [
     "media_assets",
     "media_blobs",
@@ -31,6 +33,8 @@ const OPEN_IMPORT_COMPLETION: &str = "SELECT completion.destination_asset_id
      FROM legacy_import_media_completions completion
      JOIN legacy_import_runs run ON run.id = completion.run_id
      WHERE run.status NOT IN ('completed', 'partial', 'failed')";
+
+const FINISHED_JOB: &str = "('succeeded', 'failed', 'cancelled', 'interrupted')";
 
 fn scanned(table: &str) -> bool {
     !table.starts_with("sqlite_")
@@ -70,6 +74,29 @@ fn drop_referenced(
         .collect();
     probes.push(format!(
         "{OPEN_IMPORT_COMPLETION} AND completion.destination_asset_id = c.value"
+    ));
+    probes.push(
+        "SELECT 1 FROM sync_incoming_changes change
+         JOIN sync_incoming_batches batch ON batch.batch_id = change.batch_id
+         WHERE batch.state <> 'committed'
+           AND instr(CAST(change.payload_bytes AS TEXT), c.value) > 0"
+            .to_owned(),
+    );
+    probes.push(
+        "SELECT 1 FROM sync_deferred_changes deferred
+         JOIN sync_changes change ON change.change_id = deferred.change_id
+         WHERE instr(CAST(change.payload_bytes AS TEXT), c.value) > 0"
+            .to_owned(),
+    );
+    for column in text_columns(connection, "jobs")? {
+        probes.push(format!(
+            "SELECT 1 FROM jobs WHERE state NOT IN {FINISHED_JOB}
+               AND instr(CAST(\"{column}\" AS TEXT), c.value) > 0"
+        ));
+    }
+    probes.push(format!(
+        "SELECT 1 FROM job_events event JOIN jobs job ON job.id = event.job_id
+         WHERE job.state NOT IN {FINISHED_JOB} AND instr(event.event_json, c.value) > 0"
     ));
     let tables: Vec<String> = connection
         .prepare("SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name")
@@ -229,15 +256,35 @@ impl Database {
         collect(&mut connection, now)
     }
 
-    /// Whether the catalog keeps a stored object with this content.
+    /// Whether the catalog has a blob with this content in any state; a
+    /// `missing` blob whose file is still present becomes ready again when
+    /// the same bytes are ingested, so its file is kept.
     pub fn media_object_retained(&self, content_hash: &ContentHash) -> Result<bool, PurgeError> {
         self.connection()
             .map_err(storage)?
             .query_row(
-                "SELECT EXISTS(SELECT 1 FROM media_blobs WHERE content_hash = ?1 AND state <> 'missing')",
+                "SELECT EXISTS(SELECT 1 FROM media_blobs WHERE content_hash = ?1)",
                 [content_hash.as_str()],
                 |row| row.get(0),
             )
             .map_err(storage)
+    }
+
+    /// The content of every blob another database file catalogs, in any
+    /// state, read without writing to that file.
+    pub fn media_objects_in_file(path: &Path) -> Result<BTreeSet<ContentHash>, PurgeError> {
+        let connection = Connection::open_with_flags(
+            path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .map_err(storage)?;
+        let hashes: Vec<String> = connection
+            .prepare("SELECT content_hash FROM media_blobs")
+            .and_then(|mut statement| statement.query_map([], |row| row.get(0))?.collect())
+            .map_err(storage)?;
+        hashes
+            .into_iter()
+            .map(|hash| ContentHash::parse(hash).map_err(storage))
+            .collect()
     }
 }

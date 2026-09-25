@@ -34,6 +34,61 @@ fn blob_lifecycle() -> std::sync::MutexGuard<'static, ()> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
+static OBJECT_PINS: std::sync::Mutex<std::collections::BTreeMap<String, usize>> =
+    std::sync::Mutex::new(std::collections::BTreeMap::new());
+
+fn object_pins() -> std::sync::MutexGuard<'static, std::collections::BTreeMap<String, usize>> {
+    OBJECT_PINS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// While held, the pinned objects' files are not deleted: a released one
+/// stays for a later sweep and a sweep skips it. A backup export holds one
+/// for the objects its catalog snapshot names, a restore for the objects it
+/// installs, until it has read or written them all.
+#[derive(Debug)]
+pub struct MediaObjectPin {
+    hashes: Vec<String>,
+}
+
+impl Drop for MediaObjectPin {
+    fn drop(&mut self) {
+        let mut pins = object_pins();
+        for hash in &self.hashes {
+            if let Some(count) = pins.get_mut(hash) {
+                *count -= 1;
+                if *count == 0 {
+                    pins.remove(hash);
+                }
+            }
+        }
+    }
+}
+
+/// Runs `read`, which returns a value and the objects it names, and pins
+/// those objects before any deletion can run: no object is deleted between
+/// the read and the pin.
+pub fn pin_media_objects<T, E>(
+    read: impl FnOnce() -> Result<(T, Vec<ContentHash>), E>,
+) -> Result<(T, MediaObjectPin), E> {
+    let _lifecycle = blob_lifecycle();
+    let (value, hashes) = read()?;
+    let hashes: Vec<String> = hashes
+        .into_iter()
+        .map(|hash| hash.as_str().to_owned())
+        .collect();
+    let mut pins = object_pins();
+    for hash in &hashes {
+        *pins.entry(hash.clone()).or_insert(0) += 1;
+    }
+    Ok((value, MediaObjectPin { hashes }))
+}
+
+fn object_pinned(hash: &ContentHash) -> bool {
+    object_pins().contains_key(hash.as_str())
+}
+
 /// Input metadata supplied by the logical asset owner.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IngestRequest {
@@ -83,13 +138,15 @@ pub struct ReleasedMediaObject {
     pub byte_size: u64,
 }
 
-/// How many object files a removal deleted, how many bytes they held, and
-/// how many could not be deleted.
+/// How many object files a removal deleted, how many bytes they held, how
+/// many could not be deleted, and how many released objects were left for a
+/// later sweep because they were pinned.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct MediaObjectRemoval {
     pub removed: u64,
     pub freed_bytes: u64,
     pub failed: u64,
+    pub deferred: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -643,7 +700,11 @@ where
         let _lifecycle = blob_lifecycle();
         let mut removal = MediaObjectRemoval::default();
         for object in release()? {
-            self.remove_object(&object.content_hash, object.byte_size, &mut removal);
+            if object_pinned(&object.content_hash) {
+                removal.deferred += 1;
+            } else {
+                self.remove_object(&object.content_hash, object.byte_size, &mut removal);
+            }
         }
         Ok(removal)
     }
@@ -671,7 +732,7 @@ where
                     let Ok(hash) = ContentHash::parse(entry.name.clone()) else {
                         continue;
                     };
-                    if hash.as_str() != entry.name || retained(&hash)? {
+                    if hash.as_str() != entry.name || object_pinned(&hash) || retained(&hash)? {
                         continue;
                     }
                     let size = self
@@ -1251,6 +1312,7 @@ pub fn install_backup_media_object(
     content_hash: &ContentHash,
     bytes: &[u8],
 ) -> Result<(), MediaStoreError> {
+    let _lifecycle = blob_lifecycle();
     let files = ConfinedInstallStore::open(root).map_err(MediaStoreError::File)?;
     let byte_size = u64::try_from(bytes.len()).map_err(|_| MediaStoreError::InputTooLarge)?;
     match files
@@ -1747,6 +1809,7 @@ mod tests {
                 removed: 1,
                 freed_bytes: other.len() as u64,
                 failed: 0,
+                deferred: 0,
             }
         );
         assert!(!object_path(&released.blob.content_hash).exists());
@@ -1761,6 +1824,7 @@ mod tests {
                 removed: 1,
                 freed_bytes: third.len() as u64,
                 failed: 0,
+                deferred: 0,
             }
         );
         assert!(!object_path(&orphan.blob.content_hash).exists());
@@ -1780,6 +1844,64 @@ mod tests {
         assert!(named_oddly.exists());
         assert!(partial.exists());
         assert!(outside_file.exists());
+        drop(store);
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn pinned_objects_are_neither_released_nor_swept() {
+        let root = std::env::temp_dir().join(format!("lettuce-media-{}", AssetId::new()));
+        let snapshot = DirectorySnapshot::new(&root).expect("snapshot");
+        let authority = FilesystemAuthority::new(&snapshot).expect("authority");
+        let store = LocalMediaBlobStore::new(
+            authority.managed_files(),
+            authority
+                .read_capability(ManagedRoot::MediaBlobs)
+                .expect("read capability"),
+            authority
+                .write_capability(ManagedRoot::MediaBlobs)
+                .expect("write capability"),
+            BlobMemory::default(),
+            AssetMemory::default(),
+        );
+        let mut bytes = png_fixture();
+        bytes.extend_from_slice(b"pinned");
+        let pinned = store
+            .ingest(
+                bytes.as_slice(),
+                IngestRequest::new(
+                    AssetKind::OtherImage,
+                    AssetOrigin::Upload,
+                    RetentionClass::Persistent,
+                    AssetProvenanceV1::default(),
+                ),
+            )
+            .expect("ingest");
+        let hash = pinned.blob.content_hash.clone();
+        let ((), pin) =
+            pin_media_objects(|| Ok::<_, MediaStoreError>(((), vec![hash.clone()]))).expect("pin");
+        let removal = store
+            .remove_released_objects(|| {
+                Ok(vec![ReleasedMediaObject {
+                    content_hash: hash.clone(),
+                    byte_size: bytes.len() as u64,
+                }])
+            })
+            .expect("release");
+        assert_eq!((removal.removed, removal.deferred), (0, 1));
+        assert_eq!(
+            store
+                .sweep_orphan_objects(|_| Ok(false))
+                .map(|swept| swept.removed),
+            Ok(0)
+        );
+        drop(pin);
+        assert_eq!(
+            store
+                .sweep_orphan_objects(|_| Ok(false))
+                .map(|swept| swept.removed),
+            Ok(1)
+        );
         drop(store);
         fs::remove_dir_all(root).expect("cleanup");
     }

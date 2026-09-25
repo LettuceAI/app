@@ -94,6 +94,34 @@ impl AppDatabaseLocation {
         Ok(self.private_persistent.join(DATABASE_DIRECTORY).join(name))
     }
 
+    /// The database files in the database directory other than `open` (the
+    /// file this process uses): databases a restore kept, and one a restore
+    /// is writing. Media collection keeps every object these name.
+    pub fn other_database_files(
+        &self,
+        open: &Path,
+    ) -> Result<Vec<PathBuf>, AppDatabaseLocationError> {
+        let directory = self.private_persistent.join(DATABASE_DIRECTORY);
+        let entries = match std::fs::read_dir(&directory) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => return Err(PlatformError::from(error).into()),
+        };
+        let mut files = Vec::new();
+        for entry in entries {
+            let path = entry.map_err(PlatformError::from)?.path();
+            let is_database = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.ends_with(DATABASE_EXTENSION));
+            if is_database && path != open {
+                files.push(path);
+            }
+        }
+        files.sort();
+        Ok(files)
+    }
+
     pub(crate) fn activate(&self, name: &str) -> Result<(), AppDatabaseLocationError> {
         self.database_path(name)?;
         self.files.write_atomic(
@@ -225,6 +253,16 @@ impl<'a, S: SecretStore + ?Sized> BackupRestoreCoordinator<'a, S> {
                 .ok_or(BackupRestoreError::TargetDirectory)?,
         )
         .map_err(|_| BackupRestoreError::TargetDirectory)?;
+        let ((), _media_pin) = lettuce_media::pin_media_objects(|| {
+            Ok::<_, std::convert::Infallible>((
+                (),
+                plan.media
+                    .iter()
+                    .map(|entry| entry.content_hash.clone())
+                    .collect(),
+            ))
+        })
+        .unwrap_or_else(|never| match never {});
         for entry in &plan.media {
             lettuce_media::install_backup_media_object(
                 self.media_root,
