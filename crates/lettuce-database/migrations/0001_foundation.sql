@@ -317,3 +317,19 @@ BEFORE DELETE ON legacy_import_secret_completions
 BEGIN
     SELECT RAISE(ABORT, 'legacy import secret completion is immutable');
 END;
+
+-- Owners (conversation, character or memory space ids) whose append-only
+-- history rows the running purge transaction may delete. A purge inserts its
+-- owners, deletes, and removes them again before it commits.
+CREATE TABLE purge_authorizations (
+    owner_id TEXT PRIMARY KEY CHECK (length(owner_id) > 0)
+) STRICT;
+
+-- Purges received through sync. Each runs in its own transaction after the
+-- batch that carried it commits.
+CREATE TABLE purge_queue (
+    entity_kind TEXT NOT NULL CHECK (entity_kind IN ('conversation', 'character')),
+    entity_id TEXT NOT NULL CHECK (length(entity_id) > 0),
+    queued_at INTEGER NOT NULL,
+    PRIMARY KEY (entity_kind, entity_id)
+) STRICT;

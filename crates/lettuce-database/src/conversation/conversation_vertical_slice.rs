@@ -2461,4 +2461,84 @@ mod tests {
             )
             .is_err());
     }
+
+    /// History stays append-only: only a purge of its own conversation
+    /// deletes it, the way legacy `session_delete` removed a whole session
+    /// (old-code/src-tauri/src/storage_manager/sessions.rs:3794).
+    #[test]
+    fn append_only_history_rejects_deletes_outside_a_purge_of_its_conversation() {
+        use crate::purge::tests::{execute, remaining_rows};
+        let database = Database::open_in_memory().expect("database");
+        let (conversation_id, _, _) = create_direct_fixture(&database);
+        let id = conversation_id.to_string();
+        assert_eq!(
+            remaining_rows(&database, "conversation_id", &id)
+                .into_iter()
+                .find(|(table, _)| table == "conversation_snapshot_refs"),
+            Some(("conversation_snapshot_refs".to_owned(), 1))
+        );
+        let guarded = ["conversation_snapshot_refs"];
+        for table in guarded {
+            assert!(
+                execute(
+                    &database,
+                    &format!("DELETE FROM {table} WHERE conversation_id = ?1"),
+                    &[&id]
+                )
+                .is_err(),
+                "{table} rejects a plain delete"
+            );
+        }
+        execute(
+            &database,
+            "INSERT INTO purge_authorizations (owner_id) VALUES (?1)",
+            &[&ConversationId::new().to_string()],
+        )
+        .expect("another owner's authorization");
+        for table in guarded {
+            assert!(
+                execute(
+                    &database,
+                    &format!("DELETE FROM {table} WHERE conversation_id = ?1"),
+                    &[&id]
+                )
+                .is_err(),
+                "{table} rejects a delete authorized for another owner"
+            );
+        }
+        execute(&database, "DELETE FROM purge_authorizations", &[]).expect("clear");
+
+        let receipt = database
+            .purge_conversation(conversation_id, TimestampMillis::new(10))
+            .expect("purge");
+        assert_eq!(receipt.conversations, vec![conversation_id]);
+        assert_eq!(
+            remaining_rows(&database, "conversation_id", &id),
+            Vec::new()
+        );
+        assert_eq!(remaining_rows(&database, "id", &id), Vec::new());
+        let connection = database.connection().expect("lock");
+        for table in ["conversation_snapshot_artifacts", "purge_authorizations"] {
+            let rows: i64 = connection
+                .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .expect("count");
+            assert_eq!(rows, 0, "{table}");
+        }
+    }
+
+    #[test]
+    fn a_conversation_with_a_live_generation_is_not_purged() {
+        use crate::purge::tests::remaining_rows;
+        let database = Database::open_in_memory().expect("database");
+        let graph = seed_turn_graph(&database);
+        let id = graph.conversation_id.to_string();
+        let before = remaining_rows(&database, "conversation_id", &id);
+        assert_eq!(
+            database.purge_conversation(graph.conversation_id, TimestampMillis::new(10)),
+            Err(crate::PurgeError::Busy)
+        );
+        assert_eq!(remaining_rows(&database, "conversation_id", &id), before);
+    }
 }

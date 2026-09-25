@@ -1420,7 +1420,14 @@ const CHARACTER_CODEC: SnapshotCodec = SnapshotCodec {
         crate::catalog::character_adapter::sync_character_ids(connection)
             .map_err(repository_apply_error)
     }),
-    delete: None,
+    delete: Some(|tx, id, now| {
+        if crate::purge::character_in_group(tx, id).map_err(|_| ApplyOneError::Storage)? {
+            return Ok(false);
+        }
+        crate::purge::queue_purge(tx, crate::purge::PurgeKind::Character, id, now)
+            .map_err(|_| ApplyOneError::Storage)?;
+        Ok(true)
+    }),
     empty: None,
     seed: None,
 };
@@ -1743,7 +1750,11 @@ const CONVERSATION_CODEC: SnapshotCodec = SnapshotCodec {
         crate::sync::conversation_sync_adapter::sync_conversation_ids(connection)
             .map_err(|_| ApplyOneError::Storage)
     }),
-    delete: None,
+    delete: Some(|tx, id, now| {
+        crate::purge::queue_purge(tx, crate::purge::PurgeKind::Conversation, id, now)
+            .map_err(|_| ApplyOneError::Storage)?;
+        Ok(true)
+    }),
 };
 
 fn memory_apply_error(error: lettuce_memory::MemoryRepositoryError) -> ApplyOneError {
@@ -3372,6 +3383,7 @@ impl LocalChangeJournal for Database {
         now: TimestampMillis,
     ) -> Result<usize, LocalChangeJournalError> {
         let mut connection = self.connection().map_err(storage)?;
+        crate::purge::run_queued_purges_on(&mut connection, now).map_err(storage)?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;
@@ -3387,7 +3399,9 @@ impl LocalChangeJournal for Database {
                 if SyncEntity::new(codec.kind, id.clone()).is_err() {
                     continue;
                 }
-                if entity_deferred(&tx, codec.kind, id).map_err(storage)? {
+                if entity_deferred(&tx, codec.kind, id).map_err(storage)?
+                    || crate::purge::purge_queued(&tx, codec.kind, id).map_err(storage)?
+                {
                     skipped.push(id.clone());
                     continue;
                 }
@@ -4111,6 +4125,9 @@ impl IncomingChangeRepository for Database {
             )
             .map_err(incoming_storage)?;
         transaction.commit().map_err(incoming_storage)?;
+        if let Err(error) = crate::purge::run_queued_purges_on(&mut connection, now) {
+            tracing::warn!(%error, "received deletes stay queued");
+        }
         Ok(IncomingBatchResult {
             state: IncomingBatchState::Committed,
             applied,

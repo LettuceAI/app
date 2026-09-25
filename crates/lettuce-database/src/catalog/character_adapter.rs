@@ -4495,4 +4495,202 @@ mod smoke_tests {
             1
         );
     }
+
+    fn persistent_media(database: &Database) {
+        database
+            .connection()
+            .expect("lock")
+            .execute("UPDATE media_assets SET retention = 'persistent'", [])
+            .expect("persistent media");
+    }
+
+    fn asset_and_blob(database: &Database, id: AssetId) -> (bool, bool) {
+        let connection = database.connection().expect("lock");
+        let asset: bool = connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM media_assets WHERE id = ?1)",
+                [id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("asset");
+        let blob: bool = connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM media_blobs WHERE content_hash IN (
+                     SELECT content_hash FROM media_blobs WHERE id IN (
+                         SELECT blob_id FROM media_assets WHERE id = ?1)))",
+                [id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("blob");
+        (asset, blob)
+    }
+
+    fn blob_hash(database: &Database, id: AssetId) -> String {
+        database
+            .connection()
+            .expect("lock")
+            .query_row(
+                "SELECT b.content_hash FROM media_assets a JOIN media_blobs b ON b.id = a.blob_id WHERE a.id = ?1",
+                [id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("hash")
+    }
+
+    /// Legacy `character_delete` (old-code/src-tauri/src/storage_manager/characters.rs:1066)
+    /// deleted the character row, whose cascades (storage_manager/db.rs:590-861) took its
+    /// rules, lorebook links, scenes, chat templates, sessions and companion data, and the
+    /// shared companion memory (characters.rs:1081). Its media is collected once unused.
+    #[test]
+    fn purging_a_character_deletes_its_graph_and_only_the_media_nothing_else_uses() {
+        use crate::purge::tests::{execute, remaining_rows};
+        let database = Database::open_in_memory().expect("database");
+        let (plan, avatar, _, _) = graph_fixture(&database);
+        let scene_assets: Vec<AssetId> = plan.scenes[0]
+            .assets
+            .iter()
+            .map(|link| link.asset_id)
+            .collect();
+        persistent_media(&database);
+        let created = CharacterRepository::create(&database, plan).expect("create");
+        let id = created.character.id.to_string();
+        let json_referenced = scene_assets[0];
+        let released_hashes = [
+            blob_hash(&database, avatar),
+            blob_hash(&database, scene_assets[1]),
+        ];
+        execute(
+            &database,
+            "INSERT INTO playground_history (id, origin, created_at, provider_kind, model_name, prompt, params_json, status)
+             VALUES ('history-1', 'generated', 5, 'comfyui', 'model', 'prompt', ?1, 'succeeded')",
+            &[&format!("{{\"format_version\":1,\"init_image\":\"{json_referenced}\"}}")],
+        )
+        .expect("playground history");
+
+        let receipt = database
+            .purge_character(created.character.id, TimestampMillis::new(10))
+            .expect("purge");
+        assert_eq!(receipt.characters, vec![created.character.id]);
+        assert_eq!(receipt.media_candidates, 3);
+        assert_eq!(remaining_rows(&database, "character_id", &id), Vec::new());
+        assert_eq!(remaining_rows(&database, "id", &id), Vec::new());
+        assert_eq!(
+            CharacterRepository::get(&database, created.character.id).expect("get"),
+            None
+        );
+
+        let mut released: Vec<String> = database
+            .collect_media_garbage(TimestampMillis::new(11))
+            .expect("collect")
+            .into_iter()
+            .map(|object| object.content_hash.as_str().to_owned())
+            .collect();
+        released.sort();
+        let mut expected = released_hashes.to_vec();
+        expected.sort();
+        assert_eq!(released, expected);
+        assert_eq!(asset_and_blob(&database, avatar), (false, false));
+        assert_eq!(asset_and_blob(&database, scene_assets[1]), (false, false));
+        assert_eq!(asset_and_blob(&database, json_referenced), (true, true));
+        assert_eq!(
+            database.collect_media_garbage(TimestampMillis::new(12)),
+            Ok(Vec::new())
+        );
+        assert_eq!(
+            database.media_object_retained(
+                &lettuce_types::ContentHash::parse(released_hashes[0].clone()).expect("hash")
+            ),
+            Ok(false)
+        );
+        assert_eq!(
+            database.media_object_retained(
+                &lettuce_types::ContentHash::parse(blob_hash(&database, json_referenced))
+                    .expect("hash")
+            ),
+            Ok(true)
+        );
+    }
+
+    #[test]
+    fn purging_a_character_keeps_the_media_a_duplicate_shares() {
+        let database = Database::open_in_memory().expect("database");
+        let (plan, avatar, _, _) = graph_fixture(&database);
+        persistent_media(&database);
+        let source = CharacterRepository::create(&database, plan).expect("source");
+        let copy_id = CharacterId::new();
+        ProfileDuplicateRepository::duplicate_character(
+            &database,
+            ProfileDuplicateRequest {
+                source_character_id: source.character.id,
+                destination_character_id: copy_id,
+                destination_name: Some("Copied Ada".into()),
+                now: TimestampMillis::new(10),
+            },
+        )
+        .expect("duplicate");
+        let copy = CharacterRepository::get(&database, copy_id)
+            .expect("copy")
+            .expect("present");
+        database
+            .purge_character(source.character.id, TimestampMillis::new(20))
+            .expect("purge");
+        assert_eq!(
+            database.collect_media_garbage(TimestampMillis::new(21)),
+            Ok(Vec::new())
+        );
+        assert_eq!(asset_and_blob(&database, avatar), (true, true));
+        assert_eq!(
+            CharacterRepository::get(&database, copy_id).expect("copy after"),
+            Some(copy)
+        );
+    }
+
+    #[test]
+    fn a_purged_companion_is_purged_on_the_sync_peer_and_never_comes_back() {
+        use crate::purge::tests::remaining_rows;
+        use lettuce_sync::LocalChangeJournal;
+        let a = Database::open_in_memory().expect("a");
+        let b = Database::open_in_memory().expect("b");
+        let companion = CharacterId::new();
+        CharacterRepository::create(&a, companion_plan(companion)).expect("companion");
+        sync_characters(&a, &b, 100);
+        assert!(
+            SoulRepository::get(&b, SoulOwner::Character(companion))
+                .expect("soul")
+                .is_some()
+        );
+
+        a.purge_character(companion, TimestampMillis::new(200))
+            .expect("purge on a");
+        assert_eq!(
+            remaining_rows(&a, "character_id", &companion.to_string()),
+            Vec::new()
+        );
+        sync_characters(&a, &b, 300);
+        assert_eq!(CharacterRepository::get(&b, companion).expect("b"), None);
+        assert_eq!(
+            remaining_rows(&b, "character_id", &companion.to_string()),
+            Vec::new()
+        );
+        assert_eq!(
+            SoulRepository::get(&b, SoulOwner::Character(companion)).expect("soul"),
+            None
+        );
+        assert!(
+            remaining_rows(&b, "entity_id", &companion.to_string())
+                .iter()
+                .all(|(table, _)| table.starts_with("sync_")),
+            "only the sync journal remembers the purged character"
+        );
+        sync_characters(&b, &a, 400);
+        assert_eq!(CharacterRepository::get(&a, companion).expect("a"), None);
+        for database in [&a, &b] {
+            assert_eq!(
+                database
+                    .journal_current_state(TimestampMillis::new(500))
+                    .expect("rescan"),
+                0
+            );
+        }
+    }
 }

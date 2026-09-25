@@ -85,6 +85,7 @@ END;
 
 CREATE TRIGGER companion_soul_receipts_immutable_delete
 BEFORE DELETE ON companion_soul_apply_receipts
+WHEN NOT EXISTS (SELECT 1 FROM purge_authorizations WHERE owner_id IN (OLD.character_id))
 BEGIN
     SELECT RAISE(ABORT, 'companion soul apply receipts are immutable');
 END;

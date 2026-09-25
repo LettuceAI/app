@@ -123,6 +123,7 @@ END;
 
 CREATE TRIGGER companion_state_receipts_immutable_delete
 BEFORE DELETE ON companion_state_apply_receipts
+WHEN NOT EXISTS (SELECT 1 FROM purge_authorizations WHERE owner_id IN (OLD.conversation_id, OLD.character_id))
 BEGIN
     SELECT RAISE(ABORT, 'companion state apply receipts are immutable');
 END;
@@ -264,6 +265,7 @@ BEGIN SELECT RAISE(ABORT, 'dynamic-memory suffix rewind is immutable'); END;
 
 CREATE TRIGGER dynamic_memory_suffix_rewinds_no_delete
 BEFORE DELETE ON dynamic_memory_suffix_rewinds
+WHEN NOT EXISTS (SELECT 1 FROM purge_authorizations WHERE owner_id IN (OLD.conversation_id, OLD.space_id))
 BEGIN SELECT RAISE(ABORT, 'dynamic-memory suffix rewind cannot be deleted'); END;
 
 CREATE TRIGGER companion_turn_effect_invalidations_immutable
@@ -272,6 +274,7 @@ BEGIN SELECT RAISE(ABORT, 'companion effect invalidation is immutable'); END;
 
 CREATE TRIGGER companion_turn_effect_invalidations_no_delete
 BEFORE DELETE ON companion_turn_effect_invalidations
+WHEN NOT EXISTS (SELECT 1 FROM purge_authorizations WHERE owner_id IN (OLD.conversation_id, (SELECT space_id FROM dynamic_memory_suffix_rewinds WHERE operation_id = OLD.operation_id)))
 BEGIN SELECT RAISE(ABORT, 'companion effect invalidation cannot be deleted'); END;
 
 CREATE TRIGGER companion_turn_effect_terminal_update
@@ -283,6 +286,7 @@ END;
 
 CREATE TRIGGER companion_turn_effect_no_delete
 BEFORE DELETE ON companion_turn_effects
+WHEN NOT EXISTS (SELECT 1 FROM purge_authorizations WHERE owner_id IN (OLD.conversation_id))
 BEGIN
     SELECT RAISE(ABORT, 'companion turn effect is immutable');
 END;
@@ -304,6 +308,7 @@ END;
 CREATE TRIGGER companion_turn_effect_memory_delete_open
 BEFORE DELETE ON companion_turn_effect_memory_changes
 WHEN (SELECT status FROM companion_turn_effects WHERE id = OLD.effect_id) != 'processing'
+    AND NOT EXISTS (SELECT 1 FROM purge_authorizations WHERE owner_id IN (SELECT conversation_id FROM companion_turn_effects WHERE id = OLD.effect_id))
 BEGIN
     SELECT RAISE(ABORT, 'terminal companion turn effect children are immutable');
 END;
@@ -325,6 +330,7 @@ END;
 CREATE TRIGGER companion_turn_effect_source_delete_open
 BEFORE DELETE ON companion_turn_effect_source_messages
 WHEN (SELECT status FROM companion_turn_effects WHERE id = OLD.effect_id) != 'processing'
+    AND NOT EXISTS (SELECT 1 FROM purge_authorizations WHERE owner_id IN (SELECT conversation_id FROM companion_turn_effects WHERE id = OLD.effect_id))
 BEGIN
     SELECT RAISE(ABORT, 'terminal companion turn effect children are immutable');
 END;

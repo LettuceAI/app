@@ -1120,3 +1120,50 @@ lose the message link.
 (`app_settings.default_prompt_document_id`, legacy `settings.prompt_template_id`)
 under the settings revision like the other selection setters; a prompt that does
 not exist is rejected as `InvalidData` by the foreign key.
+
+Hard delete (user decision 2026-09-25: delete like legacy, immediately).
+`Database::purge_conversation` deletes a direct or group conversation the way
+legacy `session_delete` / `group_session_delete` did (old-code
+`storage_manager/sessions.rs:3794`, `group_sessions.rs:1962`): participants,
+settings, branches, messages, revisions, candidates, turns, attempts, tool
+executions, checkpoints, dispatches, operations, outbox, snapshot references,
+media references, sync marks and fork notices; its own memory space with
+items, projections, summary, runs and their rounds; companion session state,
+turn effects, receipts and its continuity episode (a later episode is relinked
+to the deleted one's predecessor); its growth, consolidation and lorebook
+entry runs. A companion pool it shares stays, minus this conversation's runs,
+retrieval accesses and summary (legacy kept the shared companion memory).
+Usage events and cost bases stay, as legacy `usage_records` did: usage events
+check their attempt when recorded (`usage_events_require_attempt`) instead of
+a foreign key. `Database::purge_character` follows legacy `character_delete`
+(`characters.rs:1066`): the character's direct conversations, its companion
+pool (legacy deleted the shared memory, `characters.rs:1081`), Soul, facts,
+receipts, relationships, sessions, episodes, scheduled notes, runs, scenes,
+starters, media links and lorebook bindings. Group conversations it took part
+in stay, as legacy group sessions did; a reusable group that still lists the
+character refuses the delete (`PurgeError::InUse`), and creation apply
+receipts keep the id as a plain value. A conversation with a live generation,
+memory run or companion effect is refused as `Busy`.
+
+A purge runs in one immediate transaction with foreign key enforcement off,
+because branches and messages restrict each other; before the commit every
+foreign key into the touched tables is checked (`PurgeError::Integrity` rolls
+back), and enforcement is restored whatever happened. Append-only history
+keeps its delete guards: each guard allows a delete only while its owner
+(conversation, character or memory space) is listed in `purge_authorizations`,
+which the purge fills and empties inside its transaction. Launch snapshots
+and provider replays the deleted rows named go when nothing else references
+them. Every UUID in the text of a deleted row that is a non-library asset id
+is queued in `media_gc_candidates`.
+
+`Database::collect_media_garbage` takes the queue: a candidate still named by
+any foreign key (a legacy import completion only while its run is open) or
+found in the text of any table other than bookkeeping (media catalog, purge
+and sync journals, legacy import evidence, jobs and job events, provider
+replay caches) is kept and forgotten; library media is always kept. The rest
+are deleted (an asset a legacy import completion records stays as a row), and
+a blob none of whose assets is still used leaves the catalog: deleted, or
+marked `missing` while an asset row or completion names it. The released
+objects are returned so their files are deleted after this commit;
+`media_object_retained` answers the orphan sweep. Sync-received deletes wait
+in `purge_queue` (see lettuce-sync) and `run_queued_purges` runs them.

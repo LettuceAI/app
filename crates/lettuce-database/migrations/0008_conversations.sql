@@ -1030,7 +1030,7 @@ WHEN EXISTS (
     SELECT 1 FROM conversation_turns AS child
     WHERE child.retry_of_turn_id = OLD.id
       AND child.conversation_id = OLD.conversation_id
-)
+) AND NOT EXISTS (SELECT 1 FROM purge_authorizations WHERE owner_id IN (OLD.conversation_id))
 BEGIN SELECT RAISE(ABORT, 'retry source is protected'); END;
 
 CREATE TRIGGER conversation_turn_selected_speaker_character_final_insert
@@ -1172,6 +1172,7 @@ BEGIN SELECT RAISE(ABORT, 'snapshot reference is immutable'); END;
 
 CREATE TRIGGER conversation_snapshot_ref_immutable_delete
 BEFORE DELETE ON conversation_snapshot_refs
+WHEN NOT EXISTS (SELECT 1 FROM purge_authorizations WHERE owner_id IN (OLD.conversation_id))
 BEGIN SELECT RAISE(ABORT, 'snapshot reference is immutable'); END;
 
 CREATE TRIGGER conversation_initial_origin_immutable_update
@@ -1180,6 +1181,7 @@ BEGIN SELECT RAISE(ABORT, 'initial message origin is immutable'); END;
 
 CREATE TRIGGER conversation_initial_origin_immutable_delete
 BEFORE DELETE ON conversation_initial_message_origins
+WHEN NOT EXISTS (SELECT 1 FROM purge_authorizations WHERE owner_id IN (OLD.conversation_id))
 BEGIN SELECT RAISE(ABORT, 'initial message origin is immutable'); END;
 
 CREATE TRIGGER conversation_initial_origin_limit
@@ -1202,6 +1204,7 @@ BEGIN SELECT RAISE(ABORT, 'conversation operation is immutable'); END;
 
 CREATE TRIGGER conversation_operation_immutable_delete
 BEFORE DELETE ON conversation_operations
+WHEN NOT EXISTS (SELECT 1 FROM purge_authorizations WHERE owner_id IN (OLD.conversation_id))
 BEGIN SELECT RAISE(ABORT, 'conversation operation is immutable'); END;
 
 CREATE TRIGGER conversation_create_operation_shape
@@ -1220,6 +1223,7 @@ BEGIN SELECT RAISE(ABORT, 'conversation outbox event is immutable'); END;
 
 CREATE TRIGGER conversation_outbox_immutable_delete
 BEFORE DELETE ON conversation_outbox
+WHEN NOT EXISTS (SELECT 1 FROM purge_authorizations WHERE owner_id IN (OLD.conversation_id))
 BEGIN SELECT RAISE(ABORT, 'conversation outbox event is immutable'); END;
 
 CREATE TRIGGER conversation_create_outbox_shape
@@ -1300,6 +1304,7 @@ WHEN OLD.result_json IS NOT NULL OR NEW.result_json IS NULL
 BEGIN SELECT RAISE(ABORT, 'initial dispatch is immutable except first settlement'); END;
 CREATE TRIGGER initial_dispatch_no_delete
 BEFORE DELETE ON generation_initial_dispatches
+WHEN NOT EXISTS (SELECT 1 FROM purge_authorizations WHERE owner_id IN (OLD.conversation_id))
 BEGIN SELECT RAISE(ABORT, 'initial dispatch evidence is immutable'); END;
 
 CREATE TABLE generation_initial_replay_refs (
@@ -1323,6 +1328,7 @@ BEGIN SELECT RAISE(ABORT, 'initial replay requires pending dispatch'); END;
 CREATE TRIGGER initial_replay_no_update BEFORE UPDATE ON generation_initial_replay_refs
 BEGIN SELECT RAISE(ABORT, 'initial replay reference is immutable'); END;
 CREATE TRIGGER initial_replay_no_delete BEFORE DELETE ON generation_initial_replay_refs
+WHEN NOT EXISTS (SELECT 1 FROM purge_authorizations WHERE owner_id IN (OLD.conversation_id))
 BEGIN SELECT RAISE(ABORT, 'initial replay reference is immutable'); END;
 CREATE TRIGGER initial_dispatch_usage_settlement
 BEFORE UPDATE OF result_json ON generation_initial_dispatches
@@ -1368,6 +1374,7 @@ WHEN OLD.decision_json IS NOT NULL OR NEW.decision_json IS NULL
 BEGIN SELECT RAISE(ABORT, 'speaker dispatch is immutable except first settlement'); END;
 CREATE TRIGGER speaker_dispatch_no_delete
 BEFORE DELETE ON generation_speaker_dispatches
+WHEN NOT EXISTS (SELECT 1 FROM purge_authorizations WHERE owner_id IN (OLD.conversation_id))
 BEGIN SELECT RAISE(ABORT, 'speaker dispatch evidence is immutable'); END;
 CREATE TRIGGER speaker_dispatch_usage_settlement
 BEFORE UPDATE OF decision_json ON generation_speaker_dispatches

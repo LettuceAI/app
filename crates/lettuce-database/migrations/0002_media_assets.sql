@@ -104,3 +104,10 @@ BEFORE DELETE ON legacy_import_media_completions
 BEGIN
     SELECT RAISE(ABORT, 'legacy import media completion is immutable');
 END;
+
+-- Assets a purge stopped referencing. Garbage collection deletes the ones
+-- nothing references any more and forgets the rest.
+CREATE TABLE media_gc_candidates (
+    asset_id TEXT PRIMARY KEY CHECK (length(asset_id) > 0),
+    queued_at INTEGER NOT NULL
+) STRICT;

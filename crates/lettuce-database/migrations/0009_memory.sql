@@ -167,6 +167,7 @@ BEGIN SELECT RAISE(ABORT, 'memory retrieval access is immutable'); END;
 
 CREATE TRIGGER memory_retrieval_accesses_delete_restricted
 BEFORE DELETE ON memory_retrieval_accesses
+WHEN NOT EXISTS (SELECT 1 FROM purge_authorizations WHERE owner_id IN (OLD.conversation_id, OLD.space_id))
 BEGIN SELECT RAISE(ABORT, 'memory retrieval access cannot be deleted'); END;
 
 -- Background extraction owns its inference history independently from visible
@@ -304,6 +305,7 @@ END;
 
 CREATE TRIGGER dynamic_memory_summary_checkpoints_no_delete
 BEFORE DELETE ON dynamic_memory_summary_checkpoints
+WHEN NOT EXISTS (SELECT 1 FROM purge_authorizations WHERE owner_id IN (SELECT conversation_id FROM dynamic_memory_runs WHERE id = OLD.run_id UNION ALL SELECT space_id FROM dynamic_memory_runs WHERE id = OLD.run_id))
 BEGIN
     SELECT RAISE(ABORT, 'dynamic memory summary checkpoints are immutable');
 END;
@@ -449,6 +451,7 @@ BEGIN SELECT RAISE(ABORT, 'dynamic-memory background settlement is immutable'); 
 
 CREATE TRIGGER dynamic_memory_background_settlement_delete_restricted
 BEFORE DELETE ON dynamic_memory_background_round_settlements
+WHEN NOT EXISTS (SELECT 1 FROM purge_authorizations WHERE owner_id IN (SELECT conversation_id FROM dynamic_memory_runs WHERE id = OLD.run_id UNION ALL SELECT space_id FROM dynamic_memory_runs WHERE id = OLD.run_id))
 BEGIN SELECT RAISE(ABORT, 'dynamic-memory background settlement cannot be deleted'); END;
 
 CREATE TRIGGER dynamic_memory_background_result_immutable
@@ -457,6 +460,7 @@ BEGIN SELECT RAISE(ABORT, 'dynamic-memory background result is immutable'); END;
 
 CREATE TRIGGER dynamic_memory_background_result_delete_restricted
 BEFORE DELETE ON dynamic_memory_background_tool_results
+WHEN NOT EXISTS (SELECT 1 FROM purge_authorizations WHERE owner_id IN (SELECT conversation_id FROM dynamic_memory_runs WHERE id = OLD.run_id UNION ALL SELECT space_id FROM dynamic_memory_runs WHERE id = OLD.run_id))
 BEGIN SELECT RAISE(ABORT, 'dynamic-memory background result cannot be deleted'); END;
 
 CREATE TRIGGER dynamic_memory_run_immutable_update
@@ -473,6 +477,7 @@ BEGIN SELECT RAISE(ABORT, 'dynamic-memory run memory-space ownership mismatch');
 
 CREATE TRIGGER dynamic_memory_run_immutable_delete
 BEFORE DELETE ON dynamic_memory_runs
+WHEN NOT EXISTS (SELECT 1 FROM purge_authorizations WHERE owner_id IN (OLD.conversation_id, OLD.space_id))
 BEGIN SELECT RAISE(ABORT, 'dynamic-memory run cannot be deleted'); END;
 
 CREATE TRIGGER dynamic_memory_run_source_immutable_update
@@ -494,6 +499,7 @@ BEGIN SELECT RAISE(ABORT, 'dynamic-memory source requires the visible active ren
 
 CREATE TRIGGER dynamic_memory_run_source_immutable_delete
 BEFORE DELETE ON dynamic_memory_run_source_messages
+WHEN NOT EXISTS (SELECT 1 FROM purge_authorizations WHERE owner_id IN (SELECT conversation_id FROM dynamic_memory_runs WHERE id = OLD.run_id UNION ALL SELECT space_id FROM dynamic_memory_runs WHERE id = OLD.run_id))
 BEGIN SELECT RAISE(ABORT, 'dynamic-memory source window cannot be deleted'); END;
 
 CREATE TRIGGER dynamic_memory_attempt_retry_guard
@@ -560,6 +566,7 @@ BEGIN SELECT RAISE(ABORT, 'dynamic-memory inference round is immutable'); END;
 
 CREATE TRIGGER dynamic_memory_round_immutable_delete
 BEFORE DELETE ON dynamic_memory_inference_rounds
+WHEN NOT EXISTS (SELECT 1 FROM purge_authorizations WHERE owner_id IN (SELECT conversation_id FROM dynamic_memory_runs WHERE id = OLD.run_id UNION ALL SELECT space_id FROM dynamic_memory_runs WHERE id = OLD.run_id))
 BEGIN SELECT RAISE(ABORT, 'dynamic-memory inference round cannot be deleted'); END;
 
 CREATE TRIGGER dynamic_memory_tool_call_contract_guard
@@ -583,4 +590,5 @@ BEGIN SELECT RAISE(ABORT, 'dynamic-memory tool call is immutable'); END;
 
 CREATE TRIGGER dynamic_memory_tool_call_immutable_delete
 BEFORE DELETE ON dynamic_memory_admitted_tool_calls
+WHEN NOT EXISTS (SELECT 1 FROM purge_authorizations WHERE owner_id IN (SELECT conversation_id FROM dynamic_memory_runs WHERE id = OLD.run_id UNION ALL SELECT space_id FROM dynamic_memory_runs WHERE id = OLD.run_id))
 BEGIN SELECT RAISE(ABORT, 'dynamic-memory tool call cannot be deleted'); END;

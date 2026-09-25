@@ -14,9 +14,11 @@ mod models;
 mod sync;
 mod backup;
 mod legacy;
+mod purge;
 
 pub use models::*;
 pub use legacy::*;
+pub use purge::{PurgeError, PurgeReceipt};
 
 use std::{path::Path, str::FromStr, sync::Mutex, time::Duration};
 
@@ -5492,6 +5494,7 @@ mod tests {
                 "lorebooks",
                 "media_assets",
                 "media_blobs",
+                "media_gc_candidates",
                 "memory_embedding_projections",
                 "memory_items",
                 "memory_retrieval_accesses",
@@ -5509,6 +5512,8 @@ mod tests {
                 "prompt_documents",
                 "prompt_entries",
                 "provider_accounts",
+                "purge_authorizations",
+                "purge_queue",
                 "revision_media_refs",
                 "scene_assets",
                 "scene_variants",

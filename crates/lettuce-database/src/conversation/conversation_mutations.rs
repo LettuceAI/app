@@ -12906,4 +12906,125 @@ mod tests {
             )
             .expect("live send after restore");
     }
+
+    /// Legacy `session_delete` (old-code/src-tauri/src/storage_manager/sessions.rs:3794)
+    /// deleted the session's memory embeddings and the session row, whose cascades
+    /// (storage_manager/db.rs:762-782) took its messages, variants and companion turn
+    /// effects; usage records stayed, having no session foreign key.
+    #[test]
+    fn purging_a_conversation_deletes_its_history_and_keeps_usage_and_shared_media() {
+        use crate::purge::tests::remaining_rows;
+        let mut fixture = direct_fixture();
+        let own_user = stage_media_asset(&fixture.database, "31");
+        let own_reply = stage_media_asset(&fixture.database, "32");
+        let shared = stage_media_asset(&fixture.database, "33");
+        let mut other = direct_fixture_on(fixture.database.clone());
+        conversation_with_two_exchanges(&mut fixture, "purge");
+        let media = |asset_id| MessagePart::MediaAsset {
+            asset_id,
+            role: lettuce_conversations::MediaAssetRole::Inline,
+        };
+        let send = fixture
+            .database
+            .begin_send(
+                &send_command(
+                    &fixture,
+                    "purge-media",
+                    "cd",
+                    vec![media(own_user), media(shared)],
+                ),
+                TimestampMillis::new(400),
+            )
+            .expect("send media");
+        let attempt_id = send.value.attempt.id;
+        let revision = drive(
+            &fixture,
+            send.value.turn.id,
+            attempt_id,
+            &[
+                GenerationTurnStatus::Preparing,
+                GenerationTurnStatus::ContextPrepared,
+                GenerationTurnStatus::Running,
+            ],
+            "drive-purge-media",
+            401,
+        );
+        fixture
+            .database
+            .finalize_generation(
+                send.value.turn.id,
+                attempt_id,
+                conversation_revision(&fixture),
+                revision,
+                &token("finalize-purge-media", "cd"),
+                finalization_draft(vec![media(own_reply)], 0),
+                recorded_usage(&fixture, send.value.turn.id, attempt_id, 450),
+                TimestampMillis::new(450),
+            )
+            .expect("finalize media reply");
+        fixture.revision = conversation_revision(&fixture);
+        fixture
+            .database
+            .fork_branch(
+                &ForkBranch {
+                    conversation_id: fixture.conversation_id,
+                    source_branch_id: fixture.branch_id,
+                    at_message_id: None,
+                    expected_revision: fixture.revision,
+                    operation: token("purge-fork", "cd"),
+                },
+                TimestampMillis::new(500),
+            )
+            .expect("fork");
+        let other_send = other
+            .database
+            .begin_send(
+                &send_command(&other, "other-media", "cd", vec![media(shared)]),
+                TimestampMillis::new(600),
+            )
+            .expect("other send");
+        settle_succeeded(&other, &other_send.value.turn, 601);
+        other.revision = conversation_revision(&other);
+        let id = fixture.conversation_id.to_string();
+        let usage_events = remaining_rows(&fixture.database, "conversation_id", &id)
+            .into_iter()
+            .find(|(table, _)| table == "usage_events")
+            .expect("usage events");
+        assert_eq!(usage_events.1, 3);
+        let other_before = ConversationReader::get(other.database.as_ref(), other.conversation_id)
+            .expect("other conversation");
+
+        let receipt = fixture
+            .database
+            .purge_conversation(fixture.conversation_id, TimestampMillis::new(700))
+            .expect("purge");
+        assert_eq!(receipt.conversations, vec![fixture.conversation_id]);
+        assert_eq!(receipt.media_candidates, 3);
+        assert_eq!(
+            remaining_rows(&fixture.database, "conversation_id", &id),
+            vec![usage_events]
+        );
+        assert_eq!(remaining_rows(&fixture.database, "id", &id), Vec::new());
+        assert_eq!(
+            ConversationReader::get(other.database.as_ref(), other.conversation_id)
+                .expect("other conversation after"),
+            other_before
+        );
+
+        let mut released: Vec<String> = fixture
+            .database
+            .collect_media_garbage(TimestampMillis::new(701))
+            .expect("collect")
+            .into_iter()
+            .map(|object| object.content_hash.as_str().to_owned())
+            .collect();
+        released.sort();
+        assert_eq!(released, vec!["31".repeat(32), "32".repeat(32)]);
+        let assets: i64 = scalar(
+            &fixture.database,
+            "SELECT count(*) FROM media_assets WHERE id = ?1",
+            &shared.to_string(),
+        );
+        assert_eq!(assets, 1);
+    }
 }

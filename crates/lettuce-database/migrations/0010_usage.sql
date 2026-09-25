@@ -28,8 +28,6 @@ CREATE TABLE usage_events (
     ),
     recorded_at INTEGER NOT NULL,
     UNIQUE (conversation_id, turn_id, attempt_id),
-    FOREIGN KEY (conversation_id, turn_id, attempt_id)
-        REFERENCES generation_attempts(conversation_id, turn_id, id) ON DELETE RESTRICT,
     CHECK ((counters_kind = 'known') = (input_tokens IS NOT NULL)),
     CHECK ((counters_kind = 'known') = (output_tokens IS NOT NULL)),
     CHECK ((counters_kind = 'unavailable') = (unavailable_reason IS NOT NULL)),
@@ -39,6 +37,16 @@ CREATE TABLE usage_events (
         model_profile_id IS NOT NULL AND provider_account_id IS NOT NULL
     ))
 ) STRICT;
+
+-- Usage outlives a deleted conversation, so the attempt is required only
+-- when the event is recorded.
+CREATE TRIGGER usage_events_require_attempt
+BEFORE INSERT ON usage_events
+WHEN NOT EXISTS (
+    SELECT 1 FROM generation_attempts
+    WHERE conversation_id = NEW.conversation_id AND turn_id = NEW.turn_id AND id = NEW.attempt_id
+)
+BEGIN SELECT RAISE(ABORT, 'usage event requires its generation attempt'); END;
 
 CREATE TABLE job_inference_usage (
     id TEXT PRIMARY KEY,
