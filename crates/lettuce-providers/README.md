@@ -168,11 +168,9 @@ or provider with streaming off runs the request buffered (legacy
 `effective_streaming_enabled`) instead of rejecting it. The prompt-caching
 flag is ignored for providers without explicit caching, and the stored TTL is
 read per provider (cache-control providers `1h` or else five minutes, Gemini
-`5min` or else one hour, OpenAI `24h` or else in-memory). Gemini Express runs
-`-image` models buffered with `responseModalities: ["TEXT","IMAGE"]` (legacy
-express adapter); the generated images themselves are not yet carried out of
-the provider layer (there is no candidate channel for provider-made image
-bytes), so only the text part is kept. zAI always sends
+`5min` or else one hour, OpenAI `24h` or else in-memory). Gemini Express `-image` models stay rejected until provider-made
+images have a way out of the provider layer (legacy ran them buffered with
+`responseModalities: ["TEXT","IMAGE"]` and stored the images). zAI always sends
 `tool_choice: "auto"`. zAI and Gemini Express model listing returns an empty
 list. Ollama sends `num_ctx`/`num_predict` from its own settings first and
 falls back to the generic context length and output cap, as legacy
