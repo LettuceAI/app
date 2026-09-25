@@ -132,8 +132,11 @@ scanned kind, in dependency order, the current canonical snapshot of every
 entity is compared with the latest journaled one that became local state
 (incoming changes that lost a conflict are skipped), and differences are
 journaled as insert or update; journaled entities that no longer exist are
-journaled as deletes in reverse order. Edits, imports and restores therefore
-replicate with no per-mutation code, and because the scan runs before anything
+journaled as deletes in reverse order. Edits and imports therefore replicate
+with no per-mutation code; a restored database starts with a new device
+identity and an empty journal, so it rejoins as a new device whose state meets
+peers as concurrent inserts settled by last-writer-wins, never as deletes.
+Because the scan runs before anything
 is received, incoming changes always meet journaled local state. Deviations
 from legacy's per-write capture: edits between sessions collapse into one
 change, and its hybrid timestamp is the session's, not the edit's. Scanned

@@ -158,9 +158,13 @@ binds (and their ancestors), because that evidence forbids deleting its job;
 before this, one such job made every later prune fail.
 `Database::carry_device_local_state_from`
 attaches the previous database file and copies the device-local rows a backup
-never carries: the sync journal tables, installed Whisper model manifests and
-the discovered voices of audio providers present in the restored database. It
-fails instead of merging when the target already holds any of those rows.
+never carries: installed Whisper model manifests and the discovered voices of
+audio providers present in the restored database. The sync device identity,
+journal, frontiers and conflicts are not carried (user decision 2026-09-25):
+after any restore, v2 or legacy, the database joins sync as a new device, its
+first scan journals everything it holds as inserts that peers settle by
+last-writer-wins, and nothing the restore lacks reaches a peer as a delete or
+an older revision applied as a plain update.
 
 The legacy migration boundary can open an old `app.db` read-only, require the
 actual version-92 schema roots, and return a bounded typed import inventory.

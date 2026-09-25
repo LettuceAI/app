@@ -4,22 +4,11 @@ use rusqlite::TransactionBehavior;
 
 use crate::{Database, DatabaseError};
 
-const DEVICE_LOCAL_TABLES: &[&str] = &[
-    "sync_local_state",
-    "sync_frontiers",
-    "sync_changes",
-    "sync_deferred_changes",
-    "sync_change_frontiers",
-    "sync_peer_frontiers",
-    "sync_incoming_batches",
-    "sync_incoming_changes",
-    "sync_conflicts",
-    "installed_whisper_models",
-];
+const DEVICE_LOCAL_TABLES: &[&str] = &["installed_whisper_models"];
 
 impl Database {
-    /// Copies device-local state from the previous database file: the sync
-    /// journal and installed Whisper model manifests; the local LoRA library,
+    /// Copies device-local state from the previous database file: installed
+    /// Whisper model manifests; the local LoRA library,
     /// the local generation metrics, the app shell's install state, the device
     /// settings and each day of app usage unless the new file already has
     /// them (an imported legacy install's); and the discovered voices and
@@ -31,6 +20,11 @@ impl Database {
     /// or with the same `created_at`, `model_path` and `summary_json` (the
     /// same legacy generation imported again under an attempt id derived from
     /// a different source fingerprint).
+    ///
+    /// The sync device identity, journal, frontiers and conflicts stay
+    /// behind: the restored file joins sync as a new device whose first scan
+    /// journals its state as inserts, so peers merge it by last-writer-wins
+    /// and never receive the restore as deletes or rollbacks of their data.
     pub fn carry_device_local_state_from(&self, previous: &Path) -> Result<(), DatabaseError> {
         let previous = previous
             .to_str()
@@ -333,7 +327,7 @@ mod tests {
     }
 
     #[test]
-    fn device_local_sync_identity_moves_to_the_restored_database() {
+    fn restored_database_joins_sync_as_a_new_device_with_an_empty_journal() {
         let root = std::env::temp_dir().join(format!("device-local-{}", OperationId::new()));
         std::fs::create_dir_all(&root).expect("fixture root");
         let previous_path = root.join("previous.sqlite3");
@@ -341,20 +335,29 @@ mod tests {
         let device = previous
             .local_device_id(TimestampMillis::new(1))
             .expect("previous device");
+        let changes = previous
+            .journal_current_state(TimestampMillis::new(1))
+            .expect("previous journal");
+        assert!(changes > 0);
         let restored = Database::open(root.join("restored.sqlite3")).expect("restored database");
         restored
             .carry_device_local_state_from(&previous_path)
             .expect("carry device-local state");
-        assert_eq!(
+        let journal_rows = |database: &Database| -> i64 {
+            database
+                .connection()
+                .expect("database lock")
+                .query_row("SELECT COUNT(*) FROM sync_changes", [], |row| row.get(0))
+                .expect("journal rows")
+        };
+        assert_eq!(journal_rows(&restored), 0);
+        assert_ne!(
             restored
                 .local_device_id(TimestampMillis::new(2))
                 .expect("restored device"),
             device
         );
-        assert!(
-            restored
-                .carry_device_local_state_from(&previous_path)
-                .is_err()
-        );
+        drop((previous, restored));
+        std::fs::remove_dir_all(root).expect("remove fixture");
     }
 }
