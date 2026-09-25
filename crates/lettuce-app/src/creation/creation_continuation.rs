@@ -233,7 +233,6 @@ impl<
                 profile,
                 handle,
                 stream_sink,
-                self.tool_fallback,
             )
             .map(|request| (text, request))
         });
@@ -411,6 +410,7 @@ impl<
         attempt: &CreationInferenceAttempt,
     ) -> Result<CreationPromptText, CreationContinuationError> {
         Ok(CreationPromptText {
+            tool_fallback: self.tool_fallback,
             helper: crate::generation::runtime_text::RuntimeText::load(
                 self.repository,
                 crate::BuiltInPromptId::CreationHelper,
@@ -560,6 +560,7 @@ fn attempt_limit_reached(
 }
 
 struct CreationPromptText {
+    tool_fallback: Option<lettuce_creation::CreationFallbackFormat>,
     helper: crate::generation::runtime_text::RuntimeText,
     runtime: crate::generation::runtime_text::RuntimeText,
     dialogue: Vec<lettuce_creation::CreationDialogueTurn>,
@@ -573,8 +574,8 @@ fn build_creation_inference_request(
     profile: ResolvedInferenceProfile,
     handle: &JobHandle,
     stream_sink: Option<RequestId>,
-    tool_fallback: Option<lettuce_creation::CreationFallbackFormat>,
 ) -> Result<InferenceRequest, CreationContinuationError> {
+    let tool_fallback = text.tool_fallback;
     let mut profile = profile;
     if (tool_fallback.is_none() && profile.tool_policy != ToolPolicy::Allowed)
         || base.id != attempt.base_proposal_id
