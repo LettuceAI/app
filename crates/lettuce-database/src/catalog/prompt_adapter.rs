@@ -404,11 +404,6 @@ fn validate_metadata(metadata: &PromptMetadataDraft) -> Result<(), PromptReposit
 }
 
 fn validate_entries(entries: &[PromptEntryDraft]) -> Result<(), PromptRepositoryError> {
-    if entries.len() > lettuce_context::MAX_PROMPT_ENTRIES {
-        return Err(PromptRepositoryError::Invalid(
-            PromptValidationError::TooManyEntries,
-        ));
-    }
     for entry in entries {
         entry.validate().map_err(PromptRepositoryError::Invalid)?;
         if entry.built_in_entry_key.is_some() {

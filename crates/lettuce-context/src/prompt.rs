@@ -13,7 +13,6 @@ pub const MAX_LABEL_SCALARS: usize = 256;
 pub const MAX_LABEL_BYTES: usize = 1024;
 pub const MAX_PROSE_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_AUTHORED_BYTES: usize = 64 * 1024 * 1024;
-pub const MAX_PROMPT_ENTRIES: usize = 4_096;
 pub const MAX_CHILDREN: usize = 10_000;
 pub const MAX_CONDITION_DEPTH: usize = 16;
 pub const MAX_CONDITION_NODES: usize = 256;
@@ -391,9 +390,6 @@ impl PromptEntryMutation {
             }
             Self::Update { draft, .. } => draft.validate(),
             Self::Replace { drafts } => {
-                if drafts.len() > MAX_PROMPT_ENTRIES {
-                    return Err(PromptValidationError::TooManyEntries);
-                }
                 for draft in drafts {
                     draft.validate()?;
                     if draft.built_in_entry_key.is_some() {
@@ -447,9 +443,6 @@ impl PromptSnapshot {
     pub fn validate(&self) -> Result<(), PromptValidationError> {
         if self.revision.get() == 0 {
             return Err(PromptValidationError::ZeroRevision);
-        }
-        if self.entries.len() > MAX_PROMPT_ENTRIES {
-            return Err(PromptValidationError::TooManyEntries);
         }
         let mut ids = std::collections::HashSet::with_capacity(self.entries.len());
         let mut built_in_keys = std::collections::HashSet::with_capacity(self.entries.len());
@@ -507,8 +500,6 @@ pub enum PromptValidationError {
     LabelTooLarge { field: &'static str },
     #[error("{field} exceeds the 1 MiB limit")]
     ProseTooLarge { field: &'static str },
-    #[error("prompt has too many entries")]
-    TooManyEntries,
     #[error("prompt contains duplicate entry id {0}")]
     DuplicateEntry(PromptEntryId),
     #[error("prompt authored payload exceeds 8 MiB")]
@@ -672,9 +663,6 @@ impl PromptDocument {
         }
         if self.created_at > self.updated_at {
             return Err(PromptValidationError::InvalidTimestampOrder);
-        }
-        if self.entries.len() > MAX_PROMPT_ENTRIES {
-            return Err(PromptValidationError::TooManyEntries);
         }
         let mut ids = std::collections::HashSet::with_capacity(self.entries.len());
         let mut built_in_keys = std::collections::HashSet::with_capacity(self.entries.len());
@@ -2005,9 +1993,6 @@ impl BuiltInPromptSeed {
         if self.seed_version == 0 {
             return Err(PromptValidationError::ZeroSeedVersion);
         }
-        if self.entries.len() > MAX_PROMPT_ENTRIES {
-            return Err(PromptValidationError::TooManyEntries);
-        }
         let mut entry_keys = std::collections::HashSet::with_capacity(self.entries.len());
         for entry in &self.entries {
             entry.validate()?;
@@ -2669,6 +2654,14 @@ mod tests {
             conditions: None,
             payload: None,
         };
+        assert_eq!(
+            PromptEntryMutation::Replace {
+                drafts: vec![draft.clone(); 5_000]
+            }
+            .validate(),
+            Ok(()),
+            "SillyTavern presets import with any number of entries"
+        );
         let raw = serde_json::to_string(&draft).expect("draft serializes");
         assert!(!raw.contains("id"));
         let mut value = serde_json::to_value(&draft).expect("draft value");

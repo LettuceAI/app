@@ -5,8 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::ValidationError;
 use crate::constants::{
-    MAX_COLLECTION_ITEMS, validate_collection, validate_color, validate_finite, validate_non_blank,
-    validate_optional_color, validate_text,
+    validate_color, validate_finite, validate_non_blank, validate_optional_color, validate_text,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -60,8 +59,6 @@ pub struct ChatWidgetSlots {
 
 impl ChatWidgetSlots {
     pub fn validate(&self) -> Result<(), ValidationError> {
-        validate_collection("chat_widget_slots.left", &self.left, MAX_COLLECTION_ITEMS)?;
-        validate_collection("chat_widget_slots.right", &self.right, MAX_COLLECTION_ITEMS)?;
         for node in self.left.iter().chain(self.right.iter()) {
             node.validate()?;
         }
@@ -328,7 +325,6 @@ impl WidgetNode {
                 description,
                 ..
             } => {
-                validate_collection("widget.children", children, MAX_COLLECTION_ITEMS)?;
                 validate_optional_text(title.as_ref())?;
                 validate_optional_text(description.as_ref())?;
                 for child in children {
@@ -380,7 +376,6 @@ impl WidgetNode {
             } => {
                 validate_optional_text(title.as_ref())?;
                 validate_optional_text(description.as_ref())?;
-                validate_collection("widget.stats", stats, MAX_COLLECTION_ITEMS)?;
                 for stat in stats {
                     validate_non_blank("widget.stat.id", &stat.id)?;
                     validate_non_blank("widget.stat.label", &stat.label)?;
@@ -411,7 +406,6 @@ impl WidgetNode {
             } => {
                 validate_optional_text(title.as_ref())?;
                 validate_optional_text(description.as_ref())?;
-                validate_collection("widget.snippets", snippets, MAX_COLLECTION_ITEMS)?;
                 for snippet in snippets {
                     validate_non_blank("widget.snippet.id", &snippet.id)?;
                     validate_non_blank("widget.snippet.label", &snippet.label)?;
@@ -876,7 +870,6 @@ impl CharacterPresentationV1 {
         if let Some(crop) = self.banner_crop {
             crop.validate()?;
         }
-        validate_collection("custom_gradient_colors", &self.custom_gradient_colors, 256)?;
         for color in &self.custom_gradient_colors {
             validate_color("custom_gradient_color", color)?;
         }

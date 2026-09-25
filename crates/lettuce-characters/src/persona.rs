@@ -5,8 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::character::ImageRecommendation;
 use crate::constants::{
-    MAX_COLLECTION_ITEMS, validate_collection, validate_contiguous, validate_name,
-    validate_revision_timestamps, validate_text,
+    validate_contiguous, validate_name, validate_revision_timestamps, validate_text,
 };
 use crate::presentation::Crop;
 use crate::{LifecycleStatus, ValidationError};
@@ -34,7 +33,6 @@ pub struct PersonaMedia {
 
 impl PersonaMedia {
     pub fn validate(&self) -> Result<(), ValidationError> {
-        validate_collection("persona.media", &self.links, MAX_COLLECTION_ITEMS)?;
         let mut avatars = 0;
         let mut references = Vec::new();
         for link in &self.links {

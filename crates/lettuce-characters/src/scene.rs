@@ -6,10 +6,7 @@ use lettuce_types::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::constants::{
-    MAX_COLLECTION_ITEMS, validate_collection, validate_contiguous, validate_revision_timestamps,
-    validate_text,
-};
+use crate::constants::{validate_contiguous, validate_revision_timestamps, validate_text};
 use crate::{LifecycleStatus, ValidationError};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -55,7 +52,6 @@ impl SceneDocumentV1 {
                 version: self.format_version,
             });
         }
-        validate_collection("scene_document.parts", &self.parts, MAX_COLLECTION_ITEMS)?;
         for part in &self.parts {
             if let ScenePart::Text { text } = part {
                 validate_text("scene_document.text", text)?;
@@ -155,7 +151,6 @@ impl Scene {
         if let Some(direction) = &self.direction {
             validate_text("scene.direction", direction)?;
         }
-        validate_collection("scene.assets", &self.assets, MAX_COLLECTION_ITEMS)?;
         let mut backgrounds = 0;
         let mut link_ids = HashSet::new();
         let mut asset_ids = HashSet::new();

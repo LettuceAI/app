@@ -8,8 +8,8 @@ use lettuce_types::{
 use serde::{Deserialize, Serialize};
 
 use crate::constants::{
-    MAX_COLLECTION_ITEMS, validate_collection, validate_name, validate_non_blank,
-    validate_revision_timestamps, validate_scalar_limit, validate_text,
+    validate_name, validate_non_blank, validate_revision_timestamps, validate_scalar_limit,
+    validate_text,
 };
 use crate::presentation::CharacterPresentationV1;
 use crate::{InteractionMode, LifecycleStatus, MemoryPolicy, ValidationError};
@@ -46,7 +46,6 @@ impl CharacterProfile {
         {
             validate_text("character.profile", value)?;
         }
-        validate_collection("character.rules", &self.rules, MAX_COLLECTION_ITEMS)?;
         for rule in &self.rules {
             validate_text("character.rules", rule)?;
         }
@@ -242,7 +241,6 @@ pub struct CharacterMedia {
 
 impl CharacterMedia {
     pub fn validate(&self) -> Result<(), ValidationError> {
-        validate_collection("character.media", &self.links, MAX_COLLECTION_ITEMS)?;
         let mut avatars = 0;
         let mut backgrounds = 0;
         let mut design = Vec::new();
@@ -374,6 +372,26 @@ mod tests {
             scenario: None,
             rules: Vec::new(),
         }
+    }
+
+    #[test]
+    fn rules_tags_sources_and_gradient_colors_have_no_count_limit_like_legacy() {
+        let mut profile = profile();
+        profile.rules = vec!["Stay kind".into(); 10_001];
+        assert_eq!(profile.validate(), Ok(()));
+        let provenance = CharacterProvenance {
+            tags: (0..300).map(|index| format!("tag {index}")).collect(),
+            sources: (0..300)
+                .map(|index| format!("https://source/{index}"))
+                .collect(),
+            ..CharacterProvenance::default()
+        };
+        assert_eq!(provenance.validate(), Ok(()));
+        let presentation = CharacterPresentationV1 {
+            custom_gradient_colors: vec!["#abcdef".into(); 300],
+            ..CharacterPresentationV1::default()
+        };
+        assert_eq!(presentation.validate(), Ok(()));
     }
 
     #[test]

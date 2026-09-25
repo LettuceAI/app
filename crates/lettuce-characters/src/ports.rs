@@ -303,11 +303,6 @@ impl ConversationStarterDraftUpdate {
     pub fn validate(&self) -> Result<(), ValidationError> {
         crate::constants::validate_name("starter.name", &self.name)?;
         if let Selection::Explicit(lorebooks) = &self.lorebooks {
-            crate::constants::validate_collection(
-                "starter.lorebooks",
-                lorebooks,
-                crate::constants::MAX_COLLECTION_ITEMS,
-            )?;
             crate::constants::validate_unique("starter.lorebook_ids", lorebooks.iter().copied())?;
         }
         Ok(())

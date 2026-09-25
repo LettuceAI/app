@@ -5,8 +5,7 @@ use lettuce_types::{
 use serde::{Deserialize, Serialize};
 
 use crate::constants::{
-    MAX_COLLECTION_ITEMS, validate_collection, validate_name, validate_revision_timestamps,
-    validate_text, validate_unique,
+    validate_name, validate_revision_timestamps, validate_text, validate_unique,
 };
 use crate::{Selection, ValidationError};
 
@@ -81,7 +80,6 @@ impl ConversationStarter {
             self.updated_at,
         )?;
         validate_name("starter.name", &self.name)?;
-        validate_collection("starter.messages", &self.messages, MAX_COLLECTION_ITEMS)?;
         validate_unique(
             "starter.message_ids",
             self.messages.iter().map(|message| message.id),
@@ -90,7 +88,6 @@ impl ConversationStarter {
             message.validate()?;
         }
         if let Selection::Explicit(lorebooks) = &self.lorebooks {
-            validate_collection("starter.lorebooks", lorebooks, MAX_COLLECTION_ITEMS)?;
             validate_unique("starter.lorebook_ids", lorebooks.iter().copied())?;
         }
         Ok(())

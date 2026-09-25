@@ -5,8 +5,7 @@ use lettuce_types::{
 use serde::{Deserialize, Serialize};
 
 use crate::constants::{
-    MAX_COLLECTION_ITEMS, validate_collection, validate_contiguous, validate_name,
-    validate_revision_timestamps, validate_unique,
+    validate_contiguous, validate_name, validate_revision_timestamps, validate_unique,
 };
 use crate::presentation::ChatAppearanceV1;
 use crate::{
@@ -88,7 +87,6 @@ impl GroupProfile {
             self.updated_at,
         )?;
         validate_name("group.name", &self.name)?;
-        validate_collection("group.members", &self.members, MAX_COLLECTION_ITEMS)?;
         if self.members.len() < 2 {
             return Err(ValidationError::Invariant {
                 field: "group.minimum_members",

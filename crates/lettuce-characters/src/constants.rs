@@ -4,7 +4,6 @@ use crate::ValidationError;
 
 pub(crate) const MAX_NAME_BYTES: usize = 1024;
 pub(crate) const MAX_TEXT_BYTES: usize = 1024 * 1024;
-pub(crate) const MAX_COLLECTION_ITEMS: usize = 10_000;
 
 pub(crate) fn validate_revision_timestamps(
     field: &'static str,
@@ -54,17 +53,6 @@ pub(crate) fn validate_scalar_limit(
     Ok(())
 }
 
-pub(crate) fn validate_collection<T>(
-    field: &'static str,
-    values: &[T],
-    max: usize,
-) -> Result<(), ValidationError> {
-    if values.len() > max {
-        return Err(ValidationError::TooMany { field, max });
-    }
-    Ok(())
-}
-
 pub(crate) fn validate_unique<T: Eq + std::hash::Hash>(
     field: &'static str,
     values: impl IntoIterator<Item = T>,
@@ -87,10 +75,9 @@ pub(crate) fn validate_contiguous(
         if ordinal != expected {
             return Err(ValidationError::NonContiguous { field });
         }
-        expected = expected.checked_add(1).ok_or(ValidationError::TooMany {
-            field,
-            max: MAX_COLLECTION_ITEMS,
-        })?;
+        expected = expected
+            .checked_add(1)
+            .ok_or(ValidationError::NonContiguous { field })?;
     }
     Ok(())
 }
