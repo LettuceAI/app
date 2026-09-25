@@ -307,7 +307,7 @@ pub fn gguf_meta_with_retry(
 
 fn quant_quality_score(quant: &str) -> f64 {
     match quant.to_uppercase().as_str() {
-        "F32" | "BF16" | "F16" => 100.0,
+        "F32" | "BF16" | "F16" | "UD-BF16" => 100.0,
         "UD-Q8_K_XL" => 96.0,
         "Q8_K" | "Q8_K_S" | "Q8_K_L" | "Q8_K_XL" => 95.0,
         "UD-Q6_K_XL" => 92.0,
@@ -1566,6 +1566,18 @@ mod tests {
                 assert_eq!(actual.best, expected.best, "{vram} GB, cap {cap}");
             }
         }
+    }
+
+    #[test]
+    fn unsloth_bf16_files_keep_the_full_precision_score_legacy_gave_them() {
+        for name in ["m-UD-BF16.gguf", "m-BF16.gguf", "m-F16.gguf"] {
+            let quant = crate::extract_quantization(name);
+            assert_eq!(quant_quality_with_qat(&quant, false), 100.0, "{name}");
+        }
+        assert_eq!(
+            quant_quality_with_qat(&crate::extract_quantization("m-UD-F16.gguf"), false),
+            50.0
+        );
     }
 
     #[test]

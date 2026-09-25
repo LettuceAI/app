@@ -167,7 +167,8 @@ README without front matter, whoami, and the old error texts for unauthorized
 and gated responses. Quantization names follow the old list with Unsloth
 dynamic quants `UD-` prefixed; corrected: `BF16` files were labeled `F16`,
 `TQ1_0`/`TQ2_0`/`MXFP4` were unknown, and every file with `imatrix` in its
-name was hidden. Importance-matrix quants (`i1-`, `imat`, `imatrix` parts) are
+name was hidden. The runnability score keeps the full-precision quality for
+`UD-BF16` files, which legacy scored as `F16`. Importance-matrix quants (`i1-`, `imat`, `imatrix` parts) are
 now listed and flagged `imatrix`; only the importance-matrix data file itself
 is dropped.
 
