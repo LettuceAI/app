@@ -5,6 +5,7 @@
 use std::future::Future;
 use std::time::Duration;
 
+use lettuce_inference::InferenceRuntime;
 use lettuce_jobs::{
     CancellationPolicy, CancellationReason, ClaimRef, FiniteFraction, IdempotencyKey, JobError,
     JobKind, JobMutation, JobOutcome, JobPriority, JobSnapshot, JobSpec, JobState, JobStore,
@@ -42,6 +43,20 @@ pub(crate) struct OneShotLease<'a> {
     pub(crate) now: TimestampMillis,
     pub(crate) lease_for: Duration,
     pub(crate) allowed: &'a ResourceAvailability,
+    /// Where the running job's cancellation token is registered so a stop
+    /// request for its job id reaches it.
+    pub(crate) cancellations: Option<&'a InferenceRuntime>,
+}
+
+struct CancellationRegistration<'a> {
+    runtime: &'a InferenceRuntime,
+    job_id: lettuce_types::JobId,
+}
+
+impl Drop for CancellationRegistration<'_> {
+    fn drop(&mut self) {
+        let _ = self.runtime.unregister_cancellation(self.job_id);
+    }
 }
 
 pub(crate) async fn run_one_shot_job<R, T, E, F, Fut>(
@@ -72,6 +87,22 @@ where
     .with_policies(RecoveryPolicy::Restart, CancellationPolicy::Cooperative);
     let admitted = repository.create_or_get(spec).map_err(jobs)?.job;
     let at = lease.now.max(admitted.updated_at);
+    let handle = JobHandle::new(admitted.id);
+    let _registration = match lease.cancellations {
+        Some(runtime) => {
+            if runtime
+                .register_cancellation(admitted.id, handle.cancellation_token())
+                .is_err()
+            {
+                return Err(OneShotJobError::NotClaimed.into());
+            }
+            Some(CancellationRegistration {
+                runtime,
+                job_id: admitted.id,
+            })
+        }
+        None => None,
+    };
     let Some(claim) = repository
         .claim(
             admitted.id,
@@ -115,7 +146,7 @@ where
             at,
         })
         .map_err(jobs)?;
-    let result = run(JobHandle::new(admitted.id)).await;
+    let result = run(handle).await;
     settle(repository, claim.claim, job.request_id, result, at)
 }
 
@@ -185,5 +216,81 @@ where
                 .map_err(jobs)?;
             Err(error)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use lettuce_jobs::{InMemoryJobStore, JobErrorCode};
+
+    use super::*;
+
+    #[derive(Debug)]
+    enum Failure {
+        Job,
+        Cancelled,
+    }
+
+    impl From<OneShotJobError> for Failure {
+        fn from(_: OneShotJobError) -> Self {
+            Self::Job
+        }
+    }
+
+    impl OneShotFailure for Failure {
+        fn is_cancelled(&self) -> bool {
+            matches!(self, Self::Cancelled)
+        }
+
+        fn job_error(&self) -> JobError {
+            JobError::new(JobErrorCode::WorkerFailed, false, "failed").expect("job error")
+        }
+    }
+
+    #[tokio::test]
+    async fn a_stop_for_the_job_id_reaches_a_running_one_shot() {
+        let store = InMemoryJobStore::new();
+        let runtime = InferenceRuntime::default();
+        let allowed = ResourceAvailability::all();
+        let result = run_one_shot_job(
+            &store,
+            OneShotJob {
+                name: "reply-helper",
+                stage: "help_me_reply",
+                subject_kind: SubjectKind::Conversation,
+                subject: "conversation",
+                request_id: RequestId::new(),
+            },
+            OneShotLease {
+                worker_id: WorkerId::new(),
+                now: TimestampMillis::now().expect("now"),
+                lease_for: Duration::from_secs(30),
+                allowed: &allowed,
+                cancellations: Some(&runtime),
+            },
+            |handle| {
+                let runtime = &runtime;
+                async move {
+                    assert!(
+                        runtime.request_cancel(handle.id()).expect("request cancel"),
+                        "legacy api_request registered the help-me-reply request id with the AbortRegistry"
+                    );
+                    if handle.cancellation_token().is_cancelled() {
+                        Err::<(), _>(Failure::Cancelled)
+                    } else {
+                        Ok(())
+                    }
+                }
+            },
+        )
+        .await;
+        assert!(matches!(result, Err(Failure::Cancelled)));
+        let job = store
+            .list(lettuce_jobs::JobQuery::default())
+            .expect("jobs")
+            .items
+            .remove(0);
+        assert_eq!(job.state, JobState::Cancelled);
+        assert!(!runtime.request_cancel(job.id).expect("unregistered"));
     }
 }

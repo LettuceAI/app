@@ -178,6 +178,7 @@ impl<T> ReplyHelperSources for T where
 pub struct ReplyHelperCoordinator<'a, R: ?Sized, I: ?Sized> {
     repository: &'a R,
     inference: &'a I,
+    cancellations: Option<&'a lettuce_inference::InferenceRuntime>,
 }
 
 impl<'a, R: ?Sized, I: ?Sized> ReplyHelperCoordinator<'a, R, I> {
@@ -186,7 +187,19 @@ impl<'a, R: ?Sized, I: ?Sized> ReplyHelperCoordinator<'a, R, I> {
         Self {
             repository,
             inference,
+            cancellations: None,
         }
+    }
+
+    /// Registers each run's cancellation token in `runtime`, so a stop
+    /// request for the run's job id reaches it.
+    #[must_use]
+    pub const fn with_inference_runtime(
+        mut self,
+        runtime: &'a lettuce_inference::InferenceRuntime,
+    ) -> Self {
+        self.cancellations = Some(runtime);
+        self
     }
 }
 
@@ -260,6 +273,7 @@ where
                 now,
                 lease_for,
                 allowed,
+                cancellations: self.cancellations,
             },
             |handle| async move { self.run(stored, request, &handle, now).await },
         )

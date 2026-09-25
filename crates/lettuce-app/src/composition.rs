@@ -700,6 +700,7 @@ impl AppBackend {
         inference: &'a I,
     ) -> crate::ReplyHelperCoordinator<'a, Database, I> {
         crate::ReplyHelperCoordinator::new(self.database.as_ref(), inference)
+            .with_inference_runtime(self.inference_runtime.as_ref())
     }
 
     #[must_use]
