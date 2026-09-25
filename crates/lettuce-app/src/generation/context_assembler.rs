@@ -136,13 +136,15 @@ where
             omitted_messages,
             scenes: scene_timeline,
             history,
+            visible,
         } = select_timeline(&aggregate.branches, &request)?;
         let (scene, scene_direction) = snapshot.scene_values(&scene_timeline)?;
         let effective_at = source_effective_time(&request)?;
         let companion_state = self.companion_prompt_state(&aggregate, effective_at)?;
         let scheduled_notes = self.companion_scheduled_notes(&aggregate, effective_at)?;
 
-        let recent_text = history
+        let keyword_window = if direct { &visible } else { &history };
+        let recent_text = keyword_window
             .iter()
             .filter_map(active_text)
             .rev()
@@ -1184,6 +1186,8 @@ struct TimelineSelection<'a> {
     omitted_messages: usize,
     scenes: Vec<&'a TimelineItem>,
     history: Vec<&'a TimelineItem>,
+    /// Every visible message, scene messages included, in conversation order.
+    visible: Vec<&'a TimelineItem>,
 }
 
 fn select_timeline<'a>(
@@ -1229,7 +1233,7 @@ fn select_timeline<'a>(
         ordered.retain(|item| item.message.id != request.source_message_id);
     }
 
-    let visible = ordered
+    let all_visible = ordered
         .into_iter()
         .filter(|item| {
             !matches!(
@@ -1242,14 +1246,15 @@ fn select_timeline<'a>(
     // Scene messages are domain timeline records used to resolve the
     // effective scene and its latest valid edit. They are not transcript
     // messages and must not consume the bounded chat window.
-    let scenes = visible
+    let scenes = all_visible
         .iter()
         .filter(|item| item.message.role == MessageRole::Scene)
         .copied()
         .collect::<Vec<_>>();
-    let history = visible
-        .into_iter()
+    let history = all_visible
+        .iter()
         .filter(|item| item.message.role != MessageRole::Scene)
+        .copied()
         .collect::<Vec<_>>();
     let visible = &history;
     let mut selected = visible
@@ -1298,6 +1303,7 @@ fn select_timeline<'a>(
         omitted_messages,
         scenes,
         history,
+        visible: all_visible,
     })
 }
 

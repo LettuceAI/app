@@ -4492,6 +4492,78 @@ async fn identity_placeholders_resolve_everywhere_legacy_resolved_them() {
     assert!(text.contains("Hello Ada, I am Mira."));
 }
 
+#[tokio::test]
+async fn scene_text_triggers_lorebook_keywords_and_entries_order_across_books() {
+    let database = database_with_builtins();
+    let first = seed_lorebook(&database, "First");
+    add_lore_entry(&database, first, "First book, first entry.");
+    add_lore_entry(&database, first, "First book, second entry.");
+    let second = seed_lorebook(&database, "Second");
+    add_lore_entry(&database, second, "Second book, first entry.");
+    let book = LorebookRepository::get(&database, second)
+        .expect("lorebook")
+        .expect("exists");
+    LorebookRepository::mutate_entries(
+        &database,
+        second,
+        book.book.revision,
+        lettuce_context::LorebookEntryMutation::Add {
+            draft: lettuce_context::LorebookEntryDraft {
+                always_active: false,
+                keywords: vec!["harbour".into()],
+                ..lore_entry("Harbour lore.")
+            },
+            target: lettuce_context::LorebookEntryInsertionTarget::Append,
+        },
+        NOW,
+    )
+    .expect("add keyword entry");
+    let scene = text_scene(CharacterId::new(), 0, "A quiet harbour at dawn.");
+    let scene_id = scene.id;
+    let character_id = seed_character(&database, vec![scene], Vec::new(), Vec::new(), |defaults| {
+        defaults.default_scene_id = Some(scene_id);
+    });
+    let mut owner_revision = Revision::INITIAL;
+    for lorebook_id in [first, second] {
+        owner_revision = CharacterLorebookBindingRepository::bind_character_lorebook(
+            &database,
+            character_id,
+            owner_revision,
+            LorebookBindingCreate {
+                lorebook_id,
+                target: BindingInsertionTarget::Append,
+            },
+            NOW,
+        )
+        .expect("bind lorebook")
+        .owner_revision;
+    }
+    let conversation = ConversationLaunchPlanner::new(&database)
+        .launch_direct(&request(character_id, "scene-keywords"), NOW)
+        .expect("launch direct")
+        .value
+        .conversation;
+    let sent = ConversationRepository::begin_send(
+        &database,
+        &direct_send_command(&conversation, "scene-keywords-send", "Hello."),
+        TimestampMillis::new(NOW.get() + 10),
+    )
+    .expect("send direct message");
+    let source_message_id = match sent.value.turn.input {
+        GenerationInput::UserMessage { message_id } => message_id,
+        ref other => panic!("expected user-message input, got {other:?}"),
+    };
+    let (_, text) = assembled_prompt_with_text(
+        &database,
+        context_request_for(&database, conversation.id, source_message_id),
+    )
+    .await;
+    let at = |needle: &str| text.find(needle).expect(needle);
+    assert!(at("First book, first entry.") < at("Second book, first entry."));
+    assert!(at("Second book, first entry.") < at("First book, second entry."));
+    assert!(at("First book, second entry.") < at("Harbour lore."));
+}
+
 fn text_entry(text: &str) -> lettuce_context::PromptEntryDraft {
     lettuce_context::PromptEntryDraft {
         built_in_entry_key: None,
