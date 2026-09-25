@@ -2602,7 +2602,7 @@ fn journal_state_change(
         .then(|| {
             payload
                 .as_ref()
-                .and_then(|payload| snapshot_source_time(payload.bytes()))
+                .and_then(|payload| snapshot_source_time(kind, payload.bytes()))
         })
         .flatten();
     let request = NewCanonicalChange::new(
@@ -2616,12 +2616,50 @@ fn journal_state_change(
     Ok(())
 }
 
-/// The latest `updated_at` (or `updatedAt`) a snapshot records at any depth.
-/// A scanned insert (an entity this device never journaled, such as every
-/// entity of a restored database) is stamped with it instead of the session
-/// time, so against a peer's version of the same entity the more recently
-/// edited content wins rather than whichever device scanned last.
-fn snapshot_source_time(bytes: &[u8]) -> Option<TimestampMillis> {
+/// When a snapshot's content last changed: for a memory item the latest of
+/// its creation, last access and supersession; for a Soul the latest time a
+/// fact became valid, was created or was superseded; for a relationship its
+/// last interaction; for any other kind the latest `updated_at` (or
+/// `updatedAt`) it records at any depth. A scanned insert (an entity this
+/// device never journaled, such as every entity of a restored database) is
+/// stamped with it instead of the session time, so against a peer's version
+/// of the same entity the more recently changed content wins rather than
+/// whichever device scanned last.
+fn snapshot_source_time(kind: &str, bytes: &[u8]) -> Option<TimestampMillis> {
+    let newest = |times: &mut dyn Iterator<Item = TimestampMillis>| {
+        times.filter(|time| time.get() > 0).max()
+    };
+    if kind == lettuce_sync::MEMORY_ITEM_SYNC_KIND {
+        let item = serde_json::from_slice::<lettuce_memory::MemoryItem>(bytes).ok()?;
+        return newest(
+            &mut [
+                Some(item.created_at),
+                Some(item.last_accessed_at),
+                item.superseded_at,
+            ]
+            .into_iter()
+            .flatten(),
+        );
+    }
+    if kind == lettuce_sync::COMPANION_SOUL_SYNC_KIND {
+        let facts = serde_json::from_slice::<Vec<lettuce_companions::SoulFact>>(bytes).ok()?;
+        return newest(&mut facts.iter().flat_map(|fact| {
+            [
+                Some(fact.valid_from),
+                Some(fact.created_at),
+                fact.superseded_at,
+            ]
+            .into_iter()
+            .flatten()
+        }));
+    }
+    if kind == lettuce_sync::COMPANION_RELATIONSHIP_SYNC_KIND {
+        let relationship = serde_json::from_slice::<
+            crate::sync::companion_sync_adapter::SyncCompanionRelationship,
+        >(bytes)
+        .ok()?;
+        return newest(&mut std::iter::once(relationship.state.last_interaction_at));
+    }
     fn latest(value: &serde_json::Value) -> Option<i64> {
         match value {
             serde_json::Value::Object(map) => map
@@ -4745,6 +4783,72 @@ mod tests {
                 .expect("present");
             assert_eq!(persona.title, "Peer edit");
         }
+    }
+
+    #[test]
+    fn memory_soul_and_relationship_snapshots_carry_their_latest_change_time() {
+        let memory_id = lettuce_types::MemoryId::new();
+        let item = lettuce_memory::MemoryItem {
+            id: memory_id,
+            short_id: lettuce_memory::MemoryShortId::derived(memory_id),
+            text: "Likes tea".into(),
+            category: lettuce_memory::MemoryCategory::Other,
+            source_message_id: None,
+            source_role: None,
+            observed_at: None,
+            observed_time_precision: None,
+            superseded_by: None,
+            superseded_at: Some(TimestampMillis::new(20)),
+            supersedes: Vec::new(),
+            token_count: 3,
+            is_cold: false,
+            is_pinned: false,
+            importance: lettuce_memory::Score::FULL,
+            persistence_importance: lettuce_memory::Score::FULL,
+            prompt_importance: lettuce_memory::Score::FULL,
+            volatility: lettuce_memory::Score::LEGACY_VOLATILITY,
+            access_count: 1,
+            created_at: TimestampMillis::new(5),
+            last_accessed_at: TimestampMillis::new(30),
+        };
+        assert_eq!(
+            snapshot_source_time(
+                lettuce_sync::MEMORY_ITEM_SYNC_KIND,
+                &serde_json::to_vec(&item).expect("memory item")
+            ),
+            Some(TimestampMillis::new(30))
+        );
+        let soul = serde_json::json!([
+            {"id": "a", "category": "likes", "value": "tea", "policy": "current", "slot": "drink", "validFrom": 40, "createdAt": 10},
+            {"id": "b", "category": "likes", "value": "rain", "policy": "current", "slot": "weather", "validFrom": 15, "createdAt": 12, "supersededAt": 50}
+        ]);
+        assert_eq!(
+            snapshot_source_time(
+                lettuce_sync::COMPANION_SOUL_SYNC_KIND,
+                &serde_json::to_vec(&soul).expect("soul")
+            ),
+            Some(TimestampMillis::new(50))
+        );
+        let relationship = crate::sync::companion_sync_adapter::SyncCompanionRelationship {
+            character_id: lettuce_types::CharacterId::new(),
+            persona_id: None,
+            state: lettuce_companions::RelationshipState {
+                closeness: 0.1,
+                trust: 0.1,
+                affection: 0.1,
+                tension: 0.0,
+                stability: 0.5,
+                interaction_count: 3,
+                last_interaction_at: TimestampMillis::new(44),
+            },
+        };
+        assert_eq!(
+            snapshot_source_time(
+                lettuce_sync::COMPANION_RELATIONSHIP_SYNC_KIND,
+                &serde_json::to_vec(&relationship).expect("relationship")
+            ),
+            Some(TimestampMillis::new(44))
+        );
     }
 
     #[test]

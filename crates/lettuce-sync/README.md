@@ -136,10 +136,13 @@ journaled as deletes in reverse order. Edits and imports therefore replicate
 with no per-mutation code; a restored database starts with a new device
 identity and an empty journal, so it rejoins as a new device whose state meets
 peers as concurrent inserts, never as deletes. A scanned insert (an entity
-this device never journaled) carries the latest `updated_at` its snapshot
-records rather than the session time, so last-writer-wins keeps a peer's newer
-edit over an older restored version, and a snapshot without any timestamp
-falls back to the session time.
+this device never journaled) carries its content's latest change time rather
+than the session time: the latest `updated_at` its snapshot records, or for a
+memory item its creation, last access or supersession, for a Soul the latest
+fact validity, creation or supersession, and for a relationship its last
+interaction. Last-writer-wins therefore keeps a peer's newer edit over an older
+restored version; a snapshot without any timestamp falls back to the session
+time.
 Because the scan runs before anything
 is received, incoming changes always meet journaled local state. Deviations
 from legacy's per-write capture: edits between sessions collapse into one
