@@ -428,81 +428,68 @@ pub(crate) fn get_item_in(
     rows.next().map_err(storage)?.map(item_from_row).transpose()
 }
 
-/// Token counts follow the text alone, so a stored item keeps its count
-/// whenever a writer sends the same text: a recount stored after the
-/// writer's snapshot is never replaced by the snapshot's older count.
-fn stored_token_counts(
+/// Whether a retrieval access after `after` promoted `memory_id` from cold.
+fn promoted_after(
     transaction: &Transaction<'_>,
     space_id: MemorySpaceId,
-) -> Result<std::collections::HashMap<(String, String), u32>, MemoryRepositoryError> {
+    memory_id: MemoryId,
+    after: TimestampMillis,
+) -> Result<bool, MemoryRepositoryError> {
     transaction
-        .prepare("SELECT id, text, token_count FROM memory_items WHERE space_id = ?1")
-        .and_then(|mut statement| {
-            statement
-                .query_map([space_id.to_string()], |row| {
-                    Ok(((row.get(0)?, row.get(1)?), row.get(2)?))
-                })?
-                .collect()
-        })
-        .map_err(storage)
-}
-
-/// The latest retrieval access that promoted each memory of a space from cold.
-fn latest_promotions(
-    transaction: &Transaction<'_>,
-    space_id: MemorySpaceId,
-) -> Result<std::collections::HashMap<MemoryId, TimestampMillis>, MemoryRepositoryError> {
-    let rows = transaction
-        .prepare(
-            "SELECT promoted.value, MAX(access.accessed_at)
-               FROM memory_retrieval_accesses access, json_each(access.promoted_memory_ids_json) promoted
-              WHERE access.space_id = ?1
-              GROUP BY promoted.value",
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM memory_retrieval_accesses access
+                 WHERE access.space_id = ?1 AND access.accessed_at > ?3
+                   AND EXISTS (
+                       SELECT 1 FROM json_each(access.promoted_memory_ids_json) promoted
+                        WHERE promoted.value = ?2
+                   )
+             )",
+            params![space_id.to_string(), memory_id.to_string(), after.get()],
+            |row| row.get::<_, bool>(0),
         )
-        .and_then(|mut statement| {
-            statement
-                .query_map([space_id.to_string()], |row| {
-                    Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
-                })?
-                .collect::<rusqlite::Result<Vec<_>>>()
-        })
-        .map_err(storage)?;
-    rows.into_iter()
-        .map(|(id, at)| Ok((parse_id::<MemoryId>(id)?, TimestampMillis::new(at))))
-        .collect()
+        .map_err(storage)
 }
 
 /// Retrieval bookkeeping lands on stored rows between a writer's read and its
 /// commit without advancing the revision, so a writer's copy of an existing
-/// memory can predate it. When the stored row was accessed after the writer's
-/// copy, its access count and time are kept; its hotness and importance are
-/// kept too unless the writer cooled a memory that no later access promoted.
-fn merge_retrieval_fields(
+/// memory can predate it. The stored row was accessed after the writer's copy
+/// when it has more accesses and a last access no earlier than the copy's; then
+/// its access count and time are kept, and its hotness and importance too
+/// unless the writer cooled a memory that no later access promoted. A stored
+/// item keeps its token count whenever the writer sends the same text.
+fn merge_stored_fields(
+    transaction: &Transaction<'_>,
+    space_id: MemorySpaceId,
     written: &MemoryItem,
-    stored: &MemoryItem,
-    promoted_at: Option<TimestampMillis>,
-) -> MemoryItem {
-    if stored.last_accessed_at <= written.last_accessed_at
-        || stored.access_count <= written.access_count
-    {
-        return written.clone();
-    }
-    let mut merged = MemoryItem {
-        access_count: stored.access_count,
-        last_accessed_at: stored.last_accessed_at,
-        ..written.clone()
+    stored: Option<&MemoryItem>,
+) -> Result<MemoryItem, MemoryRepositoryError> {
+    let Some(stored) = stored else {
+        return Ok(written.clone());
     };
-    let promoted_after_read = promoted_at.is_some_and(|at| at > written.last_accessed_at);
+    let mut merged = written.clone();
+    if stored.text == written.text {
+        merged.token_count = stored.token_count;
+    }
+    if stored.access_count <= written.access_count
+        || stored.last_accessed_at < written.last_accessed_at
+    {
+        return Ok(merged);
+    }
+    merged.access_count = stored.access_count;
+    merged.last_accessed_at = stored.last_accessed_at;
     let keep_stored_heat = match (written.is_cold, stored.is_cold) {
         (false, false) => true,
-        (true, false) => promoted_after_read,
+        (true, false) => {
+            promoted_after(transaction, space_id, written.id, written.last_accessed_at)?
+        }
         (_, true) => false,
     };
     if keep_stored_heat {
         merged.is_cold = stored.is_cold;
         merged.importance = stored.importance;
     }
-    merged
+    Ok(merged)
 }
 
 pub(crate) fn compare_and_apply_in(
@@ -514,46 +501,27 @@ pub(crate) fn compare_and_apply_in(
         .expected_revision
         .next()
         .map_err(|_| MemoryRepositoryError::Conflict)?;
-    let current_revision = transaction
-        .query_row(
-            "SELECT revision FROM memory_spaces WHERE id = ?1",
-            [change.space_id.to_string()],
-            |row| row.get::<_, i64>(0),
-        )
-        .optional()
-        .map_err(storage)?
-        .ok_or(MemoryRepositoryError::NotFound)?;
-    if parse_revision(current_revision)? != change.expected_revision {
+    let stored = get_in(transaction, change.space_id)?.ok_or(MemoryRepositoryError::NotFound)?;
+    if stored.revision != change.expected_revision {
         return Err(MemoryRepositoryError::Conflict);
     }
-    let stored_counts = stored_token_counts(transaction, change.space_id)?;
-    let stored_items = get_in(transaction, change.space_id)?
-        .map(|snapshot| {
-            snapshot
-                .items
-                .into_iter()
-                .map(|item| (item.id, item))
-                .collect::<std::collections::HashMap<_, _>>()
-        })
-        .unwrap_or_default();
-    let promotions = latest_promotions(transaction, change.space_id)?;
+    let stored_items = stored
+        .items
+        .iter()
+        .map(|item| (item.id, item))
+        .collect::<std::collections::HashMap<_, _>>();
     let items = change
         .items
         .iter()
         .map(|item| {
-            let merged = stored_items.get(&item.id).map_or_else(
-                || item.clone(),
-                |stored| merge_retrieval_fields(item, stored, promotions.get(&item.id).copied()),
-            );
-            MemoryItem {
-                token_count: stored_counts
-                    .get(&(item.id.to_string(), item.text.clone()))
-                    .copied()
-                    .unwrap_or(item.token_count),
-                ..merged
-            }
+            merge_stored_fields(
+                transaction,
+                change.space_id,
+                item,
+                stored_items.get(&item.id).copied(),
+            )
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, _>>()?;
     transaction
         .execute(
             "DELETE FROM memory_items WHERE space_id = ?1",
@@ -574,7 +542,13 @@ pub(crate) fn compare_and_apply_in(
     if updated != 1 {
         return Err(MemoryRepositoryError::Conflict);
     }
-    get_in(transaction, change.space_id)?.ok_or(MemoryRepositoryError::NotFound)
+    let snapshot = MemorySpaceSnapshot {
+        id: change.space_id,
+        revision: next_revision,
+        items,
+    };
+    snapshot.validate()?;
+    Ok(snapshot)
 }
 
 pub(crate) fn get_summary_in(
@@ -1123,7 +1097,7 @@ impl MemoryRetrievalRepository for Database {
                         SET importance=CASE WHEN is_cold=1 THEN 9000 ELSE min(10000,importance+2000) END,
                             access_count=min(4294967295,access_count+CASE WHEN is_cold=1 THEN 2 ELSE 1 END),
                             is_cold=0,
-                            last_accessed_at=?3
+                            last_accessed_at=max(last_accessed_at,?3)
                       WHERE space_id=?1 AND id=?2 AND superseded_by IS NULL",
                     params![access.space_id.to_string(), id.to_string(), access.accessed_at.get()],
                 )
@@ -1472,6 +1446,52 @@ mod tests {
         assert!(cooled_after.is_cold);
         assert_eq!(cooled_after.access_count, 1);
         assert_eq!(find(created.id), created);
+    }
+
+    #[test]
+    fn retrieval_access_time_never_moves_back_and_a_same_time_access_survives_a_commit() {
+        use lettuce_memory::{MemoryRetrievalAccess, MemoryRetrievalRepository};
+        let database = Database::open_in_memory().expect("database");
+        database
+            .connection()
+            .expect("connection")
+            .execute_batch("PRAGMA foreign_keys = OFF")
+            .expect("fixture mode");
+        let space_id = MemorySpaceId::new();
+        let mut memory = item(MemoryId::new(), "memory");
+        memory.last_accessed_at = TimestampMillis::new(100);
+        let read = database
+            .create(snapshot(space_id, vec![memory.clone()]))
+            .expect("create");
+        database
+            .apply_retrieval_access(MemoryRetrievalAccess {
+                conversation_id: lettuce_types::ConversationId::new(),
+                turn_id: lettuce_types::GenerationTurnId::new(),
+                attempt_id: lettuce_types::GenerationAttemptId::new(),
+                space_id,
+                expected_revision: read.revision,
+                selected_memory_ids: vec![memory.id],
+                accessed_at: TimestampMillis::new(60),
+            })
+            .expect("access after a clock step back");
+        let accessed = database.get(space_id).expect("get").expect("space");
+        assert_eq!(
+            accessed.items[0].last_accessed_at,
+            TimestampMillis::new(100)
+        );
+        assert_eq!(accessed.items[0].access_count, 1);
+        let committed = database
+            .compare_and_apply(MemoryChangeSet {
+                space_id,
+                expected_revision: read.revision,
+                items: vec![memory],
+            })
+            .expect("commit from the earlier read");
+        assert_eq!(committed.items[0].access_count, 1);
+        assert_eq!(
+            database.get(space_id).expect("get").expect("space"),
+            committed
+        );
     }
 
     #[test]

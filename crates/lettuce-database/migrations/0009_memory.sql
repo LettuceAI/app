@@ -158,6 +158,9 @@ CREATE TABLE memory_retrieval_accesses (
         REFERENCES conversation_memory_spaces(conversation_id, space_id) ON DELETE RESTRICT
 ) STRICT;
 
+CREATE INDEX memory_retrieval_accesses_space_time
+    ON memory_retrieval_accesses (space_id, accessed_at);
+
 CREATE TRIGGER memory_retrieval_accesses_immutable
 BEFORE UPDATE ON memory_retrieval_accesses
 BEGIN SELECT RAISE(ABORT, 'memory retrieval access is immutable'); END;
