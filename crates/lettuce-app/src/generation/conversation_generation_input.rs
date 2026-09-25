@@ -1044,6 +1044,7 @@ where
         let stored_model = ModelProfileRepository::get(self.repository, model.source_id)
             .map_err(ConversationGenerationInputError::ModelRepository)?
             .ok_or(ConversationGenerationInputError::MissingModel)?;
+        let stored_reasoning = stored_model.config.chat_parameters.reasoning_mode;
         let account = ProviderAccountRepository::get(self.repository, model.provider_account_id)
             .map_err(ConversationGenerationInputError::ModelRepository)?
             .ok_or(ConversationGenerationInputError::MissingModel)?;
@@ -1147,8 +1148,11 @@ where
             is_scene_generation_local_image_model: scene_model_is_local,
             scene_image_protocol,
             dynamic_memory_enabled: dynamic_memory,
-            reasoning_enabled: profile.parameters.reasoning_mode
-                == Some(lettuce_models::ReasoningMode::Enabled),
+            reasoning_enabled: if group {
+                stored_reasoning == Some(lettuce_models::ReasoningMode::Enabled)
+            } else {
+                profile.parameters.reasoning_mode == Some(lettuce_models::ReasoningMode::Enabled)
+            },
             time_awareness_enabled: clock.time_awareness_enabled(),
             conversation_message_count: Some(conversation_message_count),
             ..Default::default()

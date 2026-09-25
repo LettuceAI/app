@@ -7547,3 +7547,90 @@ async fn a_chat_kept_for_another_devices_messages_goes_back_whole() {
     assert_eq!(messages(&c), messages(&a));
     assert_rescans_are_empty(&[&a, &b, &c], 4_000);
 }
+
+#[tokio::test]
+async fn a_group_reasoning_condition_reads_only_the_models_own_setting() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let database = backend.database();
+    let prompt_id = lettuce_context::PromptRepository::create_user_draft(
+        database,
+        lettuce_context::PromptMetadataDraft {
+            name: "Group reasoning".into(),
+            purpose: PromptPurpose::GroupChatConversational,
+            condense: false,
+            behavior_version: PromptBehaviorVersion::LegacyV1,
+        },
+        vec![
+            text_entry("Group base."),
+            lettuce_context::PromptEntryDraft {
+                system_prompt: false,
+                conditions: Some(lettuce_context::PromptEntryCondition::ReasoningEnabled {
+                    value: true,
+                }),
+                ..text_entry("Think first.")
+            },
+        ],
+        TimestampMillis::new(1),
+    )
+    .expect("prompt")
+    .id;
+    let (scenario, _) = group_scenario_with(
+        &backend,
+        "group-reasoning",
+        lettuce_characters::SpeakerSelection::Heuristic,
+        false,
+        "Hello cast.",
+        |group| {
+            group.chat_mode = ChatMode::Conversation;
+            group.group_conversation_prompt_id = Some(prompt_id);
+            let model_id = GlobalSettingsStore::load(database)
+                .expect("settings")
+                .default_model_profile_id
+                .expect("default model");
+            let mut stored = ModelProfileRepository::get(database, model_id)
+                .expect("model")
+                .expect("model exists");
+            let revision = stored.revision;
+            stored.config.chat_parameters.reasoning_mode = None;
+            stored.config.capabilities.reasoning = lettuce_models::CapabilityStatus::Supported;
+            ModelProfileRepository::upsert(database, stored, Some(revision))
+                .expect("enable model reasoning");
+        },
+    );
+    let (_, settings_revision) =
+        lettuce_models::GlobalModelSettingsRepository::global_model_settings(database)
+            .expect("global model settings");
+    lettuce_models::GlobalModelSettingsRepository::save_global_model_settings(
+        database,
+        lettuce_models::ModelSettingsLayer {
+            chat_parameters: lettuce_models::ChatParameterProfile {
+                reasoning_mode: Some(lettuce_models::ReasoningMode::Enabled),
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+        settings_revision,
+        TimestampMillis::new(1_012),
+    )
+    .expect("enable app-wide reasoning");
+    let work = admit_and_claim(database, &scenario, 1_015);
+    let inference = scripted(vec![text_outcome("group-reasoning-response", "Hm.", 5, 3)]);
+    let engine = ScenarioEmbeddingEngine;
+    backend
+        .prepared_conversation_generation_runner(&engine, &inference)
+        .run(
+            &work,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_020),
+        )
+        .await
+        .expect("run a group turn");
+    let system_texts = request_system_texts(&inference);
+    assert!(
+        system_texts.iter().any(|text| text.contains("Group base."))
+            && system_texts
+                .iter()
+                .all(|text| !text.contains("Think first.")),
+        "{system_texts:?}"
+    );
+}
