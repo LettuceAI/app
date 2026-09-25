@@ -413,14 +413,14 @@ Finite historical values remain exact, including values produced by old
 calculator behavior, while current pricing and offloader formulas remain
 unchanged. The source inventory stays attached and no usage row is written.
 
-The legacy model-pricing cache is retained separately as bounded historical
-evidence. Each entry keeps its exact model key, original JSON text and cache
-timestamp; known camelCase price fields must parse as finite nonnegative USD
-values, while unknown fields remain visible as conversion notices. A null
-payload still preserves the legacy cached absence. These entries lack the
-current provider account, endpoint, revision and capture evidence required by
-the immutable cost basis, so they are historical-only and never populate the
-live provider cache. No cost is recalculated and the version-1 pricing formula,
+The legacy model-pricing cache is parsed and validated but has no destination:
+the rewrite keeps no pricing cache and fetches prices when a cost is computed,
+so a non-empty cache is recorded as an `Unsupported` notice on `[]` and nothing
+is written. Each parsed entry keeps its exact model key, original JSON text and
+cache timestamp; known camelCase price fields must parse as finite nonnegative
+USD values, while unknown fields remain visible as conversion notices. These
+entries lack the current provider account, endpoint, revision and capture
+evidence required by the immutable cost basis, so they are historical-only. No cost is recalculated and the version-1 pricing formula,
 runtime calculator and smart-offloader outputs remain unchanged.
 
 Direct legacy sessions now have a bounded read-only compatibility graph. It

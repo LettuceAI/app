@@ -89,7 +89,11 @@ pub fn plan_legacy_backup_pricing(
         Some(document) => {
             let rows: Vec<CacheRow> =
                 serde_json::from_slice(&document.bytes).map_err(|_| malformed("$"))?;
-            map_rows(rows, &mut notices)?
+            let entries = map_rows(rows, &mut notices)?;
+            if !entries.is_empty() {
+                notices.push(notice(LegacyBackupConversionNoticeKind::Unsupported, "[]"));
+            }
+            entries
         }
         None => {
             notices.push(notice(LegacyBackupConversionNoticeKind::Absent, "$"));
@@ -287,6 +291,11 @@ mod tests {
         assert!(plan.notices.iter().any(|notice| {
             notice.kind == LegacyBackupConversionNoticeKind::Unsupported
                 && notice.field == "[0].future_cache_field"
+        }));
+        assert!(plan.notices.iter().any(|notice| {
+            notice.kind == LegacyBackupConversionNoticeKind::Unsupported
+                && notice.document == LegacyBackupDocumentKind::ModelPricingCache
+                && notice.field == "[]"
         }));
     }
 
