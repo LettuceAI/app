@@ -98,6 +98,7 @@ impl<
         if handle.cancellation_token().is_cancelled() {
             return Err(ConversationInitialInferenceError::Cancelled);
         }
+        let streamed = request.stream_sink.is_some();
         let outcome = crate::jobs::job_inference_usage::run_job_inference_with_id(
             self.repository,
             self.inference,
@@ -111,7 +112,7 @@ impl<
             Ok(mut outcome) => {
                 if handle.cancellation_token().is_cancelled() {
                     cleanup_provider_replays(self.repository, &outcome)?;
-                    if has_visible_text(&outcome) {
+                    if streamed && has_visible_text(&outcome) {
                         outcome.finish_reason = lettuce_conversations::FinishReason::Cancelled;
                         for candidate in &mut outcome.candidates {
                             candidate.provider_replay = None;
@@ -167,7 +168,8 @@ fn replay(
     }
 }
 
-/// Whether a reply has streamed text worth keeping when the user stops it.
+/// Whether a reply has visible text worth keeping when the user stops it;
+/// only a streamed reply has shown that text to the user.
 pub(crate) fn has_visible_text(outcome: &InferenceOutcome) -> bool {
     outcome.candidates.iter().any(|candidate| {
         candidate.parts.iter().any(|part| {

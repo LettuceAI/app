@@ -1255,7 +1255,7 @@ mod integration_tests {
         assert!(matches!(
             candidate.parts.as_slice(),
             [lettuce_conversations::MessagePart::Text { text }]
-                if !text.is_empty() && text.len() <= 65 && text.chars().all(|c| c == 'x')
+                if !text.is_empty() && text.len() < 65 && text.chars().all(|c| c == 'x')
         ));
     }
 

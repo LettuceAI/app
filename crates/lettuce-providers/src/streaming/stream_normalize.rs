@@ -286,21 +286,23 @@ impl StreamNormalizer {
         })
     }
 
-    /// The reply streamed before a cancellation: the text and reasoning already
-    /// emitted as deltas, without tool calls, provider replay or held-back tag
-    /// fragments. `None` when no visible text was streamed.
-    pub(crate) fn cancelled_outcome(self) -> Option<InferenceOutcome> {
-        if self.text.trim().is_empty() {
+    /// The reply a cancellation keeps: the `text` and `reasoning` that reached
+    /// the user, with this stream's usage and identifiers and without tool
+    /// calls or provider replay. `None` when no visible text reached the user.
+    pub(crate) fn cancelled_outcome(
+        self,
+        text: String,
+        reasoning: String,
+    ) -> Option<InferenceOutcome> {
+        if text.trim().is_empty() {
             return None;
         }
         let usage = self.usage();
         let mut parts = Vec::with_capacity(2);
-        if !self.reasoning.is_empty() {
-            parts.push(MessagePart::ReasoningSummary {
-                text: self.reasoning,
-            });
+        if !reasoning.is_empty() {
+            parts.push(MessagePart::ReasoningSummary { text: reasoning });
         }
-        parts.push(MessagePart::Text { text: self.text });
+        parts.push(MessagePart::Text { text });
         let outcome = InferenceOutcome {
             provider_response_id: self.provider_response_id,
             candidates: vec![InferenceCandidate {

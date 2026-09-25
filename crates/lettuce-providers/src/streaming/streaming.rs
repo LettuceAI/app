@@ -40,6 +40,7 @@ pub(crate) async fn consume_stream_with_provider_replay(
     let provider_request_id = response.request_id.clone();
     let mut normalizer = StreamNormalizer::new(protocol, provider_request_id.clone());
     let mut sequence = 0_u64;
+    let mut emitted = EmittedReply::default();
     match stream_deltas(
         response,
         format,
@@ -47,13 +48,14 @@ pub(crate) async fn consume_stream_with_provider_replay(
         request,
         &mut normalizer,
         &mut sequence,
+        &mut emitted,
     )
     .await
     {
         Ok(()) => {}
         Err(AdapterError::Cancelled) => {
             return normalizer
-                .cancelled_outcome()
+                .cancelled_outcome(emitted.text, emitted.reasoning)
                 .map(|outcome| (outcome, None))
                 .ok_or(AdapterError::Cancelled);
         }
@@ -69,8 +71,15 @@ pub(crate) async fn consume_stream_with_provider_replay(
     Ok((completion.outcome, completion.provider_replay))
 }
 
+/// The text and reasoning deltas that reached the stream sink.
+#[derive(Debug, Default)]
+struct EmittedReply {
+    text: String,
+    reasoning: String,
+}
+
 /// Streams every record into `normalizer`, emitting its deltas. A
-/// cancellation leaves the text streamed so far in `normalizer`.
+/// cancellation leaves the deltas that reached the sink in `emitted`.
 async fn stream_deltas(
     response: JsonResponseStream,
     format: StreamFormat,
@@ -78,6 +87,7 @@ async fn stream_deltas(
     request: &InferenceRequest,
     normalizer: &mut StreamNormalizer,
     sequence: &mut u64,
+    emitted: &mut EmittedReply,
 ) -> Result<(), AdapterError> {
     let mut response = response.without_size_limit();
     let mut framer = StreamFramer::new(format);
@@ -93,7 +103,7 @@ async fn stream_deltas(
                 .map_err(|error| map_normalize(error, provider_request_id.clone()))?
             {
                 *sequence = sequence.checked_add(1).ok_or(AdapterError::Transport)?;
-                emit(runtime, request, *sequence, delta).await?;
+                emit_recorded(runtime, request, *sequence, delta, emitted).await?;
             }
         }
     }
@@ -103,7 +113,7 @@ async fn stream_deltas(
             .map_err(|error| map_normalize(error, provider_request_id.clone()))?
         {
             *sequence = sequence.checked_add(1).ok_or(AdapterError::Transport)?;
-            emit(runtime, request, *sequence, delta).await?;
+            emit_recorded(runtime, request, *sequence, delta, emitted).await?;
         }
     }
     Ok(())
@@ -175,6 +185,21 @@ fn ensure_not_cancelled(
     } else {
         Ok(())
     }
+}
+
+async fn emit_recorded(
+    runtime: &dyn InferenceRuntimePort,
+    request: &InferenceRequest,
+    sequence: u64,
+    delta: StreamDelta,
+    emitted: &mut EmittedReply,
+) -> Result<(), AdapterError> {
+    emit(runtime, request, sequence, delta.clone()).await?;
+    match delta {
+        StreamDelta::Text(text) => emitted.text.push_str(&text),
+        StreamDelta::Reasoning(text) => emitted.reasoning.push_str(&text),
+    }
+    Ok(())
 }
 
 pub(crate) async fn emit(

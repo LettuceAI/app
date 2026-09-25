@@ -794,10 +794,9 @@ async fn app_backend_cancels_queued_and_running_generation_jobs_by_id() {
         .job;
     let inference = BlockingInference::new(text_outcome("late", "Late reply", 9, 4));
     let runner = backend.prepared_conversation_generation_runner(&engine, &inference);
-    let run = runner.execute(
-        execution_request(&running, CancellationToken::new()),
-        &clock,
-    );
+    let mut streamed = execution_request(&running, CancellationToken::new());
+    streamed.runtime.stream_sink = Some(RequestId::new());
+    let run = runner.execute(streamed, &clock);
     let cancel = async {
         inference.entered.notified().await;
         clock.set(TimestampMillis::new(1_040));

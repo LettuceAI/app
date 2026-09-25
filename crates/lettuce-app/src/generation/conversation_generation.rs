@@ -1343,44 +1343,48 @@ impl<
                 {
                     return Err(ConversationGenerationDispatchError::InvalidWork);
                 }
-                let stopped = self
+                let succeeded = self
                     .jobs
-                    .get(job_id)?
-                    .is_some_and(|job| job.state == JobState::CancellationRequested);
-                if stopped {
-                    self.jobs
-                        .append_and_transition(JobMutation::RequestCleanup {
+                    .append_and_transition(JobMutation::Progress {
+                        claim: work.claim.claim.clone(),
+                        progress: ProgressSnapshot {
+                            fraction: Some(
+                                FiniteFraction::new(1.0).expect("constant job progress is valid"),
+                            ),
+                            ..ProgressSnapshot::default()
+                        },
+                        at,
+                    })
+                    .and_then(|_| {
+                        self.jobs.append_and_transition(JobMutation::Succeed {
                             claim: work.claim.claim.clone(),
+                            outcome: JobOutcome::Success {
+                                result_ref: OutcomeRef::GenerationTurn(work.turn_id),
+                            },
                             at,
-                        })?;
-                    let job = self
-                        .jobs
-                        .append_and_transition(JobMutation::FinishCancellation {
-                            claim: work.claim.claim,
-                            at,
-                        })?;
-                    return Ok(ConversationGenerationSettledWork::Succeeded {
-                        result: Box::new(result),
-                        job,
+                        })
                     });
-                }
-                self.jobs.append_and_transition(JobMutation::Progress {
-                    claim: work.claim.claim.clone(),
-                    progress: ProgressSnapshot {
-                        fraction: Some(
-                            FiniteFraction::new(1.0).expect("constant job progress is valid"),
-                        ),
-                        ..ProgressSnapshot::default()
-                    },
-                    at,
-                })?;
-                let job = self.jobs.append_and_transition(JobMutation::Succeed {
-                    claim: work.claim.claim,
-                    outcome: JobOutcome::Success {
-                        result_ref: OutcomeRef::GenerationTurn(work.turn_id),
-                    },
-                    at,
-                })?;
+                let job = match succeeded {
+                    Ok(job) => job,
+                    Err(StoreError::IllegalTransition)
+                        if self
+                            .jobs
+                            .get(job_id)?
+                            .is_some_and(|job| job.state == JobState::CancellationRequested) =>
+                    {
+                        self.jobs
+                            .append_and_transition(JobMutation::RequestCleanup {
+                                claim: work.claim.claim.clone(),
+                                at,
+                            })?;
+                        self.jobs
+                            .append_and_transition(JobMutation::FinishCancellation {
+                                claim: work.claim.claim,
+                                at,
+                            })?
+                    }
+                    Err(error) => return Err(error.into()),
+                };
                 return Ok(ConversationGenerationSettledWork::Succeeded {
                     result: Box::new(result),
                     job,

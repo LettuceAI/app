@@ -690,7 +690,8 @@ async fn initial_checkpoint_failure_stays_pending_until_a_fresh_recovery_attempt
 #[tokio::test]
 async fn initial_cancellation_during_provider_keeps_the_streamed_reply() {
     let database = database();
-    let (conversation_id, request, handle) = fixture(&database);
+    let (conversation_id, mut request, handle) = fixture(&database);
+    request.stream_sink = Some(RequestId::new());
     let inference = BlockingInference::new(outcome());
     let coordinator = crate::ConversationInitialInferenceCoordinator::new(&database, &inference);
     let run = coordinator.run(
