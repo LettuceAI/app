@@ -49,12 +49,6 @@ impl OpenRouterCostEvidence {
         billing.output_tokens = generation
             .native_completion_tokens
             .unwrap_or(usage.output_tokens);
-        billing.cached_input_tokens = generation
-            .native_cached_tokens
-            .or(usage.cached_input_tokens);
-        billing.reasoning_tokens = generation
-            .native_reasoning_tokens
-            .or(usage.reasoning_tokens);
         billing.provider_reported_cost = generation.total_cost.or(usage.provider_reported_cost);
         Ok(billing)
     }

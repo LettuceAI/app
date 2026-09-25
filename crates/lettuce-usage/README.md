@@ -99,9 +99,10 @@ usage counters. Automatic generation enrichment remains pending.
 `UsageCostBasis::from_openrouter_job` creates a basis from one matched routed
 endpoint and fetched generation evidence. The optional evidence is stored in
 the existing versioned basis JSON; older manual bases deserialize unchanged.
-Native prompt/completion/cache/reasoning counts and total cost take precedence
-over response details, retaining both sources separately; a missing native
-prompt or completion count falls back to the response's count. Missing cache,
+Native prompt/completion counts and total cost take precedence over response
+details, retaining both sources separately; a missing native prompt or
+completion count falls back to the response's count. Cache and reasoning counts
+come from the response usage, as legacy priced them. Missing cache,
 cache-write, reasoning and web-search counts count as zero, as the legacy
 `apply_openrouter_cost_to_usage` did. The provider/display name is matched by
 its ASCII letters and digits ignoring case; the first matching endpoint wins,

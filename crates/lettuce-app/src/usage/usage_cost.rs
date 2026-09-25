@@ -312,8 +312,11 @@ mod tests {
         assert_eq!(cost.cost.total_cost, 0.3);
         assert_eq!(cost.basis.input.prompt_tokens, 150);
         assert_eq!(cost.basis.input.completion_tokens, 40);
-        assert_eq!(cost.basis.input.cached_prompt_tokens, 20);
-        assert_eq!(cost.basis.input.reasoning_tokens, 3);
+        assert_eq!(
+            cost.basis.input.cached_prompt_tokens, 10,
+            "legacy apply_openrouter_cost_to_usage read cached tokens from the response usage"
+        );
+        assert_eq!(cost.basis.input.reasoning_tokens, 2);
         assert_eq!(
             cost.basis
                 .openrouter
