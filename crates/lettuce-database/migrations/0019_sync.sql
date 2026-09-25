@@ -6,6 +6,13 @@ CREATE TABLE sync_local_state (
     hlc_counter INTEGER NOT NULL CHECK (hlc_counter >= 0)
 ) STRICT;
 
+-- The payload schema fingerprint the journal was written under. A build
+-- whose fingerprint differs starts the journal over from the current state.
+CREATE TABLE sync_journal_format (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    schema_fingerprint TEXT NOT NULL CHECK (length(schema_fingerprint) = 64)
+) STRICT;
+
 CREATE TABLE sync_frontiers (
     origin_device_id TEXT PRIMARY KEY CHECK (length(origin_device_id) = 36),
     contiguous_sequence INTEGER NOT NULL CHECK (contiguous_sequence >= 1)

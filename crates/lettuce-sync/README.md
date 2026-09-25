@@ -103,6 +103,20 @@ session-scoped, matching the legacy UI; no persistent peer-trust model is
 invented. The application layer now supplies secure pairing and the actual
 exchange; frontend status flow remains later work.
 
+Payload schema changes. The journal records the schema fingerprint it was
+written under (`sync_journal_format`). Journaled payloads are immutable and
+bound into fingerprints peers have acknowledged, so a build whose fingerprint
+differs never relays them: when the database opens (and again before each
+scan) it empties every journal table (changes, frontiers, peer
+acknowledgements, staged batches, conflicts, deferred changes, conversation
+marks, queued purges and re-journals), takes a new sync device identity while
+its hybrid clock carries on, and the next scan journals the current state as
+inserts stamped with each entity's own change time, exactly like a restored
+database. Peers on the same build start over the same way and settle the
+concurrent inserts by last writer wins. Domain rows, fork notices, secret
+versions and received memory cursors are kept, so nothing a device holds is
+lost; a delete that had not reached a peer yet is undone there instead.
+
 The session, change, acknowledgement and persona-media frame values support the
 application transport's bounded binary codec. Decoding alone does not grant
 validity: the transport reconstructs every received hello, frontier, canonical

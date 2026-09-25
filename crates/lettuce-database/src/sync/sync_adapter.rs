@@ -464,6 +464,96 @@ fn ensure_local_device(
     Ok(device)
 }
 
+/// Tables that hold journal evidence, emptied together when the journal
+/// starts over. Children come before the tables they reference.
+const JOURNAL_TABLES: [&str; 11] = [
+    "sync_change_frontiers",
+    "sync_conflicts",
+    "sync_deferred_changes",
+    "sync_incoming_changes",
+    "sync_incoming_batches",
+    "sync_changes",
+    "sync_frontiers",
+    "sync_peer_frontiers",
+    "sync_conversation_marks",
+    "purge_queue",
+    "purge_rejournals",
+];
+
+/// Starts the journal over when it was written under other payload schemas
+/// than this build exchanges. Journaled payloads are immutable and bound into
+/// change fingerprints peers have acknowledged, so they are never rewritten:
+/// every journal table is emptied, the device takes a new sync identity (its
+/// hybrid clock carries on), and the next scan journals the current state as
+/// inserts stamped with each entity's own change time. Peers updated to the
+/// same build start over the same way and settle the concurrent inserts by
+/// last writer wins; no domain row is touched, so nothing held here is lost.
+pub(crate) fn rebaseline_journal_if_format_changed(
+    connection: &Connection,
+) -> rusqlite::Result<bool> {
+    let current = lettuce_sync::current_sync_schema_fingerprint();
+    let stored = connection
+        .query_row(
+            "SELECT schema_fingerprint FROM sync_journal_format WHERE id = 1",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    if stored.as_deref() == Some(current.as_str()) {
+        return Ok(false);
+    }
+    let clock = connection
+        .query_row(
+            "SELECT hlc_wall_time, hlc_counter FROM sync_local_state WHERE id = 1",
+            [],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+        )
+        .optional()?;
+    let rebaselined = clock.is_some();
+    if let Some((wall_time, counter)) = clock {
+        let mut guarded = JOURNAL_TABLES.to_vec();
+        guarded.push("sync_local_state");
+        let placeholders = vec!["?"; guarded.len()].join(", ");
+        let triggers = connection
+            .prepare(&format!(
+                "SELECT name, sql FROM sqlite_master
+                 WHERE type = 'trigger' AND tbl_name IN ({placeholders})
+                 ORDER BY name"
+            ))?
+            .query_map(rusqlite::params_from_iter(&guarded), |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        for (name, _) in &triggers {
+            connection.execute_batch(&format!("DROP TRIGGER \"{name}\""))?;
+        }
+        for table in JOURNAL_TABLES {
+            connection.execute(&format!("DELETE FROM {table}"), [])?;
+        }
+        connection.execute("DELETE FROM sync_local_state", [])?;
+        connection.execute(
+            "INSERT INTO sync_local_state
+             (id, device_id, origin_sequence, hlc_wall_time, hlc_counter)
+             VALUES (1, ?1, 0, ?2, ?3)",
+            params![
+                SyncDeviceId::new().as_uuid().to_string(),
+                wall_time,
+                counter
+            ],
+        )?;
+        for (_, sql) in &triggers {
+            connection.execute_batch(sql)?;
+        }
+        tracing::info!("sync journal started over for changed payload schemas");
+    }
+    connection.execute(
+        "INSERT INTO sync_journal_format (id, schema_fingerprint) VALUES (1, ?1)
+         ON CONFLICT(id) DO UPDATE SET schema_fingerprint = excluded.schema_fingerprint",
+        [current.as_str()],
+    )?;
+    Ok(rebaselined)
+}
+
 fn change_for_sequence(
     connection: &Connection,
     device: SyncDeviceId,
@@ -3987,6 +4077,7 @@ impl LocalChangeJournal for Database {
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;
+        rebaseline_journal_if_format_changed(&tx).map_err(storage)?;
         retry_pending_rejournals(&tx, now).map_err(journal_apply_error)?;
         let pending_scopes = pending_rejournal_scopes(&tx).map_err(journal_apply_error)?;
         let mut journaled = journal_referenced_media(&tx, now)?;

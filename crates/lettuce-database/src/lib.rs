@@ -273,6 +273,7 @@ impl Database {
         configure(&connection, true)?;
         apply_migrations(&mut connection, MIGRATIONS)?;
         initialize_settings(&connection)?;
+        rebaseline_sync_journal(&mut connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
             foreign_keys_lost: std::sync::atomic::AtomicBool::new(false),
@@ -285,6 +286,7 @@ impl Database {
         configure(&connection, false)?;
         apply_migrations(&mut connection, MIGRATIONS)?;
         initialize_settings(&connection)?;
+        rebaseline_sync_journal(&mut connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
             foreign_keys_lost: std::sync::atomic::AtomicBool::new(false),
@@ -402,6 +404,13 @@ fn initialize_settings(connection: &Connection) -> Result<(), DatabaseError> {
          VALUES (1, NULL, ?1, ?2, 1, ?3, ?3)",
         params![GLOBAL_SETTINGS_FORMAT_VERSION, payload, now],
     )?;
+    Ok(())
+}
+
+fn rebaseline_sync_journal(connection: &mut Connection) -> Result<(), DatabaseError> {
+    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    crate::sync::sync_adapter::rebaseline_journal_if_format_changed(&transaction)?;
+    transaction.commit()?;
     Ok(())
 }
 
@@ -2636,6 +2645,73 @@ mod tests {
         assert_eq!(ModelProfileRepository::get(&b, second.id).expect("b"), None);
         assert_eq!(sync_to(&a, &b, 240), 0);
         assert_eq!(sync_to(&b, &a, 250), 0);
+    }
+
+    #[test]
+    fn a_changed_payload_schema_starts_the_journal_over_instead_of_blocking_sync() {
+        use lettuce_sync::{
+            CanonicalPayload, ChangeOperation, LocalChangeJournal, NewCanonicalChange, SyncEntity,
+        };
+        let a = Database::open_in_memory().expect("a");
+        let b = Database::open_in_memory().expect("b");
+        let account = ProviderAccountRepository::upsert(&a, provider(), None).expect("account");
+        assert_eq!(sync_to(&a, &b, 100), 1);
+        let stale = NewCanonicalChange::new(
+            SyncEntity::new("provider_account", account.id.to_string()).expect("entity"),
+            ChangeOperation::Insert,
+            None,
+            Some(
+                CanonicalPayload::new("provider_account.snapshot", 99, b"{}".to_vec())
+                    .expect("payload"),
+            ),
+        )
+        .expect("stale change");
+        a.record_local_change(
+            lettuce_types::OperationId::new(),
+            stale,
+            TimestampMillis::new(105),
+        )
+        .expect("journal a change in a retired payload version");
+        let old_device = a.local_device_id(TimestampMillis::new(106)).expect("device");
+        let model = ModelProfileRepository::upsert(&a, profile(account.id), None).expect("model");
+        for database in [&a, &b] {
+            database
+                .connection()
+                .expect("connection")
+                .execute(
+                    "UPDATE sync_journal_format SET schema_fingerprint = ?1",
+                    ["00".repeat(32)],
+                )
+                .expect("simulate an update that changed payload schemas");
+        }
+
+        sync_to(&a, &b, 200);
+        sync_to(&b, &a, 210);
+
+        assert_ne!(
+            a.local_device_id(TimestampMillis::new(220)).expect("device"),
+            old_device
+        );
+        let stale_left: i64 = a
+            .connection()
+            .expect("connection")
+            .query_row(
+                "SELECT COUNT(*) FROM sync_changes WHERE payload_version = 99",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count");
+        assert_eq!(stale_left, 0);
+        assert_eq!(
+            ModelProfileRepository::get(&b, model.id).expect("b model"),
+            Some(model)
+        );
+        assert_eq!(
+            ProviderAccountRepository::get(&b, account.id).expect("b account"),
+            Some(account)
+        );
+        assert_eq!(sync_to(&a, &b, 230), 0);
+        assert_eq!(sync_to(&b, &a, 240), 0);
     }
 
     #[test]
@@ -5546,6 +5622,7 @@ mod tests {
                 "sync_frontiers",
                 "sync_incoming_batches",
                 "sync_incoming_changes",
+                "sync_journal_format",
                 "sync_local_state",
                 "sync_peer_frontiers",
                 "sync_secret_versions",
