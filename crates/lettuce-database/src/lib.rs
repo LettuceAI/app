@@ -262,8 +262,8 @@ impl std::fmt::Debug for Database {
 impl Database {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, DatabaseError> {
         let mut connection = Connection::open(path)?;
-        configure(&connection, true)?;
         refuse_newer_schema(&connection, MIGRATIONS)?;
+        configure(&connection, true)?;
         apply_migrations(&mut connection, MIGRATIONS)?;
         initialize_settings(&connection)?;
         Ok(Self {
@@ -273,8 +273,8 @@ impl Database {
 
     pub fn open_in_memory() -> Result<Self, DatabaseError> {
         let mut connection = Connection::open_in_memory()?;
-        configure(&connection, false)?;
         refuse_newer_schema(&connection, MIGRATIONS)?;
+        configure(&connection, false)?;
         apply_migrations(&mut connection, MIGRATIONS)?;
         initialize_settings(&connection)?;
         Ok(Self {
@@ -313,11 +313,12 @@ fn migration_checksum(sql: &str) -> String {
 }
 
 /// Refuses a database that already holds a migration this build does not
-/// know, before anything is written to it.
+/// know. It runs before any pragma or migration touches the file.
 fn refuse_newer_schema(
     connection: &Connection,
     migrations: &[Migration],
 ) -> Result<(), DatabaseError> {
+    connection.busy_timeout(Duration::from_secs(5))?;
     let tracked = connection
         .query_row(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'",
@@ -3025,10 +3026,19 @@ mod tests {
                 [],
             )
             .expect("future migration");
+        rusqlite::Connection::open(&path)
+            .expect("raw connection")
+            .pragma_update(None, "journal_mode", "DELETE")
+            .expect("leave WAL mode");
         assert!(matches!(
             Database::open(&path),
             Err(DatabaseError::NewerSchema { id: 999 })
         ));
+        let mode: String = rusqlite::Connection::open(&path)
+            .expect("raw connection")
+            .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+            .expect("journal mode");
+        assert_eq!(mode, "delete", "a refused open must not write to the file");
         let _ = std::fs::remove_file(&path);
     }
 
