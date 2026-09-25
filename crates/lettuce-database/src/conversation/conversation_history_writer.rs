@@ -610,7 +610,7 @@ pub(crate) fn insert_revision(
     let message = &backup.message;
     transaction
         .execute(
-            "INSERT INTO conversation_message_revisions (conversation_id, id, message_id, branch_id, sequence, parts_json, authored_at, source_turn_id, provider_replay_artifact_id, provider_replay_retention) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            "INSERT INTO conversation_message_revisions (conversation_id, id, message_id, branch_id, sequence, parts_json, authored_at, source_turn_id, provider_replay_artifact_id, provider_replay_retention, supersedes_candidate_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
                 message.conversation_id.to_string(),
                 revision.id.to_string(),
@@ -622,6 +622,7 @@ pub(crate) fn insert_revision(
                 revision.source_turn_id.map(|id| id.to_string()),
                 replay_id(revision.provider_replay.as_ref()),
                 replay_retention(revision.provider_replay.as_ref()),
+                revision.supersedes_candidate_id.map(|id| id.to_string()),
             ],
         )
         .map_err(kernel::map_constraint)?;

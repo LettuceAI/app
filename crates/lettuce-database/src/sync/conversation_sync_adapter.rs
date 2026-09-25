@@ -1176,6 +1176,7 @@ fn flattened_revision(
         authored_at: source.message.created_at,
         source_turn_id: None,
         provider_replay: None,
+        supersedes_candidate_id: None,
     };
     Ok((source, revision))
 }

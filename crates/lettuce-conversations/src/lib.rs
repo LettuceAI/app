@@ -1316,6 +1316,7 @@ mod tests {
                 retention: ReplayRetention::Ephemeral,
                 codec: ReplayCodec::Json,
             }),
+            supersedes_candidate_id: None,
         };
         assert!(revision.validate().is_err());
     }
@@ -1793,6 +1794,7 @@ mod tests {
             authored_at: TimestampMillis::UNIX_EPOCH,
             source_turn_id: None,
             provider_replay: None,
+            supersedes_candidate_id: None,
         };
         (message, revision)
     }

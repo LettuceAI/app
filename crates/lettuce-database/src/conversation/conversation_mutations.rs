@@ -957,78 +957,27 @@ fn insert_candidate(
     Ok(())
 }
 
-/// Keeps an edited reply's text as a candidate of its own before another
-/// candidate replaces it on screen, so the edit stays a selectable variant.
-/// The copy carries the turn, attempt, author and model of
-/// `source_candidate_id`, takes the next ordinal, and its media references are
-/// historical because another candidate becomes the active one.
-fn preserve_edited_reply(
+/// The latest edit that rewrote `candidate_id`, which a selection of that
+/// variant renders in place of the candidate's own parts.
+fn latest_edit_of(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
     message_id: MessageId,
-    revision_id: MessageRevisionId,
-    source_candidate_id: MessageCandidateId,
-    now: TimestampMillis,
-) -> Result<MessageCandidateId, ConversationRepositoryError> {
-    let parts_json: String = transaction
+    candidate_id: MessageCandidateId,
+) -> Result<Option<MessageRevisionId>, ConversationRepositoryError> {
+    let id: Option<String> = transaction
         .query_row(
-            "SELECT parts_json FROM conversation_message_revisions WHERE conversation_id = ?1 AND id = ?2 AND message_id = ?3",
+            "SELECT id FROM conversation_message_revisions WHERE conversation_id = ?1 AND message_id = ?2 AND supersedes_candidate_id = ?3 ORDER BY sequence DESC LIMIT 1",
             params![
                 conversation_id.to_string(),
-                revision_id.to_string(),
                 message_id.to_string(),
+                candidate_id.to_string(),
             ],
             |row| row.get(0),
         )
         .optional()
-        .map_err(slice::db)?
-        .ok_or(ConversationRepositoryError::Storage)?;
-    let (branch_id, turn_id, attempt_id, author, model_json): (String, String, String, String, String) =
-        transaction
-            .query_row(
-                "SELECT branch_id, turn_id, attempt_id, author_participant_id, model_json FROM conversation_message_candidates WHERE conversation_id = ?1 AND id = ?2 AND message_id = ?3",
-                params![
-                    conversation_id.to_string(),
-                    source_candidate_id.to_string(),
-                    message_id.to_string(),
-                ],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
-            )
-            .optional()
-            .map_err(slice::db)?
-            .ok_or(ConversationRepositoryError::NotFound)?;
-    let copy_id = MessageCandidateId::new();
-    let ordinal = next_candidate_ordinal(transaction, conversation_id, message_id)?;
-    transaction
-        .execute(
-            "INSERT INTO conversation_message_candidates (conversation_id, id, message_id, branch_id, turn_id, attempt_id, author_participant_id, ordinal, parts_json, model_json, created_at, provider_replay_artifact_id, provider_replay_retention) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, NULL, NULL)",
-            params![
-                conversation_id.to_string(),
-                copy_id.to_string(),
-                message_id.to_string(),
-                branch_id,
-                turn_id,
-                attempt_id,
-                author,
-                i64::from(ordinal),
-                parts_json,
-                model_json,
-                now.get(),
-            ],
-        )
-        .map_err(kernel::map_constraint)?;
-    transaction
-        .execute(
-            "INSERT INTO candidate_media_refs (conversation_id, candidate_id, part_ordinal, asset_id, media_role, state, created_at) SELECT conversation_id, ?3, part_ordinal, asset_id, media_role, 'historical', ?4 FROM revision_media_refs WHERE conversation_id = ?1 AND message_revision_id = ?2",
-            params![
-                conversation_id.to_string(),
-                revision_id.to_string(),
-                copy_id.to_string(),
-                now.get(),
-            ],
-        )
-        .map_err(kernel::map_constraint)?;
-    Ok(copy_id)
+        .map_err(slice::db)?;
+    conversation_query::parse_opt(id)
 }
 
 /// Rebuilds the finalization result from the committed rows, so the first
@@ -1434,7 +1383,7 @@ fn edit_result(
 ) -> Result<EditResult, ConversationRepositoryError> {
     let revision = transaction
         .query_row(
-            "SELECT conversation_id, id, message_id, branch_id, sequence, parts_json, authored_at, provider_replay_artifact_id, provider_replay_retention, source_turn_id FROM conversation_message_revisions WHERE conversation_id = ?1 AND id = ?2",
+            "SELECT conversation_id, id, message_id, branch_id, sequence, parts_json, authored_at, provider_replay_artifact_id, provider_replay_retention, source_turn_id, supersedes_candidate_id FROM conversation_message_revisions WHERE conversation_id = ?1 AND id = ?2",
             params![conversation_id.to_string(), revision_id.to_string()],
             |row| {
                 conversation_query::hydrate_revision_row(transaction, row)
@@ -2299,6 +2248,17 @@ impl ConversationRepository for Database {
                         aggregate.conversation.kind.is_group(),
                     )
                     .map_err(ConversationRepositoryError::Invalid)?;
+                if let lettuce_conversations::MessageRenderSource::Revision(edit) =
+                    item.message.active_render_source
+                    && item
+                        .active_revision
+                        .as_ref()
+                        .filter(|revision| revision.id == edit)
+                        .and_then(|revision| revision.supersedes_candidate_id)
+                        != Some(command.active_candidate_id)
+                {
+                    return Err(invalid("regenerate.active_candidate"));
+                }
                 let turn_id = GenerationTurnId::new();
                 insert_turn(
                     transaction,
@@ -2903,7 +2863,6 @@ impl ConversationRepository for Database {
                 )?;
                 let author = resolve_candidate_author(transaction, context.conversation_id, &turn)?;
                 let candidate_id = MessageCandidateId::new();
-                let mut edited_copy = None;
                 let (message_id, prior_candidate_id) = match turn.target {
                     GenerationTarget::NewAssistant {
                         message_id,
@@ -2929,16 +2888,6 @@ impl ConversationRepository for Database {
                             message_state(transaction, context.conversation_id, message_id)?;
                         if target.visibility == "tombstoned" {
                             return Err(ConversationRepositoryError::Conflict);
-                        }
-                        if let Some(revision_id) = target.active_revision_id {
-                            edited_copy = Some(preserve_edited_reply(
-                                transaction,
-                                context.conversation_id,
-                                message_id,
-                                revision_id,
-                                prior_candidate_id,
-                                context.now,
-                            )?);
                         }
                         (message_id, Some(prior_candidate_id))
                     }
@@ -2993,7 +2942,7 @@ impl ConversationRepository for Database {
                     }
                     let flipped = transaction
                         .execute(
-                            "UPDATE conversation_messages SET active_candidate_id = ?3, active_revision_id = NULL, author_participant_id = ?4, revision = revision + 1, updated_at = ?5 WHERE conversation_id = ?1 AND id = ?2 AND (active_candidate_id = ?6 OR active_candidate_id IS NULL)",
+                            "UPDATE conversation_messages SET active_candidate_id = ?3, active_revision_id = NULL, author_participant_id = ?4, revision = revision + 1, updated_at = ?5 WHERE conversation_id = ?1 AND id = ?2 AND (active_candidate_id = ?6 OR (active_candidate_id IS NULL AND EXISTS (SELECT 1 FROM conversation_message_revisions AS edit WHERE edit.conversation_id = ?1 AND edit.message_id = ?2 AND edit.id = conversation_messages.active_revision_id AND edit.supersedes_candidate_id = ?6)))",
                             params![
                                 context.conversation_id.to_string(),
                                 message_id.to_string(),
@@ -3070,12 +3019,6 @@ impl ConversationRepository for Database {
                     owned_deltas.push((
                         prior_candidate_id,
                         candidate_deltas(transaction, context.conversation_id, prior_candidate_id)?,
-                    ));
-                }
-                if let Some(copy_id) = edited_copy {
-                    owned_deltas.push((
-                        copy_id,
-                        candidate_deltas(transaction, context.conversation_id, copy_id)?,
                     ));
                 }
                 let value = finalization_value(
@@ -3818,28 +3761,30 @@ impl ConversationRepository for Database {
                 if state.visibility == "tombstoned" {
                     return Err(ConversationRepositoryError::Conflict);
                 }
-                let chosen = MediaOwner::Candidate(command.candidate_id);
+                let edit = latest_edit_of(
+                    transaction,
+                    context.conversation_id,
+                    command.message_id,
+                    command.candidate_id,
+                )?;
+                let chosen = edit.map_or(MediaOwner::Candidate(command.candidate_id), |id| {
+                    MediaOwner::Revision(id)
+                });
                 let retired = state.render_owner().filter(|owner| *owner != chosen);
-                let edited_copy = match state.active_revision_id {
-                    Some(revision_id) if state.role == "assistant" => Some(preserve_edited_reply(
-                        transaction,
-                        context.conversation_id,
-                        command.message_id,
-                        revision_id,
-                        command.candidate_id,
-                        context.now,
-                    )?),
-                    _ => None,
+                let (revision_id, candidate_id) = match chosen {
+                    MediaOwner::Revision(id) => (Some(id.to_string()), None),
+                    MediaOwner::Candidate(id) => (None, Some(id.to_string())),
                 };
                 let changed = transaction
                     .execute(
-                        "UPDATE conversation_messages SET active_candidate_id = ?3, active_revision_id = NULL, author_participant_id = ?4, revision = revision + 1, updated_at = ?5 WHERE conversation_id = ?1 AND id = ?2",
+                        "UPDATE conversation_messages SET active_candidate_id = ?3, active_revision_id = ?6, author_participant_id = ?4, revision = revision + 1, updated_at = ?5 WHERE conversation_id = ?1 AND id = ?2",
                         params![
                             context.conversation_id.to_string(),
                             command.message_id.to_string(),
-                            command.candidate_id.to_string(),
+                            candidate_id,
                             author,
                             context.now.get(),
+                            revision_id,
                         ],
                     )
                     .map_err(kernel::map_constraint)?;
@@ -3858,14 +3803,6 @@ impl ConversationRepository for Database {
                     owned_deltas.push((
                         retired,
                         owner_deltas(&assets, retired, AssetReferenceState::Historical),
-                    ));
-                }
-                if let Some(copy_id) = edited_copy {
-                    let copy = MediaOwner::Candidate(copy_id);
-                    let assets = owner_assets(transaction, context.conversation_id, copy)?;
-                    owned_deltas.push((
-                        copy,
-                        owner_deltas(&assets, copy, AssetReferenceState::Historical),
                     ));
                 }
                 set_owner_media_state(transaction, context.conversation_id, chosen, "active")?;
@@ -4126,9 +4063,20 @@ impl ConversationRepository for Database {
                     )
                     .map_err(slice::db)?;
                 let revision_id = MessageRevisionId::new();
+                let supersedes = match (state.active_candidate_id, state.active_revision_id) {
+                    (Some(candidate_id), _) => Some(candidate_id.to_string()),
+                    (None, Some(active)) => transaction
+                        .query_row(
+                            "SELECT supersedes_candidate_id FROM conversation_message_revisions WHERE conversation_id = ?1 AND id = ?2",
+                            params![context.conversation_id.to_string(), active.to_string()],
+                            |row| row.get::<_, Option<String>>(0),
+                        )
+                        .map_err(slice::db)?,
+                    (None, None) => None,
+                };
                 transaction
                     .execute(
-                        "INSERT INTO conversation_message_revisions (conversation_id, id, message_id, branch_id, sequence, parts_json, authored_at, source_turn_id, provider_replay_artifact_id, provider_replay_retention) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, NULL, NULL)",
+                        "INSERT INTO conversation_message_revisions (conversation_id, id, message_id, branch_id, sequence, parts_json, authored_at, source_turn_id, provider_replay_artifact_id, provider_replay_retention, supersedes_candidate_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, NULL, NULL, ?8)",
                         params![
                             context.conversation_id.to_string(),
                             revision_id.to_string(),
@@ -4137,6 +4085,7 @@ impl ConversationRepository for Database {
                             sequence,
                             slice::encode(&command.draft.parts)?,
                             context.now.get(),
+                            supersedes,
                         ],
                     )
                     .map_err(kernel::map_constraint)?;
@@ -7482,6 +7431,151 @@ mod tests {
     }
 
     #[test]
+    fn an_edited_group_variant_keeps_its_author_after_a_forced_regenerate() {
+        let mut fixture = group_fixture();
+        let first_speaker = fixture.characters[0];
+        let second_speaker = fixture.characters[1];
+        let seed = fixture
+            .database
+            .begin_send(
+                &send_command(&fixture, "edit-author-seed", "cd", text("hello")),
+                TimestampMillis::new(20),
+            )
+            .expect("seed send");
+        settle_cancelled(&fixture, &seed.value.turn, 21);
+        fixture.revision = conversation_revision(&fixture);
+        let authored = fixture
+            .database
+            .begin_continue(
+                &ContinueConversation {
+                    conversation_id: fixture.conversation_id,
+                    branch_id: fixture.branch_id,
+                    expected_revision: fixture.revision,
+                    forced_speaker: Some(first_speaker),
+                    swap_roles: false,
+                    operation: token("edit-author-continue", "cd"),
+                },
+                TimestampMillis::new(30),
+            )
+            .expect("forced continue");
+        let revision = drive(
+            &fixture,
+            authored.value.turn.id,
+            authored.value.attempt.id,
+            &[
+                GenerationTurnStatus::Preparing,
+                GenerationTurnStatus::ContextPrepared,
+                GenerationTurnStatus::Running,
+            ],
+            "drive-edit-author",
+            31,
+        );
+        let finalized = fixture
+            .database
+            .finalize_generation(
+                authored.value.turn.id,
+                authored.value.attempt.id,
+                conversation_revision(&fixture),
+                revision,
+                &token("edit-author-finalize", "cd"),
+                finalization_draft(text("first"), 0),
+                UsageEventId::new(),
+                TimestampMillis::new(40),
+            )
+            .expect("finalize");
+        let message_id = finalized.value.assistant_message.id;
+        let first = finalized.value.candidate.id;
+        fixture.revision = conversation_revision(&fixture);
+        fixture
+            .database
+            .edit_message(
+                &EditMessage {
+                    conversation_id: fixture.conversation_id,
+                    message_id,
+                    expected_revision: fixture.revision,
+                    operation: token("edit-author-edit", "cd"),
+                    draft: lettuce_conversations::MessageEditDraft {
+                        parts: text("first, edited"),
+                        visibility: MessageVisibility::Visible,
+                        pinned: false,
+                        scene_edited: false,
+                    },
+                },
+                TimestampMillis::new(41),
+            )
+            .expect("edit");
+        fixture.revision = conversation_revision(&fixture);
+        let regenerate = fixture
+            .database
+            .begin_regenerate(
+                &RegenerateCandidate {
+                    conversation_id: fixture.conversation_id,
+                    branch_id: fixture.branch_id,
+                    message_id,
+                    turn_id: authored.value.turn.id,
+                    expected_revision: fixture.revision,
+                    expected_turn_revision: turn_revision(&fixture, authored.value.turn.id),
+                    operation: token("edit-author-regen", "cd"),
+                    active_candidate_id: first,
+                    guidance: None,
+                    model_override: None,
+                    forced_speaker: Some(second_speaker),
+                    swap_roles: false,
+                },
+                TimestampMillis::new(50),
+            )
+            .expect("forced regenerate of an edited reply");
+        let revision = drive(
+            &fixture,
+            regenerate.value.turn.id,
+            regenerate.value.attempt.id,
+            &[
+                GenerationTurnStatus::Preparing,
+                GenerationTurnStatus::ContextPrepared,
+                GenerationTurnStatus::Running,
+            ],
+            "drive-edit-author-regen",
+            51,
+        );
+        let regenerated = fixture
+            .database
+            .finalize_generation(
+                regenerate.value.turn.id,
+                regenerate.value.attempt.id,
+                conversation_revision(&fixture),
+                revision,
+                &token("edit-author-regen-finalize", "cd"),
+                finalization_draft(text("second"), 1),
+                UsageEventId::new(),
+                TimestampMillis::new(60),
+            )
+            .expect("finalize forced regenerate");
+        assert_eq!(
+            regenerated.value.assistant_message.author_participant_id,
+            Some(second_speaker)
+        );
+        fixture.revision = conversation_revision(&fixture);
+        let back = fixture
+            .database
+            .choose_candidate(
+                &ChooseCandidate {
+                    conversation_id: fixture.conversation_id,
+                    message_id,
+                    candidate_id: first,
+                    expected_revision: fixture.revision,
+                    operation: token("edit-author-back", "cd"),
+                },
+                TimestampMillis::new(70),
+            )
+            .expect("swipe back to the edited variant");
+        assert_eq!(back.value.author_participant_id, Some(first_speaker));
+        assert!(matches!(
+            back.value.active_render_source,
+            lettuce_conversations::MessageRenderSource::Revision(_)
+        ));
+    }
+
+    #[test]
     fn resolving_group_speaker_honors_forced_and_regenerate_authors() {
         let mut fixture = group_fixture();
         let first_speaker = fixture.characters[0];
@@ -10104,7 +10198,7 @@ mod tests {
     #[test]
     fn editing_a_message_supersedes_its_render_source() {
         let mut fixture = direct_fixture();
-        let (message_id, first, _) = two_candidates(&mut fixture, "edit");
+        let (message_id, first, second) = two_candidates(&mut fixture, "edit");
         let asset_id = stage_media_asset(&fixture.database, "33");
         let edited = fixture
             .database
@@ -10190,12 +10284,6 @@ mod tests {
             &fixture.conversation_id.to_string(),
         );
         assert_eq!(historical, 1, "the edited revision's media retired");
-        let kept_edit: i64 = scalar(
-            &fixture.database,
-            "SELECT count(*) FROM conversation_message_candidates WHERE message_id = ?1 AND ordinal = 2 AND parts_json LIKE '%edited%'",
-            &message_id.to_string(),
-        );
-        assert_eq!(kept_edit, 1, "the edited text stays a selectable variant");
         store_fixture_model_snapshots(&fixture.database);
         let graph =
             crate::backup::restore_writer::tests::assert_backup_round_trip(&fixture.database);
@@ -10207,6 +10295,31 @@ mod tests {
                 .flat_map(|conversation| &conversation.messages)
                 .any(|message| !message.historical_media_revision_ids.is_empty())
         );
+        fixture.revision = conversation_revision(&fixture);
+        let back = fixture
+            .database
+            .choose_candidate(
+                &ChooseCandidate {
+                    conversation_id: fixture.conversation_id,
+                    message_id,
+                    candidate_id: second,
+                    expected_revision: fixture.revision,
+                    operation: token("choose-edited-variant", "cd"),
+                },
+                TimestampMillis::new(103),
+            )
+            .expect("choose the edited variant");
+        assert_eq!(
+            back.value.active_render_source,
+            lettuce_conversations::MessageRenderSource::Revision(edited.value.revision.id),
+            "legacy useChatMessageActionsController rewrote the selected variant in place"
+        );
+        let variants: i64 = scalar(
+            &fixture.database,
+            "SELECT count(*) FROM conversation_message_candidates WHERE message_id = ?1",
+            &message_id.to_string(),
+        );
+        assert_eq!(variants, 2, "an edit adds no variant");
     }
 
     #[test]
@@ -10472,7 +10585,7 @@ mod tests {
                 TimestampMillis::new(20),
             )
             .expect("send");
-        let (message_id, _) = settle_succeeded(&fixture, &send.value.turn, 21);
+        let (message_id, first) = settle_succeeded(&fixture, &send.value.turn, 21);
         fixture.revision = conversation_revision(&fixture);
         fixture
             .database
@@ -10529,13 +10642,31 @@ mod tests {
             finalized.value.assistant_message.active_render_source,
             lettuce_conversations::MessageRenderSource::Candidate(finalized.value.candidate.id)
         );
-        assert_eq!(finalized.value.candidate.ordinal, 2);
-        let kept_edit: i64 = scalar(
+        assert_eq!(finalized.value.candidate.ordinal, 1);
+        let variants: i64 = scalar(
             &fixture.database,
-            "SELECT count(*) FROM conversation_message_candidates WHERE message_id = ?1 AND ordinal = 1 AND parts_json LIKE '%fixed typo%'",
+            "SELECT count(*) FROM conversation_message_candidates WHERE message_id = ?1",
             &message_id.to_string(),
         );
-        assert_eq!(kept_edit, 1);
+        assert_eq!(variants, 2, "regenerate appends one variant like legacy");
+        fixture.revision = conversation_revision(&fixture);
+        let back = fixture
+            .database
+            .choose_candidate(
+                &ChooseCandidate {
+                    conversation_id: fixture.conversation_id,
+                    message_id,
+                    candidate_id: first,
+                    expected_revision: fixture.revision,
+                    operation: token("edit-regen-back", "cd"),
+                },
+                TimestampMillis::new(130),
+            )
+            .expect("swipe back to the edited variant");
+        assert!(matches!(
+            back.value.active_render_source,
+            lettuce_conversations::MessageRenderSource::Revision(_)
+        ));
     }
 
     #[test]

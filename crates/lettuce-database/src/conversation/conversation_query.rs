@@ -801,6 +801,7 @@ pub(crate) fn hydrate_revision_row(
         authored_at: timestamp(row.get(6).map_err(slice::db)?),
         source_turn_id: parse_opt(row.get(9).map_err(slice::db)?)?,
         provider_replay: replay,
+        supersedes_candidate_id: parse_opt(row.get(10).map_err(slice::db)?)?,
     };
     value
         .validate()
@@ -907,7 +908,7 @@ pub(crate) fn message_row(
         .validate()
         .map_err(|_| ConversationRepositoryError::Storage)?;
     let active_revision = if let Some(revision_id) = active_revision_id {
-        let mut statement = transaction.prepare("SELECT conversation_id, id, message_id, branch_id, sequence, parts_json, authored_at, provider_replay_artifact_id, provider_replay_retention, source_turn_id FROM conversation_message_revisions WHERE conversation_id = ?1 AND id = ?2").map_err(slice::db)?;
+        let mut statement = transaction.prepare("SELECT conversation_id, id, message_id, branch_id, sequence, parts_json, authored_at, provider_replay_artifact_id, provider_replay_retention, source_turn_id, supersedes_candidate_id FROM conversation_message_revisions WHERE conversation_id = ?1 AND id = ?2").map_err(slice::db)?;
         Some(
             statement
                 .query_row(
@@ -2276,7 +2277,7 @@ fn read_revision_page(
         .as_ref()
         .map(|value| value.text.as_str())
         .unwrap_or("");
-    let sql = "SELECT conversation_id, id, message_id, branch_id, sequence, parts_json, authored_at, provider_replay_artifact_id, provider_replay_retention, source_turn_id FROM conversation_message_revisions WHERE conversation_id = ?1 AND message_id = ?2 AND (sequence > ?3 OR (sequence = ?3 AND id > ?4)) ORDER BY sequence, id LIMIT ?5";
+    let sql = "SELECT conversation_id, id, message_id, branch_id, sequence, parts_json, authored_at, provider_replay_artifact_id, provider_replay_retention, source_turn_id, supersedes_candidate_id FROM conversation_message_revisions WHERE conversation_id = ?1 AND message_id = ?2 AND (sequence > ?3 OR (sequence = ?3 AND id > ?4)) ORDER BY sequence, id LIMIT ?5";
     let mut statement = transaction.prepare(sql).map_err(slice::db)?;
     let mut values = Vec::new();
     for row in statement
@@ -2504,7 +2505,7 @@ impl ConversationReader for Database {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Deferred)
             .map_err(slice::db)?;
-        let mut statement = transaction.prepare("SELECT conversation_id, id, message_id, branch_id, sequence, parts_json, authored_at, provider_replay_artifact_id, provider_replay_retention, source_turn_id FROM conversation_message_revisions WHERE id = ?1").map_err(slice::db)?;
+        let mut statement = transaction.prepare("SELECT conversation_id, id, message_id, branch_id, sequence, parts_json, authored_at, provider_replay_artifact_id, provider_replay_retention, source_turn_id, supersedes_candidate_id FROM conversation_message_revisions WHERE id = ?1").map_err(slice::db)?;
         let mut values = Vec::new();
         for row in statement
             .query_map([id.to_string()], |row| {

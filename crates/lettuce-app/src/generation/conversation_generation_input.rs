@@ -2831,6 +2831,7 @@ mod tests {
             authored_at: TimestampMillis::new(index),
             source_turn_id: None,
             provider_replay: None,
+            supersedes_candidate_id: None,
         });
         item
     }

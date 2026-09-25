@@ -2694,6 +2694,7 @@ mod tests {
                 authored_at: lettuce_types::TimestampMillis::UNIX_EPOCH,
                 source_turn_id: None,
                 provider_replay: None,
+                supersedes_candidate_id: None,
             }),
             active_candidate: None,
             initial_origin: Some(lettuce_conversations::InitialMessageOrigin::SelectedScene {

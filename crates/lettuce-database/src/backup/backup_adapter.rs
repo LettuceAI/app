@@ -2066,7 +2066,7 @@ fn read_backup_revisions(
     let remaining = MAX_BACKUP_MESSAGE_REVISIONS.saturating_sub(*count);
     let limit = remaining.saturating_add(1);
     let mut statement = transaction
-        .prepare("SELECT conversation_id, id, message_id, branch_id, sequence, parts_json, authored_at, provider_replay_artifact_id, provider_replay_retention, source_turn_id FROM conversation_message_revisions WHERE conversation_id = ?1 AND message_id = ?2 ORDER BY sequence, id LIMIT ?3")
+        .prepare("SELECT conversation_id, id, message_id, branch_id, sequence, parts_json, authored_at, provider_replay_artifact_id, provider_replay_retention, source_turn_id, supersedes_candidate_id FROM conversation_message_revisions WHERE conversation_id = ?1 AND message_id = ?2 ORDER BY sequence, id LIMIT ?3")
         .map_err(backup_error)?;
     let values = statement
         .query_map(

@@ -258,6 +258,11 @@ pub struct MessageRevision {
     pub authored_at: TimestampMillis,
     pub source_turn_id: Option<GenerationTurnId>,
     pub provider_replay: Option<ReplayArtifactRef>,
+    /// The assistant variant this edit rewrote. Selecting that candidate
+    /// renders this revision, so the edit keeps the variant's place and the
+    /// candidate's own pre-edit parts are history only.
+    #[serde(default)]
+    pub supersedes_candidate_id: Option<MessageCandidateId>,
 }
 
 impl MessageRevision {

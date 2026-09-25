@@ -1352,6 +1352,7 @@ mod tests {
                 authored_at: TimestampMillis::new(1),
                 source_turn_id: None,
                 provider_replay: None,
+                supersedes_candidate_id: None,
             }),
             active_candidate: None,
             initial_origin: None,

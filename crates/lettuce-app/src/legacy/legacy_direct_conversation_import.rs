@@ -1714,6 +1714,7 @@ impl SessionWriter<'_> {
                 authored_at: created_at,
                 source_turn_id: None,
                 provider_replay: None,
+                supersedes_candidate_id: None,
             };
             let active = MessageRenderSource::Revision(revision.id);
             revisions.push(revision);
@@ -1743,6 +1744,7 @@ impl SessionWriter<'_> {
                     authored_at: timestamp(variant.created_at)?,
                     source_turn_id: None,
                     provider_replay: None,
+                    supersedes_candidate_id: None,
                 };
                 if index == active_variant_index(legacy) {
                     active = Some(revision.id);

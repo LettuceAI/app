@@ -280,6 +280,9 @@ pub struct BeginGeneration {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FinalizationDraft {
     pub parts: Vec<MessagePart>,
+    /// Must be zero for a new reply. A regenerated candidate is appended
+    /// after the message's existing variants whatever this holds, so the
+    /// stored ordinal is the one in the finalization result.
     pub ordinal: u16,
     pub model: ModelSelectionSnapshot,
     pub replay: Option<ReplayArtifactRef>,

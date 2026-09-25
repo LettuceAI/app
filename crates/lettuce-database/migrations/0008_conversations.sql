@@ -378,6 +378,7 @@ CREATE TABLE conversation_message_revisions (
     source_turn_id TEXT,
     provider_replay_artifact_id TEXT,
     provider_replay_retention TEXT CHECK (provider_replay_retention IS NULL OR provider_replay_retention = 'conversation'),
+    supersedes_candidate_id TEXT,
     PRIMARY KEY (conversation_id, id),
     UNIQUE (conversation_id, message_id, sequence),
     UNIQUE (conversation_id, message_id, id),
@@ -391,6 +392,8 @@ CREATE TABLE conversation_message_revisions (
         REFERENCES conversation_turns(conversation_id, id) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED,
     FOREIGN KEY (conversation_id, source_turn_id, branch_id)
         REFERENCES conversation_turns(conversation_id, id, branch_id) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED,
+    FOREIGN KEY (conversation_id, message_id, supersedes_candidate_id)
+        REFERENCES conversation_message_candidates(conversation_id, message_id, id) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED,
     FOREIGN KEY (provider_replay_artifact_id, provider_replay_retention)
         REFERENCES conversation_replay_artifacts(artifact_id, retention)
         ON DELETE RESTRICT
@@ -398,8 +401,8 @@ CREATE TABLE conversation_message_revisions (
 CREATE INDEX conversation_message_revisions_page_idx
     ON conversation_message_revisions(conversation_id, message_id, sequence, id);
 CREATE TRIGGER conversation_revision_owner_immutable
-BEFORE UPDATE OF conversation_id, id, message_id, branch_id, source_turn_id ON conversation_message_revisions
-WHEN NEW.conversation_id <> OLD.conversation_id OR NEW.id <> OLD.id OR NEW.message_id <> OLD.message_id OR NEW.branch_id <> OLD.branch_id OR coalesce(NEW.source_turn_id, '') <> coalesce(OLD.source_turn_id, '')
+BEFORE UPDATE OF conversation_id, id, message_id, branch_id, source_turn_id, supersedes_candidate_id ON conversation_message_revisions
+WHEN NEW.conversation_id <> OLD.conversation_id OR NEW.id <> OLD.id OR NEW.message_id <> OLD.message_id OR NEW.branch_id <> OLD.branch_id OR coalesce(NEW.source_turn_id, '') <> coalesce(OLD.source_turn_id, '') OR coalesce(NEW.supersedes_candidate_id, '') <> coalesce(OLD.supersedes_candidate_id, '')
 BEGIN SELECT RAISE(ABORT, 'revision ownership is immutable'); END;
 
 CREATE TABLE conversation_message_candidates (
