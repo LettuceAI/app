@@ -41,9 +41,12 @@ summaries and memories, and in every message of a one-to-one request
 (`apply_identity_placeholders`, `sanitize_placeholders_in_api_messages`);
 callers do that with `PromptRenderValues::resolve_identity` and
 `resolve_names` before rendering and on history. Other tokens inside a
-substituted value (`{{date}}`, `{{content_rules}}`) reach the model verbatim. `{{#if name}}…{{else}}…{{/if}}` blocks (non-nested) keep the
-first branch when the named variable is non-empty; legacy only used them for
-`current_draft`, and catalog fragments now use them for optional lines.
+substituted value (`{{date}}`, `{{content_rules}}`) reach the model verbatim.
+`{{#if name}}…{{else}}…{{/if}}` blocks (non-nested) keep the first branch when
+the named variable is non-empty; legacy only used them for `current_draft`, and
+catalog fragments now use them for optional lines. A malformed, unknown or
+nested block and a stray `{{else}}` or `{{/if}}` stay in the text as written,
+as legacy sent such text verbatim, instead of failing the render.
 `render_prompt_text` renders one fragment with the same rules.
 
 Built-in prompts use a separate seed/reconcile port. Seeds have stable unique

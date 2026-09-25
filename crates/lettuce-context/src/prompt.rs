@@ -1619,7 +1619,7 @@ impl PromptRenderValues {
         };
         let conditioned = render_legacy_conditionals(source, |name| {
             value(&format!("{{{{{name}}}}}")).map(|value| !value.is_empty())
-        })?;
+        });
         let mut rendered = String::with_capacity(conditioned.len());
         let mut rest = conditioned.as_str();
         while let Some(start) = rest.find("{{") {
@@ -1645,64 +1645,60 @@ impl PromptRenderValues {
 }
 
 /// `{{#if name}}…{{else}}…{{/if}}` keeps the first branch when the named
-/// render variable is non-empty. Blocks do not nest.
-fn render_legacy_conditionals(
-    source: &str,
-    present: impl Fn(&str) -> Option<bool>,
-) -> Result<String, PromptRenderError> {
+/// render variable is non-empty. Blocks do not nest. A block that is not well
+/// formed, names no render variable or nests, and a stray `{{else}}` or
+/// `{{/if}}`, stay in the text as written, as legacy sent such text verbatim.
+fn render_legacy_conditionals(source: &str, present: impl Fn(&str) -> Option<bool>) -> String {
     const OPEN: &str = "{{#if ";
     const ELSE: &str = "{{else}}";
     const CLOSE: &str = "{{/if}}";
+    let block = |start: usize| -> Option<(usize, &str)> {
+        let condition_start = start + OPEN.len();
+        let condition_end = condition_start + source[condition_start..].find("}}")?;
+        let condition_present = present(source[condition_start..condition_end].trim())?;
+        let body_start = condition_end + 2;
+        let close_start = body_start + source[body_start..].find(CLOSE)?;
+        let body = &source[body_start..close_start];
+        if body.contains(OPEN) {
+            return None;
+        }
+        let (if_body, else_body) = match body.find(ELSE) {
+            Some(else_start) => {
+                let else_end = else_start + ELSE.len();
+                if body[else_end..].contains(ELSE) {
+                    return None;
+                }
+                (&body[..else_start], &body[else_end..])
+            }
+            None => (body, ""),
+        };
+        Some((
+            close_start + CLOSE.len(),
+            if condition_present {
+                if_body
+            } else {
+                else_body
+            },
+        ))
+    };
     let mut output = String::with_capacity(source.len());
     let mut cursor = 0;
     while let Some(relative) = source[cursor..].find(OPEN) {
         let start = cursor + relative;
         output.push_str(&source[cursor..start]);
-        let condition_start = start + OPEN.len();
-        let Some(condition_end) = source[condition_start..].find("}}") else {
-            return Err(PromptRenderError::MalformedConditional);
-        };
-        let condition_end = condition_start + condition_end;
-        let Some(condition_present) = present(source[condition_start..condition_end].trim()) else {
-            return Err(PromptRenderError::UnknownConditional);
-        };
-        let body_start = condition_end + 2;
-        let Some(close_relative) = source[body_start..].find(CLOSE) else {
-            return Err(PromptRenderError::MalformedConditional);
-        };
-        let close_start = body_start + close_relative;
-        let body = &source[body_start..close_start];
-        if body.contains(OPEN) || body.contains(CLOSE) {
-            return Err(PromptRenderError::NestedConditional);
-        }
-        let (if_body, else_body) = if let Some(else_relative) = body.find(ELSE) {
-            let else_end = else_relative + ELSE.len();
-            if body[else_end..].contains(ELSE) {
-                return Err(PromptRenderError::MalformedConditional);
+        match block(start) {
+            Some((end, kept)) => {
+                output.push_str(kept);
+                cursor = end;
             }
-            (&body[..else_relative], &body[else_end..])
-        } else {
-            (body, "")
-        };
-        output.push_str(if condition_present {
-            if_body
-        } else {
-            else_body
-        });
-        if output.len() > MAX_AUTHORED_BYTES {
-            return Err(PromptRenderError::RenderValuesTooLarge);
+            None => {
+                output.push_str(OPEN);
+                cursor = start + OPEN.len();
+            }
         }
-        cursor = close_start + CLOSE.len();
     }
-    let tail = &source[cursor..];
-    if tail.contains(ELSE) || tail.contains(CLOSE) {
-        return Err(PromptRenderError::MalformedConditional);
-    }
-    output.push_str(tail);
-    if output.len() > MAX_AUTHORED_BYTES {
-        return Err(PromptRenderError::RenderValuesTooLarge);
-    }
-    Ok(output)
+    output.push_str(&source[cursor..]);
+    output
 }
 
 fn validate_render_values(
@@ -1791,12 +1787,6 @@ pub enum PromptRenderError {
     RenderValueTooLarge { variable: PromptVariable },
     #[error("prompt render values exceed the 8 MiB limit")]
     RenderValuesTooLarge,
-    #[error("malformed legacy conditional block")]
-    MalformedConditional,
-    #[error("unknown legacy conditional directive")]
-    UnknownConditional,
-    #[error("nested legacy conditional blocks are not supported")]
-    NestedConditional,
 }
 
 pub fn render_prompt(
@@ -2929,7 +2919,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_conditionals_render_both_branches_and_reject_controls() {
+    fn legacy_conditionals_render_both_branches_and_keep_stray_controls_verbatim() {
         let make = |content: &str, current_draft: &str| {
             let entry = PromptEntry {
                 name: "conditional".into(),
@@ -2984,19 +2974,23 @@ mod tests {
             render_prompt(&lore, &lore_context).expect("lore").relative[0].content,
             "Intro\n# Lore\nTides"
         );
-        for malformed in [
-            "{{#if current_draft}}nested {{#if current_draft}}x{{/if}}{{/if}}",
-            "{{#if unknown}}x{{/if}}",
-            "{{#if current_draft}}x",
-            "{{else}}x",
-            "{{/if}}x",
+        for (malformed, rendered) in [
+            (
+                "{{#if current_draft}}nested {{#if current_draft}}x{{/if}}{{/if}}",
+                "{{#if current_draft}}nested x{{/if}}",
+            ),
+            ("{{#if unknown}}x{{/if}}", "{{#if unknown}}x{{/if}}"),
+            ("{{#if current_draft}}x", "{{#if current_draft}}x"),
+            ("{{else}}x", "{{else}}x"),
+            ("{{/if}}x", "{{/if}}x"),
         ] {
-            assert!(matches!(
-                make(malformed, "draft"),
-                Err(PromptRenderError::NestedConditional)
-                    | Err(PromptRenderError::UnknownConditional)
-                    | Err(PromptRenderError::MalformedConditional)
-            ));
+            assert_eq!(
+                make(malformed, "draft")
+                    .expect("stray controls render")
+                    .relative[0]
+                    .content,
+                rendered
+            );
         }
     }
 
