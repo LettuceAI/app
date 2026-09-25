@@ -254,6 +254,13 @@ where
         runtime_values.author_note = runtime_values.author_note.trim().to_owned();
         runtime_values.context_summary = memory_summary.clone();
         runtime_values.key_memories = key_lines.clone();
+        resolve_substituted_values(&mut runtime_values, group);
+        let names = PromptRenderValues {
+            character_name: runtime_values.character_name.clone(),
+            persona_name: runtime_values.persona_name.clone(),
+            user_name: runtime_values.user_name.clone(),
+            ..PromptRenderValues::default()
+        };
         let guidance = request
             .guidance
             .as_deref()
@@ -319,11 +326,33 @@ where
                     .purpose_values
                     .retain(|variable, _| variable.is_allowed_for(document.purpose));
             }
+            resolve_substituted_values(&mut values, group);
+            let without_scene;
+            let rendered_document = if direct
+                && settings.scene.is_none()
+                && !scene_timeline
+                    .iter()
+                    .any(|item| active_text(item).is_some())
+            {
+                without_scene = PromptSnapshot {
+                    entries: document
+                        .entries
+                        .iter()
+                        .filter(|entry| !entry.content.contains("{{scene}}"))
+                        .cloned()
+                        .collect(),
+                    ..document.clone()
+                };
+                &without_scene
+            } else {
+                document
+            };
             let render_context = PromptRenderContext { conditions, values };
-            let rendered = render_prompt_snapshot(document, &render_context).map_err(|error| {
-                tracing::warn!(?error, "prompt snapshot rendering failed");
-                ContextAssemblyError::PromptRender
-            })?;
+            let rendered =
+                render_prompt_snapshot(rendered_document, &render_context).map_err(|error| {
+                    tracing::warn!(?error, "prompt snapshot rendering failed");
+                    ContextAssemblyError::PromptRender
+                })?;
             (Some(document), rendered)
         } else {
             (None, Default::default())
@@ -430,6 +459,13 @@ where
         }
         messages.append(&mut transcript);
         insert_in_chat_messages(&mut messages, in_chat_messages);
+        if direct {
+            for part in messages.iter_mut().flat_map(|message| &mut message.parts) {
+                if let ProviderContextPart::Text { text } = part {
+                    *text = names.resolve_names(text);
+                }
+            }
+        }
 
         let attributions = ContextAttributions {
             prompt: prompt.map(|document| PromptAttribution {
@@ -1999,45 +2035,24 @@ fn prompt_values(
         .iter()
         .find(|participant| participant.role == lettuce_conversations::ParticipantRole::User);
     let character_description = character
-        .map(|body| {
-            [
-                body.description.as_deref(),
-                body.definition.as_deref(),
-                body.design_description.as_deref(),
-            ]
-            .into_iter()
-            .flatten()
-            .filter(|value| !value.trim().is_empty())
-            .collect::<Vec<_>>()
-            .join("\n\n")
-        })
-        .unwrap_or_default();
-    let authored_user_name = user
-        .map(|participant| participant.display_name.clone())
-        .unwrap_or_default();
-    let authored_user_description = user
-        .and_then(|participant| participant.authored_description.clone())
-        .unwrap_or_default();
-    let persona_name = snapshot
-        .persona
-        .as_ref()
-        .map(|body| body.title.clone())
-        .unwrap_or_else(|| authored_user_name.clone());
-    let persona_description = snapshot
-        .persona
-        .as_ref()
-        .map(|body| {
-            [
-                Some(body.description.as_str()),
-                body.design_description.as_deref(),
-            ]
-            .into_iter()
-            .flatten()
-            .filter(|value| !value.trim().is_empty())
-            .collect::<Vec<_>>()
-            .join("\n\n")
-        })
-        .unwrap_or_else(|| authored_user_description.clone());
+        .and_then(|body| body.definition.as_deref().or(body.description.as_deref()))
+        .map(str::trim)
+        .unwrap_or_default()
+        .to_owned();
+    let persona_name = snapshot.persona.as_ref().map_or_else(
+        || {
+            user.map(|participant| participant.display_name.clone())
+                .unwrap_or_default()
+        },
+        |body| body.title.clone(),
+    );
+    let persona_description = snapshot.persona.as_ref().map_or_else(
+        || {
+            user.and_then(|participant| participant.authored_description.clone())
+                .unwrap_or_default()
+        },
+        |body| body.description.trim().to_owned(),
+    );
     let selected_name = request
         .selected_speaker
         .as_ref()
@@ -2052,53 +2067,24 @@ fn prompt_values(
     let swap_roles = swap_roles && !aggregate.conversation.kind.is_group();
     let (character_name, character_description, persona_name, persona_description) = if swap_roles {
         (
-            persona_name.clone(),
-            persona_description.clone(),
-            selected_name.clone(),
-            character_description.clone(),
+            persona_name,
+            persona_description,
+            selected_name,
+            character_description,
         )
     } else {
         (
-            selected_name.clone(),
+            selected_name,
             character_description,
             persona_name,
             persona_description,
         )
     };
-    let (user_name, user_description, ai_name, ai_description) = if swap_roles {
-        (
-            selected_name.clone(),
-            character_description.clone(),
-            snapshot
-                .persona
-                .as_ref()
-                .map(|body| body.title.clone())
-                .unwrap_or_else(|| authored_user_name.clone()),
-            snapshot
-                .persona
-                .as_ref()
-                .map(|body| {
-                    [
-                        Some(body.description.as_str()),
-                        body.design_description.as_deref(),
-                    ]
-                    .into_iter()
-                    .flatten()
-                    .filter(|value| !value.trim().is_empty())
-                    .collect::<Vec<_>>()
-                    .join("\n\n")
-                })
-                .unwrap_or_else(|| authored_user_description.clone()),
-        )
-    } else {
-        (
-            authored_user_name,
-            authored_user_description,
-            selected_name.clone(),
-            character_description.clone(),
-        )
-    };
     let mut values = PromptRenderValues {
+        user_name: persona_name.clone(),
+        user_description: persona_description.clone(),
+        ai_name: character_name.clone(),
+        ai_description: character_description.clone(),
         character_name,
         character_description,
         persona_name,
@@ -2117,10 +2103,6 @@ fn prompt_values(
             .as_ref()
             .and_then(|memory| memory.summary.clone())
             .unwrap_or_default(),
-        user_name,
-        user_description,
-        ai_description,
-        ai_name,
         ..PromptRenderValues::default()
     };
     for (variable, value) in [
@@ -2192,6 +2174,30 @@ fn prompt_values(
         );
     }
     values
+}
+
+/// Identity tokens inside values the renderer substitutes verbatim, resolved
+/// the way legacy did: a direct chat ran `apply_identity_placeholders` over its
+/// rendered prompt (`prompt_engine.rs` 4580) and author note (3314-3365); a
+/// group chat replaced `{{char}}`, `{{persona}}` and `{{user}}` in each
+/// rendered entry and every identity token in its author note
+/// (`group_chat_manager/mod.rs` 5060-5100, 5490-5495).
+fn resolve_substituted_values(values: &mut PromptRenderValues, group: bool) {
+    let resolve = |values: &PromptRenderValues, text: &str| {
+        if group {
+            values.resolve_names(text)
+        } else {
+            values.resolve_identity(text)
+        }
+    };
+    let lorebook = resolve(values, &values.lorebook);
+    let context_summary = resolve(values, &values.context_summary);
+    let key_memories = resolve(values, &values.key_memories);
+    let author_note = values.resolve_identity(&values.author_note);
+    values.lorebook = lorebook;
+    values.context_summary = context_summary;
+    values.key_memories = key_memories;
+    values.author_note = author_note;
 }
 
 fn selected_character<'a>(

@@ -4358,6 +4358,140 @@ async fn an_existing_chat_reads_lorebook_edits_bindings_and_archiving_every_turn
     );
 }
 
+#[tokio::test]
+async fn identity_placeholders_resolve_everywhere_legacy_resolved_them() {
+    let database = database_with_builtins();
+    let prompt_id = PromptRepository::create_user_draft(
+        &database,
+        PromptMetadataDraft {
+            name: "Identity".into(),
+            purpose: PromptPurpose::DirectChat,
+            condense: false,
+            behavior_version: PromptBehaviorVersion::LegacyV1,
+        },
+        vec![
+            text_entry("You={{user}} Desc={{char.desc}}"),
+            text_entry("# Scenario\n{{scene}}"),
+        ],
+        TimestampMillis::new(1),
+    )
+    .expect("prompt")
+    .id;
+    let book = seed_lorebook(&database, "Identity lore");
+    add_lore_entry(&database, book, "{{char}} owes {{user}} a map.");
+    let character_id = CharacterId::new();
+    let mut character = character_with(
+        character_id,
+        None,
+        CharacterDefaults {
+            direct_prompt_id: Some(prompt_id),
+            ..CharacterDefaults::default()
+        },
+    );
+    character.profile.definition = Some("Ada builds bridges.".into());
+    CharacterRepository::create(
+        &database,
+        CreateCharacterPlan {
+            character,
+            scenes: Vec::new(),
+            variants: Vec::new(),
+            starters: Vec::new(),
+        },
+    )
+    .expect("create character");
+    CharacterLorebookBindingRepository::bind_character_lorebook(
+        &database,
+        character_id,
+        Revision::INITIAL,
+        LorebookBindingCreate {
+            lorebook_id: book,
+            target: BindingInsertionTarget::Append,
+        },
+        NOW,
+    )
+    .expect("bind lore");
+    let persona_id = seed_persona(&database, "Mara");
+    let mut launch = request(character_id, "identity-placeholders");
+    launch.persona = LaunchSelection::Explicit(persona_id);
+    let conversation = ConversationLaunchPlanner::new(&database)
+        .launch_direct(&launch, NOW)
+        .expect("launch direct")
+        .value
+        .conversation;
+    database
+        .update_settings(
+            lettuce_conversations::PreparedConversationSettingsUpdate::new(
+                lettuce_conversations::UpdateConversationSettings {
+                    conversation_id: conversation.id,
+                    expected_settings_revision: None,
+                    operation: OperationToken {
+                        key: IdempotencyKey::new("identity-note").expect("key"),
+                        request_digest: ContentHash::parse("cd".repeat(32)).expect("digest"),
+                    },
+                    patch: lettuce_conversations::CurrentConversationSettingsPatch {
+                        author_note: lettuce_conversations::PatchValue::Set(
+                            "Keep {{user}} close to {{char.name}}.".into(),
+                        ),
+                        ..lettuce_conversations::CurrentConversationSettingsPatch::default()
+                    },
+                },
+                Vec::new(),
+            )
+            .expect("prepared author note"),
+            TimestampMillis::new(NOW.get() + 5),
+        )
+        .expect("set author note");
+    let conversation = ConversationReader::get(&database, conversation.id)
+        .expect("conversation")
+        .conversation;
+    let sent = ConversationRepository::begin_send(
+        &database,
+        &direct_send_command(
+            &conversation,
+            "identity-send",
+            "Hello {{char}}, I am {{user}}.",
+        ),
+        TimestampMillis::new(NOW.get() + 10),
+    )
+    .expect("send direct message");
+    let source_message_id = match sent.value.turn.input {
+        GenerationInput::UserMessage { message_id } => message_id,
+        ref other => panic!("expected user-message input, got {other:?}"),
+    };
+    let request = || context_request_for(&database, conversation.id, source_message_id);
+
+    let (_, text) = assembled_prompt_with_text(&database, request()).await;
+    assert!(text.contains("You=Mara Desc=Ada builds bridges."));
+    assert!(!text.contains("A meticulous engineer"));
+    assert!(!text.contains("# Scenario"));
+    assert!(text.contains("Ada owes Mara a map."));
+    assert!(text.contains("Keep Mara close to Ada."));
+    assert!(text.contains("Hello Ada, I am Mara."));
+    assert!(!text.contains("{{"));
+
+    let persona = PersonaRepository::get(&database, persona_id)
+        .expect("persona")
+        .expect("exists");
+    PersonaRepository::revise(
+        &database,
+        persona_id,
+        persona.revision,
+        lettuce_characters::PersonaDraftUpdate {
+            title: "Mira".into(),
+            description: persona.description.clone(),
+            nickname: persona.nickname.clone(),
+            design_description: persona.design_description.clone(),
+            avatar_crop: persona.avatar_crop,
+            image_recommendation: persona.image_recommendation.clone(),
+        },
+        NOW,
+    )
+    .expect("rename persona");
+    let (_, text) = assembled_prompt_with_text(&database, request()).await;
+    assert!(text.contains("You=Mira"));
+    assert!(text.contains("Hello Ada, I am Mira."));
+}
+
 fn text_entry(text: &str) -> lettuce_context::PromptEntryDraft {
     lettuce_context::PromptEntryDraft {
         built_in_entry_key: None,

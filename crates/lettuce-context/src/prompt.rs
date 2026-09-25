@@ -1496,14 +1496,87 @@ impl PromptVariable {
     }
 }
 
+#[derive(Clone, Copy)]
+enum IdentityValue {
+    CharacterName,
+    CharacterDescription,
+    PersonaName,
+    PersonaDescription,
+}
+
+fn identity_patterns() -> &'static [(regex::Regex, IdentityValue)] {
+    static PATTERNS: std::sync::OnceLock<Vec<(regex::Regex, IdentityValue)>> =
+        std::sync::OnceLock::new();
+    PATTERNS.get_or_init(|| {
+        [
+            (r"char\.name", IdentityValue::CharacterName),
+            (r"char\.desc", IdentityValue::CharacterDescription),
+            (r"ai_name", IdentityValue::CharacterName),
+            (r"ai_description", IdentityValue::CharacterDescription),
+            (r"persona\.name", IdentityValue::PersonaName),
+            (r"persona\.desc", IdentityValue::PersonaDescription),
+            (r"persona_name", IdentityValue::PersonaName),
+            (r"persona_description", IdentityValue::PersonaDescription),
+            (r"user\.name", IdentityValue::PersonaName),
+            (r"user\.desc", IdentityValue::PersonaDescription),
+            (r"user_name", IdentityValue::PersonaName),
+            (r"user_description", IdentityValue::PersonaDescription),
+            (r"char", IdentityValue::CharacterName),
+            (r"persona", IdentityValue::PersonaName),
+            (r"user", IdentityValue::PersonaName),
+        ]
+        .into_iter()
+        .map(|(body, value)| {
+            (
+                regex::Regex::new(&format!(r"\{{\{{\s*{body}\s*\}}\}}"))
+                    .expect("identity placeholder patterns are valid"),
+                value,
+            )
+        })
+        .collect()
+    })
+}
+
 impl PromptRenderValues {
+    /// Legacy `sanitize_placeholders_in_api_messages`: `{{char}}`,
+    /// `{{persona}}` and `{{user}}` in text the renderer substitutes verbatim
+    /// or never renders (history, lorebook text, memories).
+    #[must_use]
+    pub fn resolve_names(&self, text: &str) -> String {
+        text.replace("{{char}}", &self.character_name)
+            .replace("{{persona}}", &self.persona_name)
+            .replace("{{user}}", &self.user_name)
+    }
+
+    /// Legacy `apply_identity_placeholders`: every character and persona
+    /// identity token, with whitespace allowed inside the braces, resolved in
+    /// a value the renderer substitutes verbatim. Descriptions carry their
+    /// own name tokens resolved.
+    #[must_use]
+    pub fn resolve_identity(&self, text: &str) -> String {
+        let character_description = self.resolve_names(&self.character_description);
+        let persona_description = self.resolve_names(&self.persona_description);
+        let mut resolved = std::borrow::Cow::Borrowed(text);
+        for (pattern, value) in identity_patterns() {
+            if pattern.is_match(&resolved) {
+                let replacement = match value {
+                    IdentityValue::CharacterName => self.character_name.as_str(),
+                    IdentityValue::CharacterDescription => character_description.as_str(),
+                    IdentityValue::PersonaName => self.persona_name.as_str(),
+                    IdentityValue::PersonaDescription => persona_description.as_str(),
+                };
+                resolved = std::borrow::Cow::Owned(
+                    pattern
+                        .replace_all(&resolved, regex::NoExpand(replacement))
+                        .into_owned(),
+                );
+            }
+        }
+        resolved.into_owned()
+    }
+
     fn render(&self, source: &str) -> Result<String, PromptRenderError> {
-        let names = |value: &str| {
-            value
-                .replace("{{char}}", &self.character_name)
-                .replace("{{persona}}", &self.persona_name)
-                .replace("{{user}}", &self.user_name)
-        };
+        let names = |value: &str| self.resolve_names(value);
         let character_description = names(&self.character_description);
         let persona_description = names(&self.persona_description);
         let user_description = names(&self.user_description);
@@ -2700,6 +2773,28 @@ mod tests {
         assert_eq!(
             rendered.in_chat[0].content,
             "Mira trusts Sam.|Dates look like {{date}}.|Keep {{content_rules}} literal."
+        );
+    }
+
+    #[test]
+    fn identity_tokens_resolve_like_legacy_apply_identity_placeholders() {
+        let values = PromptRenderValues {
+            character_name: "Mira".into(),
+            character_description: "{{char}} maps coasts.".into(),
+            persona_name: "Sam".into(),
+            persona_description: "A sailor.".into(),
+            user_name: "Sam".into(),
+            ..PromptRenderValues::default()
+        };
+        assert_eq!(
+            values.resolve_identity(
+                "{{ char }} and {{user.name}}: {{char.desc}} / {{persona_description}} {{date}}"
+            ),
+            "Mira and Sam: Mira maps coasts. / A sailor. {{date}}"
+        );
+        assert_eq!(
+            values.resolve_names("{{char}} meets {{user}} and {{persona}} {{char.desc}}"),
+            "Mira meets Sam and Sam {{char.desc}}"
         );
     }
 
