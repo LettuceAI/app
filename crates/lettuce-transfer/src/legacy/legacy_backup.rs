@@ -315,11 +315,14 @@ struct LegacyManifest {
 
 /// Decodes a version-1 backup from a seekable source. Documents are
 /// decrypted into memory; each media entry is decrypted once to record its
-/// size and hash and again only when its bytes are read.
+/// size and hash and again only when its bytes are read. The password is
+/// trimmed before the key is derived, because version-1 backups were
+/// encrypted with the trimmed password.
 pub fn decode_legacy_backup_inventory(
     mut input: impl crate::BackupSource + 'static,
     password: &str,
 ) -> Result<LegacyBackupInventory, LegacyBackupInventoryError> {
+    let password = password.trim();
     validate_password(password)?;
     input
         .seek(SeekFrom::Start(0))
@@ -712,6 +715,16 @@ mod tests {
         password: &str,
     ) -> Result<LegacyBackupInventory, LegacyBackupInventoryError> {
         decode_legacy_backup_inventory(Cursor::new(bytes), password)
+    }
+
+    #[test]
+    fn legacy_inventory_trims_the_password_like_the_legacy_exporter() {
+        let padded = format!("  {PASSWORD}\t\n");
+        assert!(decode(archive(LEGACY_MANIFEST_VERSION, &[]), &padded).is_ok());
+        assert_eq!(
+            decode(archive(LEGACY_MANIFEST_VERSION, &[]), "   "),
+            Err(LegacyBackupInventoryError::InvalidPassword)
+        );
     }
 
     #[test]
