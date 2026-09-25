@@ -572,6 +572,21 @@ fn wire_tool_choice(choice: &ToolChoice) -> Value {
     }
 }
 
+/// Local parsers accept every argument shape the legacy chat loop executed:
+/// `<parameter=k>v</parameter>` bodies, empty or `null` arguments and
+/// non-JSON text. Tools read arguments by key, so anything that is not an
+/// object behaves as an empty object, and the raw text is kept only when it
+/// is the JSON form of the arguments it came with.
+fn proposal_arguments(arguments: Value, raw_arguments: Option<String>) -> (Value, Option<String>) {
+    let arguments = match arguments {
+        Value::Object(_) => arguments,
+        _ => Value::Object(Map::new()),
+    };
+    let raw_arguments = raw_arguments
+        .filter(|raw| serde_json::from_str::<Value>(raw).is_ok_and(|parsed| parsed == arguments));
+    (arguments, raw_arguments)
+}
+
 fn outcome(
     request: &InferenceRequest,
     output: LlamaGenerationOutput,
@@ -580,11 +595,12 @@ fn outcome(
         .tool_calls
         .into_iter()
         .map(|call| {
+            let (arguments, raw_arguments) = proposal_arguments(call.arguments, call.raw_arguments);
             let proposal = ProposedToolCall {
                 provider_call_id: Some(call.id),
                 name: call.name,
-                arguments: call.arguments,
-                raw_arguments: call.raw_arguments,
+                arguments,
+                raw_arguments,
                 provider_replay: None,
             };
             proposal
@@ -883,6 +899,53 @@ mod tests {
             outcome(&inference, unexpected),
             Err(AdapterError::MalformedResponse)
         ));
+    }
+
+    #[test]
+    fn legacy_tool_argument_shapes_become_valid_proposals() {
+        let mut inference = llama_request(LlamaCppSettings::default());
+        inference.tools = Some(ToolRequest {
+            definitions: vec![ToolDefinition {
+                name: "lookup".to_owned(),
+                description: None,
+                parameters: json!({"type": "object"}),
+                version: 1,
+            }],
+            choice: ToolChoice::Auto,
+        });
+        let text = "<tool_call><function=lookup><parameter=q>cats</parameter><parameter=n>2</parameter></function></tool_call>";
+        let recovered =
+            lettuce_local_llm::tool_calls::recover_message_from_raw_tool_output(text).unwrap();
+        let mut calls = lettuce_local_llm::tool_calls::parse_tool_calls(&recovered);
+        for (id, arguments, raw) in [
+            ("empty", Value::Null, None),
+            ("blank", Value::String(String::new()), Some(String::new())),
+            (
+                "text",
+                Value::String("find cats".to_owned()),
+                Some("find cats".to_owned()),
+            ),
+            ("json", json!({"q": "x"}), Some(r#"{"q": "x"}"#.to_owned())),
+        ] {
+            calls.push(LocalToolCall {
+                id: id.to_owned(),
+                name: "lookup".to_owned(),
+                arguments,
+                raw_arguments: raw,
+            });
+        }
+        let mut reply = output(LlamaFinishReason::ToolCalls);
+        reply.tool_calls = calls;
+        let result = outcome(&inference, reply).unwrap();
+        let proposals = &result.candidates[0].tool_calls;
+        assert_eq!(proposals.len(), 5);
+        assert_eq!(proposals[0].arguments, json!({"q": "cats", "n": 2}));
+        assert_eq!(proposals[0].raw_arguments, None);
+        for proposal in &proposals[1..4] {
+            assert_eq!(proposal.arguments, json!({}));
+            assert_eq!(proposal.raw_arguments, None);
+        }
+        assert_eq!(proposals[4].raw_arguments.as_deref(), Some(r#"{"q": "x"}"#));
     }
 
     #[derive(Default)]
