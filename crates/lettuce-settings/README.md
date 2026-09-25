@@ -148,8 +148,10 @@ Where the OS credential store is unavailable (Linux without a Secret Service),
 passphrase seals one ciphertext file with XChaCha20-Poly1305 under a fresh nonce
 on every write, with the KDF header bound as associated data. Only the derived
 key lives in memory for the unlocked session. The vault reaches storage through
-the `VaultFile` port, whose writes must replace the file atomically; an existing
-vault is never overwritten by `create`, and a wrong passphrase fails closed.
+the `VaultFile` port, whose writes must replace the file atomically; `create`
+publishes the first vault through the port's atomic create-new, so an existing
+or concurrently created vault is never overwritten, a replaced entry is zeroized,
+and a wrong passphrase fails closed.
 Credentials never fall back to a machine-derived key, a plaintext file or SQLite.
 
 Android uses `android-native-keyring-store` 0.5 because it supports the workspace

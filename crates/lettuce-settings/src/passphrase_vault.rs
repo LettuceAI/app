@@ -21,10 +21,14 @@ const MAX_PASSPHRASE_BYTES: usize = 1024;
 /// Storage for the vault's single ciphertext file.
 ///
 /// `write` must replace the previous contents atomically, so a crash leaves
-/// either the old or the new vault and never a partial one.
+/// either the old or the new vault and never a partial one. `create_new` must
+/// publish the first vault atomically and fail with
+/// [`std::io::ErrorKind::AlreadyExists`] when a vault file already exists, so
+/// two concurrent creates can never overwrite each other.
 pub trait VaultFile: Send + Sync {
     fn read(&self) -> std::io::Result<Option<Vec<u8>>>;
     fn write(&self, bytes: &[u8]) -> std::io::Result<()>;
+    fn create_new(&self, bytes: &[u8]) -> std::io::Result<()>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -101,9 +105,6 @@ impl PassphraseVault {
         passphrase: &str,
     ) -> Result<Self, PassphraseVaultError> {
         validate_passphrase(passphrase)?;
-        if file.read().map_err(|_| PassphraseVaultError::Io)?.is_some() {
-            return Err(PassphraseVaultError::AlreadyExists);
-        }
         let mut salt = vec![0_u8; SALT_BYTES];
         OsRng.fill_bytes(&mut salt);
         let kdf = VaultKdf {
@@ -119,7 +120,14 @@ impl PassphraseVault {
             key,
             lock: Mutex::new(()),
         };
-        vault.seal(&Entries::default())?;
+        let bytes = vault.sealed_bytes(&Entries::default())?;
+        match vault.file.create_new(&bytes) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                return Err(PassphraseVaultError::AlreadyExists);
+            }
+            Err(_) => return Err(PassphraseVaultError::Io),
+        }
         Ok(vault)
     }
 
@@ -158,7 +166,9 @@ impl PassphraseVault {
             .lock()
             .map_err(|_| PassphraseVaultError::Corrupt)?;
         let mut entries = self.entries()?;
-        entries.0.insert(name.to_owned(), value.to_vec());
+        if let Some(mut replaced) = entries.0.insert(name.to_owned(), value.to_vec()) {
+            replaced.zeroize();
+        }
         self.seal(&entries)
     }
 
@@ -202,6 +212,13 @@ impl PassphraseVault {
     }
 
     fn seal(&self, entries: &Entries) -> Result<(), PassphraseVaultError> {
+        let bytes = self.sealed_bytes(entries)?;
+        self.file
+            .write(&bytes)
+            .map_err(|_| PassphraseVaultError::Io)
+    }
+
+    fn sealed_bytes(&self, entries: &Entries) -> Result<Vec<u8>, PassphraseVaultError> {
         let plaintext =
             Zeroizing::new(serde_json::to_vec(entries).map_err(|_| PassphraseVaultError::Corrupt)?);
         let mut nonce = vec![0_u8; NONCE_BYTES];
@@ -226,9 +243,7 @@ impl PassphraseVault {
         if bytes.len() > MAX_VAULT_BYTES {
             return Err(PassphraseVaultError::Corrupt);
         }
-        self.file
-            .write(&bytes)
-            .map_err(|_| PassphraseVaultError::Io)
+        Ok(bytes)
     }
 }
 
@@ -296,6 +311,15 @@ pub(crate) mod tests {
 
         fn write(&self, bytes: &[u8]) -> std::io::Result<()> {
             *self.0.lock().expect("file lock") = Some(bytes.to_vec());
+            Ok(())
+        }
+
+        fn create_new(&self, bytes: &[u8]) -> std::io::Result<()> {
+            let mut file = self.0.lock().expect("file lock");
+            if file.is_some() {
+                return Err(std::io::ErrorKind::AlreadyExists.into());
+            }
+            *file = Some(bytes.to_vec());
             Ok(())
         }
     }
