@@ -6,10 +6,9 @@ use std::{
 };
 
 use lettuce_transfer::{
-    LEGACY_MEDIA_OBJECT_BYTES_LIMIT, LEGACY_MEDIA_REFERENCE_LIMIT, LEGACY_MEDIA_TOTAL_BYTES_LIMIT,
-    LegacyAsrPlan, LegacyDatabasePreflightError, LegacyImportSkip, LegacyImportSkipKind,
-    LegacyImportSkipReason, LegacyLorebookPlan, LegacyMediaCandidate, LegacyMediaPlan,
-    LegacyMediaUse, LegacyPersonaPlan,
+    LEGACY_MEDIA_OBJECT_BYTES_LIMIT, LEGACY_MEDIA_TOTAL_BYTES_LIMIT, LegacyAsrPlan,
+    LegacyDatabasePreflightError, LegacyImportSkip, LegacyImportSkipKind, LegacyImportSkipReason,
+    LegacyLorebookPlan, LegacyMediaCandidate, LegacyMediaPlan, LegacyMediaUse, LegacyPersonaPlan,
 };
 use lettuce_types::ContentHash;
 
@@ -52,9 +51,7 @@ pub fn plan_legacy_media(
         }
         for (ordinal, reference) in persona.design_references.iter().enumerate() {
             let ordinal = u32::try_from(ordinal).map_err(|_| {
-                LegacyDatabasePreflightError::MediaReferenceLimitExceeded {
-                    limit: LEGACY_MEDIA_REFERENCE_LIMIT,
-                }
+                LegacyDatabasePreflightError::MediaReferenceLimitExceeded { limit: u32::MAX }
             })?;
             let relative = image_reference_path(&storage_root, &reference.locator)?;
             add_pending(
@@ -229,16 +226,10 @@ fn require_reference_count(
                 })
         })
         .and_then(|count| count.checked_add(asr.voice_examples.len() as u64))
-        .ok_or(LegacyDatabasePreflightError::MediaReferenceLimitExceeded {
-            limit: LEGACY_MEDIA_REFERENCE_LIMIT,
-        })?;
-    if count > u64::from(LEGACY_MEDIA_REFERENCE_LIMIT) {
-        Err(LegacyDatabasePreflightError::MediaReferenceLimitExceeded {
-            limit: LEGACY_MEDIA_REFERENCE_LIMIT,
-        })
-    } else {
-        Ok(())
-    }
+        .ok_or(LegacyDatabasePreflightError::MediaReferenceLimitExceeded { limit: u32::MAX })?;
+    u32::try_from(count)
+        .map(|_| ())
+        .map_err(|_| LegacyDatabasePreflightError::MediaReferenceLimitExceeded { limit: u32::MAX })
 }
 
 fn avatar_filename(locator: &str) -> Result<&str, LegacyDatabasePreflightError> {
@@ -744,32 +735,30 @@ mod tests {
     }
 
     #[test]
-    fn media_plan_enforces_reference_and_object_bounds() {
+    fn media_plan_has_no_reference_count_cap_and_bounds_object_size() {
         let root = root();
         let persona_id = PersonaId::new();
-        let references = (0..=LEGACY_MEDIA_REFERENCE_LIMIT)
+        let references = (0..=20_000)
             .map(|_| LegacyMediaReference {
                 locator: "shared".into(),
             })
             .collect();
-        let too_many = LegacyPersonaPlan {
+        let many = LegacyPersonaPlan {
             skipped: Vec::new(),
             personas: vec![persona(persona_id, None, references)],
             default_persona_id: None,
         };
-        assert_eq!(
+        assert!(
             plan_legacy_media(
                 &root,
-                &mut too_many.clone(),
+                &mut many.clone(),
                 &mut LegacyLorebookPlan {
                     lorebooks: vec![],
                     skipped: Vec::new()
                 },
                 &empty_asr(),
-            ),
-            Err(LegacyDatabasePreflightError::MediaReferenceLimitExceeded {
-                limit: LEGACY_MEDIA_REFERENCE_LIMIT
-            })
+            )
+            .is_ok()
         );
         let large = File::create(root.join("images/large.png")).expect("create large image");
         large

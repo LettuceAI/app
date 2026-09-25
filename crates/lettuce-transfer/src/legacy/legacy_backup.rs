@@ -17,10 +17,9 @@ use zip::ZipArchive;
 
 use crate::MAX_BACKUP_ENTRIES;
 
-/// A version-1 entry is one AEAD message, so each is decrypted whole.
-pub const MAX_LEGACY_BACKUP_ENTRY_BYTES: usize = 512 * 1024 * 1024;
-/// The decrypted documents are held together while the archive is planned.
-pub const MAX_LEGACY_BACKUP_DOCUMENT_TOTAL_BYTES: usize = 512 * 1024 * 1024;
+/// A version-1 entry is one AEAD message, so each is decrypted whole; the
+/// bound is the largest entry a non-zip64 archive can describe.
+pub const MAX_LEGACY_BACKUP_ENTRY_BYTES: usize = u32::MAX as usize;
 
 const LEGACY_MANIFEST_VERSION: u32 = 2;
 const LEGACY_MARKER: &[u8] = b"LETTUCE_BACKUP_VERIFIED";
@@ -394,16 +393,11 @@ pub fn decode_legacy_backup_inventory(
         nonce,
     });
     let mut documents = Vec::new();
-    let mut document_bytes = 0usize;
     let mut media = Vec::new();
     for (index, entry) in entries {
         let decrypted = archive.entry(index)?;
         match entry {
             Ok(kind) => {
-                document_bytes = document_bytes
-                    .checked_add(decrypted.len())
-                    .filter(|total| *total <= MAX_LEGACY_BACKUP_DOCUMENT_TOTAL_BYTES)
-                    .ok_or(LegacyBackupInventoryError::LimitExceeded)?;
                 documents.push(LegacyBackupDocument {
                     kind,
                     bytes: decrypted,

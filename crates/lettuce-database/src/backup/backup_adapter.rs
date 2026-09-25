@@ -10,18 +10,7 @@ use lettuce_transfer::{
     CONVERSATION_RUNTIME_BACKUP_VERSION, CONVERSATION_USAGE_BACKUP_VERSION, CompanionEffectBackup,
     CompanionStateBackup, ConversationHistoryBackup, ConversationOutboxBackup,
     ConversationRuntimeBackup, ConversationUsageBackup, DYNAMIC_MEMORY_BACKUP_VERSION,
-    DynamicMemoryBackup, JOB_BACKUP_VERSION, JobBackup, MAX_BACKUP_AUTHORED_ROOTS,
-    MAX_BACKUP_COMPANION_EFFECTS, MAX_BACKUP_COMPANION_RECEIPTS,
-    MAX_BACKUP_COMPANION_RELATIONSHIPS, MAX_BACKUP_COMPANION_SESSIONS,
-    MAX_BACKUP_CONVERSATION_OPERATIONS, MAX_BACKUP_CONVERSATION_OUTBOX_EVENTS,
-    MAX_BACKUP_CONVERSATION_USAGE_EVENTS, MAX_BACKUP_CONVERSATIONS,
-    MAX_BACKUP_DYNAMIC_MEMORY_APPROVALS, MAX_BACKUP_DYNAMIC_MEMORY_ATTEMPTS,
-    MAX_BACKUP_DYNAMIC_MEMORY_RUNS, MAX_BACKUP_GENERATION_CHECKPOINTS, MAX_BACKUP_GENERATION_TURNS,
-    MAX_BACKUP_JOB_EVENTS, MAX_BACKUP_JOB_INFERENCE_EVENTS, MAX_BACKUP_JOBS,
-    MAX_BACKUP_MEDIA_RECORDS, MAX_BACKUP_MEMORY_ACCESSES, MAX_BACKUP_MEMORY_PROJECTIONS,
-    MAX_BACKUP_MEMORY_REWINDS, MAX_BACKUP_MEMORY_SPACES, MAX_BACKUP_MESSAGE_CANDIDATES,
-    MAX_BACKUP_MESSAGE_REVISIONS, MAX_BACKUP_MESSAGES, MAX_BACKUP_TOOL_EXECUTIONS,
-    MEMORY_BACKUP_VERSION, MEMORY_PROJECTION_BACKUP_VERSION, MemoryBackup, MemoryProjectionBackup,
+    DynamicMemoryBackup, JOB_BACKUP_VERSION, JobBackup, MEMORY_BACKUP_VERSION, MEMORY_PROJECTION_BACKUP_VERSION, MemoryBackup, MemoryProjectionBackup,
     PROVIDER_BACKUP_GRAPH_VERSION, ProviderBackupGraph, ProviderBackupSelections,
     ProviderBackupSource, ProviderBackupSourceError,
 };
@@ -99,10 +88,7 @@ fn read_companion_effects(
     transaction: &rusqlite::Transaction<'_>,
 ) -> Result<CompanionEffectBackup, ProviderBackupSourceError> {
     let identities = transaction
-        .prepare(&format!(
-            "SELECT conversation_id,assistant_message_id FROM companion_turn_effects ORDER BY conversation_id,created_at,id LIMIT {}",
-            MAX_BACKUP_COMPANION_EFFECTS + 1
-        ))
+        .prepare("SELECT conversation_id,assistant_message_id FROM companion_turn_effects ORDER BY conversation_id,created_at,id")
         .and_then(|mut statement| {
             statement
                 .query_map([], |row| {
@@ -111,9 +97,6 @@ fn read_companion_effects(
                 .collect::<rusqlite::Result<Vec<_>>>()
         })
         .map_err(backup_error)?;
-    if identities.len() > MAX_BACKUP_COMPANION_EFFECTS {
-        return Err(ProviderBackupSourceError::InvalidData);
-    }
     let effects = identities
         .into_iter()
         .map(|(conversation_id, message_id)| {
@@ -129,10 +112,7 @@ fn read_companion_effects(
         })
         .collect::<Result<Vec<_>, _>>()?;
     let rows = transaction
-        .prepare(&format!(
-            "SELECT operation_id,request_digest,conversation_id,invalid_run_id,space_id,source_memory_revision,resulting_memory_revision,restored_summary_run_id,resulting_memory_json,resulting_summary_json,applied_at FROM dynamic_memory_suffix_rewinds ORDER BY applied_at,operation_id LIMIT {}",
-            MAX_BACKUP_MEMORY_REWINDS + 1
-        ))
+        .prepare("SELECT operation_id,request_digest,conversation_id,invalid_run_id,space_id,source_memory_revision,resulting_memory_revision,restored_summary_run_id,resulting_memory_json,resulting_summary_json,applied_at FROM dynamic_memory_suffix_rewinds ORDER BY applied_at,operation_id")
         .and_then(|mut statement| {
             statement
                 .query_map([], |row| {
@@ -153,9 +133,6 @@ fn read_companion_effects(
                 .collect::<rusqlite::Result<Vec<_>>>()
         })
         .map_err(backup_error)?;
-    if rows.len() > MAX_BACKUP_MEMORY_REWINDS {
-        return Err(ProviderBackupSourceError::InvalidData);
-    }
     let mut rewinds = Vec::with_capacity(rows.len());
     for row in rows {
         let operation_id: lettuce_types::OperationId = row
@@ -230,10 +207,7 @@ fn read_memory(
     transaction: &rusqlite::Transaction<'_>,
 ) -> Result<MemoryBackup, ProviderBackupSourceError> {
     let owners = transaction
-        .prepare(&format!(
-            "SELECT conversation_id,space_id FROM conversation_memory_spaces ORDER BY conversation_id, pooled LIMIT {}",
-            MAX_BACKUP_MEMORY_SPACES + 1
-        ))
+        .prepare("SELECT conversation_id,space_id FROM conversation_memory_spaces ORDER BY conversation_id, pooled")
         .and_then(|mut statement| {
             statement
                 .query_map([], |row| {
@@ -242,9 +216,6 @@ fn read_memory(
                 .collect::<rusqlite::Result<Vec<_>>>()
         })
         .map_err(backup_error)?;
-    if owners.len() > MAX_BACKUP_MEMORY_SPACES {
-        return Err(ProviderBackupSourceError::InvalidData);
-    }
     let mut bound = std::collections::BTreeMap::<String, Vec<ConversationId>>::new();
     for (conversation_id, space_id) in owners {
         bound.entry(space_id).or_default().push(
@@ -288,10 +259,7 @@ fn read_memory(
         })
         .collect::<Result<Vec<_>, ProviderBackupSourceError>>()?;
     let rows = transaction
-        .prepare(&format!(
-            "SELECT conversation_id,turn_id,attempt_id,space_id,expected_revision,resulting_revision,selected_memory_ids_json,accessed_at,promoted_memory_ids_json FROM memory_retrieval_accesses ORDER BY conversation_id,turn_id,attempt_id LIMIT {}",
-            MAX_BACKUP_MEMORY_ACCESSES + 1
-        ))
+        .prepare("SELECT conversation_id,turn_id,attempt_id,space_id,expected_revision,resulting_revision,selected_memory_ids_json,accessed_at,promoted_memory_ids_json FROM memory_retrieval_accesses ORDER BY conversation_id,turn_id,attempt_id")
         .and_then(|mut statement| {
             statement
                 .query_map([], |row| {
@@ -310,9 +278,6 @@ fn read_memory(
                 .collect::<rusqlite::Result<Vec<_>>>()
         })
         .map_err(backup_error)?;
-    if rows.len() > MAX_BACKUP_MEMORY_ACCESSES {
-        return Err(ProviderBackupSourceError::InvalidData);
-    }
     let retrieval_accesses = rows
         .into_iter()
         .map(|row| {
@@ -393,10 +358,7 @@ fn read_memory_projections(
     transaction: &rusqlite::Transaction<'_>,
 ) -> Result<MemoryProjectionBackup, ProviderBackupSourceError> {
     let rows = transaction
-        .prepare(&format!(
-            "SELECT space_id,memory_id,source_revision,dimensions,source_text,status,vector,updated_at FROM memory_embedding_projections ORDER BY space_id,memory_id,source_revision,dimensions LIMIT {}",
-            MAX_BACKUP_MEMORY_PROJECTIONS + 1
-        ))
+        .prepare("SELECT space_id,memory_id,source_revision,dimensions,source_text,status,vector,updated_at FROM memory_embedding_projections ORDER BY space_id,memory_id,source_revision,dimensions")
         .and_then(|mut statement| {
             statement
                 .query_map([], |row| {
@@ -414,9 +376,6 @@ fn read_memory_projections(
                 .collect::<rusqlite::Result<Vec<_>>>()
         })
         .map_err(backup_error)?;
-    if rows.len() > MAX_BACKUP_MEMORY_PROJECTIONS {
-        return Err(ProviderBackupSourceError::InvalidData);
-    }
     let projections = rows
         .into_iter()
         .map(|row| {
@@ -459,10 +418,7 @@ fn read_dynamic_memory(
     transaction: &rusqlite::Transaction<'_>,
 ) -> Result<DynamicMemoryBackup, ProviderBackupSourceError> {
     let pending_rows = transaction
-        .prepare(&format!(
-            "SELECT conversation_id,prompted_message_count,pending,skipped,updated_at FROM dynamic_memory_pending_approvals ORDER BY conversation_id LIMIT {}",
-            MAX_BACKUP_DYNAMIC_MEMORY_APPROVALS + 1
-        ))
+        .prepare("SELECT conversation_id,prompted_message_count,pending,skipped,updated_at FROM dynamic_memory_pending_approvals ORDER BY conversation_id")
         .and_then(|mut statement| {
             statement
                 .query_map([], |row| {
@@ -477,9 +433,6 @@ fn read_dynamic_memory(
                 .collect::<rusqlite::Result<Vec<_>>>()
         })
         .map_err(backup_error)?;
-    if pending_rows.len() > MAX_BACKUP_DYNAMIC_MEMORY_APPROVALS {
-        return Err(ProviderBackupSourceError::InvalidData);
-    }
     let pending_approvals = pending_rows
         .into_iter()
         .map(|row| {
@@ -497,20 +450,13 @@ fn read_dynamic_memory(
         })
         .collect::<Result<Vec<_>, _>>()?;
     let run_ids = transaction
-        .prepare(&format!(
-            "SELECT id FROM dynamic_memory_runs ORDER BY id LIMIT {}",
-            MAX_BACKUP_DYNAMIC_MEMORY_RUNS + 1
-        ))
+        .prepare("SELECT id FROM dynamic_memory_runs ORDER BY id")
         .and_then(|mut statement| {
             statement
                 .query_map([], |row| row.get::<_, String>(0))?
                 .collect::<rusqlite::Result<Vec<_>>>()
         })
         .map_err(backup_error)?;
-    if run_ids.len() > MAX_BACKUP_DYNAMIC_MEMORY_RUNS {
-        return Err(ProviderBackupSourceError::InvalidData);
-    }
-    let mut total_attempts = 0usize;
     let mut runs = Vec::with_capacity(run_ids.len());
     for run_id in run_ids {
         let run_id = run_id
@@ -526,12 +472,6 @@ fn read_dynamic_memory(
                     .collect::<rusqlite::Result<Vec<_>>>()
             })
             .map_err(backup_error)?;
-        total_attempts = total_attempts
-            .checked_add(attempt_ids.len())
-            .ok_or(ProviderBackupSourceError::InvalidData)?;
-        if total_attempts > MAX_BACKUP_DYNAMIC_MEMORY_ATTEMPTS {
-            return Err(ProviderBackupSourceError::InvalidData);
-        }
         let mut attempts = Vec::with_capacity(attempt_ids.len());
         for attempt_id in attempt_ids {
             let attempt_id = attempt_id
@@ -583,10 +523,7 @@ fn read_companion_state(
     transaction: &rusqlite::Transaction<'_>,
 ) -> Result<CompanionStateBackup, ProviderBackupSourceError> {
     let relationships = transaction
-        .prepare(&format!(
-            "SELECT character_id,persona_key,persona_id,closeness,trust,affection,tension,stability,interaction_count,last_interaction_at,revision,created_at,updated_at FROM companion_relationship_states ORDER BY character_id,persona_key LIMIT {}",
-            MAX_BACKUP_COMPANION_RELATIONSHIPS + 1
-        ))
+        .prepare("SELECT character_id,persona_key,persona_id,closeness,trust,affection,tension,stability,interaction_count,last_interaction_at,revision,created_at,updated_at FROM companion_relationship_states ORDER BY character_id,persona_key")
         .and_then(|mut statement| {
             statement
                 .query_map([], |row| {
@@ -612,9 +549,6 @@ fn read_companion_state(
                 .collect::<rusqlite::Result<Vec<_>>>()
         })
         .map_err(backup_error)?;
-    if relationships.len() > MAX_BACKUP_COMPANION_RELATIONSHIPS {
-        return Err(ProviderBackupSourceError::InvalidData);
-    }
     let relationships = relationships
         .into_iter()
         .map(
@@ -661,10 +595,7 @@ fn read_companion_state(
         )
         .collect::<Result<Vec<_>, _>>()?;
     let session_rows = transaction
-        .prepare(&format!(
-            "SELECT conversation_id,character_id,persona_key,persona_id,initial_hash,confidence,emotional_updated_at,state_updated_at,revision,created_at,updated_at FROM companion_session_states ORDER BY conversation_id LIMIT {}",
-            MAX_BACKUP_COMPANION_SESSIONS + 1
-        ))
+        .prepare("SELECT conversation_id,character_id,persona_key,persona_id,initial_hash,confidence,emotional_updated_at,state_updated_at,revision,created_at,updated_at FROM companion_session_states ORDER BY conversation_id")
         .and_then(|mut statement| {
             statement
                 .query_map([], |row| {
@@ -685,9 +616,6 @@ fn read_companion_state(
                 .collect::<rusqlite::Result<Vec<_>>>()
         })
         .map_err(backup_error)?;
-    if session_rows.len() > MAX_BACKUP_COMPANION_SESSIONS {
-        return Err(ProviderBackupSourceError::InvalidData);
-    }
     let mut sessions = Vec::with_capacity(session_rows.len());
     for row in session_rows {
         let conversation_id: ConversationId = row
@@ -749,10 +677,7 @@ fn read_companion_state(
         });
     }
     let episodes = transaction
-        .prepare(&format!(
-            "SELECT conversation_id,character_id,persona_key,persona_id,episode_index,previous_conversation_id,started_at,ended_at,updated_at FROM companion_continuity_episodes ORDER BY conversation_id LIMIT {}",
-            MAX_BACKUP_COMPANION_SESSIONS + 1
-        ))
+        .prepare("SELECT conversation_id,character_id,persona_key,persona_id,episode_index,previous_conversation_id,started_at,ended_at,updated_at FROM companion_continuity_episodes ORDER BY conversation_id")
         .and_then(|mut statement| {
             statement
                 .query_map([], |row| {
@@ -771,9 +696,6 @@ fn read_companion_state(
                 .collect::<rusqlite::Result<Vec<_>>>()
         })
         .map_err(backup_error)?;
-    if episodes.len() > MAX_BACKUP_COMPANION_SESSIONS {
-        return Err(ProviderBackupSourceError::InvalidData);
-    }
     let episodes = episodes
         .into_iter()
         .map(|row| {
@@ -807,10 +729,7 @@ fn read_companion_state(
         })
         .collect::<Result<Vec<_>, _>>()?;
     let receipt_rows = transaction
-        .prepare(&format!(
-            "SELECT operation_id,conversation_id,character_id,persona_key,expected_session_revision,resulting_session_revision,expected_relationship_revision,resulting_relationship_revision,applied_at,change_hash FROM companion_state_apply_receipts ORDER BY applied_at,operation_id LIMIT {}",
-            MAX_BACKUP_COMPANION_RECEIPTS + 1
-        ))
+        .prepare("SELECT operation_id,conversation_id,character_id,persona_key,expected_session_revision,resulting_session_revision,expected_relationship_revision,resulting_relationship_revision,applied_at,change_hash FROM companion_state_apply_receipts ORDER BY applied_at,operation_id")
         .and_then(|mut statement| {
             statement
                 .query_map([], |row| {
@@ -830,9 +749,6 @@ fn read_companion_state(
                 .collect::<rusqlite::Result<Vec<_>>>()
         })
         .map_err(backup_error)?;
-    if receipt_rows.len() > MAX_BACKUP_COMPANION_RECEIPTS {
-        return Err(ProviderBackupSourceError::InvalidData);
-    }
     let receipts = receipt_rows
         .into_iter()
         .map(|row| {
@@ -1137,10 +1053,7 @@ impl ProviderBackupSource for Database {
             .map_err(backup_error)?;
         let persona_ids = read_ids::<PersonaId>(
             &transaction,
-            &format!(
-                "SELECT id FROM personas ORDER BY id LIMIT {}",
-                MAX_BACKUP_AUTHORED_ROOTS + 1
-            ),
+            "SELECT id FROM personas ORDER BY id",
         )?;
         let personas = persona_ids
             .iter()
@@ -1155,10 +1068,7 @@ impl ProviderBackupSource for Database {
             crate::catalog::persona_adapter::read_default(&transaction).map_err(backup_error)?;
         let lorebook_ids = read_ids::<LorebookId>(
             &transaction,
-            &format!(
-                "SELECT id FROM lorebooks ORDER BY id LIMIT {}",
-                MAX_BACKUP_AUTHORED_ROOTS + 1
-            ),
+            "SELECT id FROM lorebooks ORDER BY id",
         )?;
         let lorebooks = lorebook_ids
             .iter()
@@ -1171,10 +1081,7 @@ impl ProviderBackupSource for Database {
             .map_err(backup_error)?;
         let character_ids = read_ids::<CharacterId>(
             &transaction,
-            &format!(
-                "SELECT id FROM characters ORDER BY id LIMIT {}",
-                MAX_BACKUP_AUTHORED_ROOTS + 1
-            ),
+            "SELECT id FROM characters ORDER BY id",
         )?;
         let characters = character_ids
             .iter()
@@ -1187,10 +1094,7 @@ impl ProviderBackupSource for Database {
             .map_err(backup_error)?;
         let group_ids = read_ids::<GroupId>(
             &transaction,
-            &format!(
-                "SELECT id FROM groups ORDER BY id LIMIT {}",
-                MAX_BACKUP_AUTHORED_ROOTS + 1
-            ),
+            "SELECT id FROM groups ORDER BY id",
         )?;
         let groups = group_ids
             .iter()
@@ -1218,10 +1122,7 @@ impl ProviderBackupSource for Database {
         )?;
         let asset_ids = read_ids::<AssetId>(
             &transaction,
-            &format!(
-                "SELECT id FROM media_assets ORDER BY id LIMIT {}",
-                MAX_BACKUP_MEDIA_RECORDS + 1
-            ),
+            "SELECT id FROM media_assets ORDER BY id",
         )?;
         let media_assets = asset_ids
             .into_iter()
@@ -1232,9 +1133,8 @@ impl ProviderBackupSource for Database {
             .map_err(backup_error)?;
         let media_blobs = transaction
             .prepare(&format!(
-                "SELECT {} FROM media_blobs ORDER BY id LIMIT {}",
-                crate::MEDIA_BLOB_COLUMNS,
-                MAX_BACKUP_MEDIA_RECORDS + 1
+                "SELECT {} FROM media_blobs ORDER BY id",
+                crate::MEDIA_BLOB_COLUMNS
             ))
             .and_then(|mut statement| {
                 statement
@@ -1374,10 +1274,7 @@ fn read_conversation_outbox(
         })
         .collect::<std::collections::BTreeMap<_, _>>();
     let mut statement = transaction
-        .prepare(&format!(
-            "SELECT id,conversation_id,kind,operation_key,request_digest,result_kind,result_id,result_json,created_at FROM conversation_operations ORDER BY conversation_id,created_at,id LIMIT {}",
-            MAX_BACKUP_CONVERSATION_OPERATIONS + 1
-        ))
+        .prepare("SELECT id,conversation_id,kind,operation_key,request_digest,result_kind,result_id,result_json,created_at FROM conversation_operations ORDER BY conversation_id,created_at,id")
         .map_err(backup_error)?;
     let rows = statement
         .query_map([], |row| {
@@ -1394,7 +1291,6 @@ fn read_conversation_outbox(
             ))
         })
         .map_err(backup_error)?;
-    let mut operation_count = 0_usize;
     for row in rows {
         let (
             id,
@@ -1407,10 +1303,6 @@ fn read_conversation_outbox(
             result_json,
             created_at,
         ) = row.map_err(backup_error)?;
-        operation_count += 1;
-        if operation_count > MAX_BACKUP_CONVERSATION_OPERATIONS {
-            return Err(ProviderBackupSourceError::InvalidData);
-        }
         let conversation_id: ConversationId = conversation_id
             .parse()
             .map_err(|_| ProviderBackupSourceError::InvalidData)?;
@@ -1463,10 +1355,7 @@ fn read_conversation_outbox(
     }
     drop(statement);
     let mut statement = transaction
-        .prepare(&format!(
-            "SELECT conversation_id,id,sequence,conversation_revision,operation_record_id,at,event_json FROM conversation_outbox ORDER BY conversation_id,sequence,id LIMIT {}",
-            MAX_BACKUP_CONVERSATION_OUTBOX_EVENTS + 1
-        ))
+        .prepare("SELECT conversation_id,id,sequence,conversation_revision,operation_record_id,at,event_json FROM conversation_outbox ORDER BY conversation_id,sequence,id")
         .map_err(backup_error)?;
     let rows = statement
         .query_map([], |row| {
@@ -1481,14 +1370,9 @@ fn read_conversation_outbox(
             ))
         })
         .map_err(backup_error)?;
-    let mut event_count = 0_usize;
     for row in rows {
         let (conversation_id, id, sequence, revision, operation_id, at, event_json) =
             row.map_err(backup_error)?;
-        event_count += 1;
-        if event_count > MAX_BACKUP_CONVERSATION_OUTBOX_EVENTS {
-            return Err(ProviderBackupSourceError::InvalidData);
-        }
         let conversation_id: ConversationId = conversation_id
             .parse()
             .map_err(|_| ProviderBackupSourceError::InvalidData)?;
@@ -1534,9 +1418,6 @@ fn read_conversation_usage(
 ) -> Result<ConversationUsageBackup, ProviderBackupSourceError> {
     let usage = crate::usage_adapter::load_all_usage_in(transaction)
         .map_err(|_| ProviderBackupSourceError::InvalidData)?;
-    if usage.len() > MAX_BACKUP_CONVERSATION_USAGE_EVENTS {
-        return Err(ProviderBackupSourceError::InvalidData);
-    }
     let mut costs = std::collections::BTreeMap::new();
     let mut statement = transaction
         .prepare("SELECT event_id,basis_json FROM usage_costs ORDER BY event_id")
@@ -1590,20 +1471,6 @@ fn read_conversation_usage(
 fn read_job_backup(
     transaction: &rusqlite::Transaction<'_>,
 ) -> Result<JobBackup, ProviderBackupSourceError> {
-    for (table, limit) in [
-        ("jobs", MAX_BACKUP_JOBS),
-        ("job_events", MAX_BACKUP_JOB_EVENTS),
-        ("job_inference_usage", MAX_BACKUP_JOB_INFERENCE_EVENTS),
-    ] {
-        let count: i64 = transaction
-            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
-                row.get(0)
-            })
-            .map_err(backup_error)?;
-        if usize::try_from(count).map_err(|_| ProviderBackupSourceError::InvalidData)? > limit {
-            return Err(ProviderBackupSourceError::InvalidData);
-        }
-    }
     let records = crate::job_adapter::load_store(transaction)
         .map_err(|_| ProviderBackupSourceError::InvalidData)?
         .stored_records();
@@ -1669,39 +1536,24 @@ fn read_conversation_runtime(
     transaction: &rusqlite::Transaction<'_>,
     history: &ConversationHistoryBackup,
 ) -> Result<ConversationRuntimeBackup, ProviderBackupSourceError> {
-    let mut turn_count = 0_usize;
-    let mut checkpoint_count = 0_usize;
-    let mut tool_count = 0_usize;
     let conversations = history
         .conversations
         .iter()
         .map(|history| {
             let conversation_id = history.aggregate.conversation.id;
-            let remaining = MAX_BACKUP_GENERATION_TURNS.saturating_sub(turn_count);
-            let limit = remaining.saturating_add(1);
             let sql = format!(
-                "{} WHERE conversation_id = ?1 ORDER BY created_at, id LIMIT ?2",
+                "{} WHERE conversation_id = ?1 ORDER BY created_at, id",
                 crate::conversation::conversation_query::turn_select_sql()
             );
             let mut statement = transaction.prepare(&sql).map_err(backup_error)?;
             let turns = statement
-                .query_map(
-                    params![
-                        conversation_id.to_string(),
-                        i64::try_from(limit).map_err(|_| ProviderBackupSourceError::InvalidData)?
-                    ],
-                    |row| {
-                        crate::conversation::conversation_query::hydrate_turn_row(transaction, row)
-                            .map_err(|_| rusqlite::Error::InvalidQuery)
-                    },
-                )
+                .query_map(params![conversation_id.to_string()], |row| {
+                    crate::conversation::conversation_query::hydrate_turn_row(transaction, row)
+                        .map_err(|_| rusqlite::Error::InvalidQuery)
+                })
                 .map_err(backup_error)?
                 .collect::<rusqlite::Result<Vec<_>>>()
                 .map_err(backup_error)?;
-            if turns.len() > remaining {
-                return Err(ProviderBackupSourceError::InvalidData);
-            }
-            turn_count += turns.len();
             let turns = turns
                 .into_iter()
                 .map(|turn| {
@@ -1709,14 +1561,7 @@ fn read_conversation_runtime(
                         .attempts
                         .iter()
                         .map(|attempt| {
-                            read_attempt_runtime(
-                                transaction,
-                                &turn,
-                                attempt.id,
-                                attempt.job_id,
-                                &mut checkpoint_count,
-                                &mut tool_count,
-                            )
+                            read_attempt_runtime(transaction, &turn, attempt.id, attempt.job_id)
                         })
                         .collect::<Result<Vec<_>, _>>()?;
                     Ok(BackupGenerationTurn { turn, attempts })
@@ -1739,12 +1584,9 @@ fn read_attempt_runtime(
     turn: &lettuce_conversations::GenerationTurn,
     attempt_id: GenerationAttemptId,
     job_id: Option<lettuce_types::JobId>,
-    checkpoint_count: &mut usize,
-    tool_count: &mut usize,
 ) -> Result<BackupGenerationAttemptRuntime, ProviderBackupSourceError> {
-    let remaining = MAX_BACKUP_GENERATION_CHECKPOINTS.saturating_sub(*checkpoint_count);
     let mut statement = transaction
-        .prepare("SELECT sequence, job_id, correlation_id, event_json, created_at FROM generation_checkpoints WHERE conversation_id = ?1 AND turn_id = ?2 AND attempt_id = ?3 ORDER BY sequence LIMIT ?4")
+        .prepare("SELECT sequence, job_id, correlation_id, event_json, created_at FROM generation_checkpoints WHERE conversation_id = ?1 AND turn_id = ?2 AND attempt_id = ?3 ORDER BY sequence")
         .map_err(backup_error)?;
     let checkpoints = statement
         .query_map(
@@ -1752,8 +1594,6 @@ fn read_attempt_runtime(
                 turn.conversation_id.to_string(),
                 turn.id.to_string(),
                 attempt_id.to_string(),
-                i64::try_from(remaining.saturating_add(1))
-                    .map_err(|_| ProviderBackupSourceError::InvalidData)?
             ],
             |row| {
                 Ok(BackupGenerationCheckpoint {
@@ -1780,13 +1620,8 @@ fn read_attempt_runtime(
         .map_err(backup_error)?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(backup_error)?;
-    if checkpoints.len() > remaining {
-        return Err(ProviderBackupSourceError::InvalidData);
-    }
-    *checkpoint_count += checkpoints.len();
-    let remaining = MAX_BACKUP_TOOL_EXECUTIONS.saturating_sub(*tool_count);
     let sql = format!(
-        "{} WHERE e.conversation_id = ?1 AND e.turn_id = ?2 AND e.attempt_id = ?3 ORDER BY e.ordinal, e.id LIMIT ?4",
+        "{} WHERE e.conversation_id = ?1 AND e.turn_id = ?2 AND e.attempt_id = ?3 ORDER BY e.ordinal, e.id",
         crate::conversation::tool_adapter::SELECT_EXECUTION
     );
     let mut statement = transaction.prepare(&sql).map_err(backup_error)?;
@@ -1796,8 +1631,6 @@ fn read_attempt_runtime(
                 turn.conversation_id.to_string(),
                 turn.id.to_string(),
                 attempt_id.to_string(),
-                i64::try_from(remaining.saturating_add(1))
-                    .map_err(|_| ProviderBackupSourceError::InvalidData)?
             ],
             |row| {
                 crate::conversation::tool_adapter::hydrate(transaction, row)
@@ -1807,10 +1640,6 @@ fn read_attempt_runtime(
         .map_err(backup_error)?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(backup_error)?;
-    if tools.len() > remaining {
-        return Err(ProviderBackupSourceError::InvalidData);
-    }
-    *tool_count += tools.len();
     let initial_inference = job_id
         .map(|job_id| {
             crate::conversation::initial_inference_adapter::load_for_attempt_in(
@@ -1894,17 +1723,8 @@ fn read_conversation_history(
 ) -> Result<ConversationHistoryBackup, ProviderBackupSourceError> {
     let ids = read_ids::<ConversationId>(
         transaction,
-        &format!(
-            "SELECT id FROM conversations ORDER BY id LIMIT {}",
-            MAX_BACKUP_CONVERSATIONS + 1
-        ),
+        "SELECT id FROM conversations ORDER BY id",
     )?;
-    if ids.len() > MAX_BACKUP_CONVERSATIONS {
-        return Err(ProviderBackupSourceError::InvalidData);
-    }
-    let mut message_count = 0_usize;
-    let mut revision_count = 0_usize;
-    let mut candidate_count = 0_usize;
     let conversations = ids
         .into_iter()
         .map(|conversation_id| {
@@ -1914,13 +1734,7 @@ fn read_conversation_history(
                 || {},
             )
             .map_err(|_| ProviderBackupSourceError::InvalidData)?;
-            let messages = read_backup_messages(
-                transaction,
-                conversation_id,
-                &mut message_count,
-                &mut revision_count,
-                &mut candidate_count,
-            )?;
+            let messages = read_backup_messages(transaction, conversation_id)?;
             Ok(BackupConversation {
                 aggregate,
                 messages,
@@ -1948,7 +1762,7 @@ pub(crate) fn read_conversation_message(
     let Some(row) = rows.next().map_err(backup_error)? else {
         return Ok(None);
     };
-    backup_message(transaction, conversation_id, row, &mut 0, &mut 0).map(Some)
+    backup_message(transaction, conversation_id, row).map(Some)
 }
 
 /// The terminal generation turns that produced a message's candidates.
@@ -1978,35 +1792,17 @@ pub(crate) fn read_candidate_turns(
 fn read_backup_messages(
     transaction: &rusqlite::Transaction<'_>,
     conversation_id: ConversationId,
-    message_count: &mut usize,
-    revision_count: &mut usize,
-    candidate_count: &mut usize,
 ) -> Result<Vec<BackupMessage>, ProviderBackupSourceError> {
-    let remaining = MAX_BACKUP_MESSAGES.saturating_sub(*message_count);
-    let limit = remaining.saturating_add(1);
     let mut statement = transaction
-        .prepare("SELECT m.conversation_id, m.id, m.branch_id, m.parent_message_id, m.author_participant_id, m.role, m.logical_time, m.effective_time, m.visibility, m.pinned, m.scene_edited, m.timeline_ordinal, m.active_revision_id, m.active_candidate_id, m.revision, m.created_at, m.updated_at FROM conversation_messages AS m WHERE m.conversation_id = ?1 ORDER BY m.timeline_ordinal, m.id LIMIT ?2")
+        .prepare("SELECT m.conversation_id, m.id, m.branch_id, m.parent_message_id, m.author_participant_id, m.role, m.logical_time, m.effective_time, m.visibility, m.pinned, m.scene_edited, m.timeline_ordinal, m.active_revision_id, m.active_candidate_id, m.revision, m.created_at, m.updated_at FROM conversation_messages AS m WHERE m.conversation_id = ?1 ORDER BY m.timeline_ordinal, m.id")
         .map_err(backup_error)?;
     let mut rows = statement
-        .query(params![
-            conversation_id.to_string(),
-            i64::try_from(limit).map_err(|_| ProviderBackupSourceError::InvalidData)?
-        ])
+        .query(params![conversation_id.to_string()])
         .map_err(backup_error)?;
     let mut messages = Vec::new();
     while let Some(row) = rows.next().map_err(backup_error)? {
-        messages.push(backup_message(
-            transaction,
-            conversation_id,
-            row,
-            revision_count,
-            candidate_count,
-        )?);
+        messages.push(backup_message(transaction, conversation_id, row)?);
     }
-    if messages.len() > remaining {
-        return Err(ProviderBackupSourceError::InvalidData);
-    }
-    *message_count += messages.len();
     Ok(messages)
 }
 
@@ -2014,23 +1810,11 @@ fn backup_message(
     transaction: &rusqlite::Transaction<'_>,
     conversation_id: ConversationId,
     row: &rusqlite::Row<'_>,
-    revision_count: &mut usize,
-    candidate_count: &mut usize,
 ) -> Result<BackupMessage, ProviderBackupSourceError> {
     let (item, ordinal) = crate::conversation::conversation_query::message_row(transaction, row)
         .map_err(|_| ProviderBackupSourceError::InvalidData)?;
-    let revisions = read_backup_revisions(
-        transaction,
-        conversation_id,
-        item.message.id,
-        revision_count,
-    )?;
-    let candidates = read_backup_candidates(
-        transaction,
-        conversation_id,
-        item.message.id,
-        candidate_count,
-    )?;
+    let revisions = read_backup_revisions(transaction, conversation_id, item.message.id)?;
+    let candidates = read_backup_candidates(transaction, conversation_id, item.message.id)?;
     let historical_media_revision_ids = read_ids(
         transaction,
         &format!(
@@ -2061,20 +1845,13 @@ fn read_backup_revisions(
     transaction: &rusqlite::Transaction<'_>,
     conversation_id: ConversationId,
     message_id: lettuce_types::MessageId,
-    count: &mut usize,
 ) -> Result<Vec<lettuce_conversations::MessageRevision>, ProviderBackupSourceError> {
-    let remaining = MAX_BACKUP_MESSAGE_REVISIONS.saturating_sub(*count);
-    let limit = remaining.saturating_add(1);
     let mut statement = transaction
-        .prepare("SELECT conversation_id, id, message_id, branch_id, sequence, parts_json, authored_at, provider_replay_artifact_id, provider_replay_retention, source_turn_id, supersedes_candidate_id FROM conversation_message_revisions WHERE conversation_id = ?1 AND message_id = ?2 ORDER BY sequence, id LIMIT ?3")
+        .prepare("SELECT conversation_id, id, message_id, branch_id, sequence, parts_json, authored_at, provider_replay_artifact_id, provider_replay_retention, source_turn_id, supersedes_candidate_id FROM conversation_message_revisions WHERE conversation_id = ?1 AND message_id = ?2 ORDER BY sequence, id")
         .map_err(backup_error)?;
     let values = statement
         .query_map(
-            params![
-                conversation_id.to_string(),
-                message_id.to_string(),
-                i64::try_from(limit).map_err(|_| ProviderBackupSourceError::InvalidData)?
-            ],
+            params![conversation_id.to_string(), message_id.to_string()],
             |row| {
                 crate::conversation::conversation_query::hydrate_revision_row(transaction, row)
                     .map_err(|_| rusqlite::Error::InvalidQuery)
@@ -2083,10 +1860,6 @@ fn read_backup_revisions(
         .map_err(backup_error)?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(backup_error)?;
-    if values.len() > remaining {
-        return Err(ProviderBackupSourceError::InvalidData);
-    }
-    *count += values.len();
     Ok(values)
 }
 
@@ -2094,20 +1867,13 @@ fn read_backup_candidates(
     transaction: &rusqlite::Transaction<'_>,
     conversation_id: ConversationId,
     message_id: lettuce_types::MessageId,
-    count: &mut usize,
 ) -> Result<Vec<lettuce_conversations::MessageCandidate>, ProviderBackupSourceError> {
-    let remaining = MAX_BACKUP_MESSAGE_CANDIDATES.saturating_sub(*count);
-    let limit = remaining.saturating_add(1);
     let mut statement = transaction
-        .prepare("SELECT conversation_id, id, message_id, branch_id, turn_id, attempt_id, ordinal, parts_json, model_json, created_at, provider_replay_artifact_id, provider_replay_retention, author_participant_id FROM conversation_message_candidates WHERE conversation_id = ?1 AND message_id = ?2 ORDER BY ordinal, id LIMIT ?3")
+        .prepare("SELECT conversation_id, id, message_id, branch_id, turn_id, attempt_id, ordinal, parts_json, model_json, created_at, provider_replay_artifact_id, provider_replay_retention, author_participant_id FROM conversation_message_candidates WHERE conversation_id = ?1 AND message_id = ?2 ORDER BY ordinal, id")
         .map_err(backup_error)?;
     let values = statement
         .query_map(
-            params![
-                conversation_id.to_string(),
-                message_id.to_string(),
-                i64::try_from(limit).map_err(|_| ProviderBackupSourceError::InvalidData)?
-            ],
+            params![conversation_id.to_string(), message_id.to_string()],
             |row| {
                 crate::conversation::conversation_query::hydrate_candidate_row(transaction, row)
                     .map_err(|_| rusqlite::Error::InvalidQuery)
@@ -2116,10 +1882,6 @@ fn read_backup_candidates(
         .map_err(backup_error)?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(backup_error)?;
-    if values.len() > remaining {
-        return Err(ProviderBackupSourceError::InvalidData);
-    }
-    *count += values.len();
     Ok(values)
 }
 

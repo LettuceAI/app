@@ -802,4 +802,24 @@ pub(crate) mod tests {
         assert_eq!(round_trip, graph);
         graph
     }
+
+    #[test]
+    fn backup_round_trips_more_personas_than_the_old_authored_root_cap() {
+        let database = Database::open_in_memory().expect("database");
+        {
+            let mut connection = database.connection().expect("database lock");
+            let transaction = connection.transaction().expect("transaction");
+            for _ in 0..4_097 {
+                transaction
+                    .execute(
+                        "INSERT INTO personas (id,status,title,normalized_title,nickname,normalized_nickname,description,design_description,avatar_crop_json,image_recommendation_json,revision,created_at,updated_at) VALUES (?1,'active','Reader','reader',NULL,NULL,'Reads',NULL,NULL,NULL,1,1,1)",
+                        [lettuce_types::PersonaId::new().to_string()],
+                    )
+                    .expect("persona fixture");
+            }
+            transaction.commit().expect("commit personas");
+        }
+        let graph = assert_backup_round_trip(&database);
+        assert_eq!(graph.authored.personas.len(), 4_097);
+    }
 }

@@ -8,10 +8,6 @@ use crate::{
     LegacyBackupDocumentKind,
 };
 
-const SESSION_LIMIT: usize = 10_000;
-const PARTICIPATION_LIMIT: usize = 100_000;
-const MESSAGE_LIMIT: usize = 200_000;
-const VARIANT_LIMIT: usize = 400_000;
 const TEXT_LIMIT: usize = 8 * 1024 * 1024;
 const JSON_LIMIT: usize = 128 * 1024 * 1024;
 
@@ -407,9 +403,6 @@ fn map_sessions(
     skipped: &mut Vec<crate::LegacyImportSkip>,
     notices: &mut Vec<LegacyBackupConversionNotice>,
 ) -> Result<Vec<LegacyBackupGroupSession>, LegacyBackupGroupSessionError> {
-    if rows.len() > SESSION_LIMIT {
-        return Err(LegacyBackupGroupSessionError::LimitExceeded);
-    }
     let authored = &source.source.source.source.source.authored;
     let character_ids = authored
         .characters
@@ -459,9 +452,6 @@ fn map_sessions(
     let mut participation_ids = BTreeSet::new();
     let mut message_ids = BTreeSet::new();
     let mut variant_ids = BTreeSet::new();
-    let mut participation_count = 0_usize;
-    let mut message_count = 0_usize;
-    let mut variant_count = 0_usize;
     let mut sessions = Vec::with_capacity(rows.len());
     let group_rows = authored
         .configuration
@@ -741,17 +731,6 @@ fn map_sessions(
             notices,
         )?;
         skipped.extend(message_skips);
-        participation_count = checked_total(participation_count, participation.len())?;
-        message_count = checked_total(message_count, messages.len())?;
-        variant_count = messages.iter().try_fold(variant_count, |total, message| {
-            checked_total(total, message.variants.len())
-        })?;
-        if participation_count > PARTICIPATION_LIMIT
-            || message_count > MESSAGE_LIMIT
-            || variant_count > VARIANT_LIMIT
-        {
-            return Err(LegacyBackupGroupSessionError::LimitExceeded);
-        }
         let root_session_source_id = row.root_session_id.unwrap_or_else(|| row.id.clone());
         sessions.push(LegacyBackupGroupSession {
             source_id: row.id,
@@ -1493,12 +1472,6 @@ fn optional_count(
 ) -> Result<Option<u64>, LegacyBackupGroupSessionError> {
     value.map(|value| count(value, field)).transpose()
 }
-fn checked_total(total: usize, added: usize) -> Result<usize, LegacyBackupGroupSessionError> {
-    total
-        .checked_add(added)
-        .ok_or(LegacyBackupGroupSessionError::LimitExceeded)
-}
-
 fn report_extra(
     path: &str,
     extra: &BTreeMap<String, Value>,

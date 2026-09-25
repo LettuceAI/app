@@ -7,8 +7,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::{BackupSqlRow, BackupSqlValue, backup_sql_text};
 
-pub const MAX_BACKUP_PLAYGROUND_ROWS: usize = 2_000_000;
-
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PlaygroundHistoryBackup {
@@ -37,9 +35,6 @@ impl PlaygroundHistoryBackup {
     /// Every image belongs to an entry once per ordinal; rows are sorted by
     /// entry and ordinal.
     pub fn canonicalize_and_validate(&mut self) -> Result<(), PlaygroundHistoryBackupError> {
-        if self.entries.len().saturating_add(self.images.len()) > MAX_BACKUP_PLAYGROUND_ROWS {
-            return Err(PlaygroundHistoryBackupError::LimitExceeded);
-        }
         let mut ids = BTreeSet::new();
         for entry in &self.entries {
             let id =

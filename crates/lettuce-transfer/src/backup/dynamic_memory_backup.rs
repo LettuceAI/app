@@ -7,9 +7,6 @@ use lettuce_memory::{
 use serde::{Deserialize, Serialize};
 
 pub const DYNAMIC_MEMORY_BACKUP_VERSION: u32 = 1;
-pub const MAX_BACKUP_DYNAMIC_MEMORY_RUNS: usize = 100_000;
-pub const MAX_BACKUP_DYNAMIC_MEMORY_ATTEMPTS: usize = 1_000_000;
-pub const MAX_BACKUP_DYNAMIC_MEMORY_APPROVALS: usize = 100_000;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -49,10 +46,7 @@ impl DynamicMemoryBackup {
         jobs: &crate::JobBackup,
         memory: &crate::MemoryBackup,
     ) -> Result<(), DynamicMemoryBackupError> {
-        if self.version != DYNAMIC_MEMORY_BACKUP_VERSION
-            || self.pending_approvals.len() > MAX_BACKUP_DYNAMIC_MEMORY_APPROVALS
-            || self.runs.len() > MAX_BACKUP_DYNAMIC_MEMORY_RUNS
-        {
+        if self.version != DYNAMIC_MEMORY_BACKUP_VERSION {
             return Err(DynamicMemoryBackupError::InvalidData);
         }
         self.pending_approvals
@@ -116,7 +110,6 @@ impl DynamicMemoryBackup {
             }
         }
         let mut run_ids = BTreeSet::new();
-        let mut attempt_count = 0usize;
         for entry in &mut self.runs {
             if entry.run.validate().is_err()
                 || !run_ids.insert(entry.run.id)
@@ -139,13 +132,7 @@ impl DynamicMemoryBackup {
             entry
                 .attempts
                 .sort_by_key(|attempt| attempt.attempt.ordinal);
-            attempt_count = attempt_count
-                .checked_add(entry.attempts.len())
-                .ok_or(DynamicMemoryBackupError::InvalidData)?;
             validate_run(entry, &job_ids)?;
-        }
-        if attempt_count > MAX_BACKUP_DYNAMIC_MEMORY_ATTEMPTS {
-            return Err(DynamicMemoryBackupError::InvalidData);
         }
         Ok(())
     }

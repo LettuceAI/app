@@ -189,7 +189,7 @@ text-and-image outputs stay chat models with image output retained in their
 capabilities, and the old `imagegeneration` type still maps to image.
 
 Persona planning reads the complete version-92 persona shape in stable creation
-order, enforces the 10,000-record transfer bound, and fails on malformed JSON,
+order without a record count limit, and fails on malformed JSON,
 IDs, crop, LoRA, default or timestamp data rather than dropping fields.
 
 Lorebook planning reads roots and their entries together, validates exact
@@ -993,7 +993,7 @@ references to it are cleared like any other stale model reference. The media pla
 references whose file is gone: a persona avatar (with its crop), each persona
 design reference and a lorebook avatar, since the old app showed no image for
 them and the stale id stays in the untouched legacy database; the reference
-count limit is checked before pruning, and unsafe or ambiguous references still
+count is not limited, and unsafe or ambiguous references still
 abort. `reconcile_legacy_persona_lorebooks` prunes and records persona bindings
 to lorebooks absent from the lorebook plan and drops repeated ids (legacy kept a
 deleted lorebook's id in `activeLorebookIds`, its editor listed only existing

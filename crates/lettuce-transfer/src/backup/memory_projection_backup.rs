@@ -4,7 +4,6 @@ use lettuce_types::{MemoryId, MemorySpaceId, TimestampMillis};
 use serde::{Deserialize, Serialize};
 
 pub const MEMORY_PROJECTION_BACKUP_VERSION: u32 = 1;
-pub const MAX_BACKUP_MEMORY_PROJECTIONS: usize = 1_000_000;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -37,9 +36,7 @@ impl MemoryProjectionBackup {
         &mut self,
         memory: &crate::MemoryBackup,
     ) -> Result<(), MemoryProjectionBackupError> {
-        if self.version != MEMORY_PROJECTION_BACKUP_VERSION
-            || self.projections.len() > MAX_BACKUP_MEMORY_PROJECTIONS
-        {
+        if self.version != MEMORY_PROJECTION_BACKUP_VERSION {
             return Err(MemoryProjectionBackupError::InvalidData);
         }
         self.projections.sort_by(|left, right| {

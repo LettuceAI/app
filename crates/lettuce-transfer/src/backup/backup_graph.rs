@@ -24,13 +24,10 @@ use crate::BackupSection;
 
 pub const PROVIDER_BACKUP_GRAPH_VERSION: u32 = 2;
 pub const PROVIDER_BACKUP_FIXED_SECTIONS: usize = 13;
-pub const MAX_BACKUP_PROVIDER_ACCOUNTS: usize = 128;
-pub const MAX_BACKUP_MODEL_PROFILES: usize = 2_048;
-pub const MAX_BACKUP_PROMPT_DOCUMENTS: usize = 2_048;
-pub const MAX_BACKUP_AUDIO_PROVIDERS: usize = 128;
-pub const MAX_BACKUP_USER_VOICES: usize = 4_096;
-pub const MAX_BACKUP_AUTHORED_ROOTS: usize = 4_096;
-pub const MAX_BACKUP_MEDIA_RECORDS: usize = 65_536;
+/// Largest byte run one data document occupies in a single backup entry; a
+/// larger document continues in `<name>.part<N>` entries so no library size
+/// reaches the per-entry ceiling.
+pub const BACKUP_DATA_PART_BYTES: usize = 1024 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -424,10 +421,36 @@ pub fn plan_provider_backup_export(
         ),
     ]);
     Ok(ProviderBackupExportPlan {
-        data_sections,
+        data_sections: data_sections
+            .into_iter()
+            .flat_map(|section| split_data_section(section, BACKUP_DATA_PART_BYTES))
+            .collect(),
         media,
         artifacts,
     })
+}
+
+pub(crate) fn backup_data_part_name(name: &str, part: usize) -> String {
+    format!("{name}.part{part}")
+}
+
+pub(crate) fn split_data_section(section: BackupSection, part_bytes: usize) -> Vec<BackupSection> {
+    if section.bytes.len() <= part_bytes {
+        return vec![section];
+    }
+    section
+        .bytes
+        .chunks(part_bytes)
+        .enumerate()
+        .map(|(part, bytes)| {
+            let name = if part == 0 {
+                section.name.clone()
+            } else {
+                backup_data_part_name(&section.name, part)
+            };
+            BackupSection::new(name, section.schema.clone(), bytes.to_vec())
+        })
+        .collect()
 }
 
 pub fn provider_backup_secret_requirements(
@@ -585,20 +608,6 @@ pub fn canonicalize_and_validate(
 ) -> Result<(), ProviderBackupGraphError> {
     if graph.version != PROVIDER_BACKUP_GRAPH_VERSION {
         return Err(ProviderBackupGraphError::InvalidGraph);
-    }
-    if graph.accounts.len() > MAX_BACKUP_PROVIDER_ACCOUNTS
-        || graph.profiles.len() > MAX_BACKUP_MODEL_PROFILES
-        || graph.prompts.len() > MAX_BACKUP_PROMPT_DOCUMENTS
-        || graph.audio_providers.len() > MAX_BACKUP_AUDIO_PROVIDERS
-        || graph.user_voices.len() > MAX_BACKUP_USER_VOICES
-        || graph.authored.personas.len() > MAX_BACKUP_AUTHORED_ROOTS
-        || graph.authored.lorebooks.len() > MAX_BACKUP_AUTHORED_ROOTS
-        || graph.authored.characters.len() > MAX_BACKUP_AUTHORED_ROOTS
-        || graph.authored.groups.len() > MAX_BACKUP_AUTHORED_ROOTS
-        || graph.authored.media_assets.len() > MAX_BACKUP_MEDIA_RECORDS
-        || graph.authored.media_blobs.len() > MAX_BACKUP_MEDIA_RECORDS
-    {
-        return Err(ProviderBackupGraphError::LimitExceeded);
     }
     graph.accounts.sort_by_key(|account| account.id.to_string());
     graph.profiles.sort_by_key(|profile| profile.id.to_string());
@@ -1783,6 +1792,47 @@ mod tests {
         );
         assert!(plan.media.is_empty());
         assert!(plan.artifacts.is_empty());
+    }
+
+    #[test]
+    fn restore_plan_joins_data_documents_split_across_parts() {
+        let reference = SecretRef::new();
+        let source_graph = graph(reference);
+        let purpose = SecretPurpose::ProviderApiKey {
+            owner: source_graph.accounts[0].secret_owner_id,
+        };
+        let sections = provider_backup_sections(
+            source_graph.clone(),
+            vec![ProviderBackupSecret {
+                reference,
+                purpose,
+                generation: 7,
+                value: SecretValue::new("split-secret").expect("secret"),
+            }],
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("sections");
+        let whole = sections.len();
+        let split = sections
+            .into_iter()
+            .flat_map(|section| split_data_section(section, 7))
+            .collect::<Vec<_>>();
+        assert!(split.len() > whole);
+        assert!(split.iter().any(|section| section.name.ends_with(".part1")));
+        let envelope = crate::seal_backup(
+            "restore-test",
+            TimestampMillis::new(10),
+            "backup password",
+            split,
+        )
+        .expect("sealed backup");
+        let plan = crate::decode_provider_backup_restore_plan(
+            std::io::Cursor::new(envelope),
+            "backup password",
+        )
+        .expect("restore plan");
+        assert_eq!(plan.graph, source_graph);
     }
 
     #[test]

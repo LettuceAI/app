@@ -5,8 +5,6 @@ use lettuce_types::ConversationId;
 use serde::{Deserialize, Serialize};
 
 pub const MEMORY_BACKUP_VERSION: u32 = 1;
-pub const MAX_BACKUP_MEMORY_SPACES: usize = 100_000;
-pub const MAX_BACKUP_MEMORY_ACCESSES: usize = 1_000_000;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -49,10 +47,7 @@ impl MemoryBackup {
         runtime: &crate::ConversationRuntimeBackup,
         effects: &crate::CompanionEffectBackup,
     ) -> Result<(), MemoryBackupError> {
-        if self.version != MEMORY_BACKUP_VERSION
-            || self.spaces.len() > MAX_BACKUP_MEMORY_SPACES
-            || self.retrieval_accesses.len() > MAX_BACKUP_MEMORY_ACCESSES
-        {
+        if self.version != MEMORY_BACKUP_VERSION {
             return Err(MemoryBackupError::InvalidData);
         }
         self.spaces

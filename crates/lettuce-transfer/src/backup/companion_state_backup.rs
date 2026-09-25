@@ -9,9 +9,6 @@ use lettuce_types::{CharacterId, ContentHash, PersonaId, Revision, TimestampMill
 use serde::{Deserialize, Serialize};
 
 pub const COMPANION_STATE_BACKUP_VERSION: u32 = 1;
-pub const MAX_BACKUP_COMPANION_RELATIONSHIPS: usize = 100_000;
-pub const MAX_BACKUP_COMPANION_SESSIONS: usize = 100_000;
-pub const MAX_BACKUP_COMPANION_RECEIPTS: usize = 1_000_000;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -94,12 +91,7 @@ impl CompanionStateBackup {
         authored: &crate::AuthoredProfileBackup,
         history: &crate::ConversationHistoryBackup,
     ) -> Result<(), CompanionStateBackupError> {
-        if self.version != COMPANION_STATE_BACKUP_VERSION
-            || self.relationships.len() > MAX_BACKUP_COMPANION_RELATIONSHIPS
-            || self.sessions.len() > MAX_BACKUP_COMPANION_SESSIONS
-            || self.episodes.len() > MAX_BACKUP_COMPANION_SESSIONS
-            || self.receipts.len() > MAX_BACKUP_COMPANION_RECEIPTS
-        {
+        if self.version != COMPANION_STATE_BACKUP_VERSION {
             return Err(CompanionStateBackupError::InvalidData);
         }
         self.relationships

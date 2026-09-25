@@ -28,9 +28,19 @@ and data sections, then the ready media blobs and conversation artifacts in
 order); `verify_backup_media` and `verify_backup_artifact` check one object
 against its size and hash so the app appends it without copying and drops it
 before loading the next. Section limits are 2 GiB per section and 1 TiB in total (backlog #15:
-the earlier 512 MiB total blocked large libraries; legacy had no limit). The
-version-1 decoder keeps only its 512 MiB per-entry limit
-(`MAX_LEGACY_BACKUP_ENTRY_BYTES`).
+the earlier 512 MiB total blocked large libraries; legacy had no limit). A data
+document larger than `BACKUP_DATA_PART_BYTES` (1 GiB) continues in
+`<name>.part<N>` entries that restore joins before decoding, so the per-section
+limit never bounds the library. No record count is capped anywhere in export,
+validation or restore: conversations, messages, revisions, candidates,
+generation turns, checkpoints, tool executions, jobs, usage, outbox, companion,
+memory, playground rows and every authored root (characters, personas,
+lorebooks, groups, media records, provider accounts, models, prompts, voices)
+are unbounded. The envelope keeps malformed-input guards far above any library:
+2,097,152 entries (media blobs plus artifacts) and a 1 GiB manifest. The whole
+graph is still materialized in memory during export and restore. The version-1
+decoder keeps only its per-entry limit (`MAX_LEGACY_BACKUP_ENTRY_BYTES`, the
+largest non-zip64 entry).
 
 `decode_provider_backup_restore_plan` takes any seekable `BackupSource` (the
 received archive file), hashes it by streaming, decodes the data sections,
@@ -48,9 +58,9 @@ database inventory keeps only the file path (`from_file` hashes it by
 streaming) and `decode_legacy_backup_inventory` reads a version-1 archive from
 a seekable `BackupSource`, decrypting each media entry once for its size and
 hash and again on `read` (a version-1 entry is one AEAD message, so each entry
-is still limited to 512 MiB, entry names are checked before anything is
-decrypted, and the decrypted documents held for planning are limited to 512 MiB
-together; the archive and media totals are not). A live file that changed
+is still limited to the largest non-zip64 entry, entry names are checked before
+anything is decrypted, and the decrypted documents held for planning have no
+total limit). A live file that changed
 after the inventory fails its import with `SourceChanged`. The live database
 inventory no longer rejects a large or unreferenced file or a library over
 512 MiB; the media plan still limits each referenced object to 64 MiB (the
@@ -346,7 +356,8 @@ file is absent is cleared and recorded as a `MissingMediaFile` skip, like the
 legacy SQLite import: persona avatar (with its crop) and design references,
 lorebook avatars, and `CharacterMedia`/`GroupMedia` slots keyed
 `<id>:avatar|background|design:<locator>|scene:<scene id>`. Ambiguous, unsafe,
-oversized or over-limit references still reject the whole media plan. Conversation attachments, generated images and other later-domain media
+oversized references still reject the whole media plan; the number of
+references is not limited. Conversation attachments, generated images and other later-domain media
 stay attached to the source inventory and are not misclassified as orphaned by
 this authored-only slice.
 
@@ -744,8 +755,8 @@ use, one use per file however many rows repeat it. Bytes are sniffed at
 planning: images become `message_image`, audio `message_audio`; the legacy
 filename (a generated image's prompt) becomes the asset's source label, cut to
 256 scalars without control characters. Missing, unsafe, oversized or
-unsupported files (legacy's raw `.webp` fallbacks, AAC/AIFF audio), inline-only
-data and attachments past the reference limit are recorded, never fatal.
+unsupported files (legacy's raw `.webp` fallbacks, AAC/AIFF audio) and
+inline-only data are recorded, never fatal.
 Conversation import appends them as `MediaAsset` attachment parts after the
 text; the rendered variant also gets the message's attachments, deduplicated
 by id; media on non-rendered revisions and candidates is historical.

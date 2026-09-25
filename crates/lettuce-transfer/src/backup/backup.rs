@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
 pub const BACKUP_ENVELOPE_VERSION: u32 = 2;
-pub const MAX_BACKUP_ENTRIES: usize = 65_792;
+pub const MAX_BACKUP_ENTRIES: usize = 2_097_152;
 pub const MAX_BACKUP_ENTRY_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 pub const MAX_BACKUP_TOTAL_BYTES: u64 = 1024 * 1024 * 1024 * 1024;
 pub const MAX_BACKUP_WRITE_CHUNK_BYTES: usize = 1024 * 1024;
@@ -25,7 +25,7 @@ pub const MAX_BACKUP_WRITE_CHUNK_BYTES: usize = 1024 * 1024;
 const MAGIC: [u8; 16] = *b"LETTUCE-BACKUP2\0";
 const FOOTER_MAGIC: [u8; 8] = *b"LTBKEND2";
 const LEGACY_ZIP_PREFIX: [u8; 4] = *b"PK\x03\x04";
-const MAX_MANIFEST_BYTES: usize = 64 * 1024 * 1024;
+const MAX_MANIFEST_BYTES: usize = 1024 * 1024 * 1024;
 const MAX_APP_VERSION_BYTES: usize = 64;
 const MAX_ENTRY_NAME_BYTES: usize = 512;
 const MAX_SCHEMA_BYTES: usize = 128;

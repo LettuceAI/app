@@ -16,7 +16,6 @@ use crate::{
 
 /// How many metrics rows legacy and the new app keep.
 pub const LEGACY_LLM_METRICS_RETENTION: usize = 500;
-const LLM_METRICS_RECORD_LIMIT: usize = 100_000;
 
 /// One legacy metrics row as the new table stores it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -70,9 +69,6 @@ pub fn plan_legacy_backup_llm_metrics(
     };
     let rows: Vec<Map<String, Value>> = serde_json::from_slice(&document.bytes)
         .map_err(|_| LegacyBackupLlmMetricsError::Malformed)?;
-    if rows.len() > LLM_METRICS_RECORD_LIMIT {
-        return Err(LegacyBackupLlmMetricsError::LimitExceeded);
-    }
     let mut ids = BTreeSet::new();
     for (index, row) in rows.into_iter().enumerate() {
         if row.keys().any(|key| !KNOWN_COLUMNS.contains(&key.as_str())) {

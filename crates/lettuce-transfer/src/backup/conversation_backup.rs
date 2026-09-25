@@ -10,10 +10,6 @@ use lettuce_types::{MessageId, ReplayArtifactId, SnapshotArtifactId};
 use serde::{Deserialize, Serialize};
 
 pub const CONVERSATION_HISTORY_BACKUP_VERSION: u32 = 1;
-pub const MAX_BACKUP_CONVERSATIONS: usize = 10_000;
-pub const MAX_BACKUP_MESSAGES: usize = 200_000;
-pub const MAX_BACKUP_MESSAGE_REVISIONS: usize = 400_000;
-pub const MAX_BACKUP_MESSAGE_CANDIDATES: usize = 400_000;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -48,9 +44,7 @@ impl ConversationHistoryBackup {
         &mut self,
         media_asset_ids: &BTreeSet<lettuce_types::AssetId>,
     ) -> Result<(), ConversationHistoryBackupError> {
-        if self.version != CONVERSATION_HISTORY_BACKUP_VERSION
-            || self.conversations.len() > MAX_BACKUP_CONVERSATIONS
-        {
+        if self.version != CONVERSATION_HISTORY_BACKUP_VERSION {
             return Err(ConversationHistoryBackupError::InvalidData);
         }
         self.conversations
@@ -59,9 +53,6 @@ impl ConversationHistoryBackup {
         let mut message_ids = BTreeSet::new();
         let mut revision_ids = BTreeSet::new();
         let mut candidate_ids = BTreeSet::new();
-        let mut message_count = 0_usize;
-        let mut revision_count = 0_usize;
-        let mut candidate_count = 0_usize;
         for conversation in &mut self.conversations {
             let conversation_id = conversation.aggregate.conversation.id;
             if !conversation_ids.insert(conversation_id)
@@ -79,33 +70,6 @@ impl ConversationHistoryBackup {
                 &mut revision_ids,
                 &mut candidate_ids,
             )?;
-            message_count = message_count
-                .checked_add(conversation.messages.len())
-                .ok_or(ConversationHistoryBackupError::LimitExceeded)?;
-            revision_count =
-                conversation
-                    .messages
-                    .iter()
-                    .try_fold(revision_count, |count, message| {
-                        count
-                            .checked_add(message.revisions.len())
-                            .ok_or(ConversationHistoryBackupError::LimitExceeded)
-                    })?;
-            candidate_count =
-                conversation
-                    .messages
-                    .iter()
-                    .try_fold(candidate_count, |count, message| {
-                        count
-                            .checked_add(message.candidates.len())
-                            .ok_or(ConversationHistoryBackupError::LimitExceeded)
-                    })?;
-        }
-        if message_count > MAX_BACKUP_MESSAGES
-            || revision_count > MAX_BACKUP_MESSAGE_REVISIONS
-            || candidate_count > MAX_BACKUP_MESSAGE_CANDIDATES
-        {
-            return Err(ConversationHistoryBackupError::LimitExceeded);
         }
         Ok(())
     }

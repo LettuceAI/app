@@ -8,9 +8,6 @@ use lettuce_types::{ConversationId, TimestampMillis};
 use serde::{Deserialize, Serialize};
 
 pub const CONVERSATION_RUNTIME_BACKUP_VERSION: u32 = 1;
-pub const MAX_BACKUP_GENERATION_TURNS: usize = 200_000;
-pub const MAX_BACKUP_GENERATION_CHECKPOINTS: usize = 1_000_000;
-pub const MAX_BACKUP_TOOL_EXECUTIONS: usize = 400_000;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -163,9 +160,6 @@ impl ConversationRuntimeBackup {
         let mut attempt_ids = BTreeSet::new();
         let mut job_ids = BTreeSet::new();
         let mut tool_ids = BTreeSet::new();
-        let mut turn_count = 0_usize;
-        let mut checkpoint_count = 0_usize;
-        let mut tool_count = 0_usize;
         for runtime in &mut self.conversations {
             let history = history_by_id
                 .get(&runtime.conversation_id)
@@ -263,23 +257,8 @@ impl ConversationRuntimeBackup {
                         &replay_ids,
                         &mut tool_ids,
                     )?;
-                    checkpoint_count = checkpoint_count
-                        .checked_add(runtime.checkpoints.len())
-                        .ok_or(ConversationRuntimeBackupError::LimitExceeded)?;
-                    tool_count = tool_count
-                        .checked_add(runtime.tools.len())
-                        .ok_or(ConversationRuntimeBackupError::LimitExceeded)?;
                 }
             }
-            turn_count = turn_count
-                .checked_add(runtime.turns.len())
-                .ok_or(ConversationRuntimeBackupError::LimitExceeded)?;
-        }
-        if turn_count > MAX_BACKUP_GENERATION_TURNS
-            || checkpoint_count > MAX_BACKUP_GENERATION_CHECKPOINTS
-            || tool_count > MAX_BACKUP_TOOL_EXECUTIONS
-        {
-            return Err(ConversationRuntimeBackupError::LimitExceeded);
         }
         Ok(())
     }

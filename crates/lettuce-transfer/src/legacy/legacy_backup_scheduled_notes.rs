@@ -12,7 +12,6 @@ use crate::{
     LegacyBackupGroupSessionPlan,
 };
 
-const NOTE_LIMIT: usize = 100_000;
 const TEXT_LIMIT: usize = 8 * 1024 * 1024;
 
 #[derive(Debug)]
@@ -96,9 +95,6 @@ fn map_notes(
     source: &LegacyBackupGroupSessionPlan,
     notices: &mut Vec<LegacyBackupConversionNotice>,
 ) -> Result<Vec<LegacyBackupScheduledNote>, LegacyBackupScheduledNoteError> {
-    if rows.len() > NOTE_LIMIT {
-        return Err(LegacyBackupScheduledNoteError::LimitExceeded);
-    }
     let authored = &source.source.source.source.source.source.authored;
     let companion_ids = authored
         .characters

@@ -12,8 +12,6 @@ use lettuce_types::{
 use serde::{Deserialize, Serialize};
 
 pub const COMPANION_EFFECT_BACKUP_VERSION: u32 = 1;
-pub const MAX_BACKUP_COMPANION_EFFECTS: usize = 1_000_000;
-pub const MAX_BACKUP_MEMORY_REWINDS: usize = 100_000;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -46,10 +44,7 @@ impl CompanionEffectBackup {
         history: &crate::ConversationHistoryBackup,
         runtime: &crate::ConversationRuntimeBackup,
     ) -> Result<(), CompanionEffectBackupError> {
-        if self.version != COMPANION_EFFECT_BACKUP_VERSION
-            || self.effects.len() > MAX_BACKUP_COMPANION_EFFECTS
-            || self.rewinds.len() > MAX_BACKUP_MEMORY_REWINDS
-        {
+        if self.version != COMPANION_EFFECT_BACKUP_VERSION {
             return Err(CompanionEffectBackupError::InvalidData);
         }
         self.effects

@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    LEGACY_MEDIA_OBJECT_BYTES_LIMIT, LEGACY_MEDIA_REFERENCE_LIMIT, LEGACY_MEDIA_TOTAL_BYTES_LIMIT,
-    LegacyBackupAuthoredPlan, LegacyBackupDocumentKind, LegacyBackupMedia, LegacyBackupMediaRoot,
-    LegacyImportSkip, LegacyImportSkipKind, LegacyImportSkipReason, LegacyMediaCandidate,
-    LegacyMediaPlan, LegacyMediaReference, LegacyMediaUse, legacy_value_skip,
+    LEGACY_MEDIA_OBJECT_BYTES_LIMIT, LEGACY_MEDIA_TOTAL_BYTES_LIMIT, LegacyBackupAuthoredPlan,
+    LegacyBackupDocumentKind, LegacyBackupMedia, LegacyBackupMediaRoot, LegacyImportSkip,
+    LegacyImportSkipKind, LegacyImportSkipReason, LegacyMediaCandidate, LegacyMediaPlan,
+    LegacyMediaReference, LegacyMediaUse, legacy_value_skip,
 };
 
 #[derive(Debug)]
@@ -669,14 +669,6 @@ fn plan_session_backgrounds<'a>(
         {
             continue;
         }
-        if *references >= LEGACY_MEDIA_REFERENCE_LIMIT {
-            skipped.push(legacy_value_skip(
-                &format!("{field}.limit"),
-                &background.session_id,
-                LegacyImportSkipReason::MalformedLegacyValue,
-            ));
-            continue;
-        }
         add_planned(planned, media, media_use, references)?;
     }
     Ok(())
@@ -812,10 +804,6 @@ fn plan_playground_images<'a>(
                 generation_id: entry.id.clone(),
                 ordinal: bounded_ordinal(ordinal)?,
             };
-            if *references >= LEGACY_MEDIA_REFERENCE_LIMIT {
-                skipped.push(skip(LegacyImportSkipReason::MalformedLegacyValue));
-                continue;
-            }
             add_planned(planned, media, media_use, references)?;
         }
     }
@@ -887,14 +875,6 @@ fn plan_attachment<'a>(
     {
         return Ok(());
     }
-    if *references >= LEGACY_MEDIA_REFERENCE_LIMIT {
-        skipped.push(legacy_value_skip(
-            "messages.attachments.limit",
-            &attachment.id,
-            LegacyImportSkipReason::MalformedLegacyValue,
-        ));
-        return Ok(());
-    }
     add_planned(planned, media, media_use, references)
 }
 
@@ -907,9 +887,6 @@ fn add_planned<'a>(
     *references = references
         .checked_add(1)
         .ok_or(LegacyBackupMediaPlanError::ReferenceLimit)?;
-    if *references > LEGACY_MEDIA_REFERENCE_LIMIT {
-        return Err(LegacyBackupMediaPlanError::ReferenceLimit);
-    }
     let path = archive_path(media);
     planned
         .entry(path)

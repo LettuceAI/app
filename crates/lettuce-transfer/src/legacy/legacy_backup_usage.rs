@@ -8,7 +8,6 @@ use crate::{
     LegacyBackupDocumentKind,
 };
 
-const USAGE_RECORD_LIMIT: usize = 1_000_000;
 const METADATA_PER_RECORD_LIMIT: usize = 256;
 const METADATA_TOTAL_LIMIT: usize = 4_000_000;
 const TEXT_LIMIT: usize = 16_384;
@@ -139,9 +138,6 @@ fn map_rows(
     rows: Vec<UsageRow>,
     notices: &mut Vec<LegacyBackupConversionNotice>,
 ) -> Result<Vec<LegacyBackupUsageRecord>, LegacyBackupUsageError> {
-    if rows.len() > USAGE_RECORD_LIMIT {
-        return Err(LegacyBackupUsageError::LimitExceeded);
-    }
     let mut ids = BTreeSet::new();
     let mut metadata_total = 0_usize;
     let mut records = Vec::with_capacity(rows.len());

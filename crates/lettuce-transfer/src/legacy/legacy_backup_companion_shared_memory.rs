@@ -11,8 +11,6 @@ use crate::{
     LegacyBackupScheduledNotePlan,
 };
 
-const STATE_LIMIT: usize = 10_000;
-const EPISODE_LIMIT: usize = 100_000;
 const JSON_LIMIT: usize = 128 * 1024 * 1024;
 const TEXT_LIMIT: usize = 8 * 1024 * 1024;
 
@@ -176,9 +174,6 @@ fn map_states(
     source: &LegacyBackupScheduledNotePlan,
     notices: &mut Vec<LegacyBackupConversionNotice>,
 ) -> Result<Vec<LegacyBackupCompanionSharedMemory>, LegacyBackupCompanionSharedMemoryError> {
-    if rows.len() > STATE_LIMIT {
-        return Err(LegacyBackupCompanionSharedMemoryError::LimitExceeded);
-    }
     let direct = &source.source.source;
     let authored = &direct.source.source.source.source.authored;
     let companion_ids = authored
@@ -209,7 +204,6 @@ fn map_states(
         })
         .collect::<BTreeMap<_, _>>();
     let mut owners = BTreeSet::new();
-    let mut episode_count = 0usize;
     let mut states = Vec::with_capacity(rows.len());
     for (index, row) in rows.into_iter().enumerate() {
         let path = format!("[{index}]");
@@ -253,12 +247,6 @@ fn map_states(
             &persona_ids,
             &format!("{path}.relationship_states"),
         )?;
-        episode_count = episode_count
-            .checked_add(row.episodes.len())
-            .ok_or(LegacyBackupCompanionSharedMemoryError::LimitExceeded)?;
-        if episode_count > EPISODE_LIMIT {
-            return Err(LegacyBackupCompanionSharedMemoryError::LimitExceeded);
-        }
         let episodes = map_episodes(
             row.episodes,
             character_id,

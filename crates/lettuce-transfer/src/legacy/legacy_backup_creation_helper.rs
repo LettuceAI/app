@@ -10,9 +10,6 @@ use crate::{
     LegacyBackupMediaRoot, LegacyBackupMemoryEmbeddingPlan,
 };
 
-const SESSION_LIMIT: usize = 10_000;
-const MESSAGE_LIMIT: usize = 200_000;
-const IMAGE_LIMIT: usize = 100_000;
 const SCENE_LIMIT: usize = 100_000;
 const JSON_LIMIT: usize = 256 * 1024 * 1024;
 const TEXT_LIMIT: usize = 8 * 1024 * 1024;
@@ -277,13 +274,8 @@ fn map_sessions(
     source: &LegacyBackupMemoryEmbeddingPlan,
     notices: &mut Vec<LegacyBackupConversionNotice>,
 ) -> Result<Vec<LegacyBackupCreationHelperSession>, LegacyBackupCreationHelperError> {
-    if rows.len() > SESSION_LIMIT {
-        return Err(LegacyBackupCreationHelperError::LimitExceeded);
-    }
     let mut ids = BTreeSet::new();
     let mut updated_at_values = BTreeSet::new();
-    let mut message_count = 0usize;
-    let mut image_count = 0usize;
     let mut sessions = Vec::with_capacity(rows.len());
     for (index, row) in rows.into_iter().enumerate() {
         let path = format!("[{index}]");
@@ -345,12 +337,6 @@ fn map_sessions(
                 "{path}.session_json.messages[].createdAt"
             )));
         }
-        message_count = message_count
-            .checked_add(messages.len())
-            .ok_or(LegacyBackupCreationHelperError::LimitExceeded)?;
-        if message_count > MESSAGE_LIMIT {
-            return Err(LegacyBackupCreationHelperError::LimitExceeded);
-        }
         let draft = map_draft(nested.draft, &format!("{path}.session_json.draft"), notices)?;
         let draft_history = nested
             .draft_history
@@ -368,12 +354,6 @@ fn map_sessions(
             &row.uploaded_images_json,
             &format!("{path}.uploaded_images_json"),
         )?;
-        image_count = image_count
-            .checked_add(images.len())
-            .ok_or(LegacyBackupCreationHelperError::LimitExceeded)?;
-        if image_count > IMAGE_LIMIT {
-            return Err(LegacyBackupCreationHelperError::LimitExceeded);
-        }
         let uploaded_images = map_images(images, source, &path, notices)?;
         let materialization = if creation_mode == LegacyBackupCreationMode::Create
             && status == LegacyBackupCreationStatus::Active

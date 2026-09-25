@@ -8,9 +8,6 @@ use crate::{
     LegacyBackupPricingPlan,
 };
 
-const SESSION_LIMIT: usize = 10_000;
-const MESSAGE_LIMIT: usize = 200_000;
-const VARIANT_LIMIT: usize = 400_000;
 const TEXT_LIMIT: usize = 8 * 1024 * 1024;
 const JSON_LIMIT: usize = 128 * 1024 * 1024;
 
@@ -245,9 +242,6 @@ fn map_sessions(
     skipped: &mut Vec<crate::LegacyImportSkip>,
     notices: &mut Vec<LegacyBackupConversionNotice>,
 ) -> Result<Vec<LegacyBackupDirectSession>, LegacyBackupSessionError> {
-    if rows.len() > SESSION_LIMIT {
-        return Err(LegacyBackupSessionError::LimitExceeded);
-    }
     let authored = &source.source.source.source.authored;
     let character_ids = authored
         .characters
@@ -283,8 +277,6 @@ fn map_sessions(
     let mut session_ids = BTreeSet::new();
     let mut message_ids = BTreeSet::new();
     let mut variant_ids = BTreeSet::new();
-    let mut message_count = 0_usize;
-    let mut variant_count = 0_usize;
     let mut sessions = Vec::with_capacity(rows.len());
     for (session_index, row) in rows.into_iter().enumerate() {
         let path = format!("[{session_index}]");
@@ -377,17 +369,6 @@ fn map_sessions(
             skipped,
             notices,
         )?;
-        message_count = message_count
-            .checked_add(messages.len())
-            .ok_or(LegacyBackupSessionError::LimitExceeded)?;
-        variant_count = messages.iter().try_fold(variant_count, |count, message| {
-            count
-                .checked_add(message.variants.len())
-                .ok_or(LegacyBackupSessionError::LimitExceeded)
-        })?;
-        if message_count > MESSAGE_LIMIT || variant_count > VARIANT_LIMIT {
-            return Err(LegacyBackupSessionError::LimitExceeded);
-        }
         let root_session_source_id = row
             .root_session_id
             .clone()
@@ -1407,6 +1388,20 @@ mod tests {
                 reason: crate::LegacyImportSkipReason::MissingMessageVariant,
             }]
         );
+    }
+
+    #[test]
+    fn direct_sessions_have_no_session_count_cap() {
+        let character = id(20);
+        let rows = (0..10_001_u128)
+            .map(|index| {
+                let session_id = id(1_000_000 + index);
+                session(&session_id, &character, None, &session_id, None, Vec::new())
+            })
+            .collect::<Vec<_>>();
+        let plan = plan_legacy_backup_direct_sessions(source(json!(rows), &character))
+            .expect("a library past the old session cap is planned");
+        assert_eq!(plan.sessions.len(), 10_001);
     }
 
     #[test]

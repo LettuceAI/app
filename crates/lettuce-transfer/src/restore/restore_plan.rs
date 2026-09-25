@@ -354,6 +354,23 @@ impl Sections<'_> {
         let (index, _) = self.take(name, schema)?;
         Ok(self.reader.read_section(index)?)
     }
+
+    fn read_document(
+        &mut self,
+        name: &str,
+        schema: &str,
+    ) -> Result<zeroize::Zeroizing<Vec<u8>>, ProviderBackupRestorePlanError> {
+        let mut bytes = self.read(name, schema)?;
+        let mut part = 1;
+        loop {
+            let part_name = crate::backup::backup_graph::backup_data_part_name(name, part);
+            if !self.sections.contains_key(&part_name) {
+                return Ok(bytes);
+            }
+            bytes.extend_from_slice(&self.read(&part_name, schema)?);
+            part += 1;
+        }
+    }
 }
 
 fn content_hash(bytes: &[u8]) -> lettuce_types::ContentHash {
@@ -366,7 +383,7 @@ fn take_json<T: for<'de> Deserialize<'de>>(
     name: &str,
     schema: &str,
 ) -> Result<T, ProviderBackupRestorePlanError> {
-    serde_json::from_slice(&sections.read(name, schema)?)
+    serde_json::from_slice(&sections.read_document(name, schema)?)
         .map_err(|_| ProviderBackupRestorePlanError::InvalidInventory)
 }
 

@@ -17,7 +17,6 @@ use crate::{
 };
 
 const LORA_RECORD_LIMIT: usize = 100_000;
-const PLAYGROUND_RECORD_LIMIT: usize = 100_000;
 const KEYWORD_SOURCES: [&str; 4] = ["none", "metadata", "civitai", "manual"];
 const ARCHITECTURE_SOURCES: [&str; 3] = ["none", "metadata", "civitai"];
 
@@ -219,9 +218,6 @@ fn plan_playground(
     };
     let rows: Vec<PlaygroundRow> =
         serde_json::from_slice(&document.bytes).map_err(|_| malformed("$"))?;
-    if rows.len() > PLAYGROUND_RECORD_LIMIT {
-        return Err(LegacyBackupImageError::LimitExceeded);
-    }
     let mut ids = BTreeSet::new();
     for (index, row) in rows.into_iter().enumerate() {
         if !row.extra.is_empty() {

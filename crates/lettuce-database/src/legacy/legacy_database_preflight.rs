@@ -18,19 +18,17 @@ use lettuce_models::{
 use lettuce_settings::{HeaderName, SecretOwnerId, SecretRef, SecretValue};
 use lettuce_transfer::{
     LEGACY_ASR_RECORD_PLAN_LIMIT, LEGACY_ASR_TABLE_PLAN_LIMIT, LEGACY_DATABASE_SCHEMA_VERSION,
-    LEGACY_LOREBOOK_ENTRIES_PER_BOOK_LIMIT, LEGACY_LOREBOOK_ENTRY_PLAN_LIMIT,
-    LEGACY_LOREBOOK_PLAN_LIMIT, LEGACY_MODEL_PROFILE_PLAN_LIMIT, LEGACY_PERSONA_PLAN_LIMIT,
-    LEGACY_PROMPT_PLAN_LIMIT, LEGACY_PROVIDER_ACCOUNT_PLAN_LIMIT, LegacyAsrCorrectionCandidate,
-    LegacyAsrIgnoredSuggestionCandidate, LegacyAsrPlan, LegacyAsrVocabularyCandidate,
-    LegacyAsrVoiceExampleCandidate, LegacyCrop, LegacyDatabaseInventory,
-    LegacyDatabasePreflightError, LegacyImageRecommendation, LegacyImportProviderSecretSource,
-    LegacyKeywordMatchMode, LegacyLorebookCandidate, LegacyLorebookDetectionPolicy,
-    LegacyLorebookEntryCandidate, LegacyLorebookPlan, LegacyMediaReference,
-    LegacyModelProfileCandidate, LegacyPendingProviderSecret, LegacyPersonaCandidate,
-    LegacyPersonaPlan, LegacyPromptCandidate, LegacyPromptEntryCandidate, LegacyPromptPlan,
-    LegacyProviderAccountCandidate, LegacyProviderAccountOrigin, LegacyProviderModelPlan,
-    LegacyProviderSecretSource, LegacyProviderSecretSourceError, legacy_value_skip,
-    lenient_legacy_json,
+    LEGACY_MODEL_PROFILE_PLAN_LIMIT, LEGACY_PROMPT_PLAN_LIMIT, LEGACY_PROVIDER_ACCOUNT_PLAN_LIMIT,
+    LegacyAsrCorrectionCandidate, LegacyAsrIgnoredSuggestionCandidate, LegacyAsrPlan,
+    LegacyAsrVocabularyCandidate, LegacyAsrVoiceExampleCandidate, LegacyCrop,
+    LegacyDatabaseInventory, LegacyDatabasePreflightError, LegacyImageRecommendation,
+    LegacyImportProviderSecretSource, LegacyKeywordMatchMode, LegacyLorebookCandidate,
+    LegacyLorebookDetectionPolicy, LegacyLorebookEntryCandidate, LegacyLorebookPlan,
+    LegacyMediaReference, LegacyModelProfileCandidate, LegacyPendingProviderSecret,
+    LegacyPersonaCandidate, LegacyPersonaPlan, LegacyPromptCandidate, LegacyPromptEntryCandidate,
+    LegacyPromptPlan, LegacyProviderAccountCandidate, LegacyProviderAccountOrigin,
+    LegacyProviderModelPlan, LegacyProviderSecretSource, LegacyProviderSecretSourceError,
+    legacy_value_skip, lenient_legacy_json,
 };
 use lettuce_types::{
     LorebookEntryId, LorebookId, ModelProfileId, PersonaId, ProviderAccountId, Revision,
@@ -80,7 +78,7 @@ pub fn plan_legacy_personas(
     path: impl AsRef<Path>,
 ) -> Result<LegacyPersonaPlan, LegacyDatabasePreflightError> {
     let connection = open_validated(path)?;
-    plan_legacy_personas_with_limit(&connection, LEGACY_PERSONA_PLAN_LIMIT)
+    plan_legacy_personas_in(&connection)
 }
 
 pub fn plan_legacy_lorebooks(
@@ -88,12 +86,7 @@ pub fn plan_legacy_lorebooks(
 ) -> Result<LegacyLorebookPlan, LegacyDatabasePreflightError> {
     let connection = open_validated(path)?;
     require_table(&connection, "lorebook_entries")?;
-    plan_legacy_lorebooks_with_limits(
-        &connection,
-        LEGACY_LOREBOOK_PLAN_LIMIT,
-        LEGACY_LOREBOOK_ENTRY_PLAN_LIMIT,
-        LEGACY_LOREBOOK_ENTRIES_PER_BOOK_LIMIT,
-    )
+    plan_legacy_lorebooks_in(&connection)
 }
 
 pub fn plan_legacy_provider_models(
@@ -1282,17 +1275,9 @@ pub(crate) fn open_validated(
     Ok(connection)
 }
 
-fn plan_legacy_personas_with_limit(
+fn plan_legacy_personas_in(
     connection: &Connection,
-    limit: u32,
 ) -> Result<LegacyPersonaPlan, LegacyDatabasePreflightError> {
-    let count = count(connection, "personas", "personas")?;
-    if count > u64::from(limit) {
-        return Err(LegacyDatabasePreflightError::LimitExceeded {
-            table: "personas",
-            limit,
-        });
-    }
     let mut statement = connection
         .prepare(
             "SELECT id,title,description,nickname,avatar_path,avatar_crop_x,avatar_crop_y,avatar_crop_scale,design_description,design_reference_image_ids,active_lorebook_ids,is_default,lora_name,lora_strength,created_at,updated_at FROM personas ORDER BY created_at ASC,id ASC",
@@ -1320,7 +1305,7 @@ fn plan_legacy_personas_with_limit(
             ))
         })
         .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
-    let mut personas = Vec::with_capacity(count as usize);
+    let mut personas = Vec::new();
     let mut skipped = Vec::new();
     let mut default_persona_id = None;
     for row in rows {
@@ -1424,20 +1409,9 @@ fn plan_legacy_personas_with_limit(
     })
 }
 
-fn plan_legacy_lorebooks_with_limits(
+fn plan_legacy_lorebooks_in(
     connection: &Connection,
-    lorebook_limit: u32,
-    entry_limit: u32,
-    entries_per_book_limit: u32,
 ) -> Result<LegacyLorebookPlan, LegacyDatabasePreflightError> {
-    let entries_per_book_limit_usize = usize::try_from(entries_per_book_limit).map_err(|_| {
-        LegacyDatabasePreflightError::LimitExceeded {
-            table: "lorebook_entries_per_book",
-            limit: entries_per_book_limit,
-        }
-    })?;
-    require_count_limit(connection, "lorebooks", lorebook_limit)?;
-    require_count_limit(connection, "lorebook_entries", entry_limit)?;
     let mut statement = connection
         .prepare(
             "SELECT id,name,avatar_path,keyword_detection_mode,created_at,updated_at FROM lorebooks ORDER BY created_at ASC,id ASC",
@@ -1545,12 +1519,6 @@ fn plan_legacy_lorebooks_with_limits(
                 parent_table: "lorebooks",
             });
         };
-        if lorebooks[index].entries.len() >= entries_per_book_limit_usize {
-            return Err(LegacyDatabasePreflightError::LimitExceeded {
-                table: "lorebook_entries_per_book",
-                limit: entries_per_book_limit,
-            });
-        }
         let enabled = legacy_flag(enabled, "enabled")?;
         let always_active = legacy_flag(always_active, "always_active")?;
         let case_sensitive = legacy_flag(case_sensitive, "case_sensitive")?;
@@ -3421,22 +3389,6 @@ mod tests {
     }
 
     #[test]
-    fn persona_plan_enforces_its_record_limit_before_loading_rows() {
-        let path = legacy_database(i64::from(LEGACY_DATABASE_SCHEMA_VERSION));
-        let connection = Connection::open(&path).expect("open legacy database");
-
-        assert_eq!(
-            plan_legacy_personas_with_limit(&connection, 0),
-            Err(LegacyDatabasePreflightError::LimitExceeded {
-                table: "personas",
-                limit: 0
-            })
-        );
-        drop(connection);
-        std::fs::remove_file(path).expect("remove legacy database");
-    }
-
-    #[test]
     fn lorebook_plan_preserves_roots_entries_and_stable_order() {
         let path = legacy_database(i64::from(LEGACY_DATABASE_SCHEMA_VERSION));
         let connection = Connection::open(&path).expect("open legacy database");
@@ -3598,26 +3550,12 @@ mod tests {
                 [lorebook_id.to_string()],
             )
             .expect("insert lorebook");
-        assert_eq!(
-            plan_legacy_lorebooks_with_limits(&connection, 0, 1, 1),
-            Err(LegacyDatabasePreflightError::LimitExceeded {
-                table: "lorebooks",
-                limit: 0
-            })
-        );
         connection
             .execute(
                 "INSERT INTO lorebook_entries (id,lorebook_id,content,created_at,updated_at) VALUES (?1,?2,'Entry',1,1)",
                 rusqlite::params![LorebookEntryId::new().to_string(), lorebook_id.to_string()],
             )
             .expect("insert entry");
-        assert_eq!(
-            plan_legacy_lorebooks_with_limits(&connection, 1, 0, 1),
-            Err(LegacyDatabasePreflightError::LimitExceeded {
-                table: "lorebook_entries",
-                limit: 0
-            })
-        );
         drop(connection);
         std::fs::remove_file(path).expect("remove legacy database");
     }

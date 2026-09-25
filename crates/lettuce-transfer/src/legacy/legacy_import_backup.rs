@@ -2,8 +2,6 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
-pub const MAX_BACKUP_LEGACY_IMPORT_ROWS: usize = 2_000_000;
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum BackupSqlValue {
@@ -49,7 +47,6 @@ pub fn backup_sql_text<'a>(row: &'a BackupSqlRow, column: &str) -> Option<&'a st
 
 impl LegacyImportBackup {
     pub fn canonicalize_and_validate(&mut self) -> Result<(), LegacyImportBackupError> {
-        let mut row_count = self.usage_records.len();
         let mut run_ids = BTreeSet::new();
         for entry in &self.runs {
             let run_id =
@@ -68,16 +65,10 @@ impl LegacyImportBackup {
                 .chain(&entry.provider_model_results)
                 .chain(&entry.asr_results)
             {
-                row_count = row_count
-                    .checked_add(1)
-                    .ok_or(LegacyImportBackupError::LimitExceeded)?;
                 if backup_sql_text(row, "run_id") != Some(run_id) {
                     return Err(LegacyImportBackupError::InvalidData);
                 }
             }
-        }
-        if row_count.saturating_add(self.runs.len()) > MAX_BACKUP_LEGACY_IMPORT_ROWS {
-            return Err(LegacyImportBackupError::LimitExceeded);
         }
         if self.usage_records.iter().any(|row| {
             backup_sql_text(row, "run_id").is_none() || backup_sql_text(row, "source_id").is_none()

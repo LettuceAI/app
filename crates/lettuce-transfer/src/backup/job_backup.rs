@@ -5,9 +5,6 @@ use lettuce_types::{JobId, UsageEventId};
 use serde::{Deserialize, Serialize};
 
 pub const JOB_BACKUP_VERSION: u32 = 1;
-pub const MAX_BACKUP_JOBS: usize = 200_000;
-pub const MAX_BACKUP_JOB_EVENTS: usize = 2_000_000;
-pub const MAX_BACKUP_JOB_INFERENCE_EVENTS: usize = 1_000_000;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -32,21 +29,12 @@ pub struct BackupJobInference {
 
 impl JobBackup {
     pub fn canonicalize_and_validate(&mut self) -> Result<(), JobBackupError> {
-        if self.version != JOB_BACKUP_VERSION || self.jobs.len() > MAX_BACKUP_JOBS {
-            return Err(if self.jobs.len() > MAX_BACKUP_JOBS {
-                JobBackupError::LimitExceeded
-            } else {
-                JobBackupError::InvalidData
-            });
+        if self.version != JOB_BACKUP_VERSION {
+            return Err(JobBackupError::InvalidData);
         }
         self.jobs
             .sort_by_key(|job| (job.snapshot.created_at, job.snapshot.id));
         InMemoryJobStore::restore(self.jobs.clone()).map_err(|_| JobBackupError::InvalidData)?;
-        let event_count = self.jobs.iter().try_fold(0_usize, |count, job| {
-            count
-                .checked_add(job.events.len())
-                .ok_or(JobBackupError::LimitExceeded)
-        })?;
         self.inference
             .sort_by_key(|entry| (entry.evidence.admitted_at, entry.evidence.id));
         let mut evidence_ids = BTreeSet::new();
@@ -92,11 +80,6 @@ impl JobBackup {
             if !valid || !job_ids.contains(&job_id) || !bound_jobs.insert(job_id) {
                 return Err(JobBackupError::InvalidData);
             }
-        }
-        if event_count > MAX_BACKUP_JOB_EVENTS
-            || self.inference.len() > MAX_BACKUP_JOB_INFERENCE_EVENTS
-        {
-            return Err(JobBackupError::LimitExceeded);
         }
         Ok(())
     }

@@ -4,7 +4,6 @@ use lettuce_types::{GenerationAttemptId, UsageEventId};
 use serde::{Deserialize, Serialize};
 
 pub const CONVERSATION_USAGE_BACKUP_VERSION: u32 = 1;
-pub const MAX_BACKUP_CONVERSATION_USAGE_EVENTS: usize = 1_000_000;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -29,9 +28,6 @@ impl ConversationUsageBackup {
     ) -> Result<(), ConversationUsageBackupError> {
         if self.version != CONVERSATION_USAGE_BACKUP_VERSION {
             return Err(ConversationUsageBackupError::InvalidData);
-        }
-        if self.events.len() > MAX_BACKUP_CONVERSATION_USAGE_EVENTS {
-            return Err(ConversationUsageBackupError::LimitExceeded);
         }
         self.events
             .sort_by_key(|entry| (entry.event.record.recorded_at, entry.event.id));

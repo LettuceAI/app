@@ -8,8 +8,6 @@ use lettuce_types::{ConversationId, GenerationAttemptId, GenerationTurnId, Usage
 use serde::{Deserialize, Serialize};
 
 pub const CONVERSATION_OUTBOX_BACKUP_VERSION: u32 = 1;
-pub const MAX_BACKUP_CONVERSATION_OPERATIONS: usize = 1_000_000;
-pub const MAX_BACKUP_CONVERSATION_OUTBOX_EVENTS: usize = 1_000_000;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -58,8 +56,6 @@ impl ConversationOutboxBackup {
             .collect::<BTreeMap<_, _>>();
         let mut conversation_ids = BTreeSet::new();
         let mut operation_ids = BTreeSet::new();
-        let mut operation_count = 0_usize;
-        let mut event_count = 0_usize;
         for journal in &mut self.conversations {
             let history = history
                 .get(&journal.conversation_id)
@@ -76,12 +72,6 @@ impl ConversationOutboxBackup {
             journal
                 .events
                 .sort_by_key(|event| (event.sequence, event.id));
-            operation_count = operation_count
-                .checked_add(journal.operations.len())
-                .ok_or(ConversationOutboxBackupError::LimitExceeded)?;
-            event_count = event_count
-                .checked_add(journal.events.len())
-                .ok_or(ConversationOutboxBackupError::LimitExceeded)?;
             let references = ConversationReferences::new(history, runtime);
             let mut operation_keys = BTreeSet::new();
             let mut operations = BTreeMap::new();
@@ -126,11 +116,6 @@ impl ConversationOutboxBackup {
             ) {
                 return Err(ConversationOutboxBackupError::InvalidData);
             }
-        }
-        if operation_count > MAX_BACKUP_CONVERSATION_OPERATIONS
-            || event_count > MAX_BACKUP_CONVERSATION_OUTBOX_EVENTS
-        {
-            return Err(ConversationOutboxBackupError::LimitExceeded);
         }
         Ok(())
     }

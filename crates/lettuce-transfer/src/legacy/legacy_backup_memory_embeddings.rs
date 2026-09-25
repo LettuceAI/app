@@ -8,8 +8,6 @@ use crate::{
     LegacyBackupConversionNoticeKind, LegacyBackupDocumentKind,
 };
 
-const OWNER_LIMIT: usize = 30_000;
-const MEMORY_LIMIT: usize = 1_000_000;
 const JSON_LIMIT: usize = 256 * 1024 * 1024;
 const TEXT_LIMIT: usize = 16 * 1024;
 
@@ -220,14 +218,10 @@ fn map_owners(
     source: &LegacyBackupCompanionSharedMemoryPlan,
     notices: &mut Vec<LegacyBackupConversionNotice>,
 ) -> Result<Vec<LegacyBackupMemoryEmbeddingOwner>, LegacyBackupMemoryEmbeddingError> {
-    if rows.len() > OWNER_LIMIT {
-        return Err(LegacyBackupMemoryEmbeddingError::LimitExceeded);
-    }
     let group = &source.source.source;
     let direct = &group.source;
     let embedded = embedded_copies(source);
     let mut identities = BTreeSet::new();
-    let mut memory_count = 0usize;
     let mut owners = Vec::with_capacity(rows.len());
     for (index, row) in rows.into_iter().enumerate() {
         let path = format!("[{index}]");
@@ -267,12 +261,6 @@ fn map_owners(
         let parsed: Vec<MemoryRow> = parse_json(&row.memory_embeddings, &path)?;
         if parsed.is_empty() {
             return Err(malformed(format!("{path}.memory_embeddings")));
-        }
-        memory_count = memory_count
-            .checked_add(parsed.len())
-            .ok_or(LegacyBackupMemoryEmbeddingError::LimitExceeded)?;
-        if memory_count > MEMORY_LIMIT {
-            return Err(LegacyBackupMemoryEmbeddingError::LimitExceeded);
         }
         let source_message_ids = source_message_ids(kind, &row.session_id, source);
         let memories = map_memories(parsed, &source_message_ids, &path, notices)?;

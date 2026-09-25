@@ -25,8 +25,6 @@ use crate::{
     LegacyMediaReference, LegacyPersonaCandidate, LegacyPersonaPlan,
 };
 
-const CHARACTER_LIMIT: usize = 10_000;
-const SCENE_LIMIT: usize = 100_000;
 const CHILD_LIMIT: usize = 10_000;
 
 #[derive(Debug)]
@@ -366,8 +364,6 @@ struct GroupRow {
     extra: BTreeMap<String, Value>,
 }
 
-const GROUP_SESSION_LIMIT: usize = 10_000;
-
 /// A legacy group session saved before sessions linked a reusable group. The
 /// legacy v42 migration created a group from such a session under the session
 /// id and linked it; a backup or database that skipped that migration gets the
@@ -461,31 +457,16 @@ struct GroupSceneVariantRow {
 pub fn plan_legacy_backup_authored(
     mut configuration: LegacyBackupConfigurationPlan,
 ) -> Result<LegacyBackupAuthoredPlan, LegacyBackupAuthoredError> {
-    let persona_rows: Vec<PersonaRow> = document_rows(
-        &configuration,
-        LegacyBackupDocumentKind::Personas,
-        CHARACTER_LIMIT,
-    )?;
-    let lorebook_rows: Vec<LorebookRow> = document_rows(
-        &configuration,
-        LegacyBackupDocumentKind::Lorebooks,
-        CHARACTER_LIMIT,
-    )?;
-    let character_rows: Vec<CharacterRow> = document_rows(
-        &configuration,
-        LegacyBackupDocumentKind::Characters,
-        CHARACTER_LIMIT,
-    )?;
-    let mut group_rows: Vec<GroupRow> = document_rows(
-        &configuration,
-        LegacyBackupDocumentKind::GroupCharacters,
-        CHARACTER_LIMIT,
-    )?;
-    let unlinked_sessions: Vec<UnlinkedGroupSessionRow> = document_rows(
-        &configuration,
-        LegacyBackupDocumentKind::GroupSessions,
-        GROUP_SESSION_LIMIT,
-    )?;
+    let persona_rows: Vec<PersonaRow> =
+        document_rows(&configuration, LegacyBackupDocumentKind::Personas)?;
+    let lorebook_rows: Vec<LorebookRow> =
+        document_rows(&configuration, LegacyBackupDocumentKind::Lorebooks)?;
+    let character_rows: Vec<CharacterRow> =
+        document_rows(&configuration, LegacyBackupDocumentKind::Characters)?;
+    let mut group_rows: Vec<GroupRow> =
+        document_rows(&configuration, LegacyBackupDocumentKind::GroupCharacters)?;
+    let unlinked_sessions: Vec<UnlinkedGroupSessionRow> =
+        document_rows(&configuration, LegacyBackupDocumentKind::GroupSessions)?;
     let listed_groups = group_rows
         .iter()
         .map(|row| row.id.to_ascii_lowercase())
@@ -499,11 +480,8 @@ pub fn plan_legacy_backup_authored(
             })
             .map(UnlinkedGroupSessionRow::into_group_row),
     );
-    let explicit_binding_rows: Option<Vec<CharacterLorebookRow>> = optional_rows(
-        &configuration,
-        LegacyBackupDocumentKind::CharacterLorebooks,
-        SCENE_LIMIT,
-    )?;
+    let explicit_binding_rows: Option<Vec<CharacterLorebookRow>> =
+        optional_rows(&configuration, LegacyBackupDocumentKind::CharacterLorebooks)?;
     for kind in [
         LegacyBackupDocumentKind::Personas,
         LegacyBackupDocumentKind::Lorebooks,
@@ -699,7 +677,6 @@ pub(crate) fn map_lorebooks(
     let mut skipped = Vec::new();
     let mut books = Vec::with_capacity(rows.len());
     let mut book_ids = BTreeSet::new();
-    let mut entry_count = 0usize;
     for row in rows {
         report_extra(LegacyBackupDocumentKind::Lorebooks, &row.extra, notices);
         let id: LorebookId = parse_id(&row.id, LegacyBackupDocumentKind::Lorebooks, "id")?;
@@ -710,15 +687,6 @@ pub(crate) fn map_lorebooks(
             row.updated_at,
             LegacyBackupDocumentKind::Lorebooks,
         )?;
-        if row.entries.len() > CHILD_LIMIT {
-            return Err(limit(LegacyBackupDocumentKind::Lorebooks));
-        }
-        entry_count = entry_count
-            .checked_add(row.entries.len())
-            .ok_or_else(|| limit(LegacyBackupDocumentKind::Lorebooks))?;
-        if entry_count > SCENE_LIMIT {
-            return Err(limit(LegacyBackupDocumentKind::Lorebooks));
-        }
         let detection_policy = match row.keyword_detection_mode.as_str() {
             "recent_message_window" => LegacyLorebookDetectionPolicy::RecentMessageWindow,
             "latest_user_message" => LegacyLorebookDetectionPolicy::LatestUserMessage,
@@ -1206,15 +1174,10 @@ fn map_scenes(
     notices: &mut Vec<LegacyBackupConversionNotice>,
 ) -> Result<Vec<LegacyBackupSceneCandidate>, LegacyBackupAuthoredError> {
     let mut ids = BTreeSet::new();
-    let mut total_variants = 0usize;
     let mut scenes = Vec::with_capacity(rows.len());
     for (ordinal, row) in rows.into_iter().enumerate() {
         report_extra(LegacyBackupDocumentKind::Characters, &row.extra, notices);
         if row.variants.len() > CHILD_LIMIT {
-            return Err(limit(LegacyBackupDocumentKind::Characters));
-        }
-        total_variants += row.variants.len();
-        if total_variants > SCENE_LIMIT {
             return Err(limit(LegacyBackupDocumentKind::Characters));
         }
         let id: SceneId = parse_id(&row.id, LegacyBackupDocumentKind::Characters, "scenes.id")?;
@@ -2029,15 +1992,13 @@ fn validate_starter_owners(
 fn document_rows<T: for<'de> Deserialize<'de>>(
     configuration: &LegacyBackupConfigurationPlan,
     kind: LegacyBackupDocumentKind,
-    max: usize,
 ) -> Result<Vec<T>, LegacyBackupAuthoredError> {
-    Ok(optional_rows(configuration, kind, max)?.unwrap_or_default())
+    Ok(optional_rows(configuration, kind)?.unwrap_or_default())
 }
 
 fn optional_rows<T: for<'de> Deserialize<'de>>(
     configuration: &LegacyBackupConfigurationPlan,
     kind: LegacyBackupDocumentKind,
-    max: usize,
 ) -> Result<Option<Vec<T>>, LegacyBackupAuthoredError> {
     let Some(document) = configuration
         .source
@@ -2049,9 +2010,6 @@ fn optional_rows<T: for<'de> Deserialize<'de>>(
     };
     let rows =
         serde_json::from_slice::<Vec<T>>(&document.bytes).map_err(|_| malformed(kind, "$"))?;
-    if rows.len() > max {
-        return Err(limit(kind));
-    }
     Ok(Some(rows))
 }
 
