@@ -10,9 +10,11 @@ impl Database {
     /// Copies device-local state from the previous database file: installed
     /// Whisper model manifests; the models folder unless the new file names
     /// one; the local LoRA library,
-    /// the local generation metrics, the app shell's install state, the device
-    /// settings and each day of app usage unless the new file already has
-    /// them (an imported legacy install's); and the discovered voices and
+    /// the local generation metrics, the app shell's install state and the
+    /// device settings unless the new file already has them (an imported
+    /// legacy install's); each day of app usage, keeping the larger active
+    /// time where both files have the day, as the legacy import does; and the
+    /// discovered voices and
     /// llama.cpp runtime reports of audio providers and models that exist in
     /// this database.
     ///
@@ -96,7 +98,11 @@ impl Database {
                 [],
             )?;
             transaction.execute(
-                "INSERT OR IGNORE INTO main.app_usage_days SELECT * FROM previous.app_usage_days",
+                "INSERT INTO main.app_usage_days (day, active_ms, updated_at)
+                 SELECT day, active_ms, updated_at FROM previous.app_usage_days WHERE true
+                 ON CONFLICT(day) DO UPDATE SET
+                    active_ms = max(app_usage_days.active_ms, excluded.active_ms),
+                    updated_at = max(app_usage_days.updated_at, excluded.updated_at)",
                 [],
             )?;
             transaction.execute(

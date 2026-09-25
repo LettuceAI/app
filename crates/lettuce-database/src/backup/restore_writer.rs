@@ -877,12 +877,30 @@ pub(crate) mod tests {
                 .llm_models_dir,
             None
         );
+        source
+            .add_app_usage("2026-09-20", 500, lettuce_types::TimestampMillis::new(2))
+            .expect("usage after the backup");
+        source
+            .add_app_usage("2026-09-21", 40, lettuce_types::TimestampMillis::new(3))
+            .expect("another day");
         restored
             .carry_device_local_state_from(&source_path)
             .expect("carry device-local state");
         assert_eq!(
             restored.load_device_settings().expect("carried settings"),
             settings
+        );
+        assert_eq!(
+            restored
+                .app_usage_days()
+                .expect("usage days")
+                .into_iter()
+                .map(|day| (day.day, day.active_ms))
+                .collect::<Vec<_>>(),
+            vec![
+                ("2026-09-20".to_owned(), 1_500),
+                ("2026-09-21".to_owned(), 40)
+            ]
         );
         drop((source, restored));
         std::fs::remove_dir_all(root).expect("remove fixture");
