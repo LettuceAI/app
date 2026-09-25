@@ -1981,14 +1981,27 @@ lorebook as World Info or a USC card, entries in their order. The old app's
 frontend named a nameless file after its filename; the command layer does that.
 
 Character files: `AppBackend::character_files(media_store)` reads any character
-file into a package (`read`) and imports it as a new character (`import`):
-avatar, background and scene background data URLs are stored as media assets
-first (a failure only leaves that image off, like legacy), then the bundled
-lorebooks, the character, its lorebook bindings and its scheduled notes are
-written in one transaction. The host downloads a remote avatar (legacy's
-`autoDownloadCharacterCardAvatars`) and replaces `avatar_data` with the data
-URL before importing; a remote background is skipped like legacy. Images are
-stored as given instead of re-encoded to WebP.
+file into a package (`read` for text, `read_file(filename, bytes)` for a file
+whose `.png` card is read from its `ccv3`/`chara` text chunk and whose picture
+becomes the avatar, like legacy `character_import_preview_from_bytes`) and
+imports it as a new character (`import`): avatar, background and scene
+background data URLs are stored as media assets first (a failure only leaves
+that image off, like legacy), then the bundled lorebooks, the card's embedded
+`character_book` as a new lorebook bound last (legacy's character form rules:
+keys plus secondary keys, `constant` always active, `insertion_order` as the
+order), the character, its lorebook bindings and its scheduled notes are
+written in one transaction. Card tags are split on commas, trimmed and blank
+ones dropped, blank sources dropped and localized creator notes that are not
+strings skipped, as the old character form saved them. A remote background is
+skipped like legacy. Images are stored as given instead of re-encoded to WebP.
+
+Deferred to phase (c): downloading a remote (`http`/`https`) avatar URL in a
+character or persona file. Legacy downloaded character avatars when
+`autoDownloadCharacterCardAvatars` was on and persona avatars always; today
+the remote URL is dropped and the file imports without an avatar. The
+download policy (the setting, the fetch through the shared network client,
+then storing the bytes) belongs in the character and persona file use cases,
+not the Tauri shell.
 `export(character_id, format)` writes the character as UEC, Chara Card V3 or
 V2 with its avatar, background and scene backgrounds inlined as data URLs of
 their stored bytes and mime type; an image that cannot be read is left out,
@@ -2000,10 +2013,11 @@ avatar data URL stored first and left off if it cannot be, the file's
 lorebooks bound in order when they are active here and recorded otherwise,
 made the default persona when the file says so) and exports a stored persona
 as a v2 persona UEC with its avatar inlined and its enabled lorebooks in
-binding order (`export`). Personas are sync-journaled, so import goes through
-the persona and binding repositories step by step. The host downloads a remote
-avatar URL (legacy did so unconditionally for personas) and passes a data URL.
-Differences from legacy: lorebook ids that do not exist are not stored.
+binding order (`export`). The persona, its lorebook bindings and the default
+change are written in one transaction like legacy, so a failure leaves nothing
+and a retry writes one persona. A missing or empty description imports as an
+empty description, like legacy. Differences from legacy: lorebook ids that do
+not exist are not stored.
 
 Chat files: `AppBackend::chat_files().import_direct(raw, file_stem,
 character_id, now)` imports a SillyTavern JSONL transcript as a new chat with

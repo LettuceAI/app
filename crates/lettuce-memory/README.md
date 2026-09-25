@@ -33,10 +33,10 @@ change set is admitted with the run (`NewDynamicMemoryRunAttempt::
 cycle_start_change`, validated against the post-decay `starting_memory`) so a
 replay never decays twice. Legacy also restored pinned-but-cold items to hot
 there; the snapshot invariant already rejects that state, so `restored_pinned`
-stays zero for stored spaces. `MemoryPolicy` carries `decay_rate`. A round
-still trims to the storage ceiling (`MAX_MEMORY_ITEMS`, 4096) so a space whose
-`max_entries` equals the ceiling cannot fail validation mid-cycle; legacy had no
-ceiling. The verified scenarios are pinned in
+stays zero for stored spaces. `MemoryPolicy` carries `decay_rate`. A memory
+space holds any number of items, like legacy; only the cycle's policy pass
+trims to `max_entries`, which `MAX_MEMORY_ITEMS` (4096) bounds as a setting.
+The verified scenarios are pinned in
 `fixtures/legacy-import/dynamic-memory-tool-scenarios-v1.json`.
 Create calls also preserve the model-selected transcript message ID on the
 authoritative memory item. This source identity is optional for the shared

@@ -92,6 +92,13 @@ uncompilable keyword as never matching). Earlier explicit 256 KiB limits and
 raw-keyword validation rejected patterns legacy matched (`\w{100}`, a
 case-insensitive `hero\Z`) and accepted ones the matcher could never compile.
 
+Like legacy, nothing is limited by count: a lorebook holds any number of
+entries and keywords, a turn activates any number of lorebooks and entries,
+and a prompt holds any number of entries. Only bytes are bounded: an entry
+title, keyword or content by the 8 MiB prose limit (so a long World Info key
+or title imports), a lorebook's authored text by 64 MiB and a turn's active
+lorebook content by 4 MiB.
+
 Token counts: `count_tokens_batch` measures each text with the o200k encoding
 (`tiktoken-rs` 0.11, special tokens read as plain text), as the old
 `tokens_count_batch` did for the lorebook trigger preview.
