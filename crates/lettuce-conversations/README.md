@@ -230,6 +230,13 @@ user message (`group_chat_manager/mod.rs` 6430-6443); an explicit speaker
 missing from the cast is an error, never a panic. Round robin continues after
 the last speaker when it is still selectable and restarts at the first
 selectable member otherwise (`selection.rs` 449-467).
+A director adds a user message without a reply through
+`ConversationRepository::append_user_message` (legacy
+`group_chat_add_user_message`) and then continues with a forced speaker.
+Adding a character to an existing group conversation (legacy
+`group_session_add_character`) is not implemented yet: it needs a member
+launch snapshot and participant insert behind a new command, deferred to the
+command-surface phase.
 An LLM group launch may retain a dedicated speaker-selection model snapshot.
 The optional field is backward-compatible for existing snapshot documents and
 is valid only with the LLM policy. Its protected model artifact freezes the

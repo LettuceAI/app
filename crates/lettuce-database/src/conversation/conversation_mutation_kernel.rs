@@ -105,6 +105,7 @@ pub(crate) fn operation_kind_name(value: OperationKind) -> &'static str {
         OperationKind::AttachJob => "attach_job",
         OperationKind::PrepareGeneration => "prepare_generation",
         OperationKind::ResolveSpeaker => "resolve_speaker",
+        OperationKind::AppendMessage => "append_message",
     }
 }
 
@@ -697,7 +698,7 @@ mod tests {
         (database, conversation_id, branch_id)
     }
 
-    const OPERATION_KINDS: [OperationKind; 24] = [
+    const OPERATION_KINDS: [OperationKind; 25] = [
         OperationKind::Create,
         OperationKind::Send,
         OperationKind::Continue,
@@ -722,6 +723,7 @@ mod tests {
         OperationKind::Settings,
         OperationKind::AttachJob,
         OperationKind::ResolveSpeaker,
+        OperationKind::AppendMessage,
     ];
 
     #[test]

@@ -147,6 +147,7 @@ pub(crate) fn operation_kind(value: &str) -> Result<OperationKind, ConversationR
         "settings" => OperationKind::Settings,
         "attach_job" => OperationKind::AttachJob,
         "resolve_speaker" => OperationKind::ResolveSpeaker,
+        "append_message" => OperationKind::AppendMessage,
         "prepare_generation" => OperationKind::PrepareGeneration,
         _ => return Err(ConversationRepositoryError::Storage),
     })

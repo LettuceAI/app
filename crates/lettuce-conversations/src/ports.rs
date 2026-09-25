@@ -348,6 +348,7 @@ pub type CancelGenerationResult = SettleCancellationResult;
 pub type AttachAttemptJobResult = MutationCommit<GenerationAttempt>;
 pub type ChooseCandidateResult = MutationCommit<Message>;
 pub type UpdateMessageFlagsResult = MutationCommit<Message>;
+pub type AppendUserMessageResult = MutationCommit<Message>;
 pub type ArchiveConversationResult = MutationCommit<Conversation>;
 pub type RestoreConversationResult = MutationCommit<Conversation>;
 
@@ -857,6 +858,7 @@ pub enum OperationKind {
     AttachJob,
     PrepareGeneration,
     ResolveSpeaker,
+    AppendMessage,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1062,6 +1064,13 @@ pub trait ConversationRepository: ConversationCreator {
         command: &ContinueConversation,
         now: TimestampMillis,
     ) -> Result<ContinueConversationResult, ConversationRepositoryError>;
+    /// Appends the user message of `command` to its branch without starting a
+    /// generation; a director then continues with a chosen speaker.
+    fn append_user_message(
+        &self,
+        command: &SendConversation,
+        now: TimestampMillis,
+    ) -> Result<AppendUserMessageResult, ConversationRepositoryError>;
     fn begin_regenerate(
         &self,
         command: &RegenerateCandidate,

@@ -309,6 +309,17 @@ impl<R: ConversationRepository> ConversationManager<R> {
         self.repository.begin_send(command, now).map_err(Into::into)
     }
 
+    pub fn append_user_message(
+        &self,
+        command: &crate::commands::SendConversation,
+        now: TimestampMillis,
+    ) -> Result<MutationCommit<crate::Message>, ConversationServiceError> {
+        ConversationMutation::Send(command.clone()).validate()?;
+        self.repository
+            .append_user_message(command, now)
+            .map_err(Into::into)
+    }
+
     pub fn begin_continue(
         &self,
         command: &crate::commands::ContinueConversation,

@@ -2178,6 +2178,61 @@ impl ConversationRepository for Database {
         begin_continue_with_hook(self, command, now, |_, _| Ok(()))
     }
 
+    fn append_user_message(
+        &self,
+        command: &SendConversation,
+        now: TimestampMillis,
+    ) -> Result<lettuce_conversations::AppendUserMessageResult, ConversationRepositoryError> {
+        command
+            .validate()
+            .map_err(ConversationRepositoryError::Invalid)?;
+        kernel::run_mutation(
+            self,
+            command.conversation_id,
+            OperationKind::AppendMessage,
+            &command.operation,
+            now,
+            |transaction, context| {
+                let conversation = kernel::cas_conversation(
+                    transaction,
+                    context.conversation_id,
+                    command.expected_revision,
+                )?;
+                kernel::require_active(&conversation)?;
+                require_active_branch(transaction, context.conversation_id, command.branch_id)?;
+                require_no_live_turn(transaction, context.conversation_id)?;
+                let parent_message_id =
+                    branch_parent(transaction, context.conversation_id, command.branch_id)?;
+                let (message_id, revision_id) =
+                    insert_user_message(transaction, command, parent_message_id, context.now)?;
+                let revision =
+                    kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
+                Ok(kernel::Staged {
+                    value: load_message(transaction, context.conversation_id, message_id)?,
+                    result: OperationResultRef::Message(message_id),
+                    events: vec![kernel::StagedEvent {
+                        conversation_revision: revision,
+                        at: context.now,
+                        event: ConversationOutboxEvent::MessageCommitted {
+                            conversation_id: context.conversation_id,
+                            branch_id: command.branch_id,
+                            message_id,
+                            revision_id: Some(revision_id),
+                            candidate_id: None,
+                            at: context.now,
+                        },
+                    }],
+                })
+            },
+            |transaction, operation| match operation.result {
+                OperationResultRef::Message(message_id) => {
+                    load_message(transaction, command.conversation_id, message_id)
+                }
+                _ => Err(ConversationRepositoryError::Conflict),
+            },
+        )
+    }
+
     fn begin_regenerate(
         &self,
         command: &RegenerateCandidate,
@@ -7436,6 +7491,51 @@ mod tests {
                 .resolve_group_speaker(&explicit_muted, TimestampMillis::new(31))
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn a_director_appends_a_user_message_then_continues_with_a_chosen_speaker() {
+        let mut fixture = group_fixture();
+        let chosen = fixture.characters[1];
+        let command = send_command(&fixture, "director-append", "cd", text("Look out!"));
+        let appended = fixture
+            .database
+            .append_user_message(&command, TimestampMillis::new(20))
+            .expect("legacy group_chat_add_user_message saves the message only");
+        assert_eq!(appended.value.role, MessageRole::User);
+        let turns: i64 = scalar(
+            &fixture.database,
+            "SELECT count(*) FROM conversation_turns WHERE conversation_id = ?1",
+            &fixture.conversation_id.to_string(),
+        );
+        assert_eq!(turns, 0, "no generation starts");
+        let replay = fixture
+            .database
+            .append_user_message(&command, TimestampMillis::new(21))
+            .expect("replay");
+        assert_eq!(replay.value.id, appended.value.id);
+        fixture.revision = conversation_revision(&fixture);
+        let continued = fixture
+            .database
+            .begin_continue(
+                &ContinueConversation {
+                    conversation_id: fixture.conversation_id,
+                    branch_id: fixture.branch_id,
+                    expected_revision: fixture.revision,
+                    forced_speaker: Some(chosen),
+                    swap_roles: false,
+                    operation: token("director-continue", "cd"),
+                },
+                TimestampMillis::new(30),
+            )
+            .expect("continue with the chosen speaker");
+        assert_eq!(
+            continued.value.turn.input,
+            GenerationInput::ExistingHead {
+                head_message_id: appended.value.id
+            }
+        );
+        assert_eq!(continued.value.turn.forced_speaker, Some(chosen));
     }
 
     #[test]
