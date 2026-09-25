@@ -70,8 +70,7 @@ impl StreamFramer {
     }
 
     /// The record left when the body ended without its terminating blank line
-    /// (or newline). Legacy read streams line by line, so a final unterminated
-    /// record still counted; a body with no SSE fields at all (a plain JSON
+    /// (or newline) still counts; a body with no SSE fields at all (a plain JSON
     /// answer to a stream request) is returned whole as the record's data.
     pub(crate) fn finish(&mut self) -> Result<Option<StreamRecord>, FramingError> {
         let record = std::mem::take(&mut self.record);

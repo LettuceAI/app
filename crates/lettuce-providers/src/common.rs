@@ -210,8 +210,8 @@ impl AdapterError {
     }
 }
 
-/// Legacy `extract_error_message`: a body that is not JSON is the message
-/// itself, and a JSON body without `error`/`message` text (FastAPI
+/// The code and message of an error body. A body that is not JSON is the
+/// message itself, and a JSON body without `error`/`message` text (FastAPI
 /// `{"detail": ...}` and similar) yields its joined text fragments.
 pub(crate) fn provider_error_details(body: &[u8]) -> (Option<String>, Option<String>) {
     let Ok(value) = serde_json::from_slice::<serde_json::Value>(body) else {
@@ -414,10 +414,10 @@ pub(crate) fn validate_supported_reasoning(
     Ok(())
 }
 
-/// Legacy `build_chat_request` applied the caching flag only to providers
-/// with explicit caching and read the stored TTL per provider: cache-control
-/// providers take `1h` or else five minutes, Gemini `5min` or else one hour,
-/// OpenAI `24h` or else in-memory. Every other provider ignored the flag.
+/// Fits the caching request to what the provider supports: providers without
+/// explicit caching drop it; cache-control providers keep one hour or else
+/// use five minutes, explicit resources keep five minutes or else use one
+/// hour, and request retention keeps 24 hours or else uses in-memory.
 pub(crate) fn normalize_prompt_caching(
     support: crate::descriptor::PromptCachingSupport,
     parameters: &mut ResolvedChatParameters,
@@ -547,8 +547,8 @@ pub(crate) async fn load_secret_headers<S: SecretStore + ?Sized>(
     Ok(headers)
 }
 
-/// Legacy custom adapters left the auth header or query parameter off when
-/// the account had no key, so keyless local servers work in every mode.
+/// Custom accounts send their header, bearer or query auth only when they
+/// have a key, so keyless local servers work in every mode.
 pub(crate) fn custom_auth_plan(auth: &lettuce_models::CustomAuth) -> AuthPlan {
     let plan = match auth {
         lettuce_models::CustomAuth::Bearer => AuthPlan::Bearer,
@@ -559,9 +559,8 @@ pub(crate) fn custom_auth_plan(auth: &lettuce_models::CustomAuth) -> AuthPlan {
     AuthPlan::IfKey(Box::new(plan))
 }
 
-/// A custom path may be a whole `http(s)://` URL (legacy `chatEndpoint` and
-/// `modelsEndpoint`); it then replaces the account endpoint instead of being
-/// joined onto it.
+/// A custom path may be a whole `http://` or `https://` URL; it then
+/// replaces the account endpoint instead of being joined onto it.
 pub(crate) fn request_target<'a>(
     endpoint: std::borrow::Cow<'a, str>,
     path: std::borrow::Cow<'static, str>,
@@ -779,7 +778,7 @@ pub(crate) fn skip_image_data(fragment: &str) -> bool {
 }
 
 /// A field that providers send as `null` as well as omitting it; both mean
-/// the default (legacy read these fields with `.as_array()`/`.as_str()`).
+/// the default.
 pub(crate) fn null_as_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -788,8 +787,8 @@ where
     Ok(<Option<T> as serde::Deserialize>::deserialize(deserializer)?.unwrap_or_default())
 }
 
-/// A token counter read the way legacy `parse_token_value` did: an unsigned
-/// integer or an integer string; anything else is unknown, never an error.
+/// A token counter: an unsigned integer or an integer string; anything else
+/// is unknown, never an error.
 pub(crate) fn lenient_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -801,17 +800,16 @@ where
     )
 }
 
-/// The provider call id legacy gave a call that arrived without one
-/// (`tool_call_{n}`, 1-based within the response).
+/// The provider call id of a call that arrived without one (`tool_call_{n}`,
+/// 1-based within the response).
 pub(crate) fn synthesized_call_id(position: usize) -> String {
     format!("tool_call_{}", position + 1)
 }
 
-/// Legacy `arguments_value_from_str`: `<parameter=name>value</parameter>`
-/// argument strings become an object, JSON objects are kept with their raw
-/// text, a JSON string holding an object is unwrapped, and blank or non-object
-/// arguments become an empty object (the domain only carries objects; legacy
-/// passed the raw string on to the tool).
+/// Tool call arguments from their raw text: `<parameter=name>value</parameter>`
+/// strings become an object, JSON objects are kept with their raw text, a
+/// JSON string holding an object is unwrapped, and blank or non-object
+/// arguments become an empty object.
 pub(crate) fn lenient_tool_arguments(raw: &str) -> (serde_json::Value, Option<String>) {
     if let Some(parsed) = parameter_tag_arguments(raw) {
         return (parsed, None);
@@ -907,8 +905,8 @@ fn coerce_parameter_value(raw: &str) -> serde_json::Value {
     serde_json::from_str(trimmed).unwrap_or_else(|_| serde_json::Value::String(trimmed.to_owned()))
 }
 
-/// Legacy `normalize_thinking_content`: the stored reply text and reasoning
-/// are trimmed once the response is complete.
+/// The stored reply text and reasoning are trimmed once the response is
+/// complete; parts left empty are removed.
 pub(crate) fn trim_outcome_text(outcome: &mut lettuce_conversations::InferenceOutcome) {
     for candidate in &mut outcome.candidates {
         candidate.parts.retain_mut(|part| match part {

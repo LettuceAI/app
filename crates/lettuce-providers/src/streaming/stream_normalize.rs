@@ -486,8 +486,8 @@ impl StreamNormalizer {
         Ok(deltas)
     }
 
-    /// Legacy `accumulate_tool_calls_from_sse`: a fragment without an index
-    /// opens a new call keyed after the indexed ones.
+    /// A fragment without an index opens a new call keyed after the indexed
+    /// ones.
     fn append_openai_tool_call(&mut self, value: &Value) -> Result<(), StreamNormalizeError> {
         let index = value
             .get("index")
@@ -1118,8 +1118,7 @@ fn merge_fragment(
     }
 }
 
-/// Legacy `accumulate_tool_calls_from_sse`: missing ids are synthesized by
-/// position and the argument text is parsed leniently.
+/// Streamed tool calls: missing ids are synthesized by position and the argument text is parsed leniently.
 fn finish_openai_tool_calls(
     pending: BTreeMap<u64, PendingOpenAiToolCall>,
 ) -> Result<Vec<ProposedToolCall>, StreamNormalizeError> {

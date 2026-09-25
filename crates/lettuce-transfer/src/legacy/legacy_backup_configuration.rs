@@ -3785,9 +3785,9 @@ fn orphan(
     }
 }
 
-/// Legacy custom adapters trimmed `chatEndpoint`/`modelsEndpoint`, used a
-/// whole `http(s)://` URL as is, and joined a bare segment with `/`. A blank
-/// value has no path.
+/// A custom `chatEndpoint`/`modelsEndpoint` value as a provider path:
+/// trimmed, a whole `http://`/`https://` URL kept as is, and a bare segment
+/// given a leading `/`. A blank value has no path.
 #[must_use]
 pub fn legacy_custom_endpoint_path(value: &str) -> Option<String> {
     let trimmed = value.trim();

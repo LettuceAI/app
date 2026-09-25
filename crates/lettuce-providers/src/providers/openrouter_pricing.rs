@@ -114,8 +114,8 @@ struct Endpoints {
     endpoints: Vec<serde_json::Value>,
 }
 
-/// Legacy `parse_provider_pricings`: an endpoint without a provider name or
-/// a usable prompt and completion price is skipped, the others are kept.
+/// An endpoint without a provider name or a usable prompt and completion
+/// price is skipped, the others are kept.
 fn parse_endpoints(
     body: &[u8],
     model: &str,

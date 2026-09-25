@@ -267,8 +267,8 @@ impl<S: SecretStore + ?Sized> ImageProviderPort for RemoteImageProviders<S> {
     }
 }
 
-/// Legacy `api_key.unwrap_or_default()`: the local image servers generate
-/// without auth when their optional key cannot be read.
+/// The local image servers generate without auth when their optional key
+/// cannot be read.
 fn key_is_optional(kind: &str) -> bool {
     ["automatic1111", "diffusers", "comfyui"]
         .iter()

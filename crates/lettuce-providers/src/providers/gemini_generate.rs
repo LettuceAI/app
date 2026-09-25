@@ -723,7 +723,7 @@ fn build_request_with_media(
     Ok(request)
 }
 
-/// Legacy `gemini_audio_mime`.
+/// The Gemini MIME type for an `input_audio` format name.
 fn gemini_audio_mime(format: &str) -> &'static str {
     match format.to_ascii_lowercase().as_str() {
         "mp3" | "mpeg" => "audio/mp3",

@@ -1355,9 +1355,9 @@ fn backoff_delay(attempt: u32) -> Duration {
     Duration::from_millis(200 * (1_u64 << attempt.saturating_sub(1).min(3)))
 }
 
-/// Legacy header precedence: the account's own headers override the auth
-/// header, which overrides the provider's static headers, and a later header
-/// of the same name replaces an earlier one. Transport headers the client
+/// Header precedence: the account's own headers override the auth header,
+/// which overrides the provider's static headers, and a later header of the
+/// same name replaces an earlier one. Transport headers the client
 /// owns are never taken from the account.
 fn resolve_header_collection(
     static_headers: &[JsonStaticHeader],

@@ -32,7 +32,7 @@ pub trait ProviderMediaSource: Send + Sync {
 /// The user attachments a request inlines, keyed by asset.
 pub(crate) type Attachments = std::collections::HashMap<AssetId, ProviderMedia>;
 
-/// Whether the model takes image and audio input (legacy `input_scopes`).
+/// Whether the model takes image and audio input.
 pub(crate) fn allowed_inputs(request: &lettuce_conversations::InferenceRequest) -> (bool, bool) {
     let inputs = &request.profile.chat_profile.capabilities.input_modalities;
     (
@@ -43,8 +43,7 @@ pub(crate) fn allowed_inputs(request: &lettuce_conversations::InferenceRequest) 
 
 /// Reads the user attachments the model can take, off the async executor.
 /// Every attachment must be granted; one that cannot be read is left out
-/// and its message keeps its shape, as legacy skipped attachments whose data
-/// was missing. Attachments on other roles, or for a model without image or
+/// and its message keeps its shape. Attachments on other roles, or for a model without image or
 /// audio input, are never read.
 pub(crate) async fn load_attachments(
     request: &lettuce_conversations::InferenceRequest,
@@ -227,8 +226,7 @@ impl RequestMedia {
 }
 
 /// The attachments one message carries to the provider: only user messages
-/// on a model with image or audio input have any (legacy
-/// `push_user_or_assistant_message_with_context`). An attachment that could
+/// on a model with image or audio input have any. An attachment that could
 /// not be read stays as an empty entry so the message keeps its multimodal
 /// shape.
 pub(crate) fn message_attachments(
@@ -265,7 +263,7 @@ impl ProviderMedia {
     }
 }
 
-/// Legacy `audio_format_from_mime`.
+/// The `input_audio` format name for an audio MIME type, `wav` when unknown.
 pub(crate) fn audio_format_from_mime(mime: &str) -> &'static str {
     let mime = mime.to_ascii_lowercase();
     if mime.contains("wav") {
@@ -287,7 +285,7 @@ pub(crate) fn audio_format_from_mime(mime: &str) -> &'static str {
     }
 }
 
-/// Legacy `build_multimodal_content`: the text first, then each attachment
+/// OpenAI-style multimodal content: the text first, then each attachment
 /// the model accepts (images as data URLs with `detail: auto`, audio as
 /// `input_audio`), a single blank text part when nothing remains.
 pub(crate) fn openai_content_parts(

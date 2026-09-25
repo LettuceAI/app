@@ -820,8 +820,8 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
     Ok(outcome)
 }
 
-/// Legacy `extract_openai_calls`: calls without a function name are skipped,
-/// a missing id is synthesized and the arguments are parsed leniently.
+/// A buffered tool call: calls without a function name are skipped, a
+/// missing id is synthesized and the arguments are parsed leniently.
 fn parse_tool_call(
     position: usize,
     id: Option<String>,
