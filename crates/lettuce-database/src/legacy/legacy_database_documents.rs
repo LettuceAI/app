@@ -1520,7 +1520,9 @@ fn string_field(value: &Value, key: &str) -> Result<String, LegacyDatabasePrefli
 }
 
 /// Reads the legacy `companion_turn_effects` and `sync_v2_conflicts` rows
-/// verbatim, in key order, for the import provenance.
+/// verbatim, in key order, for the import provenance. A BLOB is kept as
+/// `{"hex": ...}`, TEXT that is not UTF-8 as `{"text_hex": ...}` and a REAL
+/// that is not finite as `{"real": "NaN" | "inf" | "-inf"}`.
 pub fn read_legacy_preserved_rows(
     path: impl AsRef<Path>,
 ) -> Result<Vec<lettuce_transfer::LegacyPreservedRow>, LegacyDatabasePreflightError> {
@@ -1545,14 +1547,28 @@ pub fn read_legacy_preserved_rows(
             .query_map([], |row| {
                 let mut object = Map::new();
                 for (index, column) in columns.iter().enumerate() {
-                    let value = match row.get::<_, rusqlite::types::Value>(index)? {
-                        rusqlite::types::Value::Null => Value::Null,
-                        rusqlite::types::Value::Integer(value) => json!(value),
-                        rusqlite::types::Value::Real(value) => json!(value),
-                        rusqlite::types::Value::Text(value) => Value::String(value),
-                        rusqlite::types::Value::Blob(bytes) => json!({
-                            "hex": bytes.iter().map(|byte| format!("{byte:02x}")).collect::<String>()
-                        }),
+                    let hex = |bytes: &[u8]| {
+                        bytes
+                            .iter()
+                            .map(|byte| format!("{byte:02x}"))
+                            .collect::<String>()
+                    };
+                    let value = match row.get_ref(index)? {
+                        rusqlite::types::ValueRef::Null => Value::Null,
+                        rusqlite::types::ValueRef::Integer(value) => json!(value),
+                        rusqlite::types::ValueRef::Real(value) if value.is_finite() => {
+                            json!(value)
+                        }
+                        rusqlite::types::ValueRef::Real(value) => {
+                            json!({ "real": value.to_string() })
+                        }
+                        rusqlite::types::ValueRef::Text(bytes) => {
+                            match std::str::from_utf8(bytes) {
+                                Ok(text) => Value::String(text.to_owned()),
+                                Err(_) => json!({ "text_hex": hex(bytes) }),
+                            }
+                        }
+                        rusqlite::types::ValueRef::Blob(bytes) => json!({ "hex": hex(bytes) }),
                     };
                     object.insert(column.clone(), value);
                 }
@@ -1565,6 +1581,10 @@ pub fn read_legacy_preserved_rows(
             let source_key = match object.get(key) {
                 Some(Value::String(value)) => value.clone(),
                 Some(Value::Number(value)) => value.to_string(),
+                Some(Value::Object(encoded)) => match encoded.get("text_hex") {
+                    Some(Value::String(hex)) => hex.clone(),
+                    _ => return Err(LegacyDatabasePreflightError::InvalidSchema),
+                },
                 _ => return Err(LegacyDatabasePreflightError::InvalidSchema),
             };
             preserved.push(lettuce_transfer::LegacyPreservedRow {
@@ -1931,21 +1951,26 @@ mod tests {
             .execute_batch(
                 "CREATE TABLE companion_turn_effects (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL);
                  INSERT INTO companion_turn_effects VALUES ('effect-1', 'session-1', 'ready', 5);
+                 INSERT INTO companion_turn_effects VALUES ('effect-2', CAST(X'FF00' AS TEXT), 'ready', 9e999);
                  CREATE TABLE sync_v2_conflicts (conflict_id TEXT PRIMARY KEY, table_name TEXT NOT NULL, local_row BLOB, incoming_row BLOB);
                  INSERT INTO sync_v2_conflicts VALUES ('conflict-1', 'characters', X'7B7D', NULL);",
             )
             .expect("legacy tables");
         drop(connection);
         let rows = read_legacy_preserved_rows(&path).expect("preserved rows");
-        assert_eq!(rows.len(), 2);
+        assert_eq!(rows.len(), 3);
+        assert_eq!(
+            serde_json::from_str::<Value>(&rows[1].row_json).expect("row"),
+            json!({"id": "effect-2", "session_id": {"text_hex": "ff00"}, "status": "ready", "created_at": {"real": "inf"}})
+        );
         assert_eq!(rows[0].source_table, "companion_turn_effects");
         assert_eq!(
             serde_json::from_str::<Value>(&rows[0].row_json).expect("row"),
             json!({"id": "effect-1", "session_id": "session-1", "status": "ready", "created_at": 5})
         );
-        assert_eq!(rows[1].source_key, "conflict-1");
+        assert_eq!(rows[2].source_key, "conflict-1");
         assert_eq!(
-            serde_json::from_str::<Value>(&rows[1].row_json).expect("row"),
+            serde_json::from_str::<Value>(&rows[2].row_json).expect("row"),
             json!({"conflict_id": "conflict-1", "table_name": "characters", "local_row": {"hex": "7b7d"}, "incoming_row": null})
         );
         std::fs::remove_file(path).expect("remove fixture");
