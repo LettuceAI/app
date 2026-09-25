@@ -16,6 +16,7 @@ mod global;
     target_os = "windows"
 ))]
 mod native_secrets;
+mod passphrase_vault;
 mod secrets;
 
 pub use device::{
@@ -33,6 +34,7 @@ pub use global::{
     StoredGlobalSettings, UiPreferences,
 };
 
+pub use passphrase_vault::{PassphraseVault, PassphraseVaultError, VaultFile};
 pub use secrets::{
     HeaderName, HeaderNameError, InMemorySecretStore, SecretAvailability, SecretBackendError,
     SecretOwnerId, SecretPurpose, SecretRecord, SecretRef, SecretState, SecretStatus, SecretStore,

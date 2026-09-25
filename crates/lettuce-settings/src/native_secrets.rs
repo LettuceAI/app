@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
-    SecretAvailability, SecretBackendError, SecretPurpose, SecretRecord, SecretRef, SecretState,
-    SecretStatus, SecretStore, SecretStoreError, SecretValue,
+    PassphraseVault, PassphraseVaultError, SecretAvailability, SecretBackendError, SecretPurpose,
+    SecretRecord, SecretRef, SecretState, SecretStatus, SecretStore, SecretStoreError, SecretValue,
 };
 
 const SERVICE_NAME: &str = "com.lettuceai.app.secrets.v1";
@@ -58,6 +58,17 @@ impl NativeSecretStore {
             backend: Arc::new(AndroidKeyringBackend::try_new().map_err(backend_error)?),
             mutation_lock: Arc::new(Mutex::new(())),
         })
+    }
+
+    /// Keeps credentials in an unlocked passphrase vault instead of the OS
+    /// credential store, for a device where that store is unavailable (Linux
+    /// without a Secret Service). Credentials are never written in plaintext.
+    #[must_use]
+    pub fn with_passphrase_vault(vault: PassphraseVault) -> Self {
+        Self {
+            backend: Arc::new(VaultBackend(vault)),
+            mutation_lock: Arc::new(Mutex::new(())),
+        }
     }
 
     #[cfg(test)]
@@ -273,6 +284,36 @@ trait CredentialBackend: Send + Sync {
     fn load(&self, key: &str) -> Result<Option<Zeroizing<Vec<u8>>>, CredentialBackendError>;
     fn store(&self, key: &str, value: &[u8]) -> Result<(), CredentialBackendError>;
     fn delete(&self, key: &str) -> Result<(), CredentialBackendError>;
+}
+
+struct VaultBackend(PassphraseVault);
+
+impl CredentialBackend for VaultBackend {
+    fn load(&self, key: &str) -> Result<Option<Zeroizing<Vec<u8>>>, CredentialBackendError> {
+        self.0.get(key).map_err(vault_error)
+    }
+
+    fn store(&self, key: &str, value: &[u8]) -> Result<(), CredentialBackendError> {
+        self.0.set(key, value).map_err(vault_error)
+    }
+
+    fn delete(&self, key: &str) -> Result<(), CredentialBackendError> {
+        self.0.remove(key).map_err(vault_error)
+    }
+}
+
+fn vault_error(error: PassphraseVaultError) -> CredentialBackendError {
+    match error {
+        PassphraseVaultError::Io | PassphraseVaultError::Missing => {
+            CredentialBackendError::Unavailable
+        }
+        PassphraseVaultError::WrongPassphrase | PassphraseVaultError::InvalidPassphrase => {
+            CredentialBackendError::AccessDenied
+        }
+        PassphraseVaultError::AlreadyExists | PassphraseVaultError::Corrupt => {
+            CredentialBackendError::Corrupt
+        }
+    }
 }
 
 #[cfg(not(target_os = "android"))]
@@ -588,6 +629,36 @@ mod tests {
             Err(SecretStoreError::Unavailable(
                 SecretAvailability::BackendUnavailable
             ))
+        );
+    }
+
+    #[tokio::test]
+    async fn a_passphrase_vault_backs_the_store_without_plaintext() {
+        let file = crate::passphrase_vault::tests::MemoryFile::default();
+        let vault = PassphraseVault::create(Box::new(file.clone()), "vault passphrase")
+            .expect("create vault");
+        let store = NativeSecretStore::with_passphrase_vault(vault);
+        let reference = SecretRef::new();
+        let purpose = purpose(SecretOwnerId::new());
+        store
+            .put(
+                SecretRecord::new(reference, purpose.clone()),
+                SecretValue::new("vault-canary").expect("valid secret"),
+                None,
+            )
+            .await
+            .expect("store in vault");
+        let sealed = file.0.lock().expect("file").clone().expect("sealed vault");
+        assert!(!String::from_utf8_lossy(&sealed).contains("vault-canary"));
+        let reopened = NativeSecretStore::with_passphrase_vault(
+            PassphraseVault::unlock(Box::new(file), "vault passphrase").expect("unlock"),
+        );
+        assert!(
+            reopened
+                .load(&reference, &purpose)
+                .await
+                .expect("load from reopened vault")
+                .with(|value| value == "vault-canary")
         );
     }
 

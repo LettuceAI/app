@@ -1829,10 +1829,13 @@ name = "lettuce-settings"
 version = "0.1.0"
 dependencies = [
  "android-native-keyring-store",
+ "argon2",
  "async-trait",
+ "chacha20poly1305",
  "keyring",
  "keyring-core",
  "lettuce-types",
+ "rand 0.8.8",
  "serde",
  "serde_json",
  "thiserror 2.0.20",

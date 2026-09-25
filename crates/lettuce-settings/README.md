@@ -142,6 +142,16 @@ exists. Tests run against an injected deterministic backend and never access the
 developer's credential store. The envelope bound accounts for worst-case JSON
 escaping of every valid 16 KiB `SecretValue`.
 
+Where the OS credential store is unavailable (Linux without a Secret Service),
+`NativeSecretStore::with_passphrase_vault` keeps credentials in a
+`PassphraseVault` the user explicitly creates: an Argon2id key derived from the
+passphrase seals one ciphertext file with XChaCha20-Poly1305 under a fresh nonce
+on every write, with the KDF header bound as associated data. Only the derived
+key lives in memory for the unlocked session. The vault reaches storage through
+the `VaultFile` port, whose writes must replace the file atomically; an existing
+vault is never overwritten by `create`, and a wrong passphrase fails closed.
+Credentials never fall back to a machine-derived key, a plaintext file or SQLite.
+
 Android uses `android-native-keyring-store` 0.5 because it supports the workspace
 Rust 1.85 baseline; newer releases require Rust 1.88. The production composition
 root must call `NativeSecretStore::try_new` only after Tauri Mobile initializes
