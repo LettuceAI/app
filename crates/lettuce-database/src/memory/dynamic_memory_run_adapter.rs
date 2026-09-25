@@ -223,6 +223,54 @@ pub(crate) fn load_attempt_in(
     Ok(attempt)
 }
 
+/// Makes a finished run's summary checkpoint the space's summary. A run whose
+/// tools phase failed still publishes its summary, while the summary cursor
+/// only follows succeeded runs (`memory_adapter::summary_cursor_in`). Nothing is
+/// written when a suffix rewind of the conversation landed after the
+/// checkpoint, or when a newer checkpoint already wrote the space's summary.
+fn publish_summary_checkpoint_in(
+    transaction: &Transaction<'_>,
+    run_id: DynamicMemoryRunId,
+) -> Result<(), DynamicMemoryRunRepositoryError> {
+    let Some(checkpoint) = load_summary_checkpoint_in(transaction, run_id)? else {
+        return Ok(());
+    };
+    let superseded = transaction
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM dynamic_memory_suffix_rewinds rewind
+                  JOIN dynamic_memory_runs run ON run.id = ?1
+                 WHERE rewind.conversation_id = run.conversation_id
+                   AND rewind.space_id = run.space_id
+                   AND rewind.applied_at >= ?3
+             ) OR EXISTS(
+                SELECT 1 FROM memory_summaries WHERE space_id = ?2 AND updated_at > ?3
+             )",
+            params![
+                run_id.to_string(),
+                checkpoint.summary.space_id.to_string(),
+                checkpoint.settled_at.get(),
+            ],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(storage)?;
+    if superseded {
+        return Ok(());
+    }
+    memory_adapter::replace_summary_in(
+        transaction,
+        checkpoint.summary.space_id,
+        Some(&checkpoint.summary),
+    )
+    .map(|_| ())
+    .map_err(|error| match error {
+        lettuce_memory::MemoryRepositoryError::NotFound => {
+            DynamicMemoryRunRepositoryError::NotFound
+        }
+        _ => DynamicMemoryRunRepositoryError::Storage,
+    })
+}
+
 pub(crate) fn load_summary_checkpoint_in(
     connection: &Connection,
     run_id: DynamicMemoryRunId,
@@ -1209,20 +1257,11 @@ impl DynamicMemoryRunRepository for Database {
         if changed != 1 {
             return Err(DynamicMemoryRunRepositoryError::Conflict);
         }
-        if updated.status == DynamicMemoryAttemptStatus::Succeeded {
-            if let Some(checkpoint) = load_summary_checkpoint_in(&transaction, updated.run_id)? {
-                memory_adapter::replace_summary_in(
-                    &transaction,
-                    checkpoint.summary.space_id,
-                    Some(&checkpoint.summary),
-                )
-                .map_err(|error| match error {
-                    lettuce_memory::MemoryRepositoryError::NotFound => {
-                        DynamicMemoryRunRepositoryError::NotFound
-                    }
-                    _ => DynamicMemoryRunRepositoryError::Storage,
-                })?;
-            }
+        if matches!(
+            updated.status,
+            DynamicMemoryAttemptStatus::Succeeded | DynamicMemoryAttemptStatus::Failed
+        ) {
+            publish_summary_checkpoint_in(&transaction, updated.run_id)?;
         }
         let stored = load_attempt_in(&transaction, id)?;
         transaction.commit().map_err(storage)?;
@@ -2268,116 +2307,218 @@ mod tests {
         );
     }
 
-    #[test]
-    fn summary_cursor_advances_only_when_the_tools_phase_succeeds() {
-        let database = Database::open_in_memory().expect("database");
-        let (conversation_id, space_id, messages) = conversation_fixture(&database);
-        let admit = |job: JobId| {
-            let run_id = DynamicMemoryRunId::new();
-            let attempt_id = DynamicMemoryAttemptId::new();
-            let admitted = database
-                .admit_dynamic_memory_run_attempt(NewDynamicMemoryRunAttempt {
+    fn checkpointed_run(
+        database: &Database,
+        conversation_id: ConversationId,
+        space_id: MemorySpaceId,
+        messages: &[DynamicMemorySourceMessage],
+        text: &str,
+        at: i64,
+    ) -> lettuce_memory::DynamicMemoryAttempt {
+        let run_id = DynamicMemoryRunId::new();
+        let attempt_id = DynamicMemoryAttemptId::new();
+        let admitted = database
+            .admit_dynamic_memory_run_attempt(NewDynamicMemoryRunAttempt {
+                run_id,
+                attempt_id,
+                conversation_id,
+                space_id,
+                starting_memory: database.get(space_id).expect("memory").expect("space"),
+                cycle_start_change: None,
+                source_messages: messages.to_vec(),
+                profile: profile(),
+                time_awareness_enabled: false,
+                supersession_enabled: false,
+                structured_fallback_format: DynamicMemoryStructuredFallbackFormat::Xml,
+                summary_window: lettuce_memory::DynamicMemorySummaryWindow {
+                    message_interval: 2,
+                    start: 0,
+                    end: 2,
+                },
+                tool_request: lettuce_memory::dynamic_memory_tool_request_for_run(
+                    lettuce_memory::DynamicMemoryToolOptions {
+                        group: false,
+                        supersession_enabled: false,
+                        require_source_message_id: false,
+                    },
+                    &|key| key.to_owned(),
+                ),
+                job_id: JobId::new(),
+                now: TimestampMillis::new(at),
+            })
+            .expect("run");
+        let processing = database
+            .transition_dynamic_memory_attempt(
+                attempt_id,
+                admitted.attempt.revision,
+                DynamicMemoryAttemptStatus::Processing,
+                None,
+                TimestampMillis::new(at),
+            )
+            .expect("processing");
+        let memory = database.get(space_id).expect("memory").expect("space");
+        database
+            .commit_dynamic_memory_summary(
+                DynamicMemorySummaryCommit {
                     run_id,
                     attempt_id,
-                    conversation_id,
-                    space_id,
-                    starting_memory: database.get(space_id).expect("memory").expect("space"),
-                    cycle_start_change: None,
-                    source_messages: messages.clone(),
-                    profile: profile(),
-                    time_awareness_enabled: false,
-                    supersession_enabled: false,
-                    structured_fallback_format: DynamicMemoryStructuredFallbackFormat::Xml,
-                    summary_window: lettuce_memory::DynamicMemorySummaryWindow {
-                        message_interval: 2,
-                        start: 0,
-                        end: 2,
-                    },
-                    tool_request: lettuce_memory::dynamic_memory_tool_request_for_run(
-                        lettuce_memory::DynamicMemoryToolOptions {
-                            group: false,
-                            supersession_enabled: false,
-                            require_source_message_id: false,
-                        },
-                        &|key| key.to_owned(),
-                    ),
-                    job_id: job,
-                    now: TimestampMillis::new(10),
-                })
-                .expect("run");
-            let processing = database
-                .transition_dynamic_memory_attempt(
-                    attempt_id,
-                    admitted.attempt.revision,
-                    DynamicMemoryAttemptStatus::Processing,
-                    None,
-                    TimestampMillis::new(11),
-                )
-                .expect("processing");
-            let memory = database.get(space_id).expect("memory").expect("space");
-            database
-                .commit_dynamic_memory_summary(
-                    DynamicMemorySummaryCommit {
-                        run_id,
-                        attempt_id,
-                        expected_memory_revision: memory.revision,
-                        text: "The user prefers tea.".into(),
-                        token_count: 5,
-                        request_context: ProviderNeutralContext {
-                            messages: vec![ProviderNeutralMessage {
-                                role: MessageRole::User,
-                                parts: vec![ProviderContextPart::Text {
-                                    text: "summary request".into(),
-                                }],
+                    expected_memory_revision: memory.revision,
+                    text: text.into(),
+                    token_count: 5,
+                    request_context: ProviderNeutralContext {
+                        messages: vec![ProviderNeutralMessage {
+                            role: MessageRole::User,
+                            parts: vec![ProviderContextPart::Text {
+                                text: "summary request".into(),
                             }],
-                            attributions: Default::default(),
-                            budget: Default::default(),
-                        },
-                        usage: None,
-                        provider_request_id: None,
+                        }],
+                        attributions: Default::default(),
+                        budget: Default::default(),
                     },
-                    TimestampMillis::new(12),
-                )
-                .expect("checkpoint");
-            processing
-        };
-        let failed = admit(JobId::new());
+                    usage: None,
+                    provider_request_id: None,
+                },
+                TimestampMillis::new(at + 1),
+            )
+            .expect("checkpoint");
+        processing
+    }
+
+    fn finish(
+        database: &Database,
+        attempt: &lettuce_memory::DynamicMemoryAttempt,
+        succeeded: bool,
+        at: i64,
+    ) {
         database
             .transition_dynamic_memory_attempt(
-                failed.id,
-                failed.revision,
-                DynamicMemoryAttemptStatus::Failed,
-                Some(DynamicMemoryAttemptFailureCode::ProviderUnavailable),
-                TimestampMillis::new(13),
+                attempt.id,
+                attempt.revision,
+                if succeeded {
+                    DynamicMemoryAttemptStatus::Succeeded
+                } else {
+                    DynamicMemoryAttemptStatus::Failed
+                },
+                (!succeeded).then_some(DynamicMemoryAttemptFailureCode::ProviderUnavailable),
+                TimestampMillis::new(at),
             )
-            .expect("tools failed");
-        assert_eq!(database.get_summary(space_id).expect("summary"), None);
+            .expect("finish");
+    }
+
+    #[test]
+    fn a_failed_tools_phase_keeps_the_summary_but_not_the_cursor() {
+        let database = Database::open_in_memory().expect("database");
+        let (conversation_id, space_id, messages) = conversation_fixture(&database);
+        let failed = checkpointed_run(
+            &database,
+            conversation_id,
+            space_id,
+            &messages,
+            "The user prefers tea.",
+            10,
+        );
+        finish(&database, &failed, false, 13);
+        assert_eq!(
+            database
+                .get_summary(space_id)
+                .expect("summary")
+                .expect("summary after failed tools")
+                .text,
+            "The user prefers tea."
+        );
         assert_eq!(
             database
                 .summary_cursor(space_id, conversation_id)
                 .expect("cursor after failed tools"),
             0
         );
-        let retried = admit(JobId::new());
-        database
-            .transition_dynamic_memory_attempt(
-                retried.id,
-                retried.revision,
-                DynamicMemoryAttemptStatus::Succeeded,
-                None,
-                TimestampMillis::new(14),
-            )
-            .expect("tools succeeded");
-        let summary = database
-            .get_summary(space_id)
-            .expect("summary")
-            .expect("summary after success");
-        assert_eq!(summary.text, "The user prefers tea.");
+        let retried = checkpointed_run(
+            &database,
+            conversation_id,
+            space_id,
+            &messages,
+            "The user prefers green tea.",
+            20,
+        );
+        finish(&database, &retried, true, 23);
+        assert_eq!(
+            database
+                .get_summary(space_id)
+                .expect("summary")
+                .expect("summary after success")
+                .text,
+            "The user prefers green tea."
+        );
         assert_eq!(
             database
                 .summary_cursor(space_id, conversation_id)
                 .expect("cursor after success"),
             2
+        );
+    }
+
+    #[test]
+    fn an_older_run_finishing_last_keeps_the_newer_summary() {
+        let database = Database::open_in_memory().expect("database");
+        let (conversation_id, space_id, messages) = conversation_fixture(&database);
+        let older = checkpointed_run(
+            &database,
+            conversation_id,
+            space_id,
+            &messages,
+            "Older.",
+            10,
+        );
+        let newer = checkpointed_run(
+            &database,
+            conversation_id,
+            space_id,
+            &messages,
+            "Newer.",
+            20,
+        );
+        finish(&database, &newer, true, 23);
+        finish(&database, &older, true, 24);
+        assert_eq!(
+            database
+                .get_summary(space_id)
+                .expect("summary")
+                .expect("summary")
+                .text,
+            "Newer."
+        );
+    }
+
+    #[test]
+    fn a_rewind_before_success_keeps_the_rewound_summary() {
+        let database = Database::open_in_memory().expect("database");
+        let (conversation_id, space_id, messages) = conversation_fixture(&database);
+        let attempt = checkpointed_run(
+            &database,
+            conversation_id,
+            space_id,
+            &messages,
+            "Stale.",
+            10,
+        );
+        let memory = database.get(space_id).expect("memory").expect("space");
+        database
+            .rewind_dynamic_memory_suffix(DynamicMemorySuffixRewind {
+                operation_id: OperationId::new(),
+                conversation_id,
+                invalid_run_id: Some(attempt.run_id),
+                expected_memory_revision: memory.revision,
+                invalidated_effect_ids: Vec::new(),
+                at: TimestampMillis::new(12),
+            })
+            .expect("rewind");
+        finish(&database, &attempt, true, 13);
+        assert_eq!(database.get_summary(space_id).expect("summary"), None);
+        assert_eq!(
+            database
+                .summary_cursor(space_id, conversation_id)
+                .expect("cursor"),
+            0
         );
     }
 

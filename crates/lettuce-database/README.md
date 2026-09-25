@@ -732,10 +732,15 @@ the summary's source messages when a space is shared. `summary_cursor` gives eac
 conversation its own cursor inside one read transaction: its own summary
 window; when another conversation of the pool wrote the summary, its latest
 settled run that no later suffix rewind of that conversation invalidated; with no
-summary, 0. Only runs with a succeeded attempt count toward that run cursor,
-and a run's summary checkpoint reaches the space's summary row only when its
-attempt succeeds, so a failed or cancelled tools phase leaves the cursor where
-it was (legacy `event_advances_cursor` ignored error events). A suffix rewind
+summary, 0. Only runs with a succeeded attempt count toward that run cursor.
+A run's summary checkpoint becomes the space's summary when its attempt
+succeeds or its tools phase fails, and not when it is cancelled; a suffix
+rewind of the conversation after the checkpoint, or a newer checkpoint that
+already wrote the summary, skips the write. When the current summary came from
+a run with no succeeded attempt, the owner's cursor stays at its latest
+succeeded run (or that run's window start), so a retry reprocesses the window
+(legacy tool-error branch in `flow.rs` saved the summary while
+`event_advances_cursor` ignored the error event). A suffix rewind
 in a pool keeps the pool's summary and reverts, latest first, only the tool
 results of the conversation's invalid run and its later runs
 (`dynamic_memory_rewind_adapter::undo_pool_runs`, legacy

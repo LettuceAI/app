@@ -150,10 +150,10 @@ checkpoint.
 Each run may atomically checkpoint one validated cumulative summary before its
 first memory-tool round. The checkpoint retains the exact provider-neutral
 request, usage, provider request ID, resulting root revision, and summary text;
-an exact replay returns it without a second summary CAS. The summary and its
-source cursor become the space's summary only when the attempt succeeds, so a
-failed or cancelled tools phase leaves that window unsummarized for the next
-cycle or retry.
+an exact replay returns it without a second summary CAS. The summary becomes
+the space's summary when the attempt succeeds or its tools phase fails, but the
+summary cursor only advances past a succeeded run, so a failed or cancelled
+tools phase leaves that window for the next cycle or retry.
 The memory boundary also owns the typed legacy `auto`/`askFirst`/`manual` run
 mode and the conversation-owned pending-approval port. Its prompt threshold is
 the copied interval rule: after one prompt, another is due only when another

@@ -821,6 +821,44 @@ pub(crate) fn run_cursor_in(
     u64::try_from(cursor).map_err(storage)
 }
 
+/// The window start of the run that wrote the space's current summary when
+/// that run has checkpointed its summary but no attempt of it succeeded.
+fn failed_summary_run_start_in(
+    transaction: &Transaction<'_>,
+    space_id: MemorySpaceId,
+    conversation_id: ConversationId,
+    window_end: i64,
+) -> Result<Option<u64>, MemoryRepositoryError> {
+    transaction
+        .query_row(
+            "SELECT run.summary_window_start
+               FROM memory_summaries summary
+               JOIN dynamic_memory_runs run
+                 ON run.space_id = summary.space_id
+                AND run.conversation_id = ?2
+                AND run.summary_window_end = summary.window_end
+               JOIN dynamic_memory_summary_checkpoints checkpoint
+                 ON checkpoint.run_id = run.id AND checkpoint.settled_at = summary.updated_at
+              WHERE summary.space_id = ?1 AND summary.window_end = ?3
+                AND NOT EXISTS (
+                    SELECT 1 FROM dynamic_memory_run_attempts attempt
+                     WHERE attempt.run_id = run.id AND attempt.status = 'succeeded'
+                )
+              ORDER BY checkpoint.settled_at DESC
+              LIMIT 1",
+            params![
+                space_id.to_string(),
+                conversation_id.to_string(),
+                window_end
+            ],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()
+        .map_err(storage)?
+        .map(|start| u64::try_from(start).map_err(storage))
+        .transpose()
+}
+
 /// Where a conversation's next dynamic-memory window starts: the summary
 /// window's end for the conversation that owns the space's summary, otherwise
 /// the local run cursor, or the one another device reported when that is
@@ -841,7 +879,13 @@ pub(crate) fn summary_cursor_in(
     match summary_owner {
         None => Ok(0),
         Some((owner, window_end)) if owner == conversation_id.to_string() => {
-            u64::try_from(window_end).map_err(storage)
+            match failed_summary_run_start_in(transaction, space_id, conversation_id, window_end)? {
+                None => u64::try_from(window_end).map_err(storage),
+                Some(start) => {
+                    let succeeded = run_cursor_in(transaction, space_id, conversation_id)?;
+                    Ok(if succeeded > 0 { succeeded } else { start })
+                }
+            }
         }
         Some(_) => {
             let synced = transaction
