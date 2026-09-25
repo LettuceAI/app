@@ -588,7 +588,7 @@ fn encode_request(
             .rev()
             .find(|message| message.role == user_role),
     ) {
-        if let Some(last_text) = last_user.content.last_text_mut() {
+        if let Some(last_text) = last_user.content.final_text_mut() {
             last_text.1.replace(control);
         }
     }
@@ -1129,9 +1129,11 @@ enum WireMessageContent {
 }
 
 impl WireMessageContent {
-    fn last_text_mut(&mut self) -> Option<(&mut String, &mut Option<WireCacheControl>)> {
+    /// The final block when it is text; a message ending in an image or tool
+    /// block takes no cache marker.
+    fn final_text_mut(&mut self) -> Option<(&mut String, &mut Option<WireCacheControl>)> {
         match self {
-            Self::Blocks(blocks) => blocks.iter_mut().rev().find_map(WireContentBlock::text_mut),
+            Self::Blocks(blocks) => blocks.last_mut().and_then(WireContentBlock::text_mut),
             Self::Replay(_) => None,
         }
     }
@@ -1812,6 +1814,31 @@ mod tests {
         parameters.total_completion_allowance = Some(100);
         assert_eq!(super::anthropic_max_tokens(&parameters), 100);
         assert_eq!(super::anthropic_temperature(&parameters), Some(0.7));
+    }
+
+    #[test]
+    fn cache_control_skips_a_user_message_ending_in_an_image_like_legacy() {
+        let (context, media) = crate::media::RequestMedia::fixture((true, false));
+        let mut profile = test_profile();
+        profile.parameters.prompt_caching = Some(PromptCaching::Enabled {
+            retention: PromptCacheRetention::FiveMinutes,
+        });
+        let body = encode_request(
+            &profile,
+            &context,
+            false,
+            (Cow::Borrowed("user"), Cow::Borrowed("assistant")),
+            None,
+            None,
+            false,
+            &media,
+        )
+        .expect("request");
+        let body: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        let blocks = body["messages"][0]["content"].as_array().expect("blocks");
+        assert_eq!(blocks.last().expect("image")["type"], "image");
+        assert!(blocks.iter().all(|block| block.get("cache_control").is_none()));
+        assert!(body["system"][0].get("cache_control").is_some());
     }
 
     #[test]

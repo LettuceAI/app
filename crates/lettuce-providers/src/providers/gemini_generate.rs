@@ -594,7 +594,10 @@ fn build_request_with_media(
                 ProviderContextPart::MediaAsset { .. } => {}
             }
         }
-        for attachment in media.readable(message) {
+        let (images, audio): (Vec<_>, Vec<_>) = media
+            .readable(message)
+            .partition(|attachment| !attachment.is_audio());
+        for attachment in images.into_iter().chain(audio) {
             let mime_type = if attachment.is_audio() {
                 gemini_audio_mime(crate::media::audio_format_from_mime(&attachment.mime_type))
                     .to_owned()
@@ -1983,7 +1986,8 @@ mod tests {
 
     #[test]
     fn user_images_and_audio_become_inline_data_like_legacy() {
-        let (context, media) = crate::media::RequestMedia::fixture((true, true));
+        let (mut context, media) = crate::media::RequestMedia::fixture((true, true));
+        context.messages[1].parts.swap(1, 2);
         let body = serde_json::to_value(
             build_request_with_media(&test_profile(), &context, None, None, &media)
                 .expect("request"),
