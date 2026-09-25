@@ -431,6 +431,9 @@ pub(crate) enum MemoryBinding {
     CompanionPool(lettuce_types::CharacterId),
 }
 
+/// Creates a conversation and runs `hook` in the same transaction. A replay of
+/// a committed create returns the stored result without running `hook` again,
+/// since its writes were committed with the conversation.
 pub(crate) fn create_with_hook<F>(
     database: &Database,
     launch: PreparedConversationLaunch,
@@ -495,7 +498,6 @@ where
         conversation_query::validate_outbox_event_timestamp(&outbox)?;
         conversation_query::validate_outbox_event(&transaction, &outbox)?;
         conversation_query::validate_outbox_event_exact(&transaction, &outbox)?;
-        hook(&transaction, launch.plan())?;
         transaction
             .commit()
             .map_err(conversation_vertical_slice::db)?;
@@ -1079,6 +1081,47 @@ mod tests {
                 .expect("rollback count");
             assert_eq!(count, 0, "rows leaked in {table}");
         }
+    }
+
+    #[test]
+    fn replayed_create_does_not_rerun_its_write_once_hook() {
+        let database = Database::open_in_memory().expect("database");
+        let conversation_id = ConversationId::new();
+        let character_id = CharacterId::new();
+        let mut calls = 0;
+        let mut create = |calls: &mut i32| {
+            create_with_hook(
+                &database,
+                prepared(conversation_id, character_id),
+                TimestampMillis::new(10),
+                MemoryBinding::PerConversation,
+                |tx, _| {
+                    *calls += 1;
+                    let settings = lettuce_conversations::CurrentConversationSettingsPatch {
+                        companion_clock: lettuce_conversations::PatchValue::Set(
+                            lettuce_conversations::CompanionClockSettings {
+                                time_awareness_enabled: true,
+                                ..Default::default()
+                            },
+                        ),
+                        ..Default::default()
+                    }
+                    .apply(None, None)
+                    .map_err(ConversationRepositoryError::Invalid)?;
+                    crate::conversation::conversation_mutations::write_settings(
+                        tx,
+                        conversation_id,
+                        &settings,
+                        true,
+                        TimestampMillis::new(10),
+                    )
+                },
+            )
+        };
+        let first = create(&mut calls).expect("first create");
+        let replay = create(&mut calls).expect("replayed create");
+        assert_eq!(replay.operation, first.operation);
+        assert_eq!(calls, 1);
     }
 
     #[test]
