@@ -431,7 +431,7 @@ fn map_sessions(
             messages,
         });
     }
-    validate_session_graph(&sessions)?;
+    repair_session_graph(&mut sessions, skipped);
     reconcile_authored_session_links(&mut sessions, authored, skipped)?;
     if !sessions.is_empty() {
         notices.push(notice(
@@ -636,61 +636,136 @@ fn usage(
     })
 }
 
-fn validate_session_graph(
-    sessions: &[LegacyBackupDirectSession],
-) -> Result<(), LegacyBackupSessionError> {
-    let by_id = sessions
+fn repair_session_graph(
+    sessions: &mut [LegacyBackupDirectSession],
+    skipped: &mut Vec<crate::LegacyImportSkip>,
+) {
+    let mut links = sessions
         .iter()
-        .map(|session| (session.source_id.as_str(), session))
+        .map(|session| LegacySessionLinks {
+            source_id: session.source_id.clone(),
+            owner_source_id: Some(session.character_source_id.clone()),
+            parent_session_source_id: session.parent_session_source_id.clone(),
+            root_session_source_id: session.root_session_source_id.clone(),
+            branched_from_message_source_id: session.branched_from_message_source_id.clone(),
+            message_source_ids: session
+                .messages
+                .iter()
+                .map(|message| message.source_id.clone())
+                .collect(),
+        })
+        .collect::<Vec<_>>();
+    repair_legacy_session_links(&mut links, "sessions", skipped);
+    for (session, links) in sessions.iter_mut().zip(links) {
+        session.parent_session_source_id = links.parent_session_source_id;
+        session.root_session_source_id = links.root_session_source_id;
+        session.branched_from_message_source_id = links.branched_from_message_source_id;
+    }
+}
+
+pub(crate) struct LegacySessionLinks {
+    pub(crate) source_id: String,
+    pub(crate) owner_source_id: Option<String>,
+    pub(crate) parent_session_source_id: Option<String>,
+    pub(crate) root_session_source_id: String,
+    pub(crate) branched_from_message_source_id: Option<String>,
+    pub(crate) message_source_ids: BTreeSet<String>,
+}
+
+/// Clears branch links that no longer resolve and records each one as a
+/// skip: a parent or root that was deleted or belongs to another owner, a
+/// parent chain that loops, and a branch message missing from the session.
+/// The root becomes the topmost surviving ancestor.
+pub(crate) fn repair_legacy_session_links(
+    links: &mut [LegacySessionLinks],
+    table: &str,
+    skipped: &mut Vec<crate::LegacyImportSkip>,
+) {
+    let index = links
+        .iter()
+        .enumerate()
+        .map(|(position, link)| (link.source_id.clone(), position))
         .collect::<BTreeMap<_, _>>();
-    for session in sessions {
-        let root = by_id
-            .get(session.root_session_source_id.as_str())
-            .ok_or_else(|| orphan("[].root_session_id"))?;
-        if root.parent_session_source_id.is_some()
-            || root.root_session_source_id != root.source_id
-            || root.character_source_id != session.character_source_id
-        {
-            return Err(orphan("[].root_session_id"));
-        }
-        if let Some(parent_id) = &session.parent_session_source_id {
-            let parent = by_id
-                .get(parent_id.as_str())
-                .ok_or_else(|| orphan("[].parent_session_id"))?;
-            if parent.root_session_source_id != session.root_session_source_id
-                || parent.character_source_id != session.character_source_id
-            {
-                return Err(orphan("[].parent_session_id"));
+    let mut record = |field: &str, id: &str, reason: crate::LegacyImportSkipReason| {
+        skipped.push(crate::LegacyImportSkip {
+            kind: crate::LegacyImportSkipKind::SessionLink,
+            source_key: format!("{table}.{field}:{id}"),
+            reason,
+        });
+    };
+    for position in 0..links.len() {
+        let Some(parent_id) = links[position].parent_session_source_id.clone() else {
+            continue;
+        };
+        let reason = match index.get(&parent_id) {
+            None => Some(crate::LegacyImportSkipReason::MissingSession),
+            Some(&parent) if links[parent].owner_source_id != links[position].owner_source_id => {
+                Some(crate::LegacyImportSkipReason::IncompatibleReference)
             }
-        } else if session.source_id != session.root_session_source_id {
-            return Err(orphan("[].root_session_id"));
-        }
-        if session
-            .branched_from_message_source_id
-            .as_ref()
-            .is_some_and(|id| {
-                !session
-                    .messages
-                    .iter()
-                    .any(|message| message.source_id == *id)
-            })
-        {
-            return Err(orphan("[].branched_from_message_id"));
-        }
-        let mut cursor = session.parent_session_source_id.as_deref();
-        let mut visited = BTreeSet::new();
-        while let Some(id) = cursor {
-            if !visited.insert(id) || id == session.source_id {
-                return Err(malformed("[].parent_session_id"));
+            Some(_) if parent_id == links[position].source_id => {
+                Some(crate::LegacyImportSkipReason::MalformedLegacyValue)
             }
-            cursor = by_id
-                .get(id)
-                .ok_or_else(|| orphan("[].parent_session_id"))?
-                .parent_session_source_id
-                .as_deref();
+            Some(_) => None,
+        };
+        if let Some(reason) = reason {
+            links[position].parent_session_source_id = None;
+            record("parent_session_id", &links[position].source_id, reason);
         }
     }
-    Ok(())
+    for position in 0..links.len() {
+        let mut visited = BTreeSet::from([position]);
+        let mut child = position;
+        while let Some(parent) = links[child]
+            .parent_session_source_id
+            .as_ref()
+            .and_then(|id| index.get(id).copied())
+        {
+            if !visited.insert(parent) {
+                links[child].parent_session_source_id = None;
+                record(
+                    "parent_session_id",
+                    &links[child].source_id,
+                    crate::LegacyImportSkipReason::MalformedLegacyValue,
+                );
+                break;
+            }
+            child = parent;
+        }
+    }
+    for position in 0..links.len() {
+        let mut top = position;
+        while let Some(parent) = links[top]
+            .parent_session_source_id
+            .as_ref()
+            .and_then(|id| index.get(id).copied())
+        {
+            top = parent;
+        }
+        let root_id = links[top].source_id.clone();
+        if links[position].root_session_source_id != root_id {
+            let reason = match index.get(&links[position].root_session_source_id) {
+                None => crate::LegacyImportSkipReason::MissingSession,
+                Some(&root) if links[root].owner_source_id != links[position].owner_source_id => {
+                    crate::LegacyImportSkipReason::IncompatibleReference
+                }
+                Some(_) => crate::LegacyImportSkipReason::MalformedLegacyValue,
+            };
+            record("root_session_id", &links[position].source_id, reason);
+            links[position].root_session_source_id = root_id;
+        }
+        if links[position]
+            .branched_from_message_source_id
+            .as_ref()
+            .is_some_and(|id| !links[position].message_source_ids.contains(id))
+        {
+            links[position].branched_from_message_source_id = None;
+            record(
+                "branched_from_message_id",
+                &links[position].source_id,
+                crate::LegacyImportSkipReason::MissingMessage,
+            );
+        }
+    }
 }
 
 fn reconcile_authored_session_links(
@@ -1004,21 +1079,31 @@ mod tests {
     }
 
     fn source(session_rows: Value, character_id: &str) -> LegacyBackupPricingPlan {
+        source_with_characters(session_rows, &[character_id])
+    }
+
+    fn source_with_characters(
+        session_rows: Value,
+        character_ids: &[&str],
+    ) -> LegacyBackupPricingPlan {
+        let characters = character_ids
+            .iter()
+            .map(|character_id| {
+                json!({
+                    "id": character_id,
+                    "name": "Mira",
+                    "created_at": 1,
+                    "updated_at": 1
+                })
+            })
+            .collect::<Vec<_>>();
         let inventory = LegacyBackupInventory {
             version: 1,
             created_at: 1,
             app_version: "legacy".into(),
             source_hash: ContentHash::parse("77".repeat(32)).expect("source hash"),
             documents: vec![
-                document(
-                    LegacyBackupDocumentKind::Characters,
-                    json!([{
-                        "id": character_id,
-                        "name": "Mira",
-                        "created_at": 1,
-                        "updated_at": 1
-                    }]),
-                ),
+                document(LegacyBackupDocumentKind::Characters, json!(characters)),
                 document(LegacyBackupDocumentKind::Sessions, session_rows),
             ],
             media: Vec::new(),
@@ -1223,24 +1308,79 @@ mod tests {
     }
 
     #[test]
-    fn direct_sessions_reject_orphaned_branches_and_selected_variants() {
+    fn direct_sessions_keep_broken_branch_links_and_fall_back_selected_variants() {
         let character = id(10);
         let root = id(11);
         let message_id = id(12);
-        let orphan_parent = id(13);
-        let rows = json!([session(
-            &root,
-            &character,
-            Some(&orphan_parent),
-            &root,
-            None,
-            vec![message(&message_id, None, None)]
-        )]);
-        assert!(matches!(
-            plan_legacy_backup_direct_sessions(source(rows, &character)),
-            Err(LegacyBackupSessionError::Orphan { ref field })
-                if field == "[].root_session_id" || field == "[].parent_session_id"
-        ));
+        let deleted_parent = id(13);
+        let other_character = id(15);
+        let cross_branch = id(16);
+        let cross_message = id(17);
+        let deleted_message = id(18);
+        let rows = json!([
+            session(
+                &root,
+                &character,
+                Some(&deleted_parent),
+                &deleted_parent,
+                Some(&deleted_message),
+                vec![message(&message_id, None, None)]
+            ),
+            session(
+                &cross_branch,
+                &other_character,
+                Some(&root),
+                &root,
+                None,
+                vec![message(&cross_message, None, None)]
+            )
+        ]);
+        let plan = plan_legacy_backup_direct_sessions(source_with_characters(
+            rows,
+            &[&character, &other_character],
+        ))
+        .expect("a deleted parent or a cross-character branch keeps the chat");
+        assert_eq!(plan.sessions.len(), 2);
+        for session in &plan.sessions {
+            assert_eq!(session.parent_session_source_id, None);
+            assert_eq!(session.root_session_source_id, session.source_id);
+            assert_eq!(session.branched_from_message_source_id, None);
+            assert_eq!(session.messages.len(), 1);
+        }
+        let link = |field: &str, id: &str, reason| crate::LegacyImportSkip {
+            kind: crate::LegacyImportSkipKind::SessionLink,
+            source_key: format!("sessions.{field}:{id}"),
+            reason,
+        };
+        let mut expected = vec![
+            link(
+                "parent_session_id",
+                &root,
+                crate::LegacyImportSkipReason::MissingSession,
+            ),
+            link(
+                "root_session_id",
+                &root,
+                crate::LegacyImportSkipReason::MissingSession,
+            ),
+            link(
+                "branched_from_message_id",
+                &root,
+                crate::LegacyImportSkipReason::MissingMessage,
+            ),
+            link(
+                "parent_session_id",
+                &cross_branch,
+                crate::LegacyImportSkipReason::IncompatibleReference,
+            ),
+            link(
+                "root_session_id",
+                &cross_branch,
+                crate::LegacyImportSkipReason::IncompatibleReference,
+            ),
+        ];
+        expected.sort();
+        assert_eq!(plan.skipped, expected);
 
         let missing_variant = id(14);
         let rows = json!([session(

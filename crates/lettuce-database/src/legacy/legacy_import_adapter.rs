@@ -3392,6 +3392,7 @@ fn skip_kind_name(kind: lettuce_transfer::LegacyImportSkipKind) -> &'static str 
         lettuce_transfer::LegacyImportSkipKind::CharacterMedia => "character_media",
         lettuce_transfer::LegacyImportSkipKind::GroupMedia => "group_media",
         lettuce_transfer::LegacyImportSkipKind::VoiceReference => "voice_reference",
+        lettuce_transfer::LegacyImportSkipKind::SessionLink => "session_link",
     }
 }
 
@@ -3419,6 +3420,8 @@ fn skip_reason_name(reason: lettuce_transfer::LegacyImportSkipReason) -> &'stati
         lettuce_transfer::LegacyImportSkipReason::MissingGroup => "missing_group",
         lettuce_transfer::LegacyImportSkipReason::MissingUserVoice => "missing_user_voice",
         lettuce_transfer::LegacyImportSkipReason::IncompatibleReference => "incompatible_reference",
+        lettuce_transfer::LegacyImportSkipReason::MissingSession => "missing_session",
+        lettuce_transfer::LegacyImportSkipReason::MissingMessage => "missing_message",
     }
 }
 
@@ -3481,6 +3484,7 @@ fn load_skips(
                 "character_media" => lettuce_transfer::LegacyImportSkipKind::CharacterMedia,
                 "group_media" => lettuce_transfer::LegacyImportSkipKind::GroupMedia,
                 "voice_reference" => lettuce_transfer::LegacyImportSkipKind::VoiceReference,
+                "session_link" => lettuce_transfer::LegacyImportSkipKind::SessionLink,
                 _ => return Err(LegacyImportRepositoryError::Storage),
             };
             let reason = match reason.as_str() {
@@ -3518,6 +3522,8 @@ fn load_skips(
                 "incompatible_reference" => {
                     lettuce_transfer::LegacyImportSkipReason::IncompatibleReference
                 }
+                "missing_session" => lettuce_transfer::LegacyImportSkipReason::MissingSession,
+                "missing_message" => lettuce_transfer::LegacyImportSkipReason::MissingMessage,
                 _ => return Err(LegacyImportRepositoryError::Storage),
             };
             Ok(lettuce_transfer::LegacyImportSkip {

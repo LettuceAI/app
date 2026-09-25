@@ -644,6 +644,7 @@ fn write_skips(hash: &mut Fingerprint, skips: &[lettuce_transfer::LegacyImportSk
             lettuce_transfer::LegacyImportSkipKind::CharacterMedia => 21,
             lettuce_transfer::LegacyImportSkipKind::GroupMedia => 22,
             lettuce_transfer::LegacyImportSkipKind::VoiceReference => 23,
+            lettuce_transfer::LegacyImportSkipKind::SessionLink => 24,
         });
         hash.text(&skip.source_key);
         hash.u32(match skip.reason {
@@ -665,6 +666,8 @@ fn write_skips(hash: &mut Fingerprint, skips: &[lettuce_transfer::LegacyImportSk
             lettuce_transfer::LegacyImportSkipReason::MissingGroup => 16,
             lettuce_transfer::LegacyImportSkipReason::MissingUserVoice => 17,
             lettuce_transfer::LegacyImportSkipReason::IncompatibleReference => 18,
+            lettuce_transfer::LegacyImportSkipReason::MissingSession => 19,
+            lettuce_transfer::LegacyImportSkipReason::MissingMessage => 20,
         });
     }
 }

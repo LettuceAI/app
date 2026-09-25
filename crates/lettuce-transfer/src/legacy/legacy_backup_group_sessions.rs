@@ -796,7 +796,7 @@ fn map_sessions(
             messages,
         });
     }
-    validate_session_graph(&sessions)?;
+    repair_session_graph(&mut sessions, skipped);
     if !sessions.is_empty() {
         notices.push(notice(
             LegacyBackupConversionNoticeKind::Lossy,
@@ -1119,61 +1119,37 @@ fn usage(
     })
 }
 
-fn validate_session_graph(
-    sessions: &[LegacyBackupGroupSession],
-) -> Result<(), LegacyBackupGroupSessionError> {
-    let by_id = sessions
+fn repair_session_graph(
+    sessions: &mut [LegacyBackupGroupSession],
+    skipped: &mut Vec<crate::LegacyImportSkip>,
+) {
+    let mut links = sessions
         .iter()
-        .map(|session| (session.source_id.as_str(), session))
-        .collect::<BTreeMap<_, _>>();
-    for session in sessions {
-        let root = by_id
-            .get(session.root_session_source_id.as_str())
-            .ok_or_else(|| orphan("[].root_session_id"))?;
-        if root.parent_session_source_id.is_some() || root.root_session_source_id != root.source_id
-        {
-            return Err(malformed("[].root_session_id"));
-        }
-        if root.group_source_id != session.group_source_id {
-            return Err(orphan("[].root_session_id"));
-        }
-        if let Some(parent_id) = &session.parent_session_source_id {
-            let parent = by_id
-                .get(parent_id.as_str())
-                .ok_or_else(|| orphan("[].parent_session_id"))?;
-            if parent.root_session_source_id != session.root_session_source_id
-                || parent.group_source_id != session.group_source_id
-            {
-                return Err(orphan("[].parent_session_id"));
-            }
-            let branch_id = session
-                .branched_from_message_source_id
-                .as_deref()
-                .ok_or_else(|| malformed("[].branched_from_message_id"))?;
-            if !session
-                .messages
-                .iter()
-                .any(|message| message.source_id == branch_id)
-            {
-                return Err(orphan("[].branched_from_message_id"));
-            }
-        } else if session.branched_from_message_source_id.is_some()
-            || session.root_session_source_id != session.source_id
-        {
-            return Err(malformed("[].parent_session_id"));
-        }
-        let mut cursor = session.parent_session_source_id.as_deref();
-        let mut visited = BTreeSet::new();
-        while let Some(id) = cursor {
-            if id == session.source_id || !visited.insert(id) {
-                return Err(malformed("[].parent_session_id"));
-            }
-            cursor = by_id
-                .get(id)
-                .and_then(|parent| parent.parent_session_source_id.as_deref());
-        }
+        .map(
+            |session| crate::legacy::legacy_backup_sessions::LegacySessionLinks {
+                source_id: session.source_id.clone(),
+                owner_source_id: session.group_source_id.clone(),
+                parent_session_source_id: session.parent_session_source_id.clone(),
+                root_session_source_id: session.root_session_source_id.clone(),
+                branched_from_message_source_id: session.branched_from_message_source_id.clone(),
+                message_source_ids: session
+                    .messages
+                    .iter()
+                    .map(|message| message.source_id.clone())
+                    .collect(),
+            },
+        )
+        .collect::<Vec<_>>();
+    crate::legacy::legacy_backup_sessions::repair_legacy_session_links(
+        &mut links,
+        "group_sessions",
+        skipped,
+    );
+    for (session, links) in sessions.iter_mut().zip(links) {
+        session.parent_session_source_id = links.parent_session_source_id;
+        session.root_session_source_id = links.root_session_source_id;
+        session.branched_from_message_source_id = links.branched_from_message_source_id;
     }
-    Ok(())
 }
 
 fn validate_message_cycles(
@@ -2270,6 +2246,48 @@ mod tests {
                 source_key: "group_participation.character_id:removed-participation".to_owned(),
                 reason: crate::LegacyImportSkipReason::MissingCharacter,
             }]
+        );
+    }
+
+    #[test]
+    fn group_branches_of_a_deleted_parent_are_kept_as_their_own_root() {
+        let characters = vec![id(40), id(41)];
+        let group = id(42);
+        let branch = id(43);
+        let deleted_parent = id(44);
+        let branch_message = id(45);
+        let rows = json!([session(
+            &branch,
+            &group,
+            &characters,
+            Some(&deleted_parent),
+            &deleted_parent,
+            Some(&branch_message),
+            vec![message(&branch_message, Some(&characters[0]), None, None)],
+        )]);
+        let plan = plan_legacy_backup_group_sessions(source(rows, &characters, &group))
+            .expect("a branch whose parent was deleted is imported");
+        let session = &plan.sessions[0];
+        assert_eq!(session.parent_session_source_id, None);
+        assert_eq!(session.root_session_source_id, branch);
+        assert_eq!(
+            session.branched_from_message_source_id.as_deref(),
+            Some(branch_message.as_str())
+        );
+        assert_eq!(
+            plan.skipped,
+            vec![
+                crate::LegacyImportSkip {
+                    kind: crate::LegacyImportSkipKind::SessionLink,
+                    source_key: format!("group_sessions.parent_session_id:{branch}"),
+                    reason: crate::LegacyImportSkipReason::MissingSession,
+                },
+                crate::LegacyImportSkip {
+                    kind: crate::LegacyImportSkipKind::SessionLink,
+                    source_key: format!("group_sessions.root_session_id:{branch}"),
+                    reason: crate::LegacyImportSkipReason::MissingSession,
+                },
+            ]
         );
     }
 

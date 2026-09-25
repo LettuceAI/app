@@ -419,9 +419,15 @@ companion and dynamic-memory documents, and every message and variant in the
 order present in the decrypted backup. Message visibility, parent links,
 selected variants, usage metrics, MTP statistics, reasoning, memory and
 lorebook references, attachments and effective timestamps remain explicit.
-The planner validates authored references, root/parent topology, message
-ancestry, selected-variant ownership, JSON shapes, counters and finite sampling
-values before any write. Equal message timestamps and unordered legacy variant
+The planner validates authored references, message ancestry, selected-variant
+ownership, JSON shapes, counters and finite sampling values before any write.
+Branch links are repaired rather than validated: legacy deleted a session row
+without touching its branches and "Branch to character" linked a session to
+another character's root, so a parent or root that is missing, belongs to
+another character or group, or closes a loop is cleared, a branch message
+missing from the session is cleared, the root becomes the topmost surviving
+ancestor, and each change is recorded as a `session_link` skip. The same repair
+runs for group sessions. Equal message timestamps and unordered legacy variant
 queries are reported as ordering loss. References legacy never cleaned up are
 cleared and recorded in the plan's `skipped` list instead of rejecting the
 backup: deleted override lorebooks (legacy looked each up and found nothing),
@@ -446,7 +452,7 @@ legacy send path selected explicit mentions and the continue path accepted an
 explicit member per request, including muted members, while automatic selection
 excluded muted members. Session snapshots may therefore retain an all-muted
 cast even though newly authored reusable groups require an active member. The
-planner rejects duplicate identities, orphaned persona, muted and branch links (a
+planner rejects duplicate identities, orphaned persona and muted links (a
 missing reusable group link is cleared and recorded like legacy's foreign key
 set it to null), message cycles and malformed nested scene, usage, MTP or
 attachment JSON. A deleted session prompt is kept and recorded: legacy treated
