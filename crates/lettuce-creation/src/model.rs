@@ -247,6 +247,11 @@ pub struct CreationTurn {
     pub ordinal: u32,
     pub base_proposal_id: CreationProposalId,
     pub user_message: String,
+    /// The earlier turn this turn regenerates: that turn's reply and draft
+    /// changes are discarded and this turn resends its message from the
+    /// draft it started from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub regenerated_turn_id: Option<CreationTurnId>,
     pub created_at: TimestampMillis,
 }
 

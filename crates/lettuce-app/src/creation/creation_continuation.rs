@@ -60,6 +60,42 @@ pub fn admit_creation_turn_dispatch<R: CreationAttemptRepository + ?Sized>(
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct CreationRegenerationDispatchRequest {
+    pub workflow_id: CreationWorkflowId,
+    pub expected_workflow_revision: Revision,
+    pub regenerated_turn_id: CreationTurnId,
+    pub turn_id: CreationTurnId,
+    pub attempt_id: GenerationAttemptId,
+    pub planned_proposal_id: CreationProposalId,
+    pub profile: ResolvedInferenceProfile,
+    pub now: TimestampMillis,
+}
+
+/// Discards the latest answered turn's reply and draft changes and admits a
+/// new turn that resends its message with the current profile.
+pub fn admit_creation_regeneration_dispatch<R: CreationAttemptRepository + ?Sized>(
+    repository: &R,
+    request: CreationRegenerationDispatchRequest,
+    handle: &JobHandle,
+) -> Result<CreationTurnAttemptAdmission, CreationContinuationError> {
+    let profile_fingerprint = creation_inference_profile_fingerprint(&request.profile)
+        .map_err(|_| CreationContinuationError::InvalidProfile)?;
+    repository
+        .admit_creation_regeneration(lettuce_creation::NewCreationRegeneration {
+            workflow_id: request.workflow_id,
+            expected_workflow_revision: request.expected_workflow_revision,
+            regenerated_turn_id: request.regenerated_turn_id,
+            turn_id: request.turn_id,
+            attempt_id: request.attempt_id,
+            planned_proposal_id: request.planned_proposal_id,
+            job_id: handle.id(),
+            profile_fingerprint,
+            now: request.now,
+        })
+        .map_err(Into::into)
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct CreationRecoveryDispatchRequest {
     pub workflow_id: CreationWorkflowId,
     pub turn_id: CreationTurnId,

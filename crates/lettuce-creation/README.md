@@ -152,14 +152,32 @@ later provider-continuation work.
 Creation turns also own durable inference attempts before provider dispatch.
 Each attempt pins its immutable base and planned proposal identities, retry
 parent, target-specific tool request, job identity, exact resolved-profile
-fingerprint, ordinal, lifecycle, and failure state. Retry children must keep the
-profile binding and use a distinct job. Native calls are admitted atomically in
+fingerprint, ordinal, lifecycle, and failure state. Retry children use a
+distinct job and may carry a different profile fingerprint: like legacy, a
+retry re-reads the current helper model and settings. Crash recovery of an
+interrupted attempt keeps the parent's profile. Native calls are admitted atomically in
 provider order before reduction, including their exact definition version,
 provider identity, arguments, raw arguments, and protected replay reference.
 Exact retries return the stored evidence; stale bases, changed retries,
-cross-turn owners, version drift, reused jobs, profile drift, and duplicate
+cross-turn owners, version drift, reused jobs and duplicate
 identities fail closed; undeclared tools are admitted and answered with
 `unknown tool: NAME`.
+
+Regenerate (legacy `regenerate_response`) is
+`CreationAttemptRepository::admit_creation_regeneration`: only the workflow's
+latest turn with a succeeded attempt, while the workflow still points at that
+turn's result, can be regenerated. In one transaction the workflow returns to
+the proposal the turn started from (a revision bump when the turn had changed
+the draft) and a new turn with the same user message, `regenerated_turn_id`
+set, and its first attempt are admitted there with the current profile.
+Turns and proposals stay immutable: the discarded turn and its proposal remain
+as history, a proposal's ordinal is its parent's plus one (siblings may share
+it), and `list_creation_dialogue` leaves out every regenerated turn. Backup
+restore replays turns in ordinal order and moves the workflow back to a turn's
+base when it differs. Resolving which model and settings a creation turn runs
+with (helper model then default model, streaming toggle, creation feature
+sampling slot) is caller-side wiring deferred to the frontend/command phase;
+the coordinator takes a resolved profile.
 
 Each attempt additionally checkpoints up to eight immutable provider-response
 rounds. Round evidence preserves mixed visible text/reasoning, candidate replay,

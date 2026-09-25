@@ -621,7 +621,9 @@ pub fn canonicalize_and_validate(
         .sort_by_key(|run| run.request_id);
     creation.workflows.sort_by_key(|entry| entry.workflow.id);
     for entry in &mut creation.workflows {
-        entry.proposals.sort_by_key(|proposal| proposal.ordinal);
+        entry
+            .proposals
+            .sort_by_key(|proposal| (proposal.ordinal, proposal.created_at, proposal.id));
         entry.turns.sort_by_key(|turn| turn.ordinal);
         let turn_ordinals = entry
             .turns

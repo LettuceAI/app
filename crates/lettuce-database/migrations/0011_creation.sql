@@ -20,7 +20,7 @@ CREATE TABLE creation_proposals (
     draft_json TEXT NOT NULL CHECK (json_valid(draft_json)),
     outcomes_json TEXT NOT NULL CHECK (json_valid(outcomes_json) AND json_type(outcomes_json) = 'array'),
     created_at INTEGER NOT NULL,
-    UNIQUE (workflow_id, ordinal),
+    UNIQUE (turn_id),
     FOREIGN KEY (workflow_id) REFERENCES creation_workflows(id) ON DELETE RESTRICT,
     FOREIGN KEY (turn_id) REFERENCES creation_turns(id) ON DELETE RESTRICT,
     FOREIGN KEY (parent_id) REFERENCES creation_proposals(id) ON DELETE RESTRICT,
@@ -34,10 +34,14 @@ CREATE TABLE creation_turns (
     ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
     base_proposal_id TEXT NOT NULL,
     user_message TEXT NOT NULL CHECK (length(trim(user_message)) > 0),
+    regenerated_turn_id TEXT UNIQUE,
     created_at INTEGER NOT NULL,
     UNIQUE (workflow_id, ordinal),
     FOREIGN KEY (workflow_id) REFERENCES creation_workflows(id) ON DELETE RESTRICT,
-    FOREIGN KEY (base_proposal_id) REFERENCES creation_proposals(id) ON DELETE RESTRICT
+    FOREIGN KEY (base_proposal_id) REFERENCES creation_proposals(id) ON DELETE RESTRICT,
+    FOREIGN KEY (workflow_id, regenerated_turn_id)
+        REFERENCES creation_turns(workflow_id, id) ON DELETE RESTRICT,
+    CHECK (regenerated_turn_id IS NULL OR regenerated_turn_id != id)
 ) STRICT;
 
 CREATE INDEX creation_proposals_workflow_idx
@@ -46,6 +50,8 @@ CREATE INDEX creation_turns_workflow_idx
     ON creation_turns(workflow_id, ordinal, id);
 CREATE UNIQUE INDEX creation_proposals_owner_id_uq
     ON creation_proposals(workflow_id, id);
+CREATE UNIQUE INDEX creation_proposals_root_uq
+    ON creation_proposals(workflow_id) WHERE ordinal = 0;
 CREATE UNIQUE INDEX creation_turns_owner_id_uq
     ON creation_turns(workflow_id, id);
 
@@ -359,7 +365,6 @@ WHEN NEW.retry_parent_id IS NOT NULL AND NOT EXISTS (
       AND parent.target = NEW.target
       AND parent.stage = NEW.stage
       AND parent.tool_request_json = NEW.tool_request_json
-      AND parent.profile_fingerprint = NEW.profile_fingerprint
       AND parent.job_id != NEW.job_id
       AND parent.workflow_revision = NEW.workflow_revision
 )

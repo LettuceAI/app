@@ -98,6 +98,22 @@ pub struct NewCreationTurnAttempt {
     pub now: TimestampMillis,
 }
 
+/// Regenerates the latest answered turn: the workflow returns to the
+/// proposal that turn started from and a new turn with the same message is
+/// admitted there.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewCreationRegeneration {
+    pub workflow_id: CreationWorkflowId,
+    pub expected_workflow_revision: Revision,
+    pub regenerated_turn_id: CreationTurnId,
+    pub turn_id: CreationTurnId,
+    pub attempt_id: GenerationAttemptId,
+    pub planned_proposal_id: CreationProposalId,
+    pub job_id: JobId,
+    pub profile_fingerprint: CreationInferenceProfileFingerprint,
+    pub now: TimestampMillis,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreationTurnAttemptAdmission {
     pub turn: crate::CreationTurn,

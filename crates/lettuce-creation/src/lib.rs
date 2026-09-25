@@ -18,8 +18,9 @@ pub use attempt::{
     CreationAttemptSuccessSettlement, CreationDialogueTurn, CreationInferenceAttempt,
     CreationInferenceProfileFingerprint, CreationInferenceRound, CreationRoundFinishReason,
     CreationToolCallEvidence, CreationTurnAttemptAdmission, MAX_CREATION_INFERENCE_ROUNDS,
-    NewCreationAttempt, NewCreationAttemptRecovery, NewCreationInferenceRound, NewCreationToolCall,
-    NewCreationTurnAttempt, creation_inference_profile_fingerprint,
+    NewCreationAttempt, NewCreationAttemptRecovery, NewCreationInferenceRound,
+    NewCreationRegeneration, NewCreationToolCall, NewCreationTurnAttempt,
+    creation_inference_profile_fingerprint,
 };
 pub use lorebook_entry::*;
 pub use lorebook_keyword::*;
