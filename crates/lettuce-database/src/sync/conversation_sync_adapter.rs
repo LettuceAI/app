@@ -642,6 +642,14 @@ pub(crate) fn sync_merge_conversation_message(
         "SELECT EXISTS(SELECT 1 FROM conversation_messages WHERE conversation_id = ?1 AND id = ?2 AND visibility = 'tombstoned')",
         params![conversation_id.to_string(), message.id.to_string()],
     )?;
+    if tombstoned {
+        crate::conversation::conversation_mutations::retreat_branch_head(
+            transaction,
+            conversation_id,
+            message.branch_id,
+            incoming.message.message.updated_at,
+        )?;
+    }
     let backup = &incoming.message;
     for revision in &backup.revisions {
         let historical = tombstoned || backup.historical_media_revision_ids.contains(&revision.id);

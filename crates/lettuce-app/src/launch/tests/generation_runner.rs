@@ -5539,6 +5539,101 @@ async fn direct_replies_hand_back_their_scene_tag_before_finalizing() {
 }
 
 #[tokio::test]
+async fn a_synced_delete_moves_the_head_so_later_messages_attach_on_both_devices() {
+    let a = database();
+    let b = database();
+    let scenario = scenario(&a, false, "synced-delete-head");
+    let work = admit_and_claim(&a, &scenario, 1_015);
+    let inference = scripted(vec![text_outcome("synced-delete", "Deleted reply", 20, 5)]);
+    let result = ConversationGenerationJobRunner::new(&a, &inference)
+        .run(&work, input(&scenario), TimestampMillis::new(1_020))
+        .await
+        .expect("run");
+    sync_prompts(&a, &b, 2_000);
+    let token = |name: &str| OperationToken {
+        key: key(name),
+        request_digest: ContentHash::parse("ed".repeat(32)).expect("digest"),
+    };
+    let revision = |database: &Database| {
+        ConversationReader::get(database, scenario.conversation_id)
+            .expect("conversation")
+            .conversation
+            .revision
+    };
+    lettuce_conversations::ConversationRepository::tombstone_message(
+        &a,
+        &lettuce_conversations::TombstoneMessage {
+            conversation_id: scenario.conversation_id,
+            message_id: result.candidate.message_id,
+            expected_revision: revision(&a),
+            operation: token("synced-delete-reply"),
+            descendants: lettuce_conversations::DescendantPolicy::Preserve,
+        },
+        TimestampMillis::new(2_100),
+    )
+    .expect("delete the reply on a");
+    sync_prompts(&a, &b, 2_200);
+    let head = |database: &Database| {
+        let aggregate =
+            ConversationReader::get(database, scenario.conversation_id).expect("conversation");
+        aggregate
+            .branches
+            .iter()
+            .find(|branch| branch.id == aggregate.conversation.active_branch_id)
+            .expect("active branch")
+            .head_message_id
+    };
+    assert_eq!(head(&b), head(&a), "legacy deleted the reply on every device");
+    assert_ne!(head(&b), Some(result.candidate.message_id));
+    let aggregate = ConversationReader::get(&a, scenario.conversation_id).expect("a");
+    let user = aggregate
+        .conversation
+        .participants
+        .iter()
+        .find(|participant| participant.role == ParticipantRole::User)
+        .expect("user participant")
+        .id;
+    let sent = lettuce_conversations::ConversationRepository::begin_send(
+        &a,
+        &lettuce_conversations::SendConversation {
+            conversation_id: scenario.conversation_id,
+            branch_id: aggregate.conversation.active_branch_id,
+            expected_revision: revision(&a),
+            operation: token("synced-delete-next"),
+            message: lettuce_conversations::MessageDraft {
+                role: MessageRole::User,
+                author_participant_id: Some(user),
+                parts: vec![MessagePart::Text {
+                    text: "After the delete".into(),
+                }],
+                visibility: MessageVisibility::Visible,
+                pinned: false,
+                scene_edited: false,
+            },
+            swap_roles: false,
+        },
+        TimestampMillis::new(2_300),
+    )
+    .expect("send after the delete on a");
+    let next = scripted(vec![text_outcome("synced-next", "Next reply", 20, 5)]);
+    let next_scenario = Scenario {
+        conversation_id: scenario.conversation_id,
+        turn_id: sent.value.turn.id,
+        attempt_id: sent.value.attempt.id,
+        model: scenario.model.clone(),
+        profile: scenario.profile.clone(),
+        space_id: scenario.space_id,
+    };
+    let next_work = admit_and_claim(&a, &next_scenario, 2_310);
+    ConversationGenerationJobRunner::new(&a, &next)
+        .run(&next_work, input(&next_scenario), TimestampMillis::new(2_320))
+        .await
+        .expect("next reply on a");
+    sync_prompts(&a, &b, 2_400);
+    assert_eq!(head(&b), head(&a), "the next message extends the retreated head on b");
+}
+
+#[tokio::test]
 async fn generated_messages_sync_with_their_turns_and_usage() {
     let a = database();
     let b = database();

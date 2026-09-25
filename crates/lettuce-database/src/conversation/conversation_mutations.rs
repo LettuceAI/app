@@ -323,20 +323,28 @@ fn cas_turn(
 /// Where the next message on a branch attaches. A fresh fork has no head of
 /// its own yet, so its first message hangs off the fork point and keeps the
 /// inherited ancestry reachable; the topology trigger accepts that parent.
+/// The message a new message on `branch_id` attaches to: its head, else its
+/// fork message. Branch topology is immutable, so a branch without messages of
+/// its own whose fork message was deleted has nothing to attach to and
+/// conflicts instead of continuing from deleted history.
 fn branch_parent(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
     branch_id: ConversationBranchId,
 ) -> Result<Option<MessageId>, ConversationRepositoryError> {
-    let parent: Option<Option<String>> = transaction
+    let parent: Option<(Option<String>, bool)> = transaction
         .query_row(
-            "SELECT COALESCE(head_message_id, fork_message_id) FROM conversation_branches WHERE conversation_id = ?1 AND id = ?2",
+            "SELECT COALESCE(branch.head_message_id, branch.fork_message_id), branch.head_message_id IS NULL AND EXISTS(SELECT 1 FROM conversation_messages AS fork WHERE fork.conversation_id = branch.conversation_id AND fork.id = branch.fork_message_id AND fork.visibility = 'tombstoned') FROM conversation_branches AS branch WHERE branch.conversation_id = ?1 AND branch.id = ?2",
             params![conversation_id.to_string(), branch_id.to_string()],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()
         .map_err(slice::db)?;
-    conversation_query::parse_opt(parent.ok_or(ConversationRepositoryError::NotFound)?)
+    let (parent, deleted_fork) = parent.ok_or(ConversationRepositoryError::NotFound)?;
+    if deleted_fork {
+        return Err(ConversationRepositoryError::Conflict);
+    }
+    conversation_query::parse_opt(parent)
 }
 
 fn branch_head(
@@ -360,7 +368,7 @@ fn branch_head(
 /// ancestor, so the branch continues and regenerates from its last remaining
 /// message the way a physically deleted tail did. An ancestor on the parent
 /// branch leaves the head empty, which falls back to the fork message.
-fn retreat_branch_head(
+pub(crate) fn retreat_branch_head(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
     branch_id: ConversationBranchId,
@@ -10572,6 +10580,52 @@ mod tests {
             GenerationInput::ExistingHead {
                 head_message_id: messages[2]
             }
+        );
+    }
+
+    #[test]
+    fn a_branch_whose_fork_message_was_deleted_does_not_attach_to_it() {
+        let mut fixture = direct_fixture();
+        let messages = conversation_with_two_exchanges(&mut fixture, "deleted-fork");
+        let root_branch = fixture.branch_id;
+        let forked = fixture
+            .database
+            .fork_branch(
+                &ForkBranch {
+                    conversation_id: fixture.conversation_id,
+                    source_branch_id: root_branch,
+                    at_message_id: Some(messages[1]),
+                    expected_revision: fixture.revision,
+                    operation: token("deleted-fork-branch", "cd"),
+                },
+                TimestampMillis::new(300),
+            )
+            .expect("fork");
+        fixture.revision = conversation_revision(&fixture);
+        fixture
+            .database
+            .tombstone_message(
+                &TombstoneMessage {
+                    conversation_id: fixture.conversation_id,
+                    message_id: messages[1],
+                    expected_revision: fixture.revision,
+                    operation: token("deleted-fork-tombstone", "cd"),
+                    descendants: DescendantPolicy::Preserve,
+                },
+                TimestampMillis::new(301),
+            )
+            .expect("delete the fork message");
+        fixture.revision = conversation_revision(&fixture);
+        fixture.branch_id = forked.value.branch.id;
+        assert_eq!(
+            fixture
+                .database
+                .begin_send(
+                    &send_command(&fixture, "deleted-fork-send", "cd", text("hello")),
+                    TimestampMillis::new(302),
+                )
+                .map(|_| ()),
+            Err(ConversationRepositoryError::Conflict)
         );
     }
 
