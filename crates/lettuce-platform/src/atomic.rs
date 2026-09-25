@@ -240,10 +240,6 @@ fn commit_staged(
             {
                 return Err(PlatformError::SymlinkEscape);
             }
-            #[cfg(windows)]
-            if parent.symlink_metadata(&target_name).is_ok() {
-                return Err(PlatformError::ReplaceFailed);
-            }
             stage_parent
                 .rename(Path::new(stage_name), &parent, &target_name)
                 .map_err(|error| {
