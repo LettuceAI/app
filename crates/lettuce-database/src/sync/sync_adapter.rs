@@ -1172,7 +1172,8 @@ fn resolve_dominated_conflicts(
 /// snapshot is valid but cannot be applied here (the change is journaled and
 /// kept as a current-wins conflict).
 type ScanIds = fn(&Connection) -> Result<Vec<String>, ApplyOneError>;
-type SnapshotDelete = fn(&Transaction<'_>, &str, TimestampMillis) -> Result<bool, ApplyOneError>;
+type SnapshotDelete =
+    fn(&Transaction<'_>, &CanonicalChange, TimestampMillis) -> Result<bool, ApplyOneError>;
 
 struct SnapshotCodec {
     kind: &'static str,
@@ -1330,7 +1331,8 @@ const PROVIDER_ACCOUNT_CODEC: SnapshotCodec = SnapshotCodec {
     ids: Some(|connection| {
         crate::sync_ids(connection, "provider_accounts").map_err(|_| ApplyOneError::Storage)
     }),
-    delete: Some(|tx, id, _| {
+    delete: Some(|tx, change, _| {
+        let id = change.entity().id();
         crate::sync_delete_provider_account(tx, id).map_err(model_apply_error)
     }),
     empty: None,
@@ -1371,7 +1373,8 @@ const MODEL_PROFILE_CODEC: SnapshotCodec = SnapshotCodec {
     ids: Some(|connection| {
         crate::sync_ids(connection, "model_profiles").map_err(|_| ApplyOneError::Storage)
     }),
-    delete: Some(|tx, id, now| {
+    delete: Some(|tx, change, now| {
+        let id = change.entity().id();
         crate::sync_delete_model_profile(tx, id, now).map_err(model_apply_error)
     }),
     empty: None,
@@ -1420,8 +1423,9 @@ const CHARACTER_CODEC: SnapshotCodec = SnapshotCodec {
         crate::catalog::character_adapter::sync_character_ids(connection)
             .map_err(repository_apply_error)
     }),
-    delete: Some(|tx, id, now| {
-        crate::purge::queue_purge(tx, crate::purge::PurgeKind::Character, id, now)
+    delete: Some(|tx, change, now| {
+        let id = change.entity().id();
+        crate::purge::queue_purge(tx, crate::purge::PurgeKind::Character, id, change, now)
             .map_err(|_| ApplyOneError::Storage)?;
         Ok(true)
     }),
@@ -1747,8 +1751,9 @@ const CONVERSATION_CODEC: SnapshotCodec = SnapshotCodec {
         crate::sync::conversation_sync_adapter::sync_conversation_ids(connection)
             .map_err(|_| ApplyOneError::Storage)
     }),
-    delete: Some(|tx, id, now| {
-        crate::purge::queue_purge(tx, crate::purge::PurgeKind::Conversation, id, now)
+    delete: Some(|tx, change, now| {
+        let id = change.entity().id();
+        crate::purge::queue_purge(tx, crate::purge::PurgeKind::Conversation, id, change, now)
             .map_err(|_| ApplyOneError::Storage)?;
         Ok(true)
     }),
@@ -1798,7 +1803,8 @@ const MEMORY_ITEM_CODEC: SnapshotCodec = SnapshotCodec {
         crate::sync::memory_sync_adapter::sync_memory_item_ids(connection)
             .map_err(|_| ApplyOneError::Storage)
     }),
-    delete: Some(|tx, id, _| {
+    delete: Some(|tx, change, _| {
+        let id = change.entity().id();
         crate::sync::memory_sync_adapter::sync_delete_memory_item(tx, id)
             .map_err(memory_apply_error)
     }),
@@ -1882,7 +1888,8 @@ const MEMORY_SUMMARY_CODEC: SnapshotCodec = SnapshotCodec {
         crate::sync::memory_sync_adapter::sync_memory_summary_owners(connection)
             .map_err(|_| ApplyOneError::Storage)
     }),
-    delete: Some(|tx, id, _| {
+    delete: Some(|tx, change, _| {
+        let id = change.entity().id();
         crate::sync::memory_sync_adapter::sync_delete_memory_summary(tx, id)
             .map_err(memory_apply_error)
     }),
@@ -2097,7 +2104,8 @@ const COMPANION_NOTE_CODEC: SnapshotCodec = SnapshotCodec {
         crate::sync::companion_sync_adapter::sync_note_ids(connection)
             .map_err(|_| ApplyOneError::Storage)
     }),
-    delete: Some(|tx, id, _| {
+    delete: Some(|tx, change, _| {
+        let id = change.entity().id();
         crate::sync::companion_sync_adapter::sync_delete_note(tx, id)
             .map_err(conversation_apply_error)
     }),
@@ -2120,8 +2128,9 @@ macro_rules! row_codec {
             $version,
             $spec,
             $assets,
-            Some(|tx, id, _| {
-                crate::sync::row_sync_adapter::row_delete(tx, &$spec, id).map_err(row_apply_error)
+            Some(|tx, change, _| {
+                crate::sync::row_sync_adapter::row_delete(tx, &$spec, change.entity().id())
+                    .map_err(row_apply_error)
             })
         );
     };
@@ -2727,11 +2736,11 @@ fn settle_snapshot_delete(
     };
     let concurrent = change.base_revision() != Some(current_payload.content_hash());
     if let Some(kind) = crate::purge::PurgeKind::from_sync_kind(codec.kind)
-        && keep_for_unsent_local_changes(tx, change, kind, now)?
+        && keep_for_unseen_changes(tx, change, kind, now)?
     {
         return Ok(false);
     }
-    if !delete(tx, change.entity().id(), now)? {
+    if !delete(tx, change, now)? {
         return Ok(false);
     }
     if concurrent {
@@ -2786,62 +2795,182 @@ fn owned_entity(owners: &[String], id: &str) -> bool {
     })
 }
 
-/// A received delete of a conversation or character is refused when this
-/// device has changes to it the deleting device had not seen: a change
-/// journaled here that the delete does not observe (an untouched seed such
-/// as the Soul a received companion starts with does not count), or a
-/// generation still running. The entity then stays, the user gets a notice, and everything it
-/// owns is journaled again as fresh inserts after the delete, so the other
-/// device receives it back whole.
-fn keep_for_unsent_local_changes(
-    tx: &Transaction<'_>,
-    change: &CanonicalChange,
+/// What a received delete of a conversation or character takes with it.
+struct PurgeScope {
     kind: crate::purge::PurgeKind,
-    now: TimestampMillis,
-) -> Result<bool, ApplyOneError> {
-    let id = change.entity().id();
-    let conversations = purged_conversations(tx, kind, id)?;
-    let mut owners = vec![id.to_owned()];
-    owners.extend(conversations.iter().cloned());
-    owners.dedup();
-    let mut unsent = false;
-    if let Some(device) = local_device(tx).map_err(|_| ApplyOneError::Storage)? {
-        let observed = change.base_frontier().get(&device).copied().unwrap_or(0);
+    id: String,
+    owners: Vec<String>,
+    conversations: Vec<String>,
+    notes: Vec<String>,
+}
+
+impl PurgeScope {
+    fn load(
+        tx: &Transaction<'_>,
+        kind: crate::purge::PurgeKind,
+        id: &str,
+    ) -> Result<Self, ApplyOneError> {
+        let conversations = purged_conversations(tx, kind, id)?;
+        let mut owners = vec![id.to_owned()];
+        owners.extend(conversations.iter().cloned());
+        owners.dedup();
+        let notes = tx
+            .prepare(
+                "SELECT id FROM companion_scheduled_notes
+                 WHERE character_id IN (SELECT value FROM json_each(?1)) ORDER BY id",
+            )
+            .and_then(|mut statement| {
+                statement
+                    .query_map(
+                        [serde_json::to_string(&owners).unwrap_or_default()],
+                        |row| row.get(0),
+                    )?
+                    .collect()
+            })
+            .map_err(|_| ApplyOneError::Storage)?;
+        Ok(Self {
+            kind,
+            id: id.to_owned(),
+            owners,
+            conversations,
+            notes,
+        })
+    }
+
+    fn owns(&self, kind: &str, id: &str) -> bool {
+        owned_entity(&self.owners, id)
+            || (kind == lettuce_sync::COMPANION_NOTE_SYNC_KIND
+                && self.notes.iter().any(|note| note == id))
+    }
+
+    /// Every scanned entity the scope owns, in scan (dependency) order;
+    /// messages in timeline order.
+    fn entities(
+        &self,
+        tx: &Transaction<'_>,
+    ) -> Result<Vec<(&'static SnapshotCodec, String)>, ApplyOneError> {
+        let mut entities = Vec::new();
+        for codec in SCANNED_CODECS {
+            if codec.kind == lettuce_sync::CONVERSATION_MESSAGE_SYNC_KIND {
+                for conversation in &self.conversations {
+                    let messages: Vec<String> = tx
+                        .prepare(
+                            "SELECT conversation_id || ':' || id FROM conversation_messages
+                             WHERE conversation_id = ?1 ORDER BY timeline_ordinal, id",
+                        )
+                        .and_then(|mut statement| {
+                            statement
+                                .query_map([conversation], |row| row.get(0))?
+                                .collect()
+                        })
+                        .map_err(|_| ApplyOneError::Storage)?;
+                    entities.extend(messages.into_iter().map(|id| (codec, id)));
+                }
+                continue;
+            }
+            let ids = codec.ids.ok_or(ApplyOneError::Corrupt)?;
+            entities.extend(
+                ids(tx)?
+                    .into_iter()
+                    .filter(|id| self.owns(codec.kind, id))
+                    .map(|id| (codec, id)),
+            );
+        }
+        Ok(entities
+            .into_iter()
+            .filter(|(codec, id)| SyncEntity::new(codec.kind, id.clone()).is_ok())
+            .collect())
+    }
+}
+
+/// What the device holds of a deleted entity that the delete did not see.
+#[derive(Default)]
+struct UnseenChanges {
+    local: bool,
+    remote: bool,
+}
+
+/// Compares the delete with everything this device holds of the scope: a
+/// journaled change of an owned entity the delete does not observe (from this
+/// device or another), the current content of every owned entity against
+/// its latest journaled content (edits made since the last scan, including
+/// during an exchange), and a generation still running. Untouched seeds, such
+/// as the Soul a received companion starts with, do not count.
+fn unseen_changes(
+    tx: &Transaction<'_>,
+    delete: &CanonicalChange,
+    scope: &PurgeScope,
+) -> Result<UnseenChanges, ApplyOneError> {
+    let mut unseen = UnseenChanges::default();
+    let device = local_device(tx).map_err(|_| ApplyOneError::Storage)?;
+    for owner in &scope.owners {
         let mut statement = tx
             .prepare(
-                "SELECT entity_kind, entity_id, payload_bytes FROM sync_changes
-                 WHERE origin_device_id = ?1 AND origin_sequence > ?2",
+                "SELECT change.change_id, change.entity_kind, change.entity_id, change.payload_bytes
+                 FROM sync_changes change
+                 WHERE (change.entity_id = ?1 OR change.entity_id LIKE ?1 || ':%'
+                        OR change.entity_id LIKE 'conversation:' || ?1 || '%'
+                        OR change.entity_id LIKE 'pool:' || ?1 || '%')
+                   AND change.change_id <> ?2
+                   AND NOT EXISTS (
+                     SELECT 1 FROM sync_conflicts conflict
+                     WHERE conflict.incoming_change_id = change.change_id
+                       AND conflict.winning_side = 'current')
+                   AND NOT EXISTS (
+                     SELECT 1 FROM sync_deferred_changes deferred
+                     WHERE deferred.change_id = change.change_id)",
             )
             .map_err(|_| ApplyOneError::Storage)?;
         let rows = statement
-            .query_map(
-                params![
-                    device.as_uuid().to_string(),
-                    i64::try_from(observed).map_err(|_| ApplyOneError::Corrupt)?
-                ],
-                |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, Option<Vec<u8>>>(2)?,
-                    ))
-                },
-            )
+            .query_map(params![owner, delete.id().as_uuid().to_string()], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<Vec<u8>>>(3)?,
+                ))
+            })
+            .map_err(|_| ApplyOneError::Storage)?
+            .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(|_| ApplyOneError::Storage)?;
-        for row in rows {
-            let (entity_kind, entity, payload) = row.map_err(|_| ApplyOneError::Storage)?;
-            if !owned_entity(&owners, &entity) {
+        for (change_id, kind, entity, payload) in rows {
+            if !scope.owns(&kind, &entity) || is_seed(&kind, payload.as_deref()) {
                 continue;
             }
-            let seed = snapshot_codec(&entity_kind)
-                .and_then(|codec| codec.seed)
-                .zip(payload)
-                .is_some_and(|(seed, payload)| seed(&payload));
-            unsent |= !seed;
+            let change = load_change_by_id(
+                tx,
+                SyncChangeId::from_uuid(
+                    Uuid::parse_str(&change_id).map_err(|_| ApplyOneError::Corrupt)?,
+                ),
+            )
+            .map_err(|_| ApplyOneError::Storage)?
+            .ok_or(ApplyOneError::Corrupt)?;
+            if delete.observes(&change) {
+                continue;
+            }
+            if Some(change.origin_device()) == device {
+                unseen.local = true;
+            } else {
+                unseen.remote = true;
+            }
         }
     }
-    for conversation in &conversations {
-        unsent |= tx
+    for (codec, id) in scope.entities(tx)? {
+        let payload = match (codec.current)(tx, &id) {
+            Ok(Some(payload)) => payload,
+            Ok(None) | Err(ApplyOneError::Corrupt) => continue,
+            Err(error) => return Err(error),
+        };
+        if codec.seed.is_some_and(|seed| seed(payload.bytes())) {
+            continue;
+        }
+        let latest = latest_journaled_entity(tx, codec.kind, &id, delete)?;
+        if latest.as_ref() != Some(payload.content_hash()) {
+            unseen.local = true;
+        }
+    }
+    for conversation in &scope.conversations {
+        unseen.local |= tx
             .query_row(
                 "SELECT EXISTS(SELECT 1 FROM conversation_turns WHERE conversation_id = ?1
                    AND status NOT IN ('succeeded', 'failed', 'cancelled', 'interrupted'))",
@@ -2850,150 +2979,289 @@ fn keep_for_unsent_local_changes(
             )
             .map_err(|_| ApplyOneError::Storage)?;
     }
-    if !unsent {
-        return Ok(false);
-    }
-    let entity = match kind {
-        crate::purge::PurgeKind::Conversation => crate::PurgeNoticeEntity::Conversation,
-        crate::purge::PurgeKind::Character => crate::PurgeNoticeEntity::Character,
-    };
-    crate::purge::record_notice(
-        tx,
-        entity,
-        id,
-        crate::PurgeNoticeReason::KeptUnsentLocalChanges,
-        now,
-    )
-    .map_err(|_| ApplyOneError::Storage)?;
-    rejournal_owned(tx, &owners, &conversations, now)?;
-    Ok(true)
+    Ok(unseen)
 }
 
-/// Journals the current state of everything `owners` own as fresh inserts:
-/// the launch snapshots and media it references first, then every scanned
-/// entity in dependency order, messages in timeline order.
-fn rejournal_owned(
+fn is_seed(kind: &str, payload: Option<&[u8]>) -> bool {
+    snapshot_codec(kind)
+        .and_then(|codec| codec.seed)
+        .zip(payload)
+        .is_some_and(|(seed, payload)| seed(payload))
+}
+
+/// The content hash of the latest journaled change of one entity that became
+/// local state, other than the delete being decided (`None` when never
+/// journaled or deleted).
+fn latest_journaled_entity(
     tx: &Transaction<'_>,
-    owners: &[String],
-    conversations: &[String],
+    kind: &str,
+    id: &str,
+    delete: &CanonicalChange,
+) -> Result<Option<ContentHash>, ApplyOneError> {
+    let hash: Option<Option<String>> = tx
+        .query_row(
+            "SELECT change.payload_hash FROM sync_changes change
+             WHERE change.entity_kind = ?1 AND change.entity_id = ?2 AND change.change_id <> ?3
+               AND NOT EXISTS (
+                 SELECT 1 FROM sync_conflicts conflict
+                 WHERE conflict.incoming_change_id = change.change_id
+                   AND conflict.winning_side = 'current')
+               AND NOT EXISTS (
+                 SELECT 1 FROM sync_deferred_changes deferred
+                 WHERE deferred.change_id = change.change_id)
+             ORDER BY change.rowid DESC LIMIT 1",
+            params![kind, id, delete.id().as_uuid().to_string()],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|_| ApplyOneError::Storage)?;
+    hash.flatten()
+        .map(ContentHash::parse)
+        .transpose()
+        .map_err(|_| ApplyOneError::Corrupt)
+}
+
+/// A received delete of a conversation or character is refused when this
+/// device holds changes to it the deleting device had not seen. When some are
+/// this device's own, the user gets a notice and everything the entity owns is
+/// journaled again as fresh inserts that observe the delete, so the deleting
+/// device receives it back whole; changes only from other devices keep it
+/// here without a notice, since those devices send it back themselves.
+fn keep_for_unseen_changes(
+    tx: &Transaction<'_>,
+    delete: &CanonicalChange,
+    kind: crate::purge::PurgeKind,
     now: TimestampMillis,
-) -> Result<(), ApplyOneError> {
+) -> Result<bool, ApplyOneError> {
+    let scope = PurgeScope::load(tx, kind, delete.entity().id())?;
+    let unseen = unseen_changes(tx, delete, &scope)?;
+    if unseen.local {
+        crate::purge::record_notice(
+            tx,
+            notice_entity(kind),
+            &scope.id,
+            crate::PurgeNoticeReason::KeptUnsentLocalChanges,
+            now,
+        )
+        .map_err(|_| ApplyOneError::Storage)?;
+        rejournal_scope(tx, &scope, now)?;
+    }
+    Ok(unseen.local || unseen.remote)
+}
+
+const fn notice_entity(kind: crate::purge::PurgeKind) -> crate::PurgeNoticeEntity {
+    match kind {
+        crate::purge::PurgeKind::Conversation => crate::PurgeNoticeEntity::Conversation,
+        crate::purge::PurgeKind::Character => crate::PurgeNoticeEntity::Character,
+    }
+}
+
+/// Decides a delete that waited in the purge queue again, against what the
+/// device holds now: `true` when the entity is kept.
+pub(crate) fn keep_queued_delete(
+    tx: &Transaction<'_>,
+    kind: crate::purge::PurgeKind,
+    change_id: &str,
+    now: TimestampMillis,
+) -> Result<bool, crate::PurgeError> {
+    let Ok(uuid) = Uuid::parse_str(change_id) else {
+        return Ok(false);
+    };
+    let Some(change) = load_change_by_id(tx, SyncChangeId::from_uuid(uuid))
+        .map_err(|_| crate::PurgeError::Storage)?
+    else {
+        return Ok(false);
+    };
+    keep_for_unseen_changes(tx, &change, kind, now).map_err(|error| match error {
+        ApplyOneError::Storage => crate::PurgeError::Storage,
+        _ => crate::PurgeError::Integrity,
+    })
+}
+
+/// Journals the current state of everything the scope owns as fresh inserts,
+/// all or nothing: the launch snapshots and media it references first, then
+/// every owned entity in dependency order. When a snapshot or referenced
+/// asset is missing, a media blob is not ready or a payload cannot be
+/// encoded, nothing is sent: the scope waits in `purge_rejournals` (retried
+/// before every scan, its root skipped by the scan meanwhile) and the user
+/// gets a `rejournal_incomplete` notice.
+fn rejournal_scope(
+    tx: &Transaction<'_>,
+    scope: &PurgeScope,
+    now: TimestampMillis,
+) -> Result<bool, ApplyOneError> {
     let journal = |error: LocalChangeJournalError| match error {
         LocalChangeJournalError::Storage => ApplyOneError::Storage,
         _ => ApplyOneError::Corrupt,
     };
-    for conversation in conversations {
-        let artifacts: Vec<String> = tx
-            .prepare("SELECT artifact_id FROM conversation_snapshot_refs WHERE conversation_id = ?1 ORDER BY artifact_id")
-            .and_then(|mut statement| statement.query_map([conversation], |row| row.get(0))?.collect())
-            .map_err(|_| ApplyOneError::Storage)?;
-        for artifact in artifacts {
-            let Some(snapshot) =
-                crate::conversation::conversation_artifact_adapter::sync_load_snapshot(
-                    tx, &artifact,
-                )
-                .map_err(|_| ApplyOneError::Storage)?
-            else {
-                continue;
-            };
-            let Ok(payload) = CanonicalPayload::new(
-                lettuce_sync::CONVERSATION_SNAPSHOT_SYNC_SCHEMA,
-                lettuce_sync::CONVERSATION_SNAPSHOT_SYNC_VERSION,
-                serde_json::to_vec(&snapshot).map_err(|_| ApplyOneError::Corrupt)?,
-            ) else {
-                continue;
-            };
-            journal_state_change(
-                tx,
-                lettuce_sync::CONVERSATION_SNAPSHOT_SYNC_KIND,
-                &artifact,
-                ChangeOperation::Insert,
-                None,
-                Some(payload),
-                now,
+    let mut complete = true;
+    let mut artifacts = Vec::new();
+    for conversation in &scope.conversations {
+        let ids: Vec<String> = tx
+            .prepare(
+                "SELECT artifact_id FROM conversation_snapshot_refs
+                 WHERE conversation_id = ?1 ORDER BY artifact_id",
             )
-            .map_err(journal)?;
+            .and_then(|mut statement| {
+                statement
+                    .query_map([conversation], |row| row.get(0))?
+                    .collect()
+            })
+            .map_err(|_| ApplyOneError::Storage)?;
+        for artifact in ids {
+            let payload = crate::conversation::conversation_artifact_adapter::sync_load_snapshot(
+                tx, &artifact,
+            )
+            .map_err(|_| ApplyOneError::Storage)?
+            .and_then(|snapshot| serde_json::to_vec(&snapshot).ok())
+            .and_then(|bytes| {
+                CanonicalPayload::new(
+                    lettuce_sync::CONVERSATION_SNAPSHOT_SYNC_SCHEMA,
+                    lettuce_sync::CONVERSATION_SNAPSHOT_SYNC_VERSION,
+                    bytes,
+                )
+                .ok()
+            });
+            match payload {
+                Some(payload) => artifacts.push((artifact, payload)),
+                None => complete = false,
+            }
         }
     }
-    let notes: Vec<String> = tx
-        .prepare("SELECT id FROM companion_scheduled_notes WHERE character_id IN (SELECT value FROM json_each(?1))")
+    let mut entities = Vec::new();
+    let mut media = Vec::new();
+    for (codec, id) in scope.entities(tx)? {
+        let payload = match (codec.current)(tx, &id) {
+            Ok(Some(payload)) => payload,
+            Ok(None) => continue,
+            Err(ApplyOneError::Corrupt) => {
+                complete = false;
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
+        for asset in (codec.assets)(payload.bytes()) {
+            match ready_media_asset(tx, &asset)? {
+                Some(request) => media.push(request),
+                None => complete = false,
+            }
+        }
+        entities.push((codec, id, payload));
+    }
+    let key = params![scope.kind.name(), scope.id];
+    if !complete {
+        let inserted = tx
+            .execute(
+                "INSERT OR IGNORE INTO purge_rejournals (entity_kind, entity_id) VALUES (?1, ?2)",
+                key,
+            )
+            .map_err(|_| ApplyOneError::Storage)?;
+        if inserted == 1 {
+            crate::purge::record_notice(
+                tx,
+                notice_entity(scope.kind),
+                &scope.id,
+                crate::PurgeNoticeReason::RejournalIncomplete,
+                now,
+            )
+            .map_err(|_| ApplyOneError::Storage)?;
+        }
+        return Ok(false);
+    }
+    for (artifact, payload) in artifacts {
+        journal_state_change(
+            tx,
+            lettuce_sync::CONVERSATION_SNAPSHOT_SYNC_KIND,
+            &artifact,
+            ChangeOperation::Insert,
+            None,
+            Some(payload),
+            now,
+        )
+        .map_err(journal)?;
+    }
+    for request in media {
+        record_local_change_in(tx, OperationId::new(), &request, now).map_err(journal)?;
+    }
+    for (codec, id, payload) in entities {
+        journal_state_change(
+            tx,
+            codec.kind,
+            &id,
+            ChangeOperation::Insert,
+            None,
+            Some(payload),
+            now,
+        )
+        .map_err(journal)?;
+    }
+    tx.execute(
+        "DELETE FROM purge_rejournals WHERE entity_kind = ?1 AND entity_id = ?2",
+        key,
+    )
+    .map_err(|_| ApplyOneError::Storage)?;
+    Ok(true)
+}
+
+/// Retries the re-journals that waited for media or snapshots; one whose
+/// entity is gone is dropped.
+fn retry_pending_rejournals(
+    tx: &Transaction<'_>,
+    now: TimestampMillis,
+) -> Result<(), ApplyOneError> {
+    let pending: Vec<(String, String)> = tx
+        .prepare(
+            "SELECT entity_kind, entity_id FROM purge_rejournals ORDER BY entity_kind, entity_id",
+        )
         .and_then(|mut statement| {
             statement
-                .query_map(
-                    [serde_json::to_string(owners).unwrap_or_default()],
-                    |row| row.get(0),
-                )?
+                .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
                 .collect()
         })
         .map_err(|_| ApplyOneError::Storage)?;
-    for codec in SCANNED_CODECS {
-        let ids: Vec<String> = if codec.kind == lettuce_sync::CONVERSATION_MESSAGE_SYNC_KIND {
-            let mut ids = Vec::new();
-            for conversation in conversations {
-                let mut messages: Vec<String> = tx
-                    .prepare(
-                        "SELECT conversation_id || ':' || id FROM conversation_messages
-                         WHERE conversation_id = ?1 ORDER BY timeline_ordinal, id",
-                    )
-                    .and_then(|mut statement| {
-                        statement
-                            .query_map([conversation], |row| row.get(0))?
-                            .collect()
-                    })
-                    .map_err(|_| ApplyOneError::Storage)?;
-                ids.append(&mut messages);
-            }
-            ids
+    for (kind_name, id) in pending {
+        let kind = if kind_name == crate::purge::PurgeKind::Character.name() {
+            crate::purge::PurgeKind::Character
         } else {
-            let ids = codec.ids.ok_or(ApplyOneError::Corrupt)?;
-            ids(tx)?
-                .into_iter()
-                .filter(|id| {
-                    owned_entity(owners, id)
-                        || (codec.kind == lettuce_sync::COMPANION_NOTE_SYNC_KIND
-                            && notes.contains(id))
-                })
-                .collect()
+            crate::purge::PurgeKind::Conversation
         };
-        for id in ids {
-            if SyncEntity::new(codec.kind, id.clone()).is_err() {
-                continue;
-            }
-            let payload = match (codec.current)(tx, &id) {
-                Ok(Some(payload)) => payload,
-                Ok(None) | Err(ApplyOneError::Corrupt) => continue,
-                Err(error) => return Err(error),
-            };
-            for asset in (codec.assets)(payload.bytes()) {
-                rejournal_media_asset(tx, &asset, now)?;
-            }
-            journal_state_change(
-                tx,
-                codec.kind,
-                &id,
-                ChangeOperation::Insert,
-                None,
-                Some(payload),
-                now,
+        let table = match kind {
+            crate::purge::PurgeKind::Conversation => "conversations",
+            crate::purge::PurgeKind::Character => "characters",
+        };
+        let exists: bool = tx
+            .query_row(
+                &format!("SELECT EXISTS(SELECT 1 FROM {table} WHERE id = ?1)"),
+                [&id],
+                |row| row.get(0),
             )
-            .map_err(journal)?;
+            .map_err(|_| ApplyOneError::Storage)?;
+        if !exists {
+            tx.execute(
+                "DELETE FROM purge_rejournals WHERE entity_kind = ?1 AND entity_id = ?2",
+                params![kind_name, id],
+            )
+            .map_err(|_| ApplyOneError::Storage)?;
+            continue;
         }
+        let scope = PurgeScope::load(tx, kind, &id)?;
+        rejournal_scope(tx, &scope, now)?;
     }
     Ok(())
 }
 
-fn rejournal_media_asset(
+/// The insert change of a referenced asset whose blob is ready here.
+fn ready_media_asset(
     tx: &Transaction<'_>,
     id: &str,
-    now: TimestampMillis,
-) -> Result<(), ApplyOneError> {
-    let asset_id = id
-        .parse::<lettuce_types::AssetId>()
-        .map_err(|_| ApplyOneError::Corrupt)?;
+) -> Result<Option<NewCanonicalChange>, ApplyOneError> {
+    let Ok(asset_id) = id.parse::<lettuce_types::AssetId>() else {
+        return Ok(None);
+    };
     let Some(asset) =
         crate::load_asset_with_blob(tx, asset_id).map_err(|_| ApplyOneError::Storage)?
     else {
-        return Ok(());
+        return Ok(None);
     };
     let blob = tx
         .query_row(
@@ -3006,16 +3274,11 @@ fn rejournal_media_asset(
         )
         .map_err(|_| ApplyOneError::Storage)?;
     if blob.state != lettuce_media::BlobState::Ready {
-        return Ok(());
+        return Ok(None);
     }
-    let request =
-        lettuce_sync::media_asset_insert_change(&lettuce_media::SyncMediaAsset { asset, blob })
-            .map_err(|_| ApplyOneError::Corrupt)?;
-    record_local_change_in(tx, OperationId::new(), &request, now).map_err(|error| match error {
-        LocalChangeJournalError::Storage => ApplyOneError::Storage,
-        _ => ApplyOneError::Corrupt,
-    })?;
-    Ok(())
+    lettuce_sync::media_asset_insert_change(&lettuce_media::SyncMediaAsset { asset, blob })
+        .map(Some)
+        .map_err(|_| ApplyOneError::Corrupt)
 }
 
 /// Whether the entity has a journal entry other than `change` that became
@@ -3654,11 +3917,10 @@ impl LocalChangeJournal for Database {
         now: TimestampMillis,
     ) -> Result<usize, LocalChangeJournalError> {
         let mut connection = self.connection().map_err(storage)?;
-        crate::purge::run_queued_purges_on(&mut connection, &self.foreign_keys_lost, now)
-            .map_err(storage)?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;
+        retry_pending_rejournals(&tx, now).map_err(journal_apply_error)?;
         let mut journaled = journal_referenced_media(&tx, now)?;
         journaled += journal_referenced_snapshots(&tx, now)?;
         let mut present = Vec::with_capacity(SCANNED_CODECS.len());
@@ -3757,6 +4019,8 @@ impl LocalChangeJournal for Database {
             }
         }
         tx.commit().map_err(storage)?;
+        crate::purge::run_queued_purges_on(&mut connection, &self.foreign_keys_lost, now)
+            .map_err(storage)?;
         Ok(journaled)
     }
 

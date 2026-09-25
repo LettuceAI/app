@@ -5528,6 +5528,7 @@ mod tests {
                 "purge_authorizations",
                 "purge_notices",
                 "purge_queue",
+                "purge_rejournals",
                 "revision_media_refs",
                 "scene_assets",
                 "scene_variants",

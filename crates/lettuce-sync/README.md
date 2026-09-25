@@ -436,23 +436,34 @@ character is absent at the next scan, which journals a delete of its
 `conversation.root` or `character.snapshot` entity after the deletes of its
 memory items, summaries and scheduled notes (reverse scan order); messages,
 branches, Souls, relationships and sessions journal nothing and go with their
-owner on the peer. A received delete is refused when this device has changes
-the deleting device had not seen: a change journaled here for an entity the
-conversation or character owns that the delete's causal frontier does not
-include (an untouched seed such as a received companion's first Soul does
-not count), or a generation still running. The entity then stays, a
+owner on the peer. A received delete is decided against everything the
+device holds of the entity and what it owns: a journaled change of an owned
+entity the delete's causal frontier does not include, the current content of
+every owned entity against its latest journaled content (so edits made after
+the session's scan, even during the exchange, count), and a generation still
+running. Untouched seeds such as a received companion's first Soul do not
+count. When the device itself made such changes, the entity stays, a
 `kept_unsent_local_changes` notice is recorded, and everything it owns
-(launch snapshots, referenced media, the root, branches, messages in timeline
-order, memory, companion state, bindings, notes) is journaled again as fresh
-inserts that observe the delete, so the deleting device receives it back
-whole. Otherwise the delete wins over a concurrent edit like any snapshot
-delete and is queued in `purge_queue`; the queue runs right after the batch
-commits (and before every scan), performing the same purge as a local
-delete, so the entity never comes back from a later scan. A queued purge that
-fails stays queued while the scan skips its entity; after eight failures it
-is dropped with a `dropped_after_failures` notice and the next scan journals
-the entity again, so every device keeps it. A character delete also takes the
-character out of every group on the receiving device, as it does locally.
-Payloads are unchanged (the schema fingerprint stays); the protocol version
-marks peers that accept these deletes. The media a purge leaves unused are
-collected on each device separately.
+(launch snapshots, referenced media, the root, branches, messages in
+timeline order, memory, companion state, bindings, notes) is journaled again
+as fresh inserts that observe the delete, so the deleting device receives it
+back whole; a peer that still holds the same content takes them as no-ops.
+Re-journaling is all or nothing: when a snapshot or referenced asset is
+missing, a media blob is not ready or content cannot be encoded, nothing is
+sent, the entity waits in `purge_rejournals` (retried before every scan, its
+root skipped by the scan meanwhile) and a `rejournal_incomplete` notice is
+recorded. When only other devices made changes the delete did not see, the
+entity stays without a notice, since those devices send it back themselves.
+Otherwise the delete wins over a concurrent edit like any snapshot delete and
+is queued in `purge_queue`; the queue runs right after the batch commits and
+after every scan, deciding each delete again first (the user may have written
+while it waited), then performing the same purge as a local delete. A queued
+purge that is busy (a memory run or companion effect in flight) stays queued
+while the scan skips its entity; one that fails eight times for another
+reason is dropped with a `dropped_after_failures` notice and the next scan
+journals the entity again, so every device keeps it. A character delete also
+takes the character out of every group on the receiving device, as it does
+locally, and both devices reach identical group content. Payloads are
+unchanged (the schema fingerprint stays); the protocol version marks peers
+that accept these deletes. The media a purge leaves unused are collected on
+each device separately.

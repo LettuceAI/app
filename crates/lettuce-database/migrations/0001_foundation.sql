@@ -330,21 +330,33 @@ CREATE TABLE purge_authorizations (
 CREATE TABLE purge_queue (
     entity_kind TEXT NOT NULL CHECK (entity_kind IN ('conversation', 'character')),
     entity_id TEXT NOT NULL CHECK (length(entity_id) > 0),
+    change_id TEXT NOT NULL CHECK (length(change_id) = 36),
     queued_at INTEGER NOT NULL,
     failures INTEGER NOT NULL DEFAULT 0 CHECK (failures >= 0),
     PRIMARY KEY (entity_kind, entity_id)
 ) STRICT;
 
+-- Conversations and characters kept against a received delete whose
+-- re-journal waits for a snapshot or media blob to be complete here.
+CREATE TABLE purge_rejournals (
+    entity_kind TEXT NOT NULL CHECK (entity_kind IN ('conversation', 'character')),
+    entity_id TEXT NOT NULL CHECK (length(entity_id) > 0),
+    PRIMARY KEY (entity_kind, entity_id)
+) STRICT;
+
 -- Device-local notices about deletes the user should hear of: a received
 -- delete this device refused because it had changes the other device had
--- not seen, a received delete given up after repeated failures, and a group
--- a character delete left with fewer than two members.
+-- not seen, a kept entity that cannot be sent back whole yet, a received
+-- delete given up after repeated failures, a group a character delete left
+-- with fewer than two members, and media collection skipped because another
+-- database file could not be read.
 CREATE TABLE purge_notices (
     id INTEGER PRIMARY KEY,
-    entity_kind TEXT NOT NULL CHECK (entity_kind IN ('conversation', 'character', 'group')),
+    entity_kind TEXT NOT NULL CHECK (entity_kind IN ('conversation', 'character', 'group', 'database_file')),
     entity_id TEXT NOT NULL CHECK (length(entity_id) > 0),
     reason TEXT NOT NULL CHECK (reason IN (
-        'kept_unsent_local_changes', 'dropped_after_failures', 'group_below_two_members'
+        'kept_unsent_local_changes', 'rejournal_incomplete', 'dropped_after_failures',
+        'group_below_two_members', 'media_collection_skipped'
     )),
     recorded_at INTEGER NOT NULL,
     dismissed_at INTEGER

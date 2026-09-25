@@ -40,7 +40,7 @@ pub(crate) enum PurgeKind {
 }
 
 impl PurgeKind {
-    const fn name(self) -> &'static str {
+    pub(crate) const fn name(self) -> &'static str {
         match self {
             Self::Conversation => "conversation",
             Self::Character => "character",
@@ -457,8 +457,10 @@ impl<'c> Purge<'c> {
     /// Removes the character from each group that lists it, as legacy reads
     /// skipped a deleted character left in a group's list: the remaining
     /// members keep their order and mute state, and the group's revision
-    /// moves. A group left with fewer than two members keeps all its settings
-    /// and gets a notice; it takes members again before it can start a chat.
+    /// moves while its update time stays, so two devices removing the same
+    /// character reach the same group content. A group left with fewer than
+    /// two members keeps all its settings and gets a notice; its chats still
+    /// run with the members it has.
     fn leave_groups(&mut self, character: &str) -> Result<(), PurgeError> {
         let groups = self.strings(
             "SELECT group_id FROM group_members WHERE character_id = ?1 ORDER BY group_id",
@@ -494,8 +496,8 @@ impl<'c> Purge<'c> {
             }
             self.connection
                 .execute(
-                    "UPDATE groups SET revision = revision + 1, updated_at = max(updated_at, ?2) WHERE id = ?1",
-                    params![group, self.now.get()],
+                    "UPDATE groups SET revision = revision + 1 WHERE id = ?1",
+                    [&group],
                 )
                 .map_err(storage)?;
             if remaining.len() < 2 {
@@ -717,17 +719,26 @@ pub(crate) fn queue_purge(
     connection: &Connection,
     kind: PurgeKind,
     id: &str,
+    change: &lettuce_sync::CanonicalChange,
     now: TimestampMillis,
 ) -> rusqlite::Result<()> {
     connection
         .execute(
-            "INSERT OR IGNORE INTO purge_queue (entity_kind, entity_id, queued_at) VALUES (?1, ?2, ?3)",
-            params![kind.name(), id, now.get()],
+            "INSERT INTO purge_queue (entity_kind, entity_id, change_id, queued_at)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT (entity_kind, entity_id) DO UPDATE SET change_id = excluded.change_id",
+            params![
+                kind.name(),
+                id,
+                change.id().as_uuid().to_string(),
+                now.get()
+            ],
         )
         .map(|_| ())
 }
 
-/// Whether a received delete of this synced entity still waits to run.
+/// Whether a received delete of this synced entity still waits to run, or
+/// the entity was kept and waits to be sent back whole.
 pub(crate) fn purge_queued(
     connection: &Connection,
     sync_kind: &str,
@@ -737,7 +748,8 @@ pub(crate) fn purge_queued(
         return Ok(false);
     };
     connection.query_row(
-        "SELECT EXISTS(SELECT 1 FROM purge_queue WHERE entity_kind = ?1 AND entity_id = ?2)",
+        "SELECT EXISTS(SELECT 1 FROM purge_queue WHERE entity_kind = ?1 AND entity_id = ?2)
+             OR EXISTS(SELECT 1 FROM purge_rejournals WHERE entity_kind = ?1 AND entity_id = ?2)",
         params![kind.name(), id],
         |row| row.get(0),
     )
@@ -753,16 +765,27 @@ pub(crate) fn run_queued_purges_on(
     foreign_keys_lost: &AtomicBool,
     now: TimestampMillis,
 ) -> Result<Vec<PurgeReceipt>, PurgeError> {
-    let queued: Vec<(String, String)> = connection
-        .prepare("SELECT entity_kind, entity_id FROM purge_queue ORDER BY queued_at, entity_kind, entity_id")
+    let queued: Vec<(String, String, String)> = connection
+        .prepare(
+            "SELECT entity_kind, entity_id, change_id FROM purge_queue
+             ORDER BY queued_at, entity_kind, entity_id",
+        )
         .and_then(|mut statement| {
             statement
-                .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+                .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
                 .collect()
         })
         .map_err(storage)?;
     let mut receipts = Vec::new();
-    for (kind, id) in queued {
+    for (kind, id, change_id) in queued {
+        let purge_kind = if kind == PurgeKind::Character.name() {
+            PurgeKind::Character
+        } else {
+            PurgeKind::Conversation
+        };
+        if keep_on_recheck(connection, purge_kind, &id, &change_id, now)? {
+            continue;
+        }
         let result = if kind == PurgeKind::Character.name() {
             purge_on(connection, foreign_keys_lost, now, |purge| {
                 purge.character_entry(&id)
@@ -785,6 +808,7 @@ pub(crate) fn run_queued_purges_on(
             Err(_) if foreign_keys_lost.load(Ordering::SeqCst) => {
                 return Err(PurgeError::Storage);
             }
+            Err(PurgeError::Busy) => {}
             Err(error) => {
                 tracing::warn!(%error, kind, "a received delete could not run yet");
                 give_up_after_failures(connection, &kind, &id, now)?;
@@ -792,6 +816,45 @@ pub(crate) fn run_queued_purges_on(
         }
     }
     Ok(receipts)
+}
+
+/// Decides a queued delete again against what the device holds now (the
+/// user may have chatted while it waited); a kept entity leaves the queue.
+fn keep_on_recheck(
+    connection: &mut Connection,
+    kind: PurgeKind,
+    id: &str,
+    change_id: &str,
+    now: TimestampMillis,
+) -> Result<bool, PurgeError> {
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(storage)?;
+    let exists: bool = transaction
+        .query_row(
+            &format!(
+                "SELECT EXISTS(SELECT 1 FROM {} WHERE id = ?1)",
+                match kind {
+                    PurgeKind::Conversation => "conversations",
+                    PurgeKind::Character => "characters",
+                }
+            ),
+            [id],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    let kept = exists
+        && crate::sync::sync_adapter::keep_queued_delete(&transaction, kind, change_id, now)?;
+    if kept {
+        transaction
+            .execute(
+                "DELETE FROM purge_queue WHERE entity_kind = ?1 AND entity_id = ?2",
+                params![kind.name(), id],
+            )
+            .map_err(storage)?;
+    }
+    transaction.commit().map_err(storage)?;
+    Ok(kept)
 }
 
 /// Counts one more failure of a queued delete; at the limit the delete is
@@ -840,16 +903,24 @@ pub enum PurgeNoticeEntity {
     Conversation,
     Character,
     Group,
+    /// Another database file in the app's database directory, by file name.
+    DatabaseFile,
 }
 
 impl PurgeNoticeEntity {
-    const ALL: [Self; 3] = [Self::Conversation, Self::Character, Self::Group];
+    const ALL: [Self; 4] = [
+        Self::Conversation,
+        Self::Character,
+        Self::Group,
+        Self::DatabaseFile,
+    ];
 
     const fn name(self) -> &'static str {
         match self {
             Self::Conversation => "conversation",
             Self::Character => "character",
             Self::Group => "group",
+            Self::DatabaseFile => "database_file",
         }
     }
 }
@@ -860,24 +931,35 @@ pub enum PurgeNoticeReason {
     /// Another device deleted it, but this device had changes that device
     /// had not seen, so it was kept here and is sent back.
     KeptUnsentLocalChanges,
+    /// A kept entity cannot be sent back whole yet: a snapshot or a
+    /// referenced media blob is missing here, or content cannot be encoded.
+    /// It is sent once complete.
+    RejournalIncomplete,
     /// A delete received from another device kept failing here and was
     /// given up; the entity is kept and sent back.
     DroppedAfterFailures,
     /// Deleting a character left a group with fewer than two members; the
     /// group keeps its settings and needs members before it can start a chat.
     GroupBelowTwoMembers,
+    /// Media collection was skipped because another database file could not
+    /// be read; nothing is deleted until it can be.
+    MediaCollectionSkipped,
 }
 
 impl PurgeNoticeReason {
-    const ALL: [Self; 3] = [
+    const ALL: [Self; 5] = [
         Self::KeptUnsentLocalChanges,
+        Self::RejournalIncomplete,
         Self::DroppedAfterFailures,
         Self::GroupBelowTwoMembers,
+        Self::MediaCollectionSkipped,
     ];
 
     const fn name(self) -> &'static str {
         match self {
             Self::KeptUnsentLocalChanges => "kept_unsent_local_changes",
+            Self::RejournalIncomplete => "rejournal_incomplete",
+            Self::MediaCollectionSkipped => "media_collection_skipped",
             Self::DroppedAfterFailures => "dropped_after_failures",
             Self::GroupBelowTwoMembers => "group_below_two_members",
         }
@@ -911,6 +993,22 @@ pub(crate) fn record_notice(
 }
 
 impl Database {
+    /// How many concurrent-change conflicts of any entity kind wait for a
+    /// resolution; the evidence of settled deletes and re-sent entities is
+    /// visible here.
+    pub fn unresolved_sync_conflict_count(&self) -> Result<u64, PurgeError> {
+        let count: i64 = self
+            .connection()
+            .map_err(storage)?
+            .query_row(
+                "SELECT count(*) FROM sync_conflicts WHERE status = 'unresolved'",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(storage)?;
+        u64::try_from(count).map_err(storage)
+    }
+
     /// The notices the user has not dismissed yet, oldest first.
     pub fn purge_notices(&self) -> Result<Vec<PurgeNotice>, PurgeError> {
         let connection = self.connection().map_err(storage)?;
@@ -950,6 +1048,34 @@ impl Database {
                 })
             })
             .collect()
+    }
+
+    /// Records that media collection was skipped because the named database
+    /// file could not be read, unless such a notice is still open.
+    pub fn record_media_collection_skipped(
+        &self,
+        file_name: &str,
+        now: TimestampMillis,
+    ) -> Result<(), PurgeError> {
+        let connection = self.connection().map_err(storage)?;
+        let open: bool = connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM purge_notices WHERE entity_kind = 'database_file'
+                   AND entity_id = ?1 AND reason = 'media_collection_skipped' AND dismissed_at IS NULL)",
+                [file_name],
+                |row| row.get(0),
+            )
+            .map_err(storage)?;
+        if open {
+            return Ok(());
+        }
+        record_notice(
+            &connection,
+            PurgeNoticeEntity::DatabaseFile,
+            file_name,
+            PurgeNoticeReason::MediaCollectionSkipped,
+            now,
+        )
     }
 
     /// Marks a notice as seen; `false` when there was no such open notice.

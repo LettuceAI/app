@@ -4772,13 +4772,15 @@ mod smoke_tests {
         let character = CharacterId::new();
         CharacterRepository::create(&database, companion_plan(character)).expect("companion");
         let id = character.to_string();
-        crate::purge::queue_purge(
-            &database.connection().expect("lock"),
-            crate::purge::PurgeKind::Character,
-            &id,
-            TimestampMillis::new(1),
-        )
-        .expect("queue");
+        database
+            .connection()
+            .expect("lock")
+            .execute(
+                "INSERT INTO purge_queue (entity_kind, entity_id, change_id, queued_at)
+                 VALUES ('character', ?1, ?2, 1)",
+                [&id, &uuid::Uuid::new_v4().to_string()],
+            )
+            .expect("queue");
         database
             .connection()
             .expect("lock")
@@ -4817,5 +4819,82 @@ mod smoke_tests {
                 .expect("dismiss")
         );
         assert!(database.purge_notices().expect("notices").is_empty());
+    }
+
+    #[test]
+    fn two_devices_removing_the_same_character_from_a_group_agree_without_a_conflict() {
+        use lettuce_characters::{CreateGroupPlan, GroupMember, GroupProfile, GroupRepository};
+        use lettuce_sync::LocalChangeJournal;
+        let a = Database::open_in_memory().expect("a");
+        let b = Database::open_in_memory().expect("b");
+        let members: Vec<CharacterId> = (0..3).map(|_| CharacterId::new()).collect();
+        for member in &members {
+            CharacterRepository::create(&a, companion_plan(*member)).expect("member");
+        }
+        let group = GroupProfile::new(
+            lettuce_types::GroupId::new(),
+            "Cast".into(),
+            members
+                .iter()
+                .enumerate()
+                .map(|(ordinal, character_id)| GroupMember {
+                    character_id: *character_id,
+                    ordinal: u32::try_from(ordinal).expect("ordinal"),
+                    muted: false,
+                    model_profile_override: None,
+                })
+                .collect(),
+            TimestampMillis::new(1),
+        )
+        .expect("group");
+        let group_id = group.id;
+        GroupRepository::create(
+            &a,
+            CreateGroupPlan {
+                group,
+                starting_scene: None,
+            },
+        )
+        .expect("create group");
+        sync_characters(&a, &b, 100);
+        sync_characters(&b, &a, 110);
+        let conflicts = |database: &Database| {
+            database
+                .unresolved_sync_conflict_count()
+                .expect("conflicts")
+        };
+        let before = (conflicts(&a), conflicts(&b));
+
+        a.purge_character(members[1], TimestampMillis::new(200))
+            .expect("purge on a");
+        b.purge_character(members[1], TimestampMillis::new(300))
+            .expect("purge on b");
+        sync_characters(&a, &b, 400);
+        sync_characters(&b, &a, 410);
+        sync_characters(&a, &b, 420);
+        let on_a = GroupRepository::get(&a, group_id)
+            .expect("a")
+            .expect("group on a");
+        let on_b = GroupRepository::get(&b, group_id)
+            .expect("b")
+            .expect("group on b");
+        assert_eq!(on_a, on_b);
+        assert_eq!(
+            on_a.group
+                .members
+                .iter()
+                .map(|member| (member.character_id, member.ordinal))
+                .collect::<Vec<_>>(),
+            vec![(members[0], 0), (members[2], 1)]
+        );
+        assert_eq!((conflicts(&a), conflicts(&b)), before);
+        for database in [&a, &b] {
+            assert_eq!(
+                database
+                    .journal_current_state(TimestampMillis::new(500))
+                    .expect("rescan"),
+                0
+            );
+        }
     }
 }

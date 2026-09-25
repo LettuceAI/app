@@ -62,13 +62,16 @@ fn missing_entities_and_unknown_queue_rows_are_reported_and_dropped() {
     );
     {
         let connection = database.connection().expect("lock");
-        queue_purge(
-            &connection,
-            PurgeKind::Conversation,
-            &ConversationId::new().to_string(),
-            TimestampMillis::new(1),
-        )
-        .expect("queue");
+        connection
+            .execute(
+                "INSERT INTO purge_queue (entity_kind, entity_id, change_id, queued_at)
+                 VALUES ('conversation', ?1, ?2, 1)",
+                [
+                    ConversationId::new().to_string(),
+                    uuid::Uuid::new_v4().to_string(),
+                ],
+            )
+            .expect("queue");
     }
     assert_eq!(
         database.run_queued_purges(TimestampMillis::new(2)),
