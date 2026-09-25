@@ -191,7 +191,7 @@ exactly like a local create. Missing media assets keep the batch pending for
 the media phase (their inserts precede the character in origin order). A
 default model deleted on this device is cleared instead of blocking the
 origin's later changes, and the next scan journals the cleared default.
-Characters are never hard-deleted, so they journal no deletes.
+A deleted character journals a delete (see Hard deletes below).
 
 Lorebooks and bindings (sync S4). Personas and the persona default are
 scanned too (their explicit journaling stays; the scan journals what it
@@ -430,3 +430,20 @@ waits for its event), job inference usage evidence and its cost bases
 records (key `<run>:<source>`) go through the same row codec; the immutable
 tables are insert-only (an existing row is kept). Jobs themselves stay local,
 the evidence keeps its job id as a plain value.
+
+Hard deletes (protocol version 4, user decision 2026-09-25: delete like
+legacy). A purged conversation (direct or group) or character is absent at the
+next scan, which journals a delete of its `conversation.root` or
+`character.snapshot` entity after the deletes of its memory items, summaries
+and scheduled notes (reverse scan order); messages, branches, Souls,
+relationships and sessions journal nothing and go with their owner on the
+peer. A received delete wins over a concurrent edit like any snapshot delete
+and is queued in `purge_queue`; the queue runs right after the batch commits
+(and before every scan), performing the same purge as a local delete, so the
+entity never comes back from a later scan. A queued purge that finds a live
+generation stays queued, and the scan skips its entity meanwhile. A character
+delete is refused while a local group lists the character: the delete is only
+journaled and the next scan journals the character again, so every device
+keeps it. Payloads are unchanged (the schema fingerprint stays); the protocol
+version marks peers that accept these deletes. The media a purge leaves
+unused are collected on each device separately.
