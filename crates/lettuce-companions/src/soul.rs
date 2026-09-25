@@ -437,7 +437,12 @@ pub struct SoulChangeSet {
     pub additions: Vec<SoulFact>,
     pub supersessions: Vec<SoulSupersession>,
     pub user_edits: Vec<SoulUserEdit>,
+    /// The Soul's own time for the change: the timestamp of added facts and
+    /// supersessions, which follows the conversation's companion clock.
     pub applied_at: TimestampMillis,
+    /// Wall time the change is written at; it orders Souls by recency and is
+    /// not part of the change's identity.
+    pub recorded_at: TimestampMillis,
 }
 
 /// The change set for one user edit, or `None` when it changes nothing: legacy
@@ -470,6 +475,7 @@ pub fn prepare_user_edit(
         supersessions: Vec::new(),
         user_edits: vec![edit],
         applied_at: now,
+        recorded_at: now,
     }))
 }
 
@@ -799,6 +805,7 @@ fn prepare_change_set(
         supersessions,
         user_edits: Vec::new(),
         applied_at: now,
+        recorded_at: now,
     })
 }
 
@@ -1361,6 +1368,7 @@ mod tests {
                 supersessions: Vec::new(),
                 user_edits: Vec::new(),
                 applied_at: TimestampMillis::new(2),
+                recorded_at: TimestampMillis::new(2),
             },
         )
         .expect("apply");

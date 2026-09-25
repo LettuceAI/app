@@ -696,7 +696,7 @@ impl SoulRepository for Database {
         insert_facts(&tx, owner, &next.facts)?;
         let updated = tx.execute(
             "UPDATE companion_soul_states SET revision = ?2, updated_at = max(updated_at, ?3) WHERE character_id = ?1 AND revision = ?4 AND scope = ?5",
-            params![character_id.to_string(), sql_revision(next.revision)?, change_set.applied_at.get(), sql_revision(change_set.expected_revision)?, scope(owner)],
+            params![character_id.to_string(), sql_revision(next.revision)?, change_set.recorded_at.get(), sql_revision(change_set.expected_revision)?, scope(owner)],
         ).map_err(failure)?;
         if updated != 1 {
             return Err(SoulRepositoryError::Conflict);
@@ -986,6 +986,7 @@ mod tests {
             supersessions: Vec::new(),
             user_edits: Vec::new(),
             applied_at: TimestampMillis::new(3),
+            recorded_at: TimestampMillis::new(3),
         };
         database
             .apply(owner(character_id), OperationRecordId::new(), change)

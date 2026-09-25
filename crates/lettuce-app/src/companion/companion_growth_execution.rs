@@ -191,6 +191,10 @@ impl<
             checkpoint.reduced_at,
         )
         .map_err(CompanionGrowthExecutionError::Policy)?;
+        let change_set = lettuce_companions::SoulChangeSet {
+            recorded_at: now,
+            ..change_set
+        };
         let applied_facts = change_set.additions.len();
         let receipt = self
             .repository
