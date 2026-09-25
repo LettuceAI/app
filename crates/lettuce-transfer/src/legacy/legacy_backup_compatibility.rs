@@ -46,7 +46,6 @@ const DOCUMENT_KINDS: [LegacyBackupDocumentKind; 26] = [
     LegacyBackupDocumentKind::PlaygroundGenerations,
     LegacyBackupDocumentKind::LlmGenerationMetrics,
 ];
-const META_ENTRY_LIMIT: usize = 10_000;
 const META_TEXT_LIMIT: usize = 1_000_000;
 
 #[derive(Debug)]
@@ -364,9 +363,6 @@ fn validate_meta(
     };
     let rows: Vec<MetaEntry> = serde_json::from_slice(&document.bytes)
         .map_err(|_| LegacyBackupCompatibilityError::InvalidMeta)?;
-    if rows.len() > META_ENTRY_LIMIT {
-        return Err(LegacyBackupCompatibilityError::LimitExceeded);
-    }
     let mut keys = BTreeSet::new();
     let mut notices = Vec::new();
     for (index, row) in rows.into_iter().enumerate() {

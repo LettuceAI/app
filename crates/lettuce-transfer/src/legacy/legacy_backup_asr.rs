@@ -4,10 +4,9 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    LEGACY_ASR_RECORD_PLAN_LIMIT, LEGACY_ASR_TABLE_PLAN_LIMIT, LegacyAsrCorrectionCandidate,
-    LegacyAsrIgnoredSuggestionCandidate, LegacyAsrPlan, LegacyAsrVocabularyCandidate,
-    LegacyBackupAuthoredMediaPlan, LegacyBackupConversionNotice, LegacyBackupConversionNoticeKind,
-    LegacyBackupDocumentKind,
+    LegacyAsrCorrectionCandidate, LegacyAsrIgnoredSuggestionCandidate, LegacyAsrPlan,
+    LegacyAsrVocabularyCandidate, LegacyBackupAuthoredMediaPlan, LegacyBackupConversionNotice,
+    LegacyBackupConversionNoticeKind, LegacyBackupDocumentKind,
 };
 
 #[derive(Debug)]
@@ -106,7 +105,6 @@ pub fn plan_legacy_backup_asr(
             let parsed: AsrLearningDocument =
                 serde_json::from_slice(&document.bytes).map_err(|_| malformed("$"))?;
             report_extra("$", &parsed.extra, &mut notices);
-            validate_bounds(&parsed)?;
             let vocabulary = map_vocabulary(parsed.vocabulary_terms, &mut notices)?;
             let corrections = map_corrections(parsed.corrections, &mut notices)?;
             let ignored_suggestions =
@@ -146,30 +144,6 @@ pub fn plan_legacy_backup_asr(
         notices,
         source,
     })
-}
-
-fn validate_bounds(document: &AsrLearningDocument) -> Result<(), LegacyBackupAsrError> {
-    let table_limit = usize::try_from(LEGACY_ASR_TABLE_PLAN_LIMIT)
-        .map_err(|_| LegacyBackupAsrError::LimitExceeded)?;
-    if document.vocabulary_terms.len() > table_limit
-        || document.corrections.len() > table_limit
-        || document.ignored_suggestions.len() > table_limit
-    {
-        return Err(LegacyBackupAsrError::LimitExceeded);
-    }
-    let aggregate = document
-        .vocabulary_terms
-        .len()
-        .checked_add(document.corrections.len())
-        .and_then(|count| count.checked_add(document.ignored_suggestions.len()))
-        .ok_or(LegacyBackupAsrError::LimitExceeded)?;
-    if aggregate
-        > usize::try_from(LEGACY_ASR_RECORD_PLAN_LIMIT)
-            .map_err(|_| LegacyBackupAsrError::LimitExceeded)?
-    {
-        return Err(LegacyBackupAsrError::LimitExceeded);
-    }
-    Ok(())
 }
 
 fn map_vocabulary(
@@ -559,6 +533,25 @@ mod tests {
                 && item.field == "$.futureRoot"
         }));
         assert_eq!(plan.source.authored.configuration.source.documents.len(), 1);
+    }
+
+    #[test]
+    fn backup_asr_has_no_learning_row_cap() {
+        let mut document_value = complete_document();
+        let template = document_value["vocabularyTerms"][0].clone();
+        document_value["vocabularyTerms"] = Value::Array(
+            (0..10_001)
+                .map(|index| {
+                    let mut row = template.clone();
+                    row["term"] = json!(format!("Term {index}"));
+                    row["normalized_term"] = json!(format!("term {index}"));
+                    row
+                })
+                .collect(),
+        );
+        let plan = plan_legacy_backup_asr(source(vec![document(document_value)]))
+            .expect("a library past the old ASR cap is planned");
+        assert_eq!(plan.asr.vocabulary.len(), 10_001);
     }
 
     #[test]

@@ -8,8 +8,6 @@ use crate::{
     LegacyBackupDocumentKind,
 };
 
-const METADATA_PER_RECORD_LIMIT: usize = 256;
-const METADATA_TOTAL_LIMIT: usize = 4_000_000;
 const TEXT_LIMIT: usize = 16_384;
 
 #[derive(Debug)]
@@ -139,7 +137,6 @@ fn map_rows(
     notices: &mut Vec<LegacyBackupConversionNotice>,
 ) -> Result<Vec<LegacyBackupUsageRecord>, LegacyBackupUsageError> {
     let mut ids = BTreeSet::new();
-    let mut metadata_total = 0_usize;
     let mut records = Vec::with_capacity(rows.len());
     for (index, row) in rows.into_iter().enumerate() {
         let path = format!("[{index}]");
@@ -171,12 +168,6 @@ fn map_rows(
         let timestamp =
             u64::try_from(row.timestamp).map_err(|_| malformed(format!("{path}.timestamp")))?;
         let metadata = map_metadata(row.metadata, &path, notices)?;
-        metadata_total = metadata_total
-            .checked_add(metadata.len())
-            .ok_or(LegacyBackupUsageError::LimitExceeded)?;
-        if metadata_total > METADATA_TOTAL_LIMIT {
-            return Err(LegacyBackupUsageError::LimitExceeded);
-        }
         records.push(LegacyBackupUsageRecord {
             source_id: row.id,
             timestamp,
@@ -226,9 +217,6 @@ fn map_metadata(
     path: &str,
     notices: &mut Vec<LegacyBackupConversionNotice>,
 ) -> Result<BTreeMap<String, String>, LegacyBackupUsageError> {
-    if rows.len() > METADATA_PER_RECORD_LIMIT {
-        return Err(LegacyBackupUsageError::LimitExceeded);
-    }
     let mut metadata = BTreeMap::new();
     for (index, row) in rows.into_iter().enumerate() {
         let item_path = format!("{path}.metadata[{index}]");

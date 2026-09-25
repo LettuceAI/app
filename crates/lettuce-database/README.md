@@ -206,7 +206,7 @@ ASR learning planning reads all four final version-92 learning tables through
 the same read-only connection. It retains every authored value, normalized
 value, metric, timestamp and voice-audio locator in stable source-ID order,
 validates optional term and correction links within the complete plan, and
-enforces per-table plus aggregate limits before returning any output. Planning
+limits no row count before returning any output. Planning
 does not ingest audio or mutate either database.
 
 Legacy import admission persists immutable assignments for all four ASR row

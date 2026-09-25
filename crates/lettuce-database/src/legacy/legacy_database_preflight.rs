@@ -17,18 +17,16 @@ use lettuce_models::{
 };
 use lettuce_settings::{HeaderName, SecretOwnerId, SecretRef, SecretValue};
 use lettuce_transfer::{
-    LEGACY_ASR_RECORD_PLAN_LIMIT, LEGACY_ASR_TABLE_PLAN_LIMIT, LEGACY_MODEL_PROFILE_PLAN_LIMIT,
-    LEGACY_PROMPT_PLAN_LIMIT, LEGACY_PROVIDER_ACCOUNT_PLAN_LIMIT, LegacyAsrCorrectionCandidate,
-    LegacyAsrIgnoredSuggestionCandidate, LegacyAsrPlan, LegacyAsrVocabularyCandidate,
-    LegacyAsrVoiceExampleCandidate, LegacyCrop, LegacyDatabaseInventory,
-    LegacyDatabasePreflightError, LegacyImageRecommendation, LegacyImportProviderSecretSource,
-    LegacyKeywordMatchMode, LegacyLorebookCandidate, LegacyLorebookDetectionPolicy,
-    LegacyLorebookEntryCandidate, LegacyLorebookPlan, LegacyMediaReference,
-    LegacyModelProfileCandidate, LegacyPendingProviderSecret, LegacyPersonaCandidate,
-    LegacyPersonaPlan, LegacyPromptCandidate, LegacyPromptEntryCandidate, LegacyPromptPlan,
-    LegacyProviderAccountCandidate, LegacyProviderAccountOrigin, LegacyProviderModelPlan,
-    LegacyProviderSecretSource, LegacyProviderSecretSourceError, legacy_value_skip,
-    lenient_legacy_json,
+    LegacyAsrCorrectionCandidate, LegacyAsrIgnoredSuggestionCandidate, LegacyAsrPlan,
+    LegacyAsrVocabularyCandidate, LegacyAsrVoiceExampleCandidate, LegacyCrop,
+    LegacyDatabaseInventory, LegacyDatabasePreflightError, LegacyImageRecommendation,
+    LegacyImportProviderSecretSource, LegacyKeywordMatchMode, LegacyLorebookCandidate,
+    LegacyLorebookDetectionPolicy, LegacyLorebookEntryCandidate, LegacyLorebookPlan,
+    LegacyMediaReference, LegacyModelProfileCandidate, LegacyPendingProviderSecret,
+    LegacyPersonaCandidate, LegacyPersonaPlan, LegacyPromptCandidate, LegacyPromptEntryCandidate,
+    LegacyPromptPlan, LegacyProviderAccountCandidate, LegacyProviderAccountOrigin,
+    LegacyProviderModelPlan, LegacyProviderSecretSource, LegacyProviderSecretSourceError,
+    legacy_value_skip, lenient_legacy_json,
 };
 use lettuce_types::{
     LorebookEntryId, LorebookId, ModelProfileId, PersonaId, ProviderAccountId, Revision,
@@ -93,35 +91,25 @@ pub fn plan_legacy_provider_models(
     path: impl AsRef<Path>,
 ) -> Result<LegacyProviderModelPlan, LegacyDatabasePreflightError> {
     let connection = open_validated(path)?;
-    plan_legacy_provider_models_with_limits(
-        &connection,
-        LEGACY_PROVIDER_ACCOUNT_PLAN_LIMIT,
-        LEGACY_MODEL_PROFILE_PLAN_LIMIT,
-    )
+    plan_legacy_provider_models_in(&connection)
 }
 
 pub fn plan_legacy_prompts(
     path: impl AsRef<Path>,
 ) -> Result<LegacyPromptPlan, LegacyDatabasePreflightError> {
     let connection = open_validated(path)?;
-    plan_legacy_prompts_with_limit(&connection, LEGACY_PROMPT_PLAN_LIMIT)
+    plan_legacy_prompts_in(&connection)
 }
 
 pub fn plan_legacy_asr(
     path: impl AsRef<Path>,
 ) -> Result<LegacyAsrPlan, LegacyDatabasePreflightError> {
     let connection = open_validated(path)?;
-    plan_legacy_asr_with_limits(
-        &connection,
-        LEGACY_ASR_TABLE_PLAN_LIMIT,
-        LEGACY_ASR_RECORD_PLAN_LIMIT,
-    )
+    plan_legacy_asr_in(&connection)
 }
 
-fn plan_legacy_asr_with_limits(
+fn plan_legacy_asr_in(
     connection: &Connection,
-    table_limit: u32,
-    aggregate_limit: u32,
 ) -> Result<LegacyAsrPlan, LegacyDatabasePreflightError> {
     const TABLES: [&str; 4] = [
         "asr_vocabulary_terms",
@@ -129,19 +117,8 @@ fn plan_legacy_asr_with_limits(
         "asr_ignored_suggestions",
         "asr_voice_examples",
     ];
-    let mut total = 0_u64;
     for table in TABLES {
         require_table(connection, table)?;
-        require_count_limit(connection, table, table_limit)?;
-        total = total
-            .checked_add(count(connection, table, table)?)
-            .ok_or(LegacyDatabasePreflightError::CountOutOfRange { table })?;
-    }
-    if total > u64::from(aggregate_limit) {
-        return Err(LegacyDatabasePreflightError::LimitExceeded {
-            table: "asr_learning_records",
-            limit: aggregate_limit,
-        });
     }
 
     let vocabulary = read_asr_vocabulary(connection)?;
@@ -561,11 +538,9 @@ struct LegacyPromptEntryRow {
     prompt_entry_payload: Option<PromptEntryPayload>,
 }
 
-fn plan_legacy_prompts_with_limit(
+fn plan_legacy_prompts_in(
     connection: &Connection,
-    limit: u32,
 ) -> Result<LegacyPromptPlan, LegacyDatabasePreflightError> {
-    require_count_limit(connection, "prompt_templates", limit)?;
     let (default_prompt_source_id, deprecated_system_prompt) = connection
         .query_row(
             "SELECT prompt_template_id,system_prompt FROM settings WHERE id=1",
@@ -823,13 +798,9 @@ impl LegacyProviderSecretSource for LegacyDatabaseProviderSecretSource {
     }
 }
 
-fn plan_legacy_provider_models_with_limits(
+fn plan_legacy_provider_models_in(
     connection: &Connection,
-    provider_limit: u32,
-    model_limit: u32,
 ) -> Result<LegacyProviderModelPlan, LegacyDatabasePreflightError> {
-    require_count_limit(connection, "provider_credentials", provider_limit)?;
-    require_count_limit(connection, "models", model_limit)?;
     let (default_provider_id, default_model_id, created_at, updated_at) = connection
         .query_row(
             "SELECT default_provider_credential_id,default_model_id,created_at,updated_at FROM settings WHERE id = 1",
@@ -1566,18 +1537,6 @@ fn plan_legacy_lorebooks_in(
     }
     skipped.sort();
     Ok(LegacyLorebookPlan { lorebooks, skipped })
-}
-
-fn require_count_limit(
-    connection: &Connection,
-    table: &'static str,
-    limit: u32,
-) -> Result<(), LegacyDatabasePreflightError> {
-    if count(connection, table, table)? > u64::from(limit) {
-        Err(LegacyDatabasePreflightError::LimitExceeded { table, limit })
-    } else {
-        Ok(())
-    }
 }
 
 fn legacy_flag(value: i64, field: &'static str) -> Result<bool, LegacyDatabasePreflightError> {
@@ -2379,17 +2338,6 @@ mod tests {
         assert_eq!(memory.entries[0].draft.depth, 2);
         assert_eq!(memory.entries[1].source_id, "first");
         assert_eq!(
-            plan_legacy_prompts_with_limit(
-                &Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY)
-                    .expect("open source for limit"),
-                1,
-            ),
-            Err(LegacyDatabasePreflightError::LimitExceeded {
-                table: "prompt_templates",
-                limit: 1,
-            })
-        );
-        assert_eq!(
             fs::read(&path).expect("read source after planning"),
             source_before
         );
@@ -2890,26 +2838,12 @@ mod tests {
         connection
             .execute("DELETE FROM models", [])
             .expect("delete orphan model");
-        assert_eq!(
-            plan_legacy_provider_models_with_limits(&connection, 0, 1),
-            Err(LegacyDatabasePreflightError::LimitExceeded {
-                table: "provider_credentials",
-                limit: 0
-            })
-        );
         connection
             .execute(
                 "INSERT INTO models (id,name,provider_id,provider_credential_id,provider_label,display_name,created_at) VALUES (?1,'model-a','openai',?2,'Primary','Model A',20)",
                 rusqlite::params![model_id.to_string(), provider_id.to_string()],
             )
             .expect("insert model");
-        assert_eq!(
-            plan_legacy_provider_models_with_limits(&connection, 1, 0),
-            Err(LegacyDatabasePreflightError::LimitExceeded {
-                table: "models",
-                limit: 0
-            })
-        );
         let missing_default_model = ModelProfileId::new();
         let missing_default_provider = ProviderAccountId::new();
         connection
@@ -3723,7 +3657,7 @@ mod tests {
             .execute("UPDATE asr_corrections SET user_approved=2 WHERE id=11", [])
             .expect("corrupt flag");
         assert_eq!(
-            plan_legacy_asr_with_limits(&connection, 10, 10),
+            plan_legacy_asr_in(&connection),
             Err(LegacyDatabasePreflightError::MalformedRecord {
                 table: "asr_corrections",
                 field: "user_approved",
@@ -3736,34 +3670,10 @@ mod tests {
             .execute("UPDATE asr_voice_examples SET term_id=99 WHERE id=14", [])
             .expect("orphan voice example");
         assert_eq!(
-            plan_legacy_asr_with_limits(&connection, 10, 10),
+            plan_legacy_asr_in(&connection),
             Err(LegacyDatabasePreflightError::OrphanRecord {
                 table: "asr_voice_examples",
                 parent_table: "asr_vocabulary_terms",
-            })
-        );
-        drop(connection);
-        fs::remove_file(path).expect("remove legacy database");
-    }
-
-    #[test]
-    fn asr_plan_enforces_per_table_and_aggregate_bounds() {
-        let path = legacy_database(i64::from(LEGACY_DATABASE_SCHEMA_VERSION));
-        let connection = Connection::open(&path).expect("open legacy database");
-        add_asr_schema(&connection);
-        insert_asr_records(&connection);
-        assert_eq!(
-            plan_legacy_asr_with_limits(&connection, 1, 10),
-            Err(LegacyDatabasePreflightError::LimitExceeded {
-                table: "asr_vocabulary_terms",
-                limit: 1,
-            })
-        );
-        assert_eq!(
-            plan_legacy_asr_with_limits(&connection, 2, 4),
-            Err(LegacyDatabasePreflightError::LimitExceeded {
-                table: "asr_learning_records",
-                limit: 4,
             })
         );
         drop(connection);

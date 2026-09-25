@@ -111,8 +111,9 @@ duplicate its bytes. Missing, shortened, changed or oversized ready content
 rejects the complete export; non-ready metadata remains represented without
 invented content.
 
-The versioned ASR learning document is a bounded JSON-ready interchange format
-for vocabulary, corrections, ignored suggestions and managed voice examples.
+The versioned ASR learning document is a JSON-ready interchange format for
+vocabulary, corrections, ignored suggestions and managed voice examples, with
+no row count limit.
 It preserves metrics and relationships without exporting native audio paths;
 version 3 carries each audio asset's logical kind, origin, redacted provenance,
 content hash, byte size, MIME type and duration. The application validates and
@@ -168,9 +169,8 @@ entries and entries per book before any destination mutation.
 The ASR learning plan preserves vocabulary, correction, ignored-suggestion and
 voice-example rows in stable legacy ID order. Authored and normalized text,
 counters, confidence, timestamps, language, scope and optional learning links
-remain exact. Voice audio paths remain unresolved media evidence. Separate
-per-table and aggregate bounds apply before any plan is returned, and malformed
-or orphaned rows reject the whole read-only plan.
+remain exact. Voice audio paths remain unresolved media evidence. No row count
+is limited, and malformed or orphaned rows reject the whole read-only plan.
 
 Provider/model planning preserves stable legacy account and profile identities,
 protocol, endpoint and custom wire configuration, effective streaming/TLS state,

@@ -30,17 +30,12 @@ use serde_json::{Map, Value};
 use uuid::Uuid;
 
 use crate::{
-    LEGACY_MODEL_PROFILE_PLAN_LIMIT, LEGACY_PROMPT_PLAN_LIMIT, LEGACY_PROVIDER_ACCOUNT_PLAN_LIMIT,
     LegacyBackupDocumentKind, LegacyBackupInventory, LegacyModelProfileCandidate,
     LegacyPendingProviderSecret, LegacyPromptCandidate, LegacyPromptEntryCandidate,
     LegacyPromptPlan, LegacyProviderAccountCandidate, LegacyProviderAccountOrigin,
     LegacyProviderModelPlan, ProviderBackupSecret,
 };
 
-const AUDIO_PROVIDER_LIMIT: usize = 256;
-const USER_VOICE_LIMIT: usize = 10_000;
-const CHAT_TEMPLATE_LIMIT: usize = 10_000;
-const SECRET_LIMIT: usize = 1_024;
 pub const LEGACY_ID_NAMESPACE: Uuid = Uuid::from_u128(0x6c657474_7563_652d_6261_636b75707631);
 
 /// Destination ids of one legacy source. Legacy ids and ids derived from legacy
@@ -422,43 +417,27 @@ pub fn plan_legacy_backup_configuration(
     let provider_rows: Vec<ProviderRow> = array_document(
         &source,
         LegacyBackupDocumentKind::ProviderCredentials,
-        LEGACY_PROVIDER_ACCOUNT_PLAN_LIMIT as usize,
         &mut notices,
     )?;
-    let model_rows: Vec<ModelRow> = array_document(
-        &source,
-        LegacyBackupDocumentKind::Models,
-        LEGACY_MODEL_PROFILE_PLAN_LIMIT as usize,
-        &mut notices,
-    )?;
+    let model_rows: Vec<ModelRow> =
+        array_document(&source, LegacyBackupDocumentKind::Models, &mut notices)?;
     let prompt_rows: Vec<PromptRow> = array_document(
         &source,
         LegacyBackupDocumentKind::PromptTemplates,
-        LEGACY_PROMPT_PLAN_LIMIT as usize,
         &mut notices,
     )?;
-    let secret_rows: Vec<SecretRow> = array_document(
-        &source,
-        LegacyBackupDocumentKind::Secrets,
-        SECRET_LIMIT,
-        &mut notices,
-    )?;
+    let secret_rows: Vec<SecretRow> =
+        array_document(&source, LegacyBackupDocumentKind::Secrets, &mut notices)?;
     let audio_rows: Vec<AudioProviderRow> = array_document(
         &source,
         LegacyBackupDocumentKind::AudioProviders,
-        AUDIO_PROVIDER_LIMIT,
         &mut notices,
     )?;
-    let voice_rows: Vec<UserVoiceRow> = array_document(
-        &source,
-        LegacyBackupDocumentKind::UserVoices,
-        USER_VOICE_LIMIT,
-        &mut notices,
-    )?;
+    let voice_rows: Vec<UserVoiceRow> =
+        array_document(&source, LegacyBackupDocumentKind::UserVoices, &mut notices)?;
     let chat_rows: Vec<ChatTemplateRow> = array_document(
         &source,
         LegacyBackupDocumentKind::ChatTemplates,
-        CHAT_TEMPLATE_LIMIT,
         &mut notices,
     )?;
 
@@ -557,14 +536,9 @@ fn optional_document<T: for<'de> Deserialize<'de>>(
 fn array_document<T: for<'de> Deserialize<'de>>(
     source: &LegacyBackupInventory,
     kind: LegacyBackupDocumentKind,
-    limit: usize,
     notices: &mut Vec<LegacyBackupConversionNotice>,
 ) -> Result<Vec<T>, LegacyBackupConfigurationError> {
-    let rows = optional_document::<Vec<T>>(source, kind, notices)?.unwrap_or_default();
-    if rows.len() > limit {
-        return Err(LegacyBackupConfigurationError::LimitExceeded { document: kind });
-    }
-    Ok(rows)
+    Ok(optional_document::<Vec<T>>(source, kind, notices)?.unwrap_or_default())
 }
 
 /// A settings JSON column whose stored text does not parse arrives as that

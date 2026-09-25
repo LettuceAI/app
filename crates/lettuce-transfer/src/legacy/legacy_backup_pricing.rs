@@ -8,7 +8,6 @@ use crate::{
     LegacyBackupUsagePlan,
 };
 
-const PRICING_CACHE_LIMIT: usize = 10_000;
 const MODEL_ID_LIMIT: usize = 1_024;
 const PRICING_JSON_LIMIT: usize = 64 * 1_024;
 
@@ -113,9 +112,6 @@ fn map_rows(
     rows: Vec<CacheRow>,
     notices: &mut Vec<LegacyBackupConversionNotice>,
 ) -> Result<Vec<LegacyBackupPricingEntry>, LegacyBackupPricingError> {
-    if rows.len() > PRICING_CACHE_LIMIT {
-        return Err(LegacyBackupPricingError::LimitExceeded);
-    }
     let mut model_ids = BTreeSet::new();
     let mut entries = Vec::with_capacity(rows.len());
     for (index, row) in rows.into_iter().enumerate() {

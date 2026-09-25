@@ -309,13 +309,12 @@ fn map_voice_example_row(
 pub(crate) fn read_all_learning(
     transaction: &Transaction<'_>,
 ) -> Result<AsrLearningBatch, AsrLearningRepositoryError> {
-    let limit = lettuce_transfer::ASR_LEARNING_TABLE_LIMIT + 1;
     let vocabulary = transaction
-        .prepare(&format!(
+        .prepare(
             "SELECT id, term, normalized_term, language, category, scope, priority,
                     use_count, created_at, updated_at
-               FROM asr_vocabulary_terms ORDER BY id LIMIT {limit}"
-        ))
+               FROM asr_vocabulary_terms ORDER BY id",
+        )
         .map_err(storage)?
         .query_map([], map_vocabulary_row)
         .map_err(storage)?
@@ -325,12 +324,12 @@ pub(crate) fn read_all_learning(
         .map(vocabulary_from_row)
         .collect::<Result<Vec<_>, _>>()?;
     let corrections = transaction
-        .prepare(&format!(
+        .prepare(
             "SELECT id, wrong, normalized_wrong, correct, normalized_correct, language,
                     scope, confidence, use_count, accepted_count, rejected_count, seen_count,
                     last_seen_at, user_approved, created_at, updated_at
-               FROM asr_corrections ORDER BY id LIMIT {limit}"
-        ))
+               FROM asr_corrections ORDER BY id",
+        )
         .map_err(storage)?
         .query_map([], map_correction_row)
         .map_err(storage)?
@@ -340,11 +339,11 @@ pub(crate) fn read_all_learning(
         .map(correction_from_row)
         .collect::<Result<Vec<_>, _>>()?;
     let ignored_suggestions = transaction
-        .prepare(&format!(
+        .prepare(
             "SELECT id, wrong, normalized_wrong, correct, normalized_correct, language,
                     scope, ignored_count, last_ignored_at, created_at, updated_at
-               FROM asr_ignored_suggestions ORDER BY id LIMIT {limit}"
-        ))
+               FROM asr_ignored_suggestions ORDER BY id",
+        )
         .map_err(storage)?
         .query_map([], map_ignored_row)
         .map_err(storage)?
@@ -357,12 +356,12 @@ pub(crate) fn read_all_learning(
         })
         .collect::<Result<Vec<_>, _>>()?;
     let mut statement = transaction
-        .prepare(&format!(
+        .prepare(
             "SELECT id, audio_asset_id, expected_text, normalized_expected_text,
                     whisper_output, normalized_whisper_output, language, scope,
                     vocabulary_term_id, correction_id, created_at, updated_at
-               FROM asr_voice_examples ORDER BY id LIMIT {limit}"
-        ))
+               FROM asr_voice_examples ORDER BY id",
+        )
         .map_err(storage)?;
     let mut rows = statement.query([]).map_err(storage)?;
     let mut voice_examples = Vec::new();

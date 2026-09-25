@@ -25,8 +25,6 @@ use crate::{
     LegacyMediaReference, LegacyPersonaCandidate, LegacyPersonaPlan,
 };
 
-const CHILD_LIMIT: usize = 10_000;
-
 #[derive(Debug)]
 pub struct LegacyBackupAuthoredPlan {
     pub personas: LegacyPersonaPlan,
@@ -854,9 +852,6 @@ pub(crate) fn map_character_row(
                 .ok_or_else(|| malformed(LegacyBackupDocumentKind::Characters, "rules"))
         })
         .collect::<Result<Vec<_>, _>>()?;
-    if rules.len() > CHILD_LIMIT {
-        return Err(limit(LegacyBackupDocumentKind::Characters));
-    }
     let profile = CharacterProfile {
         name: row.name,
         nickname: normalize(row.nickname),
@@ -1005,9 +1000,6 @@ pub(crate) fn map_character_row(
             "default_chat_template_id",
             crate::LegacyImportSkipReason::MissingChatTemplate,
         ));
-    }
-    if scenes.len() > CHILD_LIMIT {
-        return Err(limit(LegacyBackupDocumentKind::Characters));
     }
     let companion = crate::legacy::legacy_backup_json_values::legacy_companion(
         row.companion,
@@ -1177,9 +1169,6 @@ fn map_scenes(
     let mut scenes = Vec::with_capacity(rows.len());
     for (ordinal, row) in rows.into_iter().enumerate() {
         report_extra(LegacyBackupDocumentKind::Characters, &row.extra, notices);
-        if row.variants.len() > CHILD_LIMIT {
-            return Err(limit(LegacyBackupDocumentKind::Characters));
-        }
         let id: SceneId = parse_id(&row.id, LegacyBackupDocumentKind::Characters, "scenes.id")?;
         require_unique(
             &mut ids,
@@ -1725,9 +1714,6 @@ pub(crate) fn map_group_starting_scene(
         &row.extra,
         notices,
     );
-    if row.variants.len() > CHILD_LIMIT {
-        return Err(limit(LegacyBackupDocumentKind::GroupCharacters));
-    }
     let id = parse_id(
         &row.id,
         LegacyBackupDocumentKind::GroupCharacters,

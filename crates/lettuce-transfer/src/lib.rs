@@ -39,8 +39,6 @@ pub const LEGACY_DATABASE_SCHEMA_VERSION: u32 = 92;
 /// 2026-09-23): 2.2.0 stored 92 or 94, 2.2.1 stored 95, 2.2.2-2.2.5 96.
 pub const LEGACY_DATABASE_SCHEMA_VERSIONS: std::ops::RangeInclusive<u32> = 92..=96;
 pub const ASR_LEARNING_DOCUMENT_VERSION: u32 = 3;
-pub const ASR_LEARNING_RECORD_LIMIT: usize = 40_000;
-pub const ASR_LEARNING_TABLE_LIMIT: usize = 10_000;
 pub const LEGACY_ASR_LEARNING_DOCUMENT_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -129,17 +127,6 @@ impl LegacyAsrLearningDocument {
     #[must_use]
     pub fn within_bounds(&self) -> bool {
         self.version == LEGACY_ASR_LEARNING_DOCUMENT_VERSION
-            && self.vocabulary.len() <= ASR_LEARNING_TABLE_LIMIT
-            && self.corrections.len() <= ASR_LEARNING_TABLE_LIMIT
-            && self.ignored_suggestions.len() <= ASR_LEARNING_TABLE_LIMIT
-            && self.voice_examples.len() <= ASR_LEARNING_TABLE_LIMIT
-            && self
-                .vocabulary
-                .len()
-                .checked_add(self.corrections.len())
-                .and_then(|count| count.checked_add(self.ignored_suggestions.len()))
-                .and_then(|count| count.checked_add(self.voice_examples.len()))
-                .is_some_and(|count| count <= ASR_LEARNING_RECORD_LIMIT)
     }
 }
 
@@ -171,18 +158,6 @@ impl AsrLearningDocument {
     #[must_use]
     pub fn within_bounds(&self) -> bool {
         self.version == ASR_LEARNING_DOCUMENT_VERSION
-            && self.vocabulary.len() <= ASR_LEARNING_TABLE_LIMIT
-            && self.corrections.len() <= ASR_LEARNING_TABLE_LIMIT
-            && self.ignored_suggestions.len() <= ASR_LEARNING_TABLE_LIMIT
-            && self.voice_examples.len() <= ASR_LEARNING_TABLE_LIMIT
-            && self.audio_assets.len() <= ASR_LEARNING_TABLE_LIMIT
-            && self
-                .vocabulary
-                .len()
-                .checked_add(self.corrections.len())
-                .and_then(|count| count.checked_add(self.ignored_suggestions.len()))
-                .and_then(|count| count.checked_add(self.voice_examples.len()))
-                .is_some_and(|count| count <= ASR_LEARNING_RECORD_LIMIT)
     }
 
     pub fn validate(&self) -> Result<(), lettuce_speech::AsrLearningError> {
@@ -270,11 +245,6 @@ impl AsrLearningDocument {
 }
 pub const LEGACY_MEDIA_OBJECT_BYTES_LIMIT: u64 = 64 * 1024 * 1024;
 pub const LEGACY_MEDIA_TOTAL_BYTES_LIMIT: u64 = crate::MAX_BACKUP_TOTAL_BYTES;
-pub const LEGACY_PROVIDER_ACCOUNT_PLAN_LIMIT: u32 = 256;
-pub const LEGACY_MODEL_PROFILE_PLAN_LIMIT: u32 = 10_000;
-pub const LEGACY_PROMPT_PLAN_LIMIT: u32 = 10_000;
-pub const LEGACY_ASR_TABLE_PLAN_LIMIT: u32 = 10_000;
-pub const LEGACY_ASR_RECORD_PLAN_LIMIT: u32 = 40_000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LegacyDatabaseInventory {

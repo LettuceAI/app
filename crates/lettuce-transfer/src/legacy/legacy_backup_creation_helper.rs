@@ -10,7 +10,6 @@ use crate::{
     LegacyBackupMediaRoot, LegacyBackupMemoryEmbeddingPlan,
 };
 
-const SCENE_LIMIT: usize = 100_000;
 const JSON_LIMIT: usize = 256 * 1024 * 1024;
 const TEXT_LIMIT: usize = 8 * 1024 * 1024;
 const INLINE_IMAGE_LIMIT: usize = 64 * 1024 * 1024;
@@ -501,9 +500,6 @@ fn map_draft(
         if let Some(value) = value {
             validate_text(value, &format!("{path}.{field}"))?;
         }
-    }
-    if row.scenes.len() > SCENE_LIMIT {
-        return Err(LegacyBackupCreationHelperError::LimitExceeded);
     }
     let mut scene_ids = BTreeSet::new();
     let scenes = row
