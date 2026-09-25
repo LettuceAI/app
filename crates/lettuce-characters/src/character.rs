@@ -8,11 +8,14 @@ use lettuce_types::{
 use serde::{Deserialize, Serialize};
 
 use crate::constants::{
-    MAX_COLLECTION_ITEMS, MAX_TAGS_OR_SOURCES, validate_collection, validate_name,
-    validate_non_blank, validate_revision_timestamps, validate_scalar_limit, validate_text,
+    MAX_COLLECTION_ITEMS, validate_collection, validate_name, validate_non_blank,
+    validate_revision_timestamps, validate_scalar_limit, validate_text,
 };
 use crate::presentation::CharacterPresentationV1;
 use crate::{InteractionMode, LifecycleStatus, MemoryPolicy, ValidationError};
+
+/// The longest locale key a localized creator note may use.
+pub const MAX_LOCALE_SCALARS: usize = 64;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -71,28 +74,16 @@ impl CharacterProvenance {
         }
         for (locale, notes) in &self.localized_creator_notes {
             validate_non_blank("character.provenance.locale", locale)?;
-            validate_scalar_limit("character.provenance.locale", locale, 64)?;
+            validate_scalar_limit("character.provenance.locale", locale, MAX_LOCALE_SCALARS)?;
             validate_text("character.provenance.localized_creator_notes", notes)?;
         }
-        validate_collection("character.sources", &self.sources, MAX_TAGS_OR_SOURCES)?;
-        validate_collection("character.tags", &self.tags, MAX_TAGS_OR_SOURCES)?;
         for source in &self.sources {
             validate_non_blank("character.source", source)?;
-            validate_scalar_limit("character.source", source, 1024)?;
-            if source.len() > 1024 {
-                return Err(ValidationError::TooLarge {
-                    field: "character.source",
-                });
-            }
+            validate_text("character.source", source)?;
         }
         for tag in &self.tags {
             validate_non_blank("character.tag", tag)?;
-            validate_scalar_limit("character.tag", tag, 1024)?;
-            if tag.len() > 1024 {
-                return Err(ValidationError::TooLarge {
-                    field: "character.tag",
-                });
-            }
+            validate_text("character.tag", tag)?;
         }
         Ok(())
     }

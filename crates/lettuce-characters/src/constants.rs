@@ -2,9 +2,8 @@ use lettuce_types::{Revision, TimestampMillis};
 
 use crate::ValidationError;
 
-pub(crate) const MAX_NAME_SCALARS: usize = 256;
+pub(crate) const MAX_NAME_BYTES: usize = 1024;
 pub(crate) const MAX_TEXT_BYTES: usize = 1024 * 1024;
-pub(crate) const MAX_TAGS_OR_SOURCES: usize = 256;
 pub(crate) const MAX_COLLECTION_ITEMS: usize = 10_000;
 
 pub(crate) fn validate_revision_timestamps(
@@ -31,8 +30,7 @@ pub(crate) fn validate_non_blank(field: &'static str, value: &str) -> Result<(),
 
 pub(crate) fn validate_name(field: &'static str, value: &str) -> Result<(), ValidationError> {
     validate_non_blank(field, value)?;
-    validate_scalar_limit(field, value, MAX_NAME_SCALARS)?;
-    if value.len() > 1024 {
+    if value.len() > MAX_NAME_BYTES {
         return Err(ValidationError::TooLarge { field });
     }
     Ok(())

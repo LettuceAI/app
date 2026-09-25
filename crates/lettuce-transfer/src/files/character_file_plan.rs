@@ -4,7 +4,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use lettuce_characters::{CharacterDetails, CreateCharacterPlan, InteractionMode};
+use lettuce_characters::{
+    CharacterDetails, CreateCharacterPlan, InteractionMode, MAX_LOCALE_SCALARS,
+};
 use lettuce_companions::{
     CompanionScheduledNote, RelationshipState, ScheduledNoteRecurrence, SoulFact,
 };
@@ -259,6 +261,43 @@ pub fn plan_character_file(
             .filter(|value| !value.is_null())
             .map(Value::to_string)
     };
+    let tags = character.tags.as_ref().map(|tags| {
+        tags.iter()
+            .flat_map(|tag| tag.split(','))
+            .map(str::trim)
+            .filter(|tag| !tag.is_empty())
+            .collect::<Vec<_>>()
+    });
+    let sources = character.source.as_ref().map(|sources| {
+        sources
+            .iter()
+            .filter(|source| !source.trim().is_empty())
+            .collect::<Vec<_>>()
+    });
+    let creator_notes_multilingual = character
+        .creator_notes_multilingual
+        .as_ref()
+        .and_then(Value::as_object)
+        .map(|notes| {
+            notes
+                .iter()
+                .filter(|(locale, notes)| {
+                    let kept = notes.is_string()
+                        && !locale.trim().is_empty()
+                        && locale.chars().count() <= MAX_LOCALE_SCALARS;
+                    if !kept {
+                        skipped.push(crate::legacy_value_skip(
+                            "creator_notes_multilingual",
+                            locale,
+                            crate::LegacyImportSkipReason::MalformedLegacyValue,
+                        ));
+                    }
+                    kept
+                })
+                .map(|(locale, notes)| (locale.clone(), notes.clone()))
+                .collect::<serde_json::Map<_, _>>()
+        })
+        .map(|notes| Value::Object(notes).to_string());
     let row = json!({
         "id": character_id.to_string(),
         "name": character.name,
@@ -276,9 +315,9 @@ pub fn plan_character_file(
         "scenario": character.scenario,
         "creator_notes": character.creator_notes,
         "creator": character.creator,
-        "creator_notes_multilingual": json_text(&character.creator_notes_multilingual),
-        "source": character.source.as_ref().map(|value| json!(value).to_string()),
-        "tags": character.tags.as_ref().map(|value| json!(value).to_string()),
+        "creator_notes_multilingual": creator_notes_multilingual,
+        "source": sources.map(|value| json!(value).to_string()),
+        "tags": tags.map(|value| json!(value).to_string()),
         "default_scene_id": default_scene_id.map(|id| id.to_string()),
         "default_model_id": character.default_model_id,
         "mode": if character.mode.as_deref() == Some("companion") { "companion" } else { "roleplay" },
@@ -919,6 +958,52 @@ mod tests {
         })
         .expect("card")
         .0
+    }
+
+    #[test]
+    fn card_tags_sources_and_localized_notes_are_normalized_like_the_legacy_character_form() {
+        let long_tag = "t".repeat(4096);
+        let name = "N".repeat(300);
+        let package = card_package(&json!({
+            "name": name,
+            "description": "Keeper",
+            "first_mes": "Hello",
+            "tags": ["", " fantasy ", "sea, storm", long_tag]
+        }));
+        let mut package = package;
+        package.character.creator_notes_multilingual =
+            Some(json!({"en": "Hello", "fr": 3, " ": "blank"}));
+        package.character.source = Some(vec![" ".to_owned(), "https://example.test".to_owned()]);
+        let plan = plan_character_file(&package, &CharacterFileReferences::default(), 50, ids())
+            .expect("a lenient card still imports");
+        let provenance = &plan.character.provenance;
+        assert_eq!(plan.character.profile.name, name);
+        assert_eq!(
+            provenance.tags,
+            vec![
+                "fantasy".to_owned(),
+                "sea".to_owned(),
+                "storm".to_owned(),
+                long_tag
+            ]
+        );
+        assert_eq!(provenance.sources, vec!["https://example.test".to_owned()]);
+        assert_eq!(
+            provenance.localized_creator_notes,
+            BTreeMap::from([("en".to_owned(), "Hello".to_owned())])
+        );
+        assert_eq!(
+            plan.skipped
+                .iter()
+                .filter(|skip| skip.source_key.starts_with("creator_notes_multilingual"))
+                .count(),
+            2
+        );
+
+        package.character.creator_notes_multilingual = Some(json!(["not", "a", "map"]));
+        let plan = plan_character_file(&package, &CharacterFileReferences::default(), 50, ids())
+            .expect("a non-object note map is dropped");
+        assert!(plan.character.provenance.localized_creator_notes.is_empty());
     }
 
     #[test]
