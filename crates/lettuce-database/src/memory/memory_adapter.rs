@@ -6,7 +6,9 @@ use lettuce_memory::{
     MemoryRetrievalAccessReceipt, MemoryRetrievalRepository, MemoryShortId, MemorySpaceSnapshot,
     MemorySummary, MemorySummaryChange, MemorySummaryCommit, MemorySummaryRepository, Score,
 };
-use lettuce_types::{ConversationId, MemorySpaceId, MessageId, Revision, TimestampMillis};
+use lettuce_types::{
+    ConversationId, MemoryId, MemorySpaceId, MessageId, Revision, TimestampMillis,
+};
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
 
 use crate::Database;
@@ -445,6 +447,64 @@ fn stored_token_counts(
         .map_err(storage)
 }
 
+/// The latest retrieval access that promoted each memory of a space from cold.
+fn latest_promotions(
+    transaction: &Transaction<'_>,
+    space_id: MemorySpaceId,
+) -> Result<std::collections::HashMap<MemoryId, TimestampMillis>, MemoryRepositoryError> {
+    let rows = transaction
+        .prepare(
+            "SELECT promoted.value, MAX(access.accessed_at)
+               FROM memory_retrieval_accesses access, json_each(access.promoted_memory_ids_json) promoted
+              WHERE access.space_id = ?1
+              GROUP BY promoted.value",
+        )
+        .and_then(|mut statement| {
+            statement
+                .query_map([space_id.to_string()], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(storage)?;
+    rows.into_iter()
+        .map(|(id, at)| Ok((parse_id::<MemoryId>(id)?, TimestampMillis::new(at))))
+        .collect()
+}
+
+/// Retrieval bookkeeping lands on stored rows between a writer's read and its
+/// commit without advancing the revision, so a writer's copy of an existing
+/// memory can predate it. When the stored row was accessed after the writer's
+/// copy, its access count and time are kept; its hotness and importance are
+/// kept too unless the writer cooled a memory that no later access promoted.
+fn merge_retrieval_fields(
+    written: &MemoryItem,
+    stored: &MemoryItem,
+    promoted_at: Option<TimestampMillis>,
+) -> MemoryItem {
+    if stored.last_accessed_at <= written.last_accessed_at
+        || stored.access_count <= written.access_count
+    {
+        return written.clone();
+    }
+    let mut merged = MemoryItem {
+        access_count: stored.access_count,
+        last_accessed_at: stored.last_accessed_at,
+        ..written.clone()
+    };
+    let promoted_after_read = promoted_at.is_some_and(|at| at > written.last_accessed_at);
+    let keep_stored_heat = match (written.is_cold, stored.is_cold) {
+        (false, false) => true,
+        (true, false) => promoted_after_read,
+        (_, true) => false,
+    };
+    if keep_stored_heat {
+        merged.is_cold = stored.is_cold;
+        merged.importance = stored.importance;
+    }
+    merged
+}
+
 pub(crate) fn compare_and_apply_in(
     transaction: &Transaction<'_>,
     change: &MemoryChangeSet,
@@ -467,15 +527,31 @@ pub(crate) fn compare_and_apply_in(
         return Err(MemoryRepositoryError::Conflict);
     }
     let stored_counts = stored_token_counts(transaction, change.space_id)?;
+    let stored_items = get_in(transaction, change.space_id)?
+        .map(|snapshot| {
+            snapshot
+                .items
+                .into_iter()
+                .map(|item| (item.id, item))
+                .collect::<std::collections::HashMap<_, _>>()
+        })
+        .unwrap_or_default();
+    let promotions = latest_promotions(transaction, change.space_id)?;
     let items = change
         .items
         .iter()
-        .map(|item| MemoryItem {
-            token_count: stored_counts
-                .get(&(item.id.to_string(), item.text.clone()))
-                .copied()
-                .unwrap_or(item.token_count),
-            ..item.clone()
+        .map(|item| {
+            let merged = stored_items.get(&item.id).map_or_else(
+                || item.clone(),
+                |stored| merge_retrieval_fields(item, stored, promotions.get(&item.id).copied()),
+            );
+            MemoryItem {
+                token_count: stored_counts
+                    .get(&(item.id.to_string(), item.text.clone()))
+                    .copied()
+                    .unwrap_or(item.token_count),
+                ..merged
+            }
         })
         .collect::<Vec<_>>();
     transaction
@@ -1285,6 +1361,73 @@ mod tests {
             Err(MemoryRepositoryError::Conflict)
         );
         assert_eq!(database.get(space_id).expect("get"), Some(current));
+    }
+
+    #[test]
+    fn a_cycle_commit_keeps_retrieval_access_that_landed_after_its_read() {
+        use lettuce_memory::{MemoryRetrievalAccess, MemoryRetrievalRepository};
+        let database = Database::open_in_memory().expect("database");
+        database
+            .connection()
+            .expect("connection")
+            .execute_batch("PRAGMA foreign_keys = OFF")
+            .expect("fixture mode");
+        let space_id = MemorySpaceId::new();
+        let hot = item(MemoryId::new(), "hot");
+        let mut cold = item(MemoryId::new(), "cold");
+        cold.is_cold = true;
+        cold.importance = Score::from_basis_points(2_000).expect("score");
+        let cooled = item(MemoryId::new(), "cooled by the cycle");
+        let read = database
+            .create(snapshot(
+                space_id,
+                vec![hot.clone(), cold.clone(), cooled.clone()],
+            ))
+            .expect("create");
+        database
+            .apply_retrieval_access(MemoryRetrievalAccess {
+                conversation_id: lettuce_types::ConversationId::new(),
+                turn_id: lettuce_types::GenerationTurnId::new(),
+                attempt_id: lettuce_types::GenerationAttemptId::new(),
+                space_id,
+                expected_revision: read.revision,
+                selected_memory_ids: vec![hot.id, cold.id, cooled.id],
+                accessed_at: TimestampMillis::new(90),
+            })
+            .expect("retrieval between the read and the commit");
+        let mut soft_deleted = cooled.clone();
+        soft_deleted.is_cold = true;
+        soft_deleted.importance = Score::from_basis_points(2_000).expect("score");
+        let created = item(MemoryId::new(), "new fact");
+        let committed = database
+            .compare_and_apply(MemoryChangeSet {
+                space_id,
+                expected_revision: read.revision,
+                items: vec![hot.clone(), cold.clone(), soft_deleted, created.clone()],
+            })
+            .expect("cycle commit");
+        let find = |id| {
+            committed
+                .items
+                .iter()
+                .find(|memory| memory.id == id)
+                .expect("memory")
+                .clone()
+        };
+        let hot_after = find(hot.id);
+        assert_eq!(hot_after.access_count, 1);
+        assert_eq!(hot_after.last_accessed_at, TimestampMillis::new(90));
+        let promoted = find(cold.id);
+        assert!(!promoted.is_cold);
+        assert_eq!(promoted.access_count, 2);
+        assert_eq!(
+            promoted.importance,
+            Score::from_basis_points(9_000).expect("score")
+        );
+        let cooled_after = find(cooled.id);
+        assert!(cooled_after.is_cold);
+        assert_eq!(cooled_after.access_count, 1);
+        assert_eq!(find(created.id), created);
     }
 
     #[test]
