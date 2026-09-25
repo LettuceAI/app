@@ -331,17 +331,11 @@ where
                     .purpose_values
                     .retain(|variable, _| variable.is_allowed_for(document.purpose));
             } else {
-                values.purpose_values.insert(
-                    PromptVariable::GroupCharacters,
-                    group_characters(
-                        &snapshot,
-                        request
-                            .selected_speaker
-                            .as_ref()
-                            .map(|speaker| speaker.participant_id),
-                        &runtime,
-                    )?,
-                );
+                let list = group_characters(&snapshot.group_members, speaker_character, &runtime)?;
+                let list = values.resolve_names(&list);
+                values
+                    .purpose_values
+                    .insert(PromptVariable::GroupCharacters, list);
             }
             resolve_substituted_values(&mut values, group);
             let without_scene;
@@ -355,7 +349,7 @@ where
                     entries: document
                         .entries
                         .iter()
-                        .filter(|entry| !entry.content.contains("{{scene}}"))
+                        .filter(|entry| !has_scene_placeholder(&entry.content))
                         .cloned()
                         .collect(),
                     ..document.clone()
@@ -1407,6 +1401,8 @@ struct SnapshotBundle {
     persona: Option<PersonaSnapshotBodyV1>,
     prompt: Option<PromptSnapshot>,
     scene: Option<(SceneLaunchSnapshot, SceneSnapshotBodyV1)>,
+    /// A group's current members in cast order, for `{{group_characters}}`.
+    group_members: Vec<CharacterSnapshotBodyV1>,
 }
 
 impl SnapshotBundle {
@@ -1488,11 +1484,16 @@ impl SnapshotBundle {
                     .map(|body| (snapshot.clone(), body))
             })
             .transpose()?;
+        let group_members = match &aggregate.conversation.kind {
+            ConversationKind::Group(_) => characters.iter().map(|(_, body)| body.clone()).collect(),
+            ConversationKind::Direct(_) => Vec::new(),
+        };
         Ok(Self {
             characters,
             persona,
             prompt,
             scene,
+            group_members,
         })
     }
 
@@ -2237,38 +2238,59 @@ fn prompt_values(
     values
 }
 
-/// Legacy `{{group_characters}}` (`group_chat_manager/mod.rs` 5268-5288): one
-/// line per member other than the speaker, with the member's definition, else
-/// its description, else the name alone.
+/// Legacy `has_scene_placeholder` (`prompt_engine.rs` 3174-3178).
+fn has_scene_placeholder(content: &str) -> bool {
+    content.contains("{{scene}}")
+        || content.contains("{{scene_direction}}")
+        || content.contains("{{direction}}")
+}
+
+/// Legacy `{{group_characters}}` (`group_chat_manager/mod.rs` 5268-5288), one
+/// newline-terminated line per member other than the speaker: the member's
+/// definition, else its description; an empty one falls back to the
+/// personality summary (the first 200 characters of the same text, legacy
+/// `load_characters_info` 4511-4527); a member with neither is its name alone.
 fn group_characters(
-    snapshot: &SnapshotBundle,
-    speaker: Option<ConversationParticipantId>,
+    members: &[CharacterSnapshotBodyV1],
+    speaker: Option<CharacterId>,
     runtime: &RuntimeSections,
 ) -> Result<String, ContextAssemblyError> {
-    let mut lines = Vec::new();
-    for (participant, body) in &snapshot.characters {
-        if Some(participant.id) == speaker {
+    let mut list = String::new();
+    for body in members {
+        if Some(body.character_id) == speaker {
             continue;
         }
-        let name = (PromptVariable::CharacterName, body.name.clone());
-        let line = match body
+        let definition = body
             .definition
             .as_deref()
-            .or(body.description.as_deref())
+            .filter(|definition| !definition.is_empty());
+        let description = definition.or(body.description.as_deref());
+        let summary = description.map(|source| {
+            let summary = source.chars().take(200).collect::<String>();
+            if summary.len() < source.len() {
+                summary + "..."
+            } else {
+                source.to_owned()
+            }
+        });
+        let name = (PromptVariable::CharacterName, body.name.clone());
+        let line = match description
             .filter(|description| !description.is_empty())
+            .map(str::to_owned)
+            .or(summary)
         {
             Some(description) => runtime.fragment(
                 "runtime_group_character_line",
-                [
-                    name,
-                    (PromptVariable::CharacterDescription, description.to_owned()),
-                ],
+                [name, (PromptVariable::CharacterDescription, description)],
             )?,
             None => runtime.fragment("runtime_group_character_name_line", [name])?,
         };
-        lines.extend(line);
+        if let Some(line) = line {
+            list.push_str(&line);
+            list.push('\n');
+        }
     }
-    Ok(lines.join("\n"))
+    Ok(list)
 }
 
 /// Legacy `replace_character_name_placeholders` (`group_chat_manager/mod.rs`
@@ -3204,6 +3226,7 @@ mod tests {
             persona: None,
             prompt: None,
             scene: Some((snapshot, body)),
+            group_members: Vec::new(),
         };
         let (scene, direction) = bundle.scene_values(&[&item]).expect("scene");
         assert_eq!(scene, "edited scene");

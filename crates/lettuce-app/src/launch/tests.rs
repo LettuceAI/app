@@ -4372,6 +4372,8 @@ async fn identity_placeholders_resolve_everywhere_legacy_resolved_them() {
         vec![
             text_entry("You={{user}} Desc={{char.desc}}"),
             text_entry("# Scenario\n{{scene}}"),
+            text_entry("# Direction\n{{scene_direction}}"),
+            text_entry("# Legacy direction\n{{direction}}"),
         ],
         TimestampMillis::new(1),
     )
@@ -4464,6 +4466,7 @@ async fn identity_placeholders_resolve_everywhere_legacy_resolved_them() {
     assert!(text.contains("You=Mara Desc=Ada builds bridges."));
     assert!(!text.contains("A meticulous engineer"));
     assert!(!text.contains("# Scenario"));
+    assert!(!text.contains("# Direction") && !text.contains("# Legacy direction"));
     assert!(text.contains("Ada owes Mara a map."));
     assert!(text.contains("Keep Mara close to Ada."));
     assert!(text.contains("Hello Ada, I am Mara."));
@@ -4575,9 +4578,19 @@ async fn a_group_prompt_lists_the_other_members_and_resolves_scene_mentions() {
     );
     let first = seed_named_character(&database, "Ada");
     let second = seed_named_character(&database, "Bea");
+    set_character_texts(&database, second, None, Some("Trusts {{char}} and {{user}}."));
+    let third = seed_named_character(&database, "Cy");
+    set_character_texts(&database, third, Some(""), None);
+    let fourth = seed_named_character(&database, "Dot");
+    set_character_texts(&database, fourth, None, Some(""));
     let group_id = seed_group(
         &database,
-        vec![member(first, 0), member(second, 1)],
+        vec![
+            member(first, 0),
+            member(second, 1),
+            member(third, 2),
+            member(fourth, 3),
+        ],
         Some(group_starting_scene(
             "{{@\"Bea\"}} waits for {{@\"Nobody\"}} at the dock.",
         )),
@@ -4620,7 +4633,7 @@ async fn a_group_prompt_lists_the_other_members_and_resolves_scene_mentions() {
         usage_event_id: None,
     });
     let (_, text) = assembled_prompt_with_text(&database, request).await;
-    assert!(text.contains("Cast:\n- Bea: A member of the cast\nScene: "));
+    assert!(text.contains("Cast:\n- Bea: Trusts Ada and Traveller.\n- Cy\n- Dot: \n\nScene: "));
     assert!(!text.contains("- Ada"));
     assert!(text.contains("Bea waits for {{@\"Nobody\"}} at the dock."));
 }
@@ -4873,6 +4886,23 @@ async fn a_reasoning_condition_follows_the_turns_reasoning_setting() {
     assert!(!off.contains("Think first."));
     let (_, on) = assembled_prompt_with_text(&database, request(true)).await;
     assert!(on.contains("Think first."));
+}
+
+fn set_character_texts(
+    database: &Database,
+    character_id: CharacterId,
+    definition: Option<&str>,
+    description: Option<&str>,
+) {
+    let character = CharacterRepository::get(database, character_id)
+        .expect("character")
+        .expect("exists")
+        .character;
+    let mut profile = character.profile.clone();
+    profile.definition = definition.map(str::to_owned);
+    profile.description = description.map(str::to_owned);
+    CharacterRepository::revise_profile(database, character_id, character.revision, profile, NOW)
+        .expect("revise character profile");
 }
 
 fn text_entry(text: &str) -> lettuce_context::PromptEntryDraft {
