@@ -745,6 +745,35 @@ fn companion_shared_memory(
         },
     )?;
     let episodes_exist = table_exists(connection, "companion_episodes")?;
+    if episodes_exist {
+        states.extend(rows(
+            connection,
+            "SELECT episode.character_id, MIN(episode.started_at), MAX(episode.updated_at) FROM companion_episodes episode JOIN characters character ON character.id = episode.character_id AND character.mode = 'companion' WHERE episode.character_id NOT IN (SELECT character_id FROM companion_shared_memory_state) GROUP BY episode.character_id",
+            [],
+            |r| {
+                let created_at = r.get::<_, i64>(1)?;
+                Ok(json!({
+                    "character_id": r.get::<_, String>(0)?,
+                    "memories": "[]",
+                    "memory_summary": null,
+                    "memory_summary_token_count": 0,
+                    "memory_tool_events": "[]",
+                    "memory_status": null,
+                    "memory_error": null,
+                    "memory_progress_step": null,
+                    "soul_growth": "[]",
+                    "relationship_states": "{}",
+                    "created_at": created_at,
+                    "updated_at": r.get::<_, i64>(2)?.max(created_at),
+                }))
+            },
+        )?);
+        states.sort_by(|left, right| {
+            left["character_id"]
+                .as_str()
+                .cmp(&right["character_id"].as_str())
+        });
+    }
     for state in &mut states {
         let character_id = string_field(state, "character_id")?;
         if episodes_exist {
@@ -1789,6 +1818,46 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(variants, vec!["variant-early", "variant-late"]);
         assert_eq!(message["variants"][0]["tokens_per_second"], Value::Null);
+        std::fs::remove_file(path).expect("remove fixture");
+    }
+
+    #[test]
+    fn companion_episodes_without_a_shared_memory_row_are_kept_under_a_default_state() {
+        let path = legacy_database();
+        let connection = Connection::open(&path).expect("open legacy database");
+        connection
+            .execute_batch(
+                "CREATE TABLE companion_episodes (session_id TEXT PRIMARY KEY, character_id TEXT NOT NULL, persona_key TEXT NOT NULL DEFAULT '__default__', episode_index INTEGER NOT NULL, previous_session_id TEXT, started_at INTEGER NOT NULL, ended_at INTEGER, updated_at INTEGER NOT NULL);",
+            )
+            .expect("episodes table");
+        connection
+            .execute(
+                "UPDATE characters SET mode = 'companion' WHERE id = ?1",
+                [id(1)],
+            )
+            .expect("companion character");
+        connection
+            .execute(
+                "INSERT INTO companion_episodes (session_id, character_id, episode_index, started_at, updated_at) VALUES (?1, ?2, 1, 7, 9)",
+                [id(2), id(1)],
+            )
+            .expect("episode");
+        drop(connection);
+
+        let documents = read_legacy_database_documents(&path).expect("legacy documents");
+
+        let states = document_value(&documents, LegacyBackupDocumentKind::CompanionSharedMemory);
+        let state = states
+            .as_array()
+            .expect("states")
+            .iter()
+            .find(|state| state["character_id"] == id(1))
+            .expect("default state for the episode owner");
+        assert_eq!(state["memories"], "[]");
+        assert_eq!(state["relationship_states"], "{}");
+        assert_eq!(state["created_at"], 7);
+        assert_eq!(state["updated_at"], 9);
+        assert_eq!(state["episodes"][0]["session_id"], id(2));
         std::fs::remove_file(path).expect("remove fixture");
     }
 
