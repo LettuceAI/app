@@ -1232,7 +1232,6 @@ impl ContextRequest {
             "context_request.branch_path",
             self.branch_path.iter().copied(),
         )?;
-        self.window.validate()?;
         self.capabilities
             .validate()
             .map_err(|_| crate::ValidationError::InvalidValue {
@@ -1297,19 +1296,6 @@ impl Default for ContextWindowPolicy {
         Self {
             recent_non_pinned_limit: 64,
         }
-    }
-}
-
-impl ContextWindowPolicy {
-    pub const MAX_RECENT_NON_PINNED: usize = 512;
-
-    fn validate(self) -> Result<(), crate::ValidationError> {
-        if self.recent_non_pinned_limit > Self::MAX_RECENT_NON_PINNED {
-            return Err(crate::ValidationError::OutOfBounds {
-                field: "context_window.recent_non_pinned_limit",
-            });
-        }
-        Ok(())
     }
 }
 

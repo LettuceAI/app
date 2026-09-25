@@ -1597,10 +1597,7 @@ fn history_window(
         (false, _) => settings.manual_mode_context_window,
     };
     lettuce_conversations::ContextWindowPolicy {
-        recent_non_pinned_limit: usize::try_from(messages).unwrap_or(usize::MAX).clamp(
-            1,
-            lettuce_conversations::ContextWindowPolicy::MAX_RECENT_NON_PINNED,
-        ),
+        recent_non_pinned_limit: usize::try_from(messages).unwrap_or(usize::MAX),
     }
 }
 
@@ -2958,13 +2955,14 @@ mod tests {
         assert_eq!(limit(&settings, true, false), 20);
         assert_eq!(limit(&settings, true, true), 8);
         assert_eq!(limit(&settings, false, true), 50);
-        settings.manual_mode_context_window = 0;
-        assert_eq!(limit(&settings, false, false), 1);
-        settings.manual_mode_context_window = 4_000;
+        settings.manual_mode_context_window = 1_000;
         assert_eq!(
             limit(&settings, false, false),
-            ContextWindowPolicy::MAX_RECENT_NON_PINNED
+            1_000,
+            "legacy's context window slider went to 1000 and was used as-is"
         );
+        settings.manual_mode_context_window = 4_000;
+        assert_eq!(limit(&settings, false, false), 4_000);
     }
 
     #[test]
@@ -3013,6 +3011,30 @@ mod tests {
         let mut expected = vec![0];
         expected.extend(10..=20);
         assert_eq!(indices, expected);
+    }
+
+    #[test]
+    fn a_thousand_message_window_sends_the_last_thousand_messages_like_legacy() {
+        let items = (0..1_200_i64)
+            .map(|index| text_item(index, MessageRole::User, "Line."))
+            .collect::<Vec<_>>();
+        let source = items[1_199].message.id;
+        let kept = context_timeline(
+            items,
+            ContextWindowPolicy {
+                recent_non_pinned_limit: 1_000,
+            },
+            source,
+        );
+        assert!(kept.len() >= 1_000);
+        assert_eq!(
+            kept.last().map(|item| item.message.created_at.get()),
+            Some(1_199)
+        );
+        assert!(
+            kept.iter()
+                .any(|item| item.message.created_at.get() == 1_199 - 999)
+        );
     }
 
     #[test]
