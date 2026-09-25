@@ -13,7 +13,8 @@ use crate::Database;
 /// Tables whose text is bookkeeping about media or history, not a use of it:
 /// the media catalog itself, purge and sync journals, legacy import
 /// evidence, job logs and provider replay caches. Sync changes still waiting
-/// to apply and unfinished jobs are probed separately.
+/// to apply, conflict evidence (a user may choose its side) and unfinished
+/// jobs are probed separately.
 const UNSCANNED_TABLES: [&str; 9] = [
     "media_assets",
     "media_blobs",
@@ -82,6 +83,11 @@ fn drop_referenced(
            AND instr(CAST(change.payload_bytes AS TEXT), c.value) > 0"
             .to_owned(),
     );
+    for column in ["current_payload", "incoming_payload"] {
+        probes.push(format!(
+            "SELECT 1 FROM sync_conflicts WHERE instr(CAST({column} AS TEXT), c.value) > 0"
+        ));
+    }
     probes.push(
         "SELECT 1 FROM sync_deferred_changes deferred
          JOIN sync_changes change ON change.change_id = deferred.change_id

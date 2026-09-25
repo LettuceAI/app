@@ -2,7 +2,7 @@
 //! files they leave unused.
 
 use std::collections::BTreeSet;
-use std::path::PathBuf;
+use std::path::Path;
 
 use lettuce_database::{Database, PurgeError, PurgeReceipt};
 use lettuce_media::{
@@ -26,23 +26,46 @@ pub struct HardDeletion {
     pub media: MediaObjectRemoval,
 }
 
-/// The media store together with the other database files in the app's
-/// database directory (`AppDatabaseLocation::other_database_files`): an
-/// object any of them catalogs is never deleted, so a database a restore
-/// kept keeps its media.
+/// The media store, the app's database directory and the database file this
+/// process uses. Every collection lists the other database files in the
+/// directory at that moment (a database a restore kept, or one a restore is
+/// writing), and an object any of them catalogs is never deleted.
 #[derive(Debug)]
 pub struct MediaGarbageScope<'a, BR, AR> {
     pub store: &'a LocalMediaBlobStore<BR, AR>,
-    pub other_databases: &'a [PathBuf],
+    pub location: &'a crate::AppDatabaseLocation,
+    pub open_database: &'a Path,
 }
 
 impl<BR, AR> MediaGarbageScope<'_, BR, AR> {
-    fn kept_by_other_databases(&self) -> Result<BTreeSet<ContentHash>, HardDeleteError> {
+    /// The objects the other database files catalog, or `None` when one of
+    /// them cannot be read: collection then does nothing this run and the
+    /// user gets a notice naming the file.
+    fn kept_by_other_databases(
+        &self,
+        database: &Database,
+        now: TimestampMillis,
+    ) -> Result<Option<BTreeSet<ContentHash>>, HardDeleteError> {
+        let files = self
+            .location
+            .other_database_files(self.open_database)
+            .map_err(|_| HardDeleteError::Purge(PurgeError::Storage))?;
         let mut kept = BTreeSet::new();
-        for path in self.other_databases {
-            kept.extend(Database::media_objects_in_file(path)?);
+        for path in files {
+            match Database::media_objects_in_file(&path) {
+                Ok(objects) => kept.extend(objects),
+                Err(error) => {
+                    let name = path
+                        .file_name()
+                        .map(|name| name.to_string_lossy().into_owned())
+                        .unwrap_or_default();
+                    tracing::warn!(%error, file = %name, "media collection skipped: a database file cannot be read");
+                    database.record_media_collection_skipped(&name, now)?;
+                    return Ok(None);
+                }
+            }
         }
-        Ok(kept)
+        Ok(Some(kept))
     }
 }
 
@@ -117,7 +140,9 @@ where
     AR: MediaAssetRepository,
 {
     database.run_queued_purges(now)?;
-    let kept = media.kept_by_other_databases()?;
+    let Some(kept) = media.kept_by_other_databases(database, now)? else {
+        return Ok(MediaObjectRemoval::default());
+    };
     let mut purge_error = None;
     let removal = media
         .store
@@ -155,12 +180,15 @@ where
 pub fn sweep_orphan_media_files<BR, AR>(
     database: &Database,
     media: &MediaGarbageScope<'_, BR, AR>,
+    now: TimestampMillis,
 ) -> Result<MediaObjectRemoval, HardDeleteError>
 where
     BR: MediaBlobRepository,
     AR: MediaAssetRepository,
 {
-    let kept = media.kept_by_other_databases()?;
+    let Some(kept) = media.kept_by_other_databases(database, now)? else {
+        return Ok(MediaObjectRemoval::default());
+    };
     let mut purge_error = None;
     media
         .store
