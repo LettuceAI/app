@@ -2079,8 +2079,7 @@ fn prompt_conditions(
         input_scopes: runtime.input_scopes.clone(),
         output_scopes: runtime.output_scopes.clone(),
         provider_id: runtime.provider_id.clone(),
-        reasoning_enabled: request.capabilities.reasoning
-            == lettuce_models::CapabilityStatus::Supported,
+        reasoning_enabled: runtime.reasoning_enabled,
         vision_enabled: request.capabilities.input_modalities.image
             == lettuce_models::CapabilityStatus::Supported,
         time_awareness_enabled: runtime.time_awareness_enabled,

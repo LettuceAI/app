@@ -1323,6 +1323,9 @@ pub struct PromptRuntimeFacts {
     /// generation is off or resolves no image model.
     pub scene_image_protocol: Option<SceneImageProtocol>,
     pub dynamic_memory_enabled: bool,
+    /// Whether this turn asks its model to reason: the user's setting, not
+    /// the model's capability (legacy `resolve_reasoning_enabled`).
+    pub reasoning_enabled: bool,
     pub has_active_scheduled_note: bool,
     pub time_awareness_enabled: bool,
     pub companion_mode_enabled: bool,

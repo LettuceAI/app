@@ -1147,6 +1147,8 @@ where
             is_scene_generation_local_image_model: scene_model_is_local,
             scene_image_protocol,
             dynamic_memory_enabled: dynamic_memory,
+            reasoning_enabled: profile.parameters.reasoning_mode
+                == Some(lettuce_models::ReasoningMode::Enabled),
             time_awareness_enabled: clock.time_awareness_enabled(),
             conversation_message_count: Some(conversation_message_count),
             ..Default::default()

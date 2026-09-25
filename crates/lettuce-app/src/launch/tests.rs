@@ -4820,6 +4820,61 @@ async fn a_manual_memory_send_adds_the_relevant_memories_block_like_legacy() {
     assert!(!dynamic.contains(block));
 }
 
+#[tokio::test]
+async fn a_reasoning_condition_follows_the_turns_reasoning_setting() {
+    let database = database_with_builtins();
+    let prompt_id = PromptRepository::create_user_draft(
+        &database,
+        PromptMetadataDraft {
+            name: "Reasoning".into(),
+            purpose: PromptPurpose::DirectChat,
+            condense: false,
+            behavior_version: PromptBehaviorVersion::LegacyV1,
+        },
+        vec![
+            text_entry("Base."),
+            lettuce_context::PromptEntryDraft {
+                system_prompt: false,
+                conditions: Some(lettuce_context::PromptEntryCondition::ReasoningEnabled {
+                    value: true,
+                }),
+                ..text_entry("Think first.")
+            },
+        ],
+        TimestampMillis::new(1),
+    )
+    .expect("prompt")
+    .id;
+    let character_id = seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
+        defaults.direct_prompt_id = Some(prompt_id);
+    });
+    let conversation = ConversationLaunchPlanner::new(&database)
+        .launch_direct(&request(character_id, "reasoning-condition"), NOW)
+        .expect("launch direct")
+        .value
+        .conversation;
+    let sent = ConversationRepository::begin_send(
+        &database,
+        &direct_send_command(&conversation, "reasoning-condition-send", "Hello."),
+        TimestampMillis::new(NOW.get() + 10),
+    )
+    .expect("send direct message");
+    let source_message_id = match sent.value.turn.input {
+        GenerationInput::UserMessage { message_id } => message_id,
+        ref other => panic!("expected user-message input, got {other:?}"),
+    };
+    let request = |enabled: bool| {
+        let mut request = context_request_for(&database, conversation.id, source_message_id);
+        request.capabilities.reasoning = lettuce_models::CapabilityStatus::Supported;
+        request.prompt_runtime.reasoning_enabled = enabled;
+        request
+    };
+    let (_, off) = assembled_prompt_with_text(&database, request(false)).await;
+    assert!(!off.contains("Think first."));
+    let (_, on) = assembled_prompt_with_text(&database, request(true)).await;
+    assert!(on.contains("Think first."));
+}
+
 fn text_entry(text: &str) -> lettuce_context::PromptEntryDraft {
     lettuce_context::PromptEntryDraft {
         built_in_entry_key: None,
