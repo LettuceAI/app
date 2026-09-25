@@ -433,7 +433,7 @@ where
         }
         let condense_point = prompt
             .is_some_and(|document| document.condense)
-            .then(|| (placement.relative.len(), placement.in_chat.len()));
+            .then_some((placement.relative.len(), placement.in_chat.len()));
         let mut place = |section: Option<RuntimeSection>| placement.place(section);
         if request.swap_roles && !group {
             place(runtime.section("runtime_swap_places"));
@@ -2342,7 +2342,6 @@ fn selected_character<'a>(
         .or_else(|| snapshot.characters.first().map(|(_, body)| body))
 }
 
-#[allow(clippy::type_complexity)]
 /// Runtime sections a turn injects, collected in placement order.
 /// `turn_context` marks the in-chat messages legacy's condense could merge
 /// into its turn-context message: every one except a conditional or interval
@@ -2389,6 +2388,7 @@ fn condensed_system_message(
     })
 }
 
+#[allow(clippy::type_complexity)]
 fn prompt_messages(
     rendered: &lettuce_context::RenderedPrompt,
 ) -> Result<
