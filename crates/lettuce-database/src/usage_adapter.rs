@@ -541,12 +541,31 @@ pub(crate) fn load_turn_usage_in(
 }
 
 /// Inserts one usage event on the caller's transaction; the historical
-/// conversation writer uses it for events it restores with their ids.
+/// conversation writer uses it for events it restores with their ids. Usage
+/// outlives a deleted conversation, so an identical event already stored
+/// (the conversation came back through sync) is kept as it is.
 pub(crate) fn insert_usage_event_in(
     transaction: &rusqlite::Transaction<'_>,
     conversation_id: &str,
     event: &UsageEvent,
 ) -> Result<(), UsageLedgerError> {
+    let stored = transaction
+        .query_row(
+            &format!("{SELECT_EVENT} WHERE id = ?1"),
+            [event.id.to_string()],
+            hydrate,
+        )
+        .optional()
+        .map_err(|_| UsageLedgerError::Storage)?
+        .map(RawUsageEvent::decode)
+        .transpose()?;
+    if let Some(stored) = stored {
+        return if stored == *event {
+            Ok(())
+        } else {
+            Err(UsageLedgerError::Conflict)
+        };
+    }
     let provider_reported_cost = match &event.record.usage {
         UsageCounters::Known(usage) => usage
             .provider_reported_cost

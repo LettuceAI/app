@@ -4693,4 +4693,129 @@ mod smoke_tests {
             );
         }
     }
+
+    #[test]
+    fn a_received_character_delete_keeps_a_character_edited_here_since() {
+        use lettuce_sync::LocalChangeJournal;
+        let a = Database::open_in_memory().expect("a");
+        let b = Database::open_in_memory().expect("b");
+        let (plan, _, _, _) = graph_fixture(&a);
+        a.connection()
+            .expect("a")
+            .execute(
+                "UPDATE media_assets SET provenance_json=?1",
+                [
+                    serde_json::to_string(&lettuce_media::AssetProvenanceV1::default())
+                        .expect("provenance"),
+                ],
+            )
+            .expect("valid provenance");
+        let created = CharacterRepository::create(&a, plan).expect("create");
+        let id = created.character.id;
+        sync_characters(&a, &b, 100);
+        sync_characters(&b, &a, 110);
+        a.purge_character(id, TimestampMillis::new(200))
+            .expect("purge on a");
+        let on_b = CharacterRepository::get(&b, id)
+            .expect("b")
+            .expect("present on b");
+        let renamed = CharacterRepository::revise_profile(
+            &b,
+            id,
+            on_b.character.revision,
+            CharacterProfile {
+                name: "Renamed on b".into(),
+                ..on_b.character.profile.clone()
+            },
+            TimestampMillis::new(210),
+        )
+        .expect("rename on b");
+
+        sync_characters(&a, &b, 300);
+        assert_eq!(
+            CharacterRepository::get(&b, id)
+                .expect("b")
+                .expect("kept on b")
+                .character,
+            renamed
+        );
+        let notices = b.purge_notices().expect("notices");
+        assert_eq!(notices.len(), 1);
+        assert_eq!(notices[0].entity, crate::PurgeNoticeEntity::Character);
+        assert_eq!(
+            notices[0].reason,
+            crate::PurgeNoticeReason::KeptUnsentLocalChanges
+        );
+        sync_characters(&b, &a, 400);
+        assert_eq!(
+            CharacterRepository::get(&a, id)
+                .expect("a")
+                .expect("back on a")
+                .character
+                .profile
+                .name,
+            "Renamed on b"
+        );
+        for database in [&a, &b] {
+            assert_eq!(
+                database
+                    .journal_current_state(TimestampMillis::new(500))
+                    .expect("rescan"),
+                0
+            );
+        }
+    }
+
+    #[test]
+    fn a_received_delete_that_keeps_failing_is_given_up_with_a_notice() {
+        let database = Database::open_in_memory().expect("database");
+        let character = CharacterId::new();
+        CharacterRepository::create(&database, companion_plan(character)).expect("companion");
+        let id = character.to_string();
+        crate::purge::queue_purge(
+            &database.connection().expect("lock"),
+            crate::purge::PurgeKind::Character,
+            &id,
+            TimestampMillis::new(1),
+        )
+        .expect("queue");
+        database
+            .connection()
+            .expect("lock")
+            .execute(
+                "CREATE TRIGGER block_character_delete BEFORE DELETE ON characters
+                 BEGIN SELECT RAISE(ABORT, 'blocked'); END",
+                [],
+            )
+            .expect("block");
+        for attempt in 0..8 {
+            assert_eq!(
+                database.run_queued_purges(TimestampMillis::new(10 + attempt)),
+                Ok(Vec::new())
+            );
+        }
+        assert!(
+            CharacterRepository::get(&database, character)
+                .expect("get")
+                .is_some()
+        );
+        let queued: i64 = database
+            .connection()
+            .expect("lock")
+            .query_row("SELECT count(*) FROM purge_queue", [], |row| row.get(0))
+            .expect("queue");
+        assert_eq!(queued, 0);
+        let notices = database.purge_notices().expect("notices");
+        assert_eq!(notices.len(), 1);
+        assert_eq!(
+            notices[0].reason,
+            crate::PurgeNoticeReason::DroppedAfterFailures
+        );
+        assert!(
+            database
+                .dismiss_purge_notice(notices[0].id, TimestampMillis::new(30))
+                .expect("dismiss")
+        );
+        assert!(database.purge_notices().expect("notices").is_empty());
+    }
 }
