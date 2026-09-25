@@ -44,6 +44,7 @@ impl SyncSecretRepository for Database {
             .map_err(storage)?;
         for (api_key, owner, headers, config) in accounts {
             let Ok(owner) = uuid(&owner).map(SecretOwnerId::from_uuid) else {
+                tracing::warn!("a provider account's secret owner cannot be read");
                 continue;
             };
             if let Some(Ok(reference)) = api_key.as_deref().map(uuid) {
@@ -52,9 +53,12 @@ impl SyncSecretRepository for Database {
                     SecretPurpose::ProviderApiKey { owner },
                 ));
             }
-            for header in serde_json::from_str::<Vec<lettuce_models::SecretHeader>>(&headers)
-                .unwrap_or_default()
-            {
+            let headers = serde_json::from_str::<Vec<lettuce_models::SecretHeader>>(&headers)
+                .unwrap_or_else(|_| {
+                    tracing::warn!("a provider account's secret headers cannot be read");
+                    Vec::new()
+                });
+            for header in headers {
                 records.push(SecretRecord::new(
                     header.secret_ref,
                     SecretPurpose::ProviderSecretHeader {
@@ -89,6 +93,7 @@ impl SyncSecretRepository for Database {
             .map_err(storage)?;
         for (reference, owner) in audio {
             let (Ok(reference), Ok(owner)) = (uuid(&reference), uuid(&owner)) else {
+                tracing::warn!("an audio provider's secret reference cannot be read");
                 continue;
             };
             records.push(SecretRecord::new(
@@ -99,6 +104,24 @@ impl SyncSecretRepository for Database {
             ));
         }
         Ok(records)
+    }
+
+    fn secret_mentioned(&self, reference: &SecretRef) -> Result<bool, SyncSecretError> {
+        let connection = self.connection().map_err(storage)?;
+        connection
+            .query_row(
+                "SELECT EXISTS(
+                   SELECT 1 FROM provider_accounts
+                   WHERE instr(lower(coalesce(api_key_secret_ref, '') || ' ' ||
+                                     secret_headers_json || ' ' || config_json), ?1) > 0
+                 ) OR EXISTS(
+                   SELECT 1 FROM audio_providers
+                   WHERE instr(lower(coalesce(api_key_secret_ref, '')), ?1) > 0
+                 )",
+                [reference.to_string().to_lowercase()],
+                |row| row.get(0),
+            )
+            .map_err(storage)
     }
 
     fn secret_version(
@@ -204,4 +227,58 @@ fn stored_version(
             device: SyncDeviceId::from_uuid(uuid(&device)?),
         },
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use lettuce_settings::{SecretOwnerId, SecretRef};
+    use lettuce_speech::{AudioProvider, AudioProviderConfig, TtsConfigurationRepository};
+    use lettuce_sync::SyncSecretRepository;
+    use lettuce_types::{AudioProviderId, Revision, TimestampMillis};
+
+    use crate::Database;
+
+    #[test]
+    fn a_reference_that_cannot_be_read_is_still_mentioned() {
+        let database = Database::open_in_memory().expect("database");
+        let reference = SecretRef::new();
+        let provider = AudioProvider {
+            id: AudioProviderId::new(),
+            secret_owner_id: SecretOwnerId::new(),
+            label: "ElevenLabs".to_owned(),
+            api_key_ref: Some(reference),
+            config: AudioProviderConfig::Elevenlabs,
+            revision: Revision::INITIAL,
+            created_at: TimestampMillis::new(1),
+            updated_at: TimestampMillis::new(1),
+        };
+        database
+            .upsert_audio_provider(provider.clone(), None)
+            .expect("provider");
+        assert!(database.secret_mentioned(&reference).expect("mentioned"));
+        database
+            .connection()
+            .expect("connection")
+            .execute_batch(&format!(
+                "DROP TRIGGER audio_providers_stable_identity;
+                 UPDATE audio_providers SET secret_owner_id = '{}', revision = revision + 1
+                 WHERE id = '{}';",
+                "z".repeat(36),
+                provider.id
+            ))
+            .expect("an owner this build cannot read");
+
+        assert!(
+            database
+                .referenced_secrets()
+                .expect("referenced")
+                .is_empty()
+        );
+        assert!(database.secret_mentioned(&reference).expect("mentioned"));
+        assert!(
+            !database
+                .secret_mentioned(&SecretRef::new())
+                .expect("unrelated")
+        );
+    }
 }

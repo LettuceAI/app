@@ -2,8 +2,8 @@ use async_trait::async_trait;
 use lettuce_jobs::handle::CancellationToken;
 use lettuce_settings::{SecretRecord, SecretRef, SecretState, SecretStore, SecretValue};
 use lettuce_sync::{
-    MAX_SECRET_VERSION_AHEAD_MILLIS, MAX_SYNC_SECRETS, StoredSecretVersion, SyncDeviceId,
-    SyncSecretEntry, SyncSecretError, SyncSecretRepository, SyncSecretVersion,
+    MAX_SECRET_VERSION_AHEAD_MILLIS, StoredSecretVersion, SyncDeviceId, SyncSecretEntry,
+    SyncSecretError, SyncSecretRepository, SyncSecretVersion,
 };
 use lettuce_types::TimestampMillis;
 
@@ -69,7 +69,8 @@ pub struct SecretSyncReport {
 /// time when the store does not record it), never earlier than a version it
 /// had, so the later rotation wins on every device. A value this device lost is
 /// fetched again rather than deleted elsewhere, and a value nothing here
-/// references any more (its provider was deleted) is removed from the store.
+/// references any more (its provider was deleted) is removed from the store;
+/// one a provider row still mentions, even unreadably, is kept.
 /// A secret the store cannot read or write is skipped and retried next
 /// session.
 #[derive(Debug)]
@@ -130,7 +131,7 @@ where
             .referenced_secrets()
             .map_err(SyncSecretExchangeError::Repository)?;
         let mut local = Vec::with_capacity(records.len());
-        for record in records.iter().take(MAX_SYNC_SECRETS) {
+        for record in &records {
             local.push(self.local_secret(record, device, now).await?);
         }
         let peer = transport
@@ -276,7 +277,12 @@ where
             .recorded_secret_versions()
             .map_err(SyncSecretExchangeError::Repository)?;
         for (reference, stored) in recorded {
-            if records.iter().any(|record| record.reference == reference) {
+            if records.iter().any(|record| record.reference == reference)
+                || self
+                    .repository
+                    .secret_mentioned(&reference)
+                    .map_err(SyncSecretExchangeError::Repository)?
+            {
                 continue;
             }
             if self

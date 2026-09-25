@@ -433,7 +433,10 @@ gets a version later than any it had; a peer version more than a day ahead
 of the local clock is refused. A value this device lost is fetched again
 rather than deleted elsewhere (no tombstones: a wiped keychain must not wipe
 the other devices), and a value nothing here references any more (its
-provider was deleted) is removed from the store. Values travel only inside
+provider was deleted) is removed from the store; a provider row that still
+mentions the reference in any column keeps it, even when its secret fields
+cannot be decoded. Inventories list every referenced secret, without a count
+limit. Values travel only inside
 encrypted frames, are zeroized after use and never printed; a side serves
 only secrets it listed, only during the phase, and an unrequested value ends
 the session. A secret the store cannot read or write is skipped (before its

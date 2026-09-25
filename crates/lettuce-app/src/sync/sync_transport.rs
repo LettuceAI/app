@@ -28,7 +28,7 @@ use tokio::{
 };
 
 use lettuce_settings::{SecretPurpose, SecretRef, SecretStore, SecretValue};
-use lettuce_sync::{MAX_SYNC_SECRETS, SyncSecretEntry};
+use lettuce_sync::SyncSecretEntry;
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
@@ -1097,14 +1097,8 @@ fn validate_wire_frame(frame: &SyncWireFrame) -> Result<(), SyncPeerTransportErr
             .validate(&value.content_hash, value.offset)
             .map_err(|_| SyncPeerTransportError::Protocol),
         SyncWireFrame::BlobUnavailable { .. } => Ok(()),
-        SyncWireFrame::SecretInventory(entries) => {
-            if entries.len() > MAX_SYNC_SECRETS {
-                Err(SyncPeerTransportError::Protocol)
-            } else {
-                Ok(())
-            }
-        }
-        SyncWireFrame::SecretRequest { .. }
+        SyncWireFrame::SecretInventory(_)
+        | SyncWireFrame::SecretRequest { .. }
         | SyncWireFrame::SecretValue { .. }
         | SyncWireFrame::SecretUnavailable { .. }
         | SyncWireFrame::SecretsDone => Ok(()),

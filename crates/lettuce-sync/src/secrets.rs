@@ -12,9 +12,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::SyncDeviceId;
 
-/// Most secrets one inventory may list.
-pub const MAX_SYNC_SECRETS: usize = 1024;
-
 /// How far ahead of this device's clock a peer's secret version may be; a
 /// version further ahead is refused so a broken clock cannot pin a key.
 pub const MAX_SECRET_VERSION_AHEAD_MILLIS: i64 = 86_400_000;
@@ -76,4 +73,9 @@ pub trait SyncSecretRepository: Send + Sync {
     ) -> Result<Vec<(SecretRef, StoredSecretVersion)>, SyncSecretError>;
 
     fn forget_secret_version(&self, reference: &SecretRef) -> Result<(), SyncSecretError>;
+
+    /// Whether any provider account or audio provider row still mentions
+    /// the reference in any column, including rows whose secret fields cannot
+    /// be decoded. Only a secret nothing mentions is released from the store.
+    fn secret_mentioned(&self, reference: &SecretRef) -> Result<bool, SyncSecretError>;
 }
