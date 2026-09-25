@@ -120,7 +120,7 @@ where
             omitted_messages,
             scenes: scene_timeline,
             history,
-        } = select_timeline(&aggregate, &request)?;
+        } = select_timeline(&aggregate.branches, &request)?;
         let (scene, scene_direction) = snapshot.scene_values(&scene_timeline)?;
         let effective_at = source_effective_time(&request)?;
         let companion_state = self.companion_prompt_state(&aggregate, &snapshot, effective_at)?;
@@ -937,11 +937,10 @@ struct TimelineSelection<'a> {
 }
 
 fn select_timeline<'a>(
-    aggregate: &ConversationAggregate,
+    branches: &[lettuce_conversations::ConversationBranch],
     request: &'a ContextRequest,
 ) -> Result<TimelineSelection<'a>, ContextAssemblyError> {
-    let branch = aggregate
-        .branches
+    let branch = branches
         .iter()
         .find(|branch| branch.id == request.branch_id)
         .ok_or(ContextAssemblyError::InvalidTimeline)?;
@@ -956,10 +955,11 @@ fn select_timeline<'a>(
         .iter()
         .position(|item| Some(item.message.id) == head_id)
         .ok_or(ContextAssemblyError::InvalidTimeline)?;
-    if !matches!(
-        request.timeline[head_index].message.visibility,
-        lettuce_conversations::MessageVisibility::Visible
-    ) {
+    let head_visibility = request.timeline[head_index].message.visibility;
+    let hidden_continue_head = matches!(request.operation, GenerationOperation::Continue)
+        && head_visibility == lettuce_conversations::MessageVisibility::Hidden;
+    if head_visibility != lettuce_conversations::MessageVisibility::Visible && !hidden_continue_head
+    {
         return Err(ContextAssemblyError::InvalidTimeline);
     }
     if matches!(request.operation, GenerationOperation::Continue)
@@ -1022,6 +1022,7 @@ fn select_timeline<'a>(
     selected.dedup_by_key(|item| item.message.id);
     let required_id = match request.operation {
         GenerationOperation::Send => Some(request.source_message_id),
+        GenerationOperation::Continue if hidden_continue_head => None,
         GenerationOperation::Continue => branch.head_message_id.or(Some(request.source_message_id)),
         GenerationOperation::Regenerate => None,
     };
@@ -2529,6 +2530,91 @@ mod tests {
         assert_eq!(report.estimated_input_tokens, 2);
         assert_eq!(report.omitted_messages, 3);
         assert!(report.truncated);
+    }
+
+    #[test]
+    fn continue_from_a_hidden_head_answers_the_last_visible_message() {
+        let conversation_id = ConversationId::new();
+        let branch_id = lettuce_types::ConversationBranchId::new();
+        let user = MessageId::new();
+        let hidden = MessageId::new();
+        let item = |id, role, visibility, parent_message_id, at| TimelineItem {
+            message: lettuce_conversations::Message {
+                id,
+                conversation_id,
+                branch_id,
+                parent_message_id,
+                author_participant_id: None,
+                role,
+                logical_time: lettuce_types::TimestampMillis::new(at),
+                effective_time: lettuce_types::TimestampMillis::new(at),
+                visibility,
+                pinned: false,
+                scene_edited: false,
+                active_render_source: MessageRenderSource::Revision(
+                    lettuce_types::MessageRevisionId::new(),
+                ),
+                revision: lettuce_types::Revision::INITIAL,
+                created_at: lettuce_types::TimestampMillis::new(at),
+                updated_at: lettuce_types::TimestampMillis::new(at),
+            },
+            active_revision: None,
+            active_candidate: None,
+            initial_origin: None,
+        };
+        let request = ContextRequest {
+            conversation_id,
+            branch_id,
+            branch_path: vec![branch_id],
+            source_message_id: hidden,
+            operation: GenerationOperation::Continue,
+            swap_roles: false,
+            guidance: None,
+            window: lettuce_conversations::ContextWindowPolicy::default(),
+            selected_speaker: None,
+            capabilities: lettuce_models::ModelCapabilities::default(),
+            safety: lettuce_conversations::SafetyContext::Standard,
+            prompt_runtime: lettuce_conversations::PromptRuntimeFacts::default(),
+            prompt_values: lettuce_conversations::PromptRuntimeValues::default(),
+            memory: None,
+            timeline: vec![
+                item(
+                    user,
+                    MessageRole::User,
+                    lettuce_conversations::MessageVisibility::Visible,
+                    None,
+                    1,
+                ),
+                item(
+                    hidden,
+                    MessageRole::System,
+                    lettuce_conversations::MessageVisibility::Hidden,
+                    Some(user),
+                    2,
+                ),
+            ],
+        };
+        let branches = vec![lettuce_conversations::ConversationBranch {
+            id: branch_id,
+            conversation_id,
+            parent_branch_id: None,
+            fork_message_id: None,
+            head_message_id: Some(hidden),
+            status: BranchStatus::Active,
+            revision: lettuce_types::Revision::INITIAL,
+            created_at: lettuce_types::TimestampMillis::UNIX_EPOCH,
+            updated_at: lettuce_types::TimestampMillis::UNIX_EPOCH,
+        }];
+        let selection = select_timeline(&branches, &request)
+            .expect("legacy continuation skipped model-invisible messages");
+        assert_eq!(
+            selection
+                .window
+                .iter()
+                .map(|item| item.message.id)
+                .collect::<Vec<_>>(),
+            vec![user]
+        );
     }
 
     #[test]
