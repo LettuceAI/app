@@ -373,21 +373,35 @@ pub fn move_model_into_library(
         .map_err(|error| format!("Failed to create destination directory: {error}"))?;
     let destination = destination_dir.join(filename);
     let moved = destination.to_string_lossy().into_owned();
-    if destination.exists() {
-        if !same_contents(&source, &destination)? {
-            return Err(format!(
-                "A different file already exists at {moved}; the original was kept"
-            ));
+    let _guard = LIBRARY_MOVES
+        .lock()
+        .map_err(|_| "Another model move failed while holding the library".to_owned())?;
+    if std::fs::symlink_metadata(&destination).is_ok() {
+        return remove_duplicate_original(&source, &destination, &moved);
+    }
+    match publish_no_clobber(&source, &destination) {
+        Ok(()) => return Ok(moved),
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            return remove_duplicate_original(&source, &destination, &moved);
         }
-        std::fs::remove_file(&source)
-            .map_err(|error| format!("Failed to remove the duplicate original: {error}"))?;
-        return Ok(moved);
+        Err(_) => {}
     }
-    if std::fs::rename(&source, &destination).is_ok() {
-        return Ok(moved);
-    }
-    if let Err(error) = copy_verified(&source, &destination) {
-        let _ = std::fs::remove_file(&destination);
+    let staged = destination_dir.join(format!(
+        ".{}.{}.partial",
+        filename.to_string_lossy(),
+        uuid::Uuid::new_v4().simple()
+    ));
+    let published = copy_verified(&source, &staged).and_then(|()| {
+        publish_no_clobber(&staged, &destination).map_err(|error| {
+            if error.kind() == std::io::ErrorKind::AlreadyExists {
+                format!("A different file appeared at {moved}; the original was kept")
+            } else {
+                format!("Failed to move the copied model into place: {error}")
+            }
+        })
+    });
+    if let Err(error) = published {
+        let _ = std::fs::remove_file(&staged);
         return Err(error);
     }
     std::fs::remove_file(&source)
@@ -395,18 +409,56 @@ pub fn move_model_into_library(
     Ok(moved)
 }
 
-/// Copies `source` to a new `destination`, flushes it to disk and checks that
-/// the copy holds exactly the source's bytes.
-fn copy_verified(source: &Path, destination: &Path) -> Result<(), String> {
-    let expected = std::fs::metadata(source)
-        .map_err(|error| format!("Failed to read the model file: {error}"))?
-        .len();
-    let copied = std::fs::copy(source, destination)
+/// Serializes library moves in this process, so the existence check and the
+/// rename that follows it cannot interleave with another move.
+static LIBRARY_MOVES: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn remove_duplicate_original(
+    source: &Path,
+    destination: &Path,
+    moved: &str,
+) -> Result<String, String> {
+    if !same_contents(source, destination)? {
+        return Err(format!(
+            "A different file already exists at {moved}; the original was kept"
+        ));
+    }
+    std::fs::remove_file(source)
+        .map_err(|error| format!("Failed to remove the duplicate original: {error}"))?;
+    Ok(moved.to_owned())
+}
+
+/// Moves `from` to `to` without ever replacing an existing `to`: a hard link
+/// where the filesystem allows one, else an existence check and a rename under
+/// [`LIBRARY_MOVES`], which the caller holds.
+fn publish_no_clobber(from: &Path, to: &Path) -> std::io::Result<()> {
+    match std::fs::hard_link(from, to) {
+        Ok(()) => {
+            let _ = std::fs::remove_file(from);
+            return Ok(());
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => return Err(error),
+        Err(_) => {}
+    }
+    if std::fs::symlink_metadata(to).is_ok() {
+        return Err(std::io::Error::from(std::io::ErrorKind::AlreadyExists));
+    }
+    std::fs::rename(from, to)
+}
+
+/// Copies `source` into a new file at `staged`, flushes it to disk and checks
+/// that the copy holds exactly the source's bytes.
+fn copy_verified(source: &Path, staged: &Path) -> Result<(), String> {
+    let mut input = std::fs::File::open(source)
+        .map_err(|error| format!("Failed to read the model file: {error}"))?;
+    let mut output = std::fs::File::create_new(staged)
         .map_err(|error| format!("Failed to copy model file: {error}"))?;
-    std::fs::File::open(destination)
-        .and_then(|file| file.sync_all())
+    std::io::copy(&mut input, &mut output)
+        .map_err(|error| format!("Failed to copy model file: {error}"))?;
+    output
+        .sync_all()
         .map_err(|error| format!("Failed to flush the copied model file: {error}"))?;
-    if copied != expected || !same_contents(source, destination)? {
+    if !same_contents(source, staged)? {
         return Err("The copied model file does not match the original".to_owned());
     }
     Ok(())
@@ -601,6 +653,15 @@ mod tests {
         let copy_target = root.join("Copy.gguf");
         copy_verified(&copy_source, &copy_target).expect("verified copy");
         assert_eq!(std::fs::read(&copy_target).expect("copied"), b"GGUF copy");
+        assert!(copy_verified(&copy_source, &copy_target).is_err());
+        let other = app.join("Other.gguf");
+        std::fs::write(&other, b"GGUF other").expect("other");
+        assert_eq!(
+            publish_no_clobber(&other, &copy_target).map_err(|error| error.kind()),
+            Err(std::io::ErrorKind::AlreadyExists)
+        );
+        assert_eq!(std::fs::read(&copy_target).expect("kept"), b"GGUF copy");
+        assert!(other.exists());
         std::fs::remove_dir_all(&app).expect("cleanup");
     }
 
