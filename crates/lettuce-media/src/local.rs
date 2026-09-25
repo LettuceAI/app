@@ -24,6 +24,7 @@ pub const MAX_SYNC_MEDIA_CHUNK_BYTES: usize = 1024 * 1024;
 /// This guards downstream decoders from pathological allocation requests.
 const MAX_IMAGE_PIXELS: u64 = 100_000_000;
 const BLOB_VALIDATION_VERSION: u32 = 1;
+const MAX_OBJECT_DIRECTORY_ENTRIES: usize = 1024;
 
 static BLOB_LIFECYCLE: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -73,6 +74,22 @@ impl IngestRequest {
 pub struct IngestedMedia {
     pub asset: MediaAsset,
     pub blob: MediaBlob,
+}
+
+/// A stored object the catalog no longer keeps, identified by its content.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReleasedMediaObject {
+    pub content_hash: ContentHash,
+    pub byte_size: u64,
+}
+
+/// How many object files a removal deleted, how many bytes they held, and
+/// how many could not be deleted.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MediaObjectRemoval {
+    pub removed: u64,
+    pub freed_bytes: u64,
+    pub failed: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -612,6 +629,110 @@ where
             .remove_file(&self.write_capability, &key)
             .map_err(MediaStoreError::File)?;
         Ok(removed.then_some(blob.byte_size))
+    }
+
+    /// Runs `release`, which commits the catalog removal of blobs nothing
+    /// references and returns their objects, then deletes those objects.
+    /// Serialized with ingestion, so no asset can gain a released object
+    /// before its bytes go. An object that cannot be deleted is counted as
+    /// failed and stays behind for `sweep_orphan_objects`.
+    pub fn remove_released_objects(
+        &self,
+        release: impl FnOnce() -> Result<Vec<ReleasedMediaObject>, MediaStoreError>,
+    ) -> Result<MediaObjectRemoval, MediaStoreError> {
+        let _lifecycle = blob_lifecycle();
+        let mut removal = MediaObjectRemoval::default();
+        for object in release()? {
+            self.remove_object(&object.content_hash, object.byte_size, &mut removal);
+        }
+        Ok(removal)
+    }
+
+    /// Deletes every object file under the media root's `objects` tree
+    /// whose content hash `retained` answers `false` for: the bytes a crash
+    /// left behind after their catalog rows were removed. Only files named
+    /// by a content hash at their content-addressed location are considered,
+    /// and everything outside `objects` (partial sync and restore files) is
+    /// left alone. Serialized with ingestion, so an object being ingested is
+    /// never taken for an orphan.
+    pub fn sweep_orphan_objects(
+        &self,
+        mut retained: impl FnMut(&ContentHash) -> Result<bool, MediaStoreError>,
+    ) -> Result<MediaObjectRemoval, MediaStoreError> {
+        let _lifecycle = blob_lifecycle();
+        let mut removal = MediaObjectRemoval::default();
+        for first in self.object_directories(&["objects"])? {
+            for second in self.object_directories(&["objects", &first])? {
+                let prefix = format!("{first}{second}");
+                for entry in self.object_entries(&["objects", &first, &second])? {
+                    if entry.kind != ObjectKind::File || !entry.name.starts_with(&prefix) {
+                        continue;
+                    }
+                    let Ok(hash) = ContentHash::parse(entry.name.clone()) else {
+                        continue;
+                    };
+                    if hash.as_str() != entry.name || retained(&hash)? {
+                        continue;
+                    }
+                    let size = self
+                        .files
+                        .metadata(&self.read_capability, &object_key(&hash)?)
+                        .map(|metadata| metadata.len)
+                        .unwrap_or(0);
+                    self.remove_object(&hash, size, &mut removal);
+                }
+            }
+        }
+        Ok(removal)
+    }
+
+    fn remove_object(&self, hash: &ContentHash, byte_size: u64, removal: &mut MediaObjectRemoval) {
+        let removed = object_key(hash).and_then(|key| {
+            self.files
+                .remove_file(&self.write_capability, &key)
+                .map_err(MediaStoreError::File)
+        });
+        match removed {
+            Ok(true) => {
+                removal.removed += 1;
+                removal.freed_bytes += byte_size;
+            }
+            Ok(false) => {}
+            Err(_) => removal.failed += 1,
+        }
+    }
+
+    fn object_entries(
+        &self,
+        segments: &[&str],
+    ) -> Result<Vec<lettuce_platform::DirectoryEntry>, MediaStoreError> {
+        let key =
+            ObjectKey::from_segments(segments.iter().copied()).map_err(MediaStoreError::File)?;
+        match self.files.list(
+            &self.read_capability,
+            Some(&key),
+            MAX_OBJECT_DIRECTORY_ENTRIES,
+        ) {
+            Ok(entries) => Ok(entries),
+            Err(PlatformError::NotFound) => Ok(Vec::new()),
+            Err(error) => Err(MediaStoreError::File(error)),
+        }
+    }
+
+    fn object_directories(&self, segments: &[&str]) -> Result<Vec<String>, MediaStoreError> {
+        Ok(self
+            .object_entries(segments)?
+            .into_iter()
+            .filter(|entry| {
+                entry.kind == ObjectKind::Directory
+                    && entry.name.len() == 2
+                    && entry
+                        .name
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            })
+            .map(|entry| entry.name)
+            .collect())
     }
 
     /// Opens only a ready catalog asset and returns a descriptor-backed reader.
@@ -1547,6 +1668,118 @@ mod tests {
         let mut read_back = Vec::new();
         opened.reader.read_to_end(&mut read_back).expect("read");
         assert_eq!(read_back, input);
+        drop(store);
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn released_and_orphaned_objects_go_and_nothing_outside_the_object_tree_is_touched() {
+        let root = std::env::temp_dir().join(format!("lettuce-media-{}", AssetId::new()));
+        let snapshot = DirectorySnapshot::new(&root).expect("snapshot");
+        let authority = FilesystemAuthority::new(&snapshot).expect("authority");
+        let store = LocalMediaBlobStore::new(
+            authority.managed_files(),
+            authority
+                .read_capability(ManagedRoot::MediaBlobs)
+                .expect("read capability"),
+            authority
+                .write_capability(ManagedRoot::MediaBlobs)
+                .expect("write capability"),
+            BlobMemory::default(),
+            AssetMemory::default(),
+        );
+        let request = || {
+            IngestRequest::new(
+                AssetKind::OtherImage,
+                AssetOrigin::Upload,
+                RetentionClass::Persistent,
+                AssetProvenanceV1::default(),
+            )
+        };
+        let kept = store
+            .ingest(png_fixture().as_slice(), request())
+            .expect("kept ingest");
+        let mut other = png_fixture();
+        other.extend_from_slice(b"released");
+        let released = store
+            .ingest(other.as_slice(), request())
+            .expect("released ingest");
+        let mut third = png_fixture();
+        third.extend_from_slice(b"orphan");
+        let orphan = store
+            .ingest(third.as_slice(), request())
+            .expect("orphan ingest");
+        let media_root = root.join("platform-v2").join("media-blobs");
+        let object_path = |hash: &ContentHash| {
+            media_root
+                .join("objects")
+                .join(&hash.as_str()[..2])
+                .join(&hash.as_str()[2..4])
+                .join(hash.as_str())
+        };
+        let stray_hash = "ab".repeat(32);
+        let misplaced = media_root.join("objects").join("zz");
+        fs::create_dir_all(&misplaced).expect("misplaced dir");
+        fs::write(misplaced.join(&stray_hash), b"x").expect("misplaced file");
+        let named_oddly = object_path(&kept.blob.content_hash).with_file_name("notes.txt");
+        fs::write(&named_oddly, b"x").expect("odd file");
+        fs::create_dir_all(media_root.join("sync")).expect("sync dir");
+        let partial = media_root
+            .join("sync")
+            .join(format!("{stray_hash}.partial"));
+        fs::write(&partial, b"x").expect("partial");
+        let outside = root.join("outside");
+        fs::create_dir_all(&outside).expect("outside dir");
+        let outside_file = outside.join(orphan.blob.content_hash.as_str());
+        fs::write(&outside_file, b"x").expect("outside file");
+
+        let removal = store
+            .remove_released_objects(|| {
+                Ok(vec![ReleasedMediaObject {
+                    content_hash: released.blob.content_hash.clone(),
+                    byte_size: released.blob.byte_size,
+                }])
+            })
+            .expect("remove released");
+        assert_eq!(
+            removal,
+            MediaObjectRemoval {
+                removed: 1,
+                freed_bytes: other.len() as u64,
+                failed: 0,
+            }
+        );
+        assert!(!object_path(&released.blob.content_hash).exists());
+
+        let orphan_hash = orphan.blob.content_hash.clone();
+        let swept = store
+            .sweep_orphan_objects(|hash| Ok(*hash != orphan_hash))
+            .expect("sweep");
+        assert_eq!(
+            swept,
+            MediaObjectRemoval {
+                removed: 1,
+                freed_bytes: third.len() as u64,
+                failed: 0,
+            }
+        );
+        assert!(!object_path(&orphan.blob.content_hash).exists());
+        assert!(object_path(&kept.blob.content_hash).exists());
+        assert!(misplaced.join(&stray_hash).exists());
+        assert!(named_oddly.exists());
+        assert!(partial.exists());
+        assert!(outside_file.exists());
+        assert_eq!(
+            store
+                .sweep_orphan_objects(|_| Ok(false))
+                .map(|swept| swept.removed),
+            Ok(1),
+            "only content-addressed objects are ever swept"
+        );
+        assert!(misplaced.join(&stray_hash).exists());
+        assert!(named_oddly.exists());
+        assert!(partial.exists());
+        assert!(outside_file.exists());
         drop(store);
         fs::remove_dir_all(root).expect("cleanup");
     }
