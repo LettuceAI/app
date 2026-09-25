@@ -108,15 +108,27 @@ Payload schema changes. The journal records the schema fingerprint it was
 written under (`sync_journal_format`). Journaled payloads are immutable and
 bound into fingerprints peers have acknowledged, so a build whose fingerprint
 differs never relays them: when the database opens (and again before each
-scan) it empties every journal table (changes, frontiers, peer
-acknowledgements, staged batches, conflicts, deferred changes, conversation
-marks, queued purges and re-journals), takes a new sync device identity while
-its hybrid clock carries on, and the next scan journals the current state as
-inserts stamped with each entity's own change time, exactly like a restored
-database. Peers on the same build start over the same way and settle the
-concurrent inserts by last writer wins. Domain rows, fork notices, secret
-versions and received memory cursors are kept, so nothing a device holds is
-lost; a delete that had not reached a peer yet is undone there instead.
+scan) it empties the journal tables (changes, frontiers, peer
+acknowledgements, staged batches, conflicts, deferred changes and
+conversation marks), takes a new sync device identity while its hybrid clock
+carries on, and the next scan journals the current state as inserts stamped
+with each entity's own change time, like a restored database. Peers on the
+same build start over the same way and settle the concurrent inserts by last
+writer wins. A restart never undoes a delete: before the tables are emptied,
+every delete that is the latest state of its entity here (the entity is gone,
+or its received delete still waits in the purge queue) is collected and
+journaled again first under the new identity with its original stamp and no
+causal dependencies, which is what marks a carried delete. A received
+carried delete observes nothing, so it is decided against changes stamped
+after it only: content that a peer journaled again at its own restart is
+older and loses, deterministically, while an edit made after the delete
+still keeps the entity as usual. Queued purges and pending re-journals are
+pending work and stay (a queued purge points at its carried delete).
+Conflicts still waiting for the user's choice move to
+`sync_carried_conflicts` with both sides and a `conflict_carried` notice; one
+whose side is an untouched seed or whose sides are equal loses nothing and is
+not carried. Domain rows, fork notices, secret versions and received memory
+cursors are kept.
 
 The session, change, acknowledgement and persona-media frame values support the
 application transport's bounded binary codec. Decoding alone does not grant
@@ -147,7 +159,11 @@ scanned kind, in dependency order, the current canonical snapshot of every
 entity is compared with the latest journaled one that became local state
 (incoming changes that lost a conflict are skipped), and differences are
 journaled as insert or update; journaled entities that no longer exist are
-journaled as deletes in reverse order. Edits and imports therefore replicate
+journaled as deletes in reverse order, stamped with the time this device
+deleted the entity (`sync_deleted_entities`: triggers on the tables whose
+rows are synced entities record it, and a purge records its own time), like
+legacy's per-write capture; deletes of derived entities (memory items,
+summaries, bindings) fall back to the session time. Edits and imports therefore replicate
 with no per-mutation code; a restored database starts with a new device
 identity and an empty journal, so it rejoins as a new device whose state meets
 peers as concurrent inserts, never as deletes. A scanned insert or update
@@ -340,7 +356,10 @@ conversation and the other chain is copied the same way into a conversation
 of its own, derived from the source conversation and the chain's first
 message (the source's participants, settings and memory binding, no initial
 messages, titled as a branch), with the same notice pointing at it; a later
-message on that chain follows its copies there. Known limit: a third device
+message on that chain follows its copies there. This is a deliberate design
+choice: a branch always starts at a message, so a separate conversation is
+the only way to keep both first messages, which is what legacy's branch
+sessions did. Known limit: a third device
 replying inside a chain that later loses (nested concurrency) can leave the
 devices with different sub-forks; the originals are always kept.
 
@@ -538,3 +557,11 @@ history from sequence one; dropping even changes every known peer has
 acknowledged would strand the next device to pair. A payload schema change
 starts the journal over (see above), which leaves one snapshot per entity.
 Conflict evidence keeps both sides until resolution.
+
+Cost of large entities. The 256 MiB single-entity limit is also a memory
+cost: a change travels whole, so encoding, hashing, framing and encrypting one
+at the limit holds several copies of it at once (the snapshot, its JSON, the
+frame and the ciphertext), about a gigabyte in the worst case on either side.
+Real entities stay far below it. Follow-up: launch snapshot artifacts travel
+inside their snapshot entity as base64; moving them to the blob phase (chunked,
+content-addressed like media) would remove the largest payloads and this cost.
