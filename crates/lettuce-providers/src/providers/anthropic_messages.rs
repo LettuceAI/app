@@ -946,9 +946,6 @@ fn parse_response_with_replay(
             _ => {}
         }
     }
-    if !tool_calls.is_empty() && parsed.stop_reason.as_deref() != Some("tool_use") {
-        return Err(AdapterError::MalformedResponse);
-    }
     let provider_replay = if signed_replay_required && !tool_calls.is_empty() {
         let calls = tool_calls
             .iter()
@@ -1596,13 +1593,17 @@ mod tests {
             r#"{"content":[{"type":"tool_use","name":"x","input":{}}],"stop_reason":"tool_use"}"#,
             r#"{"content":[{"type":"tool_use","id":"id","name":"x","input":[]}],"stop_reason":"tool_use"}"#,
             r#"{"content":[],"stop_reason":"tool_use"}"#,
-            r#"{"content":[{"type":"tool_use","id":"id","name":"x","input":{}}],"stop_reason":"end_turn"}"#,
         ] {
             assert_eq!(
                 parse_response(response(malformed)),
                 Err(AdapterError::MalformedResponse)
             );
         }
+        let gateway = parse_response(response(
+            r#"{"content":[{"type":"tool_use","id":"id","name":"x","input":{}}],"stop_reason":"end_turn"}"#,
+        ))
+        .expect("legacy tooling.rs:326-356 parsed tool_use regardless of stop_reason");
+        assert_eq!(gateway.candidates[0].tool_calls.len(), 1);
     }
 
     #[test]

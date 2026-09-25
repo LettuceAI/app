@@ -1,6 +1,6 @@
-//! Byte-oriented framing for provider response streams.
-
-const MAX_RECORD_BYTES: usize = 256 * 1024;
+//! Byte-oriented framing for provider response streams. Records are not
+//! size-capped: image-output models stream a whole base64 picture as one
+//! record.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum StreamFormat {
@@ -20,8 +20,6 @@ pub(crate) enum FramingError {
     InvalidUtf8,
     #[error("stream record exceeds the {0}-byte limit")]
     RecordTooLarge(usize),
-    #[error("stream ended in the middle of a record")]
-    PrematureEof,
 }
 
 #[derive(Debug)]
@@ -29,7 +27,7 @@ pub(crate) struct StreamFramer {
     format: StreamFormat,
     line: Vec<u8>,
     record: Vec<u8>,
-    max_record_bytes: usize,
+    max_record_bytes: Option<usize>,
 }
 
 impl StreamFramer {
@@ -38,7 +36,7 @@ impl StreamFramer {
             format,
             line: Vec::new(),
             record: Vec::new(),
-            max_record_bytes: MAX_RECORD_BYTES,
+            max_record_bytes: None,
         }
     }
 
@@ -48,15 +46,17 @@ impl StreamFramer {
             format,
             line: Vec::new(),
             record: Vec::new(),
-            max_record_bytes,
+            max_record_bytes: Some(max_record_bytes),
         }
     }
 
     pub(crate) fn push(&mut self, bytes: &[u8]) -> Result<Vec<StreamRecord>, FramingError> {
         let mut records = Vec::new();
         for &byte in bytes {
-            if self.record.len() >= self.max_record_bytes {
-                return Err(FramingError::RecordTooLarge(self.max_record_bytes));
+            if let Some(max_record_bytes) = self.max_record_bytes
+                && self.record.len() >= max_record_bytes
+            {
+                return Err(FramingError::RecordTooLarge(max_record_bytes));
             }
             self.record.push(byte);
             self.line.push(byte);
@@ -69,20 +69,34 @@ impl StreamFramer {
         Ok(records)
     }
 
-    pub(crate) fn finish(&mut self) -> Result<(), FramingError> {
-        if self.record.is_empty() {
-            return Ok(());
-        }
-
-        let is_whitespace =
-            std::str::from_utf8(&self.record).is_ok_and(|record| record.trim().is_empty());
-        if !is_whitespace {
-            return Err(FramingError::PrematureEof);
-        }
-
+    /// The record left when the body ended without its terminating blank line
+    /// (or newline). Legacy read streams line by line, so a final unterminated
+    /// record still counted; a body with no SSE fields at all (a plain JSON
+    /// answer to a stream request) is returned whole as the record's data.
+    pub(crate) fn finish(&mut self) -> Result<Option<StreamRecord>, FramingError> {
+        let record = std::mem::take(&mut self.record);
         self.line.clear();
-        self.record.clear();
-        Ok(())
+        let text = std::str::from_utf8(&record).map_err(|_| FramingError::InvalidUtf8)?;
+        if text.trim().is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(match self.format {
+            StreamFormat::Sse => {
+                let parsed = parse_sse(&record)?;
+                if parsed.event.is_some() || !parsed.data.is_empty() {
+                    parsed
+                } else {
+                    StreamRecord {
+                        event: None,
+                        data: text.trim().to_owned(),
+                    }
+                }
+            }
+            StreamFormat::Ndjson => StreamRecord {
+                event: None,
+                data: text.trim().to_owned(),
+            },
+        }))
     }
 
     fn complete_line(&mut self) -> Result<Option<StreamRecord>, FramingError> {
@@ -215,14 +229,38 @@ mod tests {
     }
 
     #[test]
-    fn premature_eof_rejects_partial_sse_and_ndjson_records() {
+    fn unterminated_final_records_are_kept_like_legacy_line_reading() {
         let mut sse = StreamFramer::new(StreamFormat::Sse);
         assert!(sse.push(b"data: partial\n").unwrap().is_empty());
-        assert_eq!(sse.finish().unwrap_err(), FramingError::PrematureEof);
+        assert_eq!(sse.finish().unwrap().unwrap().data, "partial");
 
         let mut ndjson = StreamFramer::new(StreamFormat::Ndjson);
         assert!(ndjson.push(br#"{"value":1}"#).unwrap().is_empty());
-        assert_eq!(ndjson.finish().unwrap_err(), FramingError::PrematureEof);
+        assert_eq!(ndjson.finish().unwrap().unwrap().data, r#"{"value":1}"#);
+
+        let mut plain = StreamFramer::new(StreamFormat::Sse);
+        assert!(
+            plain
+                .push(b"{\"choices\":[{\"message\":{\"content\":\"hi\"}}]}\n")
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            plain.finish().unwrap().unwrap().data,
+            r#"{"choices":[{"message":{"content":"hi"}}]}"#
+        );
+
+        let mut blank = StreamFramer::new(StreamFormat::Sse);
+        assert!(blank.push(b"\r\n").unwrap().is_empty());
+        assert_eq!(blank.finish().unwrap(), None);
+    }
+
+    #[test]
+    fn records_are_not_size_capped_by_default() {
+        let mut framer = StreamFramer::new(StreamFormat::Sse);
+        let image = format!("data: {}\n\n", "A".repeat(2 * 1024 * 1024));
+        let records = framer.push(image.as_bytes()).unwrap();
+        assert_eq!(records[0].data.len(), 2 * 1024 * 1024);
     }
 
     #[test]

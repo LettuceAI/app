@@ -705,7 +705,12 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
         let tool_calls = message
             .tool_calls
             .into_iter()
-            .map(parse_tool_call)
+            .filter_map(|call| {
+                let function = call.function?;
+                Some((call.id, function.name?, function.arguments))
+            })
+            .enumerate()
+            .map(|(position, (id, name, arguments))| parse_tool_call(position, id, name, arguments))
             .collect::<Result<Vec<_>, _>>()?;
         let raw_text = message
             .content
@@ -741,11 +746,7 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
             Some("content_filter") => {
                 push_warning(&mut warnings, InferenceWarningCode::SafetyTransformed);
             }
-            Some("tool_calls") if !tool_calls.is_empty() => {}
-            Some("tool_calls") | Some("function_call") => {
-                return Err(AdapterError::MalformedResponse);
-            }
-            Some("stop") => {}
+            Some("tool_calls" | "function_call" | "stop") => {}
             _ => push_warning(&mut warnings, InferenceWarningCode::ProviderDegraded),
         }
         candidates.push(InferenceCandidate {
@@ -795,24 +796,21 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
     Ok(outcome)
 }
 
-fn parse_tool_call(call: OpenAiResponseToolCall) -> Result<ProposedToolCall, AdapterError> {
-    if call.kind.as_deref().is_some_and(|kind| kind != "function") {
-        return Err(AdapterError::MalformedResponse);
-    }
-    let id = call.id.ok_or(AdapterError::MalformedResponse)?;
-    let function = call.function.ok_or(AdapterError::MalformedResponse)?;
-    let (arguments, raw_arguments) = match function.arguments {
-        serde_json::Value::String(raw) => {
-            let arguments =
-                serde_json::from_str(&raw).map_err(|_| AdapterError::MalformedResponse)?;
-            (arguments, Some(raw))
-        }
-        value @ serde_json::Value::Object(_) => (value, None),
-        _ => return Err(AdapterError::MalformedResponse),
-    };
+/// Legacy `extract_openai_calls`: calls without a function name are skipped,
+/// a missing id is synthesized and the arguments are parsed leniently.
+fn parse_tool_call(
+    position: usize,
+    id: Option<String>,
+    name: String,
+    arguments: Option<serde_json::Value>,
+) -> Result<ProposedToolCall, AdapterError> {
+    let (arguments, raw_arguments) = crate::common::lenient_tool_argument_value(arguments);
     let call = ProposedToolCall {
-        provider_call_id: Some(id),
-        name: function.name,
+        provider_call_id: Some(
+            id.filter(|id| !id.is_empty())
+                .unwrap_or_else(|| crate::common::synthesized_call_id(position)),
+        ),
+        name,
         arguments,
         raw_arguments,
         provider_replay: None,
@@ -984,22 +982,20 @@ struct OpenAiResponseMessage {
     content: Option<MessageContent>,
     reasoning: Option<serde_json::Value>,
     reasoning_content: Option<serde_json::Value>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::common::null_as_default")]
     tool_calls: Vec<OpenAiResponseToolCall>,
 }
 
 #[derive(Deserialize)]
 struct OpenAiResponseToolCall {
     id: Option<String>,
-    #[serde(rename = "type")]
-    kind: Option<String>,
     function: Option<OpenAiResponseFunctionCall>,
 }
 
 #[derive(Deserialize)]
 struct OpenAiResponseFunctionCall {
-    name: String,
-    arguments: serde_json::Value,
+    name: Option<String>,
+    arguments: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
@@ -1035,11 +1031,17 @@ impl MessageContent {
 struct OpenAiUsage {
     #[serde(flatten)]
     details: serde_json::Map<String, serde_json::Value>,
+    #[serde(default, deserialize_with = "crate::common::lenient_u64")]
     prompt_tokens: Option<u64>,
+    #[serde(default, deserialize_with = "crate::common::lenient_u64")]
     input_tokens: Option<u64>,
+    #[serde(default, deserialize_with = "crate::common::lenient_u64")]
     prompt_eval_count: Option<u64>,
+    #[serde(default, deserialize_with = "crate::common::lenient_u64")]
     completion_tokens: Option<u64>,
+    #[serde(default, deserialize_with = "crate::common::lenient_u64")]
     output_tokens: Option<u64>,
+    #[serde(default, deserialize_with = "crate::common::lenient_u64")]
     eval_count: Option<u64>,
 }
 
@@ -1860,6 +1862,69 @@ mod tests {
                 }) if *actual_kind == kind && *actual_status == status
             ));
             assert!(matches!(PortError::from(actual), PortError::Provider(_)));
+        }
+    }
+
+    #[test]
+    fn nullable_tool_calls_and_non_integer_usage_are_tolerated_like_legacy() {
+        let outcome = parse_response(response(
+            r#"{"choices":[{"message":{"content":"  hi  ","tool_calls":null},"finish_reason":"stop"}],"usage":{"prompt_tokens":"12","completion_tokens":3,"input_tokens":1.5}}"#,
+        ))
+        .expect("legacy tooling.rs:660 ignored a null tool_calls");
+        assert!(outcome.candidates[0].tool_calls.is_empty());
+        let usage = outcome.usage.expect("usage");
+        assert_eq!((usage.input_tokens, usage.output_tokens), (12, 3));
+    }
+
+    #[test]
+    fn buffered_tool_calls_are_parsed_leniently_like_legacy_tooling() {
+        let outcome = parse_response(response(
+            r#"{"choices":[{"message":{"content":null,"tool_calls":[
+                {"type":"function","function":{"name":"a","arguments":"<parameter=text>hi</parameter><parameter=n>2</parameter>"}},
+                {"id":"b-id","function":{"name":"b","arguments":""}},
+                {"id":"c-id","function":{"name":"c"}},
+                {"id":"d-id","function":{"arguments":"{}"}}
+            ]},"finish_reason":"tool_calls"}]}"#,
+        ))
+        .expect("lenient tool calls");
+        let calls = &outcome.candidates[0].tool_calls;
+        assert_eq!(calls.len(), 3);
+        assert_eq!(calls[0].provider_call_id.as_deref(), Some("tool_call_1"));
+        assert_eq!(
+            calls[0].arguments,
+            serde_json::json!({"text": "hi", "n": 2})
+        );
+        assert_eq!(calls[1].arguments, serde_json::json!({}));
+        assert_eq!(calls[2].provider_call_id.as_deref(), Some("c-id"));
+    }
+
+    #[test]
+    fn tool_calls_finish_without_calls_keeps_the_text_reply() {
+        let outcome = parse_response(response(
+            r#"{"choices":[{"message":{"content":"plain"},"finish_reason":"tool_calls"}]}"#,
+        ))
+        .expect("text reply");
+        assert!(outcome.warning_codes.is_empty());
+    }
+
+    #[test]
+    fn error_text_comes_from_plain_bodies_and_detail_fields_like_legacy() {
+        for (body, expected) in [
+            ("<html>Bad gateway</html>", "<html>Bad gateway</html>"),
+            (r#"{"detail":"model not loaded"}"#, "model not loaded"),
+            (r#"{"detail":[{"msg":"field required"}]}"#, "field required"),
+        ] {
+            let error = AdapterError::from_response(&JsonResponse {
+                status: 502,
+                body: body.as_bytes().to_vec(),
+                request_id: None,
+                retry_after: None,
+                content_type: None,
+            });
+            let Some(AdapterError::Provider(failure)) = error else {
+                panic!("provider failure");
+            };
+            assert_eq!(failure.message.as_deref(), Some(expected));
         }
     }
 }

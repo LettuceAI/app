@@ -210,16 +210,29 @@ impl AdapterError {
     }
 }
 
-fn provider_error_details(body: &[u8]) -> (Option<String>, Option<String>) {
+/// Legacy `extract_error_message`: a body that is not JSON is the message
+/// itself, and a JSON body without `error`/`message` text (FastAPI
+/// `{"detail": ...}` and similar) yields its joined text fragments.
+pub(crate) fn provider_error_details(body: &[u8]) -> (Option<String>, Option<String>) {
     let Ok(value) = serde_json::from_slice::<serde_json::Value>(body) else {
-        return (None, None);
+        return (
+            None,
+            std::str::from_utf8(body)
+                .ok()
+                .and_then(|text| bounded_diagnostic(text, 2_048)),
+        );
     };
     let error = value.get("error").unwrap_or(&value);
     let message = error
         .as_str()
         .or_else(|| error.get("message").and_then(serde_json::Value::as_str))
         .or_else(|| value.get("message").and_then(serde_json::Value::as_str))
-        .and_then(|value| bounded_diagnostic(value, 2_048));
+        .and_then(|value| bounded_diagnostic(value, 2_048))
+        .or_else(|| {
+            let mut joined = String::new();
+            collect_text_fragments(&value, &mut joined);
+            bounded_diagnostic(&joined, 2_048)
+        });
     let code = error
         .get("code")
         .or_else(|| error.get("type"))
@@ -232,6 +245,47 @@ fn provider_error_details(body: &[u8]) -> (Option<String>, Option<String>) {
         })
         .and_then(|value| bounded_diagnostic(&value, 128));
     (code, message)
+}
+
+fn collect_text_fragments(value: &serde_json::Value, joined: &mut String) {
+    match value {
+        serde_json::Value::String(text) => {
+            if !skip_image_data(text) {
+                joined.push_str(text);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                collect_text_fragments(item, joined);
+            }
+        }
+        serde_json::Value::Object(map) => {
+            if [
+                "function_call",
+                "functionCall",
+                "function_response",
+                "functionResponse",
+            ]
+            .iter()
+            .any(|key| map.contains_key(*key))
+            {
+                return;
+            }
+            let mut handled = false;
+            for key in ["text", "content", "value", "message", "parts"] {
+                if let Some(inner) = map.get(key) {
+                    handled = true;
+                    collect_text_fragments(inner, joined);
+                }
+            }
+            if !handled {
+                for inner in map.values() {
+                    collect_text_fragments(inner, joined);
+                }
+            }
+        }
+        serde_json::Value::Null | serde_json::Value::Bool(_) | serde_json::Value::Number(_) => {}
+    }
 }
 
 fn bounded_diagnostic(value: &str, max_bytes: usize) -> Option<String> {
@@ -642,4 +696,201 @@ pub(crate) use crate::descriptor::RemoteModel;
 
 pub(crate) fn skip_image_data(fragment: &str) -> bool {
     fragment.starts_with("data:image/")
+}
+
+/// A field that providers send as `null` as well as omitting it; both mean
+/// the default (legacy read these fields with `.as_array()`/`.as_str()`).
+pub(crate) fn null_as_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Default + serde::Deserialize<'de>,
+{
+    Ok(<Option<T> as serde::Deserialize>::deserialize(deserializer)?.unwrap_or_default())
+}
+
+/// A token counter read the way legacy `parse_token_value` did: an unsigned
+/// integer or an integer string; anything else is unknown, never an error.
+pub(crate) fn lenient_u64<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(
+        <Option<serde_json::Value> as serde::Deserialize>::deserialize(deserializer)?
+            .as_ref()
+            .and_then(value_to_u64),
+    )
+}
+
+/// The provider call id legacy gave a call that arrived without one
+/// (`tool_call_{n}`, 1-based within the response).
+pub(crate) fn synthesized_call_id(position: usize) -> String {
+    format!("tool_call_{}", position + 1)
+}
+
+/// Legacy `arguments_value_from_str`: `<parameter=name>value</parameter>`
+/// argument strings become an object, JSON objects are kept with their raw
+/// text, a JSON string holding an object is unwrapped, and blank or non-object
+/// arguments become an empty object (the domain only carries objects; legacy
+/// passed the raw string on to the tool).
+pub(crate) fn lenient_tool_arguments(raw: &str) -> (serde_json::Value, Option<String>) {
+    if let Some(parsed) = parameter_tag_arguments(raw) {
+        return (parsed, None);
+    }
+    match serde_json::from_str::<serde_json::Value>(raw) {
+        Ok(value @ serde_json::Value::Object(_)) => (value, Some(raw.to_owned())),
+        Ok(serde_json::Value::String(inner)) => {
+            match serde_json::from_str::<serde_json::Value>(&inner) {
+                Ok(value @ serde_json::Value::Object(_)) => (value, None),
+                _ => {
+                    if !inner.trim().is_empty() {
+                        tracing::warn!("provider tool call arguments are not a JSON object");
+                    }
+                    (serde_json::Value::Object(serde_json::Map::new()), None)
+                }
+            }
+        }
+        _ => {
+            if !raw.trim().is_empty() && raw.trim() != "null" {
+                tracing::warn!("provider tool call arguments are not a JSON object");
+            }
+            (serde_json::Value::Object(serde_json::Map::new()), None)
+        }
+    }
+}
+
+/// Arguments that arrived already decoded; `null` or a missing value is an
+/// empty object and a string is parsed like a raw argument string.
+pub(crate) fn lenient_tool_argument_value(
+    value: Option<serde_json::Value>,
+) -> (serde_json::Value, Option<String>) {
+    match value {
+        Some(serde_json::Value::String(raw)) => lenient_tool_arguments(&raw),
+        Some(value @ serde_json::Value::Object(_)) => (value, None),
+        Some(serde_json::Value::Null) | None => {
+            (serde_json::Value::Object(serde_json::Map::new()), None)
+        }
+        Some(_) => {
+            tracing::warn!("provider tool call arguments are not a JSON object");
+            (serde_json::Value::Object(serde_json::Map::new()), None)
+        }
+    }
+}
+
+fn parameter_tag_arguments(raw: &str) -> Option<serde_json::Value> {
+    let trimmed = raw.trim();
+    if !trimmed.contains("<parameter") || !trimmed.contains("</parameter>") {
+        return None;
+    }
+    let mut map = serde_json::Map::new();
+    let mut cursor = 0_usize;
+    while let Some(start_rel) = trimmed[cursor..].find("<parameter") {
+        let start = cursor + start_rel;
+        let after_start = &trimmed[start + "<parameter".len()..];
+        let Some(name_end) = after_start.find('>') else {
+            break;
+        };
+        let name = after_start[..name_end]
+            .trim()
+            .trim_start_matches('=')
+            .trim_start_matches('-')
+            .trim()
+            .trim_matches('"')
+            .trim_matches('\'');
+        if name.is_empty() {
+            break;
+        }
+        let content_start = start + "<parameter".len() + name_end + 1;
+        let Some(end_rel) = trimmed[content_start..].find("</parameter>") else {
+            break;
+        };
+        let content_end = content_start + end_rel;
+        map.insert(
+            name.to_owned(),
+            coerce_parameter_value(&trimmed[content_start..content_end]),
+        );
+        cursor = content_end + "</parameter>".len();
+    }
+    (!map.is_empty()).then_some(serde_json::Value::Object(map))
+}
+
+fn coerce_parameter_value(raw: &str) -> serde_json::Value {
+    let trimmed = raw.trim();
+    if trimmed.eq_ignore_ascii_case("true") {
+        return serde_json::Value::Bool(true);
+    }
+    if trimmed.eq_ignore_ascii_case("false") {
+        return serde_json::Value::Bool(false);
+    }
+    if trimmed.eq_ignore_ascii_case("null") {
+        return serde_json::Value::Null;
+    }
+    serde_json::from_str(trimmed).unwrap_or_else(|_| serde_json::Value::String(trimmed.to_owned()))
+}
+
+/// Legacy `normalize_thinking_content`: the stored reply text and reasoning
+/// are trimmed once the response is complete.
+pub(crate) fn trim_outcome_text(outcome: &mut lettuce_conversations::InferenceOutcome) {
+    for candidate in &mut outcome.candidates {
+        candidate.parts.retain_mut(|part| match part {
+            lettuce_conversations::MessagePart::Text { text }
+            | lettuce_conversations::MessagePart::ReasoningSummary { text } => {
+                let trimmed = text.trim();
+                if trimmed.len() != text.len() {
+                    *text = trimmed.to_owned();
+                }
+                !text.is_empty()
+            }
+            _ => true,
+        });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stored_reply_text_is_trimmed_like_legacy_normalize_thinking_content() {
+        let mut outcome = lettuce_conversations::InferenceOutcome {
+            provider_response_id: None,
+            candidates: vec![lettuce_conversations::InferenceCandidate {
+                ordinal: 0,
+                parts: vec![
+                    lettuce_conversations::MessagePart::ReasoningSummary {
+                        text: "  \n".to_owned(),
+                    },
+                    lettuce_conversations::MessagePart::Text {
+                        text: "\n\nhello \n".to_owned(),
+                    },
+                ],
+                tool_calls: Vec::new(),
+                provider_replay: None,
+            }],
+            usage: None,
+            finish_reason: lettuce_conversations::FinishReason::Stop,
+            provider_finish_reason: None,
+            provider_request_id: None,
+            warning_codes: Vec::new(),
+        };
+        trim_outcome_text(&mut outcome);
+        assert_eq!(
+            outcome.candidates[0].parts,
+            vec![lettuce_conversations::MessagePart::Text {
+                text: "hello".to_owned()
+            }]
+        );
+    }
+
+    #[test]
+    fn lenient_arguments_unwrap_double_encoded_objects() {
+        assert_eq!(
+            lenient_tool_arguments(r#""{\"a\":1}""#).0,
+            serde_json::json!({"a": 1})
+        );
+        assert_eq!(
+            lenient_tool_arguments(r#"{"a":1}"#),
+            (serde_json::json!({"a": 1}), Some(r#"{"a":1}"#.to_owned()))
+        );
+        assert_eq!(lenient_tool_arguments("not json").0, serde_json::json!({}));
+    }
 }

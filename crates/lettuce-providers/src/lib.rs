@@ -282,7 +282,12 @@ impl<S: SecretStore + ?Sized> InferencePort for RemoteProviders<S> {
                 return Err(PortError::Rejected);
             }
         };
-        result.map_err(Into::into)
+        result
+            .map(|mut outcome| {
+                common::trim_outcome_text(&mut outcome);
+                outcome
+            })
+            .map_err(Into::into)
     }
 }
 

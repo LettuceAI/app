@@ -26,7 +26,7 @@ pub(crate) async fn consume_stream(
 }
 
 pub(crate) async fn consume_stream_with_provider_replay(
-    mut response: JsonResponseStream,
+    response: JsonResponseStream,
     format: StreamFormat,
     protocol: StreamProtocol,
     runtime: &dyn InferenceRuntimePort,
@@ -37,6 +37,7 @@ pub(crate) async fn consume_stream_with_provider_replay(
             .await
             .map(|outcome| (outcome, None));
     }
+    let mut response = response.without_size_limit();
     let mut framer = StreamFramer::new(format);
     let provider_request_id = response.request_id.clone();
     let mut normalizer = StreamNormalizer::new(protocol, provider_request_id.clone());
@@ -56,7 +57,15 @@ pub(crate) async fn consume_stream_with_provider_replay(
             }
         }
     }
-    framer.finish().map_err(map_framing)?;
+    if let Some(record) = framer.finish().map_err(map_framing)? {
+        for delta in normalizer
+            .consume(&record)
+            .map_err(|error| map_normalize(error, provider_request_id.clone()))?
+        {
+            sequence = sequence.checked_add(1).ok_or(AdapterError::Transport)?;
+            emit(runtime, request, sequence, delta).await?;
+        }
+    }
     let completion = normalizer
         .finish_with_provider_replay()
         .map_err(|error| map_normalize(error, provider_request_id))?;
@@ -169,7 +178,7 @@ pub(crate) async fn emit(
 
 fn map_framing(error: FramingError) -> AdapterError {
     match error {
-        FramingError::InvalidUtf8 | FramingError::PrematureEof => AdapterError::MalformedResponse,
+        FramingError::InvalidUtf8 => AdapterError::MalformedResponse,
         FramingError::RecordTooLarge(_) => AdapterError::Transport,
     }
 }

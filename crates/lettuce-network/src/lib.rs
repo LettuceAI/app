@@ -8,7 +8,9 @@ use lettuce_settings::{HeaderName, SecretValue};
 use reqwest::{Url, header, redirect};
 use tokio::time::sleep;
 
-pub const MAX_REQUEST_BYTES: usize = 2 * 1024 * 1024;
+/// Chat request bodies inline base64 image and audio attachments, so they
+/// share the bulk bound.
+pub const MAX_REQUEST_BYTES: usize = MAX_BULK_REQUEST_BYTES;
 const MAX_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_BULK_REQUEST_BYTES: usize = 64 * 1024 * 1024;
 const MAX_BULK_RESPONSE_BYTES: usize = 256 * 1024 * 1024;
@@ -1711,7 +1713,7 @@ mod tests {
         let (endpoint, request) =
             test_server("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 4\r\n\r\nbusy")
                 .await;
-        let body = vec![b'x'; MAX_REQUEST_BYTES + 1];
+        let body = vec![b'x'; 2 * 1024 * 1024 + 1];
         let response = BulkHttpClient::new()
             .expect("client")
             .post_json(

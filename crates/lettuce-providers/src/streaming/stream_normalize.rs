@@ -9,8 +9,7 @@ use serde_json::Value;
 
 use crate::streaming::stream_framing::StreamRecord;
 
-const MAX_TEXT_BYTES: usize = 1024 * 1024;
-const MAX_REASONING_BYTES: usize = 256 * 1024;
+const MAX_THINKING_SIGNATURE_BYTES: usize = 256 * 1024;
 const MAX_ERROR_CODE_BYTES: usize = 128;
 const MAX_ERROR_MESSAGE_BYTES: usize = 2 * 1024;
 const MAX_PROVIDER_REPLAY_BYTES: usize = 4 * 1024 * 1024;
@@ -86,7 +85,6 @@ pub(crate) struct StreamNormalizer {
     gemini_replay_bytes: usize,
     ollama_tool_calls: Vec<ProposedToolCall>,
     gemini_has_thought_signature: bool,
-    requires_openai_tool_calls: bool,
     requires_anthropic_tool_calls: bool,
     terminal: bool,
 }
@@ -157,7 +155,6 @@ impl StreamNormalizer {
             gemini_replay_bytes: 0,
             ollama_tool_calls: Vec::new(),
             gemini_has_thought_signature: false,
-            requires_openai_tool_calls: false,
             requires_anthropic_tool_calls: false,
             terminal: false,
         }
@@ -190,7 +187,13 @@ impl StreamNormalizer {
         mut self,
     ) -> Result<StreamCompletion, StreamNormalizeError> {
         if !self.terminal {
-            return Err(StreamNormalizeError::PrematureEof);
+            if self.protocol != StreamProtocol::OpenAi {
+                return Err(StreamNormalizeError::PrematureEof);
+            }
+            if self.provider_finish_reason.is_none() {
+                self.push_warning(InferenceWarningCode::ProviderDegraded);
+            }
+            self.terminal = true;
         }
         let mut tail = Vec::new();
         let split = self.thinking.finish();
@@ -233,16 +236,7 @@ impl StreamNormalizer {
             }
             StreamProtocol::Ollama => std::mem::take(&mut self.ollama_tool_calls),
         };
-        if self.requires_openai_tool_calls && tool_calls.is_empty() {
-            return Err(StreamNormalizeError::MalformedJson);
-        }
         if self.requires_anthropic_tool_calls && tool_calls.is_empty() {
-            return Err(StreamNormalizeError::MalformedJson);
-        }
-        if self.protocol == StreamProtocol::Anthropic
-            && !tool_calls.is_empty()
-            && self.provider_finish_reason.as_deref() != Some("tool_use")
-        {
             return Err(StreamNormalizeError::MalformedJson);
         }
         if self.text.trim().is_empty()
@@ -470,14 +464,12 @@ impl StreamNormalizer {
             let split = self.thinking.feed(text);
             self.append_split(split, &mut deltas)?;
         }
-        if let Some(reasoning) = delta
-            .and_then(|delta| {
-                delta
-                    .get("reasoning")
-                    .or_else(|| delta.get("reasoning_content"))
-            })
-            .and_then(Value::as_str)
-        {
+        if let Some(reasoning) = delta.and_then(|delta| {
+            delta
+                .get("reasoning")
+                .and_then(Value::as_str)
+                .or_else(|| delta.get("reasoning_content").and_then(Value::as_str))
+        }) {
             self.append_reasoning(reasoning, &mut deltas)?;
         }
         if let Some(calls) = delta
@@ -494,18 +486,17 @@ impl StreamNormalizer {
         Ok(deltas)
     }
 
+    /// Legacy `accumulate_tool_calls_from_sse`: a fragment without an index
+    /// opens a new call keyed after the indexed ones.
     fn append_openai_tool_call(&mut self, value: &Value) -> Result<(), StreamNormalizeError> {
-        if value
-            .get("type")
-            .and_then(Value::as_str)
-            .is_some_and(|kind| kind != "function")
-        {
-            return Err(StreamNormalizeError::MalformedJson);
-        }
         let index = value
             .get("index")
             .and_then(Value::as_u64)
-            .ok_or(StreamNormalizeError::MalformedJson)?;
+            .unwrap_or_else(|| {
+                u64::try_from(self.openai_tool_calls.len())
+                    .unwrap_or(u64::MAX)
+                    .saturating_add(1000)
+            });
         if !self.openai_tool_calls.contains_key(&index)
             && self.openai_tool_calls.len() >= MAX_TOOL_CALLS_PER_RESPONSE
         {
@@ -656,7 +647,7 @@ impl StreamNormalizer {
                             return Err(StreamNormalizeError::MalformedJson);
                         };
                         if replay_signature.len().saturating_add(signature.len())
-                            > MAX_REASONING_BYTES
+                            > MAX_THINKING_SIGNATURE_BYTES
                         {
                             return Err(StreamNormalizeError::OutputTooLarge {
                                 field: "thinking_signature",
@@ -1033,7 +1024,7 @@ impl StreamNormalizer {
         value: &str,
         deltas: &mut Vec<StreamDelta>,
     ) -> Result<(), StreamNormalizeError> {
-        append_bounded(&mut self.text, value, MAX_TEXT_BYTES, "text")?;
+        self.text.push_str(value);
         if !value.is_empty() {
             deltas.push(StreamDelta::Text(value.to_owned()));
         }
@@ -1045,7 +1036,7 @@ impl StreamNormalizer {
         value: &str,
         deltas: &mut Vec<StreamDelta>,
     ) -> Result<(), StreamNormalizeError> {
-        append_bounded(&mut self.reasoning, value, MAX_REASONING_BYTES, "reasoning")?;
+        self.reasoning.push_str(value);
         if !value.is_empty() {
             deltas.push(StreamDelta::Reasoning(value.to_owned()));
         }
@@ -1059,7 +1050,7 @@ impl StreamNormalizer {
                 "stop" => {}
                 "length" => self.mark_length(),
                 "content_filter" => self.push_warning(InferenceWarningCode::SafetyTransformed),
-                "tool_calls" | "function_call" => self.requires_openai_tool_calls = true,
+                "tool_calls" | "function_call" => {}
                 _ => self.push_warning(InferenceWarningCode::ProviderDegraded),
             },
             FinishFamily::Anthropic => match reason {
@@ -1127,25 +1118,28 @@ fn merge_fragment(
     }
 }
 
+/// Legacy `accumulate_tool_calls_from_sse`: missing ids are synthesized by
+/// position and the argument text is parsed leniently.
 fn finish_openai_tool_calls(
     pending: BTreeMap<u64, PendingOpenAiToolCall>,
 ) -> Result<Vec<ProposedToolCall>, StreamNormalizeError> {
     pending
         .into_values()
-        .map(|pending| {
-            let raw_arguments = pending.arguments;
-            let arguments = serde_json::from_str(&raw_arguments)
-                .map_err(|_| StreamNormalizeError::MalformedJson)?;
+        .enumerate()
+        .map(|(position, pending)| {
+            let (arguments, raw_arguments) =
+                crate::common::lenient_tool_arguments(&pending.arguments);
             let call = ProposedToolCall {
-                provider_call_id: pending.id,
+                provider_call_id: Some(
+                    pending
+                        .id
+                        .unwrap_or_else(|| crate::common::synthesized_call_id(position)),
+                ),
                 name: pending.name.ok_or(StreamNormalizeError::MalformedJson)?,
                 arguments,
-                raw_arguments: Some(raw_arguments),
+                raw_arguments,
                 provider_replay: None,
             };
-            if call.provider_call_id.is_none() {
-                return Err(StreamNormalizeError::MalformedJson);
-            }
             call.validate()
                 .map_err(|_| StreamNormalizeError::MalformedJson)?;
             Ok(call)
@@ -1218,7 +1212,7 @@ fn token(value: &Value, fields: &[&str]) -> Option<u64> {
 }
 
 fn provider_error(value: &Value) -> Option<StreamNormalizeError> {
-    let error = value.get("error")?;
+    let error = value.get("error").filter(|error| !error.is_null())?;
     let status = error
         .get("code")
         .and_then(Value::as_u64)
@@ -1268,23 +1262,6 @@ fn bounded(value: &str, max_bytes: usize) -> Option<String> {
         })]
             .to_owned(),
     )
-}
-
-fn append_bounded(
-    target: &mut String,
-    value: &str,
-    max_bytes: usize,
-    field: &'static str,
-) -> Result<(), StreamNormalizeError> {
-    if target
-        .len()
-        .checked_add(value.len())
-        .is_none_or(|length| length > max_bytes)
-    {
-        return Err(StreamNormalizeError::OutputTooLarge { field });
-    }
-    target.push_str(value);
-    Ok(())
 }
 
 pub(crate) fn split_complete_thinking(text: &str) -> (String, String) {
@@ -1428,17 +1405,59 @@ mod tests {
     }
 
     #[test]
-    fn openai_requires_done_marker() {
+    fn openai_done_marker_is_optional_like_legacy_sse_decoder() {
         let mut normalizer = StreamNormalizer::new(StreamProtocol::OpenAi, None);
         normalizer
             .consume(&record(
                 r#"{"choices":[{"delta":{"content":"hello"},"finish_reason":"stop"}]}"#,
             ))
             .unwrap();
+        let (_, outcome) = normalizer.finish().unwrap();
+        assert!(outcome.warning_codes.is_empty());
+
+        let mut unfinished = StreamNormalizer::new(StreamProtocol::OpenAi, None);
+        unfinished
+            .consume(&record(r#"{"choices":[{"delta":{"content":"hi"}}]}"#))
+            .unwrap();
+        let (_, outcome) = unfinished.finish().unwrap();
         assert_eq!(
-            normalizer.finish().unwrap_err(),
-            StreamNormalizeError::PrematureEof
+            outcome.warning_codes,
+            vec![InferenceWarningCode::ProviderDegraded]
         );
+
+        let mut plain = StreamNormalizer::new(StreamProtocol::OpenAi, None);
+        plain
+            .consume(&record(
+                r#"{"choices":[{"message":{"content":"body"},"finish_reason":"stop"}]}"#,
+            ))
+            .unwrap();
+        assert!(plain.finish().is_ok());
+    }
+
+    #[test]
+    fn openai_nullable_fields_are_ignored_like_legacy() {
+        let mut normalizer = StreamNormalizer::new(StreamProtocol::OpenAi, None);
+        let deltas = normalizer
+            .consume(&record(
+                r#"{"error":null,"choices":[{"delta":{"content":"a","reasoning":null,"reasoning_content":"why","tool_calls":null}}]}"#,
+            ))
+            .unwrap();
+        assert!(deltas.contains(&StreamDelta::Reasoning("why".to_owned())));
+    }
+
+    #[test]
+    fn openai_tool_fragments_without_index_id_or_json_are_accepted_like_legacy_sse() {
+        let mut normalizer = StreamNormalizer::new(StreamProtocol::OpenAi, None);
+        normalizer.consume(&record(r#"{"choices":[{"delta":{"tool_calls":[{"function":{"name":"one","arguments":""}}]}}]}"#)).unwrap();
+        normalizer.consume(&record(r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"two","arguments":"<parameter=text>hi</parameter>"}}]},"finish_reason":"tool_calls"}]}"#)).unwrap();
+        let (_, outcome) = normalizer.finish().unwrap();
+        let calls = &outcome.candidates[0].tool_calls;
+        assert_eq!(calls[0].name, "two");
+        assert_eq!(calls[0].arguments, serde_json::json!({"text": "hi"}));
+        assert_eq!(calls[0].provider_call_id.as_deref(), Some("tool_call_1"));
+        assert_eq!(calls[1].name, "one");
+        assert_eq!(calls[1].arguments, serde_json::json!({}));
+        assert_eq!(calls[1].provider_call_id.as_deref(), Some("tool_call_2"));
     }
 
     #[test]
@@ -1464,14 +1483,6 @@ mod tests {
             conflicting
                 .consume(&record(r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"second","function":{"arguments":"}"}}]}}]}"#))
                 .unwrap_err(),
-            StreamNormalizeError::MalformedJson
-        );
-
-        let mut incomplete = StreamNormalizer::new(StreamProtocol::OpenAi, None);
-        incomplete.consume(&record(r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call","function":{"name":"one","arguments":"{"}}]},"finish_reason":"tool_calls"}]}"#)).unwrap();
-        incomplete.consume(&record("[DONE]")).unwrap();
-        assert_eq!(
-            incomplete.finish().unwrap_err(),
             StreamNormalizeError::MalformedJson
         );
 
@@ -1669,8 +1680,10 @@ mod tests {
             .consume(&event("message_stop", r#"{"type":"message_stop"}"#))
             .unwrap();
         assert_eq!(
-            mismatched_stop.finish().unwrap_err(),
-            StreamNormalizeError::MalformedJson
+            mismatched_stop.finish().unwrap().1.candidates[0]
+                .tool_calls
+                .len(),
+            1
         );
 
         let mut malformed_json = StreamNormalizer::new(StreamProtocol::Anthropic, None);
