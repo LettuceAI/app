@@ -6601,8 +6601,22 @@ async fn retrieval_embeds_memories_without_a_current_vector_first() {
 
 fn hard_delete_root(prefix: &str) -> std::path::PathBuf {
     let root = std::env::temp_dir().join(format!("lettuce-{prefix}-{}", ConversationId::new()));
-    std::fs::create_dir_all(&root).expect("root");
+    std::fs::create_dir_all(root.join("private-persistent-v2").join("databases")).expect("root");
     root
+}
+
+fn hard_delete_path(root: &std::path::Path, name: &str) -> std::path::PathBuf {
+    root.join("private-persistent-v2")
+        .join("databases")
+        .join(name)
+}
+
+fn hard_delete_location(root: &std::path::Path) -> crate::AppDatabaseLocation {
+    use lettuce_platform::{DirectorySnapshot, FilesystemAuthority};
+    let snapshot = DirectorySnapshot::new(root).expect("directory snapshot");
+    let authority = FilesystemAuthority::new(&snapshot).expect("filesystem authority");
+    crate::AppDatabaseLocation::new(root.join("private-persistent-v2"), &authority)
+        .expect("database location")
 }
 
 fn hard_delete_media(
@@ -6738,13 +6752,15 @@ fn direct_character(database: &Database, conversation_id: ConversationId) -> Cha
 #[tokio::test]
 async fn a_deleted_chat_goes_with_its_media_here_and_on_the_sync_peer() {
     let root = hard_delete_root("hard-delete-chat");
-    let path = root.join("a.sqlite3");
+    let path = hard_delete_path(&root, "a.sqlite3");
     let a = Database::open(&path).expect("a");
     let b = database();
     let media = hard_delete_media(&path, &root);
+    let location = hard_delete_location(&root);
     let scope = crate::MediaGarbageScope {
         store: &media,
-        other_databases: &[],
+        location: &location,
+        open_database: &path,
     };
     let (scenario, reply) = generated_direct_chat(&a, "hard-delete-chat").await;
     let id = scenario.conversation_id;
@@ -6783,7 +6799,8 @@ async fn a_deleted_chat_goes_with_its_media_here_and_on_the_sync_peer() {
     std::fs::create_dir_all(stray_path.parent().expect("parent")).expect("stray dir");
     std::fs::write(&stray_path, b"orphan").expect("stray");
     let kept = chat_image(&media, b"kept");
-    let swept = crate::sweep_orphan_media_files(&a, &scope).expect("sweep");
+    let swept =
+        crate::sweep_orphan_media_files(&a, &scope, TimestampMillis::new(7_000)).expect("sweep");
     assert_eq!(swept.removed, 1);
     assert!(!stray_path.exists());
     assert!(media_object(&root, &kept.blob.content_hash).exists());
@@ -6797,12 +6814,14 @@ async fn a_deleted_chat_goes_with_its_media_here_and_on_the_sync_peer() {
 #[tokio::test]
 async fn a_companion_pool_outlives_its_chats_and_goes_with_the_companion() {
     let root = hard_delete_root("hard-delete-companion");
-    let path = root.join("app.sqlite3");
+    let path = hard_delete_path(&root, "app.sqlite3");
     let backend = AppBackend::open(&path, TimestampMillis::new(1)).expect("backend");
     let media = hard_delete_media(&path, &root);
+    let location = hard_delete_location(&root);
     let scope = crate::MediaGarbageScope {
         store: &media,
-        other_databases: &[],
+        location: &location,
+        open_database: &path,
     };
     let database = backend.database();
     enable_retrieval_only_dynamic_memory(database);
@@ -6888,12 +6907,14 @@ async fn a_companion_pool_outlives_its_chats_and_goes_with_the_companion() {
 #[tokio::test]
 async fn deleting_a_character_takes_its_direct_chats_and_leaves_its_groups() {
     let root = hard_delete_root("hard-delete-character");
-    let path = root.join("app.sqlite3");
+    let path = hard_delete_path(&root, "app.sqlite3");
     let database = Database::open(&path).expect("database");
     let media = hard_delete_media(&path, &root);
+    let location = hard_delete_location(&root);
     let scope = crate::MediaGarbageScope {
         store: &media,
-        other_databases: &[],
+        location: &location,
+        open_database: &path,
     };
     let (chat, _) = generated_direct_chat(&database, "hard-delete-character").await;
     let character = direct_character(&database, chat.conversation_id);
@@ -6974,12 +6995,14 @@ async fn deleting_a_character_takes_its_direct_chats_and_leaves_its_groups() {
 #[tokio::test]
 async fn a_group_chat_outlives_a_deleted_member_and_is_deleted_on_its_own() {
     let root = hard_delete_root("hard-delete-group");
-    let path = root.join("app.sqlite3");
+    let path = hard_delete_path(&root, "app.sqlite3");
     let backend = AppBackend::open(&path, TimestampMillis::new(1)).expect("backend");
     let media = hard_delete_media(&path, &root);
+    let location = hard_delete_location(&root);
     let scope = crate::MediaGarbageScope {
         store: &media,
-        other_databases: &[],
+        location: &location,
+        open_database: &path,
     };
     let (scenario, _) = group_scenario(
         &backend,
@@ -7050,6 +7073,50 @@ async fn a_group_chat_outlives_a_deleted_member_and_is_deleted_on_its_own() {
         vec![characters[0]]
     );
 
+    let next = next_group_turn(
+        database,
+        &scenario,
+        "hard-delete-group-after",
+        "Still there?",
+        2_100,
+    );
+    let work = admit_and_claim(database, &next, 2_101);
+    let result = backend
+        .prepared_conversation_generation_runner(
+            &ScenarioEmbeddingEngine,
+            &scripted(vec![text_outcome(
+                "hard-delete-group-after",
+                "Ada still answers.",
+                10,
+                3,
+            )]),
+        )
+        .run(
+            &work,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(2_110),
+        )
+        .await
+        .expect("a turn after a member was deleted");
+    assert_eq!(result.turn.status, GenerationTurnStatus::Succeeded);
+    let speaker = result
+        .turn
+        .selected_speaker
+        .expect("speaker")
+        .participant_id;
+    let speaker_source = ConversationReader::get(database, scenario.conversation_id)
+        .expect("chat")
+        .conversation
+        .participants
+        .into_iter()
+        .find(|participant| participant.id == speaker)
+        .expect("speaker participant")
+        .source;
+    assert_eq!(
+        speaker_source,
+        lettuce_conversations::ParticipantSource::Character(characters[0])
+    );
+
     let deletion = crate::delete_conversation(
         database,
         &scope,
@@ -7076,8 +7143,8 @@ async fn a_group_chat_outlives_a_deleted_member_and_is_deleted_on_its_own() {
 #[tokio::test]
 async fn media_a_kept_database_names_survives_collection_and_sweeps() {
     let root = hard_delete_root("hard-delete-kept-database");
-    let path = root.join("new.sqlite3");
-    let kept_path = root.join("kept.sqlite3");
+    let path = hard_delete_path(&root, "new.sqlite3");
+    let kept_path = hard_delete_path(&root, "kept.sqlite3");
     let database = Database::open(&path).expect("database");
     let kept = Database::open(&kept_path).expect("kept database");
     let media = hard_delete_media(&path, &root);
@@ -7093,10 +7160,11 @@ async fn media_a_kept_database_names_survives_collection_and_sweeps() {
         2_000,
     );
     drop(kept);
-    let other_databases = [kept_path];
+    let location = hard_delete_location(&root);
     let scope = crate::MediaGarbageScope {
         store: &media,
-        other_databases: &other_databases,
+        location: &location,
+        open_database: &path,
     };
 
     let deletion = crate::delete_conversation(
@@ -7113,23 +7181,43 @@ async fn media_a_kept_database_names_survives_collection_and_sweeps() {
     );
     assert!(media_object(&root, &image.blob.content_hash).exists());
     assert_eq!(
-        crate::sweep_orphan_media_files(&database, &scope)
+        crate::sweep_orphan_media_files(&database, &scope, TimestampMillis::new(3_100))
             .expect("sweep")
             .removed,
         0
     );
     assert!(media_object(&root, &image.blob.content_hash).exists());
-    let unscoped = crate::MediaGarbageScope {
-        store: &media,
-        other_databases: &[],
-    };
+
+    let broken = hard_delete_path(&root, "broken.sqlite3");
+    std::fs::write(&broken, b"not a database").expect("broken file");
     assert_eq!(
-        crate::sweep_orphan_media_files(&database, &unscoped)
+        crate::sweep_orphan_media_files(&database, &scope, TimestampMillis::new(3_200))
+            .expect("skipped sweep"),
+        lettuce_media::MediaObjectRemoval::default()
+    );
+    let notices = database.purge_notices().expect("notices");
+    assert_eq!(notices.len(), 1);
+    assert_eq!(notices[0].entity_id, "broken.sqlite3");
+    assert_eq!(
+        notices[0].reason,
+        lettuce_database::PurgeNoticeReason::MediaCollectionSkipped
+    );
+    std::fs::remove_file(&broken).expect("remove broken file");
+
+    drop(kept_media);
+    for suffix in ["", "-wal", "-shm"] {
+        let file = std::path::PathBuf::from(format!("{}{suffix}", kept_path.display()));
+        if file.exists() {
+            std::fs::remove_file(file).expect("remove kept database");
+        }
+    }
+    assert_eq!(
+        crate::sweep_orphan_media_files(&database, &scope, TimestampMillis::new(3_300))
             .expect("sweep without the kept database")
             .removed,
         1
     );
-    drop((database, media, kept_media));
+    drop((database, media));
     std::fs::remove_dir_all(root).expect("cleanup");
 }
 
@@ -7177,4 +7265,151 @@ async fn a_received_delete_keeps_a_chat_with_unsent_local_messages() {
     assert_eq!(texts(&a).len(), 4);
     assert!(a.purge_notices().expect("a notices").is_empty());
     assert_rescans_are_empty(&[&a, &b], 5_000);
+}
+
+/// A delete that waited behind a running memory cycle is decided again at the
+/// next sync: the user wrote in the chat meanwhile, so it is kept and sent back.
+#[tokio::test]
+async fn a_delete_queued_behind_a_memory_run_is_decided_again_after_new_messages() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let scenario = finalized_dynamic_turn(&backend, "hard-delete-queued").await;
+    let blocking = BlockingInference::new(text_outcome("hard-delete-memory", "Noted.", 1, 1));
+    {
+        let engine = ScenarioEmbeddingEngine;
+        let host = backend.companion_memory_host(&engine, &blocking);
+        let scheduler = crate::PostTurnMemoryScheduler::new();
+        assert!(scheduler.enqueue(scenario.conversation_id));
+        let clock = FakeClock::new(TimestampMillis::new(1_030));
+        let follow_up = crate::CompanionFollowUpHost::new(backend.database(), &blocking);
+        tokio::select! {
+            () = host.drive(
+                &scheduler,
+                scenario.conversation_id,
+                WorkerId::new(),
+                LEASE,
+                &clock,
+                &follow_up,
+            ) => panic!("the memory cycle must stay in flight"),
+            () = blocking.entered.notified() => {}
+        }
+    }
+    let b = backend.database();
+    let a = database();
+    let id = scenario.conversation_id;
+    sync_prompts(b, &a, 3_000);
+    sync_prompts(&a, b, 3_100);
+    a.purge_conversation(id, TimestampMillis::new(3_200))
+        .expect("delete on a");
+    sync_prompts(&a, b, 3_300);
+    assert!(
+        ConversationReader::get(b, id).is_ok(),
+        "the delete waits behind the memory run"
+    );
+    assert!(b.purge_notices().expect("notices").is_empty());
+
+    send_and_generate(b, &scenario, "hard-delete-queued-b", "Still here", 3_400).await;
+    sync_prompts(&a, b, 3_500);
+    assert!(ConversationReader::get(b, id).is_ok());
+    let notices = b.purge_notices().expect("notices");
+    assert_eq!(notices.len(), 1);
+    assert_eq!(
+        notices[0].reason,
+        lettuce_database::PurgeNoticeReason::KeptUnsentLocalChanges
+    );
+    sync_prompts(b, &a, 3_600);
+    sync_prompts(&a, b, 3_700);
+    let branch = ConversationReader::get(b, id)
+        .expect("b")
+        .conversation
+        .active_branch_id;
+    let messages = |database: &Database| {
+        branch_timeline(database, id, branch)
+            .into_iter()
+            .map(|item| item.message.id)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(messages(&a), messages(b));
+    assert_eq!(messages(&a).len(), 4);
+}
+
+/// Chat content journaled again by the device that kept it meets a third
+/// device that still holds the same content as a no-op: no conflict, no fork.
+#[tokio::test]
+async fn re_sent_chats_meet_a_peer_that_still_holds_them_without_conflicts() {
+    use lettuce_sync::ConversationForkRepository;
+    let a = database();
+    let b = database();
+    let c = database();
+    let (scenario, _) = generated_direct_chat(&a, "hard-delete-three").await;
+    let id = scenario.conversation_id;
+    for (from, to, at) in [
+        (&a, &b, 3_000),
+        (&b, &a, 3_010),
+        (&a, &c, 3_020),
+        (&c, &a, 3_030),
+    ] {
+        sync_prompts(from, to, at);
+    }
+    sync_prompts(&b, &c, 3_040);
+    sync_prompts(&c, &b, 3_050);
+    let conflicts_before = c.unresolved_sync_conflict_count().expect("c conflicts");
+    a.purge_conversation(id, TimestampMillis::new(3_100))
+        .expect("delete on a");
+    send_and_generate(&b, &scenario, "hard-delete-three-b", "Still here", 3_200).await;
+    sync_prompts(&a, &b, 3_300);
+    assert_eq!(b.purge_notices().expect("b notices").len(), 1);
+
+    sync_prompts(&b, &c, 3_400);
+    assert_eq!(
+        c.unresolved_sync_conflict_count().expect("c conflicts"),
+        conflicts_before
+    );
+    assert!(
+        c.unresolved_conversation_forks(10)
+            .expect("c forks")
+            .is_empty()
+    );
+    sync_prompts(&a, &c, 3_500);
+    assert!(
+        ConversationReader::get(&c, id).is_ok(),
+        "the delete did not see b's new content"
+    );
+    assert!(c.purge_notices().expect("c notices").is_empty());
+
+    for (from, to, at) in [
+        (&b, &a, 3_600),
+        (&c, &a, 3_610),
+        (&a, &b, 3_620),
+        (&a, &c, 3_630),
+        (&b, &c, 3_640),
+        (&c, &b, 3_650),
+    ] {
+        sync_prompts(from, to, at);
+    }
+    let branch = ConversationReader::get(&b, id)
+        .expect("b")
+        .conversation
+        .active_branch_id;
+    let messages = |database: &Database| {
+        branch_timeline(database, id, branch)
+            .into_iter()
+            .map(|item| item.message.id)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(messages(&b).len(), 4);
+    assert_eq!(messages(&a), messages(&b));
+    assert_eq!(messages(&c), messages(&b));
+    for database in [&a, &b, &c] {
+        assert!(
+            database
+                .unresolved_conversation_forks(10)
+                .expect("forks")
+                .is_empty()
+        );
+    }
+    assert_eq!(
+        c.unresolved_sync_conflict_count().expect("c conflicts"),
+        conflicts_before
+    );
+    assert_rescans_are_empty(&[&a, &b, &c], 4_000);
 }

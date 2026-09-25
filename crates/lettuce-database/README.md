@@ -1141,15 +1141,17 @@ pool (`characters.rs:1081`), Soul, facts, receipts, relationships, sessions,
 episodes, scheduled notes, runs, scenes, starters, media links and lorebook
 bindings. It leaves every group that lists it (legacy left the id in the
 group's list and its reads skipped it): the other members keep their order
-and mute state and the group revision moves. A group left with fewer than two
-members, or with only muted ones, is a valid stored state that keeps all its
-settings and gets a `group_below_two_members` notice; creating a group or
-editing its members still needs two members with one active, and a group
-chat cannot start from it until members are added. Group conversations it took part in stay readable. Creation apply
-receipts keep the character id as a plain value
-(`creation_character_apply_receipts_require_character` checks it on insert),
-and replaying an apply whose character is gone answers `NotFound`. A
-conversation with a live generation, memory run or companion effect is
+and mute state and the group revision moves while its update time stays, so
+two devices removing the same character reach identical group content. A
+group left with fewer than two members, or with only muted ones, is a valid
+stored state that keeps all its settings and gets a `group_below_two_members`
+notice; creating a group or editing its members still needs two members with
+one active. Group conversations it took part in stay readable and keep
+running turns with the members left, and a group chat can start from a group
+with one member. Creation apply receipts keep the character id as a plain
+value (`creation_character_apply_receipts_require_character` checks it on
+insert), and replaying an apply whose character is gone answers `NotFound`.
+A conversation with a live generation, memory run or companion effect is
 refused as `Busy`.
 
 A purge runs in one immediate transaction with foreign key enforcement off,
@@ -1167,16 +1169,18 @@ that is a non-library asset id is queued in `media_gc_candidates`.
 `Database::collect_media_garbage` takes the queue: a candidate still named by
 any foreign key (a legacy import completion only while its run is open), by
 a sync change still waiting to apply (staged or pending batches, deferred
-changes), by an unfinished job or its events, or found in the text of any
-other table except bookkeeping (media catalog, purge and sync journals,
-legacy import evidence, finished jobs, provider replay caches) is kept and
-forgotten; library media is always kept. The rest are deleted (an asset a
-legacy import completion records stays as a row), and a blob none of whose
-assets is still used leaves the catalog: deleted, or marked `missing` while an
-asset row or completion names it. The released objects are returned so their
-files are deleted after this commit. `media_object_retained` answers the
-orphan sweep for a blob in any state, and `media_objects_in_file` reads the
-blobs another database file catalogs, read-only. Sync-received deletes wait in
-`purge_queue` (see lettuce-sync) and `run_queued_purges` runs them; one that
-fails eight times is dropped with a `dropped_after_failures` notice.
-`purge_notices` lists the open notices and `dismiss_purge_notice` closes one.
+changes), by conflict evidence, by an unfinished job or its events, or found
+in the text of any other table except bookkeeping (media catalog, purge and
+sync journals, legacy import evidence, finished jobs, provider replay caches)
+is kept and forgotten; library media is always kept. The rest are deleted (an
+asset a legacy import completion records stays as a row), and a blob none of
+whose assets is still used leaves the catalog: deleted, or marked `missing`
+while an asset row or completion names it. The released objects are returned
+so their files are deleted after this commit. `media_object_retained` answers
+the orphan sweep for a blob in any state, and `media_objects_in_file` reads
+the blobs another database file catalogs, read-only. Sync-received deletes
+wait in `purge_queue` with the change that carried them (see lettuce-sync);
+`run_queued_purges` decides each one again before purging it. One that is
+busy stays queued without counting; one that fails eight times for another
+reason is dropped with a `dropped_after_failures` notice. `purge_notices`
+lists the open notices and `dismiss_purge_notice` closes one.
