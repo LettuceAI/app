@@ -82,6 +82,10 @@ impl LegacyIdScope {
 
 #[derive(Debug)]
 pub struct LegacyBackupConfigurationPlan {
+    /// The legacy schema version the source recorded in
+    /// `settings.migration_version`, or the importer's layout version when it
+    /// recorded none.
+    pub source_schema_version: u32,
     pub provider_models: LegacyProviderModelPlan,
     pub prompts: LegacyPromptPlan,
     pub settings: LegacyBackupSettingsCandidate,
@@ -512,7 +516,13 @@ pub fn plan_legacy_backup_configuration(
     skipped.dedup();
     notices.sort();
     notices.dedup();
+    let source_schema_version = settings
+        .migration_version
+        .and_then(|version| u32::try_from(version).ok())
+        .filter(|version| *version > 0)
+        .unwrap_or(crate::LEGACY_DATABASE_SCHEMA_VERSION);
     Ok(LegacyBackupConfigurationPlan {
+        source_schema_version,
         provider_models,
         prompts,
         settings: settings_candidate,
@@ -811,13 +821,6 @@ fn map_settings(
         ),
         notices,
     );
-    if row.migration_version.is_some() {
-        notices.push(notice(
-            LegacyBackupConversionNoticeKind::Unsupported,
-            LegacyBackupDocumentKind::Settings,
-            "migration_version",
-        ));
-    }
     Ok(LegacyBackupSettingsCandidate {
         model_settings,
         value: GlobalSettings {

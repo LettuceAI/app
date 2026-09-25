@@ -1,5 +1,5 @@
 use lettuce_transfer::{
-    LEGACY_DATABASE_SCHEMA_VERSION, LegacyAsrMaterializationRequest, LegacyAsrPlan,
+    LegacyAsrMaterializationRequest, LegacyAsrPlan,
     LegacyAsrReceipt, LegacyCrop, LegacyDatabaseInventory, LegacyImageRecommendation,
     LegacyImportAdmission, LegacyImportAdmissionRequest, LegacyImportExecutionRequest,
     LegacyImportPlan, LegacyImportProviderSecretSource, LegacyImportReceipt,
@@ -254,7 +254,7 @@ fn validate_plan(
     let total_bytes = media.media.iter().try_fold(0_u64, |total, candidate| {
         total.checked_add(candidate.byte_len)
     });
-    if inventory.schema_version != LEGACY_DATABASE_SCHEMA_VERSION
+    if inventory.schema_version == 0
         || inventory.personas != persona_count
         || inventory.lorebooks != lorebook_count
         || inventory.provider_accounts != provider_count

@@ -17,18 +17,18 @@ use lettuce_models::{
 };
 use lettuce_settings::{HeaderName, SecretOwnerId, SecretRef, SecretValue};
 use lettuce_transfer::{
-    LEGACY_ASR_RECORD_PLAN_LIMIT, LEGACY_ASR_TABLE_PLAN_LIMIT, LEGACY_DATABASE_SCHEMA_VERSION,
-    LEGACY_MODEL_PROFILE_PLAN_LIMIT, LEGACY_PROMPT_PLAN_LIMIT, LEGACY_PROVIDER_ACCOUNT_PLAN_LIMIT,
-    LegacyAsrCorrectionCandidate, LegacyAsrIgnoredSuggestionCandidate, LegacyAsrPlan,
-    LegacyAsrVocabularyCandidate, LegacyAsrVoiceExampleCandidate, LegacyCrop,
-    LegacyDatabaseInventory, LegacyDatabasePreflightError, LegacyImageRecommendation,
-    LegacyImportProviderSecretSource, LegacyKeywordMatchMode, LegacyLorebookCandidate,
-    LegacyLorebookDetectionPolicy, LegacyLorebookEntryCandidate, LegacyLorebookPlan,
-    LegacyMediaReference, LegacyModelProfileCandidate, LegacyPendingProviderSecret,
-    LegacyPersonaCandidate, LegacyPersonaPlan, LegacyPromptCandidate, LegacyPromptEntryCandidate,
-    LegacyPromptPlan, LegacyProviderAccountCandidate, LegacyProviderAccountOrigin,
-    LegacyProviderModelPlan, LegacyProviderSecretSource, LegacyProviderSecretSourceError,
-    legacy_value_skip, lenient_legacy_json,
+    LEGACY_ASR_RECORD_PLAN_LIMIT, LEGACY_ASR_TABLE_PLAN_LIMIT, LEGACY_MODEL_PROFILE_PLAN_LIMIT,
+    LEGACY_PROMPT_PLAN_LIMIT, LEGACY_PROVIDER_ACCOUNT_PLAN_LIMIT, LegacyAsrCorrectionCandidate,
+    LegacyAsrIgnoredSuggestionCandidate, LegacyAsrPlan, LegacyAsrVocabularyCandidate,
+    LegacyAsrVoiceExampleCandidate, LegacyCrop, LegacyDatabaseInventory,
+    LegacyDatabasePreflightError, LegacyImageRecommendation, LegacyImportProviderSecretSource,
+    LegacyKeywordMatchMode, LegacyLorebookCandidate, LegacyLorebookDetectionPolicy,
+    LegacyLorebookEntryCandidate, LegacyLorebookPlan, LegacyMediaReference,
+    LegacyModelProfileCandidate, LegacyPendingProviderSecret, LegacyPersonaCandidate,
+    LegacyPersonaPlan, LegacyPromptCandidate, LegacyPromptEntryCandidate, LegacyPromptPlan,
+    LegacyProviderAccountCandidate, LegacyProviderAccountOrigin, LegacyProviderModelPlan,
+    LegacyProviderSecretSource, LegacyProviderSecretSourceError, legacy_value_skip,
+    lenient_legacy_json,
 };
 use lettuce_types::{
     LorebookEntryId, LorebookId, ModelProfileId, PersonaId, ProviderAccountId, Revision,
@@ -60,7 +60,7 @@ pub fn preflight_legacy_database(
         .into_iter()
         .collect::<Result<Vec<_>, _>>()?;
     Ok(LegacyDatabaseInventory {
-        schema_version: LEGACY_DATABASE_SCHEMA_VERSION,
+        schema_version: validated_version(&connection)?,
         provider_accounts: counts[0],
         models: counts[1],
         prompts: counts[2],
@@ -1254,6 +1254,12 @@ pub(crate) fn open_validated(
         require_table(&connection, table)?;
     }
     require_table(&connection, "settings")?;
+    validated_version(&connection)?;
+    Ok(connection)
+}
+
+/// The accepted schema version the legacy database records.
+fn validated_version(connection: &Connection) -> Result<u32, LegacyDatabasePreflightError> {
     let version: Option<i64> = connection
         .query_row(
             "SELECT migration_version FROM settings WHERE id = 1",
@@ -1263,16 +1269,14 @@ pub(crate) fn open_validated(
         .optional()
         .map_err(|_| LegacyDatabasePreflightError::InvalidSchema)?;
     let version = version.ok_or(LegacyDatabasePreflightError::MissingSettings)?;
-    if !u32::try_from(version)
-        .is_ok_and(|version| lettuce_transfer::LEGACY_DATABASE_SCHEMA_VERSIONS.contains(&version))
-    {
-        return Err(LegacyDatabasePreflightError::UnsupportedVersion {
+    u32::try_from(version)
+        .ok()
+        .filter(|version| lettuce_transfer::LEGACY_DATABASE_SCHEMA_VERSIONS.contains(version))
+        .ok_or(LegacyDatabasePreflightError::UnsupportedVersion {
             found: version,
             minimum: *lettuce_transfer::LEGACY_DATABASE_SCHEMA_VERSIONS.start(),
             maximum: *lettuce_transfer::LEGACY_DATABASE_SCHEMA_VERSIONS.end(),
-        });
-    }
-    Ok(connection)
+        })
 }
 
 fn plan_legacy_personas_in(
@@ -2122,6 +2126,7 @@ mod tests {
     use super::*;
     use lettuce_context::{PromptEntryPosition, PromptEntryRole, PromptPurpose};
     use lettuce_models::{PromptCacheRetention, PromptCaching, ReasoningEffort, ReasoningMode};
+    use lettuce_transfer::LEGACY_DATABASE_SCHEMA_VERSION;
     use lettuce_types::MediaBlobId;
 
     fn legacy_database(version: i64) -> std::path::PathBuf {
@@ -2429,7 +2434,8 @@ mod tests {
                 preflight_legacy_database(&released)
                     .expect("released legacy schema")
                     .schema_version,
-                LEGACY_DATABASE_SCHEMA_VERSION
+                u32::try_from(version).expect("version"),
+                "the inventory reports the version the source recorded"
             );
             std::fs::remove_file(released).expect("remove released database");
         }

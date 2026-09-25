@@ -168,7 +168,7 @@ impl LegacyBackupCompatibilityPlan {
         let configuration = &authored.configuration;
         let count = |value: usize| u64::try_from(value).unwrap_or(u64::MAX);
         crate::LegacyDatabaseInventory {
-            schema_version: crate::LEGACY_DATABASE_SCHEMA_VERSION,
+            schema_version: configuration.source_schema_version,
             provider_accounts: count(
                 configuration
                     .provider_models

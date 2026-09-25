@@ -15,7 +15,7 @@ use lettuce_models::{ModelProfile, ProviderAccount, SecretHeader};
 use lettuce_settings::{HeaderName, SecretOwnerId, SecretRef};
 use lettuce_speech::{AsrCorrectionRule, AsrIgnoredSuggestion, AsrVocabularyTerm, AsrVoiceExample};
 use lettuce_transfer::{
-    LEGACY_DATABASE_SCHEMA_VERSION, LegacyAsrMaterializationRequest, LegacyAsrReceipt,
+    LegacyAsrMaterializationRequest, LegacyAsrReceipt,
     LegacyImportAdmission, LegacyImportAdmissionRequest, LegacyImportAssignment,
     LegacyImportExecutionRequest, LegacyImportMediaCompletion, LegacyImportMediaCompletionRequest,
     LegacyImportMediaSource, LegacyImportProviderSecretSource, LegacyImportReceipt,
@@ -59,7 +59,7 @@ impl LegacyImportRepository for Database {
         {
             return Err(LegacyImportRepositoryError::InvalidInput);
         }
-        if request.source_schema_version != LEGACY_DATABASE_SCHEMA_VERSION {
+        if request.source_schema_version == 0 {
             return Err(LegacyImportRepositoryError::InvalidInput);
         }
         let mut connection = self
