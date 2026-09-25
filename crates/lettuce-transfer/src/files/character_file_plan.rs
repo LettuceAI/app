@@ -129,6 +129,15 @@ pub fn plan_character_file(
             })
         })
         .collect::<Vec<_>>();
+    let mut lorebook_rows = lorebook_rows;
+    let character_book_id = character
+        .character_book
+        .as_ref()
+        .and_then(|book| character_book_row(book, &character.name, now, &mut new_id))
+        .map(|(id, row)| {
+            lorebook_rows.push(row);
+            id
+        });
     let lorebook_rows = serde_json::from_value(Value::Array(lorebook_rows))
         .map_err(|error| CharacterFilePlanError::Invalid(error.to_string()))?;
     let lorebooks = map_lorebooks(lorebook_rows, &mut notices).map_err(invalid)?;
@@ -231,6 +240,7 @@ pub fn plan_character_file(
         .active_lorebook_ids
         .iter()
         .map(|id| lorebook_map.get(id).cloned().unwrap_or_else(|| id.clone()))
+        .chain(character_book_id)
         .collect::<Vec<_>>();
     let background = package
         .background_image_data
@@ -333,6 +343,84 @@ pub fn plan_character_file(
         skipped,
         notices,
     })
+}
+
+/// A card's embedded `character_book` as a new lorebook row and its id, or
+/// `None` without entries. Keys and secondary keys merge into keywords, a
+/// `constant` entry is always active, and `insertion_order` orders entries.
+fn character_book_row(
+    book: &Value,
+    character_name: &str,
+    now: i64,
+    new_id: &mut impl FnMut() -> Uuid,
+) -> Option<(String, Value)> {
+    let entries = book
+        .get("entries")
+        .and_then(Value::as_array)
+        .filter(|entries| !entries.is_empty())?;
+    let text = |value: Option<&Value>| {
+        value
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .unwrap_or_default()
+            .to_owned()
+    };
+    let name = Some(text(book.get("name")))
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| format!("{} Lorebook", character_name.trim()));
+    let entries = entries
+        .iter()
+        .enumerate()
+        .map(|(index, item)| {
+            let mut keywords: Vec<String> = Vec::new();
+            for key in ["keys", "secondary_keys"]
+                .into_iter()
+                .filter_map(|field| item.get(field).and_then(Value::as_array))
+                .flatten()
+                .map(|key| text(Some(key)))
+                .filter(|key| !key.is_empty())
+            {
+                if !keywords.contains(&key) {
+                    keywords.push(key);
+                }
+            }
+            let title = Some(text(item.get("name")))
+                .filter(|title| !title.is_empty())
+                .or_else(|| keywords.first().cloned())
+                .unwrap_or_else(|| format!("Entry {}", index + 1));
+            let number = |field: &str| {
+                item.get(field)
+                    .and_then(Value::as_i64)
+                    .and_then(|value| i32::try_from(value).ok())
+            };
+            json!({
+                "id": new_id().to_string(),
+                "title": title,
+                "enabled": item.get("enabled") != Some(&Value::Bool(false)),
+                "always_active": item.get("constant") == Some(&Value::Bool(true)),
+                "keywords": serde_json::to_string(&keywords).unwrap_or_else(|_| "[]".to_owned()),
+                "case_sensitive": item.get("case_sensitive") == Some(&Value::Bool(true)),
+                "keyword_match_mode": "literal",
+                "content": text(item.get("content")),
+                "priority": number("priority").unwrap_or(0),
+                "display_order": number("insertion_order")
+                    .unwrap_or_else(|| i32::try_from(index).unwrap_or(i32::MAX)),
+                "created_at": now,
+                "updated_at": now,
+            })
+        })
+        .collect::<Vec<_>>();
+    let id = new_id().to_string();
+    let row = json!({
+        "id": id,
+        "name": name,
+        "avatar_path": Value::Null,
+        "keyword_detection_mode": "recent_message_window",
+        "entries": entries,
+        "created_at": now,
+        "updated_at": now,
+    });
+    Some((id, row))
 }
 
 /// The stored images a plan's data URLs became.
@@ -820,5 +908,66 @@ mod tests {
             ),
             Err(CharacterFilePlanError::UnsupportedVersion(2))
         ));
+    }
+
+    fn card_package(data: &Value) -> CharacterPackage {
+        let card = json!({"spec": "chara_card_v2", "spec_version": "2.0", "data": data});
+        let mut next = 0_u32;
+        crate::parse_character_import(&card, 10, || {
+            next += 1;
+            format!("file-{next}")
+        })
+        .expect("card")
+        .0
+    }
+
+    #[test]
+    fn a_card_character_book_becomes_a_bound_lorebook_like_the_legacy_character_form() {
+        let package = card_package(&json!({
+            "name": " Mira ",
+            "description": "Keeper",
+            "first_mes": "Hello",
+            "character_book": {"entries": [
+                {"keys": [" lamp ", ""], "secondary_keys": ["lamp", "tower"], "content": " The lamp burns. ", "enabled": true, "constant": true, "case_sensitive": true, "priority": 4, "insertion_order": 7},
+                {"name": "Harbour", "keys": ["dock"], "content": "Boats", "enabled": false, "insertion_order": 1},
+                {"content": "No keys", "enabled": true}
+            ]}
+        }));
+        let plan = plan_character_file(&package, &CharacterFileReferences::default(), 50, ids())
+            .expect("plan");
+        assert_eq!(plan.lorebooks.len(), 1);
+        let book = &plan.lorebooks[0];
+        assert_eq!(book.name, "Mira Lorebook");
+        assert_eq!(plan.character.active_lorebook_ids, vec![book.id]);
+        assert_eq!(book.entries.len(), 3);
+        let by_title = |title: &str| {
+            book.entries
+                .iter()
+                .find(|entry| entry.title == title)
+                .expect("entry")
+        };
+        let lamp = by_title("lamp");
+        assert_eq!(lamp.keywords, vec!["lamp".to_owned(), "tower".to_owned()]);
+        assert_eq!(lamp.content, "The lamp burns.");
+        assert!(lamp.enabled && lamp.always_active && lamp.case_sensitive);
+        assert_eq!((lamp.priority, lamp.display_order), (4, 7));
+        let harbour = by_title("Harbour");
+        assert!(!harbour.enabled && !harbour.always_active);
+        assert_eq!(harbour.display_order, 1);
+        let fallback = by_title("Entry 3");
+        assert!(fallback.keywords.is_empty() && fallback.enabled);
+        assert_eq!(fallback.display_order, 0);
+        let raw = json!({"entries": [{"keys": ["a"], "content": "x"}, {"content": "y", "enabled": null}]});
+        let (_, row) = character_book_row(&raw, "Mira", 1, &mut ids()).expect("character book row");
+        assert_eq!(row["entries"][1]["title"], "Entry 2");
+        assert_eq!(row["entries"][1]["display_order"], 1);
+        assert_eq!(row["entries"][1]["enabled"], true);
+
+        let mut empty = package;
+        empty.character.character_book = Some(json!({"name": "Empty", "entries": []}));
+        let plan = plan_character_file(&empty, &CharacterFileReferences::default(), 50, ids())
+            .expect("plan");
+        assert!(plan.lorebooks.is_empty());
+        assert!(plan.character.active_lorebook_ids.is_empty());
     }
 }
