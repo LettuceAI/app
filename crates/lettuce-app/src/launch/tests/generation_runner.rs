@@ -3521,6 +3521,7 @@ async fn disabled_global_dynamic_memory_renders_direct_memories_like_manual_mode
     assert_eq!(
         system_texts,
         [
+            "Relevant memories:\n- Mira hides a spare key under the mat.",
             "# Key Memories\nImportant facts to remember in this conversation:\n- Mira hides a spare key under the mat."
         ]
     );

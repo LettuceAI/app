@@ -3119,6 +3119,20 @@
           "promptEntryPayload": null
         },
         {
+          "key": "runtime_relevant_memories",
+          "name": "Retrieved Memories",
+          "role": "system",
+          "content": "Relevant memories:\n{{key_memories}}",
+          "enabled": true,
+          "injectionPosition": "inChat",
+          "injectionDepth": 0,
+          "conditionalMinMessages": null,
+          "intervalTurns": null,
+          "systemPrompt": false,
+          "conditions": null,
+          "promptEntryPayload": null
+        },
+        {
           "key": "runtime_group_character_line",
           "name": "Group Character Line",
           "role": "system",

@@ -4779,6 +4779,47 @@ async fn a_condensed_prompt_merges_like_legacy_condense_entries() {
     );
 }
 
+#[tokio::test]
+async fn a_manual_memory_send_adds_the_relevant_memories_block_like_legacy() {
+    let database = database_with_builtins();
+    let character_id = plain_character(&database);
+    let conversation = ConversationLaunchPlanner::new(&database)
+        .launch_direct(&request(character_id, "manual-memories"), NOW)
+        .expect("launch direct")
+        .value
+        .conversation;
+    let sent = ConversationRepository::begin_send(
+        &database,
+        &direct_send_command(&conversation, "manual-memories-send", "Hello."),
+        TimestampMillis::new(NOW.get() + 10),
+    )
+    .expect("send direct message");
+    let source_message_id = match sent.value.turn.input {
+        GenerationInput::UserMessage { message_id } => message_id,
+        ref other => panic!("expected user-message input, got {other:?}"),
+    };
+    let request = |dynamic: bool| {
+        let mut request = context_request_for(&database, conversation.id, source_message_id);
+        request.prompt_runtime.dynamic_memory_enabled = dynamic;
+        request.memory = Some(lettuce_conversations::MemoryContribution {
+            attribution: lettuce_conversations::MemoryAttribution {
+                revision_id: lettuce_types::MemoryRevisionId::new(),
+            },
+            summary: None,
+            key_memories: vec![lettuce_conversations::MemoryPromptLine {
+                text: "Ada fears the sea.".into(),
+                observed: None,
+            }],
+        });
+        request
+    };
+    let block = "Relevant memories:\n- Ada fears the sea.";
+    let (_, manual) = assembled_prompt_with_text(&database, request(false)).await;
+    assert!(manual.contains(block));
+    let (_, dynamic) = assembled_prompt_with_text(&database, request(true)).await;
+    assert!(!dynamic.contains(block));
+}
+
 fn text_entry(text: &str) -> lettuce_context::PromptEntryDraft {
     lettuce_context::PromptEntryDraft {
         built_in_entry_key: None,

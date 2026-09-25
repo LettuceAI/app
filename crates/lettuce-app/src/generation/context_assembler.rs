@@ -495,6 +495,15 @@ where
             in_chat.extend(condensed_system_message(late).map(|message| (0, message)));
             in_chat.extend(post);
         }
+        if direct
+            && request.operation == GenerationOperation::Send
+            && !request.prompt_runtime.dynamic_memory_enabled
+            && !key_lines.is_empty()
+        {
+            if let Some(section) = runtime.section("runtime_relevant_memories") {
+                in_chat.insert(0, (section.depth.unwrap_or_default(), section.message));
+            }
+        }
         messages.append(&mut runtime_relative);
 
         let character_names = snapshot
