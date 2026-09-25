@@ -1128,6 +1128,28 @@ author note and swap note name `{{persona.name}}` (the persona, or the user's
 display name when there is none, where legacy wrote "user" / "the user
 persona"). A missing runtime document
 fails the turn with `RuntimeTextUnavailable`.
+Chat history is sent in conversation order (the parent chain), never sorted by
+message time, so a companion clock moved back keeps the whole context. In-chat
+entries and runtime sections count their depth within the conversation
+messages only, as legacy's `insert_in_chat_prompt_entries` did, so a depth
+beyond the history lands right after the system prompt. A condensed direct
+prompt merges every relative entry (any role) and the relative runtime sections
+into one system message and every depth-zero in-chat entry except conditional
+and interval ones into one turn-context message; a condensed group prompt
+merges all of it into one system message (legacy
+`condense_entries_into_single_system_message`, direct and group). A one-to-one
+send outside dynamic memory adds legacy's "Relevant memories" block
+(`runtime_relevant_memories`) first among the depth-zero entries. Identity
+tokens resolve like legacy: `{{user}}` is the persona title, `{{char.desc}}` the
+definition, else the description, and `{{persona.desc}}` the persona
+description; lorebook text, summaries, memories and author notes resolve their
+tokens before rendering, and every message of a one-to-one request resolves
+`{{char}}`, `{{persona}}` and `{{user}}`. A one-to-one chat with no scene drops
+entries naming `{{scene}}`. The reasoning condition follows the turn's
+reasoning setting, not model capability. `{{group_characters}}` renders one
+catalog line per member other than the speaker (definition, else description,
+else the name), and `{{@"Name"}}` in a group's starting scene becomes the
+member's name.
 The companion state block and the scheduled-notes block render line by line
 from the built-in `prompt_app_companion_runtime` document (bands, emotion
 labels, Soul lines, regulation cues, note line, truncation marker and
