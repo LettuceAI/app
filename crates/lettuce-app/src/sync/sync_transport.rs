@@ -41,6 +41,9 @@ const PAIRING_PAKE_IDENTITY: &[u8] = b"lettuce-sync-pairing-v2";
 const MAX_PAIRING_FRAME_BYTES: usize = 1024;
 const MAX_SYNC_FRAME_BYTES: usize = MAX_CANONICAL_PAYLOAD_BYTES + 16 * 1024 * 1024;
 const MAX_PENDING_FRAMES: usize = 8;
+/// Failed PIN proofs a listener accepts before it refuses every further
+/// connection; a new listener brings a fresh PIN.
+const MAX_FAILED_PAIRING_ATTEMPTS: u32 = 3;
 const HOST_NONCE_PREFIX: [u8; 4] = *b"host";
 const CLIENT_NONCE_PREFIX: [u8; 4] = *b"clnt";
 
@@ -78,11 +81,24 @@ impl fmt::Debug for PairingPin {
     }
 }
 
+/// Asks the user of the sharing device whether an authenticated peer may
+/// sync, after its hello named it (legacy's connection approval).
+#[async_trait]
+pub trait SyncPeerApprover: Send + Sync {
+    async fn approve(&self, peer: SyncDeviceId, device_name: &str) -> bool;
+}
+
+/// A sharing session: one PIN, generated when the listener is bound. Every
+/// accepted peer still needs the approver's consent, and after
+/// `MAX_FAILED_PAIRING_ATTEMPTS` wrong PIN proofs the listener refuses every
+/// connection, so a PIN can be guessed at most that many times; sharing again
+/// binds a new listener with a fresh PIN.
 #[derive(Debug)]
 pub struct SyncTcpListener {
     listener: TcpListener,
     local_device: SyncDeviceId,
     pin: PairingPin,
+    failed_attempts: std::sync::atomic::AtomicU32,
 }
 
 impl SyncTcpListener {
@@ -105,6 +121,7 @@ impl SyncTcpListener {
             listener,
             local_device,
             pin,
+            failed_attempts: std::sync::atomic::AtomicU32::new(0),
         })
     }
 
@@ -122,13 +139,29 @@ impl SyncTcpListener {
     pub async fn accept<'a>(
         &self,
         media: Option<&'a dyn SyncBlobSource>,
+        approver: &'a dyn SyncPeerApprover,
         cancellation: &CancellationToken,
     ) -> Result<AuthenticatedTcpSyncTransport<'a>, SyncPeerTransportError> {
+        use std::sync::atomic::Ordering;
+        if self.failed_attempts.load(Ordering::SeqCst) >= MAX_FAILED_PAIRING_ATTEMPTS {
+            return Err(SyncPeerTransportError::PairingLocked);
+        }
         let (stream, _) = tokio::select! {
             () = cancellation.cancelled() => return Err(SyncPeerTransportError::Cancelled),
             accepted = self.listener.accept() => accepted.map_err(SyncPeerTransportError::Io)?,
         };
-        authenticate_host(stream, self.local_device, &self.pin, media, cancellation).await
+        match authenticate_host(stream, self.local_device, &self.pin, media, cancellation).await {
+            Ok(mut transport) => {
+                transport.approver = Some(approver);
+                Ok(transport)
+            }
+            Err(SyncPeerTransportError::AuthenticationFailed) => {
+                let failed = self.failed_attempts.fetch_add(1, Ordering::SeqCst) + 1;
+                tracing::warn!(failed, "a sync pairing attempt used the wrong PIN");
+                Err(SyncPeerTransportError::AuthenticationFailed)
+            }
+            Err(error) => Err(error),
+        }
     }
 }
 
@@ -193,6 +226,14 @@ pub enum SyncPeerTransportError {
     Disconnected,
     #[error("sync socket failed")]
     Io(#[source] io::Error),
+    #[error("too many wrong PINs; share again to get a new PIN")]
+    PairingLocked,
+    #[error("the other device declined to sync")]
+    Declined,
+    #[error(
+        "sync requires the same LettuceAI version on both devices; the other device runs {peer_app_version}"
+    )]
+    IncompatibleVersion { peer_app_version: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -214,6 +255,7 @@ pub struct AuthenticatedTcpSyncTransport<'a> {
     secrets: Option<&'a dyn SecretStore>,
     served_secrets: BTreeMap<SecretRef, SecretPurpose>,
     pending: VecDeque<SyncWireFrame>,
+    approver: Option<&'a dyn SyncPeerApprover>,
 }
 
 impl fmt::Debug for AuthenticatedTcpSyncTransport<'_> {
@@ -277,6 +319,9 @@ impl AuthenticatedTcpSyncTransport<'_> {
                     .ok_or(SyncPeerTransportError::Protocol);
             }
             let frame = self.receive(cancellation).await?;
+            if matches!(frame, SyncWireFrame::Declined) {
+                return Err(SyncPeerTransportError::Declined);
+            }
             if let SyncWireFrame::SecretRequest { reference } = frame {
                 let value = match (self.secrets, self.served_secrets.get(&reference)) {
                     (Some(store), Some(purpose)) => store.load(&reference, purpose).await.ok(),
@@ -408,7 +453,7 @@ impl AuthenticatedSyncTransport for AuthenticatedTcpSyncTransport<'_> {
         local: SyncHello,
         cancellation: &CancellationToken,
     ) -> Result<SyncHello, SyncTransportError> {
-        match self
+        let SyncWireFrame::Hello(peer) = self
             .exchange(
                 SyncWireFrame::Hello(local),
                 ExpectedFrame::Hello,
@@ -416,10 +461,21 @@ impl AuthenticatedSyncTransport for AuthenticatedTcpSyncTransport<'_> {
             )
             .await
             .map_err(map_sync_error)?
-        {
-            SyncWireFrame::Hello(value) => Ok(value),
-            _ => Err(SyncTransportError::Protocol),
+        else {
+            return Err(SyncTransportError::Protocol);
+        };
+        if self.role == ConnectionRole::Host {
+            let approver = self.approver.ok_or(SyncTransportError::Declined)?;
+            let approved = tokio::select! {
+                () = cancellation.cancelled() => return Err(SyncTransportError::Cancelled),
+                approved = approver.approve(peer.device_id(), peer.device_name()) => approved,
+            };
+            if !approved {
+                let _ = self.send(SyncWireFrame::Declined, cancellation).await;
+                return Err(SyncTransportError::Declined);
+            }
         }
+        Ok(peer)
     }
 
     async fn exchange_frontier(
@@ -689,6 +745,7 @@ enum SyncWireFrame {
         reference: SecretRef,
     },
     SecretsDone,
+    Declined,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -813,12 +870,14 @@ async fn authenticate_client<'a>(
     media: Option<&'a dyn SyncBlobSource>,
     cancellation: &CancellationToken,
 ) -> Result<AuthenticatedTcpSyncTransport<'a>, SyncPeerTransportError> {
+    let first = read_frame(&mut stream, MAX_PAIRING_FRAME_BYTES, cancellation).await?;
     let PairingFrame::HostChallenge {
         version,
         device: peer,
         challenge: host_challenge,
         pake: host_message,
-    } = receive_plain(&mut stream, cancellation).await?
+    } = deserialize_bounded(&first, MAX_PAIRING_FRAME_BYTES)
+        .map_err(|error| legacy_host_version(&first).unwrap_or(error))?
     else {
         return Err(SyncPeerTransportError::Protocol);
     };
@@ -877,6 +936,39 @@ async fn authenticate_client<'a>(
     ))
 }
 
+/// The first frame a 2.2.x host sends: its plaintext handshake, with the
+/// fixed-width bincode encoding of that release.
+#[derive(Deserialize)]
+enum LegacyHostFrame {
+    Handshake {
+        protocol_version: u32,
+        app_version: String,
+        _device_name: String,
+        _device_id: String,
+        _salt: [u8; 16],
+        _challenge: [u8; 16],
+    },
+}
+
+/// Recognizes a legacy host by its handshake, so the user learns which
+/// version the other device runs instead of a protocol error.
+fn legacy_host_version(bytes: &[u8]) -> Option<SyncPeerTransportError> {
+    let LegacyHostFrame::Handshake {
+        protocol_version,
+        app_version,
+        ..
+    } = bincode::DefaultOptions::new()
+        .with_fixint_encoding()
+        .with_limit(u64::try_from(MAX_PAIRING_FRAME_BYTES).ok()?)
+        .reject_trailing_bytes()
+        .deserialize(bytes)
+        .ok()?;
+    tracing::info!(protocol_version, "a sync host runs a legacy release");
+    Some(SyncPeerTransportError::IncompatibleVersion {
+        peer_app_version: app_version,
+    })
+}
+
 fn authenticated_transport<'a>(
     stream: TcpStream,
     peer: SyncDeviceId,
@@ -901,12 +993,13 @@ fn authenticated_transport<'a>(
         secrets: None,
         served_secrets: BTreeMap::new(),
         pending: VecDeque::new(),
+        approver: None,
     }
 }
 
 /// SPAKE2 over the session PIN: an observer of the handshake learns nothing
 /// it can test PIN guesses against, and an active attacker gets one guess per
-/// pairing session.
+/// connection, which the listener bounds per PIN.
 fn start_pake(pin: &PairingPin) -> (Spake2<Ed25519Group>, Vec<u8>) {
     Spake2::<Ed25519Group>::start_symmetric(
         &Password::new(pin.expose().as_bytes()),
@@ -1060,6 +1153,7 @@ fn map_sync_error(error: SyncPeerTransportError) -> SyncTransportError {
     match error {
         SyncPeerTransportError::Cancelled => SyncTransportError::Cancelled,
         SyncPeerTransportError::Disconnected => SyncTransportError::Disconnected,
+        SyncPeerTransportError::Declined => SyncTransportError::Declined,
         _ => SyncTransportError::Protocol,
     }
 }
@@ -1098,6 +1192,7 @@ fn validate_wire_frame(frame: &SyncWireFrame) -> Result<(), SyncPeerTransportErr
             .map_err(|_| SyncPeerTransportError::Protocol),
         SyncWireFrame::BlobUnavailable { .. } => Ok(()),
         SyncWireFrame::SecretInventory(_)
+        | SyncWireFrame::Declined
         | SyncWireFrame::SecretRequest { .. }
         | SyncWireFrame::SecretValue { .. }
         | SyncWireFrame::SecretUnavailable { .. }
@@ -1234,6 +1329,148 @@ mod tests {
             .expect("sync hello")
     }
 
+    struct Approve(bool);
+
+    #[async_trait]
+    impl SyncPeerApprover for Approve {
+        async fn approve(&self, _: SyncDeviceId, _: &str) -> bool {
+            self.0
+        }
+    }
+
+    const APPROVE: Approve = Approve(true);
+
+    #[tokio::test]
+    async fn a_listener_refuses_every_connection_after_three_wrong_pins() {
+        let host_device = SyncDeviceId::new();
+        let client_device = SyncDeviceId::new();
+        let cancellation = CancellationToken::new();
+        let listener = SyncTcpListener::bind_with_pin(
+            "127.0.0.1:0".parse().expect("address"),
+            host_device,
+            pin("123456"),
+        )
+        .await
+        .expect("listener");
+        let address = listener.local_addr().expect("address");
+        for guess in ["000001", "000002", "000003"] {
+            let wrong = pin(guess);
+            let (host, _) = tokio::join!(
+                listener.accept(None, &APPROVE, &cancellation),
+                connect_authenticated_sync(address, client_device, &wrong, None, &cancellation)
+            );
+            assert!(matches!(
+                host,
+                Err(SyncPeerTransportError::AuthenticationFailed)
+            ));
+        }
+        assert!(matches!(
+            listener.accept(None, &APPROVE, &cancellation).await,
+            Err(SyncPeerTransportError::PairingLocked)
+        ));
+    }
+
+    #[tokio::test]
+    async fn a_declined_peer_learns_it_was_declined() {
+        let host_device = SyncDeviceId::new();
+        let client_device = SyncDeviceId::new();
+        let cancellation = CancellationToken::new();
+        let listener = SyncTcpListener::bind_with_pin(
+            "127.0.0.1:0".parse().expect("address"),
+            host_device,
+            pin("123456"),
+        )
+        .await
+        .expect("listener");
+        let address = listener.local_addr().expect("address");
+        let client_pin = pin("123456");
+        let decline = Approve(false);
+        let (host, client) = tokio::join!(
+            listener.accept(None, &decline, &cancellation),
+            connect_authenticated_sync(address, client_device, &client_pin, None, &cancellation)
+        );
+        let (mut host, mut client) = (host.expect("host"), client.expect("client"));
+        let hello = |device, name| {
+            SyncHello::current(
+                "1.2.3",
+                device,
+                name,
+                SyncSessionId::new(),
+                SyncTransferLimits::default(),
+            )
+            .expect("hello")
+        };
+        let (host_hello, client_result) = tokio::join!(
+            host.exchange_hello(hello(host_device, "Host"), &cancellation),
+            async {
+                client
+                    .exchange_hello(hello(client_device, "Client"), &cancellation)
+                    .await?;
+                client
+                    .exchange_frontier(CausalFrontier::new(), &cancellation)
+                    .await
+            }
+        );
+        assert_eq!(host_hello, Err(SyncTransportError::Declined));
+        assert_eq!(client_result, Err(SyncTransportError::Declined));
+    }
+
+    #[tokio::test]
+    async fn a_legacy_host_is_reported_with_its_version() {
+        #[derive(Serialize)]
+        enum LegacyFrame {
+            Handshake {
+                protocol_version: u32,
+                app_version: String,
+                device_name: String,
+                device_id: String,
+                salt: [u8; 16],
+                challenge: [u8; 16],
+            },
+        }
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("legacy listener");
+        let address = listener.local_addr().expect("legacy address");
+        let legacy_host = async {
+            let (mut stream, _) = listener.accept().await.expect("legacy accept");
+            let bytes = bincode::DefaultOptions::new()
+                .with_fixint_encoding()
+                .serialize(&LegacyFrame::Handshake {
+                    protocol_version: 3,
+                    app_version: "2.2.5".to_owned(),
+                    device_name: "Old phone".to_owned(),
+                    device_id: "legacy-device".to_owned(),
+                    salt: [1; 16],
+                    challenge: [2; 16],
+                })
+                .expect("legacy handshake");
+            stream
+                .write_all(&u32::try_from(bytes.len()).expect("length").to_be_bytes())
+                .await
+                .expect("length");
+            stream.write_all(&bytes).await.expect("handshake");
+        };
+        let cancellation = CancellationToken::new();
+        let client_pin = pin("123456");
+        let (_, result) = tokio::join!(
+            legacy_host,
+            connect_authenticated_sync(
+                address,
+                SyncDeviceId::new(),
+                &client_pin,
+                None,
+                &cancellation
+            )
+        );
+        match result {
+            Err(SyncPeerTransportError::IncompatibleVersion { peer_app_version }) => {
+                assert_eq!(peer_app_version, "2.2.5");
+            }
+            other => panic!("expected a version mismatch, got {other:?}"),
+        }
+    }
+
     async fn authenticated_pair<'a>(
         host_device: SyncDeviceId,
         client_device: SyncDeviceId,
@@ -1254,7 +1491,7 @@ mod tests {
         let address = listener.local_addr().expect("listener address");
         let client_pin = pin("123456");
         let (host, client) = tokio::join!(
-            listener.accept(host_media, &cancellation),
+            listener.accept(host_media, &APPROVE, &cancellation),
             connect_authenticated_sync(
                 address,
                 client_device,
@@ -1494,7 +1731,7 @@ mod tests {
         let cancelled = CancellationToken::new();
         cancelled.cancel();
         assert!(matches!(
-            cancelled_listener.accept(None, &cancelled).await,
+            cancelled_listener.accept(None, &APPROVE, &cancelled).await,
             Err(SyncPeerTransportError::Cancelled)
         ));
         let listener = SyncTcpListener::bind_with_pin(
@@ -1507,7 +1744,7 @@ mod tests {
         let address = listener.local_addr().expect("address");
         let wrong_pin = pin("654321");
         let (host, client) = tokio::join!(
-            listener.accept(None, &cancellation),
+            listener.accept(None, &APPROVE, &cancellation),
             connect_authenticated_sync(address, client_device, &wrong_pin, None, &cancellation,)
         );
         assert!(matches!(
@@ -1529,7 +1766,7 @@ mod tests {
         let address = listener.local_addr().expect("address");
         let client_pin = pin("123456");
         let (host, client) = tokio::join!(
-            listener.accept(None, &cancellation),
+            listener.accept(None, &APPROVE, &cancellation),
             connect_authenticated_sync(address, host_device, &client_pin, None, &cancellation,)
         );
         assert!(matches!(

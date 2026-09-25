@@ -44,6 +44,8 @@ pub enum SyncTransportError {
     Disconnected,
     #[error("sync transport protocol failed")]
     Protocol,
+    #[error("sync was declined on the sharing device")]
+    Declined,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

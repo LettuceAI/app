@@ -95,7 +95,9 @@ resolution marks the corresponding remote conflict superseded.
 Session hello negotiation now uses the durable local device identity and a
 fresh session identity. It requires exact app and protocol versions plus a
 fingerprint of the supported canonical payload schemas, replacing the legacy
-dependency on positional SQLite schema equality. Device names and version
+dependency on positional SQLite schema equality. Peers on 2.2.5 or older cannot
+sync with this build: their pairing handshake differs, and a current client
+reports the legacy host's version (see the lettuce-app transport). Device names and version
 strings are bounded, authenticated transport identity must match the hello, and
 both peers use the smaller validated batch limits. Pairing remains
 session-scoped, matching the legacy UI; no persistent peer-trust model is

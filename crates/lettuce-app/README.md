@@ -1601,11 +1601,20 @@ only after both peers run SPAKE2 over the PIN (pairing protocol version 2,
 backlog #22: version 1 derived the key from the PIN and a cleartext salt, so a
 captured handshake allowed an offline PIN search and decryption of the whole
 session; now an observer learns nothing to test guesses against and an active
-attacker gets one guess per session) and confirm the resulting key over fresh
-challenges. The confirmation binds both ephemeral connection roles and durable
+attacker gets one guess per connection) and confirm the resulting key over fresh
+challenges. A listener holds one freshly generated PIN and refuses every
+connection after three wrong PIN proofs (sharing again binds a new listener with
+a new PIN), and like legacy the sharing device's user approves each
+authenticated peer once its hello names it (`SyncPeerApprover`); a declined
+peer receives an explicit decline. A client that meets a 2.2.x host recognizes
+its legacy handshake and reports the host's app version with the
+same-version requirement instead of a protocol error; a 2.2.x client cannot
+read the current handshake and shows its own error, so both devices must be
+updated to sync. The confirmation binds both ephemeral connection roles and durable
 device identities; the resulting
 ChaCha20-Poly1305 session uses direction-separated monotonic nonces. Every typed
-frame is length-prefixed, capped at 20 MiB before allocation, decoded with the
+frame is length-prefixed, capped at the canonical payload limit plus 16 MiB
+before allocation, decoded with the
 same bound and reconstructed through current domain validators. Host/client
 ordering prevents two large change frames from filling both socket buffers, and
 a bounded early-frame queue lets one peer serve media chunks while entering the
