@@ -5,10 +5,10 @@ use lettuce_media::{
     MediaAssetRepository, MediaBlobRepository, RetentionClass,
 };
 use lettuce_transfer::{
-    CharacterExportError, CharacterExportSource, CharacterFileAssets, CharacterFileFormat,
-    CharacterFilePlanError, CharacterFileRepository, CharacterFileRepositoryError,
-    CharacterPackage, CharacterPlanError, EntityPackageError, LegacyBackupConversionNotice,
-    LegacyImportSkip,
+    CharacterCardError, CharacterExportError, CharacterExportSource, CharacterFileAssets,
+    CharacterFileFormat, CharacterFilePlanError, CharacterFileRepository,
+    CharacterFileRepositoryError, CharacterPackage, CharacterPlanError, EntityPackageError,
+    LegacyBackupConversionNotice, LegacyImportSkip,
 };
 use lettuce_types::{AssetId, CharacterId, TimestampMillis};
 use uuid::Uuid;
@@ -17,6 +17,8 @@ use uuid::Uuid;
 pub enum CharacterFileError {
     #[error(transparent)]
     Package(#[from] EntityPackageError),
+    #[error(transparent)]
+    Card(#[from] CharacterCardError),
     #[error(transparent)]
     Plan(#[from] CharacterFilePlanError),
     #[error("character file references could not be resolved: {0}")]
@@ -73,6 +75,25 @@ where
         let (package, _) = lettuce_transfer::parse_character_import(&value, now.get(), || {
             Uuid::new_v4().to_string()
         })?;
+        Ok(package)
+    }
+
+    /// The package in a character file's bytes; a `.png` card is read from
+    /// its embedded card text and the picture itself becomes the avatar.
+    pub fn read_file(
+        &self,
+        filename: &str,
+        data: &[u8],
+        now: TimestampMillis,
+    ) -> Result<CharacterPackage, CharacterFileError> {
+        let json = lettuce_transfer::character_import_json(filename, data)?;
+        let mut package = self.read(&json, now)?;
+        if filename.to_ascii_lowercase().ends_with(".png") {
+            package.avatar_data = Some(format!(
+                "data:image/png;base64,{}",
+                base64::engine::general_purpose::STANDARD.encode(data)
+            ));
+        }
         Ok(package)
     }
 
@@ -267,6 +288,101 @@ mod tests {
         bytes.extend_from_slice(&[8, 6, 0, 0, 0]);
         bytes.extend_from_slice(b"avatar bytes");
         bytes
+    }
+
+    fn png_chunk(kind: &[u8], body: &[u8]) -> Vec<u8> {
+        let mut bytes = u32::try_from(body.len())
+            .expect("chunk length")
+            .to_be_bytes()
+            .to_vec();
+        bytes.extend_from_slice(kind);
+        bytes.extend_from_slice(body);
+        bytes.extend_from_slice(&[0, 0, 0, 0]);
+        bytes
+    }
+
+    fn card_png(card: &serde_json::Value) -> Vec<u8> {
+        let mut bytes = b"\x89PNG\r\n\x1a\n".to_vec();
+        let mut header = Vec::new();
+        header.extend_from_slice(&2_u32.to_be_bytes());
+        header.extend_from_slice(&3_u32.to_be_bytes());
+        header.extend_from_slice(&[8, 6, 0, 0, 0]);
+        bytes.extend(png_chunk(b"IHDR", &header));
+        let mut text = b"chara\0".to_vec();
+        text.extend_from_slice(
+            base64::engine::general_purpose::STANDARD
+                .encode(card.to_string())
+                .as_bytes(),
+        );
+        bytes.extend(png_chunk(b"tEXt", &text));
+        bytes.extend(png_chunk(b"IEND", &[]));
+        bytes
+    }
+
+    fn open_store(
+        root: &std::path::Path,
+        path: &std::path::Path,
+    ) -> LocalMediaBlobStore<Database, Database> {
+        let authority = FilesystemAuthority::new(&DirectorySnapshot::new(root).expect("snapshot"))
+            .expect("authority");
+        LocalMediaBlobStore::new(
+            authority.managed_files(),
+            authority
+                .read_capability(ManagedRoot::MediaBlobs)
+                .expect("read"),
+            authority
+                .write_capability(ManagedRoot::MediaBlobs)
+                .expect("write"),
+            Database::open(path).expect("blobs"),
+            Database::open(path).expect("assets"),
+        )
+    }
+
+    #[test]
+    fn a_png_card_imports_with_the_png_as_its_avatar_like_legacy_preview_from_bytes() {
+        let root = std::env::temp_dir().join(format!("character-png-{}", OperationId::new()));
+        std::fs::create_dir_all(&root).expect("root");
+        let path = root.join("state.sqlite3");
+        let backend = crate::AppBackend::open(&path, TimestampMillis::new(1)).expect("backend");
+        let store = open_store(&root, &path);
+        let files = backend.character_files(&store);
+        let png = card_png(&serde_json::json!({
+            "spec": "chara_card_v2",
+            "spec_version": "2.0",
+            "data": {
+                "name": "Mira",
+                "description": "A lighthouse keeper",
+                "first_mes": "The lamp is lit.",
+                "tags": ["coast", "keeper"]
+            }
+        }));
+        let package = files
+            .read_file("Mira.PNG", &png, TimestampMillis::new(5))
+            .expect("png card");
+        assert_eq!(package.character.name, "Mira");
+        let expected = format!(
+            "data:image/png;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(&png)
+        );
+        assert_eq!(package.avatar_data.as_deref(), Some(expected.as_str()));
+        let imported = files
+            .import(&package, TimestampMillis::new(5))
+            .expect("import");
+        let avatar = imported
+            .character
+            .character
+            .media
+            .links
+            .iter()
+            .find(|link| link.slot == CharacterMediaSlot::AvatarOriginal)
+            .expect("avatar from the png");
+        let stored = inline_image(&store, avatar.asset_id).expect("stored avatar");
+        assert_eq!(stored, expected);
+        assert!(matches!(
+            files.read_file("Mira.png", b"not a png", TimestampMillis::new(5)),
+            Err(CharacterFileError::Card(CharacterCardError::InvalidPng))
+        ));
+        std::fs::remove_dir_all(&root).ok();
     }
 
     #[test]
