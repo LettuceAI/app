@@ -6,6 +6,8 @@ use crate::{
 };
 
 pub const MAX_OUTBOUND_CHANGES: usize = 256;
+/// The payload byte budget of an outbound batch; a single change above it is
+/// sent alone.
 pub const MAX_OUTBOUND_PAYLOAD_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -5,7 +5,12 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 pub const CANONICAL_CHANGE_VERSION: u32 = 1;
-pub const MAX_CANONICAL_PAYLOAD_BYTES: usize = 8 * 1024 * 1024;
+/// The largest single canonical payload. Aggregates travel as whole
+/// snapshots, so this bounds one entity, not a row: it holds the largest
+/// protected launch artifact (128 MiB) after base64 encoding with room to
+/// spare. A change larger than a batch's byte budget travels in a batch of
+/// its own.
+pub const MAX_CANONICAL_PAYLOAD_BYTES: usize = 256 * 1024 * 1024;
 pub const MAX_FRONTIER_DEVICES: usize = 1_024;
 
 const MAX_ENTITY_KIND_BYTES: usize = 64;

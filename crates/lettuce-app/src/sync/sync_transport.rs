@@ -14,9 +14,9 @@ use lettuce_jobs::handle::CancellationToken;
 use lettuce_media::{LocalSyncMediaStore, MediaAssetRepository, MediaBlobRepository};
 use lettuce_sync::{
     CANONICAL_CHANGE_VERSION, CanonicalChange, CanonicalPayload, CausalFrontier, HybridTimestamp,
-    MAX_FRONTIER_DEVICES, MAX_SYNC_BLOB_CHUNK_BYTES, SyncBatchAcknowledgement, SyncBlobChunk,
-    SyncChangeBatch, SyncChangeFrame, SyncDeviceId, SyncEntity, SyncHello, SyncSessionError,
-    SyncTransferLimits,
+    MAX_CANONICAL_PAYLOAD_BYTES, MAX_FRONTIER_DEVICES, MAX_SYNC_BLOB_CHUNK_BYTES,
+    SyncBatchAcknowledgement, SyncBlobChunk, SyncChangeBatch, SyncChangeFrame, SyncDeviceId,
+    SyncEntity, SyncHello, SyncSessionError, SyncTransferLimits,
 };
 use lettuce_types::{ContentHash, TimestampMillis};
 use rand::{RngCore, rngs::OsRng};
@@ -39,7 +39,7 @@ use crate::{
 const PAIRING_PROTOCOL_VERSION: u32 = 2;
 const PAIRING_PAKE_IDENTITY: &[u8] = b"lettuce-sync-pairing-v2";
 const MAX_PAIRING_FRAME_BYTES: usize = 1024;
-const MAX_SYNC_FRAME_BYTES: usize = 20 * 1024 * 1024;
+const MAX_SYNC_FRAME_BYTES: usize = MAX_CANONICAL_PAYLOAD_BYTES + 16 * 1024 * 1024;
 const MAX_PENDING_FRAMES: usize = 8;
 const HOST_NONCE_PREFIX: [u8; 4] = *b"host";
 const CLIENT_NONCE_PREFIX: [u8; 4] = *b"clnt";

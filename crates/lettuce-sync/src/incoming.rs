@@ -3,6 +3,8 @@ use lettuce_types::{ContentHash, OperationId, TimestampMillis};
 use crate::{CanonicalChange, CausalFrontier, SyncDeviceId};
 
 pub const MAX_INCOMING_CHANGES: usize = 256;
+/// The payload byte budget of an incoming batch; a batch of one change may
+/// exceed it up to the canonical payload limit.
 pub const MAX_INCOMING_PAYLOAD_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

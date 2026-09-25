@@ -51,7 +51,7 @@ CREATE TABLE sync_changes (
     CHECK (
         (payload_bytes IS NULL AND payload_schema IS NULL AND payload_version IS NULL AND payload_hash IS NULL) OR
         (payload_bytes IS NOT NULL AND
-         length(payload_bytes) BETWEEN 1 AND 8388608 AND
+         length(payload_bytes) BETWEEN 1 AND 268435456 AND
          length(payload_schema) BETWEEN 1 AND 128 AND
          payload_schema = lower(payload_schema) AND
          payload_version >= 1 AND
@@ -79,7 +79,7 @@ CREATE TABLE sync_incoming_batches (
     peer_device_id TEXT NOT NULL CHECK (length(peer_device_id) = 36),
     batch_hash TEXT NOT NULL CHECK (length(batch_hash) = 64),
     change_count INTEGER NOT NULL CHECK (change_count BETWEEN 1 AND 256),
-    payload_bytes INTEGER NOT NULL CHECK (payload_bytes BETWEEN 0 AND 16777216),
+    payload_bytes INTEGER NOT NULL CHECK (payload_bytes BETWEEN 0 AND 268435456),
     state TEXT NOT NULL CHECK (state IN ('staged', 'pending', 'committed')),
     pending_reason TEXT,
     created_at INTEGER NOT NULL,
@@ -96,7 +96,7 @@ CREATE TABLE sync_incoming_changes (
     ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
     fingerprint TEXT NOT NULL CHECK (length(fingerprint) = 64),
     document BLOB NOT NULL CHECK (length(document) BETWEEN 1 AND 131072),
-    payload_bytes BLOB CHECK (payload_bytes IS NULL OR length(payload_bytes) BETWEEN 1 AND 8388608),
+    payload_bytes BLOB CHECK (payload_bytes IS NULL OR length(payload_bytes) BETWEEN 1 AND 268435456),
     PRIMARY KEY (batch_id, change_id),
     UNIQUE (batch_id, ordinal)
 ) STRICT;

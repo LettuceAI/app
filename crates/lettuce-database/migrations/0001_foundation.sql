@@ -350,8 +350,9 @@ CREATE TABLE purge_rejournals (
 -- not seen, a kept entity that cannot be sent back whole yet (and what was
 -- left out when it was sent without it), a received
 -- delete given up after repeated failures, a group a character delete left
--- with fewer than two members, and media collection skipped because another
--- database file could not be read.
+-- with fewer than two members, media collection skipped because another
+-- database file could not be read, and a synced entity that cannot be
+-- encoded for sync.
 CREATE TABLE purge_notices (
     id INTEGER PRIMARY KEY,
     entity_kind TEXT NOT NULL CHECK (entity_kind IN (
@@ -360,7 +361,8 @@ CREATE TABLE purge_notices (
     entity_id TEXT NOT NULL CHECK (length(entity_id) > 0),
     reason TEXT NOT NULL CHECK (reason IN (
         'kept_unsent_local_changes', 'rejournal_incomplete', 'dropped_after_failures',
-        'rejournal_dropped', 'group_below_two_members', 'media_collection_skipped'
+        'rejournal_dropped', 'group_below_two_members', 'media_collection_skipped',
+        'not_synced'
     )),
     recorded_at INTEGER NOT NULL,
     dismissed_at INTEGER

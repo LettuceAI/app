@@ -9,7 +9,7 @@ use crate::{
     PERSONA_SYNC_VERSION, SyncDeviceId, canonical_batch_hash,
 };
 
-pub const SYNC_PROTOCOL_VERSION: u32 = 4;
+pub const SYNC_PROTOCOL_VERSION: u32 = 5;
 
 const MAX_APP_VERSION_BYTES: usize = 64;
 const MAX_DEVICE_NAME_BYTES: usize = 128;
@@ -58,7 +58,7 @@ impl SyncTransferLimits {
             || max_changes_per_batch > MAX_INCOMING_CHANGES
             || max_change_payload_bytes == 0
             || max_change_payload_bytes > MAX_CANONICAL_PAYLOAD_BYTES
-            || max_batch_payload_bytes < max_change_payload_bytes
+            || max_batch_payload_bytes == 0
             || max_batch_payload_bytes > MAX_INCOMING_PAYLOAD_BYTES
         {
             return Err(SyncSessionError::InvalidTransferLimits);
@@ -244,7 +244,8 @@ impl SyncChangeBatch {
                     .payload()
                     .is_some_and(|payload| payload.bytes().len() > limits.max_change_payload_bytes)
             })
-            || payload_bytes.is_none_or(|bytes| bytes > limits.max_batch_payload_bytes)
+            || payload_bytes
+                .is_none_or(|bytes| changes.len() > 1 && bytes > limits.max_batch_payload_bytes)
             || canonical_batch_hash(&changes) != batch_hash
         {
             return Err(SyncSessionError::InvalidChangeBatch);
@@ -628,9 +629,16 @@ mod tests {
         assert_eq!(
             SyncChangeBatch::new(
                 batch_id,
-                vec![change],
+                vec![change.clone()],
                 SyncTransferLimits::new(1, 1, 1).expect("small limits")
             ),
+            Err(SyncSessionError::InvalidChangeBatch)
+        );
+        let bytes = change.payload().expect("payload").bytes().len();
+        let alone = SyncTransferLimits::new(2, bytes, 1).expect("small batch budget");
+        assert!(SyncChangeBatch::new(batch_id, vec![change.clone()], alone).is_ok());
+        assert_eq!(
+            SyncChangeBatch::new(batch_id, vec![change.clone(), change], alone),
             Err(SyncSessionError::InvalidChangeBatch)
         );
     }

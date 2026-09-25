@@ -19,8 +19,7 @@ causal, entity, operation, revision and payload facts.
 This deliberately replaces legacy raw SQLite changesets and schema-position
 coupling at the domain boundary. Insert requires a payload without a base
 revision, update requires both and delete requires a base revision without a
-payload. Payloads retain the legacy eight-megabyte single-revision ceiling while
-identifiers and causal frontiers now have explicit bounds.
+payload. Identifiers and causal frontiers have explicit bounds.
 
 The local journal port admits a validated change request under a stable
 operation ID and returns the allocated immutable change. Exact retries replay;
@@ -56,8 +55,8 @@ frontier, not only this device (backlog #19: a peer now relays changes it
 received from a third device), start after the peer frontier for each origin,
 retain each origin's order and merge origins by readiness, then hybrid
 timestamp and device ID; every causal dependency must be satisfied and a
-missing sequence fails closed. Caller limits are capped at 256 changes and 16 MiB of
-payload. Peer acknowledgements only advance and are clamped to facts present in
+missing sequence fails closed. Caller limits are capped at 256 changes and a
+16 MiB payload budget. Peer acknowledgements only advance and are clamped to facts present in
 the local frontier.
 
 Incoming replication now has one bounded canonical batch boundary. A batch hash
@@ -277,7 +276,7 @@ would override the origin's newer choice with a later local timestamp.
 
 Conversations, part one (sync S8a). Launch snapshot artifacts are immutable
 insert-only entities (`conversation.snapshot_artifact`, bytes base64-encoded;
-an artifact beyond the payload limit is not synced). The conversation root
+an artifact beyond the payload limit records a `not_synced` notice). The conversation root
 (`conversation.root`) carries what exists from creation on: the conversation
 with participants and settings, the root branch, the memory binding (none,
 own space, companion pool) and the initial scene/starter messages in their
@@ -298,7 +297,8 @@ not exchanged. Revision sequences and candidate ordinals are numbered by each
 device (concurrent edits or regenerations would otherwise collide), so the
 exchanged form orders both by creation time and a merge appends new ones after
 the local maximum. A message with a running turn on it is skipped until it
-settles, and one whose snapshot exceeds the payload limit is not synced.
+settles, and one whose snapshot exceeds the payload limit records a
+`not_synced` notice.
 Merging unions revisions, candidates and turns, takes the render pointer,
 author and flags from the incoming snapshot, never lifts a tombstone and sets
 media references active or historical as the snapshot says. A new message
@@ -388,8 +388,9 @@ mid-generation). A root reads only its initial messages. A restored database
 has no marks and is scanned whole once.
 
 The scan skips an entity whose id is not a valid sync entity id or whose
-snapshot cannot be encoded (for example beyond the payload limit), so one bad
-row never stops journaling for everything else.
+snapshot cannot be decoded, so one bad row never stops journaling for
+everything else; one beyond the payload limit also records a `not_synced`
+notice.
 
 Plain rows (sync S10). Audio providers, user voices and ASR learning data
 (vocabulary terms, corrections, ignored suggestions, voice examples) are
@@ -482,3 +483,14 @@ locally, and both devices reach identical group content. Payloads are
 unchanged (the schema fingerprint stays); the protocol version marks peers
 that accept these deletes. The media a purge leaves unused are collected on
 each device separately.
+
+Large entities (protocol version 5). Aggregates travel as whole snapshots, so
+the canonical payload limit bounds one entity rather than one row: 256 MiB,
+which holds the largest lorebook (64 MiB authored) and the largest protected
+launch artifact (128 MiB, base64 encoded). Batches keep a 16 MiB payload
+budget, and a change larger than the budget travels in a batch of its own
+(frames carry up to the payload limit plus 16 MiB). An entity that still
+cannot be encoded is never skipped silently: the scan records a
+`not_synced` notice for it (once until dismissed) and journals everything
+else, and a received change for it is deferred with the same notice instead
+of failing the batch; both resolve on their own once it fits again.

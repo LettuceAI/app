@@ -2829,6 +2829,79 @@ mod tests {
     }
 
     #[test]
+    fn a_lorebook_larger_than_a_batch_travels_in_a_batch_of_its_own() {
+        use lettuce_context::{LorebookEntryDraft, LorebookMetadataDraft, LorebookRepository};
+        use lettuce_sync::{IncomingChangeRepository, LocalChangeJournal};
+        let a = Database::open_in_memory().expect("a");
+        let b = Database::open_in_memory().expect("b");
+        let entries = (0..5)
+            .map(|index| LorebookEntryDraft {
+                title: format!("Chapter {index}"),
+                enabled: true,
+                always_active: false,
+                keywords: vec![format!("chapter{index}")],
+                case_sensitive: false,
+                match_mode: Default::default(),
+                content: "w".repeat(3_500_000),
+                priority: 1,
+            })
+            .collect();
+        let book = LorebookRepository::create(
+            &a,
+            LorebookMetadataDraft {
+                name: "Imported world".into(),
+                detection_policy: Default::default(),
+                icon_asset_id: None,
+                behavior_version: Default::default(),
+            },
+            entries,
+            TimestampMillis::new(10),
+        )
+        .expect("lorebook");
+        a.journal_current_state(TimestampMillis::new(100))
+            .expect("journal a");
+        b.journal_current_state(TimestampMillis::new(100))
+            .expect("journal b");
+        let mut largest = 0;
+        loop {
+            let batch = a
+                .outbound_changes(
+                    &b.local_frontier().expect("frontier"),
+                    lettuce_sync::MAX_OUTBOUND_CHANGES,
+                    lettuce_sync::MAX_OUTBOUND_PAYLOAD_BYTES,
+                )
+                .expect("outbound");
+            if batch.changes.is_empty() {
+                break;
+            }
+            if batch.payload_bytes > lettuce_sync::MAX_OUTBOUND_PAYLOAD_BYTES {
+                assert_eq!(batch.changes.len(), 1);
+            }
+            largest = largest.max(batch.payload_bytes);
+            let id = lettuce_types::OperationId::new();
+            b.stage_incoming_batch(
+                lettuce_sync::SyncDeviceId::new(),
+                id,
+                &lettuce_sync::canonical_batch_hash(&batch.changes),
+                &batch.changes,
+                TimestampMillis::new(110),
+            )
+            .expect("stage");
+            assert_eq!(
+                b.apply_incoming_batch(id, TimestampMillis::new(111))
+                    .expect("apply")
+                    .state,
+                lettuce_sync::IncomingBatchState::Committed
+            );
+        }
+        assert!(largest > lettuce_sync::MAX_OUTBOUND_PAYLOAD_BYTES);
+        assert_eq!(
+            LorebookRepository::get(&b, book.book.id).expect("book"),
+            Some(book)
+        );
+    }
+
+    #[test]
     fn lorebooks_personas_and_their_bindings_converge_through_state_sync() {
         use lettuce_characters::{Persona, PersonaRepository};
         use lettuce_context::{

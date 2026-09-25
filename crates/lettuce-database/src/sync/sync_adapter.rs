@@ -1170,7 +1170,49 @@ fn incoming_wins(incoming: &CanonicalChange, current: &CanonicalChange) -> bool 
 enum ApplyOneError {
     Pending,
     Corrupt,
+    /// The local entity cannot be encoded as a canonical payload (it exceeds
+    /// the payload limit).
+    Unencodable,
     Storage,
+}
+
+fn payload_error(error: lettuce_sync::SyncChangeError) -> ApplyOneError {
+    match error {
+        lettuce_sync::SyncChangeError::InvalidPayloadSize { .. } => ApplyOneError::Unencodable,
+        _ => ApplyOneError::Corrupt,
+    }
+}
+
+/// Records, once until the user dismisses it, that an entity cannot be
+/// encoded for sync on this device.
+fn record_not_synced(
+    connection: &Connection,
+    kind: &str,
+    id: &str,
+    now: TimestampMillis,
+) -> Result<(), ApplyOneError> {
+    let entity = format!("{kind}/{id}");
+    let recorded: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM purge_notices
+             WHERE entity_kind = 'sync_entity' AND entity_id = ?1
+               AND reason = 'not_synced' AND dismissed_at IS NULL)",
+            [&entity],
+            |row| row.get(0),
+        )
+        .map_err(|_| ApplyOneError::Storage)?;
+    if !recorded {
+        tracing::warn!(kind, "a synced entity is too large to sync");
+        crate::purge::record_notice(
+            connection,
+            crate::PurgeNoticeEntity::SyncEntity,
+            &entity,
+            crate::PurgeNoticeReason::NotSynced,
+            now,
+        )
+        .map_err(|_| ApplyOneError::Storage)?;
+    }
+    Ok(())
 }
 
 fn repository_apply_error(error: RepositoryError) -> ApplyOneError {
@@ -1675,7 +1717,7 @@ fn app_settings_payload(
         lettuce_sync::APP_SETTINGS_SYNC_VERSION,
         serde_json::to_vec(snapshot).map_err(|_| ApplyOneError::Corrupt)?,
     )
-    .map_err(|_| ApplyOneError::Corrupt)
+    .map_err(payload_error)
 }
 
 const APP_SETTINGS_CODEC: SnapshotCodec = SnapshotCodec {
@@ -1864,7 +1906,7 @@ const CONVERSATION_CODEC: SnapshotCodec = SnapshotCodec {
                     lettuce_sync::CONVERSATION_SYNC_VERSION,
                     serde_json::to_vec(&root).map_err(|_| ApplyOneError::Corrupt)?,
                 )
-                .map_err(|_| ApplyOneError::Corrupt)
+                .map_err(payload_error)
             })
             .transpose()
     },
@@ -2033,7 +2075,7 @@ fn json_payload<T: serde::Serialize>(
         version,
         serde_json::to_vec(value).map_err(|_| ApplyOneError::Corrupt)?,
     )
-    .map_err(|_| ApplyOneError::Corrupt)
+    .map_err(payload_error)
 }
 
 fn parse_character(id: &str) -> Result<lettuce_types::CharacterId, ApplyOneError> {
@@ -2277,8 +2319,7 @@ macro_rules! row_codec {
                 crate::sync::row_sync_adapter::row_current(tx, &$spec, id)
                     .map_err(row_apply_error)?
                     .map(|bytes| {
-                        CanonicalPayload::new($schema, $version, bytes)
-                            .map_err(|_| ApplyOneError::Corrupt)
+                        CanonicalPayload::new($schema, $version, bytes).map_err(payload_error)
                     })
                     .transpose()
             },
@@ -2428,7 +2469,7 @@ const CONVERSATION_BRANCH_CODEC: SnapshotCodec = SnapshotCodec {
                     lettuce_sync::CONVERSATION_BRANCH_SYNC_VERSION,
                     serde_json::to_vec(&branch).map_err(|_| ApplyOneError::Corrupt)?,
                 )
-                .map_err(|_| ApplyOneError::Corrupt)
+                .map_err(payload_error)
             })
             .transpose()
     },
@@ -2495,19 +2536,14 @@ const CONVERSATION_MESSAGE_CODEC: SnapshotCodec = SnapshotCodec {
         )
         .map_err(conversation_apply_error)?
         .map(|message| {
-            serde_json::to_vec(&message)
-                .map(|bytes| {
-                    CanonicalPayload::new(
-                        lettuce_sync::CONVERSATION_MESSAGE_SYNC_SCHEMA,
-                        lettuce_sync::CONVERSATION_MESSAGE_SYNC_VERSION,
-                        bytes,
-                    )
-                    .ok()
-                })
-                .map_err(|_| ApplyOneError::Corrupt)
+            CanonicalPayload::new(
+                lettuce_sync::CONVERSATION_MESSAGE_SYNC_SCHEMA,
+                lettuce_sync::CONVERSATION_MESSAGE_SYNC_VERSION,
+                serde_json::to_vec(&message).map_err(|_| ApplyOneError::Corrupt)?,
+            )
+            .map_err(payload_error)
         })
         .transpose()
-        .map(Option::flatten)
     },
     materialize: |tx, id, bytes| {
         let message = decode_message(id, bytes)?;
@@ -2639,6 +2675,8 @@ fn journal_referenced_snapshots(
             lettuce_sync::CONVERSATION_SNAPSHOT_SYNC_VERSION,
             bytes,
         ) else {
+            record_not_synced(tx, lettuce_sync::CONVERSATION_SNAPSHOT_SYNC_KIND, &id, now)
+                .map_err(journal_apply_error)?;
             continue;
         };
         journal_state_change(
@@ -2828,7 +2866,9 @@ fn snapshot_source_time(kind: &str, bytes: &[u8]) -> Option<TimestampMillis> {
 fn journal_apply_error(error: ApplyOneError) -> LocalChangeJournalError {
     match error {
         ApplyOneError::Storage => LocalChangeJournalError::Storage,
-        ApplyOneError::Pending | ApplyOneError::Corrupt => LocalChangeJournalError::Corrupt,
+        ApplyOneError::Pending | ApplyOneError::Corrupt | ApplyOneError::Unencodable => {
+            LocalChangeJournalError::Corrupt
+        }
     }
 }
 
@@ -3084,6 +3124,10 @@ fn unseen_changes(
         let payload = match (codec.current)(tx, &id) {
             Ok(Some(payload)) => payload,
             Ok(None) | Err(ApplyOneError::Corrupt) => continue,
+            Err(ApplyOneError::Unencodable) => {
+                unseen.local = true;
+                continue;
+            }
             Err(error) => return Err(error),
         };
         if codec.seed.is_some_and(|seed| seed(payload.bytes())) {
@@ -3284,7 +3328,7 @@ fn rejournal_scope(
         let payload = match (codec.current)(tx, &id) {
             Ok(Some(payload)) => payload,
             Ok(None) => continue,
-            Err(ApplyOneError::Corrupt) => {
+            Err(ApplyOneError::Corrupt | ApplyOneError::Unencodable) => {
                 missing.push((
                     crate::PurgeNoticeEntity::SyncEntity,
                     format!("{}/{id}", codec.kind),
@@ -3796,10 +3840,13 @@ fn settle_or_defer(
             .map_err(|_| ApplyOneError::Storage)?;
             Ok(Some(conflict))
         }
-        Err(ApplyOneError::Pending) => {
+        Err(error @ (ApplyOneError::Pending | ApplyOneError::Unencodable)) => {
             tx.execute_batch("ROLLBACK TO sync_settle; RELEASE sync_settle")
                 .map_err(|_| ApplyOneError::Storage)?;
             defer_change(tx, change, now)?;
+            if matches!(error, ApplyOneError::Unencodable) {
+                record_not_synced(tx, change.entity().kind(), change.entity().id(), now)?;
+            }
             Ok(None)
         }
         Err(error) => {
@@ -3849,7 +3896,10 @@ fn retry_deferred_changes(
                     progress = true;
                     settled += 1;
                 }
-                Ok(None) | Err(ApplyOneError::Corrupt | ApplyOneError::Pending) => {}
+                Ok(None)
+                | Err(
+                    ApplyOneError::Corrupt | ApplyOneError::Pending | ApplyOneError::Unencodable,
+                ) => {}
                 Err(ApplyOneError::Storage) => return Err(ApplyOneError::Storage),
             }
         }
@@ -4142,6 +4192,11 @@ impl LocalChangeJournal for Database {
                         skipped.push(id.clone());
                         continue;
                     }
+                    Err(ApplyOneError::Unencodable) => {
+                        record_not_synced(&tx, codec.kind, id, now).map_err(journal_apply_error)?;
+                        skipped.push(id.clone());
+                        continue;
+                    }
                     Err(ApplyOneError::Corrupt) => continue,
                     Err(error) => return Err(journal_apply_error(error)),
                 };
@@ -4337,10 +4392,7 @@ impl LocalChangeJournal for Database {
                 return Err(LocalChangeJournalError::UnsatisfiedDependencies);
             };
             let bytes = change.payload().map_or(0, |payload| payload.bytes().len());
-            if payload_bytes.saturating_add(bytes) > max_payload_bytes {
-                if changes.is_empty() {
-                    return Err(LocalChangeJournalError::ChangeTooLarge);
-                }
+            if !changes.is_empty() && payload_bytes.saturating_add(bytes) > max_payload_bytes {
                 break;
             }
             payload_bytes += bytes;
@@ -4638,7 +4690,7 @@ impl IncomingChangeRepository for Database {
         })?;
         if changes.is_empty()
             || changes.len() > MAX_INCOMING_CHANGES
-            || payload_bytes > MAX_INCOMING_PAYLOAD_BYTES
+            || (changes.len() > 1 && payload_bytes > MAX_INCOMING_PAYLOAD_BYTES)
         {
             return Err(IncomingChangeError::InvalidBatch);
         }
@@ -4839,7 +4891,9 @@ impl IncomingChangeRepository for Database {
                     applied += 1;
                     conflicts += usize::from(conflict);
                 }
-                Err(ApplyOneError::Corrupt | ApplyOneError::Pending) => {
+                Err(
+                    ApplyOneError::Corrupt | ApplyOneError::Pending | ApplyOneError::Unencodable,
+                ) => {
                     return Err(IncomingChangeError::Corrupt);
                 }
                 Err(ApplyOneError::Storage) => return Err(IncomingChangeError::Storage),
@@ -5601,6 +5655,40 @@ mod tests {
             ),
             Some(TimestampMillis::new(44))
         );
+    }
+
+    #[test]
+    fn an_entity_too_large_to_sync_is_reported_once_until_dismissed() {
+        let database = Database::open_in_memory().expect("database");
+        let oversized = CanonicalPayload::new(
+            "lorebook.snapshot",
+            1,
+            vec![b'x'; lettuce_sync::MAX_CANONICAL_PAYLOAD_BYTES + 1],
+        )
+        .map_err(payload_error);
+        assert!(matches!(oversized, Err(ApplyOneError::Unencodable)));
+        {
+            let connection = database.connection().expect("connection");
+            for at in [10, 20] {
+                assert!(
+                    record_not_synced(&connection, "lorebook", "book", TimestampMillis::new(at))
+                        .is_ok()
+                );
+            }
+        }
+        let notices = database.purge_notices().expect("notices");
+        assert_eq!(notices.len(), 1);
+        assert_eq!(notices[0].reason, crate::PurgeNoticeReason::NotSynced);
+        assert_eq!(notices[0].entity_id, "lorebook/book");
+        database
+            .dismiss_purge_notice(notices[0].id, TimestampMillis::new(30))
+            .expect("dismiss");
+        let connection = database.connection().expect("connection");
+        assert!(
+            record_not_synced(&connection, "lorebook", "book", TimestampMillis::new(40)).is_ok()
+        );
+        drop(connection);
+        assert_eq!(database.purge_notices().expect("notices").len(), 1);
     }
 
     #[test]

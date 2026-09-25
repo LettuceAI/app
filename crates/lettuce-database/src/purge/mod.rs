@@ -956,16 +956,22 @@ pub enum PurgeNoticeReason {
     /// Media collection was skipped because another database file could not
     /// be read; nothing is deleted until it can be.
     MediaCollectionSkipped,
+    /// A synced entity cannot be encoded for sync here (for example it
+    /// exceeds the largest change a session carries), so other devices do not
+    /// receive its current state and changes received for it wait. It syncs
+    /// again once it can be encoded.
+    NotSynced,
 }
 
 impl PurgeNoticeReason {
-    const ALL: [Self; 6] = [
+    const ALL: [Self; 7] = [
         Self::KeptUnsentLocalChanges,
         Self::RejournalIncomplete,
         Self::RejournalDropped,
         Self::DroppedAfterFailures,
         Self::GroupBelowTwoMembers,
         Self::MediaCollectionSkipped,
+        Self::NotSynced,
     ];
 
     const fn name(self) -> &'static str {
@@ -976,6 +982,7 @@ impl PurgeNoticeReason {
             Self::MediaCollectionSkipped => "media_collection_skipped",
             Self::DroppedAfterFailures => "dropped_after_failures",
             Self::GroupBelowTwoMembers => "group_below_two_members",
+            Self::NotSynced => "not_synced",
         }
     }
 }
