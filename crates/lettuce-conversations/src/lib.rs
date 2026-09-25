@@ -2356,6 +2356,34 @@ mod tests {
                     &participants,
                     false,
                 )
+                .is_ok(),
+            "an edited reply stays regenerable like legacy ensure_assistant_variant"
+        );
+        assert!(
+            command
+                .validate_target_context(
+                    &message(
+                        conversation_id,
+                        MessageRenderSource::Candidate(MessageCandidateId::new()),
+                    ),
+                    branch_id,
+                    Some(message_id),
+                    &participants,
+                    false,
+                )
+                .is_err()
+        );
+        let mut deleted = message(conversation_id, MessageRenderSource::Candidate(candidate_id));
+        deleted.visibility = MessageVisibility::Tombstoned;
+        assert!(
+            command
+                .validate_target_context(
+                    &deleted,
+                    branch_id,
+                    Some(message_id),
+                    &participants,
+                    false,
+                )
                 .is_err()
         );
         assert!(

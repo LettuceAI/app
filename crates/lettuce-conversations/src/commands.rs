@@ -898,6 +898,8 @@ impl UpdateParticipantPolicy {
 }
 
 impl RegenerateCandidate {
+    /// An edited reply renders from its revision and stays regenerable
+    /// through any of its candidates; a deleted reply is not a target.
     pub fn validate_target_context(
         &self,
         message: &Message,
@@ -911,8 +913,11 @@ impl RegenerateCandidate {
             || message.branch_id != self.branch_id
             || message.branch_id != active_branch_id
             || message.role != MessageRole::Assistant
-            || message.active_render_source
-                != MessageRenderSource::Candidate(self.active_candidate_id)
+            || message.visibility == MessageVisibility::Tombstoned
+            || matches!(
+                message.active_render_source,
+                MessageRenderSource::Candidate(active) if active != self.active_candidate_id
+            )
             || (!is_group && active_head_message_id != Some(message.id))
         {
             return Err(ValidationError::InvalidReference {
