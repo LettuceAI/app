@@ -98,6 +98,69 @@ struct GeminiPart {
 #[derive(Deserialize)]
 struct GeminiInlineData {
     data: String,
+    #[serde(rename = "mimeType", default)]
+    mime_type: Option<String>,
+}
+
+const GEMINI_PCM_SAMPLE_RATE: u32 = 24_000;
+const GEMINI_PCM_CHANNELS: u16 = 1;
+const PCM_BITS_PER_SAMPLE: u16 = 16;
+
+/// Gemini TTS answers with a RIFF WAV file on newer models and with headerless
+/// 16-bit little-endian PCM (`audio/L16;codec=pcm;rate=24000`, mono) on
+/// others. PCM is wrapped in a WAV header with the rate and channel count its
+/// MIME type names, 24 kHz mono by default.
+fn gemini_wav(bytes: Vec<u8>, mime_type: Option<&str>) -> Result<Vec<u8>, TtsRuntimeError> {
+    if bytes.starts_with(b"RIFF") {
+        return Ok(bytes);
+    }
+    let mut sample_rate = GEMINI_PCM_SAMPLE_RATE;
+    let mut channels = GEMINI_PCM_CHANNELS;
+    for parameter in mime_type.unwrap_or_default().split(';').skip(1) {
+        let Some((name, value)) = parameter.split_once('=') else {
+            continue;
+        };
+        match name.trim().to_ascii_lowercase().as_str() {
+            "rate" => {
+                sample_rate = value
+                    .trim()
+                    .parse()
+                    .map_err(|_| TtsRuntimeError::Rejected)?;
+            }
+            "channels" => {
+                channels = value
+                    .trim()
+                    .parse()
+                    .map_err(|_| TtsRuntimeError::Rejected)?;
+            }
+            _ => {}
+        }
+    }
+    let block_align = channels
+        .checked_mul(PCM_BITS_PER_SAMPLE / 8)
+        .filter(|value| *value > 0)
+        .ok_or(TtsRuntimeError::Rejected)?;
+    let byte_rate = sample_rate
+        .checked_mul(u32::from(block_align))
+        .filter(|value| *value > 0)
+        .ok_or(TtsRuntimeError::Rejected)?;
+    let data_len = u32::try_from(bytes.len()).map_err(|_| TtsRuntimeError::Rejected)?;
+    let riff_len = data_len.checked_add(36).ok_or(TtsRuntimeError::Rejected)?;
+    let mut wav = Vec::with_capacity(bytes.len() + 44);
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&riff_len.to_le_bytes());
+    wav.extend_from_slice(b"WAVEfmt ");
+    wav.extend_from_slice(&16_u32.to_le_bytes());
+    wav.extend_from_slice(&1_u16.to_le_bytes());
+    wav.extend_from_slice(&channels.to_le_bytes());
+    wav.extend_from_slice(&sample_rate.to_le_bytes());
+    wav.extend_from_slice(&byte_rate.to_le_bytes());
+    wav.extend_from_slice(&block_align.to_le_bytes());
+    wav.extend_from_slice(&PCM_BITS_PER_SAMPLE.to_le_bytes());
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&data_len.to_le_bytes());
+    wav.extend_from_slice(&bytes);
+    Ok(wav)
 }
 
 #[async_trait]
@@ -240,18 +303,17 @@ impl TtsRuntime for GeminiTtsRuntime {
         }
         let response: GeminiResponse =
             serde_json::from_slice(&response.body).map_err(|_| TtsRuntimeError::Rejected)?;
-        let encoded = response
+        let inline = response
             .candidates
             .iter()
             .flat_map(|candidate| &candidate.content.parts)
             .find_map(|part| part.inline_data.as_ref())
-            .map(|data| data.data.as_str())
             .ok_or(TtsRuntimeError::Rejected)?;
         let bytes = STANDARD
-            .decode(encoded)
+            .decode(&inline.data)
             .map_err(|_| TtsRuntimeError::Rejected)?;
         Ok(RuntimeSynthesis {
-            bytes,
+            bytes: gemini_wav(bytes, inline.mime_type.as_deref())?,
             declared_mime_type: "audio/wav".into(),
         })
     }
@@ -442,6 +504,42 @@ mod tests {
         assert_eq!(
             value["generation_config"]["speech_config"]["voice_config"]["prebuilt_voice_config"]["voice_name"],
             "kore"
+        );
+    }
+
+    #[test]
+    fn headerless_pcm_is_wrapped_in_a_wav_header_and_wav_passes_through() {
+        let pcm = vec![1_u8, 0, 2, 0];
+        let wav = gemini_wav(pcm.clone(), Some("audio/L16;codec=pcm;rate=24000")).expect("wav");
+        assert_eq!(&wav[..4], b"RIFF");
+        assert_eq!(u32::from_le_bytes(wav[4..8].try_into().expect("len")), 40);
+        assert_eq!(&wav[8..16], b"WAVEfmt ");
+        assert_eq!(u16::from_le_bytes([wav[22], wav[23]]), 1);
+        assert_eq!(
+            u32::from_le_bytes(wav[24..28].try_into().expect("rate")),
+            24_000
+        );
+        assert_eq!(
+            u32::from_le_bytes(wav[28..32].try_into().expect("byte rate")),
+            48_000
+        );
+        assert_eq!(u16::from_le_bytes([wav[34], wav[35]]), 16);
+        assert_eq!(&wav[36..40], b"data");
+        assert_eq!(&wav[44..], pcm.as_slice());
+        let stereo =
+            gemini_wav(pcm.clone(), Some("audio/pcm; rate=16000; channels=2")).expect("stereo wav");
+        assert_eq!(u16::from_le_bytes([stereo[22], stereo[23]]), 2);
+        assert_eq!(
+            u32::from_le_bytes(stereo[24..28].try_into().expect("rate")),
+            16_000
+        );
+        assert_eq!(
+            gemini_wav(pcm.clone(), None).expect("default")[24..28],
+            24_000_u32.to_le_bytes()
+        );
+        assert_eq!(
+            gemini_wav(b"RIFFaudio".to_vec(), Some("audio/wav")).expect("wav"),
+            b"RIFFaudio"
         );
     }
 

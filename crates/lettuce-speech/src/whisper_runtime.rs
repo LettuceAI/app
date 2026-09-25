@@ -285,18 +285,22 @@ fn build_params<'a>(
     }
     params.set_token_timestamps(options.token_timestamps);
     params.set_split_on_word(options.split_on_word);
-    let detect_language =
-        options.detect_language || language.is_some_and(|value| value.eq_ignore_ascii_case("auto"));
-    if detect_language {
-        params.set_language(None);
-        params.set_detect_language(true);
-    } else {
-        params.set_language(language);
-    }
+    params.set_language(whisper_language(options.detect_language, language));
     if !prompt.is_empty() {
         params.set_initial_prompt(prompt);
     }
     params
+}
+
+/// The language whisper.cpp decodes with. Detection is requested as the
+/// `auto` language, which detects and then transcribes; whisper.cpp's
+/// `detect_language` flag stops right after detection with no segments.
+fn whisper_language(detect_language: bool, language: Option<&str>) -> Option<&str> {
+    if detect_language || language.is_some_and(|value| value.eq_ignore_ascii_case("auto")) {
+        Some("auto")
+    } else {
+        language
+    }
 }
 
 fn collect_segments(
@@ -333,6 +337,14 @@ fn collect_segments(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn language_detection_asks_whisper_to_detect_and_transcribe() {
+        assert_eq!(super::whisper_language(true, Some("en")), Some("auto"));
+        assert_eq!(super::whisper_language(false, Some("AUTO")), Some("auto"));
+        assert_eq!(super::whisper_language(false, Some("de")), Some("de"));
+        assert_eq!(super::whisper_language(false, None), None);
+    }
+
     use std::path::Path;
 
     use lettuce_model_hub::{InstalledWhisperManifest, WhisperModelRepositoryError};

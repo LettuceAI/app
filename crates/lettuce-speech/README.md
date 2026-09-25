@@ -21,14 +21,18 @@ mismatches, malformed WAV frames, oversized audio and invalid runtime results
 fail before settlement.
 
 `WhisperCppRuntime` implements `AsrRuntime` with the pinned whisper-rs binding
-and accepts a model only after the installed manifest is reverified and matches
-the durable descriptor. Its process cache is keyed by artifact hash, effective
+and accepts a model only when its file is present at the installed size and
+the manifest matches the durable descriptor, as legacy checked only that the
+file existed; the content is hashed once, when the model is installed. Its process cache is keyed by artifact hash, effective
 CPU/GPU choice, flash-attention choice and GPU device. CUDA, ROCm, Vulkan and
 Metal remain explicit build features. It preserves the legacy greedy sampling,
 thread, translation, context, timestamp, split, length, token, offset,
 duration, temperature, language-detection, prompt and segment conversion
-inputs. An `auto` language request triggers detection, including for
-English-only models. Nonfinite temperatures and invalid device/thread values
+inputs. An `auto` language request (or `detect_language`) runs whisper.cpp
+with the `auto` language, which detects the language and then transcribes,
+including for English-only models. Fixed legacy bug: legacy set whisper.cpp's
+`detect_language` flag for `auto`, which returns right after detection, so an
+`auto` dictation came back with no text. Nonfinite temperatures and invalid device/thread values
 now fail before reaching native code instead of relying on lossy casts.
 
 The job cancellation token is read by whisper.cpp's abort callback during
@@ -177,7 +181,14 @@ remain later configuration slices.
 `GeminiTtsRuntime` preserves the Vertex AI location/project/model route, bearer
 access token, `x-goog-user-project`, fixed `en-us` speech configuration, legacy
 prompt-plus-text composition, lowercase voice resolution with `preview`
-selecting `kore`, and base64-decoded WAV output. Project, location and model
+selecting `kore`, and base64-decoded WAV output. Fixed legacy bug: legacy
+labeled the inline audio `audio/wav` as returned, but the Gemini TTS models
+answer unary requests with headerless 16-bit little-endian PCM
+(`audio/L16;codec=pcm;rate=24000`, 24 kHz mono, per Google's speech-generation
+docs), except newer models that already send a RIFF WAV file. Audio that is not
+RIFF is now wrapped in a WAV header using the rate and channel count its
+`mimeType` names (24 kHz mono by default), so media ingestion accepts it.
+Project, location and model
 segments are validated before URL construction. The response parser now finds
 the first actual inline-audio part across returned candidates instead of
 assuming the first part contains audio, which avoids rejecting valid metadata
