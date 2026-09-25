@@ -90,12 +90,26 @@ where
             self.repository,
             command.conversation_id,
         )?;
-        let Some(first_removed_id) = self.first_descendant(
-            command.conversation_id,
-            aggregate.conversation.active_branch_id,
-            command.after_message_id,
-        )?
-        else {
+        let recorded = self
+            .repository
+            .operation_record(
+                command.conversation_id,
+                lettuce_conversations::OperationKind::Tombstone,
+                &command.operation,
+            )?
+            .and_then(|record| match record.result {
+                lettuce_conversations::OperationResultRef::Message(message_id) => Some(message_id),
+                _ => None,
+            });
+        let first_removed = match recorded {
+            Some(message_id) => Some(message_id),
+            None => self.first_descendant(
+                command.conversation_id,
+                aggregate.conversation.active_branch_id,
+                command.after_message_id,
+            )?,
+        };
+        let Some(first_removed_id) = first_removed else {
             if aggregate.conversation.revision != command.expected_revision {
                 return Err(DynamicMemoryDeleteAfterError::Conversation(
                     ConversationRepositoryError::StaleRevision {

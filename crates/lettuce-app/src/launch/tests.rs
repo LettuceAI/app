@@ -9154,19 +9154,14 @@ fn group_delete_after_keeps_the_scene_anchor_and_tombstones_the_reply() {
         &PageRequest::default(),
     )
     .expect("retained group timeline");
-    assert_eq!(timeline.items.len(), 2);
     assert_eq!(
-        timeline.items[0].message.id,
-        finalized.value.assistant_message.id
-    );
-    assert_eq!(
-        timeline.items[0].message.visibility,
-        MessageVisibility::Tombstoned
-    );
-    assert_eq!(timeline.items[1].message.id, anchor.id);
-    assert_eq!(
-        timeline.items[1].message.visibility,
-        MessageVisibility::Visible
+        timeline
+            .items
+            .iter()
+            .map(|item| (item.message.id, item.message.visibility))
+            .collect::<Vec<_>>(),
+        vec![(anchor.id, MessageVisibility::Visible)],
+        "the head returns to the anchor like legacy group rewind truncation"
     );
     assert!(deleted.rewind.is_none());
 }
