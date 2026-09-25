@@ -274,6 +274,29 @@ async fn a_key_requiring_adapter_without_a_key_fails_like_legacy() {
 }
 
 #[tokio::test]
+async fn keyless_local_image_servers_ignore_an_unreadable_key_like_legacy() {
+    let store = Arc::new(InMemorySecretStore::new());
+    let (base, recorded) = server(vec![json_response(&json!({
+        "images": [encoded(PNG)]
+    }))])
+    .await;
+    let output = providers(store)
+        .generate(request(account(
+            "automatic1111",
+            &format!("{base}/sdapi/v1"),
+            Some(SecretRef::new()),
+            SecretOwnerId::new(),
+        )))
+        .await
+        .expect("legacy image_generator commands.rs:231 used unwrap_or_default");
+    assert_eq!(output.images[0].bytes, PNG);
+    assert_eq!(
+        recorded.await.expect("requests")[0].header("authorization"),
+        None
+    );
+}
+
+#[tokio::test]
 async fn automatic1111_needs_no_key_and_reads_the_images_array() {
     let store = Arc::new(InMemorySecretStore::new());
     let (base, recorded) = server(vec![json_response(&json!({

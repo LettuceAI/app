@@ -111,17 +111,11 @@ struct Envelope<T> {
 #[derive(Deserialize)]
 struct Endpoints {
     id: String,
-    endpoints: Vec<Endpoint>,
+    endpoints: Vec<serde_json::Value>,
 }
 
-#[derive(Deserialize)]
-struct Endpoint {
-    provider_name: String,
-    provider_display_name: Option<String>,
-    tag: Option<String>,
-    pricing: serde_json::Value,
-}
-
+/// Legacy `parse_provider_pricings`: an endpoint without a provider name or
+/// a usable prompt and completion price is skipped, the others are kept.
 fn parse_endpoints(
     body: &[u8],
     model: &str,
@@ -131,49 +125,52 @@ fn parse_endpoints(
     if parsed.data.id != model {
         return Err(AdapterError::MalformedResponse);
     }
-    parsed
+    Ok(parsed
         .data
         .endpoints
-        .into_iter()
-        .map(|endpoint| {
-            if endpoint.provider_name.trim().is_empty() {
-                return Err(AdapterError::MalformedResponse);
-            }
-            let price = |name: &str, required: bool| -> Result<String, AdapterError> {
-                match endpoint.pricing.get(name) {
-                    Some(serde_json::Value::String(value)) => Ok(value.clone()),
-                    Some(serde_json::Value::Number(value)) => Ok(value.to_string()),
-                    None | Some(serde_json::Value::Null) if !required => Ok(String::new()),
-                    _ => Err(AdapterError::MalformedResponse),
-                }
-            };
-            let pricing = ModelPricing {
-                prompt: price("prompt", true)?,
-                completion: price("completion", true)?,
-                request: price("request", false)?,
-                image: price("image", false)?,
-                image_output: price("image_output", false)?,
-                web_search: price("web_search", false)?,
-                internal_reasoning: price("internal_reasoning", false)?,
-                input_cache_read: price("input_cache_read", false)?,
-                input_cache_write: price("input_cache_write", false)?,
-            };
-            for value in [&pricing.prompt, &pricing.completion] {
-                if !value
-                    .parse::<f64>()
-                    .is_ok_and(|v| v.is_finite() && v >= 0.0)
-                {
-                    return Err(AdapterError::MalformedResponse);
-                }
-            }
-            Ok(OpenRouterEndpointPricing {
-                provider_name: endpoint.provider_name,
-                provider_display_name: endpoint.provider_display_name,
-                tag: endpoint.tag,
-                pricing,
-            })
+        .iter()
+        .filter_map(parse_endpoint)
+        .collect())
+}
+
+fn parse_endpoint(endpoint: &serde_json::Value) -> Option<OpenRouterEndpointPricing> {
+    let text = |field: &str| {
+        endpoint
+            .get(field)
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned)
+    };
+    let provider_name = text("provider_name").filter(|name| !name.trim().is_empty())?;
+    let pricing = endpoint.get("pricing")?;
+    let price = |name: &str| match pricing.get(name) {
+        Some(serde_json::Value::String(value)) => Some(value.clone()),
+        Some(serde_json::Value::Number(value)) => Some(value.to_string()),
+        _ => None,
+    };
+    let required = |name: &str| {
+        price(name).filter(|value| {
+            value
+                .parse::<f64>()
+                .is_ok_and(|parsed| parsed.is_finite() && parsed >= 0.0)
         })
-        .collect()
+    };
+    let optional = |name: &str| price(name).unwrap_or_default();
+    Some(OpenRouterEndpointPricing {
+        provider_name,
+        provider_display_name: text("provider_display_name"),
+        tag: text("tag"),
+        pricing: ModelPricing {
+            prompt: required("prompt")?,
+            completion: required("completion")?,
+            request: optional("request"),
+            image: optional("image"),
+            image_output: optional("image_output"),
+            web_search: optional("web_search"),
+            internal_reasoning: optional("internal_reasoning"),
+            input_cache_read: optional("input_cache_read"),
+            input_cache_write: optional("input_cache_write"),
+        },
+    })
 }
 
 #[derive(Deserialize)]
@@ -254,9 +251,14 @@ mod tests {
         ] {
             let mut body = base.clone();
             body["data"]["endpoints"][0]["pricing"]["prompt"] = price;
-            assert!(
-                parse_endpoints(&serde_json::to_vec(&body).expect("JSON"), "author/model").is_err()
-            );
+            body["data"]["endpoints"]
+                .as_array_mut()
+                .expect("endpoints")
+                .push(serde_json::json!({"provider_name":"Other","pricing":{"prompt":"0","completion":"0"}}));
+            let prices = parse_endpoints(&serde_json::to_vec(&body).expect("JSON"), "author/model")
+                .expect("legacy fetchers.rs:53-76 skipped the unusable endpoint");
+            assert_eq!(prices.len(), 1);
+            assert_eq!(prices[0].provider_name, "Other");
         }
         let prices = parse_endpoints(&bytes, "author/model").expect("prices");
         assert!(prices[0].pricing.input_cache_write.is_empty());

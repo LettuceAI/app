@@ -76,7 +76,8 @@ impl<S: SecretStore + ?Sized> RemoteImageProviders<S> {
         let Some(reference) = request.account.api_key_ref else {
             return Ok(None);
         };
-        self.secret_store
+        match self
+            .secret_store
             .load(
                 &reference,
                 &lettuce_settings::SecretPurpose::ProviderApiKey {
@@ -84,8 +85,11 @@ impl<S: SecretStore + ?Sized> RemoteImageProviders<S> {
                 },
             )
             .await
-            .map(Some)
-            .map_err(|_| ImageProviderError::Failed(MISSING_API_KEY.to_owned()))
+        {
+            Ok(key) => Ok(Some(key)),
+            Err(_) if key_is_optional(&request.account.provider_kind) => Ok(None),
+            Err(_) => Err(ImageProviderError::Failed(MISSING_API_KEY.to_owned())),
+        }
     }
 
     async fn secret_headers(
@@ -261,6 +265,14 @@ impl<S: SecretStore + ?Sized> ImageProviderPort for RemoteImageProviders<S> {
             result = self.run(request) => result,
         }
     }
+}
+
+/// Legacy `api_key.unwrap_or_default()`: the local image servers generate
+/// without auth when their optional key cannot be read.
+fn key_is_optional(kind: &str) -> bool {
+    ["automatic1111", "diffusers", "comfyui"]
+        .iter()
+        .any(|optional| kind.eq_ignore_ascii_case(optional))
 }
 
 impl<S: SecretStore + ?Sized> RemoteImageProviders<S> {

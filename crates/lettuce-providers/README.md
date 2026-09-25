@@ -230,7 +230,10 @@ policy. Endpoint/model and generation response identities must match the request
 remain typed errors. Native and normalized token counts remain separate; absent
 counts never become zero. Endpoint names/tags and exact price strings are retained
 without selecting a fallback provider. Required prices and monetary evidence must
-be finite and nonnegative. Wire response structs remain private; usage owns the
+be finite and nonnegative; an endpoint without a provider name or usable
+prompt and completion prices is skipped (legacy `parse_provider_pricings`), and
+local image servers (A1111, Diffusers, ComfyUI) run without auth when their
+optional key cannot be read. Wire response structs remain private; usage owns the
 billing result types. These reads do not add a cache or automatic cost writes.
 
 Contracts checked against the official [endpoint pricing documentation](https://openrouter.ai/docs/api/api-reference/endpoints/list-all-endpoints-for-a-model)
