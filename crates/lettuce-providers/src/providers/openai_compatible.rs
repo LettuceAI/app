@@ -203,6 +203,7 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
         .ok_or(AdapterError::Rejected)?;
     let endpoint = provider.normalize_endpoint(endpoint);
     let path = provider.chat_path(&endpoint, config)?;
+    let (endpoint, path) = crate::common::request_target(endpoint, path);
     let attachments = crate::media::load_attachments(&request, media).await?;
     let mut messages = wire_messages(
         &request.context,
@@ -333,6 +334,7 @@ pub(crate) async fn list_models<S: SecretStore + ?Sized>(
     let path = provider
         .models_path(&endpoint, &account.config)
         .ok_or(AdapterError::Rejected)?;
+    let (endpoint, path) = crate::common::request_target(endpoint, path);
     let credentials = Credentials::from(account);
     let auth = load_auth(provider.auth(&account.config)?, secret_store, &credentials).await?;
     let secret_headers = load_secret_headers(secret_store, &credentials).await?;

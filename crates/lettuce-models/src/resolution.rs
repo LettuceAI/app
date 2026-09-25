@@ -1084,7 +1084,7 @@ mod tests {
 
         let mut invalid = account;
         invalid.config = ProviderConfig::Custom(CustomProviderConfig {
-            chat_path: "/chat/completions?token=canary-secret-value".into(),
+            chat_path: "/chat/completions#canary-secret-value".into(),
             models_path: Some("/models".into()),
             streaming: true,
             auth: crate::CustomAuth::Bearer,

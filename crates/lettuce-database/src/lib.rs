@@ -3914,19 +3914,16 @@ mod tests {
                 name: QueryParameterName::new("api_key").expect("query name"),
             },
         ] {
-            let mut invalid = provider();
-            invalid.config = ProviderConfig::Custom(CustomProviderConfig {
+            let mut keyless = provider();
+            keyless.config = ProviderConfig::Custom(CustomProviderConfig {
                 chat_path: "/chat".into(),
                 models_path: None,
                 streaming: false,
                 auth,
                 ..Default::default()
             });
-            invalid.api_key_ref = None;
-            assert_eq!(
-                ProviderAccountRepository::upsert(&database, invalid, None),
-                Err(ModelRepositoryError::InvalidData)
-            );
+            keyless.api_key_ref = None;
+            assert!(ProviderAccountRepository::upsert(&database, keyless, None).is_ok());
         }
 
         let mut no_endpoint = provider();

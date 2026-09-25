@@ -413,23 +413,10 @@ pub fn validate_provider_connection(
         if let Some(models_path) = models_path {
             validate_path(models_path)?;
         }
-        match auth {
-            CustomAuth::Bearer => {
-                if account.api_key_ref.is_none() {
-                    return Err(ProviderConnectionValidationError::Authentication);
-                }
-            }
-            CustomAuth::Header { name } => {
-                if account.api_key_ref.is_none() || is_dangerous_header_name(name) {
-                    return Err(ProviderConnectionValidationError::Authentication);
-                }
-            }
-            CustomAuth::Query { .. } => {
-                if account.api_key_ref.is_none() {
-                    return Err(ProviderConnectionValidationError::Authentication);
-                }
-            }
-            CustomAuth::None => {}
+        if let CustomAuth::Header { name } = auth
+            && is_dangerous_header_name(name)
+        {
+            return Err(ProviderConnectionValidationError::Authentication);
         }
     }
     validate_secret_headers(account)?;
@@ -444,22 +431,6 @@ fn validate_secret_headers(
     }
     let mut names = HashSet::with_capacity(account.secret_headers.len());
     let mut refs = HashSet::with_capacity(account.secret_headers.len());
-    let auth_header_name = match &account.config {
-        ProviderConfig::Custom(CustomProviderConfig {
-            auth: CustomAuth::Header { name },
-            ..
-        }) => Some(name.as_str()),
-        _ => None,
-    };
-    let standard_or_bearer = matches!(
-        &account.config,
-        ProviderConfig::Standard
-            | ProviderConfig::Ollama(_)
-            | ProviderConfig::Custom(CustomProviderConfig {
-                auth: CustomAuth::Bearer,
-                ..
-            })
-    );
     for header in &account.secret_headers {
         let normalized_name = header.name.as_str().to_ascii_lowercase();
         if !names.insert(normalized_name)
@@ -468,8 +439,6 @@ fn validate_secret_headers(
             || account
                 .api_key_ref
                 .is_some_and(|api_key_ref| api_key_ref == header.secret_ref)
-            || auth_header_name.is_some_and(|name| name.eq_ignore_ascii_case(header.name.as_str()))
-            || (standard_or_bearer && header.name.as_str().eq_ignore_ascii_case("authorization"))
         {
             return Err(ProviderConnectionValidationError::SecretHeaders);
         }
@@ -550,17 +519,31 @@ fn validate_endpoint(endpoint: &str) -> Result<(), ProviderConnectionValidationE
     Ok(())
 }
 
+/// A custom provider path: `/route` with an optional fixed query
+/// (`?api-version=...`), or a whole `http(s)://` URL that replaces the
+/// account endpoint.
 fn validate_path(path: &str) -> Result<(), ProviderConnectionValidationError> {
     if path.trim() != path
         || path.is_empty()
         || path.len() > MAX_PROVIDER_PATH_BYTES
-        || !path.starts_with('/')
-        || path.starts_with("//")
-        || path.contains(['?', '#'])
+        || path.contains('#')
         || path
             .chars()
             .any(|character| character.is_control() || character.is_whitespace())
     {
+        return Err(ProviderConnectionValidationError::Path);
+    }
+    let lower = path.to_ascii_lowercase();
+    if lower.starts_with("http://") || lower.starts_with("https://") {
+        let authority_start = path.find("://").map_or(0, |index| index + 3);
+        let origin_end = path[authority_start..]
+            .find(['/', '?'])
+            .map_or(path.len(), |index| authority_start + index);
+        return validate_endpoint(&path[..origin_end])
+            .map_err(|_| ProviderConnectionValidationError::Path);
+    }
+    let route = path.split_once('?').map_or(path, |(route, _)| route);
+    if !route.starts_with('/') || route.starts_with("//") {
         return Err(ProviderConnectionValidationError::Path);
     }
     Ok(())
@@ -914,9 +897,9 @@ mod tests {
         assert!(validate_provider_connection(&account).is_ok());
 
         account.api_key_ref = None;
-        assert_eq!(
-            validate_provider_connection(&account),
-            Err(ProviderConnectionValidationError::Authentication)
+        assert!(
+            validate_provider_connection(&account).is_ok(),
+            "legacy custom.rs left auth off for keyless accounts"
         );
         account.api_key_ref = Some(SecretRef::new());
         account.endpoint = None;
@@ -930,9 +913,9 @@ mod tests {
             name: HeaderName::new("x-api-key").expect("header name"),
             secret_ref: SecretRef::new(),
         }];
-        assert_eq!(
-            validate_provider_connection(&account),
-            Err(ProviderConnectionValidationError::SecretHeaders)
+        assert!(
+            validate_provider_connection(&account).is_ok(),
+            "legacy extra headers override the auth header"
         );
 
         account.secret_headers[0].name = HeaderName::new("Host").expect("header name");
@@ -959,10 +942,7 @@ mod tests {
             ..Default::default()
         });
         account.secret_headers[0].name = HeaderName::new("AUTHORIZATION").expect("header name");
-        assert_eq!(
-            validate_provider_connection(&account),
-            Err(ProviderConnectionValidationError::SecretHeaders)
-        );
+        assert!(validate_provider_connection(&account).is_ok());
     }
 
     #[test]
@@ -984,16 +964,30 @@ mod tests {
             Err(ProviderConnectionValidationError::Endpoint)
         );
         account.endpoint = Some("https://example.invalid".into());
-        account.config = ProviderConfig::Custom(CustomProviderConfig {
-            chat_path: "chat".into(),
-            models_path: None,
-            streaming: false,
-            auth: CustomAuth::None,
-            ..Default::default()
-        });
-        assert_eq!(
-            validate_provider_connection(&account),
-            Err(ProviderConnectionValidationError::Path)
-        );
+        for (path, valid) in [
+            ("chat", false),
+            ("//chat", false),
+            ("/chat#frag", false),
+            (" /chat", false),
+            (
+                "/openai/deployments/d/chat/completions?api-version=2024-10-21",
+                true,
+            ),
+            ("https://other.host/v1/chat/completions", true),
+            ("https://user@other.host/chat", false),
+        ] {
+            account.config = ProviderConfig::Custom(CustomProviderConfig {
+                chat_path: path.into(),
+                models_path: None,
+                streaming: false,
+                auth: CustomAuth::None,
+                ..Default::default()
+            });
+            assert_eq!(
+                validate_provider_connection(&account).is_ok(),
+                valid,
+                "{path}"
+            );
+        }
     }
 }

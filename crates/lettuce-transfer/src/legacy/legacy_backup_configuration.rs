@@ -3303,7 +3303,8 @@ fn legacy_provider_config(
             .map_err(|_| malformed(LegacyBackupDocumentKind::ProviderCredentials, "config"))
     };
     let chat_path = string("chatEndpoint")?
-        .filter(|value| !value.trim().is_empty())
+        .as_deref()
+        .and_then(legacy_custom_endpoint_path)
         .unwrap_or_else(|| {
             if kind.eq_ignore_ascii_case("custom-anthropic") {
                 "/v1/messages".into()
@@ -3318,13 +3319,9 @@ fn legacy_provider_config(
         LegacyBackupDocumentKind::ProviderCredentials,
     )?;
     let models_path = if fetch {
-        Some(
-            string("modelsEndpoint")?
-                .filter(|value| !value.trim().is_empty())
-                .ok_or_else(|| {
-                    malformed(LegacyBackupDocumentKind::ProviderCredentials, "config")
-                })?,
-        )
+        string("modelsEndpoint")?
+            .as_deref()
+            .and_then(legacy_custom_endpoint_path)
     } else {
         None
     };
@@ -3361,12 +3358,7 @@ fn legacy_provider_config(
             .map_err(|_| malformed(LegacyBackupDocumentKind::ProviderCredentials, "config"))?,
         },
         "none" => CustomAuth::None,
-        _ => {
-            return Err(malformed(
-                LegacyBackupDocumentKind::ProviderCredentials,
-                "config",
-            ));
-        }
+        _ => CustomAuth::Bearer,
     };
     let tool_choice_mode = match string("toolChoiceMode")?
         .unwrap_or_else(|| "auto".into())
@@ -3793,6 +3785,26 @@ fn orphan(
     }
 }
 
+/// Legacy custom adapters trimmed `chatEndpoint`/`modelsEndpoint`, used a
+/// whole `http(s)://` URL as is, and joined a bare segment with `/`. A blank
+/// value has no path.
+#[must_use]
+pub fn legacy_custom_endpoint_path(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    Some(
+        if lower.starts_with("http://") || lower.starts_with("https://") || trimmed.starts_with('/')
+        {
+            trimmed.to_owned()
+        } else {
+            format!("/{trimmed}")
+        },
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use lettuce_types::ContentHash;
@@ -3801,6 +3813,28 @@ mod tests {
 
     use super::*;
     use crate::{LegacyBackupDocument, LegacyBackupMedia};
+
+    #[test]
+    fn custom_endpoint_paths_are_read_like_legacy_custom_adapter() {
+        for (value, expected) in [
+            (" chat/completions ", Some("/chat/completions")),
+            (
+                "/openai/deployments/d/chat/completions?api-version=2024-10-21",
+                Some("/openai/deployments/d/chat/completions?api-version=2024-10-21"),
+            ),
+            (
+                "https://other.host/v1/models",
+                Some("https://other.host/v1/models"),
+            ),
+            ("  ", None),
+        ] {
+            assert_eq!(
+                legacy_custom_endpoint_path(value).as_deref(),
+                expected,
+                "{value}"
+            );
+        }
+    }
 
     fn document(kind: LegacyBackupDocumentKind, value: Value) -> LegacyBackupDocument {
         LegacyBackupDocument {

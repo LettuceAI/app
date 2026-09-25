@@ -180,6 +180,8 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
         .or_else(|| provider.default_endpoint())
         .ok_or(AdapterError::Rejected)?;
     let path = provider.chat_path(endpoint, config)?;
+    let (target, path) = crate::common::request_target(Cow::Borrowed(endpoint), path);
+    let endpoint: &str = &target;
     let streaming = request.stream_sink.is_some()
         && profile.streaming_enabled
         && provider.supports_streaming(config);
@@ -374,6 +376,8 @@ pub(crate) async fn list_models<S: SecretStore + ?Sized>(
     let path = provider
         .models_path(endpoint, &account.config)
         .ok_or(AdapterError::Rejected)?;
+    let (target, path) = crate::common::request_target(Cow::Borrowed(endpoint), path);
+    let endpoint: &str = &target;
     let credentials = Credentials::from(account);
     let auth = load_auth(provider.auth(&account.config)?, secret_store, &credentials).await?;
     let secret_headers = load_secret_headers(secret_store, &credentials).await?;

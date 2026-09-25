@@ -153,6 +153,16 @@ share the 64 MiB bulk bound so phone photos fit.
 
 Deferred horizontals: custom-provider reasoning schema and structured output.
 
+Custom accounts follow legacy `custom.rs`: `chatEndpoint`/`modelsEndpoint`
+may be a `/route` with a fixed query (Azure `?api-version=`), a bare segment
+(joined with `/` on import), or a whole `http(s)://` URL that replaces the
+account endpoint. Header, bearer and query auth are left off when the account
+has no key, so keyless local servers import and run in every mode; an unknown
+`authMode` is bearer, as legacy's default arm. Account headers override the
+auth header, which overrides static headers (`User-Agent`, `Accept`,
+`Authorization`, `HTTP-Referer`, `X-Title` included); transport headers the
+client owns are ignored with a warning.
+
 Request policy follows legacy `request_builder`: a stream sink on an account
 or provider with streaming off runs the request buffered (legacy
 `effective_streaming_enabled`) instead of rejecting it. The prompt-caching

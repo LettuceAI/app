@@ -650,9 +650,10 @@ impl JsonClient {
             url.query_pairs_mut()
                 .extend_pairs(query.iter().map(|entry| (entry.name, entry.value)));
         }
-        validate_header_collection(static_headers, &auth, &secret_headers)?;
+        let (static_headers, auth, secret_headers) =
+            resolve_header_collection(static_headers, auth, secret_headers)?;
         let request = self.client(policy).get(url).timeout(timeout_for(policy));
-        let request = apply_static_headers(request, static_headers)?;
+        let request = apply_static_headers(request, &static_headers)?;
         let request = apply_auth(request, auth)?;
         self.send_with_headers(request, secret_headers, retries_for(policy))
             .await
@@ -713,14 +714,15 @@ impl JsonClient {
             url.query_pairs_mut()
                 .extend_pairs(query.iter().map(|entry| (entry.name, entry.value)));
         }
-        validate_header_collection(static_headers, &auth, &secret_headers)?;
+        let (static_headers, auth, secret_headers) =
+            resolve_header_collection(static_headers, auth, secret_headers)?;
         let request = self
             .client(policy)
             .post(url)
             .timeout(timeout_for(policy))
             .header(header::CONTENT_TYPE, "application/json")
             .body(body);
-        let request = apply_static_headers(request, static_headers)?;
+        let request = apply_static_headers(request, &static_headers)?;
         let request = apply_auth(request, auth)?;
         self.send_with_headers(request, secret_headers, retries_for(policy))
             .await
@@ -746,14 +748,15 @@ impl JsonClient {
             return Err(JsonClientError::RequestTooLarge);
         }
         let url = build_url(endpoint, path)?;
-        validate_header_collection(static_headers, &auth, &secret_headers)?;
+        let (static_headers, auth, secret_headers) =
+            resolve_header_collection(static_headers, auth, secret_headers)?;
         let request = self
             .client(policy)
             .delete(url)
             .timeout(timeout_for(policy))
             .header(header::CONTENT_TYPE, "application/json")
             .body(body);
-        let request = apply_static_headers(request, static_headers)?;
+        let request = apply_static_headers(request, &static_headers)?;
         let request = apply_auth(request, auth)?;
         self.send_with_headers(request, secret_headers, 0)
             .await
@@ -814,14 +817,15 @@ impl JsonClient {
             url.query_pairs_mut()
                 .extend_pairs(query.iter().map(|entry| (entry.name, entry.value)));
         }
-        validate_header_collection(static_headers, &auth, &secret_headers)?;
+        let (static_headers, auth, secret_headers) =
+            resolve_header_collection(static_headers, auth, secret_headers)?;
         let request = self
             .client(policy)
             .post(url)
             .timeout(timeout_for(policy))
             .header(header::CONTENT_TYPE, "application/json")
             .body(body);
-        let request = apply_static_headers(request, static_headers)?;
+        let request = apply_static_headers(request, &static_headers)?;
         let request = apply_auth(request, auth)?;
         let request = apply_secret_headers(request, secret_headers)?;
         self.send_stream(request, retries_for(policy), idle_timeout_for(policy))
@@ -1012,12 +1016,13 @@ impl BulkHttpClient {
             url.query_pairs_mut()
                 .extend_pairs(query.iter().map(|entry| (entry.name, entry.value)));
         }
-        validate_header_collection(static_headers, &auth, &secret_headers)?;
+        let (static_headers, auth, secret_headers) =
+            resolve_header_collection(static_headers, auth, secret_headers)?;
         let request = self
             .client(allow_invalid_tls)
             .get(url)
             .timeout(GENERATION_TIMEOUT);
-        let request = apply_static_headers(request, static_headers)?;
+        let request = apply_static_headers(request, &static_headers)?;
         let request = apply_auth(request, auth)?;
         let request = apply_secret_headers(request, secret_headers)?;
         let response = request
@@ -1051,14 +1056,15 @@ impl BulkHttpClient {
             url.query_pairs_mut()
                 .extend_pairs(query.iter().map(|entry| (entry.name, entry.value)));
         }
-        validate_header_collection(static_headers, &auth, &secret_headers)?;
+        let (static_headers, auth, secret_headers) =
+            resolve_header_collection(static_headers, auth, secret_headers)?;
         let request = self
             .client(allow_invalid_tls)
             .post(url)
             .timeout(GENERATION_TIMEOUT)
             .header(header::CONTENT_TYPE, "application/json")
             .body(body);
-        let request = apply_static_headers(request, static_headers)?;
+        let request = apply_static_headers(request, &static_headers)?;
         let request = apply_auth(request, auth)?;
         let request = apply_secret_headers(request, secret_headers)?;
         let response = request
@@ -1095,7 +1101,8 @@ impl BulkHttpClient {
             return Err(JsonClientError::RequestTooLarge);
         }
         let url = build_url(endpoint, path)?;
-        validate_header_collection(static_headers, &auth, &secret_headers)?;
+        let (static_headers, auth, secret_headers) =
+            resolve_header_collection(static_headers, auth, secret_headers)?;
         let mut form = reqwest::multipart::Form::new();
         for field in fields {
             form = match field {
@@ -1119,7 +1126,7 @@ impl BulkHttpClient {
             .post(url)
             .timeout(GENERATION_TIMEOUT)
             .multipart(form);
-        let request = apply_static_headers(request, static_headers)?;
+        let request = apply_static_headers(request, &static_headers)?;
         let request = apply_auth(request, auth)?;
         let request = apply_secret_headers(request, secret_headers)?;
         let response = request
@@ -1348,43 +1355,65 @@ fn backoff_delay(attempt: u32) -> Duration {
     Duration::from_millis(200 * (1_u64 << attempt.saturating_sub(1).min(3)))
 }
 
-fn validate_header_collection(
+/// Legacy header precedence: the account's own headers override the auth
+/// header, which overrides the provider's static headers, and a later header
+/// of the same name replaces an earlier one. Transport headers the client
+/// owns are never taken from the account.
+fn resolve_header_collection(
     static_headers: &[JsonStaticHeader],
-    auth: &JsonAuth,
-    secret_headers: &[JsonSecretHeader],
-) -> Result<(), JsonClientError> {
-    let mut names = HashSet::with_capacity(static_headers.len() + secret_headers.len() + 1);
-    names.insert("content-type".to_owned());
-    let auth_name = match auth {
+    auth: JsonAuth,
+    secret_headers: Vec<JsonSecretHeader>,
+) -> Result<(Vec<JsonStaticHeader>, JsonAuth, Vec<JsonSecretHeader>), JsonClientError> {
+    let mut secrets: Vec<JsonSecretHeader> = Vec::with_capacity(secret_headers.len());
+    for header in secret_headers {
+        if is_transport_reserved_header(header.name.as_str()) {
+            tracing::warn!("ignoring an account header the HTTP client owns");
+            continue;
+        }
+        secrets.retain(|existing| {
+            !existing
+                .name
+                .as_str()
+                .eq_ignore_ascii_case(header.name.as_str())
+        });
+        secrets.push(header);
+    }
+    let account_header =
+        |name: &str| secrets.iter().any(|header| header.name.as_str().eq_ignore_ascii_case(name));
+    let auth_name = match &auth {
         JsonAuth::Bearer(_) => Some("authorization".to_owned()),
         JsonAuth::Header { name, .. } => {
-            if is_extra_reserved_header(name.as_str()) {
+            if is_transport_reserved_header(name.as_str()) {
                 return Err(JsonClientError::InvalidRequest);
             }
             Some(name.as_str().to_ascii_lowercase())
         }
         JsonAuth::Query { .. } | JsonAuth::None => None,
     };
-    if let Some(auth_name) = &auth_name {
-        names.insert(auth_name.clone());
-    }
+    let auth = if auth_name.as_deref().is_some_and(account_header) {
+        JsonAuth::None
+    } else {
+        auth
+    };
+    let mut statics: Vec<JsonStaticHeader> = Vec::with_capacity(static_headers.len());
     for header in static_headers {
         let name = header_name_from_static(header.name)?;
-        let normalized = name.as_str().to_ascii_lowercase();
-        if is_extra_reserved_header(name.as_str())
-            || !names.insert(normalized)
+        if is_transport_reserved_header(name.as_str())
             || header::HeaderValue::from_str(header.value).is_err()
         {
             return Err(JsonClientError::InvalidRequest);
         }
-    }
-    for header in secret_headers {
-        let normalized = header.name.as_str().to_ascii_lowercase();
-        if is_extra_reserved_header(header.name.as_str()) || !names.insert(normalized) {
-            return Err(JsonClientError::InvalidRequest);
+        if account_header(header.name)
+            || auth_name
+                .as_deref()
+                .is_some_and(|auth_name| auth_name.eq_ignore_ascii_case(header.name))
+        {
+            continue;
         }
+        statics.retain(|existing| !existing.name.eq_ignore_ascii_case(header.name));
+        statics.push(*header);
     }
-    Ok(())
+    Ok((statics, auth, secrets))
 }
 
 fn apply_static_headers(
@@ -1437,13 +1466,6 @@ fn is_transport_reserved_header(name: &str) -> bool {
     )
 }
 
-fn is_extra_reserved_header(name: &str) -> bool {
-    is_transport_reserved_header(name)
-        || matches!(
-            name.to_ascii_lowercase().as_str(),
-            "authorization" | "http-referer" | "x-title"
-        )
-}
 
 fn validate_query(query: &[JsonQueryParameter<'_>]) -> Result<(), JsonClientError> {
     if query.len() > 16 {
@@ -1464,7 +1486,18 @@ fn validate_query(query: &[JsonQueryParameter<'_>]) -> Result<(), JsonClientErro
     Ok(())
 }
 
+/// Joins a provider path onto its endpoint. The path may carry a fixed query
+/// (a custom endpoint such as `/chat/completions?api-version=...`); the
+/// endpoint itself never does.
 fn build_url(endpoint: &str, path: &str) -> Result<Url, JsonClientError> {
+    let (path, fixed_query) = path.split_once('?').unwrap_or((path, ""));
+    if fixed_query.contains('#')
+        || fixed_query
+            .chars()
+            .any(|character| character.is_control() || character.is_whitespace())
+    {
+        return Err(JsonClientError::InvalidUrl);
+    }
     if endpoint.trim() != endpoint
         || endpoint.is_empty()
         || endpoint.len() > MAX_ENDPOINT_BYTES
@@ -1518,7 +1551,7 @@ fn build_url(endpoint: &str, path: &str) -> Result<Url, JsonClientError> {
         format!("{base_path}/{chat_path}")
     };
     url.set_path(&joined_path);
-    url.set_query(None);
+    url.set_query((!fixed_query.is_empty()).then_some(fixed_query));
     url.set_fragment(None);
     Ok(url)
 }
@@ -2027,65 +2060,66 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rejects_static_and_secret_header_collisions_before_send() {
-        let client = client();
-        let auth_name = HeaderName::new("x-auth").expect("header");
-        let error = client
+    async fn account_headers_override_auth_and_static_headers_like_legacy() {
+        let (endpoint, request) =
+            test_server("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}").await;
+        let secret = |name: &str, value: &str| JsonSecretHeader {
+            name: HeaderName::new(name).expect("header"),
+            value: SecretValue::new(value).expect("secret"),
+        };
+        client()
+            .post_json(
+                &endpoint,
+                "/chat?api-version=2024-10-21",
+                b"{}".to_vec(),
+                &[
+                    JsonStaticHeader {
+                        name: "accept",
+                        value: "application/json",
+                    },
+                    JsonStaticHeader {
+                        name: "user-agent",
+                        value: "LettuceAI",
+                    },
+                ],
+                JsonAuth::Bearer(SecretValue::new("key").expect("secret")),
+                vec![
+                    secret("User-Agent", "rp-proxy"),
+                    secret("Authorization", "Basic abc"),
+                    secret("X-Title", "Mine"),
+                    secret("Content-Type", "text/plain"),
+                ],
+                RequestPolicy::GENERATION,
+            )
+            .await
+            .expect("request");
+        let raw = String::from_utf8(request.await.expect("request")).expect("utf8");
+        let head = raw.to_ascii_lowercase();
+        assert!(head.starts_with("post /chat?api-version=2024-10-21 "), "{raw}");
+        assert!(head.contains("user-agent: rp-proxy"));
+        assert!(!head.contains("user-agent: lettuceai"));
+        assert!(head.contains("authorization: basic abc"));
+        assert!(!head.contains("bearer key"));
+        assert!(head.contains("x-title: mine"));
+        assert_eq!(head.matches("x-title:").count(), 1);
+        assert!(head.contains("content-type: application/json"));
+        assert!(head.contains("accept: application/json"));
+
+        let error = client()
             .post_json(
                 "http://127.0.0.1:1",
                 "/chat",
                 b"{}".to_vec(),
                 &[],
                 JsonAuth::Header {
-                    name: auth_name.clone(),
-                    value: SecretValue::new("auth-canary").expect("secret"),
+                    name: HeaderName::new("Content-Length").expect("header"),
+                    value: SecretValue::new("x").expect("secret"),
                 },
-                vec![JsonSecretHeader {
-                    name: auth_name,
-                    value: SecretValue::new("duplicate-canary").expect("secret"),
-                }],
+                Vec::new(),
                 RequestPolicy::GENERATION,
             )
             .await
-            .expect_err("auth/header collision");
-        assert_eq!(error, JsonClientError::InvalidRequest);
-
-        let accept = JsonStaticHeader {
-            name: "accept",
-            value: "application/json",
-        };
-        let error = client
-            .post_json(
-                "http://127.0.0.1:1",
-                "/chat",
-                b"{}".to_vec(),
-                &[accept],
-                JsonAuth::None,
-                vec![JsonSecretHeader {
-                    name: HeaderName::new("Accept").expect("header"),
-                    value: SecretValue::new("duplicate-canary").expect("secret"),
-                }],
-                RequestPolicy::GENERATION,
-            )
-            .await
-            .expect_err("static/header collision");
-        assert_eq!(error, JsonClientError::InvalidRequest);
-
-        let error = client
-            .post_json(
-                "http://127.0.0.1:1",
-                "/chat",
-                b"{}".to_vec(),
-                &[],
-                JsonAuth::None,
-                vec![JsonSecretHeader {
-                    name: HeaderName::new("X-Title").expect("header"),
-                    value: SecretValue::new("duplicate-canary").expect("secret"),
-                }],
-                RequestPolicy::GENERATION,
-            )
-            .await
-            .expect_err("client default header collision");
+            .expect_err("transport header as auth");
         assert_eq!(error, JsonClientError::InvalidRequest);
     }
 }

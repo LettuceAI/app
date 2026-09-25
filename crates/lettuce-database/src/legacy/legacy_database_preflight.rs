@@ -1901,7 +1901,8 @@ fn legacy_provider_config(
             .map_err(|_| provider_malformed("config"))
     };
     let chat_path = string("chatEndpoint")?
-        .filter(|value| !value.trim().is_empty())
+        .as_deref()
+        .and_then(lettuce_transfer::legacy_custom_endpoint_path)
         .unwrap_or_else(|| {
             if provider_kind.eq_ignore_ascii_case("custom-anthropic") {
                 "/v1/messages".to_owned()
@@ -1911,11 +1912,9 @@ fn legacy_provider_config(
         });
     let fetch_models = optional_bool(object, "fetchModelsEnabled", false)?;
     let models_path = if fetch_models {
-        Some(
-            string("modelsEndpoint")?
-                .filter(|value| !value.trim().is_empty())
-                .ok_or_else(|| provider_malformed("config"))?,
-        )
+        string("modelsEndpoint")?
+            .as_deref()
+            .and_then(lettuce_transfer::legacy_custom_endpoint_path)
     } else {
         None
     };
@@ -1952,7 +1951,7 @@ fn legacy_provider_config(
             .map_err(|_| provider_malformed("config"))?,
         },
         "none" => CustomAuth::None,
-        _ => return Err(provider_malformed("config")),
+        _ => CustomAuth::Bearer,
     };
     let tool_choice_mode = match string("toolChoiceMode")?
         .unwrap_or_else(|| "auto".to_owned())

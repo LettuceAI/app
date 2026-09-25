@@ -380,6 +380,8 @@ pub(crate) enum AuthPlan {
     Header(HeaderName),
     Query(String),
     None,
+    /// The inner plan when the account has a key, no auth otherwise.
+    IfKey(Box<AuthPlan>),
 }
 
 pub(crate) fn validate_common_request_with_tools(
@@ -480,6 +482,11 @@ pub(crate) async fn load_auth<S: SecretStore + ?Sized>(
     secret_store: &S,
     credentials: &Credentials<'_>,
 ) -> Result<JsonAuth, AdapterError> {
+    let plan = match plan {
+        AuthPlan::IfKey(_) if credentials.api_key_ref.is_none() => return Ok(JsonAuth::None),
+        AuthPlan::IfKey(inner) => *inner,
+        plan => plan,
+    };
     Ok(match plan {
         AuthPlan::Bearer => JsonAuth::Bearer(load_api_key(secret_store, credentials).await?),
         AuthPlan::OptionalBearer => match credentials.api_key_ref {
@@ -494,7 +501,7 @@ pub(crate) async fn load_auth<S: SecretStore + ?Sized>(
             name,
             value: load_api_key(secret_store, credentials).await?,
         },
-        AuthPlan::None => JsonAuth::None,
+        AuthPlan::None | AuthPlan::IfKey(_) => JsonAuth::None,
     })
 }
 
@@ -540,13 +547,45 @@ pub(crate) async fn load_secret_headers<S: SecretStore + ?Sized>(
     Ok(headers)
 }
 
+/// Legacy custom adapters left the auth header or query parameter off when
+/// the account had no key, so keyless local servers work in every mode.
 pub(crate) fn custom_auth_plan(auth: &lettuce_models::CustomAuth) -> AuthPlan {
-    match auth {
+    let plan = match auth {
         lettuce_models::CustomAuth::Bearer => AuthPlan::Bearer,
         lettuce_models::CustomAuth::Header { name } => AuthPlan::Header(name.clone()),
         lettuce_models::CustomAuth::Query { name } => AuthPlan::Query(name.as_str().to_owned()),
-        lettuce_models::CustomAuth::None => AuthPlan::None,
+        lettuce_models::CustomAuth::None => return AuthPlan::None,
+    };
+    AuthPlan::IfKey(Box::new(plan))
+}
+
+/// A custom path may be a whole `http(s)://` URL (legacy `chatEndpoint` and
+/// `modelsEndpoint`); it then replaces the account endpoint instead of being
+/// joined onto it.
+pub(crate) fn request_target<'a>(
+    endpoint: std::borrow::Cow<'a, str>,
+    path: std::borrow::Cow<'static, str>,
+) -> (std::borrow::Cow<'a, str>, std::borrow::Cow<'static, str>) {
+    let lower = path.to_ascii_lowercase();
+    if !(lower.starts_with("http://") || lower.starts_with("https://")) {
+        return (endpoint, path);
     }
+    let authority_start = path.find("://").map_or(0, |index| index + 3);
+    let split = path[authority_start..]
+        .find(['/', '?'])
+        .map_or(path.len(), |index| authority_start + index);
+    let rest = &path[split..];
+    let rest = if rest.is_empty() {
+        "/".to_owned()
+    } else if rest.starts_with('?') {
+        format!("/{rest}")
+    } else {
+        rest.to_owned()
+    };
+    (
+        std::borrow::Cow::Owned(path[..split].to_owned()),
+        std::borrow::Cow::Owned(rest),
+    )
 }
 
 pub(crate) fn generation_policy(credentials: &Credentials<'_>) -> RequestPolicy {
@@ -965,6 +1004,50 @@ mod tests {
             run(Support::ExplicitResource, Ttl::FiveMinutes),
             enabled(Ttl::FiveMinutes)
         );
+    }
+
+    #[test]
+    fn absolute_custom_paths_replace_the_endpoint_like_legacy_custom_adapter() {
+        use std::borrow::Cow;
+        let target = |path: &'static str| {
+            let (endpoint, path) =
+                request_target(Cow::Borrowed("http://base"), Cow::Borrowed(path));
+            (endpoint.into_owned(), path.into_owned())
+        };
+        assert_eq!(
+            target("/chat?api-version=1"),
+            ("http://base".to_owned(), "/chat?api-version=1".to_owned())
+        );
+        assert_eq!(
+            target("https://other.host/v1/models"),
+            ("https://other.host".to_owned(), "/v1/models".to_owned())
+        );
+        assert_eq!(
+            target("https://other.host?x=1"),
+            ("https://other.host".to_owned(), "/?x=1".to_owned())
+        );
+    }
+
+    #[tokio::test]
+    async fn keyless_custom_accounts_send_no_auth_like_legacy() {
+        let store = lettuce_settings::InMemorySecretStore::default();
+        let credentials = Credentials {
+            owner: SecretOwnerId::new(),
+            api_key_ref: None,
+            secret_headers: &[],
+            allow_invalid_tls: false,
+        };
+        for auth in [
+            lettuce_models::CustomAuth::Bearer,
+            lettuce_models::CustomAuth::Header {
+                name: HeaderName::new("x-api-key").expect("header"),
+            },
+        ] {
+            assert!(matches!(
+                load_auth(custom_auth_plan(&auth), &store, &credentials).await,
+                Ok(JsonAuth::None)
+            ));
+        }
     }
 
     #[test]

@@ -153,20 +153,23 @@ pub(crate) async fn verify_api_key<S: SecretStore + ?Sized>(
                 .await?,
             false,
         ),
-        Probe::PostNull { path } => (
-            network
-                .post_json(
-                    endpoint,
-                    &path,
-                    b"null".to_vec(),
-                    headers,
-                    auth,
-                    secret_headers,
-                    policy,
-                )
-                .await?,
-            true,
-        ),
+        Probe::PostNull { path } => {
+            let (target, path) = crate::common::request_target(Cow::Borrowed(endpoint), path);
+            (
+                network
+                    .post_json(
+                        &target,
+                        &path,
+                        b"null".to_vec(),
+                        headers,
+                        auth,
+                        secret_headers,
+                        policy,
+                    )
+                    .await?,
+                true,
+            )
+        }
         Probe::AlwaysValid => unreachable!("handled above"),
     };
     Ok(judge(&response, post))
