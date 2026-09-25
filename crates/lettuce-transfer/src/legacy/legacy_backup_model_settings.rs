@@ -263,18 +263,25 @@ fn chat_parameters(reader: &mut Reader<'_>, provider_kind: &str) -> ChatParamete
     });
     let reasoning_budget_tokens = reader.u32("reasoningBudgetTokens", 1024, u32::MAX);
     let caching_enabled = reader.bool("promptCachingEnabled");
+    let openai = provider_kind.eq_ignore_ascii_case("openai");
+    let gemini = ["gemini", "google", "google-gemini"]
+        .iter()
+        .any(|kind| provider_kind.eq_ignore_ascii_case(kind));
     let retention = reader.choice("promptCachingTtl", |value| match value {
-        "in_memory" => Some(PromptCacheRetention::InMemory),
-        "5min" => Some(PromptCacheRetention::FiveMinutes),
-        "1h" => Some(PromptCacheRetention::OneHour),
         "24h" => Some(PromptCacheRetention::TwentyFourHours),
+        "in_memory" | "5min" | "1h" if openai => Some(PromptCacheRetention::InMemory),
+        "in_memory" => Some(PromptCacheRetention::InMemory),
+        "5min" | "300s" => Some(PromptCacheRetention::FiveMinutes),
+        "1h" => Some(PromptCacheRetention::OneHour),
         _ => None,
     });
     let prompt_caching = caching_enabled.map(|enabled| {
         if enabled {
             PromptCaching::Enabled {
-                retention: retention.unwrap_or(if provider_kind == "openai" {
+                retention: retention.unwrap_or(if openai {
                     PromptCacheRetention::InMemory
+                } else if gemini {
+                    PromptCacheRetention::OneHour
                 } else {
                     PromptCacheRetention::FiveMinutes
                 }),
@@ -295,20 +302,12 @@ fn chat_parameters(reader: &mut Reader<'_>, provider_kind: &str) -> ChatParamete
     let num_ctx = reader
         .u32("ollamaNumCtx", 0, 262_144)
         .filter(|value| *value != 0);
-    if max_output_tokens.is_some()
-        && num_predict.is_some_and(|value| Some(value) != max_output_tokens)
-    {
-        reader.lose("ollamaNumPredict");
-    }
-    if context_length.is_some() && num_ctx.is_some_and(|value| Some(value) != context_length) {
-        reader.lose("ollamaNumCtx");
-    }
     ChatParameterProfile {
         temperature: reader.f64("temperature", 0.0, 2.0),
         top_p: reader.f64("topP", 0.0, 1.0),
         top_k: reader.u32("topK", 1, u32::MAX),
-        max_output_tokens: max_output_tokens.or(num_predict),
-        context_length: context_length.or(num_ctx),
+        max_output_tokens,
+        context_length,
         frequency_penalty: reader.f64("frequencyPenalty", -2.0, 2.0),
         presence_penalty: reader.f64("presencePenalty", -2.0, 2.0),
         repetition_penalty: reader.f64("ollamaRepeatPenalty", f64::MIN_POSITIVE, 2.0),
@@ -318,6 +317,8 @@ fn chat_parameters(reader: &mut Reader<'_>, provider_kind: &str) -> ChatParamete
         prompt_caching,
         send_thinking_state: reader.bool("forceSendThinkingState"),
         ollama: OllamaOptions {
+            num_ctx,
+            num_predict,
             num_keep: reader.u32("ollamaNumKeep", 0, 32_768),
             num_batch: reader.u32("ollamaNumBatch", 1, 16_384),
             num_gpu: reader.u32("ollamaNumGpu", 0, 512),
@@ -863,6 +864,8 @@ pub fn legacy_advanced_model_settings(
     }
     writer.put("forceSendThinkingState", chat.send_thinking_state);
     let ollama = &chat.ollama;
+    writer.put("ollamaNumCtx", ollama.num_ctx);
+    writer.put("ollamaNumPredict", ollama.num_predict);
     writer.put("ollamaNumKeep", ollama.num_keep);
     writer.put("ollamaNumBatch", ollama.num_batch);
     writer.put("ollamaNumGpu", ollama.num_gpu);
@@ -1081,6 +1084,53 @@ pub fn legacy_advanced_model_settings(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn imported_chat(provider_kind: &str, settings: Value) -> ChatParameterProfile {
+        let object = settings.as_object().expect("object");
+        let mut lossy = Vec::new();
+        chat_parameters(
+            &mut Reader::new(object, String::new(), &mut lossy),
+            provider_kind,
+        )
+    }
+
+    #[test]
+    fn ollama_context_and_output_stay_ollama_specific_like_legacy_provider_fields() {
+        let chat = imported_chat(
+            "ollama",
+            serde_json::json!({"contextLength": 128000, "ollamaNumCtx": 8192,
+                "maxOutputTokens": 1024, "ollamaNumPredict": 512}),
+        );
+        assert_eq!(chat.context_length, Some(128_000));
+        assert_eq!(chat.max_output_tokens, Some(1024));
+        assert_eq!(chat.ollama.num_ctx, Some(8192));
+        assert_eq!(chat.ollama.num_predict, Some(512));
+    }
+
+    #[test]
+    fn prompt_cache_ttl_follows_legacy_request_builder_defaults() {
+        let retention =
+            |kind: &str, settings: Value| match imported_chat(kind, settings).prompt_caching {
+                Some(PromptCaching::Enabled { retention }) => retention,
+                other => panic!("{other:?}"),
+            };
+        let enabled = serde_json::json!({"promptCachingEnabled": true});
+        assert_eq!(
+            retention(
+                "openai",
+                serde_json::json!({"promptCachingEnabled": true, "promptCachingTtl": "5min"})
+            ),
+            PromptCacheRetention::InMemory
+        );
+        assert_eq!(
+            retention("gemini", enabled.clone()),
+            PromptCacheRetention::OneHour
+        );
+        assert_eq!(
+            retention("anthropic", enabled),
+            PromptCacheRetention::FiveMinutes
+        );
+    }
 
     #[test]
     fn written_settings_read_back_as_the_same_settings() {

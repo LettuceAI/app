@@ -773,6 +773,8 @@ impl ModelSettingsLayer {
             prompt_caching: set(&chat.prompt_caching),
             send_thinking_state: set(&chat.send_thinking_state),
             ollama: crate::OllamaOptionOverrides {
+                num_ctx: set(&ollama.num_ctx),
+                num_predict: set(&ollama.num_predict),
                 num_keep: set(&ollama.num_keep),
                 num_batch: set(&ollama.num_batch),
                 num_gpu: set(&ollama.num_gpu),

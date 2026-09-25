@@ -569,6 +569,18 @@ fn resolve_ollama(
     let operation = &input.operation.ollama;
     let model = &profile.ollama;
     OllamaOptions {
+        num_ctx: resolve_common(
+            &operation.num_ctx,
+            &session.num_ctx,
+            model.num_ctx,
+            global.num_ctx,
+        ),
+        num_predict: resolve_common(
+            &operation.num_predict,
+            &session.num_predict,
+            model.num_predict,
+            global.num_predict,
+        ),
         num_keep: resolve_common(
             &operation.num_keep,
             &session.num_keep,

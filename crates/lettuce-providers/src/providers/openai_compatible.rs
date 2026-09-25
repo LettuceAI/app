@@ -180,9 +180,13 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
     network: &JsonClient,
     runtime: &dyn InferenceRuntimePort,
     media: Option<std::sync::Arc<dyn crate::media::ProviderMediaSource>>,
-    request: InferenceRequest,
+    mut request: InferenceRequest,
 ) -> Result<InferenceOutcome, AdapterError> {
     validate_common_request_with_tools(&request)?;
+    crate::common::normalize_prompt_caching(
+        provider.descriptor().prompt_caching,
+        &mut request.profile.chat_profile.parameters,
+    );
     let profile = &request.profile.chat_profile;
     let config = &profile.provider_config;
     if !provider.accepts(config) {
@@ -210,10 +214,9 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
     if provider.merges_same_role(config) {
         messages = merge_same_role(messages);
     }
-    let streaming = request.stream_sink.is_some();
-    if streaming && (!profile.streaming_enabled || !provider.supports_streaming(config)) {
-        return Err(AdapterError::Rejected);
-    }
+    let streaming = request.stream_sink.is_some()
+        && profile.streaming_enabled
+        && provider.supports_streaming(config);
     let body = encode_request(
         provider,
         profile,
@@ -317,6 +320,9 @@ pub(crate) async fn list_models<S: SecretStore + ?Sized>(
 ) -> Result<Vec<RemoteModel>, AdapterError> {
     if !provider.accepts(&account.config) {
         return Err(AdapterError::Rejected);
+    }
+    if !provider.descriptor().lists_models {
+        return Ok(Vec::new());
     }
     let endpoint = account
         .endpoint
@@ -1961,6 +1967,23 @@ mod tests {
                 panic!("provider failure");
             };
             assert_eq!(failure.message.as_deref(), Some(expected));
+        }
+    }
+
+    #[test]
+    fn zai_always_sends_auto_tool_choice_like_legacy_zai_tool_choice() {
+        for choice in [
+            ToolChoice::Required,
+            ToolChoice::Named {
+                name: "x".to_owned(),
+            },
+        ] {
+            assert_eq!(
+                crate::providers::zai::Zai
+                    .tool_choice(&choice, &ProviderConfig::Standard)
+                    .expect("choice"),
+                Some("auto".into())
+            );
         }
     }
 

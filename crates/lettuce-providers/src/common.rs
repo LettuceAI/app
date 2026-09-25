@@ -412,6 +412,49 @@ pub(crate) fn validate_supported_reasoning(
     Ok(())
 }
 
+/// Legacy `build_chat_request` applied the caching flag only to providers
+/// with explicit caching and read the stored TTL per provider: cache-control
+/// providers take `1h` or else five minutes, Gemini `5min` or else one hour,
+/// OpenAI `24h` or else in-memory. Every other provider ignored the flag.
+pub(crate) fn normalize_prompt_caching(
+    support: crate::descriptor::PromptCachingSupport,
+    parameters: &mut ResolvedChatParameters,
+) {
+    use crate::descriptor::PromptCachingSupport;
+    use lettuce_models::PromptCacheRetention;
+    let Some(PromptCaching::Enabled { retention }) = parameters.prompt_caching else {
+        return;
+    };
+    let retention = match support {
+        PromptCachingSupport::None | PromptCachingSupport::Automatic => {
+            parameters.prompt_caching = None;
+            return;
+        }
+        PromptCachingSupport::CacheControl => {
+            if retention == PromptCacheRetention::OneHour {
+                PromptCacheRetention::OneHour
+            } else {
+                PromptCacheRetention::FiveMinutes
+            }
+        }
+        PromptCachingSupport::ExplicitResource => {
+            if retention == PromptCacheRetention::FiveMinutes {
+                PromptCacheRetention::FiveMinutes
+            } else {
+                PromptCacheRetention::OneHour
+            }
+        }
+        PromptCachingSupport::RequestRetention => {
+            if retention == PromptCacheRetention::TwentyFourHours {
+                PromptCacheRetention::TwentyFourHours
+            } else {
+                PromptCacheRetention::InMemory
+            }
+        }
+    };
+    parameters.prompt_caching = Some(PromptCaching::Enabled { retention });
+}
+
 pub(crate) fn validate_prompt_caching(
     support: crate::descriptor::PromptCachingSupport,
     parameters: &ResolvedChatParameters,
@@ -876,6 +919,51 @@ mod tests {
             vec![lettuce_conversations::MessagePart::Text {
                 text: "hello".to_owned()
             }]
+        );
+    }
+
+    #[test]
+    fn prompt_caching_follows_legacy_request_builder_per_provider() {
+        use crate::descriptor::PromptCachingSupport as Support;
+        use lettuce_models::PromptCacheRetention as Ttl;
+        let run = |support, retention| {
+            let mut parameters = ResolvedChatParameters {
+                prompt_caching: Some(PromptCaching::Enabled { retention }),
+                ..crate::integration_tests::parameters()
+            };
+            normalize_prompt_caching(support, &mut parameters);
+            parameters.prompt_caching
+        };
+        let enabled = |retention| Some(PromptCaching::Enabled { retention });
+        assert_eq!(run(Support::None, Ttl::OneHour), None);
+        assert_eq!(run(Support::Automatic, Ttl::FiveMinutes), None);
+        assert_eq!(
+            run(Support::RequestRetention, Ttl::FiveMinutes),
+            enabled(Ttl::InMemory)
+        );
+        assert_eq!(
+            run(Support::RequestRetention, Ttl::OneHour),
+            enabled(Ttl::InMemory)
+        );
+        assert_eq!(
+            run(Support::RequestRetention, Ttl::TwentyFourHours),
+            enabled(Ttl::TwentyFourHours)
+        );
+        assert_eq!(
+            run(Support::CacheControl, Ttl::InMemory),
+            enabled(Ttl::FiveMinutes)
+        );
+        assert_eq!(
+            run(Support::CacheControl, Ttl::OneHour),
+            enabled(Ttl::OneHour)
+        );
+        assert_eq!(
+            run(Support::ExplicitResource, Ttl::InMemory),
+            enabled(Ttl::OneHour)
+        );
+        assert_eq!(
+            run(Support::ExplicitResource, Ttl::FiveMinutes),
+            enabled(Ttl::FiveMinutes)
         );
     }
 

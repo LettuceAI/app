@@ -126,9 +126,13 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
     runtime: &dyn InferenceRuntimePort,
     replay_artifacts: Option<&dyn ProviderReplayArtifactPort>,
     media: Option<std::sync::Arc<dyn crate::media::ProviderMediaSource>>,
-    request: InferenceRequest,
+    mut request: InferenceRequest,
 ) -> Result<InferenceOutcome, AdapterError> {
     validate_common_request_with_tools(&request)?;
+    crate::common::normalize_prompt_caching(
+        provider.descriptor().prompt_caching,
+        &mut request.profile.chat_profile.parameters,
+    );
     let profile = &request.profile.chat_profile;
     if !matches!(profile.provider_config, ProviderConfig::Standard) {
         return Err(AdapterError::Rejected);
@@ -142,10 +146,9 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
         .ok_or(AdapterError::Rejected)?;
     let base = provider.api_base(endpoint);
     let path = provider.generate_path(&profile.external_model_id)?;
-    let streaming = request.stream_sink.is_some();
-    if streaming && (!profile.streaming_enabled || !provider.descriptor().streaming) {
-        return Err(AdapterError::Rejected);
-    }
+    let streaming = request.stream_sink.is_some()
+        && profile.streaming_enabled
+        && provider.descriptor().streaming;
     let media = crate::media::RequestMedia::load(&request, media).await?;
     let uncached = build_request_with_media(
         profile,
@@ -459,7 +462,9 @@ pub(crate) async fn list_models<S: SecretStore + ?Sized>(
     if !matches!(account.config, ProviderConfig::Standard) {
         return Err(AdapterError::Rejected);
     }
-    let path = provider.models_path().ok_or(AdapterError::Rejected)?;
+    let Some(path) = provider.models_path() else {
+        return Ok(Vec::new());
+    };
     let endpoint = account
         .endpoint
         .as_deref()

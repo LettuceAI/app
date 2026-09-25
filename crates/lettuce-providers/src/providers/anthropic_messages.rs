@@ -160,16 +160,19 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
     runtime: &dyn InferenceRuntimePort,
     replay_artifacts: Option<&dyn ProviderReplayArtifactPort>,
     media: Option<std::sync::Arc<dyn crate::media::ProviderMediaSource>>,
-    request: InferenceRequest,
+    mut request: InferenceRequest,
 ) -> Result<InferenceOutcome, AdapterError> {
     validate_common_request_with_tools(&request)?;
+    crate::common::normalize_prompt_caching(
+        provider.descriptor().prompt_caching,
+        &mut request.profile.chat_profile.parameters,
+    );
     let profile = &request.profile.chat_profile;
     let config = &profile.provider_config;
     if !provider.accepts(config) {
         return Err(AdapterError::Rejected);
     }
     provider.validate_parameters(&profile.parameters)?;
-    let streaming = request.stream_sink.is_some();
     validate_tool_features(profile, request.tools.as_ref(), replay_artifacts.is_some())?;
     let endpoint = profile
         .endpoint
@@ -177,9 +180,9 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
         .or_else(|| provider.default_endpoint())
         .ok_or(AdapterError::Rejected)?;
     let path = provider.chat_path(endpoint, config)?;
-    if streaming && (!profile.streaming_enabled || !provider.supports_streaming(config)) {
-        return Err(AdapterError::Rejected);
-    }
+    let streaming = request.stream_sink.is_some()
+        && profile.streaming_enabled
+        && provider.supports_streaming(config);
     let media = crate::media::RequestMedia::load(&request, media).await?;
     let body = encode_request(
         profile,

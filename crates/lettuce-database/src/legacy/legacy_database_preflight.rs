@@ -2708,12 +2708,14 @@ mod tests {
         );
         let custom_model = &plan.model_profiles[0];
         assert_eq!(custom_model.provider_account_id, custom_id);
+        assert_eq!(custom_model.config.chat_parameters.max_output_tokens, None);
+        assert_eq!(custom_model.config.chat_parameters.context_length, None);
         assert_eq!(
-            custom_model.config.chat_parameters.max_output_tokens,
+            custom_model.config.chat_parameters.ollama.num_predict,
             Some(512)
         );
         assert_eq!(
-            custom_model.config.chat_parameters.context_length,
+            custom_model.config.chat_parameters.ollama.num_ctx,
             Some(8192)
         );
         assert_eq!(

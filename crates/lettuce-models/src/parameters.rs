@@ -75,6 +75,14 @@ impl OpenRouterOptions {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub struct OllamaOptions {
+    /// Ollama's own context window; the provider-neutral context length is
+    /// sent only when this is unset.
+    #[serde(default)]
+    pub num_ctx: Option<u32>,
+    /// Ollama's own output cap; the provider-neutral output cap is sent only
+    /// when this is unset.
+    #[serde(default)]
+    pub num_predict: Option<u32>,
     pub num_keep: Option<u32>,
     pub num_batch: Option<u32>,
     pub num_gpu: Option<u32>,
@@ -91,6 +99,8 @@ pub struct OllamaOptions {
 
 impl OllamaOptions {
     pub fn validate(&self) -> Result<(), ParameterValidationError> {
+        validate_range_u32("ollama_num_ctx", self.num_ctx, 1, 262_144)?;
+        validate_range_u32("ollama_num_predict", self.num_predict, 1, 131_072)?;
         validate_max("ollama_num_keep", self.num_keep, 32_768)?;
         validate_range_u32("ollama_num_batch", self.num_batch, 1, 16_384)?;
         validate_max("ollama_num_gpu", self.num_gpu, 512)?;
@@ -246,6 +256,10 @@ impl ChatParameterOverrides {
 #[serde(deny_unknown_fields)]
 pub struct OllamaOptionOverrides {
     #[serde(default)]
+    pub num_ctx: ParameterOverride<u32>,
+    #[serde(default)]
+    pub num_predict: ParameterOverride<u32>,
+    #[serde(default)]
     pub num_keep: ParameterOverride<u32>,
     #[serde(default)]
     pub num_batch: ParameterOverride<u32>,
@@ -274,6 +288,8 @@ pub struct OllamaOptionOverrides {
 impl OllamaOptionOverrides {
     fn validate(&self) -> Result<(), ParameterValidationError> {
         let resolved = OllamaOptions {
+            num_ctx: set_value(&self.num_ctx),
+            num_predict: set_value(&self.num_predict),
             num_keep: set_value(&self.num_keep),
             num_batch: set_value(&self.num_batch),
             num_gpu: set_value(&self.num_gpu),

@@ -36,6 +36,15 @@ impl OpenAiWireProvider for Zai {
         None
     }
 
+    /// GLM only accepts `auto`, whatever choice the request makes.
+    fn tool_choice(
+        &self,
+        _choice: &lettuce_conversations::ToolChoice,
+        _config: &ProviderConfig,
+    ) -> Result<Option<Value>, AdapterError> {
+        Ok(Some(Value::String("auto".to_owned())))
+    }
+
     fn static_headers(&self) -> &'static [JsonStaticHeader] {
         &NO_HEADERS
     }

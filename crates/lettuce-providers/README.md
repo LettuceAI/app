@@ -153,6 +153,19 @@ share the 64 MiB bulk bound so phone photos fit.
 
 Deferred horizontals: custom-provider reasoning schema and structured output.
 
+Request policy follows legacy `request_builder`: a stream sink on an account
+or provider with streaming off runs the request buffered (legacy
+`effective_streaming_enabled`) instead of rejecting it. The prompt-caching
+flag is ignored for providers without explicit caching, and the stored TTL is
+read per provider (cache-control providers `1h` or else five minutes, Gemini
+`5min` or else one hour, OpenAI `24h` or else in-memory). zAI always sends
+`tool_choice: "auto"`. zAI and Gemini Express model listing returns an empty
+list. Ollama sends `num_ctx`/`num_predict` from its own settings first and
+falls back to the generic context length and output cap, as legacy
+`build_ollama_extra_fields` did; the legacy importer keeps `ollamaNumCtx` and
+`ollamaNumPredict` as Ollama settings instead of folding them into the generic
+fields.
+
 Response parsing is as lenient as legacy (`tooling.rs`, `sse.rs`):
 `tool_calls`/`reasoning`/`error` may be `null`; usage counters that are not
 integers are unknown; a tool call without an id gets `tool_call_{n}` (legacy

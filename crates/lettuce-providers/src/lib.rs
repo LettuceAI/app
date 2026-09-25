@@ -754,72 +754,65 @@ mod integration_tests {
     }
 
     #[tokio::test]
-    async fn preflight_rejects_before_loading_secrets() {
-        let store = Arc::new(RecordingSecretStore::default());
-        let adapter = RemoteProviders::new(
-            Arc::clone(&store),
-            Arc::new(JsonClient::new().expect("client")),
-        );
-        let owner = lettuce_settings::SecretOwnerId::new();
-        let request_id = RequestId::new();
-        let mut inference = request(profile(
-            "custom",
-            "https://example.invalid".to_owned(),
-            ProviderConfig::Custom(CustomProviderConfig {
-                chat_path: "/chat".to_owned(),
-                models_path: None,
-                streaming: false,
-                auth: CustomAuth::Bearer,
-                ..Default::default()
-            }),
-            Some(SecretRef::new()),
-            owner,
-        ));
-        inference.stream_sink = Some(request_id);
-        assert_eq!(
-            adapter.run(inference).await,
-            Err(lettuce_conversations::PortError::Rejected)
-        );
-        assert!(store.take_loads().is_empty());
-
-        for (kind, protocol, retention) in [
+    async fn stream_off_runs_buffered_and_unsupported_caching_is_ignored_like_legacy() {
+        for (kind, protocol, config, caching) in [
             (
-                "openai",
+                "custom",
                 ProviderProtocol::OpenAiCompatible,
-                lettuce_models::PromptCacheRetention::OneHour,
+                ProviderConfig::Custom(CustomProviderConfig {
+                    chat_path: "/chat".to_owned(),
+                    models_path: None,
+                    streaming: false,
+                    auth: CustomAuth::None,
+                    ..Default::default()
+                }),
+                None,
             ),
             (
                 "groq",
                 ProviderProtocol::OpenAiCompatible,
-                lettuce_models::PromptCacheRetention::FiveMinutes,
+                ProviderConfig::Standard,
+                Some(lettuce_models::PromptCacheRetention::FiveMinutes),
             ),
             (
-                "gemini",
-                ProviderProtocol::Gemini,
-                lettuce_models::PromptCacheRetention::InMemory,
-            ),
-            (
-                "gemini-agent-platform-express",
-                ProviderProtocol::Gemini,
-                lettuce_models::PromptCacheRetention::FiveMinutes,
+                "openai",
+                ProviderProtocol::OpenAiCompatible,
+                ProviderConfig::Standard,
+                Some(lettuce_models::PromptCacheRetention::FiveMinutes),
             ),
         ] {
-            let mut inference = request(profile(
-                kind,
-                "https://example.invalid".to_owned(),
-                ProviderConfig::Standard,
-                Some(SecretRef::new()),
-                owner,
-            ));
-            inference.profile.chat_profile.provider_protocol = protocol;
-            inference.profile.chat_profile.parameters.prompt_caching =
-                Some(lettuce_models::PromptCaching::Enabled { retention });
-            assert_eq!(
-                adapter.run(inference).await,
-                Err(lettuce_conversations::PortError::Rejected),
-                "{kind} must reject unsupported cache policy before secret loading"
+            let (endpoint, request_receiver) = test_server(response_body()).await;
+            let store = Arc::new(RecordingSecretStore::default());
+            let owner = lettuce_settings::SecretOwnerId::new();
+            let key_ref = SecretRef::new();
+            store
+                .put(
+                    SecretRecord::new(key_ref, SecretPurpose::ProviderApiKey { owner }),
+                    SecretValue::new("key").expect("secret"),
+                    None,
+                )
+                .await
+                .expect("store key");
+            let adapter = RemoteProviders::new(
+                Arc::clone(&store),
+                Arc::new(JsonClient::new().expect("client")),
             );
-            assert!(store.take_loads().is_empty());
+            let mut inference = request(profile(kind, endpoint, config, Some(key_ref), owner));
+            inference.profile.chat_profile.provider_protocol = protocol;
+            inference.stream_sink = (kind == "custom").then(RequestId::new);
+            inference.profile.chat_profile.parameters.prompt_caching =
+                caching.map(|retention| lettuce_models::PromptCaching::Enabled { retention });
+            let outcome = adapter.run(inference).await.expect(kind);
+            assert_eq!(outcome.candidates[0].parts.len(), 1, "{kind}");
+            let raw = String::from_utf8(request_receiver.await.expect("request")).expect("utf8");
+            let body: serde_json::Value =
+                serde_json::from_str(raw.split("\r\n\r\n").nth(1).expect("body")).expect("json");
+            if kind == "custom" {
+                assert_eq!(body["stream"], false);
+            }
+            if kind == "openai" {
+                assert_eq!(body["prompt_cache_retention"], "in_memory");
+            }
         }
     }
 
@@ -2910,9 +2903,24 @@ mod integration_tests {
         }
         for (kind, protocol) in [
             ("zai", ProviderProtocol::OpenAiCompatible),
-            ("intenserp", ProviderProtocol::OpenAiCompatible),
             ("gemini-agent-platform-express", ProviderProtocol::Gemini),
         ] {
+            assert_eq!(
+                providers
+                    .list_models(&account(
+                        kind,
+                        protocol,
+                        Some("http://127.0.0.1:1".to_owned()),
+                        ProviderConfig::Standard,
+                        Some(key_ref),
+                        owner,
+                    ))
+                    .await,
+                Ok(Vec::new()),
+                "legacy get_remote_models returned no models for {kind}"
+            );
+        }
+        for (kind, protocol) in [("intenserp", ProviderProtocol::OpenAiCompatible)] {
             assert!(
                 providers
                     .list_models(&account(

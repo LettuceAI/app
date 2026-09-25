@@ -4945,7 +4945,8 @@ mod tests {
         assert_eq!(parameters.chat_parameters.temperature, Some(0.7));
         assert_eq!(parameters.chat_parameters.repetition_penalty, None);
         assert_eq!(parameters.chat_parameters.send_thinking_state, Some(true));
-        assert_eq!(parameters.chat_parameters.context_length, Some(8192));
+        assert_eq!(parameters.chat_parameters.context_length, None);
+        assert_eq!(parameters.chat_parameters.ollama.num_ctx, Some(8192));
         assert_eq!(parameters.chat_parameters.reasoning_budget_tokens, None);
         let llama = &parameters.llama_cpp;
         assert_eq!(llama.gpu_layers, Some(33));

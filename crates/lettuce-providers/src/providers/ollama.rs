@@ -45,9 +45,13 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
     network: &JsonClient,
     runtime: &dyn InferenceRuntimePort,
     media: Option<std::sync::Arc<dyn crate::media::ProviderMediaSource>>,
-    request: InferenceRequest,
+    mut request: InferenceRequest,
 ) -> Result<InferenceOutcome, AdapterError> {
     validate_common_request_with_tools(&request)?;
+    crate::common::normalize_prompt_caching(
+        DESCRIPTOR.prompt_caching,
+        &mut request.profile.chat_profile.parameters,
+    );
     let profile = &request.profile.chat_profile;
     if !matches!(
         profile.provider_config,
@@ -59,10 +63,8 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
     validate_tool_features(profile, request.tools.as_ref())?;
     validate_prompt_caching(DESCRIPTOR.prompt_caching, &profile.parameters)?;
     let base = api_base(profile.endpoint.as_deref().unwrap_or(DEFAULT_ENDPOINT));
-    let streaming = request.stream_sink.is_some();
-    if streaming && (!profile.streaming_enabled || !DESCRIPTOR.streaming) {
-        return Err(AdapterError::Rejected);
-    }
+    let streaming =
+        request.stream_sink.is_some() && profile.streaming_enabled && DESCRIPTOR.streaming;
     let media = crate::media::RequestMedia::load(&request, media).await?;
     let body = encode_request(
         profile,
@@ -489,8 +491,11 @@ fn options(parameters: &lettuce_models::ResolvedChatParameters) -> Options {
         top_k: parameters.top_k,
         frequency_penalty: parameters.frequency_penalty,
         presence_penalty: parameters.presence_penalty,
-        num_ctx: parameters.context_length,
-        num_predict: max_output_tokens(parameters),
+        num_ctx: parameters.ollama.num_ctx.or(parameters.context_length),
+        num_predict: parameters
+            .ollama
+            .num_predict
+            .unwrap_or_else(|| max_output_tokens(parameters)),
         num_keep: parameters.ollama.num_keep,
         num_batch: parameters.ollama.num_batch,
         num_gpu: parameters.ollama.num_gpu,
@@ -909,6 +914,8 @@ mod tests {
         let mut parameters = crate::integration_tests::parameters();
         parameters.repetition_penalty = Some(1.1);
         parameters.ollama = lettuce_models::OllamaOptions {
+            num_ctx: None,
+            num_predict: None,
             num_keep: Some(32),
             num_batch: Some(128),
             num_gpu: Some(2),
@@ -928,6 +935,17 @@ mod tests {
         assert_eq!(options["repeat_penalty"], serde_json::json!(1.1));
         assert_eq!(options["stop"], serde_json::json!(["END"]));
         assert_eq!(options.as_object().expect("options").len(), 16);
+    }
+
+    #[test]
+    fn ollama_specific_context_and_output_win_over_the_generic_values_like_legacy() {
+        let mut parameters = crate::integration_tests::parameters();
+        parameters.context_length = Some(128_000);
+        parameters.ollama.num_ctx = Some(8192);
+        parameters.ollama.num_predict = Some(512);
+        let options = options(&parameters);
+        assert_eq!(options.num_ctx, Some(8192));
+        assert_eq!(options.num_predict, 512);
     }
 
     #[test]
