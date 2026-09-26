@@ -14,7 +14,7 @@ use lettuce_types::{DynamicMemoryAttemptId, DynamicMemoryRunId, TimestampMillis}
 use crate::{
     CompanionMemoryContinuationError, CompanionMemoryInferenceError, CompanionMemoryLoopError,
     CompanionMemoryRoundExecutionError, CompanionPostTurnEffectCoordinator,
-    CompanionPostTurnEffectError, CompanionPostTurnFailure, CompanionPostTurnMemoryBatch,
+    CompanionPostTurnEffectError, CompanionPostTurnMemoryBatch,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -110,17 +110,6 @@ impl CompanionMemoryTerminalFailure {
             | CompanionMemoryLoopError::Run(_)
             | CompanionMemoryLoopError::Execution(_)
             | CompanionMemoryLoopError::Continuation(_) => Self::Recovery,
-        }
-    }
-
-    const fn effect_failure(self) -> CompanionPostTurnFailure {
-        match self {
-            Self::ProviderUnavailable | Self::ProviderRejected | Self::EmptyResponse => {
-                CompanionPostTurnFailure::Provider
-            }
-            Self::RoundLimit | Self::Tool => CompanionPostTurnFailure::Tool,
-            Self::Cancelled => CompanionPostTurnFailure::Cancelled,
-            Self::Recovery => CompanionPostTurnFailure::Recovery,
         }
     }
 
@@ -246,6 +235,9 @@ impl<
         })
     }
 
+    /// Ends a failed or cancelled attempt. Its companion effects stay
+    /// processing, so the next cycle summarizes their messages again, as
+    /// legacy's cursor stayed put after a failed cycle.
     #[allow(clippy::too_many_arguments)]
     pub fn settle_failure(
         &self,
@@ -263,18 +255,7 @@ impl<
         {
             return Err(CompanionMemoryTerminalError::InvalidOwnership);
         }
-        let effects = if batch.settle_effects() {
-            let effect_coordinator = CompanionPostTurnEffectCoordinator::new(self.repository);
-            batch
-                .effects()
-                .iter()
-                .map(|effect| {
-                    effect_coordinator.settle_failed(effect, failure.effect_failure(), now)
-                })
-                .collect::<Result<Vec<_>, _>>()?
-        } else {
-            batch.effects().to_vec()
-        };
+        let effects = batch.effects().to_vec();
         let attempt = if attempt.status == DynamicMemoryAttemptStatus::Processing {
             self.repository.transition_dynamic_memory_attempt(
                 attempt.id,

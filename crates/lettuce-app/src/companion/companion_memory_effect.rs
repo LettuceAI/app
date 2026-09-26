@@ -9,25 +9,6 @@ use lettuce_companions::{
 use lettuce_memory::{MemoryItem, MemorySpaceSnapshot};
 use lettuce_types::{MessageId, TimestampMillis};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CompanionPostTurnFailure {
-    Provider,
-    Tool,
-    Cancelled,
-    Recovery,
-}
-
-impl CompanionPostTurnFailure {
-    const fn summary(self) -> &'static str {
-        match self {
-            Self::Provider => "Dynamic memory provider failed",
-            Self::Tool => "Dynamic memory tool execution failed",
-            Self::Cancelled => "Dynamic memory was cancelled",
-            Self::Recovery => "Dynamic memory recovery failed",
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct CompanionPostTurnEffect<'a> {
     pub effect: &'a CompanionTurnEffect,
@@ -108,29 +89,6 @@ impl<'a, R: CompanionTurnEffectRepository + ?Sized> CompanionPostTurnEffectCoord
             );
         }
         Ok(settled)
-    }
-
-    pub fn settle_failed(
-        &self,
-        effect: &CompanionTurnEffect,
-        failure: CompanionPostTurnFailure,
-        settled_at: TimestampMillis,
-    ) -> Result<CompanionTurnEffect, CompanionPostTurnEffectError> {
-        if !matches!(
-            effect.status,
-            CompanionTurnEffectStatus::Processing | CompanionTurnEffectStatus::Failed
-        ) {
-            return Err(CompanionPostTurnEffectError::InvalidEffect);
-        }
-        self.repository
-            .settle(
-                effect.id,
-                CompanionTurnEffectOutcome::Failed {
-                    summary: failure.summary().to_owned(),
-                },
-                settled_at,
-            )
-            .map_err(CompanionPostTurnEffectError::Repository)
     }
 }
 
@@ -552,7 +510,7 @@ mod tests {
     }
 
     #[test]
-    fn no_op_is_ready_and_failure_uses_bounded_stable_reason() {
+    fn no_op_effect_settles_ready() {
         let repository = EffectRepository::default();
         let coordinator = CompanionPostTurnEffectCoordinator::new(&repository);
         let ready = effect(
@@ -579,34 +537,6 @@ mod tests {
         assert_eq!(
             settled[0].summary.as_deref(),
             Some("stability +0%, blocked reassurance need +0%")
-        );
-
-        let failed = effect(
-            ConversationId::new(),
-            None,
-            MessageId::new(),
-            CompanionTurnEffectSeed::default(),
-        );
-        repository.insert(failed.clone());
-        let failed = coordinator
-            .settle_failed(
-                &failed,
-                CompanionPostTurnFailure::Tool,
-                TimestampMillis::new(30),
-            )
-            .expect("settle failure");
-        assert_eq!(failed.status, CompanionTurnEffectStatus::Failed);
-        assert_eq!(
-            failed.summary.as_deref(),
-            Some("Dynamic memory tool execution failed")
-        );
-        assert_eq!(
-            coordinator.settle_failed(
-                &failed,
-                CompanionPostTurnFailure::Tool,
-                TimestampMillis::new(30),
-            ),
-            Ok(failed)
         );
     }
 }

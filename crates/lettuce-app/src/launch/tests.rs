@@ -3441,21 +3441,21 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     assert_eq!(failed_replay, failed);
     assert_eq!(failed.attempt.status, DynamicMemoryAttemptStatus::Cancelled);
     let failed = failed.effects.into_iter().next().expect("failed effect");
-    assert_eq!(failed.status, CompanionTurnEffectStatus::Failed);
-    assert_eq!(
-        failed.summary.as_deref(),
-        Some("Dynamic memory was cancelled")
-    );
+    assert_eq!(failed.status, CompanionTurnEffectStatus::Processing);
+    assert_eq!(failed.summary, None);
     assert_eq!(
         GlobalSettingsStore::load(&database)
             .expect("settings after cancelled retry")
             .dynamic_memory_model_profile_id,
         Some(model.source_id)
     );
-    assert!(
+    assert_eq!(
         CompanionTurnEffectRepository::list_processing(&database, 512)
-            .expect("failed effect is not pending")
-            .is_empty()
+            .expect("a failed cycle leaves its effect pending for the next cycle")
+            .into_iter()
+            .map(|effect| effect.id)
+            .collect::<Vec<_>>(),
+        [failed.id]
     );
 
     let before_delete = ConversationReader::get(&database, current.id)
