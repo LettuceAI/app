@@ -3369,7 +3369,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                 render_source: continued_source.message.active_render_source,
                 effective_time: continued_source.message.effective_time,
             }],
-            profile,
+            profile: profile.clone(),
             time_awareness_enabled: false,
             supersession_enabled: false,
             structured_fallback_format: lettuce_memory::DynamicMemoryStructuredFallbackFormat::Xml,
@@ -3458,6 +3458,108 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             .map(|effect| effect.id)
             .collect::<Vec<_>>(),
         [failed.id]
+    );
+    let mut pending = failed;
+    for cycle in 0..crate::MAX_FAILED_EFFECT_CYCLES {
+        let at = NOW.get() + 50 + i64::from(cycle) * 10;
+        let run_id = DynamicMemoryRunId::new();
+        let attempt_id = DynamicMemoryAttemptId::new();
+        let job_id = JobId::new();
+        let memory = MemoryRepository::get_for_conversation(&database, current.id)
+            .expect("memory")
+            .expect("memory space");
+        let admitted = database
+            .admit_dynamic_memory_run_attempt(NewDynamicMemoryRunAttempt {
+                run_id,
+                attempt_id,
+                conversation_id: current.id,
+                space_id: memory.id,
+                cycle_start_change: None,
+                starting_memory: memory,
+                source_messages: vec![DynamicMemorySourceMessage {
+                    message_id: continued_source.message.id,
+                    role: continued_source.message.role,
+                    render_source: continued_source.message.active_render_source,
+                    effective_time: continued_source.message.effective_time,
+                }],
+                profile: profile.clone(),
+                time_awareness_enabled: false,
+                supersession_enabled: false,
+                structured_fallback_format:
+                    lettuce_memory::DynamicMemoryStructuredFallbackFormat::Xml,
+                summary_window: lettuce_memory::DynamicMemorySummaryWindow {
+                    message_interval: 1,
+                    start: stored_summary.window_end,
+                    end: stored_summary.window_end + 1,
+                },
+                tool_request: lettuce_memory::dynamic_memory_tool_request_for_run(
+                    lettuce_memory::DynamicMemoryToolOptions {
+                        group: false,
+                        supersession_enabled: false,
+                        require_source_message_id: false,
+                    },
+                    &|key| key.to_owned(),
+                ),
+                job_id,
+                now: TimestampMillis::new(at),
+            })
+            .expect("retry run");
+        database
+            .transition_dynamic_memory_attempt(
+                attempt_id,
+                admitted.attempt.revision,
+                DynamicMemoryAttemptStatus::Processing,
+                None,
+                TimestampMillis::new(at),
+            )
+            .expect("retry processing");
+        let mut batch = failure_batch.clone();
+        batch.source = crate::PostTurnMemorySource::CompanionEffects {
+            effects: vec![pending.clone()],
+            source_effect_offset: 0,
+            settle_effects: true,
+        };
+        pending = terminal
+            .settle_failure(
+                run_id,
+                attempt_id,
+                &batch,
+                &JobHandle::new(job_id),
+                crate::CompanionMemoryTerminalFailure::ProviderUnavailable,
+                TimestampMillis::new(at + 1),
+            )
+            .expect("provider failure")
+            .effects
+            .remove(0);
+        let exhausted = cycle + 1 == crate::MAX_FAILED_EFFECT_CYCLES;
+        assert_eq!(
+            pending.status,
+            if exhausted {
+                CompanionTurnEffectStatus::Failed
+            } else {
+                CompanionTurnEffectStatus::Processing
+            }
+        );
+    }
+    assert_eq!(
+        pending.summary.as_deref(),
+        Some("Dynamic memory provider was unavailable")
+    );
+    assert_eq!(
+        CompanionTurnEffectRepository::reopen_failed(
+            &database,
+            current.id,
+            TimestampMillis::new(NOW.get() + 90)
+        ),
+        Ok(1)
+    );
+    let reopened = CompanionTurnEffectRepository::list_processing(&database, 512)
+        .expect("a user-triggered retry reopens the failed effect");
+    assert_eq!(reopened.len(), 1);
+    assert_eq!(reopened[0].summary, None);
+    assert_eq!(
+        CompanionTurnEffectRepository::failed_memory_cycles(&database, &reopened[0]),
+        Ok(0)
     );
 
     let before_delete = ConversationReader::get(&database, current.id)

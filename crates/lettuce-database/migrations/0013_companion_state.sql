@@ -279,7 +279,9 @@ BEGIN SELECT RAISE(ABORT, 'companion effect invalidation cannot be deleted'); EN
 
 CREATE TRIGGER companion_turn_effect_terminal_update
 BEFORE UPDATE ON companion_turn_effects
-WHEN OLD.status IN ('ready', 'failed')
+WHEN OLD.status = 'ready'
+  OR (OLD.status = 'failed'
+      AND NOT (NEW.status = 'processing' AND NEW.summary IS NULL AND NEW.enqueued_at IS NULL))
 BEGIN
     SELECT RAISE(ABORT, 'terminal companion turn effect is immutable');
 END;

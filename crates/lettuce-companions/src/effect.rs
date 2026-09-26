@@ -261,6 +261,25 @@ pub trait CompanionTurnEffectRepository: Send + Sync {
         outcome: CompanionTurnEffectOutcome,
         now: TimestampMillis,
     ) -> Result<CompanionTurnEffect, CompanionTurnEffectRepositoryError>;
+
+    /// How many memory cycles covering the effect's assistant message failed
+    /// since the effect last became processing.
+    fn failed_memory_cycles(
+        &self,
+        _effect: &CompanionTurnEffect,
+    ) -> Result<u32, CompanionTurnEffectRepositoryError> {
+        Err(CompanionTurnEffectRepositoryError::Invalid)
+    }
+
+    /// Makes the conversation's failed effects processing again for a
+    /// user-triggered cycle; answers how many were reopened.
+    fn reopen_failed(
+        &self,
+        _conversation_id: ConversationId,
+        _now: TimestampMillis,
+    ) -> Result<u32, CompanionTurnEffectRepositoryError> {
+        Err(CompanionTurnEffectRepositoryError::Invalid)
+    }
 }
 
 fn vector_delta(previous: &EmotionVector, current: &EmotionVector) -> EmotionVector {

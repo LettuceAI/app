@@ -17,6 +17,9 @@ use crate::{
     CompanionPostTurnEffectError, CompanionPostTurnMemoryBatch,
 };
 
+/// Failed memory cycles after which an effect settles failed.
+pub const MAX_FAILED_EFFECT_CYCLES: u32 = 3;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompanionMemoryTerminalResult {
     pub attempt: DynamicMemoryAttempt,
@@ -110,6 +113,19 @@ impl CompanionMemoryTerminalFailure {
             | CompanionMemoryLoopError::Run(_)
             | CompanionMemoryLoopError::Execution(_)
             | CompanionMemoryLoopError::Continuation(_) => Self::Recovery,
+        }
+    }
+
+    /// Why an effect's memory failed, shown with the effect.
+    const fn effect_summary(self) -> &'static str {
+        match self {
+            Self::ProviderUnavailable => "Dynamic memory provider was unavailable",
+            Self::ProviderRejected => "Dynamic memory provider rejected the request",
+            Self::EmptyResponse => "Dynamic memory provider returned an empty response",
+            Self::RoundLimit => "Dynamic memory reached its round limit",
+            Self::Tool => "Dynamic memory tool execution failed",
+            Self::Cancelled => "Dynamic memory was cancelled",
+            Self::Recovery => "Dynamic memory recovery failed",
         }
     }
 
@@ -237,7 +253,9 @@ impl<
 
     /// Ends a failed or cancelled attempt. Its companion effects stay
     /// processing, so the next cycle summarizes their messages again, as
-    /// legacy's cursor stayed put after a failed cycle.
+    /// legacy's cursor stayed put after a failed cycle; an effect whose
+    /// messages failed [`MAX_FAILED_EFFECT_CYCLES`] cycles settles failed with
+    /// the last failure, until a user-triggered cycle reopens it.
     #[allow(clippy::too_many_arguments)]
     pub fn settle_failure(
         &self,
@@ -255,7 +273,6 @@ impl<
         {
             return Err(CompanionMemoryTerminalError::InvalidOwnership);
         }
-        let effects = batch.effects().to_vec();
         let attempt = if attempt.status == DynamicMemoryAttemptStatus::Processing {
             self.repository.transition_dynamic_memory_attempt(
                 attempt.id,
@@ -267,6 +284,30 @@ impl<
         } else {
             attempt
         };
+        let mut effects = batch.effects().to_vec();
+        if batch.settle_effects() && status == DynamicMemoryAttemptStatus::Failed {
+            for effect in &mut effects {
+                if effect.status != lettuce_companions::CompanionTurnEffectStatus::Processing
+                    || self
+                        .repository
+                        .failed_memory_cycles(effect)
+                        .map_err(CompanionPostTurnEffectError::Repository)?
+                        < MAX_FAILED_EFFECT_CYCLES
+                {
+                    continue;
+                }
+                *effect = self
+                    .repository
+                    .settle(
+                        effect.id,
+                        lettuce_companions::CompanionTurnEffectOutcome::Failed {
+                            summary: failure.effect_summary().to_owned(),
+                        },
+                        now,
+                    )
+                    .map_err(CompanionPostTurnEffectError::Repository)?;
+            }
+        }
         Ok(CompanionMemoryTerminalResult {
             attempt,
             effects,

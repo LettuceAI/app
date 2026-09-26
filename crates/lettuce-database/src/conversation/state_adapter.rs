@@ -1528,6 +1528,52 @@ pub(crate) fn load_effect(
 }
 
 impl CompanionTurnEffectRepository for Database {
+    fn failed_memory_cycles(
+        &self,
+        effect: &CompanionTurnEffect,
+    ) -> Result<u32, CompanionTurnEffectRepositoryError> {
+        let connection = self.connection().map_err(effect_failure)?;
+        let count = connection
+            .query_row(
+                "SELECT COUNT(DISTINCT attempt.id)
+                   FROM dynamic_memory_run_attempts attempt
+                   JOIN dynamic_memory_runs run ON run.id = attempt.run_id
+                   JOIN dynamic_memory_run_source_messages source ON source.run_id = run.id
+                  WHERE run.conversation_id = ?1 AND source.message_id = ?2
+                    AND attempt.status = 'failed' AND attempt.finished_at >= ?3",
+                params![
+                    effect.conversation_id.to_string(),
+                    effect.assistant_message_id.to_string(),
+                    effect.updated_at.get()
+                ],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(effect_failure)?;
+        u32::try_from(count).map_err(effect_corrupt)
+    }
+
+    fn reopen_failed(
+        &self,
+        conversation_id: ConversationId,
+        now: TimestampMillis,
+    ) -> Result<u32, CompanionTurnEffectRepositoryError> {
+        let connection = self.connection().map_err(effect_failure)?;
+        let reopened = connection
+            .execute(
+                "UPDATE companion_turn_effects
+                    SET status = 'processing', summary = NULL, enqueued_at = NULL,
+                        updated_at = max(updated_at, ?2)
+                  WHERE conversation_id = ?1 AND status = 'failed'
+                    AND NOT EXISTS (
+                        SELECT 1 FROM companion_turn_effect_invalidations invalidation
+                        WHERE invalidation.effect_id = companion_turn_effects.id
+                    )",
+                params![conversation_id.to_string(), now.get()],
+            )
+            .map_err(effect_failure)?;
+        u32::try_from(reopened).map_err(effect_corrupt)
+    }
+
     fn get_for_message(
         &self,
         conversation_id: ConversationId,

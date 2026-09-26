@@ -68,6 +68,8 @@ pub enum CompanionMemoryHostError {
     Dispatch(#[from] CompanionMemoryDispatchError),
     #[error("post-turn memory runtime inputs are unavailable: {0}")]
     RuntimeInputs(CompanionMemoryRuntimeInputError),
+    #[error("companion turn effects are unavailable: {0:?}")]
+    Effects(lettuce_companions::CompanionTurnEffectRepositoryError),
 }
 
 /// Every port the post-turn memory host reads; the composition root's
@@ -189,7 +191,8 @@ where
 
     /// Legacy `trigger_dynamic_memory` (and `retry_dynamic_memory` with a
     /// model override): a forced cycle over the most recent window, which also
-    /// answers an `ask_first` approval. The same gate as `after_turn` applies,
+    /// answers an `ask_first` approval. Companion effects that settled failed
+    /// are pending again for it. The same gate as `after_turn` applies,
     /// as legacy's cycle checked it before running.
     /// A cycle already running for the conversation is reported as
     /// `CycleInProgress`; an empty result means memory is gated off.
@@ -210,6 +213,19 @@ where
         let dispatcher = CompanionMemoryDispatchCoordinator::new(self.repository, self.repository);
         let interval = active.settings.summary_message_interval;
         if active.companion {
+            let reopened = lettuce_companions::CompanionTurnEffectRepository::reopen_failed(
+                self.repository,
+                conversation_id,
+                now,
+            )
+            .map_err(CompanionMemoryHostError::Effects)?;
+            if reopened > 0 {
+                tracing::info!(
+                    %conversation_id,
+                    reopened,
+                    "a user-triggered cycle retries failed turn effects"
+                );
+            }
             match model_profile_id {
                 Some(model_profile_id) => Ok(dispatcher.retry_direct_with_model_and_claim(
                     conversation_id,
