@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 pub(crate) const MAX_DISPLAY_CHARS: usize = 256;
 pub(crate) const MAX_AUTHORED_TEXT_BYTES: usize = 8 * 1024 * 1024;
-pub(crate) const MAX_REASONING_BYTES: usize = 256 * 1024;
+pub(crate) const MAX_GUIDANCE_BYTES: usize = 256 * 1024;
 pub(crate) const MAX_ANNOTATION_BYTES: usize = 64 * 1024;
 pub(crate) const MAX_CONDITION_DEPTH: usize = 16;
 pub(crate) const MAX_CONDITION_NODES: usize = 256;

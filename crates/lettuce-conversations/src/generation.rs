@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::ValidationError;
 use crate::snapshot::{ModelSelectionSnapshot, ValidateSnapshot};
 use crate::validation::{
-    MAX_REASONING_BYTES, validate_revision_timestamps, validate_text, validate_unique,
+    MAX_GUIDANCE_BYTES, validate_revision_timestamps, validate_text, validate_unique,
 };
 
 pub use lettuce_jobs::IdempotencyKey;
@@ -186,7 +186,7 @@ impl SelectedSpeakerDecision {
             validate_text(
                 "selected_speaker.rationale_summary",
                 rationale,
-                MAX_REASONING_BYTES,
+                MAX_GUIDANCE_BYTES,
                 false,
             )?;
         }
@@ -556,7 +556,7 @@ impl GenerationTurn {
             validate_text(
                 "generation_turn.guidance",
                 guidance,
-                MAX_REASONING_BYTES,
+                MAX_GUIDANCE_BYTES,
                 false,
             )?;
         }
@@ -856,12 +856,12 @@ impl GenerationStreamEventEnvelope {
         }
         match &self.event {
             GenerationStreamEvent::TextDelta { text } => {
-                validate_text("generation_stream.text", text, MAX_REASONING_BYTES, true)
+                validate_text("generation_stream.text", text, MAX_GUIDANCE_BYTES, true)
             }
             GenerationStreamEvent::ReasoningDelta { text } => validate_text(
                 "generation_stream.reasoning",
                 text,
-                MAX_REASONING_BYTES,
+                MAX_GUIDANCE_BYTES,
                 true,
             ),
         }

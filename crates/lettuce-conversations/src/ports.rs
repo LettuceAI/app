@@ -1247,7 +1247,7 @@ impl ContextRequest {
             crate::validation::validate_text(
                 "context_request.guidance",
                 guidance,
-                crate::validation::MAX_REASONING_BYTES,
+                crate::validation::MAX_GUIDANCE_BYTES,
                 false,
             )?;
         }
@@ -1553,7 +1553,7 @@ impl MemoryContribution {
             crate::validation::validate_text(
                 "memory_contribution.summary",
                 summary,
-                crate::validation::MAX_REASONING_BYTES,
+                crate::validation::MAX_GUIDANCE_BYTES,
                 false,
             )?;
         }
@@ -1561,7 +1561,7 @@ impl MemoryContribution {
             crate::validation::validate_text(
                 "memory_contribution.memory",
                 &line.text,
-                crate::validation::MAX_REASONING_BYTES,
+                crate::validation::MAX_GUIDANCE_BYTES,
                 false,
             )?;
             if let Some(observed) = &line.observed {

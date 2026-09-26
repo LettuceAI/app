@@ -206,6 +206,14 @@ mod tests {
     }
 
     #[test]
+    fn long_reasoning_is_kept_like_message_text() {
+        let part = super::MessagePart::ReasoningSummary {
+            text: "r".repeat(1024 * 1024),
+        };
+        assert!(part.validate().is_ok());
+    }
+
+    #[test]
     fn provider_replay_debug_redacts_opaque_content() {
         let artifact = ReplayArtifactRef {
             artifact_id: ReplayArtifactId::new(),

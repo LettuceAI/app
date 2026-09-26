@@ -1319,7 +1319,7 @@ impl ConversationMutation {
                     validate_text(
                         "regenerate.guidance",
                         guidance,
-                        crate::validation::MAX_REASONING_BYTES,
+                        crate::validation::MAX_GUIDANCE_BYTES,
                         false,
                     )?;
                 }

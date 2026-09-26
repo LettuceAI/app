@@ -8,8 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::ValidationError;
 use crate::snapshot::{ModelSelectionSnapshot, ValidateSnapshot};
 use crate::validation::{
-    MAX_ANNOTATION_BYTES, MAX_AUTHORED_TEXT_BYTES, MAX_REASONING_BYTES,
-    validate_revision_timestamps, validate_text,
+    MAX_ANNOTATION_BYTES, MAX_AUTHORED_TEXT_BYTES, validate_revision_timestamps, validate_text,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -127,7 +126,7 @@ impl MessagePart {
             Self::ReasoningSummary { text } => validate_text(
                 "message_part.reasoning_summary",
                 text,
-                MAX_REASONING_BYTES,
+                MAX_AUTHORED_TEXT_BYTES,
                 true,
             ),
             Self::Annotation { annotation } => annotation.validate(),
