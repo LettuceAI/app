@@ -489,9 +489,7 @@ mod tests {
             conflict_exchange,
             SyncExchangeOutcome::Complete(_)
         ));
-        let conflicts = left
-            .unresolved_persona_conflicts(100)
-            .expect("left conflicts");
+        let conflicts = left.unresolved_persona_conflicts().expect("left conflicts");
         assert_eq!(conflicts.len(), 1);
         left.resolve_persona_conflict(
             conflicts[0].id,
@@ -515,7 +513,7 @@ mod tests {
         assert!(converged_left.revision > left_revision.revision);
         assert!(
             right
-                .unresolved_persona_conflicts(100)
+                .unresolved_persona_conflicts()
                 .expect("right conflicts")
                 .is_empty()
         );

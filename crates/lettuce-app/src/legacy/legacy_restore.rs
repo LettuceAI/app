@@ -1326,7 +1326,7 @@ mod tests {
             ]
         );
         let forks =
-            lettuce_sync::ConversationForkRepository::unresolved_conversation_forks(&restored, 10)
+            lettuce_sync::ConversationForkRepository::unresolved_conversation_forks(&restored)
                 .expect("fork notices");
         assert_eq!(forks.len(), 2);
         let effect = &graph.companion_effects.effects[0];

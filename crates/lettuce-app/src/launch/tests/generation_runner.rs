@@ -6288,8 +6288,8 @@ async fn concurrent_replies_fork_into_a_branch_and_notify_both_devices() {
     let path = branch_timeline(&a, scenario.conversation_id, root);
     assert_eq!(path, branch_timeline(&b, scenario.conversation_id, root));
     assert_eq!(path.len(), 4);
-    let forks_a = a.unresolved_conversation_forks(10).expect("a forks");
-    let forks_b = b.unresolved_conversation_forks(10).expect("b forks");
+    let forks_a = a.unresolved_conversation_forks().expect("a forks");
+    let forks_b = b.unresolved_conversation_forks().expect("b forks");
     assert_eq!(forks_a.len(), 1);
     assert_eq!(forks_b.len(), 1);
     assert_eq!(forks_a[0].branch_id, forks_b[0].branch_id);
@@ -6387,7 +6387,7 @@ async fn concurrent_replies_fork_into_a_branch_and_notify_both_devices() {
     a.resolve_conversation_fork(scenario.conversation_id, fork, TimestampMillis::new(4_000))
         .expect("resolve");
     assert!(
-        a.unresolved_conversation_forks(10)
+        a.unresolved_conversation_forks()
             .expect("a forks")
             .is_empty()
     );
@@ -6422,8 +6422,8 @@ async fn concurrent_first_messages_fork_the_losing_chain_into_its_own_conversati
     let path = branch_timeline(&a, scenario.conversation_id, root);
     assert_eq!(path.len(), 2);
     assert_eq!(path, branch_timeline(&b, scenario.conversation_id, root));
-    let forks_a = a.unresolved_conversation_forks(10).expect("a forks");
-    let forks_b = b.unresolved_conversation_forks(10).expect("b forks");
+    let forks_a = a.unresolved_conversation_forks().expect("a forks");
+    let forks_b = b.unresolved_conversation_forks().expect("b forks");
     assert_eq!(forks_a.len(), 1);
     assert_eq!(forks_b.len(), 1);
     assert_eq!(forks_a[0].conversation_id, forks_b[0].conversation_id);
@@ -7510,7 +7510,7 @@ async fn re_sent_chats_meet_a_peer_that_still_holds_them_without_conflicts() {
         conflicts_before
     );
     assert!(
-        c.unresolved_conversation_forks(10)
+        c.unresolved_conversation_forks()
             .expect("c forks")
             .is_empty()
     );
@@ -7547,7 +7547,7 @@ async fn re_sent_chats_meet_a_peer_that_still_holds_them_without_conflicts() {
     for database in [&a, &b, &c] {
         assert!(
             database
-                .unresolved_conversation_forks(10)
+                .unresolved_conversation_forks()
                 .expect("forks")
                 .is_empty()
         );
@@ -7601,11 +7601,7 @@ async fn a_chat_kept_for_another_devices_messages_goes_back_whole() {
     };
     assert_eq!(messages(&b).len(), 4);
     assert_eq!(messages(&a), messages(&b), "a gets the whole chat back");
-    assert!(
-        a.unresolved_conversation_forks(10)
-            .expect("forks")
-            .is_empty()
-    );
+    assert!(a.unresolved_conversation_forks().expect("forks").is_empty());
 
     for (from, to, at) in [
         (&a, &c, 3_600),

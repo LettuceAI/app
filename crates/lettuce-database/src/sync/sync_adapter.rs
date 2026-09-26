@@ -7,8 +7,8 @@ use lettuce_sync::{
     IncomingBatchResult, IncomingBatchState, IncomingChangeError, IncomingChangeRepository,
     LocalChangeAdmission, LocalChangeJournal, LocalChangeJournalError, MAX_FRONTIER_DEVICES,
     MAX_INCOMING_CHANGES, MAX_INCOMING_PAYLOAD_BYTES, MAX_OUTBOUND_CHANGES,
-    MAX_OUTBOUND_PAYLOAD_BYTES, MAX_UNRESOLVED_CONFLICTS, MEDIA_ASSET_SYNC_SCHEMA,
-    MEDIA_ASSET_SYNC_VERSION, NewCanonicalChange, OutboundChangeBatch, PERSONA_DEFAULT_SYNC_SCHEMA,
+    MAX_OUTBOUND_PAYLOAD_BYTES, MEDIA_ASSET_SYNC_SCHEMA, MEDIA_ASSET_SYNC_VERSION,
+    NewCanonicalChange, OutboundChangeBatch, PERSONA_DEFAULT_SYNC_SCHEMA,
     PERSONA_DEFAULT_SYNC_VERSION, PERSONA_SYNC_SCHEMA, PERSONA_SYNC_VERSION, PersonaConflict,
     PersonaConflictCandidate, PersonaConflictRepository, PersonaConflictValue, SyncChangeId,
     SyncDeviceId, SyncEntity, canonical_batch_hash, canonical_persona_default_payload,
@@ -4786,27 +4786,23 @@ impl LocalChangeJournal for Database {
 impl lettuce_sync::ConversationForkRepository for Database {
     fn unresolved_conversation_forks(
         &self,
-        limit: usize,
     ) -> Result<Vec<lettuce_sync::ConversationFork>, ConflictRepositoryError> {
         let connection = self.connection().map_err(conflict_storage)?;
         let mut statement = connection
             .prepare(
                 "SELECT conversation_id, branch_id, holds_local, detected_at FROM sync_conversation_forks
-                 WHERE resolved_at IS NULL ORDER BY detected_at DESC, conversation_id, branch_id LIMIT ?1",
+                 WHERE resolved_at IS NULL ORDER BY detected_at DESC, conversation_id, branch_id",
             )
             .map_err(conflict_storage)?;
         let rows = statement
-            .query_map(
-                [i64::try_from(limit.min(MAX_UNRESOLVED_CONFLICTS)).map_err(conflict_corrupt)?],
-                |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, i64>(2)?,
-                        row.get::<_, i64>(3)?,
-                    ))
-                },
-            )
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, i64>(3)?,
+                ))
+            })
             .map_err(conflict_storage)?;
         rows.map(|row| {
             let (conversation, branch, holds_local, detected_at) = row.map_err(conflict_storage)?;
@@ -4843,7 +4839,6 @@ impl lettuce_sync::ConversationForkRepository for Database {
 impl PersonaConflictRepository for Database {
     fn unresolved_persona_conflicts(
         &self,
-        limit: usize,
     ) -> Result<Vec<PersonaConflict>, ConflictRepositoryError> {
         let connection = self.connection().map_err(conflict_storage)?;
         let mut statement = connection
@@ -4854,20 +4849,16 @@ impl PersonaConflictRepository for Database {
                         resolution_choice, resolved_by_change_id, conflict_id
                  FROM sync_conflicts
                  WHERE status = 'unresolved' AND entity_kind IN ('persona', 'persona_default')
-                 ORDER BY detected_at DESC, conflict_id
-                 LIMIT ?1",
+                 ORDER BY detected_at DESC, conflict_id",
             )
             .map_err(conflict_storage)?;
         let rows = statement
-            .query_map(
-                [i64::try_from(limit.min(MAX_UNRESOLVED_CONFLICTS)).map_err(conflict_corrupt)?],
-                |row| {
-                    Ok((
-                        StoredConflictRecord::from_row(row)?,
-                        row.get::<_, String>(11)?,
-                    ))
-                },
-            )
+            .query_map([], |row| {
+                Ok((
+                    StoredConflictRecord::from_row(row)?,
+                    row.get::<_, String>(11)?,
+                ))
+            })
             .map_err(conflict_storage)?;
         let mut conflicts = Vec::new();
         for row in rows {
@@ -5263,6 +5254,35 @@ mod tests {
             Some(CanonicalPayload::new("persona", 1, bytes.to_vec()).expect("payload")),
         )
         .expect("request")
+    }
+
+    #[test]
+    fn every_unresolved_conversation_fork_is_listed() {
+        let database = Database::open_in_memory().expect("database");
+        let connection = database.connection().expect("connection");
+        connection
+            .execute_batch("PRAGMA foreign_keys = OFF")
+            .expect("fixture mode");
+        for index in 0..150_i64 {
+            connection
+                .execute(
+                    "INSERT INTO sync_conversation_forks
+                     (conversation_id, branch_id, holds_local, detected_at)
+                     VALUES (?1, ?2, 0, ?3)",
+                    params![
+                        lettuce_types::ConversationId::new().to_string(),
+                        lettuce_types::ConversationBranchId::new().to_string(),
+                        index
+                    ],
+                )
+                .expect("fork");
+        }
+        drop(connection);
+        let forks =
+            lettuce_sync::ConversationForkRepository::unresolved_conversation_forks(&database)
+                .expect("forks");
+        assert_eq!(forks.len(), 150);
+        assert_eq!(forks[0].detected_at, TimestampMillis::new(149));
     }
 
     #[test]
@@ -6396,7 +6416,7 @@ mod tests {
         );
 
         let target_conflicts = target
-            .unresolved_persona_conflicts(MAX_UNRESOLVED_CONFLICTS)
+            .unresolved_persona_conflicts()
             .expect("target conflicts");
         assert_eq!(target_conflicts.len(), 1);
         assert_eq!(
@@ -6445,7 +6465,7 @@ mod tests {
         );
         assert!(
             target
-                .unresolved_persona_conflicts(MAX_UNRESOLVED_CONFLICTS)
+                .unresolved_persona_conflicts()
                 .expect("resolved target conflicts")
                 .is_empty()
         );
@@ -6472,7 +6492,7 @@ mod tests {
             .expect("apply persona resolution");
         assert!(
             source
-                .unresolved_persona_conflicts(MAX_UNRESOLVED_CONFLICTS)
+                .unresolved_persona_conflicts()
                 .expect("superseded source conflicts")
                 .is_empty()
         );
@@ -6532,7 +6552,7 @@ mod tests {
             .apply_incoming_batch(source_default_batch_id, TimestampMillis::new(214))
             .expect("apply source default");
         let default_conflicts = target
-            .unresolved_persona_conflicts(MAX_UNRESOLVED_CONFLICTS)
+            .unresolved_persona_conflicts()
             .expect("default conflicts");
         assert_eq!(default_conflicts.len(), 1);
         let second_resolution_id = OperationId::new();
@@ -6568,7 +6588,7 @@ mod tests {
             .expect("apply default resolution");
         assert!(
             source
-                .unresolved_persona_conflicts(MAX_UNRESOLVED_CONFLICTS)
+                .unresolved_persona_conflicts()
                 .expect("resolved source default conflict")
                 .is_empty()
         );

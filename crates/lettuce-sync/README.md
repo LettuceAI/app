@@ -84,7 +84,7 @@ and turn the next local edit into a permanent stale-revision replay. Entities
 never touched by sync keep their unscoped identities, and a losing remote
 change leaves the scope unchanged, so an exact retry still replays.
 
-Persona conflicts can be listed as at most 100 typed current/other candidates
+Every unresolved persona conflict is listed with typed current/other candidates
 and resolved by choosing either side. Resolution always creates a new local
 canonical snapshot with a fresh aggregate revision, even when the current
 candidate is retained, so the decision observes and propagates beyond both

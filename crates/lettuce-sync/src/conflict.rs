@@ -3,8 +3,6 @@ use lettuce_types::{ConversationBranchId, ConversationId, OperationId, Timestamp
 
 use crate::{CanonicalChange, SyncChangeId, SyncDeviceId};
 
-pub const MAX_UNRESOLVED_CONFLICTS: usize = 100;
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum PersonaConflictValue {
     Persona(Persona),
@@ -48,10 +46,9 @@ pub enum ConflictRepositoryError {
 }
 
 pub trait PersonaConflictRepository: Send + Sync {
-    fn unresolved_persona_conflicts(
-        &self,
-        limit: usize,
-    ) -> Result<Vec<PersonaConflict>, ConflictRepositoryError>;
+    /// Every unresolved persona conflict, newest first.
+    fn unresolved_persona_conflicts(&self)
+    -> Result<Vec<PersonaConflict>, ConflictRepositoryError>;
 
     fn resolve_persona_conflict(
         &self,
@@ -78,9 +75,9 @@ pub struct ConversationFork {
 }
 
 pub trait ConversationForkRepository: Send + Sync {
+    /// Every unresolved conversation fork, newest first.
     fn unresolved_conversation_forks(
         &self,
-        limit: usize,
     ) -> Result<Vec<ConversationFork>, ConflictRepositoryError>;
 
     fn resolve_conversation_fork(
