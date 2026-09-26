@@ -24,7 +24,7 @@ const fn neutral_floor(axis: RelationshipAxis) -> f64 {
     }
 }
 
-/// The legacy seven-step band of a signed relationship axis.
+/// The seven-step band of a signed relationship axis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RelationshipBand {
     Lowest,
@@ -57,7 +57,7 @@ impl RelationshipBand {
     }
 }
 
-/// The legacy five-step band of the unsigned tension axis.
+/// The five-step band of the unsigned tension axis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TensionBand {
     Calm,
@@ -200,8 +200,8 @@ pub const SOUL_PROMPT_ORDER: [SoulCategory; 12] = [
     SoulCategory::Boundaries,
 ];
 
-/// What the companion state block says, decided with the legacy thresholds;
-/// the application renders each part from the prompt catalog.
+/// What the companion state block says, decided with fixed thresholds; the
+/// application renders each part from the prompt catalog.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompanionPromptState {
     pub interaction_count: u32,

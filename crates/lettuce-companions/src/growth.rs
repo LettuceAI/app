@@ -320,7 +320,7 @@ fn parse_adjustment(item: &Value, memory_ids: &[String]) -> Option<ProposedSoulF
     })
 }
 
-/// Legacy `default_soul_fact_policy`, used when a proposal names no policy.
+/// The policy used when a proposal names no policy.
 const fn default_policy(category: SoulCategory) -> SoulFactPolicy {
     match category {
         SoulCategory::Appearance
@@ -466,9 +466,6 @@ mod tests {
         assert_eq!(proposals[0].source_memory_ids, ["m0"]);
     }
 
-    /// Legacy `normalize_for_storage` (companion/mod.rs 360-362, 420-425)
-    /// fills a missing policy from the category, and `append_soul_growth_gated`
-    /// accepts "historical".
     #[test]
     fn missing_policy_defaults_by_category_and_historical_is_kept() {
         let text = r#"{"adjustments":[{"category":"likes","value":"jazz","confidence":0.9,"weight":0.8},{"category":"habits","value":"walks","confidence":0.9,"weight":0.8},{"category":"fears","policy":"historical","value":"storms","confidence":0.9,"weight":0.8},{"category":"fears","policy":"bogus","value":"dark","confidence":0.9,"weight":0.8}]}"#;

@@ -443,7 +443,7 @@ impl PreparedCompanionLaunch {
     }
 
     /// Starts the conversation time aware, the companion's default for new
-    /// conversations (legacy seeded it into the new session's preferences).
+    /// conversations.
     #[must_use]
     pub fn with_time_awareness(mut self, time_awareness: bool) -> Self {
         self.time_awareness = time_awareness;

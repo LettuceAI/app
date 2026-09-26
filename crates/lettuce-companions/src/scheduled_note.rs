@@ -125,8 +125,8 @@ pub fn is_scheduled_note_active(
     Ok(true)
 }
 
-/// Legacy note lines kept under the block's character budget. `line` renders
-/// one note and `truncated` ends a note cut at its content cap; the application
+/// Note lines kept under the block's character budget. `line` renders one
+/// note and `truncated` ends a note cut at its content cap; the application
 /// supplies both from the prompt catalog.
 pub fn scheduled_note_lines(
     notes: &[CompanionScheduledNote],

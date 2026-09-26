@@ -254,11 +254,11 @@ pub struct CompanionSoulConfig {
     #[serde(default)]
     pub prompting: CompanionPromptingConfig,
     /// Whether this companion's conversations are time aware unless a
-    /// conversation sets its own clock (legacy `timeAwareness`).
+    /// conversation sets its own clock (`timeAwareness`).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub time_awareness: bool,
-    /// Whether the companion's conversations use one memory pool (legacy
-    /// `memory.sharedAcrossSessions`); off, each uses its own memory.
+    /// Whether the companion's conversations use one memory pool
+    /// (`memory.sharedAcrossSessions`); off, each uses its own memory.
     #[serde(default = "shared", skip_serializing_if = "is_shared")]
     pub share_memory_across_chats: bool,
     /// Whether the companion's conversations grow one Soul; off, each grows
@@ -348,9 +348,9 @@ pub struct SoulState {
     pub facts: Vec<SoulFact>,
 }
 
-/// Whose Soul grows: the character's, shared by all of its conversations
-/// (legacy), or one conversation's own while the character does not share
-/// Soul growth across chats.
+/// Whose Soul grows: the character's, shared by all of its conversations,
+/// or one conversation's own while the character does not share Soul growth
+/// across chats.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SoulOwner {
     Character(CharacterId),
@@ -421,8 +421,8 @@ pub struct SoulSupersession {
     pub superseded_by: String,
 }
 
-/// A user's direct edit of Soul growth (legacy `companion_clear_soul_growth`,
-/// `companion_remove_soul_growth` and `companion_set_soul_growth_lock`).
+/// A user's direct edit of Soul growth: clearing it, removing one entry, or
+/// setting an entry's lock.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SoulUserEdit {
     ClearAll,
@@ -445,10 +445,9 @@ pub struct SoulChangeSet {
     pub recorded_at: TimestampMillis,
 }
 
-/// The change set for one user edit, or `None` when it changes nothing: legacy
-/// answered clearing an empty Soul with 0, removing an unknown entry with
-/// false and setting a lock to its current value with true, all without a
-/// write.
+/// The change set for one user edit, or `None` when it changes nothing:
+/// clearing an empty Soul, removing an unknown entry and setting a lock to
+/// its current value all skip the write.
 pub fn prepare_user_edit(
     state: &SoulState,
     edit: SoulUserEdit,
@@ -674,13 +673,13 @@ pub fn prepare_consolidation_change_set(
     prepare_change_set(state, expected_revision, proposals, retire_ids, now, true)
 }
 
-/// Legacy `append_soul_growth_gated`: each proposal is judged on its own and
-/// a bad one (below the category's confidence, zero weight, a locked current
-/// slot, an unusable validity window, a reused id) is skipped while the rest
-/// apply. A current proposal supersedes the unlocked active facts of its slot
-/// and an explicit `supersedes` id only an unlocked active fact of its
-/// category; other ids are ignored. Facts added earlier in the same batch take
-/// part in both, so a later current proposal supersedes an earlier one.
+/// Each proposal is judged on its own and a bad one (below the category's
+/// confidence, zero weight, a locked current slot, an unusable validity
+/// window, a reused id) is skipped while the rest apply. A current proposal
+/// supersedes the unlocked active facts of its slot and an explicit
+/// `supersedes` id only an unlocked active fact of its category; other ids
+/// are ignored. Facts added earlier in the same batch take part in both, so a
+/// later current proposal supersedes an earlier one.
 fn prepare_change_set(
     state: &SoulState,
     expected_revision: Revision,
@@ -1252,9 +1251,6 @@ mod tests {
         );
     }
 
-    /// Legacy `append_soul_growth_gated` (companion/mod.rs 1182-1246): a
-    /// low-confidence item, an unknown or cross-category `supersedes` id and a
-    /// second current fact in one slot never discard the rest of the batch.
     #[test]
     fn growth_batch_skips_bad_items_and_ignores_unusable_supersedes_like_legacy() {
         let state = SoulState {
@@ -1317,8 +1313,6 @@ mod tests {
         );
     }
 
-    /// Legacy consolidation (companion_consolidation.rs 135-138) retires even
-    /// when its core adjustment is ignored.
     #[test]
     fn consolidation_retires_even_when_the_core_item_is_skipped() {
         let facts = (0..12)
