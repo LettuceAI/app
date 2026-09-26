@@ -724,10 +724,23 @@ impl AppBackend {
         )
     }
 
+    /// The reply-image store a conversation generation runner writes to.
+    pub fn reply_media<'a, BR, AR>(
+        &'a self,
+        media_store: &'a lettuce_media::LocalMediaBlobStore<BR, AR>,
+    ) -> crate::ReplyMediaAssets<'a, Database, BR, AR>
+    where
+        BR: lettuce_media::MediaBlobRepository,
+        AR: lettuce_media::MediaAssetRepository,
+    {
+        crate::ReplyMediaAssets::new(self.database.as_ref(), media_store)
+    }
+
     pub fn prepared_conversation_generation_runner<'a, E: ?Sized, I: ?Sized>(
         &'a self,
         embedding: &'a E,
         inference: &'a I,
+        reply_media: &'a dyn crate::ReplyMediaStore,
     ) -> crate::PreparedConversationGenerationJobRunner<'a, E, Database, I> {
         crate::PreparedConversationGenerationJobRunner::new(
             embedding,
@@ -735,6 +748,7 @@ impl AppBackend {
             inference,
         )
         .with_inference_runtime(self.inference_runtime.as_ref())
+        .with_reply_media(reply_media)
     }
 
     #[must_use]

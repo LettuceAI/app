@@ -45,6 +45,26 @@ struct Scenario {
     space_id: Option<MemorySpaceId>,
 }
 
+struct NoReplyMedia;
+
+impl crate::ReplyMediaStore for NoReplyMedia {
+    fn store_reply_image(
+        &self,
+        _asset_id: lettuce_types::AssetId,
+        _origin: crate::ReplyImageOrigin,
+        _bytes: &[u8],
+    ) -> Result<lettuce_types::AssetId, lettuce_media::MediaStoreError> {
+        Err(lettuce_media::MediaStoreError::CatalogFailure)
+    }
+
+    fn discard_reply_image(
+        &self,
+        _asset_id: lettuce_types::AssetId,
+        _now: lettuce_types::TimestampMillis,
+    ) {
+    }
+}
+
 fn scenario(database: &Database, dynamic_memory: bool, prefix: &str) -> Scenario {
     scenario_with_resolvable_profile(database, dynamic_memory, prefix, false)
 }
@@ -607,7 +627,7 @@ async fn a_direct_chat_follows_the_live_default_model_on_each_turn() {
     let engine = ScenarioEmbeddingEngine;
     let clock = FakeClock::new(TimestampMillis::new(1_020));
     let outcome = backend
-        .prepared_conversation_generation_runner(&engine, &inference)
+        .prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
         .execute(
             execution_request(&scenario, CancellationToken::new()),
             &clock,
@@ -682,9 +702,9 @@ async fn reply_images_are_stored_as_message_assets_and_an_image_only_reply_final
     let inference = scripted(vec![outcome]);
     let engine = ScenarioEmbeddingEngine;
     let clock = FakeClock::new(TimestampMillis::new(1_020));
+    let reply_media = backend.reply_media(&store);
     let executed = backend
-        .prepared_conversation_generation_runner(&engine, &inference)
-        .with_reply_media(&store)
+        .prepared_conversation_generation_runner(&engine, &inference, &reply_media)
         .execute(
             execution_request(&scenario, CancellationToken::new()),
             &clock,
@@ -720,6 +740,33 @@ async fn reply_images_are_stored_as_message_assets_and_an_image_only_reply_final
         store.open_ready(assets[1]).expect("second").blob.id,
         "identical bytes share one content-addressed blob"
     );
+    let reported = &result.outcomes[0].candidates[0];
+    assert!(reported.media.is_empty(), "stored images leave the outcome");
+    assert_eq!(reported.parts, result.candidate.parts);
+
+    use crate::ReplyMediaStore as _;
+    reply_media.discard_reply_image(assets[0], TimestampMillis::new(1_030));
+    assert!(
+        store.open_ready(assets[0]).is_ok(),
+        "a reply image a message links is kept"
+    );
+    let mut unlinked_png = png.clone();
+    unlinked_png.extend_from_slice(b" unlinked");
+    let unlinked = reply_media
+        .store_reply_image(
+            lettuce_types::AssetId::new(),
+            crate::ReplyImageOrigin {
+                job_id: JobId::new(),
+                model_profile_id: lettuce_types::ModelProfileId::new(),
+            },
+            &unlinked_png,
+        )
+        .expect("store unlinked image");
+    reply_media.discard_reply_image(unlinked, TimestampMillis::new(1_030));
+    assert!(
+        store.open_ready(unlinked).is_err(),
+        "an image no message links is deleted"
+    );
     drop(store);
     drop(backend);
     std::fs::remove_dir_all(&root).ok();
@@ -738,7 +785,7 @@ async fn app_backend_executes_and_settles_one_durable_generation_operation() {
     let engine = ScenarioEmbeddingEngine;
     let clock = FakeClock::new(TimestampMillis::new(1_020));
     let outcome = backend
-        .prepared_conversation_generation_runner(&engine, &inference)
+        .prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
         .execute(
             execution_request(&scenario, CancellationToken::new()),
             &clock,
@@ -756,7 +803,7 @@ async fn app_backend_executes_and_settles_one_durable_generation_operation() {
     assert_eq!(inference.requests.lock().expect("requests").len(), 1);
 
     let replay = backend
-        .prepared_conversation_generation_runner(&engine, &inference)
+        .prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
         .execute(
             execution_request(&scenario, CancellationToken::new()),
             &clock,
@@ -782,7 +829,7 @@ async fn app_backend_executes_and_settles_one_durable_generation_operation() {
     let cancellation = CancellationToken::new();
     cancellation.cancel();
     let outcome = backend
-        .prepared_conversation_generation_runner(&engine, &cancelled_inference)
+        .prepared_conversation_generation_runner(&engine, &cancelled_inference, &NoReplyMedia)
         .execute(execution_request(&cancelled, cancellation), &clock)
         .await
         .expect("settle cancelled generation");
@@ -800,7 +847,7 @@ async fn app_backend_executes_and_settles_one_durable_generation_operation() {
             .is_empty()
     );
     let terminal = backend
-        .prepared_conversation_generation_runner(&engine, &cancelled_inference)
+        .prepared_conversation_generation_runner(&engine, &cancelled_inference, &NoReplyMedia)
         .execute(
             execution_request(&cancelled, CancellationToken::new()),
             &clock,
@@ -820,7 +867,7 @@ async fn app_backend_executes_and_settles_one_durable_generation_operation() {
     let mut request = execution_request(&blocked, CancellationToken::new());
     request.resources = ResourceAvailability::none();
     let outcome = backend
-        .prepared_conversation_generation_runner(&engine, &blocked_inference)
+        .prepared_conversation_generation_runner(&engine, &blocked_inference, &NoReplyMedia)
         .execute(request, &clock)
         .await
         .expect("leave unavailable generation queued");
@@ -933,7 +980,8 @@ async fn app_backend_cancels_queued_and_running_generation_jobs_by_id() {
         .expect("admit running generation")
         .job;
     let inference = BlockingInference::new(text_outcome("late", "Late reply", 9, 4));
-    let runner = backend.prepared_conversation_generation_runner(&engine, &inference);
+    let runner =
+        backend.prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia);
     let mut streamed = execution_request(&running, CancellationToken::new());
     streamed.runtime.stream_sink = Some(RequestId::new());
     let run = runner.execute(streamed, &clock);
@@ -1034,7 +1082,8 @@ async fn restart_recovery_settles_every_turn_the_previous_process_left_live() {
         .expect("admit running generation")
         .job;
     let inference = BlockingInference::new(text_outcome("lost", "Lost reply", 9, 4));
-    let runner = backend.prepared_conversation_generation_runner(&engine, &inference);
+    let runner =
+        backend.prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia);
     tokio::select! {
         _ = runner.execute(execution_request(&running, CancellationToken::new()), &clock) => {
             panic!("the blocked generation must not finish");
@@ -1154,7 +1203,7 @@ async fn app_backend_worker_executes_one_durable_generation_job() {
         resources: ResourceAvailability::all(),
     };
     let outcome = backend
-        .prepared_conversation_generation_runner(&engine, &inference)
+        .prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
         .execute_next(request.clone(), &clock)
         .await
         .expect("execute scheduled generation");
@@ -1174,7 +1223,7 @@ async fn app_backend_worker_executes_one_durable_generation_job() {
     assert_eq!(inference.requests.lock().expect("requests").len(), 1);
     assert!(matches!(
         backend
-            .prepared_conversation_generation_runner(&engine, &inference)
+            .prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
             .execute_next(request, &clock)
             .await
             .expect("empty worker pass"),
@@ -1284,7 +1333,7 @@ async fn a_chat_with_a_ten_thousand_entry_lorebook_and_129_lorebooks_runs_a_turn
     let engine = ScenarioEmbeddingEngine;
     let clock = FakeClock::new(TimestampMillis::new(1_022));
     let outcome = backend
-        .prepared_conversation_generation_runner(&engine, &inference)
+        .prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
         .execute_next(
             ConversationGenerationWorkerRequest {
                 worker_id: WorkerId::new(),
@@ -1376,7 +1425,7 @@ async fn conversation_and_app_model_settings_reach_the_resolved_request() {
     let inference = scripted(vec![text_outcome("layered-response", "Reply", 13, 4)]);
     let engine = ScenarioEmbeddingEngine;
     backend
-        .prepared_conversation_generation_runner(&engine, &inference)
+        .prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
         .run(
             &work,
             ConversationGenerationRuntimeInput::default(),
@@ -1447,7 +1496,8 @@ async fn app_backend_builds_manual_inputs_for_send_continue_and_regenerate() {
         4,
     )]);
     let engine = ScenarioEmbeddingEngine;
-    let runner = backend.prepared_conversation_generation_runner(&engine, &inference);
+    let runner =
+        backend.prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia);
     let stream_sink = RequestId::new();
     let runtime = ConversationGenerationRuntimeInput {
         stream_sink: Some(stream_sink),
@@ -1541,7 +1591,7 @@ async fn app_backend_builds_manual_inputs_for_send_continue_and_regenerate() {
         3,
     )]);
     let continued_result = backend
-        .prepared_conversation_generation_runner(&engine, &continued_inference)
+        .prepared_conversation_generation_runner(&engine, &continued_inference, &NoReplyMedia)
         .run(
             &continued_work,
             ConversationGenerationRuntimeInput::default(),
@@ -1616,7 +1666,7 @@ async fn app_backend_builds_manual_inputs_for_send_continue_and_regenerate() {
         3,
     )]);
     let regenerated_result = backend
-        .prepared_conversation_generation_runner(&engine, &regenerated_inference)
+        .prepared_conversation_generation_runner(&engine, &regenerated_inference, &NoReplyMedia)
         .run(
             &regenerated_work,
             ConversationGenerationRuntimeInput::default(),
@@ -1713,7 +1763,7 @@ async fn a_group_switched_to_llm_selection_uses_the_live_speaker_model() {
     ]);
     let engine = ScenarioEmbeddingEngine;
     let result = backend
-        .prepared_conversation_generation_runner(&engine, &inference)
+        .prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
         .run(
             &work,
             ConversationGenerationRuntimeInput::default(),
@@ -1796,7 +1846,7 @@ async fn app_backend_checkpoints_llm_group_selection_and_falls_back_to_heuristic
         ]);
         let engine = ScenarioEmbeddingEngine;
         let result = backend
-            .prepared_conversation_generation_runner(&engine, &inference)
+            .prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
             .run(
                 &work,
                 ConversationGenerationRuntimeInput::default(),
@@ -1902,7 +1952,7 @@ async fn app_backend_checkpoints_llm_group_selection_and_falls_back_to_heuristic
         drop(backend);
         let reopened = AppBackend::open(&path, TimestampMillis::new(1_030)).expect("reopen");
         let replay = reopened
-            .prepared_conversation_generation_runner(&engine, &inference)
+            .prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
             .run(
                 &work,
                 ConversationGenerationRuntimeInput::default(),
@@ -1945,7 +1995,8 @@ async fn app_backend_selects_deterministic_group_speakers_before_generation() {
         )]);
         let engine = ScenarioEmbeddingEngine;
         let result = {
-            let runner = backend.prepared_conversation_generation_runner(&engine, &inference);
+            let runner =
+                backend.prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia);
             runner
                 .run(
                     &work,
@@ -1965,7 +2016,7 @@ async fn app_backend_selects_deterministic_group_speakers_before_generation() {
         let reopened =
             AppBackend::open(&path, TimestampMillis::new(1_021)).expect("reopen backend");
         let replay = reopened
-            .prepared_conversation_generation_runner(&engine, &inference)
+            .prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
             .run(
                 &work,
                 ConversationGenerationRuntimeInput::default(),
@@ -2032,7 +2083,7 @@ async fn user_mention_selects_the_current_character(message: &str) {
     )]);
     let engine = ScenarioEmbeddingEngine;
     let result = backend
-        .prepared_conversation_generation_runner(&engine, &inference)
+        .prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
         .run(
             &work,
             ConversationGenerationRuntimeInput::default(),
@@ -2106,7 +2157,7 @@ async fn group_selection_reads_the_timeline_oldest_first() {
             2,
         )]);
         let result = backend
-            .prepared_conversation_generation_runner(&engine, &inference)
+            .prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
             .run(
                 &work,
                 ConversationGenerationRuntimeInput::default(),
@@ -2139,7 +2190,7 @@ async fn group_selection_reads_the_timeline_oldest_first() {
         text_outcome("chronology-llm-reply-0", "First reply.", 5, 2),
     ]);
     backend
-        .prepared_conversation_generation_runner(&engine, &inference)
+        .prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
         .run(
             &admit_and_claim(database, &first, 1_015),
             ConversationGenerationRuntimeInput::default(),
@@ -2159,7 +2210,7 @@ async fn group_selection_reads_the_timeline_oldest_first() {
         text_outcome("chronology-llm-reply-1", "Second reply.", 5, 2),
     ]);
     backend
-        .prepared_conversation_generation_runner(&engine, &inference)
+        .prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
         .run(
             &admit_and_claim(database, &second, 1_115),
             ConversationGenerationRuntimeInput::default(),
@@ -2281,7 +2332,8 @@ async fn app_backend_runs_resolved_group_speakers_and_rejects_unresolved_turns()
         },
     )
     .expect("store group summary");
-    let runner = backend.prepared_conversation_generation_runner(&engine, &inference);
+    let runner =
+        backend.prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia);
     let result = runner
         .run(
             &work,
@@ -2353,7 +2405,7 @@ async fn app_backend_runs_resolved_group_speakers_and_rejects_unresolved_turns()
         3,
     )]);
     let continued_result = backend
-        .prepared_conversation_generation_runner(&engine, &continued_inference)
+        .prepared_conversation_generation_runner(&engine, &continued_inference, &NoReplyMedia)
         .run(
             &continued_work,
             ConversationGenerationRuntimeInput::default(),
@@ -2419,7 +2471,7 @@ async fn app_backend_runs_resolved_group_speakers_and_rejects_unresolved_turns()
         4,
     )]);
     let regenerated_result = backend
-        .prepared_conversation_generation_runner(&engine, &regenerated_inference)
+        .prepared_conversation_generation_runner(&engine, &regenerated_inference, &NoReplyMedia)
         .run(
             &regenerated_work,
             ConversationGenerationRuntimeInput::default(),
@@ -2450,7 +2502,7 @@ async fn app_backend_runs_resolved_group_speakers_and_rejects_unresolved_turns()
     )]);
     assert!(matches!(
         unresolved_backend
-            .prepared_conversation_generation_runner(&engine, &unresolved_inference)
+            .prepared_conversation_generation_runner(&engine, &unresolved_inference, &NoReplyMedia)
             .run(
                 &unresolved_work,
                 ConversationGenerationRuntimeInput::default(),
@@ -2611,7 +2663,8 @@ async fn app_backend_builds_dynamic_memory_input_and_replays_exactly() {
         3,
     )]);
     let engine = ScenarioEmbeddingEngine;
-    let runner = backend.prepared_conversation_generation_runner(&engine, &inference);
+    let runner =
+        backend.prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia);
     let first_build = runner
         .build_input(
             &work,
@@ -2928,7 +2981,7 @@ async fn bundled_default_prompt_renders_only_retrieved_memories_in_a_dynamic_dir
         3,
     )]);
     let sent = backend
-        .prepared_conversation_generation_runner(&engine, &inference)
+        .prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
         .run(
             &work,
             ConversationGenerationRuntimeInput::default(),
@@ -2978,7 +3031,7 @@ async fn bundled_default_prompt_renders_only_retrieved_memories_in_a_dynamic_dir
         3,
     )]);
     backend
-        .prepared_conversation_generation_runner(&engine, &regenerated_inference)
+        .prepared_conversation_generation_runner(&engine, &regenerated_inference, &NoReplyMedia)
         .run(
             &regenerated_work,
             ConversationGenerationRuntimeInput::default(),
@@ -3015,7 +3068,7 @@ async fn dynamic_group_chats_keep_retrieved_key_memories_without_observation_not
     )]);
     let engine = ScenarioEmbeddingEngine;
     backend
-        .prepared_conversation_generation_runner(&engine, &inference)
+        .prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
         .run(
             &work,
             ConversationGenerationRuntimeInput::default(),
@@ -3089,7 +3142,7 @@ async fn dynamic_direct_continuation_sends_only_the_retrieved_memories_as_key_me
         3,
     )]);
     backend
-        .prepared_conversation_generation_runner(&engine, &inference)
+        .prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
         .run(
             &work,
             ConversationGenerationRuntimeInput::default(),
@@ -3133,7 +3186,7 @@ async fn dynamic_direct_continuation_sends_only_the_retrieved_memories_as_key_me
         3,
     )]);
     backend
-        .prepared_conversation_generation_runner(&engine, &continued_inference)
+        .prepared_conversation_generation_runner(&engine, &continued_inference, &NoReplyMedia)
         .run(
             &continued_work,
             ConversationGenerationRuntimeInput::default(),
@@ -3185,7 +3238,7 @@ async fn dynamic_companion_chat_fills_its_continuity_section_with_only_the_retri
         3,
     )]);
     backend
-        .prepared_conversation_generation_runner(&engine, &inference)
+        .prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
         .run(
             &work,
             ConversationGenerationRuntimeInput::default(),
@@ -3299,7 +3352,7 @@ async fn empty_retrieval_system_texts(
         3,
     )]);
     backend
-        .prepared_conversation_generation_runner(&engine, &inference)
+        .prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
         .run(
             &work,
             ConversationGenerationRuntimeInput::default(),
@@ -3489,7 +3542,7 @@ async fn calibrated_retrieval(
         3,
     )]);
     backend
-        .prepared_conversation_generation_runner(&engine, &inference)
+        .prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
         .run(
             &work,
             ConversationGenerationRuntimeInput::default(),
@@ -3591,7 +3644,7 @@ async fn disabled_global_dynamic_memory_renders_direct_memories_like_manual_mode
     let inference = scripted(vec![text_outcome("gated-dynamic-response", "Noted.", 5, 3)]);
     let engine = ScenarioEmbeddingEngine;
     backend
-        .prepared_conversation_generation_runner(&engine, &inference)
+        .prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
         .run(
             &work,
             ConversationGenerationRuntimeInput::default(),
@@ -3708,7 +3761,7 @@ async fn chat_runtime_sections_follow_catalog_edits() {
     let inference = scripted(vec![text_outcome("runtime-edit-response", "Noted.", 5, 3)]);
     let engine = ScenarioEmbeddingEngine;
     backend
-        .prepared_conversation_generation_runner(&engine, &inference)
+        .prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
         .run(
             &work,
             ConversationGenerationRuntimeInput::default(),
@@ -3737,7 +3790,7 @@ async fn plain_dynamic_turns_admit_and_run_a_post_turn_memory_cycle() {
     let engine = ScenarioEmbeddingEngine;
     let reply = scripted(vec![text_outcome("post-turn-reply", "Tea it is.", 5, 3)]);
     backend
-        .prepared_conversation_generation_runner(&engine, &reply)
+        .prepared_conversation_generation_runner(&engine, &reply, &NoReplyMedia)
         .run(
             &generation,
             ConversationGenerationRuntimeInput::default(),
@@ -3933,7 +3986,7 @@ async fn post_turn_memory_host_runs_the_plain_cycle_from_live_settings() {
     let engine = ScenarioEmbeddingEngine;
     let reply = scripted(vec![text_outcome("host-reply", "Tea it is.", 5, 3)]);
     backend
-        .prepared_conversation_generation_runner(&engine, &reply)
+        .prepared_conversation_generation_runner(&engine, &reply, &NoReplyMedia)
         .run(
             &generation,
             ConversationGenerationRuntimeInput::default(),
@@ -4112,7 +4165,7 @@ fn finalized_dynamic_turn(backend: &AppBackend, prefix: &str) -> impl Future<Out
         let engine = ScenarioEmbeddingEngine;
         let reply = scripted(vec![text_outcome("reply", "Tea it is.", 5, 3)]);
         backend
-            .prepared_conversation_generation_runner(&engine, &reply)
+            .prepared_conversation_generation_runner(&engine, &reply, &NoReplyMedia)
             .run(
                 &generation,
                 ConversationGenerationRuntimeInput::default(),
@@ -4396,7 +4449,7 @@ async fn post_turn_memory_host_answers_ask_first_with_skip_and_trigger() {
     let engine = ScenarioEmbeddingEngine;
     let reply = scripted(vec![text_outcome("ask-first-reply", "Tea it is.", 5, 3)]);
     backend
-        .prepared_conversation_generation_runner(&engine, &reply)
+        .prepared_conversation_generation_runner(&engine, &reply, &NoReplyMedia)
         .run(
             &generation,
             ConversationGenerationRuntimeInput::default(),
@@ -4569,7 +4622,7 @@ async fn post_turn_memory_host_honors_active_prompt_overrides_of_the_right_purpo
     let engine = ScenarioEmbeddingEngine;
     let reply = scripted(vec![text_outcome("prompt-reply", "Tea it is.", 5, 3)]);
     backend
-        .prepared_conversation_generation_runner(&engine, &reply)
+        .prepared_conversation_generation_runner(&engine, &reply, &NoReplyMedia)
         .run(
             &generation,
             ConversationGenerationRuntimeInput::default(),
@@ -4634,7 +4687,7 @@ async fn reply_helper_drafts_the_next_user_message_from_live_settings() {
     let engine = ScenarioEmbeddingEngine;
     let reply = scripted(vec![text_outcome("reply-helper-reply", "Tea it is.", 5, 3)]);
     backend
-        .prepared_conversation_generation_runner(&engine, &reply)
+        .prepared_conversation_generation_runner(&engine, &reply, &NoReplyMedia)
         .run(
             &generation,
             ConversationGenerationRuntimeInput::default(),
@@ -4757,7 +4810,7 @@ async fn reply_helper_falls_back_to_a_plain_request_when_the_model_cannot_stream
         3,
     )]);
     backend
-        .prepared_conversation_generation_runner(&engine, &reply)
+        .prepared_conversation_generation_runner(&engine, &reply, &NoReplyMedia)
         .run(
             &generation,
             ConversationGenerationRuntimeInput::default(),
@@ -6900,7 +6953,7 @@ async fn retrieval_embeds_memories_without_a_current_vector_first() {
     let inference = scripted(vec![]);
     let engine = ScenarioEmbeddingEngine;
     backend
-        .prepared_conversation_generation_runner(&engine, &inference)
+        .prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
         .build_input(
             &work,
             ConversationGenerationRuntimeInput::default(),
@@ -7163,6 +7216,7 @@ async fn a_companion_pool_outlives_its_chats_and_goes_with_the_companion() {
         .prepared_conversation_generation_runner(
             &ScenarioEmbeddingEngine,
             &scripted(vec![text_outcome("hard-delete-companion", "Tea.", 9, 3)]),
+            &NoReplyMedia,
         )
         .run(
             &work,
@@ -7336,6 +7390,7 @@ async fn a_group_chat_outlives_a_deleted_member_and_is_deleted_on_its_own() {
                 10,
                 3,
             )]),
+            &NoReplyMedia,
         )
         .run(
             &work,
@@ -7406,6 +7461,7 @@ async fn a_group_chat_outlives_a_deleted_member_and_is_deleted_on_its_own() {
                 10,
                 3,
             )]),
+            &NoReplyMedia,
         )
         .run(
             &work,
@@ -7855,7 +7911,7 @@ async fn a_group_reasoning_condition_reads_only_the_models_own_setting() {
     let inference = scripted(vec![text_outcome("group-reasoning-response", "Hm.", 5, 3)]);
     let engine = ScenarioEmbeddingEngine;
     backend
-        .prepared_conversation_generation_runner(&engine, &inference)
+        .prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
         .run(
             &work,
             ConversationGenerationRuntimeInput::default(),

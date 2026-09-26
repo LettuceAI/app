@@ -980,7 +980,9 @@ warning counts them per conversation.
 
 Reply images: before finalizing, `ConversationGenerationJobRunner` stores each
 image on the provider candidate through its `ReplyMediaStore`
-(`with_reply_media`; `LocalMediaBlobStore` implements it) as a persistent
+(`with_reply_media`; `AppBackend::prepared_conversation_generation_runner`
+takes one, and `AppBackend::reply_media` builds `ReplyMediaAssets` over a
+`LocalMediaBlobStore`) as a persistent
 `GeneratedImage` asset with `chat_reply` provenance, content-addressed so equal
 bytes share one blob, and appends an `Attachment` media part per image after
 the reply's text, as legacy `generated_image_attachments`
@@ -993,7 +995,11 @@ images finalizes; one with neither text nor a stored image is `EmptyOutput`.
 An image the media store refuses as content (not an image, too large, bad
 dimensions) is left out with a warning; a store I/O failure leaves the attempt
 retryable; a reply with images and no store attached fails as `Internal`
-instead of dropping them. Direct and group chats share this runner.
+instead of dropping them. When storing a later image or finalizing fails, the
+images this attempt stored are deleted unless a message already links them, so
+a failed attempt leaves no unused asset and a retry stores them again under the
+same ids. The run result's provider outcome carries the stored images as media
+parts, not their base64. Direct and group chats share this runner.
 
 `ConversationInitialInferenceCoordinator` supplies the initial provider
 dispatch boundary for a running conversation generation attempt. It reloads the

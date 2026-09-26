@@ -7,7 +7,8 @@ use lettuce_media::{
     AssetKind, AssetOrigin, AssetProvenanceV1, IngestRequest, LocalMediaBlobStore,
     MediaAssetRepository, MediaBlobRepository, MediaStoreError, RetentionClass,
 };
-use lettuce_types::{AssetId, GenerationAttemptId, JobId, ModelProfileId};
+use lettuce_transfer::PersonaFileRepository;
+use lettuce_types::{AssetId, GenerationAttemptId, JobId, ModelProfileId, TimestampMillis};
 use uuid::Uuid;
 
 /// Where a reply image came from.
@@ -27,6 +28,10 @@ pub trait ReplyMediaStore: Send + Sync {
         origin: ReplyImageOrigin,
         bytes: &[u8],
     ) -> Result<AssetId, MediaStoreError>;
+
+    /// Deletes a stored reply image and frees its bytes when no message
+    /// links it; a failure is only logged.
+    fn discard_reply_image(&self, asset_id: AssetId, now: TimestampMillis);
 }
 
 impl std::fmt::Debug for dyn ReplyMediaStore + '_ {
@@ -35,8 +40,29 @@ impl std::fmt::Debug for dyn ReplyMediaStore + '_ {
     }
 }
 
-impl<BR, AR> ReplyMediaStore for LocalMediaBlobStore<BR, AR>
+/// The media store reply images are written to, with the catalog that
+/// deletes an image no message links.
+pub struct ReplyMediaAssets<'a, R: ?Sized, BR, AR> {
+    repository: &'a R,
+    store: &'a LocalMediaBlobStore<BR, AR>,
+}
+
+impl<R: ?Sized, BR, AR> std::fmt::Debug for ReplyMediaAssets<'_, R, BR, AR> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("ReplyMediaAssets")
+    }
+}
+
+impl<'a, R: ?Sized, BR, AR> ReplyMediaAssets<'a, R, BR, AR> {
+    #[must_use]
+    pub const fn new(repository: &'a R, store: &'a LocalMediaBlobStore<BR, AR>) -> Self {
+        Self { repository, store }
+    }
+}
+
+impl<R, BR, AR> ReplyMediaStore for ReplyMediaAssets<'_, R, BR, AR>
 where
+    R: PersonaFileRepository + ?Sized,
     BR: MediaBlobRepository + Send + Sync,
     AR: MediaAssetRepository + Send + Sync,
 {
@@ -46,22 +72,41 @@ where
         origin: ReplyImageOrigin,
         bytes: &[u8],
     ) -> Result<AssetId, MediaStoreError> {
-        self.ingest_with_id(
-            asset_id,
-            bytes,
-            IngestRequest::new(
-                AssetKind::GeneratedImage,
-                AssetOrigin::Generated,
-                RetentionClass::Persistent,
-                AssetProvenanceV1 {
-                    producing_job_id: Some(origin.job_id),
-                    model_profile_id: Some(origin.model_profile_id),
-                    source_label: Some("chat_reply".into()),
-                    ..AssetProvenanceV1::default()
-                },
-            ),
-        )
-        .map(|ingested| ingested.asset.id)
+        self.store
+            .ingest_with_id(
+                asset_id,
+                bytes,
+                IngestRequest::new(
+                    AssetKind::GeneratedImage,
+                    AssetOrigin::Generated,
+                    RetentionClass::Persistent,
+                    AssetProvenanceV1 {
+                        producing_job_id: Some(origin.job_id),
+                        model_profile_id: Some(origin.model_profile_id),
+                        source_label: Some("chat_reply".into()),
+                        ..AssetProvenanceV1::default()
+                    },
+                ),
+            )
+            .map(|ingested| ingested.asset.id)
+    }
+
+    fn discard_reply_image(&self, asset_id: AssetId, now: TimestampMillis) {
+        let blob_id = match self.repository.discard_unlinked_asset(asset_id) {
+            Ok(Some(blob_id)) => blob_id,
+            Ok(None) => return,
+            Err(error) => {
+                tracing::warn!(%asset_id, %error, "unused reply image was not deleted");
+                return;
+            }
+        };
+        if let Err(error) = self.store.release_blob(blob_id, |_| {
+            self.repository
+                .release_unused_blob(blob_id, now)
+                .map_err(|_| MediaStoreError::CatalogFailure)
+        }) {
+            tracing::warn!(%asset_id, %error, "unused reply image bytes were not deleted");
+        }
     }
 }
 
@@ -82,20 +127,23 @@ fn reply_image_asset_id(attempt_id: GenerationAttemptId, index: usize) -> AssetI
     ))
 }
 
-/// Stores the candidate's images and appends a media part for each after
-/// its other parts. An image whose bytes are not a supported image is left
-/// out and logged.
+/// Stores the candidate's images, appends a media part for each after its
+/// other parts and answers the stored asset ids. An image whose bytes are not
+/// a supported image is left out and logged. When an image cannot be stored,
+/// the ones already stored are discarded.
 pub(crate) fn attach_reply_media(
     store: Option<&dyn ReplyMediaStore>,
     attempt_id: GenerationAttemptId,
     origin: ReplyImageOrigin,
     candidate: &mut InferenceCandidate,
-) -> Result<(), ReplyMediaError> {
+    now: TimestampMillis,
+) -> Result<Vec<AssetId>, ReplyMediaError> {
     let media = std::mem::take(&mut candidate.media);
     if media.is_empty() {
-        return Ok(());
+        return Ok(Vec::new());
     }
     let store = store.ok_or(ReplyMediaError::NoStore)?;
+    let mut stored = Vec::with_capacity(media.len());
     for (index, image) in media.iter().enumerate() {
         let Some(bytes) = decode(image) else {
             tracing::warn!(
@@ -106,10 +154,13 @@ pub(crate) fn attach_reply_media(
             continue;
         };
         match store.store_reply_image(reply_image_asset_id(attempt_id, index), origin, &bytes) {
-            Ok(asset_id) => candidate.parts.push(MessagePart::MediaAsset {
-                asset_id,
-                role: MediaAssetRole::Attachment,
-            }),
+            Ok(asset_id) => {
+                stored.push(asset_id);
+                candidate.parts.push(MessagePart::MediaAsset {
+                    asset_id,
+                    role: MediaAssetRole::Attachment,
+                });
+            }
             Err(
                 error @ (MediaStoreError::EmptyInput
                 | MediaStoreError::UnsupportedFormat
@@ -127,10 +178,25 @@ pub(crate) fn attach_reply_media(
                     "reply image was refused by the media store; left out of the reply"
                 );
             }
-            Err(error) => return Err(ReplyMediaError::Store(error)),
+            Err(error) => {
+                discard_reply_media(store, &stored, now);
+                return Err(ReplyMediaError::Store(error));
+            }
         }
     }
-    Ok(())
+    Ok(stored)
+}
+
+/// Discards the images an attempt stored for a reply that was not finalized;
+/// an image a message links is kept.
+pub(crate) fn discard_reply_media(
+    store: &dyn ReplyMediaStore,
+    stored: &[AssetId],
+    now: TimestampMillis,
+) {
+    for asset_id in stored {
+        store.discard_reply_image(*asset_id, now);
+    }
 }
 
 fn decode(image: &GeneratedMedia) -> Option<Vec<u8>> {
@@ -154,7 +220,7 @@ mod tests {
     use super::*;
 
     #[derive(Default)]
-    struct Recorded(Mutex<Vec<(AssetId, Vec<u8>)>>);
+    struct Recorded(Mutex<Vec<(AssetId, Vec<u8>)>>, Mutex<Vec<AssetId>>);
 
     impl ReplyMediaStore for Recorded {
         fn store_reply_image(
@@ -166,11 +232,18 @@ mod tests {
             if bytes == b"bad" {
                 return Err(MediaStoreError::UnsupportedFormat);
             }
+            if bytes == b"down" {
+                return Err(MediaStoreError::CatalogFailure);
+            }
             self.0
                 .lock()
                 .expect("store lock")
                 .push((asset_id, bytes.to_vec()));
             Ok(asset_id)
+        }
+
+        fn discard_reply_image(&self, asset_id: AssetId, _now: TimestampMillis) {
+            self.1.lock().expect("discard lock").push(asset_id);
         }
     }
 
@@ -205,7 +278,9 @@ mod tests {
             image("YmFk"),
             image("BAU"),
         ]);
-        attach_reply_media(Some(&store), attempt_id, origin, &mut reply).expect("stored");
+        let now = TimestampMillis::new(1);
+        let ids =
+            attach_reply_media(Some(&store), attempt_id, origin, &mut reply, now).expect("stored");
         assert!(reply.media.is_empty());
         let stored = store.0.lock().expect("store lock").clone();
         assert_eq!(
@@ -228,6 +303,7 @@ mod tests {
                 },
             ]
         );
+        assert_eq!(ids, vec![stored[0].0, stored[1].0]);
         assert_eq!(
             reply_image_asset_id(attempt_id, 0),
             reply_image_asset_id(attempt_id, 0)
@@ -235,10 +311,36 @@ mod tests {
 
         let mut unstored = candidate(vec![image("AQID")]);
         assert_eq!(
-            attach_reply_media(None, attempt_id, origin, &mut unstored),
+            attach_reply_media(None, attempt_id, origin, &mut unstored, now),
             Err(ReplyMediaError::NoStore)
         );
         let mut plain = candidate(Vec::new());
-        attach_reply_media(None, attempt_id, origin, &mut plain).expect("nothing to store");
+        attach_reply_media(None, attempt_id, origin, &mut plain, now).expect("nothing to store");
+        assert!(store.1.lock().expect("discard lock").is_empty());
+    }
+
+    #[test]
+    fn a_store_failure_discards_the_images_already_stored() {
+        let store = Recorded::default();
+        let attempt_id = GenerationAttemptId::new();
+        let origin = ReplyImageOrigin {
+            job_id: JobId::new(),
+            model_profile_id: ModelProfileId::new(),
+        };
+        let mut reply = candidate(vec![image("AQID"), image("ZG93bg=="), image("BAU")]);
+        assert_eq!(
+            attach_reply_media(
+                Some(&store),
+                attempt_id,
+                origin,
+                &mut reply,
+                TimestampMillis::new(1)
+            ),
+            Err(ReplyMediaError::Store(MediaStoreError::CatalogFailure))
+        );
+        assert_eq!(
+            *store.1.lock().expect("discard lock"),
+            vec![reply_image_asset_id(attempt_id, 0)]
+        );
     }
 }

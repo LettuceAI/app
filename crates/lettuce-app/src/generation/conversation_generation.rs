@@ -793,7 +793,10 @@ impl<
             lettuce_conversations::FinishReason::Stop
             | lettuce_conversations::FinishReason::Length => {}
         }
+        let mut outcome = outcome;
+        let media = std::mem::take(&mut outcome.candidates[0].media);
         let mut candidate = outcome.candidates[0].clone();
+        candidate.media = media;
         if input.strip_time_stamps {
             for part in &mut candidate.parts {
                 if let MessagePart::Text { text } = part {
@@ -807,7 +810,7 @@ impl<
                 evidence,
             });
         }
-        super::reply_media::attach_reply_media(
+        let stored_media = super::reply_media::attach_reply_media(
             self.reply_media,
             work.attempt_id,
             super::reply_media::ReplyImageOrigin {
@@ -815,61 +818,78 @@ impl<
                 model_profile_id: input.profile.chat_profile.model_profile_id,
             },
             &mut candidate,
+            now,
         )?;
-        if !candidate.parts.iter().any(|part| match part {
-            MessagePart::Text { text } => !text.trim().is_empty(),
-            MessagePart::MediaAsset { .. } => true,
-            _ => false,
-        }) {
-            return Err(ConversationGenerationRunError::Provider {
-                error: PortError::Empty,
-                evidence,
-            });
+        outcome.candidates[0]
+            .parts
+            .extend(stored_media.iter().map(|asset_id| MessagePart::MediaAsset {
+                asset_id: *asset_id,
+                role: lettuce_conversations::MediaAssetRole::Attachment,
+            }));
+        let settled: Result<ConversationGenerationRunResult, ConversationGenerationRunError> =
+            async {
+                if !candidate.parts.iter().any(|part| match part {
+                    MessagePart::Text { text } => !text.trim().is_empty(),
+                    MessagePart::MediaAsset { .. } => true,
+                    _ => false,
+                }) {
+                    return Err(ConversationGenerationRunError::Provider {
+                        error: PortError::Empty,
+                        evidence,
+                    });
+                }
+                let scene_image = input.reply_images.and_then(|facts| {
+                    crate::image::reply_images::take_scene_image(&mut candidate.parts, facts)
+                });
+                let usage = self.attempt_job_usage(work, &attempt)?;
+                let aggregate = ConversationReader::get(self.repository, conversation_id)?;
+                let turn = self.repository.get_turn(work.turn_id)?;
+                candidate.ordinal = match turn.target {
+                    GenerationTarget::NewAssistant { .. } => 0,
+                    GenerationTarget::ExistingCandidate {
+                        prior_candidate_id, ..
+                    } => self
+                        .repository
+                        .get_candidate(prior_candidate_id)?
+                        .ordinal
+                        .checked_add(1)
+                        .ok_or(ConversationGenerationRunError::InvalidInput)?,
+                };
+                let attempt = attempt_of(&turn, work.attempt_id)?;
+                let finalized = self
+                    .finalize(
+                        &attempt,
+                        &input.profile,
+                        candidate,
+                        usage,
+                        FinalizationContext {
+                            conversation_id,
+                            expected_conversation_revision: aggregate.conversation.revision,
+                            expected_turn_revision: turn.revision,
+                            operation: token(ConversationGenerationOperation::Finalize),
+                            model: input.model,
+                            usage_recorded_at: settled_at,
+                            finalized_at: now,
+                        },
+                        evidence,
+                    )
+                    .await?;
+                Ok(ConversationGenerationRunResult {
+                    turn: finalized.value.turn,
+                    candidate: finalized.value.candidate,
+                    usage_event_id: finalized.value.usage_event_id,
+                    outcomes: vec![outcome],
+                    replayed: false,
+                    scene_image,
+                })
+            }
+            .await;
+        if settled.is_err()
+            && let Some(store) = self.reply_media
+        {
+            super::reply_media::discard_reply_media(store, &stored_media, now);
         }
-        let scene_image = input.reply_images.and_then(|facts| {
-            crate::image::reply_images::take_scene_image(&mut candidate.parts, facts)
-        });
-        let usage = self.attempt_job_usage(work, &attempt)?;
-        let aggregate = ConversationReader::get(self.repository, conversation_id)?;
-        let turn = self.repository.get_turn(work.turn_id)?;
-        candidate.ordinal = match turn.target {
-            GenerationTarget::NewAssistant { .. } => 0,
-            GenerationTarget::ExistingCandidate {
-                prior_candidate_id, ..
-            } => self
-                .repository
-                .get_candidate(prior_candidate_id)?
-                .ordinal
-                .checked_add(1)
-                .ok_or(ConversationGenerationRunError::InvalidInput)?,
-        };
-        let attempt = attempt_of(&turn, work.attempt_id)?;
-        let finalized = self
-            .finalize(
-                &attempt,
-                &input.profile,
-                candidate,
-                usage,
-                FinalizationContext {
-                    conversation_id,
-                    expected_conversation_revision: aggregate.conversation.revision,
-                    expected_turn_revision: turn.revision,
-                    operation: token(ConversationGenerationOperation::Finalize),
-                    model: input.model,
-                    usage_recorded_at: settled_at,
-                    finalized_at: now,
-                },
-                evidence,
-            )
-            .await?;
-        Ok(ConversationGenerationRunResult {
-            turn: finalized.value.turn,
-            candidate: finalized.value.candidate,
-            usage_event_id: finalized.value.usage_event_id,
-            outcomes: vec![outcome],
-            replayed: false,
-            scene_image,
-        })
+        settled
     }
 
     #[allow(clippy::too_many_arguments)]
