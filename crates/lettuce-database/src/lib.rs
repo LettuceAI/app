@@ -2719,6 +2719,34 @@ mod tests {
     }
 
     #[test]
+    fn a_journal_restart_carries_a_delete_no_scan_journaled_yet() {
+        let a = Database::open_in_memory().expect("a");
+        let b = Database::open_in_memory().expect("b");
+        let account = ProviderAccountRepository::upsert(&a, provider(), None).expect("account");
+        let model = ModelProfileRepository::upsert(&a, profile(account.id), None).expect("model");
+        assert_eq!(sync_to(&a, &b, 100), 2);
+        ModelProfileRepository::delete_and_clear_default(&a, model.id).expect("delete on a");
+        for database in [&a, &b] {
+            database
+                .connection()
+                .expect("connection")
+                .execute(
+                    "UPDATE sync_journal_format SET schema_fingerprint = ?1",
+                    ["00".repeat(32)],
+                )
+                .expect("simulate an update that changed payload schemas");
+        }
+
+        sync_to(&a, &b, 200);
+        sync_to(&b, &a, 210);
+
+        assert_eq!(ModelProfileRepository::get(&b, model.id).expect("b model"), None);
+        assert_eq!(ModelProfileRepository::get(&a, model.id).expect("a model"), None);
+        assert_eq!(sync_to(&a, &b, 230), 0);
+        assert_eq!(sync_to(&b, &a, 240), 0);
+    }
+
+    #[test]
     fn a_committed_batch_keeps_no_second_copy_of_its_changes() {
         use lettuce_sync::IncomingChangeRepository;
         let a = Database::open_in_memory().expect("a");

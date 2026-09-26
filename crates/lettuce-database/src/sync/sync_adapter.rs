@@ -599,6 +599,88 @@ fn carried_deletes(tx: &Transaction<'_>) -> Result<Vec<CarriedDelete>, LocalChan
     Ok(carried)
 }
 
+/// Every entity this device deleted after journaling it but before a scan
+/// journaled the delete: its latest journaled state is still content, it is
+/// gone, and `sync_deleted_entities` holds when it was deleted. It is carried
+/// like a journaled delete, stamped with that time (after the entity's latest
+/// change), so peers still learn of it.
+fn unjournaled_deletes(
+    tx: &Transaction<'_>,
+) -> Result<Vec<CarriedDelete>, LocalChangeJournalError> {
+    let recorded = tx
+        .prepare(
+            "SELECT entity_kind, entity_id, deleted_at FROM sync_deleted_entities
+             ORDER BY deleted_at, entity_kind, entity_id",
+        )
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, i64>(2)?,
+                    ))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(storage)?;
+    let mut carried = Vec::new();
+    for (kind, id, deleted_at) in recorded {
+        let latest = tx
+            .query_row(
+                "SELECT change.change_id, change.operation, change.payload_hash
+                 FROM sync_changes change
+                 WHERE change.entity_kind = ?1 AND change.entity_id = ?2
+                   AND NOT EXISTS (
+                     SELECT 1 FROM sync_conflicts conflict
+                     WHERE conflict.incoming_change_id = change.change_id
+                       AND conflict.winning_side = 'current')
+                   AND NOT EXISTS (
+                     SELECT 1 FROM sync_deferred_changes deferred
+                     WHERE deferred.change_id = change.change_id)
+                 ORDER BY change.rowid DESC LIMIT 1",
+                params![kind, id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(storage)?;
+        let Some((change_id, operation, Some(hash))) = latest else {
+            continue;
+        };
+        if operation == "delete" {
+            continue;
+        }
+        let gone = match snapshot_codec(&kind) {
+            Some(codec) => matches!((codec.current)(tx, &id), Ok(None)),
+            None => false,
+        };
+        if !gone {
+            continue;
+        }
+        let entity = SyncEntity::new(kind, id).map_err(corrupt)?;
+        let deleted = HybridTimestamp::new(TimestampMillis::new(deleted_at), 0);
+        let timestamp = match latest_entity_stamp(tx, &entity)? {
+            Some(latest) if latest >= deleted => {
+                successor_stamp(latest).ok_or(LocalChangeJournalError::Corrupt)?
+            }
+            _ => deleted,
+        };
+        carried.push(CarriedDelete {
+            entity,
+            base_revision: Some(ContentHash::parse(hash).map_err(corrupt)?),
+            timestamp,
+            previous_change: change_id,
+        });
+    }
+    Ok(carried)
+}
+
 /// Moves every conflict still waiting for the user's choice into
 /// `sync_carried_conflicts` with both sides, and tells the user. A conflict
 /// where one side is an untouched seed or both sides are equal loses nothing
@@ -660,9 +742,10 @@ fn carry_unresolved_conflicts(
 /// the journal tables are emptied, the device takes a new sync identity (its
 /// hybrid clock carries on), and the next scan journals the current state as
 /// inserts stamped with each entity's own change time. Three things survive:
-/// every delete that is the latest state of its entity here is journaled
-/// again first under the new identity with its original stamp and no causal
-/// dependencies (which marks it as carried, see `unseen_changes`), queued
+/// every delete that is the latest state of its entity here, and every
+/// deletion a scan had not journaled yet ([`unjournaled_deletes`]), is
+/// journaled again first under the new identity with its original stamp and
+/// no causal dependencies (which marks it as carried, see `unseen_changes`), queued
 /// purges and re-journals stay as pending work (a queued purge now points at
 /// its carried delete), and conflicts still waiting for the user's choice
 /// move to `sync_carried_conflicts` with a notice. Peers updated to the same
@@ -694,7 +777,8 @@ pub(crate) fn rebaseline_journal_if_format_changed(
         .map_err(storage)?;
     let rebaselined = clock.is_some();
     if let Some((wall_time, counter)) = clock {
-        let deletes = carried_deletes(tx)?;
+        let mut deletes = carried_deletes(tx)?;
+        deletes.extend(unjournaled_deletes(tx)?);
         carry_unresolved_conflicts(tx, now)?;
         let mut guarded = JOURNAL_TABLES.to_vec();
         guarded.push("sync_local_state");
