@@ -16,9 +16,9 @@ use crate::{
     RetentionClass,
 };
 
-/// The first local ingestion slice is deliberately bounded to 64 MiB per
-/// object. This is also below the platform facade's maximum read size.
-pub const MAX_MEDIA_BLOB_BYTES: u64 = 64 * 1024 * 1024;
+/// A malformed-input guard, equal to the largest entry a backup can carry so
+/// every stored object stays restorable.
+pub const MAX_MEDIA_BLOB_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 pub const MAX_SYNC_MEDIA_CHUNK_BYTES: usize = 1024 * 1024;
 /// Image dimensions are read from bounded headers only; no decoder is used.
 /// This guards downstream decoders from pathological allocation requests.
@@ -887,8 +887,8 @@ where
                         .open_read(&self.read_capability, key)
                         .map_err(MediaStoreError::File)?;
                     let existing =
-                        read_bounded(&mut existing).map_err(|_| MediaStoreError::ObjectConflict)?;
-                    if content_hash(blake3::hash(&existing)) == *expected_hash {
+                        hash_reader(&mut existing).map_err(|_| MediaStoreError::ObjectConflict)?;
+                    if existing == *expected_hash {
                         Ok(())
                     } else {
                         Err(MediaStoreError::ObjectConflict)
@@ -1305,16 +1305,23 @@ fn le_u32(bytes: &[u8]) -> Result<u32, MediaStoreError> {
         .map_err(|_| MediaStoreError::InvalidHeader)
 }
 
-/// Installs verified backup bytes at their content-addressed object key. An
+/// Streams backup media from `source` to its content-addressed object key
+/// and installs it only when the written bytes hash to `content_hash`. An
 /// object that is already installed must hash to the same content.
 pub fn install_backup_media_object(
     root: impl AsRef<Path>,
     content_hash: &ContentHash,
-    bytes: &[u8],
+    byte_size: u64,
+    source: &mut impl Read,
 ) -> Result<(), MediaStoreError> {
     let _lifecycle = blob_lifecycle();
     let files = ConfinedInstallStore::open(root).map_err(MediaStoreError::File)?;
-    let byte_size = u64::try_from(bytes.len()).map_err(|_| MediaStoreError::InputTooLarge)?;
+    if byte_size == 0 {
+        return Err(MediaStoreError::EmptyInput);
+    }
+    if byte_size > MAX_MEDIA_BLOB_BYTES {
+        return Err(MediaStoreError::InputTooLarge);
+    }
     match files
         .prepare(
             restore_partial_key(content_hash)?,
@@ -1330,7 +1337,17 @@ pub fn install_backup_media_object(
         }
         InstallPreparation::Resume(mut file) => {
             file.restart().map_err(MediaStoreError::File)?;
-            file.append(bytes).map_err(MediaStoreError::File)?;
+            let mut buffer = vec![0_u8; 1024 * 1024];
+            loop {
+                let read = source
+                    .read(&mut buffer)
+                    .map_err(|_| MediaStoreError::InputRead)?;
+                if read == 0 {
+                    break;
+                }
+                file.append(&buffer[..read])
+                    .map_err(MediaStoreError::File)?;
+            }
             file.rewind().map_err(MediaStoreError::File)?;
             if hash_reader(&mut file)? != *content_hash {
                 file.restart().map_err(MediaStoreError::File)?;
@@ -1578,6 +1595,72 @@ mod tests {
         bytes.extend_from_slice(&[8, 6, 0, 0, 0]);
         bytes.extend_from_slice(b"payload");
         bytes
+    }
+
+    #[test]
+    fn media_over_64_mib_is_ingested_and_restored_by_streaming() {
+        let root = std::env::temp_dir().join(format!("lettuce-media-{}", AssetId::new()));
+        let snapshot = DirectorySnapshot::new(&root).expect("snapshot");
+        let authority = FilesystemAuthority::new(&snapshot).expect("authority");
+        let store = LocalMediaBlobStore::new(
+            authority.managed_files(),
+            authority
+                .read_capability(ManagedRoot::MediaBlobs)
+                .expect("read capability"),
+            authority
+                .write_capability(ManagedRoot::MediaBlobs)
+                .expect("write capability"),
+            BlobMemory::default(),
+            AssetMemory::default(),
+        );
+        let mut input = png_fixture();
+        input.resize(65 * 1024 * 1024, 0);
+        let ingested = store
+            .ingest(
+                input.as_slice(),
+                IngestRequest::new(
+                    AssetKind::OtherImage,
+                    AssetOrigin::Upload,
+                    RetentionClass::Library,
+                    AssetProvenanceV1::default(),
+                ),
+            )
+            .expect("ingest over 64 MiB");
+        assert_eq!(ingested.blob.byte_size, input.len() as u64);
+
+        let restore_root =
+            std::env::temp_dir().join(format!("lettuce-media-restore-{}", AssetId::new()));
+        let hash = content_hash(blake3::hash(&input));
+        install_backup_media_object(
+            &restore_root,
+            &hash,
+            input.len() as u64,
+            &mut input.as_slice(),
+        )
+        .expect("streamed restore over 64 MiB");
+        let installed = std::fs::metadata(
+            restore_root
+                .join("objects")
+                .join(&hash.as_str()[..2])
+                .join(&hash.as_str()[2..4])
+                .join(hash.as_str()),
+        )
+        .expect("installed object");
+        assert_eq!(installed.len(), input.len() as u64);
+        let mut tampered = input.clone();
+        tampered[100] ^= 1;
+        let other = content_hash(blake3::hash(b"other"));
+        assert_eq!(
+            install_backup_media_object(
+                &restore_root,
+                &other,
+                tampered.len() as u64,
+                &mut tampered.as_slice(),
+            ),
+            Err(MediaStoreError::ObjectConflict)
+        );
+        std::fs::remove_dir_all(root).expect("remove fixture");
+        std::fs::remove_dir_all(restore_root).expect("remove restore fixture");
     }
 
     #[test]

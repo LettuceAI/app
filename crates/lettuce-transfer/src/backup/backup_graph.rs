@@ -22,6 +22,8 @@ use serde::{Deserialize, Serialize, Serializer, ser::SerializeStruct};
 
 use crate::BackupSection;
 
+const _: () = assert!(MAX_MEDIA_BLOB_BYTES <= crate::MAX_BACKUP_ENTRY_BYTES);
+
 pub const PROVIDER_BACKUP_GRAPH_VERSION: u32 = 2;
 pub const PROVIDER_BACKUP_FIXED_SECTIONS: usize = 13;
 /// Largest byte run one data document occupies in a single backup entry; a

@@ -176,6 +176,21 @@ impl BackupRestoreWorkspace {
         Ok(())
     }
 
+    /// The staged file of one media blob, for streaming; the reader is not
+    /// checked against its hash, so its consumer must verify the content.
+    pub fn open_staged_media(
+        &self,
+        expected: &ContentHash,
+    ) -> Result<lettuce_platform::InstalledFile, BackupRestoreWorkspaceError> {
+        self.files
+            .inspect(
+                &ObjectKey::from_segments(["media", "blobs", expected.as_str()])
+                    .map_err(BackupRestoreWorkspaceError::Platform)?,
+            )
+            .map_err(BackupRestoreWorkspaceError::Platform)?
+            .ok_or(BackupRestoreWorkspaceError::Conflict)
+    }
+
     /// The staged bytes of one media blob, checked against its hash.
     pub fn read_staged_media(
         &self,

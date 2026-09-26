@@ -63,8 +63,9 @@ anything is decrypted, and the decrypted documents held for planning have no
 total limit). A live file that changed
 after the inventory fails its import with `SourceChanged`. The live database
 inventory no longer rejects a large or unreferenced file or a library over
-512 MiB; the media plan still limits each referenced object to 64 MiB (the
-media store limit) and the legacy media total is now the backup total. The
+512 MiB; the media plan limits each referenced object only by the media
+store guard (2 GiB, the backup entry size) and the legacy media total is the
+backup total. The
 live inventory source hash binds each file's size and content hash instead of
 its bytes.
 

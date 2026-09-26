@@ -243,7 +243,7 @@ impl AsrLearningDocument {
         Ok(())
     }
 }
-pub const LEGACY_MEDIA_OBJECT_BYTES_LIMIT: u64 = 64 * 1024 * 1024;
+pub const LEGACY_MEDIA_OBJECT_BYTES_LIMIT: u64 = lettuce_media::MAX_MEDIA_BLOB_BYTES;
 pub const LEGACY_MEDIA_TOTAL_BYTES_LIMIT: u64 = crate::MAX_BACKUP_TOTAL_BYTES;
 
 /// A legacy row kept verbatim in the import provenance of its run: a JSON

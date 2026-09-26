@@ -18,7 +18,6 @@ use crate::{
     },
 };
 
-pub(crate) const MAX_READ_BYTES: u64 = 64 * 1024 * 1024;
 pub(crate) const MAX_RECOVERY_ARTIFACTS: usize = 256;
 pub(crate) const MAX_RECOVERY_DEPTH: usize = 16;
 pub(crate) const MAX_LIST_ENTRIES: usize = 1024;
@@ -40,14 +39,9 @@ impl ManagedFiles {
         capability: &ReadCapability,
         key: &ObjectKey,
     ) -> Result<Vec<u8>, PlatformError> {
-        let file = self.open_read(capability, key)?;
+        let mut file = self.open_read(capability, key)?;
         let mut bytes = Vec::new();
-        file.take(MAX_READ_BYTES + 1)
-            .read_to_end(&mut bytes)
-            .map_err(PlatformError::from)?;
-        if bytes.len() as u64 > MAX_READ_BYTES {
-            return Err(PlatformError::LimitExceeded);
-        }
+        file.read_to_end(&mut bytes).map_err(PlatformError::from)?;
         Ok(bytes)
     }
 

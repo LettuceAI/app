@@ -264,10 +264,12 @@ impl<'a, S: SecretStore + ?Sized> BackupRestoreCoordinator<'a, S> {
         })
         .unwrap_or_else(|never| match never {});
         for entry in &plan.media {
+            let mut staged = workspace.open_staged_media(&entry.content_hash)?;
             lettuce_media::install_backup_media_object(
                 self.media_root,
                 &entry.content_hash,
-                &workspace.read_staged_media(&entry.content_hash)?,
+                staged.len(),
+                &mut staged,
             )
             .map_err(BackupRestoreError::Media)?;
         }
