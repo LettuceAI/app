@@ -25,7 +25,7 @@ const OOM_SIGNATURES: [&str; 8] = [
     "cuda error",
 ];
 
-/// Local generation progress, the legacy `sdcpp-generation-progress` phases.
+/// Local generation progress, the `sdcpp-generation-progress` phases.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(tag = "phase", rename_all = "camelCase")]
 pub enum GenerationProgress {
@@ -68,7 +68,7 @@ pub enum OutputSegment {
     Blank,
     /// A plain line, logged as runtime output.
     Log(String),
-    /// A step line; `log` is set for the final step, which legacy logged.
+    /// A step line; `log` is set for the final step, which is logged.
     Progress {
         progress: GenerationProgress,
         step: u32,
@@ -115,8 +115,8 @@ impl Default for RuntimeOutput {
     }
 }
 
-/// The progress throttle of one output stream; legacy throttled stdout and
-/// stderr separately.
+/// The progress throttle of one output stream; stdout and stderr are
+/// throttled separately.
 #[derive(Debug, Default)]
 pub struct ProgressThrottle {
     last_emit: Option<Instant>,

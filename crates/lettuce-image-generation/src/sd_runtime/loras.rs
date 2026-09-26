@@ -1,5 +1,5 @@
 //! LoRA files as sd-server loads them: library-relative paths, with FLUX.2
-//! Klein tensor aliases rewritten into a compatibility cache like legacy.
+//! Klein tensor aliases rewritten into a compatibility cache.
 
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Component, Path, PathBuf};
@@ -27,8 +27,8 @@ pub enum LoraPathError {
     Compatibility(String),
 }
 
-/// The file size and modification time (seconds) legacy fingerprinted LoRA
-/// files by.
+/// The file size and modification time (seconds) LoRA files are
+/// fingerprinted by.
 pub fn lora_file_fingerprint(path: &Path) -> Result<(u64, u64), String> {
     let metadata = std::fs::metadata(path)
         .map_err(|error| format!("Failed to inspect the LoRA file: {error}"))?;

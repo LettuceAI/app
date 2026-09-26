@@ -1,7 +1,7 @@
-//! The managed sd-server process and local generation, run as legacy ran
-//! them: one server reused while its model, engine build and compute policy
-//! stay the same, a native job API polled every 500 ms, and one retry with
-//! CPU-offloaded weights after an out-of-memory failure.
+//! The managed sd-server process and local generation: one server reused
+//! while its model, engine build and compute policy stay the same, a native
+//! job API polled every 500 ms, and one retry with CPU-offloaded weights
+//! after an out-of-memory failure.
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -54,7 +54,7 @@ pub trait EngineHost: Send + Sync {
     /// The system GPUs with live memory (the llama.cpp device list).
     async fn gpu_devices(&self) -> Result<Vec<HardwareGpu>, String>;
     fn available_memory_bytes(&self) -> Option<u64>;
-    /// Legacy unloaded the llama.cpp model before starting the image server.
+    /// Unloads the llama.cpp model before the image server starts.
     async fn unload_local_llm(&self) -> Result<(), String>;
 }
 
@@ -938,7 +938,7 @@ impl LocalDiffusionEngine {
     }
 
     /// Stops the server before a llama.cpp request; a failed kill fails that
-    /// request like legacy.
+    /// request.
     pub async fn stop_for_llama(&self) -> Result<(), String> {
         let mut managed = self.server.lock().await;
         if let Some(server) = managed.as_mut() {

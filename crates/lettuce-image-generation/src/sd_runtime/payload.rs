@@ -1,4 +1,4 @@
-//! The sd-server native `img_gen` request, built from the legacy defaults.
+//! The sd-server native `img_gen` request, built from fixed defaults.
 
 use serde_json::{Value, json};
 
@@ -46,7 +46,7 @@ pub enum EngineRequestError {
     MaskWithoutSource,
 }
 
-/// Legacy `parse_size_dimensions`: a positive `WxH`, else the defaults.
+/// A positive `WxH`, else the defaults.
 #[must_use]
 pub fn parse_size_dimensions(
     size: Option<&str>,
@@ -82,8 +82,8 @@ fn parse_slg_layers(raw: &str) -> Vec<i64> {
         .collect()
 }
 
-/// The legacy `img_gen` payload. Reference rules come first: a mask, or a
-/// single reference on a model without editing, becomes the init image.
+/// The `img_gen` payload. Reference rules come first: a mask, or a single
+/// reference on a model without editing, becomes the init image.
 pub fn build_generation_payload(
     input: &EngineGenerationInput<'_>,
     limits: EngineModelLimits<'_>,

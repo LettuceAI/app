@@ -1,5 +1,5 @@
 //! stable-diffusion.cpp engine builds from the upstream GitHub releases,
-//! resolved at runtime like legacy (no pinned engine version).
+//! resolved at runtime (no pinned engine version).
 
 use serde::{Deserialize, Serialize};
 
@@ -54,7 +54,7 @@ pub struct RuntimeRelease {
     pub assets: Vec<RuntimeAsset>,
 }
 
-/// The platforms legacy offered engine builds for.
+/// The platforms engine builds are offered for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimePlatform {
     LinuxX64,

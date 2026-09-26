@@ -1,5 +1,5 @@
-//! Per-runtime GPU selection for stable-diffusion.cpp, as legacy stored it
-//! next to each installed engine build.
+//! Per-runtime GPU selection for stable-diffusion.cpp, stored next to each
+//! installed engine build.
 
 use std::collections::{BTreeMap, HashSet};
 
@@ -266,7 +266,7 @@ fn normalized_device_identity(value: &str) -> String {
 }
 
 /// Matches each engine device to an unused system GPU by name, then by
-/// description; the budget leaves the legacy 512 MiB margin.
+/// description; the budget leaves a 512 MiB margin.
 pub fn match_runtime_devices(
     runtime_devices: Vec<RuntimeDevice>,
     hardware: &[HardwareGpu],

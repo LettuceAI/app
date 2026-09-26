@@ -1,6 +1,6 @@
-//! The stable-diffusion.cpp placement estimate, ported unchanged from legacy
-//! (which mirrors upstream `src/core/backend_fit.cpp`). Catalog file sizes
-//! stand in for tensor byte counts that are unknown before download.
+//! The stable-diffusion.cpp placement estimate, mirroring upstream
+//! `src/core/backend_fit.cpp`. Catalog file sizes stand in for tensor byte
+//! counts that are unknown before download.
 
 use serde::{Deserialize, Serialize};
 

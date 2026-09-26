@@ -10,8 +10,8 @@ pub const MAX_INPUT_IMAGES: usize = 16;
 pub const MAX_PROMPT_BYTES: usize = 64 * 1024;
 const MAX_OPTION_BYTES: usize = 64;
 
-/// Which part of the app asked for the image; legacy recorded it as the
-/// usage source, with no source for direct requests.
+/// Which part of the app asked for the image, recorded as the usage source;
+/// direct requests have no source.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ImageGenerationSource {
@@ -21,8 +21,8 @@ pub enum ImageGenerationSource {
     CreationHelper,
 }
 
-/// Where the image belongs for usage reporting; legacy fell back to a
-/// generic image generation owner when neither is set.
+/// Where the image belongs for usage reporting; a generic image generation
+/// owner is used when neither is set.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ImageAttribution {
@@ -40,9 +40,7 @@ pub enum ImageOutputPolicy {
 }
 
 /// One image generation. `settings` are per-request settings laid over the
-/// model's own, as legacy callers spread them over the model's settings; an
-/// empty `settings.base_loras` drops the model's base LoRAs, as the legacy
-/// playground did by clearing them.
+/// model's own; an empty `settings.base_loras` drops the model's base LoRAs.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ImageGenerationRequest {

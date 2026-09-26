@@ -1,5 +1,5 @@
-//! The upscaler library and one-shot upscaling through `sd-cli`, as legacy
-//! ran it (the server stays as it is).
+//! The upscaler library and one-shot upscaling through `sd-cli` (the server
+//! stays as it is).
 
 use std::path::Path;
 use std::process::Stdio;
@@ -87,8 +87,7 @@ impl LocalDiffusionEngine {
         Ok(self.upscaler_inventory())
     }
 
-    /// Whether an upscale can run, checked before the image is read as
-    /// legacy did.
+    /// Whether an upscale can run, checked before the image is read.
     pub fn check_upscale_ready(&self) -> Result<(), String> {
         self.upscale_target().map(|_| ())
     }

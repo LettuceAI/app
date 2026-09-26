@@ -1,6 +1,6 @@
 //! What the local image settings page shows and changes: the catalog with
 //! install state, engine builds, the active build, compute policies, model
-//! file detection and disk usage (legacy `sdcpp_*` commands).
+//! file detection and disk usage.
 
 use std::path::Path;
 
@@ -81,7 +81,7 @@ pub struct ComputePolicyInfo {
     pub devices: Vec<FitDevice>,
 }
 
-/// The bundle-assembly view of a catalog profile (legacy `HfBundleProfile`).
+/// The bundle-assembly view of a catalog profile.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BundleProfileView {
@@ -171,8 +171,7 @@ fn directory_size(path: &Path) -> u64 {
 
 impl LocalDiffusionEngine {
     /// Whether every file of a variant is on disk at its expected size and an
-    /// engine build is installed (legacy `is_variant_installed` with no
-    /// specific build).
+    /// engine build is installed.
     #[must_use]
     pub fn variant_installed(
         &self,
@@ -237,8 +236,7 @@ impl LocalDiffusionEngine {
         }
     }
 
-    /// Installed builds and the active one; an implicit choice is saved, as
-    /// legacy did.
+    /// Installed builds and the active one; an implicit choice is saved.
     pub fn runtime_inventory(&self) -> Result<RuntimeInventory, String> {
         let mut installed = self.installed_runtimes();
         let saved = saved_active_runtime(self.paths());

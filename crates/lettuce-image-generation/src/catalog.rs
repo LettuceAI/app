@@ -39,7 +39,7 @@ pub struct DiffusionVariant {
 }
 
 /// A one-click stable-diffusion.cpp model with its pinned files and the
-/// markers legacy used to recognise user-picked files of the same model.
+/// markers that recognise user-picked files of the same model.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DiffusionProfile {
@@ -66,7 +66,7 @@ pub struct DiffusionProfile {
     pub encoder_parameter_billions: f32,
 }
 
-/// The pinned upscaler model legacy recommended.
+/// The pinned recommended upscaler model.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PinnedUpscaler {
@@ -139,7 +139,7 @@ impl DiffusionComponent {
             && is_safe_relative_path(&self.repo)
     }
 
-    /// The file name alone, as legacy stored components under their hash.
+    /// The file name alone, as components are stored under their hash.
     #[must_use]
     pub fn basename(&self) -> &str {
         self.filename.rsplit('/').next().unwrap_or(&self.filename)
@@ -175,8 +175,8 @@ impl DiffusionCatalog {
             .ok_or_else(|| DiffusionCatalogError::UnknownProfile(id.to_owned()))
     }
 
-    /// A profile and variant for an install; legacy's install lookup names
-    /// an unknown profile a model rather than an architecture.
+    /// A profile and variant for an install; an unknown profile is reported
+    /// as a model rather than an architecture.
     pub fn find_variant(
         &self,
         profile_id: &str,
@@ -260,8 +260,8 @@ impl DiffusionProfile {
             .sum()
     }
 
-    /// Legacy's installed model name: the profile, then the variant label
-    /// without its recommendation suffix.
+    /// The installed model name: the profile, then the variant label without
+    /// its recommendation suffix.
     #[must_use]
     pub fn installed_display_name(&self, variant: &DiffusionVariant) -> String {
         format!(
@@ -286,8 +286,8 @@ impl DiffusionProfile {
         roles
     }
 
-    /// Each role's repository legacy suggested: the first variant's, then the
-    /// first shared file of each role.
+    /// Each role's suggested repository: the first variant's, then the first
+    /// shared file of each role.
     #[must_use]
     pub fn recommended_repositories(&self) -> BTreeMap<DiffusionComponentRole, &str> {
         let mut repositories = BTreeMap::new();
@@ -305,8 +305,8 @@ impl DiffusionProfile {
         repositories
     }
 
-    /// Legacy accepted a runtime only when its `master-<build>` tag is at
-    /// least the profile's minimum build.
+    /// Accepts a runtime only when its `master-<build>` tag is at least the
+    /// profile's minimum build.
     pub fn check_runtime(&self, runtime_release: &str) -> Result<(), DiffusionCatalogError> {
         let Some(minimum) = self.minimum_runtime_build else {
             return Ok(());

@@ -1,5 +1,5 @@
 //! Where engine builds, downloads, components, LoRAs and upscalers live. The
-//! layout is legacy's, so builds and models a legacy install already
+//! layout is the one legacy installs use, so builds and models they already
 //! downloaded keep working.
 
 use std::path::{Path, PathBuf};
@@ -25,7 +25,7 @@ pub struct DiffusionPaths {
     /// The configurable image model folder; components live below it.
     pub image_root: PathBuf,
     /// `<app>/models/image` when the user moved the image folder elsewhere:
-    /// legacy kept using components already downloaded there.
+    /// components already downloaded there stay in use.
     pub default_image_root: Option<PathBuf>,
     /// `<app>/models/loras`
     pub loras: PathBuf,
@@ -36,8 +36,8 @@ pub struct DiffusionPaths {
 }
 
 impl DiffusionPaths {
-    /// Legacy's layout below the app data folder, with the image model
-    /// folder the user configured.
+    /// The layout below the app data folder, with the image model folder the
+    /// user configured.
     #[must_use]
     pub fn legacy_layout(app_dir: &Path, image_root: PathBuf) -> Self {
         let default_image_root = app_dir.join("models").join("image");
@@ -77,7 +77,7 @@ impl DiffusionPaths {
     }
 
     /// The component in the image folder, or in the default folder when only
-    /// that one has it (legacy `component_path`).
+    /// that one has it.
     #[must_use]
     pub fn component_path(&self, component: &DiffusionComponent) -> PathBuf {
         let relative = Self::component_segments(component)
@@ -94,7 +94,7 @@ impl DiffusionPaths {
     }
 }
 
-/// Legacy's folder-name rule: ASCII letters, digits, `-`, `_` and `.` kept,
+/// The folder-name rule: ASCII letters, digits, `-`, `_` and `.` kept,
 /// anything else replaced by `_`.
 #[must_use]
 pub fn safe_path_segment(value: &str) -> String {

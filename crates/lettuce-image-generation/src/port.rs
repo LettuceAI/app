@@ -69,7 +69,7 @@ pub struct ProviderImageOutput {
     pub usage: Option<InferenceUsage>,
 }
 
-/// Provider failures carry the message legacy showed the user.
+/// Provider failures carry the message shown to the user.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ImageProviderError {
     #[error("{0}")]

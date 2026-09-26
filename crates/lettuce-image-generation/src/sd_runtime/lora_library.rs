@@ -1,6 +1,6 @@
 //! The local LoRA library: files below the LoRA folder with their trigger
 //! keywords and base architecture, found in safetensors metadata or on
-//! CivitAI, or set by the user (legacy `image_loras` and `sdcpp_*lora*`).
+//! CivitAI, or set by the user.
 
 use std::collections::HashSet;
 use std::io::Read;
@@ -209,8 +209,8 @@ pub fn keywords_from_safetensors_metadata(metadata: &Map<String, Value>) -> Vec<
     }
 }
 
-/// Legacy's base-model names: the first family whose marker the value
-/// contains, with or without separators.
+/// The base-model names: the first family whose marker the value contains,
+/// with or without separators.
 #[must_use]
 pub fn normalize_lora_architecture(value: &str) -> Option<String> {
     let value = value
@@ -415,7 +415,7 @@ pub fn apply_stored_lora_keywords(lora: &mut StableDiffusionLora, record: &LoraR
 }
 
 /// Fills each LoRA's keywords from the library before the prompt is
-/// composed (legacy `hydrate_lora_keywords`).
+/// composed.
 pub fn hydrate_lora_keywords<R: LoraLibraryRepository + ?Sized>(
     repository: &R,
     loras: &mut [StableDiffusionLora],

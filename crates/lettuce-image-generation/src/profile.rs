@@ -17,8 +17,8 @@ pub struct ResolvedImageProfile {
     pub external_model_id: String,
     pub display_name: String,
     pub settings: StableDiffusionSettings,
-    /// Legacy asked providers that can answer with text for text alongside
-    /// the image when the model outputs text.
+    /// Providers that can answer with text are asked for text alongside the
+    /// image when the model outputs text.
     pub text_output: bool,
 }
 
@@ -53,8 +53,8 @@ pub enum ImageProfileError {
     InvalidSettings,
 }
 
-/// Legacy treated any model whose output scopes include images as an image
-/// model, whatever its kind.
+/// Any model whose output scopes include images is an image model, whatever
+/// its kind.
 pub fn resolve_image_profile(
     profile: &ModelProfile,
     account: &ProviderAccount,
