@@ -211,6 +211,7 @@ fn outcome() -> InferenceOutcome {
             }],
             tool_calls: vec![],
             provider_replay: None,
+            media: Vec::new(),
         }],
         usage: Some(InferenceUsage {
             image_tokens: None,

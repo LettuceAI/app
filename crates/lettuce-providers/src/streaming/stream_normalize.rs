@@ -87,6 +87,7 @@ pub(crate) struct StreamNormalizer {
     gemini_has_thought_signature: bool,
     requires_anthropic_tool_calls: bool,
     terminal: bool,
+    images: Vec<lettuce_conversations::GeneratedMedia>,
 }
 
 #[derive(Debug, Default)]
@@ -157,6 +158,7 @@ impl StreamNormalizer {
             gemini_has_thought_signature: false,
             requires_anthropic_tool_calls: false,
             terminal: false,
+            images: Vec::new(),
         }
     }
 
@@ -242,6 +244,7 @@ impl StreamNormalizer {
         if self.text.trim().is_empty()
             && self.reasoning.trim().is_empty()
             && tool_calls.is_empty()
+            && self.images.is_empty()
             && !self
                 .warning_codes
                 .contains(&InferenceWarningCode::SafetyTransformed)
@@ -269,6 +272,7 @@ impl StreamNormalizer {
                 parts,
                 tool_calls,
                 provider_replay: None,
+                media: self.images,
             }],
             usage,
             finish_reason: self.finish_reason,
@@ -287,14 +291,15 @@ impl StreamNormalizer {
     }
 
     /// The reply a cancellation keeps: the `text` and `reasoning` that reached
-    /// the user, with this stream's usage and identifiers and without tool
-    /// calls or provider replay. `None` when no visible text reached the user.
+    /// the user and every image received whole, with this stream's usage and
+    /// identifiers and without tool calls or provider replay. `None` when
+    /// neither visible text nor an image arrived.
     pub(crate) fn cancelled_outcome(
         self,
         text: String,
         reasoning: String,
     ) -> Option<InferenceOutcome> {
-        if text.trim().is_empty() {
+        if text.trim().is_empty() && self.images.is_empty() {
             return None;
         }
         let usage = self.usage();
@@ -302,7 +307,9 @@ impl StreamNormalizer {
         if !reasoning.is_empty() {
             parts.push(MessagePart::ReasoningSummary { text: reasoning });
         }
-        parts.push(MessagePart::Text { text });
+        if !text.is_empty() {
+            parts.push(MessagePart::Text { text });
+        }
         let outcome = InferenceOutcome {
             provider_response_id: self.provider_response_id,
             candidates: vec![InferenceCandidate {
@@ -310,6 +317,7 @@ impl StreamNormalizer {
                 parts,
                 tool_calls: Vec::new(),
                 provider_replay: None,
+                media: self.images,
             }],
             usage,
             finish_reason: FinishReason::Cancelled,
@@ -517,6 +525,13 @@ impl StreamNormalizer {
             for call in calls {
                 self.append_openai_tool_call(call)?;
             }
+        }
+        if let Some(images) = delta
+            .and_then(|delta| delta.get("images"))
+            .and_then(Value::as_array)
+        {
+            self.images
+                .extend(crate::media::openai_generated_images(images));
         }
         if let Some(reason) = choice.get("finish_reason").and_then(Value::as_str) {
             self.set_finish_reason(reason, FinishFamily::OpenAi);
@@ -870,6 +885,15 @@ impl StreamNormalizer {
                         || part.get("toolResponse").is_some()
                     {
                         return Err(StreamNormalizeError::MalformedJson);
+                    }
+                    if part.get("thought").and_then(Value::as_bool) != Some(true)
+                        && let Some(image) = part
+                            .get("inlineData")
+                            .or_else(|| part.get("inline_data"))
+                            .and_then(crate::media::gemini_generated_image)
+                    {
+                        self.images.push(image);
+                        continue;
                     }
                     if part
                         .get("thoughtSignature")
@@ -1417,6 +1441,51 @@ mod tests {
                 .contains(&InferenceWarningCode::Truncated)
         );
         assert_eq!(outcome.candidates[0].parts.len(), 2);
+    }
+
+    #[test]
+    fn image_outputs_become_candidate_media_and_survive_a_stop() {
+        let mut openai = StreamNormalizer::new(StreamProtocol::OpenAi, None);
+        openai
+            .consume(&record(
+                r#"{"choices":[{"delta":{"images":[{"type":"image_url","image_url":{"url":"data:image/png;base64,iVBORw0KGgo="}},{"image_url":{"url":"https://cdn.example/x.png"}}]},"finish_reason":"stop"}]}"#,
+            ))
+            .unwrap();
+        let (_, outcome) = openai.finish().unwrap();
+        assert!(outcome.candidates[0].parts.is_empty());
+        assert_eq!(
+            outcome.candidates[0].media,
+            vec![lettuce_conversations::GeneratedMedia {
+                mime_type: "image/png".into(),
+                base64_data: "iVBORw0KGgo=".into(),
+            }]
+        );
+
+        let mut gemini = StreamNormalizer::new(StreamProtocol::Gemini, None);
+        let picture = "A".repeat(5 * 1024 * 1024);
+        gemini
+            .consume(&record(&format!(
+                r#"{{"candidates":[{{"content":{{"parts":[{{"text":"Here"}},{{"inlineData":{{"mimeType":"image/jpeg","data":"{picture}"}}}},{{"inlineData":{{"mimeType":"audio/wav","data":"AAAA"}}}},{{"thought":true,"inlineData":{{"mimeType":"image/png","data":"BBBB"}}}}]}}}}]}}"#
+            )))
+            .unwrap();
+        let cancelled = gemini
+            .cancelled_outcome(String::new(), String::new())
+            .expect("a whole image is kept on stop");
+        assert_eq!(cancelled.finish_reason, FinishReason::Cancelled);
+        assert!(cancelled.candidates[0].parts.is_empty());
+        assert_eq!(cancelled.candidates[0].media.len(), 1);
+        assert_eq!(cancelled.candidates[0].media[0].mime_type, "image/jpeg");
+        assert_eq!(
+            cancelled.candidates[0].media[0].base64_data.len(),
+            picture.len()
+        );
+
+        let nothing = StreamNormalizer::new(StreamProtocol::Gemini, None);
+        assert!(
+            nothing
+                .cancelled_outcome(String::new(), String::new())
+                .is_none()
+        );
     }
 
     #[test]

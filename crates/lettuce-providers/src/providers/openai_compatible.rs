@@ -751,8 +751,11 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
             tagged_reasoning,
             explicit_reasoning.iter().map(String::as_str),
         );
-        has_content |=
-            !text.trim().is_empty() || !reasoning.trim().is_empty() || !tool_calls.is_empty();
+        let media = crate::media::openai_generated_images(&message.images);
+        has_content |= !text.trim().is_empty()
+            || !reasoning.trim().is_empty()
+            || !tool_calls.is_empty()
+            || !media.is_empty();
         let mut parts = Vec::new();
         if !reasoning.is_empty() {
             parts.push(MessagePart::ReasoningSummary { text: reasoning });
@@ -778,6 +781,7 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
             parts,
             tool_calls,
             provider_replay: None,
+            media,
         });
     }
     if !has_content
@@ -1026,6 +1030,8 @@ struct OpenAiResponseMessage {
     reasoning_content: Option<serde_json::Value>,
     #[serde(default, deserialize_with = "crate::common::null_as_default")]
     tool_calls: Vec<OpenAiResponseToolCall>,
+    #[serde(default, deserialize_with = "crate::common::null_as_default")]
+    images: Vec<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
@@ -1659,6 +1665,28 @@ mod tests {
             assert_eq!(buffered.audio_tokens, audio);
             assert_eq!(buffered.total_tokens, total);
         }
+    }
+
+    #[test]
+    fn message_images_become_candidate_media_and_an_image_only_reply_is_not_empty() {
+        let outcome = parse_response(response(
+            r#"{"choices":[{"message":{"role":"assistant","content":null,"images":[{"type":"image_url","image_url":{"url":"data:image/webp;base64,UklGRg=="}}]},"finish_reason":"stop"}]}"#,
+        ))
+        .expect("image-only reply");
+        assert!(outcome.candidates[0].parts.is_empty());
+        assert_eq!(
+            outcome.candidates[0].media,
+            vec![lettuce_conversations::GeneratedMedia {
+                mime_type: "image/webp".into(),
+                base64_data: "UklGRg==".into(),
+            }]
+        );
+        assert!(matches!(
+            parse_response(response(
+                r#"{"choices":[{"message":{"content":"","images":[{"image_url":{"url":"https://cdn.example/a.png"}}]},"finish_reason":"stop"}]}"#,
+            )),
+            Err(AdapterError::EmptyResponse)
+        ));
     }
 
     #[test]

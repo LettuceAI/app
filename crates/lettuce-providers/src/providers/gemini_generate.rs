@@ -50,6 +50,17 @@ pub(crate) trait GeminiWireProvider: Sync {
         None
     }
 
+    /// The `responseModalities` a model must be asked for; image-output
+    /// models only emit images when asked.
+    fn response_modalities(&self, _model: &str) -> Option<&'static [&'static str]> {
+        None
+    }
+
+    /// Whether the model's replies are streamed when streaming is on.
+    fn streams_model(&self, _model: &str) -> bool {
+        true
+    }
+
     fn parse_models(&self, payload: &serde_json::Value) -> Vec<RemoteModel> {
         payload
             .get("models")
@@ -151,15 +162,18 @@ pub(crate) async fn run<S: SecretStore + ?Sized>(
     let path = provider.generate_path(&profile.external_model_id)?;
     let streaming = request.stream_sink.is_some()
         && profile.streaming_enabled
-        && provider.descriptor().streaming;
+        && provider.descriptor().streaming
+        && provider.streams_model(&profile.external_model_id);
     let media = crate::media::RequestMedia::load(&request, media).await?;
-    let uncached = build_request_with_media(
+    let mut uncached = build_request_with_media(
         profile,
         &request.context,
         request.tools.as_ref(),
         replay_artifacts,
         &media,
     )?;
+    uncached.generation_config.response_modalities =
+        provider.response_modalities(&profile.external_model_id);
     let prepared = crate::streaming::streaming::await_cancelable(
         runtime,
         request.cancellation,
@@ -690,6 +704,7 @@ fn build_request_with_media(
             max_output_tokens: max_output_tokens(parameters),
             top_k: parameters.top_k,
             thinking_config: gemini_thinking_config(&profile.external_model_id, parameters),
+            response_modalities: None,
         },
         tools: tools.map(|request| {
             vec![GeminiTool {
@@ -934,6 +949,7 @@ fn parse_response_with_replay(
             serde_json::from_str(raw_parts.get()).map_err(|_| AdapterError::MalformedResponse)?;
         let has_function_calls = parts.iter().any(|part| part.function_call.is_some());
         let mut tool_calls = Vec::new();
+        let mut media = Vec::new();
         for part in &parts {
             if (part.text.is_some() && part.function_call.is_some())
                 || part.function_response.is_some()
@@ -946,6 +962,12 @@ fn parse_response_with_replay(
                 reasoning.push_str(part.text.as_deref().unwrap_or_default());
             } else if let Some(fragment) = &part.text {
                 text.push_str(fragment);
+            } else if let Some(image) = part
+                .inline_data
+                .as_ref()
+                .and_then(crate::media::gemini_generated_image)
+            {
+                media.push(image);
             }
             if let Some(call) = &part.function_call {
                 tool_calls.push(parse_function_call(call.clone())?);
@@ -1018,8 +1040,10 @@ fn parse_response_with_replay(
             ) => push(&mut warnings, InferenceWarningCode::SafetyTransformed),
             Some(_) => push(&mut warnings, InferenceWarningCode::ProviderDegraded),
         }
-        has_content |=
-            !text.trim().is_empty() || !reasoning.trim().is_empty() || !tool_calls.is_empty();
+        has_content |= !text.trim().is_empty()
+            || !reasoning.trim().is_empty()
+            || !tool_calls.is_empty()
+            || !media.is_empty();
         candidates.push(InferenceCandidate {
             ordinal,
             parts: {
@@ -1034,6 +1058,7 @@ fn parse_response_with_replay(
             },
             tool_calls,
             provider_replay,
+            media,
         });
     }
     if !has_content
@@ -1048,6 +1073,7 @@ fn parse_response_with_replay(
             parts: Vec::new(),
             tool_calls: Vec::new(),
             provider_replay: None,
+            media: Vec::new(),
         });
     }
     Ok(InferenceOutcome {
@@ -1237,6 +1263,8 @@ struct GenerationConfig {
     top_k: Option<u32>,
     #[serde(rename = "thinkingConfig", skip_serializing_if = "Option::is_none")]
     thinking_config: Option<ThinkingConfig>,
+    #[serde(rename = "responseModalities", skip_serializing_if = "Option::is_none")]
+    response_modalities: Option<&'static [&'static str]>,
 }
 
 #[derive(Clone, Serialize)]
@@ -1317,6 +1345,8 @@ struct CandidatePart {
     server_tool_response: Option<serde_json::Value>,
     #[serde(rename = "thoughtSignature")]
     thought_signature: Option<String>,
+    #[serde(rename = "inlineData", alias = "inline_data")]
+    inline_data: Option<serde_json::Value>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -1895,6 +1925,29 @@ mod tests {
     }
 
     #[test]
+    fn image_models_ask_for_text_and_image_output() {
+        let config = |response_modalities| GenerationConfig {
+            temperature: None,
+            top_p: None,
+            max_output_tokens: 64,
+            top_k: None,
+            thinking_config: None,
+            response_modalities,
+        };
+        assert_eq!(
+            serde_json::to_value(config(Some(&["TEXT", "IMAGE"]))).expect("serialize"),
+            serde_json::json!({
+                "maxOutputTokens": 64,
+                "responseModalities": ["TEXT", "IMAGE"],
+            })
+        );
+        assert_eq!(
+            serde_json::to_value(config(None)).expect("serialize"),
+            serde_json::json!({ "maxOutputTokens": 64 })
+        );
+    }
+
+    #[test]
     fn gemini_budget_models_request_provider_auto_budget_when_unspecified() {
         let mut parameters = reasoning_parameters();
         parameters.reasoning_effort = None;
@@ -1945,6 +1998,32 @@ mod tests {
                 output_tokens: 4
             })
         );
+    }
+
+    #[test]
+    fn inline_images_become_candidate_media_like_legacy() {
+        let outcome = parse_response(response(
+            r#"{"candidates":[{"content":{"parts":[{"thought":true,"text":"plan"},{"inlineData":{"mimeType":"image/png","data":"iVBORw0KGgo="}},{"thought":true,"inlineData":{"mimeType":"image/png","data":"AAAA"}},{"inline_data":{"mime_type":"audio/wav","data":"AAAA"}}]},"finishReason":"STOP"}]}"#,
+        ))
+        .expect("image reply");
+        assert_eq!(
+            outcome.candidates[0].parts,
+            vec![MessagePart::ReasoningSummary {
+                text: "plan".into()
+            }]
+        );
+        assert_eq!(
+            outcome.candidates[0].media,
+            vec![lettuce_conversations::GeneratedMedia {
+                mime_type: "image/png".into(),
+                base64_data: "iVBORw0KGgo=".into(),
+            }]
+        );
+        let image_only = parse_response(response(
+            r#"{"candidates":[{"content":{"parts":[{"inlineData":{"data":"iVBORw0KGgo="}}]},"finishReason":"STOP"}]}"#,
+        ))
+        .expect("image-only reply");
+        assert_eq!(image_only.candidates[0].media[0].mime_type, "image/png");
     }
 
     #[test]

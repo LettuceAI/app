@@ -112,7 +112,7 @@ impl<
             Ok(mut outcome) => {
                 if handle.cancellation_token().is_cancelled() {
                     cleanup_provider_replays(self.repository, &outcome)?;
-                    if streamed && has_visible_text(&outcome) {
+                    if streamed && has_visible_output(&outcome) {
                         outcome.finish_reason = lettuce_conversations::FinishReason::Cancelled;
                         for candidate in &mut outcome.candidates {
                             candidate.provider_replay = None;
@@ -168,14 +168,13 @@ fn replay(
     }
 }
 
-/// Whether a reply has visible text worth keeping when the user stops it;
-/// only a streamed reply has shown that text to the user.
-pub(crate) fn has_visible_text(outcome: &InferenceOutcome) -> bool {
-    outcome.candidates.iter().any(|candidate| {
-        candidate.parts.iter().any(|part| {
-            matches!(part, lettuce_conversations::MessagePart::Text { text } if !text.trim().is_empty())
-        })
-    })
+/// Whether a reply has visible text or a whole image worth keeping when the
+/// user stops it; only a streamed reply has shown its text to the user.
+pub(crate) fn has_visible_output(outcome: &InferenceOutcome) -> bool {
+    outcome
+        .candidates
+        .iter()
+        .any(lettuce_conversations::InferenceCandidate::has_visible_output)
 }
 
 fn cleanup_provider_replays<R: ProviderReplayArtifactPort + ?Sized>(

@@ -176,15 +176,28 @@ or provider with streaming off runs the request buffered (legacy
 `effective_streaming_enabled`) instead of rejecting it. The prompt-caching
 flag is ignored for providers without explicit caching, and the stored TTL is
 read per provider (cache-control providers `1h` or else five minutes, Gemini
-`5min` or else one hour, OpenAI `24h` or else in-memory). Gemini Express `-image` models stay rejected until provider-made
-images have a way out of the provider layer (legacy ran them buffered with
-`responseModalities: ["TEXT","IMAGE"]` and stored the images). zAI always sends
+`5min` or else one hour, OpenAI `24h` or else in-memory). Gemini Express
+`-image` models run buffered with `responseModalities: ["TEXT","IMAGE"]`, as
+legacy `gemini_agent_platform_express.rs` did (`disables_streaming_for_model`,
+`body`). zAI always sends
 `tool_choice: "auto"`. zAI and Gemini Express model listing returns an empty
 list. Ollama sends `num_ctx`/`num_predict` from its own settings first and
 falls back to the generic context length and output cap, as legacy
 `build_ollama_extra_fields` did; the legacy importer keeps `ollamaNumCtx` and
 `ollamaNumPredict` as Ollama settings instead of folding them into the generic
 fields.
+
+Images a chat model returns ride on the candidate as `media` (MIME type and
+the provider's base64), as legacy `extract_image_data_urls_from_value`
+(`chat_manager/sse.rs` 553-620) read them: OpenAI-style `delta.images` /
+`message.images` entries whose `image_url.url` is a `data:image/...;base64,`
+URL, and Gemini `inlineData` (or `inline_data`) parts with an `image/` MIME
+type (`image/png` when none is given), skipping thought parts and non-image
+inline data. A reply with only images is not empty. Streamed images are kept
+whole per record with no cap of their own; a Gemini image part is not counted
+toward, or kept in, the signed tool-call replay. A stop keeps every image
+already received with the partial reply, and a stop after only images keeps
+the images (legacy discarded the whole reply on abort).
 
 Response parsing is as lenient as legacy (`tooling.rs`, `sse.rs`):
 `tool_calls`/`reasoning`/`error` may be `null`; usage counters that are not

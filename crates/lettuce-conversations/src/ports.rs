@@ -1862,12 +1862,84 @@ pub struct InferenceCandidate {
     pub parts: Vec<MessagePart>,
     pub tool_calls: Vec<crate::ProposedToolCall>,
     pub provider_replay: Option<ReplayArtifactRef>,
+    /// Images the model returned with the reply; finalization stores each as
+    /// a media asset and references it from the message.
+    #[serde(default)]
+    pub media: Vec<GeneratedMedia>,
+}
+
+/// One image a model returned, still in the provider's base64 form.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GeneratedMedia {
+    pub mime_type: String,
+    pub base64_data: String,
+}
+
+impl GeneratedMedia {
+    /// Reads a `data:image/...;base64,` URL; other URLs are not generated media.
+    #[must_use]
+    pub fn from_data_url(url: &str) -> Option<Self> {
+        let (prefix, data) = url.trim().split_once(";base64,")?;
+        let mime_type = prefix.strip_prefix("data:")?;
+        Self::from_inline(mime_type, data)
+    }
+
+    /// An inline image part; a non-image MIME type or empty data is not one.
+    #[must_use]
+    pub fn from_inline(mime_type: &str, base64_data: &str) -> Option<Self> {
+        let media = Self {
+            mime_type: mime_type.trim().to_ascii_lowercase(),
+            base64_data: base64_data.trim().to_owned(),
+        };
+        media.validate().is_ok().then_some(media)
+    }
+
+    pub fn validate(&self) -> Result<(), crate::ValidationError> {
+        let subtype = self.mime_type.strip_prefix("image/").unwrap_or_default();
+        if subtype.is_empty()
+            || self.mime_type.len() > 128
+            || !self
+                .mime_type
+                .bytes()
+                .all(|byte| byte.is_ascii_graphic() && byte != b';')
+            || self.base64_data.is_empty()
+        {
+            return Err(crate::ValidationError::InvalidValue {
+                field: "inference_candidate.media",
+            });
+        }
+        Ok(())
+    }
+}
+
+impl std::fmt::Debug for GeneratedMedia {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("GeneratedMedia")
+            .field("mime_type", &self.mime_type)
+            .field("base64_bytes", &self.base64_data.len())
+            .finish()
+    }
 }
 
 impl InferenceCandidate {
+    /// Whether the candidate carries text or an image worth keeping.
+    #[must_use]
+    pub fn has_visible_output(&self) -> bool {
+        !self.media.is_empty()
+            || self
+                .parts
+                .iter()
+                .any(|part| matches!(part, MessagePart::Text { text } if !text.trim().is_empty()))
+    }
+
     pub fn validate(&self) -> Result<(), crate::ValidationError> {
         for part in &self.parts {
             part.validate()?;
+        }
+        for media in &self.media {
+            media.validate()?;
         }
         for call in &self.tool_calls {
             call.validate()?;

@@ -940,6 +940,7 @@ mod tests {
                 ],
                 tool_calls: Vec::new(),
                 provider_replay: None,
+                media: Vec::new(),
             }],
             usage: None,
             finish_reason: lettuce_conversations::FinishReason::Stop,

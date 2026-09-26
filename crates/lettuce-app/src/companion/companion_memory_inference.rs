@@ -1083,6 +1083,7 @@ mod tests {
                 }],
                 tool_calls: Vec::new(),
                 provider_replay: None,
+                media: Vec::new(),
             }],
             usage,
             finish_reason: FinishReason::Stop,
@@ -1685,6 +1686,7 @@ mod tests {
                     provider_replay: None,
                 }],
                 provider_replay: None,
+                media: Vec::new(),
             }],
             usage: Some(lettuce_conversations::InferenceUsage {
                 image_tokens: None,

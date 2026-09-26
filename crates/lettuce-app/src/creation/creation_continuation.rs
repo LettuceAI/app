@@ -885,6 +885,7 @@ fn structured_fallback_candidate(
         parts,
         tool_calls,
         provider_replay: candidate.provider_replay.clone(),
+        media: candidate.media.clone(),
     }
 }
 
@@ -1213,6 +1214,7 @@ mod tests {
                 parts,
                 tool_calls: calls,
                 provider_replay: None,
+                media: Vec::new(),
             }],
             usage: Some(InferenceUsage {
                 image_tokens: None,

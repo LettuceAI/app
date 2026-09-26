@@ -299,6 +299,7 @@ impl Streamed {
                 parts,
                 tool_calls: Vec::new(),
                 provider_replay: None,
+                media: Vec::new(),
             }],
             usage: None,
             finish_reason: FinishReason::Cancelled,
@@ -708,6 +709,7 @@ fn outcome(
             parts,
             tool_calls,
             provider_replay: None,
+            media: Vec::new(),
         }],
         usage: Some(InferenceUsage {
             provider_reported_cost: None,

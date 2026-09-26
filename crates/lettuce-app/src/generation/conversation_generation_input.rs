@@ -156,6 +156,7 @@ pub struct PreparedConversationGenerationJobRunner<'a, E: ?Sized, R: ?Sized, I: 
     repository: &'a R,
     inference: &'a I,
     inference_runtime: Option<&'a InferenceRuntime>,
+    reply_media: Option<&'a dyn crate::ReplyMediaStore>,
 }
 
 impl<'a, E: ?Sized, R: ?Sized, I: ?Sized> PreparedConversationGenerationJobRunner<'a, E, R, I> {
@@ -165,7 +166,16 @@ impl<'a, E: ?Sized, R: ?Sized, I: ?Sized> PreparedConversationGenerationJobRunne
             repository,
             inference,
             inference_runtime: None,
+            reply_media: None,
         }
+    }
+
+    /// Stores the images a model returns with its reply; without it a reply
+    /// carrying images fails instead of losing them.
+    #[must_use]
+    pub const fn with_reply_media(mut self, reply_media: &'a dyn crate::ReplyMediaStore) -> Self {
+        self.reply_media = Some(reply_media);
+        self
     }
 
     pub(crate) const fn with_inference_runtime(
@@ -304,6 +314,7 @@ where
         )?;
         if admission.job.state == lettuce_jobs::JobState::Succeeded {
             let result = ConversationGenerationJobRunner::new(self.repository, self.inference)
+                .with_reply_media(self.reply_media)
                 .replay_succeeded_attempt(
                     request.conversation_id,
                     request.turn_id,
@@ -334,6 +345,7 @@ where
                 .ok_or(ConversationGenerationDispatchError::InvalidWork)?;
             if admission.job.state == lettuce_jobs::JobState::Succeeded {
                 let result = ConversationGenerationJobRunner::new(self.repository, self.inference)
+                    .with_reply_media(self.reply_media)
                     .replay_succeeded_attempt(
                         request.conversation_id,
                         request.turn_id,
@@ -382,7 +394,8 @@ where
         runtime: ConversationGenerationRuntimeInput,
         now: TimestampMillis,
     ) -> Result<ConversationGenerationRunResult, ConversationGenerationRunError> {
-        let runner = ConversationGenerationJobRunner::new(self.repository, self.inference);
+        let runner = ConversationGenerationJobRunner::new(self.repository, self.inference)
+            .with_reply_media(self.reply_media);
         if let Some(replay) = runner.replay_terminal(work)? {
             return Ok(replay);
         }

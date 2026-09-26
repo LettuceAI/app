@@ -781,6 +781,7 @@ mod tests {
                 parts,
                 tool_calls,
                 provider_replay: None,
+                media: Vec::new(),
             }],
             usage: None,
             finish_reason: FinishReason::Stop,

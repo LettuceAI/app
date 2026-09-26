@@ -9,6 +9,7 @@ pub(crate) mod live_sources;
 pub(crate) mod provider_runtime;
 pub(crate) mod pure_mode_rules;
 pub(crate) mod reply_helper;
+pub(crate) mod reply_media;
 pub(crate) mod runtime_text;
 
 pub use built_in_prompts::*;
@@ -20,3 +21,4 @@ pub use feature_parameters::*;
 pub use provider_runtime::*;
 pub use pure_mode_rules::*;
 pub use reply_helper::*;
+pub use reply_media::{ReplyImageOrigin, ReplyMediaError, ReplyMediaStore};

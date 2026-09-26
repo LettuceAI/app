@@ -38,13 +38,18 @@ impl GeminiWireProvider for GeminiExpress {
     }
 
     fn generate_path(&self, model: &str) -> Result<String, AdapterError> {
-        if is_image_model(model) {
-            return Err(AdapterError::Rejected);
-        }
         Ok(format!(
             "/{MODEL_RESOURCE_PREFIX}{}:generateContent",
             validate_model_id(bare_model_id(model))?
         ))
+    }
+
+    fn response_modalities(&self, model: &str) -> Option<&'static [&'static str]> {
+        is_image_model(model).then_some(&["TEXT", "IMAGE"])
+    }
+
+    fn streams_model(&self, model: &str) -> bool {
+        !is_image_model(model)
     }
 }
 
@@ -91,8 +96,17 @@ mod tests {
             "/publishers/google/models/gemini-2.5-flash:generateContent"
         );
         assert_eq!(
-            GeminiExpress.generate_path("gemini-2.5-flash-image"),
-            Err(AdapterError::Rejected)
+            GeminiExpress
+                .generate_path("gemini-2.5-flash-image")
+                .expect("image model path"),
+            "/publishers/google/models/gemini-2.5-flash-image:generateContent"
         );
+        assert_eq!(
+            GeminiExpress.response_modalities("publishers/google/models/gemini-2.5-flash-image"),
+            Some(&["TEXT", "IMAGE"][..])
+        );
+        assert!(!GeminiExpress.streams_model("gemini-2.5-flash-image"));
+        assert_eq!(GeminiExpress.response_modalities("gemini-2.5-flash"), None);
+        assert!(GeminiExpress.streams_model("gemini-2.5-flash"));
     }
 }

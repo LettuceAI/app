@@ -218,6 +218,7 @@ fn text_outcome(id: &str, text: &str, input_tokens: u64, output_tokens: u64) -> 
             parts: vec![MessagePart::Text { text: text.into() }],
             tool_calls: vec![],
             provider_replay: None,
+            media: Vec::new(),
         }],
         usage: usage(input_tokens, output_tokens),
         finish_reason: lettuce_conversations::FinishReason::Stop,
@@ -246,6 +247,7 @@ fn call_outcome(
                 provider_replay: None,
             }],
             provider_replay: None,
+            media: Vec::new(),
         }],
         usage: usage(tokens.0, tokens.1),
         finish_reason: lettuce_conversations::FinishReason::Stop,
@@ -631,6 +633,96 @@ async fn a_direct_chat_follows_the_live_default_model_on_each_turn() {
         result.turn.resolved_model.map(|model| model.source_id),
         Some(switched)
     );
+}
+
+#[tokio::test]
+async fn reply_images_are_stored_as_message_assets_and_an_image_only_reply_finalizes() {
+    use base64::Engine as _;
+    use lettuce_platform::{DirectorySnapshot, FilesystemAuthority, ManagedRoot};
+
+    let root = std::env::temp_dir().join(format!(
+        "reply-images-{}",
+        lettuce_types::OperationId::new()
+    ));
+    std::fs::create_dir_all(&root).expect("root");
+    let path = root.join("state.sqlite3");
+    let backend = AppBackend::open(&path, TimestampMillis::new(1)).expect("backend");
+    let authority = FilesystemAuthority::new(&DirectorySnapshot::new(&root).expect("snapshot"))
+        .expect("authority");
+    let store = lettuce_media::LocalMediaBlobStore::new(
+        authority.managed_files(),
+        authority
+            .read_capability(ManagedRoot::MediaBlobs)
+            .expect("read"),
+        authority
+            .write_capability(ManagedRoot::MediaBlobs)
+            .expect("write"),
+        Database::open(&path).expect("blobs"),
+        Database::open(&path).expect("assets"),
+    );
+    let mut png = b"\x89PNG\r\n\x1a\n".to_vec();
+    png.extend_from_slice(&13_u32.to_be_bytes());
+    png.extend_from_slice(b"IHDR");
+    png.extend_from_slice(&2_u32.to_be_bytes());
+    png.extend_from_slice(&3_u32.to_be_bytes());
+    png.extend_from_slice(&[8, 6, 0, 0, 0]);
+    png.extend_from_slice(b"reply image bytes");
+    let encoded = base64::engine::general_purpose::STANDARD.encode(&png);
+    let scenario = scenario_with_resolvable_profile(backend.database(), false, "image", true);
+    let mut outcome = text_outcome("image-reply", "", 12, 3);
+    outcome.candidates[0].parts.clear();
+    outcome.candidates[0].media = vec![
+        lettuce_conversations::GeneratedMedia::from_data_url(&format!(
+            "data:image/png;base64,{encoded}"
+        ))
+        .expect("OpenAI-style image"),
+        lettuce_conversations::GeneratedMedia::from_inline("image/png", &encoded)
+            .expect("Gemini inline image"),
+    ];
+    let inference = scripted(vec![outcome]);
+    let engine = ScenarioEmbeddingEngine;
+    let clock = FakeClock::new(TimestampMillis::new(1_020));
+    let executed = backend
+        .prepared_conversation_generation_runner(&engine, &inference)
+        .with_reply_media(&store)
+        .execute(
+            execution_request(&scenario, CancellationToken::new()),
+            &clock,
+        )
+        .await
+        .expect("execute generation");
+    let ConversationGenerationExecutionOutcome::Settled(
+        ConversationGenerationSettledWork::Succeeded { result, .. },
+    ) = executed
+    else {
+        panic!("an image-only reply finalizes");
+    };
+    let assets = result
+        .candidate
+        .parts
+        .iter()
+        .map(|part| match part {
+            MessagePart::MediaAsset { asset_id, role } => {
+                assert_eq!(*role, lettuce_conversations::MediaAssetRole::Attachment);
+                *asset_id
+            }
+            other => panic!("unexpected part {other:?}"),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(assets.len(), 2);
+    assert_ne!(assets[0], assets[1]);
+    for asset in &assets {
+        let opened = store.open_ready(*asset).expect("stored reply image");
+        assert_eq!(opened.blob.mime_type, "image/png");
+    }
+    assert_eq!(
+        store.open_ready(assets[0]).expect("first").blob.id,
+        store.open_ready(assets[1]).expect("second").blob.id,
+        "identical bytes share one content-addressed blob"
+    );
+    drop(store);
+    drop(backend);
+    std::fs::remove_dir_all(&root).ok();
 }
 
 #[tokio::test]

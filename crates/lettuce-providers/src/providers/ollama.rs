@@ -567,6 +567,7 @@ fn parse_response(response: JsonResponse) -> Result<InferenceOutcome, AdapterErr
             parts,
             tool_calls,
             provider_replay: None,
+            media: Vec::new(),
         }],
         usage: match (parsed.prompt_eval_count, parsed.eval_count) {
             (Some(input_tokens), Some(output_tokens)) => Some(InferenceUsage {

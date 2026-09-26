@@ -29,6 +29,37 @@ pub trait ProviderMediaSource: Send + Sync {
     fn load(&self, asset_id: AssetId) -> Result<ProviderMedia, ProviderMediaError>;
 }
 
+/// The images of an OpenAI-style `images` list (`[{image_url: {url}}]`);
+/// only base64 `data:image/` URLs are kept.
+pub(crate) fn openai_generated_images(
+    images: &[serde_json::Value],
+) -> Vec<lettuce_conversations::GeneratedMedia> {
+    images
+        .iter()
+        .filter_map(|image| {
+            image
+                .get("image_url")
+                .and_then(|url| url.get("url"))
+                .and_then(serde_json::Value::as_str)
+        })
+        .filter_map(lettuce_conversations::GeneratedMedia::from_data_url)
+        .collect()
+}
+
+/// The image of a Gemini `inlineData` part; other inline data (audio) is not
+/// a reply image.
+pub(crate) fn gemini_generated_image(
+    inline: &serde_json::Value,
+) -> Option<lettuce_conversations::GeneratedMedia> {
+    let mime_type = inline
+        .get("mimeType")
+        .or_else(|| inline.get("mime_type"))
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("image/png");
+    let data = inline.get("data").and_then(serde_json::Value::as_str)?;
+    lettuce_conversations::GeneratedMedia::from_inline(mime_type, data)
+}
+
 /// The user attachments a request inlines, keyed by asset.
 pub(crate) type Attachments = std::collections::HashMap<AssetId, ProviderMedia>;
 

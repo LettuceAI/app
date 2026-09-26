@@ -96,7 +96,7 @@ cannot accidentally coalesce with an earlier attempt. Cancellation is a
 two-step lifecycle: the repository commits `CancellationRequested`, the
 application asks the job runtime to stop, and settlement commits the terminal
 usage-linked `Cancelled` state. A turn stopped after its reply streamed visible
-text instead finalizes that partial reply from `CancellationRequested` (as a new
+text or a whole image instead finalizes that partial reply from `CancellationRequested` (as a new
 assistant message, or a new candidate for a regeneration), as the legacy chat
 page persisted the streamed placeholder on stop (`useChatAbortController.ts`
 29-148); its job still ends `Cancelled`.

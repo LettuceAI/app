@@ -425,6 +425,8 @@ pub enum ConversationGenerationRunError {
     Artifact(#[from] ArtifactError),
     #[error("conversation generation contract is invalid: {0}")]
     Validation(#[from] ValidationError),
+    #[error("conversation generation reply media failed: {0}")]
+    ReplyMedia(#[from] super::reply_media::ReplyMediaError),
 }
 
 impl ConversationGenerationRunError {
@@ -459,6 +461,10 @@ impl ConversationGenerationRunError {
             Self::Repository(error) => repository_terminal(error),
             Self::Conversation(error) => service_terminal(error),
             Self::Artifact(_) => None,
+            Self::ReplyMedia(super::reply_media::ReplyMediaError::NoStore) => {
+                Some(Terminal::Failed(GenerationFailureCode::Internal))
+            }
+            Self::ReplyMedia(super::reply_media::ReplyMediaError::Store(_)) => None,
         }
     }
 }
@@ -514,6 +520,7 @@ fn provider_terminal(error: &PortError) -> ConversationGenerationTerminalFailure
 pub struct ConversationGenerationJobRunner<'a, R: ?Sized, I: ?Sized> {
     repository: &'a R,
     inference: &'a I,
+    reply_media: Option<&'a dyn super::reply_media::ReplyMediaStore>,
 }
 
 impl<'a, R: ?Sized, I: ?Sized> ConversationGenerationJobRunner<'a, R, I> {
@@ -522,7 +529,18 @@ impl<'a, R: ?Sized, I: ?Sized> ConversationGenerationJobRunner<'a, R, I> {
         Self {
             repository,
             inference,
+            reply_media: None,
         }
+    }
+
+    /// Stores the images a model returns with its reply.
+    #[must_use]
+    pub const fn with_reply_media(
+        mut self,
+        reply_media: Option<&'a dyn super::reply_media::ReplyMediaStore>,
+    ) -> Self {
+        self.reply_media = reply_media;
+        self
     }
 }
 
@@ -761,7 +779,7 @@ impl<
         }
         match outcome.finish_reason {
             lettuce_conversations::FinishReason::Cancelled
-                if !super::conversation_inference::has_visible_text(&outcome) =>
+                if !super::conversation_inference::has_visible_output(&outcome) =>
             {
                 return Err(ConversationGenerationRunError::Cancelled { evidence });
             }
@@ -789,11 +807,20 @@ impl<
                 evidence,
             });
         }
-        if !candidate
-            .parts
-            .iter()
-            .any(|part| matches!(part, MessagePart::Text { text } if !text.trim().is_empty()))
-        {
+        super::reply_media::attach_reply_media(
+            self.reply_media,
+            work.attempt_id,
+            super::reply_media::ReplyImageOrigin {
+                job_id,
+                model_profile_id: input.profile.chat_profile.model_profile_id,
+            },
+            &mut candidate,
+        )?;
+        if !candidate.parts.iter().any(|part| match part {
+            MessagePart::Text { text } => !text.trim().is_empty(),
+            MessagePart::MediaAsset { .. } => true,
+            _ => false,
+        }) {
             return Err(ConversationGenerationRunError::Provider {
                 error: PortError::Empty,
                 evidence,

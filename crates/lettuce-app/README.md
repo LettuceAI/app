@@ -965,6 +965,23 @@ unknown or duplicate ids, a missing lore-entry title, a tool unavailable for
 the draft) have their own texts. An error while replaying a stored round other
 than a storage failure fails the attempt.
 
+Reply images: before finalizing, `ConversationGenerationJobRunner` stores each
+image on the provider candidate through its `ReplyMediaStore`
+(`with_reply_media`; `LocalMediaBlobStore` implements it) as a persistent
+`GeneratedImage` asset with `chat_reply` provenance, content-addressed so equal
+bytes share one blob, and appends an `Attachment` media part per image after
+the reply's text, as legacy `generated_image_attachments`
+(`group_chat_manager/persistence.rs` 32-53) and the chat flows attached them.
+The asset id is derived from the attempt and the image's position, so a retried
+finalization finds the stored image again. The media part is written in the
+same finalization transaction as the candidate (`candidate_media_refs`), so
+sync and backup carry the asset like any other message media. A reply with only
+images finalizes; one with neither text nor a stored image is `EmptyOutput`.
+An image the media store refuses as content (not an image, too large, bad
+dimensions) is left out with a warning; a store I/O failure leaves the attempt
+retryable; a reply with images and no store attached fails as `Internal`
+instead of dropping them. Direct and group chats share this runner.
+
 `ConversationInitialInferenceCoordinator` supplies the initial provider
 dispatch boundary for a running conversation generation attempt. It reloads the
 durable turn, verifies the turn/attempt/job/request identities and requires the
@@ -973,9 +990,10 @@ Each dispatch is admitted as a durable pending checkpoint before the provider is
 called, using the job usage event that retains the raw response evidence. The
 provider response, an invalid response, a provider failure or a cancellation
 observed after the response settles that checkpoint once; a cancellation after
-visible text streamed settles the streamed reply with a `Cancelled` finish
-reason (the provider adapters return the text and reasoning emitted before the
-stop), which generation finalizes as the stopped reply; a later call with the
+visible text or a whole reply image streamed settles the streamed reply with a
+`Cancelled` finish reason (the provider adapters return the text and reasoning
+emitted before the stop and every image received), which generation finalizes
+as the stopped reply; a later call with the
 same request replays the stored outcome or error without another provider
 request, including after the attempt has been finalized or the database was
 reopened. Changed context, profile, tools or media grants conflict with the

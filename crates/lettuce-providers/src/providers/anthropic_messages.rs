@@ -1040,6 +1040,7 @@ fn parse_response_with_replay(
             },
             tool_calls,
             provider_replay,
+            media: Vec::new(),
         }],
         usage: parsed.usage.and_then(|usage| {
             Some(InferenceUsage {
