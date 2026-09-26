@@ -453,7 +453,9 @@ remain attached for their following slices; no conversation or media store is
 changed.
 
 Legacy group sessions now extend that compatibility graph with the frozen
-member and mute order, optional reusable-group link, persona, chat, memory and
+member and mute order, optional reusable-group link, persona (a
+`config_overrides` `personaId` of null, empty or a deleted persona is the
+session's explicit no persona, `persona_disabled`), chat, memory and
 speaker policies, per-member model overrides, prompt selections, starting
 scene, branch topology, participation state and the complete message/variant
 history. Speaker attribution, selection reasoning, Gemini content, usage JSON,
@@ -681,7 +683,9 @@ legacy session reader. A starter whose character is missing
 still aborts because legacy's foreign key cascade made that impossible.
 
 Legacy reusable group profiles now join that same read-only plan. Ordered and
-muted members, explicit or inherited persona selection, archived state, chat and
+muted members, an explicit persona or none (a group whose `persona_id` is NULL
+used no persona and never the default, `group_chat_manager/mod.rs` 5866-5870, so
+it maps to `Selection::Disabled`), archived state, chat and
 memory modes, all five speaker policies, per-member model overrides, group
 prompt selections, lorebook order and policy, raw appearance, starting-scene
 variants and both unresolved background locators remain intact. Director and
@@ -692,7 +696,7 @@ invalid selections before restore writes. References legacy never cleaned up are
 pruned and recorded in the authored plan's `skipped` list instead: members whose
 character is gone (legacy speaker selection skipped them), muted ids and model
 overrides for non-members, overrides whose model is gone (legacy fell back), a
-deleted persona (legacy's foreign key set it to null, so it inherits), stale
+deleted persona (legacy's foreign key set it to null, so the group has none), stale
 group lorebook ids (stale group prompt ids are kept and recorded because
 sessions copied them as explicit choices), and a starting scene's missing selected variant
 (legacy group prompts used only the scene content). A group with fewer than two

@@ -133,7 +133,11 @@ where
             title: session.name.clone(),
             user: legacy_user(),
             group_id,
-            persona: persona_selection(false, session.persona_source_id.as_deref(), context)?,
+            persona: persona_selection(
+                session.persona_disabled,
+                session.persona_source_id.as_deref(),
+                context,
+            )?,
             operation_key: launch_key(context.scope, &session.source_id)?,
         };
         let overrides = crate::launch::GroupLaunchOverrides {
@@ -215,7 +219,7 @@ where
                     .then_some(session.lorebook_source_ids.as_slice()),
                 speaker_selection: (speaker_selection != details.group.speaker_selection)
                     .then_some(speaker_selection),
-                persona_disabled: false,
+                persona_disabled: session.persona_disabled,
                 chat_mode: session_override(&session.config_overrides_json, "chatType")
                     .then_some(details.group.chat_mode),
                 disable_character_lorebooks: session_override(

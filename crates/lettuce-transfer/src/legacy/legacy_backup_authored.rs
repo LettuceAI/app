@@ -1488,7 +1488,7 @@ fn map_groups(
             "persona_id",
         )?
         .map(Selection::Explicit)
-        .unwrap_or(Selection::Inherit);
+        .unwrap_or(Selection::Disabled);
         if let Selection::Explicit(persona_id) = persona
             && !persona_ids.contains(&persona_id)
         {
@@ -1497,7 +1497,7 @@ fn map_groups(
                 format!("group_characters.persona_id:{group_key}"),
                 crate::LegacyImportSkipReason::MissingPersona,
             ));
-            persona = Selection::Inherit;
+            persona = Selection::Disabled;
         }
         let chat_mode = match row.chat_type.as_str() {
             "conversation" => ChatMode::Conversation,
@@ -3251,7 +3251,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![(first.clone(), false, None), (second.clone(), false, None)]
         );
-        assert!(matches!(group.persona, Selection::Inherit));
+        assert!(matches!(group.persona, Selection::Disabled));
         assert_eq!(
             group.group_conversation_prompt_source_id.as_deref(),
             Some("deleted-group-prompt")

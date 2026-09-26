@@ -382,7 +382,7 @@ mod tests {
             status: LifecycleStatus::Active,
             name: "Harbor crew".to_owned(),
             chat_mode: ChatMode::Roleplay,
-            persona: Selection::Inherit,
+            persona: Selection::Disabled,
             speaker_selection: SpeakerSelection::Director,
             memory_policy: MemoryPolicy::Manual,
             disable_character_lorebooks: false,
@@ -1239,6 +1239,7 @@ mod tests {
             ],
             muted_member_source_ids: vec![third_id.to_string()],
             persona_source_id: None,
+            persona_disabled: true,
             parent_session_source_id: None,
             branched_from_message_source_id: None,
             root_session_source_id: group_session_id.to_string(),
@@ -1366,6 +1367,61 @@ mod tests {
             "an imported chat-type override survives a group edit"
         );
         assert!(live.disable_character_lorebooks);
+        assert_eq!(
+            live.profile.as_ref().map(|profile| profile.persona.clone()),
+            Some(Selection::Disabled)
+        );
+        assert_eq!(
+            own.persona_provenance,
+            lettuce_conversations::SettingProvenance::Disabled,
+            "a null personaId override turns the session's persona off"
+        );
+        let default_persona = lettuce_characters::PersonaRepository::create(
+            backend.database(),
+            lettuce_characters::Persona::new(
+                lettuce_types::PersonaId::new(),
+                "Later default".into(),
+                "Created after the import".into(),
+                TimestampMillis::new(60),
+            )
+            .expect("persona"),
+        )
+        .expect("create persona");
+        let default_revision =
+            lettuce_characters::PersonaRepository::get_default_snapshot(backend.database())
+                .expect("default snapshot")
+                .state
+                .revision;
+        lettuce_characters::PersonaRepository::set_default(
+            backend.database(),
+            default_persona.id,
+            default_revision,
+            TimestampMillis::new(61),
+        )
+        .expect("set default persona");
+        assert_eq!(
+            crate::generation::live_sources::live_persona(
+                backend.database(),
+                imported,
+                live.profile.as_ref(),
+            )
+            .expect("session persona"),
+            None
+        );
+        let mut following_group = imported.clone();
+        if let Some(settings) = following_group.current_settings.as_mut() {
+            settings.persona_provenance = lettuce_conversations::SettingProvenance::LaunchInherited;
+        }
+        assert_eq!(
+            crate::generation::live_sources::live_persona(
+                backend.database(),
+                &following_group,
+                live.profile.as_ref(),
+            )
+            .expect("group persona"),
+            None,
+            "a group without a persona never falls back to the default"
+        );
         let cast = &group_history.aggregate.conversation.participants;
         assert_eq!(cast.len(), 4);
         let unknown = cast

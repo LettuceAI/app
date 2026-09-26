@@ -27,6 +27,9 @@ pub struct LegacyBackupGroupSession {
     pub member_source_ids: Vec<String>,
     pub muted_member_source_ids: Vec<String>,
     pub persona_source_id: Option<String>,
+    /// The session's `config_overrides` set `personaId` to null or empty: an
+    /// explicit no persona for this session (`group_sessions.rs` 560-563).
+    pub persona_disabled: bool,
     pub parent_session_source_id: Option<String>,
     pub branched_from_message_source_id: Option<String>,
     pub root_session_source_id: String,
@@ -158,6 +161,10 @@ struct SessionRow {
     memory_progress_step: Option<i64>,
     speaker_selection_method: Option<String>,
     memory_type: Option<String>,
+    #[serde(default)]
+    persona_disabled: bool,
+    #[serde(default)]
+    persona_overridden: bool,
     config_overrides: String,
     parent_session_id: Option<String>,
     branched_from_message_id: Option<String>,
@@ -335,7 +342,15 @@ fn resolve_group_session_config(row: &mut SessionRow, group: &Value) -> bool {
     row.character_ids = serde_json::to_string(&members).unwrap_or_else(|_| "[]".to_owned());
     row.muted_character_ids = serde_json::to_string(&muted).unwrap_or_else(|_| "[]".to_owned());
     row.persona_id = match value("personaId") {
-        Some(value) => value.as_str().map(str::to_owned),
+        Some(value) => {
+            let persona_id = value
+                .as_str()
+                .filter(|id| !id.is_empty())
+                .map(str::to_owned);
+            row.persona_overridden = true;
+            row.persona_disabled = persona_id.is_none();
+            persona_id
+        }
         None => text("persona_id"),
     };
     row.chat_type = match value("chatType") {
@@ -531,6 +546,7 @@ fn map_sessions(
             .is_some_and(|persona_id| !contains_case_insensitive(&persona_ids, persona_id))
         {
             row.persona_id = None;
+            row.persona_disabled |= row.persona_overridden;
             skipped.push(crate::LegacyImportSkip {
                 kind: crate::LegacyImportSkipKind::PersonaReference,
                 source_key: format!("group_sessions.persona_id:{}", row.id),
@@ -739,6 +755,7 @@ fn map_sessions(
             member_source_ids: members,
             muted_member_source_ids: muted,
             persona_source_id: row.persona_id,
+            persona_disabled: row.persona_disabled,
             parent_session_source_id: row.parent_session_id,
             branched_from_message_source_id: row.branched_from_message_id,
             root_session_source_id,
@@ -1811,6 +1828,16 @@ mod tests {
         assert!(!session.disable_character_lorebooks);
         assert!(!session.lorebooks_overridden);
         assert_eq!(session.starting_scene_override, None);
+        assert!(!session.persona_disabled);
+        for off in [json!(null), json!("")] {
+            let mut turned_off = row.clone();
+            set_override(&mut turned_off, "personaId", off);
+            let plan =
+                plan_legacy_backup_group_sessions(source(json!([turned_off]), &characters, &group))
+                    .expect("persona turned off");
+            assert!(plan.sessions[0].persona_disabled);
+            assert_eq!(plan.sessions[0].persona_source_id, None);
+        }
 
         let scene = row["starting_scene"].as_str().expect("scene").to_owned();
         set_override(&mut row, "startingScene", json!(scene));
@@ -1822,6 +1849,10 @@ mod tests {
         assert!(session.starting_scene_json.is_some());
         assert!(session.disable_character_lorebooks);
         assert_eq!(session.persona_source_id, None);
+        assert!(
+            session.persona_disabled,
+            "legacy found no persona for a deleted override and never used the default"
+        );
         let scene = session
             .starting_scene_override
             .as_ref()
