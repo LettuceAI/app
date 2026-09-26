@@ -1207,7 +1207,13 @@ where
                 prompt_values,
                 reference_time: reference_now,
                 memory: memory_contribution,
-                timeline: context_timeline(timeline.items, context_window, source_message_id),
+                timeline: context_timeline(
+                    timeline.items,
+                    context_window,
+                    usize::from(global_settings.lorebook_scan_depth)
+                        .max(lettuce_context::PROMPT_KEYWORD_RECENT_MESSAGES),
+                    source_message_id,
+                ),
             })
             .await
             .map_err(ConversationGenerationInputError::Context)?;
@@ -1638,15 +1644,18 @@ fn conversation_message_count(
         .count()
 }
 
+/// Keeps at least `keyword_messages` recent messages even when the history
+/// window is narrower, so the lorebook and prompt keyword scans still see them.
 fn context_timeline(
     items: Vec<lettuce_conversations::TimelineItem>,
     window: lettuce_conversations::ContextWindowPolicy,
+    keyword_messages: usize,
     source_message_id: lettuce_types::MessageId,
 ) -> Vec<lettuce_conversations::TimelineItem> {
     let mut remaining = window
         .recent_non_pinned_limit
         .saturating_add(1)
-        .max(lettuce_context::LEGACY_RECENT_MESSAGE_LIMIT);
+        .max(keyword_messages);
     let mut latest_user_kept = false;
     let mut kept = items
         .into_iter()
@@ -3043,11 +3052,13 @@ mod tests {
             20
         );
         items.pop();
+        let items_for_deep_scan = items.clone();
         let kept = context_timeline(
             items,
             ContextWindowPolicy {
                 recent_non_pinned_limit: 1,
             },
+            lettuce_context::PROMPT_KEYWORD_RECENT_MESSAGES,
             source,
         );
         let indices = kept
@@ -3057,6 +3068,21 @@ mod tests {
         let mut expected = vec![0];
         expected.extend(10..=20);
         assert_eq!(indices, expected);
+
+        let kept = context_timeline(
+            items_for_deep_scan,
+            ContextWindowPolicy {
+                recent_non_pinned_limit: 1,
+            },
+            20,
+            source,
+        );
+        assert_eq!(
+            kept.iter()
+                .map(|item| item.message.created_at.get())
+                .collect::<Vec<_>>(),
+            (0..=20).collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -3070,6 +3096,7 @@ mod tests {
             ContextWindowPolicy {
                 recent_non_pinned_limit: 1_000,
             },
+            lettuce_context::PROMPT_KEYWORD_RECENT_MESSAGES,
             source,
         );
         assert!(kept.len() >= 1_000);
@@ -3101,7 +3128,12 @@ mod tests {
             })
             .collect::<Vec<_>>();
         let source = items[599].message.id;
-        let kept = context_timeline(items, ContextWindowPolicy::default(), source);
+        let kept = context_timeline(
+            items,
+            ContextWindowPolicy::default(),
+            lettuce_context::PROMPT_KEYWORD_RECENT_MESSAGES,
+            source,
+        );
         let indices = kept
             .iter()
             .map(|item| item.message.created_at.get())

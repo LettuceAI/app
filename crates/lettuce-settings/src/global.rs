@@ -1,7 +1,12 @@
+use std::ops::RangeInclusive;
+
 use lettuce_types::{ModelProfileId, PromptDocumentId, Revision, TimestampMillis};
 use serde::{Deserialize, Serialize};
 
 pub const GLOBAL_SETTINGS_FORMAT_VERSION: u32 = 1;
+
+pub const DEFAULT_LOREBOOK_SCAN_DEPTH: u8 = 10;
+pub const LOREBOOK_SCAN_DEPTH_RANGE: RangeInclusive<u8> = 1..=20;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -38,10 +43,18 @@ pub struct GlobalSettings {
     pub auto_download_character_card_avatars: bool,
     #[serde(default = "default_manual_mode_context_window")]
     pub manual_mode_context_window: u32,
+    /// How many of the latest messages a recent-message-window lorebook scans
+    /// for keywords.
+    #[serde(default = "default_lorebook_scan_depth")]
+    pub lorebook_scan_depth: u8,
 }
 
 const fn default_manual_mode_context_window() -> u32 {
     50
+}
+
+const fn default_lorebook_scan_depth() -> u8 {
+    DEFAULT_LOREBOOK_SCAN_DEPTH
 }
 
 const fn default_true() -> bool {
@@ -68,11 +81,20 @@ impl Default for GlobalSettings {
             ui_preferences: UiPreferences::default(),
             auto_download_character_card_avatars: true,
             manual_mode_context_window: default_manual_mode_context_window(),
+            lorebook_scan_depth: DEFAULT_LOREBOOK_SCAN_DEPTH,
         }
     }
 }
 
 impl GlobalSettings {
+    /// True when every bounded value is inside its range; stores, backups and
+    /// sync refuse a document that is not.
+    #[must_use]
+    pub fn within_bounds(&self) -> bool {
+        self.ui_preferences.within_bounds()
+            && LOREBOOK_SCAN_DEPTH_RANGE.contains(&self.lorebook_scan_depth)
+    }
+
     #[must_use]
     pub fn effective_group_dynamic_memory(&self) -> &DynamicMemorySettings {
         self.group_dynamic_memory
@@ -626,6 +648,7 @@ mod tests {
         let settings: GlobalSettings = serde_json::from_str(legacy).expect("old settings document");
         assert_eq!(settings.lorebook_generator.target_count(), 12);
         assert_eq!(settings.manual_mode_context_window, 50);
+        assert_eq!(settings.lorebook_scan_depth, 10);
         assert_eq!(settings.lorebook_generator.output_tokens(), 4096);
         assert_eq!(settings.dynamic_memory, DynamicMemorySettings::default());
         assert_eq!(settings.group_dynamic_memory, None);
@@ -710,5 +733,19 @@ mod tests {
         settings.group_dynamic_memory = Some(group.clone());
 
         assert_eq!(settings.effective_group_dynamic_memory(), &group);
+    }
+
+    #[test]
+    fn lorebook_scan_depth_is_bounded_from_one_to_twenty() {
+        let mut settings = GlobalSettings::default();
+        assert!(settings.within_bounds());
+        for depth in [1, 3, 20] {
+            settings.lorebook_scan_depth = depth;
+            assert!(settings.within_bounds());
+        }
+        for depth in [0, 21, u8::MAX] {
+            settings.lorebook_scan_depth = depth;
+            assert!(!settings.within_bounds());
+        }
     }
 }

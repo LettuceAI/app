@@ -2016,7 +2016,7 @@ const APP_SETTINGS_CODEC: SnapshotCodec = SnapshotCodec {
             serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
         if id != "application"
             || snapshot.model_settings.validate().is_err()
-            || !snapshot.settings.ui_preferences.within_bounds()
+            || !snapshot.settings.within_bounds()
         {
             return Err(ApplyOneError::Corrupt);
         }

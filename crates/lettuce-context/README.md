@@ -71,7 +71,7 @@ A `Lorebook` has a name, a lifecycle status, an optional icon, a `DetectionPolic
 
 ### Matching
 
-`LorebookMatcher` decides which entries of one book are active for a turn. The text it searches depends on the book's detection policy: the latest ten messages joined together (`RecentMessageWindow`), or only the newest user message (`LatestUserMessage`). An entry is active when it is enabled and either `always_active` or one of its keywords matches.
+`LorebookMatcher` decides which entries of one book are active for a turn. The text it searches depends on the book's detection policy: the latest `scan_depth` messages joined together (`RecentMessageWindow`; the matcher is built with the depth, which the app reads from its settings), or only the newest user message (`LatestUserMessage`, unaffected by the depth). `resolve_lorebook_activation` and `resolve_lorebook_snapshot_activation` take the same depth. Prompt entry keyword conditions search their own fixed window of `PROMPT_KEYWORD_RECENT_MESSAGES` (10) messages. An entry is active when it is enabled and either `always_active` or one of its keywords matches.
 
 Literal keywords are matched after normalizing punctuation to spaces and, unless the entry is case-sensitive, lowercasing:
 

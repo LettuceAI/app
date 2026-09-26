@@ -106,7 +106,7 @@ pub fn canonical_group_payload(
 
 pub const APP_SETTINGS_SYNC_KIND: &str = "app_settings";
 pub const APP_SETTINGS_SYNC_SCHEMA: &str = "app_settings.snapshot";
-pub const APP_SETTINGS_SYNC_VERSION: u32 = 1;
+pub const APP_SETTINGS_SYNC_VERSION: u32 = 2;
 
 pub const CONVERSATION_SNAPSHOT_SYNC_KIND: &str = "conversation_snapshot";
 pub const CONVERSATION_SNAPSHOT_SYNC_SCHEMA: &str = "conversation.snapshot_artifact";

@@ -15,6 +15,7 @@ The crate persists nothing itself. Settings go through the synchronous store tra
 - `help_me_reply`, `lorebook_generator`, `lorebook_entry_generator`, `creation_helper`, `companion_soul_writer`, `image_generation`: the model, prompt and format choices of the helper jobs.
 - `embedding.dimensions`: the embedding dimension preference; unset means the embedding default.
 - `manual_mode_context_window` (default 50): the history window for chats without dynamic memory. Dynamic chats use the summary interval instead.
+- `lorebook_scan_depth` (default 10, `LOREBOOK_SCAN_DEPTH_RANGE` 1 to 20): how many of the latest messages a recent-message-window lorebook scans for keywords, in direct and group chats. `GlobalSettings::within_bounds` rejects a value outside the range, and the store, backup restore and sync all refuse such a document.
 - `auto_download_character_card_avatars` (default on): fetch http(s) avatars a character card links to while importing it.
 - `ui_preferences`: the app shell's own JSON document (theme, colors, view modes, navigation, the global chat appearance, saved sampler presets and so on). Only the shell reads it; the backend stores, bounds (256 KiB) and syncs it without interpreting it.
 

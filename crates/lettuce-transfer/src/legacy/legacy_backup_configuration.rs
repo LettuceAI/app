@@ -845,6 +845,7 @@ fn map_settings(
             },
             manual_mode_context_window: optional_u32(advanced, "manualModeContextWindow")?
                 .unwrap_or(50),
+            lorebook_scan_depth: lettuce_settings::DEFAULT_LOREBOOK_SCAN_DEPTH,
         },
         default_provider_account_id,
         default_model_profile_id,

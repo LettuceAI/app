@@ -15,8 +15,6 @@ use crate::prompt::{
     validate_prose,
 };
 
-/// The runtime always inspects this many recent messages.
-pub const LEGACY_RECENT_MESSAGE_LIMIT: usize = 10;
 pub const MAX_ACTIVE_LOREBOOK_CONTENT_BYTES: usize = 4 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -468,13 +466,17 @@ pub struct LorebookExplanation {
     pub entries: Vec<LorebookEntryExplanation>,
 }
 
-#[derive(Debug, Default, Clone, Copy)]
-pub struct LorebookMatcher;
+/// Matches entries against a turn. `scan_depth` is how many of the latest
+/// messages a `RecentMessageWindow` book searches.
+#[derive(Debug, Clone, Copy)]
+pub struct LorebookMatcher {
+    scan_depth: usize,
+}
 
 impl LorebookMatcher {
     #[must_use]
-    pub const fn new() -> Self {
-        Self
+    pub const fn new(scan_depth: usize) -> Self {
+        Self { scan_depth }
     }
 
     pub fn activate(
@@ -486,7 +488,12 @@ impl LorebookMatcher {
     ) -> Result<LorebookActivation, LorebookValidationError> {
         book.validate()?;
         validate_entries(book.id, entries)?;
-        let context = context_owned(book.detection_policy, recent_messages, latest_user_message)?;
+        let context = context_owned(
+            book.detection_policy,
+            recent_messages,
+            latest_user_message,
+            self.scan_depth,
+        )?;
         let mut matches = Vec::new();
         for entry in entries.iter().filter(|entry| entry.enabled) {
             let matched_keywords = entry
@@ -530,7 +537,12 @@ impl LorebookMatcher {
     ) -> Result<LorebookExplanation, LorebookValidationError> {
         book.validate()?;
         validate_entries(book.id, entries)?;
-        let context = context_owned(book.detection_policy, recent_messages, latest_user_message)?;
+        let context = context_owned(
+            book.detection_policy,
+            recent_messages,
+            latest_user_message,
+            self.scan_depth,
+        )?;
         let entries = entries
             .iter()
             .map(|entry| {
@@ -594,6 +606,7 @@ fn context_owned(
     policy: DetectionPolicy,
     recent_messages: &[String],
     latest_user_message: Option<&str>,
+    scan_depth: usize,
 ) -> Result<String, LorebookValidationError> {
     match policy {
         DetectionPolicy::LatestUserMessage => {
@@ -603,7 +616,7 @@ fn context_owned(
             let messages = recent_messages
                 .iter()
                 .rev()
-                .take(LEGACY_RECENT_MESSAGE_LIMIT)
+                .take(scan_depth)
                 .collect::<Vec<_>>();
             Ok(messages
                 .into_iter()
@@ -827,6 +840,7 @@ pub fn resolve_lorebook_snapshot_activation(
     sources: &[LorebookSnapshotActivationSource],
     recent_messages: &[String],
     latest_user_message: Option<&str>,
+    scan_depth: usize,
 ) -> Result<MultiLorebookSnapshotActivation, MultiLorebookActivationError> {
     let mut seen_books = std::collections::HashSet::with_capacity(sources.len());
     let mut resolved_sources = Vec::new();
@@ -848,6 +862,7 @@ pub fn resolve_lorebook_snapshot_activation(
             source.detection_policy,
             recent_messages,
             latest_user_message,
+            scan_depth,
         )?;
         for entry in source.entries.iter().filter(|entry| entry.enabled) {
             let matched_keywords = entry
@@ -934,8 +949,9 @@ pub fn resolve_lorebook_activation(
     sources: &[LorebookActivationSource],
     recent_messages: &[String],
     latest_user_message: Option<&str>,
+    scan_depth: usize,
 ) -> Result<MultiLorebookActivation, MultiLorebookActivationError> {
-    let matcher = LorebookMatcher::new();
+    let matcher = LorebookMatcher::new(scan_depth);
     let mut seen_books = std::collections::HashSet::with_capacity(sources.len());
     let mut resolved_sources = Vec::new();
     let mut skipped = Vec::new();
@@ -1136,8 +1152,9 @@ pub fn activate_lorebook_entries(
     entries: &[LorebookEntry],
     recent_messages: &[String],
     latest_user_message: Option<&str>,
+    scan_depth: usize,
 ) -> Result<LorebookActivation, LorebookValidationError> {
-    LorebookMatcher::new().activate(book, entries, recent_messages, latest_user_message)
+    LorebookMatcher::new(scan_depth).activate(book, entries, recent_messages, latest_user_message)
 }
 
 pub fn preview_lorebook(
@@ -1145,8 +1162,9 @@ pub fn preview_lorebook(
     entries: &[LorebookEntry],
     recent_messages: &[String],
     latest_user_message: Option<&str>,
+    scan_depth: usize,
 ) -> Result<LorebookPreview, LorebookValidationError> {
-    LorebookMatcher::new().preview(book, entries, recent_messages, latest_user_message)
+    LorebookMatcher::new(scan_depth).preview(book, entries, recent_messages, latest_user_message)
 }
 
 pub fn explain_lorebook(
@@ -1154,13 +1172,16 @@ pub fn explain_lorebook(
     entries: &[LorebookEntry],
     recent_messages: &[String],
     latest_user_message: Option<&str>,
+    scan_depth: usize,
 ) -> Result<LorebookExplanation, LorebookValidationError> {
-    LorebookMatcher::new().explain(book, entries, recent_messages, latest_user_message)
+    LorebookMatcher::new(scan_depth).explain(book, entries, recent_messages, latest_user_message)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const DEPTH: usize = 10;
 
     fn book(policy: DetectionPolicy) -> Lorebook {
         Lorebook {
@@ -1248,18 +1269,56 @@ mod tests {
         let mut messages = (0..11).map(|n| format!("message {n}")).collect::<Vec<_>>();
         messages[0] = "needle".into();
         assert!(
-            LorebookMatcher::new()
+            LorebookMatcher::new(DEPTH)
                 .activate(&book, &entries, &messages, None)
                 .expect("valid lorebook")
                 .entries
                 .is_empty()
         );
         messages[1] = "needle".into();
-        let activated = LorebookMatcher::new()
+        let activated = LorebookMatcher::new(DEPTH)
             .activate(&book, &entries, &messages, None)
             .expect("valid lorebook");
         assert_eq!(activated.entries.len(), 1);
         assert_eq!(activated.entries[0].ordinal, 0);
+    }
+
+    #[test]
+    fn scan_depth_bounds_the_recent_window_and_leaves_latest_user_alone() {
+        let recent = book(DetectionPolicy::RecentMessageWindow);
+        let entries = vec![entry(&recent, 0, "needle")];
+        let mut messages = (0..25).map(|n| format!("message {n}")).collect::<Vec<_>>();
+        let active = |depth: usize, messages: &[String]| {
+            !LorebookMatcher::new(depth)
+                .activate(&recent, &entries, messages, None)
+                .expect("valid lorebook")
+                .entries
+                .is_empty()
+        };
+        messages[21] = "needle".into();
+        assert!(!active(3, &messages));
+        assert!(active(10, &messages));
+        messages[21] = "message 21".into();
+        messages[22] = "needle".into();
+        assert!(active(3, &messages));
+        assert!(!active(1, &messages));
+        messages[22] = "message 22".into();
+        messages[5] = "needle".into();
+        assert!(active(20, &messages));
+        assert!(!active(19, &messages));
+        assert!(!active(10, &messages));
+
+        let latest = book(DetectionPolicy::LatestUserMessage);
+        let latest_entries = vec![entry(&latest, 0, "needle")];
+        for depth in [1, 3, 20] {
+            assert!(
+                LorebookMatcher::new(depth)
+                    .activate(&latest, &latest_entries, &messages, Some("no match"))
+                    .expect("valid lorebook")
+                    .entries
+                    .is_empty()
+            );
+        }
     }
 
     #[test]
@@ -1268,7 +1327,7 @@ mod tests {
         let mut active = entry(&book, 0, "");
         active.always_active = true;
         let matched = entry(&book, 1, "needle");
-        let result = LorebookMatcher::new()
+        let result = LorebookMatcher::new(DEPTH)
             .activate(&book, &[active, matched], &["no".into()], Some("needle"))
             .expect("valid lorebook");
         assert_eq!(result.entries.len(), 2);
@@ -1298,17 +1357,19 @@ mod tests {
         ];
         let mut messages = (0..11).map(|n| format!("message {n}")).collect::<Vec<_>>();
         messages[0] = "needle".into();
-        let result = resolve_lorebook_snapshot_activation(&sources, &messages, Some("other"))
-            .expect("valid snapshot sources");
+        let result =
+            resolve_lorebook_snapshot_activation(&sources, &messages, Some("other"), DEPTH)
+                .expect("valid snapshot sources");
         assert!(result.entries.is_empty());
 
         messages[1] = "needle".into();
-        let result = resolve_lorebook_snapshot_activation(&sources, &messages, Some("other"))
-            .expect("valid snapshot sources");
+        let result =
+            resolve_lorebook_snapshot_activation(&sources, &messages, Some("other"), DEPTH)
+                .expect("valid snapshot sources");
         assert_eq!(result.activated_lorebook_ids, vec![recent_id]);
         assert_eq!(result.activated_entry_ids, vec![recent_entry.entry_id]);
 
-        let result = resolve_lorebook_snapshot_activation(&sources, &[], Some("needle"))
+        let result = resolve_lorebook_snapshot_activation(&sources, &[], Some("needle"), DEPTH)
             .expect("valid snapshot sources");
         assert_eq!(
             result.activated_lorebook_ids,
@@ -1336,6 +1397,7 @@ mod tests {
             )],
             &[],
             Some("needle"),
+            DEPTH,
         )
         .expect("valid snapshot source");
         assert_eq!(result.activated_lorebook_ids, vec![lorebook_id]);
@@ -1376,7 +1438,7 @@ mod tests {
                 vec![duplicate_entry],
             ),
         ];
-        let result = resolve_lorebook_snapshot_activation(&sources, &[], Some("needle"))
+        let result = resolve_lorebook_snapshot_activation(&sources, &[], Some("needle"), DEPTH)
             .expect("valid snapshot sources");
         assert_eq!(result.sources.len(), 2);
         assert_eq!(
@@ -1424,6 +1486,7 @@ mod tests {
             ],
             &[],
             Some("needle"),
+            DEPTH,
         )
         .expect("legacy had no active entry count limit");
         assert_eq!(result.entries.len(), 20_002);
@@ -1446,6 +1509,7 @@ mod tests {
             )],
             &[],
             None,
+            DEPTH,
         );
         assert_eq!(
             result,
@@ -1459,12 +1523,12 @@ mod tests {
         let mut bad = entry(&book, 0, "[");
         bad.match_mode = KeywordMatchMode::Regex;
         assert!(matches!(
-            LorebookMatcher::new().activate(&book, &[bad], &[], None),
+            LorebookMatcher::new(DEPTH).activate(&book, &[bad], &[], None),
             Err(LorebookValidationError::InvalidRegex(_))
         ));
         let bad_order = entry(&book, 4, "x");
         assert_eq!(
-            LorebookMatcher::new().activate(&book, &[bad_order], &[], None),
+            LorebookMatcher::new(DEPTH).activate(&book, &[bad_order], &[], None),
             Err(LorebookValidationError::InvalidOrdering)
         );
     }
@@ -1480,7 +1544,7 @@ mod tests {
         upper.match_mode = KeywordMatchMode::Regex;
         assert!(upper.validate().is_ok());
         assert_eq!(
-            LorebookMatcher::new()
+            LorebookMatcher::new(DEPTH)
                 .activate(&book, &[upper], &[], Some("the hero"))
                 .expect("valid lorebook")
                 .entries
@@ -1493,7 +1557,7 @@ mod tests {
     fn preview_and_explanation_are_pure() {
         let book = book(DetectionPolicy::LatestUserMessage);
         let entry = entry(&book, 0, "needle");
-        let preview = LorebookMatcher::new()
+        let preview = LorebookMatcher::new(DEPTH)
             .preview(&book, &[entry], &[], Some("needle"))
             .expect("valid lorebook preview");
         assert_eq!(preview.content, "Lore");
@@ -1512,7 +1576,7 @@ mod tests {
             .collect::<Vec<_>>();
         messages[0] = "needle".into();
         assert!(
-            LorebookMatcher::new()
+            LorebookMatcher::new(DEPTH)
                 .activate(&book, &entries, &messages, None)
                 .expect("valid lorebook")
                 .entries
@@ -1532,7 +1596,7 @@ mod tests {
         message.push_str(" x");
         let entries = vec![literal];
         assert_eq!(
-            LorebookMatcher::new()
+            LorebookMatcher::new(DEPTH)
                 .activate(&book, &entries, &[], Some(&message))
                 .expect("context over 1 MiB")
                 .entries
@@ -1657,7 +1721,7 @@ mod tests {
                 details: None,
             },
         ];
-        let resolved = resolve_lorebook_activation(&sources, &[], Some("needle"))
+        let resolved = resolve_lorebook_activation(&sources, &[], Some("needle"), DEPTH)
             .expect("all supplied active books are valid");
         assert_eq!(resolved.sources.len(), 2);
         assert_eq!(resolved.entries.len(), 2);
@@ -1709,7 +1773,7 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert_eq!(
-            resolve_lorebook_activation(&many_sources, &[], Some("needle"))
+            resolve_lorebook_activation(&many_sources, &[], Some("needle"), DEPTH)
                 .expect("legacy had no active lorebook limit")
                 .entries
                 .len(),
@@ -1733,6 +1797,7 @@ mod tests {
                 ],
                 &[],
                 Some("needle"),
+                DEPTH,
             )
             .expect("legacy had no active entry limit")
             .entries
@@ -1763,7 +1828,7 @@ mod tests {
             });
         }
         assert_eq!(
-            resolve_lorebook_activation(&sources, &[], None),
+            resolve_lorebook_activation(&sources, &[], None, DEPTH),
             Err(MultiLorebookActivationError::ActiveContentTooLarge)
         );
     }

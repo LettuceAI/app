@@ -607,7 +607,7 @@ pub(crate) fn sync_write_app_settings(
         .model_settings
         .validate()
         .map_err(|_| rusqlite::Error::InvalidQuery)?;
-    if !snapshot.settings.ui_preferences.within_bounds() {
+    if !snapshot.settings.within_bounds() {
         return Err(rusqlite::Error::InvalidQuery);
     }
     let present = |table: &str, id: Option<String>| -> Result<Option<String>, rusqlite::Error> {
@@ -809,7 +809,7 @@ impl GlobalSettingsStore for Database {
         default_model_profile_id: Option<ModelProfileId>,
         expected_revision: Revision,
     ) -> Result<StoredGlobalSettings, GlobalSettingsStoreError> {
-        if !settings.ui_preferences.within_bounds() {
+        if !settings.within_bounds() {
             return Err(GlobalSettingsStoreError::InvalidData);
         }
         let payload =
@@ -4578,6 +4578,33 @@ mod tests {
             GlobalSettingsStore::save(&database, settings, None, initial.revision),
             Err(GlobalSettingsStoreError::StaleRevision)
         );
+    }
+
+    #[test]
+    fn lorebook_scan_depth_saves_inside_its_range_and_rejects_the_rest() {
+        let database = Database::open_in_memory().expect("database");
+        let initial = GlobalSettingsStore::load(&database).expect("settings");
+        assert_eq!(initial.settings.lorebook_scan_depth, 10);
+        for depth in [0, 21] {
+            let mut settings = initial.settings.clone();
+            settings.lorebook_scan_depth = depth;
+            assert_eq!(
+                GlobalSettingsStore::save(&database, settings, None, initial.revision),
+                Err(GlobalSettingsStoreError::InvalidData)
+            );
+        }
+        let mut settings = initial.settings;
+        settings.lorebook_scan_depth = 20;
+        let saved = GlobalSettingsStore::save(&database, settings, None, initial.revision)
+            .expect("save scan depth");
+        assert_eq!(
+            GlobalSettingsStore::load(&database)
+                .expect("reload settings")
+                .settings
+                .lorebook_scan_depth,
+            20
+        );
+        assert_eq!(saved.settings.lorebook_scan_depth, 20);
     }
 
     #[test]

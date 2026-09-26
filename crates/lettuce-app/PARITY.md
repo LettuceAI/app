@@ -222,6 +222,7 @@ Everything the Tauri phase (phase (c)) still has to connect:
 - The macOS bundle needs legacy's `entitlements.plist` with `com.apple.security.cs.disable-library-validation`, or the hardened app refuses the re-signed ONNX Runtime download.
 - Android eSpeak hosting for Kokoro.
 - Automatic staged lorebook host wiring.
+- The advanced `lorebook_scan_depth` setting (1 to 20 recent messages, default 10): no Tauri command or settings control reads or writes it yet.
 - Automatic OpenRouter cost capture after inference (no host polling, scheduling or cache exists; `capture_job` is caller-triggered).
 - The analytics exit event.
 - Passing the Pure mode level to `CivitaiBrowser`.

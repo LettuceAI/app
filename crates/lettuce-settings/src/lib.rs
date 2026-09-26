@@ -24,11 +24,12 @@ pub use device::{
 };
 pub use global::{
     CompanionSoulWriterSettings, CreationHelperSettings, CreationHelperToolFallback,
-    DEFAULT_MIN_SIMILARITY_BASIS_POINTS,
+    DEFAULT_LOREBOOK_SCAN_DEPTH, DEFAULT_MIN_SIMILARITY_BASIS_POINTS,
     DeviceUiStateStore, DynamicMemoryPromptSelection, DynamicMemorySettings, EmbeddingSettings,
     GLOBAL_SETTINGS_FORMAT_VERSION, GlobalSettings, GlobalSettingsStore, GlobalSettingsStoreError,
     HelpMeReplySettings, HelpMeReplyStyle, ImageGenerationSettings, LorebookEntryGeneratorSettings,
-    LorebookGeneratorSelection, LorebookGeneratorSettings, MemoryRetrievalStrategy, MemoryRunMode,
+    LOREBOOK_SCAN_DEPTH_RANGE, LorebookGeneratorSelection, LorebookGeneratorSettings,
+    MemoryRetrievalStrategy, MemoryRunMode,
     MAX_UI_PREFERENCES_BYTES, MemoryStructuredFallbackFormat, PureMode, SceneGenerationMode,
     StoredGlobalSettings, UiPreferences,
 };

@@ -156,14 +156,23 @@ where
         let companion_state = self.companion_prompt_state(&aggregate, request.reference_time)?;
         let scheduled_notes = self.companion_scheduled_notes(&aggregate, request.reference_time)?;
 
+        let scan_depth = usize::from(
+            lettuce_settings::GlobalSettingsStore::load(self.sources)
+                .map_err(|_| ContextAssemblyError::LorebookActivation)?
+                .settings
+                .lorebook_scan_depth,
+        );
         let keyword_window = if direct { &visible } else { &history };
-        let recent_text = keyword_window
+        let mut scan_text = keyword_window
             .iter()
             .filter_map(active_text)
             .rev()
-            .take(lettuce_context::LEGACY_RECENT_MESSAGE_LIMIT)
+            .take(scan_depth.max(lettuce_context::PROMPT_KEYWORD_RECENT_MESSAGES))
             .collect::<Vec<_>>();
-        let recent_text = recent_text.into_iter().rev().collect::<Vec<_>>();
+        scan_text.reverse();
+        let recent_text = &scan_text[scan_text
+            .len()
+            .saturating_sub(lettuce_context::PROMPT_KEYWORD_RECENT_MESSAGES)..];
         let latest_user_message = history
             .iter()
             .rev()
@@ -179,9 +188,13 @@ where
                 .as_ref()
                 .is_some_and(|group| group.disable_character_lorebooks),
         )? {
-            let activation =
-                resolve_lorebook_activation(&tier, &recent_text, latest_user_message.as_deref())
-                    .map_err(|_| ContextAssemblyError::LorebookActivation)?;
+            let activation = resolve_lorebook_activation(
+                &tier,
+                &scan_text,
+                latest_user_message.as_deref(),
+                scan_depth,
+            )
+            .map_err(|_| ContextAssemblyError::LorebookActivation)?;
             for entry in activation.entries {
                 if !lore_entries
                     .iter()
@@ -207,7 +220,7 @@ where
             &lorebook_text,
             &scene,
             &scene_direction,
-            &recent_text,
+            recent_text,
             request
                 .prompt_runtime
                 .conversation_message_count
