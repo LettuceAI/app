@@ -1,318 +1,209 @@
 # lettuce-providers
 
-OpenAI-compatible buffered and SSE responses preserve optional
-`prompt_tokens_details.cached_tokens` and
-`completion_tokens_details.reasoning_tokens` in normalized usage. Missing
-details remain None, distinct from a reported zero. Both paths also preserve
-legacy top-level cache-read and reasoning/thinking aliases and nested camelCase
-details, with the legacy top-level precedence. Invalid optional counters fall
-through to valid aliases without inventing zero. Anthropic buffered/SSE
-usage also preserves cache_read_input_tokens; it does not infer a reasoning
-count from thinking text. Gemini buffered/streaming usage preserves
-cachedContentTokenCount and thoughtsTokenCount. Native input/output totals
-remain unchanged: these details are evidence, not a conversion to OpenRouter
-billing semantics. In particular, Anthropic cache reads may exceed its native
-input_tokens, and Gemini thoughts may exceed candidatesTokenCount. Do not
-apply OpenRouter's inclusive-token cost formula to these native totals.
-OpenAI-compatible buffered/SSE usage also preserves legacy nested cache-write
-and server-tool web-search counters, including their camelCase aliases. Anthropic
-buffered/SSE responses preserve cache_creation_input_tokens and
-server_tool_use.web_search_requests. Both message_start and message_delta update
-the cumulative native counters; omitted fields keep earlier evidence, while an
-explicit zero replaces it. Gemini/Ollama leave these new counters unknown;
-OpenAI-compatible responses retain provider-reported monetary cost from the
-legacy cost/total_cost/totalCost fields, accepting numeric values and numeric
-strings. Nonfinite or negative amounts are ignored. Missing cost stays unknown;
-stream frames replace supplied cumulative cost and retain it when omitted.
-OpenAI streaming usage frames update only counters they actually supply; partial
-or null usage frames retain earlier facts. Explicit zero replaces a prior count,
-and cumulative frames are not summed as separate requests.
+The provider adapters: they turn a provider-neutral `InferenceRequest` into one provider's HTTP request (or an embedded llama.cpp call), read the buffered or streamed answer back into an `InferenceOutcome`, and do the same for remote image generation. The crate also serves the provider catalog, model listing, key verification, the Ollama model store and OpenRouter billing reads.
 
-Remote provider catalogs, request translation, stream parsing, and error mapping.
+Provider-native DTOs are private. Callers see only the neutral types from `lettuce-conversations` and `lettuce-image-generation`, the descriptors, and a few result types. The crate does not decide what to send: the context, the resolved chat profile (model, parameters, reasoning, caching, streaming flags) and the tool request arrive already built. It does not execute tools, store anything or hold secrets; keys and secret headers are read from `lettuce_settings::SecretStore` per request.
 
-## Boundary
+- `lettuce-app` builds `RemoteProviders` and `RemoteImageProviders` with a TLS-configured client, attaches the media source, replay artifact store and embedded llama runtime, and calls them from chat, background jobs and settings screens.
+- `lettuce-network` supplies the HTTP clients: `JsonClient` for chat (bounded requests, the generation timeout and retry policy, streaming responses) and `BulkHttpClient` for image traffic.
+- `lettuce-inference` supplies `InferenceRuntimePort`, through which adapters emit stream deltas and check job cancellation.
+- `lettuce-usage` owns the billing result types the OpenRouter reads fill.
 
-Provider-native DTOs remain private adapters.
+## Structure
 
-The public surface is intentionally small. Business invariants belong in domain models and use cases; infrastructure is accessed only through narrow ports owned by the calling crate.
+| Path | What it holds |
+| --- | --- |
+| `lib.rs` | `RemoteProviders`, the dispatch by protocol and kind, the `InferencePort` implementation |
+| `providers/openai_compatible.rs` | The OpenAI-envelope family: `OpenAiWireProvider`, request encoding, buffered parsing, model listing |
+| `providers/anthropic_messages.rs` | The Anthropic Messages family and `AnthropicWireProvider` |
+| `providers/gemini_generate.rs`, `gemini_cache.rs` | The Gemini generateContent family, `GeminiWireProvider`, explicit cache resources |
+| `providers/ollama.rs`, `ollama_hub.rs` | Ollama `/api/chat`, and the model store (inventory, pull, delete) |
+| `providers/llama_cpp.rs` | The embedded llama.cpp runtime as a provider (desktop only) |
+| `providers/<kind>.rs` | One small file per provider: its wire-trait overrides and its `DESCRIPTOR` |
+| `providers/openrouter_pricing.rs` | OpenRouter endpoint pricing and generation details |
+| `streaming/` | Byte framing (SSE, NDJSON), per-protocol normalization, the stream loop |
+| `common.rs` | Auth plans, credentials, endpoint joining, usage and cost readers, lenient decoding, errors |
+| `media.rs` | `ProviderMediaSource`, attachment loading, generated image extraction |
+| `descriptor.rs`, `catalog.rs`, `verify.rs` | Provider descriptors, the catalog, key probes |
+| `images/` | `RemoteImageProviders`: per-provider image adapters, ComfyUI, image usage |
 
-## Status
+## Provider families
 
-Every remote chat provider the legacy app shipped is executable for buffered
-and streaming generation, one file per provider on a family wire trait with
-legacy-style delegation:
+There is no single "OpenAI-compatible" contract. Each wire protocol is a family with its own module and trait, and each provider is one file that implements the trait for its family:
 
-- OpenAI envelope (`OpenAiWireProvider`): `openai`, `openrouter`, `custom`,
-  `cerebras`, `deepseek`, `groq`, `xai`, `mistral`, `qwen`, `featherless`,
-  `chutes`, `anannas`, `nanogpt`, `nvidia`, `moonshot`, `literouter`,
-  `intenserp`, `pollinations`, `zai`, `lmstudio`
-- Anthropic Messages (`AnthropicWireProvider`): `anthropic`, `custom-anthropic`
-- Gemini generateContent (`GeminiWireProvider`): `gemini` (+ `google`,
-  `google-gemini`), `gemini-agent-platform-express`
-- Ollama native `/api/chat`: `ollama`
-- Embedded llama.cpp (desktop, `llama_cpp.rs`, enabled with
-  `RemoteProviders::with_local_llama`): legacy `LlamaCppAdapter` and
-  `build_llama_extra_fields` mapped onto the ported runtime. OpenAI-shaped
-  messages (assistant tool-call turns carry null content when they have no
-  text, tool results are `tool` messages), `parallel_tool_calls` whenever
-  tools are offered, output cap plus reasoning budget (4096 fallback), the
-  reasoning request turning on the template's reasoning format, the thinking
-  switch only with `send_thinking_state`, the per-field llama settings from the
-  chat profile (DFlash included: legacy's field allowlist dropped the
-  `llamaDflash*` keys, so chat never enabled it), the conversation as prompt
-  cache key for chat turns. Tool calls keep every argument shape legacy
-  executed: `<parameter=k>v</parameter>` bodies become `{"k": v}`, and
-  empty, `null` or non-JSON arguments become `{}`; raw arguments are kept only
-  when they are the JSON form of the arguments. Known gap: legacy's
-  `create_memory` saved a call whose body was plain text by taking the raw
-  text as the memory (`extract_text_argument`, `memory/flow.rs:4498-4507`);
-  the domain contract (`ProposedToolCall` needs object arguments that its raw
-  text parses to) cannot carry non-JSON raw text, so such a call now has no
-  `text` and saves nothing. Local
-  failures are non-retryable `LOCAL_INFERENCE_FAILED`; metrics, the runtime
-  report and UI events go to the app's `LlamaHost`. User attachments are
-  inlined like legacy `build_multimodal_content` (text first, then images as
-  data URLs with `detail: auto` and audio as `input_audio`) when the model's
-  image/audio input is supported, read through the `ProviderMediaSource` the
-  host attaches; attachments on other roles or unsupported modalities are
-  dropped. The runtime needs the model's mmproj for them (legacy rule). Streaming turned off for
-  the account or model runs the request unstreamed (legacy fallback). Cached
-  and cache-write prompt tokens are always reported; legacy lost them on its
-  non-streamed path.
+| Family | Trait | Providers |
+| --- | --- | --- |
+| OpenAI envelope | `OpenAiWireProvider` | `openai`, `openrouter`, `custom`, `cerebras`, `deepseek`, `groq`, `xai`, `mistral`, `qwen`, `featherless`, `chutes`, `anannas`, `nanogpt`, `nvidia`, `moonshot`, `literouter`, `intenserp`, `pollinations`, `zai`, `lmstudio` |
+| Anthropic Messages | `AnthropicWireProvider` | `anthropic`, `custom-anthropic` |
+| Gemini generateContent | `GeminiWireProvider` | `gemini` (also `google`, `google-gemini`), `gemini-agent-platform-express` |
+| Ollama `/api/chat` | none, one provider | `ollama` |
+| Embedded llama.cpp | none | the `LlamaCpp` protocol, enabled with `RemoteProviders::with_local_llama` |
 
-Legacy aliases (`cerebras.ai`, `chutes.ai`, `nvidia-nim`, `moonshot-ai`,
-`z.ai`) resolve; unknown kinds, `lettuce-host` and `lettuce-engine` are
-rejected. `RemoteProviders` also exposes `list_models` (legacy
-`get_remote_models`, incl. custom dotted-path parsing) and `verify_api_key`
-(legacy `verify_provider_api_key` probes), and every provider file carries a
-`DESCRIPTOR` (catalog metadata, key requirement, parameter/reasoning/caching
-support, extra-body allowlist) served through `provider_descriptors()`.
-Descriptors report native tool translation for all four remote wire families
-and keep structured output false. Anthropic and Gemini now advertise signed
-tool replay and reasoning-with-tools alongside reasoning-capable
-OpenAI-envelope adapters; Ollama remains false for the explicit replay
-limitations below.
+Every trait method has the standard behaviour as its default, and a provider overrides only what differs: endpoint and path, roles, same-role merging, auth, static headers, parameter validation, the reasoning policy, extra body fields, tool choice, streaming support. A provider may delegate to another provider's implementation (`OpenAi.chat_path(...)`). The result is that DeepSeek is a 34-line file and every provider difference is visible in one place.
 
-Streaming uses bounded byte framing and provider-specific normalization for
-OpenAI SSE, Anthropic Messages SSE, Gemini SSE, and Ollama NDJSON. It preserves
-native reasoning plus legacy thinking tags, usage, finish reasons, safety
-outcomes, request IDs, socket/channel backpressure, and cooperative
-cancellation. Malformed, oversized, incomplete, or contradictory protocol
-records fail closed. Provider request bodies opt into streaming only when a
-stream sink is present; cancellation alone does not change the wire protocol.
+`RemoteProviders::run` dispatches on the profile's `ProviderProtocol` and then on the provider kind with explicit match arms. Aliases (`cerebras.ai`, `chutes.ai`, `nvidia-nim`, `moonshot-ai`, `z.ai`) resolve; an unknown kind is rejected, never defaulted to OpenAI. `lettuce-host` and `lettuce-engine` are rejected. Stable diffusion and llama.cpp on mobile are rejected at the same point.
 
-Reasoning requests use explicit provider policies instead of treating
-"OpenAI-compatible" as one wire contract: OpenAI-style completion allowance,
-OpenRouter's nested reasoning object, Qwen/Moonshot thinking fields, zAI's
-thinking state, Anthropic's budgeted thinking block, Gemini's model-family
-thinking config, and Ollama HTTP's native `think` field. Buffered responses
-preserve native and tagged reasoning with the same normalized outcome shape as
-streaming. Custom OpenAI reasoning and embedded local runtimes remain deferred
-until their wire/runtime contracts are implemented explicitly.
+Each provider file carries a `DESCRIPTOR`: kind, display name, protocol, aliases, default endpoint and whether it is editable, API key requirement and header, streaming, model listing and key verification support, reasoning and prompt caching support, parameter flags and the extra-body allowlist. `provider_descriptors()` serves them as the catalog. Descriptors report native tool translation for all four remote families and keep structured output false. Anthropic, Gemini and the reasoning-capable OpenAI-envelope providers advertise signed tool replay and reasoning with tools; Ollama does not (see Tools).
 
-OpenAI-envelope providers support typed function definitions, provider-specific
-tool-choice policies, assistant-call/result transcript replay, buffered calls,
-and bounded fragmented SSE calls. Mistral maps required choice to `any`; custom
-providers retain their configured choice mode and optional
-`chat_template_kwargs`; OpenRouter cache-controls the final tool definition.
-Provider adapters only translate and validate calls: durable execution and
-handler dispatch remain owned by `lettuce-conversations`.
+## A request, step by step
 
-Anthropic and custom Anthropic use their native tool definitions, choices,
-`tool_use`/`tool_result` transcript blocks, buffered responses, and bounded SSE
-input fragments. This intentionally corrects the legacy follow-up path, which
-declared Anthropic tools but replayed OpenAI-shaped calls and results that the
-Anthropic adapter then discarded. Prompt caching covers the system, final tool
-definition, and final user text. Extended-thinking tool rounds store one
-conversation-retained native assistant-block document behind an opaque replay
-reference. Buffered responses retain the exact content-array bytes; SSE
-reconstructs one bounded canonical native array including thinking signatures.
-Continuation validates the artifact against every call and embeds the stored
-JSON unchanged. Malformed signatures, changed calls, tampered artifacts, and
-unavailable replay storage fail closed.
-Gemini and Gemini Express use native function declarations, AUTO/ANY/named
-choices, grouped `functionCall`/`functionResponse` transcript parts, buffered
-calls, and bounded SSE calls. Missing provider call IDs remain absent instead
-of being fabricated. Standard Gemini explicit-cache resources own both tool
-definitions and tool choice; a missing resource retry restores the clean
-uncached request. Signed Gemini function-call rounds retain the exact buffered
-native assistant `parts` array or the bounded canonical SSE parts sequence,
-including each `thoughtSignature`. Continuation verifies ordered call
-ID/name/arguments against the materialized artifact and embeds its JSON
-unchanged. Standard Gemini and Agent Platform Express share this boundary;
-unsigned Gemini behavior is unchanged. Ollama HTTP uses native function definitions and ordered
-assistant-call/tool-result replay, parses buffered calls, and accumulates atomic
-calls across NDJSON chunks without fabricating missing provider IDs. Its native
-API has no tool-choice field, so only Auto is supported; Required/named choice
-and reasoning-plus-tools remain rejected rather than approximated or replayed
-lossily.
+Taking the OpenAI-envelope family as the example; the other families have the same shape.
 
-Media input follows legacy `build_multimodal_content`: attachments on user
-messages reach the provider only when the model's image or audio input is
-supported (legacy `inputScopes`), read through the host's
-`ProviderMediaSource`; everything else (assistant reply images, other roles,
-text-only models) is dropped and the text is sent alone, never rejected.
-OpenAI-envelope providers get `image_url` data URLs with `detail: auto` and
-`input_audio`; Anthropic gets base64 `image` blocks (no audio); Gemini gets
-`inline_data` for images and audio (legacy `gemini_audio_mime`); Ollama gets
-the native `images` array (no audio). Multimodal messages are never merged
-with their neighbours, as legacy only merged string contents. Request bodies
-share the 64 MiB bulk bound so phone photos fit.
+1. Validate the request: common checks, tools against the model's capability, the reasoning allowance (the output allowance must be the visible cap plus the reasoning budget, as resolution computes it), and the provider's own parameter rules.
+2. Fit prompt caching to the provider (see Prompt caching).
+3. Resolve the target. The profile endpoint or the provider default is normalized, the provider picks the chat path, and a path that is a whole URL replaces the endpoint. The standard path is `/v1/chat/completions`, or `/chat/completions` when the endpoint already ends in `/v1`.
+4. Load attachments through the `ProviderMediaSource` and build wire messages: roles mapped (`Scene` becomes `system`), media inlined when allowed, tool calls and results in the family's transcript shape. Providers that ask for it get consecutive plain messages of the same role merged with a blank line between them.
+5. Encode the body: parameters, the reasoning fields from the provider's `ReasoningWirePolicy`, tools and tool choice, cache controls, and `stream: true` only when a stream sink is present and both the profile and the provider allow streaming.
+6. Load auth and secret headers from the secret store.
+7. Send through `JsonClient` with the generation policy (long timeout, bounded retries), wrapped in `await_cancelable` so the job's cancellation ends the wait.
+8. Parse the buffered response, or run the stream loop (below).
+9. Check the tool calls in the outcome against the request, and trim the reply text and reasoning.
 
-Deferred horizontals: custom-provider reasoning schema and structured output.
+A stream sink on a provider or account with streaming off runs the request buffered instead of failing it. Cancellation alone never changes the wire protocol. Gemini Express `-image` models always run buffered, with `responseModalities: ["TEXT","IMAGE"]`.
 
-Custom accounts follow legacy `custom.rs`: `chatEndpoint`/`modelsEndpoint`
-may be a `/route` with a fixed query (Azure `?api-version=`), a bare segment
-(joined with `/` on import), or a whole `http(s)://` URL that replaces the
-account endpoint. Header, bearer and query auth are left off when the account
-has no key, so keyless local servers import and run in every mode; an unknown
-`authMode` is bearer, as legacy's default arm. Account headers override the
-auth header, which overrides static headers (`User-Agent`, `Accept`,
-`Authorization`, `HTTP-Referer`, `X-Title` included); transport headers the
-client owns are ignored with a warning.
+## Endpoints, auth and headers
 
-Request policy follows legacy `request_builder`: a stream sink on an account
-or provider with streaming off runs the request buffered (legacy
-`effective_streaming_enabled`) instead of rejecting it. The prompt-caching
-flag is ignored for providers without explicit caching, and the stored TTL is
-read per provider (cache-control providers `1h` or else five minutes, Gemini
-`5min` or else one hour, OpenAI `24h` or else in-memory). Gemini Express
-`-image` models run buffered with `responseModalities: ["TEXT","IMAGE"]`, as
-legacy `gemini_agent_platform_express.rs` did (`disables_streaming_for_model`,
-`body`). zAI always sends
-`tool_choice: "auto"`. zAI and Gemini Express model listing returns an empty
-list. Ollama sends `num_ctx`/`num_predict` from its own settings first and
-falls back to the generic context length and output cap, as legacy
-`build_ollama_extra_fields` did; the legacy importer keeps `ollamaNumCtx` and
-`ollamaNumPredict` as Ollama settings instead of folding them into the generic
-fields.
+Custom accounts (`custom`, `custom-anthropic`) take their shape from `CustomProviderConfig`. `chatEndpoint` and `modelsEndpoint` may be a `/route` with a fixed query (Azure's `?api-version=`), a bare segment joined with `/`, or a whole `http(s)://` URL that replaces the account endpoint. Header, bearer and query auth are sent only when the account has a key, so keyless local servers work in every mode; an unknown `authMode` means bearer. Custom accounts also choose whether same-role messages merge, their tool-choice mode and optional `chat_template_kwargs`.
 
-Images a chat model returns ride on the candidate as `media` (MIME type and
-the provider's base64), as legacy `extract_image_data_urls_from_value`
-(`chat_manager/sse.rs` 553-620) read them: OpenAI-style `delta.images` /
-`message.images` entries whose `image_url.url` is a `data:image/...;base64,`
-URL, and Gemini `inlineData` (or `inline_data`) parts with an `image/` MIME
-type (`image/png` when none is given), skipping thought parts and non-image
-inline data. A reply with only images is not empty. Streamed images are kept
-whole per record with no cap of their own; a Gemini image part is not counted
-toward, or kept in, the signed tool-call replay. A stop keeps every image
-already received with the partial reply, and a stop after only images keeps
-the images (legacy discarded the whole reply on abort).
+Header precedence is account headers over the auth header over static headers (`User-Agent`, `Accept`, `Authorization`, `HTTP-Referer`, `X-Title` included). Transport headers owned by the client are ignored with a warning. `allowInvalidTls` is honoured only for providers with an editable endpoint (local and custom); hosted providers always validate certificates. Gemini sends its key only as the `x-goog-api-key` header.
 
-Response parsing is as lenient as legacy (`tooling.rs`, `sse.rs`):
-`tool_calls`/`reasoning`/`error` may be `null`; usage counters that are not
-integers are unknown; a tool call without an id gets `tool_call_{n}` (legacy
-used `tool_call` for every buffered call, which collided; corrected); a streamed
-fragment without an index opens a new call; `<parameter=x>` argument strings
-are parsed, a double-encoded object is unwrapped, and blank or non-object
-arguments become `{}` (legacy passed the raw string to the tool, the domain
-only carries objects); Anthropic `tool_use` blocks count under any
-`stop_reason`; a `tool_calls` finish with no calls keeps the text. OpenAI SSE
-streams may end without `[DONE]` or a final blank line, and a plain JSON body
-answering a stream request is read as one record. Text, reasoning, SSE records
-and the wire byte count of generation streams are not capped (legacy had no
-cap). The stored reply text and reasoning are trimmed like legacy
-`normalize_thinking_content`. Error bodies that are not JSON, or JSON without
-`error`/`message` text (FastAPI `detail`), keep their text as the message.
+## Reasoning
 
-Explicit prompt caching is executable for Anthropic, custom Anthropic, and
-OpenRouter through typed cache-control annotations, and for OpenAI through its
-typed request-retention field. Catalog descriptors expose the exact supported
-retention choices. Groq and Gemini Express remain automatic and emit no
-app-side cache controls. Standard Gemini creates explicit `cachedContents`
-resources for the stable prefix, reuses them in process until their typed
-five-minute or one-hour expiry, and sends the final content as the live turn.
-Cache creation is best-effort: failures send the original clean request, and a
-missing cached resource is evicted before one uncached retry. Cache names are
-never persisted because the provider owns and expires those resources.
+Reasoning is a per-provider wire policy, not a flag. The OpenAI-envelope policies (`ReasoningWirePolicy`):
 
-Normalized outcomes retain the provider's raw finish reason and bounded
-header request ID. Non-success responses carry a typed status/category plus
-bounded provider code and message; debug formatting redacts the message.
+- `MaxTokens` (DeepSeek, Featherless and others) and `MaxCompletionTokens` (LiteRouter, IntenseRP): the output cap plus the budget in that field, plus the effort. With reasoning off the cap plus budget is still sent.
+- `OpenRouter`: the nested `reasoning` object; `reasoning: {}` when on with neither effort nor budget.
+- `EnableThinking` (Qwen, Moonshot) and `Zai` (zAI's thinking state).
+- `ReasoningObject` (custom OpenAI-format): `reasoning: {effort, max_tokens}` when on, the output cap never raised by the budget.
+- `MaxCompletionTokensAndReasoningObject` (LM Studio): `max_completion_tokens`, the effort and a `reasoning` object.
+- `Ignored` (Mistral): reasoning settings are dropped and the budget is not added.
 
-Legacy data still without a destination, owned by named later slices:
+Anthropic sends a budgeted thinking block and adds the budget and forces temperature 1.0 only when thinking is actually sent (reasoning on with a budget). Gemini uses a thinking config chosen by model family, and Ollama its native `think` field. Nothing rejects an effort or budget while reasoning is off. Buffered and streamed responses keep native reasoning and tagged thinking in the same normalized shape.
 
-- model-parameters slice (`lettuce-models` profile config): generic extra-body
-  passthrough behind `extra_body_keys`. Ollama's twelve native options and the
-  OpenRouter pinned endpoint are implemented; duplicate legacy
-  context/output/repetition fields map to provider-neutral settings.
-- composition root (`lettuce-app`): constructing `JsonClient::with_tls` from
-  the settings' trusted certificates and exposing catalog, listing and
-  verification commands.
+## Tools
 
-Approved corrections of legacy tables: custom Anthropic accounts no longer
-advertise frequency/presence penalties (the Messages body never carried them);
-Gemini uses header-only `x-goog-api-key` (legacy also copied the key into the
-query string).
+Adapters translate and validate tool calls; admission, execution and handler dispatch belong to `lettuce-conversations` and `lettuce-app`.
 
-OpenRouter billing reads use `openrouter_endpoint_pricing` and
-`openrouter_generation_details` on the existing RemoteProviders adapter. They
-reuse account-owned credentials, the bounded JSON client and its 10-second probe
-policy. Endpoint/model and generation response identities must match the request;
-404 generation lookup returns None, while authentication and transport failures
-remain typed errors. Native and normalized token counts remain separate; absent
-counts never become zero. Endpoint names/tags and exact price strings are retained
-without selecting a fallback provider. Required prices and monetary evidence must
-be finite and nonnegative; an endpoint without a provider name or usable
-prompt and completion prices is skipped (legacy `parse_provider_pricings`), and
-local image servers (A1111, Diffusers, ComfyUI) run without auth when their
-optional key cannot be read. Wire response structs remain private; usage owns the
-billing result types. These reads do not add a cache or automatic cost writes.
+- OpenAI envelope: typed function definitions, provider-specific tool choice (Mistral maps required to `any`, zAI always sends `tool_choice: "auto"`, custom accounts keep their configured mode), assistant-call and `tool` result replay, buffered calls and fragmented SSE calls. OpenRouter cache-controls the final tool definition.
+- Anthropic: native definitions and choices, `tool_use` and `tool_result` blocks, buffered responses and SSE input fragments. `tool_use` blocks count under any `stop_reason`.
+- Gemini: native function declarations, AUTO, ANY and named choice, grouped `functionCall` and `functionResponse` parts, buffered and SSE calls. When a Gemini explicit cache resource is used it owns both the tool definitions and the tool choice.
+- Ollama: native definitions and ordered call and result replay; calls are accumulated atomically across NDJSON chunks. The API has no tool-choice field, so only `Auto` is supported; required or named choice and reasoning with tools are rejected rather than approximated.
 
-Contracts checked against the official [endpoint pricing documentation](https://openrouter.ai/docs/api/api-reference/endpoints/list-all-endpoints-for-a-model)
-and [generation metadata documentation](https://openrouter.ai/docs/api/api-reference/generations/get-request-&-usage-metadata-for-a-generation).
-Local HTTP fixtures cover bearer auth, base-path/version handling, encoded query
-IDs, 404 versus 401, free prices and separate native/normalized counters; parser
-tests reject wrong identities and malformed required evidence.
+Missing provider call ids stay absent in the Gemini and Ollama paths instead of being invented. Where an id is needed in the OpenAI-envelope family, a call without one gets `tool_call_{n}`, 1-based within the response.
 
-OpenAI buffered/SSE outcomes retain the response-body `id` separately from the
-HTTP `provider_request_id`. Omitted/null SSE IDs preserve the earlier identity;
-changed or non-string IDs reject the stream. Other native adapters currently
-leave response identity unknown. Companion dispatch evidence retains this ID
-before workflow validation; other workflow checkpoints are not yet wired to it.
+### Signed replay
 
-Reasoning wire behaviour follows each legacy adapter (2026-09-22): with
-reasoning off, OpenAI-envelope providers still send `max_tokens` = cap +
-budget, except Mistral (reasoning ignored) and custom OpenAI-format (budget
-never added; `reasoning: {effort, max_tokens}` when on); LM Studio sends
-`max_completion_tokens`, the effort and a `reasoning` object; DeepSeek,
-Featherless use `max_tokens` + effort; LiteRouter, IntenseRP
-`max_completion_tokens` + effort; OpenRouter sends `reasoning: {}` when on
-with neither effort nor budget. Anthropic adds the budget and forces
-temperature 1.0 only when thinking is actually sent (reasoning on with a
-budget). Nothing rejects effort or budget with reasoning off.
+Extended thinking with tools only works if the provider gets its own signed assistant content back byte for byte. For Anthropic, a thinking tool round stores one conversation-retained native assistant-block document behind an opaque replay reference, through `ProviderReplayArtifactPort`. Buffered responses keep the exact content-array bytes; streaming rebuilds one bounded canonical native array including the thinking signatures. On continuation the artifact is validated against every call and the stored JSON is embedded unchanged.
 
-Remote image generation (`RemoteImageProviders`, 2026-09-22) ports legacy
-`generate_image` for every kind but sdcpp: the eleven legacy adapters
-(OpenAI and its `custom`/`lettuce-host` aliases, OpenRouter, Pollinations,
-Gemini with the key as `?key=`, Gemini Express with `x-goog-api-key`,
-Stability, xAI, NanoGPT, LiteRouter binary responses, Automatic1111,
-Diffusers) with their endpoints, fields, defaults and parsers, and ComfyUI
-(upload, legacy `%TOKEN%` substitution, `/prompt`, `/history` polled every
-1.5 s up to 400 times, `/view`). Requests go over `BulkHttpClient`
-(release 2.2.5 behavior): reference images and mask are shrunk first
-(`shrink_for_upload`); OpenRouter posts to its Image API (`{base}/v1/images`,
-nearest legacy aspect ratio, `input_references`) and falls back to chat
-completions on 404, or 400/422 naming the model/endpoint; an HTTP 5xx or a
-transient `error` in a 2xx body (500/502/503/504/529) is retried once after
-1.5 s, other body errors fail as `Provider error {code}: {message}`, and 413
-gets a readable detail; error texts are legacy's. Linked results are
-downloaded, data URLs and raw base64 decoded, usage found the way legacy's
-`extract_usage` did. The job's cancellation token ends the request. ComfyUI
-workflows are the account's `ProviderConfig::ComfyUi` (both legacy importers
-now keep `txt2imgWorkflow`/`img2imgWorkflow`; they were dropped before).
-Deliberate corrections: a `custom` or `lettuce-host` account without an
-endpoint fails instead of sending its key to api.openai.com. Open gap:
-providers' remote result URLs are not kept beside the stored bytes.
+Gemini does the same for signed function-call rounds: the exact buffered `parts` array or the canonical streamed parts sequence, including each `thoughtSignature`, verified against the ordered call ids, names and arguments on continuation. Standard Gemini and Agent Platform Express share this path, and unsigned Gemini behaves as before. A Gemini image part is neither counted toward nor kept in the signed replay.
 
-Image, audio and total token counts are read the way legacy `usage_from_value`
-did (OpenAI `usage`, Gemini `usageMetadata` incl. AUDIO modality details) for
-chat and image responses; Anthropic, Ollama and llama.cpp never reported them.
+Malformed signatures, changed calls, tampered artifacts and unavailable replay storage fail closed.
 
-Ollama model store: `RemoteProviders::ollama_inventory`, `ollama_delete` and
-`ollama_pull` (NDJSON progress per line, cancelled by dropping the future)
-talk to an Ollama account's server with its credentials. A pull is sent once
-with only an idle timeout (legacy had none; a 30-minute total limit would kill
-large pulls), a delete is never retried, pull lines are split on bytes so a
-character across chunks survives (legacy corrupted it), and a single progress
-line is capped at 1 MiB.
+## Streaming
+
+The stream loop in `streaming/streaming.rs` has three layers:
+
+1. `StreamFramer` splits bytes into records, SSE or NDJSON. Records are not size-capped, because image-output models stream a whole base64 picture as one record.
+2. `StreamNormalizer`, one per protocol (`OpenAi`, `Anthropic`, `Gemini`, `Ollama`), turns records into text and reasoning deltas and accumulates tool calls, usage, finish reasons, safety outcomes, response ids and replay bytes. Tool arguments, thinking signatures, error text and replay documents have their own bounds.
+3. The loop emits each delta through the runtime with an increasing sequence, checks cancellation between chunks, and at the end emits the normalizer's tail and returns the outcome.
+
+Malformed, incomplete or contradictory protocol records fail closed. An OpenAI stream may end without `[DONE]` or a final blank line, and a plain JSON body answering a stream request is read as one record. The text, reasoning and total wire size of a generation stream are not capped. Socket backpressure comes from reading the response one chunk at a time.
+
+When a job is cancelled mid-stream, the normalizer builds a cancelled outcome from the text and reasoning that already reached the sink, plus every image already received, so the partial reply can be kept. A stop after only images keeps the images.
+
+## Parsing responses
+
+Buffered and streamed parsing are deliberately lenient about what providers actually send:
+
+- `tool_calls`, `reasoning` and `error` may be `null`; `null` and missing mean the default.
+- A usage counter that is not an integer or integer string is unknown, never an error.
+- A streamed tool fragment without an index opens a new call.
+- Tool arguments: `<parameter=x>` bodies are parsed, a double-encoded object is unwrapped, and blank or non-object arguments become `{}`.
+- A `tool_calls` finish with no calls keeps the text.
+- A reply with only images is not empty.
+- Error bodies that are not JSON, or JSON without `error` or `message` text (FastAPI's `detail`), keep their text as the message.
+
+Outcomes keep the provider's raw finish reason and the bounded request id from the response headers. OpenAI buffered and SSE outcomes also keep the response body `id` as `provider_response_id`; an omitted or null id in a later SSE frame keeps the earlier one, and a changed or non-string id rejects the stream. Other families leave the response id unknown.
+
+## Usage and cost
+
+Usage is evidence, reported in each provider's own terms. Native input and output totals are never converted to another provider's billing semantics: Anthropic cache reads may exceed its native `input_tokens`, and Gemini thoughts may exceed `candidatesTokenCount`, so OpenRouter's inclusive-token cost formula must not be applied to them.
+
+- OpenAI envelope: `prompt_tokens_details.cached_tokens` and `completion_tokens_details.reasoning_tokens`, the older top-level cache-read and reasoning or thinking aliases and nested camelCase details (top-level wins), cache-write and server-tool web-search counters with their camelCase aliases. An invalid optional counter falls through to a valid alias without inventing zero.
+- Anthropic: `cache_read_input_tokens`, `cache_creation_input_tokens` and `server_tool_use.web_search_requests`. Both `message_start` and `message_delta` update the cumulative counters; an omitted field keeps earlier evidence, an explicit zero replaces it. No reasoning count is inferred from thinking text.
+- Gemini: `cachedContentTokenCount` and `thoughtsTokenCount`.
+- Image, audio and total token counts come from OpenAI `usage` and Gemini `usageMetadata` (including AUDIO modality details) for chat and image responses; image tokens are also taken from `completion_tokens_details`, and cached prompt tokens are not image tokens.
+- Gemini and Ollama leave the cache-write and web-search counters unknown.
+
+A missing detail stays `None`, distinct from a reported zero. OpenAI streaming usage frames update only the counters they supply; partial or null frames keep earlier facts, an explicit zero replaces a count, and cumulative frames are not summed as separate requests.
+
+OpenAI-envelope responses keep a provider-reported monetary cost from `cost`, `total_cost` or `totalCost`, as a number or numeric string. Non-finite or negative amounts are ignored, a missing cost stays unknown, and stream frames replace a supplied cumulative cost and keep it when omitted.
+
+## Prompt caching
+
+`normalize_prompt_caching` fits the profile's caching request to the provider. Providers without explicit caching drop it. The stored TTL is read per provider: cache-control providers use one hour if chosen and otherwise five minutes, Gemini uses five minutes if chosen and otherwise one hour, and OpenAI uses 24 hours if chosen and otherwise in-memory retention. Descriptors expose the exact retention choices.
+
+- Anthropic, custom Anthropic and OpenRouter use typed cache-control annotations on the system prompt, the final tool definition and the final user text.
+- OpenAI uses its typed request-retention field.
+- Groq and Gemini Express cache automatically and get no app-side controls.
+- Standard Gemini creates explicit `cachedContents` resources for the stable prefix, reuses them in process until their five-minute or one-hour expiry, and sends the final content as the live turn. Creation is best effort: a failure sends the original clean request, and a missing resource is evicted before one uncached retry that restores the clean request. Cache names are never persisted, because the provider owns and expires them.
+
+## Media
+
+Input media reaches a provider only from user messages, only when the model supports that input (image or audio), and only through the `ProviderMediaSource` the application attaches. Anything else (assistant reply images, other roles, text-only models) is dropped and the text is sent alone; the request is never rejected for it.
+
+| Family | Images | Audio |
+| --- | --- | --- |
+| OpenAI envelope and llama.cpp | `image_url` data URLs with `detail: auto`, after the text | `input_audio` |
+| Anthropic | base64 `image` blocks | not sent |
+| Gemini | `inline_data` | `inline_data` |
+| Ollama | the native `images` array | not sent |
+
+Multimodal messages are never merged with their neighbours. Request bodies share the 64 MiB bulk bound so phone photos fit.
+
+Output media: images a chat model returns ride on the candidate as `GeneratedMedia` (MIME type and the provider's base64). OpenAI-style `delta.images` and `message.images` entries count when their `image_url.url` is a `data:image/...;base64,` URL; Gemini `inlineData` or `inline_data` parts count when their MIME type is `image/*` (`image/png` when missing), skipping thought parts and non-image data. Streamed images are kept whole per record with no cap of their own. Finalization in the application stores them as assets.
+
+## Errors
+
+Adapters fail with `AdapterError`, which maps to the conversation `PortError`: malformed and empty responses become `Empty`, rejected requests and credentials `Rejected`, missing secrets and transport failures `Unavailable`, cancellation `Cancelled`, and provider failures `Provider(ProviderFailure)`. A provider failure carries a typed status and category plus the bounded provider code and message; `Debug` redacts the message.
+
+## Embedded llama.cpp
+
+`providers/llama_cpp.rs` runs llama.cpp models on the in-process runtime from `lettuce-local-llm`. `LocalLlama` holds the runtime and the app's `LlamaHost`, which receives metrics, the runtime report and UI events. `LocalRuntimeExclusion` lets the host stop the stable-diffusion.cpp server before every llama.cpp request.
+
+The request is OpenAI-shaped: an assistant tool-call turn has null content when it has no text, and tool results are `tool` messages with their call id. `parallel_tool_calls` is on whenever tools are offered. The output cap plus the reasoning budget (4096 when unset) is the allowance, the reasoning request turns on the template's reasoning format, and the thinking switch is sent only with `send_thinking_state`. Per-field llama settings come from the chat profile, DFlash included. For chat turns the conversation is the prompt cache key. Streaming off for the account or model runs the request unstreamed. Cached and cache-write prompt tokens are always reported.
+
+Tool calls keep every argument shape the chat loop executes: `<parameter=k>v</parameter>` bodies become `{"k": v}`, and empty, `null` or non-JSON arguments become `{}`. The raw text is kept only when it is the JSON form of the arguments.
+
+Attachments are inlined as for the OpenAI envelope (text first, images as data URLs with `detail: auto`, audio as `input_audio`) when the model supports that input; the runtime needs the model's mmproj for them. Local failures are non-retryable `LOCAL_INFERENCE_FAILED`.
+
+## Catalog, listing and verification
+
+- `list_models` fetches one account's model list per family. Custom accounts can point at any JSON shape with dotted paths (`data`, `result.models[0]`, `id`), and fall back to the OpenAI `data[]` parser when the paths match nothing. zAI and Gemini Express return an empty list.
+- `verify_api_key` probes an account's credential with the short probe policy, as the settings page does on save.
+- Ollama: `num_ctx` and `num_predict` come from the account's Ollama settings first and fall back to the generic context length and output cap. Ollama's twelve native options and OpenRouter's pinned endpoint are sent as their own fields; the descriptors list them as the extra-body keys `options` and `provider`.
+
+### Ollama model store
+
+`ollama_inventory`, `ollama_delete` and `ollama_pull` talk to an Ollama account's server with its credentials. A pull reports each NDJSON progress line and is cancelled by dropping the future. It is sent once with only an idle timeout, since a total limit would kill large pulls. Lines are split on bytes, so a character split across chunks survives, and one progress line is capped at 1 MiB. A delete is never retried, because a lost response may hide a completed delete.
+
+### OpenRouter billing
+
+`openrouter_endpoint_pricing` and `openrouter_generation_details` reuse the account's credentials, the bounded JSON client and its 10-second probe policy. Endpoint and generation response identities must match the request. A 404 generation lookup returns `None`; authentication and transport failures stay typed errors. Native and normalized token counts stay separate and absent counts never become zero. Endpoint names, tags and exact price strings are kept without picking a fallback provider. Required prices and monetary evidence must be finite and non-negative; an endpoint without a provider name or usable prompt and completion prices is skipped. The wire structs are private and the result types belong to `lettuce-usage`. These reads add no cache and write no costs.
+
+The contracts follow OpenRouter's [endpoint pricing](https://openrouter.ai/docs/api/api-reference/endpoints/list-all-endpoints-for-a-model) and [generation metadata](https://openrouter.ai/docs/api/api-reference/generations/get-request-&-usage-metadata-for-a-generation) documentation. Local HTTP fixtures cover bearer auth, base path and version handling, encoded query ids, 404 versus 401, free prices and separate counters; parser tests reject wrong identities and malformed required evidence.
+
+## Remote image generation
+
+`RemoteImageProviders` implements `lettuce_image_generation::ImageProviderPort` for every image provider except sd.cpp, which runs locally. It uses `BulkHttpClient`, and the job's cancellation token ends a request.
+
+Adapters: OpenAI (with its `custom` and `lettuce-host` aliases), OpenRouter, Pollinations, Gemini (key as `?key=`), Gemini Express (`x-goog-api-key`), Stability, xAI, NanoGPT, LiteRouter (binary responses), Automatic1111, Diffusers and ComfyUI, each with its endpoints, fields, defaults and parser. A `custom` or `lettuce-host` account without an endpoint fails instead of sending its key to api.openai.com. Local image servers (Automatic1111, Diffusers, ComfyUI) run without auth when their optional key cannot be read.
+
+The request flow:
+
+1. Reference images and the mask are shrunk for upload (`shrink_for_upload`).
+2. The adapter's request is sent. OpenRouter posts to its Image API (`{base}/v1/images`, the nearest supported aspect ratio, `input_references`) and falls back to chat completions on a 404, or a 400 or 422 that names the model or endpoint.
+3. An HTTP 5xx, or a transient `error` in a 2xx body (500, 502, 503, 504, 529), is retried once after 1.5 s. Other body errors fail as `Provider error {code}: {message}`, and a 413 gets a readable hint about reference image size.
+4. Linked results are downloaded, data URLs and raw base64 decoded, and usage read from the response.
+
+ComfyUI uses the account's `ProviderConfig::ComfyUi` workflows: upload the inputs, substitute `%TOKEN%` placeholders, post to `/prompt`, poll `/history` every 1.5 s up to 400 times, and fetch the result from `/view`.
