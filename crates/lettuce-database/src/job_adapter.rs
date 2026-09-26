@@ -4,9 +4,9 @@ use std::{
 };
 
 use lettuce_jobs::{
-    Claim, ClaimRef, CreateJobResult, EventSeq, ExpiredClaim, InMemoryJobStore, JobMutation,
-    JobQuery, JobSnapshot, JobStore, NewJob, PruneReport, ResourceAvailability, StoreError,
-    StoredJobRecord, Timestamp, WorkerId,
+    Claim, ClaimRef, CreateJobResult, EventSeq, ExpiredClaim, InMemoryJobStore, JobCatalog,
+    JobChange, JobListFilter, JobMutation, JobQuery, JobSnapshot, JobStore, NewJob, PruneReport,
+    ResourceAvailability, StoreError, StoredJobRecord, Timestamp, WorkerId,
     events::{JobEvent, JobEventEnvelope},
     retention::RetentionPolicy,
 };
@@ -637,6 +637,130 @@ impl JobStore for Database {
         transaction.commit().map_err(|_| StoreError::Storage)?;
         Ok(report)
     }
+}
+
+impl JobCatalog for Database {
+    fn list_jobs(&self, filter: &JobListFilter) -> Result<Page<JobSnapshot>, StoreError> {
+        let after = filter
+            .page
+            .cursor
+            .as_deref()
+            .map(parse_list_cursor)
+            .transpose()?;
+        let limit = usize::from(filter.page.limit.get());
+        let mut clauses = Vec::new();
+        let mut values: Vec<Box<dyn ToSql>> = Vec::new();
+        if !filter.kinds.is_empty() {
+            clauses.push(format!(
+                "kind IN ({})",
+                vec!["?"; filter.kinds.len()].join(",")
+            ));
+            for kind in &filter.kinds {
+                values.push(Box::new(enum_name(kind)?));
+            }
+        }
+        if !filter.states.is_empty() {
+            clauses.push(format!(
+                "state IN ({})",
+                vec!["?"; filter.states.len()].join(",")
+            ));
+            for state in &filter.states {
+                values.push(Box::new(enum_name(state)?));
+            }
+        }
+        if let Some((kind, id)) = &filter.subject {
+            clauses.push("subject_kind=? AND subject_id=?".to_owned());
+            values.push(Box::new(enum_name(kind)?));
+            values.push(Box::new(id.to_string()));
+        }
+        if let Some((created_at, id)) = after {
+            clauses.push("(created_at<? OR (created_at=? AND id<?))".to_owned());
+            values.push(Box::new(created_at));
+            values.push(Box::new(created_at));
+            values.push(Box::new(id));
+        }
+        let filter_sql = if clauses.is_empty() {
+            "1=1".to_owned()
+        } else {
+            clauses.join(" AND ")
+        };
+        values.push(Box::new(
+            i64::try_from(limit + 1).map_err(|_| StoreError::InvalidLimit)?,
+        ));
+        self.read_job_rows(|transaction| {
+            let mut statement = transaction
+                .prepare(&format!(
+                    "SELECT {JOB_COLUMNS} FROM jobs WHERE {filter_sql} \
+                     ORDER BY created_at DESC, id DESC LIMIT ?"
+                ))
+                .map_err(|_| StoreError::Storage)?;
+            let mut rows = statement
+                .query(params_from_iter(values.iter()))
+                .map_err(|_| StoreError::Storage)?;
+            let mut items = Vec::new();
+            while let Some(row) = rows.next().map_err(|_| StoreError::Storage)? {
+                items.push(decode_job_row(row)?.snapshot);
+            }
+            let mut next_cursor = None;
+            if items.len() > limit {
+                items.truncate(limit);
+                next_cursor = items
+                    .last()
+                    .map(|last| format!("{}:{}", last.created_at.get(), last.id));
+            }
+            Ok(Page { items, next_cursor })
+        })
+    }
+
+    fn job_change_position(&self) -> Result<u64, StoreError> {
+        self.read_job_rows(|transaction| {
+            let position: Option<i64> = transaction
+                .query_row("SELECT max(rowid) FROM job_events", [], |row| row.get(0))
+                .map_err(|_| StoreError::Storage)?;
+            u64::try_from(position.unwrap_or(0)).map_err(|_| StoreError::InvalidData)
+        })
+    }
+
+    fn job_changes_since(&self, after: u64, limit: u32) -> Result<Vec<JobChange>, StoreError> {
+        if limit == 0 {
+            return Err(StoreError::InvalidLimit);
+        }
+        let after = i64::try_from(after).map_err(|_| StoreError::InvalidCursor)?;
+        self.read_job_rows(|transaction| {
+            let mut statement = transaction
+                .prepare(
+                    "SELECT job_id, max(rowid) AS position FROM job_events WHERE rowid>?1 \
+                     GROUP BY job_id ORDER BY position LIMIT ?2",
+                )
+                .map_err(|_| StoreError::Storage)?;
+            let mut rows = statement
+                .query(params![after, i64::from(limit)])
+                .map_err(|_| StoreError::Storage)?;
+            let mut changes = Vec::new();
+            while let Some(row) = rows.next().map_err(|_| StoreError::Storage)? {
+                let job_id = row
+                    .get::<_, String>(0)
+                    .map_err(|_| StoreError::Storage)?
+                    .parse::<JobId>()
+                    .map_err(|_| StoreError::InvalidData)?;
+                let position = row.get::<_, i64>(1).map_err(|_| StoreError::Storage)?;
+                changes.push(JobChange {
+                    job_id,
+                    position: u64::try_from(position).map_err(|_| StoreError::InvalidData)?,
+                });
+            }
+            Ok(changes)
+        })
+    }
+}
+
+fn parse_list_cursor(cursor: &str) -> Result<(i64, String), StoreError> {
+    let (created_at, id) = cursor.split_once(':').ok_or(StoreError::InvalidCursor)?;
+    let created_at = created_at
+        .parse::<i64>()
+        .map_err(|_| StoreError::InvalidCursor)?;
+    let id = id.parse::<JobId>().map_err(|_| StoreError::InvalidCursor)?;
+    Ok((created_at, id.to_string()))
 }
 
 #[cfg(test)]

@@ -8,6 +8,7 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
+mod catalog;
 mod model;
 mod store;
 
@@ -18,5 +19,6 @@ pub mod registry;
 pub mod retention;
 pub mod scheduler;
 
+pub use catalog::*;
 pub use model::*;
 pub use store::*;
