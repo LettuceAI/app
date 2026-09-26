@@ -1113,6 +1113,9 @@ fn ensure_pinned_hot(items: &mut [MemoryItem]) {
     }
 }
 
+/// Demotes the least recently accessed hot, unpinned memories until the hot
+/// tokens fit `budget`; equal access times keep item order, as legacy's
+/// stable sort did.
 fn enforce_hot_budget(items: &mut [MemoryItem], budget: u32) -> Vec<MemoryId> {
     let mut current = items
         .iter()
@@ -1127,7 +1130,7 @@ fn enforce_hot_budget(items: &mut [MemoryItem], budget: u32) -> Vec<MemoryId> {
         .filter(|(_, item)| !item.is_cold && !item.is_pinned)
         .map(|(index, item)| (index, item.last_accessed_at, item.id))
         .collect::<Vec<_>>();
-    candidates.sort_by_key(|(_, accessed, id)| (*accessed, *id));
+    candidates.sort_by_key(|(_, accessed, _)| *accessed);
 
     let mut demoted = Vec::new();
     for (index, _, id) in candidates {
@@ -1141,6 +1144,8 @@ fn enforce_hot_budget(items: &mut [MemoryItem], budget: u32) -> Vec<MemoryId> {
     demoted
 }
 
+/// Drops the lowest scored unpinned memories down to `max_entries`; equal
+/// scores keep item order, as legacy's stable sort did.
 fn trim_to_capacity(items: &mut Vec<MemoryItem>, max_entries: usize) -> Vec<MemoryId> {
     if items.len() <= max_entries {
         return Vec::new();
@@ -1168,7 +1173,7 @@ fn trim_to_capacity(items: &mut Vec<MemoryItem>, max_entries: usize) -> Vec<Memo
             (score, item.id)
         })
         .collect::<Vec<_>>();
-    candidates.sort_by_key(|(score, id)| (*score, *id));
+    candidates.sort_by_key(|(score, _)| *score);
 
     let remove_count = items.len().saturating_sub(max_entries);
     let remove_ids = candidates
@@ -1291,6 +1296,21 @@ mod tests {
             created_at: TimestampMillis::new(accessed),
             last_accessed_at: TimestampMillis::new(accessed),
         }
+    }
+
+    #[test]
+    fn trim_and_demotion_ties_follow_item_order_like_legacy_stable_sort() {
+        let mut first = item("User owns a cat", 4, 5, false);
+        let mut second = item("User owns a dog", 4, 5, false);
+        if first.id < second.id {
+            std::mem::swap(&mut first.id, &mut second.id);
+        }
+        let mut items = vec![first.clone(), second.clone()];
+        assert_eq!(super::enforce_hot_budget(&mut items, 4), vec![first.id]);
+
+        let mut items = vec![first.clone(), second.clone()];
+        assert_eq!(super::trim_to_capacity(&mut items, 1), vec![first.id]);
+        assert_eq!(items, vec![second]);
     }
 
     #[test]
