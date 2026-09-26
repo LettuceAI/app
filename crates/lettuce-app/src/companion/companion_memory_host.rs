@@ -304,6 +304,15 @@ where
         )
     }
 
+    /// Whether the conversation runs dynamic memory now, by the same gate
+    /// `after_turn` applies.
+    pub fn dynamic_memory_active(
+        &self,
+        conversation_id: ConversationId,
+    ) -> Result<bool, CompanionMemoryHostError> {
+        Ok(self.active_cycle(conversation_id)?.is_some())
+    }
+
     fn active_cycle(
         &self,
         conversation_id: ConversationId,

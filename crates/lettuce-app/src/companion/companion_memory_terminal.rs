@@ -14,7 +14,7 @@ use lettuce_types::{DynamicMemoryAttemptId, DynamicMemoryRunId, TimestampMillis}
 use crate::{
     CompanionMemoryContinuationError, CompanionMemoryInferenceError, CompanionMemoryLoopError,
     CompanionMemoryRoundExecutionError, CompanionPostTurnEffectCoordinator,
-    CompanionPostTurnEffectError, CompanionPostTurnMemoryBatch,
+    CompanionPostTurnEffectError, CompanionPostTurnMemoryBatch, DynamicMemoryPreparationError,
 };
 
 /// Failed memory cycles after which an effect settles failed.
@@ -34,6 +34,8 @@ pub enum CompanionMemoryTerminalFailure {
     EmptyResponse,
     RoundLimit,
     Tool,
+    /// The embedding model the memory needs is not available.
+    EmbeddingUnavailable,
     Cancelled,
     Recovery,
 }
@@ -102,6 +104,11 @@ impl CompanionMemoryTerminalFailure {
                 }
             },
             CompanionMemoryLoopError::Execution(
+                CompanionMemoryRoundExecutionError::Preparation(
+                    DynamicMemoryPreparationError::EmbeddingUnavailable,
+                ),
+            ) => Self::EmbeddingUnavailable,
+            CompanionMemoryLoopError::Execution(
                 CompanionMemoryRoundExecutionError::InvalidPreparation
                 | CompanionMemoryRoundExecutionError::Preparation(_)
                 | CompanionMemoryRoundExecutionError::Tool(_),
@@ -124,6 +131,7 @@ impl CompanionMemoryTerminalFailure {
             Self::EmptyResponse => "Dynamic memory provider returned an empty response",
             Self::RoundLimit => "Dynamic memory reached its round limit",
             Self::Tool => "Dynamic memory tool execution failed",
+            Self::EmbeddingUnavailable => "Dynamic memory needs the embedding model",
             Self::Cancelled => "Dynamic memory was cancelled",
             Self::Recovery => "Dynamic memory recovery failed",
         }
@@ -152,7 +160,7 @@ impl CompanionMemoryTerminalFailure {
                 DynamicMemoryAttemptStatus::Failed,
                 Some(DynamicMemoryAttemptFailureCode::RoundLimit),
             ),
-            Self::Tool | Self::Recovery => (
+            Self::Tool | Self::EmbeddingUnavailable | Self::Recovery => (
                 DynamicMemoryAttemptStatus::Failed,
                 Some(DynamicMemoryAttemptFailureCode::Internal),
             ),

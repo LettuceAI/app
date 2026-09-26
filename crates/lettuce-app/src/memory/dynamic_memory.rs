@@ -236,6 +236,9 @@ impl<'a, E: MemoryEmbeddingEngine + ?Sized, R: MemoryEmbeddingRepository + ?Size
                 Err(EmbeddingGenerationError::Cancelled) => {
                     return Err(DynamicMemoryPreparationError::Cancelled);
                 }
+                Err(EmbeddingGenerationError::Unavailable) if self.engine.requires_model() => {
+                    return Err(DynamicMemoryPreparationError::EmbeddingUnavailable);
+                }
                 Err(EmbeddingGenerationError::Unavailable) => (
                     Vec::new(),
                     PreparedMemoryProjection::RepairNeeded(MemoryEmbeddingRepair {
@@ -296,6 +299,8 @@ pub enum DynamicMemoryPreparationError {
     InvalidSeeds,
     #[error("dynamic-memory preparation was cancelled")]
     Cancelled,
+    #[error("the embedding model dynamic memory needs is unavailable")]
+    EmbeddingUnavailable,
     #[error("embedding projection repository failed: {0}")]
     Projection(#[from] EmbeddingProjectionError),
 }
@@ -329,6 +334,35 @@ mod tests {
 
     struct FakeEmbeddingEngine {
         unavailable: bool,
+    }
+
+    /// Unavailable, and memory cycles must not run without it.
+    struct RequiredEmbeddingEngine;
+
+    impl MemoryEmbeddingEngine for RequiredEmbeddingEngine {
+        fn source_revision(&self) -> &str {
+            "v4-test"
+        }
+
+        fn dimensions(&self) -> EmbeddingDimensions {
+            EmbeddingDimensions::D128
+        }
+
+        fn count_tokens(&self, _text: &str) -> Result<u32, EmbeddingGenerationError> {
+            Err(EmbeddingGenerationError::Unavailable)
+        }
+
+        fn embed_memory(
+            &self,
+            _request: &EmbeddingRequest,
+            _cancellation: &CancellationToken,
+        ) -> Result<EmbeddingVector, EmbeddingGenerationError> {
+            Err(EmbeddingGenerationError::Unavailable)
+        }
+
+        fn requires_model(&self) -> bool {
+            true
+        }
     }
 
     impl MemoryEmbeddingEngine for FakeEmbeddingEngine {
@@ -424,7 +458,7 @@ mod tests {
 
     fn prepare(
         backend: &AppBackend,
-        engine: &FakeEmbeddingEngine,
+        engine: &dyn MemoryEmbeddingEngine,
         space_id: MemorySpaceId,
         call: &DynamicMemoryToolCallEvidence,
         cancelled: bool,
@@ -489,6 +523,24 @@ mod tests {
             Some(PreparedMemoryProjection::RepairNeeded(repair))
                 if repair.memory_id == prepared[0].preparation.id
                     && repair.source_revision == "v4-test"
+        ));
+    }
+
+    #[test]
+    fn an_engine_that_requires_its_model_fails_the_create() {
+        let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+        let space_id = space(&backend, Vec::new());
+        let error = prepare(
+            &backend,
+            &RequiredEmbeddingEngine,
+            space_id,
+            &create_call("Mira prefers tea"),
+            false,
+        )
+        .expect_err("the create needs the model");
+        assert!(matches!(
+            error,
+            DynamicMemoryPreparationError::EmbeddingUnavailable
         ));
     }
 

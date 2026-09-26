@@ -1,6 +1,6 @@
 //! The one place domain and runtime errors become `ApiError`.
 
-use lettuce_contracts::{ApiError, ApiErrorCode, ApiErrorDetails};
+use lettuce_contracts::{ApiError, ApiErrorCode, ApiErrorDetails, RequiredModel};
 use lettuce_conversations::{ConversationRepositoryError, ValidationError};
 use lettuce_jobs::StoreError;
 use lettuce_media::MediaStoreError;
@@ -26,6 +26,25 @@ pub(crate) fn invalid_field(field: &str, message: impl Into<String>) -> ApiError
         details: Some(ApiErrorDetails::InvalidField {
             field: field.to_owned(),
         }),
+    }
+}
+
+/// A chat needs `model`: `ModelRequired` when it is not installed,
+/// `ModelUnavailable` when it cannot load.
+pub(crate) fn model_error(code: ApiErrorCode, model: RequiredModel) -> ApiError {
+    let what = match model {
+        RequiredModel::Embedding => "the embedding model",
+        RequiredModel::Emotion => "the emotion model",
+    };
+    let message = if code == ApiErrorCode::ModelRequired {
+        format!("{what} is not installed")
+    } else {
+        format!("{what} cannot be loaded")
+    };
+    ApiError {
+        code,
+        message,
+        details: Some(ApiErrorDetails::Model { model }),
     }
 }
 
@@ -101,6 +120,9 @@ impl IntoApiError for CompanionTurnError {
             Self::Character(error) => error.into_api_error(),
             Self::CharacterMissing => api_error(ApiErrorCode::NotFound, self.to_string()),
             Self::Cancelled => api_error(ApiErrorCode::Cancelled, self.to_string()),
+            Self::EmotionUnavailable => {
+                model_error(ApiErrorCode::ModelUnavailable, RequiredModel::Emotion)
+            }
             Self::State(lettuce_companions::CompanionStateRepositoryError::Conflict)
             | Self::State(lettuce_companions::CompanionStateRepositoryError::OperationMismatch) => {
                 api_error(ApiErrorCode::Conflict, self.to_string())

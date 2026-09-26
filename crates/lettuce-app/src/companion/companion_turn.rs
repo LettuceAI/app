@@ -156,6 +156,9 @@ where
             Some(engine) => match engine.classify_emotion(&text, cancellation) {
                 Ok(Some(classification)) => signals_from_classification(&classification),
                 Ok(None) => unavailable_signal_bundle(),
+                Err(CompanionEmotionGenerationError::Unavailable) if engine.requires_model() => {
+                    return Err(CompanionTurnError::EmotionUnavailable);
+                }
                 Err(CompanionEmotionGenerationError::Unavailable) => {
                     tracing::warn!(
                         conversation_id = %command.conversation_id,
@@ -271,6 +274,8 @@ pub enum CompanionTurnError {
     CharacterMissing,
     #[error("companion emotion classification was cancelled")]
     Cancelled,
+    #[error("the emotion model companion chats need is unavailable")]
+    EmotionUnavailable,
 }
 
 impl From<CompanionStateRepositoryError> for CompanionTurnError {

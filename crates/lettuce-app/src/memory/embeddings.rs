@@ -122,6 +122,12 @@ pub trait MemoryEmbeddingEngine: Send + Sync {
         request: &EmbeddingRequest,
         cancellation: &CancellationToken,
     ) -> Result<EmbeddingVector, EmbeddingGenerationError>;
+
+    /// Whether a memory cycle fails when this engine is unavailable, instead
+    /// of keeping its memories and leaving repair state.
+    fn requires_model(&self) -> bool {
+        false
+    }
 }
 
 impl MemoryEmbeddingEngine for EmbeddingService {
@@ -192,6 +198,12 @@ pub trait CompanionEmotionEngine: Send + Sync {
         text: &str,
         cancellation: &CancellationToken,
     ) -> Result<Option<EmotionClassification>, CompanionEmotionGenerationError>;
+
+    /// Whether a companion send fails when this engine is unavailable,
+    /// instead of taking the neutral update.
+    fn requires_model(&self) -> bool {
+        false
+    }
 }
 
 impl CompanionEmotionEngine for CompanionEmotionService {

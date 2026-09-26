@@ -441,6 +441,10 @@ where
     }
 }
 
+/// The job error message of a memory job the embedding model was missing
+/// for.
+pub const EMBEDDING_UNAVAILABLE_JOB_ERROR: &str = "embedding-model-unavailable";
+
 fn job_error(failure: CompanionMemoryTerminalFailure) -> JobError {
     let (code, retryable, message) = match failure {
         CompanionMemoryTerminalFailure::ProviderUnavailable => (
@@ -467,6 +471,11 @@ fn job_error(failure: CompanionMemoryTerminalFailure) -> JobError {
             JobErrorCode::WorkerFailed,
             false,
             "companion-memory-tool-failed",
+        ),
+        CompanionMemoryTerminalFailure::EmbeddingUnavailable => (
+            JobErrorCode::CapabilityUnavailable,
+            true,
+            EMBEDDING_UNAVAILABLE_JOB_ERROR,
         ),
         CompanionMemoryTerminalFailure::Recovery => (
             JobErrorCode::StorageFailure,
