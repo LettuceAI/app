@@ -1,144 +1,51 @@
 # lettuce-usage
 
-Immutable usage events, pricing snapshots, costs, budgets, and summaries.
+Records of what inference cost: immutable usage events for conversation generations, a ledger of every provider dispatch made by background jobs, cost records that tie an event to the exact prices it was calculated with, the request cost calculator, and the per-day app usage counter.
 
-## Boundary
+The crate defines the ledgers as ports and the calculation as pure functions; `lettuce-database` implements the ports in SQLite, and `lettuce-app` writes to them from generation and job coordinators. It never fetches prices or generation details itself: callers supply verified pricing. The raw counters (`InferenceUsage`) are defined in `lettuce-conversations` next to the generation lifecycle that produces them.
 
-Historical calculations retain their pricing provenance.
-Provider-reported amounts are raw evidence carried by InferenceUsage, separate
-from calculated costs. Known amounts must match the supplied authoritative total
-in a cost basis. This does not fetch prices or generation details automatically.
+## Principles
 
-`UsageLedger::get_for_attempt` reads the single terminal usage event an attempt
-owns, so settlement paths can reuse it instead of recording a conflicting one.
+- Evidence is immutable. An event, a dispatch result or a cost basis is written once; an exact retry returns the stored record and any changed evidence is a conflict.
+- Missing is not zero. A provider that reported no counters gives an explicit unavailable reason, and the ledger never invents zero usage. Absent cache or reasoning details stay distinct from an explicit zero.
+- Raw counters and calculated cost are kept apart. Provider-reported amounts are evidence on the usage record; a calculated cost lives in a separate record with the prices it used, so history keeps its pricing provenance and never reads live prices.
 
-The public surface is intentionally small. Business invariants belong in domain models and use cases; infrastructure is accessed only through narrow ports owned by the calling crate.
+## Conversation usage
 
-## Status
+`UsageLedger` records one terminal `UsageEvent` per generation attempt (the `UsageRecord` from `lettuce-conversations`: counters, outcome, provenance and time). `get_for_attempt` reads the event an attempt already owns, so a settlement path can reuse it instead of recording a conflicting one.
 
-The first domain port records one immutable terminal text-inference event. An
-exact retry for the same generation attempt returns the original event while
-changed counters, outcome, provenance, or timestamp conflict. Provider-missing
-counters remain an explicit unavailable reason; the ledger never invents zero
-usage. SQLite persistence lives in `lettuce-database`.
+Counters include input, output, image, audio and total tokens and optional cached-input and reasoning details. `total_tokens` is only a total the provider reported; readers use `InferenceUsage::effective_total_tokens` (the reported total, else input plus output). When several calls are combined, image and audio counts combine only if every call reported them, and a total if any call did.
 
-Counters carry image, audio and total tokens like legacy usage records
-(2026-09-22). `total_tokens` is only a total the provider reported; readers use
-`InferenceUsage::effective_total_tokens` (reported, else input + output, the
-legacy fallback). Legacy counted cached prompt tokens as image tokens when a
-provider sent no image count; that is not reproduced. Several calls combine
-image/audio only when every call reported them, and a total when any call did.
+## Job dispatch usage
 
-`JobUsageLedger` retains job-owned inference dispatches for companion, lorebook,
-creation-helper and conversation memory-continuation workflows. Conversation
-terminal events may aggregate these same dispatches; reports must not add both
-as independent charges. Each dispatch has a fresh event identity
-and retains the logical attempt, owning job and resolved model/provider revisions.
-Admission precedes inference; a single immutable result preserves optional raw
-usage, cancellation or inference failure. Pending records explicitly mean the
-result is unknown. Exact admission/settlement replay is accepted; changed evidence
-conflicts. Retries never overwrite earlier dispatches. The cost ledger accepts
-an explicit immutable price basis for each returned response with known usage through `record_job_cost` and `get_job_cost`. It reuses
-the conversation cost validation and calculator; pending, failed, cancelled and
-usage-missing dispatches cannot receive a cost. Separate dispatch IDs preserve
-retry and fallback charges independently. Automatic pricing capture remains pending.
-Admission verifies the job exists; evidence survives normal job retention cleanup.
+`JobUsageLedger` keeps one `JobInferenceUsage` per actual provider dispatch made by a background job: companion growth, consolidation and Soul writer, lorebook entry, keyword and staged generation, the creation helper, and conversation memory continuation. Each dispatch has its own event id and records the logical attempt, owning job, and model and provider account with their revisions.
 
-The pure OpenRouter request-cost calculator is copied from legacy
-`models/pricing/calc.rs`, with its pricing/result fields from `models/types.rs`.
-It preserves per-token USD units, cache counter clamping and cache-write price
-fallback, separate reasoning/request/search charges, and the authoritative-total
-guard that prevents negative completion costs. It does not fetch current prices.
-Malformed optional prices retain the legacy zero fallback; negative optional
-prices also fall back to zero. Invalid/nonfinite/negative required prices,
-counter overflow and nonfinite calculated totals now return None instead of
-producing invalid costs or panicking. No new price or token limit is imposed.
+1. `admit_job_usage` is called before the provider is invoked, and checks that the job exists.
+2. `settle_job_usage` records one immutable result: a response with optional usage and the provider's response id, an inference failure, or cancellation. It is called before the response is validated or reduced into a checkpoint, so invalid responses are recorded too.
+3. A dispatch without a result is pending, which means the outcome is unknown, never free or successful.
 
-Tests cover the breakdown, authoritative totals below component costs, invalid
-totals, clamping, fallback and overflow.
+Retries and fallbacks get new dispatch ids and never overwrite earlier ones, so each charge stays separate. A replayed checkpoint makes no new dispatch. Dispatch evidence survives normal job retention cleanup. A conversation's terminal event may aggregate the same dispatches that the job ledger holds, so reports must not add both as independent charges.
 
-`UsageCostLedger` associates one immutable versioned pricing/input basis with
-an existing usage event. The basis retains model/provider identities, source
-description, capture time, exact prices and explicitly supplied cost counters.
-Input/output counters must match the event; unavailable usage cannot be costed.
-Known cache-read/reasoning counters in the event must also match the cost basis.
-Missing details stay unknown; known search/cache-write counters must also match
-the supplied cost basis. OpenAI-compatible buffered/streaming normalization now captures
-standard cached/reasoning token details, and the usage ledger retains them.
-This is not yet automatic pricing capture. Nonfinite or negative authoritative totals are rejected at
-this persistence boundary rather than serialized lossily.
+## Costs
 
-SQLite stores the version-1 calculation basis separately from immutable raw
-usage. Exact replay returns the same basis; changing it conflicts. Reads use
-the version-1 legacy calculator, never live prices. Future formula changes
-must preserve that version's interpretation. Database tests cover pricing
-retention, replay, conflicts, mismatched ownership/counters, raw-event preservation,
-SQL immutability and unavailable usage. Provider price fetching, automatic
-inference-finalization wiring, adjustments, budgets, summaries and non-text
-costing remain later work.
+`UsageCostBasis` (`costing.rs`) is a versioned, immutable record of how a cost was computed: model and provider identities, a description of the price source, capture time, the exact prices and the cost counters. `UsageCostLedger` stores one per usage event, and `record_job_cost` / `get_job_cost` one per job dispatch that returned known usage; pending, failed, cancelled and usage-missing dispatches cannot be costed.
 
-Job costs retain the same version-1 basis in a separate table referencing the
-immutable dispatch evidence. Both survive job cleanup. File-backed tests cover
-reopen, exact replay, conflicting prices, ownership and all known counter
-mismatches, absent usage, SQL immutability and unchanged raw evidence. This
-preserves legacy companion response accounting independently of workflow
-validation; callers still supply verified OpenRouter pricing and cost inputs.
-Native-provider billing normalization and price fetching remain later work.
+The basis must agree with the evidence it prices: input and output counters must match the event, known cache-read and reasoning counts must match too, and known search and cache-write counts must match the basis. Unknown details stay unknown. Non-finite or negative authoritative totals are rejected at the persistence boundary. Stored bases are read with the calculator version they were written with (version 1), never with live prices, so a future formula change must keep version 1's interpretation.
 
-OpenRouter endpoint-price and generation-detail result types retain routed
-provider identity, endpoint tags and separate native/normalized counters for the
-provider adapter's billing reads. They do not select a provider or overwrite
-immutable event counters. Automatic capture and reconciliation remain pending.
+### Calculator
 
-Companion dispatch responses also retain an optional provider response-body ID,
-separate from logical attempt and HTTP request identities. Older JSON defaults
-to None. Primary/fallback calls preserve their own IDs; settlement rejects
-changing a stored ID. This supplies generation lookup identity without altering
-usage counters. Automatic generation enrichment remains pending.
+`calculate_openrouter_request_cost` (`pricing.rs`) computes a request's cost from `ModelPricing` and counters: per-token USD prices, cache counters clamped to the prompt, cache-write price falling back to the prompt price, separate reasoning, request and web-search charges, and an authoritative-total guard that keeps the completion cost from going negative when the provider's total is lower than the components. Malformed or negative optional prices count as zero; invalid, non-finite or negative required prices, counter overflow and non-finite totals return `None` instead of an invalid cost.
 
-`UsageCostBasis::from_openrouter_job` creates a basis from one matched routed
-endpoint and fetched generation evidence. The optional evidence is stored in
-the existing versioned basis JSON; older manual bases deserialize unchanged.
-Native prompt/completion counts and total cost take precedence over response
-details, retaining both sources separately; a missing native prompt or
-completion count falls back to the response's count. Cache and reasoning counts
-come from the response usage, as legacy priced them. Missing cache,
-cache-write, reasoning and web-search counts count as zero, as the legacy
-`apply_openrouter_cost_to_usage` did. The provider/display name is matched by
-its ASCII letters and digits ignoring case; the first matching endpoint wins,
-and a missing or unmatched provider name falls back to the first endpoint (the
-basis source records that fallback). The existing calculator and its authoritative-total
-guard remain unchanged. Generation-enriched bases are job-only until other
-usage records retain response IDs.
+### OpenRouter evidence
 
-Staged lorebook planner, writer/refinement and coherence execution now reuse
-the existing job-dispatch usage ledger before provider invocation and before
-response reduction/checkpointing. Every actual dispatch preserves its response
-ID and optional usage, including invalid responses and project cancellation
-during inference; returned transport failures remain explicit failed evidence.
-Checkpoint replay creates no second dispatch record. Existing successful
-checkpoint usage stays unchanged. The staged SQLite lifecycle scenario covers
-all four stages, invalid planner usage, cancellation after response, independent
-concurrent-writer failure evidence and replay without duplicated charges.
+`OpenRouterEndpointPricing` and `OpenRouterGenerationDetails` (`openrouter.rs`) hold what the provider adapter reads for billing: the routed provider, endpoint tags, and native and normalized counters kept separately. `UsageCostBasis::from_openrouter_job` builds a basis from the matched endpoint and fetched generation details, stored in the same versioned basis JSON:
 
-Legacy staged pipeline.rs called the provider without recording usage; recording
-these dispatches corrects that accounting omission. Legacy single-entry primary
-and fallback requests recorded usage before checking response success; their
-new dispatch-ledger integration remains a separate follow-up. No new schema,
-worker, pricing formula or host scheduling was introduced.
+- Native prompt and completion counts and the native total cost win over the response's counts, and both sources are kept. A missing native count falls back to the response's.
+- Cache and reasoning counts come from the response usage. Missing cache, cache-write, reasoning and web-search counts count as zero.
+- The endpoint is matched by provider name on ASCII letters and digits, ignoring case; the first match wins, and a missing or unmatched name falls back to the first endpoint, which the basis records.
 
-Lorebook entry and keyword native/fallback executions also use job dispatch
-evidence. The shared helper distinguishes evidence persistence failure from
-provider failure. Entry/keyword stop on evidence failure without writing a
-false failed-native checkpoint or dispatching a fallback; provider failures
-retain the existing fallback policy. Primary/fallback IDs and optional usage
-remain separate, and successful replay adds no dispatch. Legacy entry generation
-recorded both requests before response validation; legacy keyword generation
-omitted that recording, which this corrects.
+Generation-enriched bases exist for job dispatches only, since those are the records that keep a provider response id.
 
-The same distinction fixes Soul-writer alternate-model fallback after evidence
-or run-persistence/replay-cleanup failure. Other companion/staged callers retain
-their existing public provider-error mapping. Fault-injection scenarios prove
-admission failure sends zero requests, settlement failure sends one, no false
-checkpoint is written, and later retry preserves the pending evidence. Existing
-entry tests also prove provider-error fallback, cancellation and replay.
+## App usage
+
+`AppUsageRepository` adds up the time the app was in use per local calendar day (`YYYY-MM-DD`) in one atomic step and lists every day oldest first. It is per install and never syncs. A version 2 backup carries the days in its device state, and a restore writes them back.
