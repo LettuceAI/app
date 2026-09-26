@@ -19,6 +19,9 @@ asr-cuda = ["lettuce-speech/cuda"]
 asr-rocm = ["lettuce-speech/rocm"]
 asr-vulkan = ["lettuce-speech/vulkan"]
 asr-metal = ["lettuce-speech/metal"]
+llama-cuda = ["lettuce-local-llm/cuda"]
+llama-vulkan = ["lettuce-local-llm/vulkan"]
+llama-metal = ["lettuce-local-llm/metal"]
 
 [dependencies]
 async-trait.workspace = true

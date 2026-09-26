@@ -167,6 +167,10 @@ impl AppBackend {
         self.database.as_ref()
     }
 
+    pub(crate) const fn inference_runtime(&self) -> &Arc<InferenceRuntime> {
+        &self.inference_runtime
+    }
+
     #[must_use]
     pub fn sync_hello(&self) -> crate::SyncHelloCoordinator<'_, Database> {
         crate::SyncHelloCoordinator::new(self.database.as_ref())

@@ -5,6 +5,7 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
+pub mod api;
 mod app_version;
 mod composition;
 mod launch;

@@ -1,0 +1,245 @@
+//! The one place domain and runtime errors become `ApiError`.
+
+use lettuce_contracts::{ApiError, ApiErrorCode, ApiErrorDetails};
+use lettuce_conversations::{ConversationRepositoryError, ValidationError};
+use lettuce_jobs::StoreError;
+use lettuce_media::MediaStoreError;
+
+use crate::{
+    CompanionTurnError, ConversationGenerationCancellationError,
+    ConversationGenerationDispatchError, ConversationGenerationWorkerError,
+    ConversationLaunchError,
+};
+
+pub(crate) fn api_error(code: ApiErrorCode, message: impl Into<String>) -> ApiError {
+    ApiError {
+        code,
+        message: message.into(),
+        details: None,
+    }
+}
+
+pub(crate) fn invalid_field(field: &str, message: impl Into<String>) -> ApiError {
+    ApiError {
+        code: ApiErrorCode::InvalidInput,
+        message: message.into(),
+        details: Some(ApiErrorDetails::InvalidField {
+            field: field.to_owned(),
+        }),
+    }
+}
+
+/// Parses a contract id, naming the request field when it is not a UUID.
+pub(crate) fn parse_id<T: std::str::FromStr>(value: &str, field: &str) -> Result<T, ApiError> {
+    value
+        .parse()
+        .map_err(|_| invalid_field(field, format!("{field} is not a valid id")))
+}
+
+pub(crate) trait IntoApiError {
+    fn into_api_error(self) -> ApiError;
+}
+
+impl IntoApiError for ValidationError {
+    fn into_api_error(self) -> ApiError {
+        let field = match &self {
+            Self::ZeroRevision => "revision",
+            Self::Blank { field }
+            | Self::TooLarge { field }
+            | Self::TooMany { field, .. }
+            | Self::Duplicate { field }
+            | Self::InvalidValue { field }
+            | Self::InvalidReference { field }
+            | Self::UnsupportedVersion { field, .. }
+            | Self::InvalidTimestampOrder { field }
+            | Self::Invariant { field }
+            | Self::IllegalTransition { field }
+            | Self::OutOfBounds { field } => field,
+        };
+        invalid_field(field, self.to_string())
+    }
+}
+
+impl IntoApiError for ConversationRepositoryError {
+    fn into_api_error(self) -> ApiError {
+        let code = match &self {
+            Self::NotFound => ApiErrorCode::NotFound,
+            Self::StaleRevision { .. }
+            | Self::Conflict
+            | Self::JobAlreadyAttached
+            | Self::JobInUse
+            | Self::Dependency => ApiErrorCode::Conflict,
+            Self::Invalid(error) => return error.clone().into_api_error(),
+            Self::Unsupported => ApiErrorCode::Unsupported,
+            Self::ArtifactReference(_) | Self::Storage => ApiErrorCode::Internal,
+        };
+        api_error(code, self.to_string())
+    }
+}
+
+impl IntoApiError for lettuce_characters::RepositoryError {
+    fn into_api_error(self) -> ApiError {
+        let code = match &self {
+            Self::NotFound => ApiErrorCode::NotFound,
+            Self::AlreadyExists
+            | Self::StaleRevision { .. }
+            | Self::MissingDefaultRevision
+            | Self::Archived
+            | Self::AlreadyActive
+            | Self::HasDependencies => ApiErrorCode::Conflict,
+            Self::Invalid(_) => ApiErrorCode::InvalidInput,
+            Self::Storage => ApiErrorCode::Internal,
+        };
+        api_error(code, self.to_string())
+    }
+}
+
+impl IntoApiError for CompanionTurnError {
+    fn into_api_error(self) -> ApiError {
+        match self {
+            Self::Conversation(error) => error.into_api_error(),
+            Self::Character(error) => error.into_api_error(),
+            Self::CharacterMissing => api_error(ApiErrorCode::NotFound, self.to_string()),
+            Self::Cancelled => api_error(ApiErrorCode::Cancelled, self.to_string()),
+            Self::State(lettuce_companions::CompanionStateRepositoryError::Conflict)
+            | Self::State(lettuce_companions::CompanionStateRepositoryError::OperationMismatch) => {
+                api_error(ApiErrorCode::Conflict, self.to_string())
+            }
+            Self::Send(lettuce_companions::CompanionSendRepositoryError::Conversation(error)) => {
+                error.into_api_error()
+            }
+            Self::Continue(_) | Self::State(_) | Self::Send(_) => {
+                api_error(ApiErrorCode::Internal, self.to_string())
+            }
+        }
+    }
+}
+
+impl IntoApiError for ConversationLaunchError {
+    fn into_api_error(self) -> ApiError {
+        use crate::LaunchSourceError as Source;
+        let code = match &self {
+            Self::InvalidRequest { field } => {
+                return invalid_field(field, self.to_string());
+            }
+            Self::CharacterNotFound { .. }
+            | Self::GroupNotFound { .. }
+            | Self::MemberCharacterNotFound { .. }
+            | Self::SceneNotFound { .. }
+            | Self::StarterNotFound { .. }
+            | Self::PersonaNotFound { .. }
+            | Self::PromptNotFound { .. }
+            | Self::LorebookNotFound { .. }
+            | Self::ModelNotFound { .. }
+            | Self::ProviderNotFound { .. } => ApiErrorCode::NotFound,
+            Self::CharacterArchived { .. }
+            | Self::GroupArchived { .. }
+            | Self::MemberCharacterArchived { .. }
+            | Self::TooFewMembers { .. }
+            | Self::AllMembersMuted { .. }
+            | Self::SceneNotOwned { .. }
+            | Self::SceneNotOwnedByGroup { .. }
+            | Self::StarterNotOwned { .. }
+            | Self::PersonaInactive { .. }
+            | Self::PromptWrongPurpose { .. }
+            | Self::PromptArchived { .. }
+            | Self::LorebookArchived { .. }
+            | Self::ProviderDisabled { .. }
+            | Self::NonChatModel { .. } => ApiErrorCode::InvalidInput,
+            Self::SourceChanged { .. } | Self::AlreadyLaunched { .. } | Self::CreateConflict => {
+                ApiErrorCode::Conflict
+            }
+            Self::Repository(Source::Conversation(error)) => {
+                return error.clone().into_api_error();
+            }
+            Self::Repository(
+                Source::Character(error) | Source::Group(error) | Source::Persona(error),
+            ) => return error.clone().into_api_error(),
+            Self::BuiltInPromptMissing { .. }
+            | Self::ArtifactEncode(_)
+            | Self::InvalidLaunch(_)
+            | Self::Repository(_) => ApiErrorCode::Internal,
+        };
+        api_error(code, self.to_string())
+    }
+}
+
+impl IntoApiError for StoreError {
+    fn into_api_error(self) -> ApiError {
+        let code = match self {
+            Self::NotFound | Self::ParentNotFound => ApiErrorCode::NotFound,
+            Self::IdempotencyConflict
+            | Self::ParentTerminal
+            | Self::AlreadyTerminal
+            | Self::IllegalTransition
+            | Self::TooLate
+            | Self::NotCancellable
+            | Self::NotClaimed
+            | Self::StaleLease
+            | Self::LeaseExpired => ApiErrorCode::Conflict,
+            Self::ResourceUnavailable => ApiErrorCode::Busy,
+            _ => ApiErrorCode::Internal,
+        };
+        api_error(code, self.to_string())
+    }
+}
+
+impl IntoApiError for ConversationGenerationDispatchError {
+    fn into_api_error(self) -> ApiError {
+        match self {
+            Self::Jobs(error) => error.into_api_error(),
+            Self::Repository(error) => error.into_api_error(),
+            Self::Usage(_) | Self::InvalidWork => {
+                api_error(ApiErrorCode::Internal, self.to_string())
+            }
+        }
+    }
+}
+
+impl IntoApiError for ConversationGenerationCancellationError {
+    fn into_api_error(self) -> ApiError {
+        match self {
+            Self::Store(error) => error.into_api_error(),
+            Self::Conversation(error) => error.into_api_error(),
+            Self::WrongJobKind => api_error(ApiErrorCode::InvalidInput, self.to_string()),
+            Self::Usage(_) | Self::Runtime(_) | Self::InvalidWork => {
+                api_error(ApiErrorCode::Internal, self.to_string())
+            }
+        }
+    }
+}
+
+impl IntoApiError for ConversationGenerationWorkerError {
+    fn into_api_error(self) -> ApiError {
+        match self {
+            Self::Store(error) => error.into_api_error(),
+            Self::InvalidWork | Self::Execution(_) => {
+                api_error(ApiErrorCode::Internal, self.to_string())
+            }
+        }
+    }
+}
+
+impl IntoApiError for MediaStoreError {
+    fn into_api_error(self) -> ApiError {
+        let code = match self {
+            Self::AssetNotFound | Self::BlobNotFound | Self::ObjectMissing => {
+                ApiErrorCode::NotFound
+            }
+            Self::NotReady => ApiErrorCode::Unavailable,
+            _ => ApiErrorCode::Internal,
+        };
+        api_error(code, self.to_string())
+    }
+}
+
+impl IntoApiError for tokio::task::JoinError {
+    fn into_api_error(self) -> ApiError {
+        let code = if self.is_cancelled() {
+            ApiErrorCode::Cancelled
+        } else {
+            ApiErrorCode::Internal
+        };
+        api_error(code, "the API worker task did not finish")
+    }
+}

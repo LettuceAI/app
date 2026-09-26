@@ -4,6 +4,8 @@ The composition root and the application layer. Every workflow that spans more t
 
 The crate may depend on every other crate, and nothing depends on it. It holds no business rules of its own that a domain crate could hold: it resolves inputs, reads through repository ports, calls the pure domain functions, dispatches providers and commits through the repositories. Durable state lives in `lettuce-database`; provider I/O in `lettuce-providers`, `lettuce-local-llm`, `lettuce-image-generation` and `lettuce-speech`; job lifecycle in `lettuce-jobs`.
 
+The crate never depends on Tauri; `api/` is the surface the Tauri shell (`apps/desktop`) wraps.
+
 What stays with the host: the Tauri commands and events, window and platform integration, the native `SecretStore`, the TLS policy, filesystem roots, worker threads and polling cadence. Every repository call is synchronous SQLite work, so the host runs it on a database or job worker, never on the UI thread or an async runtime thread. The application never substitutes an in-memory secret store in production.
 
 ## Structure
@@ -11,6 +13,7 @@ What stays with the host: the Tauri commands and events, window and platform int
 | Folder | What it holds |
 | --- | --- |
 | `composition.rs` | `AppBackend`: open, shutdown, and one constructor per coordinator |
+| `api/` | The application API the desktop shell exposes: `ApiContext`, `ApiError` mapping, event sinks, the conversation generation worker, and one module per domain (`conversations`, `characters`, `assets`) |
 | `launch/` | `ConversationLaunchPlanner`, launch policies (prompt chains, defaults), snapshot documents |
 | `generation/` | The chat turn: dispatch, input reconstruction, context assembly, initial inference, live sources, provider runtime, built-in prompts, runtime text, feature parameters, reply helper, reply media |
 | `companion/` | Companion sends, clock, Soul growth, consolidation and Soul writer jobs, the Thymos install, and the background memory cycle (`companion_memory_*`) shared by all dynamic-memory chats |
@@ -28,6 +31,31 @@ What stays with the host: the Tauri commands and events, window and platform int
 | `usage/` | OpenRouter cost capture, app active-time tracking |
 | `deletion/` | Hard delete and media garbage collection |
 | `app_version.rs` | The version string the app reports (`-cuda` for the CUDA build) |
+
+## Application API (`api/`)
+
+`api/` is the application API the frontend reaches through the desktop shell. Every call is a plain async function, `async fn x(context: &ApiContext, request: XRequest) -> Result<XResponse, ApiError>`, over `lettuce-contracts` DTOs, with no Tauri type anywhere, so the whole surface is tested without a webview. The shell's commands are one-line wrappers around these functions.
+
+`ApiContext` is cheap to clone and holds the `AppBackend`, the host's `SecretStore`, the inference port, the memory embedding and optional emotion engines, the optional media store, the `ApiEventSink`, the clock, the per-turn stream sinks and the worker wake-up. `ApiContext::new(ApiContextParts)` builds it from explicit parts (tests use an in-memory backend and a fake provider); `ApiContext::open_desktop(app_data_dir, secret_store, events)` opens production: the `DirectorySnapshot` and `FilesystemAuthority` over the app data directory, the active database through `AppDatabaseLocation`, the media store over the `MediaBlobs` root and the remote `ProviderRuntime` over the native secret store and the device TLS policy. It loads no embedding or emotion model yet, so dynamic memory retrieval runs without vectors and companion sends use the neutral update. The host calls `recover_after_restart` once before any worker starts and `begin_shutdown` on exit.
+
+Every repository call runs on the blocking pool (`ApiContext::blocking`, a `spawn_blocking`), never on an async runtime thread.
+
+Errors: `api/error.rs` is the one place a domain or runtime error becomes an `ApiError`. `IntoApiError` maps conversation, character, launch, companion send, job store, dispatch, cancellation, worker and media errors to a stable `ApiErrorCode`; a validation error names its field in `ApiErrorDetails::InvalidField`, and an id that is not a UUID names the request field. The message is the error's English text, for logs only; the frontend localizes by code.
+
+Events: `ApiEventSink` receives application-wide `ApiEvent`s (the shell broadcasts them); only `GenerationSettled` is emitted, whenever a turn reaches a terminal state, so list views can refresh. Token streaming does not use it: `conversation_send` takes a `GenerationEventSink` (the shell passes the command's channel), attached to the turn until it settles.
+
+Media: contracts carry `AssetRef` ids, never bytes. `read_asset` reads a ready asset's bytes and MIME type for the shell's `lettuce-asset://` URI scheme; no API call takes or returns image bytes or base64, and media a later call accepts arrives as a file path the backend reads, validates and ingests itself.
+
+Conversations (`api/conversations.rs`):
+
+- `conversations_list` pages active conversations, most recently updated first, from the `ConversationOverviewReader` read model: kind, title, each character participant's avatar and the newest visible message's text as the preview.
+- `conversation_open` returns the header (participants with their character avatars), the active branch and its head, the newest message page, the pending turn and `can_send` (active, no unsettled turn, a user participant). `conversation_messages` pages older messages with the timeline cursor. A page holds the visible messages oldest first; each shows its active revision or selected candidate as text and media parts plus its reasoning summary, and a generated reply carries its candidate ordinal and the message's candidate count.
+- `conversation_send` builds a `SendConversation` on the active branch whose operation key is the request's `client_operation_id` and whose digest covers the conversation and the text, so a retried send replays the first one. It always goes through `CompanionTurnCoordinator`, which commits a direct companion send with its state transition and any other send as a plain send. A conflict while the conversation still has an unsettled turn is `Busy`. The turn gets the caller's sink and is scheduled with `ConversationGenerationDispatchCoordinator::schedule`; the call returns the user message and turn ids at once and wakes the worker. A replayed send whose turn already settled sends that turn's last event instead.
+- `generation_cancel` cancels the turn's latest job with reason `User`. A queued job is settled on the spot (the sink gets `Cancelled` and `GenerationSettled` is emitted); a running one is signalled and settled by the worker; a settled one is left alone.
+- `conversation_launch_direct` launches a one-to-one chat with a character through `launch_direct_conversation`, inheriting scene, starter and the default persona, titled with the character's name and with the user participant named `User` (the name the importers use). The request's key is the launch operation key, so a retry (including `AlreadyLaunched`) returns the same conversation.
+- `characters_list` (`api/characters.rs`) pages active characters with their avatars for the launch picker.
+
+The generation worker (`ConversationGenerationWorker`) runs queued generation jobs one at a time. `run_once` asks `PreparedConversationGenerationJobRunner::next_queued` for the next job; when its turn has a sink it sends `Started`, registers an `InferenceRuntime` stream and forwards every text or reasoning delta as `Delta`, then runs `execute` with that stream sink and a one-hour lease (longer than any provider request). Afterwards it drains the stream, reads the turn and, once the turn is terminal, sends `Completed` (the reply's message id), `Failed` (the turn's failure code) or `Cancelled` and emits `GenerationSettled`. An interrupted attempt recovered into a child, or a retried job, keeps its sink for the next run. `run(shutdown)` loops until the token fires, waiting between idle polls with a backoff from 250 ms to 5 s that a send cuts short. The runner calls repositories synchronously, so the host gives the worker its own thread and runtime. The post-turn memory scheduler is not wired to the worker yet.
 
 ## Startup and shutdown
 
@@ -69,9 +97,9 @@ Launch snapshots record what was selected; a turn reads its sources live. The fl
 6. Settle. Success settles the job. Cancellation runs the two-phase turn cancel. Failure goes through `fail_generation`. A pending dispatch is interrupted and recovered into a child attempt with its own job, linked as a child of the parent. Non-success settlement records a real usage event from the complete dispatch evidence (known counters only when every admitted response reported them, else an unavailable reason), so no attempt references an invented usage id. A recovered child on an already prepared turn goes straight to `Running`. Turn-side settlement errors schedule a job retry instead of leaving the claim running.
 7. After the turn. The host enqueues the conversation on the post-turn memory scheduler (see Memory).
 
-The caller creates the turn and decides when to run it; there is no second scheduler or background loop for chat. Only the stream sink and the prompt runtime values are caller-supplied, and the sink stays outside the dispatch fingerprint, so a replay may use a new sink without another provider call. Every turn reads live global settings.
+The caller creates the turn and decides when to run it; the only background loop for chat is the API's generation worker (see Application API). Only the stream sink and the prompt runtime values are caller-supplied, and the sink stays outside the dispatch fingerprint, so a replay may use a new sink without another provider call. Every turn reads live global settings.
 
-Chat replies declare no tools; a reply carrying tool calls is rejected as `ProviderRejected`. A regenerated candidate's ordinal comes from the prior candidate, not the provider's response index. Unreadable settings documents fail the turn instead of retrying it.
+Streaming is a preference: a caller's stream sink is used only when the account has streaming on and the model does not declare streaming unsupported, and the provider adapters stream only when they support it; a model that cannot stream answers in one piece. Chat replies declare no tools; a reply carrying tool calls is rejected as `ProviderRejected`. A regenerated candidate's ordinal comes from the prior candidate, not the provider's response index. Unreadable settings documents fail the turn instead of retrying it.
 
 ### Initial dispatch
 
@@ -430,4 +458,6 @@ Coordinator completion and errors are the backend status boundary; listener disc
 
 ## App version
 
-`app_version(package_version)` appends `-cuda` for the CUDA build and nothing otherwise; the normal build is CPU with Vulkan. The update check itself is in the frontend.
+`app_version(package_version)` appends `-cuda` for the CUDA build and nothing otherwise; the normal build is CPU with Vulkan. The suffix follows `lettuce-local-llm`'s `cuda` feature, which the `llama-cuda` feature enables.
+
+Build features forward to the runtimes: `llama-vulkan`, `llama-cuda` and `llama-metal` to `lettuce-local-llm`, and `asr-vulkan`, `asr-cuda`, `asr-metal` and `asr-rocm` to `lettuce-speech`. None is on by default; the desktop shell combines them into its product builds. The update check itself is in the frontend.

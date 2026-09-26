@@ -1,0 +1,432 @@
+use std::{collections::HashMap, sync::Arc};
+
+use lettuce_characters::CharacterRepository;
+use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
+use lettuce_conversations::{
+    ConversationLifecycle, ConversationOverviewReader, ConversationQuery, ConversationReader,
+    ConversationRepositoryError, GenerationInput, IdempotencyKey, MessageDraft, MessagePart,
+    MessageRole, MessageVisibility, OperationToken, ParticipantRole, ParticipantSource,
+    SendConversation,
+};
+use lettuce_jobs::{CancellationReason, handle::CancellationToken};
+use lettuce_types::{
+    CharacterId, ContentHash, ConversationBranchId, ConversationId, GenerationTurnId, PageLimit,
+    PageRequest,
+};
+
+use super::ApiContext;
+use super::error::{IntoApiError, api_error, invalid_field, parse_id};
+use super::events::GenerationEventSink;
+use super::mapping::{self, AvatarLookup};
+use super::worker::settled_event;
+use crate::{
+    CompanionTurnCoordinator, CompanionTurnError, ConversationGenerationCancellationOutcome,
+    ConversationLaunchError, DIRECT_LAUNCH_REQUEST_FORMAT_V1, DirectConversationLaunchRequest,
+    DirectUserParticipant, LaunchSelection,
+};
+
+const DEFAULT_USER_DISPLAY_NAME: &str = "User";
+
+fn page_request(cursor: Option<String>, limit: Option<u16>) -> PageRequest {
+    PageRequest {
+        cursor,
+        limit: PageLimit::new(limit.unwrap_or_default()),
+    }
+}
+
+fn operation_key(value: String) -> Result<IdempotencyKey, ApiError> {
+    IdempotencyKey::new(value).map_err(|_| {
+        invalid_field(
+            "client_operation_id",
+            "client_operation_id is not a valid idempotency key",
+        )
+    })
+}
+
+pub async fn conversations_list(
+    context: &ApiContext,
+    request: dto::ConversationsListRequest,
+) -> Result<dto::ConversationPage, ApiError> {
+    context
+        .blocking(move |context| {
+            let database = context.backend().database();
+            let page = ConversationOverviewReader::overview_page(
+                database,
+                &ConversationQuery {
+                    lifecycle: Some(ConversationLifecycle::Active),
+                    page: page_request(request.cursor, request.limit),
+                },
+            )
+            .map_err(IntoApiError::into_api_error)?;
+            let mut avatars = AvatarLookup::default();
+            let mut items = Vec::with_capacity(page.items.len());
+            for overview in page.items {
+                let mut summary_avatars = Vec::new();
+                for participant in &overview.participants {
+                    if let ParticipantSource::Character(character_id) = participant.source
+                        && let Some(asset_id) = avatars
+                            .avatar(database, character_id)
+                            .map_err(IntoApiError::into_api_error)?
+                    {
+                        summary_avatars.push(mapping::asset_ref(asset_id));
+                    }
+                }
+                items.push(dto::ConversationSummary {
+                    id: overview.summary.id.to_string(),
+                    kind: mapping::conversation_kind_tag(overview.summary.kind),
+                    title: overview.summary.title,
+                    avatars: summary_avatars,
+                    last_message_preview: overview
+                        .last_message
+                        .as_ref()
+                        .and_then(mapping::shown_text),
+                    updated_at: overview.summary.updated_at.get(),
+                });
+            }
+            Ok(dto::ConversationPage {
+                items,
+                next_cursor: page.next_cursor,
+            })
+        })
+        .await
+}
+
+pub async fn conversation_open(
+    context: &ApiContext,
+    request: dto::ConversationOpenRequest,
+) -> Result<dto::ConversationView, ApiError> {
+    let conversation_id: ConversationId = parse_id(&request.conversation_id, "conversation_id")?;
+    context
+        .blocking(move |context| {
+            let database = context.backend().database();
+            let aggregate = ConversationReader::get(database, conversation_id)
+                .map_err(IntoApiError::into_api_error)?;
+            let conversation = aggregate.conversation;
+            let branch = aggregate
+                .branches
+                .iter()
+                .find(|branch| branch.id == conversation.active_branch_id)
+                .ok_or_else(|| {
+                    api_error(
+                        ApiErrorCode::Internal,
+                        "the conversation's active branch is missing",
+                    )
+                })?;
+            let mut avatars = AvatarLookup::default();
+            let participants = conversation
+                .participants
+                .iter()
+                .map(|participant| avatars.participant(database, participant))
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(IntoApiError::into_api_error)?;
+            let messages = message_page(context, conversation_id, branch.id, None, None)?;
+            let pending_turn = ConversationOverviewReader::live_turn(database, conversation_id)
+                .map_err(IntoApiError::into_api_error)?;
+            let can_send = conversation.lifecycle == ConversationLifecycle::Active
+                && pending_turn.is_none()
+                && conversation
+                    .participants
+                    .iter()
+                    .any(|participant| participant.role == ParticipantRole::User);
+            Ok(dto::ConversationView {
+                id: conversation.id.to_string(),
+                kind: mapping::conversation_kind(&conversation.kind),
+                title: conversation.title,
+                participants,
+                branch: dto::BranchHead {
+                    branch_id: branch.id.to_string(),
+                    head_message_id: branch
+                        .head_message_id
+                        .or(branch.fork_message_id)
+                        .map(|id| id.to_string()),
+                },
+                messages,
+                pending_turn_id: pending_turn.map(|id| id.to_string()),
+                can_send,
+            })
+        })
+        .await
+}
+
+pub async fn conversation_messages(
+    context: &ApiContext,
+    request: dto::ConversationMessagesRequest,
+) -> Result<dto::MessagePage, ApiError> {
+    let conversation_id: ConversationId = parse_id(&request.conversation_id, "conversation_id")?;
+    context
+        .blocking(move |context| {
+            let aggregate = ConversationReader::get(context.backend().database(), conversation_id)
+                .map_err(IntoApiError::into_api_error)?;
+            message_page(
+                context,
+                conversation_id,
+                aggregate.conversation.active_branch_id,
+                request.before_cursor,
+                request.limit,
+            )
+        })
+        .await
+}
+
+fn message_page(
+    context: &ApiContext,
+    conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
+    cursor: Option<String>,
+    limit: Option<u16>,
+) -> Result<dto::MessagePage, ApiError> {
+    let database = context.backend().database();
+    let page = ConversationReader::timeline_page(
+        database,
+        conversation_id,
+        branch_id,
+        &page_request(cursor, limit),
+    )
+    .map_err(|error| match error {
+        ConversationRepositoryError::Invalid(_) => {
+            invalid_field("before_cursor", "the message cursor is not valid here")
+        }
+        error => error.into_api_error(),
+    })?;
+    let visible = page
+        .items
+        .iter()
+        .filter(|item| item.message.visibility == MessageVisibility::Visible)
+        .collect::<Vec<_>>();
+    let with_candidates = visible
+        .iter()
+        .filter(|item| item.message.role == MessageRole::Assistant)
+        .map(|item| item.message.id)
+        .collect::<Vec<_>>();
+    let counts =
+        ConversationOverviewReader::candidate_counts(database, conversation_id, &with_candidates)
+            .map_err(IntoApiError::into_api_error)?
+            .into_iter()
+            .collect::<HashMap<_, _>>();
+    Ok(dto::MessagePage {
+        items: visible
+            .iter()
+            .rev()
+            .map(|item| mapping::timeline_message(item, &counts))
+            .collect(),
+        next_cursor: page.next_cursor,
+    })
+}
+
+fn send_digest(conversation_id: ConversationId, text: &str) -> Result<ContentHash, ApiError> {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"lettuce-api-conversation-send-v1\0");
+    hasher.update(conversation_id.to_string().as_bytes());
+    hasher.update(b"\0");
+    hasher.update(text.as_bytes());
+    ContentHash::parse(hasher.finalize().to_hex().as_str())
+        .map_err(|_| api_error(ApiErrorCode::Internal, "send digest is not a content hash"))
+}
+
+/// Commits the user message and queues its reply; the generation worker
+/// streams the reply into `events`. A direct companion chat goes through the
+/// companion coordinator.
+pub async fn conversation_send(
+    context: &ApiContext,
+    request: dto::ConversationSendRequest,
+    events: Arc<dyn GenerationEventSink>,
+) -> Result<dto::SendAccepted, ApiError> {
+    let conversation_id: ConversationId = parse_id(&request.conversation_id, "conversation_id")?;
+    if request.text.trim().is_empty() {
+        return Err(invalid_field("text", "the message text is blank"));
+    }
+    let key = operation_key(request.client_operation_id)?;
+    let text = request.text;
+    let accepted =
+        context
+            .blocking(move |context| {
+                let database = context.backend().database();
+                let now = context.now();
+                let conversation = ConversationReader::get(database, conversation_id)
+                    .map_err(IntoApiError::into_api_error)?
+                    .conversation;
+                let user = conversation
+                    .participants
+                    .iter()
+                    .find(|participant| participant.role == ParticipantRole::User)
+                    .ok_or_else(|| {
+                        api_error(
+                            ApiErrorCode::Unsupported,
+                            "the conversation has no user participant",
+                        )
+                    })?;
+                let command = SendConversation {
+                    conversation_id,
+                    branch_id: conversation.active_branch_id,
+                    expected_revision: conversation.revision,
+                    operation: OperationToken {
+                        key,
+                        request_digest: send_digest(conversation_id, &text)?,
+                    },
+                    message: MessageDraft {
+                        role: MessageRole::User,
+                        author_participant_id: Some(user.id),
+                        parts: vec![MessagePart::Text { text }],
+                        visibility: MessageVisibility::Visible,
+                        pinned: false,
+                        scene_edited: false,
+                    },
+                    swap_roles: false,
+                };
+                let begun = match CompanionTurnCoordinator::new(database, context.emotion())
+                    .begin_send(&command, now, &CancellationToken::new())
+                {
+                    Ok(begun) => begun.value,
+                    Err(CompanionTurnError::Conversation(
+                        ConversationRepositoryError::Conflict
+                        | ConversationRepositoryError::StaleRevision { .. },
+                    )) if ConversationOverviewReader::live_turn(database, conversation_id)
+                        .map_err(IntoApiError::into_api_error)?
+                        .is_some() =>
+                    {
+                        return Err(api_error(
+                            ApiErrorCode::Busy,
+                            "the conversation is still generating a reply",
+                        ));
+                    }
+                    Err(error) => return Err(error.into_api_error()),
+                };
+                let GenerationInput::UserMessage { message_id } = begun.turn.input else {
+                    return Err(api_error(
+                        ApiErrorCode::Internal,
+                        "a send did not start from a user message",
+                    ));
+                };
+                let turn_id = begun.turn.id;
+                context.attach_stream(turn_id, events);
+                let admission = context
+                    .backend()
+                    .conversation_generation_dispatcher()
+                    .schedule(&begun, now);
+                match admission {
+                    Ok(admission) if admission.job.state.is_terminal() => {
+                        if let Some(event) = settled_event(database, turn_id)? {
+                            context.finish_stream(turn_id, event);
+                        }
+                    }
+                    Ok(_) => {}
+                    Err(error) => {
+                        context.finish_stream(
+                            turn_id,
+                            dto::GenerationEvent::Failed {
+                                turn_id: turn_id.to_string(),
+                                code: dto::GenerationFailureCode::Internal,
+                            },
+                        );
+                        return Err(error.into_api_error());
+                    }
+                }
+                Ok(dto::SendAccepted {
+                    user_message_id: message_id.to_string(),
+                    turn_id: turn_id.to_string(),
+                })
+            })
+            .await?;
+    context.wake_workers();
+    Ok(accepted)
+}
+
+/// Stops a turn. A queued turn is settled here; a running one is signalled
+/// and settled by the worker running it. Cancelling a settled turn is a
+/// no-op.
+pub async fn generation_cancel(
+    context: &ApiContext,
+    request: dto::GenerationCancelRequest,
+) -> Result<(), ApiError> {
+    let turn_id: GenerationTurnId = parse_id(&request.turn_id, "turn_id")?;
+    context
+        .blocking(move |context| {
+            let database = context.backend().database();
+            let turn = ConversationReader::get_turn(database, turn_id)
+                .map_err(IntoApiError::into_api_error)?;
+            let Some(job_id) = turn
+                .attempts
+                .iter()
+                .filter(|attempt| attempt.job_id.is_some())
+                .max_by_key(|attempt| attempt.ordinal)
+                .and_then(|attempt| attempt.job_id)
+            else {
+                return Err(api_error(
+                    ApiErrorCode::Conflict,
+                    "the turn has no generation job to cancel",
+                ));
+            };
+            match context
+                .backend()
+                .conversation_generation_cancellation()
+                .cancel(job_id, CancellationReason::User, context.now())
+                .map_err(IntoApiError::into_api_error)?
+            {
+                ConversationGenerationCancellationOutcome::QueuedCancelled(_) => {
+                    context.finish_stream(
+                        turn_id,
+                        dto::GenerationEvent::Cancelled {
+                            turn_id: turn_id.to_string(),
+                        },
+                    );
+                    context.emit(dto::ApiEvent::GenerationSettled {
+                        conversation_id: turn.conversation_id.to_string(),
+                        turn_id: turn_id.to_string(),
+                    });
+                    Ok(())
+                }
+                ConversationGenerationCancellationOutcome::Requested { .. }
+                | ConversationGenerationCancellationOutcome::AlreadyTerminal(_) => Ok(()),
+                ConversationGenerationCancellationOutcome::NotFound => Err(api_error(
+                    ApiErrorCode::NotFound,
+                    "the turn's generation job was not found",
+                )),
+            }
+        })
+        .await
+}
+
+/// Starts a one-to-one chat with a character, inheriting its scene, starter
+/// and the default persona. Repeating the call with the same key returns the
+/// same conversation.
+pub async fn conversation_launch_direct(
+    context: &ApiContext,
+    request: dto::LaunchDirectRequest,
+) -> Result<dto::LaunchDirectResponse, ApiError> {
+    let character_id: CharacterId = parse_id(&request.character_id, "character_id")?;
+    let operation_key = operation_key(request.client_operation_id)?;
+    context
+        .blocking(move |context| {
+            let database = context.backend().database();
+            let character = CharacterRepository::get(database, character_id)
+                .map_err(IntoApiError::into_api_error)?
+                .ok_or_else(|| api_error(ApiErrorCode::NotFound, "the character was not found"))?;
+            let launch = DirectConversationLaunchRequest {
+                format_version: DIRECT_LAUNCH_REQUEST_FORMAT_V1,
+                title: character.character.profile.name.clone(),
+                user: DirectUserParticipant {
+                    display_name: DEFAULT_USER_DISPLAY_NAME.to_owned(),
+                    authored_description: None,
+                },
+                character_id,
+                scene: LaunchSelection::Inherit,
+                starter: LaunchSelection::Inherit,
+                persona: LaunchSelection::Inherit,
+                operation_key,
+            };
+            let conversation_id = match context
+                .backend()
+                .launch_direct_conversation(&launch, context.now())
+            {
+                Ok(created) => created.value.conversation.id,
+                Err(ConversationLaunchError::AlreadyLaunched { conversation_id }) => {
+                    conversation_id
+                }
+                Err(error) => return Err(error.into_api_error()),
+            };
+            Ok(dto::LaunchDirectResponse {
+                conversation_id: conversation_id.to_string(),
+            })
+        })
+        .await
+}

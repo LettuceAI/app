@@ -84,6 +84,14 @@ pub struct ConversationGenerationWorkerRequest {
     pub resources: ResourceAvailability,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QueuedConversationGeneration {
+    pub conversation_id: lettuce_types::ConversationId,
+    pub turn_id: lettuce_types::GenerationTurnId,
+    pub attempt_id: lettuce_types::GenerationAttemptId,
+    pub job_id: lettuce_types::JobId,
+}
+
 #[derive(Debug)]
 pub enum ConversationGenerationWorkerOutcome {
     Idle,
@@ -230,6 +238,39 @@ where
         C: Clock + ?Sized,
         R: lettuce_jobs::JobStore + lettuce_usage::UsageLedger,
     {
+        let Some(next) = self.next_queued(&request.resources)? else {
+            return Ok(ConversationGenerationWorkerOutcome::Idle);
+        };
+        let outcome = self
+            .execute(
+                ConversationGenerationExecutionRequest {
+                    conversation_id: next.conversation_id,
+                    turn_id: next.turn_id,
+                    attempt_id: next.attempt_id,
+                    worker_id: request.worker_id,
+                    lease_for: request.lease_for,
+                    resources: request.resources,
+                    runtime: ConversationGenerationRuntimeInput::default(),
+                    cancellation: CancellationToken::new(),
+                    cancellation_reason: CancellationReason::Shutdown,
+                },
+                clock,
+            )
+            .await?;
+        Ok(ConversationGenerationWorkerOutcome::Executed(Box::new(
+            outcome,
+        )))
+    }
+
+    /// The oldest highest-priority queued generation job the resources
+    /// allow, resolved to its turn and attempt.
+    pub fn next_queued(
+        &self,
+        resources: &ResourceAvailability,
+    ) -> Result<Option<QueuedConversationGeneration>, ConversationGenerationWorkerError>
+    where
+        R: lettuce_jobs::JobStore,
+    {
         let mut page_request = PageRequest {
             cursor: None,
             limit: PageLimit::new(200),
@@ -247,7 +288,7 @@ where
             if let Some(job) = page.items.into_iter().find(|job| {
                 job.resources
                     .iter()
-                    .all(|resource| request.resources.allows(*resource))
+                    .all(|resource| resources.allows(*resource))
             }) {
                 break Some(job);
             }
@@ -257,7 +298,7 @@ where
             page_request.cursor = Some(cursor);
         };
         let Some(job) = job else {
-            return Ok(ConversationGenerationWorkerOutcome::Idle);
+            return Ok(None);
         };
         let events = lettuce_jobs::JobStore::events_since(self.repository, job.id, None, 1)?;
         let Some(JobEvent::Created {
@@ -274,25 +315,12 @@ where
             .iter()
             .find(|attempt| attempt.job_id == Some(job.id))
             .ok_or(ConversationGenerationWorkerError::InvalidWork)?;
-        let outcome = self
-            .execute(
-                ConversationGenerationExecutionRequest {
-                    conversation_id: turn.conversation_id,
-                    turn_id: turn.id,
-                    attempt_id: attempt.id,
-                    worker_id: request.worker_id,
-                    lease_for: request.lease_for,
-                    resources: request.resources,
-                    runtime: ConversationGenerationRuntimeInput::default(),
-                    cancellation: CancellationToken::new(),
-                    cancellation_reason: CancellationReason::Shutdown,
-                },
-                clock,
-            )
-            .await?;
-        Ok(ConversationGenerationWorkerOutcome::Executed(Box::new(
-            outcome,
-        )))
+        Ok(Some(QueuedConversationGeneration {
+            conversation_id: turn.conversation_id,
+            turn_id: turn.id,
+            attempt_id: attempt.id,
+            job_id: job.id,
+        }))
     }
 
     pub async fn execute<C>(
@@ -1046,6 +1074,10 @@ where
         let account = ProviderAccountRepository::get(self.repository, model.provider_account_id)
             .map_err(ConversationGenerationInputError::ModelRepository)?
             .ok_or(ConversationGenerationInputError::MissingModel)?;
+        let stream_sink = runtime.stream_sink.filter(|_| {
+            account.streaming_enabled
+                && stored_model.config.capabilities.streaming != CapabilityStatus::Unsupported
+        });
         let (global_model_settings, _) =
             lettuce_models::GlobalModelSettingsRepository::global_model_settings(self.repository)
                 .map_err(ConversationGenerationInputError::ModelRepository)?;
@@ -1073,10 +1105,7 @@ where
             &stored_model,
             &account,
             &parameters,
-            &ChatRequirements {
-                require_streaming: runtime.stream_sink.is_some(),
-                ..Default::default()
-            },
+            &ChatRequirements::default(),
         )
         .map_err(ConversationGenerationInputError::Profile)?;
         let source_message_id = match turn.input {
@@ -1243,7 +1272,7 @@ where
             },
             context,
             media_grants,
-            stream_sink: runtime.stream_sink,
+            stream_sink,
             strip_time_stamps: clock.time_awareness_enabled(),
             reply_images: crate::image::reply_images::reply_image_facts(
                 self.repository,
