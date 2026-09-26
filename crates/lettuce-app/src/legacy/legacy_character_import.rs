@@ -966,6 +966,7 @@ mod tests {
                         safety: lettuce_conversations::SafetyContext::Standard,
                         prompt_runtime: lettuce_conversations::PromptRuntimeFacts::default(),
                         prompt_values: lettuce_conversations::PromptRuntimeValues::default(),
+                        reference_time: lettuce_types::TimestampMillis::new(0),
                         memory: None,
                         timeline,
                     },

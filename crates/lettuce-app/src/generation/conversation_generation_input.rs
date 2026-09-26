@@ -1192,6 +1192,7 @@ where
                 safety: SafetyContext::Standard,
                 prompt_runtime,
                 prompt_values,
+                reference_time: reference_now,
                 memory: memory_contribution,
                 timeline: context_timeline(timeline.items, context_window, source_message_id),
             })

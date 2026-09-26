@@ -1221,6 +1221,10 @@ pub struct ContextRequest {
     pub safety: SafetyContext,
     pub prompt_runtime: PromptRuntimeFacts,
     pub prompt_values: PromptRuntimeValues,
+    /// The turn's reference time: the companion clock's effective now, or
+    /// the wall clock without one. Scheduled notes are evaluated at it, as
+    /// legacy evaluated them at `companion_effective_now`.
+    pub reference_time: TimestampMillis,
     pub memory: Option<MemoryContribution>,
     pub timeline: Vec<TimelineItem>,
 }
@@ -2304,6 +2308,7 @@ mod tests {
             safety: SafetyContext::Standard,
             prompt_runtime: PromptRuntimeFacts::default(),
             prompt_values: PromptRuntimeValues::default(),
+            reference_time: TimestampMillis::new(0),
             memory: None,
             timeline: Vec::new(),
         };

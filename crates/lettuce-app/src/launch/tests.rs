@@ -263,6 +263,7 @@ fn context_request_for(
         safety: SafetyContext::Standard,
         prompt_runtime: lettuce_conversations::PromptRuntimeFacts::default(),
         prompt_values: lettuce_conversations::PromptRuntimeValues::default(),
+        reference_time: lettuce_types::TimestampMillis::new(0),
         memory: None,
         timeline: ConversationReader::timeline_page(
             database,
@@ -3898,6 +3899,46 @@ async fn companion_context_assembles_live_prompt_state_deterministically() {
     assert!(text.contains("Stay with me."));
     assert!(!text.contains("# Time\n"));
     assert!(first.attributions.prompt.is_some());
+    let later_note_id = uuid::Uuid::new_v4();
+    database
+        .upsert_scheduled_note(lettuce_companions::CompanionScheduledNote {
+            id: later_note_id,
+            character_id,
+            label: "Later".into(),
+            content: "The ferry leaves tonight.".into(),
+            available_at: TimestampMillis::new(NOW.get() + 1_000),
+            expires_at: None,
+            recurrence: lettuce_companions::ScheduledNoteRecurrence::None,
+            recurrence_window_ms: None,
+            enabled: true,
+            created_at: TimestampMillis::new(NOW.get() + 9),
+            updated_at: TimestampMillis::new(NOW.get() + 9),
+        })
+        .expect("store a later note");
+    let notes_at = |reference: i64| {
+        let mut request =
+            context_request_for(&database, launched.value.conversation.id, source_message_id);
+        request.reference_time = TimestampMillis::new(reference);
+        let assembler = &assembler;
+        async move {
+            assembler
+                .assemble(request)
+                .await
+                .expect("assemble at a reference time")
+                .messages
+                .iter()
+                .flat_map(|message| &message.parts)
+                .any(|part| {
+                    matches!(part, ProviderContextPart::Text { text }
+                        if text.contains("The ferry leaves tonight."))
+                })
+        }
+    };
+    assert!(!notes_at(NOW.get() + 10).await);
+    assert!(notes_at(NOW.get() + 2_000).await);
+    database
+        .delete_scheduled_note(later_note_id)
+        .expect("delete the later note");
     let mut aware =
         context_request_for(&database, launched.value.conversation.id, source_message_id);
     aware.prompt_runtime.time_awareness_enabled = true;

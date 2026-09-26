@@ -154,7 +154,7 @@ where
         }
         let effective_at = source_effective_time(&request)?;
         let companion_state = self.companion_prompt_state(&aggregate, effective_at)?;
-        let scheduled_notes = self.companion_scheduled_notes(&aggregate, effective_at)?;
+        let scheduled_notes = self.companion_scheduled_notes(&aggregate, request.reference_time)?;
 
         let keyword_window = if direct { &visible } else { &history };
         let recent_text = keyword_window
@@ -938,7 +938,7 @@ where
     fn companion_scheduled_notes(
         &self,
         aggregate: &ConversationAggregate,
-        effective_at: TimestampMillis,
+        reference_time: TimestampMillis,
     ) -> Result<Option<String>, ContextAssemblyError> {
         let ConversationKind::Direct(details) = &aggregate.conversation.kind else {
             return Ok(None);
@@ -956,7 +956,7 @@ where
             .sources
             .list_scheduled_notes(details.character.source_id)
             .map_err(|_| ContextAssemblyError::ConversationUnavailable)?;
-        let active = active_scheduled_notes(notes, effective_at)
+        let active = active_scheduled_notes(notes, reference_time)
             .map_err(|_| ContextAssemblyError::ConversationUnavailable)?;
         if active.is_empty() {
             return Ok(None);
@@ -2985,6 +2985,7 @@ mod tests {
             safety: lettuce_conversations::SafetyContext::Standard,
             prompt_runtime: lettuce_conversations::PromptRuntimeFacts::default(),
             prompt_values: lettuce_conversations::PromptRuntimeValues::default(),
+            reference_time: lettuce_types::TimestampMillis::new(0),
             memory: None,
             timeline: vec![
                 item(
@@ -3069,6 +3070,7 @@ mod tests {
             safety: lettuce_conversations::SafetyContext::Standard,
             prompt_runtime: lettuce_conversations::PromptRuntimeFacts::default(),
             prompt_values: lettuce_conversations::PromptRuntimeValues::default(),
+            reference_time: lettuce_types::TimestampMillis::new(0),
             memory: None,
             timeline: vec![
                 item(0, MessageRole::User, 5_000),
@@ -3145,6 +3147,7 @@ mod tests {
             safety: lettuce_conversations::SafetyContext::Standard,
             prompt_runtime: lettuce_conversations::PromptRuntimeFacts::default(),
             prompt_values: lettuce_conversations::PromptRuntimeValues::default(),
+            reference_time: lettuce_types::TimestampMillis::new(0),
             memory: None,
             timeline: vec![
                 item(root_message, root_branch, None),
