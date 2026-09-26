@@ -71,20 +71,13 @@ pub async fn app_ui_state_update(
 ) -> Result<dto::AppUiStateView, ApiError> {
     context
         .blocking(move |context| {
-            let database = context.backend().database();
-            let mut state = database.load_device_ui_state().map_err(settings_error)?;
-            for (key, value) in request.patch {
-                if key.trim().is_empty() {
-                    return Err(invalid_field("patch", "a UI state key is empty"));
-                }
-                if value.is_null() {
-                    state.remove(&key);
-                } else {
-                    state.insert(key, value);
-                }
+            if request.patch.keys().any(|key| key.trim().is_empty()) {
+                return Err(invalid_field("patch", "a UI state key is empty"));
             }
-            database
-                .save_device_ui_state(state.clone())
+            let state = context
+                .backend()
+                .database()
+                .patch_device_ui_state(request.patch)
                 .map_err(settings_error)?;
             Ok(dto::AppUiStateView { state })
         })

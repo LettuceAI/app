@@ -1,6 +1,7 @@
 use std::path::Path;
 
-use rusqlite::TransactionBehavior;
+use lettuce_settings::GlobalSettingsStoreError;
+use rusqlite::{OptionalExtension, TransactionBehavior};
 
 use crate::{Database, DatabaseError};
 
@@ -120,12 +121,75 @@ impl Database {
     }
 }
 
+impl Database {
+    /// Sets the patch's keys in this device's UI state in one transaction; a
+    /// `null` value removes its key. Returns the state afterwards.
+    pub fn patch_device_ui_state(
+        &self,
+        patch: serde_json::Map<String, serde_json::Value>,
+    ) -> Result<serde_json::Map<String, serde_json::Value>, GlobalSettingsStoreError> {
+        let mut connection = self
+            .connection()
+            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+        let stored: Option<String> = transaction
+            .query_row(
+                "SELECT state_json FROM device_ui_state WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+        let mut state = match stored {
+            Some(stored) => {
+                serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&stored)
+                    .map_err(|_| GlobalSettingsStoreError::InvalidData)?
+            }
+            None => serde_json::Map::new(),
+        };
+        for (key, value) in patch {
+            if value.is_null() {
+                state.remove(&key);
+            } else {
+                state.insert(key, value);
+            }
+        }
+        crate::write_device_ui_state(&transaction, &state)
+            .map_err(|_| GlobalSettingsStoreError::InvalidData)?;
+        transaction
+            .commit()
+            .map_err(|_| GlobalSettingsStoreError::Storage)?;
+        Ok(state)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use lettuce_sync::LocalChangeJournal;
     use lettuce_types::{OperationId, TimestampMillis};
 
     use crate::Database;
+
+    #[test]
+    fn a_ui_state_patch_sets_and_removes_keys_in_one_step() {
+        use lettuce_settings::DeviceUiStateStore;
+        let database = Database::open_in_memory().expect("database");
+        let mut patch = serde_json::Map::new();
+        patch.insert("a".into(), serde_json::json!(1));
+        patch.insert("b".into(), serde_json::json!(2));
+        database.patch_device_ui_state(patch).expect("first patch");
+        let mut patch = serde_json::Map::new();
+        patch.insert("a".into(), serde_json::Value::Null);
+        patch.insert("c".into(), serde_json::json!(3));
+        let state = database.patch_device_ui_state(patch).expect("second patch");
+        assert_eq!(
+            serde_json::Value::Object(state.clone()),
+            serde_json::json!({"b": 2, "c": 3})
+        );
+        assert_eq!(database.load_device_ui_state().expect("state"), state);
+    }
 
     #[test]
     fn install_ui_state_is_carried_unless_the_new_file_has_its_own() {

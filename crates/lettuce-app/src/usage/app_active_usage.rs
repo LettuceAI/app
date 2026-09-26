@@ -16,6 +16,7 @@ struct TrackerState {
 #[derive(Debug)]
 pub struct AppActiveUsageTracker {
     state: Mutex<TrackerState>,
+    flushing: Mutex<()>,
 }
 
 impl AppActiveUsageTracker {
@@ -26,6 +27,7 @@ impl AppActiveUsageTracker {
                 active_since: Some(now.get()),
                 pending: BTreeMap::new(),
             }),
+            flushing: Mutex::new(()),
         }
     }
 
@@ -48,6 +50,10 @@ impl AppActiveUsageTracker {
         store: &S,
         now: TimestampMillis,
     ) -> Result<u64, AppUsageError> {
+        let _flushing = self
+            .flushing
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let pending = {
             let mut state = self.lock();
             if let Some(since) = state.active_since {
@@ -85,14 +91,22 @@ fn local_day(millis: i64) -> Option<chrono::NaiveDate> {
         .map(|time| time.date_naive())
 }
 
-/// The first millisecond of the local day after `day`.
+/// The first valid instant of the local day after `day`; where a clock
+/// change skips local midnight, the first minute that exists that day.
 fn next_day_start(day: chrono::NaiveDate) -> Option<i64> {
-    let next = day.succ_opt()?.and_time(NaiveTime::MIN);
-    Local
-        .from_local_datetime(&next)
-        .earliest()
-        .map(|time| time.timestamp_millis())
+    next_day_start_in(&Local, day)
 }
+
+fn next_day_start_in<Tz: TimeZone>(zone: &Tz, day: chrono::NaiveDate) -> Option<i64> {
+    let next = day.succ_opt()?.and_time(NaiveTime::MIN);
+    (0..=MINUTES_PER_DAY).find_map(|minute| {
+        zone.from_local_datetime(&(next + chrono::Duration::minutes(minute)))
+            .earliest()
+            .map(|time| time.timestamp_millis())
+    })
+}
+
+const MINUTES_PER_DAY: i64 = 24 * 60;
 
 /// Adds `since..until` to the pending time of each local day it spans.
 fn accrue(pending: &mut BTreeMap<String, u64>, since: i64, until: i64) {
@@ -198,6 +212,111 @@ mod tests {
         fn app_usage_days(&self) -> Result<Vec<lettuce_usage::AppUsageDay>, AppUsageError> {
             Ok(Vec::new())
         }
+    }
+
+    /// UTC, except that local time skips from midnight to 01:00 on
+    /// 2026-03-11, as a clock change at midnight does.
+    #[derive(Debug, Clone, Copy)]
+    struct MidnightGap;
+
+    impl TimeZone for MidnightGap {
+        type Offset = chrono::FixedOffset;
+
+        fn from_offset(_offset: &Self::Offset) -> Self {
+            Self
+        }
+
+        fn offset_from_local_date(
+            &self,
+            _local: &chrono::NaiveDate,
+        ) -> chrono::LocalResult<Self::Offset> {
+            chrono::LocalResult::Single(chrono::FixedOffset::east_opt(0).expect("utc"))
+        }
+
+        fn offset_from_local_datetime(
+            &self,
+            local: &chrono::NaiveDateTime,
+        ) -> chrono::LocalResult<Self::Offset> {
+            let gap_start = chrono::NaiveDate::from_ymd_opt(2026, 3, 11)
+                .expect("date")
+                .and_time(NaiveTime::MIN);
+            if *local >= gap_start && *local < gap_start + chrono::Duration::hours(1) {
+                chrono::LocalResult::None
+            } else {
+                chrono::LocalResult::Single(chrono::FixedOffset::east_opt(0).expect("utc"))
+            }
+        }
+
+        fn offset_from_utc_date(&self, _utc: &chrono::NaiveDate) -> Self::Offset {
+            chrono::FixedOffset::east_opt(0).expect("utc")
+        }
+
+        fn offset_from_utc_datetime(&self, _utc: &chrono::NaiveDateTime) -> Self::Offset {
+            chrono::FixedOffset::east_opt(0).expect("utc")
+        }
+    }
+
+    #[test]
+    fn a_skipped_midnight_starts_the_day_at_its_first_valid_instant() {
+        let day = chrono::NaiveDate::from_ymd_opt(2026, 3, 10).expect("date");
+        let expected = chrono::NaiveDate::from_ymd_opt(2026, 3, 11)
+            .expect("date")
+            .and_hms_opt(1, 0, 0)
+            .expect("time")
+            .and_utc()
+            .timestamp_millis();
+        assert_eq!(next_day_start_in(&MidnightGap, day), Some(expected));
+    }
+
+    /// Counts what is written and waits inside each write, so two flushes
+    /// overlap.
+    #[derive(Default)]
+    struct SlowStore {
+        written: std::sync::atomic::AtomicU64,
+    }
+
+    impl AppUsageRepository for SlowStore {
+        fn add_app_usage(
+            &self,
+            _day: &str,
+            active_ms: u64,
+            _now: TimestampMillis,
+        ) -> Result<(), AppUsageError> {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            self.written.fetch_add(active_ms, Ordering::SeqCst);
+            Ok(())
+        }
+
+        fn app_usage_days(&self) -> Result<Vec<lettuce_usage::AppUsageDay>, AppUsageError> {
+            Ok(Vec::new())
+        }
+    }
+
+    #[test]
+    fn concurrent_flushes_write_the_time_once() {
+        let store = std::sync::Arc::new(SlowStore::default());
+        let midnight = local_midnight();
+        let tracker = std::sync::Arc::new(AppActiveUsageTracker::new(TimestampMillis::new(
+            midnight + 1_000,
+        )));
+        tracker.on_focus_changed(false, TimestampMillis::new(midnight + 9_000));
+        let flushes = (0..4)
+            .map(|_| {
+                let store = std::sync::Arc::clone(&store);
+                let tracker = std::sync::Arc::clone(&tracker);
+                std::thread::spawn(move || {
+                    tracker
+                        .flush(store.as_ref(), TimestampMillis::new(midnight + 10_000))
+                        .expect("flush")
+                })
+            })
+            .collect::<Vec<_>>();
+        let reported = flushes
+            .into_iter()
+            .map(|flush| flush.join().expect("flush thread"))
+            .sum::<u64>();
+        assert_eq!(reported, 8_000);
+        assert_eq!(store.written.load(Ordering::SeqCst), 8_000);
     }
 
     #[test]
