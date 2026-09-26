@@ -16,8 +16,6 @@ use lettuce_memory::{
 };
 use lettuce_types::{ConversationId, MessageId, OperationId, PageLimit, PageRequest, Revision};
 
-const DELETE_AFTER_SCAN_LIMIT: u16 = 512;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeleteAfterMessages {
     pub conversation_id: ConversationId,
@@ -144,13 +142,13 @@ where
             .map(|memory| memory.id);
         let runs = self
             .repository
-            .list_dynamic_memory_runs(command.conversation_id, DELETE_AFTER_SCAN_LIMIT)?
+            .list_dynamic_memory_runs(command.conversation_id)?
             .into_iter()
             .filter(|run| Some(run.space_id) == active_space)
             .collect::<Vec<_>>();
         let effects = self
             .repository
-            .list_for_conversation(command.conversation_id, DELETE_AFTER_SCAN_LIMIT)
+            .list_for_conversation(command.conversation_id)
             .map_err(DynamicMemoryDeleteAfterError::Effects)?;
         let removed = removed_message_ids.iter().copied().collect::<HashSet<_>>();
         let invalid_run_index = runs.iter().position(|run| {

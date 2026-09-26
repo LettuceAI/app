@@ -243,7 +243,6 @@ pub trait CompanionTurnEffectRepository: Send + Sync {
     fn list_for_conversation(
         &self,
         _conversation_id: ConversationId,
-        _limit: u16,
     ) -> Result<Vec<CompanionTurnEffect>, CompanionTurnEffectRepositoryError> {
         Err(CompanionTurnEffectRepositoryError::Invalid)
     }

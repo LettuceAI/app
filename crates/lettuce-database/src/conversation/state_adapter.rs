@@ -1583,24 +1583,19 @@ impl CompanionTurnEffectRepository for Database {
     fn list_for_conversation(
         &self,
         conversation_id: ConversationId,
-        limit: u16,
     ) -> Result<Vec<CompanionTurnEffect>, CompanionTurnEffectRepositoryError> {
-        if limit == 0 || limit > 512 {
-            return Err(CompanionTurnEffectRepositoryError::Invalid);
-        }
         let connection = self.connection().map_err(effect_failure)?;
         let assistant_ids = {
             let mut statement = connection
                 .prepare(
                     "SELECT assistant_message_id FROM companion_turn_effects
-                     WHERE conversation_id=?1 ORDER BY created_at, id LIMIT ?2",
+                     WHERE conversation_id=?1 ORDER BY created_at, id",
                 )
                 .map_err(effect_failure)?;
             statement
-                .query_map(
-                    params![conversation_id.to_string(), i64::from(limit)],
-                    |row| row.get::<_, String>(0),
-                )
+                .query_map(params![conversation_id.to_string()], |row| {
+                    row.get::<_, String>(0)
+                })
                 .map_err(effect_failure)?
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(effect_failure)?

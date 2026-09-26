@@ -1608,6 +1608,50 @@ mod tests {
     }
 
     #[test]
+    fn long_summaries_windows_and_memories_are_kept_whole() {
+        let database = Database::open_in_memory().expect("database");
+        database
+            .connection()
+            .expect("connection")
+            .execute_batch("PRAGMA foreign_keys = OFF")
+            .expect("fixture mode");
+        let space_id = MemorySpaceId::new();
+        let long_memory = "m".repeat(64 * 1024);
+        let created = database
+            .create(snapshot(
+                space_id,
+                vec![item(MemoryId::new(), &long_memory)],
+            ))
+            .expect("create a memory over 16 KiB");
+        assert_eq!(created.items[0].text, long_memory);
+        database
+            .connection()
+            .expect("connection")
+            .execute(
+                "INSERT INTO conversation_memory_spaces (conversation_id, space_id) VALUES (?1, ?2)",
+                rusqlite::params!["conversation", space_id.to_string()],
+            )
+            .expect("binding");
+        let source_message_ids = (0..1100).map(|_| MessageId::new()).collect::<Vec<_>>();
+        let summary = MemorySummary {
+            space_id,
+            text: "s".repeat(20_000),
+            token_count: 5_000,
+            window_start: 0,
+            window_end: 1100,
+            source_message_ids,
+            updated_at: TimestampMillis::new(50),
+        };
+        database
+            .compare_and_apply_summary(MemorySummaryChange {
+                expected_revision: created.revision,
+                summary: summary.clone(),
+            })
+            .expect("summary over 6000 bytes and 1024 messages");
+        assert_eq!(database.get_summary(space_id).expect("get"), Some(summary));
+    }
+
+    #[test]
     fn stale_summary_cas_preserves_current_summary() {
         let database = Database::open_in_memory().expect("database");
         database

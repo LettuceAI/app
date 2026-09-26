@@ -72,7 +72,7 @@ impl MemoryProjectionBackup {
                 || projection.source_revision.trim().is_empty()
                 || projection.source_revision.len() > 128
                 || projection.source_text.trim().is_empty()
-                || projection.source_text.len() > 16 * 1024
+                || projection.source_text.len() > lettuce_memory::MAX_MEMORY_TEXT_BYTES
                 || !matches!(projection.dimensions, 64 | 128 | 256 | 512 | 768)
                 || !valid_state(projection)
             {

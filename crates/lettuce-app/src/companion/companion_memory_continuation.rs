@@ -504,6 +504,7 @@ mod tests {
         };
         assert_eq!(cap(0), 1);
         assert_eq!(cap(20), 20);
+        assert_eq!(cap(100), 100);
         assert_eq!(
             cap(10_000),
             lettuce_memory::MAX_DYNAMIC_MEMORY_INFERENCE_ROUNDS

@@ -92,10 +92,7 @@ impl CompanionPostTurnMemoryBatch {
             .iter()
             .map(|(id, _)| *id)
             .collect::<std::collections::HashSet<_>>();
-        (!messages.is_empty()
-            && unique.len() == messages.len()
-            && messages.len() <= lettuce_memory::MAX_DYNAMIC_MEMORY_SOURCE_MESSAGES)
-            .then_some(messages)
+        (!messages.is_empty() && unique.len() == messages.len()).then_some(messages)
     }
 
     #[must_use]
@@ -469,9 +466,7 @@ impl<
     {
         let interval = usize::try_from(summary_message_interval)
             .ok()
-            .filter(|interval| {
-                (1..=lettuce_memory::MAX_DYNAMIC_MEMORY_SOURCE_MESSAGES).contains(interval)
-            })
+            .filter(|interval| *interval >= 1)
             .ok_or(CompanionPostTurnMemoryAdmissionError::InvalidBatch)?;
         let messages = visible_dialogue(self.effects, conversation_id)?;
         if let Some(&(last_assistant, _)) = messages
@@ -542,9 +537,7 @@ impl<
     {
         let interval = usize::try_from(summary_message_interval)
             .ok()
-            .filter(|interval| {
-                (1..=lettuce_memory::MAX_DYNAMIC_MEMORY_SOURCE_MESSAGES).contains(interval)
-            })
+            .filter(|interval| *interval >= 1)
             .ok_or(CompanionPostTurnMemoryAdmissionError::InvalidBatch)?;
         if run_mode == DynamicMemoryRunMode::Manual {
             return Ok(None);
@@ -1033,7 +1026,6 @@ mod tests {
         fn list_for_conversation(
             &self,
             conversation_id: ConversationId,
-            limit: u16,
         ) -> Result<Vec<CompanionTurnEffect>, CompanionTurnEffectRepositoryError> {
             let mut effects = self
                 .0
@@ -1044,7 +1036,6 @@ mod tests {
                 .cloned()
                 .collect::<Vec<_>>();
             effects.sort_by_key(|effect| (effect.created_at, effect.id));
-            effects.truncate(usize::from(limit));
             Ok(effects)
         }
 

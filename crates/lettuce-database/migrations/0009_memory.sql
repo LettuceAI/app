@@ -34,7 +34,7 @@ CREATE TABLE memory_summaries (
     conversation_id TEXT NOT NULL,
     text TEXT NOT NULL CHECK (
         length(trim(text)) > 0
-        AND length(CAST(text AS BLOB)) <= 6000
+        AND length(CAST(text AS BLOB)) <= 8388608
     ),
     token_count INTEGER NOT NULL CHECK (token_count BETWEEN 0 AND 4294967295),
     window_start INTEGER NOT NULL CHECK (window_start >= 0),
@@ -49,7 +49,7 @@ CREATE TABLE memory_summary_source_messages (
     space_id TEXT NOT NULL,
     conversation_id TEXT NOT NULL,
     message_id TEXT NOT NULL,
-    ordinal INTEGER NOT NULL CHECK (ordinal BETWEEN 0 AND 1023),
+    ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
     PRIMARY KEY (space_id, ordinal),
     UNIQUE (space_id, message_id),
     FOREIGN KEY (space_id, conversation_id)
@@ -65,7 +65,7 @@ CREATE TABLE memory_items (
     ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
     text TEXT NOT NULL CHECK (
         length(trim(text)) > 0
-        AND length(CAST(text AS BLOB)) <= 16384
+        AND length(CAST(text AS BLOB)) <= 8388608
     ),
     category TEXT NOT NULL CHECK (category IN (
         'character_trait', 'relationship', 'plot_event',
@@ -117,7 +117,7 @@ CREATE TABLE memory_embedding_projections (
     dimensions INTEGER NOT NULL CHECK (dimensions IN (64, 128, 256, 512, 768)),
     source_text TEXT NOT NULL CHECK (
         length(trim(source_text)) > 0
-        AND length(CAST(source_text AS BLOB)) <= 16384
+        AND length(CAST(source_text AS BLOB)) <= 8388608
     ),
     status TEXT NOT NULL CHECK (status IN ('ready', 'repair_needed')),
     vector BLOB,
@@ -208,7 +208,7 @@ CREATE TABLE dynamic_memory_run_source_messages (
     revision_id TEXT,
     candidate_id TEXT,
     effective_time INTEGER NOT NULL,
-    ordinal INTEGER NOT NULL CHECK (ordinal BETWEEN 0 AND 1023),
+    ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
     PRIMARY KEY (run_id, ordinal),
     UNIQUE (run_id, message_id),
     FOREIGN KEY (run_id, conversation_id)
@@ -321,7 +321,7 @@ CREATE TABLE dynamic_memory_inference_rounds (
     provider_reported_cost REAL CHECK (provider_reported_cost IS NULL OR (provider_reported_cost >= 0 AND provider_reported_cost <= 1.7976931348623157e308)),
     run_id TEXT NOT NULL,
     attempt_id TEXT NOT NULL,
-    ordinal INTEGER NOT NULL CHECK (ordinal BETWEEN 0 AND 63),
+    ordinal INTEGER NOT NULL CHECK (ordinal BETWEEN 0 AND 99),
     first_call_ordinal INTEGER NOT NULL CHECK (first_call_ordinal BETWEEN 0 AND 4096),
     call_count INTEGER NOT NULL CHECK (call_count BETWEEN 0 AND 64),
     request_context_json TEXT NOT NULL CHECK (
@@ -361,7 +361,7 @@ CREATE TABLE dynamic_memory_inference_rounds (
 CREATE TABLE dynamic_memory_admitted_tool_calls (
     run_id TEXT NOT NULL,
     attempt_id TEXT NOT NULL,
-    round_ordinal INTEGER NOT NULL CHECK (round_ordinal BETWEEN 0 AND 63),
+    round_ordinal INTEGER NOT NULL CHECK (round_ordinal BETWEEN 0 AND 99),
     id TEXT NOT NULL,
     ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
     definition_name TEXT NOT NULL CHECK (
@@ -408,7 +408,7 @@ CREATE UNIQUE INDEX dynamic_memory_admitted_tool_calls_provider_id_uq
 CREATE TABLE dynamic_memory_background_round_settlements (
     run_id TEXT NOT NULL,
     attempt_id TEXT NOT NULL,
-    round_ordinal INTEGER NOT NULL CHECK (round_ordinal BETWEEN 0 AND 63),
+    round_ordinal INTEGER NOT NULL CHECK (round_ordinal BETWEEN 0 AND 99),
     space_id TEXT NOT NULL REFERENCES memory_spaces(id) ON DELETE RESTRICT,
     expected_memory_revision INTEGER NOT NULL CHECK (expected_memory_revision >= 1),
     resulting_memory_revision INTEGER NOT NULL CHECK (resulting_memory_revision >= expected_memory_revision),
@@ -427,7 +427,7 @@ CREATE TABLE dynamic_memory_background_round_settlements (
 CREATE TABLE dynamic_memory_background_tool_results (
     run_id TEXT NOT NULL,
     attempt_id TEXT NOT NULL,
-    round_ordinal INTEGER NOT NULL CHECK (round_ordinal BETWEEN 0 AND 63),
+    round_ordinal INTEGER NOT NULL CHECK (round_ordinal BETWEEN 0 AND 99),
     call_id TEXT NOT NULL,
     ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
     outcome_json TEXT NOT NULL CHECK (

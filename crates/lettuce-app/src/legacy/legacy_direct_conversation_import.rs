@@ -14,8 +14,7 @@ use lettuce_conversations::{
     UsageRecord, UsageUnavailableReason,
 };
 use lettuce_memory::{
-    MAX_MEMORY_SUMMARY_SOURCE_MESSAGES, MemoryCategory, MemoryItem, MemoryShortId,
-    MemorySpaceSnapshot, MemorySummary, Score,
+    MemoryCategory, MemoryItem, MemoryShortId, MemorySpaceSnapshot, MemorySummary, Score,
 };
 use lettuce_transfer::{
     BackupConversation, BackupMemoryProjection, BackupMemoryProjectionState, BackupMemorySpace,
@@ -1364,14 +1363,13 @@ fn memory_space(
                     messages[..=anchor].iter().filter(in_dialogue).count()
                 })
                 .clamp(1, dialogue.len());
-            let start = end - end.min(MAX_MEMORY_SUMMARY_SOURCE_MESSAGES);
             Ok::<_, Error>(MemorySummary {
                 space_id,
                 text: text.to_owned(),
                 token_count: u32::try_from(summary_token_count).unwrap_or(u32::MAX),
-                window_start: u64::try_from(start).map_err(|_| Error::InvalidInput)?,
+                window_start: 0,
                 window_end: u64::try_from(end).map_err(|_| Error::InvalidInput)?,
-                source_message_ids: dialogue[start..end].to_vec(),
+                source_message_ids: dialogue[..end].to_vec(),
                 updated_at,
             })
         })

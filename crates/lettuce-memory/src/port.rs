@@ -175,7 +175,6 @@ pub trait DynamicMemoryRunRepository: Send + Sync {
     fn list_dynamic_memory_runs(
         &self,
         _conversation_id: ConversationId,
-        _limit: u16,
     ) -> Result<Vec<DynamicMemoryRun>, DynamicMemoryRunRepositoryError> {
         Err(DynamicMemoryRunRepositoryError::Invalid)
     }

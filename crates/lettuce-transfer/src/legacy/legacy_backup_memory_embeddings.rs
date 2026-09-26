@@ -9,7 +9,7 @@ use crate::{
 };
 
 const JSON_LIMIT: usize = 256 * 1024 * 1024;
-const TEXT_LIMIT: usize = 16 * 1024;
+const TEXT_LIMIT: usize = lettuce_memory::MAX_MEMORY_TEXT_BYTES;
 
 #[derive(Debug)]
 pub struct LegacyBackupMemoryEmbeddingPlan {

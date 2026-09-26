@@ -3,7 +3,7 @@ use lettuce_types::{MemoryId, MemorySpaceId, TimestampMillis};
 use crate::{EmbeddingDimensions, EmbeddingVector};
 
 const MAX_SOURCE_REVISION_BYTES: usize = 128;
-const MAX_SOURCE_TEXT_BYTES: usize = 16 * 1024;
+const MAX_SOURCE_TEXT_BYTES: usize = 8 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MemoryEmbeddingProjection {

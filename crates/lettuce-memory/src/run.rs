@@ -14,9 +14,8 @@ use crate::{
     DynamicMemoryToolOptions, dynamic_memory_tool_request_for_run, dynamic_memory_tool_shape,
 };
 
-pub const MAX_DYNAMIC_MEMORY_SOURCE_MESSAGES: usize = 1024;
-/// Storage bound for recursive memory rounds; the user's hard cap applies below it.
-pub const MAX_DYNAMIC_MEMORY_INFERENCE_ROUNDS: u8 = 64;
+/// Legacy's largest recursive memory loop hard cap; the user's cap applies below it.
+pub const MAX_DYNAMIC_MEMORY_INFERENCE_ROUNDS: u8 = 100;
 pub const MAX_DYNAMIC_MEMORY_ATTEMPT_TOOL_CALLS: usize = 4096;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -120,7 +119,6 @@ impl DynamicMemoryRun {
     pub fn validate(&self) -> Result<(), DynamicMemoryRunError> {
         self.summary_window.validate(self.source_messages.len())?;
         if self.source_messages.is_empty()
-            || self.source_messages.len() > MAX_DYNAMIC_MEMORY_SOURCE_MESSAGES
             || self
                 .source_messages
                 .iter()
