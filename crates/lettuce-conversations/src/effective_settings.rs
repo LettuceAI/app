@@ -284,8 +284,7 @@ fn current_or_lorebooks_value(
 
 /// A group conversation's own lorebook selection, an empty one included,
 /// replaces only the group's books; the speaker's books still follow unless
-/// the group disables them, as legacy's session `lorebook_ids` did
-/// (`get_group_active_lorebook_entries`).
+/// the group disables them.
 fn group_lorebooks(
     conversation: &Conversation,
     group: Vec<LorebookLaunchSnapshot>,

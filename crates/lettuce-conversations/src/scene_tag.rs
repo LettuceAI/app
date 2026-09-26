@@ -1,5 +1,4 @@
-//! The scene tag a model writes into a direct chat reply, `<img>…</img>`
-//! (legacy `sceneImageProtocol.ts`).
+//! The scene tag a model writes into a direct chat reply, `<img>…</img>`.
 
 const SCENE_TAG_OPEN: &str = "<img>";
 const SCENE_CLOSE_TOKENS: [&str; 3] = ["</img>", "[continue]", "[/continue]"];

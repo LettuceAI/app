@@ -96,8 +96,8 @@ pub enum ConversationBackground {
 pub struct CurrentConversationSettings {
     #[serde(default)]
     pub companion_clock: Option<crate::CompanionClockSettings>,
-    /// Model settings this conversation overrides (legacy session
-    /// `advanced_model_settings`).
+    /// Model settings this conversation overrides
+    /// (`advanced_model_settings`).
     #[serde(
         default,
         skip_serializing_if = "lettuce_models::ModelSettingsLayer::is_empty"
@@ -124,19 +124,17 @@ pub struct CurrentConversationSettings {
     pub persona_provenance: crate::commands::SettingProvenance,
     pub scene: Option<crate::snapshot::SceneLaunchSnapshot>,
     pub scene_provenance: crate::commands::SettingProvenance,
-    /// A group conversation's own speaker-selection method; legacy edited it
-    /// per session.
+    /// A group conversation's own speaker-selection method.
     #[serde(default)]
     pub speaker_selection: Option<crate::snapshot::GroupSpeakerSelectionSnapshot>,
     #[serde(default)]
     pub speaker_selection_provenance: crate::commands::SettingProvenance,
     /// A group conversation's own chat mode, a current override of the
-    /// group's (legacy session `chatType` override); `None` follows the group.
+    /// group's; `None` follows the group.
     #[serde(default)]
     pub chat_mode: Option<crate::snapshot::GroupChatModeSnapshot>,
     /// A group conversation's own character-lorebook switch, a current
-    /// override of the group's (legacy session `disableCharacterLorebooks`
-    /// override); `None` follows the group.
+    /// override of the group's; `None` follows the group.
     #[serde(default)]
     pub disable_character_lorebooks: Option<bool>,
 }

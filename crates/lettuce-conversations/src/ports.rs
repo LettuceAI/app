@@ -1106,8 +1106,8 @@ pub trait ConversationRepository: ConversationCreator {
     ) -> Result<AttachAttemptJobResult, ConversationRepositoryError>;
     /// Records the model, prompt, lorebooks and memory the attempt uses. A
     /// later attempt of the same turn (a recovery child) replaces the record
-    /// with what it reads then, like a legacy retry using what was saved at
-    /// that moment, so the turn records what its running attempt used.
+    /// with what it reads then, so the turn records what its running attempt
+    /// used.
     fn prepare_generation(
         &self,
         command: &PrepareGeneration,
@@ -1223,8 +1223,7 @@ pub struct ContextRequest {
     pub prompt_values: PromptRuntimeValues,
     /// The turn's reference time: the companion clock's effective now, or
     /// the wall clock without one. The companion state and scheduled notes
-    /// are rendered at it, as legacy rendered them at
-    /// `companion_effective_now`.
+    /// are rendered at it.
     pub reference_time: TimestampMillis,
     pub memory: Option<MemoryContribution>,
     pub timeline: Vec<TimelineItem>,
@@ -1334,9 +1333,8 @@ pub struct PromptRuntimeFacts {
     pub dynamic_memory_enabled: bool,
     /// Whether this turn asks its model to reason: the user's setting, not
     /// the model's capability. A direct chat resolves the conversation's
-    /// setting, then the model's (legacy `resolve_reasoning_enabled`); a group
-    /// chat reads only the model's own setting (legacy group condition
-    /// context).
+    /// setting, then the model's; a group chat reads only the model's own
+    /// setting.
     pub reasoning_enabled: bool,
     pub has_active_scheduled_note: bool,
     pub time_awareness_enabled: bool,
@@ -1381,9 +1379,8 @@ impl PromptRuntimeFacts {
 /// derive from booleans. `None` means the value is unavailable; the assembler
 /// must not manufacture a replacement.
 /// How a subject of a local scene image is named in the chat prompt's scene
-/// protocol (legacy `local_scene_subject_binding`): by its LoRA's trigger
-/// keywords (empty when the LoRA has none), or by the generic subject filler
-/// when it has no LoRA.
+/// protocol: by its LoRA's trigger keywords (empty when the LoRA has none),
+/// or by the generic subject filler when it has no LoRA.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SceneLoraBinding {
     Keywords(String),
@@ -1525,7 +1522,7 @@ pub struct MemoryObservation {
     pub relative: RelativeTime,
 }
 
-/// The legacy relative-time buckets for an observation.
+/// The relative-time buckets for an observation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RelativeTime {
     JustNow,
@@ -1801,7 +1798,7 @@ pub struct InferenceRequest {
     pub media_grants: Vec<lettuce_types::AssetId>,
     pub tools: Option<crate::ToolRequest>,
     /// Lets a local runtime reuse the previous turn's prompt; set to the
-    /// conversation for chat turns, as legacy used the session id.
+    /// conversation for chat turns.
     #[serde(default)]
     pub prompt_cache_key: Option<String>,
 }
@@ -1946,7 +1943,7 @@ pub struct InferenceUsage {
 }
 
 impl InferenceUsage {
-    /// The reported total, else input plus output (legacy's fallback).
+    /// The reported total, else input plus output.
     #[must_use]
     pub const fn effective_total_tokens(&self) -> u64 {
         match self.total_tokens {

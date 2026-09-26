@@ -824,7 +824,7 @@ pub enum DescendantPolicy {
     Fork,
 }
 
-/// Metadata only: an in-flight generation keeps running, matching legacy.
+/// Metadata only: an in-flight generation keeps running.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ArchiveConversation {
