@@ -131,6 +131,7 @@ impl<
         .run(
             dispatch.run.id,
             dispatch.attempt.id,
+            admission.batch.window_selection,
             summary_prompt,
             handle,
             stream_sink,

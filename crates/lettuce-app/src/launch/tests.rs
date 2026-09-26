@@ -2578,6 +2578,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     .run(
         dispatch.run.id,
         dispatch.attempt.id,
+        work.admission.batch.window_selection,
         &summary_prompt,
         &work.handle,
         None,

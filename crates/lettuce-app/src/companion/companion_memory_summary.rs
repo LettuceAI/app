@@ -79,6 +79,7 @@ impl<
         &self,
         run_id: DynamicMemoryRunId,
         attempt_id: DynamicMemoryAttemptId,
+        window_selection: crate::CompanionMemoryWindowSelection,
         prompt: &PromptDocument,
         handle: &JobHandle,
         stream_sink: Option<RequestId>,
@@ -124,12 +125,13 @@ impl<
             .repository
             .get_summary(run.space_id)
             .map_err(CompanionMemoryInferenceError::Memory)?;
-        if self
-            .repository
-            .summary_cursor(run.space_id, run.conversation_id)
-            .map_err(CompanionMemoryInferenceError::Memory)?
-            > run.summary_window.end
-        {
+        if window_already_summarized(
+            self.repository
+                .summary_cursor(run.space_id, run.conversation_id)
+                .map_err(CompanionMemoryInferenceError::Memory)?,
+            run.summary_window,
+            window_selection,
+        ) {
             return Err(CompanionMemoryInferenceError::InvalidOwnership);
         }
         let sources = materialize_sources(self.conversations, &run)?;
@@ -282,6 +284,21 @@ impl<
         let provider_request_id = outcome.provider_request_id.clone();
         cleanup_outcome_replays(self.repository, &outcome)?;
         Ok((text, fallback_context, usage, provider_request_id))
+    }
+}
+
+/// Whether a newer run already summarized past this run's window, so its
+/// summary must not replace the newer one. An automatic window starts at the
+/// cursor it was admitted at; a forced recent window may re-cover summarized
+/// messages and is stale only once the cursor passed its end.
+fn window_already_summarized(
+    cursor: u64,
+    window: lettuce_memory::DynamicMemorySummaryWindow,
+    selection: crate::CompanionMemoryWindowSelection,
+) -> bool {
+    match selection {
+        crate::CompanionMemoryWindowSelection::Automatic => cursor > window.start,
+        crate::CompanionMemoryWindowSelection::Recent => cursor > window.end,
     }
 }
 
@@ -727,6 +744,21 @@ mod tests {
             .expect("partial usage");
         assert_eq!(partial.cached_input_tokens, None);
         assert_eq!(partial.reasoning_tokens, None);
+    }
+
+    #[test]
+    fn a_covered_automatic_window_never_replaces_the_newer_summary() {
+        let window = lettuce_memory::DynamicMemorySummaryWindow {
+            message_interval: 2,
+            start: 2,
+            end: 4,
+        };
+        let automatic = crate::CompanionMemoryWindowSelection::Automatic;
+        let recent = crate::CompanionMemoryWindowSelection::Recent;
+        assert!(!super::window_already_summarized(2, window, automatic));
+        assert!(super::window_already_summarized(4, window, automatic));
+        assert!(!super::window_already_summarized(4, window, recent));
+        assert!(super::window_already_summarized(6, window, recent));
     }
 
     #[test]
