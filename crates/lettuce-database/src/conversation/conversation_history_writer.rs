@@ -453,29 +453,35 @@ pub(crate) fn insert_snapshot_refs(
     Ok(())
 }
 
+/// The model snapshots a turn records: its requested override, the model it
+/// resolved and the model its speaker decision used.
+pub(crate) fn turn_model_references(
+    turn: &GenerationTurn,
+) -> impl Iterator<Item = &ProtectedSnapshotRef> {
+    [
+        turn.requested_model_override.as_ref(),
+        turn.resolved_model.as_ref(),
+        turn.selected_speaker
+            .as_ref()
+            .and_then(|speaker| speaker.decision_model.as_ref()),
+    ]
+    .into_iter()
+    .flatten()
+    .map(|model| &model.snapshot_ref)
+}
+
 /// Attaches the model snapshots the turns and their speaker dispatches
 /// recorded, so they belong to the conversation like the ones generation
 /// attached.
-fn insert_turn_snapshot_refs(
+pub(crate) fn insert_turn_snapshot_refs(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
     turns: &[GenerationTurn],
     runtime: &[lettuce_transfer::BackupGenerationAttemptRuntime],
 ) -> Result<(), ConversationRepositoryError> {
     let mut references = BTreeMap::<SnapshotArtifactId, &ProtectedSnapshotRef>::new();
-    for turn in turns {
-        for model in [
-            turn.requested_model_override.as_ref(),
-            turn.resolved_model.as_ref(),
-            turn.selected_speaker
-                .as_ref()
-                .and_then(|speaker| speaker.decision_model.as_ref()),
-        ]
-        .into_iter()
-        .flatten()
-        {
-            references.insert(model.snapshot_ref.artifact_id, &model.snapshot_ref);
-        }
+    for reference in turns.iter().flat_map(turn_model_references) {
+        references.insert(reference.artifact_id, reference);
     }
     for model in runtime.iter().filter_map(|attempt| {
         attempt

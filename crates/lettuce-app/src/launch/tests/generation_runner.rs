@@ -2117,6 +2117,203 @@ async fn a_speaker_decision_model_is_attached_through_restore_until_purge() {
     );
 }
 
+fn apply_batch(to: &Database, changes: &[lettuce_sync::CanonicalChange], at: i64) {
+    use lettuce_sync::{IncomingBatchState, IncomingChangeRepository};
+    let id = lettuce_types::OperationId::new();
+    to.stage_incoming_batch(
+        lettuce_sync::SyncDeviceId::new(),
+        id,
+        &lettuce_sync::canonical_batch_hash(changes),
+        changes,
+        TimestampMillis::new(at),
+    )
+    .expect("stage");
+    assert_eq!(
+        to.apply_incoming_batch(id, TimestampMillis::new(at))
+            .expect("apply")
+            .state,
+        IncomingBatchState::Committed
+    );
+}
+
+/// Syncs everything but the held snapshot artifacts, which the batch is
+/// resequenced to send last, checks the turn waits for them, then sends them
+/// and checks the turn merges.
+fn sync_turn_before_its_snapshots(
+    from: &Database,
+    to: &Database,
+    turn_id: GenerationTurnId,
+    held: &[&lettuce_conversations::ProtectedSnapshotRef],
+    at: i64,
+) {
+    use lettuce_sync::LocalChangeJournal;
+    from.journal_current_state(TimestampMillis::new(at))
+        .expect("scan source");
+    to.journal_current_state(TimestampMillis::new(at))
+        .expect("scan target");
+    let batch = from
+        .outbound_changes(
+            &to.local_frontier().expect("frontier"),
+            lettuce_sync::MAX_OUTBOUND_CHANGES,
+            lettuce_sync::MAX_OUTBOUND_PAYLOAD_BYTES,
+        )
+        .expect("outbound");
+    let held_ids = held
+        .iter()
+        .map(|reference| reference.artifact_id.to_string())
+        .collect::<Vec<_>>();
+    let (late, early): (Vec<_>, Vec<_>) = batch.changes.into_iter().partition(|change| {
+        change.entity().kind() == lettuce_sync::CONVERSATION_SNAPSHOT_SYNC_KIND
+            && held_ids.iter().any(|id| id == change.entity().id())
+    });
+    assert_eq!(
+        late.len(),
+        held_ids.len(),
+        "every held snapshot is journaled"
+    );
+    let resequenced = early
+        .into_iter()
+        .chain(late)
+        .zip(1..)
+        .map(|(change, sequence)| {
+            lettuce_sync::CanonicalChange::new(
+                change.id(),
+                change.origin_device(),
+                sequence,
+                change.timestamp(),
+                lettuce_sync::CausalFrontier::new(),
+                change.entity().clone(),
+                change.operation(),
+                change.base_revision().cloned(),
+                change.payload().cloned(),
+            )
+            .expect("resequenced change")
+        })
+        .collect::<Vec<_>>();
+    let (early, late) = resequenced.split_at(resequenced.len() - held_ids.len());
+    apply_batch(to, early, at);
+    assert!(
+        ConversationReader::get_turn(to, turn_id).is_err(),
+        "the turn waits for its model snapshots"
+    );
+    apply_batch(to, late, at + 1);
+    assert_eq!(
+        ConversationReader::get_turn(to, turn_id)
+            .expect("merged turn")
+            .status,
+        GenerationTurnStatus::Succeeded
+    );
+}
+
+#[tokio::test]
+async fn a_synced_speaker_decision_waits_for_its_model_snapshot_and_attaches_it() {
+    let source = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("source");
+    let target = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("target");
+    let (scenario, speakers) = group_scenario(
+        &source,
+        "synced-decision",
+        lettuce_characters::SpeakerSelection::Llm,
+        false,
+    );
+    let work = admit_and_claim(source.database(), &scenario, 1_015);
+    let inference = scripted(vec![
+        call_outcome(
+            "synced-decision-selection",
+            "select_next_speaker",
+            serde_json::json!({ "character_id": speakers[1] }),
+            (15, 2),
+        ),
+        text_outcome("synced-decision-generation", "Group reply.", 20, 4),
+    ]);
+    let engine = ScenarioEmbeddingEngine;
+    let result = source
+        .prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
+        .run(
+            &work,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_020),
+        )
+        .await
+        .expect("run LLM-selected group generation");
+    let decision_model = result
+        .turn
+        .selected_speaker
+        .and_then(|decision| decision.decision_model)
+        .expect("decision model");
+    sync_turn_before_its_snapshots(
+        source.database(),
+        target.database(),
+        scenario.turn_id,
+        &[&decision_model.snapshot_ref],
+        2_000,
+    );
+    assert_eq!(
+        ConversationReader::get_turn(target.database(), scenario.turn_id)
+            .expect("synced turn")
+            .selected_speaker
+            .and_then(|decision| decision.decision_model),
+        Some(decision_model.clone())
+    );
+    assert_attached_until_purged(
+        target.database(),
+        scenario.conversation_id,
+        &decision_model.snapshot_ref,
+    );
+}
+
+#[tokio::test]
+async fn a_synced_turn_waits_for_its_live_model_snapshot_and_attaches_it() {
+    let source = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("source");
+    let target = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("target");
+    let database = source.database();
+    let scenario = scenario_with_resolvable_profile(database, false, "synced-live-model", true);
+    let switched = seed_model(database, ProviderProtocol::Ollama, "ollama");
+    let mut model = ModelProfileRepository::get(database, switched)
+        .expect("model")
+        .expect("model exists");
+    let revision = model.revision;
+    model.config.chat_parameters.temperature = None;
+    model.config.capabilities.streaming = lettuce_models::CapabilityStatus::Supported;
+    ModelProfileRepository::upsert(database, model, Some(revision)).expect("resolvable model");
+    set_application_default_model(database, switched);
+    let inference = scripted(vec![text_outcome(
+        "synced-live-model",
+        "Live reply.",
+        12,
+        3,
+    )]);
+    let engine = ScenarioEmbeddingEngine;
+    let clock = FakeClock::new(TimestampMillis::new(1_020));
+    let outcome = source
+        .prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
+        .execute(
+            execution_request(&scenario, CancellationToken::new()),
+            &clock,
+        )
+        .await
+        .expect("execute generation");
+    let ConversationGenerationExecutionOutcome::Settled(
+        ConversationGenerationSettledWork::Succeeded { result, .. },
+    ) = outcome
+    else {
+        panic!("generation succeeds");
+    };
+    let resolved = result.turn.resolved_model.expect("resolved model");
+    assert_eq!(resolved.source_id, switched);
+    sync_turn_before_its_snapshots(
+        database,
+        target.database(),
+        scenario.turn_id,
+        &[&resolved.snapshot_ref],
+        2_000,
+    );
+    assert_attached_until_purged(
+        target.database(),
+        scenario.conversation_id,
+        &resolved.snapshot_ref,
+    );
+}
+
 #[tokio::test]
 async fn app_backend_checkpoints_llm_group_selection_and_falls_back_to_heuristic() {
     for (name, selection, expected_method, expected_fallback) in [
