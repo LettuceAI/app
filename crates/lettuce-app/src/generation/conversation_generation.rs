@@ -1795,13 +1795,12 @@ impl<
     }
 
     /// Fails a queued generation job whose turn or attempt cannot be
-    /// resolved. The turn it names is settled only when its live attempt has
-    /// no job or is this job's: a turn that had not started is cancelled, any
-    /// other fails. A live attempt with another job is left to that job.
+    /// resolved. The turn it names is left alone: a live attempt either owns
+    /// another job or is still being admitted, and restart recovery settles
+    /// anything left behind.
     pub fn fail_unresolvable_job(
         &self,
         job: &JobSnapshot,
-        turn: Option<&GenerationTurn>,
         now: TimestampMillis,
     ) -> Result<(), ConversationGenerationDispatchError> {
         let at = now.max(job.updated_at);
@@ -1829,20 +1828,7 @@ impl<
                 at,
             })?;
         }
-        let Some(turn) = turn else {
-            return Ok(());
-        };
-        let live_job = turn
-            .attempts
-            .iter()
-            .rev()
-            .find(|attempt| !is_terminal_attempt(attempt.status))
-            .map(|attempt| attempt.job_id);
-        match live_job {
-            Some(None) => self.settle_unrunnable_turn(turn, at),
-            Some(Some(job_id)) if job_id == job.id => self.settle_unrunnable_turn(turn, at),
-            _ => Ok(()),
-        }
+        Ok(())
     }
 
     /// Settles a live turn that cannot run, after cancelling its queued job

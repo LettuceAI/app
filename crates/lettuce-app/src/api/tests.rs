@@ -890,37 +890,6 @@ async fn unresolvable_queued_jobs_are_failed_and_do_not_block_the_queue() {
     .await
     .expect("healthy send");
 
-    let stranded = launch(&harness, "launch-stranded").await;
-    let stranded_stream = Arc::new(RecordingStream::default());
-    let impostor = Arc::new(Mutex::new(None));
-    let recorded = impostor.clone();
-    let stranded_send = super::conversations::send_with(
-        &harness.context,
-        dto::ConversationSendRequest {
-            conversation_id: stranded.clone(),
-            text: "Hi".into(),
-            client_operation_id: "stranded-1".into(),
-        },
-        stranded_stream.clone(),
-        move |context, begun, _| {
-            let job = lettuce_jobs::JobStore::create_or_get(
-                context.backend().database(),
-                stray_job_spec("impostor", begun.turn.id),
-            )?
-            .job;
-            *recorded.lock().expect("impostor") = Some(job.id);
-            Ok(crate::ConversationGenerationAdmission {
-                job,
-                attempt: begun.attempt.clone(),
-                created: true,
-            })
-        },
-    )
-    .await
-    .expect("send whose turn never gets its own job");
-    let impostor = impostor.lock().expect("impostor").expect("impostor job");
-    assert!(!can_send(&harness, &stranded).await);
-
     let worker = ConversationGenerationWorker::new(harness.context.clone());
     let mut runs = 0;
     while worker.run_once().await.expect("worker step") {
@@ -934,27 +903,6 @@ async fn unresolvable_queued_jobs_are_failed_and_do_not_block_the_queue() {
     assert_eq!(
         job_state(&harness, orphan.id),
         lettuce_jobs::JobState::Failed
-    );
-    assert_eq!(
-        job_state(&harness, impostor),
-        lettuce_jobs::JobState::Failed
-    );
-    assert!(can_send(&harness, &stranded).await);
-    assert_eq!(
-        stranded_stream.events(),
-        vec![GenerationEvent::Cancelled {
-            turn_id: stranded_send.turn_id.clone()
-        }]
-    );
-    assert!(api_events(&harness).contains(&ApiEvent::GenerationSettled {
-        conversation_id: stranded.clone(),
-        turn_id: stranded_send.turn_id.clone(),
-    }));
-    assert!(
-        harness
-            .context
-            .stream(stranded_send.turn_id.parse().expect("turn id"))
-            .is_none()
     );
 }
 
@@ -980,12 +928,11 @@ async fn an_orphan_job_naming_a_turn_leaves_its_healthy_job_alone() {
     )
     .expect("orphan job")
     .job;
-    let turn = ConversationReader::get_turn(database, healthy.turn_id).expect("turn");
     harness
         .context
         .backend()
         .conversation_generation_dispatcher()
-        .fail_unresolvable_job(&orphan, Some(&turn), harness.context.now())
+        .fail_unresolvable_job(&orphan, harness.context.now())
         .expect("orphan failed");
     assert_eq!(
         job_state(&harness, orphan.id),

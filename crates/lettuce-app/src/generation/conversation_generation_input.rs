@@ -384,7 +384,7 @@ where
         );
         if let Err(error) =
             ConversationGenerationDispatchCoordinator::new(self.repository, self.repository)
-                .fail_unresolvable_job(job, turn, now)
+                .fail_unresolvable_job(job, now)
         {
             tracing::error!(
                 %error,
