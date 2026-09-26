@@ -450,7 +450,10 @@ attempt that already admitted its request resumes that request unchanged, while
 a recovery child (a new attempt after an interruption) resolves its model and
 builds its context afresh and records them on the turn in place of the earlier
 attempt's (`prepare_generation`), so a live edit between the attempts never makes
-the retry conflict. Each attempt's admitted request keeps the model, prompt,
+the retry conflict. An attempt resumed after its preparation but before its
+request was admitted, whose saved inputs changed meanwhile, sends nothing and
+ends pending, so the recovery child re-records and builds the request. Each
+attempt's admitted request keeps the model, prompt,
 lorebooks and memory that attempt used, and the turn records those of its
 latest attempt.
 Context assembly reads the current authored Soul/prompting config, character-owned

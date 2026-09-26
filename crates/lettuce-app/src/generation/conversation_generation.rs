@@ -641,6 +641,16 @@ impl<
             && turn.prompt == input.attributions.prompt
             && turn.lorebooks == input.attributions.lorebooks
             && turn.memory == input.attributions.memory;
+        if matches!(
+            turn.status,
+            GenerationTurnStatus::ContextPrepared | GenerationTurnStatus::Running
+        ) && turn.resolved_model.is_some()
+            && !recorded
+        {
+            return Err(ConversationGenerationRunError::Pending {
+                evidence: GenerationUsageEvidence::None,
+            });
+        }
         if turn.status == GenerationTurnStatus::Recovering
             && turn.resolved_model.is_some()
             && recorded

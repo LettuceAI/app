@@ -1255,8 +1255,8 @@ mod tests {
             lorebooks_overridden: false,
             disable_character_lorebooks: true,
             author_note: None,
-            config_overrides_json: r#"{"chatType":"conversation","disableCharacterLorebooks":true}"#
-                .to_owned(),
+            config_overrides_json:
+                r#"{"chatType":"conversation","disableCharacterLorebooks":true}"#.to_owned(),
             memories_json: "[]".to_owned(),
             memory_embeddings_json: "[]".to_owned(),
             memory_summary: String::new(),

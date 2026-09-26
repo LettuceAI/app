@@ -7705,3 +7705,85 @@ async fn a_group_reasoning_condition_reads_only_the_models_own_setting() {
         "{system_texts:?}"
     );
 }
+
+#[tokio::test]
+async fn a_resumed_attempt_whose_saved_inputs_changed_after_preparation_recovers_instead_of_sending()
+ {
+    let database = database();
+    let scenario = scenario(&database, false, "resumed-changed");
+    let work = admit_and_claim(&database, &scenario, 1_015);
+    let job_id = work.handle.id();
+    let token = |name: &str| OperationToken {
+        key: key(name),
+        request_digest: ContentHash::parse("ef".repeat(32)).expect("digest"),
+    };
+    let stage = |revision, sequence, status, name: &str| {
+        database
+            .append_event(
+                scenario.turn_id,
+                revision,
+                &token(name),
+                GenerationCheckpointEnvelope {
+                    turn_id: scenario.turn_id,
+                    attempt_id: scenario.attempt_id,
+                    job_id: Some(job_id),
+                    correlation_id: None,
+                    sequence,
+                    event: GenerationCheckpointEvent::Stage { status },
+                },
+                TimestampMillis::new(1_016),
+            )
+            .expect("stage")
+            .value
+    };
+    let turn = ConversationReader::get_turn(&database, scenario.turn_id).expect("turn");
+    let preparing = stage(
+        turn.revision,
+        1,
+        GenerationTurnStatus::Preparing,
+        "resumed-preparing",
+    );
+    let prepared = database
+        .prepare_generation(
+            &lettuce_conversations::PrepareGeneration {
+                conversation_id: scenario.conversation_id,
+                turn_id: scenario.turn_id,
+                attempt_id: scenario.attempt_id,
+                job_id,
+                expected_revision: ConversationReader::get(&database, scenario.conversation_id)
+                    .expect("conversation")
+                    .conversation
+                    .revision,
+                expected_turn_revision: preparing.revision,
+                operation: token("resumed-prepare"),
+                model: scenario.model.clone(),
+                attributions: lettuce_conversations::ContextAttributions {
+                    memory: Some(lettuce_conversations::MemoryAttribution {
+                        revision_id: lettuce_types::MemoryRevisionId::new(),
+                    }),
+                    ..Default::default()
+                },
+            },
+            TimestampMillis::new(1_017),
+        )
+        .expect("prepare with inputs that later change")
+        .value;
+    stage(
+        prepared.revision,
+        2,
+        GenerationTurnStatus::Running,
+        "resumed-running",
+    );
+    let inference = scripted(vec![text_outcome("resumed-response", "Hi.", 5, 3)]);
+    let error = ConversationGenerationJobRunner::new(&database, &inference)
+        .run(&work, input(&scenario), TimestampMillis::new(1_020))
+        .await
+        .expect_err("a rebuilt request that differs from the record is not sent");
+    assert!(matches!(
+        error,
+        ConversationGenerationRunError::Pending {
+            evidence: GenerationUsageEvidence::None
+        }
+    ));
+    assert!(inference.requests.lock().expect("requests").is_empty());
+}
