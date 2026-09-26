@@ -1,273 +1,103 @@
 # lettuce-companions
 
-Relationship events, projections, growth policies, milestones, and scheduled effects.
+The domain of companion mode: the companion's Soul (durable identity facts that grow over time), its emotional and relationship state, the reducers for the three background model jobs (Soul growth, Soul consolidation, Soul writer), the emotion-classifier signal mapping, the prompt state, scheduled notes, and per-turn effects.
 
-## Boundary
+The crate is pure. It never reads chat storage, renders prompt text or calls a model. It decides what the state is, how a model's tool calls change it, and which facts the prompt should mention; `lettuce-app` coordinates jobs, calls providers, runs the classifier (`lettuce-embeddings`) and renders every model-facing line from the built-in prompt catalog; `lettuce-database` implements the repository ports. Companion features are additive: they sit beside the ordinary chat systems and do not change them.
 
-Does not read chat storage or invoke models directly.
+## Soul
 
-The public surface is intentionally small. Business invariants belong in domain models and use cases; infrastructure is accessed only through narrow ports owned by the calling crate.
+`soul.rs` holds the Soul model.
 
-## Status
+- `CompanionSoulConfig` is what the author writes on a companion character (stored in `lettuce-characters`' defaults document): twelve identity text categories, typed authored facts, baseline affect, regulation style, relationship defaults, prompting (a companion prompt-template reference and style notes), whether time awareness is on for new conversations, and the two sharing toggles `share_memory_across_chats` and `share_soul_growth_across_chats` (both on by default). Serialized field names are camel case.
+- `SoulState` is the durable state: the facts and a revision. A `SoulFact` has a `SoulCategory`, a semantic slot, text, confidence, weight, source ids, evidence count, validity times, a kind (authored, core, growth) and a locked flag. `SoulMutability` per category and `SoulFactPolicy` decide what growth and consolidation may touch.
+- `initial_soul_state` turns authored facts into durable ones (`normalize_authored_fact`): a UUID for a blank id, confidence and weight clamped, a blank slot defaulted to its category, evidence count from the source ids, zero creation and valid-from times filled, historical facts locked.
+- `SoulOwner` says whose Soul a conversation uses. `SoulOwner::for_conversation` returns the character's shared Soul while `share_soul_growth_across_chats` is on, else `SoulOwner::Conversation`, the conversation's own copy.
 
-Growth and consolidation proposal checkpoints now retain optional normalized
-inference usage. Soul-writer rounds retain primary and structured-fallback usage
-separately, without changing draft reduction or counting replay as new inference.
-The existing InferenceUsage value is serializable; missing checkpoint usage
-defaults to None for older saved runs. Cached/reasoning details preserve absence
-versus explicit zero. SQLite app scenarios verify persisted details in all three
-workflows. A separate job-owned usage ledger admits each actual inference dispatch
-before calling the provider and records returned usage before response validation
-or checkpoint reduction. Primary and fallback calls, retries, inference errors,
-and cancellation therefore retain independent evidence. An interrupted dispatch
-without a returned result stays pending, not zero-cost or successful. This covers
-growth, consolidation and Soul-writer coordinators; provider-internal retries and
-automatic pricing capture are not implemented by this ledger.
+### Changing a Soul
 
-Foundation scaffolding is active. Implement behavior with tests before exposing new public APIs, and keep compatibility code at explicit application or migration boundaries.
+Every change is a `SoulChangeSet` applied atomically at one expected revision through `SoulRepository::apply`, which records an immutable idempotency receipt. The pure functions prepare change sets:
 
-The verified companion growth, consolidation, and Soul-writer behavior is
-pinned in `fixtures/legacy-import/companion-tool-scenarios-v1.json`. The pure
-typed Soul/growth policy is active: it carries forward the legacy category
-mutability table, exact `0.55`/`0.70`/`0.85`/`1.0` confidence thresholds,
-confidence/weight clamping, validity rule, semantic-slot supersession, locked
-protection, twelve-active-fact consolidation threshold, and forty-item
-superseded-history bound. The typed boundary deliberately makes a proposed
-growth or consolidation change set atomic at one expected revision. Legacy's
-sixteen-item limit remains a fresh-memory coordinator input limit and is not
-misapplied to the number of proposed Soul facts. Provider calls, prompt
-document rendering, job coordination, database adapters, and frontend events
-remain outside this domain.
+- `prepare_growth_change_set` applies proposed facts. A fact needs confidence above its category's threshold (0.55, 0.70, 0.85 or 1.0 by mutability), confidence and weight are clamped, and a new fact in an occupied semantic slot supersedes the old one unless it is locked.
+- `prepare_consolidation_change_set` applies a consolidation: core adjustments (filtered to allowed categories) and retirements, with the same thresholds and locked protection.
+- `prepare_user_edit` handles the user's own edits: clear all growth (every entry, authored and locked included), remove one entry by stable id, or set an entry's lock. An edit that changes nothing returns `None` and writes nothing. User edits never prune superseded history. The change hash includes user edits only when there are any, so older receipts keep their hashes.
 
-The domain now exposes the same required `record_growth` tool contract and
-reduces the first matching native call or legacy structured-text fallback into
-typed proposals. Source indices preserve the legacy fallback to all supplied
-fresh-memory IDs; the existing Soul reducer remains the only policy path.
-Its growth prompt facts (`growth_prompt_facts`) reuse the existing
-effective-Soul projection and copy the legacy category order, effective facts
-and first sixteen non-blank memories; labels, line formats (zero-based memory
-numbering), empty fallbacks and the tool description are catalog text the
-application renders (`prompt_app_companion_runtime`).
-The domain-owned growth-run port freezes that prompt input, resolved profile,
-successful memory attempt, Soul snapshot/revision, and a stable Soul operation
-ID. Its only checkpoint immutably stores the reduced typed proposals before
-any Soul mutation.
+`apply_change_set` keeps at most 40 superseded records; `validate_state` checks the invariants. The SQLite adapter stores facts and their source and supersession lists in normalized tables and applies the pure policy inside one immediate transaction.
 
-The exact legacy consolidation input is also available without a second policy
-path: the twelve-active-changeable-fact readiness check, authored/core/growth
-prompt facts (rendered by the application from the catalog), required
-`consolidate_soul` schema, first matching native call,
-structured-text fallback, core adjustment filtering, and retirement IDs. Its
-typed output is consumed by the existing atomic
-`prepare_consolidation_change_set`; confidence thresholds, locked retirement
-protection, core-category filtering, and revision behavior stay there.
-The companion-owned consolidation-run port freezes one authoritative
-post-growth Soul snapshot and accepts one immutable typed proposal checkpoint;
-storage and application crates implement admission and execution around that
-domain boundary.
+Soul state belongs to the character by default, so growth is shared across that character's conversations independently of whether memory is shared. When `share_soul_growth_across_chats` is turned off, every companion conversation without a Soul of its own (and any created while it is off) gets a copy of the shared Soul, while a conversation that kept its Soul from an earlier off period resumes it. Turning it back on makes the most recently updated Soul of a still-existing conversation the shared one when it is newer and differs, and keeps the conversation Souls. Leaving or entering companion mode changes nothing, and a synced toggle change only seeds. Growth and consolidation runs record the owner they started with (`soul_conversation_id`), the prompt reads the owner the toggle picks now, and user edits take the owner from their caller.
 
-The pure Soul-writer boundary copies the legacy six-tool required contract and
-working-draft reducer. A partial current JSON value is completed with the same
-zero defaults, known fields are preserved and clamped, calls apply in provider
-order, and the first `done` suppresses later calls. Identity updates remain
-nonblank partial overwrites; affect and regulation values clamp to `[0,1]`;
-relationship closeness, trust, and affection clamp to `[-1,1]`; and tension
-clamps to `[0,1]`. Authored facts retain the legacy `0.7` confidence gate,
-weight default/clamp, generated identity and timestamps, and forced historical
-locking. Prompt rendering, recursion, structured fallback, model selection,
-durable proposal application, and frontend events remain application work.
-The writer prompt-value helper also preserves the exact legacy blank-input
-fallbacks, pretty current-Soul JSON, and final authoring instruction. Its
-structured fallback accepts the legacy JSON object/array aliases and
-`soul_ops`/`operations` XML roots, filters to the six known operations,
-preserves call order, coerces numeric XML fields, and keeps JSON-encoded
-authored facts for the same reducer. Provider fallback dispatch and recursion
-remain outside this pure boundary.
-The domain also owns the explicit preview run port: one job-bound request
-freezes the primary and optional fallback profile, prompt identity/revision,
-exact input values, normalized starting draft, fallback format, and at most
-eight ordered round checkpoints. Each checkpoint records whether the primary
-or fallback profile authored it, fallback rounds cannot return to primary,
-exact round replay is idempotent, completion forbids later rounds, and this
-preview state has no character-Soul mutation capability. The final
-instruction (`SOUL_WRITER_FINAL_INSTRUCTION_KEY`), structured fallback
-instructions (`soul_writer_fallback_prompt_key`,
-`soul_writer_fact_fallback_prompt_key`) and six tool descriptions
-(`SOUL_WRITER_TOOL_TEXT_KEYS`) are catalog keys the application resolves, which
-also supplies the `Not provided.` / `No special direction.` fillers through
-`SoulWriterPromptText`; the parser and reducer stay here.
+## Background jobs
 
-Character-owned scheduled notes now copy the legacy fields and recurrence
-semantics for one-time, daily, weekly, monthly, and yearly activation. Disabled,
-not-yet-available, and end-exclusive expired notes are filtered at the supplied
-effective time; recurrence windows are also end-exclusive. Active notes keep
-the legacy `available_at` then ID order, 1000-character per-note truncation
-and 4000-character block cap measured on the rendered line; the line, the
-truncation marker and the background-context heading are catalog text the
-application passes in (`scheduled_note_lines`).
-The repository port owns list/upsert/delete only; host scheduling and frontend
-commands remain outside this domain.
+Three model-driven jobs change a Soul. Each has a pure tool contract and reducer here, a durable run port whose checkpoint stores typed results before anything is applied, and a coordinator in `lettuce-app`. Tool descriptions and prompt lines are catalog keys the application resolves; the crate only decides the shape.
 
-Durable Soul state is character-owned, matching legacy continuity: companion
-Soul growth is shared across that character's sessions regardless of the
-separate shared-memory setting. `SoulRepository` owns create/load and atomic
-expected-revision change-set application. The SQLite adapter stores facts and
-their source/supersession lists in normalized tables, applies the pure policy
-inside one immediate transaction, bounds superseded history to forty entries,
-and records immutable idempotency receipts. Session, persona, relationship,
-prompt, provider, and frontend coordination remain outside this persistence
-slice.
+### Growth
 
-Authored companion Soul configuration keeps all twelve legacy identity text
-categories and typed authored facts. Initial durable state copies the legacy
-`normalize_for_storage` order directly: generate a UUID for a blank ID, clamp
-confidence and weight, default a blank slot to its category, derive a zero
-evidence count from source IDs, fill zero creation/valid-from timestamps, and
-lock historical facts. The serialized config retains legacy camel-case field
-names.
+After a successful memory run, growth reads fresh memories and records new Soul facts.
 
-Pure typed emotion and relationship state copies the legacy defaults and math
-directly: baseline affect, regulation style, expressed/blocked affect,
-45-minute exponential decay, volatility scaling, momentum interpolation,
-passive tension/stability recovery, and the distinct closeness/trust/affection
-bipolar damage and recovery constants. Authored configuration owns the exact
-baseline affect, regulation style, and relationship defaults consumed by these
-helpers.
+1. `growth_prompt_facts` builds the prompt input from the effective Soul: the categories in `GROWTH_PROMPT_CATEGORIES` order, the effective facts and the first `MAX_GROWTH_MEMORIES` (16) non-blank memories, numbered from zero. Labels, line formats and empty fallbacks are catalog text in `prompt_app_companion_runtime`.
+2. `growth_tool_request` is the required `record_growth` tool. `parse_growth_proposals` takes the first matching native call, or the structured-text fallback, and reduces it into typed proposals. Source indices fall back to all supplied memory ids.
+3. `CompanionGrowthRun` freezes the prompt input, resolved model profile, the successful memory attempt, the Soul snapshot and revision and a stable Soul operation id. Its only checkpoint stores the reduced proposals before any Soul mutation, and the proposals then go through `prepare_growth_change_set`.
 
-`CompanionStateRepository` separates durable ownership the same way as legacy:
-immediate emotional state and signals belong to one conversation, while the
-relationship belongs to the companion character plus the selected persona (or
-the explicit default-persona scope). Relationship continuity is independent of
-the dynamic-memory sharing flag. Both revisions advance in one atomic replace,
-so concurrent sessions for one character/persona cannot lose relationship
-updates; exact operation retries return an immutable receipt. Branches inside
-one conversation naturally retain that conversation's immediate emotional
-state. `PreparedCompanionLaunch` and `CompanionConversationCreator` now let the
-application freeze that initial state and let storage commit it atomically with
-a direct conversation. The same launch boundary persists the character/persona
-continuity sequence, and the state repository exposes the stored episode to
-prompt assembly without deriving it from message history.
+The 16-memory limit is an input limit of the coordinator; it does not limit how many facts a run may propose. A growth or consolidation change set is always atomic at one expected revision.
 
-The pure emotion-classifier reducer keeps the legacy GoEmotions behavior with
-one user-approved change: each `EmotionLabelScore` carries the classifier's
-calibrated threshold for its label (Lettuce Thymos's per-class thresholds from
-its `labels.json`, applied when `score >= threshold`) instead of legacy's
-SamLowe thresholds (`neutral` 0.55; love, caring, gratitude, remorse, anger,
-sadness and fear 0.18; others 0.22). The reducer itself stays pure. Only the
-first eight scored labels are considered, the label-to-signal mapping of all 28
-labels is unchanged, grouped signal names are deduplicated
-while their numeric effects still accumulate, and the exact emotion,
-relationship, confidence, clamping, and unavailable-model fallback values are
-preserved. Verified ONNX tokenization/model execution now lives behind the
-auxiliary-analysis boundary in `lettuce-embeddings`; model discovery, prompt
-rendering and direct companion turn wiring are complete. Provider/job
-coordination and frontend events remain deferred.
+### Consolidation
 
-`PreparedCompanionSend` and `CompanionConversationSender` provide the atomic
-write boundary needed by turn coordination: a prepared state replacement is
-validated against the same conversation as the user send, and storage commits
-the message, generation turn/attempt, dual-scope companion state, operation,
-and outbox together. Exact conversation-operation replay does not reapply the
-state transition. Classification and transition preparation are application
-work rather than storage behavior and are now wired for direct user sends.
+When a Soul has twelve active changeable facts (`consolidation_ready`, `CONSOLIDATION_THRESHOLD`), consolidation asks the model to merge them. `consolidation_prompt_facts` supplies the authored, core and growth facts, `consolidation_tool_request` is the required `consolidate_soul` tool, and `parse_consolidation_proposal` reads the first matching native call or the structured-text fallback into core adjustments and retirement ids, consumed by `prepare_consolidation_change_set`. `CompanionConsolidationRun` freezes one authoritative post-growth Soul snapshot and accepts one immutable proposal checkpoint.
 
-The pure prompt-state function (`prompt_state`) holds no model-facing text: it
-decides the legacy relationship bands (release 2.2.5: seven steps for
-closeness, trust and affection, with a -0.15 neutral floor for closeness and
-trust and -0.25 for affection, plus five tension steps) and keeps each raw
-value for the stance line's score, top expressed/blocked dimensions (0.08
-floor), continuity episode, all twelve authored Soul categories with effective
-durable facts ordered by clamped weight-times-confidence, style notes, active
-signals and the regulation/reassurance branches, and returns them as typed
-facts. The application renders each fact from the built-in
-`prompt_app_companion_runtime` catalog document with legacy wording. It
-accepts typed state and an explicit effective clock. Context
-assembler insertion, companion prompt-template selection, scheduled notes,
-continuity episode hydration, and time-awareness clock resolution are wired.
+### Soul writer
 
-The authored companion configuration also preserves the legacy nested
-`prompting.promptTemplateId` and `prompting.styleNotes` fields. The template ID
-remains a typed prompt-document reference, while style notes feed the exact
-prompt-state renderer without reinterpretation.
-`CompanionSoulConfig.time_awareness` (legacy `timeAwareness` or
-`context.timeAwareness`) is the default for new conversations, like legacy's
-seeded session preference: a companion launch writes an enabled
-`companion_clock` into the new conversation's settings
-(`PreparedCompanionLaunch::with_time_awareness`), and later changes to the
-character leave existing conversations alone.
-`share_memory_across_chats` is legacy `memory.sharedAcrossSessions` (default
-on; a companion-mode character whose legacy config is missing or unreadable
-imports it off, as legacy read it; a null or mistyped `memory` or
-`sharedAcrossSessions` also imports off, as legacy's failed parse did).
-Legacy companion sessions keep their own memories beside the imported pool.
-`share_soul_growth_across_chats` is new
-(default on). The other legacy `memory` keys were never read and are recorded
-as dropped. Memory follows the memory toggle (`lettuce-database` README). Soul growth
-follows `SoulOwner::for_conversation`: the character's Soul while it shares,
-else `SoulOwner::Conversation`, the conversation's own. Growth and
-consolidation runs record the owner they started with
-(`soul_conversation_id`), the prompt reads the owner the toggle picks now, and
-the user edits take the owner from their caller. Turning the toggle off gives
-every companion conversation without a Soul of its own (and one created while
-it is off) a copy of the shared Soul, while a conversation that kept its Soul
-from an earlier off period resumes it; turning it back on makes the most
-recently updated Soul of a conversation that still exists the shared one when
-it is newer and differs, keeping the conversation Souls (user decisions
-2026-09-23). Leaving or entering companion mode changes nothing, and a synced
-toggle change only seeds. Known gap: a growth run admitted before a flip
-still applies to the owner it started with.
+The Soul writer drafts a companion's authored configuration from a description. `soul_writer_tool_request` is a six-tool required contract (`set_identity`, `set_authored_facts`, `set_baseline_affect`, `set_regulation_style`, `set_relationship_defaults`, `done`). `normalize_soul_writer_draft` completes a partial current JSON value with zero defaults and clamps known fields. `reduce_soul_writer_calls` applies calls in provider order until the first `done`: identity updates are non-blank partial overwrites, affect and regulation values clamp to [0, 1], closeness, trust and affection to [-1, 1], tension to [0, 1], and authored facts need confidence 0.7 and get a generated id, timestamps, a default or clamped weight and forced historical locking.
 
-Typed companion turn effects copy their relationship, felt/expressed/blocked,
-and ordered signal changes directly from the existing legacy-math transition;
-there is no second calculation path. The domain port exposes the durable
-processing/ready/failed lifecycle, typed memory changes, and source window.
-Dynamic-memory sends retain a hidden seed with the admitted user turn, while a
-visible processing effect is created only with the durable assistant message.
-Dynamic-memory companion continuations retain the legacy zero-delta seed and
-no user-message owner.
-Failure or cancellation before finalization discards the seed, and exact send
-or finalization replay does not duplicate an effect.
-The application terminal coordinator now settles coalesced effects from
-authoritative before/after memory snapshots and exact source-message IDs while
-copying the legacy summary formula. Worker execution remains application-owned
-follow-up work.
+`soul_writer_prompt_values` builds the input values with blank-input fillers (`SoulWriterPromptText`, e.g. "Not provided."), the pretty current-Soul JSON and the final authoring instruction. `parse_soul_writer_fallback_calls` reads the structured fallback: JSON objects or arrays under several aliases, or `soul_ops`/`operations` XML roots, filtered to the six operations in call order, with numeric XML fields coerced and JSON-encoded authored facts passed to the same reducer.
 
-The repository can list bounded processing effects in stable
-conversation/time/effect order. Those normalized rows are the durable pending
-queue authority; runtime worker jobs can be reconstructed after process loss
-without storing a second copy of the turn seed or source identities.
-`list_processing_for_conversation` lists one conversation's pending effects with
-the status and invalidation filter applied before the page limit, so settled
-history or other conversations can never hide pending work.
-Delete-after rewind marks affected effects as invalidated through an immutable
-overlay. Their original processing/ready/failed evidence remains unchanged for
-audit, while invalidated processing effects no longer appear in the worker
-queue and cannot be settled later.
+`CompanionSoulWriterRun` is a preview run: one job-bound request freezes the primary and optional fallback profile, the prompt identity and revision, the exact input values, the normalized starting draft and the fallback format, and accepts at most eight ordered round checkpoints. Each checkpoint records which profile authored it; fallback rounds cannot go back to primary, an exact round replay is idempotent, and completion forbids later rounds. A preview has no way to change a character's Soul. The coordinator stops the model fallback on run persistence, dispatch evidence and replay cleanup failures; only provider and content failures continue to the alternate model.
 
-The effect, seed, relationship delta, memory-change and source-window values are
-strictly serializable for the versioned full-profile backup boundary. Serialization
-does not add a second effect model or change transition calculations; the same
-validated values used by the repository are exported and checked on backup open.
+### Usage
 
-Soul-writer model fallback stops on run persistence, dispatch evidence and replay
-cleanup failures. Only provider/content failures continue through the existing
-alternate-model policy. Admission/settlement fault injection verifies no extra
-provider call or false checkpoint; a successful later retry retains the pending
-usage record independently from completed dispatches.
+Growth and consolidation checkpoints keep optional normalized inference usage, and Soul-writer rounds keep primary and fallback usage separately; replaying a checkpoint does not count as new inference, and cached and reasoning details keep the difference between absent and zero. Separately, the coordinators admit every actual provider dispatch to a job-owned usage ledger before calling the provider and record returned usage before validating the response, so primary and fallback calls, retries, errors and cancellation each leave their own evidence. A dispatch interrupted before returning stays pending, never zero-cost or successful.
 
-Soul growth user edits (2026-09-23): `SoulChangeSet.user_edits` carries legacy
-`companion_clear_soul_growth` (every entry, authored ones and locked ones
-included), `companion_remove_soul_growth` (one entry, now by its stable id
-instead of list position) and `companion_set_soul_growth_lock`.
-`prepare_user_edit` returns `None` for an edit that changes nothing, where
-legacy answered without a write. The edits go through the CAS-guarded,
-receipt-recorded `SoulRepository::apply`. Change hashes include the edits only
-when there are any, so existing receipts keep their hashes. A locked fact still
-cannot be superseded by growth or consolidation. User edits never prune superseded
-history (legacy's edits did not bound it). Known limit: sync treats an
-authored-only, unsuperseded Soul (including an empty one, which is what a
-companion without authored facts starts from on every device) as an
-untouched seed that loses to a concurrent learned change. So a clear, or an
-edit that leaves only authored facts, made while another device grows the
-Soul concurrently, is overridden by that growth. Telling them apart needs a
-synced "edited by the user" marker in the Soul payload.
+## Emotional and relationship state
+
+`state.rs` holds the live state and its math.
+
+- `EmotionalState` (felt, expressed and blocked `EmotionVector`s plus active signals) belongs to one conversation, so branches inside a conversation share it.
+- `RelationshipState` (closeness, trust, affection, tension, stability) belongs to the companion character plus the selected persona, or an explicit default-persona scope. It is independent of the memory-sharing toggle.
+- `apply_turn` applies a turn's signals: baseline affect, regulation style (`regulate_expressed`), 45-minute exponential decay (`apply_passive_decay`), volatility scaling, momentum interpolation, passive tension and stability recovery, and separate bipolar damage and recovery constants for closeness, trust and affection (`apply_bipolar_delta`).
+
+`CompanionStateRepository` replaces both scopes in one atomic write that advances both revisions, so concurrent conversations of the same character and persona cannot lose relationship updates; an exact operation retry returns the stored receipt. It also stores the continuity episode (`CompanionContinuityEpisode`) that the prompt reads, rather than deriving it from message history.
+
+Three prepared writes let storage commit companion state together with the conversation change it belongs to:
+
+- `PreparedCompanionLaunch` / `CompanionConversationCreator`: the initial state and continuity sequence commit atomically with a new direct conversation. `with_time_awareness` writes an enabled `companion_clock` into the new conversation's settings when the character's config asks for it; later changes to the character leave existing conversations alone.
+- `PreparedCompanionSend` / `CompanionConversationSender`: a state replacement is validated against the same conversation as the user message, and the message, generation turn and attempt, both state scopes, the operation and the outbox commit together. An exact replay does not apply the transition again.
+- `PreparedCompanionContinue` / `CompanionConversationContinuer`: the same for continuations.
+
+### Signals
+
+`signals_from_classification` (`signals.rs`) turns emotion classifier output into a `CompanionSignalBundle`. Each `EmotionLabelScore` carries the classifier's calibrated threshold for its label (Thymos's per-class thresholds from its `labels.json`), and a label counts when `score >= threshold`. Only the first eight scored labels are considered; all 28 labels map to signals, grouped signal names are deduplicated while their numeric effects still add up, and the emotion, relationship, confidence and clamping values are fixed. `unavailable_signal_bundle` is the fallback when no model is installed.
+
+## Prompt state
+
+`prompt_state` (`prompt.rs`) decides what the companion prompt says, as typed facts with no model-facing text. From typed state and an explicit clock it produces:
+
+- relationship bands: seven steps each for closeness, trust and affection (neutral floor -0.15 for closeness and trust, -0.25 for affection) and five for tension, each with its raw value for the stance line;
+- the top expressed and blocked emotion dimensions above 0.08;
+- the continuity episode;
+- all twelve authored Soul categories in `SOUL_PROMPT_ORDER`, with effective durable facts ordered by clamped weight times confidence;
+- style notes, active signals, and the regulation and reassurance cues.
+
+The application renders each fact from the `prompt_app_companion_runtime` catalog document and inserts it through the context assembler.
+
+## Scheduled notes
+
+A `CompanionScheduledNote` (`scheduled_note.rs`) belongs to a character and activates once, daily, weekly, monthly or yearly. `active_scheduled_notes` filters out disabled, not-yet-available and expired notes at the supplied time; end times and recurrence windows are exclusive. Active notes are ordered by `available_at` then id, each truncated to 1000 characters, and the block is capped at 4000 characters measured on the rendered line (`scheduled_note_lines`); the line format, truncation marker and heading are catalog text passed in. `CompanionScheduledNoteRepository` offers list, upsert and delete; scheduling and frontend commands are elsewhere.
+
+## Turn effects
+
+A `CompanionTurnEffect` (`effect.rs`) records what one turn did to the companion, for the UI and for rewinds: the relationship delta, felt, expressed and blocked changes and ordered signal changes, copied from the one `apply_turn` transition (there is no second calculation), plus memory changes and the source message window. Its lifecycle is processing, ready or failed.
+
+- With dynamic memory, a send keeps a hidden seed with the admitted user turn, and the visible processing effect is created only with the durable assistant message. Continuations keep a zero-delta seed with no user message. Failure or cancellation before finalization discards the seed, and exact send or finalization replays never duplicate an effect.
+- The application settles effects of coalesced turns from before and after memory snapshots and exact source message ids.
+- The repository lists processing effects in stable conversation, time and effect order. Those rows are the durable pending queue: worker jobs can be rebuilt after a crash without a second copy of the seed. `list_processing_for_conversation` applies status and invalidation filters before the page limit, so settled history or other conversations never hide pending work.
+- A rewind after deleting messages marks affected effects invalidated through an immutable overlay. The original evidence stays for audit, and invalidated processing effects leave the queue and can no longer be settled.
+
+Effects, seeds, deltas, memory changes and source windows are strictly serializable, and a full backup exports the same validated values the repository uses.
