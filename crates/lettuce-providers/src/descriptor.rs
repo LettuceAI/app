@@ -1,8 +1,6 @@
 use lettuce_models::{CapabilityStatus, ParameterSupport, PromptCacheRetention, ProviderProtocol};
 
-/// Static, user-facing facts about one provider kind. This is the
-/// replacement for the legacy `get_provider_configs` catalog and the
-/// frontend `PROVIDER_PARAMETER_SUPPORT` / reasoning tables.
+/// Static, user-facing facts about one provider kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProviderDescriptor {
     pub kind: &'static str,
@@ -17,14 +15,14 @@ pub struct ProviderDescriptor {
     /// The provider has a catalog endpoint; custom accounts still need a
     /// configured models path.
     pub lists_models: bool,
-    /// Whether the legacy settings page verified the key on save. A probe
-    /// can still be requested explicitly for any kind.
+    /// Whether the settings page verifies the key on save. A probe can still
+    /// be requested explicitly for any kind.
     pub verifies_key: bool,
     pub reasoning: ReasoningSupport,
     pub prompt_caching: PromptCachingSupport,
     pub parameters: ParameterFlags,
-    /// User-supplied extra request-body keys the legacy request builder let
-    /// through for this provider (not keys the adapter itself emits).
+    /// User-supplied extra request-body keys let through for this provider
+    /// (not keys the adapter itself emits).
     pub extra_body_keys: &'static [&'static str],
 }
 
@@ -166,7 +164,7 @@ impl ParameterFlags {
     }
 }
 
-/// A model advertised by a provider's catalog endpoint (legacy `ModelInfo`).
+/// A model advertised by a provider's catalog endpoint.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RemoteModel {
     pub id: String,

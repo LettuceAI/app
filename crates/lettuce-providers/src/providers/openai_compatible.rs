@@ -27,8 +27,8 @@ const CHAT_PATH: &str = "/chat/completions";
 
 /// One OpenAI-envelope provider policy. Every method has the standard
 /// behavior as its default; a provider overrides what differs for it and may
-/// delegate to another provider's implementation the way the legacy adapters
-/// did (`OpenAi.chat_path(...)` and so on).
+/// delegate to another provider's implementation (`OpenAi.chat_path(...)`
+/// and so on).
 pub(crate) trait OpenAiWireProvider: Sync {
     fn descriptor(&self) -> &'static ProviderDescriptor;
 
@@ -158,14 +158,14 @@ pub(crate) fn standard_parameters(parameters: &ResolvedChatParameters) -> WirePa
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ReasoningWirePolicy {
-    /// Legacy Mistral: reasoning settings are ignored and the budget is not
-    /// added to the output cap.
+    /// Mistral: reasoning settings are ignored and the budget is not added to
+    /// the output cap.
     Ignored,
-    /// Legacy custom OpenAI-format providers: a `reasoning` object with the
-    /// effort and budget, the output cap unchanged.
+    /// Custom OpenAI-format providers: a `reasoning` object with the effort
+    /// and budget, the output cap unchanged.
     ReasoningObject,
-    /// Legacy LM Studio: `max_completion_tokens`, the effort and a
-    /// `reasoning` object.
+    /// LM Studio: `max_completion_tokens`, the effort and a `reasoning`
+    /// object.
     MaxCompletionTokensAndReasoningObject,
     MaxCompletionTokens,
     MaxTokens,

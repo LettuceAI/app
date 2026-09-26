@@ -1,7 +1,7 @@
-//! Remote image generation (legacy `generate_image` for every provider but
-//! sdcpp): reference images shrunk for upload, one retry after a transient
-//! provider failure, one fallback endpoint for adapters that have one, with
-//! the messages legacy showed.
+//! Remote image generation for every provider but sdcpp: reference images
+//! shrunk for upload, one retry after a transient provider failure, one
+//! fallback endpoint for adapters that have one, with user-facing error
+//! messages.
 
 mod adapters;
 mod body_error;
@@ -40,7 +40,7 @@ enum RemoteAttempt {
     HttpError(JsonResponse),
 }
 
-/// The remote image providers legacy supported, over one secret store.
+/// The remote image providers, over one secret store.
 pub struct RemoteImageProviders<S: ?Sized> {
     secret_store: Arc<S>,
     http: BulkHttpClient,
@@ -110,9 +110,9 @@ impl<S: SecretStore + ?Sized> RemoteImageProviders<S> {
     }
 }
 
-/// Legacy `resolve_base_url`: the account's own URL without trailing
-/// slashes, else the catalog default. `custom` and `lettuce-host` have no
-/// default (legacy's was empty, so the request could not be sent).
+/// The account's own URL without trailing slashes, else the catalog default.
+/// `custom` and `lettuce-host` have no default, so the request cannot be sent
+/// without one.
 fn base_url(request: &ProviderImageRequest, kind: &str) -> Result<String, ImageProviderError> {
     match request.account.endpoint.as_deref() {
         Some(custom) if !custom.is_empty() => Ok(custom.trim_end_matches('/').to_owned()),
@@ -123,7 +123,7 @@ fn base_url(request: &ProviderImageRequest, kind: &str) -> Result<String, ImageP
     }
 }
 
-/// Legacy allowed the invalid-TLS opt-in for the editable-endpoint text
+/// The invalid-TLS opt-in is allowed for the editable-endpoint text
 /// providers and for Automatic1111.
 fn allow_invalid_tls(request: &ProviderImageRequest, kind: &str) -> bool {
     request.account.allow_invalid_tls && (tls_opt_in_allowed(kind) || kind == "automatic1111")
@@ -151,8 +151,8 @@ fn truncate_for_log(text: &str) -> String {
     format!("{head}… [{length} chars]")
 }
 
-/// Legacy `shrink_for_upload`, off the async runtime; a failed resize task
-/// leaves the request as it was.
+/// Shrinks reference images for upload off the async runtime; a failed
+/// resize task leaves the request as it was.
 async fn shrink_inputs(request: &mut ProviderImageRequest) {
     if request.input_images.is_empty() {
         return;
@@ -178,8 +178,8 @@ fn transport_error(error: impl std::fmt::Display) -> ImageProviderError {
     ImageProviderError::Failed(format!("Request failed: {error}"))
 }
 
-/// Legacy `save_image`: `data:image...` URLs and raw base64 decode here;
-/// HTTP(S) URLs are fetched.
+/// `data:image...` URLs and raw base64 decode here; HTTP(S) URLs are
+/// fetched.
 async fn image_bytes(
     http: &BulkHttpClient,
     source: &str,

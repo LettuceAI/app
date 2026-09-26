@@ -34,9 +34,9 @@ use lettuce_settings::SecretStore;
 pub use media::{ProviderMedia, ProviderMediaError, ProviderMediaSource};
 use providers::openai_compatible::OpenAiWireProvider;
 
-/// Explicit dispatch over every remote chat provider the legacy app shipped.
-/// Each provider is one module implementing its family's wire trait plus one
-/// arm here; unknown kinds are rejected, never defaulted to OpenAI.
+/// Explicit dispatch over every remote chat provider. Each provider is one
+/// module implementing its family's wire trait plus one arm here; unknown
+/// kinds are rejected, never defaulted to OpenAI.
 pub struct RemoteProviders<S: ?Sized> {
     secret_store: Arc<S>,
     network: Arc<JsonClient>,
@@ -49,8 +49,7 @@ pub struct RemoteProviders<S: ?Sized> {
 }
 
 impl<S: SecretStore + ?Sized> RemoteProviders<S> {
-    /// Fetches the provider's model catalog for one stored account
-    /// (legacy `get_remote_models`).
+    /// Fetches the provider's model catalog for one stored account.
     pub async fn list_models(
         &self,
         account: &ProviderAccount,
@@ -80,8 +79,7 @@ impl<S: SecretStore + ?Sized> RemoteProviders<S> {
         result.map_err(Into::into)
     }
 
-    /// The models an Ollama account's server has (legacy
-    /// `ollama_inventory_list`).
+    /// The models an Ollama account's server has.
     pub async fn ollama_inventory(
         &self,
         account: &ProviderAccount,
@@ -117,8 +115,8 @@ impl<S: SecretStore + ?Sized> RemoteProviders<S> {
         .await
     }
 
-    /// Probes the account's credential the way the legacy settings page did
-    /// on save (legacy `verify_provider_api_key`).
+    /// Probes the account's credential the way the settings page does on
+    /// save.
     pub async fn verify_api_key(
         &self,
         account: &ProviderAccount,

@@ -1,13 +1,12 @@
 //! The embedded llama.cpp runtime as an inference provider. The request
-//! carries what legacy's `LlamaCppAdapter` and `build_llama_extra_fields`
-//! sent: OpenAI-shaped messages (an assistant tool-call turn has null content
-//! when it has no text, tool results are `tool` messages with their call id),
-//! the sampler and runtime settings resolved on the chat profile,
+//! carries OpenAI-shaped messages (an assistant tool-call turn has null
+//! content when it has no text, tool results are `tool` messages with their
+//! call id), the sampler and runtime settings resolved on the chat profile,
 //! `parallel_tool_calls` on whenever tools are offered, the output cap plus the
 //! reasoning budget, the reasoning request that turns on the template's
 //! reasoning format, and the thinking switch only when the model asks for it.
 //! With streaming turned off for the account or the model the request runs
-//! unstreamed, as legacy did, instead of failing.
+//! unstreamed instead of failing.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -47,8 +46,8 @@ use crate::streaming::stream_normalize::StreamDelta;
 const LOCAL_FAILURE_CODE: &str = "LOCAL_INFERENCE_FAILED";
 const LOCAL_MODEL_NOT_PICKED_CODE: &str = "LOCAL_MODEL_FILE_NOT_PICKED";
 
-/// Another local runtime that must give way before llama.cpp runs; legacy
-/// stopped the stable-diffusion.cpp server before every llama.cpp request.
+/// Another local runtime that must give way before llama.cpp runs; the
+/// stable-diffusion.cpp server is stopped before every llama.cpp request.
 #[async_trait::async_trait]
 pub trait LocalRuntimeExclusion: Send + Sync {
     /// Fails the llama.cpp request when the other runtime could not stop.
@@ -631,7 +630,7 @@ fn wire_tool_choice(choice: &ToolChoice) -> Value {
     }
 }
 
-/// Local parsers accept every argument shape the legacy chat loop executed:
+/// Local parsers accept every argument shape the chat loop executes:
 /// `<parameter=k>v</parameter>` bodies, empty or `null` arguments and
 /// non-JSON text. Tools read arguments by key, so anything that is not an
 /// object behaves as an empty object, and the raw text is kept only when it

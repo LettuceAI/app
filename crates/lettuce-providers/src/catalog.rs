@@ -1,8 +1,7 @@
 use crate::descriptor::ProviderDescriptor;
 
-/// Every remote chat provider this crate can execute, in the legacy
-/// catalog order. Local llama.cpp and image-only providers live in their
-/// own crates.
+/// Every remote chat provider this crate can execute, in catalog order.
+/// Local llama.cpp and image-only providers live in their own crates.
 pub fn provider_descriptors() -> &'static [&'static ProviderDescriptor] {
     &[
         &crate::providers::chutes::DESCRIPTOR,
@@ -33,7 +32,7 @@ pub fn provider_descriptors() -> &'static [&'static ProviderDescriptor] {
     ]
 }
 
-/// Resolves a canonical kind or one of its legacy aliases.
+/// Resolves a canonical kind or one of its aliases.
 pub fn provider_descriptor(kind: &str) -> Option<&'static ProviderDescriptor> {
     let kind = kind.trim();
     provider_descriptors().iter().copied().find(|descriptor| {

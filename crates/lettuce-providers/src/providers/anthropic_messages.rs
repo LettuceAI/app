@@ -739,7 +739,7 @@ fn validate_tool_sequence(turns: &[Turn]) -> Result<(), AdapterError> {
     Ok(())
 }
 
-/// Legacy: the budget is added to the output cap only when thinking is sent.
+/// The budget is added to the output cap only when thinking is sent.
 fn anthropic_max_tokens(parameters: &ResolvedChatParameters) -> u32 {
     if anthropic_thinking(parameters).is_none() {
         return max_output_tokens(parameters);
@@ -750,7 +750,7 @@ fn anthropic_max_tokens(parameters: &ResolvedChatParameters) -> u32 {
     })
 }
 
-/// Legacy: thinking requires temperature 1.0; otherwise the user's value.
+/// Thinking requires temperature 1.0; otherwise the user's value.
 fn anthropic_temperature(parameters: &ResolvedChatParameters) -> Option<f64> {
     if anthropic_thinking(parameters).is_some() {
         Some(1.0)

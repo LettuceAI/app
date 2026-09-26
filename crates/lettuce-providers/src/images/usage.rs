@@ -1,5 +1,4 @@
-//! Token usage in an image response, found the way legacy's
-//! `extract_usage` searched any JSON shape.
+//! Token usage in an image response, searched for in any JSON shape.
 
 use lettuce_conversations::{InferenceUsage, ProviderReportedCost};
 use serde_json::{Map, Value};

@@ -26,8 +26,8 @@ fn versioned(endpoint: &str, versioned: &'static str, bare: &'static str) -> &'s
     }
 }
 
-/// Mirrors the legacy `verify_provider_api_key` probes: which URL is hit,
-/// with which credential header, and how the status is judged.
+/// The key-verification probes: which URL is hit, with which credential
+/// header, and how the status is judged.
 pub(crate) async fn verify_api_key<S: SecretStore + ?Sized>(
     secret_store: &S,
     network: &JsonClient,

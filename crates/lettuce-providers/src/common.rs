@@ -75,12 +75,10 @@ pub(crate) fn openai_usage_extras(
     )
 }
 
-/// Image, audio and total token counts as legacy `usage_from_value` and
-/// `usage_from_map` read them from an OpenAI `usage` or Gemini
-/// `usageMetadata` object (the buffered path also took image tokens from
-/// `completion_tokens_details`, so both paths do here). Legacy also
-/// counted `prompt_tokens_details.cached_tokens` as image tokens; cached
-/// prompt tokens are not image tokens, so that fallback is not kept.
+/// Image, audio and total token counts read from an OpenAI `usage` or Gemini
+/// `usageMetadata` object; both the buffered and the streamed path also take
+/// image tokens from `completion_tokens_details`. Cached prompt tokens are
+/// not image tokens.
 pub(crate) fn usage_modalities(
     usage: &serde_json::Map<String, serde_json::Value>,
 ) -> (Option<u64>, Option<u64>, Option<u64>) {
@@ -114,7 +112,7 @@ pub(crate) fn usage_modalities(
     (image, audio, total)
 }
 
-/// Legacy `modality_token_count`: the sum of a Gemini modality's entries.
+/// The sum of a Gemini modality's entries.
 pub(crate) fn modality_token_count(
     details: Option<&serde_json::Value>,
     modality: &str,
@@ -344,8 +342,8 @@ pub(crate) struct Credentials<'a> {
     pub(crate) allow_invalid_tls: bool,
 }
 
-/// Legacy honoured `allowInvalidTls` only for local and custom providers
-/// (`old-code/src-tauri/src/tls.rs`); hosted providers never skip validation.
+/// `allowInvalidTls` is honoured only for local and custom providers; hosted
+/// providers never skip validation.
 pub(crate) fn tls_opt_in_allowed(kind: &str) -> bool {
     crate::catalog::provider_descriptor(kind).is_some_and(|descriptor| descriptor.endpoint_editable)
 }
@@ -611,8 +609,8 @@ pub(crate) fn custom_config(
     }
 }
 
-/// The legacy OpenAI `data[]` model list shape, also used as the fallback
-/// parser for custom accounts whose configured paths match nothing.
+/// The OpenAI `data[]` model list shape, also used as the fallback parser for
+/// custom accounts whose configured paths match nothing.
 pub(crate) fn parse_openai_model_list(payload: &serde_json::Value) -> Vec<RemoteModel> {
     let Some(items) = payload.get("data").and_then(serde_json::Value::as_array) else {
         return Vec::new();
@@ -697,7 +695,7 @@ pub(crate) fn value_to_string(value: &serde_json::Value) -> Option<String> {
     }
 }
 
-/// Resolves a dotted legacy path such as `data`, `result.models[0]` or `id`.
+/// Resolves a dotted path such as `data`, `result.models[0]` or `id`.
 pub(crate) fn select_path<'a>(
     value: &'a serde_json::Value,
     path: &str,

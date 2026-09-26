@@ -1,5 +1,5 @@
-//! The legacy remote image adapters: where each provider's image request
-//! goes, what it carries and how its response lists images.
+//! The remote image adapters: where each provider's image request goes,
+//! what it carries and how its response lists images.
 
 use base64::Engine as _;
 use lettuce_image_generation::{
@@ -97,7 +97,8 @@ pub(crate) enum Adapter {
     Diffusers,
 }
 
-/// Legacy `get_adapter`; `custom` and `lettuce-host` speak the OpenAI API.
+/// The adapter for an image provider kind; `custom` and `lettuce-host` speak
+/// the OpenAI API.
 pub(crate) fn adapter_for(kind: &str) -> Option<Adapter> {
     Some(match kind {
         "automatic1111" => Adapter::Automatic1111,
@@ -115,7 +116,7 @@ pub(crate) fn adapter_for(kind: &str) -> Option<Adapter> {
     })
 }
 
-/// Legacy provider catalog base URLs for the kinds that make images.
+/// Provider catalog base URLs for the kinds that make images.
 pub(crate) fn default_base_url(kind: &str) -> &'static str {
     match kind {
         "openai" => "https://api.openai.com",

@@ -1,4 +1,4 @@
-//! ComfyUI: the account's API-format workflow with legacy's `%TOKEN%`
+//! ComfyUI: the account's API-format workflow with its `%TOKEN%`
 //! substitutions, queued, polled every 1.5 s for up to 400 attempts, and
 //! its output images fetched.
 
@@ -60,7 +60,8 @@ fn escape(value: &str) -> String {
         .to_owned()
 }
 
-/// Legacy `substitute_tokens`; an unset seed is random in `0..u32::MAX`.
+/// Replaces the workflow's `%TOKEN%` placeholders; an unset seed is random
+/// in `0..u32::MAX`.
 pub(super) fn substitute_tokens(
     template: &str,
     request: &ProviderImageRequest,
