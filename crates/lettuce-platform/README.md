@@ -1,81 +1,61 @@
 # lettuce-platform
 
-Operating-system capabilities, application lifecycle, managed paths, confined
-filesystem operations, updater integration, and user-intent ports.
+Confined filesystem access for the rest of the workspace: a fixed set of managed directories, capabilities that grant read or write access to one of them, crash-safe writes, a move-to-trash, a resumable install store for large model files, and a narrow eSpeak NG process wrapper.
 
-## Boundary
+It is the only crate allowed to depend on `cap-std` and `cap-primitives` (`architecture.toml`, enforced by `scripts/check-architecture.sh`). It has no Tauri dependency and never hands out a global shell handle or an application root path. Callers name files with checked `ObjectKey`s under a root they were given a capability for; no operational method accepts a native path.
 
-Does not expose a global Tauri/shell handle or arbitrary application root path.
-Filesystem consumers receive purpose-specific capabilities.
+## Structure
 
-The public surface is intentionally small. Business invariants belong in domain models and use cases; infrastructure is accessed only through narrow ports owned by the calling crate.
+- `FilesystemAuthority` (`authority.rs`) is the only factory. The composition root in `lettuce-app` builds it once from a `DirectorySnapshot` and passes on the `ManagedFiles` facade plus the capabilities each consumer needs. Its constructor is public only so that composition code can do that wiring.
+- `DirectorySnapshot` (`directories.rs`) holds the trusted native locations: the app data directory and the private persistent directory. The paths must be absolute, free of `.` and `..`, and must not overlap the internal `platform-v2` container. No accessor returns them.
+- `ManagedRoot` lists the grantable leaf roots: `Diagnostics`, `ImportStaging`, `JobStaging`, `MediaBlobs`, `Quarantine`, `Trash` under `platform-v2/`, and `PrivatePersistent` (by default `private-persistent-v2/` next to it). The container directory itself is never grantable.
+- `ReadCapability` and `WriteCapability` pair one root with the authority that issued them. `ManagedFiles` checks with `Arc::ptr_eq` that a capability belongs to its own authority and fails with `WrongCapability` otherwise. `ManagedFiles` has no constructor and cannot mint capabilities.
+- `ObjectKey` (`keys.rs`) is a list of explicit segments. There is no string or path parser. A segment may not be empty, `.` or `..`, contain `/`, `\` or control characters, look like a drive prefix, or start with one of the crate's reserved prefixes (`.lettuce-stage-`, `.lettuce-trash-`, `.lettuce-recovery-`, `.lettuce-journal-`). Keys are capped at 64 segments, 255 bytes and 255 characters per segment, and 4 KiB in total. Unicode is kept as given, not normalized.
+- `PlatformError` is a small copyable enum with no paths in it, safe to send over IPC or into diagnostics.
 
-## Implemented filesystem kernel
+## Reading
 
-Phase 1 provides an immutable `DirectorySnapshot`, named non-overlapping leaf
-roots, explicit checked `ObjectKey` segments, and separate read/write
-capabilities. `FilesystemAuthority` is the only factory: the app composition
-root constructs it from its attested native locations and passes its
-`ManagedFiles` facade plus purpose capabilities onward. Its constructor is
-public solely so a separate composition adapter can perform that wiring;
-architecture checks will restrict construction to adapter code, while domain
-code receives only the facade and purpose capabilities. `ManagedFiles` has no
-constructor or capability-minting shortcut.
+All operations are relative to descriptors opened once at construction. The roots themselves are opened without following a final symlink; trusting the ancestors of those paths is the composition adapter's job. Below a root, every directory on the way to a file is opened no-follow, so an existing symlink anywhere on the path fails with `SymlinkEscape`.
 
-Managed reads and metadata operate on descriptor-relative `cap-std`
-directories. Listing has an explicit caller limit and uses no-follow entry
-file types, so symlinks are returned as `Other`. Existing intermediate and
-final symlinks are rejected for file operations; no operational method accepts
-a caller-supplied native path. The platform container directory is internal and
-is never grantable.
+- `read` loads a whole file, up to `MAX_MANAGED_READ_BYTES` (2 GiB, the same as the media blob limit, so any stored object can be read whole).
+- `open_read` returns a `ReadHandle` that implements `Read` but cannot be turned into a path.
+- `metadata` stats without following symlinks.
+- `list` needs an explicit limit (1 to 1024). It uses the directory entry's own file type, so a symlink is reported as `Other` and its target is never touched. Listing the private persistent root is refused: that root only supports reads and writes of keys the caller already knows.
 
-Writes are streamed to an exclusively-created sibling stage file, bounded when
-requested, and synced before commit. Replacement uses same-root rename and
-reports parent-directory durability. Create-new uses an atomic hard-link
-no-replace operation; filesystems that cannot provide it return `Unsupported`.
-Once that link succeeds, the target is committed exactly once: the receipt
-reports whether sibling-stage cleanup was completed or needs bounded recovery,
-so cleanup failure must not be retried as the write itself.
-Windows replacement of an existing target is reported as a
-recoverable replacement failure rather than being described as atomic. Failed
-commits retain their stage artifact for recovery; ordinary dropped writers
-clean up their own stage file. A single authority-wide mutation lock
-serializes operations within that authority; it is not a cross-process lock.
+## Writing
 
-`ConfinedInstallStore` is the purpose-specific exception for large native model
-artifacts that must later be opened by a C runtime. Its composition-time root
-is canonicalized once, all operational names remain checked `ObjectKey`s, and
-descriptor-relative no-follow files retain stable partial bytes across process
-restart. It bounds appends and atomically renames a caller-verified partial.
-Only the committed file exposes an internal native path for construction of a
-verified runtime manifest; partial paths and install roots are never returned.
-The same confined store supports bounded, sorted directory inventory and
-read-only inspection of known artifact keys. Directory and file symlinks are
-rejected, missing directories return an empty inventory, and consumers still
-cannot supply native paths after the store is opened.
+Writes go through a `StagedWrite`:
 
-Desktop Kokoro phonemization uses a purpose-specific eSpeak NG capability. It
-accepts bounded text and a validated language, passes fixed arguments over
-stdin, and can use standard executable lookup or an existing absolute
-executable plus existing data directory. It exposes no generic process runner.
+1. `stage`, `stage_new` or `stage_bounded` exclusively creates a sibling stage file named `.lettuce-stage-<uuid>` next to the target. A bounded stage rejects writes past its limit.
+2. The caller streams bytes into it (`Write`).
+3. `commit` syncs the stage, takes the authority's mutation lock and publishes it. `Replace` renames over the target within the same root; a failed rename is `ReplaceFailed` (on Windows replacing an existing file is reported this way instead of being passed off as atomic). `CreateNew` publishes without ever overwriting: `renameat2(RENAME_NOREPLACE)` on Linux, a per-directory lock plus existence check plus rename on Android (older Android seccomp policies kill a process that calls `renameat2`), and a hard link elsewhere. An existing target is `Conflict`; a filesystem that cannot do it is `Unsupported`.
+4. The parent directory is synced and the `CommitReceipt` reports it (`Synced`, `Unsupported` or `Failed`) along with the byte count and the stage cleanup status.
 
-Generic root deletion is not exposed. File removal is an in-process move to an
-opaque trash receipt with collision-safe, retryable restore. Receipts are
-authority-bound, validate opaque internal names, and include source/destination
-durability statuses. Durable trash journals, retention purge, a quarantine
-workflow, and ambiguous-commit reconciliation are later work; this slice does
-not claim generic trash is crash-restorable or retention-managed. Recovery is
-bounded, idempotent, scans each leaf once, and identifies artifacts by full
-leaf plus relative location; it only inspects tool-owned stage names and does
-not guess at destructive cleanup.
+Once a create-new publish has succeeded the write is done, even if removing the stage afterwards fails. The receipt then says `RecoveryNeeded` for the cleanup, and the caller must not retry the write. A failed commit keeps its stage file for recovery; a `StagedWrite` dropped without commit removes its own stage. `write_atomic` is the one-call version for a byte slice.
 
-This slice intentionally excludes Tauri, lifecycle, archive, grants, updater,
-domain formats, cryptography, and secret-envelope policy. The private
-persistent root permits known-key reads and atomic writes for a settings-owned
-secret adapter, but generic listing/export is unavailable. Root construction
-uses a no-follow final open; ambient ancestor attestation remains the
-application adapter's responsibility.
+The mutation lock is per authority and serializes mutations within one process. It is not a cross-process lock.
 
-`ManagedFiles::remove_file` deletes one regular file under a write
-capability (never in the private persistent root) and reports whether one
-was there.
+## Removing files
+
+`remove_file` deletes one regular file under a write capability and reports whether it existed. `remove_to_trash` instead renames the object into the `Trash` root under an opaque `.lettuce-trash-<uuid>` name and returns a `TrashReceipt` with the sync status of both directories. `restore_from_trash` moves it back; the receipt holds a weak reference to its authority, so it only works on the authority that issued it and only for the root it came from, and it refuses to overwrite an object that has since appeared at the old key. Neither operation is allowed on the private persistent root, and there is no way to delete a root.
+
+Trash is in-process only: there is no journal, so a trashed object is not guaranteed to be restorable after a crash, and nothing purges old trash.
+
+## Recovery scan
+
+`recover_incomplete` walks every root (depth 16, at most 256 entries) and counts leftover stage files it owns, identified by root and full relative location so equal names in different roots stay distinct. It only inspects names matching the crate's own stage pattern and deletes nothing; the `RecoveryReport` says how many were found and whether the scan was cut short.
+
+## Install store
+
+`ConfinedInstallStore` (`install.rs`) exists for large files that must stay resumable across restarts and that a native runtime may later open by path, such as model artifacts. It is opened on one absolute directory, which is canonicalized once; after that every name is an `ObjectKey` and parent directories are checked for symlinks as they are created.
+
+- `prepare(partial, target, max_bytes)` returns `Installed` if the target file already exists (within the size limit), or `Resume` with a `ResumableInstall` positioned at the end of the partial file, so a download continues from the bytes that survived a restart.
+- A `ResumableInstall` can `append` (bounded by `max_bytes`), `restart` from zero, be read and seeked for verification, `sync`, `discard`, and `commit` (rename over the target) or `commit_new` (hard link, `Conflict` if the target exists). Verifying the bytes is the caller's job before commit.
+- Only a committed file exposes its native path (`InstalledFile::native_path`, the path returned by `commit`), for building a verified runtime manifest. Partial paths and the root are never returned.
+- `inspect` opens a known key read-only, `list` gives a sorted, bounded inventory of one directory (missing directory means empty), `remove_installed` deletes a target only when the caller's expected path matches, `discard` removes a partial or installed file by key, `discard_partials_like` clears stale `.part` siblings with a given prefix, and `owns_installed_path` tells whether a path belongs to a key in this store.
+
+`lettuce-model-hub` uses it for pinned artifacts (Whisper, Kokoro, the companion emotion model), `lettuce-media` for the sync media store, and `lettuce-transfer` for backup archives and restore workspaces. Of the managed roots, only `MediaBlobs` (the local media blob store in `lettuce-media`) and `PrivatePersistent` (the pointer to the active database file, `AppDatabaseLocation` in `lettuce-app`) have callers outside tests so far.
+
+## eSpeak NG
+
+Desktop Kokoro phonemization needs eSpeak NG. `EspeakNgProcess` implements the `EspeakPhonemizer` trait and runs `espeak-ng --ipa --stdin -q -v <language>` with fixed arguments, from `PATH` (`from_path`) or from an absolute executable with an optional data directory (`with_managed_paths`, both must exist). Input is capped at 64 KiB and may not contain NUL; the language must be 1 to 16 ASCII letters, digits, `-` or `_`; stdout and stderr are drained on separate threads and capped at 1 MiB. On Linux the executable's directory is put on `LD_LIBRARY_PATH` for a bundled build, and on Windows the process is started without a console window. There is no generic process runner in the crate.
