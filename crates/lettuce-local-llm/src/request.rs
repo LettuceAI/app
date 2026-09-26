@@ -1,9 +1,9 @@
-//! One local generation request and the legacy rules that turn its raw
-//! settings into the values a run uses: sampler profile defaults, range
-//! filters, deduplicated device lists, MTP and DFlash draft bounds, the
-//! thinking switch (a trailing `/think` or `/no_think` wins over the explicit
-//! flag, which wins over "a reasoning format was asked for") and the
-//! incremental stop matcher.
+//! One local generation request and the rules that turn its raw settings
+//! into the values a run uses: sampler profile defaults, range filters,
+//! deduplicated device lists, MTP and DFlash draft bounds, the thinking
+//! switch (a trailing `/think` or `/no_think` wins over the explicit flag,
+//! which wins over "a reasoning format was asked for") and the incremental
+//! stop matcher.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -24,7 +24,7 @@ pub const STREAM_EMIT_INTERVAL: Duration = Duration::from_millis(32);
 pub const STREAM_EMIT_BYTES: usize = 256;
 
 /// Everything one local generation needs. Settings carry the user's raw
-/// values; the `resolve_*` methods apply the legacy filters.
+/// values; the `resolve_*` methods apply the filters.
 #[derive(Clone, Debug, Default)]
 pub struct LlamaGenerationRequest {
     pub request_id: Option<String>,
@@ -145,7 +145,7 @@ pub struct ResolvedSampling {
     pub adaptive_decay: Option<f64>,
 }
 
-/// The runtime values the run uses after the legacy filters.
+/// The runtime values the run uses after the filters.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ResolvedRuntime {
     pub gpu_layers: Option<u32>,

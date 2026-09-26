@@ -128,10 +128,9 @@ pub fn get_available_vram_bytes() -> Option<u64> {
     choose_effective_vram_bytes(ggml_available_vram_bytes(), windows_local_vram_cap_bytes())
 }
 
-/// The GPUs, accelerators and integrated GPUs llama.cpp sees. Legacy left
-/// integrated GPUs out, so an APU (a Ryzen AI handheld, for one) had no
-/// device to pick; `device_type` tells them apart (`IntegratedGpu`), and
-/// multi-GPU still takes only discrete devices.
+/// The GPUs, accelerators and integrated GPUs llama.cpp sees, so an APU (a
+/// Ryzen AI handheld, for one) has a device to pick; `device_type` tells them
+/// apart (`IntegratedGpu`), and multi-GPU still takes only discrete devices.
 pub fn list_gpu_devices() -> Vec<LlamaGpuDeviceInfo> {
     llama_cpp_2::list_llama_ggml_backend_devices()
         .into_iter()

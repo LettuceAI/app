@@ -1,9 +1,9 @@
-//! Prompt building carried over from the legacy runtime: the chat template
-//! resolves from an explicit override, then the GGUF's embedded template,
-//! then a named preset; tool requests go through the OpenAI-compatible
-//! template path, plain chats try it before the legacy template call, and
-//! the raw `role: content` transcript is the opt-in last resort. BOS is only
-//! added to raw completions, following the tokenizer's metadata.
+//! Prompt building: the chat template resolves from an explicit override,
+//! then the GGUF's embedded template, then a named preset; tool requests go
+//! through the OpenAI-compatible template path, plain chats try it before the
+//! plain template call, and the raw `role: content` transcript is the opt-in
+//! last resort. BOS is only added to raw completions, following the
+//! tokenizer's metadata.
 
 use llama_cpp_2::TokenToStringError;
 use llama_cpp_2::model::{

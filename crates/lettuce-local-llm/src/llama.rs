@@ -1,7 +1,7 @@
 //! llama.cpp bindings for the offload planner: the process-wide backend,
 //! model metadata, KV geometry and per-unit weights read from a model file,
 //! and compute buffers measured without allocating. Results are cached per
-//! model path for the life of the process, as the legacy runtime did.
+//! model path for the life of the process.
 
 use std::collections::HashMap;
 use std::num::NonZeroU32;

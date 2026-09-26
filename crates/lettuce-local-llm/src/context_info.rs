@@ -1,8 +1,8 @@
 //! The model editor's fit estimate for a local model: context limits, the
 //! machine's memory, how many layers the GPU would take and, with several
 //! GPUs, how they would be split. It plans with an unset context and a batch
-//! of 512, as legacy did. The draft model reserve counts the DFlash drafter
-//! when DFlash is enabled, else the MTP draft model.
+//! of 512. The draft model reserve counts the DFlash drafter when DFlash is
+//! enabled, else the MTP draft model.
 
 use std::path::Path;
 

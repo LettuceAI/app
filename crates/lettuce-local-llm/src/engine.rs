@@ -68,7 +68,7 @@ impl BackendPath {
     }
 }
 
-/// The model-load stage the frontend shows (legacy numeric values).
+/// The model-load stage the frontend shows, as fixed numeric values.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum ModelLoadStage {
@@ -78,7 +78,7 @@ pub enum ModelLoadStage {
     Finalizing = 3,
 }
 
-/// The model-load status the frontend shows (legacy numeric values).
+/// The model-load status the frontend shows, as fixed numeric values.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum ModelLoadStatus {

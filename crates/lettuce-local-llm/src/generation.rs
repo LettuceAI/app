@@ -1,14 +1,13 @@
-//! One local llama.cpp generation, carried over from the legacy request
-//! handler: planning (smart offload with its per-model cache, llama.cpp's
-//! own fitter behind its gate, multi-GPU distribution, MTP or DFlash
-//! drafter placement), loading, the prompt, the context attempt ladder with
-//! the KV cache falling back to RAM (after one reload at the KV-aware layer
-//! estimate), the prompt prefix cache, prefill, generation with MTP or
-//! DFlash, stop sequences and streaming, the structured tool-call parse, the
-//! runtime report and the metrics.
+//! One local llama.cpp generation: planning (smart offload with its
+//! per-model cache, llama.cpp's own fitter behind its gate, multi-GPU
+//! distribution, MTP or DFlash drafter placement), loading, the prompt, the
+//! context attempt ladder with the KV cache falling back to RAM (after one
+//! reload at the KV-aware layer estimate), the prompt prefix cache, prefill,
+//! generation with MTP or DFlash, stop sequences and streaming, the
+//! structured tool-call parse, the runtime report and the metrics.
 //!
 //! Runs execute on one worker thread that owns the loaded model and the hot
-//! context cache, as in legacy.
+//! context cache.
 
 use std::borrow::Cow;
 use std::collections::VecDeque;
@@ -82,15 +81,15 @@ pub trait GenerationObserver: EngineObserver {
     fn runtime_report_updated(&self, model_path: &str);
 }
 
-/// The per-model runtime report (legacy `llamaLastRuntimeReport`). `store`
-/// returns whether the stored report changed.
+/// The per-model runtime report (`llamaLastRuntimeReport`). `store` returns
+/// whether the stored report changed.
 pub trait RuntimeReportStore: Send + Sync {
     fn load(&self, model_path: &str) -> Result<Option<Value>, String>;
     fn store(&self, model_path: &str, report: &Value) -> Result<bool, String>;
 }
 
 /// What the application gives local generations: the runtime report store,
-/// the metrics sink and the events legacy sent to the frontend.
+/// the metrics sink and the events sent to the frontend.
 pub trait LlamaHost: RuntimeReportStore {
     fn record_metrics(&self, record: LlamaMetricsRecord);
     fn event(&self, event: LlamaHostEvent);
@@ -223,7 +222,7 @@ pub struct LlamaUsage {
     pub mtp_stats: Option<LlamaMtpStats>,
 }
 
-/// A finished run's metrics row (legacy `llm_metrics`).
+/// A finished run's metrics row (`llm_metrics`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct LlamaMetricsRecord {
     pub id: String,
@@ -3489,8 +3488,8 @@ impl Run<'_> {
     }
 }
 
-/// The planning-config `kvType`: the shared type as legacy wrote it, or the
-/// K and V types when they differ.
+/// The planning-config `kvType`: the shared type, or the K and V types when
+/// they differ.
 fn planning_kv_type(rt: &ResolvedRuntime) -> Value {
     let kv_types = rt.kv_types();
     if kv_types.shared().is_some() {
@@ -3535,8 +3534,7 @@ fn apply_common_params(
 }
 
 /// Takes the decodable text out of `pending`, replacing invalid bytes. An
-/// incomplete trailing sequence holds back everything still pending, as in
-/// legacy.
+/// incomplete trailing sequence holds back everything still pending.
 fn drain_utf8(pending: &mut Vec<u8>) -> String {
     let mut piece = String::new();
     loop {
@@ -3563,8 +3561,8 @@ fn drain_utf8(pending: &mut Vec<u8>) -> String {
     piece
 }
 
-/// The legacy text of a message's content: a string, the `text` parts joined
-/// by newlines (`None` when blank), or any other value as JSON.
+/// The text of a message's content: a string, the `text` parts joined by
+/// newlines (`None` when blank), or any other value as JSON.
 fn extract_text_content(content: Option<&Value>) -> Option<String> {
     match content {
         None | Some(Value::Null) => None,

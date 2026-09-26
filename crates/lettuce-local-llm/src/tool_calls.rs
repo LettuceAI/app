@@ -1,8 +1,8 @@
-//! Tool calls in a local model's reply, carried over from the legacy parser:
-//! OpenAI `tool_calls`/`function_call` shapes in the parsed message (with
-//! Anthropic `tool_use` parts and Gemini `functionCall` parts as fallbacks),
-//! and raw text recovery for models that wrote their calls as `<tool_call>`
-//! blocks, JSON or `<function=name>` tags instead.
+//! Tool calls in a local model's reply: OpenAI `tool_calls`/`function_call`
+//! shapes in the parsed message (with Anthropic `tool_use` parts and Gemini
+//! `functionCall` parts as fallbacks), and raw text recovery for models that
+//! wrote their calls as `<tool_call>` blocks, JSON or `<function=name>` tags
+//! instead.
 
 use serde_json::{Map, Value, json};
 

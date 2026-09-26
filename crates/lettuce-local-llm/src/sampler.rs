@@ -1,10 +1,9 @@
-//! The llama.cpp sampler chain, carried over from the legacy runtime: the
-//! named profiles and their defaults, the stage order (default or the
-//! user's, deduplicated, an explicit empty list meaning no stages), the
-//! penalties/DRY/XTC/typical/min-p parameters, the template's (lazy) grammar
-//! forced to the front, and last adaptive-p when the order asks for it and a
-//! target is set, else `dist` when the temperature is positive, `greedy`
-//! otherwise.
+//! The llama.cpp sampler chain: the named profiles and their defaults, the
+//! stage order (default or the user's, deduplicated, an explicit empty list
+//! meaning no stages), the penalties/DRY/XTC/typical/min-p parameters, the
+//! template's (lazy) grammar forced to the front, and last adaptive-p when
+//! the order asks for it and a target is set, else `dist` when the
+//! temperature is positive, `greedy` otherwise.
 
 use llama_cpp_2::model::{AddBos, LlamaModel};
 use llama_cpp_2::sampling::LlamaSampler;

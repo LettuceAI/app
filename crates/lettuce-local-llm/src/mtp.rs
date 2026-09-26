@@ -1,7 +1,7 @@
 //! Multi-token prediction (speculative decoding with a draft head or a
 //! separate draft model): detecting a bundled NextN draft, finding an
-//! external `mtp-*.gguf` draft beside the model, and the legacy draft/verify
-//! rounds with their adaptive draft length, unchanged.
+//! external `mtp-*.gguf` draft beside the model, and the draft/verify rounds
+//! with their adaptive draft length.
 
 use std::collections::VecDeque;
 use std::path::Path;

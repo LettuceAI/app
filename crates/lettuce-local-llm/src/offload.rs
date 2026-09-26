@@ -1,12 +1,11 @@
 //! GPU offload, KV cache and context planning for llama.cpp models.
 //!
-//! The formulas are the legacy desktop planner's, carried over unchanged:
-//! offload units are the repeating blocks plus the output layer (offloaded
-//! first), per-unit weights come from the GGUF tensor index, KV cache bytes
-//! come from per-layer geometry with sliding-window layers capped to the
-//! window, and the recommended context is solved against the real KV curve.
-//! Loading a model or measuring a compute buffer happens in the runtime
-//! adapter, which hands the results in.
+//! The formulas are frozen: offload units are the repeating blocks plus the
+//! output layer (offloaded first), per-unit weights come from the GGUF tensor
+//! index, KV cache bytes come from per-layer geometry with sliding-window
+//! layers capped to the window, and the recommended context is solved against
+//! the real KV curve. Loading a model or measuring a compute buffer happens
+//! in the runtime adapter, which hands the results in.
 
 use std::collections::BTreeMap;
 
@@ -171,8 +170,7 @@ impl ModelOffloadCosts {
 
 const KV_CELL_PAD: u64 = 256;
 
-/// The K and V cache types. Legacy set one type for both; with one shared
-/// type every formula is the legacy one.
+/// The K and V cache types; with one shared type both use the same formula.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct KvCacheTypes<'a> {
     pub k: Option<&'a str>,

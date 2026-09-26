@@ -1,10 +1,9 @@
-//! Context sizing for llama.cpp generations, carried over unchanged from the
-//! legacy runtime: the (context, batch) fallback ladder, the out-of-memory
-//! classifier and its error detail, the effective-VRAM choice between the
-//! backend's free memory and the platform cap, per-device VRAM alignment, and
-//! the recommended and CPU-safe context limits. These formulas are frozen and
-//! deliberately keep their own KV-per-value table (the offload planner has a
-//! newer one).
+//! Context sizing for llama.cpp generations: the (context, batch) fallback
+//! ladder, the out-of-memory classifier and its error detail, the
+//! effective-VRAM choice between the backend's free memory and the platform
+//! cap, per-device VRAM alignment, and the recommended and CPU-safe context
+//! limits. These formulas are frozen and deliberately keep their own
+//! KV-per-value table (the offload planner has a newer one).
 
 use crate::offload::{KvCacheTypes, LlamaModelMetadata};
 
