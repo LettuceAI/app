@@ -226,6 +226,25 @@ where
                     "a user-triggered cycle retries failed turn effects"
                 );
             }
+            if lettuce_companions::CompanionTurnEffectRepository::list_processing_for_conversation(
+                self.repository,
+                conversation_id,
+                1,
+            )
+            .map_err(CompanionMemoryHostError::Effects)?
+            .is_empty()
+            {
+                return Ok(dispatcher.trigger_settled_companion_and_claim(
+                    conversation_id,
+                    interval,
+                    model_profile_id,
+                    update_default_on_success,
+                    worker_id,
+                    now,
+                    lease_for,
+                    allowed,
+                )?);
+            }
             match model_profile_id {
                 Some(model_profile_id) => Ok(dispatcher.retry_direct_with_model_and_claim(
                     conversation_id,

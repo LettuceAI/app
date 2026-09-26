@@ -465,6 +465,60 @@ impl<
             + lettuce_memory::MemoryRepository
             + lettuce_memory::MemorySummaryRepository,
     {
+        self.trigger_recent_messages_and_admit(
+            conversation_id,
+            summary_message_interval,
+            selected_model_profile_id,
+            update_dynamic_memory_model_on_success,
+            false,
+        )
+    }
+
+    /// The same forced cycle for a companion conversation with no pending
+    /// turn effects: legacy's trigger re-summarized the most recent window
+    /// whatever the companion had already settled. No effect is settled.
+    pub fn trigger_settled_companion_and_admit(
+        &self,
+        conversation_id: ConversationId,
+        summary_message_interval: u32,
+        selected_model_profile_id: Option<ModelProfileId>,
+        update_dynamic_memory_model_on_success: bool,
+    ) -> Result<Option<CompanionPostTurnMemoryAdmission>, CompanionPostTurnMemoryAdmissionError>
+    where
+        R: ConversationReader
+            + lettuce_memory::MemoryRepository
+            + lettuce_memory::MemorySummaryRepository,
+    {
+        if !self
+            .effects
+            .list_processing_for_conversation(conversation_id, 1)
+            .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?
+            .is_empty()
+        {
+            return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
+        }
+        self.trigger_recent_messages_and_admit(
+            conversation_id,
+            summary_message_interval,
+            selected_model_profile_id,
+            update_dynamic_memory_model_on_success,
+            true,
+        )
+    }
+
+    fn trigger_recent_messages_and_admit(
+        &self,
+        conversation_id: ConversationId,
+        summary_message_interval: u32,
+        selected_model_profile_id: Option<ModelProfileId>,
+        update_dynamic_memory_model_on_success: bool,
+        companion: bool,
+    ) -> Result<Option<CompanionPostTurnMemoryAdmission>, CompanionPostTurnMemoryAdmissionError>
+    where
+        R: ConversationReader
+            + lettuce_memory::MemoryRepository
+            + lettuce_memory::MemorySummaryRepository,
+    {
         let interval = usize::try_from(summary_message_interval)
             .ok()
             .filter(|interval| *interval >= 1)
@@ -475,11 +529,12 @@ impl<
             .rev()
             .find(|(_, role)| *role == MessageRole::Assistant)
         {
-            if self
-                .effects
-                .get_for_message(conversation_id, last_assistant)
-                .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?
-                .is_some()
+            if !companion
+                && self
+                    .effects
+                    .get_for_message(conversation_id, last_assistant)
+                    .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?
+                    .is_some()
             {
                 return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
             }

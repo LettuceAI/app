@@ -5007,6 +5007,57 @@ async fn post_turn_memory_host_admits_only_this_companion_conversation_effects()
             .any(|effect| effect.conversation_id == second),
         "the other companion conversation's effect stays untouched"
     );
+
+    let settled = CompanionTurnEffectRepository::list_processing(database, 512)
+        .expect("processing effects")
+        .into_iter()
+        .find(|effect| effect.conversation_id == second)
+        .expect("second effect");
+    CompanionTurnEffectRepository::settle(
+        database,
+        settled.id,
+        lettuce_companions::CompanionTurnEffectOutcome::Ready {
+            summary: None,
+            memory_changes: lettuce_companions::CompanionMemoryChanges::default(),
+            source_window: lettuce_companions::CompanionEffectSourceWindow {
+                message_ids: settled
+                    .user_message_id
+                    .into_iter()
+                    .chain([settled.assistant_message_id])
+                    .collect(),
+                enqueued_at: TimestampMillis::new(1_032),
+            },
+        },
+        TimestampMillis::new(1_032),
+    )
+    .expect("settle the second effect");
+    let forced = host
+        .trigger(
+            second,
+            None,
+            false,
+            WorkerId::new(),
+            TimestampMillis::new(1_033),
+            LEASE,
+            &ResourceAvailability::all(),
+        )
+        .expect("a companion with nothing pending still re-runs the latest window")
+        .into_iter()
+        .next()
+        .expect("claimed forced companion cycle");
+    assert_eq!(
+        forced.admission.batch.window_selection,
+        crate::CompanionMemoryWindowSelection::Recent
+    );
+    assert!(forced.admission.batch.effects().is_empty());
+    assert_eq!(
+        forced
+            .admission
+            .batch
+            .source_messages()
+            .map(|messages| messages.len()),
+        Some(2)
+    );
 }
 
 #[tokio::test]
