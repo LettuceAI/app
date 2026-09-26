@@ -529,6 +529,12 @@ impl StreamNormalizer {
         if let Some(images) = delta
             .and_then(|delta| delta.get("images"))
             .and_then(Value::as_array)
+            .or_else(|| {
+                choice
+                    .get("message")
+                    .and_then(|message| message.get("images"))
+                    .and_then(Value::as_array)
+            })
         {
             self.images
                 .extend(crate::media::openai_generated_images(images));
@@ -886,6 +892,13 @@ impl StreamNormalizer {
                     {
                         return Err(StreamNormalizeError::MalformedJson);
                     }
+                    if part
+                        .get("thoughtSignature")
+                        .and_then(Value::as_str)
+                        .is_some_and(|signature| !signature.is_empty())
+                    {
+                        self.gemini_has_thought_signature = true;
+                    }
                     if part.get("thought").and_then(Value::as_bool) != Some(true)
                         && let Some(image) = part
                             .get("inlineData")
@@ -894,13 +907,6 @@ impl StreamNormalizer {
                     {
                         self.images.push(image);
                         continue;
-                    }
-                    if part
-                        .get("thoughtSignature")
-                        .and_then(Value::as_str)
-                        .is_some_and(|signature| !signature.is_empty())
-                    {
-                        self.gemini_has_thought_signature = true;
                     }
                     let replay_bytes = serde_json::to_vec(part)
                         .map_err(|_| StreamNormalizeError::MalformedJson)?
@@ -1486,6 +1492,33 @@ mod tests {
                 .cancelled_outcome(String::new(), String::new())
                 .is_none()
         );
+    }
+
+    #[test]
+    fn message_images_back_up_a_delta_without_images() {
+        let mut openai = StreamNormalizer::new(StreamProtocol::OpenAi, None);
+        openai
+            .consume(&record(
+                r#"{"choices":[{"delta":{"content":"Here"},"message":{"images":[{"image_url":{"url":"data:image/png;base64,iVBORw0KGgo="}}]},"finish_reason":"stop"}]}"#,
+            ))
+            .unwrap();
+        let (_, outcome) = openai.finish().unwrap();
+        assert_eq!(outcome.candidates[0].media.len(), 1);
+        assert_eq!(outcome.candidates[0].media[0].base64_data, "iVBORw0KGgo=");
+    }
+
+    #[test]
+    fn a_signed_gemini_image_part_keeps_the_tool_call_replay() {
+        let mut gemini = StreamNormalizer::new(StreamProtocol::Gemini, None);
+        gemini
+            .consume(&record(
+                r#"{"candidates":[{"content":{"parts":[{"inlineData":{"mimeType":"image/png","data":"iVBORw0KGgo="},"thoughtSignature":"image-signature"},{"functionCall":{"id":"call-1","name":"lookup_weather","args":{}}}]},"finishReason":"STOP"}]}"#,
+            ))
+            .unwrap();
+        let completion = gemini.finish_with_provider_replay().unwrap();
+        assert_eq!(completion.outcome.candidates[0].media.len(), 1);
+        assert_eq!(completion.outcome.candidates[0].tool_calls.len(), 1);
+        assert!(completion.provider_replay.is_some());
     }
 
     #[test]
