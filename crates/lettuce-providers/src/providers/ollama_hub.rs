@@ -316,10 +316,7 @@ pub(crate) async fn pull<S: SecretStore + ?Sized>(
         .await
         .map_err(|error| OllamaHubError::Message(format!("Ollama pull request failed: {error}")))?;
     if !(200..300).contains(&stream.status) {
-        let mut body = Vec::new();
-        while let Ok(Some(chunk)) = stream.next_chunk().await {
-            body.extend(chunk);
-        }
+        let body = stream.read_error_body().await.unwrap_or_default();
         return Err(returned(stream.status, &body));
     }
     let mut reader = PullProgressReader::new();

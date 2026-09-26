@@ -14,7 +14,7 @@ use crate::{
     DynamicMemoryToolOptions, dynamic_memory_tool_request_for_run, dynamic_memory_tool_shape,
 };
 
-/// Legacy's largest recursive memory loop hard cap; the user's cap applies below it.
+/// The largest recursive memory loop hard cap; the user's cap applies below it.
 pub const MAX_DYNAMIC_MEMORY_INFERENCE_ROUNDS: u8 = 100;
 pub const MAX_DYNAMIC_MEMORY_ATTEMPT_TOOL_CALLS: usize = 4096;
 

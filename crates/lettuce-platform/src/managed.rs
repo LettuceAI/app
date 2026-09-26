@@ -18,6 +18,9 @@ use crate::{
     },
 };
 
+/// The largest file `read` buffers; it equals the media blob guard so any
+/// stored object can be read whole.
+pub const MAX_MANAGED_READ_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 pub(crate) const MAX_RECOVERY_ARTIFACTS: usize = 256;
 pub(crate) const MAX_RECOVERY_DEPTH: usize = 16;
 pub(crate) const MAX_LIST_ENTRIES: usize = 1024;
@@ -39,9 +42,21 @@ impl ManagedFiles {
         capability: &ReadCapability,
         key: &ObjectKey,
     ) -> Result<Vec<u8>, PlatformError> {
-        let mut file = self.open_read(capability, key)?;
+        let file = self.open_read(capability, key)?;
+        let len = self.metadata(capability, key)?.len;
+        if len > MAX_MANAGED_READ_BYTES {
+            return Err(PlatformError::LimitExceeded);
+        }
         let mut bytes = Vec::new();
-        file.read_to_end(&mut bytes).map_err(PlatformError::from)?;
+        bytes
+            .try_reserve_exact(usize::try_from(len).map_err(|_| PlatformError::LimitExceeded)?)
+            .map_err(|_| PlatformError::LimitExceeded)?;
+        file.take(MAX_MANAGED_READ_BYTES + 1)
+            .read_to_end(&mut bytes)
+            .map_err(PlatformError::from)?;
+        if bytes.len() as u64 > MAX_MANAGED_READ_BYTES {
+            return Err(PlatformError::LimitExceeded);
+        }
         Ok(bytes)
     }
 

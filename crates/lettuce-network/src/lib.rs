@@ -100,6 +100,7 @@ pub struct JsonResponseStream {
     pub request_id: Option<String>,
     pub retry_after: Option<String>,
     received_bytes: usize,
+    error_body_limit: usize,
     idle_timeout: Duration,
 }
 
@@ -116,9 +117,8 @@ impl fmt::Debug for JsonResponseStream {
 }
 
 impl JsonResponseStream {
-    /// Reads the next response chunk with an idle timeout. Streamed bodies
-    /// are consumed as they arrive, so their total size is not bounded, as
-    /// legacy's streamed reads were not. `None` is a clean end of stream.
+    /// Reads the next response chunk with an idle timeout. The total size of
+    /// a streamed body is not bounded. `None` is a clean end of stream.
     pub async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, JsonClientError> {
         let chunk = tokio::time::timeout(self.idle_timeout, self.response.chunk())
             .await
@@ -132,6 +132,26 @@ impl JsonResponseStream {
             .checked_add(chunk.len())
             .ok_or(JsonClientError::ResponseTooLarge)?;
         Ok(Some(chunk.to_vec()))
+    }
+
+    /// Buffers the rest of a non-success body, bounded by the client's
+    /// buffered response limit.
+    pub async fn read_error_body(&mut self) -> Result<Vec<u8>, JsonClientError> {
+        if self
+            .response
+            .content_length()
+            .is_some_and(|length| length > self.error_body_limit as u64)
+        {
+            return Err(JsonClientError::ResponseTooLarge);
+        }
+        let mut body = Vec::new();
+        while let Some(chunk) = self.next_chunk().await? {
+            if body.len().saturating_add(chunk.len()) > self.error_body_limit {
+                return Err(JsonClientError::ResponseTooLarge);
+            }
+            body.extend_from_slice(&chunk);
+        }
+        Ok(body)
     }
 }
 
@@ -883,7 +903,11 @@ impl JsonClient {
                         sleep(delay).await;
                         continue;
                     }
-                    return Ok(response_stream(response, idle_timeout));
+                    return Ok(response_stream(
+                        response,
+                        idle_timeout,
+                        self.max_response_bytes,
+                    ));
                 }
                 Err(error) => {
                     if attempt < max_retries && (error.is_timeout() || error.is_request()) {
@@ -1152,7 +1176,11 @@ impl BulkHttpClient {
     }
 }
 
-fn response_stream(response: reqwest::Response, idle_timeout: Duration) -> JsonResponseStream {
+fn response_stream(
+    response: reqwest::Response,
+    idle_timeout: Duration,
+    error_body_limit: usize,
+) -> JsonResponseStream {
     JsonResponseStream {
         status: response.status().as_u16(),
         request_id: bounded_header(&response, "x-request-id")
@@ -1160,6 +1188,7 @@ fn response_stream(response: reqwest::Response, idle_timeout: Duration) -> JsonR
         retry_after: bounded_header(&response, "retry-after"),
         response,
         received_bytes: 0,
+        error_body_limit,
         idle_timeout,
     }
 }
@@ -1773,6 +1802,44 @@ mod tests {
             received += chunk.len();
         }
         assert_eq!(received, body.len());
+    }
+
+    #[tokio::test]
+    async fn streamed_error_bodies_keep_the_buffered_limit() {
+        let (endpoint, _) =
+            test_server("HTTP/1.1 500 Internal Server Error\r\nContent-Length: 64\r\n\r\n").await;
+        let mut stream = client()
+            .with_max_response_bytes(16)
+            .post_json_stream(
+                &endpoint,
+                "/chat",
+                b"{}".to_vec(),
+                &[],
+                JsonAuth::None,
+                Vec::new(),
+                RequestPolicy::PROBE,
+            )
+            .await
+            .expect("error stream");
+        assert_eq!(
+            stream.read_error_body().await,
+            Err(JsonClientError::ResponseTooLarge)
+        );
+        let (endpoint, _) =
+            test_server("HTTP/1.1 400 Bad Request\r\nContent-Length: 4\r\n\r\nnope").await;
+        let mut stream = client()
+            .post_json_stream(
+                &endpoint,
+                "/chat",
+                b"{}".to_vec(),
+                &[],
+                JsonAuth::None,
+                Vec::new(),
+                RequestPolicy::PROBE,
+            )
+            .await
+            .expect("error stream");
+        assert_eq!(stream.read_error_body().await.expect("body"), b"nope");
     }
 
     #[tokio::test]

@@ -158,10 +158,10 @@ async fn read_error_response(
     runtime: &dyn InferenceRuntimePort,
     cancellation: Option<JobId>,
 ) -> Result<InferenceOutcome, AdapterError> {
-    let mut body = Vec::new();
-    while let Some(chunk) = next_chunk(&mut response, runtime, cancellation).await? {
-        body.extend_from_slice(&chunk);
-    }
+    let body = await_cancelable(runtime, cancellation, async {
+        response.read_error_body().await.map_err(Into::into)
+    })
+    .await?;
     let response = JsonResponse {
         status: response.status,
         body,

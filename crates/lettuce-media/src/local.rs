@@ -19,6 +19,7 @@ use crate::{
 /// A malformed-input guard, equal to the largest entry a backup can carry so
 /// every stored object stays restorable.
 pub const MAX_MEDIA_BLOB_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+const _: () = assert!(MAX_MEDIA_BLOB_BYTES == lettuce_platform::MAX_MANAGED_READ_BYTES);
 pub const MAX_SYNC_MEDIA_CHUNK_BYTES: usize = 1024 * 1024;
 /// Image dimensions are read from bounded headers only; no decoder is used.
 /// This guards downstream decoders from pathological allocation requests.

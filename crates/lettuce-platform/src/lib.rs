@@ -30,7 +30,7 @@ pub use install::{
     ResumableInstall,
 };
 pub use keys::ObjectKey;
-pub use managed::ManagedFiles;
+pub use managed::{MAX_MANAGED_READ_BYTES, ManagedFiles};
 pub use model::{
     Atomicity, CommitReceipt, DirectoryEntry, ObjectKind, ObjectMetadata, ParentSyncStatus,
     ReadCapability, ReadHandle, RecoveryReport, StageCleanupStatus, TrashDurability, TrashReceipt,
