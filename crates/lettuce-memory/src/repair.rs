@@ -10,7 +10,7 @@ pub const MEMORY_REPAIR_TOOL_TEXT_KEYS: [&str; 3] = [
     "memory_repair_category_parameter",
 ];
 
-/// The categories a memory may carry, in the order legacy listed them.
+/// The categories a memory may carry, in their listing order.
 pub const MEMORY_CATEGORIES: [MemoryCategory; 6] = [
     MemoryCategory::CharacterTrait,
     MemoryCategory::Relationship,
@@ -41,8 +41,8 @@ impl MemoryCategory {
     }
 }
 
-/// The single-tool contract legacy used to re-tag memories whose category the
-/// manager left out or invented.
+/// The single-tool contract that re-tags memories whose category the manager
+/// left out or invented.
 #[must_use]
 pub fn memory_repair_tool_request(text: &dyn Fn(&str) -> String) -> ToolRequest {
     ToolRequest {
@@ -81,7 +81,7 @@ pub const fn memory_repairs_fallback_prompt_key(
     }
 }
 
-/// Legacy's keyword buckets, used when a repair request answers with nothing.
+/// Keyword buckets, used when a repair request answers with nothing.
 #[must_use]
 pub fn guess_memory_category(text: &str) -> MemoryCategory {
     const BUCKETS: [(MemoryCategory, &[&str]); 5] = [

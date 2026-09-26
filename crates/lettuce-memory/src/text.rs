@@ -36,7 +36,7 @@ const THINKING_TAGS: [(&str, &str); 6] = [
     ("<|channel>", "<channel|>"),
 ];
 
-/// Why a model-written memory text was not kept, as legacy checked it.
+/// Why a model-written memory text was not kept.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MemoryTextProblem {
@@ -46,8 +46,8 @@ pub enum MemoryTextProblem {
     Meta,
 }
 
-/// Legacy normalization of model output: a surrounding code fence and any
-/// thinking section are removed and the text is trimmed.
+/// Normalization of model output: a surrounding code fence and any thinking
+/// section are removed and the text is trimmed.
 #[must_use]
 pub fn normalize_llm_output_text(raw: &str) -> String {
     let trimmed = raw.trim();
@@ -71,7 +71,7 @@ pub fn collapse_whitespace(text: &str) -> String {
 }
 
 /// The stored form of a model-written memory: normalized, whitespace collapsed
-/// and within legacy's 280-byte limit, rejecting refusals and meta output.
+/// and within a 280-byte limit, rejecting refusals and meta output.
 pub fn normalize_memory_text(raw: &str) -> Result<String, MemoryTextProblem> {
     let normalized = collapse_whitespace(&normalize_llm_output_text(raw));
     if normalized.is_empty() {

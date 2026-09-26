@@ -76,8 +76,8 @@ impl Score {
     }
 }
 
-/// The legacy six-digit memory id a model sees and quotes back. It is unique
-/// within a memory space and never changes after creation.
+/// The six-digit memory id a model sees and quotes back. It is unique within
+/// a memory space and never changes after creation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(try_from = "u32", into = "u32")]
 pub struct MemoryShortId(u32);
@@ -116,7 +116,7 @@ impl MemoryShortId {
         candidate
     }
 
-    /// Exactly six ASCII digits, as legacy rendered them.
+    /// Exactly six ASCII digits.
     #[must_use]
     pub fn parse(value: &str) -> Option<Self> {
         (value.len() == 6 && value.bytes().all(|byte| byte.is_ascii_digit()))

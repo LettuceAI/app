@@ -164,7 +164,7 @@ pub struct NewDynamicMemoryRunAttempt {
     pub space_id: MemorySpaceId,
     /// The memory space as the cycle sees it, after `cycle_start_change`.
     pub starting_memory: crate::MemorySpaceSnapshot,
-    /// Legacy's cycle-start pass (pinned items restored, hot items decayed),
+    /// The cycle-start pass (pinned items restored, hot items decayed),
     /// committed in the same transaction as the run so a replay never decays
     /// twice.
     pub cycle_start_change: Option<crate::MemoryChangeSet>,
@@ -174,7 +174,7 @@ pub struct NewDynamicMemoryRunAttempt {
     pub supersession_enabled: bool,
     pub structured_fallback_format: DynamicMemoryStructuredFallbackFormat,
     pub summary_window: DynamicMemorySummaryWindow,
-    /// The legacy tool contract with its catalog texts, frozen with the run.
+    /// The memory tool contract with its catalog texts, frozen with the run.
     pub tool_request: lettuce_conversations::ToolRequest,
     pub job_id: JobId,
     pub now: TimestampMillis,
@@ -332,7 +332,7 @@ pub enum DynamicMemoryRoundFinishReason {
 }
 
 /// Which request a round answers: the recursive manager loop, or the single
-/// category repair pass that legacy ran after the loop and never resumed from.
+/// category repair pass that runs after the loop and is never resumed from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DynamicMemoryRoundKind {

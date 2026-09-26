@@ -151,7 +151,7 @@ pub trait MemorySummaryRepository: Send + Sync {
 
     /// How far one conversation's dialogue is summarized inside a space. A
     /// companion memory pool is shared by several conversations, so the cursor
-    /// belongs to the conversation, like legacy's per-session tool-event walk.
+    /// belongs to the conversation.
     fn summary_cursor(
         &self,
         space_id: MemorySpaceId,

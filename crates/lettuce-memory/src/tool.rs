@@ -36,8 +36,8 @@ pub const DYNAMIC_MEMORY_TOOL_TEXT_KEYS: [&str; 18] = [
     "memory_done_summary_parameter",
 ];
 
-/// Which legacy memory tool contract a run uses. Group chats use the legacy
-/// group contract, which has no source attribution or supersession.
+/// Which memory tool contract a run uses. Group chats use the group contract,
+/// which has no source attribution or supersession.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DynamicMemoryToolOptions {
     pub group: bool,
@@ -45,7 +45,7 @@ pub struct DynamicMemoryToolOptions {
     pub require_source_message_id: bool,
 }
 
-/// The legacy memory tool contract; `text` resolves a runtime catalog key.
+/// The memory tool contract; `text` resolves a runtime catalog key.
 #[must_use]
 pub fn dynamic_memory_tool_request_for_run(
     options: DynamicMemoryToolOptions,
@@ -199,13 +199,13 @@ pub enum MemoryToolArguments {
         summary: Option<String>,
     },
     /// A call whose arguments cannot be applied; it settles as `Skipped`
-    /// instead of failing the round, as legacy skipped such calls.
+    /// instead of failing the round.
     Unusable {
         reason: MemoryToolSkipReason,
     },
 }
 
-/// The category a create named. Legacy validated it only after the duplicate
+/// The category a create named. It is validated only after the duplicate
 /// check, so an untagged or mistagged create is still reported as a duplicate
 /// when its text already exists.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -234,7 +234,7 @@ pub enum MemoryToolSkipReason {
 
 /// A memory as the model named it: a six-digit short id, a stable id, or (for
 /// deletes) the exact memory text. It resolves against the items current when
-/// the call applies, as legacy did.
+/// the call applies.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct MemoryReference(pub String);
@@ -296,8 +296,8 @@ impl MemoryToolArguments {
         })
     }
 
-    /// Reads arguments as leniently as legacy: unknown keys are ignored and
-    /// optional fields with the wrong shape fall back to their defaults.
+    /// Reads arguments leniently: unknown keys are ignored and optional
+    /// fields with the wrong shape fall back to their defaults.
     pub fn parse(name: &str, arguments: &Value) -> Result<Self, MemoryToolError> {
         let object = arguments
             .as_object()
@@ -529,7 +529,7 @@ pub fn list_memories(items: &[MemoryItem]) -> Vec<ListedMemory> {
         .collect()
 }
 
-/// Which duplicate check matched, as legacy reported it back to the model.
+/// Which duplicate check matched, as reported back to the model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum DuplicateKind {
@@ -538,7 +538,7 @@ pub enum DuplicateKind {
     LexicalOverlap,
 }
 
-/// What a call did, with the facts legacy echoed to the model afterwards: the
+/// What a call did, with the facts echoed to the model afterwards: the
 /// six-digit id, a deleted memory's text and the memory list right after the
 /// call applied.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -602,7 +602,7 @@ pub struct MemoryBatchResult {
     pub results: Vec<MemoryToolResult>,
 }
 
-/// Legacy allowed `floor(initial_count * ratio).max(1)` hard deletes per cycle,
+/// Allows `floor(initial_count * ratio).max(1)` hard deletes per cycle,
 /// counting every memory (cold included) at cycle start and every hard delete
 /// across the cycle's rounds; a cycle over an empty space allows none.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -645,8 +645,8 @@ impl MemoryCycleBudget {
     }
 }
 
-/// The cycle-start pass legacy ran before the summary phase: pinned memories
-/// return to hot, then every hot unpinned memory decays by
+/// The cycle-start pass before the summary phase: pinned memories return to
+/// hot, then every hot unpinned memory decays by
 /// `decay_rate / (1 + sqrt(access_count))` and goes cold below the threshold.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MemoryCycleStart {
@@ -656,8 +656,8 @@ pub struct MemoryCycleStart {
     pub demoted_ids: Vec<MemoryId>,
 }
 
-/// The once-per-cycle policy pass legacy ran after the loop and the repair
-/// pass: trim to `max_entries`, then demote to the hot token budget.
+/// The once-per-cycle policy pass after the loop and the repair pass: trim
+/// to `max_entries`, then demote to the hot token budget.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MemoryCycleFinish {
     pub change: Option<MemoryChangeSet>,
@@ -978,10 +978,9 @@ fn enforce_superseded_cap(items: &mut Vec<MemoryItem>, cap: usize) {
     });
 }
 
-/// Legacy `find_duplicate_memory_reason`: the first memory, in item order,
-/// whose normalized text equals the candidate's, whose embedding is similar
-/// enough, or whose keywords overlap at least 90 percent, checked in that
-/// order per memory.
+/// The first memory, in item order, whose normalized text equals the
+/// candidate's, whose embedding is similar enough, or whose keywords overlap
+/// at least 90 percent, checked in that order per memory.
 fn duplicate_id(
     candidate: &str,
     semantic_duplicates: &[SemanticDuplicateEvidence],
@@ -1119,8 +1118,7 @@ fn ensure_pinned_hot(items: &mut [MemoryItem]) {
 }
 
 /// Demotes the least recently accessed hot, unpinned memories until the hot
-/// tokens fit `budget`; equal access times keep item order, as legacy's
-/// stable sort did.
+/// tokens fit `budget`; equal access times keep item order.
 fn enforce_hot_budget(items: &mut [MemoryItem], budget: u32) -> Vec<MemoryId> {
     let mut current = items
         .iter()
@@ -1150,7 +1148,7 @@ fn enforce_hot_budget(items: &mut [MemoryItem], budget: u32) -> Vec<MemoryId> {
 }
 
 /// Drops the lowest scored unpinned memories down to `max_entries`; equal
-/// scores keep item order, as legacy's stable sort did.
+/// scores keep item order.
 fn trim_to_capacity(items: &mut Vec<MemoryItem>, max_entries: usize) -> Vec<MemoryId> {
     if items.len() <= max_entries {
         return Vec::new();
