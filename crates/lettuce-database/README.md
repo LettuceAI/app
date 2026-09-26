@@ -1,1196 +1,263 @@
 # lettuce-database
 
-Migration 17 persists TTS audio-provider metadata and user voice profiles.
-Provider kinds and versioned configurations are cross-checked on every read;
-credential rows contain only scoped native-secret references and owner IDs.
-Provider and voice updates use revision compare-and-swap while retaining their
-creation timestamps. Foreign keys require every voice to have a provider and
-delete dependent voices atomically when that provider is removed. The deleted
-provider record is returned through the domain port so native-secret cleanup
-can run separately without storing plaintext in SQLite.
-
-Migration 17 also stores bounded discovered TTS voices by provider and response
-ordinal. Refresh replacement runs in one immediate transaction, preserves the
-provider response order and versioned label map, and cascades with provider
-deletion. Failed or invalid replacement leaves the prior rebuildable cache
-intact.
-
-The usage ledger also reads the terminal usage event by turn and attempt
-(`get_for_attempt`) through the existing event query; it adds no schema.
-
-Initial generation dispatch is checkpointed in the original conversation
-migration: `generation_initial_dispatches` holds one pending row per running
-prepared attempt, bound to its job, request fingerprint and the job usage event
-that will retain the raw dispatch evidence. The same immutable row stores the
-versioned provider-neutral request without its runtime stream sink; reads
-recompute its fingerprint, and an exact attempt-owned lookup supports restart
-and interrupted-child recovery without consulting mutable preparation inputs.
-Admission requires a running turn
-and attempt with a resolved model, the attached job, matching prepared model and
-attributions, an existing job and no tool executions yet. Settlement is the only
-permitted update, writes the versioned result once, requires settled job usage
-that agrees with the result, verifies conversation-retained replay artifacts and
-records them in `generation_initial_replay_refs` so orphan cleanup keeps them.
-Reads revalidate stored replay references and usage agreement; exact settlement
-replay returns the stored record, changed results conflict, and SQL update or
-delete of admitted rows, including request replacement, is rejected.
-
-Conversation preparation now writes the existing turn model/prompt/memory fields
-and ordered lorebook attribution rows in the mutation-kernel transaction. Job
-ownership, preparing state and revisions are checked before writes; a failed
-attribution insert rolls back the entire preparation. Exact replay verifies the
-stored values, and recovery may reuse matching preparation under a child attempt.
-The original conversation migration includes the preparation operation kind.
-
-Preparation verifies the model artifact's stored reference, digest, and attachment
-to the conversation using the existing snapshot verifier. Missing, foreign, or
-forged artifacts cannot become turn provenance. Group preparation reuses the
-candidate-author resolver: an explicit director target, a persisted mention or
-automatic decision, or the original regeneration author supplies the identity.
-It does not require an automatic selector or a SelectingSpeaker checkpoint.
-Unresolved multi-character turns fail before preparation writes.
-
-A file-backed lifecycle scenario covers direct, automatic group, explicit mention,
-and director continuation preparation; ordered prompt/lorebook entry attribution;
-reopen; interruption and child-job reuse; changed child rejection without writes;
-and child finalization. Group regeneration also prepares and finalizes without
-reselecting the original author. Historical attribution revisions are retained
-without consulting current authored entries. This is repository recovery coverage,
-not host scheduling or response checkpoint replay.
-
-Optional cached-input and reasoning token evidence survives usage ledger,
-creation inference-round, dynamic-memory inference-round and summary-checkpoint
-round trips. Original migrations 9/10/11 store nullable nonnegative counters.
-Raw counters are not clamped; billing applies its existing clamping policy.
-Cache-write and web-search counts follow the same nullable, checked persistence
-path in the original migrations, including summary and inference checkpoints.
-Optional provider-reported cost follows that same path as a checked finite,
-nonnegative REAL, retaining the legacy f64 precision without rounding to cents.
-
-Migration 10 also retains immutable per-event usage-cost bases through
-`UsageCostLedger`: versioned prices, provenance and calculation inputs are
-stored separately from raw usage evidence. Exact retries are idempotent;
-changed bases conflict and SQL updates/deletes are rejected. Costs are derived
-with the basis version's calculator rather than current provider prices.
-
-Job-owned inference usage in migration 10 admits each dispatch against an existing
-job and settles its versioned result once. Pending and settled evidence survives
-database reopen and job retention cleanup. SQL guards reject evidence mutation
-and deletion; exact admission/settlement replay remains idempotent.
-
-`UsageCostLedger::record_job_cost` and `get_job_cost` attach the existing
-version-1 pricing basis to known response usage in `job_inference_usage`.
-Migration 10 stores it in `job_usage_costs` with an evidence FK and immutable
-update/delete guards. Job cleanup retains both evidence and costs. The same
-domain validation checks model/provider identity and all known counters and
-reported amounts; unavailable dispatch usage is rejected. The file-backed
-usage regression verifies cost replay after reopen and job deletion, conflicting
-bases, invalid evidence, and unchanged raw usage. Prices remain caller supplied.
-
-Staged lorebook source documents are retained by project/source identity in
-migration 11. Admission writes their asset references and the project in one
-transaction, requiring ready source-document assets. Foreign keys protect the
-assets even when their original retention class is temporary; references live
-as long as the saved project, including cancelled and committed projects.
-Loading verifies the reference rows against excerpt provenance in the run JSON.
-
-Epoch-2 SQLite schema, migrations, maintenance, and repository adapters.
-
-`restore_writer` implements `ProviderBackupRestoreWriter` for an empty database
-in one transaction with deferred foreign keys. It writes media blob and asset
-rows, provider accounts, model profiles, prompts, audio providers, user voices,
-personas, lorebooks, characters, groups and their lorebook bindings with their
-exported ids, revisions, timestamps and states, sets the persona default and
-global settings and selections to the exported rows, and inserts ASR learning
-records. Reading the restored database back yields the same sections. Companion
-Soul states are replaced by their exported rows later in the same transaction.
-Protected snapshot and replay artifacts are
-written from their verified backup bytes, and every conversation goes through
-`conversation_history_writer` in exact mode: exported operations and outbox
-events instead of a generated create record, provider replay references,
-selected speaker, lorebook and memory attribution, failed or interrupted turns
-without candidates, companion memory pools shared by several conversations,
-usage events and cost bases. Work that was in progress when the backup was taken
-is restored as interrupted (user decision 2026-09-14) through
-`lettuce_transfer::settle_in_flight_generation`: unfinished attempts are
-interrupted with a derived interrupted usage event (not admitted, or transport
-failed when a job dispatch exists), unfinished turns become interrupted, turns
-without attempts are left out, running tools are interrupted and requested or
-validated tools cancelled. Earlier the attempt got a usage id without an event,
-so a restored database with such work could not be backed up again. Jobs and job events are written as exported through the job store's
-validation (in-flight jobs keep their state so the normal lease-expiry recovery
-handles them like after a restart), with job inference usage and cost bases.
-Speech transcriptions and syntheses are inserted pending and settled through
-their settle-once triggers, so a restored synthesis is checked against its
-output asset and provenance like a live one. Revision and candidate media refs
-that were historical at backup time (retired by regenerate, candidate choice,
-edit or tombstone) are exported per owner and flipped back to historical after
-the history writer inserts them active; ref `created_at` still follows the
-revision or candidate timestamp. Legacy import evidence (runs, assignments,
-skips, secret and media completions, stage, graph, provider-model and ASR
-results) and imported legacy usage records are exported as column rows by
-`legacy_import_backup_adapter`; each run is restored in admission order by
-walking its status guard (`admitting` for assignments and skips, `admitted` for
-completions and ASR results, `importing` for results, `partial` for stage
-results, then its final status), and the restored run row must read back equal.
-Each turn walks the shortest legal status path of the 0008 transition graph,
-and per attempt the writer restores its speaker dispatch while the turn is
-selecting a speaker, its initial dispatch with replay references and tool
-executions while the attempt is running (a tool walks from `requested` along
-the path its revision implies; a tool left unsettled by an interrupted attempt
-is settled with it), and its generation checkpoints. Memory retrieval accesses
-follow the conversations, then companion relationship states, session states
-with their emotion vectors and signals, continuity episodes and apply receipts
-at their exported revisions, companion Soul states with their facts and apply
-receipts (replacing the Soul rows the character insert seeded), scheduled notes
-and the companion memory pool ownership rows. Dynamic memory pending approvals and runs follow:
-each source row is inserted while its message briefly renders the source the run
-recorded (messages tombstoned at backup time are written hidden and tombstoned
-after the runs, because a tombstone cannot be undone), attempts walk
-`created -> processing -> terminal` up to their stored status with their rounds,
-tool calls, settlements and summary checkpoints, and background work still open
-at backup time (created or processing attempts, processing companion effects)
-stays open for its restored job, like after a restart. Companion turn effects
-are written through their draft, processing status and children, then settled;
-suffix rewinds and effect invalidations come last. Secrets, media bytes and the
-cutover belong to the app restore coordinator. Job pruning keeps terminal jobs that a speech transcription or synthesis still
-binds (and their ancestors), because that evidence forbids deleting its job;
-before this, one such job made every later prune fail.
-`Database::carry_device_local_state_from`
-attaches the previous database file and copies the device-local rows a backup
-never carries: installed Whisper model manifests and the discovered voices of
-audio providers present in the restored database. The sync device identity,
-journal, frontiers and conflicts are not carried (user decision 2026-09-25):
-after any restore, v2 or legacy, the database joins sync as a new device and
-its first scan journals everything it holds as inserts stamped with each
-snapshot's latest `updated_at`. Peers settle them by last-writer-wins, so an
-older restored version loses to a newer edit on a peer, and nothing the
-restore lacks reaches a peer as a delete.
-
-Legacy `companion_turn_effects` and `sync_v2_conflicts` rows are kept verbatim
-in the run's provenance (`legacy_import_preserved_rows`, user decision
-2026-09-25): `read_legacy_preserved_rows` reads each row as a JSON object with
-BLOBs as `{"hex": ...}`, `record_legacy_preserved_rows` stores them
-immutably once per run and key, and v2 backups carry them with the run. An
-effect whose assistant message the import wrote with a generation turn also
-becomes a companion effect record (the newest turn of that message, memory
-changes limited to imported memories); the rest stays only in provenance. A
-conflict the user never resolved on a legacy `messages` or `group_messages`
-row becomes forks of the imported conversation: `legacy_message_conflicts`
-decodes the recorded bincode row snapshots and takes every side whose content
-differs from the imported message, and `fork_legacy_message_conflicts` copies
-the message with each such content into a branch from its parent and flags it
-in `sync_conversation_forks` for the user to choose. A branch needs an earlier
-message to fork from, so a conflict on a chat's first message (and one on a
-message the import does not hold) is recorded at planning as a
-`message_conflict` skip. A fork that fails to write is rolled back alone,
-counted and logged; the restore continues and the row stays in provenance.
-Conflicts on other tables stay only in provenance. Preserved rows keep a BLOB
-as `{"hex"}`, non-UTF-8 TEXT as `{"text_hex"}` and a non-finite REAL as
-`{"real"}`.
-
-The legacy migration boundary can open an old `app.db` read-only, require the
-actual version-92 schema roots, and return a bounded typed import inventory.
-It performs no source migration or destination writes during preflight. It accepts
-`LEGACY_DATABASE_SCHEMA_VERSIONS` (92 to 96, user decision 2026-09-23): the
-released 2.2.0 stored 92 or 94, 2.2.1 stored 95 and 2.2.2 to 2.2.5 stored 96.
-Those versions keep the 92 table layout the reader expects: 93 and 94 only
-repaired group columns, 95 rewrote group session override encodings the
-importer reads in both forms, and 96 reordered columns and renamed leftover
-tables. Older
-databases are refused: the old app migrates them to its current version when
-opened once, and pre-SQLite `.bin` stores are not read (legacy imported them
-itself on startup).
-
-`read_legacy_database_documents` reproduces the 22 documents the legacy backup
-exporter writes, with the exporter's exact column lists, ordering, COALESCE
-defaults, boolean conversions and pretty JSON, so a live legacy database and a
-legacy backup archive feed one shared backup planner. Memory embedding copies
-use one canonicalization for session, group, companion and owner documents,
-serializing normalized rows in the legacy `MemoryEmbedding` field order and f32
-text and falling back to the legacy column only when no rows exist.
-
-Legacy model rows always carry `model_type = 'chat'` once saved by the modern
-editor, so a model whose output scopes are image-only plans as an image model;
-text-and-image outputs stay chat models with image output retained in their
-capabilities, and the old `imagegeneration` type still maps to image.
-
-Persona planning reads the complete version-92 persona shape in stable creation
-order without a record count limit, and fails on malformed JSON,
-IDs, crop, LoRA, default or timestamp data rather than dropping fields.
-
-Lorebook planning reads roots and their entries together, validates exact
-legacy enum and boolean encodings, and rejects malformed keywords, timestamps
-and orphan entries. External world-info fields already discarded by the legacy
-importer are not fabricated as version-92 database fields.
-
-ASR learning planning reads all four final version-92 learning tables through
-the same read-only connection. It retains every authored value, normalized
-value, metric, timestamp and voice-audio locator in stable source-ID order,
-validates optional term and correction links within the complete plan, and
-limits no row count before returning any output. Planning
-does not ingest audio or mutate either database.
-
-Legacy import admission persists immutable assignments for all four ASR row
-kinds alongside media assignments. Source integer IDs map to typed destination
-UUIDs, replay returns the original mapping after reopen, and the foundation
-schema accepts these assignment kinds only while the run is admitting. This
-does not write live ASR rows or mark their audio complete. A later immediate
-transaction resolves those assignments into all four live ASR tables only after
-each voice asset has an immutable media completion. The ASR result receipt is
-immutable and exact retries replay it after reopen; invalid timestamps, missing
-audio, dangling links or destination collisions roll back every ASR row.
-
-Provider/model planning reads the final version-92 settings, credential and model
-tables through a read-only connection. It applies the legacy credential resolution
-order, validates defaults and parent bindings, maps custom protocol configuration
-and model scopes/settings into typed candidates, and enforces separate account and
-profile bounds. SQL exposes only API-key presence plus header names, types and
-lengths, so secret values do not cross the source-reader boundary. Unmapped field names
-identify later embedded-runtime, image and feature-policy work without copying their
-values out of the source. File-backed tests compare the database bytes before and
-after planning and cover mapped fields, defaults, stable order, malformed rows,
-orphans and both limits.
-
-The version-92 plaintext `api_key` column is authoritative because migration 7
-backfilled it from the former secrets table. The obsolete `api_key_ref` is not
-treated as secret evidence or copied. Legacy llama.cpp models keep their runtime
-behavior through a deterministic secret-free built-in account instead of becoming
-orphans.
-
-## Boundary
-
-The only crate allowed to depend on SQLite libraries.
-
-The public surface is intentionally small. Business invariants belong in domain models and use cases; infrastructure is accessed only through narrow ports owned by the calling crate.
-
-## Foundation schema
-
-Migration 1 creates only migration bookkeeping plus four usable roots:
-global settings, provider accounts, model profiles, and content-addressed media
-blobs. Migration 2 adds the logical media-asset catalog, retaining the blob
-catalog as the physical metadata boundary. Later feature tables arrive with
-their owning vertical slices.
-
-Migration 3 adds authored character graphs and starter-owned content. Migration
-4 adds personas and their media/default associations. Migration 5 adds
-reusable group profiles, ordered members, typed image associations, and the
-optional complete group-owned starting scene graph. Migration 6 adds the
-provider-neutral prompt/lorebook documents, ordered entries, and typed
-character/persona/group lorebook bindings. Prompt/lorebook JSON is strictly
-versioned and aggregate revisions use CAS; bindings follow the latest
-lorebook revision while archived references remain readable.
-Migration 7 adds nullable stable keys for built-in prompt entries, with a
-partial per-prompt uniqueness index and strict nonblank/bounded storage checks.
-Built-in reconciliation matches keyed entries so IDs and entry history survive
-catalog refreshes, while ordinary user drafts cannot forge catalog keys.
-Migration 8 adds the normalized conversation ownership graph: participants and
-settings, durable branches/messages/turns, revisions/candidates, typed media
-associations, generation attempts/checkpoints, operation/outbox records, and
-usage references. It also stores bounded tool executions under the exact
-conversation/turn/attempt that requested them. Tool request identity and input
-are immutable, provider call IDs are unique within an attempt, state changes use
-revision CAS, and terminal states cannot regress. Provider replay references use
-the existing protected replay-artifact store rather than leaking opaque replay
-data into ordinary rows. Multi-call provider responses are inserted in one
-immediate transaction, so an ordinal or provider-ID collision cannot leave a
-partially durable handler round. Each later tool round compare-and-appends at
-the expected attempt ordinal. Multi-execution lifecycle transitions use the
-same immediate-transaction rule: all executions share one attempt owner and
-either every expected revision advances or none do.
-The conversation repository can read the latest checkpoint sequence for an
-exact turn/attempt, returning no sequence before the first append and preserving
-that result across reopen. The existing contiguous insert trigger remains the
-authority for sequence uniqueness.
-Durable history is
-restrict-owned and composite foreign keys
-keep every child scoped to its conversation and turn. Snapshot and provider
-replay bytes are held in separate private artifact tables; ordinary conversation
-rows store references and the artifact store verifies immutable metadata and
-payload digests before reads or trusted transfer. A separate narrow provider
-replay port materializes only fully matched protected references for exact
-provider-native continuation; raw bytes remain outside repositories and DTOs.
-The database currently exposes
-an internal normalized create/read slice while the complete conversation
-repository mutation port is still being implemented.
-Initial scene and starter messages use normalized source rows tied to both the
-conversation message and its selected snapshot artifact. Those rows are durable
-attribution, not a license for storage to interpret protected artifact bytes;
-the application launch planner materializes the validated authored content
-before the eventual atomic creator writes it.
-Migration 8 is the final normalized conversation schema. Generation turns
-persist a typed target, retry source, provider request overrides, and
-forced-speaker identity directly; there is no legacy runtime-contract column
-or follow-up migration. Runtime triggers enforce target/input coherence,
-retry terminal-source ownership, group speaker ownership, settings
-provenance/value pairing, and branch/message topology. The conversation
-adapter checks every generation-turn status change against the domain transition
-table before issuing SQL, while the matching migration trigger remains a
-storage-level invariant.
-Global ID indexes support recovery lookups without weakening conversation-local
-composite ownership. Outbox consumer leases, usage ledgers, and memory join
-tables are intentionally outside this migration.
-Migration 9 adds revisioned memory spaces and strictly typed ordered memory
-items. The adapter creates spaces atomically and replaces a complete item set
-under one immediate-transaction revision comparison, so a stale or failed
-dynamic-memory round cannot partially alter the stored snapshot. The same
-migration stores rebuildable ready/repair-needed embedding projections as
-little-endian float BLOBs. Projection reads join exact live memory ID and text;
-stale derived rows cannot affect similarity, while unchanged projections
-survive the complete item-set CAS without rewriting their BLOBs. Repair queries
-also synthesize work for live items with no matching projection, closing the
-crash window between authoritative memory commit and derived-data persistence.
-`put_ready` writes a vector in one statement only while the memory still has
-the embedded text (`Superseded` otherwise), and `put_reembedded` also stores
-the recounted token count under the same check. Change sets and synced items
-keep the stored token count of an item whose text they leave unchanged, so a
-recount needs no revision bump and an older snapshot cannot restore the old
-count.
-Migration 9 also owns background dynamic-memory runs that are intentionally not
-conversation generation turns. The immutable run binds the normalized
-conversation memory space plus its complete starting snapshot, ordered
-source-message roles, effective times, and active immutable revision/candidate sources,
-full resolved inference profile, frozen time-awareness flag, and matching tool
-contract. The same memory root owns a normalized cumulative summary, token
-count, and ordered source-message cursor; immutable runs freeze the selected
-summary interval and half-open window. Memory items preserve coherent optional source role, observed time,
-and legacy `turn` precision alongside source-message attribution. The same
-rows preserve superseded-by/time and ordered supersedes IDs, while the immutable
-run freezes whether its tool contract enables companion supersession. It also
-stores the selected JSON/XML structured fallback format so recovery cannot
-silently change the parser or retry request.
-One immutable pre-round summary checkpoint stores the validated cumulative
-summary, token count, exact provider-neutral request context, usage, provider
-request ID, and root-revision transition in the same immediate transaction as
-the summary cursor CAS.
-Migration 9 stores the conversation-owned `askFirst` prompt baseline and
-pending/skipped state. Repeating discovery at the same unsummarized count is a
-no-op; skip clears pending but retains the baseline, and a later full interval
-advances the durable prompt count. Automatic or approved forced job admission
-clears the row.
-The foundation settings row keeps the dynamic-memory and group speaker models
-as typed model-profile foreign keys beside the application default. Their
-narrow CAS updates are idempotent, and model/profile graph deletion clears all
-matching routes in the same transaction before removing the referenced profile.
-CAS attempts provide
-created/processing/succeeded/failed/cancelled/interrupted state; ordered rounds
-and calls retain their exact provider-neutral request context, bounded usage,
-and protected provider-replay references.
-Admission and retry are idempotent, recovery interrupts the parent and clones
-its exact round/call evidence plus any settled result checkpoints into one
-processing child, and SQL ownership
-guards prevent a foreign conversation, memory space, or source message from
-entering the run. Background tool outcomes are immutable per admitted round and
-commit in the same transaction as the memory revision CAS; stale revisions roll
-back without results, while exact retries return the original settlement. The
-SQLite scenarios also prove this lifecycle creates no conversation turn or
-message.
-Possession of `Database` is a trusted application-composition capability: ordinary
-conversation repositories and DTOs expose artifact references only and cannot
-export protected bytes. Trusted transfer remains a separate composition-only
-capability.
-The settings row carries the optional companion clock as nullable versioned
-JSON, read and written through the existing settings CAS, outbox and backup
-materialization path. New user and assistant messages of a direct chat take
-their effective time from that clock when the live character is a companion or
-the conversation has companion session state, the two sides of legacy's
-`is_companion_mode` (session mode or character mode), as legacy stamped
-`effective_at`; a finalized turn event reports the stored message time,
-so a regenerated reply keeps its original time like legacy.
-
-Dynamic-memory run admission applies the optional cycle-start memory change
-(`cycle_start_change`) through the same compare-and-apply as any memory change,
-inside the transaction that inserts the run, and then requires the stored space
-to equal the run's `starting_memory`; a stale change conflicts and inserts no
-run.
-
-Migration 10 owns the append-only usage ledger. The adapter derives conversation
-ownership from the durable generation attempt, records known token counters or
-one explicit unavailable reason with immutable model/provider revisions, and
-implements the conversation `UsagePort`. Exact retries for one attempt return
-the original usage ID; changed evidence conflicts, and SQL triggers reject
-updates or deletes.
-Migration 11 owns creation-helper proposal state. It persists the target and its
-expected authored revision, user turns before inference, and an immutable
-ordered proposal lineage. Workflow stage/current-proposal changes use revision
-CAS and ownership/lineage triggers; exact retries are idempotent, while stale
-base proposals and changed identities conflict. A workflow may leave the
-confirmation stage again (the helper keeps editing after a confirmation
-request), but once any apply receipt exists the workflow is closed: triggers
-reject workflow updates and new turns or attempts, and the adapter refuses
-turns, attempts, recoveries, proposals and settlements with Conflict. Apply is
-refused while an attempt on the current proposal is created or running. Tool
-calls must match a declared name and version, except calls to undeclared
-tools, which are admitted at version 1 and answered as unknown tools. The
-adapter implements the `lettuce-creation` port. Confirmed new-persona apply is the first deliberate
-authored-domain write: new and existing persona applies reuse the persona create
-and revise paths and commit the persona plus an immutable
-workflow/proposal/destination receipt in one transaction. Receipt identity is
-per workflow, allowing later distinct workflows to revise the same persona
-through fresh authored CAS tokens. Other creation targets still cannot write
-character, persona, or lorebook tables.
-Confirmed new-character apply likewise reuses the complete character-plan
-insert transaction and records a separate strongly referenced immutable
-character receipt. Character root, scenes, and receipt commit together; a
-failed graph insert or duplicate destination leaves neither partial children
-nor a receipt.
-Confirmed new-lorebook apply shares the complete lorebook aggregate insert
-transaction and adds a strongly referenced immutable lorebook receipt. Root,
-ordered entries, and receipt are one commit; exact retries never regenerate
-entry identities.
-Existing-lorebook apply reuses the complete aggregate CAS writer and the same
-typed receipt table. It reconciles reviewed entry IDs in one transaction,
-preserves hidden policy fields for retained entries, permits sequential
-workflows against later root revisions, and rolls back root, children, and
-receipt together on any collision or validation failure.
-Existing-character apply similarly uses one character-owned profile/scene CAS
-transaction and the immutable character receipt. The adapter preserves the
-unreviewed graph, rejects dependent scene removal, and commits profile, ordered
-scenes, one root revision bump, and receipt together.
-Migration 12 owns character-scoped companion Soul state. Facts, ordered source
-memory IDs, and supersession evidence are normalized rather than mirrored into
-a JSON authority. The domain-owned adapter applies one typed `SoulChangeSet`
-under immediate-transaction revision CAS, rewrites the bounded state, advances
-the root, and inserts an immutable operation receipt atomically. Exact retries
-return the original receipt; changed operation reuse, stale revisions, foreign
-owners, malformed rows, and partial writes fail closed.
-The same unshipped migration now stores one immutable companion growth run per
-durable job and memory run. It freezes the successful memory attempt, profile,
-prompt inputs, bounded evidence, Soul snapshot, and deterministic apply ID;
-the adapter admits one immutable reduced-proposal checkpoint before Soul apply
-and replays it exactly across restart.
-Migration 12 also stores one consolidation run per succeeded growth job. The
-row freezes the authoritative post-growth Soul revision and companion prompt
-inputs plus a deterministic apply ID; its typed adjustment/retirement proposal
-checkpoint is immutable and independently replayable before the later Soul
-apply worker runs.
-Migration 12 also stores explicit Soul-writer preview runs by request ID. The
-immutable row binds the interactive job and freezes both resolved profiles,
-prompt identity/revision, exact prompt values, normalized starting draft,
-fallback format, and creation time. Ordered primary/fallback round checkpoints
-are appended separately and exact checkpoint replay is idempotent, so a later
-provider failure retains only durable incomplete work for retry. This preview
-store does not mutate character-owned Soul state.
-Migration 12 also owns normalized character-scoped scheduled notes with the
-legacy recurrence, availability, expiry, enabled, and recurrence-window fields.
-The SQLite adapter rejects non-companion owners, lists in legacy
-`available_at`/ID order, normalizes authored label/content on upsert, and keeps
-delete idempotent.
-Creating a companion character now seeds its initial character-owned Soul root
-and normalized authored facts inside the same character aggregate transaction.
-An authored-fact failure rolls back the character and Soul rows together;
-roleplay character creation writes no Soul root. Exact initial-state retries
-through the Soul repository return the existing typed state only when state
-and creation timestamp match.
-Migration 13 owns normalized companion runtime state. Four emotional vectors
-and ordered driver/active signals are conversation-local; relationship axes,
-tension, stability, interaction count, and last interaction are keyed by the
-companion character plus persona/default scope. Creating another conversation
-for the same scope keeps its fresh emotion but hydrates the existing
-relationship, regardless of dynamic-memory sharing. Atomic dual-revision CAS
-updates both scopes and records an immutable request hash/receipt; stale writes,
-changed retries, corrupt rows, and partial vector/signal writes fail closed.
-The companion prepared-launch adapter now seeds those rows inside the existing
-conversation creation transaction. A state-seed failure rolls back the entire
-conversation launch, and replay validates the same frozen initial-state hash
-before returning the already committed conversation.
-Migration 13 also stores the legacy character/persona continuity sequence.
-Each fresh direct companion launch closes only the prior open episode and links
-the next index to it in that same transaction; exact launch replay leaves the
-sequence unchanged, and a different persona starts its own sequence.
-
-Migration 11 also stores immutable single-entry lorebook-generation runs. Each
-request is bound to one generic creation job plus the real conversation,
-lorebook, character/persona, model profile, and prompt revision; the complete
-frozen request remains versioned JSON and exact replay rejects any drift.
-Staged lorebook planner runs use the same migration to persist the frozen
-project/profile/prompt boundary and its single immutable provider attempt.
-Attempt persistence precedes the atomic planning-to-outline-review CAS, so a
-restart cannot redispatch a completed planner request.
-The following outline approval is another exact-replay CAS on the same staged
-project row, atomically storing the ordered legacy-initialized pending drafts
-and the drafting stage.
-Migration 11 also stores immutable per-plan staged writer runs. Scalar
-project/job/plan/model/prompt projections are checked against versioned JSON,
-and exact request replay returns the original run while changed replay
-conflicts.
-Writer attempts are stored inside the immutable writer-run document before the
-separate stable-plan project CAS. Exact checkpoint and draft settlement replay
-without another provider request.
-Draft-batch start, independent stable-plan success/failure, and drafts-ready
-gating use project-row CAS updates. Parallel completions may advance the root
-revision independently without invalidating another run from the same frozen
-batch.
-Stable-plan manual draft edits and approval toggles use the same project-row
-revision CAS. Exact operation retries return the stored project, while stale or
-changed retries conflict.
-Refinement reuses the immutable staged-writer run table for its frozen input and
-attempt, then commits the revised draft plus one history record through a strict
-project-revision CAS. Exact settlement replay is restart-safe.
-Coherence proposal submission and accepted-change application are project-row
-CAS operations as well. The application receipt retains the exact accepted-ID
-list so changed stale retries cannot masquerade as exact replay.
-Coherence admissions and attempts are retained in the versioned staged-project
-document before the separate proposal CAS. Multiple review cycles keep their
-own immutable request/job evidence instead of overwriting an earlier run.
-Prepared companion sends reuse the conversation send transaction: the user
-message, generation turn/attempt, companion session and relationship revisions,
-operation, and outbox commit together. A stale state CAS or hook failure rolls
-the entire send back, while exact operation replay returns the existing turn
-without applying the state transition twice.
-Migration 13 also normalizes the legacy companion turn-effect seed as
-relationship columns, three emotion-delta vectors, and ordered signal changes.
-Only dynamic-memory companion sends create that hidden turn-owned seed.
-Companion continuations use the same boundary with the legacy zero-delta seed
-and nullable user-message reference.
-Assistant finalization creates the processing effect in the same transaction;
-failure/cancellation removes an unconsumed seed, while interrupted recovery
-keeps it with the same turn. Ready/failed settlement stores typed memory IDs,
-the exact source-message window, and bounded summary data behind the
-companion-owned repository port. Terminal effects are immutable.
-Memory items store their six-digit `short_id` with a per-space uniqueness
-constraint.
-Migration 9 stores one immutable dynamic-memory retrieval-access receipt per
-generation attempt. Its transaction verifies conversation, attempt, space,
-revision and every selected active memory before applying the legacy cold
-promotion and access-count updates, records which selected items were cold
-before that promotion, then advances the memory root once. A
-matching retry returns the recorded resulting revision without touching the
-items again; changed input and stale selections roll back as conflicts.
-Migration 13 adds immutable delete-after rewind receipts and companion-effect
-invalidation rows. The adapter uses an admitted run's starting snapshot and an
-earlier summary checkpoint as the rollback authority, applies one memory CAS,
-restores the summary without a second root revision bump, clears pending
-approval, and records the exact retry result atomically. Effect invalidation is
-an overlay, so migration 13's terminal effect evidence is never rewritten.
-The versioned operation `result_json` and outbox `event_json` envelopes are the
-canonical payloads; scalar columns are routing/index projections. The future
-full repository must validate projection equality on every write and hydrate.
-Usage rows are references owned by the external `UsagePort`, not copied usage
-records.
-
-`conversation_settings` keeps a group conversation's own speaker-selection
-method (`speaker_selection` with `current_override` or `launch_inherited`
-provenance).
-Migration 8 also stores one immutable provider-backed speaker-selection
-dispatch per generation attempt. Admission requires the attached attempt to be
-preparing at `SelectingSpeaker`; settlement requires the linked job inference
-evidence to be terminal and the selected participant to be enabled and unmuted.
-The row retains the exact request fingerprint, usage-event identity and final
-decision, so process reopen replays selection without another provider call.
-
-Sessions, conversation assembly/resolution, starter-link normalization,
-import/export, hard purge, sync/backup, FTS, and legacy text-column retrofits
-remain outside this slice. Existing prompt/lorebook text columns are not
-silently migrated or overwritten.
-
-`Database` owns a serialized `rusqlite` connection, enables foreign keys and a
-bounded busy timeout, and uses WAL for persistent files. Repository traits stay
-in their domain crates; this crate contains their SQLite implementations. The
-application is responsible for running these synchronous operations on its
-database worker rather than a UI or async-runtime thread.
-
-The generic `JobStore` persists versioned specifications, snapshots, and an
-ordered event table here. Each mutation loads the durable aggregates into the
-single lifecycle reducer in `lettuce-jobs`, applies it under `BEGIN IMMEDIATE`,
-and writes only changed jobs and events before commit. This preserves the
-reference store's idempotency, lease, cancellation, retry, progress, pagination,
-recovery, and retention behavior across process restart and concurrent database
-handles without creating a second scheduler state machine.
-
-Migration 14 stores admitted ASR transcription requests and their single
-immutable successful result. Each row is bound to a `speech_transcribe` job, a
-speech-request identity, and a ready audio asset; request/model/audio bindings
-cannot change after admission. A result can settle once and remains available
-after process reopen so job recovery can finish without transcribing twice.
-
-Migration 18 stores one immutable TTS synthesis request and successful result
-against a `speech_synthesize` job. Settlement requires the request's exact
-synthesized-speech asset, producing-job provenance, and admitted temporary or
-persistent retention. Scalar request and result projections are validated
-against versioned documents on every read. Repeated admission and settlement
-must be exact, and completed evidence cannot be updated or deleted.
-
-Migration 15 stores immutable installed-Whisper manifests separately from user
-media. Scalar model/path/size/hash projections must match the versioned
-manifest, and repeated admission is exact. Updates remain disabled. The
-model-hub removal workflow may conditionally delete the exact stored manifest
-only after its managed bytes are gone; retained legacy models are refused
-before this repository call.
-
-Staged lorebook final apply reuses the existing lorebook aggregate insert/replace
-functions inside the project transaction. The committed project stores its
-request and result receipt in the versioned run; exact retries return the same
-entry identities, including after subsequent changes to the authored book.
-Staged project cancellation and its job cancellation events commit atomically,
-using the existing job reducer. Queued work settles immediately; claimed work
-keeps its lease for worker cleanup or startup expiry recovery. Late writer
-admission/checkpoints cannot mutate terminal projects.
-Pre-approval outline replacement uses the same staged project CAS, reindexes
-the submitted order, and retains the immutable planner attempt.
-Batch settlement rejects a writer from an older batch after a failed draft is
-selected again. Terminal projects cannot reopen an unfinished batch.
-Draft failure settlement checks the writer's admitted project revision against
-the current batch, just like successful settlement.
-Explicit planner retry creates the new generic job and archives the previous
-planner attempt in the same transaction as the project revision/job binding.
-The old job remains stored; retries with the same request identity are deduplicated.
-
-Secrets are never stored here. Provider rows contain opaque `SecretRef` values
-only. Blob registration validates SQLite-representable metadata and preserves
-the first immutable metadata record for a content hash; physical `BlobState`
-remains separate operational state and is not changed by deduplication.
-Logical assets store only versioned, redacted provenance and retention; asset
-mutations use revision CAS. Library pagination uses an opaque
-`(updated_at, id)` keyset cursor. It is deliberately non-snapshot pagination:
-rows added or updated between page requests may move relative to a prior page.
-
-Job dispatch result JSON retains optional provider response IDs with serde
-default compatibility. The file-backed usage scenario rejects changed-ID
-settlement and verifies the identity survives reopen/job cleanup. No migration
-is needed for this addition to the existing versioned response JSON.
-
-Job-result replay compares decoded versioned values, so an older stored response
-without the optional ID remains an exact replay of an absent-ID response. The
-regression exercises the old bytes directly without rewriting the evidence.
-
-Optional OpenRouter generation/endpoint evidence lives inside existing cost
-basis JSON. The usage domain validates response-ID binding, endpoint/price
-agreement and native billing counts while raw dispatch responses remain
-immutable. Existing get/record methods persist and replay the enriched basis;
-no schema change is needed. App file-backed tests cover differing raw/native
-counts and cost amounts surviving reopen without a second lookup.
-
-Migration 1 also stores sealed legacy import admissions and their stable destination ID assignments. Admission is one immediate transaction: the source schema, inventory and plan fingerprints are immutable, assignments can only be inserted while the run is being admitted, and a rollback leaves neither the run nor a partial mapping. Exact replay survives reopen; a changed binding or source set conflicts. Provider accounts additionally receive stable secret-owner IDs, and pending API keys and ordered header names receive opaque secret references. The assignment schema has no secret-value column and admission does not create provider, model, persona, lorebook, entry, asset, or blob rows. Graph materialization leaves a provider-bearing run importing so later provider transfer can complete the same sealed run. A run admitted
-from the shared legacy backup planner also seals that compatibility plan's
-fingerprint as its immutable `source_fingerprint`. It seals the skips of the
-domains later stages write (chat templates, characters, groups, direct and group
-sessions) together with the admitted sub-plan skips. A `partial` run may still
-advance to `completed` or `failed` once those later stages finish.
-
-Later import stages record one immutable `legacy_import_stage_results` row per
-`(run, stage)`. Their insert guard requires a `partial` run bound to a source
-fingerprint. The characters stage requires the persona/lorebook and
-provider/prompt receipts. In one immediate transaction it writes every planned
-character through the ordinary aggregate insert path:
-- profile, scenario, rules, provenance, defaults, presentation, image recommendation and media links;
-- scenes with deterministic background links, variants and starters;
-- companion soul state;
-- character lorebook bindings.
-
-Characters, scenes, variants, starters, groups, audio providers and user voices
-take ids derived from their legacy ids within the run's `LegacyIdScope` (bound
-to the source fingerprint), so a different legacy source that reuses the same
-ids imports next to existing data and a replay derives the same ids. An
-already-selected default persona, model or prompt is kept instead of aborting
-the import, the settings stage keeps the global settings an earlier run already
-imported, and legacy usage records are keyed by run and source id. Models,
-prompts, lorebooks and media are remapped through the sealed assignments. A
-stale prompt reference resolves to the app default, as legacy did. The
-deprecated character system prompt stays in the sealed source evidence like the
-model and settings prompts. Replay returns the receipt; a destination
-collision rolls back the whole stage. The persona stage now checks only persona
-and lorebook media uses, because the shared media plan also carries character
-and group media.
-
-The groups stage runs through the same stage guard and additionally requires
-the characters stage receipt. It writes every planned reusable group through
-`insert_group_plan`:
-- keeps legacy group, scene and variant ids;
-- remaps the explicit persona and member model overrides (the planner already cleared missing or non-chat ones);
-- remaps group prompts (a missing one becomes the app default) and the group and starting-scene backgrounds;
-- writes the group lorebook bindings.
-
-The audio stage needs no earlier stage, since characters reference voice
-profiles without a foreign key. It inserts every planned legacy audio provider
-and user voice through the TTS adapter's insert helpers inside the stage
-transaction. A provider keeps its deterministic API key reference; the key
-itself lives only in the native secret store.
-
-The settings stage also needs no earlier stage beyond the provider and prompt
-receipt the stage guard already requires. It rewrites the `app_settings`
-payload with the legacy global settings. Lorebook-generator, dynamic-memory and
-help-me-reply model and prompt selections are remapped through the admission
-assignments, as are the dynamic-memory and group-speaker model columns. The
-default model and prompt stay as the provider/prompt stage wrote them. The
-settings revision advances once and a replay changes nothing.
-
-`conversation_history_writer` inserts a finished conversation from the backup
-v2 history shapes with its own ids and timestamps: snapshot drafts, the
-conversation and its participants, branches, messages, revisions, initial
-origins, turns walked through their legal statuses, attempts, usage references
-and events, and candidates, then the create operation and `conversation_created`
-outbox event so later live mutations work. Failed or cancelled turns without a
-candidate, turns carrying speaker, lorebook or memory attribution, and provider
-replay artifacts are rejected for now; candidate media refs are written active.
-The direct conversations stage (after the characters stage) and the group
-conversations stage (after the groups stage) write every legacy session through
-it with one shared stage body; `stage_receipt` lets a caller return a committed
-receipt before rebuilding stage input; it checks the run's stored plan and
-source fingerprints. Turns targeting one message are inserted in input order.
-The usage records stage writes each legacy usage record unchanged into the
-immutable `legacy_usage_records` table (source ids, tokens, costs, success,
-error, metadata), linking the imported model when it exists; these rows are
-historical and are not `usage_events`, which belong to generation attempts.
-The writer also restores a conversation's memory space with its own id,
-revision and items (`memory_adapter::insert_space_in`), its summary and its
-embedding projections, after the messages the summary cites.
-
-Companion Soul tables are keyed by `(character_id, scope)`: an empty scope is
-the character's shared Soul, a conversation id that conversation's own Soul.
-`soul_adapter::apply_sharing_change_in` runs in the same transaction as a
-character defaults write (`update_defaults`, a synced character root) and
-performs the share-Soul-growth transitions (user decisions 2026-09-23);
-`seed_conversation_soul_in` seeds a companion conversation created while
-sharing is off. Soul sync ids are the
-character id, or `character:conversation` for a conversation Soul; backups
-carry the conversation id.
-
-A companion character has one shared memory pool (`companion_memory_pools`,
-user decision 2026-09-14), and each companion conversation also keeps its own
-space (user decision 2026-09-23, legacy's two stores): `conversation_memory_spaces`
-holds a conversation's own space (`pooled = 0`, never shared) and, for a
-companion conversation, a `pooled = 1` row for the character's pool. The
-character's `share_memory_across_chats` toggle picks which one the
-conversation uses (`memory_adapter::active_space_id_in`, read on every use like
-legacy `resolve_effective_memory_owner`); flipping it copies and deletes
-nothing. The summary row stays per space and records the
-conversation that wrote it; `replace_summary_in` takes that conversation from
-the summary's source messages when a space is shared. `summary_cursor` gives each
-conversation its own cursor inside one read transaction: its own summary
-window; when another conversation of the pool wrote the summary, its latest
-settled run that no later suffix rewind of that conversation invalidated; with no
-summary, 0. Only runs with a succeeded attempt count toward that run cursor.
-A run's summary checkpoint becomes the space's summary when its attempt
-succeeds or its tools phase fails, and not when it is cancelled; a suffix
-rewind of the conversation after the checkpoint, or a newer checkpoint that
-already wrote the summary, skips the write. When the current summary came from
-a run with no succeeded attempt, the owner's cursor stays at its latest
-succeeded run (or that run's window start), so a retry reprocesses the window
-(legacy tool-error branch in `flow.rs` saved the summary while
-`event_advances_cursor` ignored the error event). A suffix rewind
-reverts, latest first, only the tool results of the conversation's invalid
-run and its later runs (`dynamic_memory_rewind_adapter::undo_runs`, legacy
-`replay_memory_state_after_rewind` over the effective owner's memories), so
-decay, retrieval access and user edits stay, and in a pool the other members'
-memories stay; a pool keeps its summary while a conversation's own space
-takes the prior run's summary. A hard-deleted memory it restores gets a fresh
-short id when another memory has taken its old one since; it still records the rewind and invalidates the
-conversation's effects. Rewinds, their prior-summary search and the run
-cursor only look at runs of the space the rewind touches, so a conversation's
-own and pool runs never undo each other. A character stops sharing when it
-leaves companion mode. Backups export a
-pool once with its members in `shared_conversation_ids` and each own space
-separately.
-The history writer creates the conversation's own space and creates or joins
-its companion pool (`memory_adapter::insert_pool_space_in`), creates its companion
-session state and writes its legacy continuity episode
-(`state_adapter::insert_continuity_episode_in`, else the normal episode chain);
-the conversation stages also replace imported Soul facts
-(`soul_adapter::replace_facts_in`) and insert scheduled notes
-(`scheduled_note_adapter::insert_note_in`).
-The creation helper stage inserts seeded workflows through
-`creation_adapter::insert_workflow_in` and leaves out a legacy draft that exceeds
-the rewrite's creation limits instead of aborting the stage, and `complete_legacy_import_run` moves a
-partial run to `completed` only when every later stage has a result row.
-Importing the same legacy source again is detected at admission: a run whose
-source fingerprint matches a run that has not failed returns that run's
-admission as a replay (every stage then replays its receipt), a different plan
-for the same source conflicts, and a partial unique index keeps two live runs
-from admitting one source concurrently. A failed run can be retried under a new
-run id.
-
-The read-only legacy provider-secret adapter lists only planned API-key/header
-metadata, then loads one exact value into `SecretValue` on demand. It ignores the
-obsolete pre-v7 API-key reference and never opens the source writable. Migration
-1 records immutable per-secret completion generations tied to the sealed
-assignment. These receipts contain no value or digest and cannot be inserted for
-an unassigned reference.
-
-Migration 2 stores immutable per-object legacy media completion receipts. Each receipt must match the sealed path, size, hash and destination asset, and SQLite verifies that the asset points to the recorded ready content-addressed blob. The first receipt advances the run from admitted to importing in the same transaction. A failed later object leaves earlier receipts replayable without marking the run complete.
-
-Legacy persona and lorebook materialization reuses the aggregate insert paths inside one immediate transaction after every assigned media object has a verified receipt. It preserves assigned root and entry IDs, authored fields and timestamps, legacy lorebook behavior, ordered entry and persona-binding semantics, and the default-persona singleton through its initial revision CAS. The immutable result receipt and completed run state commit with the graph. Exact retry survives reopen; missing receipts, changed plans, destination collisions, binding failures and default conflicts roll back all writes from that attempt. The legacy source database and storage tree are never mutated or removed and remain retained until separate verification and explicit user approval.
-
-Provider/model/prompt materialization rebuilds account secret references only from the
-sealed assignments and verified non-secret completion rows. One immediate
-transaction validates and inserts assigned provider accounts before their mapped
-model profiles, inserts validated imported prompt documents and ordered entries,
-and activates mapped model and app-wide prompt defaults. A dangling legacy app
-prompt selection remains sealed evidence and falls back instead of inventing a
-target. The same transaction writes an immutable result receipt. A collision, orphan,
-invalid mapped configuration, missing or mismatched secret receipt, or authored
-default rolls back every provider/model/default write while preserving completed
-media, graph and secret evidence. The run reaches completed only when both graph
-and provider/model/prompt receipts exist. Model-level prompt references, deprecated
-system prompts and unsupported field names remain sealed in the plan fingerprint
-and retained source rather than becoming unused live columns.
-
-Migration 16 stores ASR vocabulary and correction rules behind the
-speech-owned repository port. Authored text and categories remain separate from
-normalized lookup columns, and no save path truncates them. Queries reproduce
-the legacy scope/language filters and runtime order. A file-backed scenario
-proves prompt construction, correction order, CRUD and reopen behavior. The
-same migration stores ignored edit suggestions with a null-safe unique identity,
-counts repeated ignores, and removes matching ignored rows atomically when a
-correction is saved. Chat and group edit scenarios verify suppression, repeated
-acceptance, scope promotion and two reopen cycles. Legacy ASR row transfer is
-materialized through the same validated records and preserves every counter.
-
-Migration 16 also stores ASR voice examples through a composite foreign key to
-an audio-kind media asset. Vocabulary and correction links use `SET NULL`, while
-the audio asset remains retained by `RESTRICT`. The adapter validates normalized
-text on every read, orders by creation time and ID, and rejects missing or
-non-audio assets. File-backed coverage proves create, update, edit-derived
-suggestion, link clearing, deletion and two reopen cycles. Legacy ASR row
-transfer resolves assigned managed audio assets, so native paths are never
-copied into live records.
-
-The ASR repository lists ignored suggestions with the same scope/language
-semantics as the other learning records and imports a validated learning batch
-in one immediate transaction. Fresh IDs and remapped links are inserted only if
-all referenced managed audio exists; any constraint failure rolls back the
-complete batch.
-
-Migration 19 starts the canonical sync journal. It keeps one durable local
-device identity, monotonic origin sequence and hybrid clock, the current causal
-frontier, immutable change rows and their immutable frontier snapshots. The
-sync-owned repository port allocates identity and clock facts in the same
-immediate transaction as a validated canonical change. Exact operation replay
-returns the stored change; changed reuse conflicts, and a failed insert rolls
-back the device state and frontier. Aggregate coverage is added explicitly at
-each repository transaction rather than through arbitrary SQL capture.
-The same port can initialize and read the stable device identity before the
-first change, leaving the frontier empty and the first later change at sequence
-one. This supports session hello creation and survives reopen.
-
-Persona repository create, authored revision and all four media mutations are
-atomic journal call sites. Their canonical payload is the complete
-post-mutation aggregate, including ordered media references but no media bytes;
-revision updates bind the pre-mutation snapshot hash as their base. Aggregate
-and journal writes share one immediate transaction, so a missing or duplicate
-media reference, stale CAS or later SQL failure rolls back both. Exact retries
-return the stored persona without allocating another sequence. Persona default
-set and clear append a canonical singleton update in the same immediate
-transaction as their existing CAS write. Exact retries preserve the first
-timestamp and sequence; missing or archived targets, stale revisions and either
-singleton or journal failures leave both sides unchanged. Persona archive and
-restore journal the complete lifecycle transition. A selected persona archive
-also journals the coupled default clear; failure of either change rolls back
-both aggregate writes and both sequence allocations. Restore does not reselect
-the persona, matching the existing lifecycle contract.
-
-Migration 19 also stores durable monotonic peer frontiers. The sync adapter
-exports the local canonical journal in bounded causal-ready batches, rejects a
-gap instead of silently skipping it, clamps acknowledgements to the local
-frontier and preserves them across reopen. Network sessions, incoming apply and
-conflict handling were deliberately left to the following storage slice.
-
-Migration 19 now also stores immutable incoming batches and conflict evidence.
-Persona/default batches are staged before application, then supported snapshots,
-remote changes, causal frontiers, conflict evidence and remote-clock observation
-commit atomically. Exact committed delivery replays across reopen. Unknown
-schemas, origin gaps and missing materialization dependencies stay pending with
-their original bytes. The adapter never deletes pending input or either side of
-a conflict. Bounded conflict reads decode and validate both typed candidates.
-Choosing current or other atomically applies a fresh revision, appends a local
-canonical change and records the immutable resolution; exact replay survives
-reopen. Replicated changes that causally dominate both candidates close the
-corresponding remote conflict as superseded. Session hello identity now consumes
-the durable device ID through the sync port. Peer transport, authentication and
-blob transfer remain later sync work.
-
-Encrypted backup export reads provider accounts, model profiles, all prompt
-documents with ordered entries and their current global selections in one
-deferred SQLite transaction. The adapter returns typed non-secret domain data
-through the transfer-owned source port; native secret values remain behind the
-application's `SecretStore`.
-
-The same snapshot transaction includes the exact global settings payload and
-all audio providers and user voices. TTS ownership and voice-to-provider links
-are decoded through the existing validated row readers before the graph leaves
-the database boundary.
-
-That transaction also reads every authored persona, lorebook, character and
-group aggregate through the existing aggregate decoders, including archived
-roots, ordered children and every owner-lorebook binding. It includes all media
-asset and blob metadata in stable ID order. The transfer graph rejects dangling
-model, prompt, voice, lorebook and media references before encryption; SQLite
-does not read media files or secret values.
-
-The same snapshot reads every ASR vocabulary term, correction, ignored
-suggestion and managed voice example without language or scope filtering. Voice
-examples keep their term, correction and audio asset links. Per-table and total
-transfer limits are enforced before the graph leaves the database boundary.
-
-The deferred backup transaction also reads the unified direct and group
-conversation graph through the existing validated aggregate and message row
-decoders. It includes archived roots, all branches and selected heads, every
-message in exact timeline order, every immutable revision and candidate, and
-initial-origin and media references. Global bounds apply while rows are read;
-runtime generation, tool, job, usage, memory and protected artifact payloads are
-reserved for their own backup sections.
-
-Conversation backup also hydrates all generation turns and attempts through the
-normal strict turn reader, then reads contiguous checkpoint timestamps, speaker
-and initial dispatch checkpoints, and exact tool execution state in the same
-deferred transaction. Preparation model, prompt, lorebook and memory attribution
-is already part of each hydrated turn. No SQL or raw database document crosses
-the transfer boundary.
-
-The same deferred snapshot reconstructs every durable job through the existing
-strict job-store loader, then reads ordered immutable inference evidence and
-optional job cost bases independently because that evidence survives job
-retention. Scalar identity columns must agree with their typed documents, and
-global job, event and dispatch limits are checked before the graph leaves SQLite.
-
-Conversation UsageLedger events and their optional captured cost bases join that
-same deferred backup snapshot through the existing strict usage decoder. Historic
-events remain valid when their provider account or model profile has since been
-deleted. The adapter derives exact overlap IDs from retained job inference
-evidence, rejects orphan cost rows, and does not calculate or combine charges.
-
-The same transaction reads all conversation operation records and immutable
-outbox events through their existing typed documents and relational validators.
-It preserves operations that emit no event, verifies scalar result projections,
-event timestamps, ownership and current foreign-key targets, and applies bounded
-global limits before the journal leaves SQLite. Consumer delivery state is not
-fabricated because migration 8 stores no lease or acknowledgement table.
-
-Normalized companion relationships, session emotion vectors, ordered driver and
-active signals, continuity episodes and immutable state-apply receipts are read
-in the same deferred backup transaction. The adapter preserves initial-state and
-replacement hashes, persona-key projections, revisions and row timestamps while
-reusing the state adapter's strict vector and signal readers.
-
-That transaction also reads all companion turn effects through the existing
-strict effect hydrator and preserves the immutable dynamic-memory suffix-rewind
-rows with their storage-only request digest and revision projections. Resulting
-memory and summary snapshots are decoded as versioned domain values, and ordered
-effect invalidations remain attached to their rewind operation. The database
-does not interpret these rows as current memory state or recalculate companion
-effects during export.
-
-Authoritative conversation memory spaces now leave the same snapshot through
-the existing strict memory and summary hydrators. The adapter includes every
-ordered item and summary source cursor, then decodes immutable retrieval-access
-rows with their exact attempt owner and before/after revisions.
-
-The same snapshot exports every memory embedding projection row, including
-stale derived rows that current retrieval deliberately ignores. Ready vectors
-retain their exact BLOB bytes; repair-needed rows retain their null-vector
-state. Space/item IDs, source revision and text, dimensions and update time are
-preserved without regenerating embeddings. Dynamic-memory run tables remain for
-their own bounded document.
-
-Dynamic-memory backup now reads pending approvals, every immutable visible-turn
-preparation document, and the complete background run graph in the same deferred
-transaction. Existing strict hydrators validate frozen run sources, retry
-attempts, ordered inference rounds and calls, background settlements and summary
-checkpoints before they leave SQLite. Storage-only preparation and settlement
-digests remain explicit, including exact preparation JSON, so restart evidence
-is not reconstructed during export.
-
-Migration 20 stores immutable backup-restore admissions for both current
-version-2 and legacy version-1 sources. One row binds the source hash, plan
-fingerprint, staging-receipt fingerprint and exact inventory counts before any
-live restore work. Identical retry and reopen replay the stored row and its
-original admission time;
-changed input under the same admission, invalid counts and failed inserts write
-nothing. The same backup source can be admitted again under a new operation, so
-an immutable admission never blocks a later restore of that file. The table
-contains no secret values, media bytes or domain snapshots and cannot perform
-materialization, cutover or cleanup.
-
-A legacy import run whose planned stages all finish ends as `partial`, not
-`completed`: characters, chat templates, sessions and messages, groups,
-memories, companion tables, usage, audio providers, user voices and the legacy
-settings documents are not imported by any stage yet. `completed` is reserved
-for a run that covers every legacy domain, and any future step that deletes
-legacy data must require it together with explicit user approval.
-
-Legacy records the old app itself ignored are skipped instead of aborting the
-import, and every skip is sealed with the run in `legacy_import_skips` (insert
-only while admitting, never updated or deleted) and hashed into the plan
-fingerprint. Currently: a settings default provider or default model that no
-longer exists (legacy `provider_delete` and `model_delete` never cleared them and
-the old app ignored a stale id), and a settings default prompt that no longer
-exists (recorded as a prompt reference; legacy fell back to the built-in default,
-while the execution step used to drop it silently). A model whose provider credential no longer
-resolves is skipped and recorded as a `model_profile` skip keyed by the model
-id (user decision 2026-09-13: models of a deleted provider are not imported);
-references to it are cleared like any other stale model reference. The media planner also prunes and records
-references whose file is gone: a persona avatar (with its crop), each persona
-design reference and a lorebook avatar, since the old app showed no image for
-them and the stale id stays in the untouched legacy database; the reference
-count is not limited, and unsafe or ambiguous references still
-abort. `reconcile_legacy_persona_lorebooks` prunes and records persona bindings
-to lorebooks absent from the lorebook plan and drops repeated ids (legacy kept a
-deleted lorebook's id in `activeLorebookIds`, its editor listed only existing
-lorebooks, and chats resolved such an id to no entries; repeats counted once);
-admission rejects an unreconciled or repeated binding. `reconcile_legacy_lorebook_keywords`
-prunes and records a regex keyword that does not compile in the form the matcher
-uses (trimmed, lowercased unless case-sensitive, default regex limits, exactly
-like the legacy matcher), because legacy never matched such a keyword; admission
-rejects a plan that still holds one. Values the old app read leniently fall back to
-the value it used and are recorded as `legacy_value` skips keyed
-`<table>.<field>:<row id>`: an unknown prompt type (Undefined, then direct chat;
-types are read through the legacy prompt store's own table, so its snake_case
-lorebook aliases keep their purpose and runtime text is unknown),
-prompt entries that are not a JSON array (empty, then the content entry; a
-valid array the new types cannot read still aborts), malformed persona
-design reference or lorebook id lists (empty; a non-UUID lorebook id is recorded
-as a missing lorebook binding), an unknown lorebook detection mode (recent
-message window), malformed entry keywords JSON (empty) and an unknown keyword
-match mode (literal). Provider `config` and `headers` and model `input_scopes`,
-`output_scopes` and `advanced_model_settings` that are not valid JSON fall back
-like the legacy settings reader, which omitted them (empty config, no headers,
-text-only scopes, empty advanced settings); JSON `null` counts as absent. The
-same fallback applies when the JSON has the wrong shape (a non-object config,
-headers or advanced settings, non-text header values): legacy's frontend salvage
-dropped the whole provider (with every model on it) or model, and wrong headers
-or advanced settings also failed its typed Rust settings read, so keeping the
-record and recording the field is a deliberate correction; non-array scopes
-were already omitted by the legacy reader. A header repeated with the same
-name keeps its last value like legacy's JSON parsing. Unknown scope names,
-invalid advanced setting values and header names or values the new types
-reject still abort. Every
-other malformed record still aborts.
-
-Migration 0021 holds the embedded llama.cpp runtime's device-local state:
-`llama_runtime_reports` (legacy `llamaLastRuntimeReport`, now on the newest
-llama.cpp model profile for the file instead of inside the synced model
-config; deleted with the model) and `llm_generation_metrics` (legacy
-retention of the newest 500). Neither is backed up or synced; a restore
-carries the metrics and the reports of models that still exist.
-
-Migration 0022 stores one image generation per `image_generate` job
-(`image_generations`): the versioned request and its state (pending, then
-exactly once succeeded, failed with the user-facing message, or cancelled).
-Admission requires the matching job and image-request subject; the binding
-columns are immutable. A success can only name `generated_image` assets whose
-provenance names the same job, and `image_generation_outputs` keeps those
-assets from being deleted while the row exists. Terminal rows may be deleted
-(playground history, taking their output links with them), pending rows may
-not. Job pruning keeps jobs an image generation
-still binds, and backups carry the rows with the job backup.
-
-Speech cache: `SpeechCacheRepository` for `Database` (lookup through
-`speech_syntheses_reuse_idx`; cached blobs exclude any blob one of whose
-assets is referenced from a foreign key column other than
-`speech_syntheses.result_asset_id`, discovered from the schema so new
-referencing tables are covered). The restore writer inserts `missing` blobs
-as `ready` so their assets pass `media_assets_require_ready_blob`, then marks
-them `missing` again.
-
-Local generation metrics readers: `llm_generation_metrics(limit)` (newest
-first, without samples, limit defaulting to 500 within 1..=5000),
-`llm_generation_metric(id)`, `llm_generation_metric_for_message(conversation,
-message)` and `clear_llm_generation_metrics`, as the old `llm_metrics_*`
-commands. A local generation records its metrics under its attempt id, so a
-message's metrics are found through its candidates' attempts; the old
-frontend's `llm_metrics_attach_message` call has nothing left to do.
-Legacy also stored each message's (and variant's) time to first token, tokens
-per second and MTP stats on the message itself, where they outlived the
-500-row metrics list and its "clear". Those stats now live only in the
-metrics row, so the table has `message_stats_only`: a row of a message's
-generation that falls out of the newest 500, or is cleared, keeps its summary
-(samples dropped) and leaves the list, `llm_generation_metric(id)` and the
-count; `llm_generation_metric_for_message` still returns it. Triggers
-delete such a kept row when its candidate is deleted (including a hard-deleted
-conversation) or its message is tombstoned, in the same statement's
-transaction.
-
-The per-message stats columns of a legacy database or backup
-(`messages`/`message_variants`/`group_messages`/`group_message_variants`
-`first_token_ms`, `tokens_per_second`, `mtp_stats`, added by legacy migrations
-v69-v70 and v75-v76) are written by the conversation import stages as
-`message_stats_only` rows under each imported candidate's attempt id, with the
-runtime's summary keys (see lettuce-app).
-
-Legacy metric rows are imported by the `llm_metrics` stage of a legacy
-database import, after both conversation stages: rows keep their legacy id,
-timestamp, summary and samples (`model_name` becomes `model_path`), except
-that the newest row attached to each imported message is stored under the
-attempt id of that message's selected candidate so
-`llm_generation_metric_for_message` finds it. A message imported without
-candidates, a link to a message that was not imported, or an attempt id a
-different row already holds leaves the legacy id; a message's imported speed
-stats row does not count as held, and the full legacy row replaces it (and
-joins the metrics list). Inserts ignore other rows that already exist. Carrying device-local state into a restored file keeps the new
-file's rows: a previous metric is skipped when the new file has its id or a
-row with the same `created_at`, `model_path` and `summary_json` (the same
-legacy generation re-keyed under an attempt id derived from a changed source
-fingerprint), and a LoRA path both files have keeps the more recently updated
-row, the rule the legacy images stage uses. Metrics of messages imported without candidates keep their legacy id and
-lose the message link.
-
-`Database::set_default_prompt_document` selects the app default prompt
-(`app_settings.default_prompt_document_id`, legacy `settings.prompt_template_id`)
-under the settings revision like the other selection setters; a prompt that does
-not exist is rejected as `InvalidData` by the foreign key.
-
-Hard delete. `Database::purge_conversation` deletes a direct or group
-conversation the way legacy `session_delete` / `group_session_delete` did
-(old-code `storage_manager/sessions.rs:3794`, `group_sessions.rs:1962`):
-participants, settings, branches, messages, revisions, candidates, turns,
-attempts, tool executions, checkpoints, dispatches, operations, outbox,
-snapshot references, media references, sync marks and fork notices; its own
-memory space with items, projections, summary, runs and their rounds;
-companion session state, turn effects, receipts and its continuity episode (a
-later episode is relinked to the deleted one's predecessor); its growth,
-consolidation and lorebook entry runs. A companion pool it shares stays,
-minus this conversation's runs, retrieval accesses and summary. Usage events
-and cost bases stay: usage events check their attempt when recorded
-(`usage_events_require_attempt`) instead of a foreign key, and an identical
-event already stored is kept when its conversation comes back through sync.
-`Database::purge_character` follows legacy `character_delete`
-(`characters.rs:1066`): the character's direct conversations, its companion
-pool (`characters.rs:1081`), Soul, facts, receipts, relationships, sessions,
-episodes, scheduled notes, runs, scenes, starters, media links and lorebook
-bindings. It leaves every group that lists it (legacy left the id in the
-group's list and its reads skipped it): the other members keep their order
-and mute state and the group revision moves while its update time stays, so
-two devices removing the same character reach identical group content. A
-group left with fewer than two members, or with only muted ones, is a valid
-stored state that keeps all its settings and gets a `group_below_two_members`
-notice; creating a group or editing its members still needs two members with
-one active. Group conversations it took part in stay readable and keep
-running turns with the members left, and a group chat can start from a group
-with one member. Creation apply receipts keep the character id as a plain
-value (`creation_character_apply_receipts_require_character` checks it on
-insert), and replaying an apply whose character is gone answers `NotFound`.
-A conversation with a live generation, memory run or companion effect is
-refused as `Busy`.
-
-A purge runs in one immediate transaction with foreign key enforcement off,
-because branches and messages restrict each other; before the commit every
-foreign key into the touched tables is checked (`PurgeError::Integrity` rolls
-back). Enforcement is then restored and verified; if that fails the
-`Database` refuses every later use (`DatabaseError::ForeignKeysLost`) until it
-is reopened. Append-only history keeps its delete guards: each guard allows a
-delete only while its owner (conversation, character or memory space) is
-listed in `purge_authorizations`, which the purge fills and empties inside
-its transaction. Launch snapshots and provider replays the deleted rows named
-go when nothing else references them. Every UUID in the text of a deleted row
-that is a non-library asset id is queued in `media_gc_candidates`.
-
-`Database::collect_media_garbage` takes the queue: a candidate still named by
-any foreign key (a legacy import completion only while its run is open), by
-a sync change still waiting to apply (staged or pending batches, deferred
-changes), by conflict evidence, by an unfinished job or its events, or found
-in the text of any other table except bookkeeping (media catalog, purge and
-sync journals, legacy import evidence, finished jobs, provider replay caches)
-is kept and forgotten; library media is always kept. The rest are deleted (an
-asset a legacy import completion records stays as a row), and a blob none of
-whose assets is still used leaves the catalog: deleted, or marked `missing`
-while an asset row or completion names it. The released objects are returned
-so their files are deleted after this commit. `media_object_retained` answers
-the orphan sweep for a blob in any state, and `media_objects_in_file` reads
-the blobs another database file catalogs, read-only. Sync-received deletes
-wait in `purge_queue` with the change that carried them (see lettuce-sync);
-`run_queued_purges` decides each one again before purging it. A kept entity
-waiting to be sent back whole is in `purge_rejournals` with its attempt
-count. One that is
-busy stays queued without counting; one that fails eight times for another
-reason is dropped with a `dropped_after_failures` notice. `purge_notices`
-lists the open notices and `dismiss_purge_notice` closes one.
+The SQLite storage of the app: the schema and its migrations, and one adapter per repository port that the domain crates define. It is the only crate that depends on SQLite.
+
+Domain crates own their rules and describe persistence as synchronous repository traits (`ConversationRepository`, `MemoryRepository`, `JobStore`, `LocalChangeJournal` and the rest, about ninety in all). This crate implements all of them on a single `Database` value and keeps the storage representation private: callers get validated domain values, never a connection, a row type or SQL. It does not decide policy. It does, however, enforce the invariants that must hold on disk regardless of which code path writes, with CAS checks in the adapters and triggers in the schema.
+
+- `lettuce-app` opens the `Database`, passes it to services as the repository for each port, and runs every call on its database worker thread, not on the UI or async runtime threads.
+- `lettuce-transfer` defines the backup and legacy-import documents that the backup, restore and legacy adapters read and write.
+- `lettuce-sync` defines the journal and snapshot contracts the sync adapters implement; its README describes the whole sync design, including the parts that live here.
+
+## Structure
+
+| Path | What it holds |
+| --- | --- |
+| `lib.rs` | `Database`, migrations, settings, provider accounts, model profiles, media blobs and assets |
+| `conversation/` | Creator, mutation kernel and mutations, queries, artifacts, dispatch checkpoints, tools, companion state, chat import, historical writer |
+| `memory/` | Memory spaces, summaries, embeddings, dynamic-memory runs and rewinds, consolidation runs, scheduled notes |
+| `companion/` | Soul state, growth runs, Soul-writer runs |
+| `catalog/` | Characters, personas, groups, prompts, creation helper workflows, character and persona files |
+| `lorebook/` | Lorebooks and bindings, entry and keyword runs, staged lorebook projects |
+| `media/` | Transcriptions, ASR learning, TTS configuration and syntheses, Whisper manifests, image generations, LoRA library, playground history |
+| `models/` | Local llama.cpp reports and metrics, model lookup, model path relocation, device-local carry-over |
+| `job_adapter.rs`, `usage_adapter.rs` | The durable job store, the usage ledger and cost bases |
+| `sync/` | Journal, state scan, incoming changes, conflicts, per-domain snapshot codecs, secret versions |
+| `backup/` | Backup export source, restore admission, restore writer |
+| `legacy/` | Legacy database preflight and documents, import admission and stages, backup of import evidence |
+| `purge/` | Hard delete of conversations and characters, media garbage collection |
+
+## The Database handle
+
+`Database` owns one `rusqlite` connection behind a mutex. Opening it:
+
+1. refuses a file that already holds a migration this build does not know (`NewerSchema`), before any pragma touches it;
+2. enables foreign keys and a five-second busy timeout, and for files WAL with `synchronous=NORMAL`;
+3. applies pending migrations in one immediate transaction, checking the FNV-1a checksum of every applied one (`MigrationChecksum` on mismatch);
+4. seeds the settings singleton;
+5. restarts the sync journal if its schema fingerprint changed (see lettuce-sync).
+
+A single serialized connection keeps the transaction story simple: every adapter method opens its own transaction, usually `BEGIN IMMEDIATE` so reads that decide a write cannot race with another writer. Possession of `Database` is a trusted composition capability. Ordinary repository traits expose artifact references only; the ports that can read protected bytes (trusted transfer, provider replay) are separate traits the app wires deliberately.
+
+If foreign key enforcement cannot be restored after a purge, the handle refuses every later call with `ForeignKeysLost` until it is reopened.
+
+## Migrations
+
+Each migration belongs to one domain and holds all of that domain's tables, triggers and indexes:
+
+| # | Domain |
+| --- | --- |
+| 1 | Foundation: settings, device settings and UI state, provider accounts, model profiles, jobs and job events, media blobs, legacy import runs and evidence, purge bookkeeping |
+| 2 | Media assets, legacy media completions, media GC candidates |
+| 3 | Characters, media, scenes, variants, starters |
+| 4 | Personas and the default persona |
+| 5 | Groups, members, starting scenes |
+| 6 | Prompt documents, lorebooks, owner bindings, legacy graph and provider results |
+| 7 | Stable keys for built-in prompt entries |
+| 8 | Conversations: participants, settings, branches, messages, revisions, candidates, turns, attempts, tools, checkpoints, artifacts, media refs, operations, outbox, dispatch checkpoints |
+| 9 | Memory spaces and items, summaries, embeddings, retrieval receipts, dynamic-memory approvals and runs |
+| 10 | Usage events, job inference usage, cost bases, legacy usage records |
+| 11 | Creation helper workflows, lorebook runs and staged projects, apply receipts |
+| 12 | Companion Soul, growth, consolidation and Soul-writer runs, scheduled notes |
+| 13 | Companion relationships, sessions, continuity, turn effects, suffix rewinds, memory pools |
+| 14 | Speech transcriptions |
+| 15 | Installed Whisper models |
+| 16 | ASR vocabulary, corrections, ignored suggestions, voice examples |
+| 17 | Audio providers, user voices, discovered voices |
+| 18 | Speech syntheses |
+| 19 | Sync journal, frontiers, incoming batches, conflicts, deferred changes, marks, forks |
+| 20 | Backup restore admissions |
+| 21 | llama.cpp runtime reports and generation metrics |
+| 22 | Image generations, LoRA library, playground history |
+
+The schema has not shipped, so a domain's tables change inside that domain's migration instead of through follow-up migrations. The checksum check makes a database created from an earlier draft fail loudly on open rather than drift.
+
+## Storage conventions
+
+The same few patterns run through every adapter:
+
+- Normalized rows for anything queried or constrained; versioned JSON envelopes (`{format_version, value}`, unknown fields rejected) for values that are meant to be extensible, such as prompt conditions, settings payloads, run documents and outbox events. When a row has both, the scalar columns are projections of the document and are checked against it on every write and read.
+- Aggregates change under revision compare-and-swap. A stale revision is a conflict, never a partial write.
+- Operations that may be retried carry an operation id or request hash. An exact retry returns the stored result; the same id with different input conflicts.
+- Evidence is immutable. Usage events, dispatch checkpoints, run documents, apply receipts, import evidence and journal rows are insert-only, and triggers reject `UPDATE` and `DELETE` on them. The only way such rows go is a purge (below).
+- Triggers restate the invariants the domain already checks: legal state transitions, topology, ownership, settle-once. A trigger abort that names a known invariant maps to `Conflict`; anything else is a storage fault.
+- Library pages use an opaque `(updated_at, id)` keyset cursor. This is not snapshot pagination: rows changed between requests may move relative to an earlier page.
+- Secrets are never stored. Provider rows hold opaque `SecretRef` values and secret owner ids; the values live in the native secret store behind `lettuce_settings::SecretStore`.
+
+## Settings, providers and models
+
+`app_settings` is a singleton row with a versioned payload plus typed foreign-key columns for the selections that must follow a deleted row: the default model and prompt, the dynamic-memory model and the group speaker model. Selection setters (`set_default_prompt_document` and friends) are narrow CAS updates under the settings revision; a missing target fails as `InvalidData` through the foreign key. Deleting a model profile clears every foreign-key route to it and the model selections inside the payload (help me reply, lorebook generator, image features) in the same transaction. Device settings and UI state are separate rows that never sync.
+
+Provider accounts store a strictly decoded, versioned `ProviderConfig` (only the fields of its variant are accepted) and model profiles their versioned config. Global model settings are stored as NULL when empty.
+
+## Authored catalog
+
+Characters, personas, groups, prompt documents and lorebooks are each stored as one aggregate: the root row, ordered children and media associations are read and written together, every read rebuilds and validates the complete value, and the adapter owns child identity, ordering, revisions and timestamps. Prompt and lorebook JSON (conditions, payloads, provenance) is strictly versioned. Lorebook bindings to characters, personas and groups use the owner's revision as their CAS token and follow the latest lorebook revision; an archived book stays readable through its bindings. Personas keep a singleton default under its own revision.
+
+Built-in prompt entries carry a nullable stable key with a partial per-prompt unique index and strict non-blank, bounded checks. Reconciling the built-in catalog matches entries by key, so ids and entry history survive catalog refreshes, and ordinary user drafts cannot forge a key.
+
+Group tables never mention conversations; a group's members, presentation assets and optional starting scene form the aggregate.
+
+## Media
+
+Media has two layers. `media_blobs` is the physical, content-addressed catalog: registration validates that the metadata fits SQLite, the first metadata registered for a hash is kept, and deduplication never changes the separate operational `BlobState`. `media_assets` is the logical catalog: each asset names a ready blob, a kind, a retention class and redacted, versioned provenance, and changes under revision CAS. Rows that reference media do so through typed media-ref tables with foreign keys, so the schema knows who holds an asset.
+
+## Conversations
+
+The conversation schema (migration 8) stores the `lettuce-conversations` aggregate fully normalized. Durable history is restrict-owned, and composite foreign keys keep every child scoped to its conversation and turn. Global id indexes serve recovery lookups without weakening that ownership. Triggers enforce target and input coherence of turns, retry-source ownership, group speaker ownership, pairing of each setting's value with its provenance, branch and message topology, contiguous checkpoint sequences, settle-once attempts, and immutable operations and outbox events.
+
+### Creation
+
+`conversation_creator` consumes a `PreparedConversationLaunch` in one transaction: it stages the snapshot artifacts, inserts the conversation, participants, settings, root branch, the initial scene and starter messages with their origin rows, the memory space (or pool membership) when memory is on, the create operation and the `conversation_created` outbox event. Origin rows are attribution; storage never interprets artifact bytes. The companion launch adapter seeds the companion session and relationship rows and the continuity episode in the same transaction, so a seed failure rolls back the whole launch, and replay checks the same frozen initial-state hash.
+
+### The mutation kernel
+
+Every other conversation mutation runs through `run_mutation` in `conversation_mutation_kernel.rs`, which fixes the order:
+
+1. Open an immediate transaction.
+2. Look up the operation record for the conversation, operation kind and idempotency key. A hit with the same request digest replays: the stored operation and outbox rows are returned and the value is rehydrated from current state, without running the body. A hit with a different digest is a conflict.
+3. Run the body: CAS the conversation revision, require an active conversation (except for restore), stage the writes and describe the outbox events.
+4. Insert the operation record, whose scalar result columns are projections of the stored reference.
+5. Allocate contiguous per-conversation outbox sequences and append the events.
+6. Commit.
+
+The generation-begin family adds its own rule: a conversation holds at most one live turn, so a second begin while one is unsettled conflicts. Turn idempotency keys are prefixed with the operation kind, since send, continue, regenerate and retry share one unique index. `append_event` is shaped differently: it carries no conversation revision, so it checks the lifecycle, appends the checkpoint and leaves the revision and outbox alone. `latest_checkpoint_sequence` returns the highest stored sequence for an exact turn and attempt (none before the first append), and the insert trigger remains the authority on contiguity. Every turn status change is checked against the domain transition table before SQL runs, and again by the trigger.
+
+Some mutations carry more:
+
+- Preparation writes the turn's model, prompt and memory fields and its ordered lorebook attribution rows. It checks job ownership, the preparing state and revisions first, verifies the model artifact's stored reference, digest and attachment to the conversation (missing, foreign or forged artifacts cannot become provenance), and rolls everything back if one attribution insert fails. Group preparation takes the speaker from an explicit director target, a stored mention or automatic decision, or the original author of a regenerated reply, and fails before writing when a multi-character turn has no speaker. Recovery may reuse a matching preparation under a child attempt.
+- Prepared companion sends and continuations reuse the send and continue transactions: the user message, turn, attempt, companion session and relationship revisions, operation and outbox commit together, and a stale state CAS or hook failure rolls the send back. Only dynamic-memory companion sends create the hidden turn-owned effect seed (relationship columns, three emotion-delta vectors, ordered signal changes); continuations use the zero-delta seed. Finalization creates the processing effect in the same transaction; failure or cancellation removes an unconsumed seed, and interrupted recovery keeps it for the same turn.
+- In a companion direct chat, new user and assistant messages take their effective time from the conversation's companion clock. A finalized turn event reports the stored message time, so a regenerated reply keeps its original time.
+
+### Dispatch checkpoints and tools
+
+`generation_initial_dispatches` holds one row per running prepared attempt, bound to its job, the request fingerprint and the job usage event that keeps the raw dispatch evidence. The row stores the versioned provider-neutral request without the stream sink; reads recompute its fingerprint, and an exact attempt-owned lookup serves restart and child recovery without touching mutable preparation inputs. Admission needs a running turn and attempt with a resolved model, the attached job, matching prepared model and attributions, an existing job and no tool executions yet. Settlement is the only permitted update: it writes the versioned result once, requires settled job usage that agrees with it (including the provider response id), verifies conversation-retained replay artifacts and records them in `generation_initial_replay_refs` so orphan cleanup keeps them. Exact settlement replays; changed results conflict; SQL updates or deletes of admitted rows, including replacing the request, are rejected.
+
+`generation_speaker_dispatches` does the same for LLM speaker selection: admission needs the attempt preparing at `SelectingSpeaker`, settlement needs terminal job inference evidence and an enabled, unmuted chosen participant, and the row keeps the fingerprint, the usage event id and the decision, so a reopened process replays the selection without another provider call.
+
+`tool_executions` rows live under the exact conversation, turn and attempt that requested them. Request identity and input are immutable, provider call ids are unique within an attempt, state changes use revision CAS and terminal states cannot regress. A multi-call response is inserted in one immediate transaction, so an ordinal or provider-id collision cannot leave half a round; a later round compare-and-appends at the expected ordinal. Batch transitions require one attempt owner and advance every expected revision or none.
+
+### Artifacts
+
+Snapshot and provider replay bytes live in private artifact tables (`conversation_snapshot_artifacts`, `conversation_replay_artifacts`). Conversation rows store references, and the artifact store verifies immutable metadata and payload digests before any read or trusted transfer. The provider replay port materializes only fully matched references for exact provider-native continuation.
+
+### Reads
+
+`conversation_query` is read-only and snapshot-consistent: it owns the SQL projections, cursor decoding and the conversion of rows into validated domain values. `LiveTurnReader` lists unsettled turns across conversations for job recovery.
+
+### Historical conversations
+
+`conversation_history_writer` inserts a finished conversation with its own ids and timestamps, for backup restore and legacy import. Rows go in the order the migration 8 triggers require; each turn walks the shortest legal path of the transition graph instead of being inserted terminal; the create operation and its outbox event come last so later live mutations see a normal conversation. Legacy import generates the create operation; restore writes the exported operations and events exactly. The writer also creates the conversation's own memory space (or restores it with its id, revision, items, summary and embedding projections, after the messages the summary cites), creates or joins its companion pool, creates the companion session state and writes its continuity episode. Turns targeting one message are inserted in input order. Candidate media refs are written active.
+
+## Memory
+
+Migration 9 stores `lettuce-memory`'s model: revisioned memory spaces with typed, ordered items (six-digit `short_id` unique per space, source attribution with role, observed time and `turn` precision, supersession links), the cumulative summary with its ordered source-message cursor, and the dynamic-memory run graph.
+
+### Own spaces and companion pools
+
+A conversation with memory has its own space (`conversation_memory_spaces` with `pooled = 0`). A companion character also has one shared pool (`companion_memory_pools`), and each of its conversations has a `pooled = 1` row for it. The character's `share_memory_across_chats` toggle picks which space a conversation uses; `memory_adapter::active_space_id_in` reads it on every use, and flipping it copies and deletes nothing. A character leaving companion mode stops sharing. Backups export a pool once with its members in `shared_conversation_ids` and each own space separately.
+
+The summary row is per space and records the conversation that wrote it. `summary_cursor` gives each conversation its own cursor within one read transaction: its own summary window; when another pool member wrote the summary, the end of its latest settled run that no later rewind of its own invalidated (only runs with a succeeded attempt count); with no summary, 0. A run's summary checkpoint becomes the space's summary when its attempt succeeds or only its tools phase fails, not when it is cancelled; a later rewind of the conversation or a newer checkpoint that already wrote the summary skips the write. When the current summary came from a run without a succeeded attempt, the owner's cursor stays at its latest succeeded run, so a retry reprocesses the window.
+
+### Writes
+
+The item set changes only through `compare_and_apply`: one immediate transaction compares the space revision, replaces the complete item set and bumps the revision once, so a stale or failed memory round cannot partly alter a snapshot. Change sets and synced items keep the stored token count of an item whose text they leave unchanged, so a recount needs no revision bump and an older snapshot cannot restore the old count.
+
+Retrieval access has its own immutable receipt per generation attempt: the transaction checks conversation, attempt, space, revision and every selected active memory, promotes cold items and bumps access counts, records which items were cold before, and advances the memory root once. A matching retry returns the recorded revision without touching the items again.
+
+### Embeddings
+
+Embedding projections are rebuildable derived data: ready vectors as little-endian f32 BLOBs, or repair-needed rows without one. Reads join the exact live memory id and text, so a stale projection cannot affect similarity, and unchanged projections survive an item-set CAS without their BLOBs being rewritten. Repair queries also produce work for live items that have no projection, which closes the window between committing memory and storing its derived data. `put_ready` writes a vector only while the memory still has the embedded text (`Superseded` otherwise), and `put_reembedded` also stores the recounted token count under the same check.
+
+### Runs
+
+A dynamic-memory run is not a conversation turn and creates no turn or message. Its immutable row binds the conversation memory space and freezes the complete starting snapshot, ordered source messages with roles, effective times and the revision or candidate each rendered, the summary interval and half-open window, the resolved inference profile, time awareness, whether supersession is on, the structured fallback format and the tool contract. Admission applies the optional cycle-start change through the same memory CAS in the transaction that inserts the run, then requires the stored space to equal the run's `starting_memory`; a stale change conflicts and inserts no run.
+
+Attempts move through `created`, `processing` and a terminal state by CAS. Rounds and calls keep their exact provider-neutral request context, bounded usage and protected replay references. Recovery interrupts the parent and copies its round and call evidence and settled results into one processing child. Background tool outcomes commit per round in the same transaction as the memory CAS; a stale revision rolls back without results and an exact retry returns the original settlement. The single pre-round summary checkpoint stores the summary, token count, request context, usage, provider request id and root-revision transition in the same transaction as the summary cursor CAS. Ownership guards keep a foreign conversation, space or source message out of a run.
+
+The ask-first state stores the prompt baseline and pending or skipped state per conversation: repeating discovery at the same unsummarized count is a no-op, skipping clears pending but keeps the baseline, a later full interval advances the prompt count, and admitting an automatic or approved forced job clears the row.
+
+### Rewinds
+
+`dynamic_memory_rewind_adapter` undoes, latest first, only the tool results of the conversation's first invalid run and its later runs (`undo_runs`), then restores the summary without a second root revision bump, clears pending approval, invalidates the named companion effects and records an immutable receipt for exact retries. Decay, retrieval access, user edits and, in a pool, the other members' memories stay; a pool keeps its summary while an own space takes the prior run's summary. A hard-deleted memory it restores gets a fresh short id when its old one has been taken. Rewinds, the prior-summary search and the run cursor look only at runs of the space the rewind touches, so own-space runs and pool runs never undo each other. Effect invalidation is an overlay, so terminal effect evidence is never rewritten.
+
+## Companions
+
+- Soul (migration 12): character-scoped state keyed by `(character_id, scope)`, where an empty scope is the shared Soul and a conversation id is that conversation's own. Facts, ordered source memory ids and supersession evidence are normalized, not stored as a JSON authority. `SoulChangeSet`s apply under revision CAS with an immutable receipt. Creating a companion character seeds its Soul root and authored facts in the character transaction; roleplay characters get none. `apply_sharing_change_in` runs the share-Soul-growth transitions inside the character defaults write, and `seed_conversation_soul_in` seeds a conversation Soul when sharing is off.
+- Runs: one growth run per durable job and memory run, freezing the memory attempt, profile, prompt inputs, evidence, Soul snapshot and a deterministic apply id, with one immutable reduced-proposal checkpoint; one consolidation run per succeeded growth job, freezing the post-growth Soul revision; Soul-writer preview runs by request id with ordered primary and fallback round checkpoints, which never touch Soul state.
+- State (migration 13): four emotion vectors and ordered driver and active signals per conversation; relationship axes, tension, stability, interaction count and last interaction per companion character and persona (or default) scope. A new conversation in the same scope starts with fresh emotion and the existing relationship. Updates CAS both scopes and record an immutable request-hash receipt.
+- Continuity: a fresh direct companion launch closes the prior open episode for the character and persona and links the next one; replay leaves the sequence unchanged.
+- Turn effects: drafts become processing effects at finalization and settle as ready or failed with typed memory ids, the source-message window and bounded summary data. Terminal effects are immutable.
+- Scheduled notes: character-scoped, companion owners only, listed in `available_at`, id order, idempotent delete.
+
+## Creation helper and lorebook runs
+
+Migration 11 stores creation-helper workflows: the target and its expected authored revision, user turns before inference, and an immutable ordered proposal lineage, with stage and current-proposal changes under revision CAS. A workflow may leave the confirmation stage again, but once an apply receipt exists it is closed: triggers and the adapter refuse further turns, attempts, recoveries, proposals and settlements. Apply is refused while an attempt on the current proposal is created or running. Tool calls must match a declared name and version, except undeclared tools, which are admitted at version 1 and answered as unknown.
+
+Apply is the helper's only write into authored domains, and each target reuses that domain's own insert or CAS path in the same transaction as an immutable receipt: new and existing personas, new characters (root, scenes and receipt together), existing characters (profile and scenes under one root revision, unreviewed graph kept, dependent scene removal refused), new lorebooks and existing lorebooks (reviewed entry ids reconciled, hidden policy fields kept). Receipts are per workflow, so later workflows can revise the same entity with fresh CAS tokens.
+
+Lorebook generation stores immutable single-entry runs bound to one job and the conversation, lorebook, character or persona, model and prompt revisions it used. Staged lorebook projects keep their state on one project row changed by CAS, with frozen planner, writer, refinement and coherence runs stored as immutable documents: the planner attempt is persisted before the planning-to-outline CAS so a restart never redispatches it; outline approval, replacement, draft batches, per-plan success and failure, manual edits, approvals, refinement, coherence proposals and accepted changes are all project CAS operations with exact replay; parallel writer completions from one batch may each advance the project revision without invalidating each other, and a writer from an older batch is rejected; each coherence review cycle keeps its own request and job evidence; an explicit planner retry creates a new job and archives the previous attempt in the same transaction, keeping the old job; cancellation and its job events commit together (queued work settles at once, claimed work keeps its lease for cleanup or expiry recovery), and late writer results cannot change a terminal project; final apply reuses the lorebook aggregate writers and returns the same entry ids on retry, even after later edits to the book. Staged source documents are retained by project and source identity: admission writes their asset references with the project and requires ready assets, foreign keys protect those assets even when their retention class is temporary, and loading checks the references against the excerpt provenance in the run document.
+
+## Jobs and usage
+
+`JobStore` persists versioned job specifications, snapshots and an ordered event table. Each mutation loads the durable aggregates into the single lifecycle reducer from `lettuce-jobs`, applies it under `BEGIN IMMEDIATE` and writes only the changed jobs and events. Idempotency, leases, cancellation, retries, progress, pagination, recovery and retention behave the same across restarts and concurrent handles, with no second state machine. Pruning keeps terminal jobs that a speech transcription, synthesis or image generation still binds, and their ancestors.
+
+The usage ledger (migration 10) is append-only. `usage_events` derive conversation ownership from the generation attempt (checked by trigger at insert, not by foreign key, so usage outlives a purged conversation) and store known counters or one explicit unavailable reason with immutable model and provider revisions. Optional counters (cached input, reasoning, cache write, web search) and the provider-reported cost are nullable, checked, non-negative values; raw counters are never clamped, and the cost is a finite REAL at full f64 precision. `job_inference_usage` admits each job-owned dispatch and settles its versioned result once. `usage_costs` and `job_usage_costs` keep immutable, versioned cost bases (prices, provenance, calculation inputs, optional OpenRouter evidence) separate from raw usage, and costs are recomputed with the basis version's calculator, never with current prices. All of it survives job retention cleanup.
+
+## Speech, images and local models
+
+- Transcriptions (14) and syntheses (18) are admitted against their job and settle once; a synthesis must name its exact output asset with matching provenance and retention. `SpeechCacheRepository` looks up reusable syntheses and treats a blob as cached only when no asset of it is referenced from any other foreign key column, discovered from the schema.
+- ASR learning (16) keeps authored text apart from normalized lookup columns and never truncates it, reproduces scope and language filters and runtime order, stores ignored suggestions under a null-safe unique identity with a repeat count, and removes matching ignored rows when a correction is saved. A learning batch imports in one transaction with fresh ids and remapped links, or not at all. Voice examples reference audio assets with `RESTRICT`, and term and correction links use `SET NULL`.
+- TTS (17) cross-checks provider kinds and versioned configs on every read; credential columns hold only scoped secret references and owner ids. Provider and voice updates use revision CAS and keep their creation time. Voices require a provider and go with it, and the deleted provider record is returned so secret cleanup can run separately. The discovered voice cache keeps the provider's response order and label map, is replaced in one transaction and is left intact on failure.
+- Whisper manifests (15) are immutable and kept apart from user media; the model hub may delete the exact manifest after its bytes are gone, and retained legacy models are refused before that call.
+- Image generations (22) bind one `image_generate` job; success can name only `generated_image` assets whose provenance names that job, and output links keep those assets alive. Terminal rows may be deleted from the playground history, pending rows may not.
+- Local llama.cpp state (21): runtime reports per model file and generation metrics. The metrics list keeps the newest 500; a row that falls out of the list or is cleared but belongs to a message's generation stays as `message_stats_only` (summary kept, samples dropped), and is found by `llm_generation_metric_for_message` through the message's candidate attempts. Triggers delete such rows when their candidate is deleted or message tombstoned. Neither table is backed up or synced.
+
+## Sync
+
+Migration 19 holds the sync journal: the local device identity, origin sequence and hybrid clock, the causal frontier, immutable change rows and frontier snapshots, peer frontiers, immutable incoming batches, conflicts, deferred changes, secret versions, conversation marks and fork notices, carried conflicts and deleted-entity stamps. The adapters in `sync/` implement the journal, the state scan (`SCANNED_CODECS`, in dependency order), incoming application and conflict resolution, and one snapshot codec per domain (conversations, memory under `conversation:<id>` or `pool:<character>` owners, companion state, plain rows, secrets). Persona and default-persona mutations also journal in the same transaction as their aggregate write. The lettuce-sync README describes the design.
+
+## Backup and restore
+
+Export (`backup_adapter`) reads everything a backup holds in one deferred transaction, through the same strict decoders the live adapters use: providers, models, prompts and selections, settings, audio providers and voices, personas, lorebooks, characters and groups with bindings (archived roots included), media metadata, ASR data, the full conversation graph in timeline order with turns, attempts, checkpoints, dispatches and tool state, jobs with inference evidence and costs, usage events and bases, operations and outbox events, companion state and effects, suffix rewinds, memory spaces with every embedding projection (stale rows and exact BLOB bytes included) and the dynamic-memory run graph. Scalar projections are checked, global limits apply while reading, and dangling references are rejected before encryption. Nothing is recalculated during export. Secret values and media bytes stay outside SQLite and are added by the app.
+
+Restore admission (migration 20) records one immutable row per restore operation binding the source hash, plan fingerprint, staging receipt fingerprint and inventory counts; the same file can be admitted again under a new operation.
+
+`restore_writer` fills an empty database in one transaction with deferred foreign keys, in dependency order:
+
+1. Media blobs and assets, providers, models, prompts, audio providers and voices, personas, lorebooks, characters and groups with their bindings, exactly as exported (ids, revisions, timestamps, states), then settings, selections and ASR records. Blobs that were `missing` are inserted `ready` so their assets pass the ready-blob check, then marked `missing` again.
+2. Protected snapshot and replay artifacts from their verified bytes.
+3. Every conversation through the history writer in exact mode: exported operations and events, replay references, speaker, lorebook and memory attribution, failed or interrupted turns without candidates, shared pools, usage events and bases. Per attempt the writer restores its speaker dispatch while the turn is selecting a speaker, its initial dispatch with replay references and tool executions while the attempt runs (a tool walks from `requested` along the path its revision implies), and its checkpoints. Media refs that were historical at backup time are flipped back after insertion.
+4. Work in progress at backup time is settled as interrupted through `lettuce_transfer::settle_in_flight_generation`: unfinished attempts get a derived interrupted usage event, unfinished turns become interrupted, turns without attempts are left out, running tools are interrupted and requested or validated ones cancelled.
+5. Jobs and events through the job store's validation (in-flight jobs keep their state, so lease expiry recovers them as after a restart), job usage and bases; speech transcriptions and syntheses inserted pending and settled through their settle-once triggers.
+6. Memory retrieval accesses, companion relationships, sessions, episodes and receipts, Soul states (replacing the rows character insertion seeded), scheduled notes, pool ownership, dynamic-memory approvals and runs. Each run source is inserted while its message briefly renders the source the run recorded; messages tombstoned at backup time are written hidden and tombstoned after the runs. Open background work stays open for its restored job. Companion turn effects go through draft, processing and children before settling; suffix rewinds and invalidations come last.
+7. Legacy import evidence, restored run by run by walking its status guard, and imported legacy usage records.
+
+Secrets, media bytes and the cutover to the new file belong to the app's restore coordinator. `carry_device_local_state_from` then attaches the previous file and copies what a backup never carries: Whisper manifests, the models folder (unless the new file names one), the LoRA library, generation metrics, the shell's install state and device settings (unless the new file has them), app usage days (keeping the larger active time per day), and the discovered voices and llama.cpp reports of providers and models that exist in the new file. A LoRA path in both files keeps the more recently updated row; a metrics row is skipped when the new file holds its id or the same generation under another id. The sync identity, journal, frontiers and conflicts stay behind, so a restored database joins sync as a new device.
+
+## Legacy import
+
+The legacy boundary reads the old app's `app.db` read-only and never modifies or deletes it.
+
+1. Preflight (`legacy_database_preflight`) opens the file read-only, checks it is one of `LEGACY_DATABASE_SCHEMA_VERSIONS` (92 to 96, which share the table layout the reader expects), and returns a bounded typed inventory.
+2. Planning reads each domain completely, in stable order and without row-count limits, and fails on malformed data instead of dropping fields: personas, lorebooks with entries, ASR learning, providers and models (exposing only API-key presence and header names, types and lengths, so no secret value crosses the reader), characters, groups, sessions and the rest. `read_legacy_database_documents` reproduces the 22 documents the legacy backup exporter writes, with its exact column lists, ordering, defaults and JSON, so a live legacy database and a legacy backup archive feed one shared planner.
+3. Admission seals a run in one immediate transaction: immutable source schema, inventory and plan fingerprints, stable destination id assignments (insertable only while admitting), secret owner ids and opaque references for pending keys and headers, and every skip. A run whose source fingerprint matches a run that has not failed replays that admission; a different plan for the same source conflicts; a partial unique index stops two live runs from admitting one source. A failed run can be retried under a new id.
+4. Secrets and media: the read-only secret adapter loads one exact value on demand into `SecretValue`, and each secret or media object gets an immutable completion receipt (no value or digest for secrets; path, size, hash and destination asset for media, checked against a ready blob). The first media receipt moves the run to `importing`.
+5. Materialization reuses the ordinary aggregate insert paths inside immediate transactions: personas and lorebooks once every media receipt exists, then providers, models and prompts (secret references rebuilt only from sealed assignments and completion rows), then the stages. Each stage writes one immutable `legacy_import_stage_results` row per `(run, stage)`, requires a `partial` run bound to a source fingerprint and its prerequisite receipts, rolls back entirely on a destination collision, and replays its receipt.
+
+The stages are characters, groups, audio, settings, direct conversations, group conversations, usage records, creation helper, images and LLM metrics. Characters, groups, scenes, variants, starters, audio providers and voices take ids derived from their legacy ids within the run's `LegacyIdScope`, so a different legacy source that reuses the same ids imports alongside and a replay derives the same ids; models, prompts, lorebooks and media are remapped through the sealed assignments. Conversation stages write every session through the history writer, restore memory, pools, companion state, Soul facts and scheduled notes, write per-message speed stats as `message_stats_only` metric rows, and fork unresolved legacy message conflicts into branches flagged in `sync_conversation_forks`. `complete_legacy_import_run` moves a `partial` run to `completed` only when every stage has a result row.
+
+Legacy records that the old app itself ignored are skipped instead of aborting the import, and every skip is sealed with the run in `legacy_import_skips` and hashed into the plan fingerprint. Values it read leniently fall back to the value it used and are recorded as `legacy_value` skips keyed `<table>.<field>:<row id>`. Other malformed records abort. Legacy rows with no destination (`companion_turn_effects` beyond those tied to an imported turn, `sync_v2_conflicts`) are kept verbatim as `legacy_import_preserved_rows`, with BLOBs as `{"hex"}`, non-UTF-8 text as `{"text_hex"}` and non-finite REALs as `{"real"}`, and travel with the run in v2 backups.
+
+## Hard delete
+
+`purge_conversation` and `purge_character` delete an entity with every row that only it owns, in one immediate transaction:
+
+- A conversation takes its participants, settings, branches, messages, revisions, candidates, turns, attempts, tools, checkpoints, dispatches, operations, outbox, snapshot and media references, sync marks and fork notices, its own memory space with items, projections, summary and runs, its companion session state, effects, receipts and continuity episode (a later episode is relinked to the deleted one's predecessor), and its growth, consolidation and lorebook entry runs. A shared pool stays, minus this conversation's runs, retrieval accesses and summary. Usage events and cost bases stay.
+- A character takes its direct conversations, its pool, Soul, facts, receipts, relationships, sessions, episodes, scheduled notes, runs, scenes, starters, media links and lorebook bindings. Groups that list it keep their other members' order and mute state; the group revision moves while its update time stays, so two devices removing the same character reach identical content. A group left with fewer than two members or only muted ones stays valid and gets a `group_below_two_members` notice. Group conversations stay readable and keep running with the members left. Creation apply receipts keep the character id as a plain value, and replaying an apply whose character is gone answers `NotFound`.
+- An entity with a live generation, memory run or companion effect is refused as `Busy`.
+
+Branches and messages restrict each other, so a purge runs with foreign key enforcement off and checks every foreign key into the touched tables before committing (`PurgeError::Integrity` rolls back). Enforcement is then restored and verified. Append-only tables keep their delete guards; each guard allows a delete only while the owner (conversation, character or memory space) is listed in `purge_authorizations`, which the purge fills and empties inside its own transaction. Launch snapshots and provider replays the deleted rows named go when nothing else references them, and every UUID in a deleted row's text that is a non-library asset id is queued in `media_gc_candidates`.
+
+`collect_media_garbage` takes the queue. A candidate is kept and forgotten when anything still names it: a foreign key (a legacy media completion only while its run is open), a sync change still waiting to apply, conflict evidence, an unfinished job or its events, or the text of any other table except bookkeeping (media catalog, purge and sync journals, legacy import evidence, finished jobs, replay caches). Library media is always kept. The rest are deleted; a blob none of whose assets is used leaves the catalog (deleted, or marked `missing` while an asset row or completion names it), and the released objects are returned so their files are deleted after the commit. `media_object_retained` answers the orphan sweep for a blob in any state, and `media_objects_in_file` reads the blobs another database file catalogs.
+
+Deletes received through sync wait in `purge_queue` with the change that carried them; `run_queued_purges` decides each one again before purging. Entities kept and waiting to be sent back whole are in `purge_rejournals`. A busy entry stays queued without counting; one that fails eight times for another reason is dropped with a `dropped_after_failures` notice. `purge_notices` lists open notices and `dismiss_purge_notice` closes one.
