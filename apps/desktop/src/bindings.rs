@@ -28,9 +28,12 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
         .events(collect_events![AppEvent])
 }
 
-/// Writes the TypeScript bindings to `path`.
-pub fn export_bindings(path: &Path) -> Result<(), specta_typescript::Error> {
-    specta_builder::<tauri::Wry>().export(Typescript::default(), path)
+/// Writes the TypeScript bindings to `path`, ending in exactly one newline.
+pub fn export_bindings(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    specta_builder::<tauri::Wry>().export(Typescript::default(), path)?;
+    let text = std::fs::read_to_string(path)?;
+    std::fs::write(path, format!("{}\n", text.trim_end()))?;
+    Ok(())
 }
 
 #[cfg(test)]

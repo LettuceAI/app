@@ -25,7 +25,9 @@ struct Workers {
     running: Mutex<Option<(tokio::sync::oneshot::Sender<()>, JoinHandle<()>)>>,
 }
 
-/// Builds and runs the desktop app until its last window closes.
+/// Builds and runs the app until its last window closes; on Android and
+/// iOS this is the mobile entry point.
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     if let Err(error) =
         lettuce_observability::install(lettuce_observability::ObservabilityConfig::default())
