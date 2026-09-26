@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/*"]
+members = ["crates/*", "apps/desktop"]
 exclude = ["old-code"]
 resolver = "2"
 
@@ -90,6 +90,10 @@ rand = "0.8"
 sha1_smol = "1"
 sha2 = "0.10"
 specta = { version = "=2.0.0-rc.25", features = ["derive"] }
+specta-typescript = "=0.0.12"
+tauri = "=2.12.0"
+tauri-build = { version = "=2.7.0", default-features = false }
+tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
 tar = "0.4"
 ort = { version = "=2.0.0-rc.10", default-features = false, features = ["std", "half", "ndarray"] }
 tokenizers = { version = "0.20", default-features = false, features = ["unstable_wasm"] }

@@ -60,6 +60,12 @@ cargo clippy --workspace --all-targets -- -D warnings
 bash scripts/check-architecture.sh
 ```
 
+The workspace includes the Tauri desktop shell (`apps/desktop`), so building it on Linux
+needs the WebKitGTK 4.1 development packages. `cargo test --workspace` fails when
+`frontend/src/api/generated/bindings.ts` is stale; regenerate it with
+`cargo run -p lettuce-desktop --bin export-bindings` after changing a command or a
+contract.
+
 Match the existing tests:
 
 - use in-memory databases and temporary directories, never real user data;

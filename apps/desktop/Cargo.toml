@@ -1,0 +1,50 @@
+[package]
+name = "lettuce-desktop"
+readme = "README.md"
+description = "LettuceAI desktop shell: Tauri commands over the application API."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+default-run = "lettuce-desktop"
+
+[lints]
+workspace = true
+
+[lib]
+name = "lettuce_desktop"
+path = "src/lib.rs"
+
+[[bin]]
+name = "lettuce-desktop"
+path = "src/main.rs"
+
+[[bin]]
+name = "export-bindings"
+path = "src/bin/export-bindings.rs"
+
+[features]
+default = []
+custom-protocol = ["tauri/custom-protocol"]
+vulkan = ["lettuce-app/llama-vulkan", "lettuce-app/asr-vulkan"]
+cuda = ["lettuce-app/llama-cuda", "lettuce-app/asr-cuda"]
+metal = ["lettuce-app/llama-metal", "lettuce-app/asr-metal"]
+
+[dependencies]
+lettuce-app.workspace = true
+lettuce-contracts = { workspace = true, features = ["specta"] }
+lettuce-observability.workspace = true
+lettuce-settings.workspace = true
+serde.workspace = true
+specta.workspace = true
+specta-typescript.workspace = true
+tauri.workspace = true
+tauri-specta.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[build-dependencies]
+tauri-build.workspace = true
