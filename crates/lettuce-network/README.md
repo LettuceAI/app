@@ -22,8 +22,8 @@ legacy's default reqwest client did (up to ten), but only on the host the
 request went to and never from HTTPS down to HTTP, so no credential reaches
 another host; a cross-host redirect is returned as the response. The buffered
 response cap is 8 MiB unless the caller raises it with
-`with_max_response_bytes` (remote TTS uses 256 MiB, since legacy read audio
-responses without a bound). Plain HTTP is allowed for
+`with_max_response_bytes` (remote TTS and chat inference use 256 MiB, since
+legacy read audio and non-streamed image replies without a bound). Plain HTTP is allowed for
 user-configured hosts (legacy LAN endpoints). Timeouts and retries follow the
 legacy transport: 10 s connect, 30 min generation total, up to two retries
 with 200/400 ms backoff on 5xx, 429 (honoring `Retry-After` up to 30 s),
