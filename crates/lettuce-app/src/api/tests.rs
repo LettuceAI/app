@@ -120,6 +120,14 @@ struct Harness {
 }
 
 fn harness(reply: Reply) -> Harness {
+    harness_with(reply, Arc::new(SystemClock), None)
+}
+
+fn harness_with(
+    reply: Reply,
+    clock: Arc<dyn lettuce_jobs::Clock>,
+    media: Option<Arc<ApiMediaStore>>,
+) -> Harness {
     let backend = Arc::new(AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend"));
     let database = backend.database();
     let model_id = crate::launch::tests::seed_model(database, ProviderProtocol::Ollama, "ollama");
@@ -173,9 +181,10 @@ fn harness(reply: Reply) -> Harness {
         inference: provider.clone(),
         embedding: Arc::new(UnavailableEmbedding),
         emotion: None,
-        media: None,
+        media,
         events: events.clone(),
-        clock: Arc::new(SystemClock),
+        clock,
+        asset_url_base: "test-asset://host".into(),
     });
     Harness {
         context,
@@ -589,9 +598,13 @@ async fn invalid_requests_map_to_stable_codes() {
     .await
     .expect_err("unknown character");
     assert_eq!(error.code, ApiErrorCode::NotFound);
-    let error = read_asset(&harness.context, &lettuce_types::AssetId::new().to_string())
-        .await
-        .expect_err("no media store");
+    let error = read_asset(
+        &harness.context,
+        &lettuce_types::AssetId::new().to_string(),
+        AssetRange::Whole,
+    )
+    .await
+    .expect_err("no media store");
     assert_eq!(error.code, ApiErrorCode::Unavailable);
 }
 
@@ -699,4 +712,524 @@ fn contract_events_serialize_as_tagged_snake_case() {
         error,
         serde_json::json!({"code": "invalid_input", "message": "m", "details": {"type": "invalid_field", "field": "f"}})
     );
+}
+
+fn queued_generation(harness: &Harness, turn_id: &str) -> crate::QueuedConversationGeneration {
+    let turn = ConversationReader::get_turn(
+        harness.context.backend().database(),
+        turn_id.parse().expect("turn id"),
+    )
+    .expect("turn");
+    let attempt = turn.attempts.last().expect("attempt");
+    crate::QueuedConversationGeneration {
+        conversation_id: turn.conversation_id,
+        turn_id: turn.id,
+        attempt_id: attempt.id,
+        job_id: attempt.job_id.expect("attached job"),
+    }
+}
+
+async fn can_send(harness: &Harness, conversation_id: &str) -> bool {
+    conversation_open(
+        &harness.context,
+        dto::ConversationOpenRequest {
+            conversation_id: conversation_id.into(),
+        },
+    )
+    .await
+    .expect("open")
+    .can_send
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_retried_send_while_queued_returns_the_first_send_and_other_text_conflicts() {
+    let harness = harness(Reply::Text("Hello."));
+    let conversation_id = launch(&harness, "launch-retry").await;
+    let first = Arc::new(RecordingStream::default());
+    let accepted = send(&harness, &conversation_id, "retry-1", "Hi", first.clone())
+        .await
+        .expect("send");
+    let retry = Arc::new(RecordingStream::default());
+    let replayed = send(&harness, &conversation_id, "retry-1", "Hi", retry.clone())
+        .await
+        .expect("retried send while queued");
+    assert_eq!(replayed, accepted);
+    let error = send(
+        &harness,
+        &conversation_id,
+        "retry-1",
+        "Something else",
+        Arc::new(RecordingStream::default()),
+    )
+    .await
+    .expect_err("same key, different text");
+    assert_eq!(error.code, ApiErrorCode::Conflict);
+
+    let worker = ConversationGenerationWorker::new(harness.context.clone());
+    assert!(worker.run_once().await.expect("run generation"));
+    assert!(matches!(
+        retry.events().last(),
+        Some(GenerationEvent::Completed { .. })
+    ));
+    assert!(first.events().is_empty());
+    assert_eq!(harness.provider.requests.lock().expect("requests").len(), 1);
+    let error = send(
+        &harness,
+        &conversation_id,
+        "retry-1",
+        "Something else",
+        Arc::new(RecordingStream::default()),
+    )
+    .await
+    .expect_err("same key, different text after settling");
+    assert_eq!(error.code, ApiErrorCode::Conflict);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_job_that_cannot_be_claimed_or_already_ended_is_not_run() {
+    let harness = harness(Reply::Text("Hello."));
+    let worker = ConversationGenerationWorker::new(harness.context.clone());
+
+    let claimed_elsewhere = launch(&harness, "launch-not-claimed").await;
+    let stream = Arc::new(RecordingStream::default());
+    let accepted = send(&harness, &claimed_elsewhere, "nc-1", "Hi", stream.clone())
+        .await
+        .expect("send");
+    let next = queued_generation(&harness, &accepted.turn_id);
+    lettuce_jobs::JobStore::claim(
+        harness.context.backend().database(),
+        next.job_id,
+        lettuce_jobs::WorkerId::new(),
+        harness.context.now(),
+        std::time::Duration::from_secs(60),
+        &lettuce_jobs::ResourceAvailability::all(),
+    )
+    .expect("claim")
+    .expect("claimed by another worker");
+    assert!(!worker.run_queued(next).await.expect("not claimed"));
+    assert!(!worker.run_once().await.expect("nothing queued"));
+    assert!(stream.events().is_empty());
+    assert!(harness.context.stream(next.turn_id).is_some());
+
+    let cancelled = launch(&harness, "launch-terminal").await;
+    let stream = Arc::new(RecordingStream::default());
+    let accepted = send(&harness, &cancelled, "terminal-1", "Hi", stream.clone())
+        .await
+        .expect("send");
+    let next = queued_generation(&harness, &accepted.turn_id);
+    generation_cancel(
+        &harness.context,
+        dto::GenerationCancelRequest {
+            turn_id: accepted.turn_id.clone(),
+        },
+    )
+    .await
+    .expect("cancel");
+    assert!(!worker.run_queued(next).await.expect("already ended"));
+    assert_eq!(
+        stream.events(),
+        vec![GenerationEvent::Cancelled {
+            turn_id: accepted.turn_id.clone()
+        }]
+    );
+    assert!(
+        harness
+            .provider
+            .requests
+            .lock()
+            .expect("requests")
+            .is_empty()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn unresolvable_queued_jobs_are_failed_and_do_not_block_the_queue() {
+    let harness = harness(Reply::Text("Hello."));
+    let database = harness.context.backend().database();
+    let spec = |key: &str, turn_id: lettuce_types::GenerationTurnId| {
+        lettuce_jobs::JobSpec::new(
+            lettuce_jobs::JobKind::ConversationGeneration,
+            lettuce_jobs::JobSubject::new(
+                lettuce_jobs::SubjectKind::Conversation,
+                lettuce_types::ConversationId::new().to_string(),
+            )
+            .expect("subject"),
+            lettuce_jobs::OutcomeRef::GenerationTurn(turn_id),
+        )
+        .with_idempotency_key(lettuce_jobs::IdempotencyKey::new(key).expect("key"))
+        .with_resources(vec![lettuce_jobs::ResourceClass::Network])
+    };
+    let orphan = lettuce_jobs::JobStore::create_or_get(
+        database,
+        spec("orphan", lettuce_types::GenerationTurnId::new()),
+    )
+    .expect("orphan job")
+    .job;
+
+    let healthy = launch(&harness, "launch-healthy").await;
+    let healthy_stream = Arc::new(RecordingStream::default());
+    send(
+        &harness,
+        &healthy,
+        "healthy-1",
+        "Hi",
+        healthy_stream.clone(),
+    )
+    .await
+    .expect("healthy send");
+
+    let stranded = launch(&harness, "launch-stranded").await;
+    let stranded_stream = Arc::new(RecordingStream::default());
+    let stranded_send = send(
+        &harness,
+        &stranded,
+        "stranded-1",
+        "Hi",
+        stranded_stream.clone(),
+    )
+    .await
+    .expect("stranded send");
+    let stranded_job = queued_generation(&harness, &stranded_send.turn_id).job_id;
+    let impostor = lettuce_jobs::JobStore::create_or_get(
+        database,
+        spec("impostor", stranded_send.turn_id.parse().expect("turn id")),
+    )
+    .expect("impostor job")
+    .job;
+    lettuce_jobs::JobStore::append_and_transition(
+        database,
+        lettuce_jobs::JobMutation::RequestCancellation {
+            id: stranded_job,
+            reason: lettuce_jobs::CancellationReason::User,
+            at: harness.context.now(),
+        },
+    )
+    .expect("the stranded turn's own job leaves the queue");
+    assert!(!can_send(&harness, &stranded).await);
+
+    let worker = ConversationGenerationWorker::new(harness.context.clone());
+    let mut runs = 0;
+    while worker.run_once().await.expect("worker step") {
+        runs += 1;
+    }
+    assert_eq!(runs, 1);
+    assert!(matches!(
+        healthy_stream.events().last(),
+        Some(GenerationEvent::Completed { .. })
+    ));
+    for job_id in [orphan.id, impostor.id] {
+        let job = lettuce_jobs::JobStore::get(database, job_id)
+            .expect("job")
+            .expect("job exists");
+        assert_eq!(job.state, lettuce_jobs::JobState::Failed);
+    }
+    let stranded_job = lettuce_jobs::JobStore::get(database, stranded_job)
+        .expect("job")
+        .expect("job exists");
+    assert!(stranded_job.state.is_terminal());
+    assert!(can_send(&harness, &stranded).await);
+    assert_eq!(
+        stranded_stream.events(),
+        vec![GenerationEvent::Cancelled {
+            turn_id: stranded_send.turn_id.clone()
+        }]
+    );
+    assert!(
+        harness
+            .events
+            .0
+            .lock()
+            .expect("api events")
+            .contains(&ApiEvent::GenerationSettled {
+                conversation_id: stranded.clone(),
+                turn_id: stranded_send.turn_id.clone(),
+            })
+    );
+    assert!(
+        harness
+            .context
+            .stream(stranded_send.turn_id.parse().expect("turn id"))
+            .is_none()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_send_whose_reply_cannot_be_queued_settles_its_turn() {
+    let harness = harness(Reply::Text("Hello."));
+    let conversation_id = launch(&harness, "launch-unschedulable").await;
+    let stream = Arc::new(RecordingStream::default());
+    let error = super::conversations::send_with(
+        &harness.context,
+        dto::ConversationSendRequest {
+            conversation_id: conversation_id.clone(),
+            text: "Hi".into(),
+            client_operation_id: "unschedulable-1".into(),
+        },
+        stream.clone(),
+        |_, _, _| Err(crate::ConversationGenerationDispatchError::InvalidWork),
+    )
+    .await
+    .expect_err("schedule failed");
+    assert_eq!(error.code, ApiErrorCode::Internal);
+    let events = stream.events();
+    let [GenerationEvent::Failed { turn_id, code }] = events.as_slice() else {
+        panic!("unexpected stream: {events:?}");
+    };
+    assert_eq!(*code, dto::GenerationFailureCode::Internal);
+    assert!(
+        harness
+            .context
+            .stream(turn_id.parse().expect("turn id"))
+            .is_none()
+    );
+    assert!(
+        harness
+            .events
+            .0
+            .lock()
+            .expect("api events")
+            .contains(&ApiEvent::GenerationSettled {
+                conversation_id: conversation_id.clone(),
+                turn_id: turn_id.clone(),
+            })
+    );
+    let view = conversation_open(
+        &harness.context,
+        dto::ConversationOpenRequest {
+            conversation_id: conversation_id.clone(),
+        },
+    )
+    .await
+    .expect("open");
+    assert!(view.can_send);
+    assert_eq!(view.pending_turn_id, None);
+    send(
+        &harness,
+        &conversation_id,
+        "unschedulable-2",
+        "Again",
+        Arc::new(RecordingStream::default()),
+    )
+    .await
+    .expect("the next send is accepted");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn conversations_page_through_ties_on_updated_at() {
+    let harness = harness_with(
+        Reply::Text("Hello."),
+        Arc::new(lettuce_jobs::FakeClock::new(TimestampMillis::new(5_000))),
+        None,
+    );
+    let mut launched = Vec::new();
+    for index in 0..5 {
+        launched.push(launch(&harness, &format!("launch-tie-{index}")).await);
+    }
+    let mut seen = Vec::new();
+    let mut cursor = None;
+    let mut pages = 0;
+    loop {
+        let page = conversations_list(
+            &harness.context,
+            dto::ConversationsListRequest {
+                cursor: cursor.take(),
+                limit: Some(2),
+            },
+        )
+        .await
+        .expect("page");
+        pages += 1;
+        assert!(page.items.len() <= 2);
+        assert!(page.items.iter().all(|item| item.updated_at == 5_000));
+        seen.extend(page.items.into_iter().map(|item| item.id));
+        match page.next_cursor {
+            Some(next) => cursor = Some(next),
+            None => break,
+        }
+    }
+    assert_eq!(pages, 3);
+    let mut unique = seen.clone();
+    unique.sort();
+    unique.dedup();
+    assert_eq!(unique.len(), seen.len());
+    launched.sort();
+    assert_eq!(unique, launched);
+
+    let clamped = conversations_list(
+        &harness.context,
+        dto::ConversationsListRequest {
+            cursor: None,
+            limit: Some(u32::MAX),
+        },
+    )
+    .await
+    .expect("an oversized limit is clamped");
+    assert_eq!(clamped.items.len(), 5);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn message_cursor_errors_name_the_cursor_only_when_one_was_sent() {
+    let harness = harness(Reply::Text("Hello."));
+    let conversation_id = launch(&harness, "launch-cursor").await;
+    let error = conversation_messages(
+        &harness.context,
+        dto::ConversationMessagesRequest {
+            conversation_id,
+            before_cursor: Some("not-a-cursor".into()),
+            limit: None,
+        },
+    )
+    .await
+    .expect_err("bad cursor");
+    assert_eq!(
+        error.details,
+        Some(ApiErrorDetails::InvalidField {
+            field: "before_cursor".into()
+        })
+    );
+}
+
+fn png_bytes() -> Vec<u8> {
+    let mut bytes = b"\x89PNG\r\n\x1a\n".to_vec();
+    bytes.extend_from_slice(&13_u32.to_be_bytes());
+    bytes.extend_from_slice(b"IHDR");
+    bytes.extend_from_slice(&2_u32.to_be_bytes());
+    bytes.extend_from_slice(&3_u32.to_be_bytes());
+    bytes.extend_from_slice(&[8, 6, 0, 0, 0]);
+    bytes.extend_from_slice(b"api asset range bytes");
+    bytes
+}
+
+fn media_store(root: &std::path::Path) -> Arc<ApiMediaStore> {
+    let path = root.join("media.sqlite3");
+    let authority = lettuce_platform::FilesystemAuthority::new(
+        &lettuce_platform::DirectorySnapshot::new(root).expect("snapshot"),
+    )
+    .expect("authority");
+    Arc::new(lettuce_media::LocalMediaBlobStore::new(
+        authority.managed_files(),
+        authority
+            .read_capability(lettuce_platform::ManagedRoot::MediaBlobs)
+            .expect("read capability"),
+        authority
+            .write_capability(lettuce_platform::ManagedRoot::MediaBlobs)
+            .expect("write capability"),
+        lettuce_database::Database::open(&path).expect("blob database"),
+        lettuce_database::Database::open(&path).expect("asset database"),
+    ))
+}
+
+async fn read_bytes(harness: &Harness, id: &str, range: AssetRange) -> AssetBytes {
+    match read_asset(&harness.context, id, range)
+        .await
+        .expect("asset read")
+    {
+        AssetRead::Bytes(bytes) => bytes,
+        AssetRead::Unsatisfiable { .. } => panic!("{range:?} is unsatisfiable"),
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn assets_are_read_whole_or_by_range_with_urls_from_the_host_base() {
+    let root = std::env::temp_dir().join(format!(
+        "lettuce-api-assets-{}",
+        lettuce_types::RequestId::new()
+    ));
+    std::fs::create_dir_all(&root).expect("root");
+    let store = media_store(&root);
+    let bytes = png_bytes();
+    let asset_id = store
+        .ingest(
+            bytes.as_slice(),
+            lettuce_media::IngestRequest::new(
+                lettuce_media::AssetKind::AvatarOriginal,
+                lettuce_media::AssetOrigin::Upload,
+                lettuce_media::RetentionClass::Persistent,
+                lettuce_media::AssetProvenanceV1::default(),
+            ),
+        )
+        .expect("ingest")
+        .asset
+        .id;
+    let harness = harness_with(Reply::Text("Hello."), Arc::new(SystemClock), Some(store));
+    let id = asset_id.to_string();
+    let total = bytes.len() as u64;
+
+    let whole = read_bytes(&harness, &id, AssetRange::Whole).await;
+    assert_eq!(whole.bytes, bytes);
+    assert_eq!((whole.start, whole.total_len), (0, total));
+    assert_eq!(whole.mime_type, "image/png");
+    let middle = read_bytes(&harness, &id, AssetRange::Between { start: 4, end: 9 }).await;
+    assert_eq!(middle.bytes, bytes[4..=9]);
+    assert_eq!(middle.start, 4);
+    let tail = read_bytes(&harness, &id, AssetRange::Last { len: 5 }).await;
+    assert_eq!(tail.bytes, bytes[bytes.len() - 5..]);
+    let rest = read_bytes(&harness, &id, AssetRange::From { start: 20 }).await;
+    assert_eq!(rest.bytes, bytes[20..]);
+    assert_eq!(
+        read_asset(&harness.context, &id, AssetRange::From { start: total })
+            .await
+            .expect("past the end"),
+        AssetRead::Unsatisfiable { total_len: total }
+    );
+
+    let error = read_asset(&harness.context, "not-an-id", AssetRange::Whole)
+        .await
+        .expect_err("bad id");
+    assert_eq!(error.code, ApiErrorCode::InvalidInput);
+    let error = read_asset(
+        &harness.context,
+        &lettuce_types::AssetId::new().to_string(),
+        AssetRange::Whole,
+    )
+    .await
+    .expect_err("unknown id");
+    assert_eq!(error.code, ApiErrorCode::NotFound);
+
+    assert_eq!(
+        harness.context.asset_ref(asset_id),
+        dto::AssetRef {
+            asset_id: id.clone(),
+            url: format!("test-asset://host/{id}"),
+        }
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_job_started_after_shutdown_began_is_cancelled() {
+    let harness = harness(Reply::UntilCancelled);
+    let conversation_id = launch(&harness, "launch-shutdown").await;
+    let stream = Arc::new(RecordingStream::default());
+    let accepted = send(
+        &harness,
+        &conversation_id,
+        "shutdown-1",
+        "Wait",
+        stream.clone(),
+    )
+    .await
+    .expect("send");
+    harness.context.begin_shutdown();
+    let worker = ConversationGenerationWorker::new(harness.context.clone());
+    tokio::time::timeout(std::time::Duration::from_secs(10), worker.run_once())
+        .await
+        .expect("the job does not wait for a provider reply")
+        .expect("worker ran");
+    let turn = ConversationReader::get_turn(
+        harness.context.backend().database(),
+        accepted.turn_id.parse().expect("turn id"),
+    )
+    .expect("turn");
+    assert!(
+        matches!(
+            turn.status,
+            GenerationTurnStatus::Cancelled
+                | GenerationTurnStatus::Failed
+                | GenerationTurnStatus::Interrupted
+        ),
+        "{:?}",
+        turn.status
+    );
+    assert!(harness.context.stream(turn.id).is_none());
 }

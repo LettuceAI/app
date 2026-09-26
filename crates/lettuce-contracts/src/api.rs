@@ -45,10 +45,12 @@ pub enum ApiEvent {
     },
 }
 
-/// A stored media asset, served by the host under its asset URI scheme.
+/// A stored media asset and the URL the host serves it at; the UI loads
+/// `url` as is and never builds one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct AssetRef {
     pub asset_id: String,
+    pub url: String,
 }

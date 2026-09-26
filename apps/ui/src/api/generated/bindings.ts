@@ -44,9 +44,13 @@ export type ApiEvent = { type: "generation_settled"; conversation_id: string; tu
 /**  The application-wide event every window receives. */
 export type AppEvent = ApiEvent;
 
-/**  A stored media asset, served by the host under its asset URI scheme. */
+/**
+ *  A stored media asset and the URL the host serves it at; the UI loads
+ *  `url` as is and never builds one.
+ */
 export type AssetRef = {
 	asset_id: string,
+	url: string,
 };
 
 /**  The selected branch and the message it currently ends at. */

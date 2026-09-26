@@ -8,12 +8,14 @@ use lettuce_conversations::{
     ConversationKind, ConversationKindTag, ConversationParticipant, MediaAssetRole, MessagePart,
     MessageRenderSource, MessageRole, ParticipantRole, ParticipantSource, TimelineItem,
 };
-use lettuce_types::{AssetId, CharacterId, MessageId};
+use lettuce_types::{AssetId, CharacterId, MessageId, PageLimit};
 
-pub(crate) fn asset_ref(asset_id: AssetId) -> dto::AssetRef {
-    dto::AssetRef {
-        asset_id: asset_id.to_string(),
-    }
+use super::ApiContext;
+
+/// A requested page size; any value is accepted and clamped to the
+/// repository's range.
+pub(crate) fn page_limit(limit: Option<u32>) -> PageLimit {
+    PageLimit::new(u16::try_from(limit.unwrap_or_default()).unwrap_or(u16::MAX))
 }
 
 pub(crate) fn character_avatar(character: &Character) -> Option<AssetId> {
@@ -46,9 +48,9 @@ impl AvatarLookup {
         Ok(avatar)
     }
 
-    pub(crate) fn participant<R: CharacterRepository + ?Sized>(
+    pub(crate) fn participant(
         &mut self,
-        repository: &R,
+        context: &ApiContext,
         participant: &ConversationParticipant,
     ) -> Result<dto::ParticipantView, lettuce_characters::RepositoryError> {
         let character_id = match participant.source {
@@ -56,7 +58,7 @@ impl AvatarLookup {
             ParticipantSource::User | ParticipantSource::System => None,
         };
         let avatar = match character_id {
-            Some(id) => self.avatar(repository, id)?,
+            Some(id) => self.avatar(context.backend().database(), id)?,
             None => None,
         };
         Ok(dto::ParticipantView {
@@ -64,7 +66,7 @@ impl AvatarLookup {
             role: participant_role(participant.role),
             name: participant.display_name.clone(),
             character_id: character_id.map(|id| id.to_string()),
-            avatar: avatar.map(asset_ref),
+            avatar: avatar.map(|asset_id| context.asset_ref(asset_id)),
         })
     }
 }
@@ -135,6 +137,7 @@ pub(crate) fn shown_text(item: &TimelineItem) -> Option<String> {
 }
 
 pub(crate) fn timeline_message(
+    context: &ApiContext,
     item: &TimelineItem,
     candidate_counts: &HashMap<MessageId, u32>,
 ) -> dto::TimelineMessage {
@@ -146,7 +149,7 @@ pub(crate) fn timeline_message(
                 parts.push(dto::MessagePartView::Text { text: text.clone() })
             }
             MessagePart::MediaAsset { asset_id, role } => parts.push(dto::MessagePartView::Media {
-                asset: asset_ref(*asset_id),
+                asset: context.asset_ref(*asset_id),
                 role: media_role(*role),
             }),
             MessagePart::ReasoningSummary { text } => reasoning.push(text.as_str()),

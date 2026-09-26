@@ -1,6 +1,6 @@
 use lettuce_characters::CharacterRepository;
 use lettuce_contracts::{self as dto, ApiError};
-use lettuce_types::{PageLimit, PageRequest};
+use lettuce_types::PageRequest;
 
 use super::ApiContext;
 use super::error::IntoApiError;
@@ -17,7 +17,7 @@ pub async fn characters_list(
                 context.backend().database(),
                 PageRequest {
                     cursor: request.cursor,
-                    limit: PageLimit::new(request.limit.unwrap_or_default()),
+                    limit: mapping::page_limit(request.limit),
                 },
                 false,
             )
@@ -29,7 +29,8 @@ pub async fn characters_list(
                     .map(|character| dto::CharacterSummary {
                         id: character.id.to_string(),
                         name: character.profile.name.clone(),
-                        avatar: mapping::character_avatar(character).map(mapping::asset_ref),
+                        avatar: mapping::character_avatar(character)
+                            .map(|asset_id| context.asset_ref(asset_id)),
                     })
                     .collect(),
                 next_cursor: page.next_cursor,

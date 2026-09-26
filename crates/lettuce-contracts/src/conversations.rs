@@ -45,7 +45,7 @@ pub enum MediaRole {
 #[serde(deny_unknown_fields)]
 pub struct ConversationsListRequest {
     pub cursor: Option<String>,
-    pub limit: Option<u16>,
+    pub limit: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -118,7 +118,7 @@ pub struct ConversationView {
 pub struct ConversationMessagesRequest {
     pub conversation_id: String,
     pub before_cursor: Option<String>,
-    pub limit: Option<u16>,
+    pub limit: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -244,7 +244,7 @@ pub struct LaunchDirectResponse {
 #[serde(deny_unknown_fields)]
 pub struct CharactersListRequest {
     pub cursor: Option<String>,
-    pub limit: Option<u16>,
+    pub limit: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

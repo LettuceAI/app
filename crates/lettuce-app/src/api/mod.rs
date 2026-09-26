@@ -15,7 +15,7 @@ mod worker;
 #[cfg(test)]
 mod tests;
 
-pub use assets::{AssetBytes, read_asset};
+pub use assets::{AssetBytes, AssetRange, AssetRead, OPEN_RANGE_CHUNK, read_asset};
 pub use characters::characters_list;
 pub use context::{ApiContext, ApiContextParts, ApiMediaStore};
 pub use conversations::{

@@ -71,6 +71,7 @@ fn start<R: Runtime>(app: &mut App<R>) -> Result<(), Box<dyn std::error::Error>>
         &app_data,
         Arc::new(lettuce_settings::NativeSecretStore::new()),
         Arc::new(events::TauriEventSink(app.handle().clone())),
+        asset_protocol::ASSET_URL_BASE.to_owned(),
     )
     .map_err(|error| error.message)?;
     context
@@ -100,8 +101,9 @@ fn start<R: Runtime>(app: &mut App<R>) -> Result<(), Box<dyn std::error::Error>>
     Ok(())
 }
 
-/// Cancels running inference, stops and joins the worker, then stops the
-/// backend's local servers.
+/// Tells the worker to stop taking jobs, cancels running inference and any
+/// job the worker started meanwhile, joins it, then stops the backend's
+/// local servers.
 fn stop<R: Runtime>(handle: &AppHandle<R>) {
     let Some(context) = handle
         .try_state::<ApiContext>()
@@ -109,15 +111,18 @@ fn stop<R: Runtime>(handle: &AppHandle<R>) {
     else {
         return;
     };
-    context.begin_shutdown();
     let running = handle
         .try_state::<Workers>()
         .and_then(|workers| workers.running.lock().ok()?.take());
-    if let Some((stop, thread)) = running {
+    let thread = running.map(|(stop, thread)| {
         let _ = stop.send(());
-        if thread.join().is_err() {
-            tracing::error!("the generation worker thread panicked");
-        }
+        thread
+    });
+    context.begin_shutdown();
+    if let Some(thread) = thread
+        && thread.join().is_err()
+    {
+        tracing::error!("the generation worker thread panicked");
     }
     tauri::async_runtime::block_on(context.backend().shutdown());
 }

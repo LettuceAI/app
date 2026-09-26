@@ -238,7 +238,7 @@ where
         C: Clock + ?Sized,
         R: lettuce_jobs::JobStore + lettuce_usage::UsageLedger,
     {
-        let Some(next) = self.next_queued(&request.resources)? else {
+        let Some(next) = self.next_queued(&request.resources, clock.now())? else {
             return Ok(ConversationGenerationWorkerOutcome::Idle);
         };
         let outcome = self
@@ -263,19 +263,22 @@ where
     }
 
     /// The oldest highest-priority queued generation job the resources
-    /// allow, resolved to its turn and attempt.
+    /// allow, resolved to its turn and attempt. A job whose turn or attempt
+    /// cannot be resolved is failed, with its turn, and skipped.
     pub fn next_queued(
         &self,
         resources: &ResourceAvailability,
+        now: TimestampMillis,
     ) -> Result<Option<QueuedConversationGeneration>, ConversationGenerationWorkerError>
     where
-        R: lettuce_jobs::JobStore,
+        R: lettuce_jobs::JobStore + lettuce_usage::UsageLedger,
     {
         let mut page_request = PageRequest {
             cursor: None,
             limit: PageLimit::new(200),
         };
-        let job = loop {
+        let mut unresolvable = HashSet::new();
+        loop {
             let page = lettuce_jobs::JobStore::list(
                 self.repository,
                 JobQuery {
@@ -285,42 +288,99 @@ where
                     page: page_request.clone(),
                 },
             )?;
-            if let Some(job) = page.items.into_iter().find(|job| {
-                job.resources
-                    .iter()
-                    .all(|resource| resources.allows(*resource))
-            }) {
-                break Some(job);
+            let mut failed_any = false;
+            for job in page.items {
+                if unresolvable.contains(&job.id)
+                    || !job
+                        .resources
+                        .iter()
+                        .all(|resource| resources.allows(*resource))
+                {
+                    continue;
+                }
+                match self.resolve_queued(&job)? {
+                    Ok(next) => return Ok(Some(next)),
+                    Err(turn) => {
+                        self.fail_unresolvable(&job, turn.as_ref(), now);
+                        unresolvable.insert(job.id);
+                        failed_any = true;
+                    }
+                }
+            }
+            if failed_any {
+                page_request.cursor = None;
+                continue;
             }
             let Some(cursor) = page.next_cursor else {
-                break None;
+                return Ok(None);
             };
             page_request.cursor = Some(cursor);
-        };
-        let Some(job) = job else {
-            return Ok(None);
-        };
+        }
+    }
+
+    /// The job's turn and attempt, or the turn it names (if any) when the
+    /// job cannot run.
+    fn resolve_queued(
+        &self,
+        job: &lettuce_jobs::JobSnapshot,
+    ) -> Result<
+        Result<QueuedConversationGeneration, Option<lettuce_conversations::GenerationTurn>>,
+        ConversationGenerationWorkerError,
+    >
+    where
+        R: lettuce_jobs::JobStore,
+    {
         let events = lettuce_jobs::JobStore::events_since(self.repository, job.id, None, 1)?;
         let Some(JobEvent::Created {
             input_ref: lettuce_jobs::OutcomeRef::GenerationTurn(turn_id),
             ..
         }) = events.first().map(|event| &event.event)
         else {
-            return Err(ConversationGenerationWorkerError::InvalidWork);
+            return Ok(Err(None));
         };
-        let turn = ConversationReader::get_turn(self.repository, *turn_id)
-            .map_err(|_| ConversationGenerationWorkerError::InvalidWork)?;
-        let attempt = turn
+        let turn = match ConversationReader::get_turn(self.repository, *turn_id) {
+            Ok(turn) => turn,
+            Err(ConversationRepositoryError::NotFound) => return Ok(Err(None)),
+            Err(_) => return Err(ConversationGenerationWorkerError::InvalidWork),
+        };
+        let Some(attempt) = turn
             .attempts
             .iter()
             .find(|attempt| attempt.job_id == Some(job.id))
-            .ok_or(ConversationGenerationWorkerError::InvalidWork)?;
-        Ok(Some(QueuedConversationGeneration {
+        else {
+            return Ok(Err(Some(turn)));
+        };
+        Ok(Ok(QueuedConversationGeneration {
             conversation_id: turn.conversation_id,
             turn_id: turn.id,
             attempt_id: attempt.id,
             job_id: job.id,
         }))
+    }
+
+    fn fail_unresolvable(
+        &self,
+        job: &lettuce_jobs::JobSnapshot,
+        turn: Option<&lettuce_conversations::GenerationTurn>,
+        now: TimestampMillis,
+    ) where
+        R: lettuce_jobs::JobStore + lettuce_usage::UsageLedger,
+    {
+        tracing::warn!(
+            job_id = %job.id,
+            turn_id = ?turn.map(|turn| turn.id),
+            "queued conversation generation job cannot be resolved; failing it"
+        );
+        if let Err(error) =
+            ConversationGenerationDispatchCoordinator::new(self.repository, self.repository)
+                .fail_unresolvable_job(job, turn, now)
+        {
+            tracing::error!(
+                %error,
+                job_id = %job.id,
+                "unresolvable conversation generation job could not be failed"
+            );
+        }
     }
 
     pub async fn execute<C>(
@@ -331,6 +391,23 @@ where
     where
         C: Clock + ?Sized,
         R: lettuce_jobs::JobStore + lettuce_usage::UsageLedger,
+    {
+        self.execute_with(request, clock, || None).await
+    }
+
+    /// Runs like `execute`, calling `on_claimed` once the job is claimed and
+    /// before inference starts; a stream sink it returns replaces the
+    /// request's.
+    pub async fn execute_with<C, F>(
+        &self,
+        request: ConversationGenerationExecutionRequest,
+        clock: &C,
+        on_claimed: F,
+    ) -> Result<ConversationGenerationExecutionOutcome, ConversationGenerationExecutionError>
+    where
+        C: Clock + ?Sized,
+        R: lettuce_jobs::JobStore + lettuce_usage::UsageLedger,
+        F: FnOnce() -> Option<RequestId>,
     {
         let dispatcher =
             ConversationGenerationDispatchCoordinator::new(self.repository, self.repository);
@@ -411,7 +488,11 @@ where
                 admission,
             ));
         };
-        let result = self.run(&work, request.runtime, clock.now()).await;
+        let mut runtime = request.runtime;
+        if let Some(stream_sink) = on_claimed() {
+            runtime.stream_sink = Some(stream_sink);
+        }
+        let result = self.run(&work, runtime, clock.now()).await;
         let settled = dispatcher.settle(work, result, request.cancellation_reason, clock.now())?;
         Ok(ConversationGenerationExecutionOutcome::Settled(settled))
     }

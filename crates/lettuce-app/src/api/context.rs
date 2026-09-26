@@ -36,6 +36,9 @@ pub struct ApiContextParts {
     pub media: Option<Arc<ApiMediaStore>>,
     pub events: Arc<dyn ApiEventSink>,
     pub clock: Arc<dyn Clock>,
+    /// What an asset id is appended to for its `AssetRef::url`; the host
+    /// picks it for its transport.
+    pub asset_url_base: String,
 }
 
 impl std::fmt::Debug for ApiContextParts {
@@ -57,6 +60,7 @@ struct ApiContextInner {
     parts: ApiContextParts,
     streams: Mutex<HashMap<GenerationTurnId, Arc<dyn GenerationEventSink>>>,
     wake: tokio::sync::Notify,
+    shutdown: CancellationToken,
 }
 
 impl std::fmt::Debug for ApiContext {
@@ -67,12 +71,16 @@ impl std::fmt::Debug for ApiContext {
 
 impl ApiContext {
     #[must_use]
-    pub fn new(parts: ApiContextParts) -> Self {
+    pub fn new(mut parts: ApiContextParts) -> Self {
+        if !parts.asset_url_base.ends_with('/') {
+            parts.asset_url_base.push('/');
+        }
         Self {
             inner: Arc::new(ApiContextInner {
                 parts,
                 streams: Mutex::new(HashMap::new()),
                 wake: tokio::sync::Notify::new(),
+                shutdown: CancellationToken::new(),
             }),
         }
     }
@@ -86,6 +94,7 @@ impl ApiContext {
         app_data_dir: &Path,
         secret_store: Arc<dyn SecretStore>,
         events: Arc<dyn ApiEventSink>,
+        asset_url_base: String,
     ) -> Result<Self, ApiError> {
         let clock: Arc<dyn Clock> = Arc::new(SystemClock);
         let snapshot = DirectorySnapshot::with_private_persistent(
@@ -142,6 +151,7 @@ impl ApiContext {
             media: Some(Arc::new(media)),
             events,
             clock,
+            asset_url_base,
         }))
     }
 
@@ -168,13 +178,32 @@ impl ApiContext {
             turns = report.turns.len(),
             "recovered work left by the previous process"
         );
+        for (turn_id, _) in &report.turns {
+            self.forget_stream(*turn_id);
+        }
         Ok(())
     }
 
-    /// Cancels every running generation; workers stop through their own
-    /// shutdown token.
+    /// Cancels every running generation and any job a worker starts from
+    /// now on; workers stop through their own shutdown signal.
     pub fn begin_shutdown(&self) {
+        self.inner.shutdown.cancel();
         self.backend().begin_shutdown();
+    }
+
+    pub(crate) fn shutdown_token(&self) -> &CancellationToken {
+        &self.inner.shutdown
+    }
+
+    pub(crate) fn asset_ref(
+        &self,
+        asset_id: lettuce_types::AssetId,
+    ) -> lettuce_contracts::AssetRef {
+        let asset_id = asset_id.to_string();
+        lettuce_contracts::AssetRef {
+            url: format!("{}{asset_id}", self.inner.parts.asset_url_base),
+            asset_id,
+        }
     }
 
     pub(crate) fn inference(&self) -> &dyn InferencePort {
@@ -223,17 +252,72 @@ impl ApiContext {
             .and_then(|streams| streams.get(&turn_id).cloned())
     }
 
-    /// Sends a turn's last event and forgets its stream.
-    pub(crate) fn finish_stream(&self, turn_id: GenerationTurnId, event: GenerationEvent) {
-        let sink = self
-            .inner
+    /// Sends a turn's last event and forgets its stream; returns whether the
+    /// turn still had one.
+    pub(crate) fn finish_stream(&self, turn_id: GenerationTurnId, event: GenerationEvent) -> bool {
+        match self.forget_stream(turn_id) {
+            Some(sink) => {
+                sink.emit(event);
+                true
+            }
+            None => false,
+        }
+    }
+
+    fn forget_stream(&self, turn_id: GenerationTurnId) -> Option<Arc<dyn GenerationEventSink>> {
+        self.inner
             .streams
             .lock()
             .ok()
-            .and_then(|mut streams| streams.remove(&turn_id));
-        if let Some(sink) = sink {
-            sink.emit(event);
+            .and_then(|mut streams| streams.remove(&turn_id))
+    }
+
+    /// Ends the stream of a turn that reached a terminal state and tells
+    /// every window.
+    pub(crate) fn settle_turn(
+        &self,
+        conversation_id: lettuce_types::ConversationId,
+        turn_id: GenerationTurnId,
+        event: GenerationEvent,
+    ) {
+        self.finish_stream(turn_id, event);
+        self.emit(lettuce_contracts::ApiEvent::GenerationSettled {
+            conversation_id: conversation_id.to_string(),
+            turn_id: turn_id.to_string(),
+        });
+    }
+
+    /// Ends the streams of turns settled outside a worker run, such as a
+    /// job failed because its work could not be resolved.
+    pub(crate) fn finish_settled_streams(&self) -> Result<(), ApiError> {
+        let turns = self
+            .inner
+            .streams
+            .lock()
+            .map(|streams| streams.keys().copied().collect::<Vec<_>>())
+            .unwrap_or_default();
+        for turn_id in turns {
+            let turn = match lettuce_conversations::ConversationReader::get_turn(
+                self.backend().database(),
+                turn_id,
+            ) {
+                Ok(turn) => turn,
+                Err(lettuce_conversations::ConversationRepositoryError::NotFound) => {
+                    self.forget_stream(turn_id);
+                    continue;
+                }
+                Err(error) => return Err(error.into_api_error()),
+            };
+            if let Some(event) = super::worker::settled_event(self.backend().database(), turn_id)?
+                && self.finish_stream(turn_id, event)
+            {
+                self.emit(lettuce_contracts::ApiEvent::GenerationSettled {
+                    conversation_id: turn.conversation_id.to_string(),
+                    turn_id: turn_id.to_string(),
+                });
+            }
         }
+        Ok(())
     }
 
     pub(crate) fn wake_workers(&self) {

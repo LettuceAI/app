@@ -13,7 +13,8 @@ use lettuce_types::{GenerationTurnId, RequestId};
 use super::ApiContext;
 use super::error::{IntoApiError, api_error};
 use crate::{
-    ConversationGenerationExecutionRequest, ConversationGenerationRuntimeInput, ReplyImageOrigin,
+    ConversationGenerationExecutionOutcome, ConversationGenerationExecutionRequest,
+    ConversationGenerationRuntimeInput, QueuedConversationGeneration, ReplyImageOrigin,
     ReplyMediaStore,
 };
 
@@ -44,9 +45,9 @@ impl ConversationGenerationWorker {
     }
 
     /// Polls until `shutdown` completes. A job already running finishes
-    /// first (the host cancels its inference through
-    /// `ApiContext::begin_shutdown`). An idle worker waits with a doubling
-    /// backoff, and a send wakes it at once.
+    /// first; `ApiContext::begin_shutdown` cancels it and any job started
+    /// after it. An idle worker, or one whose job could not be claimed,
+    /// waits with a doubling backoff, and a send wakes it at once.
     pub async fn run(&self, shutdown: impl Future<Output = ()>) {
         let shutdown = shutdown.fuse();
         futures_util::pin_mut!(shutdown);
@@ -70,8 +71,32 @@ impl ConversationGenerationWorker {
         }
     }
 
-    /// Runs the next queued job, if any; returns whether one ran.
+    /// Runs the next queued job, if any; returns whether one ran. A job that
+    /// could not be claimed, or had already ended, counts as not run.
     pub async fn run_once(&self) -> Result<bool, ApiError> {
+        let context = &self.context;
+        let next = {
+            let backend = context.backend();
+            let runner = backend.prepared_conversation_generation_runner(
+                context.embedding(),
+                context.inference(),
+                &UnstoredReplyMedia,
+            );
+            runner
+                .next_queued(&self.resources, context.now())
+                .map_err(IntoApiError::into_api_error)?
+        };
+        context.finish_settled_streams()?;
+        match next {
+            Some(next) => self.run_queued(next).await,
+            None => Ok(false),
+        }
+    }
+
+    pub(super) async fn run_queued(
+        &self,
+        next: QueuedConversationGeneration,
+    ) -> Result<bool, ApiError> {
         let context = &self.context;
         let backend = context.backend();
         let database = backend.database();
@@ -85,48 +110,12 @@ impl ConversationGenerationWorker {
             context.inference(),
             reply_media,
         );
-        let Some(next) = runner
-            .next_queued(&self.resources)
-            .map_err(IntoApiError::into_api_error)?
-        else {
-            return Ok(false);
-        };
         let turn_label = next.turn_id.to_string();
-        let sink = context.stream(next.turn_id);
+        let (cancellation, _shutdown_link) = shutdown_child(context.shutdown_token());
         let mut stream_sink = None;
         let mut forwarder = None;
-        if let Some(sink) = sink {
-            sink.emit(dto::GenerationEvent::Started {
-                turn_id: turn_label.clone(),
-            });
-            let sink_id = RequestId::new();
-            match backend.inference_runtime().register_stream(sink_id) {
-                Ok(mut receiver) => {
-                    let turn_id = turn_label.clone();
-                    forwarder = Some(tokio::spawn(async move {
-                        while let Some(envelope) = receiver.recv().await {
-                            let (text, reasoning) = match envelope.event {
-                                GenerationStreamEvent::TextDelta { text } => (Some(text), None),
-                                GenerationStreamEvent::ReasoningDelta { text } => {
-                                    (None, Some(text))
-                                }
-                            };
-                            sink.emit(dto::GenerationEvent::Delta {
-                                turn_id: turn_id.clone(),
-                                text,
-                                reasoning,
-                            });
-                        }
-                    }));
-                    stream_sink = Some(sink_id);
-                }
-                Err(error) => {
-                    tracing::warn!(%error, turn_id = %next.turn_id, "generation stream could not be registered");
-                }
-            }
-        }
         let outcome = runner
-            .execute(
+            .execute_with(
                 ConversationGenerationExecutionRequest {
                     conversation_id: next.conversation_id,
                     turn_id: next.turn_id,
@@ -134,35 +123,68 @@ impl ConversationGenerationWorker {
                     worker_id: self.worker_id,
                     lease_for: GENERATION_LEASE,
                     resources: self.resources,
-                    runtime: ConversationGenerationRuntimeInput {
-                        stream_sink,
-                        prompt_values: Default::default(),
-                    },
-                    cancellation: CancellationToken::new(),
+                    runtime: ConversationGenerationRuntimeInput::default(),
+                    cancellation,
                     cancellation_reason: CancellationReason::Shutdown,
                 },
                 context.clock(),
+                || {
+                    let sink = context.stream(next.turn_id)?;
+                    sink.emit(dto::GenerationEvent::Started {
+                        turn_id: turn_label.clone(),
+                    });
+                    let sink_id = RequestId::new();
+                    match backend.inference_runtime().register_stream(sink_id) {
+                        Ok(receiver) => {
+                            forwarder = Some(tokio::spawn(forward_deltas(
+                                receiver,
+                                sink,
+                                turn_label.clone(),
+                            )));
+                            stream_sink = Some(sink_id);
+                            stream_sink
+                        }
+                        Err(error) => {
+                            tracing::warn!(%error, turn_id = %next.turn_id, "generation stream could not be registered");
+                            None
+                        }
+                    }
+                },
             )
             .await;
-        if let Some(sink_id) = stream_sink {
-            if let Err(error) = backend.inference_runtime().unregister_stream(sink_id) {
-                tracing::warn!(%error, "generation stream could not be unregistered");
-            }
+        if let Some(sink_id) = stream_sink
+            && let Err(error) = backend.inference_runtime().unregister_stream(sink_id)
+        {
+            tracing::warn!(%error, "generation stream could not be unregistered");
         }
         if let Some(forwarder) = forwarder
             && let Err(error) = forwarder.await
         {
             tracing::warn!(%error, "generation stream forwarder stopped");
         }
-        if let Err(error) = &outcome {
-            tracing::error!(%error, turn_id = %next.turn_id, "conversation generation failed to run");
-        }
+        let ran = match &outcome {
+            Ok(
+                ConversationGenerationExecutionOutcome::Settled(_)
+                | ConversationGenerationExecutionOutcome::Replayed { .. },
+            ) => true,
+            Ok(
+                ConversationGenerationExecutionOutcome::Terminal(_)
+                | ConversationGenerationExecutionOutcome::NotClaimed(_),
+            ) => false,
+            Err(error) => {
+                tracing::error!(%error, turn_id = %next.turn_id, "conversation generation failed to run");
+                true
+            }
+        };
         if let Some(event) = settled_event(database, next.turn_id)? {
-            context.finish_stream(next.turn_id, event);
-            context.emit(dto::ApiEvent::GenerationSettled {
-                conversation_id: next.conversation_id.to_string(),
-                turn_id: turn_label,
-            });
+            if ran {
+                context.settle_turn(next.conversation_id, next.turn_id, event);
+            } else if context.finish_stream(next.turn_id, event) {
+                context.emit(dto::ApiEvent::GenerationSettled {
+                    conversation_id: next.conversation_id.to_string(),
+                    turn_id: turn_label,
+                });
+            }
         }
         outcome.map_err(|error| {
             api_error(
@@ -170,7 +192,46 @@ impl ConversationGenerationWorker {
                 format!("conversation generation failed to run: {error}"),
             )
         })?;
-        Ok(true)
+        Ok(ran)
+    }
+}
+
+/// A token cancelled with `parent`, including when `parent` already is;
+/// the link ends when the returned guard drops.
+fn shutdown_child(parent: &CancellationToken) -> (CancellationToken, ShutdownLink) {
+    let child = CancellationToken::new();
+    let parent = parent.clone();
+    let linked = child.clone();
+    let link = tokio::spawn(async move {
+        parent.cancelled().await;
+        linked.cancel();
+    });
+    (child, ShutdownLink(link))
+}
+
+struct ShutdownLink(tokio::task::JoinHandle<()>);
+
+impl Drop for ShutdownLink {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+async fn forward_deltas(
+    mut receiver: lettuce_inference::InferenceStreamReceiver,
+    sink: std::sync::Arc<dyn super::GenerationEventSink>,
+    turn_id: String,
+) {
+    while let Some(envelope) = receiver.recv().await {
+        let (text, reasoning) = match envelope.event {
+            GenerationStreamEvent::TextDelta { text } => (Some(text), None),
+            GenerationStreamEvent::ReasoningDelta { text } => (None, Some(text)),
+        };
+        sink.emit(dto::GenerationEvent::Delta {
+            turn_id: turn_id.clone(),
+            text,
+            reasoning,
+        });
     }
 }
 

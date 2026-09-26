@@ -3,15 +3,15 @@ use std::{collections::HashMap, sync::Arc};
 use lettuce_characters::CharacterRepository;
 use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
 use lettuce_conversations::{
-    ConversationLifecycle, ConversationOverviewReader, ConversationQuery, ConversationReader,
-    ConversationRepositoryError, GenerationInput, IdempotencyKey, MessageDraft, MessagePart,
-    MessageRole, MessageVisibility, OperationToken, ParticipantRole, ParticipantSource,
-    SendConversation,
+    BeginGeneration, ConversationLifecycle, ConversationOverviewReader, ConversationQuery,
+    ConversationReader, ConversationRepositoryError, GenerationInput, IdempotencyKey, MessageDraft,
+    MessagePart, MessageRole, MessageVisibility, OperationKind, OperationToken, ParticipantRole,
+    ParticipantSource, SendConversation, ValidationError,
 };
 use lettuce_jobs::{CancellationReason, handle::CancellationToken};
 use lettuce_types::{
-    CharacterId, ContentHash, ConversationBranchId, ConversationId, GenerationTurnId, PageLimit,
-    PageRequest,
+    CharacterId, ContentHash, ConversationBranchId, ConversationId, GenerationTurnId, PageRequest,
+    TimestampMillis,
 };
 
 use super::ApiContext;
@@ -20,17 +20,18 @@ use super::events::GenerationEventSink;
 use super::mapping::{self, AvatarLookup};
 use super::worker::settled_event;
 use crate::{
-    CompanionTurnCoordinator, CompanionTurnError, ConversationGenerationCancellationOutcome,
+    CompanionTurnCoordinator, CompanionTurnError, ConversationGenerationAdmission,
+    ConversationGenerationCancellationOutcome, ConversationGenerationDispatchError,
     ConversationLaunchError, DIRECT_LAUNCH_REQUEST_FORMAT_V1, DirectConversationLaunchRequest,
     DirectUserParticipant, LaunchSelection,
 };
 
 const DEFAULT_USER_DISPLAY_NAME: &str = "User";
 
-fn page_request(cursor: Option<String>, limit: Option<u16>) -> PageRequest {
+fn page_request(cursor: Option<String>, limit: Option<u32>) -> PageRequest {
     PageRequest {
         cursor,
-        limit: PageLimit::new(limit.unwrap_or_default()),
+        limit: mapping::page_limit(limit),
     }
 }
 
@@ -68,7 +69,7 @@ pub async fn conversations_list(
                             .avatar(database, character_id)
                             .map_err(IntoApiError::into_api_error)?
                     {
-                        summary_avatars.push(mapping::asset_ref(asset_id));
+                        summary_avatars.push(context.asset_ref(asset_id));
                     }
                 }
                 items.push(dto::ConversationSummary {
@@ -116,7 +117,7 @@ pub async fn conversation_open(
             let participants = conversation
                 .participants
                 .iter()
-                .map(|participant| avatars.participant(database, participant))
+                .map(|participant| avatars.participant(context, participant))
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(IntoApiError::into_api_error)?;
             let messages = message_page(context, conversation_id, branch.id, None, None)?;
@@ -173,9 +174,10 @@ fn message_page(
     conversation_id: ConversationId,
     branch_id: ConversationBranchId,
     cursor: Option<String>,
-    limit: Option<u16>,
+    limit: Option<u32>,
 ) -> Result<dto::MessagePage, ApiError> {
     let database = context.backend().database();
+    let has_cursor = cursor.is_some();
     let page = ConversationReader::timeline_page(
         database,
         conversation_id,
@@ -183,9 +185,15 @@ fn message_page(
         &page_request(cursor, limit),
     )
     .map_err(|error| match error {
-        ConversationRepositoryError::Invalid(_) => {
-            invalid_field("before_cursor", "the message cursor is not valid here")
-        }
+        ConversationRepositoryError::Invalid(ValidationError::InvalidValue {
+            field: "page.cursor",
+        }) if has_cursor => invalid_field("before_cursor", "the message cursor is not valid here"),
+        ConversationRepositoryError::Invalid(ValidationError::InvalidReference {
+            field: "timeline_page.selected_branch",
+        }) => api_error(
+            ApiErrorCode::Conflict,
+            "the conversation's selected branch is no longer active",
+        ),
         error => error.into_api_error(),
     })?;
     let visible = page
@@ -207,7 +215,7 @@ fn message_page(
         items: visible
             .iter()
             .rev()
-            .map(|item| mapping::timeline_message(item, &counts))
+            .map(|item| mapping::timeline_message(context, item, &counts))
             .collect(),
         next_cursor: page.next_cursor,
     })
@@ -231,6 +239,31 @@ pub async fn conversation_send(
     request: dto::ConversationSendRequest,
     events: Arc<dyn GenerationEventSink>,
 ) -> Result<dto::SendAccepted, ApiError> {
+    send_with(context, request, events, |context, begun, now| {
+        context
+            .backend()
+            .conversation_generation_dispatcher()
+            .schedule(begun, now)
+    })
+    .await
+}
+
+pub(super) async fn send_with<S>(
+    context: &ApiContext,
+    request: dto::ConversationSendRequest,
+    events: Arc<dyn GenerationEventSink>,
+    schedule: S,
+) -> Result<dto::SendAccepted, ApiError>
+where
+    S: FnOnce(
+            &ApiContext,
+            &BeginGeneration,
+            TimestampMillis,
+        )
+            -> Result<ConversationGenerationAdmission, ConversationGenerationDispatchError>
+        + Send
+        + 'static,
+{
     let conversation_id: ConversationId = parse_id(&request.conversation_id, "conversation_id")?;
     if request.text.trim().is_empty() {
         return Err(invalid_field("text", "the message text is blank"));
@@ -255,14 +288,29 @@ pub async fn conversation_send(
                             "the conversation has no user participant",
                         )
                     })?;
+                let operation = OperationToken {
+                    key,
+                    request_digest: send_digest(conversation_id, &text)?,
+                };
+                if let Some(record) = ConversationReader::operation_record(
+                    database,
+                    conversation_id,
+                    OperationKind::Send,
+                    &operation,
+                )
+                .map_err(IntoApiError::into_api_error)?
+                    && record.operation.request_digest != operation.request_digest
+                {
+                    return Err(api_error(
+                        ApiErrorCode::Conflict,
+                        "client_operation_id was already used for a different send",
+                    ));
+                }
                 let command = SendConversation {
                     conversation_id,
                     branch_id: conversation.active_branch_id,
                     expected_revision: conversation.revision,
-                    operation: OperationToken {
-                        key,
-                        request_digest: send_digest(conversation_id, &text)?,
-                    },
+                    operation,
                     message: MessageDraft {
                         role: MessageRole::User,
                         author_participant_id: Some(user.id),
@@ -299,11 +347,7 @@ pub async fn conversation_send(
                 };
                 let turn_id = begun.turn.id;
                 context.attach_stream(turn_id, events);
-                let admission = context
-                    .backend()
-                    .conversation_generation_dispatcher()
-                    .schedule(&begun, now);
-                match admission {
+                match schedule(context, &begun, now) {
                     Ok(admission) if admission.job.state.is_terminal() => {
                         if let Some(event) = settled_event(database, turn_id)? {
                             context.finish_stream(turn_id, event);
@@ -311,13 +355,7 @@ pub async fn conversation_send(
                     }
                     Ok(_) => {}
                     Err(error) => {
-                        context.finish_stream(
-                            turn_id,
-                            dto::GenerationEvent::Failed {
-                                turn_id: turn_id.to_string(),
-                                code: dto::GenerationFailureCode::Internal,
-                            },
-                        );
+                        unschedulable_send(context, conversation_id, turn_id);
                         return Err(error.into_api_error());
                     }
                 }
@@ -329,6 +367,36 @@ pub async fn conversation_send(
             .await?;
     context.wake_workers();
     Ok(accepted)
+}
+
+/// Settles a committed send whose reply could not be queued, so the
+/// conversation accepts the next send.
+fn unschedulable_send(
+    context: &ApiContext,
+    conversation_id: ConversationId,
+    turn_id: GenerationTurnId,
+) {
+    let database = context.backend().database();
+    let settled = ConversationReader::get_turn(database, turn_id)
+        .map_err(|error| error.to_string())
+        .and_then(|turn| {
+            context
+                .backend()
+                .conversation_generation_dispatcher()
+                .settle_unrunnable_turn(&turn, context.now())
+                .map_err(|error| error.to_string())
+        });
+    if let Err(error) = settled {
+        tracing::error!(%error, %turn_id, "a send whose reply could not be queued was not settled");
+    }
+    context.settle_turn(
+        conversation_id,
+        turn_id,
+        dto::GenerationEvent::Failed {
+            turn_id: turn_id.to_string(),
+            code: dto::GenerationFailureCode::Internal,
+        },
+    );
 }
 
 /// Stops a turn. A queued turn is settled here; a running one is signalled
@@ -363,16 +431,13 @@ pub async fn generation_cancel(
                 .map_err(IntoApiError::into_api_error)?
             {
                 ConversationGenerationCancellationOutcome::QueuedCancelled(_) => {
-                    context.finish_stream(
+                    context.settle_turn(
+                        turn.conversation_id,
                         turn_id,
                         dto::GenerationEvent::Cancelled {
                             turn_id: turn_id.to_string(),
                         },
                     );
-                    context.emit(dto::ApiEvent::GenerationSettled {
-                        conversation_id: turn.conversation_id.to_string(),
-                        turn_id: turn_id.to_string(),
-                    });
                     Ok(())
                 }
                 ConversationGenerationCancellationOutcome::Requested { .. }

@@ -6,9 +6,9 @@ The Tauri 2.12 shell for every platform: Windows, macOS and Linux today, Android
 
 `run()` installs logging (`lettuce-observability`), builds the tauri-specta command and event registry and starts Tauri. In debug builds it first writes the TypeScript bindings to `apps/ui/src/api/generated/bindings.ts`.
 
-The setup hook resolves the app data directory (identifier `com.lettuceai.app`, the same as the legacy app, so legacy import finds its data), opens the API with `ApiContext::open_desktop` over the native `NativeSecretStore` and an event sink that emits Tauri events, and calls `recover_after_restart` before any worker starts. It then starts the conversation generation worker on its own thread with a current-thread Tokio runtime, because the runner calls repositories synchronously, and manages the `ApiContext` as Tauri state.
+The setup hook resolves the app data directory (identifier `com.lettuceai.app`, the same as the legacy app, so legacy import finds its data), opens the API with `ApiContext::open_desktop` over the native `NativeSecretStore`, an event sink that emits Tauri events and the platform's asset URL base, and calls `recover_after_restart` before any worker starts. It then starts the conversation generation worker on its own thread with a current-thread Tokio runtime, because the runner calls repositories synchronously, and manages the `ApiContext` as Tauri state.
 
-On exit the shell calls `begin_shutdown` (every running inference is cancelled, so the job being run settles), signals the worker, joins its thread, and waits for the backend's `shutdown` to stop the local servers.
+On exit the shell first signals the worker so it takes no new job, then calls `begin_shutdown`, which cancels every running inference and the job the worker is running (each job runs with a token linked to the context's shutdown token, so one started in between is cancelled too), joins the worker thread, and waits for the backend's `shutdown` to stop the local servers.
 
 ## Commands
 
@@ -28,7 +28,7 @@ Each command is a `#[tauri::command] #[specta::specta]` one-line wrapper over th
 
 ## Media
 
-Images and other media never cross IPC as bytes, base64 or data URLs, in either direction. The shell registers the asynchronous `lettuce-asset` URI scheme, which streams a ready asset's bytes with its MIME type from the media store (`lettuce_app::api::read_asset`). The frontend builds the URL from an `AssetRef` with `convertFileSrc(assetId, "lettuce-asset")`, which gives `lettuce-asset://localhost/<asset_id>` on macOS and Linux and `http://lettuce-asset.localhost/<asset_id>` on Windows and Android. A missing asset answers 404, a bad id 400, an unavailable store 503. Commands that accept user media later take a file path from the dialog or drag and drop (a `content://` URI on Android), which Rust reads, validates and ingests.
+Images and other media never cross IPC as bytes, base64 or data URLs, in either direction. The shell registers the asynchronous `lettuce-asset` URI scheme, which serves a ready asset's bytes with its MIME type from the media store (`lettuce_app::api::read_asset`). Every `AssetRef` carries its `url`, built by the API from the base the shell passes at startup: `lettuce-asset://localhost/` on Linux, macOS and iOS, `http://lettuce-asset.localhost/` on Windows and Android (chosen by `cfg`). The frontend uses that URL as is and never builds one. A response carries `Content-Length`, `Accept-Ranges: bytes` and `X-Content-Type-Options: nosniff`. A single `Range` (`bytes=a-b`, `a-` or `-n`) gets `206` with `Content-Range`, reading only those bytes; an open-ended `a-` returns at most 4 MiB, and the client asks again for the rest. A range past the end answers 416, a missing asset 404, a bad id 400, an unavailable store 503; any other request gets the whole asset with 200. Commands that accept user media later take a file path from the dialog or drag and drop (a `content://` URI on Android), which Rust reads, validates and ingests.
 
 ## Bindings
 
@@ -36,7 +36,7 @@ Images and other media never cross IPC as bytes, base64 or data URLs, in either 
 
 ## Configuration
 
-`tauri.conf.json` points `devUrl` at the frontend's Vite dev server on `http://localhost:1420` (started with `bun run dev` in `apps/ui/`) and `frontendDist` at `../ui/dist` (built with `bun run build`). The window is the default decorated window; the custom title bar comes later. The `default` capability grants the main window `core:default` only; application commands need no plugin permission.
+`tauri.conf.json` points `devUrl` at the frontend's Vite dev server on `http://localhost:1420` (started with `bun run dev` in `apps/ui/`) and `frontendDist` at `../ui/dist` (built with `bun run build`). The window is the default decorated window; the custom title bar comes later. The content security policy allows scripts only from the app, styles from the app plus inline styles, images and media from the app, the asset scheme, `blob:` and `data:` (small inline SVGs from CSS), fonts from the app and `data:`, and connections only to the IPC endpoints; the development policy also allows the Vite dev server's websocket. The `default` capability grants the main window `core:default` only; application commands need no plugin permission.
 
 ## Builds
 

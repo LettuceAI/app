@@ -32,6 +32,7 @@ use lettuce_usage::{JobInferenceUsageResult, JobUsageLedger, UsageLedger, UsageL
 use crate::{ConversationInitialInferenceCoordinator, ConversationInitialInferenceError};
 
 const STAGE_LABEL: &str = "conversation-generation";
+const UNRESOLVABLE_JOB_LEASE: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ConversationGenerationOperation {
@@ -1807,6 +1808,108 @@ impl<
             at,
         )?;
         Ok(())
+    }
+
+    /// Fails a queued generation job whose turn or attempt cannot be
+    /// resolved. The turn it names, if any, is settled unless another job is
+    /// running it: a turn that had not started is cancelled, any other fails.
+    pub fn fail_unresolvable_job(
+        &self,
+        job: &JobSnapshot,
+        turn: Option<&GenerationTurn>,
+        now: TimestampMillis,
+    ) -> Result<(), ConversationGenerationDispatchError> {
+        let at = now.max(job.updated_at);
+        if job.state == JobState::Queued
+            && let Some(claim) = self.jobs.claim(
+                job.id,
+                WorkerId::new(),
+                at,
+                UNRESOLVABLE_JOB_LEASE,
+                &ResourceAvailability::all(),
+            )?
+        {
+            self.jobs.append_and_transition(JobMutation::Start {
+                claim: claim.claim.clone(),
+                at,
+            })?;
+            self.jobs.append_and_transition(JobMutation::Fail {
+                claim: claim.claim,
+                error: JobError::new(
+                    JobErrorCode::InvalidInput,
+                    false,
+                    "conversation-generation-unresolvable",
+                )
+                .expect("constant job error is valid"),
+                at,
+            })?;
+        }
+        match turn {
+            Some(turn) => self.settle_unrunnable_turn(turn, at),
+            None => Ok(()),
+        }
+    }
+
+    /// Settles a live turn that cannot run, after cancelling its queued job
+    /// and settling its pending tools: a turn that had not started is
+    /// cancelled, any other fails. A turn whose job is running is left to
+    /// that job.
+    pub fn settle_unrunnable_turn(
+        &self,
+        turn: &GenerationTurn,
+        now: TimestampMillis,
+    ) -> Result<(), ConversationGenerationDispatchError> {
+        let Some(attempt) = turn
+            .attempts
+            .iter()
+            .rev()
+            .find(|attempt| !is_terminal_attempt(attempt.status))
+        else {
+            return Ok(());
+        };
+        let attempt_job = match attempt.job_id {
+            Some(job_id) => self
+                .jobs
+                .get(job_id)?
+                .map(|attempt_job| self.cancel_job_after_restart(attempt_job, now))
+                .transpose()?,
+            None => None,
+        };
+        let at = attempt_job
+            .as_ref()
+            .map_or(now, |attempt_job| now.max(attempt_job.updated_at));
+        if attempt_job
+            .as_ref()
+            .is_some_and(|attempt_job| !attempt_job.state.is_terminal())
+        {
+            return Ok(());
+        }
+        let target = GenerationWorkTarget {
+            conversation_id: turn.conversation_id,
+            turn_id: turn.id,
+            attempt_id: attempt.id,
+            job_id: attempt.job_id.unwrap_or_else(|| {
+                JobId::from_uuid(uuid::Uuid::new_v5(
+                    &attempt.id.as_uuid(),
+                    b"unresolvable-job-settlement",
+                ))
+            }),
+            job_created_at: attempt_job
+                .as_ref()
+                .map_or(turn.created_at, |attempt_job| attempt_job.created_at),
+            bound: attempt.job_id.is_some(),
+        };
+        self.settle_tools_after_restart(&target, at)?;
+        if turn.status.can_transition_to(GenerationTurnStatus::Failed) {
+            self.fail_turn(
+                &target,
+                GenerationFailureCode::Internal,
+                GenerationUsageEvidence::None,
+                at,
+            )
+        } else {
+            self.cancel_turn(&target, GenerationUsageEvidence::None, at)
+        }
     }
 
     /// Cancels a turn that had not started or was being cancelled, fails a
