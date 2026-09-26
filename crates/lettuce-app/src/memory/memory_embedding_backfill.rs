@@ -30,6 +30,8 @@ pub enum MemoryEmbeddingBackfillError {
     Cancelled,
     #[error("memory embedding storage failed")]
     Repository,
+    #[error("the embedding model dynamic memory needs is unavailable")]
+    EmbeddingUnavailable,
 }
 
 /// Embeds every active memory of `memory` whose vector for the engine's
@@ -69,6 +71,9 @@ where
             Ok(vector) => vector,
             Err(EmbeddingGenerationError::Cancelled) => {
                 return Err(MemoryEmbeddingBackfillError::Cancelled);
+            }
+            Err(EmbeddingGenerationError::Unavailable) if engine.requires_model() => {
+                return Err(MemoryEmbeddingBackfillError::EmbeddingUnavailable);
             }
             Err(EmbeddingGenerationError::Unavailable) => {
                 outcome.failed += 1;
@@ -121,6 +126,7 @@ mod tests {
         calls: AtomicUsize,
         fail_text: Option<&'static str>,
         during_embed: EmbedHook<'a>,
+        required: bool,
     }
 
     impl MemoryEmbeddingEngine for Engine<'_> {
@@ -155,6 +161,10 @@ mod tests {
                 source_revision: self.space.to_owned(),
                 values: vec![0.25; request.dimensions.get()],
             })
+        }
+
+        fn requires_model(&self) -> bool {
+            self.required
         }
     }
 
@@ -192,6 +202,7 @@ mod tests {
             calls: AtomicUsize::new(0),
             fail_text,
             during_embed: std::sync::Mutex::new(None),
+            required: false,
         }
     }
 
@@ -270,6 +281,26 @@ mod tests {
                 TimestampMillis::new(3)
             ),
             Err(MemoryEmbeddingBackfillError::Cancelled)
+        );
+    }
+
+    #[test]
+    fn a_required_engine_that_is_unavailable_fails_the_backfill() {
+        let database = Database::open_in_memory().expect("database");
+        let memory = space(&database, &["tea by the harbor"]);
+        let required = Engine {
+            required: true,
+            ..engine("v5", Some("tea by the harbor"))
+        };
+        assert_eq!(
+            embed_missing_memories(
+                &required,
+                &database,
+                &memory,
+                &CancellationToken::new(),
+                TimestampMillis::new(2)
+            ),
+            Err(MemoryEmbeddingBackfillError::EmbeddingUnavailable)
         );
     }
 

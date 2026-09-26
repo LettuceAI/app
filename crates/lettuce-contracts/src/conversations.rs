@@ -187,6 +187,7 @@ pub enum GenerationFailureCode {
     EmptyOutput,
     TimedOut,
     RecoveryUnavailable,
+    EmbeddingUnavailable,
     Internal,
 }
 

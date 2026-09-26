@@ -2224,6 +2224,11 @@ fn job_error(code: GenerationFailureCode) -> JobError {
             false,
             "conversation-generation-recovery-unavailable",
         ),
+        GenerationFailureCode::EmbeddingUnavailable => (
+            JobErrorCode::CapabilityUnavailable,
+            false,
+            crate::EMBEDDING_UNAVAILABLE_JOB_ERROR,
+        ),
         GenerationFailureCode::Internal => (
             JobErrorCode::WorkerFailed,
             false,

@@ -21,8 +21,6 @@ use crate::{
 /// A claim outlives the longest provider request, so a slow reply is never
 /// settled after its lease ran out.
 const GENERATION_LEASE: Duration = Duration::from_secs(60 * 60);
-const IDLE_BACKOFF_MIN: Duration = Duration::from_millis(250);
-const IDLE_BACKOFF_MAX: Duration = Duration::from_secs(5);
 
 /// Runs queued conversation generation jobs one at a time and streams each
 /// turn into the sink its send attached. Repository calls are synchronous,
@@ -47,17 +45,14 @@ impl ConversationGenerationWorker {
     /// Polls until `shutdown` completes. A job already running finishes
     /// first; `ApiContext::begin_shutdown` cancels it and any job started
     /// after it. An idle worker, or one whose job could not be claimed,
-    /// waits with a doubling backoff, and a send wakes it at once.
+    /// sleeps until a send, a cancellation or another scheduling path wakes
+    /// it; no queued generation job waits for a later time.
     pub async fn run(&self, shutdown: impl Future<Output = ()>) {
         let shutdown = shutdown.fuse();
         futures_util::pin_mut!(shutdown);
-        let mut idle = IDLE_BACKOFF_MIN;
         while (&mut shutdown).now_or_never().is_none() {
             match self.run_once().await {
-                Ok(true) => {
-                    idle = IDLE_BACKOFF_MIN;
-                    continue;
-                }
+                Ok(true) => continue,
                 Ok(false) => {}
                 Err(error) => {
                     tracing::warn!(code = ?error.code, message = %error.message, "conversation generation worker step failed");
@@ -65,8 +60,7 @@ impl ConversationGenerationWorker {
             }
             tokio::select! {
                 () = &mut shutdown => break,
-                () = self.context.woken() => idle = IDLE_BACKOFF_MIN,
-                () = tokio::time::sleep(idle) => idle = (idle * 2).min(IDLE_BACKOFF_MAX),
+                () = self.context.woken() => {}
             }
         }
     }
@@ -320,6 +314,9 @@ const fn failure_code(failure: Option<GenerationFailureCode>) -> dto::Generation
         Some(GenerationFailureCode::TimedOut) => dto::GenerationFailureCode::TimedOut,
         Some(GenerationFailureCode::RecoveryUnavailable) => {
             dto::GenerationFailureCode::RecoveryUnavailable
+        }
+        Some(GenerationFailureCode::EmbeddingUnavailable) => {
+            dto::GenerationFailureCode::EmbeddingUnavailable
         }
         Some(GenerationFailureCode::Cancelled | GenerationFailureCode::Internal) | None => {
             dto::GenerationFailureCode::Internal

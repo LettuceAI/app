@@ -3560,6 +3560,69 @@ async fn bundled_default_prompt_renders_only_retrieved_memories_in_a_dynamic_dir
     assert_retrieved_only(&request_system_texts(&regenerated_inference));
 }
 
+/// Embeds nothing, and dynamic memory must not run without it.
+struct RequiredUnavailableEmbedding(&'static str);
+
+impl crate::MemoryEmbeddingEngine for RequiredUnavailableEmbedding {
+    fn source_revision(&self) -> &str {
+        self.0
+    }
+
+    fn dimensions(&self) -> lettuce_embeddings::EmbeddingDimensions {
+        lettuce_embeddings::EmbeddingDimensions::D128
+    }
+
+    fn count_tokens(&self, _text: &str) -> Result<u32, crate::EmbeddingGenerationError> {
+        Err(crate::EmbeddingGenerationError::Unavailable)
+    }
+
+    fn embed_memory(
+        &self,
+        _request: &EmbeddingRequest,
+        _cancellation: &CancellationToken,
+    ) -> Result<EmbeddingVector, crate::EmbeddingGenerationError> {
+        Err(crate::EmbeddingGenerationError::Unavailable)
+    }
+
+    fn requires_model(&self) -> bool {
+        true
+    }
+}
+
+#[tokio::test]
+async fn a_required_embedding_that_is_unavailable_fails_the_turn() {
+    for (revision, label) in [("scenario-v1", "retrieval"), ("other-v1", "backfill")] {
+        let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+        enable_retrieval_only_dynamic_memory(backend.database());
+        let scenario = direct_scenario(backend.database(), true, label, true, false);
+        seed_retrieved_and_hot_memories(
+            backend.database(),
+            scenario.space_id.expect("dynamic memory space"),
+        );
+        let engine = RequiredUnavailableEmbedding(revision);
+        let work = admit_and_claim(backend.database(), &scenario, 1_015);
+        let inference = scripted(vec![text_outcome("unused", "Unused.", 1, 1)]);
+        let result = backend
+            .prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
+            .run(
+                &work,
+                ConversationGenerationRuntimeInput::default(),
+                TimestampMillis::new(1_020),
+            )
+            .await;
+        assert!(
+            matches!(
+                result,
+                Err(ConversationGenerationRunError::PreparationFailed {
+                    code: GenerationFailureCode::EmbeddingUnavailable,
+                })
+            ),
+            "{label}: {result:?}"
+        );
+        assert!(inference.requests.lock().expect("requests").is_empty());
+    }
+}
+
 #[tokio::test]
 async fn dynamic_group_chats_keep_retrieved_key_memories_without_observation_notes() {
     let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");

@@ -158,6 +158,7 @@ pub(crate) fn failure_name(value: GenerationFailureCode) -> &'static str {
         GenerationFailureCode::Cancelled => "cancelled",
         GenerationFailureCode::TimedOut => "timed_out",
         GenerationFailureCode::RecoveryUnavailable => "recovery_unavailable",
+        GenerationFailureCode::EmbeddingUnavailable => "embedding_unavailable",
         GenerationFailureCode::Internal => "internal",
     }
 }
@@ -789,6 +790,7 @@ mod tests {
             GenerationFailureCode::Cancelled,
             GenerationFailureCode::TimedOut,
             GenerationFailureCode::RecoveryUnavailable,
+            GenerationFailureCode::EmbeddingUnavailable,
             GenerationFailureCode::Internal,
         ] {
             assert_eq!(

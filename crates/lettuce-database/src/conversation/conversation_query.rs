@@ -216,6 +216,7 @@ pub(crate) fn failure(
             "cancelled" => Ok(GenerationFailureCode::Cancelled),
             "timed_out" => Ok(GenerationFailureCode::TimedOut),
             "recovery_unavailable" => Ok(GenerationFailureCode::RecoveryUnavailable),
+            "embedding_unavailable" => Ok(GenerationFailureCode::EmbeddingUnavailable),
             "internal" => Ok(GenerationFailureCode::Internal),
             _ => Err(ConversationRepositoryError::Storage),
         })

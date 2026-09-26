@@ -159,6 +159,7 @@ pub(crate) enum ConversationGenerationInputError {
     Memory(MemoryRepositoryError),
     Settings(lettuce_settings::GlobalSettingsStoreError),
     Embedding,
+    EmbeddingUnavailable,
     Cancelled,
     MemoryInputUnavailable,
     SpeakerUnavailable,
@@ -1589,6 +1590,9 @@ where
             crate::MemoryEmbeddingBackfillError::Repository => {
                 ConversationGenerationInputError::Embedding
             }
+            crate::MemoryEmbeddingBackfillError::EmbeddingUnavailable => {
+                ConversationGenerationInputError::EmbeddingUnavailable
+            }
         })
     }
 
@@ -1650,6 +1654,9 @@ where
             Ok(vector) => vector,
             Err(EmbeddingGenerationError::Cancelled) => {
                 return Err(ConversationGenerationInputError::Cancelled);
+            }
+            Err(EmbeddingGenerationError::Unavailable) if self.embedding.requires_model() => {
+                return Err(ConversationGenerationInputError::EmbeddingUnavailable);
             }
             Err(EmbeddingGenerationError::Unavailable) => {
                 tracing::warn!("dynamic-memory retrieval embedding is unavailable");
@@ -1877,6 +1884,9 @@ impl ConversationGenerationInputError {
                     code: lettuce_conversations::GenerationFailureCode::ContextUnavailable,
                 }
             }
+            Self::EmbeddingUnavailable => ConversationGenerationRunError::PreparationFailed {
+                code: lettuce_conversations::GenerationFailureCode::EmbeddingUnavailable,
+            },
             Self::Cancelled => ConversationGenerationRunError::Cancelled {
                 evidence: crate::GenerationUsageEvidence::None,
             },

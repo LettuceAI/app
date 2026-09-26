@@ -243,6 +243,8 @@ pub enum GenerationFailureCode {
     Cancelled,
     TimedOut,
     RecoveryUnavailable,
+    /// The embedding model dynamic memory needs could not be used.
+    EmbeddingUnavailable,
     Internal,
 }
 
