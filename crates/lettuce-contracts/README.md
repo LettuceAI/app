@@ -1,22 +1,16 @@
 # lettuce-contracts
 
-Versioned IPC requests, responses, events, and generated frontend bindings.
+The serde types that cross the IPC boundary between the Rust backend and the frontend. They are owned transport DTOs, kept separate from the domain and provider types so that an internal change never silently changes what the frontend receives, and so the frontend never has to guess a provider's wire values or feature combinations.
 
-## Boundary
+Only the composition crate (`lettuce-app`) depends on it; domain crates must not. It depends on nothing but `lettuce-types` and `serde`, and it holds no behavior.
 
-Transport types only; domain crates must not depend on this crate.
+## Provider contracts
 
-The public surface is intentionally small. Business invariants belong in domain models and use cases; infrastructure is accessed only through narrow ports owned by the calling crate.
+Everything in `src/lib.rs` today describes providers:
 
-## Status
+- `ProviderCatalogContract` is the list the provider settings screen renders. Each `ProviderDescriptorContract` gives a provider kind's display name, `ProviderProtocolContract`, aliases, default endpoint and whether it can be edited, whether an API key is required, optional or unused and which header carries it, and what the provider supports: streaming, native tool translation, structured output, signed tool replay, reasoning together with tools, model listing, key verification, the `ReasoningSupportContract` (none, effort, budget only, dynamic), the `PromptCachingSupportContract` (none, supported, automatic) with the exact `PromptCacheRetentionContract` choices it accepts, which sampling parameters it takes (`ProviderParameterSupportContract`) and the extra request body keys it allows. Features are listed separately so the frontend never infers an unsafe combination from a protocol name or a model capability, and retention choices are typed so it never infers provider wire values.
+- `ProviderAccountRequest` names an account for account-scoped calls.
+- `ProviderModelsContract` returns the models a provider account lists, each a `RemoteModelContract` (id, display name, description, context length, input and output modalities, supported endpoints, prices).
+- `KeyVerificationContract` reports whether an account's key verified, with the HTTP status when there was one.
 
-The first provider contracts are active: the provider catalog and capability
-metadata, account-scoped model discovery, and key-verification results. These
-owned serde DTOs keep domain/provider implementation types out of the IPC and
-future generated frontend boundary.
-
-Prompt-cache catalog metadata includes the exact typed retention choices for
-each configurable provider; frontend code does not infer provider wire values.
-Provider descriptors separately expose native tool translation, structured
-output, signed tool replay, and reasoning-with-tools support so callers do not
-infer unsafe feature combinations from a protocol name or a model capability.
+`lettuce-app` builds these from the provider catalog in `lettuce-providers` (`generation/provider_runtime.rs`).
