@@ -1,4 +1,4 @@
-//! Immutable usage ledger contracts and legacy request cost calculation.
+//! Immutable usage ledger contracts and request cost calculation.
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
