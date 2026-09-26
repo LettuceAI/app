@@ -12,8 +12,8 @@ use crate::{
     VoiceDesignRuntime, VoiceDesignRuntimeError,
 };
 
-/// The response cap for remote synthesis: legacy read audio responses without
-/// a bound, and long replies from local or high-bitrate servers pass 8 MiB.
+/// The response cap for remote synthesis; long replies from local or
+/// high-bitrate servers pass 8 MiB.
 pub const MAX_TTS_RESPONSE_BYTES: usize = 256 * 1024 * 1024;
 
 pub struct RemoteTtsRuntime {
