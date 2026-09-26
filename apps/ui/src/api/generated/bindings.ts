@@ -203,7 +203,7 @@ export type GenerationCancelRequest = {
  */
 export type GenerationEvent = { type: "started"; turn_id: string } | { type: "delta"; turn_id: string; text: string | null; reasoning: string | null } | { type: "completed"; turn_id: string; message_id: string } | { type: "failed"; turn_id: string; code: GenerationFailureCode } | { type: "cancelled"; turn_id: string };
 
-export type GenerationFailureCode = "invalid_conversation" | "missing_model" | "context_unavailable" | "speaker_unavailable" | "provider_unavailable" | "provider_rejected" | "empty_output" | "timed_out" | "recovery_unavailable" | "internal";
+export type GenerationFailureCode = "invalid_conversation" | "missing_model" | "context_unavailable" | "speaker_unavailable" | "provider_unavailable" | "provider_rejected" | "empty_output" | "timed_out" | "recovery_unavailable" | "embedding_unavailable" | "internal";
 
 export type JobCancelRequest = {
 	job_id: string,

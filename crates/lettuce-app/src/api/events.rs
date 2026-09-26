@@ -15,5 +15,6 @@ pub trait GenerationEventSink: Send + Sync {
 /// The stream of one watched job, handed in by `job_watch`. Delivery is
 /// best effort, like `GenerationEventSink`.
 pub trait JobEventSink: Send + Sync {
-    fn emit(&self, event: JobEvent);
+    /// Returns `false` once the consumer is gone, which ends the watch.
+    fn emit(&self, event: JobEvent) -> bool;
 }

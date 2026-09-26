@@ -332,10 +332,20 @@ impl<J: JobStore + ?Sized> ArtifactInstallCoordinator<'_, J> {
         let Some(claim) = self.jobs.claim(job_id, worker_id, at, lease_for, allowed)? else {
             return Ok(None);
         };
-        self.jobs.append_and_transition(JobMutation::Start {
+        if let Err(error) = self.jobs.append_and_transition(JobMutation::Start {
             claim: claim.claim.clone(),
             at,
-        })?;
+        }) {
+            let cancelled = self
+                .jobs
+                .get(job_id)?
+                .is_some_and(|job| job.state == JobState::CancellationRequested);
+            if !cancelled {
+                return Err(error.into());
+            }
+            finish_claimed_cancellation(self.jobs, &claim.claim, at)?;
+            return Ok(None);
+        }
         let job = self.jobs.append_and_transition(JobMutation::StageChanged {
             claim: claim.claim.clone(),
             stage: StageSnapshot::new("download", false).expect("constant stage"),
@@ -654,6 +664,23 @@ impl<J: JobStore + ?Sized> ArtifactInstallCoordinator<'_, J> {
     }
 }
 
+/// Settles a claimed job whose cancellation was requested before it
+/// started.
+pub(crate) fn finish_claimed_cancellation<J: JobStore + ?Sized>(
+    jobs: &J,
+    claim: &lettuce_jobs::ClaimRef,
+    at: TimestampMillis,
+) -> Result<JobSnapshot, StoreError> {
+    let cleaning = jobs.append_and_transition(JobMutation::RequestCleanup {
+        claim: claim.clone(),
+        at,
+    })?;
+    jobs.append_and_transition(JobMutation::FinishCancellation {
+        claim: claim.clone(),
+        at: at.max(cleaning.updated_at),
+    })
+}
+
 fn check_cancelled(handle: &JobHandle) -> Result<(), ArtifactInstallError> {
     if handle.cancellation_token().is_cancelled() {
         Err(ArtifactInstallError::Cancelled)
@@ -836,6 +863,138 @@ mod tests {
             }
         }
         std::fs::remove_dir_all(root).ok();
+    }
+
+    /// Requests the job's cancellation right after it is claimed, before
+    /// it starts.
+    struct CancelOnClaim<'a>(&'a Database);
+
+    impl JobStore for CancelOnClaim<'_> {
+        fn create_or_get(
+            &self,
+            spec: lettuce_jobs::NewJob,
+        ) -> Result<lettuce_jobs::CreateJobResult, StoreError> {
+            self.0.create_or_get(spec)
+        }
+
+        fn get(&self, id: JobId) -> Result<Option<JobSnapshot>, StoreError> {
+            self.0.get(id)
+        }
+
+        fn list(&self, query: JobQuery) -> Result<lettuce_types::Page<JobSnapshot>, StoreError> {
+            self.0.list(query)
+        }
+
+        fn events_since(
+            &self,
+            id: JobId,
+            after: Option<lettuce_jobs::EventSeq>,
+            limit: u32,
+        ) -> Result<Vec<lettuce_jobs::events::JobEventEnvelope>, StoreError> {
+            self.0.events_since(id, after, limit)
+        }
+
+        fn claim_next(
+            &self,
+            worker_id: WorkerId,
+            now: TimestampMillis,
+            lease_for: Duration,
+            allowed: &ResourceAvailability,
+        ) -> Result<Option<Claim>, StoreError> {
+            self.0.claim_next(worker_id, now, lease_for, allowed)
+        }
+
+        fn claim(
+            &self,
+            id: JobId,
+            worker_id: WorkerId,
+            now: TimestampMillis,
+            lease_for: Duration,
+            allowed: &ResourceAvailability,
+        ) -> Result<Option<Claim>, StoreError> {
+            let claimed = self.0.claim(id, worker_id, now, lease_for, allowed)?;
+            self.0
+                .append_and_transition(JobMutation::RequestCancellation {
+                    id,
+                    reason: CancellationReason::User,
+                    at: now,
+                })?;
+            Ok(claimed)
+        }
+
+        fn heartbeat(
+            &self,
+            claim: &lettuce_jobs::ClaimRef,
+            now: TimestampMillis,
+            extend_for: Duration,
+        ) -> Result<Claim, StoreError> {
+            self.0.heartbeat(claim, now, extend_for)
+        }
+
+        fn append_and_transition(&self, mutation: JobMutation) -> Result<JobSnapshot, StoreError> {
+            self.0.append_and_transition(mutation)
+        }
+
+        fn expired_claims(
+            &self,
+            now: TimestampMillis,
+            limit: u32,
+        ) -> Result<Vec<lettuce_jobs::ExpiredClaim>, StoreError> {
+            self.0.expired_claims(now, limit)
+        }
+
+        fn orphaned_claims(
+            &self,
+            now: TimestampMillis,
+            limit: u32,
+        ) -> Result<Vec<lettuce_jobs::ExpiredClaim>, StoreError> {
+            self.0.orphaned_claims(now, limit)
+        }
+
+        fn prune(
+            &self,
+            policy: lettuce_jobs::retention::RetentionPolicy,
+            now: TimestampMillis,
+        ) -> Result<lettuce_jobs::PruneReport, StoreError> {
+            self.0.prune(policy, now)
+        }
+    }
+
+    #[test]
+    fn a_cancel_between_claim_and_start_cancels_the_job() {
+        let database = Database::open_in_memory().expect("database");
+        let root = std::env::temp_dir().join(format!("artifact-race-{}", OperationId::new()));
+        let source = ArtifactSource::Https {
+            url: "https://example.com/model.bin".to_owned(),
+        };
+        let plan = ArtifactInstallPlan {
+            install_id: "race".to_owned(),
+            root,
+            artifacts: vec![planned(source, &["model.bin"], b"bytes")],
+        };
+        let admitted = ArtifactInstallCoordinator::new(&database)
+            .admit(&plan)
+            .expect("admit");
+        let racing = CancelOnClaim(&database);
+        let claimed = ArtifactInstallCoordinator::new(&racing)
+            .claim(
+                plan,
+                admitted.job.id,
+                WorkerId::new(),
+                TimestampMillis::new(10),
+                Duration::from_secs(30),
+                &ResourceAvailability::all(),
+            )
+            .expect("claim settles the cancellation");
+        assert!(claimed.is_none());
+        assert_eq!(
+            database
+                .get(admitted.job.id)
+                .expect("job")
+                .expect("present")
+                .state,
+            JobState::Cancelled
+        );
     }
 
     #[tokio::test]

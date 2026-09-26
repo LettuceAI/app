@@ -11,15 +11,13 @@ use lettuce_jobs::{
     JobKind, JobQuery, JobSnapshot, JobState, JobStore, ResourceAvailability, WorkerId,
     handle::CancellationToken,
 };
-use lettuce_types::{JobId, PageLimit, PageRequest};
+use lettuce_types::{JobId, PageLimit, PageRequest, TimestampMillis};
 
 use super::install::{ArtifactInstallHandler, NetworkInstallSources};
 use crate::api::ApiContext;
 use crate::api::error::IntoApiError;
 use crate::api::worker::link_to_shutdown;
 
-const IDLE_BACKOFF_MIN: Duration = Duration::from_millis(250);
-const IDLE_BACKOFF_MAX: Duration = Duration::from_secs(5);
 const QUEUE_PAGE: u16 = 200;
 
 /// What a running job streams besides its stored progress: text deltas of
@@ -46,6 +44,12 @@ pub trait JobHandler: Send + Sync {
     /// The lane `job` runs in, or `None` while this process cannot run it;
     /// the job then stays queued.
     fn lane(&self, context: &ApiContext, job: &JobSnapshot) -> Option<JobLane>;
+
+    /// When a queued job may run at the earliest, for a retry scheduled
+    /// later; the runner sleeps exactly until the earliest such time.
+    fn not_before(&self, _context: &ApiContext, _job: &JobSnapshot) -> Option<TimestampMillis> {
+        None
+    }
 
     /// Claims `job` through its coordinator. `None` when it could not be
     /// claimed or had already ended.
@@ -120,7 +124,7 @@ impl JobHandlers {
 
 /// Claims and runs queued jobs of the kinds its handlers take, each lane one
 /// job at a time. Like `ConversationGenerationWorker` it claims before a job
-/// counts as started, backs off while idle, and links every job to the
+/// counts as started, sleeps while idle until woken, and links every job to the
 /// context's shutdown token. Repository calls are synchronous, so the host
 /// gives the runner its own thread.
 #[derive(Clone)]
@@ -130,6 +134,7 @@ pub struct JobRunner {
     handlers: JobHandlers,
     lanes: Arc<Mutex<HashSet<JobLane>>>,
     tasks: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
+    next_due: Arc<Mutex<Option<TimestampMillis>>>,
 }
 
 impl std::fmt::Debug for JobRunner {
@@ -161,32 +166,45 @@ impl JobRunner {
             handlers,
             lanes: Arc::new(Mutex::new(HashSet::new())),
             tasks: Arc::new(Mutex::new(Vec::new())),
+            next_due: Arc::new(Mutex::new(None)),
         }
     }
 
-    /// Polls until `shutdown` completes, then waits for the jobs it started
-    /// (`ApiContext::begin_shutdown` cancels them). An idle runner, or one
-    /// that could not claim anything, waits with a doubling backoff; a new
-    /// job or a finished one wakes it.
+    /// Runs until `shutdown` completes, then waits for the jobs it started
+    /// (`ApiContext::begin_shutdown` cancels them). An idle runner sleeps
+    /// until a new job, a cancellation or a finished job wakes it, or until
+    /// the earliest time a queued job was scheduled to run.
     pub async fn run(&self, shutdown: impl Future<Output = ()>) {
         let shutdown = shutdown.fuse();
         futures_util::pin_mut!(shutdown);
-        let mut idle = IDLE_BACKOFF_MIN;
         while (&mut shutdown).now_or_never().is_none() {
             match self.run_once().await {
-                Ok(true) => {
-                    idle = IDLE_BACKOFF_MIN;
-                    continue;
-                }
+                Ok(true) => continue,
                 Ok(false) => {}
                 Err(error) => {
                     tracing::warn!(code = ?error.code, message = %error.message, "job runner step failed");
                 }
             }
+            let due = *self
+                .next_due
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let until_due = async {
+                match due {
+                    Some(due) => {
+                        let wait = due.get().saturating_sub(self.context.now().get());
+                        tokio::time::sleep(Duration::from_millis(
+                            u64::try_from(wait).unwrap_or_default(),
+                        ))
+                        .await;
+                    }
+                    None => std::future::pending::<()>().await,
+                }
+            };
             tokio::select! {
                 () = &mut shutdown => break,
-                () = self.context.jobs().woken() => idle = IDLE_BACKOFF_MIN,
-                () = tokio::time::sleep(idle) => idle = (idle * 2).min(IDLE_BACKOFF_MAX),
+                () = self.context.jobs().woken() => {}
+                () = until_due => {}
             }
         }
         self.wait_idle().await;
@@ -221,10 +239,18 @@ impl JobRunner {
             .blocking(move |context| queued_jobs(context, &kinds))
             .await?;
         let mut started = false;
+        let now = self.context.now();
+        let mut next_due: Option<TimestampMillis> = None;
         for job in queued {
             let Some(handler) = self.handlers.handler(job.kind).cloned() else {
                 continue;
             };
+            if let Some(due) = handler.not_before(&self.context, &job)
+                && due > now
+            {
+                next_due = Some(next_due.map_or(due, |earliest| earliest.min(due)));
+                continue;
+            }
             let Some(lane) = handler.lane(&self.context, &job) else {
                 continue;
             };
@@ -245,6 +271,10 @@ impl JobRunner {
                 }
             }
         }
+        *self
+            .next_due
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = next_due;
         Ok(started)
     }
 

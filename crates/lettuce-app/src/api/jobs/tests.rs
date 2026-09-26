@@ -25,8 +25,9 @@ use crate::{
 struct RecordingJob(Mutex<Vec<dto::JobEvent>>);
 
 impl JobEventSink for RecordingJob {
-    fn emit(&self, event: dto::JobEvent) {
+    fn emit(&self, event: dto::JobEvent) -> bool {
         self.0.lock().expect("job events").push(event);
+        true
     }
 }
 
@@ -710,19 +711,234 @@ async fn startup_recovers_before_it_starts_the_workers() {
         vec![
             crate::api::StartupStep::RecoverAfterRestart,
             crate::api::StartupStep::DetectLegacyDatabase,
+            crate::api::StartupStep::AdoptLegacyEmbedding,
             crate::api::StartupStep::ResumeMemoryJobs,
             crate::api::StartupStep::ResumeCompanionFollowUps,
             crate::api::StartupStep::RecoverQueuedInstalls,
-            crate::api::StartupStep::AdoptLegacyEmbedding,
             crate::api::StartupStep::SweepOrphanMedia,
             crate::api::StartupStep::StartWorkers,
         ]
     );
     assert_eq!(state(context, orphan), JobState::Cancelled);
+    until_updated(&harness, orphan, dto::JobStateDto::Cancelled).await;
     let status = crate::api::app_status(context).await.expect("status");
     assert!(!status.legacy_database_detected);
-    tokio::task::spawn_blocking(move || workers.stop())
-        .await
-        .expect("stopped");
+    workers.stop().await;
     std::fs::remove_dir_all(root).ok();
+}
+
+/// A download source that cannot be built.
+struct BrokenSources;
+
+#[async_trait]
+impl InstallSources for BrokenSources {
+    async fn artifacts(
+        &self,
+        _context: &ApiContext,
+        _finish: &InstallFinish,
+    ) -> Result<Box<dyn ArtifactSourceClient>, lettuce_contracts::ApiError> {
+        Err(crate::api::error::api_error(
+            ApiErrorCode::Unavailable,
+            "the saved token cannot be read",
+        ))
+    }
+
+    fn whisper(&self) -> Result<Box<dyn WhisperDownloadSource>, lettuce_contracts::ApiError> {
+        NetworkInstallSources.whisper()
+    }
+
+    fn kokoro_model(&self) -> Result<Box<dyn KokoroDownloadSource>, lettuce_contracts::ApiError> {
+        NetworkInstallSources.kokoro_model()
+    }
+
+    fn kokoro_voices(
+        &self,
+    ) -> Result<Box<dyn KokoroVoiceDownloadSource>, lettuce_contracts::ApiError> {
+        NetworkInstallSources.kokoro_voices()
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_install_whose_source_cannot_be_built_fails_typed() {
+    let harness = harness(Reply::Text("Hello."));
+    let context = &harness.context;
+    let root = temp_root("broken-source");
+    let runner = JobRunner::new(
+        context.clone(),
+        JobHandlers::new(vec![Arc::new(ArtifactInstallHandler::new(Arc::new(
+            BrokenSources,
+        )))]),
+    );
+    let accepted = admit_install(
+        context,
+        InstallWork::Artifact {
+            plan: plan(&root, "broken", b"bytes"),
+            finish: Box::new(InstallFinish::Files),
+        },
+    )
+    .await
+    .expect("admit");
+    assert!(!runner.run_once().await.expect("run"));
+    let view = job_get(
+        context,
+        dto::JobGetRequest {
+            job_id: accepted.job_id,
+        },
+    )
+    .await
+    .expect("job");
+    assert_eq!(view.state, dto::JobStateDto::Failed);
+    assert_eq!(
+        view.failure
+            .map(|failure| (failure.code, failure.retryable)),
+        Some((dto::JobFailureCode::ResourceUnavailable, true))
+    );
+    assert!(!runner.run_once().await.expect("nothing left"));
+    std::fs::remove_dir_all(root).ok();
+}
+
+/// Closed after its first event.
+#[derive(Default)]
+struct ClosingJob(Mutex<u32>);
+
+impl JobEventSink for ClosingJob {
+    fn emit(&self, _event: dto::JobEvent) -> bool {
+        let mut count = self.0.lock().expect("count");
+        *count += 1;
+        *count < 2
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_closed_watch_is_dropped() {
+    let harness = harness(Reply::Text("Hello."));
+    let context = &harness.context;
+    let job_id = create(&harness, spec(JobKind::Maintenance, "closing", "closing-1"));
+    let sink = Arc::new(ClosingJob::default());
+    job_watch(
+        context,
+        dto::JobWatchRequest {
+            job_id: job_id.to_string(),
+        },
+        sink.clone(),
+    )
+    .await
+    .expect("watch");
+    assert!(context.jobs().watching(job_id));
+    let view = job_get(
+        context,
+        dto::JobGetRequest {
+            job_id: job_id.to_string(),
+        },
+    )
+    .await
+    .expect("job");
+    context
+        .jobs()
+        .deliver(job_id, dto::JobEvent::Progress { job: view }, false);
+    assert!(!context.jobs().watching(job_id));
+    assert_eq!(*sink.0.lock().expect("count"), 2);
+}
+
+async fn until_updated(harness: &Harness, job_id: JobId, state: dto::JobStateDto) {
+    for _ in 0..500 {
+        if job_updates(harness, job_id).contains(&state) {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("no {state:?} update for {job_id}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_feed_publishes_only_after_a_committed_change() {
+    let harness = harness(Reply::Text("Hello."));
+    let context = harness.context.clone();
+    let feed = JobFeed::start(&context).await.expect("feed");
+    let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+    let running = tokio::spawn({
+        let context = context.clone();
+        async move {
+            feed.run(context, async move {
+                let _ = stopped.await;
+            })
+            .await;
+        }
+    });
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    assert!(api_events(&harness).is_empty());
+    let job_id = create(&harness, spec(JobKind::Maintenance, "fed", "fed-1"));
+    until_updated(&harness, job_id, dto::JobStateDto::Queued).await;
+    job_cancel(
+        &context,
+        dto::JobCancelRequest {
+            job_id: job_id.to_string(),
+        },
+    )
+    .await
+    .expect("cancel");
+    until_updated(&harness, job_id, dto::JobStateDto::Cancelled).await;
+    stop.send(()).expect("stop");
+    running.await.expect("feed task");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_idle_runner_wakes_for_a_new_install() {
+    let harness = harness(Reply::Text("Hello."));
+    let context = harness.context.clone();
+    let root = temp_root("idle-wake");
+    let (runner, _) = runner(&context, b"bytes", None);
+    let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+    let running = {
+        let runner = runner.clone();
+        tokio::spawn(async move {
+            runner
+                .run(async move {
+                    let _ = stopped.await;
+                })
+                .await;
+        })
+    };
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let accepted = admit_install(
+        &context,
+        InstallWork::Artifact {
+            plan: plan(&root, "later", b"bytes"),
+            finish: Box::new(InstallFinish::Files),
+        },
+    )
+    .await
+    .expect("admit");
+    assert_eq!(
+        until_ended(&context, parse(&accepted)).await,
+        JobState::Succeeded
+    );
+    stop.send(()).expect("stop");
+    running.await.expect("runner task");
+    std::fs::remove_dir_all(root).ok();
+}
+
+#[test]
+fn whisper_and_kokoro_share_the_download_queue() {
+    let root = std::path::PathBuf::from("/models");
+    let artifact = InstallWork::Artifact {
+        plan: plan(&root, "gguf", b"bytes"),
+        finish: Box::new(InstallFinish::Files),
+    };
+    let whisper = InstallWork::Whisper {
+        model: lettuce_model_hub::RemoteWhisperModel {
+            model_id: "base".into(),
+            filename: "ggml-base.bin".into(),
+            source_revision: "a".repeat(40),
+            byte_size: 1,
+            sha256: "0".repeat(64),
+            english_only: false,
+            quantized: false,
+            recommended: false,
+            recommended_for_mobile: false,
+            recommended_for_desktop: false,
+        },
+        install_root: root,
+    };
+    assert_eq!(artifact.lane(), whisper.lane());
 }

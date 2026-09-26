@@ -270,8 +270,37 @@ where
         return Err(invalid_field("text", "the message text is blank"));
     }
     let key = operation_key(request.client_operation_id)?;
-    require_conversation_models(context, conversation_id).await?;
     let text = request.text;
+    let replay = {
+        let operation = OperationToken {
+            key: key.clone(),
+            request_digest: send_digest(conversation_id, &text)?,
+        };
+        context
+            .blocking(move |context| {
+                let record = ConversationReader::operation_record(
+                    context.backend().database(),
+                    conversation_id,
+                    OperationKind::Send,
+                    &operation,
+                )
+                .map_err(IntoApiError::into_api_error)?;
+                match record {
+                    Some(record) if record.operation.request_digest != operation.request_digest => {
+                        Err(api_error(
+                            ApiErrorCode::Conflict,
+                            "client_operation_id was already used for a different send",
+                        ))
+                    }
+                    Some(_) => Ok(true),
+                    None => Ok(false),
+                }
+            })
+            .await?
+    };
+    if !replay {
+        require_conversation_models(context, conversation_id).await?;
+    }
     let accepted = context
         .blocking(move |context| {
             let database = context.backend().database();

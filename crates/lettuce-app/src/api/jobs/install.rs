@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
 use lettuce_image_generation::CivitaiLoraDownload;
 use lettuce_jobs::{
-    CancellationReason, JobKind, JobMutation, JobQuery, JobSnapshot, JobState, JobStore, WorkerId,
-    handle::CancellationToken,
+    CancellationReason, JobError, JobErrorCode, JobKind, JobMutation, JobQuery, JobSnapshot,
+    JobState, JobStore, WorkerId, handle::CancellationToken,
 };
 use lettuce_model_hub::{
     CompanionEmotionInstallStore, EmbeddingPin, KokoroInstallStore, KokoroVoiceInstallStore,
@@ -29,6 +29,7 @@ use crate::{
 /// progress and the install stage renew it.
 const INSTALL_LEASE: Duration = Duration::from_secs(30 * 60);
 const RECOVERY_PAGE: u16 = 200;
+const DOWNLOAD_LANE: &str = "install:downloads";
 
 /// A stable-diffusion.cpp catalog variant and the engine build it runs on.
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -108,18 +109,19 @@ pub enum InstallWork {
 }
 
 impl InstallWork {
-    /// Hugging Face, stable-diffusion.cpp and CivitAI downloads share one
-    /// queue; embeddings, the emotion model, Whisper and Kokoro each have
-    /// their own.
-    fn lane(&self) -> JobLane {
+    /// GGUF, stable-diffusion.cpp, CivitAI, Hugging Face bundle, Whisper
+    /// and Kokoro downloads share one sequential queue, as legacy's download
+    /// queue did; the embedding and emotion models each have their own.
+    pub(super) fn lane(&self) -> JobLane {
         let name = match self {
             Self::Artifact { finish, .. } => match finish.as_ref() {
                 InstallFinish::Embedding { .. } => "install:embedding",
                 InstallFinish::CompanionEmotion { .. } => "install:companion-emotion",
-                _ => "install:downloads",
+                _ => DOWNLOAD_LANE,
             },
-            Self::Whisper { .. } => "install:whisper",
-            Self::KokoroModel { .. } | Self::KokoroVoices { .. } => "install:kokoro",
+            Self::Whisper { .. } | Self::KokoroModel { .. } | Self::KokoroVoices { .. } => {
+                DOWNLOAD_LANE
+            }
         };
         JobLane(name.to_owned())
     }
@@ -467,19 +469,34 @@ impl JobHandler for ArtifactInstallHandler {
         let Some(work) = context.jobs().install(job.id) else {
             return Ok(None);
         };
+        let job_id = job.id;
         let source = match &work {
-            InstallWork::Artifact { finish, .. } => {
-                InstallSource::Artifact(self.sources.artifacts(context, finish).await?)
-            }
-            InstallWork::Whisper { .. } => InstallSource::Whisper(self.sources.whisper()?),
+            InstallWork::Artifact { finish, .. } => self
+                .sources
+                .artifacts(context, finish)
+                .await
+                .map(InstallSource::Artifact),
+            InstallWork::Whisper { .. } => self.sources.whisper().map(InstallSource::Whisper),
             InstallWork::KokoroModel { .. } => {
-                InstallSource::KokoroModel(self.sources.kokoro_model()?)
+                self.sources.kokoro_model().map(InstallSource::KokoroModel)
             }
-            InstallWork::KokoroVoices { .. } => {
-                InstallSource::KokoroVoices(self.sources.kokoro_voices()?)
+            InstallWork::KokoroVoices { .. } => self
+                .sources
+                .kokoro_voices()
+                .map(InstallSource::KokoroVoices),
+        };
+        let source = match source {
+            Ok(source) => source,
+            Err(error) => {
+                context
+                    .blocking(move |context| {
+                        context.jobs().forget_install(job_id);
+                        settle_unclaimable(context, job_id, SOURCE_UNAVAILABLE)
+                    })
+                    .await?;
+                return Err(error);
             }
         };
-        let job_id = job.id;
         let resources = self.resources();
         let claimed = context
             .blocking(move |context| {
@@ -499,15 +516,7 @@ impl JobHandler for ArtifactInstallHandler {
                     }
                     Err(_) => {
                         context.jobs().forget_install(job_id);
-                        if let Some(job) = context
-                            .backend()
-                            .database()
-                            .get(job_id)
-                            .map_err(IntoApiError::into_api_error)?
-                            && job.state == JobState::Queued
-                        {
-                            cancel_waiting(context, &job)?;
-                        }
+                        settle_unclaimable(context, job_id, WORK_INVALID)?;
                     }
                 }
                 claimed.map(|claimed| claimed.map(|claimed| (claimed, work)))
@@ -522,6 +531,89 @@ impl JobHandler for ArtifactInstallHandler {
             source,
         })))
     }
+}
+
+/// A download source could not be built (no client, the saved token could
+/// not be read).
+const SOURCE_UNAVAILABLE: (JobErrorCode, bool, &str) = (
+    JobErrorCode::ResourceUnavailable,
+    true,
+    "install-source-unavailable",
+);
+/// The install work does not match its job.
+const WORK_INVALID: (JobErrorCode, bool, &str) =
+    (JobErrorCode::InvalidInput, false, "install-work-invalid");
+
+/// Ends a job the runner could not run: one whose cancellation was requested
+/// (after a claim or before it) is cancelled, any other fails with
+/// `failure`. An ended job is left alone.
+fn settle_unclaimable(
+    context: &ApiContext,
+    job_id: JobId,
+    failure: (JobErrorCode, bool, &'static str),
+) -> Result<(), ApiError> {
+    let database = context.backend().database();
+    let Some(job) = database.get(job_id).map_err(IntoApiError::into_api_error)? else {
+        return Ok(());
+    };
+    let at = context.now().max(job.updated_at);
+    let (code, retryable, message) = failure;
+    let error =
+        JobError::new(code, retryable, message).map_err(|_| internal("invalid job error"))?;
+    match (job.state, job.claim.clone()) {
+        (JobState::CancellationRequested, Some(claim)) => {
+            crate::models::artifact_install::finish_claimed_cancellation(database, &claim, at)
+                .map_err(IntoApiError::into_api_error)?;
+        }
+        (JobState::CancellationRequested, None) => {
+            database
+                .append_and_transition(JobMutation::FinishQueuedCancellation { id: job_id, at })
+                .map_err(IntoApiError::into_api_error)?;
+        }
+        (JobState::Queued, _) => {
+            let claim = database
+                .claim(
+                    job_id,
+                    WorkerId::new(),
+                    at,
+                    INSTALL_LEASE,
+                    &lettuce_jobs::ResourceAvailability::all(),
+                )
+                .map_err(IntoApiError::into_api_error)?
+                .ok_or_else(|| internal("the install job could not be claimed to end it"))?;
+            database
+                .append_and_transition(JobMutation::Start {
+                    claim: claim.claim.clone(),
+                    at,
+                })
+                .map_err(IntoApiError::into_api_error)?;
+            database
+                .append_and_transition(JobMutation::Fail {
+                    claim: claim.claim,
+                    error,
+                    at,
+                })
+                .map_err(IntoApiError::into_api_error)?;
+        }
+        (JobState::Claimed, Some(claim)) => {
+            database
+                .append_and_transition(JobMutation::Start {
+                    claim: claim.clone(),
+                    at,
+                })
+                .map_err(IntoApiError::into_api_error)?;
+            database
+                .append_and_transition(JobMutation::Fail { claim, error, at })
+                .map_err(IntoApiError::into_api_error)?;
+        }
+        (JobState::Running, Some(claim)) => {
+            database
+                .append_and_transition(JobMutation::Fail { claim, error, at })
+                .map_err(IntoApiError::into_api_error)?;
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 fn claim_work(

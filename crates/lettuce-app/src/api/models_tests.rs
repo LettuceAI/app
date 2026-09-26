@@ -359,9 +359,7 @@ async fn startup_on_a_fresh_install_fetches_and_loads_nothing() {
     tokio::time::timeout(Duration::from_secs(30), workers.started())
         .await
         .expect("workers started");
-    tokio::task::spawn_blocking(move || workers.stop())
-        .await
-        .expect("stopped");
+    workers.stop().await;
     assert_eq!(models.calls(), (0, 0, 0));
     assert!(
         harness
@@ -393,4 +391,85 @@ async fn a_companion_send_whose_classification_fails_is_refused() {
     assert_eq!(error.code, ApiErrorCode::ModelUnavailable);
     assert_eq!(model_of(&error), Some(RequiredModel::Emotion));
     assert_untouched(&harness, &conversation_id).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_accepted_send_replays_after_its_model_is_removed() {
+    let models = CountingModels::new(true, true);
+    let harness = harness_with_models(Arc::clone(&models));
+    let companion = create_character(
+        harness.context.backend().database(),
+        "Mira",
+        companion_defaults(),
+    );
+    let conversation_id = launch(&harness, companion, "replay-launch").await;
+    send(&harness, &conversation_id, "replay-send")
+        .await
+        .expect("first send");
+    models.installed.store(false, Ordering::SeqCst);
+    harness.context.models_changed();
+    send(&harness, &conversation_id, "replay-send")
+        .await
+        .expect("the same send replays");
+    let conflict = conversation_send(
+        &harness.context,
+        dto::ConversationSendRequest {
+            conversation_id: conversation_id.clone(),
+            text: "Something else".into(),
+            client_operation_id: "replay-send".into(),
+        },
+        Arc::new(NoStream),
+    )
+    .await
+    .expect_err("a different send under the same key");
+    assert_eq!(conflict.code, ApiErrorCode::Conflict);
+    let refused = send(&harness, &conversation_id, "new-send")
+        .await
+        .expect_err("a new send needs the model");
+    assert_eq!(refused.code, ApiErrorCode::ModelRequired);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn adopting_legacy_embedding_files_forgets_a_missing_model() {
+    let root = std::env::temp_dir().join(format!(
+        "lettuce-api-adopt-{}",
+        lettuce_types::OperationId::new()
+    ));
+    std::fs::create_dir_all(&root).expect("root");
+    let models = CountingModels::new(false, false);
+    let harness = harness_in(
+        Reply::Text("Hello."),
+        Arc::new(SystemClock),
+        None,
+        Some(root.clone()),
+        Arc::clone(&models) as Arc<dyn ModelLoader>,
+    );
+    enable_dynamic_memory(&harness);
+    let character = create_character(
+        harness.context.backend().database(),
+        "Rin",
+        dynamic_defaults(),
+    );
+    let conversation_id = launch(&harness, character, "adopt-launch").await;
+    let conversation: ConversationId = conversation_id.parse().expect("id");
+    let missing = require_conversation_models(&harness.context, conversation)
+        .await
+        .expect_err("no model yet");
+    assert_eq!(missing.code, ApiErrorCode::ModelRequired);
+
+    let legacy = root.join("lettuce").join("models").join("embedding");
+    std::fs::create_dir_all(&legacy).expect("legacy folder");
+    std::fs::write(legacy.join("v4-model.int8.onnx"), b"v4 model").expect("model");
+    std::fs::write(legacy.join("v4-tokenizer.json"), b"v4 tokenizer").expect("tokenizer");
+    models.installed.store(true, Ordering::SeqCst);
+    models.loadable.store(true, Ordering::SeqCst);
+    let workers = super::startup(&harness.context).await.expect("startup");
+    require_conversation_models(&harness.context, conversation)
+        .await
+        .expect("the adopted model loads");
+    tokio::time::timeout(Duration::from_secs(30), workers.started())
+        .await
+        .expect("workers started");
+    workers.stop().await;
+    std::fs::remove_dir_all(root).ok();
 }

@@ -20,10 +20,9 @@ pub(crate) struct JobWatch {
 }
 
 impl JobWatch {
-    fn send(&self, event: JobEvent) {
-        if !self.finished.load(Ordering::Acquire) {
-            self.sink.emit(event);
-        }
+    /// Whether the stream is still open afterwards.
+    fn send(&self, event: JobEvent) -> bool {
+        !self.finished.load(Ordering::Acquire) && self.sink.emit(event)
     }
 
     fn finish(&self, event: JobEvent) {
@@ -34,14 +33,26 @@ impl JobWatch {
 }
 
 /// The API's per-process job state: watch streams, the cancellation tokens
-/// of running jobs, install work waiting for the runner, and the runner's
-/// wake-up.
-#[derive(Default)]
+/// of running jobs, install work waiting for the runner, the runner's
+/// wake-up and the signal of committed job changes.
 pub(crate) struct JobHostState {
     watches: Mutex<HashMap<JobId, Vec<Arc<JobWatch>>>>,
     running: Mutex<HashMap<JobId, CancellationToken>>,
     installs: Mutex<HashMap<JobId, InstallWork>>,
     wake: tokio::sync::Notify,
+    changed: Arc<tokio::sync::Notify>,
+}
+
+impl Default for JobHostState {
+    fn default() -> Self {
+        Self {
+            watches: Mutex::new(HashMap::new()),
+            running: Mutex::new(HashMap::new()),
+            installs: Mutex::new(HashMap::new()),
+            wake: tokio::sync::Notify::new(),
+            changed: Arc::new(tokio::sync::Notify::new()),
+        }
+    }
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -57,6 +68,15 @@ impl JobHostState {
 
     pub(crate) async fn woken(&self) {
         self.wake.notified().await;
+    }
+
+    /// The signal the database raises after a committed job change.
+    pub(crate) fn change_signal(&self) -> Arc<tokio::sync::Notify> {
+        Arc::clone(&self.changed)
+    }
+
+    pub(crate) async fn changed(&self) {
+        self.changed.notified().await;
     }
 
     /// Runs `first` while holding the watch registry, so no delivery runs in
@@ -76,23 +96,26 @@ impl JobHostState {
         });
         if terminal {
             watch.finish(event);
-        } else {
-            watch.send(event);
+        } else if watch.send(event) {
             watches.entry(job_id).or_default().push(watch);
         }
         Ok(value)
     }
 
-    /// Sends a job's change to its watches; a terminal event ends them.
+    /// Sends a job's change to its watches; a terminal event ends them, and
+    /// a closed stream is dropped.
     pub(crate) fn deliver(&self, job_id: JobId, event: JobEvent, terminal: bool) {
         let mut watches = lock(&self.watches);
         if terminal {
             for watch in watches.remove(&job_id).unwrap_or_default() {
                 watch.finish(event.clone());
             }
-        } else if let Some(list) = watches.get(&job_id) {
-            for watch in list {
-                watch.send(event.clone());
+            return;
+        }
+        if let Some(list) = watches.get_mut(&job_id) {
+            list.retain(|watch| watch.send(event.clone()));
+            if list.is_empty() {
+                watches.remove(&job_id);
             }
         }
     }
@@ -107,12 +130,16 @@ impl JobHostState {
         text: Option<String>,
         reasoning: Option<String>,
     ) {
-        if let Some(list) = lock(&self.watches).get(&job_id) {
-            for watch in list {
+        let mut watches = lock(&self.watches);
+        if let Some(list) = watches.get_mut(&job_id) {
+            list.retain(|watch| {
                 watch.send(JobEvent::TextDelta {
                     text: text.clone(),
                     reasoning: reasoning.clone(),
-                });
+                })
+            });
+            if list.is_empty() {
+                watches.remove(&job_id);
             }
         }
     }

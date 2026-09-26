@@ -340,3 +340,106 @@ async fn purge_notices_are_listed_counted_and_dismissed() {
         .expect_err("invalid");
     assert_eq!(invalid.code, ApiErrorCode::InvalidInput);
 }
+
+fn png_chunk(kind: &[u8], body: &[u8]) -> Vec<u8> {
+    let mut chunk = u32::try_from(body.len())
+        .expect("chunk length")
+        .to_be_bytes()
+        .to_vec();
+    chunk.extend_from_slice(kind);
+    chunk.extend_from_slice(body);
+    chunk.extend_from_slice(&[0, 0, 0, 0]);
+    chunk
+}
+
+async fn kind_of(harness: &super::tests::Harness, path: &std::path::Path) -> dto::FileKind {
+    files_inspect(
+        &harness.context,
+        dto::FilesInspectRequest {
+            source: source(path),
+        },
+    )
+    .await
+    .expect("inspect")
+    .kind
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn large_files_are_detected_by_streaming_them() {
+    use base64::Engine;
+    use std::io::Write;
+
+    let harness = harness(Reply::Text("Hello."));
+    let root = temp_root("large-inspect");
+    let big = 70 * 1024 * 1024;
+
+    let chat = root.join("long.jsonl");
+    let mut file = std::io::BufWriter::new(std::fs::File::create(&chat).expect("chat"));
+    writeln!(
+        file,
+        "{}",
+        json!({"user_name": "User", "character_name": "Ada"})
+    )
+    .expect("header");
+    let line = json!({"name": "Ada", "is_user": false, "mes": "x".repeat(1_000)}).to_string();
+    let mut written = 0;
+    while written < big {
+        writeln!(file, "{line}").expect("line");
+        written += line.len() + 1;
+    }
+    file.flush().expect("flush");
+    drop(file);
+    assert_eq!(kind_of(&harness, &chat).await, dto::FileKind::ChatJsonl);
+
+    let card = root.join("heavy.json");
+    let text = json!({
+        "spec": "chara_card_v2",
+        "spec_version": "2.0",
+        "data": {"name": "Ada", "description": "d".repeat(big)}
+    })
+    .to_string();
+    std::fs::write(&card, text).expect("card");
+    assert_eq!(kind_of(&harness, &card).await, dto::FileKind::CharacterCard);
+
+    let png = root.join("card.png");
+    let mut header = 2_u32.to_be_bytes().to_vec();
+    header.extend_from_slice(&3_u32.to_be_bytes());
+    header.extend_from_slice(&[8, 6, 0, 0, 0]);
+    let mut bytes = b"\x89PNG\r\n\x1a\n".to_vec();
+    bytes.extend(png_chunk(b"IHDR", &header));
+    let card_json = json!({"spec": "chara_card_v2", "data": {"name": "Ada"}}).to_string();
+    let mut text = b"chara\0".to_vec();
+    text.extend_from_slice(
+        base64::engine::general_purpose::STANDARD
+            .encode(card_json.as_bytes())
+            .as_bytes(),
+    );
+    bytes.extend(png_chunk(b"IDAT", &vec![0; 1024 * 1024]));
+    bytes.extend(png_chunk(b"tEXt", &text));
+    bytes.extend(png_chunk(b"IEND", &[]));
+    std::fs::write(&png, bytes).expect("png card");
+    assert_eq!(kind_of(&harness, &png).await, dto::FileKind::CharacterCard);
+    std::fs::remove_dir_all(root).ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn concurrent_ui_state_updates_all_land() {
+    let harness = harness(Reply::Text("Hello."));
+    let updates = (0..8)
+        .map(|index| {
+            let context = harness.context.clone();
+            tokio::spawn(async move {
+                let mut patch = serde_json::Map::new();
+                patch.insert(format!("key-{index}"), json!(index));
+                app_ui_state_update(&context, dto::AppUiStateUpdateRequest { patch })
+                    .await
+                    .expect("update")
+            })
+        })
+        .collect::<Vec<_>>();
+    for update in updates {
+        update.await.expect("task");
+    }
+    let status = app_status(&harness.context).await.expect("status");
+    assert_eq!(status.ui_state.len(), 8);
+}

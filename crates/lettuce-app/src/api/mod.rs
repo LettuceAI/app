@@ -10,6 +10,7 @@ mod context;
 mod conversations;
 mod error;
 mod events;
+mod file_kind;
 mod files;
 mod jobs;
 mod mapping;

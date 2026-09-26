@@ -8,7 +8,7 @@ The Tauri 2.12 shell for every platform: Windows, macOS and Linux today, Android
 
 The setup hook resolves the app data directory (identifier `com.lettuceai.app`, the same as the legacy app, so legacy import finds its data) and the resource folder, and opens the API with `ApiContext::open_desktop` over the native `NativeSecretStore`, an event sink that emits Tauri events, the desktop `FileAccess` and the platform's asset URL base. It then runs `lettuce_app::api::startup`, which returns once restart recovery and legacy detection are done, so commands never race recovery; the rest of startup and the workers (conversation generation, the job runner with the job change feed) run on threads `lettuce-app` starts, each with a current-thread Tokio runtime because repositories are called synchronously. The shell manages the `ApiContext` and the returned `ApiWorkers` as Tauri state, and forwards window focus changes (on Android and iOS also suspend and resume) to `ApiContext::app_focus_changed` for the active-time counter, which writes the counted time when focus is lost.
 
-On exit the shell calls `ApiWorkers::stop`, which tells every worker to take no new work, calls `begin_shutdown` (cancelling running inference, and every job a worker runs through its token linked to the context's shutdown token), joins the threads and records the counted active time; then it waits for the backend's `shutdown` to stop the local servers.
+On exit the shell calls `ApiWorkers::stop`, which tells every worker to take no new work, calls `begin_shutdown` (cancelling running inference, and every job a worker runs through its token linked to the context's shutdown token), records the counted active time, waits for the backend's `shutdown` to stop the local diffusion server, and then joins the threads.
 
 ## Commands
 
@@ -38,7 +38,7 @@ Commands live in `src/commands/`, one module per domain. Each command is a `#[ta
 
 ## Files
 
-`src/files.rs` implements `lettuce_app::api::FileAccess` for desktop with `std::fs`: a `FileSource` or `FileTarget` URI is the filesystem path a dialog or drop returned, and any `scheme://` URI is refused as unsupported. Android `content://` URIs need their own implementation later (opening the descriptor through the content resolver); the shell chooses which one the context gets.
+`src/files.rs` implements `lettuce_app::api::FileAccess` for desktop with `std::fs`: a `FileSource` or `FileTarget` URI is the filesystem path a dialog or drop returned, and any `scheme://` URI is refused as unsupported. Android `content://` URIs need their own implementation later (opening the descriptor through the content resolver); the shell chooses which one the context gets. `create` has no caller yet; when the transfer slice uses it for exports, writes must be restricted to targets a save dialog returned.
 
 ## Media
 

@@ -9,14 +9,15 @@ use super::{job_event, job_view};
 use crate::api::ApiContext;
 use crate::api::error::IntoApiError;
 
-/// How often the feed reads job changes, which bounds the updates one job
-/// sends to four a second.
-pub(crate) const FEED_INTERVAL: Duration = Duration::from_millis(250);
+/// How long the feed gathers changes after the database signalled one,
+/// which bounds the updates one job sends to four a second.
+pub(crate) const FEED_COALESCE: Duration = Duration::from_millis(250);
 const FEED_PAGE: u32 = 500;
 
 /// Follows the job store's change feed and publishes each changed job as
 /// `ApiEvent::JobUpdated` and to its watch streams, once per read with its
-/// latest state.
+/// latest state. It reads only after the database signalled a committed job
+/// change.
 pub(crate) struct JobFeed {
     position: u64,
     downloads: HashMap<JobId, (u64, i64)>,
@@ -49,7 +50,11 @@ impl JobFeed {
             }
             tokio::select! {
                 () = &mut shutdown => break,
-                () = tokio::time::sleep(FEED_INTERVAL) => {}
+                () = context.jobs().changed() => {}
+            }
+            tokio::select! {
+                () = &mut shutdown => break,
+                () = tokio::time::sleep(FEED_COALESCE) => {}
             }
         }
     }

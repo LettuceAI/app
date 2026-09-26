@@ -99,6 +99,12 @@ impl ApiContext {
             parts.asset_url_base.push('/');
         }
         let now = parts.clock.now();
+        let jobs = JobHostState::default();
+        let changed = jobs.change_signal();
+        parts
+            .backend
+            .database()
+            .on_job_change(move || changed.notify_one());
         Self {
             inner: Arc::new(ApiContextInner {
                 models: ModelSlots::new(Arc::clone(&parts.models)),
@@ -106,7 +112,7 @@ impl ApiContext {
                 streams: Mutex::new(HashMap::new()),
                 wake: tokio::sync::Notify::new(),
                 shutdown: CancellationToken::new(),
-                jobs: JobHostState::default(),
+                jobs,
                 app_usage: AppActiveUsageTracker::new(now),
                 legacy_database_detected: AtomicBool::new(false),
             }),

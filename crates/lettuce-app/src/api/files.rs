@@ -4,17 +4,9 @@ use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
 use lettuce_media::{
     AssetKind, AssetOrigin, AssetProvenanceV1, IngestRequest, MediaKind, RetentionClass,
 };
-use serde_json::Value;
 
 use super::ApiContext;
 use super::error::{IntoApiError, api_error, invalid_field};
-
-const HEADER_BYTES: usize = 64 * 1024;
-/// Text and card files larger than this are not parsed to detect their kind.
-const MAX_PARSED_BYTES: u64 = 64 * 1024 * 1024;
-const SQLITE_MAGIC: &[u8] = b"SQLite format 3\0";
-const GGUF_MAGIC: &[u8] = b"GGUF";
-const PNG_MAGIC: &[u8] = b"\x89PNG\r\n\x1a\n";
 
 /// A readable file the host opened.
 pub trait FileReader: Read + Seek + Send {}
@@ -82,7 +74,7 @@ pub async fn files_inspect(
             let files = context.files();
             let description = files.describe(&uri).map_err(IntoApiError::into_api_error)?;
             let mut reader = files.open(&uri).map_err(IntoApiError::into_api_error)?;
-            let kind = detect_kind(reader.as_mut(), description.size)
+            let kind = super::file_kind::detect_kind(reader.as_mut())
                 .map_err(IntoApiError::into_api_error)?;
             Ok(dto::FileInspection {
                 name: description.name,
@@ -91,94 +83,6 @@ pub async fn files_inspect(
             })
         })
         .await
-}
-
-fn read_header(reader: &mut dyn FileReader) -> Result<Vec<u8>, FileAccessError> {
-    let mut header = Vec::with_capacity(HEADER_BYTES);
-    reader
-        .take(HEADER_BYTES as u64)
-        .read_to_end(&mut header)
-        .map_err(|_| FileAccessError::Io)?;
-    Ok(header)
-}
-
-fn read_all(reader: &mut dyn FileReader) -> Result<Vec<u8>, FileAccessError> {
-    reader
-        .seek(SeekFrom::Start(0))
-        .map_err(|_| FileAccessError::Io)?;
-    let mut bytes = Vec::new();
-    reader
-        .take(MAX_PARSED_BYTES)
-        .read_to_end(&mut bytes)
-        .map_err(|_| FileAccessError::Io)?;
-    Ok(bytes)
-}
-
-fn detect_kind(reader: &mut dyn FileReader, size: u64) -> Result<dto::FileKind, FileAccessError> {
-    let header = read_header(reader)?;
-    if header.starts_with(SQLITE_MAGIC) {
-        return Ok(dto::FileKind::LegacyDatabase);
-    }
-    if header.starts_with(GGUF_MAGIC) {
-        return Ok(dto::FileKind::GgufModel);
-    }
-    match lettuce_transfer::detect_backup_format(&header) {
-        Ok(lettuce_transfer::BackupFormatVersion::CurrentV2) => return Ok(dto::FileKind::BackupV2),
-        Ok(lettuce_transfer::BackupFormatVersion::LegacyV1) => return Ok(dto::FileKind::BackupV1),
-        Err(_) => {}
-    }
-    let parseable = size <= MAX_PARSED_BYTES;
-    if header.starts_with(PNG_MAGIC) && parseable {
-        let bytes = read_all(reader)?;
-        let card = lettuce_transfer::extract_character_json_from_png(&bytes)
-            .ok()
-            .and_then(|json| serde_json::from_str::<Value>(&json).ok())
-            .is_some_and(|value| lettuce_transfer::detect_character_format(&value).is_some());
-        if card {
-            return Ok(dto::FileKind::CharacterCard);
-        }
-    }
-    match lettuce_media::sniff_media_kind(&header) {
-        Some(MediaKind::Image) => return Ok(dto::FileKind::Image),
-        Some(MediaKind::Audio) => return Ok(dto::FileKind::Audio),
-        Some(MediaKind::Video | MediaKind::Document) | None => {}
-    }
-    if !parseable {
-        return Ok(dto::FileKind::Other);
-    }
-    let bytes = read_all(reader)?;
-    let Ok(text) = std::str::from_utf8(&bytes) else {
-        return Ok(dto::FileKind::Other);
-    };
-    Ok(detect_text_kind(text.trim_start_matches('\u{feff}')))
-}
-
-fn detect_text_kind(text: &str) -> dto::FileKind {
-    let Ok(value) = serde_json::from_str::<Value>(text) else {
-        return if lettuce_transfer::parse_chat_jsonl(text, 0).is_ok() {
-            dto::FileKind::ChatJsonl
-        } else {
-            dto::FileKind::Other
-        };
-    };
-    if lettuce_transfer::looks_like_uec(&value) {
-        return if lettuce_transfer::parse_persona_import(&value, 0).is_ok() {
-            dto::FileKind::PersonaFile
-        } else {
-            dto::FileKind::CharacterCard
-        };
-    }
-    if lettuce_transfer::detect_character_format(&value).is_some() {
-        dto::FileKind::CharacterCard
-    } else if lettuce_transfer::parse_persona_import(&value, 0).is_ok() {
-        dto::FileKind::PersonaFile
-    } else if lettuce_transfer::parse_world_info(text).is_ok() {
-        dto::FileKind::Lorebook
-    } else if lettuce_transfer::parse_prompt_import(text, None, "Imported", "Imported").is_ok() {
-        dto::FileKind::PromptPreset
-    } else {
-        dto::FileKind::Other
-    }
 }
 
 /// Stores a picked image or audio file as a media asset; the media store
@@ -204,8 +108,8 @@ pub async fn assets_ingest(
                 dto::AssetIngestRole::VoiceExample => AssetKind::OtherAudio,
                 dto::AssetIngestRole::ReferenceImage => AssetKind::OtherImage,
                 dto::AssetIngestRole::Attachment => {
-                    let header =
-                        read_header(reader.as_mut()).map_err(IntoApiError::into_api_error)?;
+                    let header = super::file_kind::read_header(reader.as_mut())
+                        .map_err(IntoApiError::into_api_error)?;
                     reader
                         .seek(SeekFrom::Start(0))
                         .map_err(|_| FileAccessError::Io.into_api_error())?;

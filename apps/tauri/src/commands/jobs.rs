@@ -48,9 +48,13 @@ pub async fn job_watch(
 struct ChannelSink(Channel<JobEvent>);
 
 impl JobEventSink for ChannelSink {
-    fn emit(&self, event: JobEvent) {
-        if let Err(error) = self.0.send(event) {
-            tracing::debug!(%error, "job channel is closed");
+    fn emit(&self, event: JobEvent) -> bool {
+        match self.0.send(event) {
+            Ok(()) => true,
+            Err(error) => {
+                tracing::debug!(%error, "job channel is closed");
+                false
+            }
         }
     }
 }

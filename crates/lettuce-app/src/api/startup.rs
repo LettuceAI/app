@@ -25,10 +25,10 @@ const LEGACY_FOLDER: &str = "lettuce";
 pub enum StartupStep {
     RecoverAfterRestart,
     DetectLegacyDatabase,
+    AdoptLegacyEmbedding,
     ResumeMemoryJobs,
     ResumeCompanionFollowUps,
     RecoverQueuedInstalls,
-    AdoptLegacyEmbedding,
     SweepOrphanMedia,
     StartWorkers,
 }
@@ -79,40 +79,51 @@ impl ApiWorkers {
         }
     }
 
-    /// Stops taking new work, cancels running work and startup steps still
-    /// running, joins every thread and records the counted active time.
-    pub fn stop(mut self) {
+    /// Stops taking new work and cancels running work and startup steps
+    /// still running, records the counted active time, stops the local
+    /// diffusion server, then joins every thread.
+    pub async fn stop(mut self) {
         self.stop.send_replace(true);
         self.context.begin_shutdown();
-        if let Some(startup) = self.startup.take()
-            && startup.join().is_err()
-        {
-            tracing::error!("the startup thread panicked");
-        }
-        let threads = std::mem::take(
-            &mut *self
-                .threads
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner),
-        );
-        for thread in threads {
-            if thread.join().is_err() {
-                tracing::error!("a worker thread panicked");
-            }
-        }
         self.context.flush_app_usage();
+        self.context.backend().shutdown().await;
+        let startup = self.startup.take();
+        let threads = Arc::clone(&self.threads);
+        let joined = tokio::task::spawn_blocking(move || {
+            if let Some(startup) = startup
+                && startup.join().is_err()
+            {
+                tracing::error!("the startup thread panicked");
+            }
+            let threads = std::mem::take(
+                &mut *threads
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner),
+            );
+            for thread in threads {
+                if thread.join().is_err() {
+                    tracing::error!("a worker thread panicked");
+                }
+            }
+        })
+        .await;
+        if let Err(error) = joined {
+            tracing::error!(%error, "the worker threads could not be joined");
+        }
     }
 }
 
-/// Starts the application: settles what the previous process left running
-/// and detects legacy data before returning, so commands can be served;
-/// then, on its own thread, resumes background memory and companion jobs,
-/// recovers queued installs, records legacy v4 embedding files, sweeps
-/// orphaned media files, and last starts the conversation generation worker,
-/// and the job runner with the job change feed. It
-/// downloads and loads nothing: optional models load when a chat needs them.
+/// Starts the application. Before returning, so commands are served only
+/// afterwards, it takes the job change feed's position, settles what the
+/// previous process left running, detects legacy data and records legacy v4
+/// embedding files. Then, on its own thread, it resumes background memory
+/// and companion jobs, recovers queued installs, sweeps orphaned media files,
+/// and last starts the conversation generation worker and the job runner
+/// with the job change feed. It downloads and loads nothing: optional models
+/// load when a chat needs them.
 pub async fn startup(context: &ApiContext) -> Result<ApiWorkers, ApiError> {
     let steps: Steps = Arc::new(Mutex::new(Vec::new()));
+    let feed = JobFeed::start(context).await?;
     context
         .blocking(|context| context.recover_after_restart())
         .await?;
@@ -122,6 +133,8 @@ pub async fn startup(context: &ApiContext) -> Result<ApiWorkers, ApiError> {
         .await?;
     context.set_legacy_database_detected(detected);
     record(&steps, StartupStep::DetectLegacyDatabase);
+    adopt_legacy_embedding(context).await;
+    record(&steps, StartupStep::AdoptLegacyEmbedding);
     let (stop, stopped) = tokio::sync::watch::channel(false);
     let (ready, started) = tokio::sync::watch::channel(false);
     let threads = Arc::new(Mutex::new(Vec::new()));
@@ -146,7 +159,7 @@ pub async fn startup(context: &ApiContext) -> Result<ApiWorkers, ApiError> {
                 if *stopped.borrow() {
                     return;
                 }
-                match start_workers(&context, &stopped) {
+                match start_workers(&context, feed, &stopped) {
                     Ok(started) => {
                         threads
                             .lock()
@@ -229,11 +242,6 @@ async fn finish_startup(
     if *stopped.borrow() {
         return;
     }
-    adopt_legacy_embedding(context).await;
-    record(steps, StartupStep::AdoptLegacyEmbedding);
-    if *stopped.borrow() {
-        return;
-    }
     if let Err(error) = context.blocking(sweep_orphan_media).await {
         tracing::warn!(code = ?error.code, message = %error.message, "orphaned media files could not be swept");
     }
@@ -262,7 +270,10 @@ async fn adopt_legacy_embedding(context: &ApiContext) {
         })
         .await;
     match adopted {
-        Ok(Some(_)) => tracing::info!("adopted the legacy v4 embedding model"),
+        Ok(Some(_)) => {
+            tracing::info!("adopted the legacy v4 embedding model");
+            context.models_changed();
+        }
         Ok(None) => {}
         Err(error) => {
             tracing::warn!(message = %error.message, "the legacy embedding model could not be adopted");
@@ -322,6 +333,7 @@ async fn until_stopped(mut stopped: tokio::sync::watch::Receiver<bool>) {
 
 fn start_workers(
     context: &ApiContext,
+    feed: JobFeed,
     stopped: &tokio::sync::watch::Receiver<bool>,
 ) -> std::io::Result<Vec<JoinHandle<()>>> {
     let generation = ConversationGenerationWorker::new(context.clone());
@@ -332,19 +344,7 @@ fn start_workers(
     let feed_context = context.clone();
     let jobs = worker_thread("jobs", stopped, move |stopped| {
         Box::pin(async move {
-            let feed = match JobFeed::start(&feed_context).await {
-                Ok(feed) => Some(feed),
-                Err(error) => {
-                    tracing::warn!(message = %error.message, "the job change feed could not start");
-                    None
-                }
-            };
-            let feed = async {
-                if let Some(feed) = feed {
-                    feed.run(feed_context.clone(), until_stopped(stopped.clone()))
-                        .await;
-                }
-            };
+            let feed = feed.run(feed_context, until_stopped(stopped.clone()));
             tokio::join!(runner.run(until_stopped(stopped.clone())), feed);
         })
     })?;
