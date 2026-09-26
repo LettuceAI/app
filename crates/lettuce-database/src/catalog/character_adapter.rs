@@ -3542,10 +3542,8 @@ mod smoke_tests {
         );
     }
 
-    /// Legacy kept the Soul in the character's companion settings
-    /// (`characters.rs` 387-390, 695), so switching a roleplay character to
-    /// companion, syncing that switch, or duplicating a companion always had
-    /// one; each path here gives the character its shared Soul.
+    /// Switching a roleplay character to companion, syncing that switch, or
+    /// duplicating a companion each gives the character its shared Soul.
     #[test]
     fn switching_syncing_and_duplicating_a_companion_give_it_a_soul() {
         let database = Database::open_in_memory().expect("database");
@@ -3611,9 +3609,9 @@ mod smoke_tests {
         );
     }
 
-    /// Legacy merged the current authored facts into the character's fact
-    /// pool by id on the next save (`companion_shared_memory.rs` 618-638), so
-    /// an authored fact saved after creation reaches the Soul.
+    /// The current authored facts merge into the character's fact pool by id
+    /// on the next save, so an authored fact saved after creation reaches the
+    /// Soul.
     #[test]
     fn authored_facts_saved_later_join_the_soul_by_id() {
         let database = Database::open_in_memory().expect("database");
@@ -4537,10 +4535,9 @@ mod smoke_tests {
             .expect("hash")
     }
 
-    /// Legacy `character_delete` (old-code/src-tauri/src/storage_manager/characters.rs:1066)
-    /// deleted the character row, whose cascades (storage_manager/db.rs:590-861) took its
-    /// rules, lorebook links, scenes, chat templates, sessions and companion data, and the
-    /// shared companion memory (characters.rs:1081). Its media is collected once unused.
+    /// Deleting a character removes its rules, lorebook links, scenes, chat
+    /// templates, conversations, companion data and shared companion memory.
+    /// Its media is collected once unused.
     #[test]
     fn purging_a_character_deletes_its_graph_and_only_the_media_nothing_else_uses() {
         use crate::purge::tests::{execute, remaining_rows};

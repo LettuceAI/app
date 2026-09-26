@@ -50,9 +50,8 @@ const NEWEST_LLAMA_MODEL: &str = "SELECT model.id FROM model_profiles model
      LIMIT 1";
 
 impl Database {
-    /// The last runtime report of the newest llama.cpp model using this file
-    /// (legacy `llamaLastRuntimeReport` of that model), if it was written for
-    /// this file.
+    /// The last runtime report of the newest llama.cpp model using this file,
+    /// if it was written for this file.
     pub fn llama_runtime_report(&self, model_path: &str) -> Result<Option<Value>, DatabaseError> {
         if model_path == lettuce_models::UNPICKED_LOCAL_MODEL_FILE {
             return Ok(None);
@@ -114,8 +113,8 @@ impl Database {
     }
 
     /// Records one local generation's metrics, keeping the newest 500 in the
-    /// list as legacy did. Older rows of a message's generation stay for that
-    /// message without their samples, as legacy kept a message's stats.
+    /// list. Older rows of a message's generation stay for that message
+    /// without their samples.
     pub fn record_llm_generation_metrics(
         &self,
         id: &str,

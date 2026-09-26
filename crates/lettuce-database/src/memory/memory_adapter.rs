@@ -227,9 +227,9 @@ fn insert_pool_binding_in(
     Ok(())
 }
 
-/// The memory space a conversation uses now: its companion pool while the
-/// character shares memory across chats, else its own space (legacy
-/// `resolve_effective_memory_owner`, read on every use).
+/// The memory space a conversation uses now, read on every use: its
+/// companion pool while the character shares memory across chats, else its
+/// own space.
 pub(crate) fn active_space_id_in(
     connection: &rusqlite::Connection,
     conversation_id: ConversationId,

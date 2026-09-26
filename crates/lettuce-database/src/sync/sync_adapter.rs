@@ -3297,11 +3297,11 @@ fn journal_apply_error(error: ApplyOneError) -> LocalChangeJournalError {
 }
 
 /// A delete of a complete-snapshot entity. Concurrent with a local edit the
-/// delete still wins (legacy) and the discarded edit is kept as conflict
-/// evidence. A delete this device must refuse (the entity is still
-/// referenced here) is journaled and nothing else happens now: the next state
-/// scan sees the entity present after a journaled delete and journals a fresh
-/// insert, in dependency order, so every device converges on keeping it.
+/// delete still wins and the discarded edit is kept as conflict evidence. A
+/// delete this device must refuse (the entity is still referenced here) is
+/// journaled and nothing else happens now: the next state scan sees the
+/// entity present after a journaled delete and journals a fresh insert, in
+/// dependency order, so every device converges on keeping it.
 fn settle_snapshot_delete(
     tx: &Transaction<'_>,
     change: &CanonicalChange,

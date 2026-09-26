@@ -6401,9 +6401,8 @@ mod tests {
             .expect("settle")
     }
 
-    /// Legacy `creation_helper/service.rs` 2606-2640: regenerate drops the
-    /// last reply, restores the draft from before it and reruns the same user
-    /// message.
+    /// Regenerate drops the last reply, restores the draft from before it and
+    /// reruns the same user message.
     #[test]
     fn regeneration_restores_the_pre_turn_draft_and_resends_the_message() {
         let database = Database::open_in_memory().expect("database");

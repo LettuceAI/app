@@ -196,7 +196,7 @@ impl LoraLibraryRepository for Database {
         Ok(())
     }
 
-    /// Legacy searched the model's settings for the quoted path.
+    /// Counts the models whose settings contain the quoted path.
     fn lora_model_references(&self, path: &str) -> Result<u64, LoraLibraryRepositoryError> {
         let escaped = path
             .replace('\\', "\\\\")

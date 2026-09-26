@@ -595,7 +595,7 @@ pub(crate) fn ensure_continuity_episode_in(
     Ok(())
 }
 
-/// Writes one legacy continuity episode exactly as legacy kept it.
+/// Writes one imported continuity episode exactly as it was stored.
 pub(crate) fn insert_continuity_episode_in(
     tx: &Transaction<'_>,
     owner: CompanionStateOwner,
@@ -2017,9 +2017,8 @@ mod tests {
         assert_eq!(other.state.relationship_state.trust, -0.3);
     }
 
-    /// Legacy loaded the relationship stored for the session's current
-    /// persona and saved under that persona's key (sessions.rs 94-117,
-    /// 1265-1269); a persona without one kept the session's relationship.
+    /// The relationship is stored under the conversation's current persona;
+    /// a persona without one keeps the conversation's relationship.
     #[test]
     fn a_persona_switched_mid_chat_reads_and_writes_its_own_relationship() {
         let database = Database::open_in_memory().expect("open database");

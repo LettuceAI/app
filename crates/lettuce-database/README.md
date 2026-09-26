@@ -740,8 +740,9 @@ Companion Soul tables are keyed by `(character_id, scope)`: an empty scope is
 the character's shared Soul, a conversation id that conversation's own Soul.
 `soul_adapter::apply_sharing_change_in` runs in the same transaction as a
 character defaults write (`update_defaults`, a synced character root) and
-performs the share-Soul-growth transitions; `seed_conversation_soul_in` seeds a
-companion conversation created while sharing is off. Soul sync ids are the
+performs the share-Soul-growth transitions (user decisions 2026-09-23);
+`seed_conversation_soul_in` seeds a companion conversation created while
+sharing is off. Soul sync ids are the
 character id, or `character:conversation` for a conversation Soul; backups
 carry the conversation id.
 

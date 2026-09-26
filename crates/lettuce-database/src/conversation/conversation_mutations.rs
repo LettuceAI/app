@@ -12918,10 +12918,8 @@ mod tests {
             .expect("live send after restore");
     }
 
-    /// Legacy `session_delete` (old-code/src-tauri/src/storage_manager/sessions.rs:3794)
-    /// deleted the session's memory embeddings and the session row, whose cascades
-    /// (storage_manager/db.rs:762-782) took its messages, variants and companion turn
-    /// effects; usage records stayed, having no session foreign key.
+    /// Deleting a conversation removes its memory embeddings, messages,
+    /// variants and companion turn effects; usage records stay.
     #[test]
     fn purging_a_conversation_deletes_its_history_and_keeps_usage_and_shared_media() {
         use crate::purge::tests::remaining_rows;

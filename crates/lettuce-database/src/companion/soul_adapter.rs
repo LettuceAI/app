@@ -339,8 +339,7 @@ fn overwrite_in(
 }
 
 /// Seeds a companion conversation that has no Soul of its own with a copy of
-/// its character's shared Soul; one that has kept its own Soul resumes it
-/// (user decisions 2026-09-23).
+/// its character's shared Soul; one that has kept its own Soul resumes it.
 pub(crate) fn seed_conversation_soul_in(
     tx: &Transaction<'_>,
     character_id: CharacterId,
@@ -360,13 +359,13 @@ pub(crate) fn seed_conversation_soul_in(
     replace_facts_in(tx, owner, &shared.facts, now)
 }
 
-/// Follows a change of the character's share-Soul-growth toggle (user
-/// decisions 2026-09-23): turned off, each companion conversation without a
-/// Soul of its own starts from a copy of the shared Soul, and the others
-/// resume theirs; turned on, the most recently updated Soul of a conversation
-/// that still exists becomes the shared one when it is newer and differs. The
-/// conversation Souls are kept. A synced toggle change only seeds: the Souls
-/// the other device promoted arrive by sync themselves.
+/// Follows a change of the character's share-Soul-growth toggle: turned off,
+/// each companion conversation without a Soul of its own starts from a copy
+/// of the shared Soul, and the others resume theirs; turned on, the most
+/// recently updated Soul of a conversation that still exists becomes the
+/// shared one when it is newer and differs. The conversation Souls are kept.
+/// A synced toggle change only seeds: the Souls the other device promoted
+/// arrive by sync themselves.
 pub(crate) fn apply_sharing_change_in(
     tx: &Transaction<'_>,
     character_id: CharacterId,
@@ -429,10 +428,9 @@ pub(crate) fn apply_sharing_change_in(
 }
 
 /// Gives a companion character its shared Soul when it has none, seeded from
-/// its current settings (legacy `default_state`). With `reconcile_authored`,
-/// an existing Soul also gains every authored fact of the settings whose id it
-/// lacks, as legacy merged a new session's authored facts into the stored
-/// fact pool; facts it already holds keep their stored form.
+/// its current settings. With `reconcile_authored`, an existing Soul also
+/// gains every authored fact of the settings whose id it lacks; facts it
+/// already holds keep their stored form.
 pub(crate) fn ensure_character_soul_in(
     tx: &Transaction<'_>,
     character_id: CharacterId,

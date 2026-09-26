@@ -454,8 +454,7 @@ impl<'c> Purge<'c> {
         Ok(())
     }
 
-    /// Removes the character from each group that lists it, as legacy reads
-    /// skipped a deleted character left in a group's list: the remaining
+    /// Removes the character from each group that lists it: the remaining
     /// members keep their order and mute state, and the group's revision
     /// moves while its update time stays, so two devices removing the same
     /// character reach the same group content. A group left with fewer than

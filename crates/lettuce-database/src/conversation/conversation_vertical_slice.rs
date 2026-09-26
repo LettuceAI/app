@@ -2489,8 +2489,7 @@ mod tests {
     }
 
     /// History stays append-only: only a purge of its own conversation
-    /// deletes it, the way legacy `session_delete` removed a whole session
-    /// (old-code/src-tauri/src/storage_manager/sessions.rs:3794).
+    /// deletes it.
     #[test]
     fn append_only_history_rejects_deletes_outside_a_purge_of_its_conversation() {
         use crate::purge::tests::{execute, remaining_rows};

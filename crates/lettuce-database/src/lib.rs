@@ -924,9 +924,8 @@ impl GlobalSettingsStore for Database {
 }
 
 impl Database {
-    /// Selects the app default prompt (legacy `settings.prompt_template_id`)
-    /// under the settings revision; a prompt that does not exist is rejected
-    /// as `InvalidData`.
+    /// Selects the app default prompt under the settings revision; a prompt
+    /// that does not exist is rejected as `InvalidData`.
     pub fn set_default_prompt_document(
         &self,
         prompt_id: Option<lettuce_types::PromptDocumentId>,

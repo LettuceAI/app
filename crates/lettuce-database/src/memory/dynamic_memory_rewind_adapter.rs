@@ -193,10 +193,9 @@ fn prior_summary(
 }
 
 /// Reverts only what the rewound conversation's invalid run and its later
-/// runs' memory tools did, latest first, like legacy's rewind replay: decay,
-/// retrieval access, user edits and, in a shared companion pool, the other
-/// conversations' changes stay. Runs an earlier rewind already reverted are
-/// skipped.
+/// runs' memory tools did, latest first: decay, retrieval access, user edits
+/// and, in a shared companion pool, the other conversations' changes stay.
+/// Runs an earlier rewind already reverted are skipped.
 pub(crate) fn undo_runs(
     transaction: &Transaction<'_>,
     current: &lettuce_memory::MemorySpaceSnapshot,
