@@ -248,6 +248,22 @@ impl SpeakerInferenceRepository for Database {
             return Err(ConversationRepositoryError::Conflict);
         }
         verify_usage(&transaction, &record, decision)?;
+        if let Some(model) = &decision.decision_model {
+            crate::conversation::conversation_artifact_adapter::verify_snapshot_in_transaction(
+                &transaction,
+                &model.snapshot_ref,
+            )
+            .map_err(ConversationRepositoryError::ArtifactReference)?;
+            transaction
+                .execute(
+                    "INSERT OR IGNORE INTO conversation_snapshot_refs (conversation_id, artifact_id) VALUES (?1, ?2)",
+                    params![
+                        binding.conversation_id.to_string(),
+                        model.snapshot_ref.artifact_id.to_string()
+                    ],
+                )
+                .map_err(slice::db)?;
+        }
         transaction
             .execute(
                 "UPDATE generation_speaker_dispatches SET decision_json = ?4, settled_at = ?5 WHERE conversation_id = ?1 AND turn_id = ?2 AND attempt_id = ?3 AND decision_json IS NULL",

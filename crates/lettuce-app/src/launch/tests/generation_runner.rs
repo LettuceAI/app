@@ -370,6 +370,36 @@ fn group_scenario_with_message(
     )
 }
 
+fn seed_speaker_model(
+    database: &Database,
+    label: &str,
+    tools: lettuce_models::CapabilityStatus,
+) -> lettuce_types::ModelProfileId {
+    let model_id = seed_model(database, ProviderProtocol::Ollama, label);
+    let mut model = ModelProfileRepository::get(database, model_id)
+        .expect("selection model")
+        .expect("selection model exists");
+    let revision = model.revision;
+    model.config.chat_parameters.temperature = None;
+    model.config.capabilities.tools = tools;
+    ModelProfileRepository::upsert(database, model, Some(revision))
+        .expect("resolvable selection model");
+    model_id
+}
+
+fn set_group_speaker_model(
+    database: &Database,
+    model_profile_id: Option<lettuce_types::ModelProfileId>,
+) {
+    let settings = GlobalSettingsStore::load(database).expect("settings");
+    GlobalSettingsStore::set_group_speaker_model_profile(
+        database,
+        model_profile_id,
+        settings.revision,
+    )
+    .expect("select group speaker model");
+}
+
 fn group_scenario_with(
     backend: &AppBackend,
     prefix: &str,
@@ -391,22 +421,12 @@ fn group_scenario_with(
     ModelProfileRepository::upsert(database, stored_model, Some(model_revision))
         .expect("resolvable model profile");
     if speaker_selection == lettuce_characters::SpeakerSelection::Llm {
-        let selection_model_id = seed_model(database, ProviderProtocol::Ollama, "speaker");
-        let mut selection_model = ModelProfileRepository::get(database, selection_model_id)
-            .expect("selection model")
-            .expect("selection model exists");
-        let selection_revision = selection_model.revision;
-        selection_model.config.chat_parameters.temperature = None;
-        selection_model.config.capabilities.tools = lettuce_models::CapabilityStatus::Supported;
-        ModelProfileRepository::upsert(database, selection_model, Some(selection_revision))
-            .expect("resolvable selection model");
-        let settings = GlobalSettingsStore::load(database).expect("settings");
-        GlobalSettingsStore::set_group_speaker_model_profile(
+        let selection_model_id = seed_speaker_model(
             database,
-            Some(selection_model_id),
-            settings.revision,
-        )
-        .expect("select group speaker model");
+            "speaker",
+            lettuce_models::CapabilityStatus::Supported,
+        );
+        set_group_speaker_model(database, Some(selection_model_id));
     }
     let first = seed_named_character_with(database, "Ada", |defaults| {
         defaults.model_profile_id = Some(model_id);
@@ -1775,7 +1795,18 @@ async fn a_group_switched_to_llm_selection_uses_the_live_speaker_model() {
     assert_eq!(decision.participant_id, speakers[1]);
     assert_eq!(decision.method, SpeakerDecisionMethod::Llm);
     assert_eq!(decision.fallback, SpeakerFallback::None);
-    assert_eq!(decision.decision_model, None);
+    let default_model = GlobalSettingsStore::load(backend.database())
+        .expect("settings")
+        .default_model_profile_id
+        .expect("default model");
+    assert_eq!(
+        decision
+            .decision_model
+            .as_ref()
+            .map(|model| model.source_id),
+        Some(default_model),
+        "the decision records the live model it used"
+    );
     let requests = inference.requests.lock().expect("requests");
     assert_eq!(requests.len(), 2);
     assert_eq!(
@@ -1794,6 +1825,54 @@ async fn a_group_switched_to_llm_selection_uses_the_live_speaker_model() {
             .default_model_profile_id
             .expect("default model")
     );
+}
+
+#[tokio::test]
+async fn llm_selection_follows_the_live_speaker_model_setting() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let (scenario, speakers) = group_scenario(
+        &backend,
+        "live-speaker-model",
+        lettuce_characters::SpeakerSelection::Llm,
+        false,
+    );
+    let database = backend.database();
+    let untooled = seed_speaker_model(
+        database,
+        "untooled-speaker",
+        lettuce_models::CapabilityStatus::Unsupported,
+    );
+    set_group_speaker_model(database, Some(untooled));
+    let work = admit_and_claim(database, &scenario, 1_015);
+    let inference = scripted(vec![text_outcome(
+        "untooled-generation",
+        "Group reply.",
+        20,
+        4,
+    )]);
+    let engine = ScenarioEmbeddingEngine;
+    let result = backend
+        .prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
+        .run(
+            &work,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_020),
+        )
+        .await
+        .expect("run group generation with an untooled speaker model");
+    let decision = result.turn.selected_speaker.expect("speaker decision");
+    assert_eq!(decision.participant_id, speakers[0]);
+    assert_eq!(decision.method, SpeakerDecisionMethod::Llm);
+    assert_eq!(decision.fallback, SpeakerFallback::Heuristic);
+    assert_eq!(decision.usage_event_id, None);
+    assert_eq!(decision.decision_model, None);
+    let requests = inference.requests.lock().expect("requests");
+    assert_eq!(
+        requests.len(),
+        1,
+        "a live speaker model without tools falls back without a provider call"
+    );
+    assert_eq!(requests[0].tools, None);
 }
 
 #[tokio::test]
@@ -1821,13 +1900,12 @@ async fn app_backend_checkpoints_llm_group_selection_and_falls_back_to_heuristic
             lettuce_characters::SpeakerSelection::Llm,
             selection.is_none(),
         );
-        let settings = GlobalSettingsStore::load(backend.database()).expect("settings");
-        GlobalSettingsStore::set_group_speaker_model_profile(
+        let live_selection_model = seed_speaker_model(
             backend.database(),
-            None,
-            settings.revision,
-        )
-        .expect("clear live selection model after launch");
+            &format!("{name}-live-speaker"),
+            lettuce_models::CapabilityStatus::Supported,
+        );
+        set_group_speaker_model(backend.database(), Some(live_selection_model));
         let selected_id = selection
             .map(|index| speakers[index])
             .unwrap_or_else(lettuce_types::ConversationParticipantId::new);
@@ -1864,7 +1942,8 @@ async fn app_backend_checkpoints_llm_group_selection_and_falls_back_to_heuristic
         let decision_model = decision
             .decision_model
             .as_ref()
-            .expect("frozen selection model");
+            .expect("live selection model");
+        assert_eq!(decision_model.source_id, live_selection_model);
         let selection_request = {
             let requests = inference.requests.lock().expect("requests");
             assert_eq!(requests.len(), 2);

@@ -731,10 +731,9 @@ where
         policy: &SpeakerPolicyRequest,
         now: TimestampMillis,
     ) -> Result<SelectedSpeakerDecision, ConversationGenerationInputError> {
-        let ConversationKind::Group(details) = &conversation.kind else {
+        if !matches!(conversation.kind, ConversationKind::Group(_)) {
             return Err(ConversationGenerationInputError::SpeakerUnavailable);
-        };
-        let selection_model = details.group.speaker_selection_model.as_ref();
+        }
         let available = conversation
             .participants
             .iter()
@@ -748,24 +747,18 @@ where
         if available.is_empty() {
             return Err(ConversationGenerationInputError::SpeakerUnavailable);
         }
-        let model_id = match selection_model {
-            Some(snapshot) => snapshot.source_id,
-            None => {
-                let settings = lettuce_settings::GlobalSettingsStore::load(self.repository)
-                    .map_err(ConversationGenerationInputError::Settings)?;
-                let Some(id) = settings
-                    .group_speaker_model_profile_id
-                    .or(settings.default_model_profile_id)
-                else {
-                    return heuristic_fallback(policy, None, None);
-                };
-                id
-            }
+        let settings = lettuce_settings::GlobalSettingsStore::load(self.repository)
+            .map_err(ConversationGenerationInputError::Settings)?;
+        let Some(model_id) = settings
+            .group_speaker_model_profile_id
+            .or(settings.default_model_profile_id)
+        else {
+            return heuristic_fallback(policy, None, None);
         };
         let Some(model) = ModelProfileRepository::get(self.repository, model_id)
             .map_err(ConversationGenerationInputError::ModelRepository)?
         else {
-            return heuristic_fallback(policy, selection_model, None);
+            return heuristic_fallback(policy, None, None);
         };
         let Some(account) =
             ProviderAccountRepository::get(self.repository, model.provider_account_id)
@@ -773,19 +766,16 @@ where
         else {
             return heuristic_fallback(policy, None, None);
         };
-        let expected = selection_model.map_or_else(
-            || lettuce_models::ExpectedModelIdentity {
-                model_profile_id: model.id,
-                model_revision: model.revision,
-                provider_account_id: account.id,
-                provider_account_revision: account.revision,
-                external_model_id: model.external_model_id.clone(),
-                display_name: model.display_name.clone(),
-                provider_protocol: account.protocol,
-                model_kind: model.kind,
-            },
-            lettuce_conversations::ModelSelectionSnapshot::expected_chat_identity,
-        );
+        let expected = lettuce_models::ExpectedModelIdentity {
+            model_profile_id: model.id,
+            model_revision: model.revision,
+            provider_account_id: account.id,
+            provider_account_revision: account.revision,
+            external_model_id: model.external_model_id.clone(),
+            display_name: model.display_name.clone(),
+            provider_protocol: account.protocol,
+            model_kind: model.kind,
+        };
         let global_model_settings =
             lettuce_models::GlobalModelSettingsRepository::global_model_settings(self.repository)
                 .map(|(settings, _)| settings)
@@ -867,6 +857,12 @@ where
                     record.usage_event_id,
                 ));
         }
+        let decision_model = self
+            .live_model_snapshot(conversation.id, &model, &account)
+            .map_err(|_| {
+                ConversationGenerationInputError::Repository(ConversationRepositoryError::Storage)
+            })?;
+        let selection_model = Some(&decision_model);
         let admission = self
             .repository
             .admit_speaker_inference(work.conversation_id, &request, now)
@@ -985,8 +981,21 @@ where
         }) {
             return Ok(stored);
         }
+        self.live_model_snapshot(conversation.id, &profile, &account)
+            .map_err(|_| ConversationGenerationInputError::MissingModel)
+    }
+
+    /// A conversation-scoped snapshot of a live model revision, stored under
+    /// an identity derived from the conversation, model and account revisions.
+    fn live_model_snapshot(
+        &self,
+        conversation_id: lettuce_types::ConversationId,
+        profile: &lettuce_models::ModelProfile,
+        account: &lettuce_models::ProviderAccount,
+    ) -> Result<lettuce_conversations::ModelSelectionSnapshot, lettuce_conversations::ArtifactError>
+    {
         let artifact_id = lettuce_types::SnapshotArtifactId::from_uuid(uuid::Uuid::new_v5(
-            &conversation.id.as_uuid(),
+            &conversation_id.as_uuid(),
             format!(
                 "live-model:{}:{}:{}:{}",
                 profile.id,
@@ -999,14 +1008,10 @@ where
         let draft = crate::launch::documents::draft(
             artifact_id,
             profile.revision,
-            crate::launch::documents::model_body(&profile, &account),
-        )
-        .map_err(|_| ConversationGenerationInputError::MissingModel)?;
-        let snapshot = crate::launch::planner::model_snapshot(&profile, &account, &draft);
-        self.repository
-            .artifact_store()
-            .put_snapshot(draft)
-            .map_err(|_| ConversationGenerationInputError::MissingModel)?;
+            crate::launch::documents::model_body(profile, account),
+        )?;
+        let snapshot = crate::launch::planner::model_snapshot(profile, account, &draft);
+        self.repository.artifact_store().put_snapshot(draft)?;
         Ok(snapshot)
     }
 
