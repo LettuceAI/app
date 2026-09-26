@@ -105,8 +105,8 @@ fn start<R: Runtime>(app: &mut App<R>) -> Result<(), Box<dyn std::error::Error>>
     Ok(())
 }
 
-/// Stops the workers: cancels running work, records the active time, stops
-/// the local diffusion server and joins the worker threads.
+/// Stops the workers: cancels running work, stops the local diffusion
+/// server, records the active time and joins the worker threads.
 fn stop<R: Runtime>(handle: &AppHandle<R>) {
     let Some(context) = handle
         .try_state::<ApiContext>()
@@ -121,8 +121,8 @@ fn stop<R: Runtime>(handle: &AppHandle<R>) {
         Some(workers) => tauri::async_runtime::block_on(workers.stop()),
         None => {
             context.begin_shutdown();
-            context.flush_app_usage();
             tauri::async_runtime::block_on(context.backend().shutdown());
+            context.flush_app_usage();
         }
     }
 }

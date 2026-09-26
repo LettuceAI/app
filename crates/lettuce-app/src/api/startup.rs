@@ -80,13 +80,13 @@ impl ApiWorkers {
     }
 
     /// Stops taking new work and cancels running work and startup steps
-    /// still running, records the counted active time, stops the local
-    /// diffusion server, then joins every thread.
+    /// still running, stops the local diffusion server, records the counted
+    /// active time, then joins every thread.
     pub async fn stop(mut self) {
         self.stop.send_replace(true);
         self.context.begin_shutdown();
-        self.context.flush_app_usage();
         self.context.backend().shutdown().await;
+        self.context.flush_app_usage();
         let startup = self.startup.take();
         let threads = Arc::clone(&self.threads);
         let joined = tokio::task::spawn_blocking(move || {
