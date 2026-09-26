@@ -77,7 +77,7 @@ impl EmbeddingModelFamily {
 
     /// The label stored with every vector this family produces. Vectors
     /// compare only within one label and dimension, whatever download or
-    /// import the model files came from; `v4` is the label legacy stored.
+    /// import the model files came from.
     #[must_use]
     pub const fn vector_space(self) -> &'static str {
         match self {
@@ -109,7 +109,7 @@ impl EmbeddingModelFamily {
     }
 
     /// Eidos writes its pooled, normalized vector to this output; v4 uses
-    /// its first output as legacy did.
+    /// its first output.
     #[must_use]
     pub const fn output_name(self) -> Option<&'static str> {
         match self {

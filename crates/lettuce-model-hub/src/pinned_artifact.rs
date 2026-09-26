@@ -17,8 +17,8 @@ pub struct PinnedArtifact {
     pub source_identity: String,
     pub local_segments: Vec<String>,
     pub byte_size: u64,
-    /// Lowercase hex SHA-256; `None` checks the size only, as legacy did for
-    /// release assets published without a digest.
+    /// Lowercase hex SHA-256; `None` checks the size only, for release assets
+    /// published without a digest.
     pub sha256: Option<String>,
 }
 
@@ -209,7 +209,7 @@ impl PinnedArtifactStore {
     }
 
     /// The installed file when one of the expected size exists; the content
-    /// is not rehashed, as legacy's installed checks compared sizes only.
+    /// is not rehashed.
     pub fn installed_path(
         &self,
         artifact: &PinnedArtifact,
