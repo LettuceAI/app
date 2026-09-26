@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use futures_util::FutureExt;
+
 use lettuce_contracts::{self as dto, ApiError};
 use lettuce_conversations::{
     ConversationReader, GenerationFailureCode, GenerationStreamEvent, GenerationTurnStatus,
@@ -41,11 +43,15 @@ impl ConversationGenerationWorker {
         }
     }
 
-    /// Polls until `shutdown` fires. An idle worker waits with a doubling
+    /// Polls until `shutdown` completes. A job already running finishes
+    /// first (the host cancels its inference through
+    /// `ApiContext::begin_shutdown`). An idle worker waits with a doubling
     /// backoff, and a send wakes it at once.
-    pub async fn run(&self, shutdown: CancellationToken) {
+    pub async fn run(&self, shutdown: impl Future<Output = ()>) {
+        let shutdown = shutdown.fuse();
+        futures_util::pin_mut!(shutdown);
         let mut idle = IDLE_BACKOFF_MIN;
-        while !shutdown.is_cancelled() {
+        while (&mut shutdown).now_or_never().is_none() {
             match self.run_once().await {
                 Ok(true) => {
                     idle = IDLE_BACKOFF_MIN;
@@ -57,7 +63,7 @@ impl ConversationGenerationWorker {
                 }
             }
             tokio::select! {
-                () = shutdown.cancelled() => break,
+                () = &mut shutdown => break,
                 () = self.context.woken() => idle = IDLE_BACKOFF_MIN,
                 () = tokio::time::sleep(idle) => idle = (idle * 2).min(IDLE_BACKOFF_MAX),
             }
