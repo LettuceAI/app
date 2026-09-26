@@ -443,3 +443,48 @@ async fn concurrent_ui_state_updates_all_land() {
     let status = app_status(&harness.context).await.expect("status");
     assert_eq!(status.ui_state.len(), 8);
 }
+
+/// Fails its first step, then finds nothing to do; nothing ever wakes it.
+#[derive(Default)]
+struct FlakyWorker {
+    steps: std::sync::atomic::AtomicUsize,
+    retried: tokio::sync::Notify,
+}
+
+impl super::worker::WorkerStep for FlakyWorker {
+    const LABEL: &'static str = "flaky";
+
+    async fn step(&self) -> Result<bool, lettuce_contracts::ApiError> {
+        if self.steps.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+            return Err(super::error::api_error(
+                ApiErrorCode::Internal,
+                "the database is busy",
+            ));
+        }
+        self.retried.notify_one();
+        Ok(false)
+    }
+
+    async fn woken(&self) {
+        std::future::pending::<()>().await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failed_worker_step_is_retried_without_a_wake() {
+    let worker = FlakyWorker::default();
+    let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+    let driven = super::worker::drive(&worker, async move {
+        let _ = stopped.await;
+    });
+    let retried = async {
+        worker.retried.notified().await;
+        stop.send(()).expect("stop");
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        tokio::join!(driven, retried);
+    })
+    .await
+    .expect("the failed step was retried");
+    assert_eq!(worker.steps.load(std::sync::atomic::Ordering::SeqCst), 2);
+}

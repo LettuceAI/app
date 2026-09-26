@@ -93,25 +93,56 @@ fn png_holds_a_card(reader: &mut dyn FileReader) -> Result<bool, FileAccessError
         .is_some_and(|value| lettuce_transfer::detect_character_format(&value).is_some()))
 }
 
-fn detect_text_kind(reader: &mut dyn FileReader) -> Result<dto::FileKind, FileAccessError> {
-    let mut lines = BufReader::new(&mut *reader);
-    let mut first = Vec::new();
-    lines.read_until(b'\n', &mut first).map_err(io)?;
-    let first_line = String::from_utf8_lossy(&first);
-    let first_line = first_line.trim_start_matches('\u{feff}').trim();
-    if first_line.starts_with('{')
-        && serde_json::from_str::<Value>(first_line).is_ok_and(|value| value.is_object())
-    {
-        let mut second = String::new();
-        while second.trim().is_empty() {
-            second.clear();
-            if lines.read_line(&mut second).map_err(io)? == 0 {
-                break;
+/// Whether a JSONL line is a chat transcript line: a header naming the
+/// chat's people or metadata, or a message.
+fn is_chat_line(value: &Value) -> bool {
+    value.get("mes").is_some()
+        || ["chat_metadata", "user_name", "character_name"]
+            .iter()
+            .any(|key| value.get(*key).is_some())
+}
+
+/// Reads at most `HEADER_BYTES` of the first line; `None` when the line is
+/// longer.
+pub(super) fn probe_first_line<R: BufRead>(
+    reader: &mut R,
+) -> Result<Option<Vec<u8>>, FileAccessError> {
+    let mut line = Vec::new();
+    reader
+        .take(HEADER_BYTES as u64)
+        .read_until(b'\n', &mut line)
+        .map_err(io)?;
+    Ok((line.ends_with(b"\n") || line.len() < HEADER_BYTES).then_some(line))
+}
+
+/// Whether anything but whitespace follows, consuming only whitespace.
+fn more_content<R: BufRead>(reader: &mut R) -> Result<bool, FileAccessError> {
+    loop {
+        let buffer = reader.fill_buf().map_err(io)?;
+        if buffer.is_empty() {
+            return Ok(false);
+        }
+        match buffer.iter().position(|byte| !byte.is_ascii_whitespace()) {
+            Some(_) => return Ok(true),
+            None => {
+                let length = buffer.len();
+                reader.consume(length);
             }
         }
-        if !second.trim().is_empty() {
-            let sample = format!("{first_line}\n{}", second.trim());
-            return Ok(if lettuce_transfer::parse_chat_jsonl(&sample, 0).is_ok() {
+    }
+}
+
+fn detect_text_kind(reader: &mut dyn FileReader) -> Result<dto::FileKind, FileAccessError> {
+    let mut lines = BufReader::new(&mut *reader);
+    if let Some(first) = probe_first_line(&mut lines)? {
+        let first = String::from_utf8_lossy(&first);
+        let first = first.trim_start_matches('\u{feff}').trim();
+        if first.starts_with('{')
+            && let Ok(value) = serde_json::from_str::<Value>(first)
+            && value.is_object()
+            && more_content(&mut lines)?
+        {
+            return Ok(if is_chat_line(&value) {
                 dto::FileKind::ChatJsonl
             } else {
                 dto::FileKind::Other
@@ -134,14 +165,31 @@ fn detect_text_kind(reader: &mut dyn FileReader) -> Result<dto::FileKind, FileAc
     } else {
         bom[..peeked].to_vec()
     };
-    let mut deserializer = serde_json::Deserializer::from_reader(prefix.chain(document));
-    let Ok(value) = Sample::TOP.deserialize(&mut deserializer) else {
+    let (value, single) = sample_json(prefix.chain(document));
+    let Some(value) = value.filter(Value::is_object) else {
         return Ok(dto::FileKind::Other);
     };
-    if deserializer.end().is_err() || !value.is_object() {
-        return Ok(dto::FileKind::Other);
+    if !single {
+        return Ok(if is_chat_line(&value) {
+            dto::FileKind::ChatJsonl
+        } else {
+            dto::FileKind::Other
+        });
     }
     Ok(json_kind(&value))
+}
+
+/// The sampled first JSON value of `reader`, and whether it is the whole
+/// document.
+pub(super) fn sample_json<R: Read>(reader: R) -> (Option<Value>, bool) {
+    let mut deserializer = serde_json::Deserializer::from_reader(reader);
+    match Sample.deserialize(&mut deserializer) {
+        Ok(value) => {
+            let single = deserializer.end().is_ok();
+            (Some(value), single)
+        }
+        Err(_) => (None, false),
+    }
 }
 
 fn json_kind(value: &Value) -> dto::FileKind {
@@ -167,17 +215,10 @@ fn json_kind(value: &Value) -> dto::FileKind {
 }
 
 /// Builds a JSON value from a stream, keeping each string's first
-/// `SAMPLE_STRING_BYTES` and, below the top level, each list's and object's
-/// first `SAMPLE_ITEMS` items; the top level keeps every field.
+/// `SAMPLE_STRING_BYTES` and each list's and object's first `SAMPLE_ITEMS`
+/// items.
 #[derive(Clone, Copy)]
-struct Sample {
-    top: bool,
-}
-
-impl Sample {
-    const TOP: Self = Self { top: true };
-    const NESTED: Self = Self { top: false };
-}
+struct Sample;
 
 impl<'de> DeserializeSeed<'de> for Sample {
     type Value = Value;
@@ -245,8 +286,8 @@ impl<'de> Visitor<'de> for SampleVisitor {
 
     fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Value, A::Error> {
         let mut items = Vec::new();
-        while let Some(item) = seq.next_element_seed(Sample::NESTED)? {
-            if self.0.top || items.len() < SAMPLE_ITEMS {
+        while let Some(item) = seq.next_element_seed(Sample)? {
+            if items.len() < SAMPLE_ITEMS {
                 items.push(item);
             }
         }
@@ -256,11 +297,92 @@ impl<'de> Visitor<'de> for SampleVisitor {
     fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Value, A::Error> {
         let mut object = serde_json::Map::new();
         while let Some(key) = map.next_key::<String>()? {
-            let value = map.next_value_seed(Sample::NESTED)?;
-            if self.0.top || object.len() < SAMPLE_ITEMS {
+            let value = map.next_value_seed(Sample)?;
+            if object.len() < SAMPLE_ITEMS {
                 object.insert(key, value);
             }
         }
         Ok(Value::Object(object))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{BufReader, Read};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    };
+
+    use super::*;
+
+    /// A single-line minified JSON array of `items` small objects, generated
+    /// as it is read and counting the bytes handed out.
+    struct GeneratedArray {
+        items: u64,
+        emitted: u64,
+        pending: Vec<u8>,
+        closed: bool,
+        read: Arc<AtomicU64>,
+    }
+
+    impl GeneratedArray {
+        fn new(items: u64, read: Arc<AtomicU64>) -> Self {
+            Self {
+                items,
+                emitted: 0,
+                pending: b"[".to_vec(),
+                closed: false,
+                read,
+            }
+        }
+    }
+
+    impl Read for GeneratedArray {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            while self.pending.len() < buffer.len() && !self.closed {
+                if self.emitted == self.items {
+                    self.pending.push(b']');
+                    self.closed = true;
+                } else {
+                    if self.emitted > 0 {
+                        self.pending.push(b',');
+                    }
+                    self.pending
+                        .extend_from_slice(br#"{"name":"entry","content":"some text"}"#);
+                    self.emitted += 1;
+                }
+            }
+            let length = self.pending.len().min(buffer.len());
+            buffer[..length].copy_from_slice(&self.pending[..length]);
+            self.pending.drain(..length);
+            self.read.fetch_add(length as u64, Ordering::SeqCst);
+            Ok(length)
+        }
+    }
+
+    /// About 300 MB on one line.
+    const ITEMS: u64 = 8_000_000;
+
+    #[test]
+    fn the_first_line_probe_reads_a_bounded_prefix_of_a_huge_line() {
+        let read = Arc::new(AtomicU64::new(0));
+        let mut reader = BufReader::new(GeneratedArray::new(ITEMS, Arc::clone(&read)));
+        assert_eq!(probe_first_line(&mut reader).expect("probe"), None);
+        assert!(read.load(Ordering::SeqCst) <= (HEADER_BYTES + 16 * 1024) as u64);
+    }
+
+    #[test]
+    fn a_huge_json_array_is_sampled_in_bounded_memory() {
+        let read = Arc::new(AtomicU64::new(0));
+        let (value, single) = sample_json(BufReader::new(GeneratedArray::new(
+            ITEMS,
+            Arc::clone(&read),
+        )));
+        let value = value.expect("sampled");
+        assert!(single);
+        assert!(read.load(Ordering::SeqCst) > 300_000_000);
+        assert_eq!(value.as_array().map(Vec::len), Some(SAMPLE_ITEMS));
+        assert!(value.to_string().len() < 64 * 1024);
     }
 }

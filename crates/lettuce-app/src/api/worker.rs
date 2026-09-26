@@ -42,27 +42,14 @@ impl ConversationGenerationWorker {
         }
     }
 
-    /// Polls until `shutdown` completes. A job already running finishes
+    /// Runs until `shutdown` completes. A job already running finishes
     /// first; `ApiContext::begin_shutdown` cancels it and any job started
     /// after it. An idle worker, or one whose job could not be claimed,
     /// sleeps until a send, a cancellation or another scheduling path wakes
-    /// it; no queued generation job waits for a later time.
+    /// it; no queued generation job waits for a later time. A failed step is
+    /// retried after a delay growing from 250 ms to 30 s.
     pub async fn run(&self, shutdown: impl Future<Output = ()>) {
-        let shutdown = shutdown.fuse();
-        futures_util::pin_mut!(shutdown);
-        while (&mut shutdown).now_or_never().is_none() {
-            match self.run_once().await {
-                Ok(true) => continue,
-                Ok(false) => {}
-                Err(error) => {
-                    tracing::warn!(code = ?error.code, message = %error.message, "conversation generation worker step failed");
-                }
-            }
-            tokio::select! {
-                () = &mut shutdown => break,
-                () = self.context.woken() => {}
-            }
-        }
+        drive(self, shutdown).await;
     }
 
     /// Runs the next queued job, if any; returns whether one ran. A job that
@@ -189,6 +176,74 @@ impl ConversationGenerationWorker {
             )
         })?;
         Ok(ran)
+    }
+}
+
+const RETRY_MIN: Duration = Duration::from_millis(250);
+const RETRY_MAX: Duration = Duration::from_secs(30);
+
+/// A worker loop's step and what it waits on between steps.
+pub(super) trait WorkerStep {
+    const LABEL: &'static str;
+
+    /// Runs what is due; `true` when something ran and the next step should
+    /// follow at once.
+    async fn step(&self) -> Result<bool, ApiError>;
+
+    /// Completes when new work may be there.
+    async fn woken(&self);
+
+    /// Completes when queued work becomes due; never by default.
+    async fn due(&self) {
+        std::future::pending::<()>().await;
+    }
+}
+
+/// Runs `worker` until `shutdown`. After a step that ran something the next
+/// follows at once; an idle worker waits for its wake-up or due time only;
+/// a failed step, such as a storage error, is retried after a delay that
+/// doubles from `RETRY_MIN` to `RETRY_MAX` and resets after a step succeeds.
+pub(super) async fn drive<W: WorkerStep>(worker: &W, shutdown: impl Future<Output = ()>) {
+    let shutdown = shutdown.fuse();
+    futures_util::pin_mut!(shutdown);
+    let mut retry: Option<Duration> = None;
+    while (&mut shutdown).now_or_never().is_none() {
+        match worker.step().await {
+            Ok(true) => {
+                retry = None;
+                continue;
+            }
+            Ok(false) => retry = None,
+            Err(error) => {
+                let delay = retry.map_or(RETRY_MIN, |delay| (delay * 2).min(RETRY_MAX));
+                retry = Some(delay);
+                tracing::warn!(worker = W::LABEL, code = ?error.code, message = %error.message, ?delay, "worker step failed; retrying");
+            }
+        }
+        let retry_after = async {
+            match retry {
+                Some(delay) => tokio::time::sleep(delay).await,
+                None => std::future::pending::<()>().await,
+            }
+        };
+        tokio::select! {
+            () = &mut shutdown => break,
+            () = worker.woken() => {}
+            () = worker.due() => {}
+            () = retry_after => {}
+        }
+    }
+}
+
+impl WorkerStep for ConversationGenerationWorker {
+    const LABEL: &'static str = "conversation-generation";
+
+    async fn step(&self) -> Result<bool, ApiError> {
+        self.run_once().await
+    }
+
+    async fn woken(&self) {
+        self.context.woken().await;
     }
 }
 

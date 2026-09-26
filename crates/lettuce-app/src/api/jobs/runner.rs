@@ -5,7 +5,6 @@ use std::{
 };
 
 use async_trait::async_trait;
-use futures_util::FutureExt;
 use lettuce_contracts::ApiError;
 use lettuce_jobs::{
     JobKind, JobQuery, JobSnapshot, JobState, JobStore, ResourceAvailability, WorkerId,
@@ -16,7 +15,7 @@ use lettuce_types::{JobId, PageLimit, PageRequest, TimestampMillis};
 use super::install::{ArtifactInstallHandler, NetworkInstallSources};
 use crate::api::ApiContext;
 use crate::api::error::IntoApiError;
-use crate::api::worker::link_to_shutdown;
+use crate::api::worker::{WorkerStep, drive, link_to_shutdown};
 
 const QUEUE_PAGE: u16 = 200;
 
@@ -52,7 +51,9 @@ pub trait JobHandler: Send + Sync {
     }
 
     /// Claims `job` through its coordinator. `None` when it could not be
-    /// claimed or had already ended.
+    /// claimed or had already ended; a job that can never run is settled by
+    /// the handler, which then returns `None`. An error is a transient
+    /// failure: the job stays queued and the runner retries after a delay.
     async fn claim(
         &self,
         context: &ApiContext,
@@ -173,40 +174,10 @@ impl JobRunner {
     /// Runs until `shutdown` completes, then waits for the jobs it started
     /// (`ApiContext::begin_shutdown` cancels them). An idle runner sleeps
     /// until a new job, a cancellation or a finished job wakes it, or until
-    /// the earliest time a queued job was scheduled to run.
+    /// the earliest time a queued job was scheduled to run; a failed step,
+    /// such as a storage error, is retried after a growing delay.
     pub async fn run(&self, shutdown: impl Future<Output = ()>) {
-        let shutdown = shutdown.fuse();
-        futures_util::pin_mut!(shutdown);
-        while (&mut shutdown).now_or_never().is_none() {
-            match self.run_once().await {
-                Ok(true) => continue,
-                Ok(false) => {}
-                Err(error) => {
-                    tracing::warn!(code = ?error.code, message = %error.message, "job runner step failed");
-                }
-            }
-            let due = *self
-                .next_due
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let until_due = async {
-                match due {
-                    Some(due) => {
-                        let wait = due.get().saturating_sub(self.context.now().get());
-                        tokio::time::sleep(Duration::from_millis(
-                            u64::try_from(wait).unwrap_or_default(),
-                        ))
-                        .await;
-                    }
-                    None => std::future::pending::<()>().await,
-                }
-            };
-            tokio::select! {
-                () = &mut shutdown => break,
-                () = self.context.jobs().woken() => {}
-                () = until_due => {}
-            }
-        }
+        drive(self, shutdown).await;
         self.wait_idle().await;
     }
 
@@ -231,7 +202,8 @@ impl JobRunner {
     }
 
     /// Starts every queued job whose lane is free and that could be
-    /// claimed; returns whether one started.
+    /// claimed; returns whether one started, or the error of a claim that
+    /// failed transiently so the caller retries.
     pub async fn run_once(&self) -> Result<bool, ApiError> {
         let kinds = self.handlers.kinds();
         let queued = self
@@ -239,6 +211,7 @@ impl JobRunner {
             .blocking(move |context| queued_jobs(context, &kinds))
             .await?;
         let mut started = false;
+        let mut failed = None;
         let now = self.context.now();
         let mut next_due: Option<TimestampMillis> = None;
         for job in queued {
@@ -268,6 +241,7 @@ impl JobRunner {
                 Err(error) => {
                     self.lock_lanes().remove(&lane);
                     tracing::warn!(job_id = %job.id, code = ?error.code, message = %error.message, "a queued job could not be claimed");
+                    failed = Some(error);
                 }
             }
         }
@@ -275,7 +249,27 @@ impl JobRunner {
             .next_due
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = next_due;
-        Ok(started)
+        match failed {
+            Some(error) => Err(error),
+            None => Ok(started),
+        }
+    }
+
+    async fn until_due(&self) {
+        let due = *self
+            .next_due
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match due {
+            Some(due) => {
+                let wait = due.get().saturating_sub(self.context.now().get());
+                tokio::time::sleep(Duration::from_millis(
+                    u64::try_from(wait).unwrap_or_default(),
+                ))
+                .await;
+            }
+            None => std::future::pending::<()>().await,
+        }
     }
 
     fn lock_lanes(&self) -> std::sync::MutexGuard<'_, HashSet<JobLane>> {
@@ -327,6 +321,22 @@ impl JobRunner {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         tasks.retain(|task| !task.is_finished());
         tasks.push(task);
+    }
+}
+
+impl WorkerStep for JobRunner {
+    const LABEL: &'static str = "jobs";
+
+    async fn step(&self) -> Result<bool, ApiError> {
+        self.run_once().await
+    }
+
+    async fn woken(&self) {
+        self.context.jobs().woken().await;
+    }
+
+    async fn due(&self) {
+        self.until_due().await;
     }
 }
 

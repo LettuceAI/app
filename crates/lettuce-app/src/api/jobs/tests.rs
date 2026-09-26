@@ -942,3 +942,43 @@ fn whisper_and_kokoro_share_the_download_queue() {
     };
     assert_eq!(artifact.lane(), whisper.lane());
 }
+
+/// Claims fail as the database would while it is briefly unavailable.
+struct UnavailableStorage;
+
+#[async_trait]
+impl JobHandler for UnavailableStorage {
+    fn kinds(&self) -> &[JobKind] {
+        &[JobKind::Maintenance]
+    }
+
+    fn lane(&self, _context: &ApiContext, _job: &JobSnapshot) -> Option<JobLane> {
+        Some(JobLane("maintenance".into()))
+    }
+
+    async fn claim(
+        &self,
+        _context: &ApiContext,
+        _job: &JobSnapshot,
+        _worker_id: lettuce_jobs::WorkerId,
+    ) -> Result<Option<Box<dyn ClaimedJob>>, lettuce_contracts::ApiError> {
+        Err(crate::api::error::api_error(
+            ApiErrorCode::Unavailable,
+            "job storage failed",
+        ))
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_transient_claim_failure_leaves_the_job_queued_for_a_retry() {
+    let harness = harness(Reply::Text("Hello."));
+    let context = &harness.context;
+    let job_id = create(&harness, spec(JobKind::Maintenance, "retry", "retry-1"));
+    let runner = JobRunner::new(
+        context.clone(),
+        JobHandlers::new(vec![Arc::new(UnavailableStorage)]),
+    );
+    let error = runner.run_once().await.expect_err("retried later");
+    assert_eq!(error.code, ApiErrorCode::Unavailable);
+    assert_eq!(state(context, job_id), JobState::Queued);
+}

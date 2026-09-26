@@ -5,7 +5,7 @@ use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
 use lettuce_image_generation::CivitaiLoraDownload;
 use lettuce_jobs::{
     CancellationReason, JobError, JobErrorCode, JobKind, JobMutation, JobQuery, JobSnapshot,
-    JobState, JobStore, WorkerId, handle::CancellationToken,
+    JobState, JobStore, StoreError, WorkerId, handle::CancellationToken,
 };
 use lettuce_model_hub::{
     CompanionEmotionInstallStore, EmbeddingPin, KokoroInstallStore, KokoroVoiceInstallStore,
@@ -488,21 +488,21 @@ impl JobHandler for ArtifactInstallHandler {
         let source = match source {
             Ok(source) => source,
             Err(error) => {
+                tracing::warn!(%job_id, message = %error.message, "the install's download source is unavailable");
                 context
                     .blocking(move |context| {
                         context.jobs().forget_install(job_id);
                         settle_unclaimable(context, job_id, SOURCE_UNAVAILABLE)
                     })
                     .await?;
-                return Err(error);
+                return Ok(None);
             }
         };
         let resources = self.resources();
         let claimed = context
             .blocking(move |context| {
-                let claimed = claim_work(context, job_id, work.clone(), worker_id, &resources);
-                match &claimed {
-                    Ok(Some(_)) => {}
+                match claim_work(context, job_id, work.clone(), worker_id, &resources) {
+                    Ok(Some(claimed)) => Ok(Some((claimed, work))),
                     Ok(None) => {
                         let ended = context
                             .backend()
@@ -513,13 +513,18 @@ impl JobHandler for ArtifactInstallHandler {
                         if ended {
                             context.jobs().forget_install(job_id);
                         }
+                        Ok(None)
                     }
-                    Err(_) => {
+                    Err(ClaimFailure::Transient(message)) => {
+                        Err(api_error(ApiErrorCode::Unavailable, message))
+                    }
+                    Err(ClaimFailure::Invalid(message)) => {
+                        tracing::warn!(%job_id, %message, "install work cannot run");
                         context.jobs().forget_install(job_id);
                         settle_unclaimable(context, job_id, WORK_INVALID)?;
+                        Ok(None)
                     }
                 }
-                claimed.map(|claimed| claimed.map(|claimed| (claimed, work)))
             })
             .await?;
         let Some((claimed, work)) = claimed else {
@@ -616,45 +621,96 @@ fn settle_unclaimable(
     Ok(())
 }
 
+/// Why a claim failed: a transient storage failure leaves the job queued
+/// for the runner to retry; anything else means the work can never run.
+#[derive(Debug)]
+enum ClaimFailure {
+    Transient(String),
+    Invalid(String),
+}
+
+impl ClaimFailure {
+    fn of_store(error: &StoreError) -> Self {
+        match error {
+            StoreError::Storage => Self::Transient(error.to_string()),
+            _ => Self::Invalid(error.to_string()),
+        }
+    }
+
+    fn artifact(error: ArtifactInstallError) -> Self {
+        match &error {
+            ArtifactInstallError::Jobs(store) => Self::of_store(store),
+            _ => Self::Invalid(error.to_string()),
+        }
+    }
+
+    fn whisper(error: crate::WhisperDownloadError) -> Self {
+        match &error {
+            crate::WhisperDownloadError::Jobs(store) => Self::of_store(store),
+            crate::WhisperDownloadError::Repository(_) => Self::Transient(error.to_string()),
+            _ => Self::Invalid(error.to_string()),
+        }
+    }
+
+    fn kokoro_model(error: crate::KokoroDownloadError) -> Self {
+        match &error {
+            crate::KokoroDownloadError::Jobs(store) => Self::of_store(store),
+            _ => Self::Invalid(error.to_string()),
+        }
+    }
+
+    fn kokoro_voices(error: crate::KokoroVoiceDownloadError) -> Self {
+        match &error {
+            crate::KokoroVoiceDownloadError::Jobs(store) => Self::of_store(store),
+            _ => Self::Invalid(error.to_string()),
+        }
+    }
+}
+
 fn claim_work(
     context: &ApiContext,
     job_id: JobId,
     work: InstallWork,
     worker_id: WorkerId,
     resources: &lettuce_jobs::ResourceAvailability,
-) -> Result<Option<ClaimedWork>, ApiError> {
+) -> Result<Option<ClaimedWork>, ClaimFailure> {
     let backend = context.backend();
     let database = backend.database();
     let now = context.now();
+    let invalid = |error: &dyn std::fmt::Display| ClaimFailure::Invalid(error.to_string());
     Ok(match work {
         InstallWork::Artifact { plan, .. } => ArtifactInstallCoordinator::new(database)
             .claim(plan, job_id, worker_id, now, INSTALL_LEASE, resources)
-            .map_err(internal)?
+            .map_err(ClaimFailure::artifact)?
             .map(ClaimedWork::Artifact),
         InstallWork::Whisper {
             model,
             install_root,
         } => backend
             .whisper_downloads(&install_root)
-            .map_err(internal)?
+            .map_err(ClaimFailure::whisper)?
             .claim(model, job_id, worker_id, now, INSTALL_LEASE, resources)
-            .map_err(internal)?
+            .map_err(ClaimFailure::whisper)?
             .map(ClaimedWork::Whisper),
         InstallWork::KokoroModel {
             model,
             install_root,
         } => backend
-            .kokoro_downloads(KokoroInstallStore::open(&install_root).map_err(internal)?)
+            .kokoro_downloads(
+                KokoroInstallStore::open(&install_root).map_err(|error| invalid(&error))?,
+            )
             .claim(model, job_id, worker_id, now, INSTALL_LEASE, resources)
-            .map_err(internal)?
+            .map_err(ClaimFailure::kokoro_model)?
             .map(ClaimedWork::KokoroModel),
         InstallWork::KokoroVoices {
             bundle,
             install_root,
         } => backend
-            .kokoro_voice_downloads(KokoroVoiceInstallStore::open(&install_root).map_err(internal)?)
+            .kokoro_voice_downloads(
+                KokoroVoiceInstallStore::open(&install_root).map_err(|error| invalid(&error))?,
+            )
             .claim(bundle, job_id, worker_id, now, INSTALL_LEASE, resources)
-            .map_err(internal)?
+            .map_err(ClaimFailure::kokoro_voices)?
             .map(ClaimedWork::KokoroVoices),
     })
 }
@@ -881,4 +937,31 @@ fn register_variant(
     )
     .map(|_| ())
     .map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod claim_failure_tests {
+    use super::*;
+
+    #[test]
+    fn only_storage_failures_are_retried() {
+        assert!(matches!(
+            ClaimFailure::artifact(ArtifactInstallError::Jobs(StoreError::Storage)),
+            ClaimFailure::Transient(_)
+        ));
+        assert!(matches!(
+            ClaimFailure::artifact(ArtifactInstallError::InvalidWork),
+            ClaimFailure::Invalid(_)
+        ));
+        assert!(matches!(
+            ClaimFailure::kokoro_model(crate::KokoroDownloadError::Jobs(StoreError::Storage)),
+            ClaimFailure::Transient(_)
+        ));
+        assert!(matches!(
+            ClaimFailure::kokoro_voices(crate::KokoroVoiceDownloadError::Jobs(
+                StoreError::IllegalTransition
+            )),
+            ClaimFailure::Invalid(_)
+        ));
+    }
 }
