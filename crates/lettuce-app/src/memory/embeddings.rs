@@ -65,15 +65,22 @@ impl EmbeddingService {
             .map_err(Into::into)
     }
 
-    /// The closest existing memory whose shown similarity exceeds
-    /// `threshold`; the shown similarity is the model's calibrated score.
-    pub fn semantic_duplicate_evidence(
+    /// Every existing memory whose shown similarity exceeds `threshold`, in
+    /// the given order; the shown similarity is the model's calibrated score.
+    /// Legacy checked each memory in turn, so the reducer takes the first
+    /// match in memory order rather than the closest one.
+    pub fn semantic_duplicate_matches(
         candidate: &EmbeddingVector,
         existing: &[(MemoryId, EmbeddingVector)],
         threshold: lettuce_memory::Score,
         calibration: &SimilarityCalibration,
-    ) -> Option<lettuce_memory::SemanticDuplicateEvidence> {
-        let dimensions = EmbeddingDimensions::from_len(candidate.values.len())?;
+    ) -> Vec<lettuce_memory::SemanticDuplicateEvidence> {
+        let Some(dimensions) = EmbeddingDimensions::from_len(candidate.values.len()) else {
+            return Vec::new();
+        };
+        let Ok(stored_dimensions) = u16::try_from(candidate.values.len()) else {
+            return Vec::new();
+        };
         existing
             .iter()
             .filter_map(|(id, embedding)| {
@@ -82,20 +89,19 @@ impl EmbeddingService {
                     .map(|similarity| (*id, calibration.score(similarity, dimensions)))
             })
             .filter(|(_, similarity)| f64::from(*similarity) > threshold.ratio())
-            .max_by(|(_, left), (_, right)| left.total_cmp(right))
-            .and_then(|(existing_id, similarity)| {
+            .filter_map(|(existing_id, similarity)| {
                 let cosine_score =
                     lettuce_memory::Score::from_ratio(f64::from(similarity.clamp(0.0, 1.0)))
                         .ok()?;
-                let dimensions = u16::try_from(candidate.values.len()).ok()?;
                 Some(lettuce_memory::SemanticDuplicateEvidence {
                     existing_id,
                     source_revision: candidate.source_revision.clone(),
-                    dimensions,
+                    dimensions: stored_dimensions,
                     cosine_score,
                     threshold,
                 })
             })
+            .collect()
     }
 }
 
@@ -242,7 +248,7 @@ mod tests {
     }
 
     #[test]
-    fn semantic_duplicate_evidence_uses_matching_identity_and_best_score() {
+    fn semantic_duplicate_matches_keep_every_qualifying_memory_with_matching_identity() {
         let mut candidate_values = vec![0.0; 64];
         candidate_values[0] = 1.0;
         let candidate = EmbeddingVector {
@@ -252,7 +258,7 @@ mod tests {
         let wrong_identity = MemoryId::new();
         let weaker = MemoryId::new();
         let strongest = MemoryId::new();
-        let evidence = EmbeddingService::semantic_duplicate_evidence(
+        let evidence = EmbeddingService::semantic_duplicate_matches(
             &candidate,
             &[
                 (
@@ -285,11 +291,14 @@ mod tests {
             score(9_000),
             &SimilarityCalibration::RawCosine,
         );
-        assert!(evidence.is_some_and(|evidence| {
-            evidence.existing_id == strongest
-                && evidence.source_revision == "v4"
-                && evidence.cosine_score == Score::FULL
-        }));
+        assert_eq!(
+            evidence
+                .iter()
+                .map(|evidence| evidence.existing_id)
+                .collect::<Vec<_>>(),
+            [weaker, strongest]
+        );
+        assert!(evidence[1].source_revision == "v4" && evidence[1].cosine_score == Score::FULL);
     }
 
     #[test]
@@ -302,22 +311,22 @@ mod tests {
         };
         let existing = [(MemoryId::new(), candidate.clone())];
         assert!(
-            EmbeddingService::semantic_duplicate_evidence(
+            EmbeddingService::semantic_duplicate_matches(
                 &candidate,
                 &existing,
                 Score::FULL,
                 &SimilarityCalibration::RawCosine,
             )
-            .is_none()
+            .is_empty()
         );
         assert!(
-            EmbeddingService::semantic_duplicate_evidence(
+            !EmbeddingService::semantic_duplicate_matches(
                 &candidate,
                 &existing,
                 score(9_999),
                 &SimilarityCalibration::RawCosine,
             )
-            .is_some()
+            .is_empty()
         );
     }
 
@@ -353,23 +362,25 @@ mod tests {
                     values: unit(dimensions, raw),
                 },
             )];
-            let evidence = EmbeddingService::semantic_duplicate_evidence(
+            let evidence = EmbeddingService::semantic_duplicate_matches(
                 &candidate,
                 &existing,
                 score(7_800),
                 &calibration,
             )
+            .into_iter()
+            .next()
             .expect("calibrated duplicate");
             assert!((evidence.cosine_score.ratio() - shown).abs() < 0.001);
             assert!(evidence.cosine_score >= evidence.threshold);
             assert!(
-                EmbeddingService::semantic_duplicate_evidence(
+                EmbeddingService::semantic_duplicate_matches(
                     &candidate,
                     &existing,
                     score(9_000),
                     &calibration,
                 )
-                .is_none()
+                .is_empty()
             );
         }
         let candidate = EmbeddingVector {
@@ -384,22 +395,22 @@ mod tests {
             },
         )];
         assert!(
-            EmbeddingService::semantic_duplicate_evidence(
+            !EmbeddingService::semantic_duplicate_matches(
                 &candidate,
                 &unrelated,
                 score(7_800),
                 &SimilarityCalibration::RawCosine,
             )
-            .is_some()
+            .is_empty()
         );
         assert!(
-            EmbeddingService::semantic_duplicate_evidence(
+            EmbeddingService::semantic_duplicate_matches(
                 &candidate,
                 &unrelated,
                 score(7_800),
                 &calibration,
             )
-            .is_none()
+            .is_empty()
         );
     }
 }

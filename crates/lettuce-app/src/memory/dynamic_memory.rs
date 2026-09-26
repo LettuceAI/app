@@ -210,15 +210,15 @@ impl<'a, E: MemoryEmbeddingEngine + ?Sized, R: MemoryEmbeddingRepository + ?Size
                 },
                 &cancellation,
             );
-            let (semantic_duplicate, projection) = match generated {
+            let (semantic_duplicates, projection) = match generated {
                 Ok(vector) => {
-                    let evidence = EmbeddingService::semantic_duplicate_evidence(
+                    let evidence = EmbeddingService::semantic_duplicate_matches(
                         &vector,
                         &existing,
                         duplicate_threshold,
                         &self.engine.calibration(),
                     );
-                    if evidence.is_none() {
+                    if evidence.is_empty() {
                         existing.push((seed.id, vector.clone()));
                     }
                     (
@@ -237,7 +237,7 @@ impl<'a, E: MemoryEmbeddingEngine + ?Sized, R: MemoryEmbeddingRepository + ?Size
                     return Err(DynamicMemoryPreparationError::Cancelled);
                 }
                 Err(EmbeddingGenerationError::Unavailable) => (
-                    None,
+                    Vec::new(),
                     PreparedMemoryProjection::RepairNeeded(MemoryEmbeddingRepair {
                         space_id,
                         memory_id: seed.id,
@@ -254,7 +254,7 @@ impl<'a, E: MemoryEmbeddingEngine + ?Sized, R: MemoryEmbeddingRepository + ?Size
                     id: seed.id,
                     token_count: seed.token_count,
                     created_at: seed.created_at,
-                    semantic_duplicate,
+                    semantic_duplicates,
                 },
                 projection: Some(projection),
             });
@@ -462,7 +462,7 @@ mod tests {
         )
         .expect("prepare");
         assert_eq!(prepared.len(), 1);
-        assert!(prepared[0].preparation.semantic_duplicate.is_none());
+        assert!(prepared[0].preparation.semantic_duplicates.is_empty());
         assert!(matches!(
             &prepared[0].projection,
             Some(PreparedMemoryProjection::Ready(projection))
@@ -552,10 +552,11 @@ mod tests {
         assert_eq!(
             prepared[0]
                 .preparation
-                .semantic_duplicate
-                .as_ref()
-                .map(|evidence| evidence.existing_id),
-            Some(existing_id)
+                .semantic_duplicates
+                .iter()
+                .map(|evidence| evidence.existing_id)
+                .collect::<Vec<_>>(),
+            [existing_id]
         );
     }
 
@@ -586,14 +587,15 @@ mod tests {
                 &handle,
             )
             .expect("prepare");
-        assert!(prepared[0].preparation.semantic_duplicate.is_none());
+        assert!(prepared[0].preparation.semantic_duplicates.is_empty());
         assert_eq!(
             prepared[1]
                 .preparation
-                .semantic_duplicate
-                .as_ref()
-                .map(|evidence| evidence.existing_id),
-            Some(seeds[0].id)
+                .semantic_duplicates
+                .iter()
+                .map(|evidence| evidence.existing_id)
+                .collect::<Vec<_>>(),
+            [seeds[0].id]
         );
     }
 

@@ -396,9 +396,11 @@ pub struct CreateMemoryPreparation {
     pub id: MemoryId,
     pub token_count: u32,
     pub created_at: TimestampMillis,
-    /// Optional qualified evidence supplied by the embedding coordinator. The
-    /// reducer verifies both its policy qualification and live target.
-    pub semantic_duplicate: Option<SemanticDuplicateEvidence>,
+    /// Qualified evidence supplied by the embedding coordinator, one entry per
+    /// existing memory whose similarity passed the threshold. The reducer
+    /// verifies each entry's policy qualification and takes the first live
+    /// memory, in memory order, that matches any duplicate check.
+    pub semantic_duplicates: Vec<SemanticDuplicateEvidence>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -861,17 +863,15 @@ fn apply_create(
         };
     }
     if preparation
-        .semantic_duplicate
-        .as_ref()
-        .is_some_and(|evidence| !evidence.is_qualified())
+        .semantic_duplicates
+        .iter()
+        .any(|evidence| !evidence.is_qualified())
     {
         return MemoryToolOutcome::Rejected {
             reason: MemoryToolRejection::InvalidSemanticDuplicateEvidence,
         };
     }
-    if let Some((existing_id, kind)) =
-        duplicate_id(text, preparation.semantic_duplicate.as_ref(), items)
-    {
+    if let Some((existing_id, kind)) = duplicate_id(text, &preparation.semantic_duplicates, items) {
         return MemoryToolOutcome::DuplicateSkipped { existing_id, kind };
     }
     let category = match category {
@@ -978,28 +978,33 @@ fn enforce_superseded_cap(items: &mut Vec<MemoryItem>, cap: usize) {
     });
 }
 
+/// Legacy `find_duplicate_memory_reason`: the first memory, in item order,
+/// whose normalized text equals the candidate's, whose embedding is similar
+/// enough, or whose keywords overlap at least 90 percent, checked in that
+/// order per memory.
 fn duplicate_id(
     candidate: &str,
-    semantic_duplicate: Option<&SemanticDuplicateEvidence>,
+    semantic_duplicates: &[SemanticDuplicateEvidence],
     items: &[MemoryItem],
 ) -> Option<(MemoryId, DuplicateKind)> {
-    if let Some(evidence) = semantic_duplicate {
-        if items.iter().any(|item| item.id == evidence.existing_id) {
-            return Some((
-                evidence.existing_id,
-                DuplicateKind::Semantic {
-                    cosine: evidence.cosine_score,
-                    threshold: evidence.threshold,
-                },
-            ));
-        }
-    }
     let normalized_candidate = normalize_text(candidate);
     let candidate_word_count = normalized_candidate.split_whitespace().count();
     items.iter().find_map(|item| {
         let normalized_existing = normalize_text(&item.text);
         if !normalized_candidate.is_empty() && normalized_candidate == normalized_existing {
             return Some((item.id, DuplicateKind::NormalizedText));
+        }
+        if let Some(evidence) = semantic_duplicates
+            .iter()
+            .find(|evidence| evidence.existing_id == item.id)
+        {
+            return Some((
+                item.id,
+                DuplicateKind::Semantic {
+                    cosine: evidence.cosine_score,
+                    threshold: evidence.threshold,
+                },
+            ));
         }
         (candidate_word_count >= 3 && lexical_overlap(candidate, &item.text) >= 0.9)
             .then_some((item.id, DuplicateKind::LexicalOverlap))
@@ -1708,7 +1713,7 @@ mod tests {
             id: created_id,
             token_count: 4,
             created_at: TimestampMillis::new(2),
-            semantic_duplicate: None,
+            semantic_duplicates: Vec::new(),
         });
 
         let result = MemoryToolReducer
@@ -1742,7 +1747,7 @@ mod tests {
             id: created_id,
             token_count: 4,
             created_at: TimestampMillis::new(2),
-            semantic_duplicate: None,
+            semantic_duplicates: Vec::new(),
         });
         let result = MemoryToolReducer
             .reduce(&snapshot(vec![existing]), &policy(), &[create])
@@ -1787,7 +1792,7 @@ mod tests {
             id: created_id,
             token_count: 4,
             created_at: TimestampMillis::new(2),
-            semantic_duplicate: None,
+            semantic_duplicates: Vec::new(),
         });
 
         let result = MemoryToolReducer
@@ -1844,7 +1849,7 @@ mod tests {
             id: MemoryId::new(),
             token_count: 1,
             created_at: TimestampMillis::new(43),
-            semantic_duplicate: None,
+            semantic_duplicates: Vec::new(),
         });
         let result = MemoryToolReducer
             .reduce(
@@ -1870,6 +1875,57 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_is_the_first_matching_memory_in_order_like_legacy() {
+        let deleted_id = MemoryId::new();
+        let first = item("Mira collects old maps", 4, 1, false);
+        let second = item("Mira likes the old harbor", 4, 2, false);
+        let evidence = |existing_id, cosine| super::SemanticDuplicateEvidence {
+            existing_id,
+            source_revision: "v4-test".to_owned(),
+            dimensions: 768,
+            cosine_score: score(cosine),
+            threshold: score(9_000),
+        };
+        let mut create = call(MemoryToolArguments::CreateMemory {
+            text: "Mira adores the harbor by the old town".to_string(),
+            category: CategoryArgument::Tagged {
+                category: MemoryCategory::Preference,
+            },
+            important: false,
+            source_message_id: None,
+            supersedes: Vec::new(),
+        });
+        create.create = Some(CreateMemoryPreparation {
+            id: MemoryId::new(),
+            token_count: 5,
+            created_at: TimestampMillis::new(3),
+            semantic_duplicates: vec![
+                evidence(deleted_id, 9_900),
+                evidence(second.id, 9_800),
+                evidence(first.id, 9_100),
+            ],
+        });
+        let result = match MemoryToolReducer.reduce(
+            &snapshot(vec![first.clone(), second]),
+            &policy(),
+            &[create],
+        ) {
+            Ok(result) => result,
+            Err(error) => panic!("reduction failed: {error}"),
+        };
+        assert_eq!(
+            result.results[0].outcome,
+            MemoryToolOutcome::DuplicateSkipped {
+                existing_id: first.id,
+                kind: DuplicateKind::Semantic {
+                    cosine: score(9_100),
+                    threshold: score(9_000),
+                },
+            }
+        );
+    }
+
+    #[test]
     fn create_skips_normalized_and_semantic_duplicates() {
         let existing = item("Mira likes the old harbor.", 4, 1, false);
         let existing_id = existing.id;
@@ -1888,7 +1944,7 @@ mod tests {
             id: create_id,
             token_count: 5,
             created_at: TimestampMillis::new(2),
-            semantic_duplicate: None,
+            semantic_duplicates: Vec::new(),
         });
         let result = MemoryToolReducer.reduce(&state, &policy(), &[first]);
         let result = match result {
@@ -1917,13 +1973,13 @@ mod tests {
             id: MemoryId::new(),
             token_count: 5,
             created_at: TimestampMillis::new(2),
-            semantic_duplicate: Some(super::SemanticDuplicateEvidence {
+            semantic_duplicates: vec![super::SemanticDuplicateEvidence {
                 existing_id,
                 source_revision: "v4-test".to_owned(),
                 dimensions: 768,
                 cosine_score: score(9_500),
                 threshold: score(9_000),
-            }),
+            }],
         });
         let result = MemoryToolReducer.reduce(&state, &policy(), &[semantic]);
         let result = match result {
@@ -1999,7 +2055,7 @@ mod tests {
             id: MemoryId::new(),
             token_count: 3,
             created_at: TimestampMillis::new(2),
-            semantic_duplicate: None,
+            semantic_duplicates: Vec::new(),
         });
         let mut untagged = call(MemoryToolArguments::CreateMemory {
             text: "The captain trusts Mira.".to_string(),
@@ -2012,7 +2068,7 @@ mod tests {
             id: MemoryId::new(),
             token_count: 4,
             created_at: TimestampMillis::new(2),
-            semantic_duplicate: None,
+            semantic_duplicates: Vec::new(),
         });
         let result = MemoryToolReducer
             .reduce(&state, &policy(), &[duplicate, untagged])
@@ -2055,7 +2111,7 @@ mod tests {
             id: create_id,
             token_count: 7,
             created_at: TimestampMillis::new(4),
-            semantic_duplicate: None,
+            semantic_duplicates: Vec::new(),
         });
         let calls = vec![
             create,
@@ -2132,13 +2188,13 @@ mod tests {
             id: MemoryId::new(),
             token_count: 3,
             created_at: TimestampMillis::new(2),
-            semantic_duplicate: Some(super::SemanticDuplicateEvidence {
+            semantic_duplicates: vec![super::SemanticDuplicateEvidence {
                 existing_id: existing.id,
                 source_revision: "v4-test".to_owned(),
                 dimensions: 768,
                 cosine_score: score(8_000),
                 threshold: score(9_000),
-            }),
+            }],
         });
         let result = match MemoryToolReducer.reduce(&snapshot(vec![existing]), &policy(), &[create])
         {
@@ -2466,7 +2522,7 @@ mod tests {
             id: create_id,
             token_count: 8,
             created_at: TimestampMillis::new(9_000),
-            semantic_duplicate: None,
+            semantic_duplicates: Vec::new(),
         });
         let result = MemoryToolReducer
             .reduce_round(
