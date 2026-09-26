@@ -1223,25 +1223,9 @@ impl<
         ) {
             return Err(ConversationGenerationDispatchError::InvalidWork);
         }
-        let subject = JobSubject::new(SubjectKind::Conversation, conversation_id.to_string())
-            .map_err(|_| ConversationGenerationDispatchError::InvalidWork)?;
-        let created = self.jobs.create_or_get(
-            JobSpec::new(
-                JobKind::ConversationGeneration,
-                subject,
-                OutcomeRef::GenerationTurn(turn_id),
-            )
-            .with_idempotency_key(key)
-            .with_resources(vec![
-                ResourceClass::Network,
-                ResourceClass::ModelLoad,
-                ResourceClass::DiskRead,
-                ResourceClass::DiskWrite,
-                ResourceClass::Cpu,
-            ])
-            .with_priority(JobPriority::Interactive)
-            .with_policies(RecoveryPolicy::Restart, CancellationPolicy::Cooperative),
-        )?;
+        let created =
+            self.jobs
+                .create_or_get(attempt_job_spec(conversation_id, turn_id, attempt_id)?)?;
         let attached = self.conversations.attach_attempt_job(
             &AttachAttemptJob {
                 conversation_id,
@@ -1811,8 +1795,9 @@ impl<
     }
 
     /// Fails a queued generation job whose turn or attempt cannot be
-    /// resolved. The turn it names, if any, is settled unless another job is
-    /// running it: a turn that had not started is cancelled, any other fails.
+    /// resolved. The turn it names is settled only when its live attempt has
+    /// no job or is this job's: a turn that had not started is cancelled, any
+    /// other fails. A live attempt with another job is left to that job.
     pub fn fail_unresolvable_job(
         &self,
         job: &JobSnapshot,
@@ -1844,9 +1829,19 @@ impl<
                 at,
             })?;
         }
-        match turn {
-            Some(turn) => self.settle_unrunnable_turn(turn, at),
-            None => Ok(()),
+        let Some(turn) = turn else {
+            return Ok(());
+        };
+        let live_job = turn
+            .attempts
+            .iter()
+            .rev()
+            .find(|attempt| !is_terminal_attempt(attempt.status))
+            .map(|attempt| attempt.job_id);
+        match live_job {
+            Some(None) => self.settle_unrunnable_turn(turn, at),
+            Some(Some(job_id)) if job_id == job.id => self.settle_unrunnable_turn(turn, at),
+            _ => Ok(()),
         }
     }
 
@@ -2159,6 +2154,43 @@ impl<
         let admission = self.admit(work.conversation_id, work.turn_id, child_attempt_id, at)?;
         Ok((child_attempt_id, admission.job))
     }
+}
+
+/// The job `admit` creates for an attempt before attaching it.
+pub(crate) fn attempt_job_spec(
+    conversation_id: ConversationId,
+    turn_id: GenerationTurnId,
+    attempt_id: GenerationAttemptId,
+) -> Result<JobSpec, ConversationGenerationDispatchError> {
+    let subject = JobSubject::new(SubjectKind::Conversation, conversation_id.to_string())
+        .map_err(|_| ConversationGenerationDispatchError::InvalidWork)?;
+    Ok(JobSpec::new(
+        JobKind::ConversationGeneration,
+        subject,
+        OutcomeRef::GenerationTurn(turn_id),
+    )
+    .with_idempotency_key(attempt_job_idempotency_key(turn_id, attempt_id))
+    .with_resources(vec![
+        ResourceClass::Network,
+        ResourceClass::ModelLoad,
+        ResourceClass::DiskRead,
+        ResourceClass::DiskWrite,
+        ResourceClass::Cpu,
+    ])
+    .with_priority(JobPriority::Interactive)
+    .with_policies(RecoveryPolicy::Restart, CancellationPolicy::Cooperative))
+}
+
+/// Whether `job` is the job `admit` created for a live attempt of `turn`
+/// that has not been attached to it yet.
+pub(crate) fn awaits_attach(turn: &GenerationTurn, job: &JobSnapshot) -> bool {
+    turn.attempts.iter().any(|attempt| {
+        let key = attempt_job_idempotency_key(turn.id, attempt.id);
+        !is_terminal_attempt(attempt.status)
+            && attempt.job_id.is_none()
+            && attempt.job_idempotency_key == key
+            && job.idempotency_key.as_ref() == Some(&key)
+    })
 }
 
 const fn is_terminal_attempt(status: GenerationAttemptStatus) -> bool {

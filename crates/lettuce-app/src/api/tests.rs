@@ -842,26 +842,38 @@ async fn a_job_that_cannot_be_claimed_or_already_ended_is_not_run() {
     );
 }
 
+fn stray_job_spec(key: &str, turn_id: lettuce_types::GenerationTurnId) -> lettuce_jobs::JobSpec {
+    lettuce_jobs::JobSpec::new(
+        lettuce_jobs::JobKind::ConversationGeneration,
+        lettuce_jobs::JobSubject::new(
+            lettuce_jobs::SubjectKind::Conversation,
+            lettuce_types::ConversationId::new().to_string(),
+        )
+        .expect("subject"),
+        lettuce_jobs::OutcomeRef::GenerationTurn(turn_id),
+    )
+    .with_idempotency_key(lettuce_jobs::IdempotencyKey::new(key).expect("key"))
+    .with_resources(vec![lettuce_jobs::ResourceClass::Network])
+}
+
+fn job_state(harness: &Harness, job_id: lettuce_types::JobId) -> lettuce_jobs::JobState {
+    lettuce_jobs::JobStore::get(harness.context.backend().database(), job_id)
+        .expect("job")
+        .expect("job exists")
+        .state
+}
+
+fn api_events(harness: &Harness) -> Vec<ApiEvent> {
+    harness.events.0.lock().expect("api events").clone()
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn unresolvable_queued_jobs_are_failed_and_do_not_block_the_queue() {
     let harness = harness(Reply::Text("Hello."));
     let database = harness.context.backend().database();
-    let spec = |key: &str, turn_id: lettuce_types::GenerationTurnId| {
-        lettuce_jobs::JobSpec::new(
-            lettuce_jobs::JobKind::ConversationGeneration,
-            lettuce_jobs::JobSubject::new(
-                lettuce_jobs::SubjectKind::Conversation,
-                lettuce_types::ConversationId::new().to_string(),
-            )
-            .expect("subject"),
-            lettuce_jobs::OutcomeRef::GenerationTurn(turn_id),
-        )
-        .with_idempotency_key(lettuce_jobs::IdempotencyKey::new(key).expect("key"))
-        .with_resources(vec![lettuce_jobs::ResourceClass::Network])
-    };
     let orphan = lettuce_jobs::JobStore::create_or_get(
         database,
-        spec("orphan", lettuce_types::GenerationTurnId::new()),
+        stray_job_spec("orphan", lettuce_types::GenerationTurnId::new()),
     )
     .expect("orphan job")
     .job;
@@ -880,31 +892,33 @@ async fn unresolvable_queued_jobs_are_failed_and_do_not_block_the_queue() {
 
     let stranded = launch(&harness, "launch-stranded").await;
     let stranded_stream = Arc::new(RecordingStream::default());
-    let stranded_send = send(
-        &harness,
-        &stranded,
-        "stranded-1",
-        "Hi",
+    let impostor = Arc::new(Mutex::new(None));
+    let recorded = impostor.clone();
+    let stranded_send = super::conversations::send_with(
+        &harness.context,
+        dto::ConversationSendRequest {
+            conversation_id: stranded.clone(),
+            text: "Hi".into(),
+            client_operation_id: "stranded-1".into(),
+        },
         stranded_stream.clone(),
-    )
-    .await
-    .expect("stranded send");
-    let stranded_job = queued_generation(&harness, &stranded_send.turn_id).job_id;
-    let impostor = lettuce_jobs::JobStore::create_or_get(
-        database,
-        spec("impostor", stranded_send.turn_id.parse().expect("turn id")),
-    )
-    .expect("impostor job")
-    .job;
-    lettuce_jobs::JobStore::append_and_transition(
-        database,
-        lettuce_jobs::JobMutation::RequestCancellation {
-            id: stranded_job,
-            reason: lettuce_jobs::CancellationReason::User,
-            at: harness.context.now(),
+        move |context, begun, _| {
+            let job = lettuce_jobs::JobStore::create_or_get(
+                context.backend().database(),
+                stray_job_spec("impostor", begun.turn.id),
+            )?
+            .job;
+            *recorded.lock().expect("impostor") = Some(job.id);
+            Ok(crate::ConversationGenerationAdmission {
+                job,
+                attempt: begun.attempt.clone(),
+                created: true,
+            })
         },
     )
-    .expect("the stranded turn's own job leaves the queue");
+    .await
+    .expect("send whose turn never gets its own job");
+    let impostor = impostor.lock().expect("impostor").expect("impostor job");
     assert!(!can_send(&harness, &stranded).await);
 
     let worker = ConversationGenerationWorker::new(harness.context.clone());
@@ -917,16 +931,14 @@ async fn unresolvable_queued_jobs_are_failed_and_do_not_block_the_queue() {
         healthy_stream.events().last(),
         Some(GenerationEvent::Completed { .. })
     ));
-    for job_id in [orphan.id, impostor.id] {
-        let job = lettuce_jobs::JobStore::get(database, job_id)
-            .expect("job")
-            .expect("job exists");
-        assert_eq!(job.state, lettuce_jobs::JobState::Failed);
-    }
-    let stranded_job = lettuce_jobs::JobStore::get(database, stranded_job)
-        .expect("job")
-        .expect("job exists");
-    assert!(stranded_job.state.is_terminal());
+    assert_eq!(
+        job_state(&harness, orphan.id),
+        lettuce_jobs::JobState::Failed
+    );
+    assert_eq!(
+        job_state(&harness, impostor),
+        lettuce_jobs::JobState::Failed
+    );
     assert!(can_send(&harness, &stranded).await);
     assert_eq!(
         stranded_stream.events(),
@@ -934,17 +946,10 @@ async fn unresolvable_queued_jobs_are_failed_and_do_not_block_the_queue() {
             turn_id: stranded_send.turn_id.clone()
         }]
     );
-    assert!(
-        harness
-            .events
-            .0
-            .lock()
-            .expect("api events")
-            .contains(&ApiEvent::GenerationSettled {
-                conversation_id: stranded.clone(),
-                turn_id: stranded_send.turn_id.clone(),
-            })
-    );
+    assert!(api_events(&harness).contains(&ApiEvent::GenerationSettled {
+        conversation_id: stranded.clone(),
+        turn_id: stranded_send.turn_id.clone(),
+    }));
     assert!(
         harness
             .context
@@ -954,17 +959,119 @@ async fn unresolvable_queued_jobs_are_failed_and_do_not_block_the_queue() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_send_whose_reply_cannot_be_queued_settles_its_turn() {
+async fn an_orphan_job_naming_a_turn_leaves_its_healthy_job_alone() {
     let harness = harness(Reply::Text("Hello."));
-    let conversation_id = launch(&harness, "launch-unschedulable").await;
+    let database = harness.context.backend().database();
+    let conversation_id = launch(&harness, "launch-orphan-sibling").await;
     let stream = Arc::new(RecordingStream::default());
-    let error = super::conversations::send_with(
+    let accepted = send(
+        &harness,
+        &conversation_id,
+        "sibling-1",
+        "Hi",
+        stream.clone(),
+    )
+    .await
+    .expect("send");
+    let healthy = queued_generation(&harness, &accepted.turn_id);
+    let orphan = lettuce_jobs::JobStore::create_or_get(
+        database,
+        stray_job_spec("orphan-sibling", healthy.turn_id),
+    )
+    .expect("orphan job")
+    .job;
+    let turn = ConversationReader::get_turn(database, healthy.turn_id).expect("turn");
+    harness
+        .context
+        .backend()
+        .conversation_generation_dispatcher()
+        .fail_unresolvable_job(&orphan, Some(&turn), harness.context.now())
+        .expect("orphan failed");
+    assert_eq!(
+        job_state(&harness, orphan.id),
+        lettuce_jobs::JobState::Failed
+    );
+    assert_eq!(
+        job_state(&harness, healthy.job_id),
+        lettuce_jobs::JobState::Queued
+    );
+    assert!(!can_send(&harness, &conversation_id).await);
+
+    let worker = ConversationGenerationWorker::new(harness.context.clone());
+    assert!(worker.run_once().await.expect("healthy job runs"));
+    assert!(matches!(
+        stream.events().last(),
+        Some(GenerationEvent::Completed { .. })
+    ));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_job_created_but_not_yet_attached_is_skipped_not_failed() {
+    let harness = harness(Reply::Text("Hello."));
+    let conversation_id = launch(&harness, "launch-attach-race").await;
+    let stream = Arc::new(RecordingStream::default());
+    let worker = ConversationGenerationWorker::new(harness.context.clone());
+    let scanning = worker.clone();
+    let accepted = super::conversations::send_with(
         &harness.context,
         dto::ConversationSendRequest {
             conversation_id: conversation_id.clone(),
             text: "Hi".into(),
-            client_operation_id: "unschedulable-1".into(),
+            client_operation_id: "attach-race-1".into(),
         },
+        stream.clone(),
+        move |context, begun, now| {
+            let database = context.backend().database();
+            let job = lettuce_jobs::JobStore::create_or_get(
+                database,
+                crate::generation::conversation_generation::attempt_job_spec(
+                    begun.conversation.id,
+                    begun.turn.id,
+                    begun.attempt.id,
+                )?,
+            )?
+            .job;
+            let ran = tokio::runtime::Handle::current()
+                .block_on(scanning.run_once())
+                .expect("scan between create and attach");
+            assert!(!ran);
+            let pending = lettuce_jobs::JobStore::get(database, job.id)?.expect("job exists");
+            assert_eq!(pending.state, lettuce_jobs::JobState::Queued);
+            context
+                .backend()
+                .conversation_generation_dispatcher()
+                .schedule(begun, now)
+        },
+    )
+    .await
+    .expect("send");
+    assert!(stream.events().is_empty());
+    assert!(worker.run_once().await.expect("run generation"));
+    assert!(matches!(
+        stream.events().last(),
+        Some(GenerationEvent::Completed { .. })
+    ));
+    assert_eq!(
+        stream.events().first(),
+        Some(&GenerationEvent::Started {
+            turn_id: accepted.turn_id.clone()
+        })
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_send_whose_reply_cannot_be_queued_settles_its_turn() {
+    let harness = harness(Reply::Text("Hello."));
+    let conversation_id = launch(&harness, "launch-unschedulable").await;
+    let stream = Arc::new(RecordingStream::default());
+    let request = dto::ConversationSendRequest {
+        conversation_id: conversation_id.clone(),
+        text: "Hi".into(),
+        client_operation_id: "unschedulable-1".into(),
+    };
+    let error = super::conversations::send_with(
+        &harness.context,
+        request.clone(),
         stream.clone(),
         |_, _, _| Err(crate::ConversationGenerationDispatchError::InvalidWork),
     )
@@ -972,27 +1079,20 @@ async fn a_send_whose_reply_cannot_be_queued_settles_its_turn() {
     .expect_err("schedule failed");
     assert_eq!(error.code, ApiErrorCode::Internal);
     let events = stream.events();
-    let [GenerationEvent::Failed { turn_id, code }] = events.as_slice() else {
+    let [GenerationEvent::Cancelled { turn_id }] = events.as_slice() else {
         panic!("unexpected stream: {events:?}");
     };
-    assert_eq!(*code, dto::GenerationFailureCode::Internal);
     assert!(
         harness
             .context
             .stream(turn_id.parse().expect("turn id"))
             .is_none()
     );
-    assert!(
-        harness
-            .events
-            .0
-            .lock()
-            .expect("api events")
-            .contains(&ApiEvent::GenerationSettled {
-                conversation_id: conversation_id.clone(),
-                turn_id: turn_id.clone(),
-            })
-    );
+    let settled = ApiEvent::GenerationSettled {
+        conversation_id: conversation_id.clone(),
+        turn_id: turn_id.clone(),
+    };
+    assert!(api_events(&harness).contains(&settled));
     let view = conversation_open(
         &harness.context,
         dto::ConversationOpenRequest {
@@ -1003,6 +1103,39 @@ async fn a_send_whose_reply_cannot_be_queued_settles_its_turn() {
     .expect("open");
     assert!(view.can_send);
     assert_eq!(view.pending_turn_id, None);
+
+    let retry_stream = Arc::new(RecordingStream::default());
+    let retried = super::conversations::send_with(
+        &harness.context,
+        request,
+        retry_stream.clone(),
+        |_, _, _| panic!("a settled send is not scheduled again"),
+    )
+    .await
+    .expect("a retry of the settled send replays it");
+    assert_eq!(&retried.turn_id, turn_id);
+    assert_eq!(
+        retry_stream.events(),
+        vec![GenerationEvent::Cancelled {
+            turn_id: turn_id.clone()
+        }]
+    );
+    assert_eq!(
+        api_events(&harness)
+            .iter()
+            .filter(|event| **event == settled)
+            .count(),
+        1
+    );
+    assert!(
+        harness
+            .context
+            .stream(turn_id.parse().expect("turn id"))
+            .is_none()
+    );
+    let worker = ConversationGenerationWorker::new(harness.context.clone());
+    assert!(!worker.run_once().await.expect("nothing queued"));
+
     send(
         &harness,
         &conversation_id,

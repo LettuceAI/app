@@ -92,6 +92,14 @@ pub struct QueuedConversationGeneration {
     pub job_id: lettuce_types::JobId,
 }
 
+/// What a queued job resolves to: its work, a job `admit` has not attached
+/// yet (skipped this scan), or work that cannot run.
+enum QueuedResolution {
+    Ready(QueuedConversationGeneration),
+    AwaitingAttach,
+    Unresolvable(Option<Box<lettuce_conversations::GenerationTurn>>),
+}
+
 #[derive(Debug)]
 pub enum ConversationGenerationWorkerOutcome {
     Idle,
@@ -299,9 +307,10 @@ where
                     continue;
                 }
                 match self.resolve_queued(&job)? {
-                    Ok(next) => return Ok(Some(next)),
-                    Err(turn) => {
-                        self.fail_unresolvable(&job, turn.as_ref(), now);
+                    QueuedResolution::Ready(next) => return Ok(Some(next)),
+                    QueuedResolution::AwaitingAttach => {}
+                    QueuedResolution::Unresolvable(turn) => {
+                        self.fail_unresolvable(&job, turn.as_deref(), now);
                         unresolvable.insert(job.id);
                         failed_any = true;
                     }
@@ -323,10 +332,7 @@ where
     fn resolve_queued(
         &self,
         job: &lettuce_jobs::JobSnapshot,
-    ) -> Result<
-        Result<QueuedConversationGeneration, Option<lettuce_conversations::GenerationTurn>>,
-        ConversationGenerationWorkerError,
-    >
+    ) -> Result<QueuedResolution, ConversationGenerationWorkerError>
     where
         R: lettuce_jobs::JobStore,
     {
@@ -336,11 +342,13 @@ where
             ..
         }) = events.first().map(|event| &event.event)
         else {
-            return Ok(Err(None));
+            return Ok(QueuedResolution::Unresolvable(None));
         };
         let turn = match ConversationReader::get_turn(self.repository, *turn_id) {
             Ok(turn) => turn,
-            Err(ConversationRepositoryError::NotFound) => return Ok(Err(None)),
+            Err(ConversationRepositoryError::NotFound) => {
+                return Ok(QueuedResolution::Unresolvable(None));
+            }
             Err(_) => return Err(ConversationGenerationWorkerError::InvalidWork),
         };
         let Some(attempt) = turn
@@ -348,9 +356,12 @@ where
             .iter()
             .find(|attempt| attempt.job_id == Some(job.id))
         else {
-            return Ok(Err(Some(turn)));
+            if crate::generation::conversation_generation::awaits_attach(&turn, job) {
+                return Ok(QueuedResolution::AwaitingAttach);
+            }
+            return Ok(QueuedResolution::Unresolvable(Some(Box::new(turn))));
         };
-        Ok(Ok(QueuedConversationGeneration {
+        Ok(QueuedResolution::Ready(QueuedConversationGeneration {
             conversation_id: turn.conversation_id,
             turn_id: turn.id,
             attempt_id: attempt.id,

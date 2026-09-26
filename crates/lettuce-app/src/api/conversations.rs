@@ -346,6 +346,14 @@ where
                     ));
                 };
                 let turn_id = begun.turn.id;
+                let accepted = dto::SendAccepted {
+                    user_message_id: message_id.to_string(),
+                    turn_id: turn_id.to_string(),
+                };
+                if let Some(event) = settled_event(database, turn_id)? {
+                    events.emit(event);
+                    return Ok(accepted);
+                }
                 context.attach_stream(turn_id, events);
                 match schedule(context, &begun, now) {
                     Ok(admission) if admission.job.state.is_terminal() => {
@@ -359,10 +367,7 @@ where
                         return Err(error.into_api_error());
                     }
                 }
-                Ok(dto::SendAccepted {
-                    user_message_id: message_id.to_string(),
-                    turn_id: turn_id.to_string(),
-                })
+                Ok(accepted)
             })
             .await?;
     context.wake_workers();
@@ -389,14 +394,21 @@ fn unschedulable_send(
     if let Err(error) = settled {
         tracing::error!(%error, %turn_id, "a send whose reply could not be queued was not settled");
     }
-    context.settle_turn(
-        conversation_id,
-        turn_id,
-        dto::GenerationEvent::Failed {
+    let event = match settled_event(database, turn_id) {
+        Ok(Some(event)) => event,
+        Ok(None) => dto::GenerationEvent::Failed {
             turn_id: turn_id.to_string(),
             code: dto::GenerationFailureCode::Internal,
         },
-    );
+        Err(error) => {
+            tracing::error!(code = ?error.code, message = %error.message, %turn_id, "a send whose reply could not be queued has no readable outcome");
+            dto::GenerationEvent::Failed {
+                turn_id: turn_id.to_string(),
+                code: dto::GenerationFailureCode::Internal,
+            }
+        }
+    };
+    context.settle_turn(conversation_id, turn_id, event);
 }
 
 /// Stops a turn. A queued turn is settled here; a running one is signalled

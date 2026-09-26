@@ -200,6 +200,9 @@ impl ConversationGenerationWorker {
 /// the link ends when the returned guard drops.
 fn shutdown_child(parent: &CancellationToken) -> (CancellationToken, ShutdownLink) {
     let child = CancellationToken::new();
+    if parent.is_cancelled() {
+        child.cancel();
+    }
     let parent = parent.clone();
     let linked = child.clone();
     let link = tokio::spawn(async move {
