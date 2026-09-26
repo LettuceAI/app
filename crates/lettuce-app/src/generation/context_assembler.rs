@@ -664,7 +664,8 @@ where
             };
             crate::launch::policy::direct_prompt(
                 self.sources,
-                selected.into_iter().chain(starter),
+                selected,
+                starter,
                 defaults.direct_prompt_id,
                 app_default,
             )

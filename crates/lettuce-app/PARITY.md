@@ -114,6 +114,7 @@ Facts about how `lettuce-app` relates to the legacy app (2.2.x): what follows le
 - The legacy inventory walk follows no symbolic links and leaves out names that cannot form a safe archive path, unlike the legacy exporter.
 - Legacy used an app-wide template of any type in a direct chat; only a direct-chat document is used.
 - `Clear` stores a disabled prompt, a state legacy never had; the frontend's reset must send `UseLaunchDefault`.
+- A starter's prompt admits the purposes legacy's starter picker offered (direct, untyped, conversational and roleplay group templates, `ChatTemplateEditorPage.tsx` 275-287; legacy's untyped templates import as direct-chat documents), at launch and on every turn alike.
 - Legacy fixed a new chat's prompt at creation by copying the starter's template, else the character's, into `session.promptTemplateId` (`repo.ts` 1584-1609), so pointing the character or the starter at another template never reached existing chats. Nothing is fixed at launch here: a chat without its own override follows its starter's and its character's current prompts on every turn.
 - The bundled continuity entry drops its "Scheduled Background Context" sub-section through a condition; legacy stripped the rendered heading afterwards (`prompt_engine.rs` 4349-4350) and left four newlines behind.
 - `{{group_characters}}` renders empty in a direct chat; the old direct engine left the literal placeholder.

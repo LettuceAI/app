@@ -6627,6 +6627,48 @@ fn prompt_precedence_prefers_the_starter_and_rejects_a_wrong_purpose() {
         other => panic!("expected an explicit prompt, got {other:?}"),
     }
 
+    let group_starter_prompt = seed_prompt(
+        &database,
+        "Group starter prompt",
+        PromptPurpose::GroupChatRoleplay,
+    );
+    set_starter_prompt(
+        &database,
+        character_id,
+        starter_id,
+        Some(group_starter_prompt),
+    );
+    let group_starter = request_with_starter(character_id, "prompt-group-starter", starter_id);
+    match &direct_details(&plan_for(&database, &group_starter)).prompt {
+        SnapshotSelection::Explicit(prompt) => {
+            assert_eq!(prompt.source_id, group_starter_prompt);
+        }
+        other => panic!("expected the starter's group prompt, got {other:?}"),
+    }
+    let companion_starter_prompt = seed_prompt(
+        &database,
+        "Companion starter prompt",
+        PromptPurpose::CompanionChat,
+    );
+    set_starter_prompt(
+        &database,
+        character_id,
+        starter_id,
+        Some(companion_starter_prompt),
+    );
+    assert_eq!(
+        ConversationLaunchPlanner::new(&database)
+            .prepare_direct(&request_with_starter(
+                character_id,
+                "prompt-companion-starter",
+                starter_id,
+            ))
+            .expect_err("a companion-chat starter prompt"),
+        ConversationLaunchError::PromptWrongPurpose {
+            prompt_id: companion_starter_prompt
+        }
+    );
+
     let wrong = seed_prompt(&database, "Group prompt", PromptPurpose::GroupChatRoleplay);
     let wrong_character =
         seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
@@ -6834,7 +6876,7 @@ fn the_direct_chain_ends_in_the_app_default_then_the_bundled_prompt() {
         PromptPurpose::DynamicMemorySummarizer,
     );
     let chain = |selected, character| {
-        policy::direct_prompt(&database, selected, character, None)
+        policy::direct_prompt(&database, selected, None, character, None)
             .expect("direct chain")
             .map(|document| document.id)
     };
@@ -6853,18 +6895,27 @@ fn the_direct_chain_ends_in_the_app_default_then_the_bundled_prompt() {
         Some(app_default)
     );
     assert_eq!(chain(None, Some(companion)), Some(built_in));
+    let with_starter = |selected, starter| {
+        policy::direct_prompt(&database, selected, starter, Some(app_default), None)
+            .expect("direct chain")
+            .map(|document| document.id)
+    };
     assert_eq!(
-        policy::direct_prompt(
-            &database,
-            [lettuce_types::PromptDocumentId::new(), group],
-            Some(app_default),
-            None,
-        )
-        .expect("direct chain")
-        .map(|document| document.id),
+        with_starter(Some(lettuce_types::PromptDocumentId::new()), Some(group)),
         Some(group),
         "an unusable override falls through to the starter's prompt"
     );
+    assert_eq!(
+        with_starter(Some(companion), Some(group)),
+        Some(companion),
+        "the chat's override wins over the starter's prompt"
+    );
+    assert_eq!(
+        with_starter(None, Some(companion)),
+        Some(app_default),
+        "a companion-chat starter prompt falls through like legacy's starter picker"
+    );
+    assert_eq!(with_starter(None, Some(summarizer)), Some(app_default));
     PromptRepository::archive(&database, app_default, Revision::INITIAL, NOW)
         .expect("archive app default");
     assert_eq!(resolve(Some(app_default)), Some(built_in));
