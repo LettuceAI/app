@@ -1,147 +1,86 @@
 # lettuce-image-generation
 
-Capability-aware remote and local image requests, Stable Diffusion runtime,
-LoRA application, upscale, jobs, output ingestion, and provenance.
+Image generation: the request and its durable record, prompt composition and LoRA merging, input image preparation, output ingestion as media assets, and the local stable-diffusion.cpp runtime (model catalog, engine builds, compute placement, the managed `sd-server`, LoRA library, upscaling). It also holds the rules for assembling image models from Hugging Face files and for browsing LoRAs on CivitAI, and the playground history types.
 
-## Boundary
+Remote image providers (the OpenAI-style, Gemini and other adapters and ComfyUI) live in `lettuce-providers` (`RemoteImageProviders`). Job admission, usage recording and the callers (scenes, playground, creation helper) live in `lettuce-app`, whose `AppImageProviders` routes `sdcpp` accounts to the local engine and every other kind to the remote adapters. The local runtime and the remote orchestration are separate modules that meet only at `ImageProviderPort`.
 
-Remote orchestration and the local SD runtime remain separate internal modules.
-Permanent outputs exist only after media validation.
+## Requests
 
-The public surface is intentionally small. Business invariants belong in domain models and use cases; infrastructure is accessed only through narrow ports owned by the calling crate.
+`ImageGenerationRequest` (`request.rs`) is one generation: the model profile, the prompt, per-request `StableDiffusionSettings` laid over the model's own (the stable-diffusion.cpp binding always stays the model's; an empty `base_loras` drops the model's base LoRAs), input and mask image assets, request LoRAs, size, quality, style, count, an `ImageGenerationSource` (direct, scene, playground, creation helper), an `ImageAttribution` (conversation or character, for usage), and an `ImageOutputPolicy` (`Retained`, or `Preview` with an expiry). Validation bounds it at 10 images, 16 input images and a 64 KiB prompt, and trims size, quality and style.
 
-## Status
+`ImageGenerationRecord` and `ImageGenerationRepository` hold the durable request and its terminal state.
 
-Domain core (legacy `image_generator/commands.rs` + `types.rs`):
+### Model
 
-- `ImageGenerationRequest`: model profile, prompt, per-request
-  `StableDiffusionSettings` laid over the model's (legacy callers spread their
-  settings over the model's `advancedModelSettings`; the sd.cpp binding always
-  stays the model's), input and mask image assets, request LoRAs, size,
-  quality, style, count, source (legacy `usage_source`: none, scene,
-  playground, creation helper), attribution and output retention.
-- Legacy prompt composition, unchanged: `merge_loras` (a request LoRA replaces
-  the model's entry for the same file and noise stage), `lora_keywords`
-  (trimmed, case-insensitive dedupe, first spelling kept) and
-  `compose_image_prompt` (pre-prompt, then keywords the prompt does not
-  already contain, then the prompt, joined with `", "`), with the legacy tests.
-- `resolve_image_profile`: an image model is any model whose output image
-  capability is Supported (legacy output scopes), on an enabled account with a
-  valid connection; text output capability becomes legacy's "text" output
-  modality.
-- `ImageProviderPort`: one generation with the composed prompt, effective
-  settings, merged LoRAs and input bytes; outputs come back as bytes (adapters
-  fetch URLs), with optional token usage. `ImageProviderError` keeps the
-  message legacy showed.
-- `shrink_for_upload` (legacy `input_images`): reference images past 2048 px
-  (Lanczos3) or 4 MiB are re-encoded, PNG when any pixel is transparent,
-  else JPEG at quality 90/82/74 until it fits; whenever the first image is
-  resized or re-encoded the mask follows its upright size (Nearest, PNG).
-  GIFs pass through untouched, as in legacy. Corrections: pixels are turned
-  upright by their EXIF orientation before resizing (legacy ignored it and
-  dropped the EXIF on re-encode, so rotated photos went out sideways and the
-  mask followed the sideways size), and a same-size re-encode that is not
-  smaller keeps the original bytes.
-- `ImageMedia` for `LocalMediaBlobStore`: reads input images and ingests each
-  output as a `GeneratedImage` asset with producing-job and model provenance.
-- `ImageGenerationRecord` / `ImageGenerationRepository`: the durable request
-  and terminal state.
+`resolve_image_profile` (`profile.rs`) accepts any model whose output image capability is `Supported`, on an enabled account with a valid connection. A model that also outputs text reports "text" as an output modality.
 
-The app's `ImageGenerationCoordinator` runs each request as an
-`ImageGenerate` job (interrupted, never re-run, after a crash), records job
-usage for success and failure like legacy, and settles the record once. A job
-that ended without running to completion (interrupted, or cancelled while
-queued) has its record settled as failed ("Image generation was interrupted.")
-or cancelled, and its open usage settled as failed, on the next admission or
-claim. A usage write that fails after the provider answered is logged and the
-images are kept, as legacy did.
+### Prompt
 
-Deferred to the stable-diffusion.cpp LoRA library slice: legacy filled sdcpp
-LoRA keywords from the stored LoRA library before composing the prompt.
+`prompt.rs` composes the prompt that reaches the provider:
 
-Deliberate corrections:
+- `merge_loras`: a request LoRA replaces the model's entry for the same file and noise stage.
+- `lora_keywords`: the trigger keywords of the merged LoRAs, trimmed and deduplicated case-insensitively, first spelling kept.
+- `compose_image_prompt`: the pre-prompt, then the keywords the prompt does not already contain, then the prompt, joined with `", "`.
 
-- Outputs pass media validation. An output that is not a valid image is
-  dropped and counted (`rejected_outputs`) instead of being saved as a broken
-  file; the request fails only when no output is valid.
-- Base LoRAs and the pre-prompt come from the effective settings for every
-  caller. Legacy sdcpp read base LoRAs from the stored model while the
-  creation helper sent no settings at all, so its prompts skipped the model's
-  pre-prompt and LoRA keywords.
-- Request bounds legacy lacked: at most 10 images, 16 input images, a 64 KiB
-  prompt, and trimmed size/quality/style values.
+Base LoRAs and the pre-prompt come from the effective settings for every caller, so every caller gets the model's pre-prompt and LoRA keywords. On the local engine, LoRA keywords are filled from the LoRA library before the prompt is composed.
 
-stable-diffusion.cpp (in progress):
+### Input images
 
-- `resources/stable-diffusion-cpp-catalog.json`: the legacy one-click model
-  catalog (8 profiles, variants, pinned repository/revision/size/SHA-256 of
-  every component, the bundle markers legacy used to recognise user-picked
-  files) and the pinned RealESRGAN upscaler, extracted mechanically from the
-  legacy source. `catalog.rs` types and validates it and keeps legacy's
-  lookups and error texts.
-- `sd_runtime`: the frozen auto-fit placement estimate and `--backend`
-  specs, the per-build compute policy (legacy name-based files migrate),
-  engine device matching, the native `img_gen` payload with legacy defaults
-  and reference rules, console output (240-line tail, OOM signatures,
-  throttled progress per stream), GitHub release filtering per platform, the
-  legacy on-disk layout (engine builds, archives, content-addressed
-  components, active build and policy files) so legacy installs are reused,
-  and LoRA path normalization with the FLUX.2 Klein tensor alias cache.
+`shrink_for_upload` (`input_images.rs`) prepares reference images. Pixels are first turned upright by their EXIF orientation. An image larger than 2048 px (Lanczos3) or 4 MiB is re-encoded: PNG when any pixel is transparent, else JPEG at quality 90, 82, then 74 until it fits. Whenever the first image is resized or re-encoded, the mask follows its upright size (Nearest, PNG). GIFs pass through untouched, and a same-size re-encode that is not smaller keeps the original bytes.
 
-- `sd_runtime::server::LocalDiffusionEngine`: the managed sd-server
-  (legacy arguments and order, reuse while the model/build/policy key is the
-  same, five-minute readiness, native job API polled every 500 ms for ten
-  minutes, one retry with `--offload-to-cpu` after an out-of-memory failure
-  under the automatic policy, cancel through the engine job or by stopping
-  the server, shutdown). It implements `ImageProviderPort` for the managed
-  `sdcpp` account; the job's cancellation token cancels the engine job.
-  Verified against the real engine (Vulkan build, FLUX.2 Klein 4B, a Klein
-  LoRA whose compatibility cache equals legacy's byte for byte).
+### Provider port and outputs
 
-The app composes it (`AppBackend::with_local_diffusion`): starting the image
-server unloads llama.cpp, and every llama.cpp request stops the image server
-first (a failed stop fails that request, as legacy did).
+`ImageProviderPort` (`port.rs`) runs one generation with the composed prompt, effective settings, merged LoRAs and input bytes, and returns output bytes (adapters fetch URLs themselves) with optional token usage. `ImageProviderError` carries the message shown to the user.
 
-- `sd_runtime::lora_library`: the local LoRA library (legacy `image_loras`):
-  metadata keywords and architecture from safetensors headers, reuse of a
-  copy's discovery by hash, CivitAI lookup by hash (one request, like
-  legacy), user keywords that are never replaced, import with the
-  same-name check, delete refused while a local model uses the LoRA.
-  Generations on the local engine take LoRA keywords from the library before
-  the prompt is composed, as legacy did for sdcpp.
-- App commands: installed catalog variants, uninstall (shared files kept,
-  unused engine build removed on request; the check reads each model's
-  stored build instead of legacy's active one), registration repair, LoRA
-  library, upscale of a stored image into a new asset.
+`ImageMedia` (`media.rs`) is the port to `lettuce-media`: it reads input images and ingests each output as a `GeneratedImage` asset with the producing job and model as provenance. Outputs go through media validation: an output that is not a valid image is dropped and counted in `rejected_outputs`, and the request fails only when no output is valid. A permanent output exists only after that validation.
 
-Not yet ported: the runnability probe, Hugging Face image bundles and the
-component library (they need the Hugging Face browser), importing legacy
-`image_loras` and `playground_generations` rows.
+### Running a request
 
-Remote providers live in `lettuce-providers::RemoteImageProviders` (the
-legacy adapters and ComfyUI); the app's `AppImageProviders` routes sdcpp
-accounts to the embedded engine and every other kind there.
+`lettuce-app`'s `ImageGenerationCoordinator` runs each request as an `ImageGenerate` job that is interrupted, never re-run, after a crash. It records job usage for success and failure and settles the record once. A job that ended without running to completion (interrupted, or cancelled while queued) has its record settled as failed ("Image generation was interrupted.") or cancelled, and its open usage settled as failed, on the next admission or claim. If the usage write fails after the provider answered, the error is logged and the images are kept.
 
-Next: the scene, playground and creation-helper callers.
+## Local stable-diffusion.cpp
 
-Runnability: `LocalDiffusionEngine::catalog_runnability` (legacy
-`sdcpp_runnability`) gives a catalog variant a compute-policy placement
-estimate before it is installed and a real generation probe (one step, or the
-full request) once it is; `remote_bundle_runnability` estimates a bundle by
-its file sizes before download. Verdict strings, reason texts, check order
-and the probe payload are legacy's; transport errors carry the shared HTTP
-client's texts and limits (64 MiB requests, a poll URL must be a plain path).
+`sd_runtime` runs stable-diffusion.cpp as a managed `sd-server` process.
 
-Hugging Face bundles: `hf_bundle` holds the legacy rules for assembling a
-local image model from Hugging Face files (repository compatibility with
-declared base-model ancestry, role default queries and listing matches, file
-format/quantization, training-artifact exclusion, role compatibility, the GGUF
-encoder hint markers, image-role inference) and the bundle manifest in the old
-JSON format under `<image root>/huggingface/bundles`, including hard-linking a
-verified identical file from another bundle.
+- Catalog. `resources/stable-diffusion-cpp-catalog.json` is the one-click model catalog: 8 profiles with their variants, the pinned repository, revision, size and SHA-256 of every component, the bundle markers that recognize user-picked files, and the pinned RealESRGAN upscaler. `catalog.rs` types and validates it and provides the lookups and error texts.
+- Layout (`layout.rs`). Engine builds, archives, content-addressed components, LoRAs, upscalers, and the active build and policy files, in the on-disk layout existing installs use, so their builds and models keep working.
+- Releases (`releases.rs`). Engine builds come from the upstream GitHub releases, filtered per platform and resolved at runtime; no engine version is pinned.
+- Policy (`policy.rs`). Per-build GPU selection, stored next to each installed build, with engine device matching.
+- Fit (`fit.rs`). The auto-fit placement estimate and `--backend` specs, mirroring upstream `src/core/backend_fit.cpp`; catalog file sizes stand in for tensor byte counts that are unknown before download. The estimate is frozen like the llama.cpp formulas.
+- Payload (`payload.rs`). The native `img_gen` request built from fixed defaults and reference-image rules.
+- Output (`output.rs`). Console handling: a 240-line tail kept for out-of-memory signatures, and step lines turned into throttled progress events per stream.
+- Inventory (`inventory.rs`). What the local image settings page shows: catalog entries with install state, engine builds, the active build, compute policies, model file detection and disk usage.
 
-CivitAI: `civitai` holds the legacy LoRA browsing rules: the `/api/v1/models`
-query (LoRA only, sort/period/base-model filters, Pure mode asks for no NSFW),
-what a page and a model show (supported base models only, NSFW models and
-images hidden in Pure mode), the status texts and the checks on a download
-(single safetensors file name, https URL on civitai.com or a subdomain).
+### The engine
+
+`LocalDiffusionEngine` (`server.rs`) implements `ImageProviderPort` for the managed `sdcpp` account:
+
+1. Resolve the engine build and compute policy for the model.
+2. Start `sd-server` with its fixed argument list, or reuse the running one while the model, build and policy key is unchanged. Readiness may take up to five minutes.
+3. Submit the job through the native job API and poll it every 500 ms for up to ten minutes.
+4. Under the automatic policy, retry once with `--offload-to-cpu` after an out-of-memory failure.
+5. Cancel through the engine job or by stopping the server; the job's cancellation token cancels the engine job.
+
+The local engine and llama.cpp never run at once: `AppBackend::with_local_diffusion` wires it so starting the image server unloads llama.cpp, and every llama.cpp request first stops the image server (`stop_for_llama`); if that stop fails, the llama.cpp request fails.
+
+### LoRAs
+
+`loras.rs` gives sd-server library-relative LoRA paths and rewrites FLUX.2 Klein tensor aliases into a compatibility cache. `lora_library.rs` is the local LoRA library: keywords and base architecture read from safetensors headers, reuse of a copy's discovery by hash, a CivitAI lookup by hash (one request), user keywords that are never replaced, import with a same-name check, and deletion refused while a local model uses the LoRA.
+
+### Runnability and upscaling
+
+`runnability.rs` answers whether a model runs here. `LocalDiffusionEngine::catalog_runnability` gives a catalog variant a compute-policy placement estimate before it is installed and a real generation probe (one step, or the full request) once it is. `remote_bundle_runnability` estimates a Hugging Face bundle from its file sizes before download. Transport errors carry the shared HTTP client's texts and limits.
+
+`upscale.rs` holds the upscaler library and upscales a stored image once through `sd-cli`, leaving the server as it is.
+
+## Hugging Face bundles
+
+`hf_bundle.rs` holds the rules for assembling a local image model from Hugging Face files: repository compatibility including declared base-model ancestry, per-role default queries and listing matches, file format and quantization, exclusion of training artifacts, role compatibility, the GGUF encoder hint markers and image-role inference. A bundle manifest is written under `<image root>/huggingface/bundles`, and a verified identical file from another bundle is hard-linked instead of downloaded again.
+
+## CivitAI
+
+`civitai.rs` holds the LoRA browsing rules: the `/api/v1/models` query (LoRAs only, sort, period and base-model filters, and no NSFW when Pure mode is on), what a page and a model show (supported base models only, NSFW models and images hidden in Pure mode), the status texts, and the checks on a download (a single safetensors file name and an https URL on `civitai.com` or a subdomain).
+
+## Playground
+
+`playground.rs` has the playground history types: generated and imported entries with their images, listed 30 at a time by default (1 to 200).
