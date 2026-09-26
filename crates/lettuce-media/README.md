@@ -1,77 +1,63 @@
 # lettuce-media
 
-Content-addressed user media, validation, derivatives, serving, retention, and repair.
+User media as a content-addressed store: the catalog records for physical blobs and logical assets, header sniffing and validation on ingest, the on-disk object layout, reading ready assets, resumable transfer for sync, installing backup objects, and releasing bytes nothing needs any more.
 
-## Boundary
+Callers only ever see `AssetId`s, `MediaBlobId`s and descriptor-backed readers, never a native path. Files are reached through `lettuce-platform` (`MediaBlobs` capabilities for the local store, a `ConfinedInstallStore` for sync and restore). The catalog is behind two synchronous repository traits that `lettuce-database` implements. Nothing is decoded, rendered or executed: formats are recognized from bounded headers only.
 
-Source documents use the existing content-addressed store and descriptor-backed
-`open_ready` path with `AssetKind::SourceDocument` / `MediaKind::Document`.
-PDF signatures (1.0–1.7 and 2.0) and UTF-8 text are accepted; Markdown shares
-canonical `text/plain` metadata so identical bytes deduplicate consistently.
-Invalid UTF-8 is not accepted as text, matching legacy text intake. PDF header
-recognition is not structural validation, extraction or sanitization; a later
-extractor must reject malformed/encrypted documents as appropriate. Nothing is
-rendered or executed during ingestion. Existing size bounds and retention
-policies apply; feature-specific legacy source limits remain at intake.
-Lettuce-app can read source documents for legacy PDF/text extraction; creation
-project-owned source associations are not yet wired.
+## Blobs and assets
 
-Exposes asset IDs, never managed native paths.
+The crate separates physical content from what the user sees.
 
-The public surface is intentionally small. Business invariants belong in domain models and use cases; infrastructure is accessed only through narrow ports owned by the calling crate.
+A `MediaBlob` (`blob.rs`) is one set of bytes, identified by its BLAKE3 `ContentHash`: `MediaKind` (`Image`, `Audio`, `Video`, `Document`), MIME type, size, optional width and height (always both or neither) and duration, a validation version and a `BlobState` (`Staged`, `Ready`, `Quarantined`, `Missing`). `MediaBlobRepository::register` inserts a staged row or returns the existing row for the same hash, so the same bytes are stored once. `finalize_staged_to_ready` runs after the object file is committed; `restore_missing_to_ready` brings back a blob whose bytes were released and then ingested again.
 
-## Foundation contract
+A `MediaAsset` (`asset.rs`) is a logical, user-facing record with its own `AssetId` pointing at a blob: an `AssetKind` (avatar original, background, illustration, lorebook icon, message image or audio, generated image, synthesized speech, other image or audio, source document), an `AssetOrigin` (upload, import, remote fetch, generated, synthesized, legacy), a `RetentionClass` and `AssetProvenanceV1`. Each asset kind requires one blob kind (`AssetKind::blob_kind`), checked when the asset is created and opened.
 
-The first slice exposes a `MediaBlobRepository` for validated,
-content-addressed blob metadata. Registering the same BLAKE3 hash returns the
-existing blob. It does not expose deletion or native paths.
+Several assets can share one blob without merging their provenance or retention. That is why missing, quarantined or corrupt bytes are blob state and not asset state: one blob backs many assets, and one synced asset can have its bytes on one device and not on another.
 
-A blob is not a logical user-facing asset. The logical slice now exposes
-validated `MediaAsset` records with distinct `AssetId` and `MediaBlobId`
-identities, provenance format `AssetProvenanceV1`, origin, and
-persistent/library/temporary retention. Multiple assets may share one
-blob without merging their provenance or retention policy.
+`RetentionClass` is `Persistent`, `Library` (listed in the media library) or `Temporary { expires_at }`, so a temporary asset without an expiry cannot be represented. `MediaAssetRepository` offers create, get, a retention change with a revision CAS, and a paged listing of library assets. It has no delete; physical removal goes through the release paths below.
 
-`MediaAssetRepository` is a synchronous port with create/read, retention CAS,
-and paged library listing. It deliberately has no
-physical-delete method. `AssetReferenceReader` and `AssetRetentionReader`
-provide typed reachability ports for future character, context, conversation,
-and message association adapters; no generic owner-kind strings are exposed.
+`AssetProvenanceV1` is versioned and bounded: an optional source label, a redacted source URI (http or https only, no credentials, query, `..`, whitespace or native path), the producing job, the model profile and an imported format token. It cannot carry bytes, prompts, paths or provider bodies.
 
-The domain validates nonzero revisions, closed/versioned serialized shapes,
-asset/blob kind compatibility, bounded provenance strings, and redacted
-HTTP(S)-only source locators without credentials, queries, native paths,
-bytes, prompts, or secrets. Ingestion, decoding, native paths, filesystem
-access, derivatives, serving and garbage collection belong to later
-adapter/use-case slices.
+`AssetRetainer` lists the typed owners that can keep an asset reachable (character, persona, group, scene and its variants and links, conversation, message, message revision and candidate, prompt document, lorebook and entry). `AssetReferenceReader` and `AssetRetentionReader` are the ports a reachability or repair workflow would use; there are no free-form owner-kind strings.
 
-Missing, quarantined, or corrupt bytes are physical blob/location state, not
-logical asset state. Keeping that distinction is required because several
-assets can share one blob and one synced asset can have different availability
-on different devices.
+## Object layout
 
-Local ingest can now accept a caller-owned `AssetId` for durable import workflows. It still validates and content-addresses the bytes before cataloging; an exact retry returns the existing ready asset and blob, while changed content or metadata conflicts without creating a second logical asset. Ordinary uploads continue to allocate a fresh logical identity.
+Objects live under the media root at `objects/<first two hex>/<next two hex>/<hash>`. Resumable sync downloads write `sync/<hash>.partial`, backup installs write `restore/<hash>.partial`. Because the name is the content hash, an existing object is never replaced: a create-new that finds the file already there checks its size and hash and accepts it only if they match.
 
-Persona sync uses a separate confined media-root adapter. It reads only ready
-content-addressed objects, resumes a fixed hash-owned partial after interruption
-or reopen, accepts chunks no larger than one MiB, and verifies declared size and
-BLAKE3 before atomic object availability. Catalog rows are committed only after
-the bytes verify. Existing objects are never replaced, and multiple remote
-logical assets with the same hash reuse one local blob. The adapter exposes no
-native path and has no delete operation.
+## Ingest
 
-`install_backup_media_object` installs verified backup bytes at the same
-content-addressed object key through its own hash-owned `restore/` partial, so it
-never truncates a concurrent sync download of the same blob. An object
-that is already installed must match size and BLAKE3; catalog rows are not
-touched, because the restored database carries its own blob and asset rows.
+`LocalMediaBlobStore::ingest(reader, IngestRequest)` handles one local upload, import or generated file:
 
-Releasing bytes: `LocalMediaBlobStore::release_blob` deletes a ready blob's
-content-addressed object after the caller's callback has marked its catalog
-row `missing` (the callback decides whether the blob may go). Ingest, sync
-install and release are serialized by one process-wide lifecycle lock, and an
-ingest or sync of the same bytes restores a `missing` row to `ready`
-(`MediaBlobRepository::restore_missing_to_ready`). Asset rows stay, so
-evidence that refers to them is kept; `open_ready` reports `NotReady`. A crash
-between the catalog commit and the file deletion leaves the file on disk
-until the same bytes are ingested again.
+1. Validate the provenance and read the input, up to `MAX_MEDIA_BLOB_BYTES` (2 GiB, equal to the largest file a backup can carry and to the platform's managed read limit, so every stored object stays restorable). Empty input is rejected.
+2. Sniff the format from its header. Images: PNG, JPEG, GIF, WebP, with dimensions read from the header and capped at 100 million pixels so downstream decoders are never asked for a pathological allocation. Audio: WAV, Ogg, FLAC, M4A, MP3. For `SourceDocument` assets: a PDF header with version 1.0 to 1.7 or 2.0, otherwise valid UTF-8 text as `text/plain` (Markdown included, so identical bytes deduplicate the same way). Recognizing a PDF header is not structural validation; an extractor must still reject malformed or encrypted documents.
+3. Check that the sniffed kind matches the asset kind and, when the caller declared a MIME type, that it agrees (with the usual aliases such as `image/jpg` or `audio/x-wav`).
+4. Take the process-wide lifecycle lock, hash the bytes and commit the object create-new under its content key.
+5. Register the blob (or get the existing one), move it to `Ready` (from `Staged`, or from `Missing` when released bytes come back), and create the asset.
+
+`ingest` allocates a new `AssetId`. `ingest_with_id` takes one from a durable import workflow: an exact retry returns the existing ready asset and blob, while different content or metadata for the same id fails instead of creating a second asset.
+
+`open_ready(asset_id)` opens a ready asset for reading. It checks asset and blob kinds, the blob state (`NotReady` otherwise), and that the object file exists with the recorded size, then returns the records and a `ReadHandle`.
+
+## Releasing bytes
+
+Bytes leave the store in three ways, all under the same lifecycle lock as ingest, so no asset can pick up a blob while its bytes are being deleted:
+
+- `release_blob(blob_id, release)` deletes one ready blob's object after the callback has marked its catalog row `Missing` (the callback returns `false` if the blob must stay). The asset rows stay, so records that point at them remain valid and `open_ready` reports `NotReady`. Ingesting or syncing the same bytes later restores the row to `Ready`. Persona files and the TTS audio cache use this.
+- `remove_released_objects(release)` runs a callback that commits the catalog removal of unreferenced blobs and returns their objects, then deletes those files. A file that cannot be deleted is counted and left for the sweep. Hard delete uses this.
+- `sweep_orphan_objects(retained)` walks `objects/` and deletes files named by a content hash that the callback says the catalog no longer keeps: bytes a crash left behind between the catalog commit and the file deletion. Partial sync and restore files are never touched.
+
+`pin_media_objects(read)` runs a catalog read and pins the objects it names before any deletion can run. While the `MediaObjectPin` is alive, released objects are deferred and the sweep skips them. A backup export pins the objects its catalog snapshot names and a restore pins what it installs, until they have read or written them all.
+
+## Sync transfer
+
+`LocalSyncMediaStore` moves media between devices over a `ConfinedInstallStore` on the media root:
+
+- `snapshot(asset_id)` returns the asset and blob records of a ready asset after re-hashing the object.
+- `read_sync_chunk(hash, offset, max)` serves chunks of at most `MAX_SYNC_MEDIA_CHUNK_BYTES` (1 MiB).
+- On the receiving side, `receive_offset` says how many bytes of the hash-named partial already survived an interruption or restart, `append_sync_chunk` appends at exactly that offset, and `finish_sync_asset` checks the declared size and BLAKE3, publishes the object create-new, and only then registers the blob and creates the asset. A hash mismatch restarts the partial. When several remote assets share a hash, they reuse the one local blob.
+
+## Backup install
+
+`install_backup_media_object(root, hash, size, reader)` streams backup bytes into `restore/<hash>.partial`, verifies the hash and publishes the object. It uses its own partial so it never truncates a sync download of the same blob. An object that is already there must match size and hash. Catalog rows are not touched, because the restored database carries its own blob and asset rows.
+
+`sniff_media_kind` exposes the sniffer for callers that need to classify bytes without ingesting them, such as the legacy backup importer in `lettuce-transfer`.
