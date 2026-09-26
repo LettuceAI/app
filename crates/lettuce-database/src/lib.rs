@@ -255,6 +255,7 @@ pub enum DatabaseError {
 
 pub struct Database {
     connection: Mutex<Connection>,
+    job_changes: std::sync::Arc<job_adapter::JobChangeSignal>,
     /// Set when foreign key enforcement could not be restored after a purge;
     /// every later use of the connection then fails.
     foreign_keys_lost: std::sync::atomic::AtomicBool,
@@ -274,8 +275,10 @@ impl Database {
         apply_migrations(&mut connection, MIGRATIONS)?;
         initialize_settings(&connection)?;
         rebaseline_sync_journal(&mut connection)?;
+        let job_changes = job_adapter::JobChangeSignal::install(&connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
+            job_changes,
             foreign_keys_lost: std::sync::atomic::AtomicBool::new(false),
         })
     }
@@ -287,8 +290,10 @@ impl Database {
         apply_migrations(&mut connection, MIGRATIONS)?;
         initialize_settings(&connection)?;
         rebaseline_sync_journal(&mut connection)?;
+        let job_changes = job_adapter::JobChangeSignal::install(&connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
+            job_changes,
             foreign_keys_lost: std::sync::atomic::AtomicBool::new(false),
         })
     }
@@ -5821,6 +5826,7 @@ mod tests {
                 "image_generations",
                 "image_loras",
                 "installed_whisper_models",
+                "job_changes",
                 "job_events",
                 "job_inference_usage",
                 "job_usage_costs",
@@ -5871,6 +5877,7 @@ mod tests {
                 "schema_migrations",
                 "speech_syntheses",
                 "speech_transcriptions",
+                "sqlite_sequence",
                 "starter_messages",
                 "sync_carried_conflicts",
                 "sync_change_frontiers",

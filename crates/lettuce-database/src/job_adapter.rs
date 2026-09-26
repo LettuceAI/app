@@ -715,7 +715,9 @@ impl JobCatalog for Database {
     fn job_change_position(&self) -> Result<u64, StoreError> {
         self.read_job_rows(|transaction| {
             let position: Option<i64> = transaction
-                .query_row("SELECT max(rowid) FROM job_events", [], |row| row.get(0))
+                .query_row("SELECT max(position) FROM job_changes", [], |row| {
+                    row.get(0)
+                })
                 .map_err(|_| StoreError::Storage)?;
             u64::try_from(position.unwrap_or(0)).map_err(|_| StoreError::InvalidData)
         })
@@ -729,8 +731,8 @@ impl JobCatalog for Database {
         self.read_job_rows(|transaction| {
             let mut statement = transaction
                 .prepare(
-                    "SELECT job_id, max(rowid) AS position FROM job_events WHERE rowid>?1 \
-                     GROUP BY job_id ORDER BY position LIMIT ?2",
+                    "SELECT job_id, position FROM job_changes WHERE position>?1 \
+                     ORDER BY position LIMIT ?2",
                 )
                 .map_err(|_| StoreError::Storage)?;
             let mut rows = statement
@@ -751,6 +753,76 @@ impl JobCatalog for Database {
             }
             Ok(changes)
         })
+    }
+}
+
+type JobChangeListener = std::sync::Arc<dyn Fn() + Send + Sync>;
+
+/// Tells a listener when a committed transaction changed a job: the update
+/// hook marks writes to `job_changes`, the commit hook reports them, and a
+/// rollback discards them.
+pub(crate) struct JobChangeSignal {
+    pending: std::sync::atomic::AtomicBool,
+    listeners: std::sync::Mutex<Vec<JobChangeListener>>,
+}
+
+impl JobChangeSignal {
+    pub(crate) fn install(
+        connection: &rusqlite::Connection,
+    ) -> rusqlite::Result<std::sync::Arc<Self>> {
+        let signal = std::sync::Arc::new(Self {
+            pending: std::sync::atomic::AtomicBool::new(false),
+            listeners: std::sync::Mutex::new(Vec::new()),
+        });
+        let marked = std::sync::Arc::clone(&signal);
+        connection.update_hook(Some(
+            move |_: rusqlite::hooks::Action, _: &str, table: &str, _: i64| {
+                if table == "job_changes" {
+                    marked
+                        .pending
+                        .store(true, std::sync::atomic::Ordering::Release);
+                }
+            },
+        ))?;
+        let committed = std::sync::Arc::clone(&signal);
+        connection.commit_hook(Some(move || {
+            if committed
+                .pending
+                .swap(false, std::sync::atomic::Ordering::AcqRel)
+            {
+                committed.notify();
+            }
+            false
+        }))?;
+        let rolled_back = std::sync::Arc::clone(&signal);
+        connection.rollback_hook(Some(move || {
+            rolled_back
+                .pending
+                .store(false, std::sync::atomic::Ordering::Release);
+        }))?;
+        Ok(signal)
+    }
+
+    fn notify(&self) {
+        let listeners = self
+            .listeners
+            .lock()
+            .map(|listeners| listeners.clone())
+            .unwrap_or_default();
+        for listener in listeners {
+            listener();
+        }
+    }
+}
+
+impl Database {
+    /// Calls `listener` after every committed transaction that changed a
+    /// job, on the committing thread; the listener must not use this
+    /// database.
+    pub fn on_job_change(&self, listener: impl Fn() + Send + Sync + 'static) {
+        if let Ok(mut listeners) = self.job_changes.listeners.lock() {
+            listeners.push(std::sync::Arc::new(listener));
+        }
     }
 }
 
@@ -799,6 +871,52 @@ mod tests {
                 .checked_add(millis)
                 .expect("test time"),
         )
+    }
+
+    #[test]
+    fn committed_job_changes_notify_and_feed_positions_only_grow() {
+        let database = Database::open_in_memory().expect("database");
+        let notified = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = Arc::clone(&notified);
+        database.on_job_change(move || {
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        });
+        let start = database.job_change_position().expect("position");
+        let first = database.create_or_get(spec("feed-1")).expect("first").job;
+        assert_eq!(notified.load(std::sync::atomic::Ordering::SeqCst), 1);
+        let changes = database.job_changes_since(start, 10).expect("changes");
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].job_id, first.id);
+
+        {
+            let mut connection = database.connection.lock().expect("connection");
+            let transaction = connection.transaction().expect("transaction");
+            transaction
+                .execute(
+                    "INSERT INTO job_events (job_id, seq, at, correlation_id, event_json) \
+                     VALUES (?1, 99, 1, 'x', '{}')",
+                    [first.id.to_string()],
+                )
+                .expect("uncommitted change");
+        }
+        assert_eq!(notified.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+        let second = database.create_or_get(spec("feed-2")).expect("second").job;
+        let latest = database.job_change_position().expect("latest");
+        database
+            .connection
+            .lock()
+            .expect("connection")
+            .execute("DELETE FROM jobs WHERE id = ?1", [second.id.to_string()])
+            .expect("remove the newest job");
+        let third = database.create_or_get(spec("feed-3")).expect("third").job;
+        let changes = database
+            .job_changes_since(latest, 10)
+            .expect("after delete");
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].job_id, third.id);
+        assert!(changes[0].position > latest);
+        assert_eq!(notified.load(std::sync::atomic::Ordering::SeqCst), 4);
     }
 
     #[test]

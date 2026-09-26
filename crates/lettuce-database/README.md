@@ -20,7 +20,7 @@ Domain crates own their rules and describe persistence as synchronous repository
 | `lorebook/` | Lorebooks and bindings, entry and keyword runs, staged lorebook projects |
 | `media/` | Transcriptions, ASR learning, TTS configuration and syntheses, Whisper manifests, image generations, LoRA library, playground history |
 | `models/` | Local llama.cpp reports and metrics, model lookup, model path relocation, device-local carry-over |
-| `job_adapter.rs`, `usage_adapter.rs` | The durable job store and its `JobCatalog` read model (filtered listing, change feed over the job event log), the usage ledger and cost bases |
+| `job_adapter.rs`, `usage_adapter.rs` | The durable job store and its `JobCatalog` read model (filtered listing, change feed over the `job_changes` positions, commit-hook notification of committed job changes), the usage ledger and cost bases |
 | `sync/` | Journal, state scan, incoming changes, conflicts, per-domain snapshot codecs, secret versions |
 | `backup/` | Backup export source, restore admission, restore writer |
 | `legacy/` | Legacy database preflight and documents, import admission and stages, backup of import evidence |

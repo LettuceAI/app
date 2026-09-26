@@ -102,6 +102,17 @@ CREATE TABLE job_events (
     PRIMARY KEY (job_id, seq)
 ) STRICT;
 
+CREATE TABLE job_changes (
+    position INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id TEXT NOT NULL UNIQUE REFERENCES jobs(id) ON DELETE CASCADE
+) STRICT;
+
+CREATE TRIGGER job_events_record_change AFTER INSERT ON job_events
+BEGIN
+    DELETE FROM job_changes WHERE job_id = NEW.job_id;
+    INSERT INTO job_changes (job_id) VALUES (NEW.job_id);
+END;
+
 CREATE TABLE media_blobs (
     id TEXT PRIMARY KEY,
     content_hash TEXT NOT NULL UNIQUE CHECK (length(content_hash) = 64),
