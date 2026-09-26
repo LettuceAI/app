@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::{CreationDraft, CreationLorebookEntry, CreationScene, CreationStage};
 
 pub const MAX_CREATION_OPERATIONS: usize = 64;
-pub const MAX_CREATION_PROPOSAL_BYTES: usize = 16 * 1024 * 1024;
+pub const MAX_CREATION_PROPOSAL_BYTES: usize = 128 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -251,9 +251,6 @@ fn apply_change(
             let CreationDraft::Character { scenes, .. } = draft else {
                 return Err(CreationOperationError::WrongTarget);
             };
-            if scenes.len() >= crate::model::MAX_CREATION_SCENES {
-                return Err(CreationOperationError::LimitExceeded);
-            }
             if scenes.iter().any(|scene| scene.id == *id) {
                 return Err(CreationOperationError::DuplicateIdentity);
             }
@@ -292,9 +289,6 @@ fn apply_change(
                 entry.title.clone_from(title);
                 entry.content.clone_from(content);
             } else {
-                if entries.len() >= crate::model::MAX_CREATION_LOREBOOK_ENTRIES {
-                    return Err(CreationOperationError::LimitExceeded);
-                }
                 entries.push(CreationLorebookEntry {
                     id: *id,
                     title: title.clone(),
@@ -469,6 +463,70 @@ mod tests {
                 }],
             }
         );
+    }
+
+    #[test]
+    fn large_existing_drafts_and_long_messages_are_accepted() {
+        let scenes = (0..200)
+            .map(|index| crate::CreationScene {
+                id: SceneId::new(),
+                content: format!("scene {index}"),
+                direction: None,
+            })
+            .collect::<Vec<_>>();
+        let character = CreationProposal::initial(
+            CreationProposalId::new(),
+            CreationDraft::Character {
+                name: Some("Aster".to_owned()),
+                definition: Some("d".repeat(512 * 1024)),
+                scenes,
+            },
+            TimestampMillis::new(1),
+        )
+        .expect("200 scenes and a 512 KiB definition");
+        let added = character
+            .apply(
+                CreationProposalId::new(),
+                CreationTurnId::new(),
+                vec![CreationOperation::AddScene {
+                    id: SceneId::new(),
+                    content: "one more".to_owned(),
+                    direction: None,
+                }],
+                TimestampMillis::new(2),
+            )
+            .expect("proposal");
+        assert!(added.outcomes[0].succeeded());
+        let entries = (0..2_100)
+            .map(|index| crate::CreationLorebookEntry {
+                id: LorebookEntryId::new(),
+                title: format!("entry {index}"),
+                content: "content".to_owned(),
+            })
+            .collect::<Vec<_>>();
+        let lorebook = CreationProposal::initial(
+            CreationProposalId::new(),
+            CreationDraft::Lorebook {
+                name: Some("World".to_owned()),
+                description: None,
+                entries,
+            },
+            TimestampMillis::new(1),
+        )
+        .expect("2100 entries");
+        let upserted = lorebook
+            .apply(
+                CreationProposalId::new(),
+                CreationTurnId::new(),
+                vec![CreationOperation::UpsertLorebookEntry {
+                    id: LorebookEntryId::new(),
+                    title: "new".to_owned(),
+                    content: "new".to_owned(),
+                }],
+                TimestampMillis::new(2),
+            )
+            .expect("proposal");
+        assert!(upserted.outcomes[0].succeeded());
     }
 
     #[test]

@@ -4,11 +4,9 @@ use lettuce_types::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const MAX_CREATION_TEXT_BYTES: usize = 256 * 1024;
-pub const MAX_CREATION_USER_MESSAGE_BYTES: usize = 64 * 1024;
-pub const MAX_CREATION_SCENES: usize = 128;
-pub const MAX_CREATION_LOREBOOK_ENTRIES: usize = 2_048;
-pub const MAX_CREATION_DRAFT_BYTES: usize = 8 * 1024 * 1024;
+pub const MAX_CREATION_TEXT_BYTES: usize = 8 * 1024 * 1024;
+pub const MAX_CREATION_USER_MESSAGE_BYTES: usize = 8 * 1024 * 1024;
+pub const MAX_CREATION_DRAFT_BYTES: usize = 64 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -115,9 +113,6 @@ impl CreationDraft {
             } => {
                 validate_optional(name)?;
                 validate_optional(definition)?;
-                if scenes.len() > MAX_CREATION_SCENES {
-                    return Err(super::CreationProposalError::DraftTooLarge);
-                }
                 for scene in scenes {
                     validate_required(&scene.content)?;
                     validate_optional(&scene.direction)?;
@@ -135,9 +130,6 @@ impl CreationDraft {
             } => {
                 validate_optional(name)?;
                 validate_optional(description)?;
-                if entries.len() > MAX_CREATION_LOREBOOK_ENTRIES {
-                    return Err(super::CreationProposalError::DraftTooLarge);
-                }
                 for entry in entries {
                     validate_required(&entry.title)?;
                     validate_required(&entry.content)?;
