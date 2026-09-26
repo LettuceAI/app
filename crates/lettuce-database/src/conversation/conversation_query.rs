@@ -2916,6 +2916,7 @@ mod tests {
             .expect("snapshot");
         let conversation_id = ConversationId::new();
         let plan = lettuce_conversations::CreateConversationPlan {
+            current_settings: None,
             conversation_id,
             title: title.to_owned(),
             kind: ConversationKind::Direct(DirectConversationDetails {

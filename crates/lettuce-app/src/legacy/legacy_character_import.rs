@@ -1255,7 +1255,8 @@ mod tests {
             lorebooks_overridden: false,
             disable_character_lorebooks: true,
             author_note: None,
-            config_overrides_json: "{}".to_owned(),
+            config_overrides_json: r#"{"chatType":"conversation","disableCharacterLorebooks":true}"#
+                .to_owned(),
             memories_json: "[]".to_owned(),
             memory_embeddings_json: "[]".to_owned(),
             memory_summary: String::new(),
@@ -1328,6 +1329,43 @@ mod tests {
                 ));
             })
             .expect("group conversation");
+        let imported = &group_history.aggregate.conversation;
+        let own = imported
+            .current_settings
+            .as_ref()
+            .expect("the session's overrides are the conversation's own settings");
+        assert_eq!(
+            own.chat_mode,
+            Some(lettuce_conversations::GroupChatModeSnapshot::Conversation)
+        );
+        assert_eq!(own.disable_character_lorebooks, Some(true));
+        let imported_group = GroupId::from_uuid(scope.uuid(group_id.as_uuid()));
+        let revision = GroupRepository::get(backend.database(), imported_group)
+            .expect("read group")
+            .expect("group exists")
+            .group
+            .revision;
+        GroupRepository::rename(
+            backend.database(),
+            imported_group,
+            revision,
+            "Renamed crew".into(),
+            TimestampMillis::new(59),
+        )
+        .expect("rename the group");
+        let live = crate::generation::live_sources::live_group(backend.database(), imported)
+            .expect("live group")
+            .expect("group conversation");
+        assert_eq!(
+            live.profile.as_ref().map(|profile| profile.chat_mode),
+            Some(ChatMode::Roleplay)
+        );
+        assert_eq!(
+            live.chat_mode,
+            lettuce_conversations::GroupChatModeSnapshot::Conversation,
+            "an imported chat-type override survives a group edit"
+        );
+        assert!(live.disable_character_lorebooks);
         let cast = &group_history.aggregate.conversation.participants;
         assert_eq!(cast.len(), 4);
         let unknown = cast

@@ -511,6 +511,7 @@ where
         };
 
         let plan = CreateConversationPlan {
+            current_settings: persona_turned_off(&request.persona)?,
             conversation_id,
             title: request.title.clone(),
             kind: ConversationKind::Direct(details),
@@ -1288,6 +1289,7 @@ where
         };
 
         let plan = CreateConversationPlan {
+            current_settings: persona_turned_off(&request.persona)?,
             conversation_id,
             title,
             kind: ConversationKind::Group(details),
@@ -1549,6 +1551,27 @@ fn collect_model(
 
 fn retain(ids: Vec<LorebookId>, kept: &[LorebookId]) -> Vec<LorebookId> {
     ids.into_iter().filter(|id| kept.contains(id)).collect()
+}
+
+/// A launch that turns the persona off records that as the conversation's
+/// own disabled persona, like legacy's session `persona_disabled`; a launch
+/// that only found no default persona records nothing, so the chat follows a
+/// default persona set later (legacy `choose_persona`).
+fn persona_turned_off(
+    selection: &LaunchSelection<lettuce_types::PersonaId>,
+) -> Result<Option<lettuce_conversations::CurrentConversationSettings>, ConversationLaunchError> {
+    if !matches!(selection, LaunchSelection::Disabled) {
+        return Ok(None);
+    }
+    lettuce_conversations::CurrentConversationSettingsPatch {
+        persona: lettuce_conversations::PatchValue::Clear,
+        ..lettuce_conversations::CurrentConversationSettingsPatch::default()
+    }
+    .apply(None, None)
+    .map(Some)
+    .map_err(|_| ConversationLaunchError::InvalidRequest {
+        field: "launch.persona",
+    })
 }
 
 fn collect_lorebooks(

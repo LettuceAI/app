@@ -5117,6 +5117,111 @@ async fn a_group_turn_reads_its_members_mode_and_lorebook_switch_live() {
     assert!(!text.contains("Ada's harbour."), "{text}");
 }
 
+#[tokio::test]
+async fn a_chat_launched_without_a_default_persona_follows_one_set_later_unless_turned_off() {
+    let database = database_with_builtins();
+    let prompt_id = prompt_with_text(
+        &database,
+        "Identity",
+        PromptPurpose::DirectChat,
+        "User={{user}}",
+    );
+    let character_id = seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
+        defaults.direct_prompt_id = Some(prompt_id);
+    });
+    let inherited =
+        direct_prompt_text(&database, request(character_id, "no-default-inherit"), "a").await;
+    let mut off = request(character_id, "no-default-off");
+    off.persona = LaunchSelection::Disabled;
+    let off = direct_prompt_text(&database, off, "b").await;
+    assert!(inherited().await.contains("User=Traveller"));
+
+    let mara = seed_persona(&database, "Mara");
+    set_default_persona(&database, mara);
+    assert!(inherited().await.contains("User=Mara"));
+    let text = off().await;
+    assert!(text.contains("User=Traveller"), "{text}");
+}
+
+#[tokio::test]
+async fn a_group_launched_without_a_persona_follows_the_groups_later_persona() {
+    let database = database_with_builtins();
+    let prompt_id = prompt_with_text(
+        &database,
+        "Group identity",
+        PromptPurpose::GroupChatConversational,
+        "User={{user}}",
+    );
+    let first = seed_named_character(&database, "Ada");
+    let second = seed_named_character(&database, "Bea");
+    let group_id = seed_group(
+        &database,
+        vec![member(first, 0), member(second, 1)],
+        None,
+        |group| {
+            group.chat_mode = ChatMode::Conversation;
+            group.group_conversation_prompt_id = Some(prompt_id);
+            group.persona = Selection::Disabled;
+        },
+    );
+    let conversation = ConversationLaunchPlanner::new(&database)
+        .launch_group(&group_request(group_id, "group-no-persona"), NOW)
+        .expect("launch group")
+        .value
+        .conversation;
+    let ConversationKind::Group(details) = &conversation.kind else {
+        panic!("group conversation");
+    };
+    assert_eq!(details.group.persona, SnapshotSelection::Disabled);
+    let sent = ConversationRepository::begin_send(
+        &database,
+        &direct_send_command(&conversation, "group-no-persona-send", "Hello cast."),
+        TimestampMillis::new(NOW.get() + 10),
+    )
+    .expect("send group message");
+    let source_message_id = match sent.value.turn.input {
+        GenerationInput::UserMessage { message_id } => message_id,
+        ref other => panic!("expected user-message input, got {other:?}"),
+    };
+    let speaker = conversation
+        .participants
+        .iter()
+        .find(|participant| {
+            participant.source == lettuce_conversations::ParticipantSource::Character(first)
+        })
+        .expect("speaker")
+        .id;
+    let turn = || async {
+        let mut request = context_request_for(&database, conversation.id, source_message_id);
+        request.selected_speaker = Some(lettuce_conversations::SelectedSpeakerDecision {
+            participant_id: speaker,
+            method: lettuce_conversations::SpeakerDecisionMethod::Explicit,
+            fallback: lettuce_conversations::SpeakerFallback::None,
+            reference: None,
+            rationale_summary: None,
+            decision_model: None,
+            usage_event_id: None,
+        });
+        assembled_prompt_with_text(&database, request).await.1
+    };
+    assert!(turn().await.contains("User=Traveller"));
+    let mara = seed_persona(&database, "Mara");
+    let revision = GroupRepository::get(&database, group_id)
+        .expect("group")
+        .expect("exists")
+        .group
+        .revision;
+    GroupRepository::set_persona(
+        &database,
+        group_id,
+        revision,
+        Selection::Explicit(mara),
+        NOW,
+    )
+    .expect("give the group a persona");
+    assert!(turn().await.contains("User=Mara"));
+}
+
 fn text_entry(text: &str) -> lettuce_context::PromptEntryDraft {
     lettuce_context::PromptEntryDraft {
         built_in_entry_key: None,
@@ -11481,7 +11586,7 @@ fn a_default_starter_is_never_applied_without_an_explicit_request() {
 }
 
 #[test]
-fn launching_without_a_default_persona_freezes_the_absence() {
+fn launching_without_a_default_persona_snapshots_no_persona() {
     let database = database();
     let character_id = plain_character(&database);
     let persona_id = seed_persona(&database, "Traveller");

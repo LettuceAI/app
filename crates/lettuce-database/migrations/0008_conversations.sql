@@ -72,6 +72,8 @@ CREATE TABLE conversation_settings (
     background_asset_id TEXT,
     background_blob_kind TEXT NOT NULL DEFAULT 'image' CHECK (background_blob_kind = 'image'),
     background_hidden INTEGER NOT NULL DEFAULT 0 CHECK (background_hidden IN (0, 1)),
+    chat_mode TEXT CHECK (chat_mode IS NULL OR chat_mode IN ('conversation', 'roleplay')),
+    disable_character_lorebooks INTEGER CHECK (disable_character_lorebooks IS NULL OR disable_character_lorebooks IN (0, 1)),
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     CHECK (author_note IS NULL OR (length(trim(author_note)) > 0 AND length(CAST(author_note AS BLOB)) <= 1048576)),

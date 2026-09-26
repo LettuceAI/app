@@ -130,6 +130,15 @@ pub struct CurrentConversationSettings {
     pub speaker_selection: Option<crate::snapshot::GroupSpeakerSelectionSnapshot>,
     #[serde(default)]
     pub speaker_selection_provenance: crate::commands::SettingProvenance,
+    /// A group conversation's own chat mode, a current override of the
+    /// group's (legacy session `chatType` override); `None` follows the group.
+    #[serde(default)]
+    pub chat_mode: Option<crate::snapshot::GroupChatModeSnapshot>,
+    /// A group conversation's own character-lorebook switch, a current
+    /// override of the group's (legacy session `disableCharacterLorebooks`
+    /// override); `None` follows the group.
+    #[serde(default)]
+    pub disable_character_lorebooks: Option<bool>,
 }
 
 impl CurrentConversationSettings {
@@ -307,6 +316,13 @@ impl CurrentConversationSettings {
                 field: "conversation_settings.companion_clock",
             });
         }
+        if matches!(kind, ConversationKind::Direct(_))
+            && (self.chat_mode.is_some() || self.disable_character_lorebooks.is_some())
+        {
+            return Err(ValidationError::InvalidReference {
+                field: "conversation_settings.group_overrides",
+            });
+        }
         if matches!(kind, ConversationKind::Direct(_)) && self.speaker_selection.is_some() {
             return Err(ValidationError::InvalidReference {
                 field: "conversation_settings.speaker_selection",
@@ -314,14 +330,16 @@ impl CurrentConversationSettings {
         }
         let expected_prompt = match kind {
             ConversationKind::Direct(_) => crate::snapshot::PromptPurposeSnapshot::Direct,
-            ConversationKind::Group(details) => match details.group.chat_mode {
-                crate::snapshot::GroupChatModeSnapshot::Conversation => {
-                    crate::snapshot::PromptPurposeSnapshot::GroupConversational
+            ConversationKind::Group(details) => {
+                match self.chat_mode.unwrap_or(details.group.chat_mode) {
+                    crate::snapshot::GroupChatModeSnapshot::Conversation => {
+                        crate::snapshot::PromptPurposeSnapshot::GroupConversational
+                    }
+                    crate::snapshot::GroupChatModeSnapshot::Roleplay => {
+                        crate::snapshot::PromptPurposeSnapshot::GroupRoleplay
+                    }
                 }
-                crate::snapshot::GroupChatModeSnapshot::Roleplay => {
-                    crate::snapshot::PromptPurposeSnapshot::GroupRoleplay
-                }
-            },
+            }
         };
         if self
             .prompt
@@ -335,7 +353,7 @@ impl CurrentConversationSettings {
         if matches!(
             kind,
             ConversationKind::Group(details)
-                if details.group.chat_mode
+                if self.chat_mode.unwrap_or(details.group.chat_mode)
                     == crate::snapshot::GroupChatModeSnapshot::Conversation
                     && self.scene.is_some()
         ) {

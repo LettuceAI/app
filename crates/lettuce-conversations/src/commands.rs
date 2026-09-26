@@ -90,6 +90,10 @@ pub struct CreateConversationPlan {
     pub participants: Vec<ConversationParticipantDraft>,
     pub initial_timeline: InitialTimelineDraft,
     pub operation: OperationToken,
+    /// The conversation's own settings from its first moment, created with
+    /// it; a launch that turns the persona off records that here.
+    #[serde(default)]
+    pub current_settings: Option<crate::model::CurrentConversationSettings>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -221,6 +225,9 @@ impl CreateConversationPlan {
         )?;
         self.kind.validate()?;
         self.initial_timeline.validate()?;
+        if let Some(settings) = &self.current_settings {
+            settings.validate_against_kind(&self.kind)?;
+        }
         for participant in &self.participants {
             participant.validate()?;
         }
@@ -1127,6 +1134,8 @@ impl CurrentConversationSettingsPatch {
             scene_provenance: SettingProvenance::LaunchInherited,
             speaker_selection: None,
             speaker_selection_provenance: SettingProvenance::LaunchInherited,
+            chat_mode: None,
+            disable_character_lorebooks: None,
         };
         let base = current.unwrap_or(&empty);
         let (author_note, author_note_provenance) = apply_value(
@@ -1218,6 +1227,8 @@ impl CurrentConversationSettingsPatch {
             scene_provenance,
             speaker_selection,
             speaker_selection_provenance,
+            chat_mode: base.chat_mode,
+            disable_character_lorebooks: base.disable_character_lorebooks,
         };
         result.validate()?;
         Ok(result)

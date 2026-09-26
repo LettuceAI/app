@@ -614,6 +614,7 @@ mod tests {
             byte_size: bytes.len() as u64,
         };
         let plan = lettuce_conversations::CreateConversationPlan {
+            current_settings: None,
             conversation_id,
             title: "Kernel".into(),
             kind: ConversationKind::Direct(DirectConversationDetails {

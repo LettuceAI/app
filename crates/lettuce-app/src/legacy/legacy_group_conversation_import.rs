@@ -215,6 +215,14 @@ where
                     .then_some(session.lorebook_source_ids.as_slice()),
                 speaker_selection: (speaker_selection != details.group.speaker_selection)
                     .then_some(speaker_selection),
+                persona_disabled: false,
+                chat_mode: session_override(&session.config_overrides_json, "chatType")
+                    .then_some(details.group.chat_mode),
+                disable_character_lorebooks: session_override(
+                    &session.config_overrides_json,
+                    "disableCharacterLorebooks",
+                )
+                .then_some(session.disable_character_lorebooks),
                 model_settings: &lettuce_models::ModelSettingsLayer::default(),
                 background: context.background(
                     &session.source_id,
@@ -592,4 +600,14 @@ fn parse_character(
     value: &str,
 ) -> Result<CharacterId, Error> {
     parse::<CharacterId>(value).map(|legacy| CharacterId::from_uuid(scope.uuid(legacy.as_uuid())))
+}
+
+/// Whether a legacy group session overrode `key` in its `config_overrides`
+/// (`group_sessions.rs` 544-590): the session's resolved value then belongs
+/// to the conversation instead of following the group.
+fn session_override(config_overrides_json: &str, key: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(config_overrides_json)
+        .ok()
+        .and_then(|overrides| overrides.as_object().map(|object| object.contains_key(key)))
+        .unwrap_or(false)
 }

@@ -430,18 +430,20 @@ of an entry. The turn records every book it used with the revision it read and
 the activated entry ids. Persona, characters and group are read live too
 (`generation::live_sources`). A one-to-one chat uses its chosen persona, or the
 current default persona when it chose none or its persona no longer exists or is
-archived (legacy `choose_persona`, `storage.rs` 509-521); a disabled persona is
-none, and a launch that found no default persona stays without one. A group
-chat uses its own persona, else its launch's explicit one, else the group's
-current selection, and a persona that no longer exists is none (legacy
-`load_persona`). Every character body is its current record, and
-`{{group_characters}}` and `{{@"Name"}}` mentions use the group's current
-members in cast order. A group's chat mode and character-lorebook switch follow
-the group (`group_sessions.rs` 509-600); a launch bakes a legacy session
-override of either into its snapshot with no separate marker, so the snapshot
-value is used while the group is unchanged since launch and the group's value
-once it changes, which drops such an imported override after the first group
-edit. A group turn in conversation mode sends no scene. The live document goes through the launch
+archived (legacy `choose_persona`, `storage.rs` 509-521). A launch that found no
+default persona snapshots none, and its chat follows a default set later; a
+launch that turns the persona off records it as the conversation's own disabled
+persona (`CreateConversationPlan::current_settings`, legacy `persona_disabled`),
+which stays off. A group chat uses its own persona, else its launch's explicit
+one, else the group's current selection (`group_sessions.rs` 560-563), and a
+persona that no longer exists is none (legacy `load_persona`). Every character
+body is its current record, and `{{group_characters}}` and `{{@"Name"}}`
+mentions use the group's current members in cast order. A group's chat mode and
+character-lorebook switch are the conversation's own values when it has them
+(`CurrentConversationSettings::chat_mode` and `disable_character_lorebooks`,
+which the legacy importer fills from a session's `config_overrides` `chatType`
+and `disableCharacterLorebooks`), else the group's current values
+(`group_sessions.rs` 509-600). A group turn in conversation mode sends no scene. The live document goes through the launch
 snapshot conversion, and prompt attribution carries its current id and
 revision. A retry reads whatever is saved when it runs, as legacy did: an
 attempt that already admitted its request resumes that request unchanged, while

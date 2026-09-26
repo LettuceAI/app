@@ -142,7 +142,7 @@ fn make_aggregate(
         kind: plan.kind.clone(),
         active_branch_id: root_branch_id,
         participants,
-        current_settings: None,
+        current_settings: plan.current_settings.clone(),
         revision: Revision::INITIAL,
         created_at: now,
         updated_at: now,
@@ -636,6 +636,7 @@ mod tests {
         let user_id = ConversationParticipantId::new();
         let character_participant_id = ConversationParticipantId::new();
         let plan = lettuce_conversations::CreateConversationPlan {
+            current_settings: None,
             conversation_id,
             title: "Atomic create".into(),
             kind: ConversationKind::Direct(DirectConversationDetails {
@@ -734,6 +735,7 @@ mod tests {
         let (starter_ref, starter_bytes) =
             make_reference(SnapshotSource::Starter(starter_id), b"starter");
         let plan = lettuce_conversations::CreateConversationPlan {
+            current_settings: None,
             conversation_id,
             title: "Timeline create".into(),
             kind: ConversationKind::Direct(DirectConversationDetails {

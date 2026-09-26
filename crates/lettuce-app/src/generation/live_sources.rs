@@ -9,12 +9,10 @@ use lettuce_conversations::{
     Conversation, ConversationKind, GroupChatModeSnapshot, SettingProvenance, SnapshotSelection,
 };
 
-/// A group conversation's live profile and the group settings a turn uses.
-/// Legacy resolved the chat mode and the character-lorebook switch from the
-/// group on every turn unless the session overrode them
-/// (`group_sessions.rs` 509-600). A launch applies such an override to its
-/// snapshot, so while the group is unchanged since launch the snapshot's value
-/// is the conversation's; once the group changes, its current value is used.
+/// A group conversation's live profile and the group settings a turn uses:
+/// the conversation's own chat mode and character-lorebook switch (a legacy
+/// session override), else the group's current values (`group_sessions.rs`
+/// 509-600), else the launch values when the group no longer exists.
 pub(crate) struct LiveGroup {
     pub(crate) profile: Option<GroupProfile>,
     pub(crate) chat_mode: GroupChatModeSnapshot,
@@ -30,13 +28,23 @@ pub(crate) fn live_group<S: GroupRepository + ?Sized>(
     };
     let launch = &details.group;
     let profile = sources.get(launch.source_id)?.map(|details| details.group);
-    let (chat_mode, disable_character_lorebooks) = match &profile {
-        Some(profile) if profile.revision != launch.source_revision => (
-            crate::launch::policy::group_chat_mode(profile.chat_mode),
-            profile.disable_character_lorebooks,
-        ),
-        _ => (launch.chat_mode, launch.disable_character_lorebook),
-    };
+    let own = conversation.current_settings.as_ref();
+    let chat_mode = own
+        .and_then(|settings| settings.chat_mode)
+        .or_else(|| {
+            profile
+                .as_ref()
+                .map(|profile| crate::launch::policy::group_chat_mode(profile.chat_mode))
+        })
+        .unwrap_or(launch.chat_mode);
+    let disable_character_lorebooks = own
+        .and_then(|settings| settings.disable_character_lorebooks)
+        .or_else(|| {
+            profile
+                .as_ref()
+                .map(|profile| profile.disable_character_lorebooks)
+        })
+        .unwrap_or(launch.disable_character_lorebook);
     Ok(Some(LiveGroup {
         profile,
         chat_mode,
@@ -45,12 +53,15 @@ pub(crate) fn live_group<S: GroupRepository + ?Sized>(
 }
 
 /// The persona a turn speaks to, read live (legacy `choose_persona`,
-/// `storage.rs` 509-521). A one-to-one chat uses its chosen persona, or the
-/// current default persona when it chose none or its persona no longer exists
-/// or is archived; a disabled persona is none. A group chat uses its own
-/// persona, else the persona its launch chose, else the group's current
-/// selection (the default persona when the group inherits it), and a persona that no longer exists is none, as legacy
-/// `load_persona` found none.
+/// `storage.rs` 509-521). A persona the conversation turned off (its own
+/// disabled setting, legacy `persona_disabled`) is none. A one-to-one chat
+/// uses its chosen persona, or the current default persona when it chose none,
+/// including a launch that found no default then, or when its persona no
+/// longer exists or is archived. A group chat uses its own persona, else the
+/// persona its launch chose explicitly, else the group's current selection
+/// (`group_sessions.rs` 560-563; the default persona when the group inherits
+/// it), and a persona that no longer exists is none, as legacy `load_persona`
+/// found none.
 pub(crate) fn live_persona<S: PersonaRepository + ?Sized>(
     sources: &S,
     conversation: &Conversation,
@@ -67,21 +78,22 @@ pub(crate) fn live_persona<S: PersonaRepository + ?Sized>(
         }
         _ => match &conversation.kind {
             ConversationKind::Direct(details) => match &details.persona {
-                SnapshotSelection::Disabled => return Ok(None),
                 SnapshotSelection::Explicit(persona) => Chosen::Explicit(Some(persona.source_id)),
-                SnapshotSelection::Inherited(_) => Chosen::Default,
+                SnapshotSelection::Inherited(_) | SnapshotSelection::Disabled => Chosen::Default,
             },
             ConversationKind::Group(details) => match (&details.group.persona, group) {
-                (SnapshotSelection::Disabled, _) => return Ok(None),
+                (SnapshotSelection::Disabled, None) => return Ok(None),
                 (SnapshotSelection::Explicit(persona), _)
                 | (SnapshotSelection::Inherited(persona), None) => {
                     Chosen::Explicit(Some(persona.source_id))
                 }
-                (SnapshotSelection::Inherited(_), Some(profile)) => match profile.persona {
-                    Selection::Disabled => return Ok(None),
-                    Selection::Inherit => Chosen::Default,
-                    Selection::Explicit(id) => Chosen::Explicit(Some(id)),
-                },
+                (SnapshotSelection::Inherited(_) | SnapshotSelection::Disabled, Some(profile)) => {
+                    match profile.persona {
+                        Selection::Disabled => return Ok(None),
+                        Selection::Inherit => Chosen::Default,
+                        Selection::Explicit(id) => Chosen::Explicit(Some(id)),
+                    }
+                }
             },
         },
     };

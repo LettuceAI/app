@@ -131,6 +131,12 @@ pub(crate) struct SessionSettingsSource<'a> {
     pub model_settings: &'a lettuce_models::ModelSettingsLayer,
     pub background: Option<lettuce_conversations::ConversationBackground>,
     pub companion_clock: Option<lettuce_conversations::CompanionClockSettings>,
+    /// Legacy `persona_disabled`: the chat turned its persona off.
+    pub persona_disabled: bool,
+    /// A group session's own `chatType` override.
+    pub chat_mode: Option<lettuce_conversations::GroupChatModeSnapshot>,
+    /// A group session's own `disableCharacterLorebooks` override.
+    pub disable_character_lorebooks: Option<bool>,
 }
 
 /// One legacy chat row in the shape both direct and group sessions share.
@@ -534,6 +540,9 @@ where
                 prompt_snapshot_purpose: lettuce_conversations::PromptPurposeSnapshot::Direct,
                 lorebook_source_ids: session.lorebook_source_ids_override.as_deref(),
                 speaker_selection: None,
+                persona_disabled: session.persona_disabled,
+                chat_mode: None,
+                disable_character_lorebooks: None,
                 model_settings: &session.generation_settings.model_settings,
                 background: context.background(
                     &session.source_id,
@@ -1169,6 +1178,9 @@ pub(crate) fn session_settings<S: DirectLaunchSources>(
         && input.model_settings.is_empty()
         && input.background.is_none()
         && input.companion_clock.is_none()
+        && !input.persona_disabled
+        && input.chat_mode.is_none()
+        && input.disable_character_lorebooks.is_none()
     {
         return Ok((None, drafts));
     }
@@ -1191,11 +1203,17 @@ pub(crate) fn session_settings<S: DirectLaunchSources>(
             lorebooks_provenance,
             lorebooks,
             persona: None,
-            persona_provenance: SettingProvenance::LaunchInherited,
+            persona_provenance: if input.persona_disabled {
+                SettingProvenance::Disabled
+            } else {
+                SettingProvenance::LaunchInherited
+            },
             scene: None,
             scene_provenance: SettingProvenance::LaunchInherited,
             speaker_selection_provenance: provenance(input.speaker_selection.is_some()),
             speaker_selection: input.speaker_selection,
+            chat_mode: input.chat_mode,
+            disable_character_lorebooks: input.disable_character_lorebooks,
         }),
         drafts,
     ))

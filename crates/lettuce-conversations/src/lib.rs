@@ -392,6 +392,7 @@ mod tests {
             lettuce_types::ConversationStarterId::new(),
         ));
         let plan = CreateConversationPlan {
+            current_settings: None,
             conversation_id: ConversationId::new(),
             title: "Direct launch".into(),
             kind: ConversationKind::Direct(DirectConversationDetails {
@@ -487,6 +488,7 @@ mod tests {
         details.group.chat_mode = chat_mode;
         details.group.scene = scene;
         CreateConversationPlan {
+            current_settings: None,
             conversation_id: ConversationId::new(),
             title: "Group launch".into(),
             kind: ConversationKind::Group(details),
@@ -2569,6 +2571,8 @@ mod tests {
             scene_provenance: SettingProvenance::Disabled,
             speaker_selection: None,
             speaker_selection_provenance: SettingProvenance::LaunchInherited,
+            chat_mode: None,
+            disable_character_lorebooks: None,
         };
         let preserved = patch
             .apply(Some(&existing), Some(Revision::INITIAL))
@@ -2921,6 +2925,8 @@ mod tests {
             scene_provenance: SettingProvenance::Disabled,
             speaker_selection: None,
             speaker_selection_provenance: SettingProvenance::LaunchInherited,
+            chat_mode: None,
+            disable_character_lorebooks: None,
         };
         assert!(settings.validate().is_ok());
         settings.revision = Revision::new(0);
