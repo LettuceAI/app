@@ -1,425 +1,90 @@
 # lettuce-creation
 
-Resumable AI-assisted authoring plus remote catalog discovery, inspection, and
-import preparation.
+AI-assisted authoring. Three systems live here, each as pure contracts, reducers and durable run records:
 
-## Boundary
+- the creation helper, a chat agent that drafts or edits a character, persona or lorebook through tool calls and applies the result once the user confirms;
+- single lorebook entry and keyword generation from a conversation;
+- the staged lorebook generator, which plans, writes, refines and checks a whole lorebook from source documents.
 
-Creation and discovery remain separate internal modules and commit only through
-normal transfer, media, and authored-domain use cases.
+The crate never calls a model or touches SQLite. `lettuce-app` resolves profiles and prompts, dispatches inference and runs the jobs; `lettuce-database` implements the repositories. Nothing here writes a character, persona or lorebook directly: final apply goes through the normal authored-domain invariants (`lettuce-characters`, `lettuce-context`), atomically with an immutable receipt. The crate also holds no model-facing text. Every tool description, instruction and fallback prompt is a catalog key the application resolves from the built-in prompt documents (`prompt_app_creation_runtime`, `prompt_app_lorebook_runtime`), and tool builders take that resolver.
 
-The public surface is intentionally small. Business invariants belong in domain models and use cases; infrastructure is accessed only through narrow ports owned by the calling crate.
+## Creation helper
 
-## Status
+### Model
 
-Lorebook entry/keyword primary and fallback checkpoints, and staged planner,
-writer/refinement/coherence checkpoints retain optional cached-input/reasoning
-token counters alongside native totals. Older JSON defaults missing details to
-None; explicit zero remains distinct. App mappings copy provider evidence
-without billing normalization. Tests cover old/new JSON for all four usage
-types and staged planner persistence/replay with reported details.
+A `CreationWorkflow` (`model.rs`) has a versioned `CreationTarget`: a new or existing character, persona or lorebook. The user talks to it in `CreationTurn`s. Each turn's effect is an immutable `CreationProposal` revision holding the `CreationDraft` (name, definition or description, ordered scenes or lorebook entries) and the ordered operation outcomes. The workflow's `CreationStage` is drafting, awaiting review or awaiting confirmation.
 
-### Lorebook workflow scenario coverage
+`CreationWorkflowRepository` persists a turn's input before inference and advances proposal lineage with a workflow revision CAS; exact retries return the stored records. Proposals are immutable: a proposal's ordinal is its parent's plus one, and siblings may share it.
 
-The pinned `fixtures/legacy-import/lorebook-generation-tool-scenarios-v1.json`
-remains the legacy behavior baseline, not a statement that its original
-first-slice exclusions are still unimplemented. Current backend coverage:
+### Tools
 
-| Scenario group | Implemented boundary and evidence |
+The helper's tools (`tool.rs`, versioned by `CREATION_TOOL_VERSION`) are target-specific:
+
+| Target | Tools |
 | --- | --- |
-| Text/Markdown/PDF sources and byte/excerpt bounds | `staged_lorebook_sources` preserves legacy limits, order and Unicode truncation; PDF text uses the legacy pdf-extract 0.7 implementation. |
-| Planner outline, required tool, approval and edits | `staged_lorebook` reducer/domain tests and app staged SQLite scenario cover nonempty plans, stable IDs and review CAS. |
-| Three-entry batches, failure/retry and partial recovery | Existing batch checkpoint plus per-entry runs preserve completed drafts, retry failed identities under new jobs, and reject stale batch writes. |
-| Draft edits, refinement/history and coherence acceptance | Domain transitions and the SQLite execution scenario cover reviewed changes, append-only refinement history and selected stable-ID coherence proposals. |
-| Explicit accepted-draft commit | SQLite creation repository applies new/existing book plus accepted entries and receipt in one transaction; stale requests and duplicate commit intent are checked. |
-| Cancellation and durable replay | App scenario covers job settlement, retained review state, late response cancellation, frozen model/prompt inputs and replay without inference redispatch. |
+| Character | `write_definition`, `write_scene`, `set_name`, `edit_scene`, `delete_scene` |
+| Persona | `write_definition`, `set_name` |
+| Lorebook | `write_lore_entry`, `set_name`, `edit_lore_entry`, `delete_lore_entry`, `reorder_lore_entries` |
+| All | `show_preview`, `request_confirmation` (both with an optional `message`) |
 
-Single-entry and keyword generation remain proposal-only, with native then
-structured fallback and their own admission/execution tests. The staged scenario
-uses scripted inference and repository reloads, not a process-kill test or a
-live provider. Automatic host scheduling, progress IPC and frontend integration
-are still deferred.
-Backend scenario coverage does not mean the user-facing rewrite is complete.
+`creation_tool_request` builds the definitions with catalog keys only (`CREATION_TOOL_TEXT_KEYS`), so stored attempts keep the shape, and `describe_creation_tools` fills the text. The same tools are offered at every stage, so the user can keep chatting after a confirmation request. `show_preview` moves the proposal to review and `request_confirmation` to confirmation; any successful change returns it to drafting, so confirmation has to be requested again before apply.
 
-The app writer dispatch coordinator's `run_batch` concurrently claims, executes
-and settles the admitted batch using existing per-writer lifecycle methods.
-Results arrive in completion order; unclaimable jobs return None. One failed
-writer does not cancel siblings. The existing three-entry domain batch bound
-is enforced, and duplicate or foreign project work is rejected. A barrier-backed
-SQLite regression verifies concurrent partial-retry execution, independent
-success/failure settlement and no redispatch of terminal jobs. Automatic host
-scheduling and lease renewal remain host responsibilities.
-The same scenario verifies resource denial leaves jobs unchanged, duplicate
-batch requests are rejected before inference, and a cancelled project's queued
-writer settles cancelled without inference or changes to saved drafts.
+Reading calls is lenient. Tool names match case-insensitively (`preview` and `confirm` are accepted), unknown arguments are ignored, nulls and empty strings count as absent, numbers and booleans are read as text, `set_name` also reads `note`, the write tools read `text`, `edit_scene` reads `scene_id`, a blank `direction` is dropped, and `reorder_lore_entries` also takes a comma-separated string. A call without a usable required argument, or with an id that is not one of the draft's, becomes a `Rejected` operation answered with an error while later calls still run. A call to an undeclared tool becomes `UndeclaredTool`, answered with `unknown tool: NAME`, and the attempt continues. Only version mismatches, duplicate provider ids, malformed calls and bad call counts reject the batch before reduction.
 
-PDF extraction accepts already-read bytes, keeps parser diagnostics out of
-public errors, and applies the same excerpt truncation as text. It is synchronous
-CPU work for the host's worker, not the UI thread. Protected document reading is
-wired in lettuce-app; extraction neither creates assets nor retains raw bytes.
-Prepared document excerpts carry optional asset identities; pasted text has none.
-Configured and resolved admission requests accept protected documents through
-`with_documents`. SQLite retains project/source/asset associations atomically
-with admission, rejects missing or non-document assets, and prevents referenced
-asset deletion. Replay uses saved excerpts without reopening source files.
-The on-disk source scenario also saves an outline awaiting approval, closes
-the database, reloads it by request identity, replays configured admission
-without resetting review state, and approves the restored outline. This covers
-known-ID resume, matching legacy's get-by-ID boundary; a project browser or
-host persistence of the selected project ID is not implemented here.
-The app's `with_intake` configured request accepts interleaved pasted text and
-protected documents. Both count toward the same legacy byte limits and source
-ordering; each document's raw buffer is released after extraction.
+`reduce_creation_tool_calls` applies valid calls in provider order into one proposal with one typed outcome per call (at most 64 operations); a failed operation does not roll back later valid ones. Scene and lorebook entry ids generated by the application are deterministic across an exact retry.
 
-Staged planning runs retain optional configured input provenance: explicit
-project model/four prompt overrides and the originally requested target count.
-This is stored in the existing run JSON alongside the frozen planner profile.
-Missing provenance in earlier documents defaults to None. The selection type
-is reused from settings; no duplicate selection schema or storage port is added.
-Refinement and coherence runs also retain optional per-operation overrides for
-configured admission replay, defaulting to None for older run documents.
-Configured writer batches keep their resolved profile, prompt identity/revision
-and original operation overrides alongside the current batch checkpoint. Batch
-start stores these in the same transaction before per-entry jobs are admitted.
-Planner, writer/refinement, coherence and configured batch inputs retain an
-optional admitted PromptDocument. The existing document validator checks its
-content and its identity/revision/purpose must match the run. Missing snapshots
-remain readable for earlier JSON. No prompt-history repository is introduced.
+### Attempts and rounds
 
-The verified creation-helper progressive-edit and finalization behavior is
-pinned in
-`fixtures/legacy-import/creation-helper-tool-scenarios-v1.json`. The first
-implementation slice is active: versioned new/edit targets, durable user turns,
-immutable draft proposal revisions, bounded pure target-specific text, scene,
-and lorebook-entry operations, ordered typed outcomes, and explicit
-awaiting-review/awaiting-confirmation stages are owned here. Failed operations
-do not roll back later valid operations in the same provider order. The
-repository port persists input before inference and advances proposal lineage
-with workflow revision CAS; exact retries return the immutable stored records.
+Each turn owns durable inference attempts (`attempt.rs`) created before dispatch. An attempt pins its base and planned proposal, retry parent, target-specific tool request, job, the resolved profile's fingerprint, ordinal, lifecycle and failure. A retry child uses a new job and re-reads the current helper model and settings, so its fingerprint may differ; crash recovery of an interrupted attempt keeps the parent's profile and admits an empty child atomically, never inheriting a partial provider sequence.
 
-The SQLite implementation lives in `lettuce-database`. No operation in this
-slice writes character, persona, or lorebook aggregates. Final authored-domain
-apply, provider continuation, image/media leases, administrative tools, and
-frontend events remain later slices.
+Native calls are admitted atomically in provider order before reduction, with their definition version, provider id, arguments, raw arguments and protected replay reference. Stale bases, changed retries, cross-turn owners, version drift, reused jobs and duplicate identities fail closed. Each attempt checkpoints up to eight provider response rounds (`MAX_CREATION_INFERENCE_ROUNDS`) with mixed visible text and reasoning, candidate replay and the exact contiguous call range, including text-only final responses, so continuation and recovery never guess round boundaries.
 
-The native proposal-tool contract is also active and uses the legacy
-creation-agent tool names and schemas (`old-code/.../creation_helper/agent/
-tool_defs.rs`, `verbs.rs`) for every operation the proposal supports:
-character `write_definition`, `write_scene`, `set_name`, `edit_scene`,
-`delete_scene`; persona `write_definition`, `set_name`; lorebook
-`write_lore_entry`, `set_name`, `edit_lore_entry`, `delete_lore_entry`,
-`reorder_lore_entries`; plus `show_preview` and `request_confirmation` (both
-accept the legacy optional `message`). As in legacy the same tools are offered
-at every stage and the user can keep chatting after a confirmation request:
-`show_preview` moves the proposal to review and `request_confirmation` to
-confirmation. Correction: legacy never left its preview status, while here any
-successful change returns the proposal to drafting so confirmation must be
-requested again before it can be applied. Once a proposal is applied the
-workflow is closed (no new turns, attempts, proposals or settlements; enforced
-by the adapter and by triggers), and applying is refused while an attempt of
-the workflow is created or running. Definitions carry no text here: descriptions
-and parameter descriptions are catalog keys (`CREATION_TOOL_TEXT_KEYS`) that
-`describe_creation_tools` fills from the application's
-`prompt_app_creation_runtime` document, so stored attempts keep the shape
-only. As legacy, tool names are matched case-insensitively (`preview` and
-`confirm` are accepted; names with spaces never pass provider validation),
-unknown arguments are ignored, nulls and empty strings count as absent,
-numbers and booleans are read as text, `set_name` also reads `note`,
-`write_definition`/`write_scene`/`write_lore_entry` read `text`, `edit_scene`
-reads `scene_id`, a blank `direction` is dropped and `reorder_lore_entries`
-also takes a comma-separated string. A call without a usable required
-argument, or with an id that is not one of ours, becomes a `Rejected`
-operation answered with an error while later calls still run; only version
-mismatches, duplicate provider ids, malformed calls and bad call counts are
-rejected before reduction. Deviation: legacy gave `write_lore_entry` a default
-`New entry` title; a missing title is now rejected. Valid calls reduce in
-provider order into one proposal with one typed outcome per call, including
-operation errors without stopping later calls; the application renders the
-tool results. Calls to undeclared tools reduce to an `UndeclaredTool`
-operation answered with legacy's `unknown tool: NAME`; the attempt continues.
-`CreationAttemptRepository::list_creation_dialogue` returns a workflow's earlier
-turns that have a succeeded attempt, with that attempt's parts, for the
-helper's history (legacy never persisted a turn whose reply failed).
-Legacy tools that need draft fields or services the proposal does not have yet
-(model, prompt, gradient, lorebook attachment, list reads, images, persona and
-lorebook deletion) are later slices; the lorebook description tool was
-removed because legacy had none. Corrected: the legacy `edit_scene` texts
-promised `sc_*` ids that never existed; they now point at the draft summary.
-Application-generated scene and lorebook-entry IDs are deterministic across an
-exact proposal retry, and the repository CAS commits the proposal before any
-later provider-continuation work.
+`CreationAttemptRepository` makes the lifecycle atomic: a user turn is admitted together with its first attempt at the exact workflow revision, so a turn never exists without its dispatch attempt; successful settlement advances the proposal and the attempt together. `list_creation_dialogue` returns earlier turns that have a succeeded attempt, with its parts, as the helper's history.
 
-Creation turns also own durable inference attempts before provider dispatch.
-Each attempt pins its immutable base and planned proposal identities, retry
-parent, target-specific tool request, job identity, exact resolved-profile
-fingerprint, ordinal, lifecycle, and failure state. Retry children use a
-distinct job and may carry a different profile fingerprint: like legacy, a
-retry re-reads the current helper model and settings. Crash recovery of an
-interrupted attempt keeps the parent's profile. Native calls are admitted atomically in
-provider order before reduction, including their exact definition version,
-provider identity, arguments, raw arguments, and protected replay reference.
-Exact retries return the stored evidence; stale bases, changed retries,
-cross-turn owners, version drift, reused jobs and duplicate
-identities fail closed; undeclared tools are admitted and answered with
-`unknown tool: NAME`.
+### Structured fallback
 
-The helper's `tool_fallback` setting (legacy `creationHelperToolFallback`)
-reaches the app coordinator through `with_tool_fallback`. With JSON or XML the
-request carries no native tools, the catalog protocol entry
-(`creation_fallback_json`/`_xml` with the tool summary built from
-`creation_fallback_tool` lines) follows the helper system entries, and a reply
-without native calls is read by `parse_creation_fallback` with legacy's
-envelope aliases; its `reply` call becomes the visible text and the calls get
-attempt-unique `fallback_N` provider ids. A reply that does not parse ends the
-turn with its raw text, like legacy. Deviations: a call whose name is not a
-valid tool name is dropped instead of answered, and an envelope with neither
-calls nor reply keeps its raw text instead of an empty reply. Continuation
-rounds replay only the visible reply and the calls, never reasoning.
+When the helper's tool fallback setting is JSON or XML, the request carries no native tools; the catalog protocol entry (`creation_fallback_json` or `_xml`, with a tool summary built from `creation_fallback_tool` lines) follows the helper's system entries. `parse_creation_fallback` reads a reply without native calls, accepting several envelope aliases: its `reply` call becomes the visible text, and the calls get attempt-unique `fallback_N` provider ids. A call whose name is not a valid tool name is dropped. A reply that does not parse ends the turn with its raw text, and an envelope with neither calls nor reply keeps its raw text. Continuation rounds replay only the visible reply and the calls, never reasoning.
 
-Regenerate (legacy `regenerate_response`) is
-`CreationAttemptRepository::admit_creation_regeneration`: only the workflow's
-latest turn with a succeeded attempt, while the workflow still points at that
-turn's result, can be regenerated. In one transaction the workflow returns to
-the proposal the turn started from (a revision bump when the turn had changed
-the draft) and a new turn with the same user message, `regenerated_turn_id`
-set, and its first attempt are admitted there with the current profile.
-Turns and proposals stay immutable: the discarded turn and its proposal remain
-as history, a proposal's ordinal is its parent's plus one (siblings may share
-it), and `list_creation_dialogue` leaves out every regenerated turn. Backup
-restore replays turns in ordinal order and moves the workflow back to a turn's
-base when it differs. Resolving which model and settings a creation turn runs
-with (helper model then default model, streaming toggle, creation feature
-sampling slot) is caller-side wiring deferred to the frontend/command phase;
-the coordinator takes a resolved profile.
+### Regenerate
 
-Each attempt additionally checkpoints up to eight immutable provider-response
-rounds. Round evidence preserves mixed visible text/reasoning, candidate replay,
-and the exact contiguous call range, including text-only terminal responses.
-This makes batch ownership and continuation recovery explicit instead of
-guessing round boundaries from timestamps or a flat call list.
+`admit_creation_regeneration` regenerates the workflow's latest turn with a succeeded attempt, while the workflow still points at that turn's result. In one transaction the workflow returns to the proposal the turn started from (bumping the revision when the turn had changed the draft), and a new turn with the same user message and `regenerated_turn_id` set is admitted with its first attempt at the current profile. The discarded turn and its proposal stay as history, and `list_creation_dialogue` leaves regenerated turns out. Backup restore replays turns in ordinal order and moves the workflow back to a turn's base when it differs.
 
-Remote provider dispatch and recursive continuation are active through the
-`lettuce-app` coordinator. User-turn/first-attempt admission is one atomic port
-operation bound to the exact workflow revision; it never exposes a durable turn
-without its dispatch attempt. The explicit interrupted-parent recovery contract
-preserves parent evidence and admits an empty immediate child atomically; retry
-children never inherit a partial provider sequence. Successful terminal
-settlement likewise advances the proposal workflow and attempt together through
-one repository operation.
+### Apply
 
-Confirmed persona finalization is now an explicit application-coordinated
-authored-domain apply. New-persona workflows map complete confirmed drafts
-through the normal create invariants. Existing-persona workflows additionally
-pin the authored revision and revise only name/description while preserving all
-other authored fields, media, lifecycle, identity, timestamps, and default
-selection. Both mutations atomically persist an immutable workflow receipt, so
-crash retries return the original result after the persona revision advances
-while stale or changed commands conflict.
+`CreationApplyRepository` applies a confirmed proposal. Every apply persists an immutable receipt atomically with the authored change, so a crash retry returns the original result after the target's revision has moved, while a stale or changed command conflicts. Applying is refused while an attempt of the workflow is created or running, and an applied workflow is closed: no new turns, attempts, proposals or settlements (enforced in the adapter and by triggers).
 
-Confirmed new-character finalization is also active. A complete name and
-definition plus the ordered draft scenes map into the normal character-plan
-contract, retaining proposal scene IDs, text, direction, and order. The
-resulting graph deliberately starts with default character policies and empty
-provenance, presentation customizations, media, variants, and starters. The
-complete graph and its character-specific immutable receipt commit atomically.
+- New persona: the draft goes through the normal create invariants. Existing persona: pinned to the authored revision, only name and description change; media, lifecycle, identity, timestamps and default selection stay.
+- New character: name, definition and the ordered scenes become a normal character plan, keeping proposal scene ids, text, direction and order; everything else starts at the character defaults (empty provenance, presentation customizations, media, variants and starters).
+- Existing character: revision-pinned; name, definition and the authoritative ordered scene list apply in one root CAS, and fields the draft does not have stay unchanged. Kept scene ids keep lifecycle, variants, selection, assets and creation data, and only changed scenes bump their revision; new ids start as minimal active text scenes; omitted ids are removed, unless that would break a default-scene or starter reference the draft cannot express, which is rejected.
+- New lorebook: the confirmed name and exact entry ids, titles, content and order. Helper entries have no keyword policy, so they are created enabled and always active, with empty keywords, literal case-insensitive matching and priority zero. The helper's description stays proposal context; lorebooks have no description field.
+- Existing lorebook: revision-pinned; root lifecycle, detection, icon, behavior, identity and creation time stay, while the name and the complete entry graph apply in one CAS. Kept entry ids keep activation, keywords, matching, priority and creation data; new ids get the new-lorebook defaults; omitted ids are removed.
 
-Confirmed existing-character finalization is revision-pinned and applies the
-reviewed name, definition, and authoritative ordered scene list in one root
-CAS. All character fields absent from the helper draft remain unchanged.
-Retained scene IDs preserve lifecycle, variants, selected variant, assets, and
-creation metadata while reviewed text/direction/order changes bump only affected
-scene revisions; new IDs start as minimal active text scenes and omitted IDs
-are removed. Removal is rejected when it would invalidate an unrepresented
-default-scene or starter reference instead of silently rewriting that setting.
+## Lorebook entry and keyword generation
 
-Confirmed new-lorebook finalization is active through the normal lorebook
-aggregate path. It preserves the confirmed root name and exact entry IDs,
-titles, content, and order. Because neither the legacy nor current authored
-lorebook aggregate has a description field, the helper description remains
-proposal context and is not fabricated into durable content. Creation-helper
-entries have no keyword-policy fields, so finalization makes them explicitly
-enabled and always-active with empty keywords, literal matching, case-insensitive
-matching, and priority zero; this avoids persisting inert entries while keeping
-all hidden policy defaults deterministic.
+`lorebook_entry.rs` generates one entry from a direct conversation. Ordinary mode requires `write_lorebook_entry` or `no_entry`; force mode exposes only `write_lorebook_entry` and treats `no_entry` as undeclared. A later valid entry beats an earlier `no_entry`. Title, content and always-active are normalized, and keywords are deduplicated case-insensitively and capped at 24. Instructions exist for each source mode with and without force, and there are JSON and XML fallback prompts and parsers.
 
-Confirmed existing-lorebook finalization is also active and revision-pinned.
-It preserves root lifecycle, detection, icon, behavior, identity, and creation
-time while applying the reviewed name and complete entry graph in one root CAS.
-Retained proposal entry IDs keep their activation, keyword, matching, priority,
-and creation metadata; reviewed title/content/order changes bump only affected
-entry revisions. New IDs use the explicit new-lorebook defaults, and omitted
-IDs are removed because the confirmed proposal is authoritative. This
-deliberately corrects the legacy helper, which preloaded only the root name and
-silently discarded every reviewed lorebook entry at final apply.
+`LorebookEntryGenerationRun` freezes everything the generation depends on: the conversation, lorebook, character and persona, the selected messages and memories, the source mode (messages, memory or mixed, validated before admission), the optional summary, the force flag, the resolved profile, prompt revision, rendered input values, fallback format and job. Execution records the native decision and, only when needed, one structured fallback decision with the same profile, each with normalized result, usage and provider diagnostics. A stored decision replays without another request, and an invalid declared result is terminal instead of silently falling through.
 
-Single-entry, keyword, and staged lorebook-generation behavior is pinned in
-`fixtures/legacy-import/lorebook-generation-tool-scenarios-v1.json`. Generation
-owns durable reviewed proposals; `lettuce-context` remains the only lorebook
-domain owner and final apply must use its expected-revision use cases atomically.
-Process-local job state, permissive free-text tool inference, positional draft
-identity, partial commit, and cancel-by-deletion are not preserved.
+`lorebook_keyword.rs` does the same for keywords: one required `write_lorebook_keywords` tool, JSON and XML fallbacks, the first matching call, first-spelling case-insensitive deduplication capped at 24, a frozen run and immutable native and fallback checkpoints.
 
-The single-entry writer's pure provider contract is now copied from legacy:
-ordinary mode requires `write_lorebook_entry` or `no_entry`, force mode exposes
-only `write_lorebook_entry`, a later valid entry wins over an earlier no-entry
-call, and title/content/always-active plus case-insensitively deduplicated
-keywords use the same normalization and 24-keyword legacy cap. Its exact JSON
-and XML fallback prompts and parsers are also present, with force-mode
-`no_entry` rejected as undeclared. The six source/force final instructions and
-two-attempt native/structured-fallback checkpoint decisions are typed here as
-well; none of these contracts mutate a lorebook. The crate holds no model-facing
-text: instructions, fallback prompts and tool descriptions are catalog keys
-(`lorebook_entry_final_instruction_key`, `lorebook_entry_fallback_prompt_key`,
-`LOREBOOK_ENTRY_TOOL_TEXT_KEYS` and the keyword equivalents) that the
-application resolves from the built-in `prompt_app_lorebook_runtime` document;
-tool builders take that resolver. The staged planner, writer, refinement and
-coherence final instructions (`STAGED_LOREBOOK_*_FINAL_INSTRUCTION_KEY`) and the
-three staged tool descriptions (`STAGED_LOREBOOK_TOOL_TEXT_KEYS`) follow the same
-rule.
+Neither mutates a lorebook; both produce proposals the user reviews. Both run as the generic `CreationRun` job (restart recovery, cooperative cancellation).
 
-The matching immutable run now freezes the direct conversation, lorebook,
-character/persona, selected message and memory identities, source mode,
-optional-summary choice, force flag, exact resolved inference profile, prompt
-revision, rendered input values, fallback format, and generic job identity.
-Messages/memory/mixed source gates are validated before admission. The SQLite
-adapter rejects changed request replay and the application admission boundary
-reuses the generic restart/cooperative-cancellation `CreationRun` job.
-Application execution persists the native decision and, only when needed, one
-same-profile structured fallback decision with normalized result, usage, and
-provider diagnostics. Durable entry-or-none results replay without another
-provider request; invalid declared results remain terminal instead of silently
-falling through.
+## Staged lorebook generator
 
-The keyword draft's pure legacy contract is also preserved: one required
-`write_lorebook_keywords` declaration, the exact final instruction and JSON/XML
-fallback prompts, first matching writer-call selection, and first-spelling
-case-insensitive deduplication capped at 24 keywords. Its immutable run freezes
-the resolved profile, active prompt revision, exact prepared values, fallback
-format, and generic job identity. Native and optional one-fallback decisions
-are immutable checkpoints with usage/provider diagnostics, allowing completed
-drafts to replay without another provider request. None of these contracts
-mutate a lorebook.
+`staged_lorebook.rs` builds a lorebook in stages on one durable `StagedLorebookProject`.
 
-The staged generator now has its first pure state slice: the exact legacy
-5-to-50 target clamp, bounded 20,000-character extracted excerpts, stable
-outline identities, free-text source references, and legal created-to-planning-to-
-outline-review transitions. The created/planning project is persisted with its
-planner profile, prompt revision, and generic job identity; exact admission and
-created-to-planning CAS retries are restart-safe. The planner's single native
-attempt, typed calls, reduced decision, usage, and provider diagnostics are
-durable before outline settlement. Source extraction, drafting, coherence, and
-final apply remain explicit later slices.
+1. Sources. `prepare_staged_lorebook_sources` takes pasted text and documents in order as `src_NN`: UTF-8 text and Markdown, and PDF through `pdf-extract` (from bytes already read, parser diagnostics kept out of errors). Each source is limited to 50 MiB and all sources to 200 MiB, and each excerpt is cut at 20 000 characters with a fixed truncation marker. Only excerpts enter project state; raw bytes are released after extraction, and replay never reopens source files. Document sources keep their asset identity; the project, source and asset associations are stored with admission, missing or non-document assets are rejected, and referenced assets cannot be deleted.
+2. Planning. The project is created with its planner profile, prompt revision and job; the target count is clamped to 5..50. The planner calls the required `propose_lorebook_outline`; the first matching call is reduced into an outline with deterministic stable entry ids and kept source references, and an empty outline is rejected. The planner attempt (typed calls, decision, usage, diagnostics) is stored before the outline is settled. A failed planner job can be retried while planning: the retry keeps the earlier job id and any invalid-response checkpoint and starts a new attempt under a new job with the same frozen profile and prompt.
+3. Outline review. Before approval the user can replace, add, remove and reorder plans; ordinals are rebuilt from input order while stable ids stay. Approval creates one pending draft per plan (title, proposed keys, empty content, not always-active) and moves to drafting; later outline edits are rejected.
+4. Drafting. Pending or failed drafts are written in batches of three in outline order (`STAGED_LOREBOOK_DRAFT_BATCH_SIZE`). Each batch freezes its revision and start time, and each draft gets a `StagedLorebookWriterRun` that freezes the project and plan ids, project revision, resolved profile, writer prompt revision, rendered values and job. The writer calls `write_lorebook_entry`; a valid result replaces only its own pending draft. Writers of one batch run concurrently and settle independently; one failure does not cancel the others. Re-selecting failed drafts makes a new batch without changing draft ids or overwriting earlier evidence. The project becomes drafts-ready once nothing is pending or drafting.
+5. Review. Manual edits store title and content as written and trim keywords; approval toggles a draft between drafted and approved. Refinement reruns the writer with feedback and appends the feedback, revised content and time to the draft's revision history.
+6. Coherence. `propose_coherence_changes` proposes changes of four kinds with stable ids. Accepted changes apply in proposal order (ASCII-insensitive key removal, literal term replacement, contradiction no-op, always-active toggle); rejected ones are dropped when review returns to drafts-ready.
+7. Commit. Only approved drafts are committed, and drafts with blank title and content are skipped. Plan ids become entry ids, so a retry keeps identity. The name is the explicit name, else the initial one. Entries keep their text, keys and always-active, and are enabled, case-insensitive, literal and priority zero; the usual lorebook validation applies (a draft with content but no title fails the commit atomically). New entries append in draft order with contiguous ordinals after existing ones. The book write, project state and receipt commit together; stale or changed retries conflict.
 
-The planner's exact required `propose_lorebook_outline` declaration and final
-instruction are copied from legacy. Reduction selects the first matching call,
-preserves legacy field aliases/defaults and returned entry count, assigns
-deterministic stable entry IDs, and rejects empty outlines before the
-outline-review transition. Like legacy, a source reference that names no
-extracted source is kept; the writer then reads every excerpt.
-Outline approval copies the legacy pending-draft initialization exactly: one
-ordered draft per stable plan ID, the plan title and proposed keys, empty
-content, `always_active = false`, pending status, and no revisions. The durable
-project then moves to drafting; writer execution remains separate.
-Before approval, outline edits can replace, add, remove and reorder plans.
-Ordinals are rebuilt from input order while stable plan IDs and field values
-are retained. Existing outline validation checks nonempty plans and
-stable ordinals; edits after approval are rejected to protect draft identity.
-The staged writer's pure provider contract is also copied from legacy: one
-required `write_lorebook_entry` declaration and exact final instruction, first
-matching-call selection, trimmed nonblank title/content, optional trimmed
-keywords without an added cap or deduplication, and both always-active aliases
-with a false default. Reduction returns a drafted payload bound to the stable
-plan ID but does not mutate the project.
-Each admitted staged writer can now retain one immutable native attempt with
-typed calls, draft-or-invalid decision, usage, and provider diagnostics. A
-valid stable-ID result replaces only its matching pending draft through the
-project revision boundary.
-Draft progression preserves the legacy batch size of three and outline order.
-Pending or failed drafts enter drafting, independent completions advance the
-same durable project safely, and the project becomes drafts-ready only after no
-pending or drafting item remains.
-Each batch freezes its revision and start time. Partial completion leaves that
-identity intact; selecting failed entries again creates a new batch identity
-without changing draft IDs or overwriting earlier writer evidence.
-Manual editing preserves the legacy permissive behavior: title and content are
-stored verbatim, keywords are only trimmed with blank values removed, and only
-pending or failed drafts become drafted. Approval directly toggles the selected
-stable-ID draft between drafted and approved without new validation or limits.
-Refinement reuses the required writer tool contract and copies the legacy
-prompt inputs and final instruction. Successful output replaces the selected
-stable-ID draft as drafted and appends the trimmed feedback, revised content,
-and completion time to its preserved revision history.
-The coherence contract now copies the legacy required tool schema, first-call
-reduction, stable change IDs, and four proposal kinds. Accepted changes apply in
-proposal order with the same ASCII-insensitive key removal, literal term
-replacement, contradiction no-op, and always-active toggle behavior; rejected
-changes are discarded when review returns to drafts-ready.
-Each coherence run can retain one immutable native attempt with typed calls,
-proposal-or-invalid decision, usage, and provider diagnostics before proposal
-submission mutates the project.
-Each pending staged draft can now be represented by an immutable writer run
-that freezes its stable project/plan identity, project revision, resolved
-profile, writer prompt revision, exact rendered-input values, and generic job
-identity. Provider execution and draft settlement remain separate.
+Cancellation is terminal and keeps the previous stage, outlines, drafts, proposals and attempts; a committed project cannot be cancelled, and an exact cancellation retry keeps the same revision.
 
-Final staged commit closes a drafts-ready project and retains its request and
-result receipt. Per the pinned scenario correction, only approved drafts are
-eligible; drafts with both title and content blank are skipped. Plan IDs become
-entry IDs, preserving identity across retries. Name selection keeps legacy
-explicit-name then initial-name precedence. Entry text, keys and always-active
-values are preserved, with enabled=true, case_sensitive=false, literal matching
-and priority=0. The existing authored lorebook validation still applies (for
-example, a nonblank content with blank title is rejected atomically).
-Eligible entries append in draft order using contiguous aggregate ordinals;
-this corrects legacy ordinal gaps and collisions with existing entries. Existing
-book metadata and entries are retained. New/existing book writes, project state
-and the receipt commit together; stale or changed retries conflict.
+Runs keep their configured inputs for replay: explicit model and prompt overrides and the requested target count on the planner, per-operation overrides on refinement and coherence, and the resolved profile, prompt identity and overrides on writer batches (stored before per-entry jobs are admitted). Planner, writer, refinement, coherence and batch inputs can hold the admitted `PromptDocument`, validated against the run's identity, revision and purpose.
 
-Project cancellation is terminal and retains the previous stage, outlines,
-drafts, coherence proposals and immutable attempts. Committed projects cannot
-be cancelled. Exact cancellation retries preserve the same project revision.
-Failed planner jobs can be explicitly retried while the project is planning.
-Each retry retains the previous job ID and optional invalid-response checkpoint,
-then starts a fresh attempt under a new job. Planner profile and prompt remain
-frozen across retries. Active runs, accepted outlines and terminal projects
-cannot be replaced by a fresh retry; an exact prior retry request remains replayable.
+## Usage evidence
 
-Text and UTF-8 TXT/MD source preparation copies legacy ordered `src_NN`
-identities, 50 MiB per-source and 200 MiB total byte bounds, and 20,000 Unicode
-character excerpts with the exact appended truncation marker. Excerpt validation
-accepts that marker in addition to the content limit. Labels follow the existing
-trimmed, nonblank project contract. Raw bodies are borrowed during preparation;
-only excerpts enter durable project state. Protected binary/PDF extraction is
-still deferred as recorded in the legacy scenario fixture.
-
-Staged lorebook planner, writer/refinement and coherence execution now reuse
-the existing job-dispatch usage ledger before provider invocation and before
-response reduction/checkpointing. Every actual dispatch preserves its response
-ID and optional usage, including invalid responses and project cancellation
-during inference; returned transport failures remain explicit failed evidence.
-Checkpoint replay creates no second dispatch record. Existing successful
-checkpoint usage stays unchanged. The staged SQLite lifecycle scenario covers
-all four stages, invalid planner usage, cancellation after response, independent
-concurrent-writer failure evidence and replay without duplicated charges.
-
-Legacy staged pipeline.rs called the provider without recording usage; recording
-these dispatches corrects that accounting omission. Legacy single-entry primary
-and fallback requests recorded usage before checking response success; their
-new dispatch-ledger integration remains a separate follow-up. No new schema,
-worker, pricing formula or host scheduling was introduced.
-
-Lorebook entry and keyword native/fallback executions also use job dispatch
-evidence. The shared helper distinguishes evidence persistence failure from
-provider failure. Entry/keyword stop on evidence failure without writing a
-false failed-native checkpoint or dispatching a fallback; provider failures
-retain the existing fallback policy. Primary/fallback IDs and optional usage
-remain separate, and successful replay adds no dispatch. Legacy entry generation
-recorded both requests before response validation; legacy keyword generation
-omitted that recording, which this corrects.
-
-The same distinction fixes Soul-writer alternate-model fallback after evidence
-or run-persistence/replay-cleanup failure. Other companion/staged callers retain
-their existing public provider-error mapping. Fault-injection scenarios prove
-admission failure sends zero requests, settlement failure sends one, no false
-checkpoint is written, and later retry preserves the pending evidence. Existing
-entry tests also prove provider-error fallback, cancellation and replay.
+Entry and keyword checkpoints (primary and fallback) and the staged planner, writer, refinement and coherence checkpoints keep optional cached-input and reasoning token counts beside the totals; absent and zero stay distinct, and the application copies provider evidence without normalizing it for billing. Every actual provider dispatch is also admitted to the job-owned usage ledger before the call and records its response id and usage before the response is reduced, including invalid responses, cancellation during inference and transport failures. Replaying a checkpoint dispatches nothing. When recording that evidence fails, entry and keyword generation stop without writing a false failed checkpoint or dispatching the fallback; provider failures still follow the fallback policy.
