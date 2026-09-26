@@ -1,80 +1,85 @@
 # lettuce-jobs
 
-Durable operation state, scheduling, progress, cancellation, and recovery.
+The lifecycle of long-running work: job identity and state, claims and leases, stages and progress, cancellation, retries, parent and child jobs, crash recovery, retention, and an event history per job.
 
-## Boundary
+The crate knows nothing about what a job does. It has no Tauri, SQLite, provider, filesystem or feature-specific payloads. A job points at its input and its result through typed `OutcomeRef`s whose records belong to the domain crates; this crate owns only the lifecycle truth. Executors, feature checkpoints and follow-up work live in `lettuce-app`, and durable storage in `lettuce-database`.
 
-Contains no feature-specific business state.
+## Structure
 
-The public surface is intentionally small. Business invariants belong in domain models and use cases; infrastructure is accessed only through narrow ports owned by the calling crate.
+- `model.rs`: the vocabulary. `JobSpec` (also `NewJob`) is a submission: `JobKind`, `JobSubject`, optional `IdempotencyKey`, optional parent, `CorrelationId`, input `OutcomeRef`, `JobPriority`, `RecoveryPolicy`, `CancellationPolicy` and the `ResourceClass`es it needs. `JobSnapshot` is the current state of one job. `JobState` holds the transition table.
+- `store.rs`: the `JobStore` trait, `InMemoryJobStore` (the one implementation of the lifecycle rules), `JobMutation`, `StoredJobRecord`, `Clock`/`SystemClock`/`FakeClock`, and the claim, recovery and retention results.
+- `events.rs`: `JobEvent` and `JobEventEnvelope`, the per-job history.
+- `handle.rs`: `JobHandle` and `CancellationToken` for executors.
+- `recovery.rs`, `retention.rs`, `registry.rs`, `scheduler.rs`: `RecoveryAction`, `RetentionPolicy`, the per-kind `JobRegistry` of policies, and `ResourceClaim`.
 
-## Slice 0 status
+## Kinds and subjects
 
-The crate now provides the domain-independent foundation:
+`JobKind` names the operation: artifact install and verify, runtime prepare, model load, memory extraction and consolidation, companion growth, consolidation and Soul writer, conversation generation, vector index build, creation run, image generation, media transform, transfer import and export, backup export and restore, sync session, speech transcription and synthesis, embedding benchmark, maintenance.
 
-- validated opaque job, lease, worker, correlation, event-sequence and
-  idempotency identities;
-- typed subjects, outcome references, safe labels/errors, progress and stages;
-- a checked lifecycle state machine with durable cancellation and cleanup
-  semantics;
-- an atomic, thread-safe in-memory `JobStore` reference implementation and a
-  persistence-neutral aggregate bridge used by the SQLite adapter, with
-  idempotent create-or-get, event cursors, pagination, next-job and exact-job
-  claims, heartbeats and expired-lease recovery; and
-- policy, recovery, retention, handle and resource-admission vocabulary for
-  later database/application adapters.
+Kinds are split finely on purpose. Companion Soul growth runs after a successful memory job and must fail or retry without touching that completed job, so it has its own kind. Companion consolidation follows a successful growth job, targets the character's Soul, and likewise must not change the growth job when it skips, fails or retries, so it is separate from generic memory consolidation. The feature input and checkpoints of these jobs belong to the application. `ConversationGeneration` is one direct conversation generation attempt.
 
-Snapshots retain the optional caller idempotency key so application schedulers
-can distinguish an exact active logical batch from newly arrived work for the
-same subject without opening the store's private specification record.
-Exact-job claims use the same lease and resource checks as ordinary queue
-claims while leaving unrelated queued work untouched.
+`JobRegistry` maps each kind to a policy (recovery, cancellation, resources) through a private numeric key. New kinds get a new key at the end, and a test asserts every kind maps to a distinct key, so inserting a variant in the middle of the enum cannot make two kinds share a policy.
 
-Request handles expose a cloneable cancellation token with both an atomic
-instant check and an async notification, allowing executors to interrupt
-blocked I/O without polling.
-Hosts may construct a job handle with an existing cancellation token when a
-command lifetime must propagate cancellation into the claimed executor. The job
-identity remains explicit and the durable store still owns lifecycle state.
+The crate checks only that a job's resource classes are non-empty and distinct. Which resources a kind needs is decided where the kind is registered, so a remote image executor can declare network access instead of the GPU without a default baked in here.
 
-The in-memory store is deterministic when constructed with `FakeClock`; the
-SQLite implementation lives in `lettuce-database` and restores every durable
-aggregate through this same lifecycle reducer. Events have no
-structural slot for arbitrary JSON, provider response bodies, local paths,
-credentials or base64 payloads. `SafeLabel` and `SubjectId` are bounded,
-caller-attested text fields—not secret scrubbers—and their `Debug` output is
-redacted. Adapters should supply machine-facing stage/error/translation keys
-and must never place prompts, credentials, paths or provider bodies in these
-fields. Domain crates own the records named by typed `OutcomeRef` values; this
-crate owns only lifecycle truth. Slice 0 validates resource snapshots for
-nonempty, deduplicated classes; kind/subject compatibility is intentionally
-registration-owned so a remote image executor can declare network rather than
-GPU admission without a universal default baked into this crate.
+A `JobSubject` is a `SubjectKind` (conversation, group, memory space, artifact install, backup and so on), a `SubjectId` and an optional display `SafeLabel`.
 
-`ConversationGeneration` is the durable kind for one direct conversation
-generation attempt; its registry key is appended, and a test asserts every kind
-maps to a distinct key so a mid-enum insertion cannot alias two policies.
+## Safe text
 
-`CompanionGrowth` is a distinct durable kind because Soul growth is derived
-after memory success and must fail or retry without changing the completed
-memory job. Its feature input and checkpoints remain application-owned.
-`CompanionConsolidation` is likewise distinct from generic memory consolidation:
-it follows a succeeded Soul-growth job, targets the character-owned Soul, and
-must not change the completed growth lifecycle when it skips, fails, or retries.
+Events and snapshots cross into the UI, so nothing in them can carry arbitrary JSON, provider bodies, paths, credentials or base64. `SafeLabel` is at most 128 characters without control characters, `/`, `\`, `:` or `?`. `SubjectId` and `IdempotencyKey` are at most 128 ASCII characters from a small alphabet. `SubjectId` and `IdempotencyKey` print as redacted in `Debug`; `SafeLabel` prints only its length. These are bounded, caller-attested fields, not scrubbers: callers put machine-facing stage names, error codes and translation keys in them, never prompts, credentials, paths or provider bodies. `JobError` pairs a `JobErrorCode` with a retryable flag, a `SafeLabel` message and an optional retry delay.
 
-Lease timestamps use an inclusive boundary: a mutation or heartbeat at the
-expiry instant is accepted, while a timestamp after expiry is rejected. A
-heartbeat never shortens the authoritative snapshot expiry. The first claim
-is attempt 1; retries return to `Queued` and the next claim increments once.
-Lease scavenging follows the persisted recovery policy and treats a requested
-cancellation as cleanup/recovery work rather than illegally moving it back to
-`Queued`. If a lease expires after cleanup has started, the store records
-`Interrupted` and does not claim that cleanup or domain compensation completed;
-`RecoveryAction::Compensate` tells the application to perform that follow-up.
-`orphaned_claims` scavenges every claim the same way whatever its lease (at
-startup no worker of the previous process is alive), each job at `now` or its
-last update if later.
-Retention with `keep_terminal_for: None` retains records indefinitely. With a
-finite retention window, an old terminal parent/child graph may be pruned
-together, while any node referenced by a nonterminal, too-new, or otherwise
-external parent/child is retained. Optional links count as references too.
+## Lifecycle
+
+The legal transitions (`JobState::can_transition_to`):
+
+| From | To |
+| --- | --- |
+| `Queued` | `Claimed`, `CancellationRequested`, `Interrupted` |
+| `Claimed` | `Running`, `CancellationRequested`, `Queued`, `Interrupted` |
+| `Running` | `CancellationRequested`, `CleaningUp`, `Succeeded`, `Failed`, `Queued`, `Interrupted` |
+| `CancellationRequested` | `CleaningUp`, `Succeeded`, `Failed`, `Interrupted` |
+| `CleaningUp` | `Cancelled`, `Failed`, `Interrupted` |
+
+Terminal states are `Succeeded`, `Failed`, `Cancelled` and `Interrupted`, and a terminal job and its events never change again.
+
+Every change goes through `append_and_transition(JobMutation)`, which updates the snapshot and appends the matching event under one lock, so the snapshot always equals the replay of its events. Mutations after the claim carry the `ClaimRef` (job, worker, attempt, lease id) and fail with `StaleLease` if it is not the job's current claim or `LeaseExpired` if the time is past the lease. Timestamps may not run backwards (`TimestampRegression`).
+
+1. Create. `create_or_get` validates the spec (at least one resource class, no duplicates) and inserts the job as `Queued` with `Created` and `Queued` events. With an idempotency key, the same key and the same submission return the existing job; the same key with a different submission is `IdempotencyConflict`. A child names a non-terminal parent and is attached to it as a required child.
+2. Claim. `claim_next` picks the highest-priority queued job whose resources the caller's `ResourceAvailability` allows, oldest first within a priority. `claim(id, ...)` claims one exact job with the same lease and resource checks and leaves the rest of the queue alone. A claim increments the attempt (the first claim is attempt 1) and issues a new lease. The `Claimed` event records the input, policies and resources the worker received.
+3. Run. `Start` moves to `Running`. `StageChanged` sets a new `StageSnapshot` and resets progress. `Progress` merges with the previous snapshot (omitted dimensions are kept), must not exceed a declared total, must not change a total, and must not go backwards within a stage. `Checkpoint` records an `OutcomeRef` the executor can resume from.
+4. Heartbeat. `heartbeat` extends the lease. The boundary is inclusive: a heartbeat or mutation at the expiry instant is accepted, one after it is not. A heartbeat never shortens the stored expiry.
+5. Settle. `Succeed` needs every required child to have succeeded. `PartiallySucceed` ends in `Succeeded` with warnings. `Fail` stores the `JobError`. `RetryScheduled` returns a claimed or running job to `Queued`; the next claim increments the attempt once.
+
+Snapshots keep the idempotency key, so a scheduler can tell whether the active job for a subject is exactly the logical batch it would submit or whether new work has arrived, without reading the stored spec.
+
+## Cancellation
+
+`CancellationPolicy` is `Cooperative`, `UntilIrreversibleStage` or `NotCancellable`. A request records the reason (user, shutdown, parent, timeout, recovery) and moves the job to `CancellationRequested`. It is rejected for `NotCancellable` jobs and, for `UntilIrreversibleStage`, once a claimed or running job has entered a stage marked irreversible. A repeated request is a no-op.
+
+A running job then calls `RequestCleanup` and `FinishCancellation`, so cleanup is always a recorded state. A job that finishes its work just as the stop arrives may still settle as `Succeeded` or `Failed`, which keeps its real outcome. A queued job that was never claimed is closed with `finish_queued_cancellation` (cleanup and cancelled in one step).
+
+In process, `JobHandle` carries a cloneable `CancellationToken` with an atomic `is_cancelled` check and an async `cancelled()` notification, so an executor can abort blocked I/O without polling. A host can build the handle around an existing token (`with_cancellation`) when a command's lifetime should cancel the executor; the job id stays explicit and the store still owns the durable state.
+
+## Recovery
+
+`expired_claims(now, limit)` releases claims whose lease has passed. What happens depends on where the job was:
+
+- `CleaningUp`: it ends `Interrupted`. Cleanup may already have had side effects, so the job is never requeued and the store does not claim that cleanup finished.
+- `CancellationRequested`: it goes through cleanup to `Interrupted`.
+- otherwise the persisted `RecoveryPolicy` decides: `Resume` and `Restart` requeue it, `Compensate` and `MarkInterrupted` end it `Interrupted`.
+
+Each `ExpiredClaim` returns the recovery policy; `recovery_action()` turns it into a `RecoveryAction`. `Compensate` is a request for follow-up work in the application, not a statement that it happened.
+
+`orphaned_claims` does the same for every claim regardless of its lease. It runs at startup, when no worker of the previous process can still be alive, and settles each job at `now` or at its last update if that is later. `lettuce-app`'s startup job recovery calls it.
+
+## Retention
+
+`prune(RetentionPolicy, now)` removes terminal jobs older than `keep_terminal_for` (default 30 days; `None` keeps everything). A whole old terminal parent and child graph is removed together, but any job linked to a parent or child that is not itself prunable (not terminal, too new, or outside the set) is kept, and optional links count as links. Pruning removes lifecycle records only, never a domain outcome or anything an `OutcomeRef` names.
+
+## Events
+
+Each job has a gapless event sequence starting at 1, every envelope carrying the job id, sequence, time and correlation id. `events_since(id, after, limit)` pages through it (limit 1 to 1000), and `list` pages snapshots filtered by state, kind or subject, ordered by creation time, with a `PageRequest`. Events are typed references and counters only; there is no field for a path or raw payload.
+
+## Durable storage
+
+`InMemoryJobStore` is both the test store (deterministic with `FakeClock`) and the rule engine for the durable one. `StoredJobRecord` is the persistence-neutral aggregate (spec, snapshot, events). The SQLite adapter in `lettuce-database` loads the records an operation touches, rebuilds a store with `restore_working_set`, applies the operation there, and writes back what changed, so there is one implementation of the lifecycle rules. `restore_working_set` accepts a trailing window of each job's events and links to jobs outside the set; `restore` requires full histories and a closed graph and is used for backup restore. Both check that snapshot and spec agree and that the event sequence is contiguous.
