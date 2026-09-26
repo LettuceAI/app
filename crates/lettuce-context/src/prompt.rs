@@ -696,10 +696,6 @@ impl PromptDocument {
     }
 }
 
-/// How many of the latest messages `recent_text` holds for the keyword
-/// conditions.
-pub const PROMPT_KEYWORD_RECENT_MESSAGES: usize = 10;
-
 /// Immutable facts used to evaluate all condition variants, including the
 /// companion-only scheduled-note rule and the lorebook keyword matcher.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

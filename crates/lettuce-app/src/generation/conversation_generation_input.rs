@@ -1210,8 +1210,7 @@ where
                 timeline: context_timeline(
                     timeline.items,
                     context_window,
-                    usize::from(global_settings.lorebook_scan_depth)
-                        .max(lettuce_context::PROMPT_KEYWORD_RECENT_MESSAGES),
+                    usize::from(global_settings.lorebook_scan_depth),
                     source_message_id,
                 ),
             })
@@ -3058,7 +3057,7 @@ mod tests {
             ContextWindowPolicy {
                 recent_non_pinned_limit: 1,
             },
-            lettuce_context::PROMPT_KEYWORD_RECENT_MESSAGES,
+            10,
             source,
         );
         let indices = kept
@@ -3096,7 +3095,7 @@ mod tests {
             ContextWindowPolicy {
                 recent_non_pinned_limit: 1_000,
             },
-            lettuce_context::PROMPT_KEYWORD_RECENT_MESSAGES,
+            10,
             source,
         );
         assert!(kept.len() >= 1_000);
@@ -3131,7 +3130,7 @@ mod tests {
         let kept = context_timeline(
             items,
             ContextWindowPolicy::default(),
-            lettuce_context::PROMPT_KEYWORD_RECENT_MESSAGES,
+            10,
             source,
         );
         let indices = kept

@@ -167,12 +167,10 @@ where
             .iter()
             .filter_map(active_text)
             .rev()
-            .take(scan_depth.max(lettuce_context::PROMPT_KEYWORD_RECENT_MESSAGES))
+            .take(scan_depth)
             .collect::<Vec<_>>();
         scan_text.reverse();
-        let recent_text = &scan_text[scan_text
-            .len()
-            .saturating_sub(lettuce_context::PROMPT_KEYWORD_RECENT_MESSAGES)..];
+        let recent_text = &scan_text[..];
         let latest_user_message = history
             .iter()
             .rev()
