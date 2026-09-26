@@ -167,7 +167,7 @@ fn map_vocabulary(
         if row
             .category
             .as_ref()
-            .is_some_and(|value| value.chars().count() > 512 || value.contains('\0'))
+            .is_some_and(|value| value.contains('\0'))
         {
             return Err(malformed(format!("{path}.category")));
         }
@@ -335,12 +335,10 @@ fn validate_common(
         value.is_empty()
             || value.trim() != value
             || value.to_ascii_lowercase() != value
-            || value.chars().count() > 32
             || value.chars().any(char::is_control)
     }) || scope.is_empty()
         || scope.trim() != scope
         || scope.to_ascii_lowercase() != scope
-        || scope.chars().count() > 64
         || scope.chars().any(char::is_control)
         || !valid_timestamp(created_at)
         || updated_at.is_some_and(|value| !valid_timestamp(value) || created_at > value)
@@ -356,7 +354,6 @@ fn validate_pair(
     field: &str,
 ) -> Result<(), LegacyBackupAsrError> {
     if authored.is_empty()
-        || authored.chars().count() > 4_096
         || authored.contains('\0')
         || normalized.is_empty()
         || normalized != normalize_asr(authored)

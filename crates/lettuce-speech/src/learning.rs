@@ -12,11 +12,6 @@ use crate::{AppliedCorrection, AsrLibraryError, AsrPromptLibrary};
 const DEFAULT_SCOPE: &str = "global";
 const MAX_PROMPT_BYTES: usize = 240;
 const MAX_PROMPT_TERMS: usize = 24;
-const MAX_TERM_SCALARS: usize = 4_096;
-const MAX_CORRECTION_SCALARS: usize = 4_096;
-const MAX_CATEGORY_SCALARS: usize = 512;
-const MAX_LANGUAGE_SCALARS: usize = 32;
-const MAX_SCOPE_SCALARS: usize = 64;
 const MAX_REPLACEMENT_WORDS: usize = 5;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -61,7 +56,7 @@ impl AsrVocabularyTerm {
     }
 
     pub fn validate(&self) -> Result<(), AsrLearningError> {
-        validate_authored_text(&self.term, MAX_TERM_SCALARS)?;
+        validate_authored_text(&self.term)?;
         if self.normalized_term != normalize_lookup_text(&self.term)
             || self.language != normalize_language(self.language.as_deref())
             || self.scope != normalize_scope(Some(&self.scope))
@@ -69,9 +64,9 @@ impl AsrVocabularyTerm {
         {
             return Err(AsrLearningError::InvalidData);
         }
-        validate_optional_bounded(&self.language, MAX_LANGUAGE_SCALARS)?;
-        validate_optional_payload(&self.category, MAX_CATEGORY_SCALARS)?;
-        validate_bounded_text(&self.scope, MAX_SCOPE_SCALARS)
+        validate_optional_bounded(&self.language)?;
+        validate_optional_payload(&self.category)?;
+        validate_bounded_text(&self.scope)
     }
 }
 
@@ -131,8 +126,8 @@ impl AsrCorrectionRule {
     }
 
     pub fn validate(&self) -> Result<(), AsrLearningError> {
-        validate_authored_text(&self.wrong, MAX_CORRECTION_SCALARS)?;
-        validate_authored_text(&self.correct, MAX_CORRECTION_SCALARS)?;
+        validate_authored_text(&self.wrong)?;
+        validate_authored_text(&self.correct)?;
         if self.normalized_wrong != normalize_lookup_text(&self.wrong)
             || self.normalized_correct != normalize_lookup_text(&self.correct)
             || self.language != normalize_language(self.language.as_deref())
@@ -147,8 +142,8 @@ impl AsrCorrectionRule {
         {
             return Err(AsrLearningError::InvalidData);
         }
-        validate_optional_bounded(&self.language, MAX_LANGUAGE_SCALARS)?;
-        validate_bounded_text(&self.scope, MAX_SCOPE_SCALARS)
+        validate_optional_bounded(&self.language)?;
+        validate_bounded_text(&self.scope)
     }
 }
 
@@ -169,8 +164,8 @@ pub struct AsrLearnedSuggestion {
 
 impl AsrLearnedSuggestion {
     pub fn validate(&self) -> Result<(), AsrLearningError> {
-        validate_authored_text(&self.wrong, MAX_CORRECTION_SCALARS)?;
-        validate_authored_text(&self.correct, MAX_CORRECTION_SCALARS)?;
+        validate_authored_text(&self.wrong)?;
+        validate_authored_text(&self.correct)?;
         if self.normalized_wrong != normalize_lookup_text(&self.wrong)
             || self.normalized_correct != normalize_lookup_text(&self.correct)
             || self.normalized_wrong == self.normalized_correct
@@ -181,8 +176,8 @@ impl AsrLearnedSuggestion {
         {
             return Err(AsrLearningError::InvalidData);
         }
-        validate_optional_bounded(&self.language, MAX_LANGUAGE_SCALARS)?;
-        validate_bounded_text(&self.scope, MAX_SCOPE_SCALARS)
+        validate_optional_bounded(&self.language)?;
+        validate_bounded_text(&self.scope)
     }
 }
 
@@ -204,8 +199,8 @@ pub struct AsrIgnoredSuggestion {
 
 impl AsrIgnoredSuggestion {
     pub fn validate(&self) -> Result<(), AsrLearningError> {
-        validate_authored_text(&self.wrong, MAX_CORRECTION_SCALARS)?;
-        validate_authored_text(&self.correct, MAX_CORRECTION_SCALARS)?;
+        validate_authored_text(&self.wrong)?;
+        validate_authored_text(&self.correct)?;
         if self.normalized_wrong != normalize_lookup_text(&self.wrong)
             || self.normalized_correct != normalize_lookup_text(&self.correct)
             || self.normalized_wrong == self.normalized_correct
@@ -217,8 +212,8 @@ impl AsrIgnoredSuggestion {
         {
             return Err(AsrLearningError::InvalidData);
         }
-        validate_optional_bounded(&self.language, MAX_LANGUAGE_SCALARS)?;
-        validate_bounded_text(&self.scope, MAX_SCOPE_SCALARS)
+        validate_optional_bounded(&self.language)?;
+        validate_bounded_text(&self.scope)
     }
 }
 
@@ -287,8 +282,8 @@ impl AsrVoiceExample {
     }
 
     pub fn validate(&self) -> Result<(), AsrLearningError> {
-        validate_authored_text(&self.expected_text, MAX_CORRECTION_SCALARS)?;
-        validate_optional_payload(&self.whisper_output, MAX_CORRECTION_SCALARS)?;
+        validate_authored_text(&self.expected_text)?;
+        validate_optional_payload(&self.whisper_output)?;
         let expected_whisper = self
             .whisper_output
             .as_deref()
@@ -302,8 +297,8 @@ impl AsrVoiceExample {
         {
             return Err(AsrLearningError::InvalidData);
         }
-        validate_optional_bounded(&self.language, MAX_LANGUAGE_SCALARS)?;
-        validate_bounded_text(&self.scope, MAX_SCOPE_SCALARS)
+        validate_optional_bounded(&self.language)?;
+        validate_bounded_text(&self.scope)
     }
 }
 
@@ -471,8 +466,8 @@ impl<R: AsrLearningRepository + ?Sized> AsrLearningLibrary<'_, R> {
     ) -> Result<Vec<AsrLearnedSuggestion>, AsrLearningError> {
         let language = normalize_language(language);
         let scope = normalize_scope(scope);
-        validate_optional_bounded(&language, MAX_LANGUAGE_SCALARS)?;
-        validate_bounded_text(&scope, MAX_SCOPE_SCALARS)?;
+        validate_optional_bounded(&language)?;
+        validate_bounded_text(&scope)?;
         let before_raw = tokenize_words(before);
         let after_raw = tokenize_words(after);
         let before_tokens = before_raw
@@ -1031,7 +1026,7 @@ fn normalize_query(
     scopes: &[String],
 ) -> Result<(Option<String>, Vec<String>), AsrLearningError> {
     let language = normalize_language(language);
-    validate_optional_bounded(&language, MAX_LANGUAGE_SCALARS)?;
+    validate_optional_bounded(&language)?;
     if scopes.len() > 8 {
         return Err(AsrLearningError::InvalidData);
     }
@@ -1046,7 +1041,7 @@ fn normalize_query(
     let mut seen = HashSet::new();
     let mut normalized = Vec::new();
     for scope in source {
-        validate_bounded_text(&scope, MAX_SCOPE_SCALARS)?;
+        validate_bounded_text(&scope)?;
         if seen.insert(scope.clone()) {
             normalized.push(scope);
         }
@@ -1054,40 +1049,29 @@ fn normalize_query(
     Ok((language, normalized))
 }
 
-fn validate_bounded_text(value: &str, max: usize) -> Result<(), AsrLearningError> {
-    if value.trim() != value
-        || value.is_empty()
-        || value.chars().count() > max
-        || value.chars().any(char::is_control)
-    {
+fn validate_bounded_text(value: &str) -> Result<(), AsrLearningError> {
+    if value.trim() != value || value.is_empty() || value.chars().any(char::is_control) {
         return Err(AsrLearningError::InvalidData);
     }
     Ok(())
 }
 
-fn validate_optional_bounded(value: &Option<String>, max: usize) -> Result<(), AsrLearningError> {
+fn validate_optional_bounded(value: &Option<String>) -> Result<(), AsrLearningError> {
     if let Some(value) = value {
-        validate_bounded_text(value, max)?;
+        validate_bounded_text(value)?;
     }
     Ok(())
 }
 
-fn validate_authored_text(value: &str, max: usize) -> Result<(), AsrLearningError> {
-    if value.is_empty()
-        || value.chars().count() > max
-        || value.contains('\0')
-        || normalize_lookup_text(value).is_empty()
-    {
+fn validate_authored_text(value: &str) -> Result<(), AsrLearningError> {
+    if value.is_empty() || value.contains('\0') || normalize_lookup_text(value).is_empty() {
         return Err(AsrLearningError::InvalidData);
     }
     Ok(())
 }
 
-fn validate_optional_payload(value: &Option<String>, max: usize) -> Result<(), AsrLearningError> {
-    if value
-        .as_ref()
-        .is_some_and(|value| value.chars().count() > max || value.contains('\0'))
-    {
+fn validate_optional_payload(value: &Option<String>) -> Result<(), AsrLearningError> {
+    if value.as_ref().is_some_and(|value| value.contains('\0')) {
         return Err(AsrLearningError::InvalidData);
     }
     Ok(())
@@ -1153,6 +1137,24 @@ mod tests {
         assert_eq!(prompt.matches("Lettuce AI").count(), 1);
         assert!(prompt.len() <= MAX_PROMPT_BYTES + 1);
         assert!(prompt.ends_with('.'));
+    }
+
+    #[test]
+    fn long_dictionary_fields_are_kept() {
+        let now = TimestampMillis::new(10);
+        let scope = format!("character:{}", "s".repeat(100));
+        let term = AsrVocabularyTerm::new(
+            "t".repeat(5_000),
+            Some(&"l".repeat(40)),
+            Some(&"c".repeat(600)),
+            Some(&scope),
+            1,
+            now,
+        )
+        .expect("term past the old bounds");
+        assert_eq!(term.term.len(), 5_000);
+        AsrCorrectionRule::new("w".repeat(5_000), "c".repeat(5_000), None, None, true, now)
+            .expect("correction past 4096 characters");
     }
 
     #[test]

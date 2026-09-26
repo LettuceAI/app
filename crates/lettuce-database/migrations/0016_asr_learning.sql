@@ -1,20 +1,20 @@
 CREATE TABLE asr_vocabulary_terms (
     id TEXT PRIMARY KEY CHECK (length(id) = 36),
-    term TEXT NOT NULL CHECK (length(term) BETWEEN 1 AND 4096 AND instr(term, char(0)) = 0),
+    term TEXT NOT NULL CHECK (length(term) >= 1 AND instr(term, char(0)) = 0),
     normalized_term TEXT NOT NULL CHECK (
-        length(normalized_term) BETWEEN 1 AND 4096
+        length(normalized_term) >= 1
         AND trim(normalized_term) = normalized_term
     ),
     language TEXT CHECK (
         language IS NULL
-        OR (length(language) BETWEEN 1 AND 32 AND trim(language) = language AND lower(language) = language)
+        OR (length(language) >= 1 AND trim(language) = language AND lower(language) = language)
     ),
     category TEXT CHECK (
         category IS NULL
-        OR (length(category) BETWEEN 0 AND 512 AND instr(category, char(0)) = 0)
+        OR instr(category, char(0)) = 0
     ),
     scope TEXT NOT NULL CHECK (
-        length(scope) BETWEEN 1 AND 64
+        length(scope) >= 1
         AND trim(scope) = scope
         AND lower(scope) = scope
     ),
@@ -40,22 +40,22 @@ ON asr_vocabulary_terms(normalized_term);
 
 CREATE TABLE asr_corrections (
     id TEXT PRIMARY KEY CHECK (length(id) = 36),
-    wrong TEXT NOT NULL CHECK (length(wrong) BETWEEN 1 AND 4096 AND instr(wrong, char(0)) = 0),
+    wrong TEXT NOT NULL CHECK (length(wrong) >= 1 AND instr(wrong, char(0)) = 0),
     normalized_wrong TEXT NOT NULL CHECK (
-        length(normalized_wrong) BETWEEN 1 AND 4096
+        length(normalized_wrong) >= 1
         AND trim(normalized_wrong) = normalized_wrong
     ),
-    correct TEXT NOT NULL CHECK (length(correct) BETWEEN 1 AND 4096 AND instr(correct, char(0)) = 0),
+    correct TEXT NOT NULL CHECK (length(correct) >= 1 AND instr(correct, char(0)) = 0),
     normalized_correct TEXT NOT NULL CHECK (
-        length(normalized_correct) BETWEEN 1 AND 4096
+        length(normalized_correct) >= 1
         AND trim(normalized_correct) = normalized_correct
     ),
     language TEXT CHECK (
         language IS NULL
-        OR (length(language) BETWEEN 1 AND 32 AND trim(language) = language AND lower(language) = language)
+        OR (length(language) >= 1 AND trim(language) = language AND lower(language) = language)
     ),
     scope TEXT NOT NULL CHECK (
-        length(scope) BETWEEN 1 AND 64
+        length(scope) >= 1
         AND trim(scope) = scope
         AND lower(scope) = scope
     ),
@@ -98,22 +98,22 @@ ON asr_corrections(
 
 CREATE TABLE asr_ignored_suggestions (
     id TEXT PRIMARY KEY CHECK (length(id) = 36),
-    wrong TEXT NOT NULL CHECK (length(wrong) BETWEEN 1 AND 4096 AND instr(wrong, char(0)) = 0),
+    wrong TEXT NOT NULL CHECK (length(wrong) >= 1 AND instr(wrong, char(0)) = 0),
     normalized_wrong TEXT NOT NULL CHECK (
-        length(normalized_wrong) BETWEEN 1 AND 4096
+        length(normalized_wrong) >= 1
         AND trim(normalized_wrong) = normalized_wrong
     ),
-    correct TEXT NOT NULL CHECK (length(correct) BETWEEN 1 AND 4096 AND instr(correct, char(0)) = 0),
+    correct TEXT NOT NULL CHECK (length(correct) >= 1 AND instr(correct, char(0)) = 0),
     normalized_correct TEXT NOT NULL CHECK (
-        length(normalized_correct) BETWEEN 1 AND 4096
+        length(normalized_correct) >= 1
         AND trim(normalized_correct) = normalized_correct
     ),
     language TEXT CHECK (
         language IS NULL
-        OR (length(language) BETWEEN 1 AND 32 AND trim(language) = language AND lower(language) = language)
+        OR (length(language) >= 1 AND trim(language) = language AND lower(language) = language)
     ),
     scope TEXT NOT NULL CHECK (
-        length(scope) BETWEEN 1 AND 64
+        length(scope) >= 1
         AND trim(scope) = scope
         AND lower(scope) = scope
     ),
@@ -149,29 +149,29 @@ CREATE TABLE asr_voice_examples (
     audio_asset_id TEXT NOT NULL,
     audio_blob_kind TEXT NOT NULL DEFAULT 'audio' CHECK (audio_blob_kind = 'audio'),
     expected_text TEXT NOT NULL CHECK (
-        length(expected_text) BETWEEN 1 AND 4096 AND instr(expected_text, char(0)) = 0
+        length(expected_text) >= 1 AND instr(expected_text, char(0)) = 0
     ),
     normalized_expected_text TEXT NOT NULL CHECK (
-        length(normalized_expected_text) BETWEEN 1 AND 4096
+        length(normalized_expected_text) >= 1
         AND trim(normalized_expected_text) = normalized_expected_text
     ),
     whisper_output TEXT CHECK (
         whisper_output IS NULL
-        OR (length(whisper_output) <= 4096 AND instr(whisper_output, char(0)) = 0)
+        OR instr(whisper_output, char(0)) = 0
     ),
     normalized_whisper_output TEXT CHECK (
         normalized_whisper_output IS NULL
         OR (
-            length(normalized_whisper_output) BETWEEN 1 AND 4096
+            length(normalized_whisper_output) >= 1
             AND trim(normalized_whisper_output) = normalized_whisper_output
         )
     ),
     language TEXT CHECK (
         language IS NULL
-        OR (length(language) BETWEEN 1 AND 32 AND trim(language) = language AND lower(language) = language)
+        OR (length(language) >= 1 AND trim(language) = language AND lower(language) = language)
     ),
     scope TEXT NOT NULL CHECK (
-        length(scope) BETWEEN 1 AND 64 AND trim(scope) = scope AND lower(scope) = scope
+        length(scope) >= 1 AND trim(scope) = scope AND lower(scope) = scope
     ),
     vocabulary_term_id TEXT REFERENCES asr_vocabulary_terms(id) ON DELETE SET NULL,
     correction_id TEXT REFERENCES asr_corrections(id) ON DELETE SET NULL,

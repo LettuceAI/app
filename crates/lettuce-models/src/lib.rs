@@ -27,7 +27,6 @@ const MAX_PROVIDER_KIND_BYTES: usize = 128;
 const MAX_PROVIDER_ENDPOINT_BYTES: usize = 4096;
 const MAX_PROVIDER_PATH_BYTES: usize = 1024;
 const MAX_PROVIDER_QUERY_PARAMETER_BYTES: usize = 128;
-const MAX_PROVIDER_SECRET_HEADERS: usize = 16;
 const MAX_WIRE_ROLE_BYTES: usize = 64;
 const MAX_JSON_PATH_BYTES: usize = 256;
 
@@ -426,9 +425,6 @@ pub fn validate_provider_connection(
 fn validate_secret_headers(
     account: &ProviderAccount,
 ) -> Result<(), ProviderConnectionValidationError> {
-    if account.secret_headers.len() > MAX_PROVIDER_SECRET_HEADERS {
-        return Err(ProviderConnectionValidationError::SecretHeaders);
-    }
     let mut names = HashSet::with_capacity(account.secret_headers.len());
     let mut refs = HashSet::with_capacity(account.secret_headers.len());
     for header in &account.secret_headers {
@@ -916,6 +912,18 @@ mod tests {
             validate_provider_connection(&account).is_ok(),
             "legacy extra headers override the auth header"
         );
+
+        account.secret_headers = (0..40)
+            .map(|index| SecretHeader {
+                name: HeaderName::new(format!("x-custom-{index}")).expect("header name"),
+                secret_ref: SecretRef::new(),
+            })
+            .collect();
+        assert!(
+            validate_provider_connection(&account).is_ok(),
+            "legacy did not limit the number of custom headers"
+        );
+        account.secret_headers.truncate(1);
 
         account.secret_headers[0].name = HeaderName::new("Host").expect("header name");
         assert_eq!(

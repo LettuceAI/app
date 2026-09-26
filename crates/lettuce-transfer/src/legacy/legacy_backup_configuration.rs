@@ -3044,12 +3044,6 @@ fn parse_headers(
             format!("[{index}].headers"),
         )
     })?;
-    if object.len() > 16 {
-        return Err(malformed(
-            LegacyBackupDocumentKind::ProviderCredentials,
-            format!("[{index}].headers"),
-        ));
-    }
     let mut result = BTreeMap::new();
     for (name, value) in object {
         let value = value

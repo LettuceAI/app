@@ -202,7 +202,7 @@ fn read_asr_vocabulary(
         if candidate
             .category
             .as_ref()
-            .is_some_and(|value| value.chars().count() > 512 || value.contains('\0'))
+            .is_some_and(|value| value.contains('\0'))
         {
             return Err(asr_malformed(table, "category"));
         }
@@ -423,13 +423,11 @@ fn validate_asr_common(
             value.is_empty()
                 || value.trim() != value
                 || value.to_ascii_lowercase() != value
-                || value.chars().count() > 32
                 || value.chars().any(char::is_control)
         })
         || scope.is_empty()
         || scope.trim() != scope
         || scope.to_ascii_lowercase() != scope
-        || scope.chars().count() > 64
         || scope.chars().any(char::is_control)
         || !valid_asr_timestamp(created_at)
         || updated_at.is_some_and(|value| !valid_asr_timestamp(value) || created_at > value)
@@ -445,7 +443,6 @@ fn validate_asr_pair(
     table: &'static str,
 ) -> Result<(), LegacyDatabasePreflightError> {
     if authored.is_empty()
-        || authored.chars().count() > 4_096
         || authored.contains('\0')
         || normalized.is_empty()
         || normalized != normalize_asr(authored)
@@ -1973,9 +1970,6 @@ fn read_pending_headers(
             return Err(provider_malformed("headers"));
         }
         names.push(name);
-    }
-    if names.len() > 16 {
-        return Err(provider_malformed("headers"));
     }
     Ok(names
         .into_iter()
