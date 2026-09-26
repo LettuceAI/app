@@ -21,7 +21,7 @@ mod secrets;
 
 pub use device::{
     DeviceEmbeddingSettings, DeviceSettings, DeviceSettingsStore, EmbeddingModelVersion,
-    MAX_DEVICE_NAME_BYTES, TrustedCertificate,
+    MAX_CERTIFICATE_NAME_BYTES, TrustedCertificate,
 };
 pub use global::{
     CompanionSoulWriterSettings, CreationHelperSettings, CreationHelperToolFallback,

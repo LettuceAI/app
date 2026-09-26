@@ -1098,11 +1098,11 @@ fn map_device_settings(
 /// A display name or label cut to the device-settings bound at a character
 /// boundary; a cut is recorded.
 fn shorten_name(value: &str, field: String, lossy: &mut Vec<String>) -> String {
-    if value.len() <= lettuce_settings::MAX_DEVICE_NAME_BYTES {
+    if value.len() <= lettuce_settings::MAX_CERTIFICATE_NAME_BYTES {
         return value.to_owned();
     }
     lossy.push(field);
-    let mut end = lettuce_settings::MAX_DEVICE_NAME_BYTES;
+    let mut end = lettuce_settings::MAX_CERTIFICATE_NAME_BYTES;
     while !value.is_char_boundary(end) {
         end -= 1;
     }
