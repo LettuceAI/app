@@ -89,6 +89,16 @@ pub trait SpeakerInferenceRepository: Send + Sync {
         binding: &SpeakerInferenceBinding,
     ) -> Result<Option<SpeakerInferenceRecord>, ConversationRepositoryError>;
 
+    /// The dispatch recorded for one attempt whatever request it was admitted
+    /// with, so a settled selection replays without rebuilding its request.
+    fn attempt_speaker_inference(
+        &self,
+        conversation_id: ConversationId,
+        turn_id: GenerationTurnId,
+        attempt_id: GenerationAttemptId,
+        job_id: JobId,
+    ) -> Result<Option<SpeakerInferenceRecord>, ConversationRepositoryError>;
+
     fn admit_speaker_inference(
         &self,
         conversation_id: ConversationId,

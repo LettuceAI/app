@@ -700,6 +700,30 @@ impl ConversationArtifactStore for Database {
         Ok(reference)
     }
 
+    fn attach_snapshot(
+        &self,
+        conversation_id: ConversationId,
+        draft: SnapshotArtifactDraft,
+    ) -> Result<ProtectedSnapshotRef, ArtifactError> {
+        let mut connection = self.connection().map_err(|_| ArtifactError::Storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(db_error)?;
+        let reference = stage_snapshot_in_transaction(
+            &transaction,
+            draft,
+            lettuce_types::TimestampMillis::now().map_err(|_| ArtifactError::Storage)?,
+        )?;
+        transaction
+            .execute(
+                "INSERT OR IGNORE INTO conversation_snapshot_refs (conversation_id, artifact_id) VALUES (?1, ?2)",
+                params![conversation_id.to_string(), reference.artifact_id.to_string()],
+            )
+            .map_err(db_error)?;
+        transaction.commit().map_err(db_error)?;
+        Ok(reference)
+    }
+
     fn verify_snapshot(&self, reference: &ProtectedSnapshotRef) -> Result<(), ArtifactError> {
         reference
             .validate()

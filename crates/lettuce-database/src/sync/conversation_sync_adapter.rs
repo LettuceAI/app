@@ -559,6 +559,15 @@ fn require_references(
         }
     }
     for turn in &incoming.turns {
+        for reference in history::turn_model_references(turn) {
+            if !exists(
+                transaction,
+                "SELECT EXISTS(SELECT 1 FROM conversation_snapshot_artifacts WHERE artifact_id = ?1)",
+                [reference.artifact_id.to_string()],
+            )? {
+                return Err(ConversationRepositoryError::NotFound);
+            }
+        }
         if let Some(prompt) = &turn.prompt
             && !exists(
                 transaction,
@@ -637,6 +646,7 @@ pub(crate) fn sync_merge_conversation_message(
     } else {
         insert_synced_message(transaction, incoming, &evidence)?;
     }
+    history::insert_turn_snapshot_refs(transaction, conversation_id, &incoming.turns, &[])?;
     let tombstoned = exists(
         transaction,
         "SELECT EXISTS(SELECT 1 FROM conversation_messages WHERE conversation_id = ?1 AND id = ?2 AND visibility = 'tombstoned')",
