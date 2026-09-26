@@ -89,6 +89,7 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 rand = "0.8"
 sha1_smol = "1"
 sha2 = "0.10"
+specta = { version = "=2.0.0-rc.25", features = ["derive"] }
 tar = "0.4"
 ort = { version = "=2.0.0-rc.10", default-features = false, features = ["std", "half", "ndarray"] }
 tokenizers = { version = "0.20", default-features = false, features = ["unstable_wasm"] }

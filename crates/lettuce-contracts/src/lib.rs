@@ -2,6 +2,12 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
+mod api;
+mod conversations;
+
+pub use api::*;
+pub use conversations::*;
+
 use lettuce_types::ProviderAccountId;
 use serde::{Deserialize, Serialize};
 
