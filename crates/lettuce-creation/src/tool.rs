@@ -59,9 +59,9 @@ pub const CREATION_TOOL_TEXT_KEYS: [(&str, Option<&str>, &str); 16] = [
     ),
 ];
 
-/// The legacy creation-agent tools the proposal supports for this target,
-/// without descriptions; `describe_creation_tools` adds the catalog text
-/// before a request is sent. Legacy offered the same tools at every stage.
+/// The creation-agent tools the proposal supports for this target, without
+/// descriptions; `describe_creation_tools` adds the catalog text before a
+/// request is sent. The same tools are offered at every stage.
 #[must_use]
 pub fn creation_tool_request(target: CreationTargetKind) -> ToolRequest {
     let names: &[&str] = match target {
@@ -327,8 +327,8 @@ pub fn apply_creation_tool_calls(
     })
 }
 
-/// The declared tool a provider name refers to: legacy trimmed and lowercased
-/// names and accepted `preview` and `confirm`.
+/// The declared tool a provider name refers to: names are trimmed and
+/// lowercased, and `preview` and `confirm` are accepted.
 #[must_use]
 pub fn canonical_tool_name(name: &str) -> String {
     let normalized = name.trim().to_ascii_lowercase();
@@ -458,8 +458,8 @@ fn unknown(id: &str) -> CreationRejection {
     CreationRejection::UnknownId { id: id.to_owned() }
 }
 
-/// The first present value among `names`; legacy skipped nulls and empty
-/// values and read numbers and booleans as their text.
+/// The first present value among `names`; nulls and empty values are
+/// skipped and numbers and booleans are read as their text.
 fn text(object: &Map<String, Value>, names: &[&str]) -> Option<String> {
     names.iter().find_map(|name| match object.get(*name)? {
         Value::String(value) if !value.is_empty() => Some(value.clone()),

@@ -49,12 +49,12 @@ pub enum CreationOperation {
     ShowPreview,
     RequestConfirmation,
     /// A call to a tool the attempt did not declare; it changes nothing and
-    /// reports an error back to the model, as legacy did.
+    /// reports an error back to the model.
     UndeclaredTool {
         name: String,
     },
-    /// A declared tool called without usable arguments; like legacy, the call
-    /// is answered with an error and later calls still run.
+    /// A declared tool called without usable arguments; the call is answered
+    /// with an error and later calls still run.
     Rejected {
         tool: String,
         reason: CreationRejection,
@@ -197,9 +197,9 @@ impl CreationProposal {
     }
 }
 
-/// Legacy kept every tool available after a preview; here a successful change
-/// also returns the proposal to drafting, so confirmation must be requested
-/// again before the user can apply it.
+/// Every tool stays available after a preview; a successful change also
+/// returns the proposal to drafting, so confirmation must be requested again
+/// before the user can apply it.
 fn apply_one(
     draft: &mut CreationDraft,
     stage: &mut CreationStage,

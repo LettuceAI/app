@@ -223,7 +223,6 @@ mod tests {
         parse_creation_fallback,
     };
 
-    /// Legacy `creation_helper/agent/structured_fallback.rs` `parse_json`.
     #[test]
     fn json_envelope_reads_calls_aliases_and_the_reply_like_legacy() {
         let parsed = parse_creation_fallback(
@@ -257,7 +256,6 @@ mod tests {
         );
     }
 
-    /// Legacy `creation_helper/agent/structured_fallback.rs` `parse_xml`.
     #[test]
     fn xml_envelope_reads_trimmed_args_entities_and_the_reply_like_legacy() {
         let parsed = parse_creation_fallback(

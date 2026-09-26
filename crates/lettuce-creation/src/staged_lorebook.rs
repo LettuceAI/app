@@ -2124,8 +2124,6 @@ mod tests {
         );
     }
 
-    /// Legacy `pipeline.rs` 496-566 kept any `sourceRefs` string and the
-    /// writer fell back to every excerpt (392-409).
     #[test]
     fn outline_keeps_source_refs_that_name_no_extracted_source() {
         let project = StagedLorebookProject::create(
