@@ -18,7 +18,6 @@ use crate::prompt::{
 /// The legacy runtime always inspected this many recent messages.
 pub const LEGACY_RECENT_MESSAGE_LIMIT: usize = 10;
 pub const MAX_ACTIVE_LOREBOOK_CONTENT_BYTES: usize = 4 * 1024 * 1024;
-pub const MAX_MATCH_CONTEXT_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -211,8 +210,6 @@ pub enum LorebookValidationError {
     ZeroRevision,
     #[error("lorebook created_at must not be later than updated_at")]
     InvalidTimestampOrder,
-    #[error("lorebook match context exceeds the 1 MiB limit")]
-    MatchContextTooLarge,
 }
 
 impl Lorebook {
@@ -373,7 +370,6 @@ pub(crate) fn keyword_matches_with_mode(
     case_sensitive: bool,
     mode: KeywordMatchMode,
 ) -> Result<bool, LorebookValidationError> {
-    validate_match_context(text)?;
     let keyword = keyword.trim();
     if keyword.is_empty() {
         return Ok(false);
@@ -442,14 +438,6 @@ fn compile_regex(
         .case_insensitive(!case_sensitive)
         .build()
         .map_err(|error| LorebookValidationError::InvalidRegex(error.to_string()))
-}
-
-pub(crate) fn validate_match_context(text: &str) -> Result<(), LorebookValidationError> {
-    if text.len() > MAX_MATCH_CONTEXT_BYTES {
-        Err(LorebookValidationError::MatchContextTooLarge)
-    } else {
-        Ok(())
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -609,9 +597,7 @@ fn context_owned(
 ) -> Result<String, LorebookValidationError> {
     match policy {
         DetectionPolicy::LatestUserMessage => {
-            let message = latest_user_message.unwrap_or_default();
-            validate_match_context(message)?;
-            Ok(message.to_owned())
+            Ok(latest_user_message.unwrap_or_default().to_owned())
         }
         DetectionPolicy::RecentMessageWindow => {
             let messages = recent_messages
@@ -619,11 +605,6 @@ fn context_owned(
                 .rev()
                 .take(LEGACY_RECENT_MESSAGE_LIMIT)
                 .collect::<Vec<_>>();
-            let bytes = messages.iter().map(|message| message.len()).sum::<usize>()
-                + messages.len().saturating_sub(1);
-            if bytes > MAX_MATCH_CONTEXT_BYTES {
-                return Err(LorebookValidationError::MatchContextTooLarge);
-            }
             Ok(messages
                 .into_iter()
                 .rev()
@@ -1540,21 +1521,24 @@ mod tests {
     }
 
     #[test]
-    fn lorebook_limits_context_bytes_but_not_keyword_or_entry_counts() {
+    fn lorebook_does_not_limit_context_bytes_or_keyword_and_entry_counts() {
         let book = book(DetectionPolicy::LatestUserMessage);
-        let mut entry = entry(&book, 0, "x");
-        entry.match_mode = KeywordMatchMode::Regex;
-        entry.keywords = (0..20_000).map(|_| "x".to_owned()).collect();
-        assert_eq!(validate_entries(book.id, &[entry]), Ok(()));
-        assert!(matches!(
-            LorebookMatcher::new().activate(
-                &book,
-                &[],
-                &[],
-                Some(&"x".repeat(MAX_MATCH_CONTEXT_BYTES + 1)),
-            ),
-            Err(LorebookValidationError::MatchContextTooLarge)
-        ));
+        let literal = entry(&book, 0, "x");
+        let mut regex = literal.clone();
+        regex.match_mode = KeywordMatchMode::Regex;
+        regex.keywords = (0..20_000).map(|_| "x".to_owned()).collect();
+        assert_eq!(validate_entries(book.id, &[regex]), Ok(()));
+        let mut message = "y".repeat(2 * 1024 * 1024);
+        message.push_str(" x");
+        let entries = vec![literal];
+        assert_eq!(
+            LorebookMatcher::new()
+                .activate(&book, &entries, &[], Some(&message))
+                .expect("context over 1 MiB")
+                .entries
+                .len(),
+            1
+        );
     }
 
     #[test]

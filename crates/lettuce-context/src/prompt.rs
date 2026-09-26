@@ -9,7 +9,6 @@ use std::collections::BTreeMap;
 
 use crate::lorebook::keyword_matches;
 
-pub const MAX_LABEL_SCALARS: usize = 256;
 pub const MAX_LABEL_BYTES: usize = 1024;
 pub const MAX_PROSE_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_AUTHORED_BYTES: usize = 64 * 1024 * 1024;
@@ -494,8 +493,6 @@ pub type PromptProgram = PromptDocument;
 pub enum PromptValidationError {
     #[error("{field} must not be blank")]
     Blank { field: &'static str },
-    #[error("{field} exceeds the 256 Unicode scalar limit")]
-    LabelTooLong { field: &'static str },
     #[error("{field} exceeds the 1 KiB encoded limit")]
     LabelTooLarge { field: &'static str },
     #[error("{field} exceeds the 1 MiB limit")]
@@ -528,8 +525,6 @@ pub enum PromptValidationError {
     InvalidDerivedSource,
     #[error("prompt revision must be at least one")]
     ZeroRevision,
-    #[error("prompt condition match context exceeds the 1 MiB limit")]
-    MatchContextTooLarge,
     #[error("prompt purpose must be explicit")]
     UndefinedPurpose,
     #[error("prompt created_at must not be later than updated_at")]
@@ -554,9 +549,6 @@ pub(crate) fn validate_optional_label(
     value: &str,
     field: &'static str,
 ) -> Result<(), PromptValidationError> {
-    if value.chars().count() > MAX_LABEL_SCALARS {
-        return Err(PromptValidationError::LabelTooLong { field });
-    }
     if value.len() > MAX_LABEL_BYTES {
         return Err(PromptValidationError::LabelTooLarge { field });
     }
@@ -1859,8 +1851,6 @@ fn render_prompt_input(
     entries: &[PromptEntry],
     context: &PromptRenderContext,
 ) -> Result<RenderedPrompt, PromptRenderError> {
-    crate::lorebook::validate_match_context(&context.conditions.recent_text)
-        .map_err(|_| PromptValidationError::MatchContextTooLarge)?;
     validate_render_values(purpose, &context.values)?;
     let mut rendered = RenderedPrompt {
         document_id,
@@ -1939,8 +1929,6 @@ pub fn explain_prompt(
     context: &PromptRenderContext,
 ) -> Result<PromptExplanation, PromptRenderError> {
     document.validate()?;
-    crate::lorebook::validate_match_context(&context.conditions.recent_text)
-        .map_err(|_| PromptValidationError::MatchContextTooLarge)?;
     validate_render_values(document.purpose, &context.values)?;
     let entries = document
         .entries
@@ -2639,7 +2627,7 @@ mod tests {
     }
 
     #[test]
-    fn prompt_rejects_zero_revision_and_oversized_match_context() {
+    fn prompt_rejects_zero_revision_and_accepts_long_match_context_and_names() {
         let entry = PromptEntry {
             id: PromptEntryId::new(),
             name: "test".into(),
@@ -2651,17 +2639,18 @@ mod tests {
 
         let context = PromptRenderContext {
             conditions: PromptConditionContext {
-                recent_text: "x".repeat(crate::lorebook::MAX_MATCH_CONTEXT_BYTES + 1),
+                recent_text: "x".repeat(2 * 1024 * 1024),
                 ..PromptConditionContext::default()
             },
             values: PromptRenderValues::default(),
         };
-        assert!(matches!(
-            render_prompt(&document(entry), &context),
-            Err(PromptRenderError::Invalid(
-                PromptValidationError::MatchContextTooLarge
-            ))
-        ));
+        assert!(render_prompt(&document(entry.clone()), &context).is_ok());
+        let mut named = document(PromptEntry {
+            name: "\u{e9}".repeat(400),
+            ..entry
+        });
+        named.name = "p".repeat(900);
+        assert_eq!(named.validate(), Ok(()));
     }
 
     #[test]
