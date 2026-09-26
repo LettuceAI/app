@@ -17,8 +17,8 @@ jobs:
         with:
           components: clippy,rustfmt
       - uses: Swatinem/rust-cache@v2
-      - name: Install desktop shell dependencies
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev
+      - name: Install Tauri shell dependencies
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev libvulkan-dev glslc spirv-headers
       - name: Check architecture
         run: bash scripts/check-architecture.sh
       - name: Check formatting
@@ -29,3 +29,5 @@ jobs:
         run: cargo test --workspace
       - name: Lint workspace
         run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Check Vulkan build
+        run: cargo check -p lettuce-tauri --features vulkan
