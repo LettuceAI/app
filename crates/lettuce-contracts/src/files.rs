@@ -1,0 +1,73 @@
+use serde::{Deserialize, Serialize};
+
+/// A file the user picked: a filesystem path, or a platform URI the host
+/// resolves (such as an Android `content://` URI).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct FileSource {
+    pub uri: String,
+}
+
+/// Where an export is written, as chosen by the save dialog.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct FileTarget {
+    pub uri: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum FileKind {
+    CharacterCard,
+    PersonaFile,
+    Lorebook,
+    PromptPreset,
+    ChatJsonl,
+    BackupV1,
+    BackupV2,
+    LegacyDatabase,
+    Image,
+    Audio,
+    GgufModel,
+    Other,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct FilesInspectRequest {
+    pub source: FileSource,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct FileInspection {
+    pub name: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub size: u64,
+    pub kind: FileKind,
+}
+
+/// What a picked image or audio file is for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum AssetIngestRole {
+    Avatar,
+    Background,
+    Attachment,
+    VoiceExample,
+    ReferenceImage,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct AssetsIngestRequest {
+    pub source: FileSource,
+    pub role: AssetIngestRole,
+}

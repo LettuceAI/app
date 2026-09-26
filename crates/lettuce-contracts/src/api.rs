@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 
 /// Stable error category the frontend localizes; the message never reaches
-/// the user.
+/// the user. `ModelRequired` means the chat needs an optional model that is
+/// not installed, `ModelUnavailable` one that is installed but cannot load;
+/// both name the model in `ApiErrorDetails::Model`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "snake_case")]
@@ -14,6 +16,18 @@ pub enum ApiErrorCode {
     Cancelled,
     Busy,
     Internal,
+    ModelRequired,
+    ModelUnavailable,
+}
+
+/// An optional model some chats need: the embedding model for dynamic
+/// memory, the emotion model (Lettuce Thymos) for companion chats.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum RequiredModel {
+    Embedding,
+    Emotion,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -21,6 +35,7 @@ pub enum ApiErrorCode {
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ApiErrorDetails {
     InvalidField { field: String },
+    Model { model: RequiredModel },
 }
 
 /// The error every API call returns. `message` is English diagnostic text
@@ -42,6 +57,9 @@ pub enum ApiEvent {
     GenerationSettled {
         conversation_id: String,
         turn_id: String,
+    },
+    JobUpdated {
+        job: crate::JobView,
     },
 }
 

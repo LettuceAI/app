@@ -3,10 +3,16 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 mod api;
+mod app;
 mod conversations;
+mod files;
+mod jobs;
 
 pub use api::*;
+pub use app::*;
 pub use conversations::*;
+pub use files::*;
+pub use jobs::*;
 
 use lettuce_types::ProviderAccountId;
 use serde::{Deserialize, Serialize};

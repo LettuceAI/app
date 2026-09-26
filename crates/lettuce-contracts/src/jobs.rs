@@ -1,0 +1,236 @@
+use serde::{Deserialize, Serialize};
+
+use crate::AssetRef;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum JobKindDto {
+    ArtifactInstall,
+    ArtifactVerify,
+    RuntimePrepare,
+    ModelLoad,
+    MemoryExtraction,
+    MemoryConsolidation,
+    CompanionGrowth,
+    CompanionConsolidation,
+    CompanionSoulWriter,
+    ConversationGeneration,
+    VectorIndexBuild,
+    CreationRun,
+    ImageGenerate,
+    MediaTransform,
+    TransferImport,
+    TransferExport,
+    BackupExport,
+    BackupRestore,
+    SyncSession,
+    SpeechTranscribe,
+    SpeechSynthesize,
+    EmbeddingBenchmark,
+    Maintenance,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum JobStateDto {
+    Queued,
+    Claimed,
+    Running,
+    CancellationRequested,
+    CleaningUp,
+    Succeeded,
+    Failed,
+    Cancelled,
+    Interrupted,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum JobSubjectKindDto {
+    Conversation,
+    Group,
+    MemorySpace,
+    CreationProject,
+    ArtifactInstall,
+    ImageRequest,
+    TransferPlan,
+    Backup,
+    Peer,
+    SpeechRequest,
+    Runtime,
+    ModelProfile,
+    Maintenance,
+}
+
+/// What a job works on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct JobSubjectDto {
+    pub kind: JobSubjectKindDto,
+    pub id: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum JobProgressUnit {
+    Bytes,
+    Items,
+    Permille,
+}
+
+/// The job's progress within its current stage, in bytes, items or
+/// thousandths; `label_code` names the stage (such as `download`, `verify`
+/// or `install`) for the frontend to localize.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct JobProgressDto {
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub current: u64,
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
+    pub total: Option<u64>,
+    pub unit: Option<JobProgressUnit>,
+    pub label_code: Option<String>,
+    /// Download speed, sent with `JobUpdated` and watch events while bytes
+    /// arrive.
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
+    pub bytes_per_second: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum JobFailureCode {
+    Cancelled,
+    InvalidInput,
+    Authentication,
+    CapabilityUnavailable,
+    IntegrityFailure,
+    ResourceUnavailable,
+    LeaseLost,
+    WorkerFailed,
+    StorageFailure,
+    SafetyRefusal,
+    TimedOut,
+    Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct JobFailureDto {
+    pub code: JobFailureCode,
+    pub retryable: bool,
+    /// The optional model whose absence failed the job.
+    pub model: Option<crate::RequiredModel>,
+}
+
+/// What a finished job produced, where the job kind has a typed result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum JobResultDto {
+    ArtifactInstalled,
+    Asset { asset: AssetRef },
+    GenerationTurn { turn_id: String },
+    Conversation { conversation_id: String },
+    Group { group_id: String },
+    Character { character_id: String },
+    ModelProfile { model_profile_id: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct JobView {
+    pub id: String,
+    pub kind: JobKindDto,
+    pub subject: JobSubjectDto,
+    pub state: JobStateDto,
+    pub progress: JobProgressDto,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub created_at: i64,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub updated_at: i64,
+    pub failure: Option<JobFailureDto>,
+    pub result: Option<JobResultDto>,
+}
+
+/// Jobs, most recently created first. An empty or missing `kinds` or
+/// `states` matches every value.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct JobsListRequest {
+    pub kinds: Option<Vec<JobKindDto>>,
+    pub states: Option<Vec<JobStateDto>>,
+    pub subject: Option<JobSubjectDto>,
+    pub cursor: Option<String>,
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct JobPage {
+    pub items: Vec<JobView>,
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct JobGetRequest {
+    pub job_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct JobCancelRequest {
+    pub job_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct JobWatchRequest {
+    pub job_id: String,
+}
+
+/// Returned by every command that starts background work.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct JobAccepted {
+    pub job_id: String,
+}
+
+/// The stream `job_watch` attaches. It starts with the job's current state;
+/// `Completed`, `Failed` and `Cancelled` are the last event.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum JobEvent {
+    Progress {
+        job: JobView,
+    },
+    TextDelta {
+        text: Option<String>,
+        reasoning: Option<String>,
+    },
+    Completed {
+        job: JobView,
+    },
+    Failed {
+        job: JobView,
+    },
+    Cancelled {
+        job: JobView,
+    },
+}

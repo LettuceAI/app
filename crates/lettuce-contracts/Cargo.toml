@@ -20,5 +20,6 @@ specta = ["dep:specta", "dep:specta-typescript"]
 [dependencies]
 lettuce-types.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 specta = { workspace = true, optional = true }
 specta-typescript = { workspace = true, optional = true }

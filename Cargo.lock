@@ -2588,6 +2588,7 @@ version = "0.1.0"
 dependencies = [
  "lettuce-types",
  "serde",
+ "serde_json",
  "specta",
  "specta-typescript",
 ]
