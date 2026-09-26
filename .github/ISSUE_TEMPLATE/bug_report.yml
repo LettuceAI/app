@@ -1,0 +1,126 @@
+name: Bug report
+description: Report something in LettuceAI that is broken or behaves incorrectly
+title: "fix: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Search the existing issues before continuing, and remove API keys, tokens and private chat content from logs and screenshots.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of LettuceAI is affected?
+      options:
+        - Chat and roleplay
+        - Group chats
+        - Companions
+        - Memory
+        - Lorebooks
+        - Characters or personas
+        - Creation Helper
+        - Remote providers and models
+        - Local models (llama.cpp)
+        - Image generation
+        - Speech (text to speech or transcription)
+        - Sync between devices
+        - Backup, import or export
+        - Settings
+        - Interface
+        - Startup or updates
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the problem and its impact. Include the exact error message when one is shown.
+      placeholder: LettuceAI showed..., then...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Give us the shortest reliable path to the problem.
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should LettuceAI have done instead?
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: LettuceAI version or commit
+      description: Use the version shown in Settings, or the commit hash when running from source. Mention a CUDA build if you use one.
+      placeholder: 2.2.5, 2.2.5-cuda or 1244fe9
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Android
+        - iOS
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: Device and OS version
+      placeholder: Pixel 8 with Android 15, Windows 11, Arch Linux, macOS 15
+    validations:
+      required: true
+
+  - type: input
+    id: model
+    attributes:
+      label: Provider and model
+      description: Leave blank when the issue is unrelated to generation. For local models, include the GGUF file name and your GPU.
+      placeholder: OpenRouter, deepseek/deepseek-chat or llama.cpp, Qwen3-8B-Q4_K_M.gguf on an RTX 4070
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and screenshots
+      description: Attach the relevant app log, screenshots or a short recording. Remove API keys, tokens, and any chat content you do not want to share first.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add anything else that may help reproduce or diagnose the problem, such as whether it started after an update or an import.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched the existing issues and did not find the same problem.
+          required: true
+        - label: I tested a current LettuceAI release or included the exact version or commit where this occurred.
+          required: true
+        - label: I removed API keys, tokens and other private information from the report and attachments.
+          required: true
