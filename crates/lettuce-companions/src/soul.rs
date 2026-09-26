@@ -515,6 +515,12 @@ pub trait SoulRepository: Send + Sync {
         operation_id: OperationRecordId,
         change_set: SoulChangeSet,
     ) -> Result<SoulApplyReceipt, SoulRepositoryError>;
+
+    /// The receipt of an operation that already applied, if any.
+    fn receipt(
+        &self,
+        operation_id: OperationRecordId,
+    ) -> Result<Option<SoulApplyReceipt>, SoulRepositoryError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

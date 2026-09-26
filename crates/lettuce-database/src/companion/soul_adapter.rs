@@ -634,6 +634,19 @@ fn load_receipt(
 }
 
 impl SoulRepository for Database {
+    fn receipt(
+        &self,
+        operation_id: OperationRecordId,
+    ) -> Result<Option<SoulApplyReceipt>, SoulRepositoryError> {
+        let mut connection = self.connection().map_err(failure)?;
+        let tx = connection
+            .transaction_with_behavior(TransactionBehavior::Deferred)
+            .map_err(failure)?;
+        let receipt = load_receipt(&tx, operation_id)?.map(|(receipt, _)| receipt);
+        tx.commit().map_err(failure)?;
+        Ok(receipt)
+    }
+
     fn create(
         &self,
         owner: SoulOwner,

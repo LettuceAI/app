@@ -177,23 +177,34 @@ impl<
                 proposal_replayed,
             });
         }
-        let change_set = prepare_consolidation_change_set(
+        let (receipt, change_set) = crate::companion::soul_growth_edit::apply_on_latest_soul(
+            self.repository,
+            run.soul_owner(),
+            run.operation_id,
             &run.soul,
-            run.soul.revision,
-            checkpoint.proposal.core_adjustments.clone(),
-            checkpoint.proposal.retire_ids.clone(),
-            checkpoint.reduced_at,
+            |soul| {
+                prepare_consolidation_change_set(
+                    soul,
+                    soul.revision,
+                    checkpoint.proposal.core_adjustments.clone(),
+                    checkpoint.proposal.retire_ids.clone(),
+                    checkpoint.reduced_at,
+                )
+                .map(|change_set| lettuce_companions::SoulChangeSet {
+                    recorded_at: now,
+                    ..change_set
+                })
+            },
         )
-        .map_err(CompanionConsolidationExecutionError::Policy)?;
-        let change_set = lettuce_companions::SoulChangeSet {
-            recorded_at: now,
-            ..change_set
-        };
+        .map_err(|error| match error {
+            crate::companion::soul_growth_edit::SoulApplyError::Prepare(error) => {
+                CompanionConsolidationExecutionError::Policy(error)
+            }
+            crate::companion::soul_growth_edit::SoulApplyError::Soul(error) => {
+                CompanionConsolidationExecutionError::Soul(error)
+            }
+        })?;
         let applied_changes = change_set.additions.len() + change_set.supersessions.len();
-        let receipt = self
-            .repository
-            .apply(run.soul_owner(), run.operation_id, change_set)
-            .map_err(CompanionConsolidationExecutionError::Soul)?;
         Ok(CompanionConsolidationExecutionResult {
             receipt: Some(receipt),
             applied_changes,

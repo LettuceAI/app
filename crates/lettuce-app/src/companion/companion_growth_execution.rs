@@ -184,22 +184,33 @@ impl<
                 proposal_replayed,
             });
         }
-        let change_set = prepare_growth_change_set(
+        let (receipt, change_set) = crate::companion::soul_growth_edit::apply_on_latest_soul(
+            self.repository,
+            run.soul_owner(),
+            run.operation_id,
             &run.soul,
-            run.soul.revision,
-            checkpoint.proposals.clone(),
-            checkpoint.reduced_at,
+            |soul| {
+                prepare_growth_change_set(
+                    soul,
+                    soul.revision,
+                    checkpoint.proposals.clone(),
+                    checkpoint.reduced_at,
+                )
+                .map(|change_set| lettuce_companions::SoulChangeSet {
+                    recorded_at: now,
+                    ..change_set
+                })
+            },
         )
-        .map_err(CompanionGrowthExecutionError::Policy)?;
-        let change_set = lettuce_companions::SoulChangeSet {
-            recorded_at: now,
-            ..change_set
-        };
+        .map_err(|error| match error {
+            crate::companion::soul_growth_edit::SoulApplyError::Prepare(error) => {
+                CompanionGrowthExecutionError::Policy(error)
+            }
+            crate::companion::soul_growth_edit::SoulApplyError::Soul(error) => {
+                CompanionGrowthExecutionError::Soul(error)
+            }
+        })?;
         let applied_facts = change_set.additions.len();
-        let receipt = self
-            .repository
-            .apply(run.soul_owner(), run.operation_id, change_set)
-            .map_err(CompanionGrowthExecutionError::Soul)?;
         Ok(CompanionGrowthExecutionResult {
             receipt: Some(receipt),
             applied_facts,
