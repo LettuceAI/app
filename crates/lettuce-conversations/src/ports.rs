@@ -1222,8 +1222,9 @@ pub struct ContextRequest {
     pub prompt_runtime: PromptRuntimeFacts,
     pub prompt_values: PromptRuntimeValues,
     /// The turn's reference time: the companion clock's effective now, or
-    /// the wall clock without one. Scheduled notes are evaluated at it, as
-    /// legacy evaluated them at `companion_effective_now`.
+    /// the wall clock without one. The companion state and scheduled notes
+    /// are rendered at it, as legacy rendered them at
+    /// `companion_effective_now`.
     pub reference_time: TimestampMillis,
     pub memory: Option<MemoryContribution>,
     pub timeline: Vec<TimelineItem>,

@@ -152,8 +152,8 @@ where
             }
             scene = resolve_member_mentions(&scene, &snapshot.group_members);
         }
-        let effective_at = source_effective_time(&request)?;
-        let companion_state = self.companion_prompt_state(&aggregate, effective_at)?;
+        ensure_source_in_timeline(&request)?;
+        let companion_state = self.companion_prompt_state(&aggregate, request.reference_time)?;
         let scheduled_notes = self.companion_scheduled_notes(&aggregate, request.reference_time)?;
 
         let keyword_window = if direct { &visible } else { &history };
@@ -992,14 +992,12 @@ fn runtime_text_error(
     }
 }
 
-fn source_effective_time(
-    request: &ContextRequest,
-) -> Result<TimestampMillis, ContextAssemblyError> {
+fn ensure_source_in_timeline(request: &ContextRequest) -> Result<(), ContextAssemblyError> {
     request
         .timeline
         .iter()
-        .find(|item| item.message.id == request.source_message_id)
-        .map(|item| item.message.effective_time)
+        .any(|item| item.message.id == request.source_message_id)
+        .then_some(())
         .ok_or(ContextAssemblyError::InvalidTimeline)
 }
 

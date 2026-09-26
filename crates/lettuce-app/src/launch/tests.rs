@@ -3937,6 +3937,53 @@ async fn companion_context_assembles_live_prompt_state_deterministically() {
     };
     assert!(!notes_at(NOW.get() + 10).await);
     assert!(notes_at(NOW.get() + 2_000).await);
+    let soul_owner = lettuce_companions::SoulOwner::Character(character_id);
+    let soul = SoulRepository::get(&database, soul_owner)
+        .expect("soul")
+        .expect("companion soul");
+    let growth = lettuce_companions::prepare_growth_change_set(
+        &soul,
+        soul.revision,
+        vec![lettuce_companions::ProposedSoulFact {
+            id: "rain".to_owned(),
+            category: lettuce_companions::SoulCategory::Likes,
+            value: "Rainy evenings".to_owned(),
+            kind: lettuce_companions::SoulFactKind::Add,
+            policy: lettuce_companions::SoulFactPolicy::Adaptive,
+            slot: "weather".to_owned(),
+            confidence: 0.75,
+            weight: 0.8,
+            valid_until: Some(TimestampMillis::new(NOW.get() + 1_000)),
+            locked: false,
+            source_memory_ids: vec!["memory-a".to_owned()],
+            supersedes: Vec::new(),
+        }],
+        TimestampMillis::new(NOW.get() + 5),
+    )
+    .expect("growth");
+    SoulRepository::apply(&database, soul_owner, OperationRecordId::new(), growth)
+        .expect("grow soul");
+    let state_at = |reference: i64| {
+        let mut request =
+            context_request_for(&database, launched.value.conversation.id, source_message_id);
+        request.reference_time = TimestampMillis::new(reference);
+        let assembler = &assembler;
+        async move {
+            assembler
+                .assemble(request)
+                .await
+                .expect("assemble at a reference time")
+                .messages
+                .iter()
+                .flat_map(|message| &message.parts)
+                .any(|part| {
+                    matches!(part, ProviderContextPart::Text { text }
+                        if text.contains("Rainy evenings"))
+                })
+        }
+    };
+    assert!(state_at(NOW.get() + 10).await);
+    assert!(!state_at(NOW.get() + 2_000).await);
     database
         .delete_scheduled_note(later_note_id)
         .expect("delete the later note");
