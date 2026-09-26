@@ -949,6 +949,39 @@ pub trait LiveTurnReader: Send + Sync {
     fn live_turns(&self, limit: u32) -> Result<Vec<GenerationTurnId>, ConversationRepositoryError>;
 }
 
+/// One conversation list row, read from one storage snapshot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConversationOverview {
+    pub summary: ConversationSummary,
+    pub active_branch_id: ConversationBranchId,
+    pub participants: Vec<crate::model::ConversationParticipant>,
+    /// The newest visible non-system message on the active branch.
+    pub last_message: Option<TimelineItem>,
+}
+
+/// Read models behind the conversation list and chat screens.
+pub trait ConversationOverviewReader: Send + Sync {
+    /// Conversations in the order and pages of `ConversationReader::page`.
+    fn overview_page(
+        &self,
+        query: &ConversationQuery,
+    ) -> Result<KeysetPage<ConversationOverview>, ConversationRepositoryError>;
+
+    /// The conversation's oldest unsettled turn.
+    fn live_turn(
+        &self,
+        conversation_id: ConversationId,
+    ) -> Result<Option<GenerationTurnId>, ConversationRepositoryError>;
+
+    /// The number of reply candidates of each listed message; a message
+    /// without candidates is left out.
+    fn candidate_counts(
+        &self,
+        conversation_id: ConversationId,
+        message_ids: &[MessageId],
+    ) -> Result<Vec<(MessageId, u32)>, ConversationRepositoryError>;
+}
+
 /// Materializes one protected launch snapshot through the conversation's
 /// ownership reference. Implementations must read the reference and artifact
 /// from the same storage snapshot and must never resolve live source rows.

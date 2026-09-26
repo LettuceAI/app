@@ -144,6 +144,8 @@ Snapshot and provider replay bytes live in private artifact tables (`conversatio
 
 `conversation_query` is read-only and snapshot-consistent: it owns the SQL projections, cursor decoding and the conversion of rows into validated domain values. `LiveTurnReader` lists unsettled turns across conversations for job recovery.
 
+`ConversationOverviewReader` serves the conversation list and chat screens. `overview_page` pages conversations like `ConversationReader::page` and, in the same read transaction, adds each one's active branch, participants and newest visible non-system message on that branch (timeline pages are scanned newest first until one is found). `live_turn` names a conversation's oldest unsettled turn, and `candidate_counts` counts the reply candidates of the listed messages.
+
 ### Historical conversations
 
 `conversation_history_writer` inserts a finished conversation with its own ids and timestamps, for backup restore and legacy import. Rows go in the order the migration 8 triggers require; each turn walks the shortest legal path of the transition graph instead of being inserted terminal; the create operation and its outbox event come last so later live mutations see a normal conversation. Legacy import generates the create operation; restore writes the exported operations and events exactly. The writer also creates the conversation's own memory space (or restores it with its id, revision, items, summary and embedding projections, after the messages the summary cites), creates or joins its companion pool, creates the companion session state and writes its continuity episode. Turns targeting one message are inserted in input order. Candidate media refs are written active.

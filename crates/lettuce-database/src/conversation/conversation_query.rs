@@ -2392,6 +2392,194 @@ impl lettuce_conversations::LiveTurnReader for Database {
     }
 }
 
+const PREVIEW_SCAN_PAGE: u16 = 20;
+
+impl lettuce_conversations::ConversationOverviewReader for Database {
+    fn overview_page(
+        &self,
+        query: &ConversationQuery,
+    ) -> Result<KeysetPage<lettuce_conversations::ConversationOverview>, ConversationRepositoryError>
+    {
+        let mut connection = open_read(self)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Deferred)
+            .map_err(slice::db)?;
+        let page = read_summary_page(&transaction, query)?;
+        let mut items = Vec::with_capacity(page.items.len());
+        for summary in page.items {
+            let active_branch_id: ConversationBranchId = parse(
+                transaction
+                    .query_row(
+                        "SELECT active_branch_id FROM conversations WHERE id = ?1",
+                        [summary.id.to_string()],
+                        |row| row.get(0),
+                    )
+                    .map_err(slice::db)?,
+            )?;
+            let mut participants = Vec::new();
+            let mut statement = transaction.prepare("SELECT id, role, ordinal, source_kind, source_id, enabled, muted, display_name, authored_description, model_selection_json, revision, created_at, updated_at FROM conversation_participants WHERE conversation_id = ?1 ORDER BY ordinal, id").map_err(slice::db)?;
+            for row in statement
+                .query_map([summary.id.to_string()], slice::read_participant)
+                .map_err(slice::db)?
+            {
+                participants.push(row.map_err(slice::db)?);
+            }
+            drop(statement);
+            let last_message = newest_visible_message(&transaction, summary.id, active_branch_id)?;
+            items.push(lettuce_conversations::ConversationOverview {
+                summary,
+                active_branch_id,
+                participants,
+                last_message,
+            });
+        }
+        transaction.commit().map_err(slice::db)?;
+        Ok(Page {
+            items,
+            next_cursor: page.next_cursor,
+        })
+    }
+
+    fn live_turn(
+        &self,
+        conversation_id: ConversationId,
+    ) -> Result<Option<GenerationTurnId>, ConversationRepositoryError> {
+        let connection = open_read(self)?;
+        let id: Option<String> = connection
+            .query_row(
+                "SELECT id FROM conversation_turns WHERE conversation_id = ?1 AND status NOT IN ('succeeded','failed','cancelled','interrupted') ORDER BY created_at, id LIMIT 1",
+                [conversation_id.to_string()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(slice::db)?;
+        id.map(parse).transpose()
+    }
+
+    fn candidate_counts(
+        &self,
+        conversation_id: ConversationId,
+        message_ids: &[MessageId],
+    ) -> Result<Vec<(MessageId, u32)>, ConversationRepositoryError> {
+        let connection = open_read(self)?;
+        let mut statement = connection
+            .prepare("SELECT COUNT(*) FROM conversation_message_candidates WHERE conversation_id = ?1 AND message_id = ?2")
+            .map_err(slice::db)?;
+        let mut counts = Vec::new();
+        for message_id in message_ids {
+            let count: i64 = statement
+                .query_row(
+                    params![conversation_id.to_string(), message_id.to_string()],
+                    |row| row.get(0),
+                )
+                .map_err(slice::db)?;
+            if count > 0 {
+                counts.push((
+                    *message_id,
+                    u32::try_from(count).map_err(|_| ConversationRepositoryError::Storage)?,
+                ));
+            }
+        }
+        Ok(counts)
+    }
+}
+
+fn newest_visible_message(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
+) -> Result<Option<TimelineItem>, ConversationRepositoryError> {
+    let mut page = PageRequest {
+        cursor: None,
+        limit: lettuce_types::PageLimit::new(PREVIEW_SCAN_PAGE),
+    };
+    loop {
+        let timeline = hydrate_timeline(transaction, conversation_id, branch_id, &page)?;
+        if let Some(item) = timeline.items.into_iter().find(|item| {
+            item.message.visibility == MessageVisibility::Visible
+                && item.message.role != MessageRole::System
+        }) {
+            return Ok(Some(item));
+        }
+        match timeline.next_cursor {
+            Some(cursor) => page.cursor = Some(cursor),
+            None => return Ok(None),
+        }
+    }
+}
+
+fn read_summary_page(
+    transaction: &Transaction<'_>,
+    query: &ConversationQuery,
+) -> Result<KeysetPage<ConversationSummary>, ConversationRepositoryError> {
+    let scope = format!("conversations:{:?}", query.lifecycle);
+    let cursor = decode_cursor(query.page.cursor.as_ref(), &scope)?;
+    if let Some(cursor) = cursor.as_ref() {
+        validate_cursor_number(cursor, true)?;
+        let _: ConversationId = validate_cursor_id(cursor)?;
+    }
+    let updated = cursor
+        .as_ref()
+        .map(|value| value.number)
+        .unwrap_or(i64::MAX);
+    let id = cursor
+        .as_ref()
+        .map(|value| value.text.as_str())
+        .unwrap_or("\u{ffff}");
+    let limit = i64::from(query.page.limit.get());
+    let lifecycle = query.lifecycle.map(|value| match value {
+        ConversationLifecycle::Active => "active",
+        ConversationLifecycle::Archived => "archived",
+        ConversationLifecycle::Tombstoned => "tombstoned",
+    });
+    let mut statement = transaction.prepare("SELECT id, title, lifecycle, kind, revision, updated_at FROM conversations WHERE (?1 IS NULL OR lifecycle = ?1) AND (updated_at < ?2 OR (updated_at = ?2 AND id > ?3)) ORDER BY updated_at DESC, id LIMIT ?4").map_err(slice::db)?;
+    let mut items = Vec::new();
+    for row in statement
+        .query_map(params![lifecycle, updated, id, limit], |row| {
+            let id: ConversationId =
+                parse(row.get(0)?).map_err(|_| rusqlite::Error::InvalidQuery)?;
+            let lifecycle = match row.get::<_, String>(2)?.as_str() {
+                "active" => ConversationLifecycle::Active,
+                "archived" => ConversationLifecycle::Archived,
+                "tombstoned" => ConversationLifecycle::Tombstoned,
+                _ => return Err(rusqlite::Error::InvalidQuery),
+            };
+            let kind = match row.get::<_, String>(3)?.as_str() {
+                "direct" => ConversationKindTag::Direct,
+                "group" => ConversationKindTag::Group,
+                _ => return Err(rusqlite::Error::InvalidQuery),
+            };
+            Ok(ConversationSummary {
+                id,
+                title: row.get(1)?,
+                lifecycle,
+                kind,
+                revision: slice::rev(row.get(4)?).map_err(|_| rusqlite::Error::InvalidQuery)?,
+                updated_at: timestamp(row.get(5)?),
+            })
+        })
+        .map_err(slice::db)?
+    {
+        items.push(row.map_err(slice::db)?);
+    }
+    drop(statement);
+    let next_cursor = if let Some(last) = items.last() {
+        let has_more: bool = transaction.query_row("SELECT EXISTS(SELECT 1 FROM conversations WHERE (?1 IS NULL OR lifecycle = ?1) AND (updated_at < ?2 OR (updated_at = ?2 AND id > ?3)))", params![lifecycle, last.updated_at.get(), last.id.to_string()], |row| row.get(0)).map_err(slice::db)?;
+        if has_more {
+            Some(encode_cursor(
+                &scope,
+                &last.id.to_string(),
+                last.updated_at.get(),
+            )?)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    Ok(Page { items, next_cursor })
+}
+
 impl ConversationReader for Database {
     fn get(
         &self,
@@ -2408,73 +2596,9 @@ impl ConversationReader for Database {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Deferred)
             .map_err(slice::db)?;
-        let scope = format!("conversations:{:?}", query.lifecycle);
-        let cursor = decode_cursor(query.page.cursor.as_ref(), &scope)?;
-        if let Some(cursor) = cursor.as_ref() {
-            validate_cursor_number(cursor, true)?;
-            let _: ConversationId = validate_cursor_id(cursor)?;
-        }
-        let updated = cursor
-            .as_ref()
-            .map(|value| value.number)
-            .unwrap_or(i64::MAX);
-        let id = cursor
-            .as_ref()
-            .map(|value| value.text.as_str())
-            .unwrap_or("\u{ffff}");
-        let limit = i64::from(query.page.limit.get());
-        let lifecycle = query.lifecycle.map(|value| match value {
-            ConversationLifecycle::Active => "active",
-            ConversationLifecycle::Archived => "archived",
-            ConversationLifecycle::Tombstoned => "tombstoned",
-        });
-        let mut statement = transaction.prepare("SELECT id, title, lifecycle, kind, revision, updated_at FROM conversations WHERE (?1 IS NULL OR lifecycle = ?1) AND (updated_at < ?2 OR (updated_at = ?2 AND id > ?3)) ORDER BY updated_at DESC, id LIMIT ?4").map_err(slice::db)?;
-        let mut items = Vec::new();
-        for row in statement
-            .query_map(params![lifecycle, updated, id, limit], |row| {
-                let id: ConversationId =
-                    parse(row.get(0)?).map_err(|_| rusqlite::Error::InvalidQuery)?;
-                let lifecycle = match row.get::<_, String>(2)?.as_str() {
-                    "active" => ConversationLifecycle::Active,
-                    "archived" => ConversationLifecycle::Archived,
-                    "tombstoned" => ConversationLifecycle::Tombstoned,
-                    _ => return Err(rusqlite::Error::InvalidQuery),
-                };
-                let kind = match row.get::<_, String>(3)?.as_str() {
-                    "direct" => ConversationKindTag::Direct,
-                    "group" => ConversationKindTag::Group,
-                    _ => return Err(rusqlite::Error::InvalidQuery),
-                };
-                Ok(ConversationSummary {
-                    id,
-                    title: row.get(1)?,
-                    lifecycle,
-                    kind,
-                    revision: slice::rev(row.get(4)?).map_err(|_| rusqlite::Error::InvalidQuery)?,
-                    updated_at: timestamp(row.get(5)?),
-                })
-            })
-            .map_err(slice::db)?
-        {
-            items.push(row.map_err(slice::db)?);
-        }
-        drop(statement);
-        let next_cursor = if let Some(last) = items.last() {
-            let has_more: bool = transaction.query_row("SELECT EXISTS(SELECT 1 FROM conversations WHERE (?1 IS NULL OR lifecycle = ?1) AND (updated_at < ?2 OR (updated_at = ?2 AND id > ?3)))", params![lifecycle, last.updated_at.get(), last.id.to_string()], |row| row.get(0)).map_err(slice::db)?;
-            if has_more {
-                Some(encode_cursor(
-                    &scope,
-                    &last.id.to_string(),
-                    last.updated_at.get(),
-                )?)
-            } else {
-                None
-            }
-        } else {
-            None
-        };
+        let page = read_summary_page(&transaction, query)?;
         transaction.commit().map_err(slice::db)?;
-        Ok(Page { items, next_cursor })
+        Ok(page)
     }
 
     fn timeline_page(
@@ -4927,5 +5051,46 @@ mod tests {
             ConversationReader::get_turn(&database, turn_id),
             Err(ConversationRepositoryError::Storage)
         );
+    }
+
+    #[test]
+    fn overview_reads_participants_last_message_live_turn_and_candidate_counts() {
+        use lettuce_conversations::ConversationOverviewReader;
+        let database = Database::open_in_memory().expect("database");
+        let (conversation_id, _revision_id, _candidate_id, source_turn, current_turn) =
+            create_content_fixture(&database);
+        let page = database
+            .overview_page(&ConversationQuery::default())
+            .expect("overview page");
+        assert_eq!(page.items.len(), 1);
+        let overview = &page.items[0];
+        assert_eq!(overview.summary.id, conversation_id);
+        assert_eq!(overview.participants.len(), 2);
+        let last = overview.last_message.as_ref().expect("last message");
+        assert_eq!(last.message.role, MessageRole::Assistant);
+        let timeline = ConversationReader::timeline_page(
+            &database,
+            conversation_id,
+            overview.active_branch_id,
+            &PageRequest::default(),
+        )
+        .expect("timeline");
+        let ids = timeline
+            .items
+            .iter()
+            .map(|item| item.message.id)
+            .collect::<Vec<_>>();
+        assert_eq!(ids[0], last.message.id);
+        assert_eq!(
+            database
+                .candidate_counts(conversation_id, &ids)
+                .expect("candidate counts"),
+            vec![(last.message.id, 1)]
+        );
+        let live = database
+            .live_turn(conversation_id)
+            .expect("live turn")
+            .expect("unsettled turn");
+        assert!(live == source_turn || live == current_turn);
     }
 }
