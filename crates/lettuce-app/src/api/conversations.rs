@@ -18,6 +18,7 @@ use super::ApiContext;
 use super::error::{IntoApiError, api_error, invalid_field, parse_id};
 use super::events::GenerationEventSink;
 use super::mapping::{self, AvatarLookup};
+use super::models::require_conversation_models;
 use super::worker::settled_event;
 use crate::{
     CompanionTurnCoordinator, CompanionTurnError, ConversationGenerationAdmission,
@@ -269,107 +270,108 @@ where
         return Err(invalid_field("text", "the message text is blank"));
     }
     let key = operation_key(request.client_operation_id)?;
+    require_conversation_models(context, conversation_id).await?;
     let text = request.text;
-    let accepted =
-        context
-            .blocking(move |context| {
-                let database = context.backend().database();
-                let now = context.now();
-                let conversation = ConversationReader::get(database, conversation_id)
-                    .map_err(IntoApiError::into_api_error)?
-                    .conversation;
-                let user = conversation
-                    .participants
-                    .iter()
-                    .find(|participant| participant.role == ParticipantRole::User)
-                    .ok_or_else(|| {
-                        api_error(
-                            ApiErrorCode::Unsupported,
-                            "the conversation has no user participant",
-                        )
-                    })?;
-                let operation = OperationToken {
-                    key,
-                    request_digest: send_digest(conversation_id, &text)?,
-                };
-                if let Some(record) = ConversationReader::operation_record(
-                    database,
-                    conversation_id,
-                    OperationKind::Send,
-                    &operation,
-                )
+    let accepted = context
+        .blocking(move |context| {
+            let database = context.backend().database();
+            let now = context.now();
+            let conversation = ConversationReader::get(database, conversation_id)
                 .map_err(IntoApiError::into_api_error)?
-                    && record.operation.request_digest != operation.request_digest
+                .conversation;
+            let user = conversation
+                .participants
+                .iter()
+                .find(|participant| participant.role == ParticipantRole::User)
+                .ok_or_else(|| {
+                    api_error(
+                        ApiErrorCode::Unsupported,
+                        "the conversation has no user participant",
+                    )
+                })?;
+            let operation = OperationToken {
+                key,
+                request_digest: send_digest(conversation_id, &text)?,
+            };
+            if let Some(record) = ConversationReader::operation_record(
+                database,
+                conversation_id,
+                OperationKind::Send,
+                &operation,
+            )
+            .map_err(IntoApiError::into_api_error)?
+                && record.operation.request_digest != operation.request_digest
+            {
+                return Err(api_error(
+                    ApiErrorCode::Conflict,
+                    "client_operation_id was already used for a different send",
+                ));
+            }
+            let command = SendConversation {
+                conversation_id,
+                branch_id: conversation.active_branch_id,
+                expected_revision: conversation.revision,
+                operation,
+                message: MessageDraft {
+                    role: MessageRole::User,
+                    author_participant_id: Some(user.id),
+                    parts: vec![MessagePart::Text { text }],
+                    visibility: MessageVisibility::Visible,
+                    pinned: false,
+                    scene_edited: false,
+                },
+                swap_roles: false,
+            };
+            let emotion = context.emotion();
+            let begun = match CompanionTurnCoordinator::new(database, Some(emotion.as_ref()))
+                .begin_send(&command, now, &CancellationToken::new())
+            {
+                Ok(begun) => begun.value,
+                Err(CompanionTurnError::Conversation(
+                    ConversationRepositoryError::Conflict
+                    | ConversationRepositoryError::StaleRevision { .. },
+                )) if ConversationOverviewReader::live_turn(database, conversation_id)
+                    .map_err(IntoApiError::into_api_error)?
+                    .is_some() =>
                 {
                     return Err(api_error(
-                        ApiErrorCode::Conflict,
-                        "client_operation_id was already used for a different send",
+                        ApiErrorCode::Busy,
+                        "the conversation is still generating a reply",
                     ));
                 }
-                let command = SendConversation {
-                    conversation_id,
-                    branch_id: conversation.active_branch_id,
-                    expected_revision: conversation.revision,
-                    operation,
-                    message: MessageDraft {
-                        role: MessageRole::User,
-                        author_participant_id: Some(user.id),
-                        parts: vec![MessagePart::Text { text }],
-                        visibility: MessageVisibility::Visible,
-                        pinned: false,
-                        scene_edited: false,
-                    },
-                    swap_roles: false,
-                };
-                let begun = match CompanionTurnCoordinator::new(database, context.emotion())
-                    .begin_send(&command, now, &CancellationToken::new())
-                {
-                    Ok(begun) => begun.value,
-                    Err(CompanionTurnError::Conversation(
-                        ConversationRepositoryError::Conflict
-                        | ConversationRepositoryError::StaleRevision { .. },
-                    )) if ConversationOverviewReader::live_turn(database, conversation_id)
-                        .map_err(IntoApiError::into_api_error)?
-                        .is_some() =>
-                    {
-                        return Err(api_error(
-                            ApiErrorCode::Busy,
-                            "the conversation is still generating a reply",
-                        ));
-                    }
-                    Err(error) => return Err(error.into_api_error()),
-                };
-                let GenerationInput::UserMessage { message_id } = begun.turn.input else {
-                    return Err(api_error(
-                        ApiErrorCode::Internal,
-                        "a send did not start from a user message",
-                    ));
-                };
-                let turn_id = begun.turn.id;
-                let accepted = dto::SendAccepted {
-                    user_message_id: message_id.to_string(),
-                    turn_id: turn_id.to_string(),
-                };
-                if let Some(event) = settled_event(database, turn_id)? {
-                    events.emit(event);
-                    return Ok(accepted);
-                }
-                context.attach_stream(turn_id, events);
-                match schedule(context, &begun, now) {
-                    Ok(admission) if admission.job.state.is_terminal() => {
-                        if let Some(event) = settled_event(database, turn_id)? {
-                            context.finish_stream(turn_id, event);
-                        }
-                    }
-                    Ok(_) => {}
-                    Err(error) => {
-                        unschedulable_send(context, conversation_id, turn_id);
-                        return Err(error.into_api_error());
+                Err(error) => return Err(error.into_api_error()),
+            };
+            let GenerationInput::UserMessage { message_id } = begun.turn.input else {
+                return Err(api_error(
+                    ApiErrorCode::Internal,
+                    "a send did not start from a user message",
+                ));
+            };
+            let turn_id = begun.turn.id;
+            let accepted = dto::SendAccepted {
+                user_message_id: message_id.to_string(),
+                turn_id: turn_id.to_string(),
+            };
+            if let Some(event) = settled_event(database, turn_id)? {
+                events.emit(event);
+                return Ok(accepted);
+            }
+            context.attach_stream(turn_id, events);
+            match schedule(context, &begun, now) {
+                Ok(admission) if admission.job.state.is_terminal() => {
+                    if let Some(event) = settled_event(database, turn_id)? {
+                        context.finish_stream(turn_id, event);
                     }
                 }
-                Ok(accepted)
-            })
-            .await?;
+                Ok(_) => {}
+                Err(error) => {
+                    unschedulable_send(context, conversation_id, turn_id);
+                    return Err(error.into_api_error());
+                }
+            }
+            Ok(accepted)
+        })
+        .await?;
     context.wake_workers();
     Ok(accepted)
 }

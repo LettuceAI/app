@@ -1,5 +1,5 @@
-//! The LettuceAI desktop shell: opens the application API, runs its workers
-//! and exposes it to the webview as Tauri commands, events and the asset URI
+//! The LettuceAI desktop shell: opens the application API, starts it and
+//! exposes it to the webview as Tauri commands, events and the asset URI
 //! scheme. Every command is a one-line wrapper over `lettuce_app::api`.
 
 #![deny(unsafe_op_in_unsafe_fn)]
@@ -8,22 +8,18 @@ mod asset_protocol;
 mod bindings;
 mod commands;
 mod events;
+mod files;
 
-use std::{
-    sync::{Arc, Mutex},
-    thread::JoinHandle,
-};
+use std::sync::{Arc, Mutex};
 
-use lettuce_app::api::{ApiContext, ConversationGenerationWorker};
-use tauri::{App, AppHandle, Manager, RunEvent, Runtime};
+use lettuce_app::api::{ApiContext, ApiWorkers};
+use tauri::{App, AppHandle, Manager, RunEvent, Runtime, WindowEvent};
 
 pub use bindings::{BINDINGS_PATH, export_bindings, specta_builder};
 pub use events::AppEvent;
 
-/// The generation worker's thread and the signal that stops it.
-struct Workers {
-    running: Mutex<Option<(tokio::sync::oneshot::Sender<()>, JoinHandle<()>)>>,
-}
+/// The workers `api::startup` started, stopped on exit.
+struct Workers(Mutex<Option<ApiWorkers>>);
 
 /// Builds and runs the app until its last window closes; on Android and
 /// iOS this is the mobile entry point.
@@ -52,58 +48,65 @@ pub fn run() {
         })
         .build(tauri::generate_context!());
     match app {
-        Ok(app) => app.run(|handle, event| {
-            if let RunEvent::Exit = event {
-                stop(handle);
+        Ok(app) => app.run(|handle, event| match event {
+            RunEvent::WindowEvent {
+                event: WindowEvent::Focused(focused),
+                ..
+            } => {
+                if let Some(context) = handle.try_state::<ApiContext>() {
+                    context.app_focus_changed(focused);
+                }
             }
+            #[cfg(mobile)]
+            RunEvent::WindowEvent {
+                event: WindowEvent::Suspended,
+                ..
+            } => {
+                if let Some(context) = handle.try_state::<ApiContext>() {
+                    context.app_focus_changed(false);
+                }
+            }
+            #[cfg(mobile)]
+            RunEvent::WindowEvent {
+                event: WindowEvent::Resumed,
+                ..
+            } => {
+                if let Some(context) = handle.try_state::<ApiContext>() {
+                    context.app_focus_changed(true);
+                }
+            }
+            RunEvent::Exit => stop(handle),
+            _ => {}
         }),
         Err(error) => tracing::error!(%error, "the desktop app could not start"),
     }
 }
 
-/// Opens the application API under the app data directory, settles what the
-/// previous process left running, then starts the generation worker on its
-/// own thread and runtime.
+/// Opens the application API under the app data directory and runs
+/// `api::startup`, which settles what the previous process left running
+/// before commands are served and then starts the workers on their own
+/// threads.
 fn start<R: Runtime>(app: &mut App<R>) -> Result<(), Box<dyn std::error::Error>> {
     let app_data = app.path().app_data_dir()?;
     std::fs::create_dir_all(&app_data)?;
     let context = ApiContext::open_desktop(
         &app_data,
+        app.path().resource_dir().ok(),
         Arc::new(lettuce_settings::NativeSecretStore::new()),
         Arc::new(events::TauriEventSink(app.handle().clone())),
+        Arc::new(files::DesktopFileAccess),
         asset_protocol::ASSET_URL_BASE.to_owned(),
     )
     .map_err(|error| error.message)?;
-    context
-        .recover_after_restart()
+    let workers = tauri::async_runtime::block_on(lettuce_app::api::startup(&context))
         .map_err(|error| error.message)?;
-    let worker = ConversationGenerationWorker::new(context.clone());
-    let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
-    let thread = std::thread::Builder::new()
-        .name("conversation-generation".into())
-        .spawn(move || {
-            match tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-            {
-                Ok(runtime) => runtime.block_on(worker.run(async move {
-                    let _ = stopped.await;
-                })),
-                Err(error) => {
-                    tracing::error!(%error, "the generation worker runtime could not start");
-                }
-            }
-        })?;
     app.manage(context);
-    app.manage(Workers {
-        running: Mutex::new(Some((stop, thread))),
-    });
+    app.manage(Workers(Mutex::new(Some(workers))));
     Ok(())
 }
 
-/// Tells the worker to stop taking jobs, cancels running inference and any
-/// job the worker started meanwhile, joins it, then stops the backend's
-/// local servers.
+/// Stops the workers (cancelling running work and joining their threads),
+/// then stops the backend's local servers.
 fn stop<R: Runtime>(handle: &AppHandle<R>) {
     let Some(context) = handle
         .try_state::<ApiContext>()
@@ -111,18 +114,12 @@ fn stop<R: Runtime>(handle: &AppHandle<R>) {
     else {
         return;
     };
-    let running = handle
+    let workers = handle
         .try_state::<Workers>()
-        .and_then(|workers| workers.running.lock().ok()?.take());
-    let thread = running.map(|(stop, thread)| {
-        let _ = stop.send(());
-        thread
-    });
-    context.begin_shutdown();
-    if let Some(thread) = thread
-        && thread.join().is_err()
-    {
-        tracing::error!("the generation worker thread panicked");
+        .and_then(|workers| workers.0.lock().ok()?.take());
+    match workers {
+        Some(workers) => workers.stop(),
+        None => context.begin_shutdown(),
     }
     tauri::async_runtime::block_on(context.backend().shutdown());
 }

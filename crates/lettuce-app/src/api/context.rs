@@ -1,7 +1,10 @@
 use std::{
     collections::HashMap,
-    path::Path,
-    sync::{Arc, Mutex},
+    path::{Path, PathBuf},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use lettuce_contracts::{ApiError, ApiErrorCode, GenerationEvent};
@@ -16,9 +19,12 @@ use lettuce_types::GenerationTurnId;
 
 use super::error::{IntoApiError, api_error};
 use super::events::{ApiEventSink, GenerationEventSink};
+use super::files::FileAccess;
+use super::jobs::JobHostState;
+use super::models::{ApiEmbedding, ApiEmotion, InstalledModels, ModelLoader, ModelSlots};
 use crate::{
-    AppBackend, AppDatabaseLocation, CompanionEmotionEngine, EmbeddingGenerationError,
-    MemoryEmbeddingEngine,
+    AppActiveUsageTracker, AppBackend, AppDatabaseLocation, CompanionEmotionEngine,
+    EmbeddingGenerationError, MemoryEmbeddingEngine,
 };
 
 const PRIVATE_PERSISTENT_DIRECTORY: &str = "private-persistent-v2";
@@ -26,16 +32,29 @@ const PRIVATE_PERSISTENT_DIRECTORY: &str = "private-persistent-v2";
 /// The media store the API reads assets from and writes reply images to.
 pub type ApiMediaStore = LocalMediaBlobStore<Database, Database>;
 
+/// The database files the process uses, for media collection.
+#[derive(Debug)]
+pub struct ApiDatabaseFiles {
+    pub location: AppDatabaseLocation,
+    pub active: PathBuf,
+}
+
 /// Everything an `ApiContext` is built from.
 pub struct ApiContextParts {
     pub backend: Arc<AppBackend>,
     pub secret_store: Arc<dyn SecretStore>,
     pub inference: Arc<dyn InferencePort>,
-    pub embedding: Arc<dyn MemoryEmbeddingEngine>,
-    pub emotion: Option<Arc<dyn CompanionEmotionEngine>>,
+    /// Loads the optional embedding and emotion models on first use.
+    pub models: Arc<dyn ModelLoader>,
     pub media: Option<Arc<ApiMediaStore>>,
     pub events: Arc<dyn ApiEventSink>,
     pub clock: Arc<dyn Clock>,
+    pub files: Arc<dyn FileAccess>,
+    /// The app data folder models, runtimes and legacy data live below.
+    pub app_folder: Option<PathBuf>,
+    /// The app bundle's resource folder, when the host has one.
+    pub resource_dir: Option<PathBuf>,
+    pub database_files: Option<ApiDatabaseFiles>,
     /// What an asset id is appended to for its `AssetRef::url`; the host
     /// picks it for its transport.
     pub asset_url_base: String,
@@ -58,9 +77,13 @@ pub struct ApiContext {
 
 struct ApiContextInner {
     parts: ApiContextParts,
+    models: ModelSlots,
     streams: Mutex<HashMap<GenerationTurnId, Arc<dyn GenerationEventSink>>>,
     wake: tokio::sync::Notify,
     shutdown: CancellationToken,
+    jobs: JobHostState,
+    app_usage: AppActiveUsageTracker,
+    legacy_database_detected: AtomicBool,
 }
 
 impl std::fmt::Debug for ApiContext {
@@ -75,25 +98,31 @@ impl ApiContext {
         if !parts.asset_url_base.ends_with('/') {
             parts.asset_url_base.push('/');
         }
+        let now = parts.clock.now();
         Self {
             inner: Arc::new(ApiContextInner {
+                models: ModelSlots::new(Arc::clone(&parts.models)),
                 parts,
                 streams: Mutex::new(HashMap::new()),
                 wake: tokio::sync::Notify::new(),
                 shutdown: CancellationToken::new(),
+                jobs: JobHostState::default(),
+                app_usage: AppActiveUsageTracker::new(now),
+                legacy_database_detected: AtomicBool::new(false),
             }),
         }
     }
 
     /// Opens the production backend under the app data directory: the active
     /// database, the media store and the remote provider runtime over the
-    /// host's native secret store. Memory embedding and emotion models are
-    /// not loaded, so dynamic memory retrieval runs without vectors and
-    /// companion sends use the neutral update.
+    /// host's native secret store. The optional embedding and emotion models
+    /// load when a chat first needs them.
     pub fn open_desktop(
         app_data_dir: &Path,
+        resource_dir: Option<PathBuf>,
         secret_store: Arc<dyn SecretStore>,
         events: Arc<dyn ApiEventSink>,
+        files: Arc<dyn FileAccess>,
         asset_url_base: String,
     ) -> Result<Self, ApiError> {
         let clock: Arc<dyn Clock> = Arc::new(SystemClock);
@@ -146,11 +175,17 @@ impl ApiContext {
             backend,
             secret_store,
             inference,
-            embedding: Arc::new(UnavailableEmbedding),
-            emotion: None,
+            models: Arc::new(InstalledModels),
             media: Some(Arc::new(media)),
             events,
             clock,
+            files,
+            app_folder: Some(app_data_dir.to_path_buf()),
+            resource_dir,
+            database_files: Some(ApiDatabaseFiles {
+                location,
+                active: path,
+            }),
             asset_url_base,
         }))
     }
@@ -189,6 +224,7 @@ impl ApiContext {
     pub fn begin_shutdown(&self) {
         self.inner.shutdown.cancel();
         self.backend().begin_shutdown();
+        self.inner.jobs.wake();
     }
 
     pub(crate) fn shutdown_token(&self) -> &CancellationToken {
@@ -210,12 +246,78 @@ impl ApiContext {
         self.inner.parts.inference.as_ref()
     }
 
-    pub(crate) fn embedding(&self) -> &dyn MemoryEmbeddingEngine {
-        self.inner.parts.embedding.as_ref()
+    /// The embedding engine for one use; the installed model loads at its
+    /// first call.
+    pub(crate) fn embedding(&self) -> Arc<dyn MemoryEmbeddingEngine> {
+        Arc::new(ApiEmbedding::new(self.clone()))
     }
 
-    pub(crate) fn emotion(&self) -> Option<&dyn CompanionEmotionEngine> {
-        self.inner.parts.emotion.as_deref()
+    /// The emotion engine for one use; the installed model loads at its
+    /// first classification.
+    pub(crate) fn emotion(&self) -> Arc<dyn CompanionEmotionEngine> {
+        Arc::new(ApiEmotion::new(self.clone()))
+    }
+
+    pub(crate) fn models(&self) -> &ModelSlots {
+        &self.inner.models
+    }
+
+    /// Forgets the loaded optional models after an install, switch or
+    /// removal; the next use loads what is installed then.
+    pub fn models_changed(&self) {
+        self.inner.models.forget();
+    }
+
+    pub(crate) fn files(&self) -> &dyn FileAccess {
+        self.inner.parts.files.as_ref()
+    }
+
+    pub(crate) fn app_folder(&self) -> Option<&Path> {
+        self.inner.parts.app_folder.as_deref()
+    }
+
+    pub(crate) fn resource_dir(&self) -> Option<&Path> {
+        self.inner.parts.resource_dir.as_deref()
+    }
+
+    pub(crate) fn database_files(&self) -> Option<&ApiDatabaseFiles> {
+        self.inner.parts.database_files.as_ref()
+    }
+
+    pub(crate) fn jobs(&self) -> &JobHostState {
+        &self.inner.jobs
+    }
+
+    pub(crate) fn legacy_database_detected(&self) -> bool {
+        self.inner.legacy_database_detected.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn set_legacy_database_detected(&self, detected: bool) {
+        self.inner
+            .legacy_database_detected
+            .store(detected, Ordering::Release);
+    }
+
+    /// Records that the window gained or lost focus (or, on mobile, that the
+    /// app resumed or went to the background) for the active-time counter;
+    /// losing focus writes the counted time.
+    pub fn app_focus_changed(&self, focused: bool) {
+        self.inner.app_usage.on_focus_changed(focused, self.now());
+        if !focused {
+            self.flush_app_usage();
+        }
+    }
+
+    /// Adds the counted active time to each day's usage; the host calls it on
+    /// exit.
+    pub fn flush_app_usage(&self) {
+        if let Err(error) = self
+            .inner
+            .app_usage
+            .flush(self.backend().database(), self.now())
+        {
+            tracing::warn!(%error, "app active time could not be recorded");
+        }
     }
 
     pub(crate) fn media(&self) -> Option<&ApiMediaStore> {

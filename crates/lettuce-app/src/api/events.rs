@@ -1,4 +1,4 @@
-use lettuce_contracts::{ApiEvent, GenerationEvent};
+use lettuce_contracts::{ApiEvent, GenerationEvent, JobEvent};
 
 /// Application-wide events, broadcast by the host to every window.
 pub trait ApiEventSink: Send + Sync {
@@ -10,4 +10,10 @@ pub trait ApiEventSink: Send + Sync {
 /// generation continues.
 pub trait GenerationEventSink: Send + Sync {
     fn emit(&self, event: GenerationEvent);
+}
+
+/// The stream of one watched job, handed in by `job_watch`. Delivery is
+/// best effort, like `GenerationEventSink`.
+pub trait JobEventSink: Send + Sync {
+    fn emit(&self, event: JobEvent);
 }

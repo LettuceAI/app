@@ -2,10 +2,9 @@ use std::sync::Arc;
 
 use lettuce_app::api::{self, ApiContext, GenerationEventSink};
 use lettuce_contracts::{
-    ApiError, CharacterPage, CharactersListRequest, ConversationMessagesRequest,
-    ConversationOpenRequest, ConversationPage, ConversationSendRequest, ConversationView,
-    ConversationsListRequest, GenerationCancelRequest, GenerationEvent, LaunchDirectRequest,
-    LaunchDirectResponse, MessagePage, SendAccepted,
+    ApiError, ConversationMessagesRequest, ConversationOpenRequest, ConversationPage,
+    ConversationSendRequest, ConversationView, ConversationsListRequest, GenerationCancelRequest,
+    GenerationEvent, LaunchDirectRequest, LaunchDirectResponse, MessagePage, SendAccepted,
 };
 use tauri::{State, ipc::Channel};
 
@@ -62,15 +61,6 @@ pub async fn conversation_launch_direct(
     request: LaunchDirectRequest,
 ) -> Result<LaunchDirectResponse, ApiError> {
     api::conversation_launch_direct(&context, request).await
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn characters_list(
-    context: State<'_, ApiContext>,
-    request: CharactersListRequest,
-) -> Result<CharacterPage, ApiError> {
-    api::characters_list(&context, request).await
 }
 
 /// A send's generation stream, delivered over the command's IPC channel.

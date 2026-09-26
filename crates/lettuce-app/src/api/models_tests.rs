@@ -1,0 +1,396 @@
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
+
+use async_trait::async_trait;
+use lettuce_characters::CharacterDefaults;
+use lettuce_companions::EmotionClassification;
+use lettuce_contracts::{self as dto, ApiErrorCode, ApiErrorDetails, RequiredModel};
+use lettuce_embeddings::{EmbeddingDimensions, EmbeddingRequest, EmbeddingVector};
+use lettuce_jobs::{SystemClock, handle::CancellationToken};
+use lettuce_settings::GlobalSettingsStore;
+use lettuce_types::{CharacterId, ConversationId};
+
+use super::models::require_conversation_models;
+use super::tests::{Harness, Reply, create_character, harness_in};
+use super::{
+    ApiContext, ModelLoad, ModelLoader, conversation_launch_direct, conversation_open,
+    conversation_send,
+};
+use crate::{
+    CompanionEmotionEngine, CompanionEmotionGenerationError, EmbeddingGenerationError,
+    MemoryEmbeddingEngine,
+};
+
+struct FixedEmbedding;
+
+impl MemoryEmbeddingEngine for FixedEmbedding {
+    fn source_revision(&self) -> &str {
+        "fixed"
+    }
+
+    fn dimensions(&self) -> EmbeddingDimensions {
+        EmbeddingDimensions::from_preference(None)
+    }
+
+    fn count_tokens(&self, _text: &str) -> Result<u32, EmbeddingGenerationError> {
+        Ok(1)
+    }
+
+    fn embed_memory(
+        &self,
+        _request: &EmbeddingRequest,
+        _cancellation: &CancellationToken,
+    ) -> Result<EmbeddingVector, EmbeddingGenerationError> {
+        Err(EmbeddingGenerationError::Unavailable)
+    }
+}
+
+struct NeutralEmotion;
+
+impl CompanionEmotionEngine for NeutralEmotion {
+    fn classify_emotion(
+        &self,
+        _text: &str,
+        _cancellation: &CancellationToken,
+    ) -> Result<Option<EmotionClassification>, CompanionEmotionGenerationError> {
+        Ok(None)
+    }
+}
+
+struct FailingEmotion;
+
+impl CompanionEmotionEngine for FailingEmotion {
+    fn classify_emotion(
+        &self,
+        _text: &str,
+        _cancellation: &CancellationToken,
+    ) -> Result<Option<EmotionClassification>, CompanionEmotionGenerationError> {
+        Err(CompanionEmotionGenerationError::Unavailable)
+    }
+}
+
+/// Counts every question and load; models are installed when `installed`
+/// and load when `loadable`.
+#[derive(Default)]
+struct CountingModels {
+    installed: AtomicBool,
+    loadable: AtomicBool,
+    failing_emotion: AtomicBool,
+    checks: AtomicUsize,
+    prepares: AtomicUsize,
+    loads: AtomicUsize,
+}
+
+impl CountingModels {
+    fn new(installed: bool, loadable: bool) -> Arc<Self> {
+        let models = Self::default();
+        models.installed.store(installed, Ordering::SeqCst);
+        models.loadable.store(loadable, Ordering::SeqCst);
+        Arc::new(models)
+    }
+
+    fn calls(&self) -> (usize, usize, usize) {
+        (
+            self.checks.load(Ordering::SeqCst),
+            self.prepares.load(Ordering::SeqCst),
+            self.loads.load(Ordering::SeqCst),
+        )
+    }
+}
+
+#[async_trait]
+impl ModelLoader for CountingModels {
+    fn installed(&self, _context: &ApiContext, _model: RequiredModel) -> bool {
+        self.checks.fetch_add(1, Ordering::SeqCst);
+        self.installed.load(Ordering::SeqCst)
+    }
+
+    async fn prepare(&self, _context: &ApiContext) -> bool {
+        self.prepares.fetch_add(1, Ordering::SeqCst);
+        true
+    }
+
+    fn embedding(&self, _context: &ApiContext) -> ModelLoad<Arc<dyn MemoryEmbeddingEngine>> {
+        self.loads.fetch_add(1, Ordering::SeqCst);
+        if !self.installed.load(Ordering::SeqCst) {
+            ModelLoad::NotInstalled
+        } else if self.loadable.load(Ordering::SeqCst) {
+            ModelLoad::Loaded(Arc::new(FixedEmbedding))
+        } else {
+            ModelLoad::Unavailable
+        }
+    }
+
+    fn emotion(&self, _context: &ApiContext) -> ModelLoad<Arc<dyn CompanionEmotionEngine>> {
+        self.loads.fetch_add(1, Ordering::SeqCst);
+        if !self.installed.load(Ordering::SeqCst) {
+            ModelLoad::NotInstalled
+        } else if self.failing_emotion.load(Ordering::SeqCst) {
+            ModelLoad::Loaded(Arc::new(FailingEmotion))
+        } else if self.loadable.load(Ordering::SeqCst) {
+            ModelLoad::Loaded(Arc::new(NeutralEmotion))
+        } else {
+            ModelLoad::Unavailable
+        }
+    }
+}
+
+fn harness_with_models(models: Arc<CountingModels>) -> Harness {
+    harness_in(
+        Reply::Text("Hello."),
+        Arc::new(SystemClock),
+        None,
+        None,
+        models,
+    )
+}
+
+fn companion_defaults() -> CharacterDefaults {
+    CharacterDefaults {
+        interaction_mode: lettuce_characters::InteractionMode::Companion,
+        companion_soul: Some(lettuce_companions::CompanionSoulConfig::default()),
+        ..CharacterDefaults::default()
+    }
+}
+
+fn dynamic_defaults() -> CharacterDefaults {
+    CharacterDefaults {
+        memory_policy: lettuce_characters::MemoryPolicy::Dynamic,
+        ..CharacterDefaults::default()
+    }
+}
+
+fn enable_dynamic_memory(harness: &Harness) {
+    let database = harness.context.backend().database();
+    let stored = database.load().expect("settings");
+    let mut settings = stored.settings;
+    settings.dynamic_memory.enabled = true;
+    database
+        .save(settings, stored.default_model_profile_id, stored.revision)
+        .expect("enable dynamic memory");
+}
+
+async fn launch(harness: &Harness, character_id: CharacterId, key: &str) -> String {
+    conversation_launch_direct(
+        &harness.context,
+        dto::LaunchDirectRequest {
+            character_id: character_id.to_string(),
+            client_operation_id: key.into(),
+        },
+    )
+    .await
+    .expect("launch")
+    .conversation_id
+}
+
+async fn send(harness: &Harness, conversation_id: &str, key: &str) -> Result<(), dto::ApiError> {
+    conversation_send(
+        &harness.context,
+        dto::ConversationSendRequest {
+            conversation_id: conversation_id.into(),
+            text: "Hello there".into(),
+            client_operation_id: key.into(),
+        },
+        Arc::new(NoStream),
+    )
+    .await
+    .map(|_| ())
+}
+
+struct NoStream;
+
+impl super::GenerationEventSink for NoStream {
+    fn emit(&self, _event: dto::GenerationEvent) {}
+}
+
+async fn assert_untouched(harness: &Harness, conversation_id: &str) {
+    let view = conversation_open(
+        &harness.context,
+        dto::ConversationOpenRequest {
+            conversation_id: conversation_id.into(),
+        },
+    )
+    .await
+    .expect("open");
+    assert!(view.messages.items.is_empty());
+    assert!(view.pending_turn_id.is_none());
+    assert!(view.can_send);
+}
+
+fn model_of(error: &dto::ApiError) -> Option<RequiredModel> {
+    match error.details {
+        Some(ApiErrorDetails::Model { model }) => Some(model),
+        _ => None,
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_companion_chat_without_the_emotion_model_is_refused_and_untouched() {
+    let models = CountingModels::new(false, false);
+    let harness = harness_with_models(Arc::clone(&models));
+    let companion = create_character(
+        harness.context.backend().database(),
+        "Mira",
+        companion_defaults(),
+    );
+    let conversation_id = launch(&harness, companion, "companion-launch").await;
+    let error = send(&harness, &conversation_id, "companion-send")
+        .await
+        .expect_err("refused");
+    assert_eq!(error.code, ApiErrorCode::ModelRequired);
+    assert_eq!(model_of(&error), Some(RequiredModel::Emotion));
+    assert_untouched(&harness, &conversation_id).await;
+    assert!(
+        harness
+            .provider
+            .requests
+            .lock()
+            .expect("requests")
+            .is_empty()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_dynamic_memory_chat_without_the_embedding_model_is_refused() {
+    let models = CountingModels::new(false, false);
+    let harness = harness_with_models(Arc::clone(&models));
+    enable_dynamic_memory(&harness);
+    let character = create_character(
+        harness.context.backend().database(),
+        "Rin",
+        dynamic_defaults(),
+    );
+    let conversation_id = launch(&harness, character, "dynamic-launch").await;
+    let error = send(&harness, &conversation_id, "dynamic-send")
+        .await
+        .expect_err("refused");
+    assert_eq!(error.code, ApiErrorCode::ModelRequired);
+    assert_eq!(model_of(&error), Some(RequiredModel::Embedding));
+    assert_untouched(&harness, &conversation_id).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_installed_model_that_cannot_load_refuses_the_send() {
+    let models = CountingModels::new(true, false);
+    let harness = harness_with_models(Arc::clone(&models));
+    let companion = create_character(
+        harness.context.backend().database(),
+        "Mira",
+        companion_defaults(),
+    );
+    let conversation_id = launch(&harness, companion, "broken-launch").await;
+    let error = send(&harness, &conversation_id, "broken-send")
+        .await
+        .expect_err("refused");
+    assert_eq!(error.code, ApiErrorCode::ModelUnavailable);
+    assert_eq!(model_of(&error), Some(RequiredModel::Emotion));
+    assert_untouched(&harness, &conversation_id).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_manual_memory_roleplay_chat_needs_no_model() {
+    let models = CountingModels::new(false, false);
+    let harness = harness_with_models(Arc::clone(&models));
+    let conversation_id = launch(&harness, harness.character_id, "plain-launch").await;
+    send(&harness, &conversation_id, "plain-send")
+        .await
+        .expect("sends");
+    assert_eq!(models.calls(), (0, 0, 0));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn installed_models_load_once_until_they_change() {
+    let models = CountingModels::new(true, true);
+    let harness = harness_with_models(Arc::clone(&models));
+    enable_dynamic_memory(&harness);
+    let defaults = CharacterDefaults {
+        memory_policy: lettuce_characters::MemoryPolicy::Dynamic,
+        ..companion_defaults()
+    };
+    let companion = create_character(harness.context.backend().database(), "Mira", defaults);
+    let conversation_id = launch(&harness, companion, "lazy-launch").await;
+    let conversation: ConversationId = conversation_id.parse().expect("id");
+    assert_eq!(models.calls(), (0, 0, 0));
+    require_conversation_models(&harness.context, conversation)
+        .await
+        .expect("models load");
+    assert_eq!(models.calls(), (2, 2, 2));
+    require_conversation_models(&harness.context, conversation)
+        .await
+        .expect("models stay loaded");
+    assert_eq!(models.calls(), (2, 2, 2));
+    let embedding = harness.context.embedding();
+    assert_eq!(embedding.source_revision(), "fixed");
+    assert!(embedding.requires_model());
+    assert_eq!(models.calls(), (2, 2, 2));
+    send(&harness, &conversation_id, "lazy-send")
+        .await
+        .expect("sends");
+    assert_eq!(models.calls(), (2, 2, 2));
+
+    harness.context.models_changed();
+    require_conversation_models(&harness.context, conversation)
+        .await
+        .expect("models reload");
+    assert_eq!(models.calls(), (4, 4, 4));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn startup_on_a_fresh_install_fetches_and_loads_nothing() {
+    let root = std::env::temp_dir().join(format!(
+        "lettuce-api-fresh-{}",
+        lettuce_types::OperationId::new()
+    ));
+    std::fs::create_dir_all(&root).expect("root");
+    let models = CountingModels::new(false, false);
+    let harness = harness_in(
+        Reply::Text("Hello."),
+        Arc::new(SystemClock),
+        None,
+        Some(root.clone()),
+        Arc::clone(&models) as Arc<dyn ModelLoader>,
+    );
+    let workers = super::startup(&harness.context).await.expect("startup");
+    tokio::time::timeout(Duration::from_secs(30), workers.started())
+        .await
+        .expect("workers started");
+    tokio::task::spawn_blocking(move || workers.stop())
+        .await
+        .expect("stopped");
+    assert_eq!(models.calls(), (0, 0, 0));
+    assert!(
+        harness
+            .provider
+            .requests
+            .lock()
+            .expect("requests")
+            .is_empty()
+    );
+    assert!(!root.join("onnxruntime").exists());
+    assert!(!root.join("downloads").exists());
+    std::fs::remove_dir_all(root).ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_companion_send_whose_classification_fails_is_refused() {
+    let models = CountingModels::new(true, true);
+    models.failing_emotion.store(true, Ordering::SeqCst);
+    let harness = harness_with_models(Arc::clone(&models));
+    let companion = create_character(
+        harness.context.backend().database(),
+        "Mira",
+        companion_defaults(),
+    );
+    let conversation_id = launch(&harness, companion, "failing-launch").await;
+    let error = send(&harness, &conversation_id, "failing-send")
+        .await
+        .expect_err("refused");
+    assert_eq!(error.code, ApiErrorCode::ModelUnavailable);
+    assert_eq!(model_of(&error), Some(RequiredModel::Emotion));
+    assert_untouched(&harness, &conversation_id).await;
+}

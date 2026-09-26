@@ -12,6 +12,16 @@ export const commands = {
 	generationCancel: (request: GenerationCancelRequest) => typedError<null, ApiError>(__TAURI_INVOKE("generation_cancel", { request })),
 	conversationLaunchDirect: (request: LaunchDirectRequest) => typedError<LaunchDirectResponse, ApiError>(__TAURI_INVOKE("conversation_launch_direct", { request })),
 	charactersList: (request: CharactersListRequest) => typedError<CharacterPage, ApiError>(__TAURI_INVOKE("characters_list", { request })),
+	jobsList: (request: JobsListRequest) => typedError<JobPage, ApiError>(__TAURI_INVOKE("jobs_list", { request })),
+	jobGet: (request: JobGetRequest) => typedError<JobView, ApiError>(__TAURI_INVOKE("job_get", { request })),
+	jobCancel: (request: JobCancelRequest) => typedError<null, ApiError>(__TAURI_INVOKE("job_cancel", { request })),
+	jobWatch: (request: JobWatchRequest, onEvent: Channel<JobEvent>) => typedError<JobView, ApiError>(__TAURI_INVOKE("job_watch", { request, onEvent })),
+	filesInspect: (request: FilesInspectRequest) => typedError<FileInspection, ApiError>(__TAURI_INVOKE("files_inspect", { request })),
+	assetsIngest: (request: AssetsIngestRequest) => typedError<AssetRef, ApiError>(__TAURI_INVOKE("assets_ingest", { request })),
+	appStatus: () => typedError<AppStatus, ApiError>(__TAURI_INVOKE("app_status")),
+	appUiStateUpdate: (request: AppUiStateUpdateRequest) => typedError<AppUiStateView, ApiError>(__TAURI_INVOKE("app_ui_state_update", { request })),
+	purgeNoticesList: () => typedError<PurgeNoticeList, ApiError>(__TAURI_INVOKE("purge_notices_list")),
+	purgeNoticeDismiss: (request: PurgeNoticeDismissRequest) => typedError<null, ApiError>(__TAURI_INVOKE("purge_notice_dismiss", { request })),
 };
 
 /** Events */
@@ -32,17 +42,44 @@ export type ApiError = {
 
 /**
  *  Stable error category the frontend localizes; the message never reaches
- *  the user.
+ *  the user. `ModelRequired` means the chat needs an optional model that is
+ *  not installed, `ModelUnavailable` one that is installed but cannot load;
+ *  both name the model in `ApiErrorDetails::Model`.
  */
-export type ApiErrorCode = "not_found" | "conflict" | "invalid_input" | "unsupported" | "unavailable" | "cancelled" | "busy" | "internal";
+export type ApiErrorCode = "not_found" | "conflict" | "invalid_input" | "unsupported" | "unavailable" | "cancelled" | "busy" | "internal" | "model_required" | "model_unavailable";
 
-export type ApiErrorDetails = { type: "invalid_field"; field: string };
+export type ApiErrorDetails = { type: "invalid_field"; field: string } | { type: "model"; model: RequiredModel };
 
 /**  Application-wide events the host broadcasts to every window. */
-export type ApiEvent = { type: "generation_settled"; conversation_id: string; turn_id: string };
+export type ApiEvent = { type: "generation_settled"; conversation_id: string; turn_id: string } | { type: "job_updated"; job: JobView };
 
 /**  The application-wide event every window receives. */
 export type AppEvent = ApiEvent;
+
+export type AppPlatform = "windows" | "macos" | "linux" | "android" | "ios" | "other";
+
+export type AppStatus = {
+	version: string,
+	build_variant: BuildVariant,
+	platform: AppPlatform,
+	ui_state: { [key in string]: unknown },
+	/**  A database from the previous app version was found on this device. */
+	legacy_database_detected: boolean,
+	unresolved_sync_conflicts: number,
+	purge_notices: number,
+};
+
+/**  Keys to set; a `null` value removes the key. */
+export type AppUiStateUpdateRequest = {
+	patch: { [key in string]: unknown },
+};
+
+export type AppUiStateView = {
+	state: { [key in string]: unknown },
+};
+
+/**  What a picked image or audio file is for. */
+export type AssetIngestRole = "avatar" | "background" | "attachment" | "voice_example" | "reference_image";
 
 /**
  *  A stored media asset and the URL the host serves it at; the UI loads
@@ -53,11 +90,18 @@ export type AssetRef = {
 	url: string,
 };
 
+export type AssetsIngestRequest = {
+	source: FileSource,
+	role: AssetIngestRole,
+};
+
 /**  The selected branch and the message it currently ends at. */
 export type BranchHead = {
 	branch_id: string,
 	head_message_id: string | null,
 };
+
+export type BuildVariant = "normal" | "cuda";
 
 export type CharacterPage = {
 	items: CharacterSummary[],
@@ -129,6 +173,26 @@ export type ConversationsListRequest = {
 	limit: number | null,
 };
 
+export type FileInspection = {
+	name: string,
+	size: number,
+	kind: FileKind,
+};
+
+export type FileKind = "character_card" | "persona_file" | "lorebook" | "prompt_preset" | "chat_jsonl" | "backup_v1" | "backup_v2" | "legacy_database" | "image" | "audio" | "gguf_model" | "other";
+
+/**
+ *  A file the user picked: a filesystem path, or a platform URI the host
+ *  resolves (such as an Android `content://` URI).
+ */
+export type FileSource = {
+	uri: string,
+};
+
+export type FilesInspectRequest = {
+	source: FileSource,
+};
+
 export type GenerationCancelRequest = {
 	turn_id: string,
 };
@@ -140,6 +204,96 @@ export type GenerationCancelRequest = {
 export type GenerationEvent = { type: "started"; turn_id: string } | { type: "delta"; turn_id: string; text: string | null; reasoning: string | null } | { type: "completed"; turn_id: string; message_id: string } | { type: "failed"; turn_id: string; code: GenerationFailureCode } | { type: "cancelled"; turn_id: string };
 
 export type GenerationFailureCode = "invalid_conversation" | "missing_model" | "context_unavailable" | "speaker_unavailable" | "provider_unavailable" | "provider_rejected" | "empty_output" | "timed_out" | "recovery_unavailable" | "internal";
+
+export type JobCancelRequest = {
+	job_id: string,
+};
+
+/**
+ *  The stream `job_watch` attaches. It starts with the job's current state;
+ *  `Completed`, `Failed` and `Cancelled` are the last event.
+ */
+export type JobEvent = { type: "progress"; job: JobView } | { type: "text_delta"; text: string | null; reasoning: string | null } | { type: "completed"; job: JobView } | { type: "failed"; job: JobView } | { type: "cancelled"; job: JobView };
+
+export type JobFailureCode = "cancelled" | "invalid_input" | "authentication" | "capability_unavailable" | "integrity_failure" | "resource_unavailable" | "lease_lost" | "worker_failed" | "storage_failure" | "safety_refusal" | "timed_out" | "unknown";
+
+export type JobFailureDto = {
+	code: JobFailureCode,
+	retryable: boolean,
+	/**  The optional model whose absence failed the job. */
+	model: RequiredModel | null,
+};
+
+export type JobGetRequest = {
+	job_id: string,
+};
+
+export type JobKindDto = "artifact_install" | "artifact_verify" | "runtime_prepare" | "model_load" | "memory_extraction" | "memory_consolidation" | "companion_growth" | "companion_consolidation" | "companion_soul_writer" | "conversation_generation" | "vector_index_build" | "creation_run" | "image_generate" | "media_transform" | "transfer_import" | "transfer_export" | "backup_export" | "backup_restore" | "sync_session" | "speech_transcribe" | "speech_synthesize" | "embedding_benchmark" | "maintenance";
+
+export type JobPage = {
+	items: JobView[],
+	next_cursor: string | null,
+};
+
+/**
+ *  The job's progress within its current stage, in bytes, items or
+ *  thousandths; `label_code` names the stage (such as `download`, `verify`
+ *  or `install`) for the frontend to localize.
+ */
+export type JobProgressDto = {
+	current: number,
+	total: number | null,
+	unit: JobProgressUnit | null,
+	label_code: string | null,
+	/**
+	 *  Download speed, sent with `JobUpdated` and watch events while bytes
+	 *  arrive.
+	 */
+	bytes_per_second: number | null,
+};
+
+export type JobProgressUnit = "bytes" | "items" | "permille";
+
+/**  What a finished job produced, where the job kind has a typed result. */
+export type JobResultDto = { type: "artifact_installed" } | { type: "asset"; asset: AssetRef } | { type: "generation_turn"; turn_id: string } | { type: "conversation"; conversation_id: string } | { type: "group"; group_id: string } | { type: "character"; character_id: string } | { type: "model_profile"; model_profile_id: string };
+
+export type JobStateDto = "queued" | "claimed" | "running" | "cancellation_requested" | "cleaning_up" | "succeeded" | "failed" | "cancelled" | "interrupted";
+
+/**  What a job works on. */
+export type JobSubjectDto = {
+	kind: JobSubjectKindDto,
+	id: string,
+};
+
+export type JobSubjectKindDto = "conversation" | "group" | "memory_space" | "creation_project" | "artifact_install" | "image_request" | "transfer_plan" | "backup" | "peer" | "speech_request" | "runtime" | "model_profile" | "maintenance";
+
+export type JobView = {
+	id: string,
+	kind: JobKindDto,
+	subject: JobSubjectDto,
+	state: JobStateDto,
+	progress: JobProgressDto,
+	created_at: number,
+	updated_at: number,
+	failure: JobFailureDto | null,
+	result: JobResultDto | null,
+};
+
+export type JobWatchRequest = {
+	job_id: string,
+};
+
+/**
+ *  Jobs, most recently created first. An empty or missing `kinds` or
+ *  `states` matches every value.
+ */
+export type JobsListRequest = {
+	kinds: JobKindDto[] | null,
+	states: JobStateDto[] | null,
+	subject: JobSubjectDto | null,
+	cursor: string | null,
+	limit: number | null,
+};
 
 export type LaunchDirectRequest = {
 	character_id: string,
@@ -174,6 +328,36 @@ export type ParticipantView = {
 	character_id: string | null,
 	avatar: AssetRef | null,
 };
+
+export type PurgeNoticeDismissRequest = {
+	id: string,
+};
+
+export type PurgeNoticeEntityDto = "conversation" | "character" | "group" | "database_file" | "media_asset" | "sync_entity";
+
+export type PurgeNoticeList = {
+	items: PurgeNoticeView[],
+};
+
+export type PurgeNoticeReasonDto = "kept_unsent_local_changes" | "rejournal_incomplete" | "rejournal_dropped" | "dropped_after_failures" | "group_below_two_members" | "media_collection_skipped" | "not_synced" | "conflict_carried";
+
+/**
+ *  A delete that needs the user's attention; `entity_id` names the entity
+ *  (a database file name for `database_file`).
+ */
+export type PurgeNoticeView = {
+	id: string,
+	entity: PurgeNoticeEntityDto,
+	entity_id: string,
+	reason: PurgeNoticeReasonDto,
+	recorded_at: number,
+};
+
+/**
+ *  An optional model some chats need: the embedding model for dynamic
+ *  memory, the emotion model (Lettuce Thymos) for companion chats.
+ */
+export type RequiredModel = "embedding" | "emotion";
 
 export type SendAccepted = {
 	user_message_id: string,

@@ -140,6 +140,7 @@ Facts about how `lettuce-app` relates to the legacy app (2.2.x): what follows le
 - Soul growth: legacy addressed edits through a session whose character owned the Soul; the old relationship page removed by list position, now by id. Legacy's clear emptied the shared Soul but other sessions re-persisted their copies on the next save; the rewrite's clear really clears it.
 - The post-turn memory driver does not sleep 1200 ms before each pass as legacy did; the running pass already coalesces later turns. Group memory runs through the same driver; legacy awaited group memory inside send and continue.
 - App usage counts only focused time; legacy never paused on blur and counted the time the app was open.
+- App usage is written when the window loses focus, the mobile app goes to the background, and on exit (user decision 2026-09-27); legacy flushed every 30 s on a timer (`old-code/src-tauri/src/app/bootstrap.rs` 191-203). A crash loses only the focused stretch in progress. Counted time is split at local midnight between its days.
 - The app version marks only `-cuda`; the old app also marked `-rocm` and `-vulkan`, and the CPU and Vulkan builds are now one normal build with no ROCm build.
 - Avatar gradients are cached per process by content hash instead of `gradient-*.json` files; a single-color image produced `#hex NaN%` and now spans 0% to 100%; GIF avatars, which failed to decode as `.webp`, now decode.
 - Character file images are stored as given instead of re-encoded to WebP.
@@ -158,6 +159,9 @@ Facts about how `lettuce-app` relates to the legacy app (2.2.x): what follows le
 - Approved removals: the legacy SamLowe `roberta-base-go_emotions-onnx` classifier is not ported, and its files under `<legacy app folder>/models/embedding/companion-emotion` are neither imported nor touched (legacy kept no other companion-model state); Thymos must be downloaded. The legacy companion NER and router (NLI) models are not ported.
 - Legacy round avatar files (`avatar_round.webp`) are not imported; the round image falls back to the square avatar until a positioning system exists.
 - The legacy database and storage tree are never modified or removed; source cleanup waits for full migration verification and explicit user-approved deletion.
+- 2026-09-27 (user decision): the embedding and emotion models are optional and never downloaded or loaded at startup; they load at first use, with ONNX Runtime fetched then only when a model is installed. A missing model blocks the chat that needs it: a companion send without the emotion model and any send in a dynamic-memory chat without the embedding model is refused with `ModelRequired` (`ModelUnavailable` when installed but not loadable) before anything is written. Legacy loaded both lazily too, but ran such chats anyway: a companion turn without the classifier took the neutral update (`chat_manager/companion/mod.rs` `detect_signals`), a memory create without an embedding kept the memory without a vector (`chat_manager/memory/flow.rs`, `compute_embedding` error arm) and retrieval without an embedding returned no memories. The rewrite's API engines now fail a memory cycle (`CapabilityUnavailable`, `embedding-model-unavailable`) and a companion send instead; retrieval inside a turn still returns no memories when the embedding fails after the send was accepted, because that code (`generation/conversation_generation_input.rs`) is owned by the generation slice, and `memory_embedding_backfill` still counts an unavailable embedding as failed and continues.
+- A GGUF download creates a llama.cpp model only when the request asks for it, as legacy's `create_model_when_finished`; otherwise the file only joins the library.
+- 2026-09-26 approved removals: the legacy commands `group_message_add_variant`, `group_participation_increment`, `api_request`, `group_session_update_memories`, `group_session_update_memory_state`, `memory_embeddings_exist`, `settings_set_migration_version`, `asr_whisper_get_models_dir`, `backup_check_dynamic_memory`, `backup_check_dynamic_memory_from_bytes`, `backup_disable_dynamic_memory`, `legacy_backup_and_remove` and `get_storage_root` get no API command; they served frontend-driven persistence, native path exposure, pre-SQLite migration or a generic HTTP proxy, which the backend now owns or no longer has. The content filter debug trace, the embedding developer benchmark, `developer_force_crash` and the Engine commands are not ported.
 
 ## Known gaps
 
@@ -167,6 +171,7 @@ Facts about how `lettuce-app` relates to the legacy app (2.2.x): what follows le
 - A pruned terminal memory job would restart its key chain onto a stale run id (no memory job is pruned today). An input error that never clears (settings, missing model) keeps its memory job retrying each turn.
 - A crash between growth success and consolidation admission loses the consolidation (legacy lost it too). With a shared pool, overlapping memory passes of two chats can count one chat's new memories as fresh for the other's growth.
 - An `artifact_id` image recommendation (made by the new app) has no resolvable LoRA file yet, so it binds as having no LoRA.
+- Install work lives in the job runner's memory, since the job store keeps only the job: a queued install an earlier process admitted is cancelled at startup (a queued Thymos install resumes from its hint), and the next request admits a new job that resumes the verified and partial files.
 - A Thymos job that succeeded without a readable hint cannot be finished, since the job store does not record the pinned revision; the next admission installs again.
 - Creation helper drafts do not show the avatar, background, model, prompt, gradient and image-gallery lines (the fields do not exist yet) or the non-native fallback-protocol entry (the legacy UI never enabled it).
 - The creation helper's avatar prompt path (template text, untrimmed, no conditions) is not ported.
@@ -213,11 +218,10 @@ Contradictions in the old README, resolved by the code:
 
 Everything the Tauri phase (phase (c)) still has to connect:
 
-- Tauri commands and frontend surfaces for every coordinator: chat send, regenerate, retry and cancel commands; streaming progress events; creation helper commands; Soul-writer preview IPC; microphone and transcription scheduling; lorebook, chat, character, persona, prompt, chat template and model file commands (including naming a nameless lorebook file after its filename); the purge notice list (`Database::purge_notices`); sync listener discovery and status events; the "memory paused" explanation when a memory window is held after `LeaseLost`.
-- Startup order: `recover_after_restart`, then the memory host's and follow-up host's `resume_after_restart`, then workers. Claim and run, or recover, queued `ArtifactInstall` jobs at startup, since a queued Thymos job keeps every later Thymos admission, completion and removal busy. Run `sweep_orphan_media_files` at startup.
+- Tauri commands and frontend surfaces for every coordinator: chat send, regenerate, retry and cancel commands; streaming progress events; creation helper commands; Soul-writer preview IPC; microphone and transcription scheduling; lorebook, chat, character, persona, prompt, chat template and model file commands (including naming a nameless lorebook file after its filename); sync listener discovery and status events; the "memory paused" explanation when a memory window is held after `LeaseLost`.
+- The generation worker does not enqueue `PostTurnMemoryScheduler` and drive the memory host after a settled turn yet.
 - After each sync session, run `collect_media_garbage`.
-- Embeddings: nothing calls `EmbeddingModelCoordinator::adopt_legacy_install`, `load_active` or `complete_install`, `EmbeddingModelCatalog::pin` or the embedding `ArtifactInstall` job. The host must adopt the legacy v4 files at startup, load the active service with the device's dimension and token budget, and run install jobs from the model hub UI, finishing them with `complete_install`.
-- Local stable-diffusion.cpp: nothing calls `finish_runtime_install` when a catalog or engine download completes; the host must run it (extract the engine, then `register_catalog_model`) from the install job's completion, as legacy `sdcpp.rs` did after each download.
+- Embeddings: nothing calls `EmbeddingModelCatalog::pin` or admits the embedding install from the model hub UI yet; the job runner finishes an admitted one with `complete_install` and reloads the model.
 - Remote avatar URLs in character and persona files: legacy downloaded character avatars when `autoDownloadCharacterCardAvatars` was on and persona avatars always; today the URL is dropped. The download policy (the setting, the fetch through the shared network client, storing the bytes) belongs in the character and persona file use cases, not the Tauri shell.
 - The macOS bundle needs legacy's `entitlements.plist` with `com.apple.security.cs.disable-library-validation`, or the hardened app refuses the re-signed ONNX Runtime download.
 - Android eSpeak hosting for Kokoro.
@@ -228,5 +232,11 @@ Everything the Tauri phase (phase (c)) still has to connect:
 - Passing the Pure mode level to `CivitaiBrowser`.
 - TTS preview caching.
 - Scene images: optimistic placeholders and the askFirst approval flow.
-- Group companions and group growth scheduling.
 - Adding a character to an existing group conversation (see lettuce-conversations).
+
+## Planned features (not legacy)
+
+New features to design with the user; legacy never had them.
+
+- Group companions and group growth scheduling.
+- Scene images in group chats: legacy generated scene images for direct chats only, and the backend rejects groups (`NotDirect`).

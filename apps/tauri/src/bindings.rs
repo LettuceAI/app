@@ -17,13 +17,23 @@ pub const BINDINGS_PATH: &str = concat!(
 pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
     tauri_specta::Builder::<R>::new()
         .commands(collect_commands![
-            commands::conversations_list,
-            commands::conversation_open,
-            commands::conversation_messages,
-            commands::conversation_send,
-            commands::generation_cancel,
-            commands::conversation_launch_direct,
-            commands::characters_list,
+            commands::conversations::conversations_list,
+            commands::conversations::conversation_open,
+            commands::conversations::conversation_messages,
+            commands::conversations::conversation_send,
+            commands::conversations::generation_cancel,
+            commands::conversations::conversation_launch_direct,
+            commands::characters::characters_list,
+            commands::jobs::jobs_list,
+            commands::jobs::job_get,
+            commands::jobs::job_cancel,
+            commands::jobs::job_watch,
+            commands::files::files_inspect,
+            commands::files::assets_ingest,
+            commands::app::app_status,
+            commands::app::app_ui_state_update,
+            commands::app::purge_notices_list,
+            commands::app::purge_notice_dismiss,
         ])
         .events(collect_events![AppEvent])
 }

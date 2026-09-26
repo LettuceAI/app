@@ -77,8 +77,9 @@ impl ConversationGenerationWorker {
         let context = &self.context;
         let next = {
             let backend = context.backend();
+            let embedding = context.embedding();
             let runner = backend.prepared_conversation_generation_runner(
-                context.embedding(),
+                embedding.as_ref(),
                 context.inference(),
                 &UnstoredReplyMedia,
             );
@@ -105,8 +106,9 @@ impl ConversationGenerationWorker {
             Some(store) => store,
             None => &UnstoredReplyMedia,
         };
+        let embedding = context.embedding();
         let runner = backend.prepared_conversation_generation_runner(
-            context.embedding(),
+            embedding.as_ref(),
             context.inference(),
             reply_media,
         );
@@ -200,19 +202,28 @@ impl ConversationGenerationWorker {
 /// the link ends when the returned guard drops.
 fn shutdown_child(parent: &CancellationToken) -> (CancellationToken, ShutdownLink) {
     let child = CancellationToken::new();
+    let link = link_to_shutdown(parent, child.clone());
+    (child, link)
+}
+
+/// Cancels `child` with `parent`, including when `parent` already is; the
+/// link ends when the returned guard drops.
+pub(super) fn link_to_shutdown(
+    parent: &CancellationToken,
+    child: CancellationToken,
+) -> ShutdownLink {
     if parent.is_cancelled() {
         child.cancel();
     }
     let parent = parent.clone();
-    let linked = child.clone();
     let link = tokio::spawn(async move {
         parent.cancelled().await;
-        linked.cancel();
+        child.cancel();
     });
-    (child, ShutdownLink(link))
+    ShutdownLink(link)
 }
 
-struct ShutdownLink(tokio::task::JoinHandle<()>);
+pub(super) struct ShutdownLink(tokio::task::JoinHandle<()>);
 
 impl Drop for ShutdownLink {
     fn drop(&mut self) {

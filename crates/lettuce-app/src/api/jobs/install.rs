@@ -1,0 +1,792 @@
+use std::{path::PathBuf, sync::Arc, time::Duration};
+
+use async_trait::async_trait;
+use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
+use lettuce_image_generation::CivitaiLoraDownload;
+use lettuce_jobs::{
+    CancellationReason, JobKind, JobMutation, JobQuery, JobSnapshot, JobState, JobStore, WorkerId,
+    handle::CancellationToken,
+};
+use lettuce_model_hub::{
+    CompanionEmotionInstallStore, EmbeddingPin, KokoroInstallStore, KokoroVoiceInstallStore,
+    RemoteCompanionEmotionModel, RemoteKokoroModel, RemoteWhisperModel,
+};
+use lettuce_types::{JobId, PageLimit, PageRequest};
+
+use super::runner::{ClaimedJob, JobHandler, JobLane, JobProgressSink};
+use crate::api::ApiContext;
+use crate::api::error::{IntoApiError, api_error};
+use crate::{
+    ArtifactInstallClaimedWork, ArtifactInstallCoordinator, ArtifactInstallError,
+    ArtifactInstallPlan, ArtifactInstallRunResult, ArtifactSourceClient, CivitaiBrowser,
+    CompanionEmotionDownloadError, EmbeddingModelCoordinator, GgufDownload, GgufModelSetup,
+    HuggingFaceBrowser, KokoroDownloadClaimedWork, KokoroDownloadSource, KokoroVoiceBundle,
+    KokoroVoiceDownloadClaimedWork, KokoroVoiceDownloadSource, WhisperDownloadClaimedWork,
+    WhisperDownloadSource,
+};
+
+/// A claim outlives a stalled download long enough to recover on its own;
+/// progress and the install stage renew it.
+const INSTALL_LEASE: Duration = Duration::from_secs(30 * 60);
+const RECOVERY_PAGE: u16 = 200;
+
+/// A stable-diffusion.cpp catalog variant and the engine build it runs on.
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CatalogVariant {
+    pub profile_id: String,
+    pub variant_id: String,
+    pub runtime_release: String,
+    pub runtime_asset: String,
+}
+
+/// What completes an artifact install once its files are verified.
+#[derive(Debug, Clone)]
+pub enum InstallFinish {
+    /// The verified files are the whole install (the upscaler).
+    Files,
+    /// A downloaded GGUF model joins the library; with `create_model` it
+    /// also becomes a llama.cpp model set up that way.
+    Gguf {
+        root: PathBuf,
+        download: GgufDownload,
+        create_model: Option<GgufModelSetup>,
+    },
+    /// Extracts an engine build, then registers `variant` when every file
+    /// of it is on disk.
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    StableDiffusionRuntime {
+        paths: lettuce_image_generation::sd_runtime::layout::DiffusionPaths,
+        release: String,
+        asset: lettuce_image_generation::sd_runtime::releases::RuntimeAsset,
+        variant: Option<CatalogVariant>,
+    },
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    StableDiffusionVariant {
+        paths: lettuce_image_generation::sd_runtime::layout::DiffusionPaths,
+        variant: CatalogVariant,
+    },
+    HuggingFaceBundle {
+        paths: lettuce_image_generation::sd_runtime::layout::DiffusionPaths,
+        bundle_id: String,
+    },
+    CivitaiLora {
+        lora_root: PathBuf,
+        download: CivitaiLoraDownload,
+    },
+    Embedding {
+        root: PathBuf,
+        pin: EmbeddingPin,
+    },
+    CompanionEmotion {
+        root: PathBuf,
+        remote: RemoteCompanionEmotionModel,
+    },
+}
+
+/// An install the runner holds until it claims the job. The job store keeps
+/// only the job, so work admitted by an earlier process is recovered at
+/// startup.
+#[derive(Debug, Clone)]
+pub enum InstallWork {
+    Artifact {
+        plan: ArtifactInstallPlan,
+        finish: Box<InstallFinish>,
+    },
+    Whisper {
+        model: RemoteWhisperModel,
+        install_root: PathBuf,
+    },
+    KokoroModel {
+        model: RemoteKokoroModel,
+        install_root: PathBuf,
+    },
+    KokoroVoices {
+        bundle: KokoroVoiceBundle,
+        install_root: PathBuf,
+    },
+}
+
+impl InstallWork {
+    /// Hugging Face, stable-diffusion.cpp and CivitAI downloads share one
+    /// queue; embeddings, the emotion model, Whisper and Kokoro each have
+    /// their own.
+    fn lane(&self) -> JobLane {
+        let name = match self {
+            Self::Artifact { finish, .. } => match finish.as_ref() {
+                InstallFinish::Embedding { .. } => "install:embedding",
+                InstallFinish::CompanionEmotion { .. } => "install:companion-emotion",
+                _ => "install:downloads",
+            },
+            Self::Whisper { .. } => "install:whisper",
+            Self::KokoroModel { .. } | Self::KokoroVoices { .. } => "install:kokoro",
+        };
+        JobLane(name.to_owned())
+    }
+}
+
+/// Where install downloads come from; tests replace the network.
+#[async_trait]
+pub trait InstallSources: Send + Sync {
+    async fn artifacts(
+        &self,
+        context: &ApiContext,
+        finish: &InstallFinish,
+    ) -> Result<Box<dyn ArtifactSourceClient>, ApiError>;
+
+    fn whisper(&self) -> Result<Box<dyn WhisperDownloadSource>, ApiError>;
+
+    fn kokoro_model(&self) -> Result<Box<dyn KokoroDownloadSource>, ApiError>;
+
+    fn kokoro_voices(&self) -> Result<Box<dyn KokoroVoiceDownloadSource>, ApiError>;
+}
+
+/// Downloads over the network, signed in with the saved Hugging Face token,
+/// or the CivitAI token for a CivitAI LoRA.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NetworkInstallSources;
+
+fn unavailable(error: impl std::fmt::Display) -> ApiError {
+    api_error(ApiErrorCode::Unavailable, error.to_string())
+}
+
+fn internal(error: impl std::fmt::Display) -> ApiError {
+    api_error(ApiErrorCode::Internal, error.to_string())
+}
+
+#[async_trait]
+impl InstallSources for NetworkInstallSources {
+    async fn artifacts(
+        &self,
+        context: &ApiContext,
+        finish: &InstallFinish,
+    ) -> Result<Box<dyn ArtifactSourceClient>, ApiError> {
+        let secrets = context.secret_store().as_ref();
+        let client = match finish {
+            InstallFinish::CivitaiLora { .. } => CivitaiBrowser::download_client(secrets)
+                .await
+                .map_err(unavailable)?,
+            _ => HuggingFaceBrowser::download_client(secrets)
+                .await
+                .map_err(unavailable)?,
+        };
+        Ok(Box::new(client))
+    }
+
+    fn whisper(&self) -> Result<Box<dyn WhisperDownloadSource>, ApiError> {
+        crate::HuggingFaceWhisperDownloadSource::new()
+            .map(|source| Box::new(source) as Box<dyn WhisperDownloadSource>)
+            .map_err(unavailable)
+    }
+
+    fn kokoro_model(&self) -> Result<Box<dyn KokoroDownloadSource>, ApiError> {
+        crate::HuggingFaceKokoroDownloadSource::new()
+            .map(|source| Box::new(source) as Box<dyn KokoroDownloadSource>)
+            .map_err(unavailable)
+    }
+
+    fn kokoro_voices(&self) -> Result<Box<dyn KokoroVoiceDownloadSource>, ApiError> {
+        crate::HuggingFaceKokoroVoiceDownloadSource::new()
+            .map(|source| Box::new(source) as Box<dyn KokoroVoiceDownloadSource>)
+            .map_err(unavailable)
+    }
+}
+
+/// Admits an install and hands its work to the runner. A request for an
+/// install already queued or running joins that job; one that already
+/// finished (a replayed Whisper or Kokoro download) is returned as is.
+pub async fn admit_install(
+    context: &ApiContext,
+    work: InstallWork,
+) -> Result<dto::JobAccepted, ApiError> {
+    let job_id = context
+        .blocking(move |context| {
+            let (job, work) = admit(context, work)?;
+            if !job.state.is_terminal() {
+                context.jobs().put_install(job.id, work);
+            }
+            Ok(job.id)
+        })
+        .await?;
+    context.jobs().wake();
+    Ok(dto::JobAccepted {
+        job_id: job_id.to_string(),
+    })
+}
+
+fn admit(context: &ApiContext, work: InstallWork) -> Result<(JobSnapshot, InstallWork), ApiError> {
+    let backend = context.backend();
+    let database = backend.database();
+    Ok(match work {
+        InstallWork::Artifact { plan, finish } => match *finish {
+            InstallFinish::CompanionEmotion { root, remote } => {
+                let admitted = crate::admit_companion_emotion_install(database, &root, &remote)
+                    .map_err(|error| match error {
+                        CompanionEmotionDownloadError::InstallInProgress(_) => {
+                            api_error(ApiErrorCode::Busy, error.to_string())
+                        }
+                        error => internal(error),
+                    })?;
+                (
+                    admitted.job,
+                    InstallWork::Artifact {
+                        plan: admitted.plan,
+                        finish: Box::new(InstallFinish::CompanionEmotion {
+                            root,
+                            remote: admitted.remote,
+                        }),
+                    },
+                )
+            }
+            finish => {
+                let admitted = ArtifactInstallCoordinator::new(database)
+                    .admit(&plan)
+                    .map_err(internal)?;
+                (
+                    admitted.job,
+                    InstallWork::Artifact {
+                        plan,
+                        finish: Box::new(finish),
+                    },
+                )
+            }
+        },
+        InstallWork::Whisper {
+            model,
+            install_root,
+        } => {
+            let admitted = backend
+                .whisper_downloads(&install_root)
+                .map_err(internal)?
+                .admit(model)
+                .map_err(internal)?;
+            (
+                admitted.job,
+                InstallWork::Whisper {
+                    model: admitted.model,
+                    install_root,
+                },
+            )
+        }
+        InstallWork::KokoroModel {
+            model,
+            install_root,
+        } => {
+            let installs = KokoroInstallStore::open(&install_root).map_err(internal)?;
+            let admitted = backend
+                .kokoro_downloads(installs)
+                .admit(model)
+                .map_err(internal)?;
+            (
+                admitted.job,
+                InstallWork::KokoroModel {
+                    model: admitted.model,
+                    install_root,
+                },
+            )
+        }
+        InstallWork::KokoroVoices {
+            bundle,
+            install_root,
+        } => {
+            let installs = KokoroVoiceInstallStore::open(&install_root).map_err(internal)?;
+            let admitted = backend
+                .kokoro_voice_downloads(installs)
+                .admit(bundle)
+                .map_err(internal)?;
+            (
+                admitted.job,
+                InstallWork::KokoroVoices {
+                    bundle: admitted.bundle,
+                    install_root,
+                },
+            )
+        }
+    })
+}
+
+/// Queued installs whose work this process does not hold cannot run: the
+/// Thymos install its hint describes is taken up again, every other one is
+/// cancelled so a new request admits a fresh job. Returns the cancelled
+/// jobs.
+pub(crate) fn recover_queued_installs(context: &ApiContext) -> Result<Vec<JobId>, ApiError> {
+    let database = context.backend().database();
+    let mut waiting = Vec::new();
+    for state in [JobState::Queued, JobState::CancellationRequested] {
+        let mut cursor = None;
+        loop {
+            let page = database
+                .list(JobQuery {
+                    state: Some(state),
+                    kind: Some(JobKind::ArtifactInstall),
+                    subject: None,
+                    page: PageRequest {
+                        cursor: cursor.take(),
+                        limit: PageLimit::new(RECOVERY_PAGE),
+                    },
+                })
+                .map_err(IntoApiError::into_api_error)?;
+            waiting.extend(page.items.into_iter().filter(|job| job.claim.is_none()));
+            match page.next_cursor {
+                Some(next) => cursor = Some(next),
+                None => break,
+            }
+        }
+    }
+    if let Some(app_folder) = context.app_folder() {
+        resume_companion_emotion(
+            context,
+            &crate::companion_emotion_root(app_folder),
+            &waiting,
+        );
+    }
+    let mut cancelled = Vec::new();
+    for job in waiting {
+        if context.jobs().has_install(job.id) {
+            continue;
+        }
+        match cancel_waiting(context, &job) {
+            Ok(()) => cancelled.push(job.id),
+            Err(error) => {
+                tracing::warn!(job_id = %job.id, code = ?error.code, message = %error.message, "a queued install could not be cancelled");
+            }
+        }
+    }
+    Ok(cancelled)
+}
+
+fn resume_companion_emotion(context: &ApiContext, root: &std::path::Path, waiting: &[JobSnapshot]) {
+    let hint = CompanionEmotionInstallStore::open(root)
+        .ok()
+        .and_then(|store| store.lock().active().ok().flatten());
+    let Some(hint) = hint else {
+        return;
+    };
+    if !waiting
+        .iter()
+        .any(|job| job.state == JobState::Queued && job.id.to_string() == hint.job_id)
+    {
+        return;
+    }
+    match admit(
+        context,
+        InstallWork::Artifact {
+            plan: ArtifactInstallPlan {
+                install_id: String::new(),
+                root: root.to_path_buf(),
+                artifacts: Vec::new(),
+            },
+            finish: Box::new(InstallFinish::CompanionEmotion {
+                root: root.to_path_buf(),
+                remote: hint.remote,
+            }),
+        },
+    ) {
+        Ok((job, work)) if !job.state.is_terminal() => context.jobs().put_install(job.id, work),
+        Ok(_) => {}
+        Err(error) => {
+            tracing::warn!(code = ?error.code, message = %error.message, "the queued Thymos install could not be resumed");
+        }
+    }
+}
+
+fn cancel_waiting(context: &ApiContext, job: &JobSnapshot) -> Result<(), ApiError> {
+    let database = context.backend().database();
+    let at = context.now().max(job.updated_at);
+    let requested = match job.state {
+        JobState::Queued => database
+            .append_and_transition(JobMutation::RequestCancellation {
+                id: job.id,
+                reason: CancellationReason::Recovery,
+                at,
+            })
+            .map_err(IntoApiError::into_api_error)?,
+        _ => job.clone(),
+    };
+    database
+        .append_and_transition(JobMutation::FinishQueuedCancellation {
+            id: job.id,
+            at: at.max(requested.updated_at),
+        })
+        .map_err(IntoApiError::into_api_error)?;
+    Ok(())
+}
+
+/// Runs `ArtifactInstall` jobs: artifact installs through
+/// `ArtifactInstallCoordinator` and their finisher, Whisper and Kokoro
+/// downloads through their coordinators, which record the install.
+pub struct ArtifactInstallHandler {
+    sources: Arc<dyn InstallSources>,
+}
+
+impl std::fmt::Debug for ArtifactInstallHandler {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ArtifactInstallHandler")
+            .finish_non_exhaustive()
+    }
+}
+
+impl ArtifactInstallHandler {
+    #[must_use]
+    pub fn new(sources: Arc<dyn InstallSources>) -> Self {
+        Self { sources }
+    }
+}
+
+enum InstallSource {
+    Artifact(Box<dyn ArtifactSourceClient>),
+    Whisper(Box<dyn WhisperDownloadSource>),
+    KokoroModel(Box<dyn KokoroDownloadSource>),
+    KokoroVoices(Box<dyn KokoroVoiceDownloadSource>),
+}
+
+enum ClaimedWork {
+    Artifact(ArtifactInstallClaimedWork),
+    Whisper(WhisperDownloadClaimedWork),
+    KokoroModel(KokoroDownloadClaimedWork),
+    KokoroVoices(KokoroVoiceDownloadClaimedWork),
+}
+
+#[async_trait]
+impl JobHandler for ArtifactInstallHandler {
+    fn kinds(&self) -> &[JobKind] {
+        &[JobKind::ArtifactInstall]
+    }
+
+    fn lane(&self, context: &ApiContext, job: &JobSnapshot) -> Option<JobLane> {
+        context.jobs().install(job.id).map(|work| work.lane())
+    }
+
+    async fn claim(
+        &self,
+        context: &ApiContext,
+        job: &JobSnapshot,
+        worker_id: WorkerId,
+    ) -> Result<Option<Box<dyn ClaimedJob>>, ApiError> {
+        let Some(work) = context.jobs().install(job.id) else {
+            return Ok(None);
+        };
+        let source = match &work {
+            InstallWork::Artifact { finish, .. } => {
+                InstallSource::Artifact(self.sources.artifacts(context, finish).await?)
+            }
+            InstallWork::Whisper { .. } => InstallSource::Whisper(self.sources.whisper()?),
+            InstallWork::KokoroModel { .. } => {
+                InstallSource::KokoroModel(self.sources.kokoro_model()?)
+            }
+            InstallWork::KokoroVoices { .. } => {
+                InstallSource::KokoroVoices(self.sources.kokoro_voices()?)
+            }
+        };
+        let job_id = job.id;
+        let resources = self.resources();
+        let claimed = context
+            .blocking(move |context| {
+                let claimed = claim_work(context, job_id, work.clone(), worker_id, &resources);
+                match &claimed {
+                    Ok(Some(_)) => {}
+                    Ok(None) => {
+                        let ended = context
+                            .backend()
+                            .database()
+                            .get(job_id)
+                            .map_err(IntoApiError::into_api_error)?
+                            .is_none_or(|job| job.state.is_terminal());
+                        if ended {
+                            context.jobs().forget_install(job_id);
+                        }
+                    }
+                    Err(_) => {
+                        context.jobs().forget_install(job_id);
+                        if let Some(job) = context
+                            .backend()
+                            .database()
+                            .get(job_id)
+                            .map_err(IntoApiError::into_api_error)?
+                            && job.state == JobState::Queued
+                        {
+                            cancel_waiting(context, &job)?;
+                        }
+                    }
+                }
+                claimed.map(|claimed| claimed.map(|claimed| (claimed, work)))
+            })
+            .await?;
+        let Some((claimed, work)) = claimed else {
+            return Ok(None);
+        };
+        Ok(Some(Box::new(ClaimedInstall {
+            work,
+            claimed,
+            source,
+        })))
+    }
+}
+
+fn claim_work(
+    context: &ApiContext,
+    job_id: JobId,
+    work: InstallWork,
+    worker_id: WorkerId,
+    resources: &lettuce_jobs::ResourceAvailability,
+) -> Result<Option<ClaimedWork>, ApiError> {
+    let backend = context.backend();
+    let database = backend.database();
+    let now = context.now();
+    Ok(match work {
+        InstallWork::Artifact { plan, .. } => ArtifactInstallCoordinator::new(database)
+            .claim(plan, job_id, worker_id, now, INSTALL_LEASE, resources)
+            .map_err(internal)?
+            .map(ClaimedWork::Artifact),
+        InstallWork::Whisper {
+            model,
+            install_root,
+        } => backend
+            .whisper_downloads(&install_root)
+            .map_err(internal)?
+            .claim(model, job_id, worker_id, now, INSTALL_LEASE, resources)
+            .map_err(internal)?
+            .map(ClaimedWork::Whisper),
+        InstallWork::KokoroModel {
+            model,
+            install_root,
+        } => backend
+            .kokoro_downloads(KokoroInstallStore::open(&install_root).map_err(internal)?)
+            .claim(model, job_id, worker_id, now, INSTALL_LEASE, resources)
+            .map_err(internal)?
+            .map(ClaimedWork::KokoroModel),
+        InstallWork::KokoroVoices {
+            bundle,
+            install_root,
+        } => backend
+            .kokoro_voice_downloads(KokoroVoiceInstallStore::open(&install_root).map_err(internal)?)
+            .claim(bundle, job_id, worker_id, now, INSTALL_LEASE, resources)
+            .map_err(internal)?
+            .map(ClaimedWork::KokoroVoices),
+    })
+}
+
+struct ClaimedInstall {
+    work: InstallWork,
+    claimed: ClaimedWork,
+    source: InstallSource,
+}
+
+#[async_trait]
+impl ClaimedJob for ClaimedInstall {
+    fn cancellation(&self) -> CancellationToken {
+        match &self.claimed {
+            ClaimedWork::Artifact(work) => work.handle.cancellation_token(),
+            ClaimedWork::Whisper(work) => work.handle.cancellation_token(),
+            ClaimedWork::KokoroModel(work) => work.handle.cancellation_token(),
+            ClaimedWork::KokoroVoices(work) => work.handle.cancellation_token(),
+        }
+    }
+
+    async fn run(
+        self: Box<Self>,
+        context: ApiContext,
+        _progress: Arc<dyn JobProgressSink>,
+    ) -> Result<(), ApiError> {
+        let Self {
+            work,
+            claimed,
+            source,
+        } = *self;
+        let job_id = match &claimed {
+            ClaimedWork::Artifact(work) => work.job.id,
+            ClaimedWork::Whisper(work) => work.job.id,
+            ClaimedWork::KokoroModel(work) => work.job.id,
+            ClaimedWork::KokoroVoices(work) => work.job.id,
+        };
+        let result = run_claimed(&context, work, claimed, source).await;
+        context.jobs().forget_install(job_id);
+        result
+    }
+}
+
+async fn run_claimed(
+    context: &ApiContext,
+    work: InstallWork,
+    claimed: ClaimedWork,
+    source: InstallSource,
+) -> Result<(), ApiError> {
+    let backend = context.backend();
+    let database = backend.database();
+    let now = context.now();
+    let reason = CancellationReason::Shutdown;
+    match (work, claimed, source) {
+        (
+            InstallWork::Artifact { plan, finish },
+            ClaimedWork::Artifact(claimed),
+            InstallSource::Artifact(source),
+        ) => match *finish {
+            InstallFinish::CompanionEmotion { root, remote } => {
+                context.models_changed();
+                let result = ArtifactInstallCoordinator::new(database)
+                    .run(claimed, source.as_ref(), reason, now)
+                    .await
+                    .map_err(internal)?;
+                if let ArtifactInstallRunResult::Succeeded { .. } = result {
+                    crate::finish_companion_emotion_install(database, &root, &remote)
+                        .map_err(internal)?;
+                    context.models_changed();
+                }
+            }
+            finish => {
+                let reload = matches!(finish, InstallFinish::Embedding { .. });
+                if reload {
+                    context.models_changed();
+                }
+                let finisher = context.clone();
+                let result = ArtifactInstallCoordinator::new(database)
+                    .run_then(
+                        claimed,
+                        source.as_ref(),
+                        reason,
+                        now,
+                        move |paths, _| async move {
+                            finish_artifact(&finisher, &plan, finish, paths)
+                                .await
+                                .map_err(ArtifactInstallError::Finish)
+                        },
+                    )
+                    .await
+                    .map_err(internal)?;
+                if reload && matches!(result, ArtifactInstallRunResult::Succeeded { .. }) {
+                    context.models_changed();
+                }
+            }
+        },
+        (
+            InstallWork::Whisper { install_root, .. },
+            ClaimedWork::Whisper(claimed),
+            InstallSource::Whisper(source),
+        ) => {
+            backend
+                .whisper_downloads(&install_root)
+                .map_err(internal)?
+                .run(claimed, source.as_ref(), reason, now)
+                .await
+                .map_err(internal)?;
+        }
+        (
+            InstallWork::KokoroModel { install_root, .. },
+            ClaimedWork::KokoroModel(claimed),
+            InstallSource::KokoroModel(source),
+        ) => {
+            backend
+                .kokoro_downloads(KokoroInstallStore::open(&install_root).map_err(internal)?)
+                .run(claimed, source.as_ref(), reason, now)
+                .await
+                .map_err(internal)?;
+        }
+        (
+            InstallWork::KokoroVoices { install_root, .. },
+            ClaimedWork::KokoroVoices(claimed),
+            InstallSource::KokoroVoices(source),
+        ) => {
+            backend
+                .kokoro_voice_downloads(
+                    KokoroVoiceInstallStore::open(&install_root).map_err(internal)?,
+                )
+                .run(claimed, source.as_ref(), reason, now)
+                .await
+                .map_err(internal)?;
+        }
+        _ => return Err(internal("install work does not match its claim")),
+    }
+    Ok(())
+}
+
+/// Completes an install whose files are verified, as the job's `install`
+/// stage; an error fails the job.
+async fn finish_artifact(
+    context: &ApiContext,
+    plan: &ArtifactInstallPlan,
+    finish: InstallFinish,
+    paths: Vec<PathBuf>,
+) -> Result<(), String> {
+    let database = context.backend().database();
+    let now = context.now();
+    match finish {
+        InstallFinish::Files | InstallFinish::CompanionEmotion { .. } => Ok(()),
+        InstallFinish::Gguf {
+            create_model: None, ..
+        } => Ok(()),
+        InstallFinish::Gguf {
+            root,
+            download,
+            create_model: Some(setup),
+        } => crate::register_downloaded_gguf(database, &root, &download, &setup, now)
+            .map(|_| ())
+            .map_err(|error| error.to_string()),
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        InstallFinish::StableDiffusionRuntime {
+            paths: layout,
+            release,
+            asset,
+            variant,
+        } => {
+            crate::finish_runtime_install(&layout, &release, &asset, paths)
+                .await
+                .map_err(|error| error.to_string())?;
+            let Some(variant) = variant else {
+                return Ok(());
+            };
+            let (profile, catalog_variant) = lettuce_image_generation::diffusion_catalog()
+                .find_variant(&variant.profile_id, &variant.variant_id)
+                .map_err(|error| error.to_string())?;
+            if crate::is_variant_installed(
+                &layout,
+                profile,
+                catalog_variant,
+                Some((&variant.runtime_release, &variant.runtime_asset)),
+                false,
+            ) {
+                register_variant(database, &layout, &variant, now)?;
+            }
+            Ok(())
+        }
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        InstallFinish::StableDiffusionVariant {
+            paths: layout,
+            variant,
+        } => register_variant(database, &layout, &variant, now),
+        InstallFinish::HuggingFaceBundle {
+            paths: layout,
+            bundle_id,
+        } => crate::finish_hf_bundle(database, &layout, &bundle_id, plan, now)
+            .await
+            .map(|_| ()),
+        InstallFinish::CivitaiLora {
+            lora_root,
+            download,
+        } => crate::record_civitai_lora(database, &lora_root, &download, now),
+        InstallFinish::Embedding { root, pin } => EmbeddingModelCoordinator::new(&root, database)
+            .complete_install(&pin)
+            .map(|_| ())
+            .map_err(|error| error.to_string()),
+    }
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn register_variant(
+    database: &lettuce_database::Database,
+    layout: &lettuce_image_generation::sd_runtime::layout::DiffusionPaths,
+    variant: &CatalogVariant,
+    now: lettuce_types::TimestampMillis,
+) -> Result<(), String> {
+    crate::register_catalog_model(
+        database,
+        layout,
+        &variant.profile_id,
+        &variant.variant_id,
+        &variant.runtime_release,
+        &variant.runtime_asset,
+        now,
+    )
+    .map(|_| ())
+    .map_err(|error| error.to_string())
+}

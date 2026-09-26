@@ -16,10 +16,38 @@ use lettuce_media::MediaStoreError;
 use lettuce_models::{ModelProfileRepository, ProviderProtocol};
 use lettuce_types::{CharacterId, TimestampMillis};
 
-use super::context::UnavailableEmbedding;
 use super::error::IntoApiError;
 use super::*;
 use crate::AppBackend;
+
+/// Files on the local disk, as the desktop shell reaches them.
+pub(super) struct StdFiles;
+
+impl FileAccess for StdFiles {
+    fn describe(&self, uri: &str) -> Result<FileDescription, FileAccessError> {
+        let path = std::path::Path::new(uri);
+        let metadata = std::fs::metadata(path).map_err(|_| FileAccessError::NotFound)?;
+        Ok(FileDescription {
+            name: path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            size: metadata.len(),
+        })
+    }
+
+    fn open(&self, uri: &str) -> Result<Box<dyn FileReader>, FileAccessError> {
+        std::fs::File::open(uri)
+            .map(|file| Box::new(file) as Box<dyn FileReader>)
+            .map_err(|_| FileAccessError::NotFound)
+    }
+
+    fn create(&self, uri: &str) -> Result<Box<dyn std::io::Write + Send>, FileAccessError> {
+        std::fs::File::create(uri)
+            .map(|file| Box::new(file) as Box<dyn std::io::Write + Send>)
+            .map_err(|_| FileAccessError::Io)
+    }
+}
 
 #[derive(Default)]
 struct RecordingStream(Mutex<Vec<GenerationEvent>>);
@@ -37,7 +65,7 @@ impl RecordingStream {
 }
 
 #[derive(Default)]
-struct RecordingEvents(Mutex<Vec<ApiEvent>>);
+pub(super) struct RecordingEvents(Mutex<Vec<ApiEvent>>);
 
 impl ApiEventSink for RecordingEvents {
     fn emit(&self, event: ApiEvent) {
@@ -45,18 +73,18 @@ impl ApiEventSink for RecordingEvents {
     }
 }
 
-enum Reply {
+pub(super) enum Reply {
     Text(&'static str),
     UntilCancelled,
 }
 
 /// Streams "Hel" and "lo." when the request has a sink, then answers or
 /// waits for its job to be cancelled.
-struct FakeProvider {
+pub(super) struct FakeProvider {
     runtime: Arc<InferenceRuntime>,
     reply: Reply,
     entered: tokio::sync::Notify,
-    requests: Mutex<Vec<InferenceRequest>>,
+    pub(super) requests: Mutex<Vec<InferenceRequest>>,
 }
 
 #[async_trait::async_trait]
@@ -112,14 +140,14 @@ impl InferencePort for FakeProvider {
     }
 }
 
-struct Harness {
-    context: ApiContext,
-    provider: Arc<FakeProvider>,
-    events: Arc<RecordingEvents>,
-    character_id: CharacterId,
+pub(super) struct Harness {
+    pub(super) context: ApiContext,
+    pub(super) provider: Arc<FakeProvider>,
+    pub(super) events: Arc<RecordingEvents>,
+    pub(super) character_id: CharacterId,
 }
 
-fn harness(reply: Reply) -> Harness {
+pub(super) fn harness(reply: Reply) -> Harness {
     harness_with(reply, Arc::new(SystemClock), None)
 }
 
@@ -127,6 +155,17 @@ fn harness_with(
     reply: Reply,
     clock: Arc<dyn lettuce_jobs::Clock>,
     media: Option<Arc<ApiMediaStore>>,
+) -> Harness {
+    harness_in(reply, clock, media, None, Arc::new(NoModels))
+}
+
+/// A harness whose context has `app_folder` as its app data folder.
+pub(super) fn harness_in(
+    reply: Reply,
+    clock: Arc<dyn lettuce_jobs::Clock>,
+    media: Option<Arc<ApiMediaStore>>,
+    app_folder: Option<std::path::PathBuf>,
+    models: Arc<dyn ModelLoader>,
 ) -> Harness {
     let backend = Arc::new(AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend"));
     let database = backend.database();
@@ -139,6 +178,42 @@ fn harness_with(
     model.config.capabilities.streaming = lettuce_models::CapabilityStatus::Supported;
     ModelProfileRepository::upsert(database, model, Some(revision)).expect("streaming model");
     crate::launch::tests::set_application_default_model(database, model_id);
+    let character_id = create_character(database, "Ada", CharacterDefaults::default());
+    let provider = Arc::new(FakeProvider {
+        runtime: Arc::clone(backend.inference_runtime()),
+        reply,
+        entered: tokio::sync::Notify::new(),
+        requests: Mutex::new(Vec::new()),
+    });
+    let events = Arc::new(RecordingEvents::default());
+    let context = ApiContext::new(ApiContextParts {
+        backend,
+        secret_store: Arc::new(lettuce_settings::InMemorySecretStore::new()),
+        inference: provider.clone(),
+        models,
+        media,
+        events: events.clone(),
+        clock,
+        files: Arc::new(StdFiles),
+        app_folder,
+        resource_dir: None,
+        database_files: None,
+        asset_url_base: "test-asset://host".into(),
+    });
+    Harness {
+        context,
+        provider,
+        events,
+        character_id,
+    }
+}
+
+/// Creates an active character named `name` with `defaults`.
+pub(super) fn create_character(
+    database: &lettuce_database::Database,
+    name: &str,
+    defaults: CharacterDefaults,
+) -> CharacterId {
     let character_id = CharacterId::new();
     CharacterRepository::create(
         database,
@@ -146,7 +221,7 @@ fn harness_with(
             character: Character::new(
                 character_id,
                 CharacterProfile {
-                    name: "Ada".into(),
+                    name: name.into(),
                     nickname: None,
                     description: Some("A meticulous engineer".into()),
                     definition: None,
@@ -155,7 +230,7 @@ fn harness_with(
                     rules: Vec::new(),
                 },
                 CharacterProvenance::default(),
-                CharacterDefaults::default(),
+                defaults,
                 CharacterPresentationV1::default(),
                 None,
                 CharacterMedia::default(),
@@ -168,30 +243,7 @@ fn harness_with(
         },
     )
     .expect("create character");
-    let provider = Arc::new(FakeProvider {
-        runtime: Arc::clone(backend.inference_runtime()),
-        reply,
-        entered: tokio::sync::Notify::new(),
-        requests: Mutex::new(Vec::new()),
-    });
-    let events = Arc::new(RecordingEvents::default());
-    let context = ApiContext::new(ApiContextParts {
-        backend,
-        secret_store: Arc::new(lettuce_settings::InMemorySecretStore::new()),
-        inference: provider.clone(),
-        embedding: Arc::new(UnavailableEmbedding),
-        emotion: None,
-        media,
-        events: events.clone(),
-        clock,
-        asset_url_base: "test-asset://host".into(),
-    });
-    Harness {
-        context,
-        provider,
-        events,
-        character_id,
-    }
+    character_id
 }
 
 async fn launch(harness: &Harness, key: &str) -> String {
@@ -863,7 +915,7 @@ fn job_state(harness: &Harness, job_id: lettuce_types::JobId) -> lettuce_jobs::J
         .state
 }
 
-fn api_events(harness: &Harness) -> Vec<ApiEvent> {
+pub(super) fn api_events(harness: &Harness) -> Vec<ApiEvent> {
     harness.events.0.lock().expect("api events").clone()
 }
 
@@ -1169,7 +1221,7 @@ async fn message_cursor_errors_name_the_cursor_only_when_one_was_sent() {
     );
 }
 
-fn png_bytes() -> Vec<u8> {
+pub(super) fn png_bytes() -> Vec<u8> {
     let mut bytes = b"\x89PNG\r\n\x1a\n".to_vec();
     bytes.extend_from_slice(&13_u32.to_be_bytes());
     bytes.extend_from_slice(b"IHDR");
@@ -1180,7 +1232,7 @@ fn png_bytes() -> Vec<u8> {
     bytes
 }
 
-fn media_store(root: &std::path::Path) -> Arc<ApiMediaStore> {
+pub(super) fn media_store(root: &std::path::Path) -> Arc<ApiMediaStore> {
     let path = root.join("media.sqlite3");
     let authority = lettuce_platform::FilesystemAuthority::new(
         &lettuce_platform::DirectorySnapshot::new(root).expect("snapshot"),

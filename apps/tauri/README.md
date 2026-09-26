@@ -6,13 +6,13 @@ The Tauri 2.12 shell for every platform: Windows, macOS and Linux today, Android
 
 `run()` installs logging (`lettuce-observability`), builds the tauri-specta command and event registry and starts Tauri. In debug builds it first writes the TypeScript bindings to `apps/ui/src/api/generated/bindings.ts`.
 
-The setup hook resolves the app data directory (identifier `com.lettuceai.app`, the same as the legacy app, so legacy import finds its data), opens the API with `ApiContext::open_desktop` over the native `NativeSecretStore`, an event sink that emits Tauri events and the platform's asset URL base, and calls `recover_after_restart` before any worker starts. It then starts the conversation generation worker on its own thread with a current-thread Tokio runtime, because the runner calls repositories synchronously, and manages the `ApiContext` as Tauri state.
+The setup hook resolves the app data directory (identifier `com.lettuceai.app`, the same as the legacy app, so legacy import finds its data) and the resource folder, and opens the API with `ApiContext::open_desktop` over the native `NativeSecretStore`, an event sink that emits Tauri events, the desktop `FileAccess` and the platform's asset URL base. It then runs `lettuce_app::api::startup`, which returns once restart recovery and legacy detection are done, so commands never race recovery; the rest of startup and the workers (conversation generation, the job runner with the job change feed) run on threads `lettuce-app` starts, each with a current-thread Tokio runtime because repositories are called synchronously. The shell manages the `ApiContext` and the returned `ApiWorkers` as Tauri state, and forwards window focus changes (on Android and iOS also suspend and resume) to `ApiContext::app_focus_changed` for the active-time counter, which writes the counted time when focus is lost.
 
-On exit the shell first signals the worker so it takes no new job, then calls `begin_shutdown`, which cancels every running inference and the job the worker is running (each job runs with a token linked to the context's shutdown token, so one started in between is cancelled too), joins the worker thread, and waits for the backend's `shutdown` to stop the local servers.
+On exit the shell calls `ApiWorkers::stop`, which tells every worker to take no new work, calls `begin_shutdown` (cancelling running inference, and every job a worker runs through its token linked to the context's shutdown token), joins the threads and records the counted active time; then it waits for the backend's `shutdown` to stop the local servers.
 
 ## Commands
 
-Each command is a `#[tauri::command] #[specta::specta]` one-line wrapper over the `lettuce_app::api` function of the same name, taking one request DTO and returning `Result<Response, ApiError>`; the generated client exposes them as `commands.conversationsList(request)` and so on, with errors as `{ status: "error", error: ApiError }`.
+Commands live in `src/commands/`, one module per domain. Each command is a `#[tauri::command] #[specta::specta]` one-line wrapper over the `lettuce_app::api` function of the same name, taking one request DTO and returning `Result<Response, ApiError>`; the generated client exposes them as `commands.conversationsList(request)` and so on, with errors as `{ status: "error", error: ApiError }`.
 
 | Command | Request | Response |
 | --- | --- | --- |
@@ -23,8 +23,22 @@ Each command is a `#[tauri::command] #[specta::specta]` one-line wrapper over th
 | `generation_cancel` | `GenerationCancelRequest` | `null` |
 | `conversation_launch_direct` | `LaunchDirectRequest` | `LaunchDirectResponse` |
 | `characters_list` | `CharactersListRequest` | `CharacterPage` |
+| `jobs_list` | `JobsListRequest` | `JobPage` |
+| `job_get` | `JobGetRequest` | `JobView` |
+| `job_cancel` | `JobCancelRequest` | `null` |
+| `job_watch` | `JobWatchRequest` and an `on_event: Channel<JobEvent>` | `JobView` |
+| `files_inspect` | `FilesInspectRequest` | `FileInspection` |
+| `assets_ingest` | `AssetsIngestRequest` | `AssetRef` |
+| `app_status` | none | `AppStatus` |
+| `app_ui_state_update` | `AppUiStateUpdateRequest` | `AppUiStateView` |
+| `purge_notices_list` | none | `PurgeNoticeList` |
+| `purge_notice_dismiss` | `PurgeNoticeDismissRequest` | `null` |
 
-`conversation_send` wraps its channel as the turn's `GenerationEventSink`, so token deltas travel on that channel and never through the global event bus. The only global event is `AppEvent` (`app-event`), which carries an `ApiEvent` such as `generation_settled`.
+`conversation_send` wraps its channel as the turn's `GenerationEventSink` and `job_watch` its channel as the job's `JobEventSink`, so token deltas and job progress for a watcher travel on those channels. The only global event is `AppEvent` (`app-event`), which carries an `ApiEvent`: `generation_settled`, or `job_updated` for every job change.
+
+## Files
+
+`src/files.rs` implements `lettuce_app::api::FileAccess` for desktop with `std::fs`: a `FileSource` or `FileTarget` URI is the filesystem path a dialog or drop returned, and any `scheme://` URI is refused as unsupported. Android `content://` URIs need their own implementation later (opening the descriptor through the content resolver); the shell chooses which one the context gets.
 
 ## Media
 
@@ -57,4 +71,4 @@ Building on Linux needs the WebKitGTK 4.1 development packages. The `vulkan` fea
 
 The shell is written generic over `R: Runtime` and `run()` carries `#[cfg_attr(mobile, tauri::mobile_entry_point)]`, so Android and iOS builds (`gen/android`, `gen/apple`) can come from this crate once they are initialized; that step also adds the `staticlib` and `cdylib` library types.
 
-User files on mobile: the official `tauri-plugin-dialog` returns `content://` URIs on Android and `file://` on iOS (security-scoped access handled), and `tauri-plugin-fs` opens an Android `content://` URI through the content resolver as a real file descriptor for reading or writing. An upload is therefore the picked path or URI handed to Rust, which opens, validates and ingests it, matching the no-bytes-over-IPC rule. These plugins do not cover folder pickers on mobile, persistable URI permissions, writing into shared storage such as MediaStore Downloads, or access outside the app folder by default. The legacy app used `tauri-plugin-android-fs` for exactly those (backups into Downloads, log export, folder picks, persistable access), so it is still needed there later, unless backups go to a save-dialog `content://` target instead (not yet verified on devices). None of these plugins is added yet; no slice-1 command needs them.
+User files on mobile: the official `tauri-plugin-dialog` returns `content://` URIs on Android and `file://` on iOS (security-scoped access handled), and `tauri-plugin-fs` opens an Android `content://` URI through the content resolver as a real file descriptor for reading or writing. An upload is therefore the picked path or URI handed to Rust, which opens, validates and ingests it, matching the no-bytes-over-IPC rule. These plugins do not cover folder pickers on mobile, persistable URI permissions, writing into shared storage such as MediaStore Downloads, or access outside the app folder by default. The legacy app used `tauri-plugin-android-fs` for exactly those (backups into Downloads, log export, folder picks, persistable access), so it is still needed there later, unless backups go to a save-dialog `content://` target instead (not yet verified on devices). None of these plugins is added yet; no command so far needs them.
