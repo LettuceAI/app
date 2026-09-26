@@ -4325,6 +4325,13 @@ async fn post_turn_memory_host_answers_ask_first_with_skip_and_trigger() {
             serde_json::json!({"text": "The user prefers tea", "category": "preference"}),
             (7, 2),
         ),
+        call_outcome(
+            "ask-first-resummary",
+            "write_summary",
+            serde_json::json!({"summary": "The user still chose tea."}),
+            (6, 2),
+        ),
+        call_outcome("ask-first-done", "done", serde_json::json!({}), (3, 1)),
     ]);
     let host = backend.companion_memory_host(&engine, &memory);
     let after_turn = || {
@@ -4381,6 +4388,7 @@ async fn post_turn_memory_host_answers_ask_first_with_skip_and_trigger() {
             .len(),
         2
     );
+    let first_sources = work.admission.batch.source_messages();
     let settled = host
         .run_claimed(work, CancellationReason::User, TimestampMillis::new(1_033))
         .await
@@ -4397,10 +4405,35 @@ async fn post_turn_memory_host_answers_ask_first_with_skip_and_trigger() {
             .window_end,
         2
     );
-    assert!(
-        trigger(Some(scenario.model.source_id))
-            .expect("nothing left to summarize")
-            .is_empty()
+    let rerun = trigger(Some(scenario.model.source_id))
+        .expect("a forced trigger with nothing new re-runs the latest window")
+        .into_iter()
+        .next()
+        .expect("claimed forced re-run");
+    assert_eq!(
+        rerun.admission.batch.window_selection,
+        crate::CompanionMemoryWindowSelection::Recent
+    );
+    assert_eq!(rerun.admission.batch.unsummarized_message_count, 0);
+    assert_eq!(rerun.admission.batch.source_messages(), first_sources);
+    let resettled = host
+        .run_claimed(rerun, CancellationReason::User, TimestampMillis::new(1_034))
+        .await
+        .expect("run the forced re-run");
+    assert!(matches!(
+        resettled,
+        crate::CompanionMemorySettledWork::Succeeded { .. }
+    ));
+    let summary = MemorySummaryRepository::get_summary(database, space_id)
+        .expect("summary")
+        .expect("stored summary");
+    assert_eq!(
+        (
+            summary.window_start,
+            summary.window_end,
+            summary.text.as_str()
+        ),
+        (0, 2, "The user still chose tea.")
     );
 
     let stored = GlobalSettingsStore::load(database).expect("settings");

@@ -451,7 +451,8 @@ impl<
 
     /// Legacy `trigger_dynamic_memory` / `retry_dynamic_memory` for plain
     /// conversations: forced, so the run mode is ignored, and the window is
-    /// the most recent interval-sized slice of the unsummarized dialogue.
+    /// the most recent interval-sized slice of the dialogue, already
+    /// summarized messages included, even when nothing is new.
     pub fn trigger_plain_and_admit(
         &self,
         conversation_id: ConversationId,
@@ -495,16 +496,16 @@ impl<
         .map_err(CompanionPostTurnMemoryAdmissionError::Memory)?;
         let cursor = usize::try_from(cursor)
             .map_err(|_| CompanionPostTurnMemoryAdmissionError::InvalidBatch)?;
-        let unsummarized = messages.len().saturating_sub(cursor);
-        if unsummarized == 0 {
+        if messages.is_empty() {
             self.effects
                 .clear_dynamic_memory_pending_approval(conversation_id)
                 .map_err(CompanionPostTurnMemoryAdmissionError::Approval)?;
             return Ok(None);
         }
+        let unsummarized = messages.len().saturating_sub(cursor);
         let unsummarized_message_count = u64::try_from(unsummarized)
             .map_err(|_| CompanionPostTurnMemoryAdmissionError::InvalidBatch)?;
-        let source_count = interval.min(unsummarized);
+        let source_count = interval.min(messages.len());
         let admitted = self.admit_selected(
             conversation_id,
             summary_message_interval,
@@ -662,7 +663,10 @@ impl<
             } => *source_effect_offset < effects.len(),
             PostTurnMemorySource::Messages(messages) => !messages.is_empty(),
         };
-        if !valid_source || unsummarized_message_count == 0 {
+        if !valid_source
+            || (window_selection == CompanionMemoryWindowSelection::Automatic
+                && unsummarized_message_count == 0)
+        {
             return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
         }
         let idempotency_key = batch_idempotency_key(
@@ -697,12 +701,15 @@ impl<
             }
         }
         let mut idempotency_key = idempotency_key;
+        let forced = window_selection == CompanionMemoryWindowSelection::Recent;
         while let Some(ended) = jobs.iter().find(|job| {
             job.idempotency_key.as_ref() == Some(&idempotency_key)
                 && job.is_terminal()
-                && job.state != lettuce_jobs::JobState::Succeeded
+                && (forced || job.state != lettuce_jobs::JobState::Succeeded)
         }) {
-            if crate::jobs::job_recovery::failed_as_interrupted(ended) {
+            if ended.state != lettuce_jobs::JobState::Succeeded
+                && crate::jobs::job_recovery::failed_as_interrupted(ended)
+            {
                 return Ok(None);
             }
             idempotency_key = retry_idempotency_key(&idempotency_key, ended.id)?;

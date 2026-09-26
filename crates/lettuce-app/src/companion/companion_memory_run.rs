@@ -263,26 +263,33 @@ fn summary_window(
     unsummarized_message_count: u64,
     source_message_count: usize,
 ) -> Result<DynamicMemorySummaryWindow, CompanionPostTurnMemoryRunError> {
-    if message_interval == 0 || source_message_count == 0 || unsummarized_message_count == 0 {
+    if message_interval == 0 || source_message_count == 0 {
         return Err(CompanionPostTurnMemoryRunError::InvalidAdmission);
     }
     let source_message_count = u64::try_from(source_message_count)
         .map_err(|_| CompanionPostTurnMemoryRunError::InvalidAdmission)?;
-    if source_message_count > unsummarized_message_count {
-        return Err(CompanionPostTurnMemoryRunError::InvalidAdmission);
-    }
     let (start, end) = match selection {
-        crate::CompanionMemoryWindowSelection::Automatic => (
-            cursor,
-            cursor
-                .checked_add(source_message_count)
-                .ok_or(CompanionPostTurnMemoryRunError::InvalidAdmission)?,
-        ),
+        crate::CompanionMemoryWindowSelection::Automatic => {
+            if unsummarized_message_count == 0 || source_message_count > unsummarized_message_count
+            {
+                return Err(CompanionPostTurnMemoryRunError::InvalidAdmission);
+            }
+            (
+                cursor,
+                cursor
+                    .checked_add(source_message_count)
+                    .ok_or(CompanionPostTurnMemoryRunError::InvalidAdmission)?,
+            )
+        }
         crate::CompanionMemoryWindowSelection::Recent => {
             let end = cursor
                 .checked_add(unsummarized_message_count)
                 .ok_or(CompanionPostTurnMemoryRunError::InvalidAdmission)?;
-            (end - source_message_count, end)
+            (
+                end.checked_sub(source_message_count)
+                    .ok_or(CompanionPostTurnMemoryRunError::InvalidAdmission)?,
+                end,
+            )
         }
     };
     Ok(DynamicMemorySummaryWindow {
@@ -1076,6 +1083,29 @@ mod tests {
                 start: 16,
                 end: 20,
             }
+        );
+    }
+
+    #[test]
+    fn forced_window_with_nothing_new_covers_the_latest_messages_like_legacy() {
+        assert_eq!(
+            summary_window(10, 4, crate::CompanionMemoryWindowSelection::Recent, 0, 4)
+                .expect("forced recent window"),
+            lettuce_memory::DynamicMemorySummaryWindow {
+                message_interval: 4,
+                start: 6,
+                end: 10,
+            }
+        );
+        assert_eq!(
+            summary_window(
+                10,
+                4,
+                crate::CompanionMemoryWindowSelection::Automatic,
+                0,
+                4
+            ),
+            Err(CompanionPostTurnMemoryRunError::InvalidAdmission)
         );
     }
 
