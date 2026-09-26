@@ -204,7 +204,42 @@ impl<
                 CompanionConsolidationExecutionError::Soul(error)
             }
         })?;
-        let applied_changes = change_set.additions.len() + change_set.supersessions.len();
+        let applied_changes = match change_set {
+            Some(change_set) => change_set.additions.len() + change_set.supersessions.len(),
+            None => {
+                let facts = self
+                    .repository
+                    .get(run.soul_owner())
+                    .map_err(CompanionConsolidationExecutionError::Soul)?
+                    .ok_or(CompanionConsolidationExecutionError::Soul(
+                        SoulRepositoryError::NotFound,
+                    ))?
+                    .facts;
+                let added = crate::companion::soul_growth_edit::stored_growth_count(
+                    &facts,
+                    &checkpoint
+                        .proposal
+                        .core_adjustments
+                        .iter()
+                        .map(|proposal| proposal.id.clone())
+                        .collect::<Vec<_>>(),
+                );
+                let superseded = facts
+                    .iter()
+                    .filter(|fact| {
+                        fact.superseded_by.as_ref().is_some_and(|replacement| {
+                            checkpoint
+                                .proposal
+                                .core_adjustments
+                                .iter()
+                                .any(|proposal| &proposal.id == replacement)
+                        }) || (fact.superseded_at.is_some()
+                            && checkpoint.proposal.retire_ids.contains(&fact.id))
+                    })
+                    .count();
+                added + superseded
+            }
+        };
         Ok(CompanionConsolidationExecutionResult {
             receipt: Some(receipt),
             applied_changes,

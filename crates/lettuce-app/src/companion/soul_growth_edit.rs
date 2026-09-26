@@ -50,25 +50,26 @@ pub(crate) enum SoulApplyError<E> {
 /// prepared on `prepared_on` first; a concurrent write that lands in between
 /// makes it stale, and it is then prepared again on the current Soul, as
 /// legacy's later save kept both edits' growth. A replay after an earlier
-/// attempt applied on a newer Soul answers that attempt's receipt. Returns the
-/// receipt with the change set it applied (or would have applied first).
+/// attempt applied on a newer Soul answers that attempt's stored receipt.
+/// Returns the receipt with the change set this call applied, or `None` when
+/// the receipt was stored by an earlier call whose change set differed.
 pub(crate) fn apply_on_latest_soul<R, E>(
     repository: &R,
     owner: SoulOwner,
     operation_id: OperationRecordId,
     prepared_on: &lettuce_companions::SoulState,
     prepare: impl Fn(&lettuce_companions::SoulState) -> Result<lettuce_companions::SoulChangeSet, E>,
-) -> Result<(SoulApplyReceipt, lettuce_companions::SoulChangeSet), SoulApplyError<E>>
+) -> Result<(SoulApplyReceipt, Option<lettuce_companions::SoulChangeSet>), SoulApplyError<E>>
 where
     R: SoulRepository + ?Sized,
 {
     let mut change_set = prepare(prepared_on).map_err(SoulApplyError::Prepare)?;
     for attempt in 1..=SOUL_APPLY_ATTEMPTS {
         match repository.apply(owner, operation_id, change_set.clone()) {
-            Ok(receipt) => return Ok((receipt, change_set)),
+            Ok(receipt) => return Ok((receipt, Some(change_set))),
             Err(SoulRepositoryError::OperationMismatch) => {
                 return match repository.receipt(operation_id) {
-                    Ok(Some(receipt)) if receipt.owner == owner => Ok((receipt, change_set)),
+                    Ok(Some(receipt)) if receipt.owner == owner => Ok((receipt, None)),
                     Ok(_) => Err(SoulApplyError::Soul(SoulRepositoryError::OperationMismatch)),
                     Err(error) => Err(SoulApplyError::Soul(error)),
                 };
@@ -88,6 +89,19 @@ where
         }
     }
     Err(SoulApplyError::Soul(SoulRepositoryError::Conflict))
+}
+
+/// How many of an operation's proposed facts the stored Soul holds, for a
+/// replay answered from an earlier call's receipt. Proposed fact ids are
+/// unique to their operation.
+pub(crate) fn stored_growth_count(
+    facts: &[lettuce_companions::SoulFact],
+    proposal_ids: &[String],
+) -> usize {
+    proposal_ids
+        .iter()
+        .filter(|id| facts.iter().any(|fact| &fact.id == *id))
+        .count()
 }
 
 /// Removes every Soul growth entry, authored ones included, as legacy did;
@@ -279,7 +293,7 @@ mod tests {
             apply_on_latest_soul(&souls, owner, operation_id, &initial, prepare)
                 .expect("growth applies on the newer soul");
         assert_eq!(receipt.expected_revision, Revision::new(2));
-        assert_eq!(applied.additions.len(), 1);
+        assert_eq!(applied.map(|applied| applied.additions.len()), Some(1));
         let facts = souls.get(owner).expect("get").expect("soul").facts;
         assert_eq!(
             facts
@@ -289,9 +303,15 @@ mod tests {
             ["tea", "maps"]
         );
 
-        let (replayed, _) = apply_on_latest_soul(&souls, owner, operation_id, &initial, prepare)
-            .expect("a replay answers the applied receipt");
+        let (replayed, replayed_change) =
+            apply_on_latest_soul(&souls, owner, operation_id, &initial, prepare)
+                .expect("a replay answers the applied receipt");
         assert_eq!(replayed, receipt);
+        assert_eq!(replayed_change, None);
+        assert_eq!(
+            stored_growth_count(&facts, &["maps".to_owned(), "gone".to_owned()]),
+            1
+        );
         assert_eq!(souls.get(owner).expect("get").expect("soul").facts, facts);
     }
 }

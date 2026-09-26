@@ -210,7 +210,24 @@ impl<
                 CompanionGrowthExecutionError::Soul(error)
             }
         })?;
-        let applied_facts = change_set.additions.len();
+        let applied_facts = match change_set {
+            Some(change_set) => change_set.additions.len(),
+            None => crate::companion::soul_growth_edit::stored_growth_count(
+                &self
+                    .repository
+                    .get(run.soul_owner())
+                    .map_err(CompanionGrowthExecutionError::Soul)?
+                    .ok_or(CompanionGrowthExecutionError::Soul(
+                        lettuce_companions::SoulRepositoryError::NotFound,
+                    ))?
+                    .facts,
+                &checkpoint
+                    .proposals
+                    .iter()
+                    .map(|proposal| proposal.id.clone())
+                    .collect::<Vec<_>>(),
+            ),
+        };
         Ok(CompanionGrowthExecutionResult {
             receipt: Some(receipt),
             applied_facts,
