@@ -57,7 +57,7 @@ pub struct ConversationSummary {
     pub title: String,
     pub avatars: Vec<AssetRef>,
     pub last_message_preview: Option<String>,
-    #[cfg_attr(feature = "specta", specta(type = f64))]
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub updated_at: i64,
 }
 
@@ -138,7 +138,7 @@ pub struct TimelineMessage {
     pub author_participant_id: Option<String>,
     pub parts: Vec<MessagePartView>,
     pub reasoning: Option<String>,
-    #[cfg_attr(feature = "specta", specta(type = f64))]
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub created_at: i64,
     /// The shown reply variant's ordinal; set on generated replies only.
     pub candidate_index: Option<u16>,

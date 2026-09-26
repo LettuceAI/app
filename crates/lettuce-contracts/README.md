@@ -8,11 +8,13 @@ The `specta` cargo feature derives `specta::Type` on the application API contrac
 
 ## Application API contracts
 
-The application API (`lettuce_app::api`) speaks only these types. Ids are UUID strings and timestamps are unix milliseconds (exported to TypeScript as `number`). No domain type appears in them.
+The application API (`lettuce_app::api`) speaks only these types. Ids are UUID strings and timestamps are unix milliseconds (exported to TypeScript as `number`, which holds them exactly). No domain type appears in them.
+
+Media never crosses IPC as bytes, base64 or a data URL, in either direction: a contract names media only by `AssetRef`, and a request that brings in user media will carry a file path (a `content://` URI on Android) that the backend reads, validates and ingests. No contract type has a bytes or base64 field.
 
 - `ApiError` is what every call returns on failure: a stable `ApiErrorCode` (`not_found`, `conflict`, `invalid_input`, `unsupported`, `unavailable`, `cancelled`, `busy`, `internal`), an English diagnostic `message` that is never shown to the user, and optional `ApiErrorDetails` (the invalid field). The frontend localizes by code.
 - `ApiEvent` is the application-wide event the host broadcasts. `GenerationSettled` names a conversation and turn whose generation reached a terminal state, so list views can refresh.
-- `AssetRef` names a stored media asset by id; the host serves its bytes under the `lettuce-asset://` URI scheme, so no media crosses IPC as base64.
+- `AssetRef` names a stored media asset by id; the host serves its bytes under the `lettuce-asset://` URI scheme.
 - Conversations (`src/conversations.rs`): `ConversationsListRequest` and `ConversationPage` of `ConversationSummary` (kind, title, character avatars, last message preview, update time); `ConversationOpenRequest` and `ConversationView` (participants as `ParticipantView`, the active `BranchHead`, the newest `MessagePage`, the pending turn and `can_send`); `ConversationMessagesRequest` for older pages; `TimelineMessage` with text and media parts (`MessagePartView`), reasoning and the shown candidate's ordinal and count; `ConversationSendRequest` (its `client_operation_id` is the idempotency key) and `SendAccepted`; `GenerationEvent` (`started`, `delta`, `completed`, `failed` with a `GenerationFailureCode`, `cancelled`), each carrying its turn id; `GenerationCancelRequest`; `LaunchDirectRequest` and `LaunchDirectResponse`; `CharactersListRequest` and `CharacterPage` of `CharacterSummary`.
 
 ## Provider contracts
