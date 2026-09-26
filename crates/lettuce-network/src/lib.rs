@@ -542,8 +542,8 @@ fn parse_content_range(
     Ok(start)
 }
 
-/// Extra PEM roots the user trusts (legacy `appState.trustedCertificates`).
-/// Invalid entries are skipped, as the legacy transport did.
+/// Extra PEM roots the user trusts (`appState.trustedCertificates`).
+/// Invalid entries are skipped.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TlsPolicy {
     pub trusted_roots_pem: Vec<String>,
@@ -551,9 +551,9 @@ pub struct TlsPolicy {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RequestTimeout {
-    /// Legacy 30-minute generation budget.
+    /// 30-minute generation budget.
     Generation,
-    /// Legacy 10-second key-verification probe.
+    /// 10-second key-verification probe.
     Probe,
     /// A long streamed transfer such as a model pull: sent once, with no
     /// practical total deadline; only the stream's idle timeout applies.
@@ -968,7 +968,7 @@ impl fmt::Debug for MultipartField {
     }
 }
 
-/// An HTTP status as legacy printed it: the code and its reason phrase.
+/// An HTTP status as the code and its reason phrase.
 #[must_use]
 pub fn status_text(status: u16) -> String {
     reqwest::StatusCode::from_u16(status)
@@ -1159,8 +1159,8 @@ impl BulkHttpClient {
         read_response_limited(response, MAX_BULK_RESPONSE_BYTES).await
     }
 
-    /// Fetches an image a provider linked to (legacy downloaded result URLs
-    /// with a plain client); only HTTP(S) URLs are followed.
+    /// Fetches an image a provider linked to with a plain client; only
+    /// HTTP(S) URLs are followed.
     pub async fn fetch_url(&self, url: &str) -> Result<JsonResponse, JsonClientError> {
         let parsed = Url::parse(url).map_err(|_| JsonClientError::InvalidUrl)?;
         if !matches!(parsed.scheme(), "http" | "https") {
@@ -1208,10 +1208,9 @@ fn apply_secret_headers(
     Ok(request)
 }
 
-/// Legacy `apply_trusted_certificates`: a root the TLS stack cannot parse is
-/// skipped with a warning. The rustls backend only parses roots while it
-/// builds a client, so each one is tried alone first; one bad root would
-/// otherwise fail every client.
+/// A root the TLS stack cannot parse is skipped with a warning. The rustls
+/// backend only parses roots while it builds a client, so each one is tried
+/// alone first; one bad root would otherwise fail every client.
 fn trusted_roots(policy: &TlsPolicy) -> Vec<reqwest::Certificate> {
     policy
         .trusted_roots_pem
@@ -1257,9 +1256,9 @@ fn build_client(
         .map_err(|_| JsonClientError::ClientConfiguration)
 }
 
-/// Redirects are followed as legacy's default client followed them (up to
-/// ten), but only on the host the request went to and never from HTTPS back
-/// to HTTP, so no credential header reaches another host.
+/// Redirects are followed up to ten times, but only on the host the request
+/// went to and never from HTTPS back to HTTP, so no credential header reaches
+/// another host.
 fn same_host_redirects() -> redirect::Policy {
     redirect::Policy::custom(|attempt| {
         let previous = attempt.previous();
@@ -1277,7 +1276,7 @@ fn same_host_redirects() -> redirect::Policy {
     })
 }
 
-/// Legacy verification probes used a bare client with no retry loop.
+/// Verification probes use a bare client with no retry loop.
 fn retries_for(policy: RequestPolicy) -> u32 {
     match policy.timeout {
         RequestTimeout::Generation => MAX_RETRIES,
