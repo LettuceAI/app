@@ -100,7 +100,6 @@ pub struct JsonResponseStream {
     pub request_id: Option<String>,
     pub retry_after: Option<String>,
     received_bytes: usize,
-    size_limit: Option<usize>,
     idle_timeout: Duration,
 }
 
@@ -117,16 +116,9 @@ impl fmt::Debug for JsonResponseStream {
 }
 
 impl JsonResponseStream {
-    /// Lifts the cumulative size bound, for long progress streams whose
-    /// lines are consumed as they arrive.
-    #[must_use]
-    pub fn without_size_limit(mut self) -> Self {
-        self.size_limit = None;
-        self
-    }
-
-    /// Reads the next response chunk with an idle timeout and a cumulative
-    /// response-size bound. `None` is a clean end of stream.
+    /// Reads the next response chunk with an idle timeout. Streamed bodies
+    /// are consumed as they arrive, so their total size is not bounded, as
+    /// legacy's streamed reads were not. `None` is a clean end of stream.
     pub async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, JsonClientError> {
         let chunk = tokio::time::timeout(self.idle_timeout, self.response.chunk())
             .await
@@ -139,12 +131,6 @@ impl JsonResponseStream {
             .received_bytes
             .checked_add(chunk.len())
             .ok_or(JsonClientError::ResponseTooLarge)?;
-        if self
-            .size_limit
-            .is_some_and(|limit| self.received_bytes > limit)
-        {
-            return Err(JsonClientError::ResponseTooLarge);
-        }
         Ok(Some(chunk.to_vec()))
     }
 }
@@ -602,8 +588,9 @@ impl JsonClient {
         })
     }
 
-    /// Raises (or lowers) the buffered and streamed response cap from its
-    /// 8 MiB default, for callers whose responses carry media.
+    /// Raises (or lowers) the buffered response cap from its 8 MiB default,
+    /// for callers whose responses carry media. Streamed responses are not
+    /// capped.
     #[must_use]
     pub const fn with_max_response_bytes(mut self, max_response_bytes: usize) -> Self {
         self.max_response_bytes = max_response_bytes;
@@ -896,7 +883,7 @@ impl JsonClient {
                         sleep(delay).await;
                         continue;
                     }
-                    return response_stream(response, idle_timeout, self.max_response_bytes);
+                    return Ok(response_stream(response, idle_timeout));
                 }
                 Err(error) => {
                     if attempt < max_retries && (error.is_timeout() || error.is_request()) {
@@ -1165,27 +1152,16 @@ impl BulkHttpClient {
     }
 }
 
-fn response_stream(
-    response: reqwest::Response,
-    idle_timeout: Duration,
-    max_bytes: usize,
-) -> Result<JsonResponseStream, JsonClientError> {
-    if response
-        .content_length()
-        .is_some_and(|length| length > max_bytes as u64)
-    {
-        return Err(JsonClientError::ResponseTooLarge);
-    }
-    Ok(JsonResponseStream {
+fn response_stream(response: reqwest::Response, idle_timeout: Duration) -> JsonResponseStream {
+    JsonResponseStream {
         status: response.status().as_u16(),
         request_id: bounded_header(&response, "x-request-id")
             .or_else(|| bounded_header(&response, "request-id")),
         retry_after: bounded_header(&response, "retry-after"),
         response,
         received_bytes: 0,
-        size_limit: Some(max_bytes),
         idle_timeout,
-    })
+    }
 }
 
 fn apply_secret_headers(
@@ -1767,6 +1743,36 @@ mod tests {
         }
         assert_eq!(body, b"data: first\n\ndata: second\n\n");
         server.await.expect("server task");
+    }
+
+    #[tokio::test]
+    async fn streamed_responses_are_not_capped_by_the_buffered_limit() {
+        let body = "a".repeat(9 * 1024 * 1024);
+        let response: &'static str = Box::leak(
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{body}",
+                body.len()
+            )
+            .into_boxed_str(),
+        );
+        let (endpoint, _) = test_server(response).await;
+        let mut stream = client()
+            .post_json_stream(
+                &endpoint,
+                "/chat",
+                b"{}".to_vec(),
+                &[],
+                JsonAuth::None,
+                Vec::new(),
+                RequestPolicy::GENERATION,
+            )
+            .await
+            .expect("stream over the buffered cap");
+        let mut received = 0;
+        while let Some(chunk) = stream.next_chunk().await.expect("next chunk") {
+            received += chunk.len();
+        }
+        assert_eq!(received, body.len());
     }
 
     #[tokio::test]

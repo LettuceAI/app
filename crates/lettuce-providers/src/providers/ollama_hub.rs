@@ -322,7 +322,6 @@ pub(crate) async fn pull<S: SecretStore + ?Sized>(
         }
         return Err(returned(stream.status, &body));
     }
-    let mut stream = stream.without_size_limit();
     let mut reader = PullProgressReader::new();
     while let Some(chunk) = stream
         .next_chunk()

@@ -81,7 +81,7 @@ struct EmittedReply {
 /// Streams every record into `normalizer`, emitting its deltas. A
 /// cancellation leaves the deltas that reached the sink in `emitted`.
 async fn stream_deltas(
-    response: JsonResponseStream,
+    mut response: JsonResponseStream,
     format: StreamFormat,
     runtime: &dyn InferenceRuntimePort,
     request: &InferenceRequest,
@@ -89,7 +89,6 @@ async fn stream_deltas(
     sequence: &mut u64,
     emitted: &mut EmittedReply,
 ) -> Result<(), AdapterError> {
-    let mut response = response.without_size_limit();
     let mut framer = StreamFramer::new(format);
     let provider_request_id = response.request_id.clone();
     loop {

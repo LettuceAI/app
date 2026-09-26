@@ -11,8 +11,9 @@ The public surface is intentionally small. Business invariants belong in domain 
 ## Status
 
 `JsonClient` is the one JSON transport for buffered POST/GET and pull-based
-streaming POST requests. Request bodies and cumulative response bytes are
-bounded; streamed bodies retain socket backpressure, apply an idle timeout,
+streaming POST requests. Request bodies and buffered response bytes are
+bounded; streamed bodies are not size-capped (as legacy's were not), retain
+socket backpressure, apply an idle timeout,
 and are cancelled by dropping their owner instead of a detached reader task.
 Referers are disabled, credentials are per-request, and diagnostics are
 redacted. System proxies (`HTTP(S)_PROXY`, `ALL_PROXY`, `NO_PROXY` and the
@@ -20,7 +21,7 @@ platform settings reqwest reads) are honored and redirects are followed, as
 legacy's default reqwest client did (up to ten), but only on the host the
 request went to and never from HTTPS down to HTTP, so no credential reaches
 another host; a cross-host redirect is returned as the response. The buffered
-and streamed response cap is 8 MiB unless the caller raises it with
+response cap is 8 MiB unless the caller raises it with
 `with_max_response_bytes` (remote TTS uses 256 MiB, since legacy read audio
 responses without a bound). Plain HTTP is allowed for
 user-configured hosts (legacy LAN endpoints). Timeouts and retries follow the
