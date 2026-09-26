@@ -1,261 +1,201 @@
 # lettuce-conversations
 
-Initial provider dispatch has a durable checkpoint contract. `InitialInferenceBinding`
-fingerprints the prepared request (turn, attempt, operation, resolved profile,
-context, job, media grants and tools) without the stream sink, so a reattached
-caller replays the same dispatch. `InitialInferenceRepository` admits one pending
-dispatch per attempt, settles it once with either the exact `InferenceOutcome`
-or a typed `PortError`, and returns the stored provider-neutral request by exact
-binding or attempt ownership for recovery. The stored request omits the runtime
-stream sink, and reads revalidate its fingerprint before use. Changed requests
-conflict, a pending record is reported as pending rather than
-redispatched, and a settled response keeps its conversation-retained replay
-references coherent. Response interpretation and tool admission remain separate.
+The domain model for direct and group conversations: the conversation and its launch snapshots, branches, messages with their revisions and candidates, the generation turn and its attempts, tool executions, and the command and repository contracts that change them.
 
-Generation preparation uses `PrepareGeneration` through the existing repository
-and manager. It binds the resolved model and context attributions to the turn,
-checks attached attempt/job ownership and revisions, and advances ContextPrepared
-atomically. Operation replay is idempotent; different preparation conflicts.
-Existing group speaker resolution remains separate. Explicit director targets and
-original regeneration authors can prepare without another selection step; mention
-decisions need no automatic selection. `mentioned_participant` preserves the
-legacy `@"Full Name"` then `@Word` parsing: quoted names match exactly,
-unquoted names match exactly and then by prefix, case-insensitively, with
-trailing punctuation trimmed. Candidate order is priority: the first
-candidate matching within each step wins. The database verifies attached model
-artifact provenance. Preparation stores provenance,
-while the initial-dispatch checkpoint stores the resolved provider-neutral
-request needed to replay or recover after mutable model and context state drifts.
+The crate is pure. It validates state, defines the commands and describes persistence as synchronous, transaction-shaped repository traits; it never opens SQLite, calls a provider or runs a job. The pieces around it:
 
-InferenceUsage retains optional provider-reported cost with a validated finite,
-nonnegative value type. JSON round trips preserve the existing f64 precision;
-unknown amounts remain distinct from zero. Invalid numeric values cannot enter
-the type, so usage records retain their equality contract.
+- `lettuce-database` implements the repositories, including the artifact store and the checkpoint repositories.
+- `lettuce-app` plans launches, assembles context, resolves models, runs the provider call, drives tools and finalizes turns.
+- `lettuce-providers` and `lettuce-inference` consume `InferenceRequest` and produce `InferenceOutcome`; their family codecs translate the provider-neutral tool and context values.
+- `lettuce-memory` owns memory semantics. This crate stops at admitting tool calls and tracking their lifecycle.
+- `lettuce-transfer` uses `ConversationAggregate` as the typed root of the encrypted conversation-history document and adds global limits, timeline ordering and cross-record checks.
 
-Unified direct and group conversations, messages, revisions, branches, and generation turns.
+The public surface is kept small. Invariants live in the domain types and their `validate` methods; infrastructure is reached only through narrow ports. There is no schema, migration, provider adapter, frontend or engine client here.
 
-`ConversationAggregate` is also the typed root of the encrypted
-conversation-history transfer document. Serialization remains a domain shape;
-the transfer crate adds global limits, exact timeline ordering and cross-record
-validation while protected snapshot and provider replay bytes stay behind the
-artifact transfer port.
+## Structure
 
-## Boundary
+| Module | What it holds |
+| --- | --- |
+| `model.rs` | `Conversation`, `ConversationKind`, participants, branches, current settings, `ConversationAggregate`, `ConversationHistory` |
+| `content.rs` | `Message`, `MessageRevision`, `MessageCandidate`, `MessagePart`, annotations, replay references |
+| `snapshot.rs`, `document.rs` | Launch snapshots and the versioned documents stored inside their protected artifacts |
+| `artifact.rs` | Protected bytes, the artifact store, replay and transfer ports, `PreparedConversationLaunch` |
+| `generation.rs` | `GenerationTurn`, `GenerationAttempt`, their state machines, checkpoint and stream envelopes |
+| `commands.rs` | Command structs, `ConversationMutation`, the settings patch |
+| `ports.rs` | Repository traits, outbox events, operation records, context and inference contracts, usage |
+| `service.rs` | `ConversationManager`, the thin façade over a repository |
+| `tool.rs` | Tool definitions, requests, proposed calls, transcript values, `ToolExecution` |
+| `initial_inference.rs`, `speaker_inference.rs` | Durable checkpoints for the first provider call and for LLM speaker selection |
+| `speaker_policy.rs` | Deterministic group speaker selection and `@mention` parsing |
+| `effective_settings.rs` | Resolves launch values against conversation overrides |
+| `clock.rs` | `CompanionClockSettings` and effective time |
+| `scene_tag.rs` | Extracts the `<img>…</img>` scene prompt from a reply |
 
-Provider execution and concrete persistence are injected ports.
+## Conversations
 
-The public surface is intentionally small. Business invariants belong in domain models and use cases; infrastructure is accessed only through narrow ports owned by the calling crate.
+A `Conversation` has a lifecycle (`Active`, `Archived`, `Tombstoned`), a title, a kind, participants, the active branch, a revision and an optional `CurrentConversationSettings`. `ConversationKind` is a tagged union of `Direct(DirectConversationDetails)` and `Group(GroupConversationDetails)`: one aggregate type covers both, so storage, transfer and history code do not fork on chat type.
 
-Tool calling uses the same boundary. This crate owns bounded provider-neutral
-definitions, request selection, proposed calls, transcript call/result values,
-and the attempt-scoped `ToolExecution` lifecycle. It does not own handlers or
-provider JSON. Application code persists a provider proposal before execution;
-message parts keep only the resulting execution ID. Terminal executions cannot
-regress, and provider call IDs are separate from the stable application ID so
-providers without native IDs do not force fabricated wire identities.
-`ConversationManager` validates a provider call set against the exact declared
-request, assigns stable wire ordinals and handler versions, and persists the
-whole set atomically before any handler starts. Undeclared calls, named-choice
-mismatches, duplicate provider IDs, and over-limit sets fail before storage.
-Later continuation rounds append after prior executions with an expected-next
-ordinal, so a recovery worker cannot interleave a second copy of the round.
+The kind holds the launch snapshots: what the character, persona, scene, prompt, lorebooks, model, memory and voice settings were when the conversation was created. Each is a `SnapshotSelection` (`Inherited(value)`, `Explicit(value)` or `Disabled`); inherited selections carry the fully resolved value, not a pointer back to the source. Snapshots never change for the life of the conversation.
 
-## Status
+What the user changes afterwards lives in `CurrentConversationSettings`, a separate revisioned record. Each overridable field has a `SettingProvenance` (`LaunchInherited`, `CurrentOverride`, `Disabled`). `resolve_effective_settings` combines the two for one turn: a current override wins, `Disabled` yields nothing, and otherwise the launch value applies. The current settings hold no live values derived from other conversations or sources; the only inputs are the launch snapshot and the explicit overrides.
 
-The crate now exposes the persistence-ready V1 domain contracts: one tagged
-direct/group aggregate, immutable launch snapshots, participants, branches,
-messages with immutable revisions/candidates, and the durable generation-turn
-lifecycle. Repository methods are synchronous and transaction-shaped; runtime
-dependencies are separate asynchronous ports. No database schema, provider
-adapter, migration, frontend, or engine client belongs here.
+For a group, effective settings are resolved per speaker. The member's prompt falls back to the group's, the participant's model to the group model, the group's scene applies only in roleplay chat mode, and lorebooks are the group's books (or the conversation's own selection, which replaces only those) followed by the speaker's books unless the group disables character lorebooks. `effective_memory`, `effective_persona` and `effective_speaker_selection` answer the same question without a speaker.
 
-All authored documents and message parts are bounded and closed under
-`serde(deny_unknown_fields)`. Provider replay artifacts are versioned opaque
-references (artifact ID, digest, schema, codec, retention and size), with no
-provider payload bytes in conversation rows or public DTOs. Streaming text is
-held only in a non-serializable sequenced UI envelope; durable checkpoints and
-outbox events contain stages, counters and typed IDs only.
+Current settings also carry:
 
-Immutable snapshot and replay payloads are written through the private
-`ConversationArtifactStore` boundary. `ProtectedArtifactBytes` is bounded,
-redacted in `Debug`, not serializable, and zeroized on drop; only a store or
-backup adapter should open it. Stores make artifact identity immutable and
-deduplicated, and expose only verification plus explicit orphan cleanup;
-backup exports reuse conversation-retained references rather than creating a
-second retention identity. Ordinary repositories and IPC never carry raw
-artifact bytes.
+- `model_settings`, a `lettuce_models::ModelSettingsLayer` of chat parameters, llama.cpp and stable-diffusion settings. Each unset field defers to the model and then the app settings. It is stored as `conversation_settings.model_settings_json` (NULL when empty) and travels with the conversation in backups; generation input passes it as the session layer of chat parameter resolution.
+- `background`: `Image { asset_id }` or `Hidden`. `None` follows the selected scene, then the character (direct) or group. It is stored as `background_asset_id` and `background_hidden`, the asset must be an image, and deleting a referenced asset is restricted. It travels in backups and sync with its media.
+- `companion_clock` for direct conversations (see Time below).
+- For groups, `speaker_selection`, `chat_mode` and `disable_character_lorebooks` as overrides of the group's launch values.
 
-Provider-native signed replay uses the separate
-`ProviderReplayArtifactPort`. It can stage, verify, and materialize exact
-protected replay bytes for a trusted provider adapter without adding read-back
-to ordinary conversation repositories or serializable contracts.
+The speaker-selection patch can set a method or return to the one the group was launched with; it cannot be cleared, and setting it on a direct conversation is rejected. `effective_speaker_selection` falls back to the launch-time group method.
 
-Generation attempts own their scheduler idempotency keys and optional job IDs.
-Attaching a job is a separate CAS mutation, so retries and recovery children
-cannot accidentally coalesce with an earlier attempt. Cancellation is a
-two-step lifecycle: the repository commits `CancellationRequested`, the
-application asks the job runtime to stop, and settlement commits the terminal
-usage-linked `Cancelled` state. A turn stopped after its reply streamed visible
-text or a whole image instead finalizes that partial reply from `CancellationRequested` (as a new
-assistant message, or a new candidate for a regeneration), as the legacy chat
-page persisted the streamed placeholder on stop (`useChatAbortController.ts`
-29-148); its job still ends `Cancelled`.
-Editing an assistant reply rewrites its selected variant in place, as the
-legacy chat page did (`useChatMessageActionsController.ts` 227-241): the new
-revision records the candidate it supersedes, selecting that candidate renders
-the latest such revision, and the candidate's own pre-edit parts stay as
-history only. A variant list shows the superseding revision's text at that
-candidate's position; regenerating an edited reply appends one new variant. Checkpoints are operation-bound and must begin
-at sequence one. The repository exposes the latest sequence for an exact
-turn/attempt so checkpoint producers can append after durable streaming events,
-including after restart. Runtime-owned stage checkpoints advance the named
-attempt from created to preparing to running in the same transaction as the turn
-stage, so persisted attempt state matches the job state consumed by tool
-workflows.
-Terminal outbox events carry the attempt, usage,
-message/candidate references where applicable, and bounded memory revision
-references so downstream consumers can be idempotent by turn ID without
-reading conversation internals.
+### Participants
 
-Job attachment is repository-wide, not merely turn-local: an attempt may be
-attached once, and a non-null job ID may belong to only one attempt across all
-conversations. The final conversation schema must enforce this with a partial unique index on
-`generation_attempts(job_id)`, while the domain reports separate
-`JobAlreadyAttached` and `JobInUse` failures.
+A participant has a role (`User`, `Character`, `System`), an ordinal, enabled and muted flags, a typed `ParticipantSource`, and the display name, description and model selection it had at launch. A group has exactly one user participant, at least one character and no system participant, and its initial participant policy lists one entry per character. `UpdateParticipantPolicy` changes the enabled, muted and model-override values later.
 
-Conversation creation receives a non-cloneable `PreparedConversationLaunch`.
-The application planner validates the complete plan, traverses both launch
-settings and initial-message origins, and hands over exactly one validated
-draft for every distinct protected snapshot reference. The repository consumes
-that bundle in one adapter transaction; it does not perform a separate
-pre-verification that could race with staging. The same-database artifact store
-remains available on the full repository for replay finalization and trusted
-retention workflows, with orphan cleanup for staged payloads.
+## Branches and messages
 
-Trusted encrypted backup/sync composition receives a separate
-`ConversationArtifactTransferPort`. It streams chunks into a
-`TrustedArtifactSink` and is deliberately not reachable through
-`ConversationRepository::artifact_store`; ordinary repositories have no
-artifact read-back API and no raw payload DTOs.
+A conversation is a tree of branches. The root branch has no parent; every other branch names its parent and the `fork_message_id` it was forked at, and the two must be present together. `ConversationAggregate::validate` checks there is exactly one root, the active branch exists and is active, and a bounded walk proves the parent links contain no cycle. A freshly forked branch has no head; its timeline is the inherited ancestry up to the fork message. `ConversationHistory` carries the full root-to-branch ancestry so validation can tell a legal fork prefix from an unrelated sibling.
 
-Launch documents carry a format version and protected snapshot references.
-Inherited selections contain their fully resolved value, while mutable current
-settings remain separate from immutable launch history. Branch history uses
-parent links, depth/order and bounded validators; operation records bind CAS
-mutations to request digests and idempotency keys.
+A `Message` belongs to one branch and links to its parent message. It has a role, a logical time, an effective time, visibility (`Visible`, `Hidden`, `Tombstoned`), pinned and scene-edited flags, and an `active_render_source` that points at either a revision or a candidate. User and assistant messages need an author participant; system and scene messages must not have one.
 
-Conversation creation also carries a bounded, versioned initial timeline. It
-materializes the selected scene and direct-chat starter messages as ordinary
-immutable message revisions with stable IDs, while retaining normalized source
-attribution to the selected protected scene or starter snapshot. `Scene` is a
-distinct authorless message role: request assembly must not silently convert it
-to a provider `system`, `user`, or `assistant` message. Scene content is supplied
-to prompting through the scene-context path instead.
+The content itself is never edited in place:
 
-An origin row proves which immutable launch snapshot was selected; it does not
-decrypt that snapshot or independently prove that arbitrary text came from it.
-The application composition layer must therefore build
-`PreparedConversationLaunch` through the conversation launch planner from the
-same validated authored scene/starter graph used to create the protected
-artifacts. IPC callers do not construct initial timelines, and the database
-creator only persists and revalidates the prepared plan atomically.
+- A `MessageRevision` is an immutable version of the message's parts, numbered by sequence, optionally tied to the turn that produced it and to a provider replay artifact.
+- A `MessageCandidate` is one assistant variant produced by a turn attempt. It records the speaker, the model snapshot and the parts. Choosing a candidate sets the render source and restores its author onto the message.
 
-Tool execution is currently a horizontal contract only. Remote OpenAI-envelope,
-Anthropic, Gemini, and Ollama adapters have family-specific declaration,
-transcript, buffered-response, and streaming codecs. The application
-coordinator and legacy memory/creation/companion/lorebook handler migrations are
-separate usable slices; arbitrary shell, filesystem, plugin, and general-chat
-tools are not implied by this contract.
+Editing an assistant reply rewrites the selected variant: the new revision records `supersedes_candidate_id`, selecting that candidate renders the latest revision that supersedes it, and the candidate's own pre-edit parts stay only as history. A variant list shows the superseding revision's text at that candidate's position, and regenerating an edited reply appends one new variant.
 
-The direct/group dynamic-memory scenario audit is pinned in
-`fixtures/legacy-import/dynamic-memory-tool-scenarios-v1.json`. Conversation
-ownership ends at durable call admission and execution lifecycle: memory
-operation semantics and atomic memory-space changes belong to `lettuce-memory`,
-while continuation and recovery orchestration belong to `lettuce-app` and
-durable jobs.
-Dynamic launch memory snapshots optionally retain the exact retrieval and
-mutation policy values used by generation. The optional field keeps older
-snapshot documents readable; new dynamic launches populate it, while manual and
-disabled modes reject it.
+`MessagePart` is a closed set: text, media asset (with a role such as inline, attachment, avatar, scene or reference), reasoning summary, tool call and tool result (both by `ToolExecutionId` only) and annotations (scene edited, safety, system notice, companion effect). All documents and parts are bounded and deserialize with `deny_unknown_fields`.
 
-One admitted handler round can transition through the repository's typed batch
-CAS. The batch requires one conversation/turn/attempt owner and unique execution
-IDs; a stale revision, invalid transition, or storage failure rolls back every
-execution rather than exposing a partially running or terminal round.
+`Scene` is its own authorless role. Request assembly must not turn it into a provider `system`, `user` or `assistant` message; scene text reaches the model through the scene-context path of prompt rendering.
 
-Launch snapshots stay frozen for the conversation lifetime. Current participant
-policy and settings are explicit mutable state; this contract does not derive
-live values from cross-conversation sources.
+## Launching a conversation
 
-InferenceOutcome carries optional provider_response_id independently of the
-HTTP provider_request_id. OpenAI buffered/SSE adapters populate it for billing
-lookups; it is not an internal attempt or candidate identity. Durable companion
-dispatch responses retain it; conversation/creation/memory checkpoints do not
-yet persist this additional field.
+1. The application's launch planner resolves every selected source, builds the snapshot documents (`build_snapshot_draft` over the versioned `*SnapshotBodyV1` types) and the `CreateConversationPlan`, including the initial timeline.
+2. The initial timeline is a bounded, versioned list of `InitialMessageDraft`s: the selected scene and, for direct chats, the starter messages. Each becomes an ordinary immutable message revision with a stable id and an `InitialMessageOrigin` naming the protected scene or starter snapshot it came from.
+3. The planner packs the plan and exactly one `SnapshotArtifactDraft` per distinct snapshot reference into a `PreparedConversationLaunch`. It walks both the launch settings and the initial-message origins (`conversation_launch_snapshot_references`) and rejects the bundle if plan and drafts do not describe the same set.
+4. `ConversationCreator::create` consumes the bundle in one adapter transaction: it stages the artifacts, revalidates the plan and inserts the aggregate. There is no separate pre-verification step that could race with staging.
 
-Provider-backed group speaker selection has a separate immutable checkpoint
-contract from the initial generation dispatch. Its request binding covers the
-conversation, turn, attempt, job, resolved profile, prompt context and required
-tool request. Admission returns the usage-event identity for the actual provider
-call; settlement stores only the validated final speaker decision. A pending
-record blocks redispatch, while a settled record can replay the decision without
-retaining a second copy of the provider response.
-A group conversation can change its speaker-selection method after launch, as
-legacy did per session: `CurrentConversationSettingsPatch.speaker_selection`
-sets it or returns it to the method the group had at launch (it cannot be
-cleared, and setting it on a direct conversation is rejected), and
-`effective_speaker_selection` resolves the method the next turn uses. Until
-conversations follow their group live, the fallback is the launch-time group
-method, not the group's current one. The method is read when the turn's job
-runs, so switching to director mode while a turn without a chosen speaker is
-queued fails that turn as speaker-unavailable. When a conversation switched to
-LLM selection has no launch speaker-model snapshot, the application resolves
-the model live; a speaker-model snapshot is simply unused while the method is
-not LLM. Direct conversations can store optional `CompanionClockSettings`
-through the existing settings patch: time awareness defaults off, and the
-override is live, frozen or ticking. Clearing or resetting restores the live,
-disabled default without changing other settings. Effective time uses the
-stored anchor and nonnegative elapsed real time; invalid negative anchors are
-rejected. This is session-owned data, not a character launch snapshot. The
-database stamps new messages of companion direct chats with this effective time,
-and the application reads it for prompt time values, history timestamps, memory
-lines, the memory cycle's time awareness and temporal-range retrieval. Legacy
-imports of the `timeAwarenessEnabled` and `timeOverride` preferences are still
-missing.
-The heuristic's recency distance counts every visible message after a
-participant's last line, excluding the user message the send is answering,
-because legacy numbered every stored group message as a turn, scored
-`current_turn - last_spoke_turn` and built that context before it saved the new
-user message (`group_chat_manager/mod.rs` 6430-6443); an explicit speaker
-missing from the cast is an error, never a panic. Round robin continues after
-the last speaker when it is still selectable and restarts at the first
-selectable member otherwise (`selection.rs` 449-467).
-A director adds a user message without a reply through
-`ConversationRepository::append_user_message` (legacy
-`group_chat_add_user_message`) and then continues with a forced speaker.
-Adding a character to an existing group conversation (legacy
-`group_session_add_character`) is not implemented yet: it needs a member
-launch snapshot and participant insert behind a new command, deferred to the
-command-surface phase.
-An LLM group launch may retain a dedicated speaker-selection model snapshot.
-The optional field is backward-compatible for existing snapshot documents and
-is valid only with the LLM policy. Its protected model artifact freezes the
-model and provider-account revisions independently from the responding member's
-generation model.
+`PreparedConversationLaunch` is neither `Clone` nor serializable. Only one owner holds the protected drafts, so staging and cleanup are unambiguous and the bytes cannot leak through serialization. An origin row proves which snapshot was selected, not that the text came from it, which is why only the planner builds the timeline from the same validated scene and starter graph used to create the artifacts. IPC callers never construct initial timelines, and the creator only persists and revalidates.
 
-`CurrentConversationSettings.model_settings` (`lettuce_models::ModelSettingsLayer`:
-chat parameters, llama.cpp and stable-diffusion settings) holds the model
-settings a conversation overrides, the legacy session `advanced_model_settings`.
-Legacy resolved every field as session, then model, then app; an unset field
-defers to the next layer. It is patched with `CurrentConversationSettingsPatch
-.model_settings`, stored in `conversation_settings.model_settings_json` (NULL
-when empty) and travels with the conversation history in backups. Runtime
-resolution wiring is a later slice.
+Snapshot documents are structural copies of authored values: media is an `AssetId` link, and secrets, provider auth, endpoints and native paths never enter them (`SnapshotProviderDescriptorV1` is the non-secret half of a provider account). Launch documents carry a format version. Dynamic memory snapshots may carry the exact retrieval and mutation policy used by generation; the field is optional so older documents stay readable, new dynamic launches fill it and manual or disabled modes reject it. An LLM-selected group may carry a dedicated speaker-selection model snapshot, valid only with the LLM method, which freezes that model and its provider account independently of the members' models.
 
-`CurrentConversationSettings.background` (`ConversationBackground`) is the
-background a conversation sets for itself: `Image { asset_id }` or `Hidden`;
-`None` follows the selected scene, then the character (direct) or the group
-(group), like legacy. It is patched with `CurrentConversationSettingsPatch
-.background`, stored in `conversation_settings.background_asset_id` /
-`background_hidden` (the asset must be an image; deleting it is restricted) and
-travels in backups and sync with its media.
+## Artifacts
+
+Launch snapshots and provider replay payloads are stored as immutable artifacts. Conversation rows hold only references: `ProtectedSnapshotRef` (source, source revision, artifact id, digest, schema version, size) and `ReplayArtifactRef` (id, digest, schema, codec, retention, size). No provider payload bytes appear in rows or public DTOs.
+
+The bytes travel as `ProtectedArtifactBytes`: bounded (128 MiB), redacted in `Debug`, not serializable and zeroized on drop. Three separate capabilities reach them:
+
+- `ConversationArtifactStore`, reachable from the full repository, puts snapshot and replay payloads immutably by identity and digest (the same payload deduplicates, a different one conflicts) and offers verification and orphan cleanup. It is used for launch, replay finalization and retention work.
+- `ProviderReplayArtifactPort` lets a trusted provider adapter stage, verify and materialize exact provider-native replay bytes, for example signed reasoning that must be sent back verbatim.
+- `ConversationArtifactTransferPort` streams chunks into a `TrustedArtifactSink` for encrypted backup and sync. It is deliberately not reachable through `ConversationRepository::artifact_store`, and backup exports reuse conversation-retained references instead of creating a second retention identity.
+
+Ordinary repositories have no artifact read-back, and IPC never carries raw artifact bytes. `ConversationSnapshotMaterializer` decodes one launch snapshot through the conversation's own reference and never resolves live source rows.
+
+## Mutations
+
+Every mutation is a command carrying the expected revision and an `OperationToken` (idempotency key plus request digest). `ConversationMutation` enumerates them: send, continue, regenerate, retry, cancel, choose candidate, edit, flags, fork, select branch, tombstone, archive, restore, rename, participant policy and settings.
+
+A repository returns `MutationCommit<T>`: the value, the `OperationRecord` and the outbox records, all written in one transaction. Replaying the same operation returns the original operation and outbox records with the value rehydrated from current state; the same key with a different request conflicts. Reads return plain values and create no operation or outbox record. Mutations other than restore require an active conversation, and the begin methods require that no non-terminal turn exists, so a conversation has at most one turn in flight.
+
+Some command details:
+
+- `ForkBranch` forks at a message or, without one, at the source head; forking a headless branch is a conflict.
+- `TombstoneMessage` takes a `DescendantPolicy`: `Preserve`, `Tombstone` or `Fork`. Tombstoning descendants leaves the branch head where it is, because a tombstone is a flag and the timeline still renders the entries. The policy is branch-local; cross-branch descendants belong to `Fork` or branch archival.
+- `ArchiveConversation` is metadata only; an in-flight generation keeps running.
+- `append_user_message` adds a user message without starting a reply. A group director uses it and then continues with a forced speaker.
+
+Outbox events (`ConversationCreated`, `MessageCommitted`, `MessageRevised`, `MessageTombstoned` and the turn events) carry typed ids, stages and counters, plus `AssetReferenceDelta`s that tell the media crate which assets became active, historical or released. Terminal turn events carry the attempt, usage, message and candidate references and bounded memory revision references, so consumers can be idempotent by turn id without reading conversation internals.
+
+## Generation turns
+
+A `GenerationTurn` is the durable record of one reply. It stores the operation (`Send`, `Continue`, `Regenerate`), the input (the new user message, the existing head or an existing candidate), the target (a new assistant message with its parent, or a new candidate on an existing message), guidance, the requested model override, a forced speaker, and after preparation the resolved model, the selected speaker and the prompt, lorebook and memory attributions. The target belongs to the turn so retry and recovery can reconstruct the exact message and candidate identity without the original command.
+
+The turn state machine:
+
+```
+Created → Preparing → [SelectingSpeaker] → ContextPrepared → Running → Finalizing → Succeeded
+                                                                              ↘ Failed | Cancelled | Interrupted → Recovering
+any live state → CancellationRequested → Finalizing | Cancelled | Failed | Interrupted
+```
+
+A retry is a new turn linked by `retry_of_turn_id` to the terminal turn it replaces.
+
+Each turn has one or more `GenerationAttempt`s, with their own states, candidates, usage event and failure code. An attempt owns its scheduler key, `attempt_job_idempotency_key(turn, attempt)`, so retries and recovery children never coalesce with a parent's job. Attaching a job is its own CAS (`AttachAttemptJob`). Attachment is repository-wide: an attempt is attached once, and a job id belongs to at most one attempt across all conversations, reported as `JobAlreadyAttached` or `JobInUse`. The database enforces the second rule with a partial unique index on `generation_attempts(job_id)`.
+
+### One turn, step by step
+
+1. Begin. `begin_send`, `begin_continue`, `begin_regenerate` or `begin_retry` creates the turn and its first attempt (and for a send, the user message) and returns `BeginGeneration`.
+2. Job. The application starts a job with the attempt's key and attaches it.
+3. Speaker (groups only). A forced speaker, an `@mention`, a director target or the original author of a regenerated reply is used directly. Heuristic and round-robin selection are computed by `select_group_speaker`. LLM selection goes through the speaker inference checkpoint. `resolve_group_speaker` stores the decision.
+4. Prepare. `PrepareGeneration` binds the resolved model and the context attributions to the turn, checks the attached attempt and job and their revisions, and advances to `ContextPrepared` atomically. Replaying the same preparation is idempotent; a different one conflicts. The database checks the provenance of the attached model artifact.
+5. Dispatch. The first provider call goes through the initial inference checkpoint (below). Stage checkpoints advance the attempt from created to preparing to running in the same transaction as the turn stage, so the stored attempt state matches what tool workflows read.
+6. Tools. If the reply proposes tool calls, they are admitted as `ToolExecution`s and continued by the application.
+7. Finalize. `finalize_generation` takes the candidate drafts and usage and writes the assistant message or new candidate, the revision, the outbox events and the terminal state in one transaction. `fail_generation` and `interrupt_generation` record the other endings; `recover_generation` starts a child attempt after an interruption.
+
+Preparation stores provenance; the initial dispatch checkpoint stores the full resolved provider-neutral request. Between them a turn can be replayed or recovered after the model or the context sources have changed.
+
+### Checkpoints and streaming
+
+Durable progress uses `GenerationCheckpointEnvelope`: turn, attempt, job, correlation id, a sequence that starts at one and increases by one, and an event (stage, progress count, candidate ready, usage recorded, completed, failed, cancelled). Checkpoints are operation-bound, and `latest_checkpoint_sequence` lets a producer continue after the events already stored, including after a restart.
+
+Streaming text is a different channel. `GenerationStreamEventEnvelope` carries text and reasoning deltas, is not serializable and must never reach a repository or the job port. Durable records carry stages, counters and ids, never prompt or reply text.
+
+### Cancellation
+
+Cancellation has two steps. `request_cancellation` commits `CancellationRequested`; the application asks the job runtime to stop; `settle_cancellation` commits the terminal `Cancelled` state together with its usage. A turn stopped after its reply had streamed visible text or a whole image instead finalizes that partial reply from `CancellationRequested`, as a new assistant message or a new candidate for a regeneration, while its job still ends `Cancelled`.
+
+### Initial inference checkpoint
+
+`InitialInferenceBinding` fingerprints the prepared request with BLAKE3 over the conversation, turn, attempt, operation, resolved profile, context, job, media grants and tools. The stream sink is left out, so a reattached caller produces the same binding and replays the same dispatch.
+
+`InitialInferenceRepository` admits one pending dispatch per attempt and settles it once, with either the exact `InferenceOutcome` or a typed `PortError`. It returns the stored request by exact binding or by attempt ownership for recovery; the stored request omits the stream sink, and reads check its fingerprint again before use. A changed request conflicts, a pending record is reported as pending instead of being dispatched again, and a settled response keeps its conversation-retained replay references consistent. Interpreting the response and admitting tools are separate steps.
+
+### Speaker inference checkpoint
+
+LLM speaker selection has its own checkpoint. The binding covers the conversation, turn, attempt, job, resolved profile, prompt context and the required tool request. Admission returns the usage event id for the actual provider call; settlement stores only the validated speaker decision. A pending record blocks a second dispatch, and a settled record replays the decision without keeping a second copy of the provider response.
+
+## Group speaker selection
+
+`select_group_speaker` handles the deterministic methods. A forced speaker or a mention source wins if it is an eligible participant; an unknown or ineligible explicit speaker is an error, never a panic. `Director` and `DirectorAction` then require an explicit speaker, and `Llm` requires an external decision.
+
+- Heuristic scores every eligible, unmuted participant: a base score, a bonus for speaking less than an even share and a penalty for speaking far more, then a recency adjustment (never spoke: bonus; spoke last or one message ago: penalty; three or more ago: small bonus). Recency counts the visible messages after the participant's last line, excluding the user message a send is answering. The highest score wins, first on ties.
+- Round robin continues after the prior speaker when that speaker is still selectable and otherwise starts at the first selectable member.
+
+`mentioned_participant` parses `@"Full Name"` first (exact, case-insensitive) and then `@Word` (exact, then prefix, case-insensitive, trailing punctuation trimmed). Candidates are in priority order, and within each step the first match wins.
+
+The method is read when the turn's job runs, not when it is queued. Switching to director mode while a turn without a chosen speaker is queued fails that turn as speaker-unavailable. When a conversation switched to LLM selection has no speaker-model snapshot, the application resolves the model live; a speaker-model snapshot is unused while the method is not LLM.
+
+## Tools
+
+The crate owns the provider-neutral side of tool calling: bounded `ToolDefinition`s, a `ToolRequest` with a `ToolChoice` (auto, required or named), `ProposedToolCall`s from a provider, the transcript values `TranscriptToolCall` and `TranscriptToolResult`, and the attempt-scoped `ToolExecution` lifecycle. Handlers and provider JSON live elsewhere: the remote OpenAI-envelope, Anthropic, Gemini and Ollama adapters have family-specific codecs for declarations, transcripts, buffered responses and streams, and application code runs the handlers.
+
+A proposal is persisted before anything executes. `ConversationManager::request_tool_executions` validates the call set against the exact declared request, assigns stable wire ordinals and handler versions, and stores the whole set atomically. Undeclared tools, a named-choice mismatch, duplicate provider call ids, over-limit sets and an empty set under a required choice all fail before storage. A later continuation round appends after the existing executions with an expected next ordinal, so a recovery worker cannot interleave a second copy of the round.
+
+The execution state machine is `Requested → Validated → Running → Succeeded | Failed | Cancelled | Interrupted`, with `Rejected` and `Cancelled` also reachable before running. Terminal states cannot regress. A handler round moves through `transition_tool_execution_batch`, a typed batch CAS that requires one conversation, turn and attempt owner and unique execution ids; a stale revision, invalid transition or storage failure rolls back every execution, so nobody sees a partly running or partly settled round.
+
+The provider's call id is kept apart from the stable `ToolExecutionId`, so providers without native ids do not force invented wire identities. Message parts reference only the execution id. `context_with_settled_tool_round` appends one settled round to a context as assistant calls followed by matching user results, leaving the original untouched if anything is inconsistent. Only memory, creation, companion and lorebook handlers exist; the contract does not imply shell, filesystem, plugin or general chat tools.
+
+## Context and inference contracts
+
+`ports.rs` also defines the values that cross from conversation state to a provider:
+
+- `ProviderNeutralContext`: messages with text, media, tool call and tool result parts, plus prompt, lorebook and memory attributions and a budget report. Validation checks that tool calls sit on assistant messages, results on user messages, and every result matches an earlier call by execution id, name and provider call id.
+- `InferenceRequest`: turn, attempt, operation, a `ResolvedInferenceProfile` (chat profile, tool policy, output policy, safety context), the context, the job used for cancellation, an optional stream sink, media grants, tools and a prompt cache key that lets a local runtime reuse the previous turn's prompt. The tool policy and the presence of tools must agree, and a required policy needs a required or named choice.
+- `InferenceOutcome`: candidates (parts, tool calls, replay reference and any images returned as `GeneratedMedia`, which finalization stores as assets), usage, the normalized and provider-native finish reasons, the HTTP `provider_request_id`, the separate `provider_response_id` (used by OpenAI-compatible adapters for billing lookups; not an attempt or candidate identity) and warnings. Only a single-candidate outcome may carry tool calls.
+- `InferenceUsage` keeps an optional provider-reported cost as `ProviderReportedCost`, a validated finite, non-negative value. JSON round trips keep the f64 precision, an unknown amount stays distinct from zero, and invalid numbers cannot enter the type, so usage records keep their equality.
+- `PromptRuntimeFacts` and `PromptRuntimeValues` feed prompt conditions and pre-resolved runtime strings; `None` means unavailable and the assembler must not invent a replacement. `ContextAssemblyError` variants carry no authored text.
+
+The async ports (`ContextAssembler`, `InferencePort`, `UsagePort` and the others) describe the runtime dependencies of a generation workflow. `lettuce-app` implements the ones it uses and composes the flow itself.
+
+## Time
+
+`CompanionClockSettings` lets a direct conversation set its own clock. Time awareness is off by default, and the override is `Live`, `Frozen { anchor_at }` or `Ticking { anchor_at, set_at }`. `effective_now` returns real time when awareness is off or live, the anchor when frozen, and the anchor plus non-negative elapsed real time when ticking; negative anchors are rejected. Clearing or resetting restores the live, disabled default without touching other settings. This is conversation data, not part of a character snapshot.
+
+The database stamps each new message of a companion direct chat with this effective time. The application reads it for prompt time values, history timestamps, memory lines, the memory cycle's time awareness and temporal-range retrieval.
+
+## Scene tags
+
+`extract_scene_prompt` removes every `<img>…</img>` scene tag from a direct chat reply and returns the cleaned text and the first non-blank prompt. A tag closes at `</img>`, `[continue]` or `[/continue]` in any case; an unclosed tag drops the rest of the text.
