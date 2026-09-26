@@ -1463,6 +1463,7 @@ where
                     && item.message.id == shape.source_message_id)
             }),
             settings.context_enrichment_enabled,
+            shape.group,
         );
         if query.is_empty() {
             return Ok(Vec::new());
@@ -1747,9 +1748,14 @@ impl ConversationGenerationInputError {
     }
 }
 
+/// Legacy `build_enriched_query`: the latest user message, or with
+/// enrichment the last two dialogue messages joined by a newline, empty ones
+/// included. A direct chat's dialogue also counts its visible system
+/// messages; a group chat's only user and assistant messages.
 fn memory_query<'a>(
     timeline: impl DoubleEndedIterator<Item = &'a lettuce_conversations::TimelineItem>,
     enriched: bool,
+    group: bool,
 ) -> String {
     let mut candidates = timeline.rev().filter(|item| {
         !matches!(
@@ -1765,14 +1771,12 @@ fn memory_query<'a>(
             .unwrap_or_default();
     }
     let mut messages = candidates
-        .filter(|item| {
-            matches!(
-                item.message.role,
-                MessageRole::User | MessageRole::Assistant
-            )
+        .filter(|item| match item.message.role {
+            MessageRole::User | MessageRole::Assistant => true,
+            MessageRole::System => !group,
+            MessageRole::Scene => false,
         })
         .map(timeline_item_text)
-        .filter(|text| !text.is_empty())
         .take(2)
         .collect::<Vec<_>>();
     messages.reverse();
@@ -2933,17 +2937,39 @@ mod tests {
             hidden,
         ];
         assert_eq!(
-            memory_query(timeline.iter(), false),
+            memory_query(timeline.iter(), false, false),
             "Where is the lighthouse?"
         );
         assert_eq!(
-            memory_query(timeline.iter(), true),
+            memory_query(timeline.iter(), true, false),
             "Where is the lighthouse?\nNorth of the harbor."
         );
         let image_only = item(4, MessageRole::User, MessageVisibility::Visible, false);
         assert_eq!(
-            memory_query(timeline.iter().chain([&image_only]), false),
+            memory_query(timeline.iter().chain([&image_only]), false, false),
             ""
+        );
+    }
+
+    #[test]
+    fn enriched_query_keeps_visible_system_and_empty_messages_like_legacy() {
+        let timeline = [
+            text_item(1, MessageRole::User, "Where is the lighthouse?"),
+            text_item(2, MessageRole::System, "A storm rolls in."),
+            text_item(3, MessageRole::Scene, "The harbor at dusk."),
+        ];
+        assert_eq!(
+            memory_query(timeline.iter(), true, false),
+            "Where is the lighthouse?\nA storm rolls in."
+        );
+        assert_eq!(
+            memory_query(timeline.iter(), true, true),
+            "Where is the lighthouse?"
+        );
+        let image_only = item(4, MessageRole::User, MessageVisibility::Visible, false);
+        assert_eq!(
+            memory_query(timeline.iter().chain([&image_only]), true, false),
+            "A storm rolls in.\n"
         );
     }
 
