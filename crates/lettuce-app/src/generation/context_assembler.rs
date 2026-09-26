@@ -131,7 +131,7 @@ where
         .map_err(unavailable)?;
         snapshot.persona = persona.as_ref().map(crate::launch::documents::persona_body);
         snapshot.prompt = match &live_group {
-            None => self.live_direct_prompt(&aggregate.conversation, &snapshot)?,
+            None => self.live_direct_prompt(&aggregate.conversation)?,
             Some(group) => {
                 self.live_group_prompt(&aggregate.conversation, group, speaker_character)?
             }
@@ -603,20 +603,15 @@ where
 {
     /// The system prompt of a direct chat, resolved from live sources on
     /// every turn; the stored launch and override snapshots only record which
-    /// prompt the chat selected. A companion chat follows
-    /// `policy::companion_prompt` and ignores the selection. Any other direct
-    /// chat follows `policy::direct_prompt`: the chat's selection, then the
-    /// live character's direct prompt, then the app default chain; a prompt
-    /// the chat disabled yields none. The selection is a current override,
-    /// else the launch prompt when the launch pinned one: a starter's explicit
-    /// prompt, or an inherited prompt that is the character's direct prompt in
-    /// the launch character snapshot, so it runs before the bundle's
-    /// characters are replaced with their live records. A launch that fell
-    /// back to the app default chain pinned nothing.
+    /// prompt was selected. A companion chat follows `policy::companion_prompt`
+    /// and ignores the selection. Any other direct chat follows
+    /// `policy::direct_prompt`: the chat's current override, then the current
+    /// prompt of the starter it launched from while that starter exists, then
+    /// the live character's direct prompt, then the app default chain; a
+    /// prompt the chat disabled yields none.
     fn live_direct_prompt(
         &self,
         conversation: &lettuce_conversations::Conversation,
-        snapshot: &SnapshotBundle,
     ) -> Result<Option<PromptSnapshot>, ContextAssemblyError> {
         let ConversationKind::Direct(details) = &conversation.kind else {
             return Ok(None);
@@ -655,21 +650,21 @@ where
                 Some((SettingProvenance::CurrentOverride, prompt)) => {
                     prompt.map(|prompt| prompt.source_id)
                 }
-                _ => match &details.prompt {
-                    SnapshotSelection::Explicit(prompt) => Some(prompt.source_id),
-                    SnapshotSelection::Inherited(prompt)
-                        if snapshot.characters.first().is_some_and(|(_, character)| {
-                            character.direct_prompt_id == Some(prompt.source_id)
-                        }) =>
-                    {
-                        Some(prompt.source_id)
-                    }
-                    SnapshotSelection::Inherited(_) | SnapshotSelection::Disabled => None,
-                },
+                _ => None,
+            };
+            let starter = match &details.starter {
+                SnapshotSelection::Inherited(starter) | SnapshotSelection::Explicit(starter) => {
+                    character
+                        .starters
+                        .iter()
+                        .find(|live| live.id == starter.source_id)
+                        .and_then(|live| live.prompt_id)
+                }
+                SnapshotSelection::Disabled => None,
             };
             crate::launch::policy::direct_prompt(
                 self.sources,
-                selected,
+                selected.into_iter().chain(starter),
                 defaults.direct_prompt_id,
                 app_default,
             )

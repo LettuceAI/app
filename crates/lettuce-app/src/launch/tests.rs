@@ -4189,6 +4189,17 @@ async fn companion_context_renders_defaults_when_state_is_missing() {
     assert!(!text.contains("this chat is episode"));
 }
 
+fn current_settings_revision(
+    database: &Database,
+    conversation_id: lettuce_types::ConversationId,
+) -> Option<Revision> {
+    lettuce_conversations::ConversationReader::get(database, conversation_id)
+        .expect("conversation")
+        .conversation
+        .current_settings
+        .map(|settings| settings.revision)
+}
+
 fn override_conversation_prompt(
     database: &Database,
     conversation_id: lettuce_types::ConversationId,
@@ -4216,7 +4227,10 @@ fn override_conversation_prompt(
             lettuce_conversations::PreparedConversationSettingsUpdate::new(
                 lettuce_conversations::UpdateConversationSettings {
                     conversation_id,
-                    expected_settings_revision: None,
+                    expected_settings_revision: current_settings_revision(
+                        database,
+                        conversation_id,
+                    ),
                     operation: OperationToken {
                         key: IdempotencyKey::new(operation_key).expect("key"),
                         request_digest: ContentHash::parse("cd".repeat(32)).expect("digest"),
@@ -5617,8 +5631,69 @@ impl LiveTurn {
     }
 }
 
+fn reset_conversation_prompt(
+    database: &Database,
+    conversation_id: lettuce_types::ConversationId,
+    operation_key: &str,
+) {
+    database
+        .update_settings(
+            lettuce_conversations::PreparedConversationSettingsUpdate::new(
+                lettuce_conversations::UpdateConversationSettings {
+                    conversation_id,
+                    expected_settings_revision: current_settings_revision(
+                        database,
+                        conversation_id,
+                    ),
+                    operation: OperationToken {
+                        key: IdempotencyKey::new(operation_key).expect("key"),
+                        request_digest: ContentHash::parse("cf".repeat(32)).expect("digest"),
+                    },
+                    patch: lettuce_conversations::CurrentConversationSettingsPatch {
+                        prompt: lettuce_conversations::PatchValue::UseLaunchDefault,
+                        ..lettuce_conversations::CurrentConversationSettingsPatch::default()
+                    },
+                },
+                Vec::new(),
+            )
+            .expect("prepared prompt reset"),
+            TimestampMillis::new(NOW.get() + 6),
+        )
+        .expect("reset conversation prompt");
+}
+
+fn set_starter_prompt(
+    database: &Database,
+    character_id: CharacterId,
+    starter_id: lettuce_types::ConversationStarterId,
+    prompt_id: Option<lettuce_types::PromptDocumentId>,
+) {
+    let details = CharacterRepository::get(database, character_id)
+        .expect("character")
+        .expect("character exists");
+    let starter = details
+        .starters
+        .iter()
+        .find(|starter| starter.id == starter_id)
+        .expect("starter exists");
+    lettuce_characters::StarterRepository::update_starter(
+        database,
+        character_id,
+        details.character.revision,
+        starter_id,
+        lettuce_characters::ConversationStarterDraftUpdate {
+            name: starter.name.clone(),
+            scene_id: starter.scene_id,
+            prompt_id,
+            lorebooks: starter.lorebooks.clone(),
+        },
+        NOW,
+    )
+    .expect("update starter prompt");
+}
+
 #[tokio::test]
-async fn a_direct_turn_reads_its_pinned_prompt_live_and_ignores_a_reassigned_character() {
+async fn a_direct_turn_follows_the_character_prompt_live_and_its_override_wins() {
     let database = database_with_builtins();
     let first = prompt_with_text(&database, "First", PromptPurpose::DirectChat, "First voice");
     let second = prompt_with_text(
@@ -5636,7 +5711,7 @@ async fn a_direct_turn_reads_its_pinned_prompt_live_and_ignores_a_reassigned_cha
     let character_id = seed_character(&database, Vec::new(), Vec::new(), Vec::new(), |defaults| {
         defaults.direct_prompt_id = Some(first);
     });
-    let turn = LiveTurn::start(&database, &request(character_id, "pinned-launch"));
+    let turn = LiveTurn::start(&database, &request(character_id, "live-character-launch"));
 
     let (prompt, text) = turn.prompt(&database).await;
     assert_eq!(prompt, Some((first, Revision::INITIAL)));
@@ -5650,19 +5725,20 @@ async fn a_direct_turn_reads_its_pinned_prompt_live_and_ignores_a_reassigned_cha
     );
     assert!(
         text.contains("First voice, edited"),
-        "the pinned prompt's edit is read live"
+        "the character prompt's edit is read live"
     );
 
     set_direct_prompt(&database, character_id, Some(second));
     let (prompt, text) = turn.prompt(&database).await;
     assert_eq!(
         prompt.map(|(id, _)| id),
-        Some(first),
-        "a chat keeps the character prompt it launched with"
+        Some(second),
+        "a chat follows the prompt the character points at now"
     );
-    assert!(!text.contains("Second voice"));
+    assert!(text.contains("Second voice"));
+    assert!(!text.contains("First voice"));
 
-    override_conversation_prompt(&database, turn.conversation_id, selected, "pinned-select");
+    override_conversation_prompt(&database, turn.conversation_id, selected, "live-select");
     let (prompt, text) = turn.prompt(&database).await;
     assert_eq!(prompt.map(|(id, _)| id), Some(selected));
     assert!(text.contains("Chosen voice"));
@@ -5672,6 +5748,20 @@ async fn a_direct_turn_reads_its_pinned_prompt_live_and_ignores_a_reassigned_cha
         text.contains("Chosen voice, edited"),
         "the chat's selected prompt is read live"
     );
+    set_direct_prompt(&database, character_id, Some(first));
+    assert_eq!(
+        turn.prompt(&database).await.0.map(|(id, _)| id),
+        Some(selected),
+        "the chat's override wins over the character's prompt"
+    );
+    reset_conversation_prompt(&database, turn.conversation_id, "live-reset");
+    assert_eq!(
+        turn.prompt(&database).await.0.map(|(id, _)| id),
+        Some(first),
+        "resetting the override returns to the live chain"
+    );
+    set_direct_prompt(&database, character_id, Some(second));
+    override_conversation_prompt(&database, turn.conversation_id, selected, "live-reselect");
     let revision = PromptRepository::get(&database, selected)
         .expect("read selected")
         .expect("selected exists")
@@ -5687,7 +5777,7 @@ async fn a_direct_turn_reads_its_pinned_prompt_live_and_ignores_a_reassigned_cha
 }
 
 #[tokio::test]
-async fn a_direct_turn_without_a_pinned_prompt_follows_the_character_and_app_default_live() {
+async fn a_direct_turn_on_the_app_default_follows_the_character_and_app_default_live() {
     let database = database_with_builtins();
     let bundled = BuiltInPromptService::new(&database)
         .expect("prompt service")
@@ -5702,7 +5792,7 @@ async fn a_direct_turn_without_a_pinned_prompt_follows_the_character_and_app_def
     );
     let app_default = prompt_with_text(&database, "App", PromptPurpose::DirectChat, "App voice");
     let character_id = plain_character(&database);
-    let turn = LiveTurn::start(&database, &request(character_id, "unpinned-launch"));
+    let turn = LiveTurn::start(&database, &request(character_id, "app-default-launch"));
     let (prompt, _) = turn.prompt(&database).await;
     assert_eq!(prompt.map(|(id, _)| id), Some(bundled));
 
@@ -5785,6 +5875,68 @@ async fn a_direct_turn_follows_a_starter_prompt_live_and_honors_selection_states
     assert!(
         text.contains("Starter voice, edited"),
         "the starter's prompt is read live"
+    );
+    let second_starter_prompt = prompt_with_text(
+        &database,
+        "Second starter",
+        PromptPurpose::DirectChat,
+        "Second starter voice",
+    );
+    set_starter_prompt(
+        &database,
+        character_id,
+        starter_id,
+        Some(second_starter_prompt),
+    );
+    let (prompt, text) = started.prompt(&database).await;
+    assert_eq!(
+        prompt.map(|(id, _)| id),
+        Some(second_starter_prompt),
+        "a chat follows the prompt its starter points at now"
+    );
+    assert!(text.contains("Second starter voice"));
+    override_conversation_prompt(
+        &database,
+        started.conversation_id,
+        character_prompt,
+        "starter-override",
+    );
+    assert_eq!(
+        started.prompt(&database).await.0.map(|(id, _)| id),
+        Some(character_prompt),
+        "the chat's override wins over the starter's prompt"
+    );
+    reset_conversation_prompt(&database, started.conversation_id, "starter-reset");
+    set_direct_prompt(&database, character_id, Some(character_prompt));
+    set_starter_prompt(&database, character_id, starter_id, None);
+    assert_eq!(
+        started.prompt(&database).await.0.map(|(id, _)| id),
+        Some(character_prompt),
+        "a starter without a prompt falls through to the character's prompt"
+    );
+    set_starter_prompt(&database, character_id, starter_id, Some(starter_prompt));
+    assert_eq!(
+        started.prompt(&database).await.0.map(|(id, _)| id),
+        Some(starter_prompt)
+    );
+    let revision = CharacterRepository::get(&database, character_id)
+        .expect("character")
+        .expect("character exists")
+        .character
+        .revision;
+    lettuce_characters::StarterRepository::remove_starter(
+        &database,
+        character_id,
+        revision,
+        starter_id,
+        None,
+        NOW,
+    )
+    .expect("remove starter");
+    assert_eq!(
+        started.prompt(&database).await.0.map(|(id, _)| id),
+        Some(character_prompt),
+        "a removed starter falls through to the character's prompt"
     );
 
     let disabled = LiveTurn::start(&database, &request(character_id, "disabled-launch"));
@@ -6701,6 +6853,18 @@ fn the_direct_chain_ends_in_the_app_default_then_the_bundled_prompt() {
         Some(app_default)
     );
     assert_eq!(chain(None, Some(companion)), Some(built_in));
+    assert_eq!(
+        policy::direct_prompt(
+            &database,
+            [lettuce_types::PromptDocumentId::new(), group],
+            Some(app_default),
+            None,
+        )
+        .expect("direct chain")
+        .map(|document| document.id),
+        Some(group),
+        "an unusable override falls through to the starter's prompt"
+    );
     PromptRepository::archive(&database, app_default, Revision::INITIAL, NOW)
         .expect("archive app default");
     assert_eq!(resolve(Some(app_default)), Some(built_in));

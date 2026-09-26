@@ -115,13 +115,13 @@ pub(crate) const DIRECT_SELECTION_PURPOSES: [PromptPurpose; 4] = [
     PromptPurpose::GroupChatRoleplay,
 ];
 
-/// The direct-chat chain outside companion mode: the chat's selected prompt
-/// when it is an active document of a chat purpose
+/// The direct-chat chain outside companion mode: each selected prompt in
+/// order when it is an active document of a chat purpose
 /// (`DIRECT_SELECTION_PURPOSES`), then the character's direct prompt when it
 /// is an active direct-chat document, then `direct_app_default_prompt`.
 pub(crate) fn direct_prompt<S: PromptRepository + ?Sized>(
     sources: &S,
-    selected: Option<PromptDocumentId>,
+    selected: impl IntoIterator<Item = PromptDocumentId>,
     character: Option<PromptDocumentId>,
     app_default: Option<PromptDocumentId>,
 ) -> Result<Option<PromptDocument>, PromptRepositoryError> {

@@ -462,8 +462,8 @@ where
     /// consulted a companion session's prompt template; the value stays only
     /// in the legacy source. A session whose own mode alone was companion
     /// runs as a direct chat and keeps its override. Any other session whose
-    /// template was empty or did not import pins no launch prompt, so it
-    /// follows the live character like legacy.
+    /// template was empty or did not import has no override, so it follows the
+    /// live character like legacy.
     fn map_session(
         &self,
         session: &LegacyBackupDirectSession,
@@ -617,14 +617,6 @@ where
             },
         )?;
         snapshots.extend(settings_snapshots);
-        let mut kind = plan.kind.clone();
-        if !companion_session
-            && settings
-                .as_ref()
-                .is_none_or(|settings| settings.prompt.is_none())
-        {
-            unpin_launch_prompt(&mut kind, &mut snapshots);
-        }
         let model = selected_model(&details.model);
         let messages = rows
             .iter()
@@ -673,7 +665,7 @@ where
             LegacyConversationSource {
                 source_id: &session.source_id,
                 title: plan.title.clone(),
-                kind,
+                kind: plan.kind.clone(),
                 participants: plan.participants.clone(),
                 initial_timeline: &plan.initial_timeline.entries,
                 snapshots,
@@ -693,23 +685,6 @@ where
         )
         .map(|record| (record, companion))
     }
-}
-
-/// Drops the launch prompt of an imported direct session that carries no
-/// session template of its own, so its turns follow the live character like
-/// legacy's null `session.prompt_template_id` instead of reading the launch
-/// prompt as a pin; the launch prompt's snapshot draft goes with it.
-fn unpin_launch_prompt(kind: &mut ConversationKind, snapshots: &mut Vec<SnapshotArtifactDraft>) {
-    let ConversationKind::Direct(details) = kind else {
-        return;
-    };
-    if let SnapshotSelection::Inherited(prompt) | SnapshotSelection::Explicit(prompt) =
-        &details.prompt
-    {
-        let artifact_id = prompt.snapshot_ref.artifact_id;
-        snapshots.retain(|draft| draft.artifact_id != artifact_id);
-    }
-    details.prompt = SnapshotSelection::Disabled;
 }
 
 /// A companion session's state before its continuity episode is placed in the
@@ -1116,7 +1091,8 @@ fn legacy_companion_state(
 /// A legacy session's author note, prompt and lorebook overrides and group
 /// speaker selection as current conversation settings, snapshotting the
 /// imported prompt and lorebooks they name. A prompt that is missing, archived
-/// or of another purpose keeps the launch prompt, like legacy's fallback.
+/// or of another purpose imports no override, so the chat follows its live
+/// prompt chain like legacy's fallback.
 pub(crate) fn session_settings<S: DirectLaunchSources>(
     sources: &S,
     source_id: &str,
