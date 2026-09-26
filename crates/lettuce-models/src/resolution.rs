@@ -733,13 +733,23 @@ fn validate_configured_capabilities(
         || parameters.reasoning_effort.is_some()
         || parameters.reasoning_budget_tokens.is_some()
     {
-        require_capability(RequiredCapability::Reasoning, capabilities.reasoning)?;
+        reject_unsupported(RequiredCapability::Reasoning, capabilities.reasoning)?;
     }
     if matches!(
         parameters.prompt_caching,
         Some(PromptCaching::Enabled { .. })
     ) {
-        require_capability(RequiredCapability::PromptCache, capabilities.prompt_cache)?;
+        reject_unsupported(RequiredCapability::PromptCache, capabilities.prompt_cache)?;
+    }
+    Ok(())
+}
+
+fn reject_unsupported(
+    capability: RequiredCapability,
+    status: CapabilityStatus,
+) -> Result<(), ChatProfileResolutionError> {
+    if status == CapabilityStatus::Unsupported {
+        require_capability(capability, status)?;
     }
     Ok(())
 }
@@ -1220,10 +1230,23 @@ mod tests {
     }
 
     #[test]
-    fn authored_reasoning_and_prompt_cache_require_supported_capabilities() {
+    fn authored_reasoning_and_prompt_cache_are_rejected_only_when_unsupported() {
         let (expected, mut profile, account) = fixture();
         profile.config.chat_parameters.reasoning_mode = Some(ReasoningMode::Enabled);
+        profile.config.chat_parameters.reasoning_effort = Some(ReasoningEffort::High);
         profile.config.capabilities.reasoning = CapabilityStatus::Unknown;
+        assert!(
+            resolve_chat_profile(
+                &expected,
+                &profile,
+                &account,
+                &ChatParameterResolutionInput::default(),
+                &ChatRequirements::default()
+            )
+            .is_ok()
+        );
+
+        profile.config.capabilities.reasoning = CapabilityStatus::Unsupported;
         assert!(matches!(
             resolve_chat_profile(
                 &expected,
@@ -1232,10 +1255,11 @@ mod tests {
                 &ChatParameterResolutionInput::default(),
                 &ChatRequirements::default()
             ),
-            Err(ChatProfileResolutionError::CapabilityUnknown {
+            Err(ChatProfileResolutionError::CapabilityUnsupported {
                 capability: RequiredCapability::Reasoning
             })
         ));
+        profile.config.chat_parameters.reasoning_effort = None;
 
         profile.config.chat_parameters.reasoning_mode = None;
         profile.config.chat_parameters.prompt_caching = Some(PromptCaching::Enabled {
