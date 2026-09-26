@@ -1,7 +1,7 @@
 use std::{
     fmt,
     fs::File,
-    io::{self, Read},
+    io::{self, Read, Seek, SeekFrom},
     sync::{Arc, Weak},
 };
 
@@ -40,6 +40,12 @@ pub struct ReadHandle {
 impl Read for ReadHandle {
     fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
         self.file.read(buffer)
+    }
+}
+
+impl Seek for ReadHandle {
+    fn seek(&mut self, position: SeekFrom) -> io::Result<u64> {
+        self.file.seek(position)
     }
 }
 
