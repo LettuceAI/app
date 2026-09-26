@@ -192,11 +192,12 @@ fn prior_summary(
     Ok((prior_id, summary))
 }
 
-/// Reverts, in a shared companion pool, only what the rewound conversation's
-/// invalid run and its later runs did to the pool, latest first, leaving the
-/// other conversations' changes in place. Runs an earlier rewind already
-/// reverted are skipped.
-pub(crate) fn undo_pool_runs(
+/// Reverts only what the rewound conversation's invalid run and its later
+/// runs' memory tools did, latest first, like legacy's rewind replay: decay,
+/// retrieval access, user edits and, in a shared companion pool, the other
+/// conversations' changes stay. Runs an earlier rewind already reverted are
+/// skipped.
+pub(crate) fn undo_runs(
     transaction: &Transaction<'_>,
     current: &lettuce_memory::MemorySpaceSnapshot,
     conversation_id: lettuce_types::ConversationId,
@@ -346,13 +347,13 @@ impl DynamicMemorySuffixRewindRepository for Database {
                 if run.conversation_id != rewind.conversation_id || run.space_id != space_id {
                     return Err(DynamicMemorySuffixRewindError::Conflict);
                 }
+                let memory = undo_runs(
+                    &transaction,
+                    &current,
+                    rewind.conversation_id,
+                    invalid_run_id,
+                )?;
                 if shared_pool {
-                    let memory = undo_pool_runs(
-                        &transaction,
-                        &current,
-                        rewind.conversation_id,
-                        invalid_run_id,
-                    )?;
                     (
                         memory,
                         None,
@@ -367,15 +368,6 @@ impl DynamicMemorySuffixRewindRepository for Database {
                         invalid_run_id,
                         run.summary_window.start,
                     )?;
-                    let memory = memory_adapter::compare_and_apply_in(
-                        &transaction,
-                        &MemoryChangeSet {
-                            space_id,
-                            expected_revision: rewind.expected_memory_revision,
-                            items: run.starting_memory.items,
-                        },
-                    )
-                    .map_err(memory_error)?;
                     memory_adapter::replace_summary_in(&transaction, space_id, summary.as_ref())
                         .map_err(memory_error)?;
                     (memory, prior_run_id, summary)

@@ -768,11 +768,12 @@ a run with no succeeded attempt, the owner's cursor stays at its latest
 succeeded run (or that run's window start), so a retry reprocesses the window
 (legacy tool-error branch in `flow.rs` saved the summary while
 `event_advances_cursor` ignored the error event). A suffix rewind
-in a pool keeps the pool's summary and reverts, latest first, only the tool
-results of the conversation's invalid run and its later runs
-(`dynamic_memory_rewind_adapter::undo_pool_runs`, legacy
-`replay_memory_state_after_rewind` over the effective owner's memories), so the
-other members' memories stay. A hard-deleted memory it restores gets a fresh
+reverts, latest first, only the tool results of the conversation's invalid
+run and its later runs (`dynamic_memory_rewind_adapter::undo_runs`, legacy
+`replay_memory_state_after_rewind` over the effective owner's memories), so
+decay, retrieval access and user edits stay, and in a pool the other members'
+memories stay; a pool keeps its summary while a conversation's own space
+takes the prior run's summary. A hard-deleted memory it restores gets a fresh
 short id when another memory has taken its old one since; it still records the rewind and invalidates the
 conversation's effects. Rewinds, their prior-summary search and the run
 cursor only look at runs of the space the rewind touches, so a conversation's

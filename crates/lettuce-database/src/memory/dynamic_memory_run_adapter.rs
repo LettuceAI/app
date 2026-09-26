@@ -2741,11 +2741,12 @@ mod tests {
                 TimestampMillis::new(15),
             )
             .expect("second processing");
+        let edited_item = memory_item(MemoryId::new(), "edited outside the tools", 16);
         let after_effect = database
             .compare_and_apply(MemoryChangeSet {
                 space_id,
                 expected_revision: before_second.revision,
-                items: vec![memory_item(MemoryId::new(), "removed suffix memory", 16)],
+                items: vec![edited_item.clone()],
             })
             .expect("suffix memory");
         let second_summary = database
@@ -2785,8 +2786,12 @@ mod tests {
                 .expect("receipt lookup"),
             Some(receipt.clone())
         );
-        assert_eq!(receipt.memory.revision, Revision::new(6));
-        assert_eq!(receipt.memory.items, vec![kept_item]);
+        assert_eq!(
+            receipt.memory.revision,
+            second_summary.resulting_memory_revision
+        );
+        assert_eq!(receipt.memory.items, vec![edited_item]);
+        assert_ne!(receipt.memory.items, vec![kept_item]);
         assert_eq!(receipt.summary, Some(first_summary.summary.clone()));
         assert_eq!(
             database.get_summary(space_id).expect("summary"),
@@ -3133,17 +3138,17 @@ mod tests {
                 items: vec![stored.items[0].clone(), other_chat_memory.clone()],
             })
             .expect("other chat memory");
-        let mut connection = database.connection().expect("connection");
-        let transaction = connection.transaction().expect("transaction");
-        let undone = crate::memory::dynamic_memory_rewind_adapter::undo_pool_runs(
-            &transaction,
-            &pooled,
-            conversation_id,
-            run_id,
-        )
-        .expect("pool undo");
-        transaction.commit().expect("commit");
-        assert_eq!(undone.items, vec![other_chat_memory]);
+        let undone = database
+            .rewind_dynamic_memory_suffix(DynamicMemorySuffixRewind {
+                operation_id: OperationId::new(),
+                conversation_id,
+                invalid_run_id: Some(run_id),
+                expected_memory_revision: pooled.revision,
+                invalidated_effect_ids: Vec::new(),
+                at: TimestampMillis::new(21),
+            })
+            .expect("own-space rewind");
+        assert_eq!(undone.memory.items, vec![other_chat_memory]);
     }
 
     #[test]
