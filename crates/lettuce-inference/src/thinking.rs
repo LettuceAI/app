@@ -107,8 +107,8 @@ pub fn split_thinking_tags(text: &str) -> ThinkingSplit {
     split
 }
 
-/// The legacy complete-message normalization: tagged reasoning, then the
-/// explicit reasoning appended unless it repeats it, both trimmed.
+/// The complete-message normalization: tagged reasoning, then the explicit
+/// reasoning appended unless it repeats it, both trimmed.
 #[must_use]
 pub fn normalize_thinking_content(
     content: Option<&str>,
