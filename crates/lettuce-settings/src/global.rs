@@ -33,8 +33,7 @@ pub struct GlobalSettings {
     pub companion_soul_writer: CompanionSoulWriterSettings,
     #[serde(default, skip_serializing_if = "UiPreferences::is_empty")]
     pub ui_preferences: UiPreferences,
-    /// Legacy `autoDownloadCharacterCardAvatars`: fetch http(s) avatars a
-    /// character card links to while importing it.
+    /// Fetch http(s) avatars a character card links to while importing it.
     #[serde(default = "default_true")]
     pub auto_download_character_card_avatars: bool,
     #[serde(default = "default_manual_mode_context_window")]
@@ -133,9 +132,8 @@ pub enum SceneGenerationMode {
     Manual,
 }
 
-/// Legacy `avatarGeneration*`, `sceneGeneration*`, `sceneWriterModelId` and
-/// `creationHelperImageModelId` advanced settings; unset models mean the first
-/// suitable model, as legacy chose.
+/// Avatar and scene generation, scene writer and creation helper image model
+/// settings; unset models mean the first suitable model.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ImageGenerationSettings {
@@ -146,8 +144,8 @@ pub struct ImageGenerationSettings {
     pub scene_model_profile_id: Option<ModelProfileId>,
     pub scene_writer_model_profile_id: Option<ModelProfileId>,
     pub creation_helper_model_profile_id: Option<ModelProfileId>,
-    /// Legacy `sdDefaultSize`: the scene image size when the scene model sets
-    /// none; unset means 1024x1024.
+    /// The scene image size when the scene model sets none; unset means
+    /// 1024x1024.
     pub scene_default_size: Option<String>,
 }
 
@@ -171,8 +169,8 @@ pub const MAX_UI_PREFERENCES_BYTES: usize = 256 * 1024;
 
 /// Preferences only the app shell reads (theme, colors, view modes,
 /// navigation, sounds and haptics, the base chat appearance, saved sampler
-/// orders), kept as the shell's own JSON document under legacy's key names.
-/// The backend stores, syncs and bounds it but never interprets it.
+/// orders), kept as the shell's own JSON document. The backend stores, syncs
+/// and bounds it but never interprets it.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct UiPreferences(pub serde_json::Map<String, serde_json::Value>);
@@ -190,7 +188,7 @@ impl UiPreferences {
 }
 
 /// How the creation helper asks for tool calls when a model has no native
-/// tool calling (legacy `creationHelperToolFallback`).
+/// tool calling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CreationHelperToolFallback {
@@ -200,9 +198,9 @@ pub enum CreationHelperToolFallback {
     Xml,
 }
 
-/// Legacy `creationHelper*` advanced settings: the chat model (unset means
-/// the default model), streaming, the tools it may call (unset means all)
-/// and its tool-call fallback.
+/// Creation helper settings: the chat model (unset means the default model),
+/// streaming, the tools it may call (unset means all) and its tool-call
+/// fallback.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct CreationHelperSettings {
@@ -223,10 +221,9 @@ impl Default for CreationHelperSettings {
     }
 }
 
-/// Legacy `lorebookEntryGenerator*` and
-/// `lorebookKeywordGeneratorPromptTemplateId` advanced settings: the model
-/// (unset means the first text model), the entry and keyword prompts (unset
-/// means the built-in ones) and the structured fallback format.
+/// Lorebook entry and keyword generator settings: the model (unset means the
+/// first text model), the entry and keyword prompts (unset means the built-in
+/// ones) and the structured fallback format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct LorebookEntryGeneratorSettings {
@@ -247,9 +244,9 @@ impl Default for LorebookEntryGeneratorSettings {
     }
 }
 
-/// Legacy `companionSoulWriter*` advanced settings: the model (unset means
-/// the default model, then the first text model), its fallback model, the
-/// prompt (unset means the built-in one) and the structured fallback format.
+/// Companion Soul writer settings: the model (unset means the default model,
+/// then the first text model), its fallback model, the prompt (unset means
+/// the built-in one) and the structured fallback format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct CompanionSoulWriterSettings {
@@ -291,10 +288,8 @@ pub enum MemoryRunMode {
     Manual,
 }
 
-/// The user's dynamic-memory prompt overrides (legacy
-/// `dynamicMemorySummarizerPromptTemplateId` /
-/// `dynamicMemoryManagerPromptTemplateId`), shared by direct and group chats;
-/// unset means the built-in document.
+/// The user's dynamic-memory summarizer and manager prompt overrides, shared
+/// by direct and group chats; unset means the built-in document.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct DynamicMemoryPromptSelection {
@@ -309,9 +304,9 @@ pub enum HelpMeReplyStyle {
     Conversational,
 }
 
-/// Legacy `helpMeReply*` advanced settings: the feature toggle, its model,
-/// streaming, output cap, history window, style and the per-style prompt
-/// overrides; unset ids mean the default model and the built-in documents.
+/// Help-me-reply settings: the feature toggle, its model, streaming, output
+/// cap, history window, style and the per-style prompt overrides; unset ids
+/// mean the default model and the built-in documents.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct HelpMeReplySettings {
@@ -341,7 +336,7 @@ impl Default for HelpMeReplySettings {
 }
 
 impl HelpMeReplySettings {
-    /// Legacy ignored a zero history count and used ten messages.
+    /// A zero history count means ten messages.
     #[must_use]
     pub fn history_count(&self) -> usize {
         if self.history_count == 0 {
@@ -353,7 +348,7 @@ impl HelpMeReplySettings {
 }
 
 /// The document format the dynamic-memory cycle asks for when a model cannot
-/// call tools; legacy defaulted to XML.
+/// call tools; XML by default.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MemoryStructuredFallbackFormat {
@@ -512,9 +507,9 @@ pub enum GlobalSettingsStoreError {
     Storage,
 }
 
-/// The app shell's state about this install (legacy onboarding progress,
-/// dismissed hints, the last version seen, active-usage counters): a JSON
-/// object under legacy's key names that never syncs or enters backups.
+/// The app shell's state about this install (onboarding progress, dismissed
+/// hints, the last version seen, active-usage counters): a JSON object that
+/// never syncs or enters backups.
 pub trait DeviceUiStateStore: Send + Sync {
     fn load_device_ui_state(
         &self,

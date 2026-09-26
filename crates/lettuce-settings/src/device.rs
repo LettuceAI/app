@@ -18,14 +18,13 @@ const MAX_PATH_BYTES: usize = 4096;
 pub struct DeviceSettings {
     pub trusted_certificates: Vec<TrustedCertificate>,
     pub embedding: DeviceEmbeddingSettings,
-    /// Legacy `customLlmModelsDir`: where GGUF downloads go (image models in
-    /// its `image` folder); unset means the app's own models folder.
+    /// Where GGUF downloads go (image models in its `image` folder); unset
+    /// means the app's own models folder.
     pub llm_models_dir: Option<String>,
 }
 
-/// A root certificate every provider request trusts (legacy
-/// `trustedCertificates`); an entry the TLS stack cannot parse is skipped
-/// when clients are built, as legacy did.
+/// A root certificate every provider request trusts; an entry the TLS stack
+/// cannot parse is skipped when clients are built.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TrustedCertificate {
@@ -44,10 +43,9 @@ pub enum EmbeddingModelVersion {
     V5,
 }
 
-/// Legacy `embeddingModelVersion` (which installed model loads; unset means
-/// Eidos), `embeddingMaxTokens` (unset means 4096; legacy clamped it to
-/// 512..=4096 at load, and the import stores it clamped) and
-/// `embeddingKeepModelLoaded`.
+/// Which installed embedding model loads (unset means Eidos), its token
+/// window (unset means 4096; imports store it clamped to 512..=4096) and
+/// whether the model stays loaded.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct DeviceEmbeddingSettings {
