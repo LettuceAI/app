@@ -1,1 +1,0 @@
-{"default":{"identifier":"default","description":"The main window: core defaults only; application commands need no plugin permission.","local":true,"windows":["main"],"permissions":["core:default"]}}
