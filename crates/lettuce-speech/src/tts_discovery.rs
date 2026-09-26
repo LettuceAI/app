@@ -6,9 +6,8 @@ use lettuce_types::{AudioProviderId, TimestampMillis};
 
 use crate::AudioProvider;
 
-pub const MAX_DISCOVERED_VOICES: usize = 1_000;
 const MAX_ID_BYTES: usize = 4_096;
-const MAX_NAME_BYTES: usize = 256;
+const MAX_NAME_BYTES: usize = 1024;
 const MAX_URL_BYTES: usize = 4_096;
 const MAX_LABELS: usize = 64;
 const MAX_LABEL_KEY_BYTES: usize = 128;
@@ -68,9 +67,6 @@ pub fn materialize_discovered_voices(
     drafts: Vec<DiscoveredVoiceDraft>,
     cached_at: TimestampMillis,
 ) -> Result<Vec<DiscoveredVoice>, VoiceDiscoveryError> {
-    if drafts.len() > MAX_DISCOVERED_VOICES {
-        return Err(VoiceDiscoveryError::InvalidData);
-    }
     let mut ids = HashSet::with_capacity(drafts.len());
     drafts
         .into_iter()

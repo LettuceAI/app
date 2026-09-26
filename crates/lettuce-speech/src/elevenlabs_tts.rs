@@ -86,8 +86,6 @@ struct ElevenLabsVoiceCreationResponse {
 #[derive(Deserialize)]
 struct ElevenLabsVoicesResponse {
     voices: Vec<ElevenLabsVoice>,
-    #[serde(default)]
-    has_more: bool,
 }
 
 fn null_as_empty<'de, D>(deserializer: D) -> Result<BTreeMap<String, String>, D::Error>
@@ -191,11 +189,6 @@ impl ElevenLabsTtsRuntime {
         }
         let response: ElevenLabsVoicesResponse =
             serde_json::from_slice(&response.body).map_err(|_| VoiceDiscoveryError::InvalidData)?;
-        if (response.has_more && search.is_none())
-            || response.voices.len() > crate::MAX_DISCOVERED_VOICES
-        {
-            return Err(VoiceDiscoveryError::InvalidData);
-        }
         response
             .voices
             .into_iter()

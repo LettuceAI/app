@@ -11,7 +11,7 @@ use lettuce_types::{
 };
 use serde::{Deserialize, Serialize};
 
-const MAX_LABEL_BYTES: usize = 256;
+const MAX_LABEL_BYTES: usize = 1024;
 const MAX_VALUE_BYTES: usize = 4096;
 const MAX_PROMPT_BYTES: usize = 16_384;
 const MAX_SYNTHESIS_TEXT_BYTES: usize = 1_000_000;
@@ -576,6 +576,25 @@ mod tests {
                 AudioProviderKind::Kokoro,
             ]
         );
+    }
+
+    #[test]
+    fn labels_and_voice_names_past_256_bytes_are_kept() {
+        let mut long = provider(AudioProviderConfig::Elevenlabs);
+        long.label = "l".repeat(600);
+        assert_eq!(long.validate(), Ok(()));
+        let voice = UserVoice {
+            id: VoiceProfileId::new(),
+            provider_id: long.id,
+            name: "n".repeat(600),
+            model_id: "model".into(),
+            voice_id: "voice".into(),
+            prompt: None,
+            revision: Revision::INITIAL,
+            created_at: TimestampMillis::new(1),
+            updated_at: TimestampMillis::new(1),
+        };
+        assert_eq!(voice.validate(), Ok(()));
     }
 
     #[test]

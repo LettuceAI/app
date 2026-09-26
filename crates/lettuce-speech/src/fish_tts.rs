@@ -15,7 +15,6 @@ use crate::{
 };
 
 const ENDPOINT: &str = "https://api.fish.audio";
-const MAX_FISH_VOICES: usize = 100;
 
 #[derive(Debug, Clone)]
 pub struct FishTtsRuntime {
@@ -60,8 +59,6 @@ struct FishTtsRequest<'a> {
 #[derive(Deserialize)]
 struct FishModelsResponse {
     items: Vec<FishModel>,
-    #[serde(default)]
-    has_more: bool,
 }
 
 #[derive(Deserialize)]
@@ -174,9 +171,6 @@ impl VoiceDiscovery for FishTtsRuntime {
         }
         let response: FishModelsResponse =
             serde_json::from_slice(&response.body).map_err(|_| VoiceDiscoveryError::InvalidData)?;
-        if response.has_more || response.items.len() > MAX_FISH_VOICES {
-            return Err(VoiceDiscoveryError::InvalidData);
-        }
         response
             .items
             .into_iter()
@@ -517,8 +511,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rejects_partial_configured_model_pages() {
-        let body = br#"{"items":[],"has_more":true}"#;
+    async fn keeps_the_first_configured_model_page_like_legacy() {
+        let items = (0..120)
+            .map(|index| format!(r#"{{"_id":"voice-{index}","title":"Voice {index}"}}"#))
+            .collect::<Vec<_>>()
+            .join(",");
+        let body = format!(r#"{{"items":[{items}],"has_more":true}}"#);
+        let body = body.as_bytes();
         let headers = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len());
         let response = headers
             .into_bytes()
@@ -530,15 +529,15 @@ mod tests {
             Arc::new(JsonClient::new().expect("network client")),
             endpoint,
         );
-        assert_eq!(
-            runtime
-                .fetch_configured_voices(
-                    &request(None).provider,
-                    &SecretValue::new("secret").expect("secret"),
-                )
-                .await,
-            Err(VoiceDiscoveryError::InvalidData)
-        );
+        let voices = runtime
+            .fetch_configured_voices(
+                &request(None).provider,
+                &SecretValue::new("secret").expect("secret"),
+            )
+            .await
+            .expect("first page");
+        assert_eq!(voices.len(), 120);
+        assert_eq!(voices[0].voice_id, "voice-0");
     }
 
     #[tokio::test]

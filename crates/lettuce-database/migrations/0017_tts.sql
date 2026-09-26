@@ -5,7 +5,7 @@ CREATE TABLE audio_providers (
         'gemini_tts', 'elevenlabs', 'fish_tts', 'fish_speech', 'open_ai_tts', 'kokoro'
     )),
     label TEXT NOT NULL CHECK (
-        length(label) BETWEEN 1 AND 256
+        length(label) BETWEEN 1 AND 1024
         AND trim(label) = label
         AND instr(label, char(0)) = 0
     ),
@@ -28,7 +28,7 @@ CREATE TABLE user_voices (
     id TEXT PRIMARY KEY CHECK (length(id) = 36),
     provider_id TEXT NOT NULL,
     name TEXT NOT NULL CHECK (
-        length(name) BETWEEN 1 AND 256
+        length(name) BETWEEN 1 AND 1024
         AND trim(name) = name
         AND instr(name, char(0)) = 0
     ),
@@ -66,7 +66,7 @@ CREATE TABLE discovered_tts_voices (
         AND instr(voice_id, char(0)) = 0
     ),
     name TEXT NOT NULL CHECK (
-        length(CAST(name AS BLOB)) BETWEEN 1 AND 256
+        length(CAST(name AS BLOB)) BETWEEN 1 AND 1024
         AND instr(name, char(0)) = 0
     ),
     preview_url TEXT CHECK (
