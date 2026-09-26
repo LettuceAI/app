@@ -63,8 +63,7 @@ pub struct ProviderParameterSupportContract {
     pub reasoning_budget: bool,
 }
 
-/// One provider row rendered by the settings UI. These values replace the
-/// legacy frontend-owned provider and parameter-support tables.
+/// One provider row rendered by the settings UI.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProviderDescriptorContract {
