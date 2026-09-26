@@ -106,20 +106,34 @@ fn memory_changes_for_turn(
     after: &MemorySpaceSnapshot,
 ) -> CompanionMemoryChanges {
     let message_ids = message_ids.iter().copied().collect::<HashSet<_>>();
-    let mut changes = CompanionMemoryChanges::default();
-    for memory in &after.items {
-        if !memory
+    let from_turn = |memory: &MemoryItem| {
+        memory
             .source_message_id
             .is_some_and(|id| message_ids.contains(&id))
-        {
-            continue;
-        }
+    };
+    let mut changes = CompanionMemoryChanges::default();
+    for memory in &after.items {
+        let source_matches = from_turn(memory);
         match before_by_id.get(&memory.id) {
-            None => changes.added.push(memory.id),
-            Some(previous) if legacy_effect_fields_changed(previous, memory) => {
-                changes.updated.push(memory.id);
+            None if source_matches => changes.added.push(memory.id),
+            None => {}
+            Some(previous) => {
+                if source_matches && legacy_effect_fields_changed(previous, memory) {
+                    changes.updated.push(memory.id);
+                }
+                if previous.superseded_at.is_none()
+                    && memory.superseded_at.is_some()
+                    && memory.superseded_by.is_some_and(|replacement| {
+                        after
+                            .items
+                            .iter()
+                            .find(|item| item.id == replacement)
+                            .is_some_and(from_turn)
+                    })
+                {
+                    changes.superseded.push(memory.id);
+                }
             }
-            Some(_) => {}
         }
     }
     changes
@@ -169,14 +183,16 @@ fn summarize_turn_effect(
     (!parts.is_empty()).then(|| parts.into_iter().take(3).collect::<Vec<_>>().join(", "))
 }
 
+/// Legacy read the deltas from JSON objects, whose keys iterate in
+/// alphabetical order, and kept the last of equal largest values.
 fn largest_relationship_delta(effect: &CompanionTurnEffect) -> Option<(&'static str, f64)> {
     let delta = &effect.seed.relationship_delta;
     [
-        ("closeness", delta.closeness),
-        ("trust", delta.trust),
         ("affection", delta.affection),
-        ("tension", delta.tension),
+        ("closeness", delta.closeness),
         ("stability", delta.stability),
+        ("tension", delta.tension),
+        ("trust", delta.trust),
     ]
     .into_iter()
     .max_by(compare_absolute_delta)
@@ -184,9 +200,9 @@ fn largest_relationship_delta(effect: &CompanionTurnEffect) -> Option<(&'static 
 
 fn largest_emotion_delta(effect: &CompanionTurnEffect) -> Option<(String, f64)> {
     [
-        ("felt", &effect.seed.emotion_delta.felt),
-        ("expressed", &effect.seed.emotion_delta.expressed),
         ("blocked", &effect.seed.emotion_delta.blocked),
+        ("expressed", &effect.seed.emotion_delta.expressed),
+        ("felt", &effect.seed.emotion_delta.felt),
     ]
     .into_iter()
     .flat_map(|(group, vector)| {
@@ -195,18 +211,19 @@ fn largest_emotion_delta(effect: &CompanionTurnEffect) -> Option<(String, f64)> 
     .max_by(compare_absolute_delta)
 }
 
+/// The emotion dimensions under legacy's camelCase keys, alphabetically.
 fn emotion_values(value: &EmotionVector) -> std::array::IntoIter<(&'static str, f64), 10> {
     [
-        ("warmth", value.warmth),
-        ("trust", value.trust),
+        ("affectionIntensity", value.affection_intensity),
         ("calm", value.calm),
-        ("vulnerability", value.vulnerability),
-        ("longing", value.longing),
         ("hurt", value.hurt),
-        ("tension", value.tension),
         ("irritation", value.irritation),
-        ("affection_intensity", value.affection_intensity),
-        ("reassurance_need", value.reassurance_need),
+        ("longing", value.longing),
+        ("reassuranceNeed", value.reassurance_need),
+        ("tension", value.tension),
+        ("trust", value.trust),
+        ("vulnerability", value.vulnerability),
+        ("warmth", value.warmth),
     ]
     .into_iter()
 }
@@ -455,16 +472,26 @@ mod tests {
         let first_added_id = MemoryId::new();
         let second_added_id = MemoryId::new();
         let unrelated_id = MemoryId::new();
+        let replaced_id = MemoryId::new();
+        let replaced = memory(replaced_id, "replaced", Some(MessageId::new()));
         let before = snapshot(
             space_id,
             Revision::INITIAL,
-            vec![memory(updated_id, "before", Some(first_user))],
+            vec![
+                memory(updated_id, "before", Some(first_user)),
+                replaced.clone(),
+            ],
         );
         let after = snapshot(
             space_id,
             Revision::new(2),
             vec![
                 memory(updated_id, "after", Some(first_user)),
+                MemoryItem {
+                    superseded_by: Some(second_added_id),
+                    superseded_at: Some(TimestampMillis::new(25)),
+                    ..replaced
+                },
                 memory(first_added_id, "first", Some(first_assistant)),
                 memory(second_added_id, "second", Some(second_assistant)),
                 memory(unrelated_id, "unrelated", Some(MessageId::new())),
@@ -498,15 +525,68 @@ mod tests {
             Some([first_user, first_assistant].as_slice())
         );
         assert_eq!(settled[1].memory_changes.added, [second_added_id]);
+        assert!(settled[0].memory_changes.superseded.is_empty());
+        assert_eq!(settled[1].memory_changes.superseded, [replaced_id]);
         assert_eq!(
             settled[1].summary.as_deref(),
-            Some("stability +0%, blocked reassurance need +0%, 1 memory added")
+            Some("trust +0%, felt warmth +0%, 1 memory added")
         );
 
         let replay = coordinator
             .settle_ready(&inputs, &before, &after, TimestampMillis::new(30))
             .expect("exact replay");
         assert_eq!(replay, settled);
+    }
+
+    #[test]
+    fn summary_reads_deltas_in_legacy_json_key_order_and_names() {
+        let tie = effect(
+            ConversationId::new(),
+            None,
+            MessageId::new(),
+            CompanionTurnEffectSeed {
+                relationship_delta: RelationshipDelta {
+                    affection: 0.1,
+                    closeness: -0.1,
+                    ..RelationshipDelta::default()
+                },
+                emotion_delta: CompanionEmotionDelta {
+                    blocked: EmotionVector {
+                        affection_intensity: 0.3,
+                        ..EmotionVector::default()
+                    },
+                    felt: EmotionVector {
+                        warmth: -0.3,
+                        ..EmotionVector::default()
+                    },
+                    ..CompanionEmotionDelta::default()
+                },
+                signal_changes: CompanionSignalChanges::default(),
+            },
+        );
+        assert_eq!(
+            summarize_turn_effect(&tie, &CompanionMemoryChanges::default()).as_deref(),
+            Some("closeness -10%, felt warmth -30%")
+        );
+        let camel = effect(
+            ConversationId::new(),
+            None,
+            MessageId::new(),
+            CompanionTurnEffectSeed {
+                emotion_delta: CompanionEmotionDelta {
+                    blocked: EmotionVector {
+                        affection_intensity: 0.3,
+                        ..EmotionVector::default()
+                    },
+                    ..CompanionEmotionDelta::default()
+                },
+                ..CompanionTurnEffectSeed::default()
+            },
+        );
+        assert_eq!(
+            summarize_turn_effect(&camel, &CompanionMemoryChanges::default()).as_deref(),
+            Some("trust +0%, blocked affectionIntensity +30%")
+        );
     }
 
     #[test]
@@ -536,7 +616,7 @@ mod tests {
         assert_eq!(settled[0].status, CompanionTurnEffectStatus::Ready);
         assert_eq!(
             settled[0].summary.as_deref(),
-            Some("stability +0%, blocked reassurance need +0%")
+            Some("trust +0%, felt warmth +0%")
         );
     }
 }
