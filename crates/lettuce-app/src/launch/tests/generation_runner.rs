@@ -1876,6 +1876,248 @@ async fn llm_selection_follows_the_live_speaker_model_setting() {
 }
 
 #[tokio::test]
+async fn a_settled_selection_replays_after_the_speaker_model_setting_changes() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let (scenario, speakers) = group_scenario(
+        &backend,
+        "settled-replay",
+        lettuce_characters::SpeakerSelection::Llm,
+        false,
+    );
+    let database = backend.database();
+    let settled_model = GlobalSettingsStore::load(database)
+        .expect("settings")
+        .group_speaker_model_profile_id
+        .expect("speaker model");
+    let work = admit_and_claim(database, &scenario, 1_015);
+    let engine = ScenarioEmbeddingEngine;
+    let selection = BlockingInference::new(call_outcome(
+        "settled-replay-selection",
+        "select_next_speaker",
+        serde_json::json!({ "character_id": speakers[1] }),
+        (15, 2),
+    ));
+    let runner =
+        backend.prepared_conversation_generation_runner(&engine, &selection, &NoReplyMedia);
+    let run = runner.run(
+        &work,
+        ConversationGenerationRuntimeInput::default(),
+        TimestampMillis::new(1_020),
+    );
+    let interrupt = async {
+        selection.entered.notified().await;
+        let turn = ConversationReader::get_turn(database, scenario.turn_id).expect("turn");
+        let sequence = database
+            .latest_checkpoint_sequence(scenario.turn_id, scenario.attempt_id)
+            .expect("latest sequence")
+            .unwrap_or(0)
+            + 1;
+        database
+            .append_event(
+                scenario.turn_id,
+                turn.revision,
+                &OperationToken {
+                    key: key("settled-replay-progress"),
+                    request_digest: ContentHash::parse("bc".repeat(32)).expect("digest"),
+                },
+                GenerationCheckpointEnvelope {
+                    turn_id: scenario.turn_id,
+                    attempt_id: scenario.attempt_id,
+                    job_id: Some(work.handle.id()),
+                    correlation_id: None,
+                    sequence,
+                    event: GenerationCheckpointEvent::Progress { emitted_parts: 0 },
+                },
+                TimestampMillis::new(1_018),
+            )
+            .expect("advance the turn while the selection runs");
+        selection.release.notify_one();
+    };
+    let (first, ()) = tokio::join!(run, interrupt);
+    assert!(
+        first.is_err(),
+        "the selection settles but the speaker is not recorded"
+    );
+    assert_eq!(
+        ConversationReader::get_turn(database, scenario.turn_id)
+            .expect("turn")
+            .selected_speaker,
+        None
+    );
+
+    let replacement = seed_speaker_model(
+        database,
+        "replacement-speaker",
+        lettuce_models::CapabilityStatus::Supported,
+    );
+    set_group_speaker_model(database, Some(replacement));
+    let inference = scripted(vec![text_outcome(
+        "settled-replay-generation",
+        "Group reply.",
+        20,
+        4,
+    )]);
+    let result = backend
+        .prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
+        .run(
+            &work,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_030),
+        )
+        .await
+        .expect("rerun the same attempt");
+    let decision = result.turn.selected_speaker.expect("speaker decision");
+    assert_eq!(decision.participant_id, speakers[1]);
+    assert_eq!(decision.fallback, SpeakerFallback::None);
+    assert_eq!(
+        decision
+            .decision_model
+            .as_ref()
+            .map(|model| model.source_id),
+        Some(settled_model),
+        "the settled decision replays with the model it used"
+    );
+    let requests = inference.requests.lock().expect("requests");
+    assert_eq!(requests.len(), 1, "the replay makes no selection call");
+    assert_eq!(requests[0].tools, None);
+    assert_eq!(selection.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
+struct CollectedArtifact(Vec<u8>);
+
+impl lettuce_conversations::TrustedArtifactSink for CollectedArtifact {
+    fn begin(
+        &mut self,
+        _: &lettuce_conversations::TrustedArtifactDescriptor,
+    ) -> Result<(), lettuce_conversations::ArtifactTransferError> {
+        Ok(())
+    }
+
+    fn chunk(&mut self, bytes: &[u8]) -> Result<(), lettuce_conversations::ArtifactTransferError> {
+        self.0.extend_from_slice(bytes);
+        Ok(())
+    }
+
+    fn finish(&mut self) -> Result<(), lettuce_conversations::ArtifactTransferError> {
+        Ok(())
+    }
+}
+
+fn restored_copy(database: &Database) -> Database {
+    use lettuce_conversations::{ConversationArtifactTransferPort, TrustedArtifactDescriptor};
+    let mut graph = lettuce_transfer::ProviderBackupSource::read_provider_backup_graph(database)
+        .expect("export graph");
+    lettuce_transfer::canonicalize_and_validate(&mut graph).expect("canonical graph");
+    lettuce_transfer::settle_in_flight_generation(&mut graph);
+    lettuce_transfer::canonicalize_and_validate(&mut graph).expect("settled graph");
+    let artifacts = lettuce_transfer::provider_backup_artifact_requirements(&graph)
+        .expect("artifact requirements")
+        .into_iter()
+        .map(|descriptor| {
+            let mut sink = CollectedArtifact(Vec::new());
+            match &descriptor {
+                TrustedArtifactDescriptor::Snapshot(reference) => {
+                    database.export_snapshot(reference.artifact_id, &mut sink)
+                }
+                TrustedArtifactDescriptor::Replay(reference) => {
+                    database.export_replay(reference.artifact_id, &mut sink)
+                }
+            }
+            .expect("export artifact");
+            lettuce_transfer::BackupConversationArtifact {
+                descriptor,
+                bytes: zeroize::Zeroizing::new(sink.0),
+            }
+        })
+        .collect::<Vec<_>>();
+    let restored = Database::open_in_memory().expect("restore target");
+    lettuce_transfer::ProviderBackupRestoreWriter::restore_provider_backup_graph(
+        &restored, &graph, &artifacts,
+    )
+    .expect("restore graph");
+    restored
+}
+
+fn assert_attached_until_purged(
+    database: &Database,
+    conversation_id: ConversationId,
+    reference: &lettuce_conversations::ProtectedSnapshotRef,
+) {
+    let store = ConversationRepository::artifact_store(database);
+    store
+        .cleanup_orphan_snapshot(reference.artifact_id)
+        .expect("orphan cleanup");
+    assert_eq!(
+        store.verify_snapshot(reference),
+        Ok(()),
+        "the conversation's reference keeps the snapshot"
+    );
+    database
+        .purge_conversation(conversation_id, TimestampMillis::new(5_000))
+        .expect("purge conversation");
+    assert_eq!(
+        store.verify_snapshot(reference),
+        Err(lettuce_conversations::ArtifactError::NotFound),
+        "purging the conversation deletes the snapshot"
+    );
+}
+
+#[tokio::test]
+async fn a_speaker_decision_model_is_attached_through_restore_until_purge() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let (scenario, speakers) = group_scenario(
+        &backend,
+        "decision-ref",
+        lettuce_characters::SpeakerSelection::Llm,
+        false,
+    );
+    let database = backend.database();
+    let work = admit_and_claim(database, &scenario, 1_015);
+    let inference = scripted(vec![
+        call_outcome(
+            "decision-ref-selection",
+            "select_next_speaker",
+            serde_json::json!({ "character_id": speakers[1] }),
+            (15, 2),
+        ),
+        text_outcome("decision-ref-generation", "Group reply.", 20, 4),
+    ]);
+    let engine = ScenarioEmbeddingEngine;
+    let result = backend
+        .prepared_conversation_generation_runner(&engine, &inference, &NoReplyMedia)
+        .run(
+            &work,
+            ConversationGenerationRuntimeInput::default(),
+            TimestampMillis::new(1_020),
+        )
+        .await
+        .expect("run LLM-selected group generation");
+    let decision_model = result
+        .turn
+        .selected_speaker
+        .and_then(|decision| decision.decision_model)
+        .expect("decision model");
+    let resolved_model = result.turn.resolved_model.expect("resolved model");
+    let restored = restored_copy(database);
+    for reference in [&decision_model.snapshot_ref, &resolved_model.snapshot_ref] {
+        assert_eq!(
+            ConversationRepository::artifact_store(&restored).verify_snapshot(reference),
+            Ok(())
+        );
+    }
+    assert_attached_until_purged(
+        &restored,
+        scenario.conversation_id,
+        &decision_model.snapshot_ref,
+    );
+    assert_attached_until_purged(
+        database,
+        scenario.conversation_id,
+        &decision_model.snapshot_ref,
+    );
+}
+
+#[tokio::test]
 async fn app_backend_checkpoints_llm_group_selection_and_falls_back_to_heuristic() {
     for (name, selection, expected_method, expected_fallback) in [
         (

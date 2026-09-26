@@ -98,6 +98,14 @@ mod tests {
             Ok(reference)
         }
 
+        fn attach_snapshot(
+            &self,
+            _conversation_id: ConversationId,
+            draft: SnapshotArtifactDraft,
+        ) -> Result<ProtectedSnapshotRef, ArtifactError> {
+            self.put_snapshot(draft)
+        }
+
         fn verify_snapshot(&self, reference: &ProtectedSnapshotRef) -> Result<(), ArtifactError> {
             if self
                 .snapshots

@@ -3,7 +3,9 @@ use lettuce_conversations::{
     SpeakerDecisionMethod, SpeakerInferenceAdmission, SpeakerInferenceBinding,
     SpeakerInferenceRecord, SpeakerInferenceRepository,
 };
-use lettuce_types::{ConversationId, TimestampMillis, UsageEventId};
+use lettuce_types::{
+    ConversationId, GenerationAttemptId, GenerationTurnId, JobId, TimestampMillis, UsageEventId,
+};
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
 
 use crate::{
@@ -63,27 +65,60 @@ fn load(
     transaction: &Transaction<'_>,
     binding: &SpeakerInferenceBinding,
 ) -> Result<Option<SpeakerInferenceRecord>, ConversationRepositoryError> {
+    let record = load_attempt(
+        transaction,
+        binding.conversation_id,
+        binding.turn_id,
+        binding.attempt_id,
+        binding.job_id,
+    )?;
+    if record
+        .as_ref()
+        .is_some_and(|record| record.binding.request_fingerprint != binding.request_fingerprint)
+    {
+        return Err(ConversationRepositoryError::Conflict);
+    }
+    Ok(record)
+}
+
+fn load_attempt(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    turn_id: GenerationTurnId,
+    attempt_id: GenerationAttemptId,
+    job_id: JobId,
+) -> Result<Option<SpeakerInferenceRecord>, ConversationRepositoryError> {
     let row = transaction
         .query_row(
             "SELECT job_id, request_fingerprint, admitted_at, decision_json, settled_at, usage_event_id FROM generation_speaker_dispatches WHERE conversation_id = ?1 AND turn_id = ?2 AND attempt_id = ?3",
-            params![binding.conversation_id.to_string(), binding.turn_id.to_string(), binding.attempt_id.to_string()],
+            params![conversation_id.to_string(), turn_id.to_string(), attempt_id.to_string()],
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?, row.get::<_, i64>(2)?, row.get::<_, Option<String>>(3)?, row.get::<_, Option<i64>>(4)?, row.get::<_, String>(5)?)),
         )
         .optional()
         .map_err(slice::db)?;
-    let Some((job_id, fingerprint, admitted_at, decision, settled_at, usage_event_id)) = row else {
+    let Some((stored_job_id, fingerprint, admitted_at, decision, settled_at, usage_event_id)) = row
+    else {
         return Ok(None);
     };
-    if job_id != binding.job_id.to_string() || fingerprint != binding.request_fingerprint {
+    if stored_job_id != job_id.to_string() {
         return Err(ConversationRepositoryError::Conflict);
     }
+    let request_fingerprint: [u8; 32] = fingerprint
+        .try_into()
+        .map_err(|_| ConversationRepositoryError::Storage)?;
     let decision: Option<lettuce_conversations::SelectedSpeakerDecision> =
         decision.as_deref().map(slice::decode).transpose()?;
     if decision.is_some() != settled_at.is_some() || settled_at.is_some_and(|at| at < admitted_at) {
         return Err(ConversationRepositoryError::Storage);
     }
     let record = SpeakerInferenceRecord {
-        binding: binding.clone(),
+        binding: SpeakerInferenceBinding {
+            conversation_id,
+            turn_id,
+            attempt_id,
+            job_id,
+            request_fingerprint,
+        },
         usage_event_id: usage_event_id
             .parse()
             .map_err(|_| ConversationRepositoryError::Storage)?,
@@ -134,6 +169,22 @@ impl SpeakerInferenceRepository for Database {
             .map_err(|_| ConversationRepositoryError::Storage)?;
         let transaction = connection.transaction().map_err(slice::db)?;
         let record = load(&transaction, binding)?;
+        transaction.commit().map_err(slice::db)?;
+        Ok(record)
+    }
+
+    fn attempt_speaker_inference(
+        &self,
+        conversation_id: ConversationId,
+        turn_id: GenerationTurnId,
+        attempt_id: GenerationAttemptId,
+        job_id: JobId,
+    ) -> Result<Option<SpeakerInferenceRecord>, ConversationRepositoryError> {
+        let mut connection = self
+            .connection()
+            .map_err(|_| ConversationRepositoryError::Storage)?;
+        let transaction = connection.transaction().map_err(slice::db)?;
+        let record = load_attempt(&transaction, conversation_id, turn_id, attempt_id, job_id)?;
         transaction.commit().map_err(slice::db)?;
         Ok(record)
     }

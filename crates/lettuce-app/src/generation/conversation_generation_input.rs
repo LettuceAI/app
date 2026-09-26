@@ -734,6 +734,22 @@ where
         if !matches!(conversation.kind, ConversationKind::Group(_)) {
             return Err(ConversationGenerationInputError::SpeakerUnavailable);
         }
+        if let Some(record) = self
+            .repository
+            .attempt_speaker_inference(
+                work.conversation_id,
+                turn.id,
+                work.attempt_id,
+                work.handle.id(),
+            )
+            .map_err(ConversationGenerationInputError::Repository)?
+        {
+            return record
+                .decision
+                .ok_or(ConversationGenerationInputError::SpeakerPending(
+                    record.usage_event_id,
+                ));
+        }
         let available = conversation
             .participants
             .iter()
@@ -846,17 +862,6 @@ where
         };
         let binding = SpeakerInferenceBinding::from_request(work.conversation_id, &request)
             .map_err(|_| ConversationGenerationInputError::InvalidTurn)?;
-        if let Some(record) = self
-            .repository
-            .speaker_inference(&binding)
-            .map_err(ConversationGenerationInputError::Repository)?
-        {
-            return record
-                .decision
-                .ok_or(ConversationGenerationInputError::SpeakerPending(
-                    record.usage_event_id,
-                ));
-        }
         let decision_model = self
             .live_model_snapshot(conversation.id, &model, &account)
             .map_err(|_| {
@@ -985,8 +990,9 @@ where
             .map_err(|_| ConversationGenerationInputError::MissingModel)
     }
 
-    /// A conversation-scoped snapshot of a live model revision, stored under
-    /// an identity derived from the conversation, model and account revisions.
+    /// A conversation-scoped snapshot of a live model revision, stored and
+    /// attached to the conversation under an identity derived from the
+    /// conversation, model and account revisions.
     fn live_model_snapshot(
         &self,
         conversation_id: lettuce_types::ConversationId,
@@ -1011,7 +1017,9 @@ where
             crate::launch::documents::model_body(profile, account),
         )?;
         let snapshot = crate::launch::planner::model_snapshot(profile, account, &draft);
-        self.repository.artifact_store().put_snapshot(draft)?;
+        self.repository
+            .artifact_store()
+            .attach_snapshot(conversation_id, draft)?;
         Ok(snapshot)
     }
 
