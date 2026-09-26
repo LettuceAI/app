@@ -2,9 +2,9 @@
 
 The serde types that cross the IPC boundary between the Rust backend and the frontend. They are owned transport DTOs, kept separate from the domain and provider types so that an internal change never silently changes what the frontend receives, and so the frontend never has to guess a provider's wire values or feature combinations.
 
-Only the composition crate (`lettuce-app`) and the desktop shell (`apps/desktop`) depend on it; domain crates must not. It depends on nothing but `lettuce-types` and `serde`, and it holds no behavior.
+Only the composition crate (`lettuce-app`) and the Tauri shell (`apps/tauri`) depend on it; domain crates must not. It depends on nothing but `lettuce-types` and `serde`, and it holds no behavior.
 
-The `specta` cargo feature derives `specta::Type` on the application API contracts so the desktop shell can export them as TypeScript bindings (`frontend/src/api/generated/bindings.ts`). Only the desktop shell enables it; no other crate sees specta.
+The `specta` cargo feature derives `specta::Type` on the application API contracts so the Tauri shell can export them as TypeScript bindings (`apps/ui/src/api/generated/bindings.ts`). Only the Tauri shell enables it; no other crate sees specta.
 
 ## Application API contracts
 

@@ -6,10 +6,10 @@ fn main() -> ExitCode {
     {
         tracing::warn!(%error, "logging could not be installed");
     }
-    match lettuce_desktop::export_bindings(Path::new(lettuce_desktop::BINDINGS_PATH)) {
+    match lettuce_tauri::export_bindings(Path::new(lettuce_tauri::BINDINGS_PATH)) {
         Ok(()) => {
             tracing::info!(
-                path = lettuce_desktop::BINDINGS_PATH,
+                path = lettuce_tauri::BINDINGS_PATH,
                 "TypeScript bindings written"
             );
             ExitCode::SUCCESS

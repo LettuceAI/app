@@ -1,10 +1,10 @@
-# lettuce-desktop
+# lettuce-tauri
 
-The Tauri 2.12 shell for Windows, macOS and Linux. It holds no application behavior: it opens the application API from `lettuce-app`, runs its workers, and exposes it to the webview as commands, events and the asset URI scheme. It is the only crate that depends on Tauri and tauri-specta (`scripts/check-architecture.sh` enforces this), and nothing depends on it.
+The Tauri 2.12 shell for every platform: Windows, macOS and Linux today, Android and iOS from the same crate once `cargo tauri android init` and `cargo tauri ios init` generate `gen/android` and `gen/apple`. It holds no application behavior: it opens the application API from `lettuce-app`, runs its workers, and exposes it to the webview as commands, events and the asset URI scheme. It is the only crate that depends on Tauri and tauri-specta (`scripts/check-architecture.sh` enforces this), and nothing depends on it.
 
 ## Startup and shutdown
 
-`run()` installs logging (`lettuce-observability`), builds the tauri-specta command and event registry and starts Tauri. In debug builds it first writes the TypeScript bindings to `frontend/src/api/generated/bindings.ts`.
+`run()` installs logging (`lettuce-observability`), builds the tauri-specta command and event registry and starts Tauri. In debug builds it first writes the TypeScript bindings to `apps/ui/src/api/generated/bindings.ts`.
 
 The setup hook resolves the app data directory (identifier `com.lettuceai.app`, the same as the legacy app, so legacy import finds its data), opens the API with `ApiContext::open_desktop` over the native `NativeSecretStore` and an event sink that emits Tauri events, and calls `recover_after_restart` before any worker starts. It then starts the conversation generation worker on its own thread with a current-thread Tokio runtime, because the runner calls repositories synchronously, and manages the `ApiContext` as Tauri state.
 
@@ -32,11 +32,11 @@ Images and other media never cross IPC as bytes, base64 or data URLs, in either 
 
 ## Bindings
 
-`tauri-specta` generates `frontend/src/api/generated/bindings.ts` from the command signatures and the `lettuce-contracts` types (their `specta` feature is enabled only here). Regenerate after changing a command or contract with `cargo run -p lettuce-desktop --bin export-bindings`. The test `committed_bindings_are_current` exports to a temporary file and fails when the committed file differs, so `cargo test --workspace` catches stale bindings.
+`tauri-specta` generates `apps/ui/src/api/generated/bindings.ts` from the command signatures and the `lettuce-contracts` types (their `specta` feature is enabled only here). Regenerate after changing a command or contract with `cargo run -p lettuce-tauri --bin export-bindings`. The test `committed_bindings_are_current` exports to a temporary file and fails when the committed file differs, so `cargo test --workspace` catches stale bindings.
 
 ## Configuration
 
-`tauri.conf.json` points `devUrl` at the frontend's Vite dev server on `http://localhost:1420` (started with `bun run dev` in `frontend/`) and `frontendDist` at `../../frontend/dist` (built with `bun run build`). The window is the default decorated window; the custom title bar comes later. The `default` capability grants the main window `core:default` only; application commands need no plugin permission.
+`tauri.conf.json` points `devUrl` at the frontend's Vite dev server on `http://localhost:1420` (started with `bun run dev` in `apps/ui/`) and `frontendDist` at `../ui/dist` (built with `bun run build`). The window is the default decorated window; the custom title bar comes later. The `default` capability grants the main window `core:default` only; application commands need no plugin permission.
 
 ## Builds
 

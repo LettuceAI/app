@@ -26,8 +26,6 @@ coverage/
 /README.md
 /architecture/
 /docs/
-/frontend/*.md
-/apps/desktop/*.md
 /crates/*/PLAN.md
 /old-code/REFERENCE_ONLY.md
 /fixtures/legacy-import/*.md

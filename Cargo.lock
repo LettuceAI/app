@@ -2661,24 +2661,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lettuce-desktop"
-version = "0.1.0"
-dependencies = [
- "lettuce-app",
- "lettuce-contracts",
- "lettuce-observability",
- "lettuce-settings",
- "serde",
- "specta",
- "specta-typescript",
- "tauri",
- "tauri-build",
- "tauri-specta",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "lettuce-embeddings"
 version = "0.1.0"
 dependencies = [
@@ -2939,6 +2921,24 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.20",
  "uuid",
+]
+
+[[package]]
+name = "lettuce-tauri"
+version = "0.1.0"
+dependencies = [
+ "lettuce-app",
+ "lettuce-contracts",
+ "lettuce-observability",
+ "lettuce-settings",
+ "serde",
+ "specta",
+ "specta-typescript",
+ "tauri",
+ "tauri-build",
+ "tauri-specta",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

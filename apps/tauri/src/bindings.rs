@@ -9,7 +9,7 @@ use crate::{commands, events::AppEvent};
 /// Where the generated TypeScript bindings are committed.
 pub const BINDINGS_PATH: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/../../frontend/src/api/generated/bindings.ts"
+    "/../ui/src/api/generated/bindings.ts"
 );
 
 /// Every command and event the frontend can reach.
@@ -43,7 +43,7 @@ mod tests {
     #[test]
     fn committed_bindings_are_current() {
         let directory =
-            std::env::temp_dir().join(format!("lettuce-desktop-bindings-{}", std::process::id()));
+            std::env::temp_dir().join(format!("lettuce-tauri-bindings-{}", std::process::id()));
         std::fs::create_dir_all(&directory).expect("temporary directory");
         let generated = directory.join("bindings.ts");
         export_bindings(&generated).expect("export bindings");
@@ -52,7 +52,7 @@ mod tests {
         let committed = std::fs::read_to_string(BINDINGS_PATH).unwrap_or_default();
         assert!(
             generated_text == committed,
-            "frontend/src/api/generated/bindings.ts is stale; run `cargo run -p lettuce-desktop --bin export-bindings`"
+            "apps/ui/src/api/generated/bindings.ts is stale; run `cargo run -p lettuce-tauri --bin export-bindings`"
         );
     }
 }

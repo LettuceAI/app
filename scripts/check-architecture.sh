@@ -12,8 +12,8 @@ if [[ ${#manifests[@]} -ne 27 ]]; then
 fi
 
 mapfile -t app_manifests < <(find "$app_root" -mindepth 2 -maxdepth 2 -name Cargo.toml -print | sort)
-if [[ "${app_manifests[*]}" != "$app_root/desktop/Cargo.toml" ]]; then
-  echo "expected only the apps/desktop manifest, found: ${app_manifests[*]}" >&2
+if [[ "${app_manifests[*]}" != "$app_root/tauri/Cargo.toml" ]]; then
+  echo "expected only the apps/tauri manifest, found: ${app_manifests[*]}" >&2
   exit 1
 fi
 all_manifests=("${manifests[@]}" "${app_manifests[@]}")
@@ -28,8 +28,8 @@ if rg -n 'old-code' "$repo_root/Cargo.toml" "${all_manifests[@]}" | rg -v '^.*ex
   exit 1
 fi
 
-if rg -n '^lettuce-desktop(\.workspace)?[[:space:]]*=' "${all_manifests[@]}"; then
-  echo "nothing may depend on the desktop shell" >&2
+if rg -n '^lettuce-tauri(\.workspace)?[[:space:]]*=' "${all_manifests[@]}"; then
+  echo "nothing may depend on the Tauri shell" >&2
   exit 1
 fi
 
@@ -56,11 +56,11 @@ check_dependency_owner() {
 check_dependency_owner rusqlite crates/lettuce-database
 check_dependency_owner sqlx crates/lettuce-database
 check_dependency_owner sea-orm crates/lettuce-database
-check_dependency_owner tauri apps/desktop
-check_dependency_owner tauri-build apps/desktop
-check_dependency_owner tauri-specta apps/desktop
-check_dependency_owner specta crates/lettuce-contracts apps/desktop
-check_dependency_owner specta-typescript crates/lettuce-contracts apps/desktop
+check_dependency_owner tauri apps/tauri
+check_dependency_owner tauri-build apps/tauri
+check_dependency_owner tauri-specta apps/tauri
+check_dependency_owner specta crates/lettuce-contracts apps/tauri
+check_dependency_owner specta-typescript crates/lettuce-contracts apps/tauri
 check_dependency_owner reqwest crates/lettuce-network
 check_dependency_owner keyring crates/lettuce-settings
 check_dependency_owner cap-std crates/lettuce-platform

@@ -1,7 +1,7 @@
 schema = 1
 crate_count = 27
 composition_root = "lettuce-app"
-shell = "apps/desktop"
+shell = "apps/tauri"
 shared_root = "lettuce-types"
 legacy_root = "old-code"
 
@@ -41,17 +41,17 @@ workflows = [
   "lettuce-usage",
 ]
 composition = ["lettuce-app"]
-shell = ["lettuce-desktop"]
+shell = ["lettuce-tauri"]
 
 [restricted_dependencies]
 rusqlite = ["lettuce-database"]
 sqlx = ["lettuce-database"]
 sea-orm = ["lettuce-database"]
-tauri = ["lettuce-desktop"]
-tauri-build = ["lettuce-desktop"]
-tauri-specta = ["lettuce-desktop"]
-specta = ["lettuce-contracts", "lettuce-desktop"]
-specta-typescript = ["lettuce-contracts", "lettuce-desktop"]
+tauri = ["lettuce-tauri"]
+tauri-build = ["lettuce-tauri"]
+tauri-specta = ["lettuce-tauri"]
+specta = ["lettuce-contracts", "lettuce-tauri"]
+specta-typescript = ["lettuce-contracts", "lettuce-tauri"]
 reqwest = ["lettuce-network"]
 keyring = ["lettuce-settings"]
 cap-std = ["lettuce-platform"]

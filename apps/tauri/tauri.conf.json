@@ -5,14 +5,14 @@
   "build": {
     "beforeDevCommand": {
       "script": "bun run dev",
-      "cwd": "../../frontend"
+      "cwd": "../ui"
     },
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": {
       "script": "bun run build",
-      "cwd": "../../frontend"
+      "cwd": "../ui"
     },
-    "frontendDist": "../../frontend/dist"
+    "frontendDist": "../ui/dist"
   },
   "app": {
     "windows": [

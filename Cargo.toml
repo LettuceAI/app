@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/*", "apps/desktop"]
+members = ["crates/*", "apps/tauri"]
 exclude = ["old-code"]
 resolver = "2"
 

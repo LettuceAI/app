@@ -4,7 +4,7 @@ The composition root and the application layer. Every workflow that spans more t
 
 The crate may depend on every other crate, and nothing depends on it. It holds no business rules of its own that a domain crate could hold: it resolves inputs, reads through repository ports, calls the pure domain functions, dispatches providers and commits through the repositories. Durable state lives in `lettuce-database`; provider I/O in `lettuce-providers`, `lettuce-local-llm`, `lettuce-image-generation` and `lettuce-speech`; job lifecycle in `lettuce-jobs`.
 
-The crate never depends on Tauri; `api/` is the surface the Tauri shell (`apps/desktop`) wraps.
+The crate never depends on Tauri; `api/` is the surface the Tauri shell (`apps/tauri`) wraps.
 
 What stays with the host: the Tauri commands and events, window and platform integration, the native `SecretStore`, the TLS policy, filesystem roots, worker threads and polling cadence. Every repository call is synchronous SQLite work, so the host runs it on a database or job worker, never on the UI thread or an async runtime thread. The application never substitutes an in-memory secret store in production.
 
@@ -13,7 +13,7 @@ What stays with the host: the Tauri commands and events, window and platform int
 | Folder | What it holds |
 | --- | --- |
 | `composition.rs` | `AppBackend`: open, shutdown, and one constructor per coordinator |
-| `api/` | The application API the desktop shell exposes: `ApiContext`, `ApiError` mapping, event sinks, the conversation generation worker, and one module per domain (`conversations`, `characters`, `assets`) |
+| `api/` | The application API the Tauri shell exposes: `ApiContext`, `ApiError` mapping, event sinks, the conversation generation worker, and one module per domain (`conversations`, `characters`, `assets`) |
 | `launch/` | `ConversationLaunchPlanner`, launch policies (prompt chains, defaults), snapshot documents |
 | `generation/` | The chat turn: dispatch, input reconstruction, context assembly, initial inference, live sources, provider runtime, built-in prompts, runtime text, feature parameters, reply helper, reply media |
 | `companion/` | Companion sends, clock, Soul growth, consolidation and Soul writer jobs, the Thymos install, and the background memory cycle (`companion_memory_*`) shared by all dynamic-memory chats |
@@ -34,7 +34,7 @@ What stays with the host: the Tauri commands and events, window and platform int
 
 ## Application API (`api/`)
 
-`api/` is the application API the frontend reaches through the desktop shell. Every call is a plain async function, `async fn x(context: &ApiContext, request: XRequest) -> Result<XResponse, ApiError>`, over `lettuce-contracts` DTOs, with no Tauri type anywhere, so the whole surface is tested without a webview. The shell's commands are one-line wrappers around these functions.
+`api/` is the application API the frontend reaches through the Tauri shell. Every call is a plain async function, `async fn x(context: &ApiContext, request: XRequest) -> Result<XResponse, ApiError>`, over `lettuce-contracts` DTOs, with no Tauri type anywhere, so the whole surface is tested without a webview. The shell's commands are one-line wrappers around these functions.
 
 `ApiContext` is cheap to clone and holds the `AppBackend`, the host's `SecretStore`, the inference port, the memory embedding and optional emotion engines, the optional media store, the `ApiEventSink`, the clock, the per-turn stream sinks and the worker wake-up. `ApiContext::new(ApiContextParts)` builds it from explicit parts (tests use an in-memory backend and a fake provider); `ApiContext::open_desktop(app_data_dir, secret_store, events)` opens production: the `DirectorySnapshot` and `FilesystemAuthority` over the app data directory, the active database through `AppDatabaseLocation`, the media store over the `MediaBlobs` root and the remote `ProviderRuntime` over the native secret store and the device TLS policy. It loads no embedding or emotion model yet, so dynamic memory retrieval runs without vectors and companion sends use the neutral update. The host calls `recover_after_restart` once before any worker starts and `begin_shutdown` on exit.
 
@@ -460,4 +460,4 @@ Coordinator completion and errors are the backend status boundary; listener disc
 
 `app_version(package_version)` appends `-cuda` for the CUDA build and nothing otherwise; the normal build is CPU with Vulkan. The suffix follows `lettuce-local-llm`'s `cuda` feature, which the `llama-cuda` feature enables.
 
-Build features forward to the runtimes: `llama-vulkan`, `llama-cuda` and `llama-metal` to `lettuce-local-llm`, and `asr-vulkan`, `asr-cuda`, `asr-metal` and `asr-rocm` to `lettuce-speech`. None is on by default; the desktop shell combines them into its product builds. The update check itself is in the frontend.
+Build features forward to the runtimes: `llama-vulkan`, `llama-cuda` and `llama-metal` to `lettuce-local-llm`, and `asr-vulkan`, `asr-cuda`, `asr-metal` and `asr-rocm` to `lettuce-speech`. None is on by default; the Tauri shell combines them into its product builds. The update check itself is in the frontend.
