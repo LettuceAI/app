@@ -1,62 +1,56 @@
 # lettuce-observability
 
-The workspace's single Rust observability layer: `tracing` subscriber configuration, redaction, rotating local output, health diagnostics, crash context, and support bundles.
+The one place in the workspace that configures logging: it installs the process-wide `tracing` subscriber, writes the daily log files the in-app log viewer reads, sanitizes what goes into them, serves the viewer's reads, and writes panic reports.
 
-## Boundary
+Other crates only emit `tracing` spans and events. They never install a subscriber, create an exporter, log through Tauri or add a logging facade of their own. Progress the user sees travels through typed job and application events, never through log parsing. User content and secrets are kept out of logs by default.
 
-User content and secrets are excluded by default.
+## Structure
 
-Other crates emit structured `tracing` spans and events. They do not install subscribers, create telemetry exporters, depend on Tauri for logging, or introduce a parallel logging facade. User-visible progress travels through typed job/application events rather than log parsing.
+- `config.rs`: `ObservabilityConfig` holds the `EnvFilter` directives (invalid directives fall back to `info`), the stderr format (`Compact` or `Pretty`) and an optional `LocalOutputConfig` with the log directory and queue capacity (default 1024, at most 1 000 000). Validation only checks what it was given; the crate never discovers or creates a log directory on its own.
+- `init.rs`: `install` builds the subscriber (filter, stderr layer, and the file layer when local output is configured) and sets it as the global default once. It returns a `LocalOutput` with the `WorkerGuard` that flushes queued lines on drop and a `LogSink`.
+- `line_layer.rs`: `LineLayer` turns each event into one log line.
+- `log_files.rs`: the line format (`LogEntry`), `sanitize_message`, `DailyLogWriter` and `LogDirectory`, the viewer's reads.
+- `correlation.rs`: `CorrelationContext` carries an `OperationId` and optional request, job, conversation and generation-turn ids, and opens a `lettuce.operation` span with them. Correlation is ids only, never prompts or payloads. The field names are exported as constants so every crate records them the same way.
+- `redaction.rs`: `Sensitive<T>` and `UserContent<T>` print `[REDACTED]` for both `Debug` and `Display`, also when nested inside another formatted error. The value is reachable only through `as_inner` or `into_inner`. Wrapping content does not make it loggable; it makes accidental formatting safe.
+- `panic.rs`: `install_panic_reports`.
 
-The public surface is intentionally small. Business invariants belong in domain models and use cases; infrastructure is accessed only through narrow ports owned by the calling crate.
+## Log files
 
-## Status
+The composition root passes the host's log directory. Records go to `app-YYYY-MM-DD.log`, one file per local day, one line per record:
 
-The first foundation slice provides typed correlation, unconditional redaction
-wrappers, safe `tracing_subscriber` installation, and optional daily local
-output.
+```
+[<rfc3339 local time>] LEVEL component at=file:line:1 | message name=value [span=outer > inner]
+```
 
-Log files keep the old app's layout because its log viewer parses them: one
-`app-YYYY-MM-DD.log` per local day in the host's log directory, one
-`[rfc3339 local time] LEVEL component at=file:line:1 | message [span=a > b]`
-line per record. `LineLayer` writes every DEBUG-or-higher event that way (the
-old app never wrote TRACE, and its viewer only styles and filters the four
-levels): the component is the event's `component` field or its target, the
-message is the `message` or `msg` field, `at=` is written only for relative
-source paths without whitespace (the viewer's `at=\S+` pattern), and fields
-other than the message are appended after the sanitized message as
-` name=value`, each value sanitized on its own and the values of
-`key`/`api_key`/`apikey`/`access_token`/`token`/`authorization`/`x-api-key`
-fields replaced by `***` (the old app had no structured fields, so they would
-otherwise be lost). The message passes the old sanitizer (newlines
-escaped, request/response bodies replaced by their length, bearer tokens and
-`key=`/`token=`-style parameters masked, messages over 1200 characters cut
-except for the old `api_request`/`image_generator`/`llama_cpp`/
-`dynamic_memory` components, `full_url=` shortened for `api_request`). The
-sanitizer searches case-insensitively without lowercasing the message, which
-corrects the old byte-offset mismatch on non-ASCII text; `len=` reports the
-real body length, where the old app sanitized twice and always reported the
-placeholder's length. `DailyLogWriter` sits
-behind the bounded lossy non-blocking queue and reopens the day's file when
-the date changes or the file was deleted; `LogSink` appends records that do
-not come from `tracing` (the frontend's) unsanitized to the same files, as
-the old `log_to_file` did; they share the bounded lossy queue, so a full queue
-drops them silently where the old synchronous write returned an error the
-frontend only warned about. `install` returns both as `LocalOutput`.
+The viewer's parser depends on this layout. `LineLayer` builds each line like this:
 
-`LogDirectory` is the log viewer: `list` (`.log` files, newest name first),
-`read`, `page` (offset/limit plus the line count), `search` (plain,
-case-insensitive, whole word or regex; "Invalid search pattern: ..."),
-`relevant_lines` (lines sharing a UUID with the reference line, or from its
-component within 30 seconds or sharing at least two of its words of five or
-more letters, or more than 40% of them), `delete` and `clear` (every `.log`
-file), with the old error texts. File names must be a single name inside the
-directory, correcting the old `..` escape. Retention stays as the old app had
-it: files are kept until the user deletes them. Saving a log to Downloads and
-the Android export folder are host work for (c).
+1. TRACE events are skipped; the viewer only knows the four levels from DEBUG up.
+2. The component is the event's `component` field, or its target. The message is the `message` or `msg` field.
+3. `at=` is written only when the source path is relative and has no whitespace, since the viewer matches `at=\S+`.
+4. The message goes through `sanitize_message`.
+5. Every other field is appended as ` name=value`, each value sanitized on its own. Values of `key`, `api_key`, `apikey`, `access_token`, `token`, `authorization` and `x-api-key` are written as `***`.
+6. The span path from the root is appended as `[span=a > b]`.
 
-Panic reports (2026-09-23): `install_panic_reports(directory)` chains a panic
-hook that writes each panic's report (time, thread, location, payload, forced
-backtrace) to its own `panic-{local time}-p{pid}-{thread}-{counter}.log` in the
-host's log directory and logs where it went, as legacy's bootstrap did; the
-host installs it after `install`.
+`sanitize_message` escapes newlines, replaces everything after a `request body:` or `response body:` marker (and two similar markers) with `<redacted body len=N>` giving the real length, masks the token after `bearer ` and the value of every `name=` parameter in the secret list, and cuts messages over 1200 characters, except for the `api_request`, `image_generator`, `llama_cpp` and `dynamic_memory` components. For `api_request` it shortens `full_url=` to `url=`. Matching is case-insensitive on ASCII without lowercasing the message, so byte offsets stay correct for non-ASCII text.
+
+`DailyLogWriter` sits behind `tracing-appender`'s non-blocking writer, bounded to the configured capacity and lossy: when the queue is full, lines are dropped rather than blocking the caller. It reopens the file when the local date changes or when the current file was deleted.
+
+`LogSink` appends records that do not come from `tracing`, such as the frontend's, to the same files through the same queue. They are written as given, without sanitizing, and a full queue drops them silently.
+
+Files are kept until the user deletes them; there is no automatic retention.
+
+## Log viewer
+
+`LogDirectory` serves the viewer:
+
+- `list` returns the `.log` files, newest name first.
+- `read` returns a whole file; `page` returns an offset and limit of lines plus the total line count.
+- `search` matches plain text, case-insensitively, as a whole word, or as a regex; a bad pattern fails with `Invalid search pattern: ...`.
+- `relevant_lines` finds lines related to a reference line: any line containing one of its UUIDs, or a line from the same component that is within 30 seconds of it or shares at least two of its words of five or more letters (or more than 40% of them).
+- `delete` removes one file and `clear` removes every `.log` file.
+
+File names must be a single name inside the directory; anything else is not found.
+
+## Panic reports
+
+`install_panic_reports(directory)` chains a panic hook in front of the existing one. For each panic it writes a report (local time, thread, location, payload, a forced backtrace) to its own `panic-<local time>-p<pid>-<thread>-<counter>.log`, prints it to stderr, and logs where the file went. The host installs it after `install`, so the log line reaches the daily file.
