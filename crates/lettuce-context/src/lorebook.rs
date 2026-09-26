@@ -1,5 +1,5 @@
-//! Lorebook records, legacy-compatible matching, activation previews, and
-//! explanation data.
+//! Lorebook records, keyword matching, activation previews, and explanation
+//! data.
 
 use std::cmp::Ordering;
 
@@ -15,7 +15,7 @@ use crate::prompt::{
     validate_prose,
 };
 
-/// The legacy runtime always inspected this many recent messages.
+/// The runtime always inspects this many recent messages.
 pub const LEGACY_RECENT_MESSAGE_LIMIT: usize = 10;
 pub const MAX_ACTIVE_LOREBOOK_CONTENT_BYTES: usize = 4 * 1024 * 1024;
 
@@ -354,8 +354,8 @@ fn normalize_literal(value: &str) -> String {
         .join(" ")
 }
 
-/// Matches one keyword using the legacy runtime's punctuation, word-boundary,
-/// wildcard, CJK and regex rules.
+/// Matches one keyword using the punctuation, word-boundary, wildcard, CJK
+/// and regex rules.
 pub(crate) fn keyword_matches(
     keyword: &str,
     text: &str,
@@ -662,7 +662,7 @@ pub enum LorebookSourceProvenance {
 }
 
 /// Sources must already be in the caller's binding/source order. The resolver
-/// preserves that order only as the final tie-break after legacy ordinal and
+/// preserves that order only as the final tie-break after entry ordinal and
 /// creation-time ordering. `details: None` is an unresolved ID, not an error.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LorebookActivationSource {
@@ -822,7 +822,7 @@ fn validate_snapshot_source(
 /// conversation document has no entry timestamps or live lifecycle state, so
 /// manufacturing `Lorebook`/`LorebookEntry` values would make replay depend on
 /// data which was not actually captured.  Matching itself still goes through
-/// the same legacy keyword helper and context-window rules.
+/// the same keyword helper and context-window rules.
 pub fn resolve_lorebook_snapshot_activation(
     sources: &[LorebookSnapshotActivationSource],
     recent_messages: &[String],

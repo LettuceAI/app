@@ -156,9 +156,9 @@ pub enum PromptEntryInfoSource {
     Mixed,
 }
 
-/// The scene image protocol variant a chat asks for: legacy kept its
-/// protocol entries only when scene generation was on and resolved a model,
-/// and only the variant of that model (local or remote).
+/// The scene image protocol variant a chat asks for: protocol entries are
+/// kept only when scene generation is on and resolved a model, and only the
+/// variant of that model (local or remote).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum SceneImageProtocolKind {
@@ -166,10 +166,10 @@ pub enum SceneImageProtocolKind {
     Local,
 }
 
-/// Legacy `append_image_directive_instructions` kept the direct-chat prompt
-/// entries with these ids only when scene generation was on and resolved a
-/// model of the same variant; imported copies carry that rule as a
-/// condition. Other purposes never ran the filter.
+/// The direct-chat prompt entries with these ids are kept only when scene
+/// generation is on and resolved a model of the same variant; imported
+/// copies carry that rule as a condition. Other purposes never run the
+/// filter.
 #[must_use]
 pub fn legacy_scene_protocol_conditions(
     purpose: PromptPurpose,
@@ -196,7 +196,7 @@ pub fn legacy_scene_protocol_conditions(
     })
 }
 
-/// The closed condition vocabulary used by legacy prompt entries.
+/// The closed condition vocabulary used by prompt entries.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
 pub enum PromptEntryCondition {
@@ -256,7 +256,7 @@ pub struct PromptEntry {
     pub depth: u32,
     pub conditional_min_messages: Option<u32>,
     pub interval_turns: Option<u32>,
-    /// Retained because the legacy runtime executes disabled system entries.
+    /// A system entry runs even when disabled.
     pub system_prompt: bool,
     pub conditions: Option<PromptEntryCondition>,
     pub payload: Option<PromptEntryPayload>,
@@ -409,8 +409,8 @@ pub struct PromptDocument {
     pub status: LifecycleStatus,
     pub name: String,
     pub purpose: PromptPurpose,
-    /// The structured entries are the sole operational authority. Legacy text
-    /// is converted by transfer adapters and is not a second live field.
+    /// The structured entries are the sole operational authority. Imported
+    /// text is converted by transfer adapters and is not a second live field.
     pub entries: Vec<PromptEntry>,
     /// Consumer-specific condensation is performed by later conversation
     /// assembly. The generic renderer preserves this flag but never condenses.
@@ -696,9 +696,8 @@ impl PromptDocument {
     }
 }
 
-/// Immutable facts used to evaluate all condition variants. The fields mirror
-/// the old runtime deliberately, including the companion-only scheduled-note
-/// rule and the legacy keyword matcher.
+/// Immutable facts used to evaluate all condition variants, including the
+/// companion-only scheduled-note rule and the lorebook keyword matcher.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PromptConditionContext {
     pub chat_mode: PromptEntryChatMode,
@@ -881,7 +880,7 @@ pub struct PromptRenderValues {
     pub purpose_values: BTreeMap<PromptVariable, String>,
 }
 
-/// The complete legacy placeholder vocabulary accepted by this renderer.
+/// The complete placeholder vocabulary accepted by this renderer.
 /// Values unavailable for a particular purpose deliberately render empty.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PromptVariable {
@@ -1337,7 +1336,7 @@ impl PromptVariable {
         Self::OtherSubjectName,
     ];
 
-    /// Mirrors the legacy prompt editor's allowed-variable contract.
+    /// The prompt editor's allowed-variable contract.
     #[must_use]
     pub const fn is_allowed_for(self, purpose: PromptPurpose) -> bool {
         use PromptPurpose as Purpose;
@@ -1530,9 +1529,9 @@ fn identity_patterns() -> &'static [(regex::Regex, IdentityValue)] {
 }
 
 impl PromptRenderValues {
-    /// Legacy `sanitize_placeholders_in_api_messages`: `{{char}}`,
-    /// `{{persona}}` and `{{user}}` in text the renderer substitutes verbatim
-    /// or never renders (history, lorebook text, memories).
+    /// `{{char}}`, `{{persona}}` and `{{user}}` in text the renderer
+    /// substitutes verbatim or never renders (history, lorebook text,
+    /// memories).
     #[must_use]
     pub fn resolve_names(&self, text: &str) -> String {
         text.replace("{{char}}", &self.character_name)
@@ -1540,10 +1539,9 @@ impl PromptRenderValues {
             .replace("{{user}}", &self.user_name)
     }
 
-    /// Legacy `apply_identity_placeholders`: every character and persona
-    /// identity token, with whitespace allowed inside the braces, resolved in
-    /// a value the renderer substitutes verbatim. Descriptions carry their
-    /// own name tokens resolved.
+    /// Every character and persona identity token, with whitespace allowed
+    /// inside the braces, resolved in a value the renderer substitutes
+    /// verbatim. Descriptions carry their own name tokens resolved.
     #[must_use]
     pub fn resolve_identity(&self, text: &str) -> String {
         let character_description = self.resolve_names(&self.character_description);
@@ -1639,7 +1637,7 @@ impl PromptRenderValues {
 /// `{{#if name}}…{{else}}…{{/if}}` keeps the first branch when the named
 /// render variable is non-empty. Blocks do not nest. A block that is not well
 /// formed, names no render variable or nests, and a stray `{{else}}` or
-/// `{{/if}}`, stay in the text as written, as legacy sent such text verbatim.
+/// `{{/if}}`, stay in the text as written.
 fn render_legacy_conditionals(source: &str, present: impl Fn(&str) -> Option<bool>) -> String {
     const OPEN: &str = "{{#if ";
     const ELSE: &str = "{{else}}";
