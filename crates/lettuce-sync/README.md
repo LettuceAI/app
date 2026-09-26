@@ -167,8 +167,10 @@ journaled as deletes in reverse order, stamped with the time this device
 deleted the entity (`sync_deleted_entities`: delete triggers on the tables
 whose rows are synced entities, messages, branches and memory items included,
 record it, and a purge records its own time inside its transaction first),
-like legacy's per-write capture; every scan clears the table, as does a
-journal restart after carrying its deletes, and summaries and bindings fall
+like legacy's per-write capture; every scan clears the table except the
+times of entities it skipped (a deferred incoming change or a pending
+re-journal), which a later scan still uses, a journal restart clears it after
+carrying its deletes, and summaries and bindings fall
 back to the session time. Edits and imports therefore replicate
 with no per-mutation code; a restored database starts with a new device
 identity and an empty journal, so it rejoins as a new device whose state meets

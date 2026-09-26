@@ -3058,6 +3058,39 @@ fn journal_referenced_media(
     Ok(journaled)
 }
 
+/// Forgets the delete times a scan had no use for, keeping those of entities
+/// it skipped: one with a deferred incoming change or owned by a pending
+/// re-journal still has its delete journaled by a later scan, stamped with
+/// the time this device deleted it.
+fn forget_unused_delete_times(
+    tx: &Transaction<'_>,
+    pending_scopes: &[PurgeScope],
+) -> Result<(), LocalChangeJournalError> {
+    let recorded = tx
+        .prepare("SELECT entity_kind, entity_id FROM sync_deleted_entities")
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(storage)?;
+    for (kind, id) in recorded {
+        if entity_deferred(tx, &kind, &id).map_err(storage)?
+            || pending_scopes.iter().any(|scope| scope.owns(&kind, &id))
+        {
+            continue;
+        }
+        tx.execute(
+            "DELETE FROM sync_deleted_entities WHERE entity_kind = ?1 AND entity_id = ?2",
+            params![kind, id],
+        )
+        .map_err(storage)?;
+    }
+    Ok(())
+}
+
 /// Journals one scanned change. An insert or update is stamped with its
 /// content's change time and a delete with the time this device deleted the
 /// entity (recorded by `sync_deleted_entities`), each no earlier than the
@@ -4581,8 +4614,7 @@ impl LocalChangeJournal for Database {
                 }
             }
         }
-        tx.execute("DELETE FROM sync_deleted_entities", [])
-            .map_err(storage)?;
+        forget_unused_delete_times(&tx, &pending_scopes)?;
         tx.commit().map_err(storage)?;
         crate::purge::run_queued_purges_on(&mut connection, &self.foreign_keys_lost, now)
             .map_err(storage)?;
@@ -5325,6 +5357,50 @@ mod tests {
             Some(&1)
         );
         assert!(second.change.observes(&first.change));
+    }
+
+    #[test]
+    fn a_scan_keeps_the_delete_time_of_an_entity_it_skipped() {
+        let database = Database::open_in_memory().expect("database");
+        let recorded = database
+            .record_local_change(
+                OperationId::new(),
+                request(b"first"),
+                TimestampMillis::new(10),
+            )
+            .expect("change");
+        {
+            let connection = database.connection().expect("connection");
+            connection
+                .execute(
+                    "INSERT INTO sync_deferred_changes (change_id, entity_kind, entity_id, deferred_at)
+                     VALUES (?1, 'persona', 'deferred', 20)",
+                    [recorded.change.id().as_uuid().to_string()],
+                )
+                .expect("defer");
+            connection
+                .execute(
+                    "INSERT INTO sync_deleted_entities (entity_kind, entity_id, deleted_at)
+                     VALUES ('persona', 'deferred', 30), ('persona', 'unused', 31)",
+                    [],
+                )
+                .expect("delete times");
+        }
+        database
+            .journal_current_state(TimestampMillis::new(40))
+            .expect("scan");
+        let kept = database
+            .connection()
+            .expect("connection")
+            .prepare("SELECT entity_id, deleted_at FROM sync_deleted_entities ORDER BY entity_id")
+            .expect("statement")
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })
+            .expect("rows")
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .expect("kept");
+        assert_eq!(kept, [("deferred".to_owned(), 30)]);
     }
 
     #[test]
