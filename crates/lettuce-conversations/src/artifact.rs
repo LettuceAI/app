@@ -517,6 +517,14 @@ pub trait ConversationArtifactStore: Send + Sync {
         &self,
         draft: SnapshotArtifactDraft,
     ) -> Result<ProtectedSnapshotRef, ArtifactError>;
+    /// Stores a snapshot and attaches it to an existing conversation in one
+    /// write, so the artifact never exists without the conversation's
+    /// reference.
+    fn attach_snapshot(
+        &self,
+        conversation_id: lettuce_types::ConversationId,
+        draft: SnapshotArtifactDraft,
+    ) -> Result<ProtectedSnapshotRef, ArtifactError>;
     fn verify_snapshot(&self, reference: &ProtectedSnapshotRef) -> Result<(), ArtifactError>;
     /// Removes an artifact that was staged before its owning conversation
     /// mutation committed. Implementations must treat this as an orphan-only,

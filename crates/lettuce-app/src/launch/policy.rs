@@ -115,13 +115,23 @@ pub(crate) const DIRECT_SELECTION_PURPOSES: [PromptPurpose; 4] = [
     PromptPurpose::GroupChatRoleplay,
 ];
 
+/// The purposes a starter's prompt admits: direct and group chat templates,
+/// rendered whatever their type.
+pub(crate) const STARTER_PROMPT_PURPOSES: [PromptPurpose; 3] = [
+    PromptPurpose::DirectChat,
+    PromptPurpose::GroupChatConversational,
+    PromptPurpose::GroupChatRoleplay,
+];
+
 /// The direct-chat chain outside companion mode: the chat's selected prompt
-/// when it is an active document of a chat purpose
-/// (`DIRECT_SELECTION_PURPOSES`), then the character's direct prompt when it
-/// is an active direct-chat document, then `direct_app_default_prompt`.
+/// when it is an active document of a `DIRECT_SELECTION_PURPOSES` purpose,
+/// then the starter's prompt when it is an active document of a
+/// `STARTER_PROMPT_PURPOSES` purpose, then the character's direct prompt when
+/// it is an active direct-chat document, then `direct_app_default_prompt`.
 pub(crate) fn direct_prompt<S: PromptRepository + ?Sized>(
     sources: &S,
     selected: Option<PromptDocumentId>,
+    starter: Option<PromptDocumentId>,
     character: Option<PromptDocumentId>,
     app_default: Option<PromptDocumentId>,
 ) -> Result<Option<PromptDocument>, PromptRepositoryError> {
@@ -132,6 +142,11 @@ pub(crate) fn direct_prompt<S: PromptRepository + ?Sized>(
                 .into_iter()
                 .map(move |purpose| (id, purpose))
         })
+        .chain(starter.into_iter().flat_map(|id| {
+            STARTER_PROMPT_PURPOSES
+                .into_iter()
+                .map(move |purpose| (id, purpose))
+        }))
         .chain(character.map(|id| (id, PromptPurpose::DirectChat)));
     for (prompt_id, purpose) in candidates {
         if let PromptLookupResult::Available { document } =

@@ -157,6 +157,7 @@ pub(crate) fn insert_historical_conversation(
         (None, _) => false,
     };
     insert_snapshot_refs(transaction, input.history)?;
+    insert_turn_snapshot_refs(transaction, conversation_id, input.turns, input.runtime)?;
 
     let branches = aggregate
         .branches
@@ -446,6 +447,58 @@ pub(crate) fn insert_snapshot_refs(
             .execute(
                 "INSERT OR IGNORE INTO conversation_snapshot_refs (conversation_id, artifact_id) VALUES (?1, ?2)",
                 params![conversation.id.to_string(), reference.artifact_id.to_string()],
+            )
+            .map_err(slice::db)?;
+    }
+    Ok(())
+}
+
+/// The model snapshots a turn records: its requested override, the model it
+/// resolved and the model its speaker decision used.
+pub(crate) fn turn_model_references(
+    turn: &GenerationTurn,
+) -> impl Iterator<Item = &ProtectedSnapshotRef> {
+    [
+        turn.requested_model_override.as_ref(),
+        turn.resolved_model.as_ref(),
+        turn.selected_speaker
+            .as_ref()
+            .and_then(|speaker| speaker.decision_model.as_ref()),
+    ]
+    .into_iter()
+    .flatten()
+    .map(|model| &model.snapshot_ref)
+}
+
+/// Attaches the model snapshots the turns and their speaker dispatches
+/// recorded, so they belong to the conversation like the ones generation
+/// attached.
+pub(crate) fn insert_turn_snapshot_refs(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    turns: &[GenerationTurn],
+    runtime: &[lettuce_transfer::BackupGenerationAttemptRuntime],
+) -> Result<(), ConversationRepositoryError> {
+    let mut references = BTreeMap::<SnapshotArtifactId, &ProtectedSnapshotRef>::new();
+    for reference in turns.iter().flat_map(turn_model_references) {
+        references.insert(reference.artifact_id, reference);
+    }
+    for model in runtime.iter().filter_map(|attempt| {
+        attempt
+            .speaker_inference
+            .as_ref()
+            .and_then(|record| record.decision.as_ref())
+            .and_then(|decision| decision.decision_model.as_ref())
+    }) {
+        references.insert(model.snapshot_ref.artifact_id, &model.snapshot_ref);
+    }
+    for reference in references.values() {
+        conversation_artifact_adapter::verify_snapshot_in_transaction(transaction, reference)
+            .map_err(ConversationRepositoryError::ArtifactReference)?;
+        transaction
+            .execute(
+                "INSERT OR IGNORE INTO conversation_snapshot_refs (conversation_id, artifact_id) VALUES (?1, ?2)",
+                params![conversation_id.to_string(), reference.artifact_id.to_string()],
             )
             .map_err(slice::db)?;
     }

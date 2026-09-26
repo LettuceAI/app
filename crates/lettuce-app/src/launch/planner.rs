@@ -668,8 +668,9 @@ where
 
     /// A companion character always launches on the companion prompt chain
     /// (`policy::companion_prompt`) and ignores a starter's prompt. A direct
-    /// character uses the starter's prompt, the character's direct prompt,
-    /// then `policy::direct_app_default_prompt`. An explicit prompt fails on
+    /// character uses the starter's prompt (`policy::STARTER_PROMPT_PURPOSES`),
+    /// the character's direct prompt, then
+    /// `policy::direct_app_default_prompt`. An explicit prompt fails on
     /// any resolution error; an inherited one fails when it is missing or of
     /// another purpose and falls through when it is archived.
     fn resolve_prompt(
@@ -692,9 +693,20 @@ where
             None => defaults.direct_prompt_id.map(|id| (id, false)),
         };
         if let Some((prompt_id, authored)) = choice {
-            match PromptRepository::lookup_exact(self.sources, prompt_id, PromptPurpose::DirectChat)
-                .map_err(LaunchSourceError::Prompt)?
-            {
+            let purposes: &[PromptPurpose] = if authored {
+                &policy::STARTER_PROMPT_PURPOSES
+            } else {
+                &[PromptPurpose::DirectChat]
+            };
+            let mut lookup = PromptLookupResult::Missing;
+            for purpose in purposes {
+                lookup = PromptRepository::lookup_exact(self.sources, prompt_id, *purpose)
+                    .map_err(LaunchSourceError::Prompt)?;
+                if !matches!(lookup, PromptLookupResult::PurposeMismatch { .. }) {
+                    break;
+                }
+            }
+            match lookup {
                 PromptLookupResult::Missing => {
                     return Err(ConversationLaunchError::PromptNotFound { prompt_id });
                 }
