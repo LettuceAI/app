@@ -1662,9 +1662,8 @@ fn prompt_purposes(prompts: &crate::LegacyPromptPlan) -> BTreeMap<&str, PromptPu
         .collect()
 }
 
-/// A missing prompt stays referenced and resolves to the app default like
-/// legacy; a prompt of another purpose is cleared because the rewrite would
-/// refuse to launch with it.
+/// A missing prompt stays referenced and resolves to the app default; a
+/// prompt of another purpose is cleared because a launch would refuse it.
 fn prompt_reference_issue(
     prompt: &mut Option<String>,
     purpose: PromptPurpose,

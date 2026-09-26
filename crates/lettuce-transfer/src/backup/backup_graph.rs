@@ -1425,11 +1425,10 @@ pub fn rebind_provider_backup_secrets(
 }
 
 /// Settles generation work that was in flight when the backup was taken as
-/// interrupted (user decision 2026-09-14), the way a restore writes it: a turn
-/// that never started an attempt is left out, unfinished attempts are
-/// interrupted with an interrupted usage event, unfinished turns become
-/// interrupted, running tools are interrupted and requested or validated tools
-/// are cancelled.
+/// interrupted, the way a restore writes it: a turn that never started an
+/// attempt is left out, unfinished attempts are interrupted with an
+/// interrupted usage event, unfinished turns become interrupted, running
+/// tools are interrupted and requested or validated tools are cancelled.
 pub fn settle_in_flight_generation(graph: &mut ProviderBackupGraph) {
     use lettuce_conversations::{
         GenerationAttemptStatus, GenerationTurnStatus, ToolExecutionStatus, UsageCounters,

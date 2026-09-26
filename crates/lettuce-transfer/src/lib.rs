@@ -1,8 +1,7 @@
 //! Canonical transfer, compatibility formats, backup, and restore.
 //!
-//! The intended ownership, boundaries, migration path, and acceptance gates are
-//! specified in the crate PLAN.md. This crate starts behavior-empty so the
-//! legacy monolith cannot leak in through premature compatibility APIs.
+//! The intended ownership, boundaries, and acceptance gates are specified in
+//! the crate PLAN.md.
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
@@ -35,8 +34,8 @@ use serde::{Deserialize, Serialize};
 /// rewrote group session override encodings the importer reads in both forms,
 /// 96 reordered columns and renamed tables outside the schema).
 pub const LEGACY_DATABASE_SCHEMA_VERSION: u32 = 92;
-/// Every legacy schema version the importer accepts (user decision
-/// 2026-09-23): 2.2.0 stored 92 or 94, 2.2.1 stored 95, 2.2.2-2.2.5 96.
+/// Every legacy schema version the importer accepts: 2.2.0 stored 92 or 94,
+/// 2.2.1 stored 95, 2.2.2-2.2.5 96.
 pub const LEGACY_DATABASE_SCHEMA_VERSIONS: std::ops::RangeInclusive<u32> = 92..=96;
 pub const ASR_LEARNING_DOCUMENT_VERSION: u32 = 3;
 pub const LEGACY_ASR_LEARNING_DOCUMENT_VERSION: u32 = 2;
@@ -293,7 +292,8 @@ pub enum LegacyProviderAccountOrigin {
 pub enum LegacyPendingProviderSecret {
     ApiKey,
     Header { name: HeaderName },
-    /// An Ollama account's Sprout probe key (legacy config `sproutApiKey`).
+    /// An Ollama account's Sprout probe key (`sproutApiKey` in the source
+    /// credential config).
     SproutApiKey,
 }
 
