@@ -82,10 +82,10 @@ pub(crate) const fn is_companion(defaults: &CharacterDefaults) -> bool {
     matches!(defaults.interaction_mode, InteractionMode::Companion)
 }
 
-/// The companion prompt chain (legacy `build_system_prompt_entries` in
-/// companion mode): the character's companion template, then the app default
-/// prompt, each only when it is an active companion-chat document, then the
-/// bundled companion prompt. `None` only when the bundled prompt is missing.
+/// The companion prompt chain: the character's companion template, then the
+/// app default prompt, each only when it is an active companion-chat
+/// document, then the bundled companion prompt. `None` only when the bundled
+/// prompt is missing.
 pub(crate) fn companion_prompt<S: PromptRepository + ?Sized>(
     sources: &S,
     config: Option<&CompanionSoulConfig>,
@@ -105,10 +105,9 @@ pub(crate) fn companion_prompt<S: PromptRepository + ?Sized>(
     )
 }
 
-/// The purposes a one-to-one chat's own prompt selection admits: legacy set a
-/// session template from a chat template, whose picker offered direct and
-/// group chat templates, or from a companion template, and rendered it
-/// whatever its type.
+/// The purposes a one-to-one chat's own prompt selection admits: direct and
+/// group chat templates and companion templates, rendered whatever their
+/// type.
 pub(crate) const DIRECT_SELECTION_PURPOSES: [PromptPurpose; 4] = [
     PromptPurpose::DirectChat,
     PromptPurpose::CompanionChat,
@@ -116,11 +115,10 @@ pub(crate) const DIRECT_SELECTION_PURPOSES: [PromptPurpose; 4] = [
     PromptPurpose::GroupChatRoleplay,
 ];
 
-/// The direct-chat chain (legacy `build_system_prompt_entries` outside
-/// companion mode): the chat's selected prompt when it is an active document of
-/// a chat purpose (`DIRECT_SELECTION_PURPOSES`), then the character's direct
-/// prompt when it is an active direct-chat document, then
-/// `direct_app_default_prompt`.
+/// The direct-chat chain outside companion mode: the chat's selected prompt
+/// when it is an active document of a chat purpose
+/// (`DIRECT_SELECTION_PURPOSES`), then the character's direct prompt when it
+/// is an active direct-chat document, then `direct_app_default_prompt`.
 pub(crate) fn direct_prompt<S: PromptRepository + ?Sized>(
     sources: &S,
     selected: Option<PromptDocumentId>,
@@ -174,10 +172,9 @@ pub(crate) fn group_prompt<S: PromptRepository + ?Sized>(
     crate::generation::built_in_prompts::active_built_in_prompt(sources, built_in)
 }
 
-/// The tail of the direct-chat chain (legacy `get_app_default_template_content`
-/// outside companion mode): the app default prompt when it is an active
-/// direct-chat document, else the bundled app default prompt. `None` only when
-/// the bundled prompt is missing.
+/// The tail of the direct-chat chain: the app default prompt when it is an
+/// active direct-chat document, else the bundled app default prompt. `None`
+/// only when the bundled prompt is missing.
 pub(crate) fn direct_app_default_prompt<S: PromptRepository + ?Sized>(
     sources: &S,
     app_default: Option<PromptDocumentId>,
@@ -258,8 +255,8 @@ pub(crate) fn member_shape(members: &[GroupMember]) -> MemberShape {
     MemberShape::Launchable
 }
 
-/// Legacy naming for an untitled cast: up to three names in member order,
-/// then the first two followed by how many members were left out.
+/// The title of an untitled cast: up to three names in member order, then
+/// the first two followed by how many members were left out.
 pub(crate) fn derive_group_title(names: &[String], max_bytes: usize) -> String {
     let derived = if names.len() <= 3 {
         names.join(", ")
@@ -448,9 +445,9 @@ pub(crate) fn project_scene_text(parts: &[ScenePart]) -> String {
         .collect()
 }
 
-/// Legacy direct scene text precedence: selected variant, then the base
-/// document, then the direction. A selected variant that no longer belongs to
-/// this scene falls back to the base document rather than blanking the scene.
+/// Direct scene text precedence: selected variant, then the base document,
+/// then the direction. A selected variant that no longer belongs to this
+/// scene falls back to the base document rather than blanking the scene.
 pub(crate) fn resolve_scene_text(scene: &Scene, variants: &[SceneVariant]) -> Option<String> {
     scene_text(scene, variants, true)
 }

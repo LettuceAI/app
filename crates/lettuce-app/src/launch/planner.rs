@@ -668,10 +668,10 @@ where
 
     /// A companion character always launches on the companion prompt chain
     /// (`policy::companion_prompt`) and ignores a starter's prompt. A direct
-    /// character follows legacy's order: the starter's prompt, the character's
-    /// direct prompt, then `policy::direct_app_default_prompt`. An explicit
-    /// prompt fails on any resolution error; an inherited one fails when it is
-    /// missing or of another purpose and falls through when it is archived.
+    /// character uses the starter's prompt, the character's direct prompt,
+    /// then `policy::direct_app_default_prompt`. An explicit prompt fails on
+    /// any resolution error; an inherited one fails when it is missing or of
+    /// another purpose and falls through when it is archived.
     fn resolve_prompt(
         &self,
         defaults: &lettuce_characters::CharacterDefaults,
@@ -1554,9 +1554,8 @@ fn retain(ids: Vec<LorebookId>, kept: &[LorebookId]) -> Vec<LorebookId> {
 }
 
 /// A launch that turns the persona off records that as the conversation's
-/// own disabled persona, like legacy's session `persona_disabled`; a launch
-/// that only found no default persona records nothing, so the chat follows a
-/// default persona set later (legacy `choose_persona`).
+/// own disabled persona; a launch that only found no default persona records
+/// nothing, so the chat follows a default persona set later.
 fn persona_turned_off(
     selection: &LaunchSelection<lettuce_types::PersonaId>,
 ) -> Result<Option<lettuce_conversations::CurrentConversationSettings>, ConversationLaunchError> {

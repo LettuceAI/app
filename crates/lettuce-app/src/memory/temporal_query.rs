@@ -7,8 +7,7 @@ use chrono::{
 use lettuce_types::TimestampMillis;
 use regex::Regex;
 
-/// A half-open local-calendar window a memory query asks about, legacy
-/// `TemporalRange`.
+/// A half-open local-calendar window a memory query asks about.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TemporalRange {
     pub(crate) start: TimestampMillis,
@@ -198,8 +197,8 @@ fn days_in_month(year: i32, month: u32) -> Option<u32> {
     Some(sub_days(NaiveDate::from_ymd_opt(next_year, next_month, 1)?, 1)?.day())
 }
 
-/// Legacy `detect_temporal_query_range`: the first calendar phrase of a memory
-/// query, resolved against the reference time in the local timezone.
+/// The first calendar phrase of a memory query, resolved against the
+/// reference time in the local timezone.
 pub(crate) fn detect_temporal_query_range(
     query: &str,
     reference: TimestampMillis,

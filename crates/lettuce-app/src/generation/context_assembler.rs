@@ -591,18 +591,17 @@ where
         + GroupLorebookBindingRepository,
 {
     /// The system prompt of a direct chat, resolved from live sources on
-    /// every turn (legacy `build_system_prompt_entries`); the stored launch
-    /// and override snapshots only record which prompt the chat selected.
-    /// A companion chat follows `policy::companion_prompt` and ignores the
-    /// selection. Any other direct chat follows `policy::direct_prompt`: the
-    /// chat's selection, then the live character's direct prompt, then the app
-    /// default chain; a prompt the chat disabled yields none. The selection is
-    /// a current override, else the launch prompt when the launch pinned one
-    /// like legacy's session template: a starter's explicit prompt, or an
-    /// inherited prompt that is the character's direct prompt in the launch
-    /// character snapshot, so it runs before the bundle's characters are
-    /// replaced with their live records. A launch that fell back to the app
-    /// default chain pinned nothing, as legacy left the session template empty.
+    /// every turn; the stored launch and override snapshots only record which
+    /// prompt the chat selected. A companion chat follows
+    /// `policy::companion_prompt` and ignores the selection. Any other direct
+    /// chat follows `policy::direct_prompt`: the chat's selection, then the
+    /// live character's direct prompt, then the app default chain; a prompt
+    /// the chat disabled yields none. The selection is a current override,
+    /// else the launch prompt when the launch pinned one: a starter's explicit
+    /// prompt, or an inherited prompt that is the character's direct prompt in
+    /// the launch character snapshot, so it runs before the bundle's
+    /// characters are replaced with their live records. A launch that fell
+    /// back to the app default chain pinned nothing.
     fn live_direct_prompt(
         &self,
         conversation: &lettuce_conversations::Conversation,
@@ -676,10 +675,10 @@ where
             .transpose()
     }
 
-    /// The prompt a group speaker generates with, read live each turn like
-    /// legacy's group template lookup: the conversation's own selection, the
-    /// speaker's group prompt, then the group's (`policy::group_prompt`). A
-    /// prompt the conversation disabled yields none.
+    /// The prompt a group speaker generates with, read live each turn: the
+    /// conversation's own selection, the speaker's group prompt, then the
+    /// group's (`policy::group_prompt`). A prompt the conversation disabled
+    /// yields none.
     fn live_group_prompt(
         &self,
         conversation: &lettuce_conversations::Conversation,
@@ -732,13 +731,12 @@ where
     }
 
     /// The lorebooks a turn activates, read live each turn in ordered tiers.
-    /// A direct chat has one tier (legacy `get_lorebook_content`): the chat's
-    /// own selection, else the character's enabled bindings then the persona's.
-    /// A group chat has two (legacy `get_group_active_lorebook_entries`): the
-    /// conversation's own selection, else the group's bindings; then the
+    /// A direct chat has one tier: the chat's own selection, else the
+    /// character's enabled bindings then the persona's. A group chat has two:
+    /// the conversation's own selection, else the group's bindings; then the
     /// speaker's bindings unless the group disables character lorebooks. A
-    /// disabled selection is an empty own selection, as legacy's empty
-    /// `lorebook_ids`. Missing and archived books are skipped by the activation.
+    /// disabled selection is an empty own selection. Missing and archived
+    /// books are skipped by the activation.
     fn live_lorebook_tiers(
         &self,
         conversation: &lettuce_conversations::Conversation,
@@ -845,11 +843,10 @@ where
             .collect()
     }
 
-    /// The companion state block of a companion chat (legacy
-    /// `is_companion_mode`, see `companion_clock`). The relationship and the
-    /// partner are those of the persona the chat uses now; a chat, Soul or
-    /// episode that has no stored state yet renders the defaults of the
-    /// character's companion settings.
+    /// The companion state block of a companion chat (see
+    /// `companion_clock`). The relationship and the partner are those of the
+    /// persona the chat uses now; a chat, Soul or episode that has no stored
+    /// state yet renders the defaults of the character's companion settings.
     fn companion_prompt_state(
         &self,
         aggregate: &ConversationAggregate,
@@ -1372,9 +1369,9 @@ fn select_timeline<'a>(
     })
 }
 
-/// The parent chain ending at `head_id`, root first: the conversation order
-/// legacy sent history in. Message times never reorder it, so a message
-/// stamped earlier by a moved companion clock keeps its place.
+/// The parent chain ending at `head_id`, root first: the order history is
+/// sent in. Message times never reorder it, so a message stamped earlier by a
+/// moved companion clock keeps its place.
 fn conversation_order(
     request: &ContextRequest,
     head_id: MessageId,
@@ -1501,10 +1498,10 @@ impl SnapshotBundle {
         })
     }
 
-    /// Replaces each character body with its current record, as legacy read
-    /// the characters every turn, and lists a group's current members in cast
-    /// order. A record that no longer exists keeps its launch body; a group
-    /// that no longer exists keeps its launch members.
+    /// Replaces each character body with its current record, read every
+    /// turn, and lists a group's current members in cast order. A record
+    /// that no longer exists keeps its launch body; a group that no longer
+    /// exists keeps its launch members.
     fn read_live_characters<S: CharacterRepository + ?Sized>(
         &mut self,
         sources: &S,
@@ -2287,18 +2284,16 @@ fn prompt_values(
     values
 }
 
-/// Legacy `has_scene_placeholder` (`prompt_engine.rs` 3174-3178).
 fn has_scene_placeholder(content: &str) -> bool {
     content.contains("{{scene}}")
         || content.contains("{{scene_direction}}")
         || content.contains("{{direction}}")
 }
 
-/// Legacy `{{group_characters}}` (`group_chat_manager/mod.rs` 5268-5288), one
-/// newline-terminated line per member other than the speaker: the member's
-/// definition, else its description; an empty one falls back to the
-/// personality summary (the first 200 characters of the same text, legacy
-/// `load_characters_info` 4511-4527); a member with neither is its name alone.
+/// `{{group_characters}}`, one newline-terminated line per member other than
+/// the speaker: the member's definition, else its description; an empty one
+/// falls back to the personality summary (the first 200 characters of the
+/// same text); a member with neither is its name alone.
 fn group_characters(
     members: &[CharacterSnapshotBodyV1],
     speaker: Option<CharacterId>,
@@ -2342,9 +2337,8 @@ fn group_characters(
     Ok(list)
 }
 
-/// Legacy `replace_character_name_placeholders` (`group_chat_manager/mod.rs`
-/// 5549-5577): a `{{@"Name"}}` token in a group's starting scene becomes the
-/// member's name; a token naming no member stays as written.
+/// A `{{@"Name"}}` token in a group's starting scene becomes the member's
+/// name; a token naming no member stays as written.
 fn resolve_member_mentions(content: &str, members: &[CharacterSnapshotBodyV1]) -> String {
     const OPEN: &str = "{{@\"";
     const CLOSE: &str = "\"}}";
@@ -2369,12 +2363,10 @@ fn resolve_member_mentions(content: &str, members: &[CharacterSnapshotBodyV1]) -
     resolved
 }
 
-/// Identity tokens inside values the renderer substitutes verbatim, resolved
-/// the way legacy did: a direct chat ran `apply_identity_placeholders` over its
-/// rendered prompt (`prompt_engine.rs` 4580) and author note (3314-3365); a
-/// group chat replaced `{{char}}`, `{{persona}}` and `{{user}}` in each
-/// rendered entry and every identity token in its author note
-/// (`group_chat_manager/mod.rs` 5060-5100, 5490-5495).
+/// Identity tokens inside values the renderer substitutes verbatim: a direct
+/// chat resolves every identity token in its rendered prompt and author note;
+/// a group chat replaces `{{char}}`, `{{persona}}` and `{{user}}` in each
+/// rendered entry and every identity token in its author note.
 fn resolve_substituted_values(values: &mut PromptRenderValues, group: bool) {
     let resolve = |values: &PromptRenderValues, text: &str| {
         if group {
@@ -2411,9 +2403,9 @@ fn selected_character<'a>(
 }
 
 /// Runtime sections a turn injects, collected in placement order.
-/// `turn_context` marks the in-chat messages legacy's condense could merge
-/// into its turn-context message: every one except a conditional or interval
-/// template entry.
+/// `turn_context` marks the in-chat messages condensing may merge into the
+/// turn-context message: every one except a conditional or interval template
+/// entry.
 struct Placement {
     relative: Vec<ProviderNeutralMessage>,
     in_chat: Vec<(u32, ProviderNeutralMessage)>,
@@ -2435,8 +2427,7 @@ impl Placement {
     }
 }
 
-/// Legacy `condense_entries_into_single_system_message`: the non-empty text
-/// of the messages as one system message.
+/// The non-empty text of the messages as one system message.
 fn condensed_system_message(
     messages: Vec<ProviderNeutralMessage>,
 ) -> Option<ProviderNeutralMessage> {

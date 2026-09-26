@@ -6975,9 +6975,9 @@ fn direct_character(database: &Database, conversation_id: ConversationId) -> Cha
         .expect("character participant")
 }
 
-/// Legacy `session_delete` (old-code/src-tauri/src/storage_manager/sessions.rs:3794)
-/// removed a chat for good; usage records outlived it. Its media go once unused, the
-/// peer purges it too, and a file left by an interrupted collection is swept.
+/// Deleting a chat removes it for good while usage records outlive it. Its
+/// media go once unused, the peer purges it too, and a file left by an
+/// interrupted collection is swept.
 #[tokio::test]
 async fn a_deleted_chat_goes_with_its_media_here_and_on_the_sync_peer() {
     let root = hard_delete_root("hard-delete-chat");
@@ -7037,9 +7037,8 @@ async fn a_deleted_chat_goes_with_its_media_here_and_on_the_sync_peer() {
     std::fs::remove_dir_all(root).expect("cleanup");
 }
 
-/// Legacy `session_delete` dropped only the session's own memories
-/// (sessions.rs:3798); `character_delete` dropped the companion's shared memory and
-/// its soul, notes and episodes (characters.rs:1066-1101, db.rs:803-861).
+/// Deleting a chat drops only its own memories; deleting a character drops
+/// the companion's shared memory and its soul, notes and episodes.
 #[tokio::test]
 async fn a_companion_pool_outlives_its_chats_and_goes_with_the_companion() {
     let root = hard_delete_root("hard-delete-companion");
@@ -7128,11 +7127,8 @@ async fn a_companion_pool_outlives_its_chats_and_goes_with_the_companion() {
     std::fs::remove_dir_all(root).expect("cleanup");
 }
 
-/// Legacy `character_delete` (old-code/src-tauri/src/storage_manager/characters.rs:1066)
-/// had no group check: it cascaded to the character's sessions (db.rs:735), left group
-/// chats alone and left its id in `group_characters.character_ids`, which group reads
-/// then skipped (useGroupSettingsController.ts:62). Here the character leaves each
-/// group; a group left with one member cannot exist and goes with a notice.
+/// Deleting a character removes its chats and makes it leave each group; a
+/// group left with one member cannot exist and goes with a notice.
 #[tokio::test]
 async fn deleting_a_character_takes_its_direct_chats_and_leaves_its_groups() {
     let root = hard_delete_root("hard-delete-character");
@@ -7218,9 +7214,8 @@ async fn deleting_a_character_takes_its_direct_chats_and_leaves_its_groups() {
     std::fs::remove_dir_all(root).expect("cleanup");
 }
 
-/// Legacy `group_session_delete` (old-code/src-tauri/src/storage_manager/group_sessions.rs:1962)
-/// removed the group session and its messages; the reusable group stayed. A group chat
-/// stays readable after one of its characters is deleted.
+/// Deleting a group chat removes it and its messages while the reusable group
+/// stays. A group chat stays readable after one of its characters is deleted.
 #[tokio::test]
 async fn a_group_chat_outlives_a_deleted_member_and_is_deleted_on_its_own() {
     let root = hard_delete_root("hard-delete-group");

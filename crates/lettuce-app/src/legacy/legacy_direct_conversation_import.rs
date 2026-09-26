@@ -752,8 +752,8 @@ fn assign_companion_episodes(
 /// their own memories beside it; the share-memory toggle picks which one they
 /// use, as legacy's live owner resolution did. The pool takes the legacy
 /// shared memory when legacy kept one, otherwise a copy of the memories of
-/// the character's most recently updated session that has any (user decision
-/// 2026-09-14); its summary window belongs to that session.
+/// the character's most recently updated session that has any; its summary
+/// window belongs to that session.
 fn attach_companion_pools(
     mapped: &mut [(LegacyConversationRecord, Option<PendingCompanion>)],
     sessions: &[LegacyBackupDirectSession],

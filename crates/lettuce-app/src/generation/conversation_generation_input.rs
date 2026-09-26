@@ -404,7 +404,7 @@ where
 
     /// An attempt that already admitted its request resumes it unchanged. A
     /// recovery child has no admitted request of its own and builds one from
-    /// what is saved now, as a legacy retry read the current session.
+    /// what is saved now.
     fn durable_generation_input(
         &self,
         work: &ConversationGenerationClaimedWork,
@@ -1415,7 +1415,7 @@ where
 
     /// Embeds the memories that have no ready vector for the current
     /// embedding model and text (new, edited, synced or from an older
-    /// model), as legacy migrated session memories before retrieval.
+    /// model) before retrieval.
     fn embed_pending_memories(
         &self,
         work: &ConversationGenerationClaimedWork,
@@ -1749,10 +1749,10 @@ impl ConversationGenerationInputError {
     }
 }
 
-/// Legacy `build_enriched_query`: the latest user message, or with
-/// enrichment the last two dialogue messages joined by a newline, empty ones
-/// included. A direct chat's dialogue also counts its visible system
-/// messages; a group chat's only user and assistant messages.
+/// The latest user message, or with enrichment the last two dialogue
+/// messages joined by a newline, empty ones included. A direct chat's
+/// dialogue also counts its visible system messages; a group chat's only user
+/// and assistant messages.
 fn memory_query<'a>(
     timeline: impl DoubleEndedIterator<Item = &'a lettuce_conversations::TimelineItem>,
     enriched: bool,
@@ -2254,8 +2254,8 @@ fn select_memories<'a>(
     selected
 }
 
-/// Legacy scored a zero-norm vector as 0 instead of skipping it, while a NaN
-/// component still failed every threshold comparison.
+/// Scores a zero-norm vector as 0 instead of skipping it, while a NaN
+/// component still fails every threshold comparison.
 fn legacy_cosine(
     query: &lettuce_embeddings::EmbeddingVector,
     memory: &lettuce_embeddings::EmbeddingVector,
@@ -2273,8 +2273,8 @@ fn legacy_cosine(
     })
 }
 
-/// Legacy temporal candidates: only memories observed inside the queried
-/// window take part, and a memory without an observation time never does.
+/// Temporal candidates: only memories observed inside the queried window
+/// take part, and a memory without an observation time never does.
 fn temporal_candidates<'a>(
     active: &[&'a lettuce_memory::MemoryItem],
     range: crate::memory::temporal_query::TemporalRange,

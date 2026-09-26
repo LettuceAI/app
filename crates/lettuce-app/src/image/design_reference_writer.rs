@@ -1,5 +1,4 @@
-//! Design reference notes from a subject's images (legacy
-//! `chat_generate_design_reference_description`): the scene writer model
+//! Design reference notes from a subject's images: the scene writer model
 //! looks at the avatar and reference images and writes the design text the
 //! character or persona editor offers as a draft.
 
@@ -447,10 +446,8 @@ where
     }
 }
 
-/// Legacy `design_reference_prompt_entry_to_message`. An image entry with
-/// images becomes a user message with its text first; one without images is
-/// dropped. Tokens left in other entries are removed, where legacy sent them
-/// as text.
+/// An image entry with images becomes a user message with its text first;
+/// one without images is dropped. Tokens left in other entries are removed.
 fn entry_message(
     entry: &FeatureEntry,
     avatar: Option<AssetId>,
@@ -506,8 +503,7 @@ fn entry_message(
     })
 }
 
-/// Legacy `render_design_reference_prompt_entries` and its message list: the
-/// relative entries, then every other entry, each in template order.
+/// The relative entries, then every other entry, each in template order.
 fn design_reference_messages(
     document: &PromptDocument,
     context: &PromptRenderContext,
@@ -543,7 +539,7 @@ fn generated_text(outcome: &InferenceOutcome) -> Option<String> {
     (!texts.is_empty()).then(|| texts.join("\n"))
 }
 
-/// Legacy's cleanup of the writer's answer.
+/// Cleans up the writer's answer.
 fn clean_design_reference(text: &str) -> String {
     condense(
         text.trim()

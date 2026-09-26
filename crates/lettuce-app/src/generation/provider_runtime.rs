@@ -265,8 +265,7 @@ impl<S: SecretStore + ?Sized> InferencePort for ProviderRuntime<S> {
     }
 }
 
-/// The saved Pure mode level; legacy fell back to Standard when settings
-/// could not be read.
+/// The saved Pure mode level; Standard when settings cannot be read.
 fn pure_mode_level(database: &Database) -> PureModeLevel {
     match lettuce_settings::GlobalSettingsStore::load(database)
         .map(|stored| stored.settings.pure_mode)

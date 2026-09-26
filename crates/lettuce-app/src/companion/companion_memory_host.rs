@@ -23,8 +23,8 @@ use crate::{
     MemoryCreateSeed, MemoryEmbeddingEngine,
 };
 
-/// Everything the memory job runner needs that legacy read from live settings
-/// and the session at cycle start.
+/// Everything the memory job runner reads from live settings and the
+/// conversation at cycle start.
 #[derive(Debug, Clone)]
 pub struct CompanionMemoryRuntimeInputs {
     pub profile: ResolvedInferenceProfile,
@@ -38,8 +38,7 @@ pub struct CompanionMemoryRuntimeInputs {
 }
 
 /// Why a claimed cycle could not resolve its runtime inputs; the job is
-/// rescheduled so a settings fix lets the same window run, as legacy retried
-/// the cycle on the next turn.
+/// rescheduled so a settings fix lets the same window run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum CompanionMemoryRuntimeInputError {
     #[error("summarisation model not configured")]
@@ -116,9 +115,9 @@ impl<T> CompanionMemoryHostSources for T where
 {
 }
 
-/// The host entry points legacy's `enqueue_post_turn_dynamic_memory` and its
-/// scheduler loop provided: admit the cycle a finished turn earns, resolve the
-/// live settings into runner inputs, run the claimed work and settle its job.
+/// The dynamic memory host entry points: admit the cycle a finished turn
+/// earns, resolve the live settings into runner inputs, run the claimed work
+/// and settle its job.
 #[derive(Debug)]
 pub struct CompanionMemoryHostCoordinator<'a, R: ?Sized, E: ?Sized, I: ?Sized> {
     repository: &'a R,
@@ -143,8 +142,8 @@ where
     E: MemoryEmbeddingEngine + ?Sized,
     I: InferencePort + ?Sized,
 {
-    /// Legacy enqueued the post-turn cycle after a send or continue (never a
-    /// regenerate) when dynamic memory was active: global `enabled` and a
+    /// The post-turn cycle is admitted after a send or continue (never a
+    /// regenerate) when dynamic memory is active: global `enabled` and a
     /// dynamic session for direct chats, only a dynamic session for groups.
     /// Companion conversations discover their processing turn effects; plain
     /// conversations admit the next interval-sized window.
@@ -189,11 +188,10 @@ where
         }
     }
 
-    /// Legacy `trigger_dynamic_memory` (and `retry_dynamic_memory` with a
-    /// model override): a forced cycle over the most recent window, which also
-    /// answers an `ask_first` approval. Companion effects that settled failed
-    /// are pending again for it. The same gate as `after_turn` applies,
-    /// as legacy's cycle checked it before running.
+    /// A forced cycle over the most recent window, optionally with a model
+    /// override, which also answers an `ask_first` approval. Companion
+    /// effects that settled failed are pending again for it. The same gate as
+    /// `after_turn` applies.
     /// A cycle already running for the conversation is reported as
     /// `CycleInProgress`; an empty result means memory is gated off.
     #[allow(clippy::too_many_arguments)]
@@ -282,8 +280,7 @@ where
         }
     }
 
-    /// Legacy `skip_dynamic_memory_cycle`: the pending `ask_first` approval is
-    /// marked skipped.
+    /// Marks the pending `ask_first` approval skipped.
     pub fn skip(
         &self,
         conversation_id: ConversationId,
@@ -296,7 +293,7 @@ where
         )
     }
 
-    /// Legacy `dynamic_memory_pending_approval`.
+    /// How many `ask_first` approvals are pending.
     pub fn pending_approval_count(
         &self,
         conversation_id: ConversationId,
@@ -333,7 +330,7 @@ where
         }))
     }
 
-    /// Legacy resolved the summarisation model as override, then
+    /// The summarisation model resolves as override, then
     /// `summarisationModelId`, then the app default model; the manager prompt
     /// is the local variant for llama.cpp models; the policy comes from the
     /// direct or group dynamic-memory settings.
@@ -472,9 +469,8 @@ where
     }
 
     /// Runs one claimed cycle with live inputs and settles its job. Missing
-    /// runtime inputs reschedule the job without starting a run, as legacy
-    /// skipped the cycle when no summarisation model was configured and tried
-    /// again on the next turn.
+    /// runtime inputs (no summarisation model configured) reschedule the job
+    /// without starting a run, so it is tried again on the next turn.
     pub async fn run_claimed(
         &self,
         work: CompanionMemoryClaimedWork,
@@ -704,8 +700,8 @@ where
             .map_err(CompanionMemoryHostError::Companion)
     }
 
-    /// Legacy read the override template by id and fell back to the built-in
-    /// entries when it was missing; an inactive document or one of another
+    /// The override template is read by id and falls back to the built-in
+    /// entries when it is missing; an inactive document or one of another
     /// purpose falls back the same way.
     fn prompt_override(
         &self,
@@ -750,12 +746,12 @@ fn clock_error(
     }
 }
 
-/// Legacy `DYNAMIC_MEMORY_MANAGER_DEFAULTS` over the model's dynamic memory
-/// slot, then the llama.cpp sampler strip: unless the user turned
+/// The dynamic memory manager defaults over the model's dynamic memory slot,
+/// then the llama.cpp sampler strip: unless the user turned
 /// `dynamicMemoryLlamaSamplerOverwriteEnabled` off, or the slot sets its own
 /// llama sampler, memory calls on llama.cpp use `top_k` 40 and neutral
 /// penalties, with the llama.cpp sampler replaced by the fixed memory
-/// sampler (DRY differs between direct and group memory, as in legacy).
+/// sampler (DRY differs between direct and group memory).
 fn memory_parameter_input(
     slot: &lettuce_models::FeatureGenerationParameters,
     protocol: ProviderProtocol,
@@ -805,8 +801,8 @@ const fn storage() -> CompanionMemoryHostError {
     CompanionMemoryHostError::RuntimeInputs(CompanionMemoryRuntimeInputError::Storage)
 }
 
-/// Legacy counted the validated memory text's tokens with the embedding
-/// tokenizer and stored zero when counting failed.
+/// The validated memory text's tokens are counted with the embedding
+/// tokenizer; zero is stored when counting fails.
 fn create_seeds<E: MemoryEmbeddingEngine + ?Sized>(
     engine: &E,
     round: &lettuce_memory::DynamicMemoryInferenceRound,

@@ -34,9 +34,9 @@ use crate::{BuiltInPromptId, cleanup_outcome_replays};
 
 const HELP_ME_REPLY_STAGE: &str = "reply-helper";
 
-/// Legacy `HELP_ME_REPLY_DEFAULTS` over the model's help-me-reply slot; the
+/// `HELP_ME_REPLY_DEFAULTS` over the model's help-me-reply slot; the
 /// settings' output cap applies where the slot sets none. Only the direct
-/// helper passed top_k, the penalties and prompt caching.
+/// helper passes top_k, the penalties and prompt caching.
 fn help_me_reply_parameters(
     slot: &lettuce_models::FeatureGenerationParameters,
     group: bool,
@@ -62,7 +62,7 @@ fn help_me_reply_parameters(
     input
 }
 
-/// One "help me reply" request, legacy `chat_generate_user_reply`.
+/// One "help me reply" request.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReplyHelperRequest {
     pub conversation_id: ConversationId,
@@ -170,10 +170,9 @@ impl<T> ReplyHelperSources for T where
 {
 }
 
-/// Legacy `chat_generate_user_reply`: a one-shot completion, driven by the
-/// live settings and sources, that drafts the user's next message. It runs as
-/// a job so its usage evidence and cancellation follow every other feature
-/// request.
+/// A one-shot completion, driven by the live settings and sources, that
+/// drafts the user's next message. It runs as a job so its usage evidence
+/// and cancellation follow every other feature request.
 #[derive(Debug)]
 pub struct ReplyHelperCoordinator<'a, R: ?Sized, I: ?Sized> {
     repository: &'a R,
@@ -231,7 +230,7 @@ struct DialogueLine {
     text: String,
 }
 
-/// Legacy read the character's definition, else its description.
+/// The character's definition, else its description.
 fn character_description(profile: &lettuce_characters::CharacterProfile) -> &str {
     profile
         .definition
@@ -568,9 +567,9 @@ where
     }
 }
 
-/// Legacy `swapped_prompt_entities`: with `swap_places` and a persona, the
-/// character speaks as the persona and the persona as the character; without
-/// a persona the names stay ("user" with no description).
+/// With `swap_places` and a persona, the character speaks as the persona and
+/// the persona as the character; without a persona the names stay ("user"
+/// with no description).
 fn speakers(
     character_name: &str,
     character_description: &str,
@@ -647,10 +646,10 @@ fn render_entries(
         .collect())
 }
 
-/// Legacy's runtime user entry: every recent message as "{name}: {text}"
-/// (roles swapped with the speakers when `swap_places`; group replies name
-/// each message's character, "Character" when it is unknown), then the
-/// request to draft the persona's next line.
+/// The runtime user entry: every recent message as "{name}: {text}" (roles
+/// swapped with the speakers when `swap_places`; group replies name each
+/// message's character, "Character" when it is unknown), then the request to
+/// draft the persona's next line.
 fn reply_input(
     text: &RuntimeText,
     history: &[DialogueLine],
@@ -725,8 +724,8 @@ fn generated_text(outcome: &InferenceOutcome) -> Option<String> {
     (!text.trim().is_empty()).then_some(text)
 }
 
-/// Legacy cleaned the completion by trimming, dropping surrounding quotes,
-/// stripping a leading "{user}:" and trimming again.
+/// Cleans the completion by trimming, dropping surrounding quotes, stripping
+/// a leading "{user}:" and trimming again.
 fn clean_reply(text: &str, user_name: &str) -> String {
     text.trim()
         .trim_matches('"')

@@ -59,7 +59,7 @@ pub struct PlannedArtifact {
 /// Everything one install downloads, below one root folder.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArtifactInstallPlan {
-    /// A stable description of what is installed (legacy install ids such as
+    /// A stable description of what is installed (install ids such as
     /// `sdcpp:<profile>:<variant>:<release>:<asset>`).
     pub install_id: String,
     pub root: PathBuf,
@@ -548,10 +548,9 @@ impl<J: JobStore + ?Sized> ArtifactInstallCoordinator<'_, J> {
         }
     }
 
-    /// Every file stays cancellable, as each legacy download was; files
-    /// already verified stay installed and are reused by the next install.
-    /// A cancelled or failed file leaves no partial behind, since the job
-    /// fails for good instead of retrying.
+    /// Every file stays cancellable; files already verified stay installed
+    /// and are reused by the next install. A cancelled or failed file leaves
+    /// no partial behind, since the job fails for good instead of retrying.
     async fn execute<S: ArtifactSourceClient + ?Sized>(
         &self,
         work: &ArtifactInstallClaimedWork,

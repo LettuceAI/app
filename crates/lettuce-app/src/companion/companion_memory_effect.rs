@@ -183,8 +183,8 @@ fn summarize_turn_effect(
     (!parts.is_empty()).then(|| parts.into_iter().take(3).collect::<Vec<_>>().join(", "))
 }
 
-/// Legacy read the deltas from JSON objects, whose keys iterate in
-/// alphabetical order, and kept the last of equal largest values.
+/// The deltas are compared in alphabetical key order, and the last of equal
+/// largest values is kept.
 fn largest_relationship_delta(effect: &CompanionTurnEffect) -> Option<(&'static str, f64)> {
     let delta = &effect.seed.relationship_delta;
     [
@@ -211,7 +211,7 @@ fn largest_emotion_delta(effect: &CompanionTurnEffect) -> Option<(String, f64)> 
     .max_by(compare_absolute_delta)
 }
 
-/// The emotion dimensions under legacy's camelCase keys, alphabetically.
+/// The emotion dimensions under their camelCase keys, alphabetically.
 fn emotion_values(value: &EmotionVector) -> std::array::IntoIter<(&'static str, f64), 10> {
     [
         ("affectionIntensity", value.affection_intensity),

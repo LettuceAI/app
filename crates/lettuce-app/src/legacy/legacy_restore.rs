@@ -64,13 +64,12 @@ fn stage<E: fmt::Debug>(name: &'static str) -> impl FnOnce(E) -> LegacyRestoreEr
     }
 }
 
-/// Replaces the app data with a legacy source (user decision 2026-09-14: a
-/// legacy backup replaces, never imports alongside). The whole legacy import
-/// chain runs into a new database file; only a completed run switches the
-/// active database, and the previous file is never deleted. Provider and audio
-/// secrets use references unique to the import run, so a failed attempt deletes
-/// them again and a successful one never shares a record with the previous
-/// database.
+/// Replaces the app data with a legacy source; a legacy source never imports
+/// alongside existing data. The whole legacy import chain runs into a new
+/// database file; only a completed run switches the active database, and the
+/// previous file is never deleted. Provider and audio secrets use references
+/// unique to the import run, so a failed attempt deletes them again and a
+/// successful one never shares a record with the previous database.
 pub struct LegacyRestoreCoordinator<'a, S: ?Sized> {
     location: &'a AppDatabaseLocation,
     authority: &'a FilesystemAuthority,

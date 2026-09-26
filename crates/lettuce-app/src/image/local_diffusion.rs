@@ -1,7 +1,6 @@
 //! The embedded stable-diffusion.cpp engine composed with the llama.cpp
-//! runtime: each gives way to the other like legacy (the image server
-//! unloads llama.cpp before it starts, llama.cpp stops the image server
-//! before it runs).
+//! runtime: each gives way to the other (the image server unloads llama.cpp
+//! before it starts, llama.cpp stops the image server before it runs).
 
 use std::sync::{Arc, OnceLock};
 
@@ -119,8 +118,7 @@ impl crate::AppBackend {
     }
 }
 
-/// One installed catalog variant as the settings page lists it (legacy
-/// `sdcpp_installed`).
+/// One installed catalog variant as the settings page lists it.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InstalledLocalImageModel {
@@ -194,9 +192,8 @@ impl crate::AppBackend {
     }
 
     /// Removes the old `sdcpp:<profile>:<variant>` models whose variant is
-    /// not installed, which legacy purged whenever the installed list was
-    /// read. An installed variant's row stays, so registering it adopts the
-    /// row's settings.
+    /// not installed, whenever the installed list is read. An installed
+    /// variant's row stays, so registering it adopts the row's settings.
     fn purge_stale_legacy_models(&self, engine: &LocalDiffusionEngine) -> Result<(), String> {
         use lettuce_models::{ModelCatalog, ModelLookup, ModelProfileRepository};
         let Some(account) = self
@@ -313,8 +310,7 @@ impl crate::AppBackend {
 
     /// Removes a catalog variant: the files no other installed variant uses,
     /// its model, and optionally an engine build no remaining model names
-    /// (legacy `sdcpp_uninstall`; the build check reads each model's stored
-    /// build instead of legacy's active build).
+    /// (checked against each model's stored build).
     pub async fn uninstall_local_image_model(
         &self,
         profile_id: &str,
@@ -402,7 +398,7 @@ impl crate::AppBackend {
     }
 
     /// Registers an installed variant again with the first complete engine
-    /// build (legacy `sdcpp_repair_registration`).
+    /// build.
     pub fn repair_local_image_registration(
         &self,
         profile_id: &str,
@@ -456,8 +452,7 @@ impl crate::AppBackend {
         )
     }
 
-    /// Upscales a stored image into a new asset (legacy
-    /// `sdcpp_upscale_image`, which took the image bytes).
+    /// Upscales a stored image into a new asset.
     pub async fn upscale_image<D: lettuce_image_generation::ImageMedia + ?Sized>(
         &self,
         media: &D,

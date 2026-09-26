@@ -28,7 +28,7 @@ pub enum CompanionMemoryContinuationResult {
     },
 }
 
-/// Legacy recursive-loop settings: without recursion a cycle makes one memory
+/// Recursive-loop settings: without recursion a cycle makes one memory
 /// request; with it, rounds continue until `done` or the hard cap, which ends
 /// the cycle normally.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

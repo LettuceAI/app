@@ -953,8 +953,8 @@ fn the_share_memory_toggle_picks_the_pool_or_each_conversations_own_memory() {
 }
 
 /// Taking sharing back picks the conversation Soul that grew last in wall
-/// time, as legacy's single save order did, even when that chat's companion
-/// clock is frozen in the past and stamps its facts there.
+/// time, even when that chat's companion clock is frozen in the past and
+/// stamps its facts there.
 #[test]
 fn the_latest_soul_wins_by_wall_time_when_its_chat_clock_is_frozen_in_the_past() {
     use lettuce_companions::SoulOwner;
@@ -3718,9 +3718,9 @@ fn companion_turn_coordinator_classifies_once_and_replays_without_state_drift() 
     assert_eq!(state.state.relationship_state.interaction_count, 1);
 }
 
-/// Legacy stamped the user message with `companion_effective_now` and passed
-/// that time to `update_state_for_user_message` (completion.rs 150-179), so a
-/// frozen companion clock drives decay and the stored interaction time.
+/// The user message is stamped with the companion clock's effective now and
+/// the state update uses that time, so a frozen companion clock drives decay
+/// and the stored interaction time.
 #[test]
 fn companion_turn_uses_the_conversation_clock_for_decay_and_stamps() {
     use lettuce_conversations::ConversationRepository as _;
@@ -3786,9 +3786,9 @@ fn companion_turn_uses_the_conversation_clock_for_decay_and_stamps() {
     assert_eq!(state.state.relationship_state.last_interaction_at, anchor);
 }
 
-/// Legacy `current_state` fell back to `default_state` on every companion
-/// turn, continue included, so a companion chat without stored state gets it
-/// on its first continue as it does on its first send.
+/// Every companion turn, continue included, falls back to the default state,
+/// so a companion chat without stored state gets it on its first continue as
+/// it does on its first send.
 #[test]
 fn companion_continue_creates_missing_companion_state() {
     let database = database_with_builtins();
@@ -4122,9 +4122,8 @@ async fn companion_context_assembles_live_prompt_state_deterministically() {
     );
 }
 
-/// Legacy `current_state` (companion/mod.rs 1373-1381) falls back to
-/// `default_state` when a companion chat has no stored state, so the turn
-/// renders the default companion block instead of failing.
+/// A companion chat with no stored state falls back to the default state, so
+/// the turn renders the default companion block instead of failing.
 #[tokio::test]
 async fn companion_context_renders_defaults_when_state_is_missing() {
     let database = database_with_builtins();

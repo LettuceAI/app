@@ -1,6 +1,6 @@
 //! stable-diffusion.cpp engine builds, catalog models and the upscaler as
-//! pinned installs, and the model registration legacy did when a catalog
-//! model finished downloading.
+//! pinned installs, and the model registration when a catalog model finishes
+//! downloading.
 
 use std::path::PathBuf;
 
@@ -50,8 +50,7 @@ impl From<ModelRepositoryError> for LocalDiffusionInstallError {
     }
 }
 
-/// The engine builds on GitHub that run on this platform (legacy
-/// `fetch_runtime_releases`).
+/// The engine builds on GitHub that run on this platform.
 pub async fn fetch_runtime_releases(
     client: &JsonClient,
 ) -> Result<Vec<RuntimeRelease>, LocalDiffusionInstallError> {
@@ -118,8 +117,8 @@ fn https_artifact(
     }
 }
 
-/// The archives of one engine build. Its manifest is written first, as
-/// legacy did, so a partly extracted build never counts as installed.
+/// The archives of one engine build. Its manifest is written first, so a
+/// partly extracted build never counts as installed.
 pub fn runtime_install_plan(
     paths: &DiffusionPaths,
     release: &RuntimeRelease,
@@ -187,9 +186,8 @@ pub async fn finish_runtime_install(
 }
 
 /// Every file of a catalog variant not yet on disk, content-addressed below
-/// the image folder; components legacy already downloaded into the default
-/// folder are reused. An empty plan means only the registration is left.
-/// Legacy required an installed, compatible engine build first.
+/// the image folder; components already downloaded into the default folder
+/// are reused. An empty plan means only the registration is left.
 pub fn variant_install_plan(
     paths: &DiffusionPaths,
     profile_id: &str,
@@ -268,7 +266,7 @@ pub fn upscaler_install_plan(paths: &DiffusionPaths) -> ArtifactInstallPlan {
     }
 }
 
-/// The legacy message for a failed upscaler install.
+/// The message for a failed upscaler install.
 #[must_use]
 pub fn upscaler_install_error_text(error: &crate::ArtifactInstallError) -> String {
     match error {
@@ -283,7 +281,7 @@ pub fn upscaler_install_error_text(error: &crate::ArtifactInstallError) -> Strin
 }
 
 /// Whether every file of a variant is on disk at its expected size, with
-/// the engine build installed (legacy `is_variant_installed`).
+/// the engine build installed.
 #[must_use]
 pub fn is_variant_installed(
     paths: &DiffusionPaths,
@@ -381,8 +379,8 @@ where
 
 /// Registers an installed catalog variant as a model on the managed
 /// stable-diffusion.cpp account, updating the model an earlier install (or
-/// legacy's `sdcpp:<profile>:<variant>` name) created. The binding keys are
-/// rewritten and every other model setting is kept, as legacy did.
+/// an old `sdcpp:<profile>:<variant>` name) created. The binding keys are
+/// rewritten and every other model setting is kept.
 pub fn register_catalog_model<R>(
     repository: &R,
     paths: &DiffusionPaths,

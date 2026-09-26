@@ -1,7 +1,7 @@
 //! The application side of the embedded llama.cpp runtime: runtime reports
-//! and generation metrics in the database, and the frontend events legacy
-//! emitted (model load progress, GPU fallback, heartbeats, notices, report
-//! updates) through the sink the host attaches.
+//! and generation metrics in the database, and the frontend events (model
+//! load progress, GPU fallback, heartbeats, notices, report updates) through
+//! the sink the host attaches.
 
 use std::sync::Arc;
 
@@ -94,13 +94,13 @@ pub enum LocalLlamaCommandError {
 }
 
 impl crate::AppBackend {
-    /// The GPU devices llama.cpp can use (legacy `llamacpp_backend_devices`).
+    /// The GPU devices llama.cpp can use.
     #[must_use]
     pub fn llama_backend_devices(&self) -> Vec<lettuce_local_llm::hardware::LlamaGpuDeviceInfo> {
         lettuce_local_llm::hardware::list_gpu_devices()
     }
 
-    /// The model editor's fit estimate (legacy `llamacpp_context_info`).
+    /// The model editor's fit estimate.
     pub async fn llama_context_info(
         &self,
         request: lettuce_local_llm::context_info::ContextInfoRequest,
@@ -111,8 +111,7 @@ impl crate::AppBackend {
             .map_err(Into::into)
     }
 
-    /// The chat template embedded in a model file (legacy
-    /// `llamacpp_embedded_chat_template`).
+    /// The chat template embedded in a model file.
     pub async fn llama_embedded_chat_template(
         &self,
         model_path: String,
@@ -125,8 +124,8 @@ impl crate::AppBackend {
         .map_err(Into::into)
     }
 
-    /// Frees the loaded model and its cached contexts (legacy
-    /// `llamacpp_unload`); nothing to do before the runtime first ran.
+    /// Frees the loaded model and its cached contexts; nothing to do before
+    /// the runtime first ran.
     pub async fn unload_local_llama(&self) -> Result<(), LocalLlamaCommandError> {
         let Some(local_llama) = self.started_local_llama() else {
             return Ok(());

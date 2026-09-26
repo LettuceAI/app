@@ -549,7 +549,7 @@ pub struct CreationContinuationResult {
     pub usage: UsageCounters,
 }
 
-/// Legacy stopped after eight iterations and kept the draft; the attempt also
+/// The attempt stops after eight iterations and keeps the draft; it also
 /// stops once it holds as many calls as one proposal may apply.
 fn attempt_limit_reached(
     rounds: &[CreationInferenceRound],
@@ -1808,11 +1808,10 @@ mod tests {
         let _ = std::fs::remove_file(path);
     }
 
-    /// Legacy `creation_helper/agent/run.rs` 60-67 and 150-176 with
-    /// `structured_fallback.rs`: a JSON fallback sends no tools, adds the
-    /// protocol to the system prompt and reads calls from the reply text; a
-    /// reply that does not parse ends the turn. The continuation assistant
-    /// message carries only the visible reply (run.rs 342-347).
+    /// A JSON fallback sends no tools, adds the protocol to the system prompt
+    /// and reads calls from the reply text; a reply that does not parse ends
+    /// the turn. The continuation assistant message carries only the visible
+    /// reply.
     #[tokio::test]
     async fn json_fallback_reads_calls_from_the_reply_text_without_native_tools() {
         let database = with_built_ins(Database::open_in_memory().expect("database"));

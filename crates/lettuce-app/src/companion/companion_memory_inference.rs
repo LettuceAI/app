@@ -260,8 +260,8 @@ impl MemoryFallbackKind {
         }
     }
 
-    /// Legacy re-checked a repair response after parsing it and still ran the
-    /// structured fallback when no usable `retag_memory` call came back.
+    /// A repair response is re-checked after parsing, and the structured
+    /// fallback still runs when no usable `retag_memory` call came back.
     fn accepts(self, outcome: &InferenceOutcome) -> bool {
         match self {
             Self::Operations => true,

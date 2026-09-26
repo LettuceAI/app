@@ -88,7 +88,7 @@ const ITEM_PREVIEW_CHARS: usize = 60;
 
 /// The creation helper's system messages (the `prompt_app_creation_helper`
 /// entries with the target label and draft view), the earlier dialogue and the
-/// current user message, in the legacy order.
+/// current user message, in that order.
 ///
 /// A structured fallback protocol follows the helper entries as one more
 /// system message.
@@ -247,7 +247,7 @@ pub(crate) fn fallback_protocol(
     )
 }
 
-/// The legacy `DRAFT (...)` summary the model reads in `<current_draft>`.
+/// The `DRAFT (...)` summary the model reads in `<current_draft>`.
 pub(crate) fn render_draft_view(
     text: &RuntimeText,
     draft: &CreationDraft,
@@ -344,9 +344,8 @@ pub(crate) fn render_draft_view(
     Ok(view)
 }
 
-/// The legacy tool result for one call: `{success, message, error?, ...}`
-/// with the legacy wording; preview and confirmation also carry `action` and
-/// the draft.
+/// The tool result for one call: `{success, message, error?, ...}`; preview
+/// and confirmation also carry `action` and the draft.
 pub(crate) fn render_tool_output(
     text: &RuntimeText,
     call: &ProposedToolCall,

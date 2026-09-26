@@ -1,5 +1,5 @@
-//! The live sources a chat turn reads instead of its launch snapshots, the
-//! way legacy re-read the session's persona, group and characters each turn.
+//! The live sources a chat turn reads instead of its launch snapshots: the
+//! conversation's persona, group and characters, re-read each turn.
 
 use lettuce_characters::{
     GroupProfile, GroupRepository, LifecycleStatus, Persona, PersonaRepository, RepositoryError,
@@ -10,9 +10,9 @@ use lettuce_conversations::{
 };
 
 /// A group conversation's live profile and the group settings a turn uses:
-/// the conversation's own chat mode and character-lorebook switch (a legacy
-/// session override), else the group's current values (`group_sessions.rs`
-/// 509-600), else the launch values when the group no longer exists.
+/// the conversation's own chat mode and character-lorebook switch, else the
+/// group's current values, else the launch values when the group no longer
+/// exists.
 pub(crate) struct LiveGroup {
     pub(crate) profile: Option<GroupProfile>,
     pub(crate) chat_mode: GroupChatModeSnapshot,
@@ -52,16 +52,14 @@ pub(crate) fn live_group<S: GroupRepository + ?Sized>(
     }))
 }
 
-/// The persona a turn speaks to, read live (legacy `choose_persona`,
-/// `storage.rs` 509-521). A persona the conversation turned off (its own
-/// disabled setting, legacy `persona_disabled`) is none. A one-to-one chat
-/// uses its chosen persona, or the current default persona when it chose none,
-/// including a launch that found no default then, or when its persona no
-/// longer exists or is archived. A group chat uses its own persona, else the
-/// persona its launch chose explicitly, else the group's current selection
-/// (`group_sessions.rs` 560-563; the default persona when the group inherits
-/// it), and a persona that no longer exists is none, as legacy `load_persona`
-/// found none.
+/// The persona a turn speaks to, read live. A persona the conversation turned
+/// off (its own disabled setting) is none. A one-to-one chat uses its chosen
+/// persona, or the current default persona when it chose none, including a
+/// launch that found no default then, or when its persona no longer exists
+/// or is archived. A group chat uses its own persona, else the persona its
+/// launch chose explicitly, else the group's current selection (the default
+/// persona when the group inherits it), and a persona that no longer exists
+/// is none.
 pub(crate) fn live_persona<S: PersonaRepository + ?Sized>(
     sources: &S,
     conversation: &Conversation,

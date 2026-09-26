@@ -98,7 +98,7 @@ where
     }
 
     /// Writes the package as a new character with its bundled lorebooks;
-    /// an image that cannot be stored is left off like legacy did.
+    /// an image that cannot be stored is left off.
     pub fn import(
         &self,
         package: &CharacterPackage,
@@ -141,7 +141,7 @@ where
     }
 
     /// The character written as a file of `format`, its images inlined as
-    /// data URLs; an image that cannot be read is left out like legacy did.
+    /// data URLs; an image that cannot be read is left out.
     pub fn export(
         &self,
         character_id: CharacterId,

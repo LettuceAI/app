@@ -67,8 +67,8 @@ impl EmbeddingService {
 
     /// Every existing memory whose shown similarity exceeds `threshold`, in
     /// the given order; the shown similarity is the model's calibrated score.
-    /// Legacy checked each memory in turn, so the reducer takes the first
-    /// match in memory order rather than the closest one.
+    /// Each memory is checked in turn, so the reducer takes the first match
+    /// in memory order rather than the closest one.
     pub fn semantic_duplicate_matches(
         candidate: &EmbeddingVector,
         existing: &[(MemoryId, EmbeddingVector)],

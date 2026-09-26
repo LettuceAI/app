@@ -24,7 +24,7 @@ pub(crate) fn content_rules<R: RuntimeTextSource + ?Sized>(
 }
 
 /// The rules a character without rules starts with: the base rules, then
-/// the level's (legacy `default_character_rules`).
+/// the level's.
 pub fn default_character_rules<R: RuntimeTextSource + ?Sized>(
     repository: &R,
     level: PureMode,

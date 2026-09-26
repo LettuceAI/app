@@ -1,7 +1,6 @@
-//! The scene tag a direct chat reply carries (legacy
-//! `sanitizeAssistantSceneDirective` + `runInChatImageGeneration`): the
-//! reply's text is cleaned when it is finalized, and the scene prompt is
-//! handed back for the caller to run or ask about.
+//! The scene tag a direct chat reply carries: the reply's text is cleaned
+//! when it is finalized, and the scene prompt is handed back for the caller
+//! to run or ask about.
 
 use lettuce_conversations::{ConversationKind, MessagePart, extract_scene_prompt};
 use lettuce_models::ModelCatalog;
@@ -41,8 +40,8 @@ pub(crate) fn reply_image_facts<C: ModelCatalog + ?Sized>(
     })
 }
 
-/// Removes the scene tag from a reply's text, as legacy always did, and keeps
-/// its prompt unless the scene mode is manual or scenes cannot run.
+/// Removes the scene tag from a reply's text, always, and keeps its prompt
+/// unless the scene mode is manual or scenes cannot run.
 pub(crate) fn take_scene_image(
     parts: &mut [MessagePart],
     facts: ReplyImageFacts,

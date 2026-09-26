@@ -301,9 +301,9 @@ impl<
         })
     }
 
-    /// Legacy trimmed to `max_entries` and demoted to the hot budget once per
-    /// cycle after the loop and the repair pass; replaying a finished cycle
-    /// finds nothing left to change.
+    /// Trims to `max_entries` and demotes to the hot budget once per cycle
+    /// after the loop and the repair pass; replaying a finished cycle finds
+    /// nothing left to change.
     fn finish_cycle(
         &self,
         dispatch: &CompanionPostTurnMemoryRunDispatch,

@@ -129,8 +129,8 @@ impl AppBackend {
         self.local_llama.get().cloned().flatten()
     }
 
-    /// The embedded llama.cpp runtime, started on first use like legacy's
-    /// worker; `None` when its thread could not start.
+    /// The embedded llama.cpp runtime, started on first use; `None` when its
+    /// thread could not start.
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     fn local_llama(&self) -> Option<lettuce_providers::LocalLlama> {
         self.local_llama
@@ -921,7 +921,7 @@ impl AppBackend {
     }
 
     /// The TLS trust every provider client is built with: this device's
-    /// trusted certificates (legacy `trustedCertificates`).
+    /// trusted certificates.
     pub fn tls_policy(
         &self,
     ) -> Result<lettuce_network::TlsPolicy, lettuce_settings::GlobalSettingsStoreError> {

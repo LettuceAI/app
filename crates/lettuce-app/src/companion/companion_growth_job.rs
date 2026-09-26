@@ -194,8 +194,8 @@ impl<
     }
 
     /// The Soul the conversation grows, created from the companion settings
-    /// when it has none yet, as legacy fell back to `default_state`; a
-    /// conversation's own Soul starts from the shared one when that exists.
+    /// when it has none yet; a conversation's own Soul starts from the shared
+    /// one when that exists.
     fn soul_or_default(
         &self,
         owner: SoulOwner,
@@ -234,8 +234,8 @@ impl<
         }
     }
 
-    /// Legacy ran growth on the summarisation model with its companion
-    /// memory slot and defaults, not the memory cycle's sampling.
+    /// Growth runs on the summarisation model with its companion memory slot
+    /// and defaults, not the memory cycle's sampling.
     fn growth_profile(
         &self,
         memory: &lettuce_conversations::ResolvedInferenceProfile,

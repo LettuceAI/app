@@ -129,8 +129,8 @@ pub(crate) fn render_companion_state(
     Ok(lines.join("\n"))
 }
 
-/// Active scheduled notes under the legacy budget, wrapped in the catalog
-/// block, or `None` when no line remains or the block is disabled.
+/// Active scheduled notes under the block's character budget, wrapped in the
+/// catalog block, or `None` when no line remains or the block is disabled.
 pub(crate) fn render_scheduled_notes(
     text: &RuntimeText,
     notes: &[CompanionScheduledNote],

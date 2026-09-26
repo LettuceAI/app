@@ -157,7 +157,7 @@ fn generates_text(model: &FeatureModel) -> bool {
 }
 
 /// The creation helper's chat model: its own setting, else the default
-/// model; legacy checked no capability.
+/// model; no capability is checked.
 pub fn creation_helper_model<C: ModelCatalog + ?Sized>(
     models: &C,
     settings: &GlobalSettings,

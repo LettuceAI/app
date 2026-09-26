@@ -64,8 +64,8 @@ impl<T> CompanionFollowUpSources for T where
 {
 }
 
-/// Legacy's growth cycle after a successful companion memory cycle, and the
-/// consolidation it triggered when growth applied changes.
+/// The growth cycle after a successful companion memory cycle, and the
+/// consolidation it triggers when growth applied changes.
 #[derive(Debug)]
 pub struct CompanionFollowUpHost<'a, R: ?Sized, I: ?Sized> {
     sources: &'a R,

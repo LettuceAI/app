@@ -252,10 +252,10 @@ impl<
     }
 
     /// Ends a failed or cancelled attempt. Its companion effects stay
-    /// processing, so the next cycle summarizes their messages again, as
-    /// legacy's cursor stayed put after a failed cycle; an effect whose
-    /// messages failed [`MAX_FAILED_EFFECT_CYCLES`] cycles settles failed with
-    /// the last failure, until a user-triggered cycle reopens it.
+    /// processing, so the next cycle summarizes their messages again; an
+    /// effect whose messages failed [`MAX_FAILED_EFFECT_CYCLES`] cycles
+    /// settles failed with the last failure, until a user-triggered cycle
+    /// reopens it.
     #[allow(clippy::too_many_arguments)]
     pub fn settle_failure(
         &self,

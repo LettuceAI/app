@@ -1,6 +1,5 @@
 //! The LoRAs a local scene image uses: the character's and persona's image
-//! recommendations, with trigger keywords from the LoRA library (legacy
-//! `build_scene_loras` / `local_scene_lora_bindings`).
+//! recommendations, with trigger keywords from the LoRA library.
 
 use lettuce_characters::ImageRecommendation;
 use lettuce_conversations::SceneLoraBinding;
@@ -9,8 +8,9 @@ use lettuce_image_generation::sd_runtime::lora_library::{
 };
 use lettuce_models::StableDiffusionLora;
 
-/// A subject's LoRA. Only a legacy LoRA name is a stable-diffusion.cpp path;
-/// an artifact recommendation has no resolvable file yet.
+/// A subject's LoRA. Only an `unresolved_legacy_name` is a
+/// stable-diffusion.cpp path; an artifact recommendation has no resolvable
+/// file yet.
 pub(crate) fn recommendation_lora<R: LoraLibraryRepository + ?Sized>(
     library: &R,
     recommendation: Option<&ImageRecommendation>,
@@ -39,7 +39,7 @@ pub(crate) fn recommendation_lora<R: LoraLibraryRepository + ?Sized>(
 
 /// The character's LoRA and, when the chat's persona still exists, the
 /// persona's (`Some(None)` for a persona without one). A subject that cannot
-/// be read has no LoRA, as legacy's binding never failed the turn.
+/// be read has no LoRA; the binding never fails the turn.
 pub(crate) fn subject_loras<R>(
     repository: &R,
     character_id: lettuce_types::CharacterId,
@@ -76,7 +76,7 @@ where
     )
 }
 
-/// Legacy `local_scene_subject_binding`.
+/// How a subject is named in the scene protocol, from its LoRA.
 pub(crate) fn subject_binding(lora: Option<&StableDiffusionLora>) -> SceneLoraBinding {
     lora.map_or(SceneLoraBinding::NoLora, |lora| {
         SceneLoraBinding::Keywords(lora.keywords.join(", "))

@@ -1,6 +1,6 @@
-//! A feature prompt (scene writer, design reference writer) rendered the way
-//! legacy's feature commands did: active entries in template order, each
-//! condensed, merged into one system entry when the template condenses.
+//! A feature prompt (scene writer, design reference writer) rendered as
+//! active entries in template order, each condensed, merged into one system
+//! entry when the template condenses.
 
 use lettuce_context::{
     PromptDocument, PromptEntryImageSlot, PromptEntryPayload, PromptEntryPosition, PromptEntryRole,
@@ -8,7 +8,7 @@ use lettuce_context::{
 };
 use lettuce_conversations::MessageRole;
 
-/// A rendered entry in template order, with the placement legacy gave it.
+/// A rendered entry in template order, with its placement.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FeatureEntry {
     pub(crate) role: PromptEntryRole,
@@ -29,7 +29,7 @@ impl FeatureEntry {
     }
 }
 
-/// Legacy `condense_prompt_whitespace`.
+/// Collapses the prompt's whitespace.
 pub(crate) fn condense(input: &str) -> String {
     let mut output = input.to_owned();
     while output.contains("\n\n\n") {

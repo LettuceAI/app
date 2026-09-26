@@ -3,8 +3,8 @@ use lettuce_models::{
     ParameterOverride, ProviderProtocol, ReasoningMode,
 };
 
-/// Legacy `FeatureSamplingDefaults`: the temperature, top_p and output cap a
-/// feature request uses where the model's feature slot leaves them unset.
+/// The temperature, top_p and output cap a feature request uses where the
+/// model's feature slot leaves them unset.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FeatureSamplingDefaults {
     pub temperature: f64,
@@ -49,10 +49,10 @@ pub const GROUP_SPEAKER_SELECTION_DEFAULTS: FeatureSamplingDefaults =
 pub const CREATION_HELPER_DEFAULTS: FeatureSamplingDefaults =
     FeatureSamplingDefaults::with_max_tokens(0.7, 20480);
 
-/// Which request fields legacy passed for a feature besides temperature,
-/// top_p, the output cap and the context length. Ollama always received top_k
-/// and the penalties through its request options; llama.cpp got them only for
-/// `Full` features and otherwise sampled with its sampler-profile defaults.
+/// Which request fields a feature passes besides temperature, top_p, the
+/// output cap and the context length. Ollama always receives top_k and the
+/// penalties through its request options; llama.cpp gets them only for
+/// `Full` features and otherwise samples with its sampler-profile defaults.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FeatureRequestFields {
     Sampling,
@@ -64,12 +64,11 @@ fn unset<T>(value: &ParameterOverride<T>) -> bool {
     !matches!(value, ParameterOverride::Set(_))
 }
 
-/// Legacy `feature_model_overrides` + `prepare_feature_request` for one app
-/// feature: the model's feature slot overrides the model, unset temperature
-/// and top_p (and the output cap when the feature has one) come from the
-/// feature defaults, reasoning is off, and a conversation's own model settings
-/// do not apply (legacy replaced them with the feature slot). The app layer
-/// still fills what the model leaves unset.
+/// The parameters of one app feature request: the model's feature slot
+/// overrides the model, unset temperature and top_p (and the output cap when
+/// the feature has one) come from the feature defaults, reasoning is off, and
+/// a conversation's own model settings do not apply (the feature slot takes
+/// their place). The app layer still fills what the model leaves unset.
 #[must_use]
 pub fn feature_parameter_input(
     slot: &FeatureGenerationParameters,

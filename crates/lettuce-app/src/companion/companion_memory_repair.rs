@@ -20,8 +20,8 @@ use crate::{
     run_memory_request_with_fallback,
 };
 
-/// A create call the manager left without a usable category, as legacy queued
-/// it for repair.
+/// A create call the manager left without a usable category, queued for
+/// repair.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MemoryRepairCandidate {
     pub text: String,
@@ -53,9 +53,9 @@ impl<
     I: InferencePort + ?Sized,
 > CompanionMemoryRepairCoordinator<'_, R, I>
 {
-    /// Legacy's post-cycle repair pass: every create the manager skipped for a
-    /// missing or invalid category is re-tagged in one request and admitted as
-    /// a final round of create calls.
+    /// The post-cycle repair pass: every create the manager skipped for a
+    /// missing or invalid category is re-tagged in one request and admitted
+    /// as a final round of create calls.
     pub async fn repair_round(
         &self,
         run: &DynamicMemoryRun,
@@ -176,7 +176,7 @@ impl<
     }
 
     /// Creates skipped for a missing or invalid category, deduplicated by text
-    /// and normalized as legacy queued them.
+    /// and normalized.
     fn candidates(
         &self,
         run: &DynamicMemoryRun,
@@ -321,8 +321,8 @@ pub(crate) fn repaired_categories(
         .collect()
 }
 
-/// Legacy kept only the answered candidates, and fell back to the keyword
-/// guess for every candidate when the request answered with nothing.
+/// Keeps only the answered candidates, and falls back to the keyword guess
+/// for every candidate when the request answered with nothing.
 fn resolve(
     candidates: &[MemoryRepairCandidate],
     repairs: &[(String, MemoryCategory)],
@@ -376,7 +376,7 @@ fn rewrite_as_creates(
         .collect();
 }
 
-/// Legacy still applied the keyword guess when both the repair request and its
+/// The keyword guess still applies when both the repair request and its
 /// structured fallback failed, so the round is planned without any response.
 fn guessed_outcome(
     resolved: &[(MemoryRepairCandidate, MemoryCategory)],

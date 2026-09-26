@@ -8,9 +8,9 @@ use serde_json::{Value, json};
 
 use crate::generation::runtime_text::{RuntimeText, RuntimeTextError};
 
-/// The result a memory tool call reports back to the model, in the shape
-/// legacy sent: six-digit ids, the deleted text, the memory list right after
-/// the call, and a catalog reason for every skipped call.
+/// The result a memory tool call reports back to the model: six-digit ids,
+/// the deleted text, the memory list right after the call, and a catalog
+/// reason for every skipped call.
 pub(crate) fn legacy_memory_tool_output(
     text: &RuntimeText,
     call: &ProposedToolCall,

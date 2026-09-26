@@ -11,10 +11,10 @@ use lettuce_conversations::{
 use lettuce_types::TimestampMillis;
 use regex::Regex;
 
-/// Legacy `is_companion_mode` and the session time preferences of one
-/// conversation: a direct chat is a companion chat when its live character is
-/// a companion or it carries companion session state, and its clock counts
-/// only while time awareness is on.
+/// Companion mode and the session time preferences of one conversation: a
+/// direct chat is a companion chat when its live character is a companion or
+/// it carries companion session state, and its clock counts only while time
+/// awareness is on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) struct CompanionClockContext {
     pub(crate) companion: bool,
@@ -81,8 +81,8 @@ pub(crate) fn companion_state_owner(conversation: &Conversation) -> Option<Compa
     })
 }
 
-/// Legacy `time_placeholder_values`: every time placeholder the caller left
-/// unset is rendered from the reference time in the local timezone.
+/// Every time placeholder the caller left unset is rendered from the
+/// reference time in the local timezone.
 pub(crate) fn fill_time_values(values: &mut PromptRuntimeValues, reference: TimestampMillis) {
     let now = match Local.timestamp_millis_opt(reference.get()) {
         LocalResult::Single(datetime) | LocalResult::Ambiguous(datetime, _) => datetime,
@@ -148,9 +148,9 @@ fn leading_invented_time_stamp() -> &'static Regex {
     })
 }
 
-/// Legacy `strip_echoed_time_stamps`: removes `<time>` tags and the older
-/// bracket stamp anywhere, plus one invented stamp at the start of the reply,
-/// so a model's own timestamps are never persisted; roleplay brackets stay.
+/// Removes `<time>` tags and the older bracket stamp anywhere, plus one
+/// invented stamp at the start of the reply, so a model's own timestamps are
+/// never persisted; roleplay brackets stay.
 pub(crate) fn strip_echoed_time_stamps(text: &str) -> String {
     let without_tags = tagged_time_stamp().replace_all(text, "");
     let without_brackets = bracket_time_stamp().replace_all(&without_tags, "");

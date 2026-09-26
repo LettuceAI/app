@@ -196,9 +196,8 @@ impl<
         Ok(admissions)
     }
 
-    /// Legacy's post-turn scheduler was per session: only this conversation's
-    /// processing effects are admitted, under the settings the caller
-    /// resolved for it.
+    /// Only this conversation's processing effects are admitted, under the
+    /// settings the caller resolved for it.
     pub fn discover_and_admit_for_conversation(
         &self,
         conversation_id: ConversationId,
@@ -449,10 +448,9 @@ impl<
         )
     }
 
-    /// Legacy `trigger_dynamic_memory` / `retry_dynamic_memory` for plain
-    /// conversations: forced, so the run mode is ignored, and the window is
-    /// the most recent interval-sized slice of the dialogue, already
-    /// summarized messages included, even when nothing is new.
+    /// A forced cycle for plain conversations: the run mode is ignored, and
+    /// the window is the most recent interval-sized slice of the dialogue,
+    /// already summarized messages included, even when nothing is new.
     pub fn trigger_plain_and_admit(
         &self,
         conversation_id: ConversationId,
@@ -475,8 +473,8 @@ impl<
     }
 
     /// The same forced cycle for a companion conversation with no pending
-    /// turn effects: legacy's trigger re-summarized the most recent window
-    /// whatever the companion had already settled. No effect is settled.
+    /// turn effects: the most recent window is re-summarized whatever the
+    /// companion had already settled. No effect is settled.
     pub fn trigger_settled_companion_and_admit(
         &self,
         conversation_id: ConversationId,

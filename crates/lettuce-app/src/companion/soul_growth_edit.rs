@@ -1,8 +1,6 @@
-//! The user's direct Soul growth edits (legacy `companion_clear_soul_growth`,
-//! `companion_remove_soul_growth` and `companion_set_soul_growth_lock`, which
-//! named a session). The edits act on the Soul the conversation grows: its
-//! character's shared Soul, or its own while the character does not share
-//! Soul growth ([`SoulOwner::for_conversation`]).
+//! The user's direct Soul growth edits. The edits act on the Soul the
+//! conversation grows: its character's shared Soul, or its own while the
+//! character does not share Soul growth ([`SoulOwner::for_conversation`]).
 
 use lettuce_companions::{
     SoulApplyReceipt, SoulOwner, SoulRepository, SoulRepositoryError, SoulUserEdit,
@@ -11,7 +9,7 @@ use lettuce_types::{OperationRecordId, TimestampMillis};
 
 /// Applies `edit` to the current Soul. A growth or consolidation run that
 /// lands between the read and the write makes the write conflict; the edit is
-/// then prepared again on the newer Soul, as legacy's last save simply won.
+/// then prepared again on the newer Soul.
 fn edit<R: SoulRepository + ?Sized>(
     repository: &R,
     owner: SoulOwner,
@@ -48,9 +46,9 @@ pub(crate) enum SoulApplyError<E> {
 
 /// Applies a background Soul change under `operation_id`. The change is
 /// prepared on `prepared_on` first; a concurrent write that lands in between
-/// makes it stale, and it is then prepared again on the current Soul, as
-/// legacy's later save kept both edits' growth. A replay after an earlier
-/// attempt applied on a newer Soul answers that attempt's stored receipt.
+/// makes it stale, and it is then prepared again on the current Soul, so both
+/// edits' growth is kept. A replay after an earlier attempt applied on a newer
+/// Soul answers that attempt's stored receipt.
 /// Returns the receipt with the change set this call applied, or `None` when
 /// the receipt was stored by an earlier call whose change set differed.
 pub(crate) fn apply_on_latest_soul<R, E>(
@@ -104,8 +102,8 @@ pub(crate) fn stored_growth_count(
         .count()
 }
 
-/// Removes every Soul growth entry, authored ones included, as legacy did;
-/// answers how many there were.
+/// Removes every Soul growth entry, authored ones included; answers how many
+/// there were.
 pub fn clear_companion_soul_growth<R: SoulRepository + ?Sized>(
     repository: &R,
     owner: SoulOwner,
@@ -118,8 +116,8 @@ pub fn clear_companion_soul_growth<R: SoulRepository + ?Sized>(
     )
 }
 
-/// Removes one Soul growth entry; false when there is none with that id.
-/// Legacy removed by list position; entries now have stable ids.
+/// Removes one Soul growth entry by its stable id; false when there is none
+/// with that id.
 pub fn remove_companion_soul_growth<R: SoulRepository + ?Sized>(
     repository: &R,
     owner: SoulOwner,

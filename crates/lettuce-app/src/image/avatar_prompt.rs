@@ -1,6 +1,5 @@
-//! Avatar image prompts (legacy `buildAvatarGenerationPrompt` /
-//! `buildAvatarEditPrompt`): the active avatar prompt document rendered with
-//! the subject, the request and legacy's two entry conditions.
+//! Avatar image prompts: the active avatar prompt document rendered with the
+//! subject, the request and the two avatar entry conditions.
 
 use lettuce_context::{PromptDocument, PromptEntryCondition, PromptRepository};
 
@@ -39,8 +38,8 @@ impl AvatarPromptRequest {
         }
     }
 
-    /// What a local stable-diffusion.cpp model receives: legacy sent it the
-    /// user's request as typed, without the avatar template.
+    /// What a local stable-diffusion.cpp model receives: the user's request
+    /// as typed, without the avatar template.
     fn raw_request(&self) -> &str {
         match self {
             Self::Generation { avatar_request, .. } => avatar_request.trim(),
@@ -75,11 +74,10 @@ impl crate::AppBackend {
     }
 }
 
-/// Legacy `resolveTemplateContent` + `applyTemplateVariables`: the enabled,
-/// non-blank entries whose avatar conditions hold, in document order and
-/// joined by blank lines (else every enabled entry of the bundled seed, the
-/// stand-in for legacy's template text), then legacy's nine placeholders
-/// replaced one after another with trimmed values and blank runs collapsed.
+/// The enabled, non-blank entries whose avatar conditions hold, in document
+/// order and joined by blank lines (else every enabled entry of the bundled
+/// seed), then the nine placeholders replaced one after another with trimmed
+/// values and blank runs collapsed.
 pub(crate) fn render_avatar_prompt(
     document: &PromptDocument,
     request: &AvatarPromptRequest,
@@ -187,8 +185,8 @@ struct AvatarConditions {
     has_current_description: bool,
 }
 
-/// Legacy `matchesAvatarPromptCondition`: only the two avatar conditions and
-/// the combinators are read; every other condition passes.
+/// Only the two avatar conditions and the combinators are read; every other
+/// condition passes.
 fn avatar_condition_holds(condition: &PromptEntryCondition, context: AvatarConditions) -> bool {
     match condition {
         PromptEntryCondition::HasSubjectDescription { value } => {

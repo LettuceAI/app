@@ -82,7 +82,7 @@ impl fmt::Debug for PairingPin {
 }
 
 /// Asks the user of the sharing device whether an authenticated peer may
-/// sync, after its hello named it (legacy's connection approval).
+/// sync, after its hello named it.
 #[async_trait]
 pub trait SyncPeerApprover: Send + Sync {
     async fn approve(&self, peer: SyncDeviceId, device_name: &str) -> bool;

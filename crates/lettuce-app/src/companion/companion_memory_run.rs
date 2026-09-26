@@ -352,7 +352,7 @@ pub(crate) fn test_memory_tool_request(
     )
 }
 
-/// The legacy memory tool contract with its catalog descriptions.
+/// The memory tool contract with its catalog descriptions.
 pub(crate) fn memory_tool_request<
     R: crate::generation::runtime_text::RuntimeTextSource + ?Sized,
 >(

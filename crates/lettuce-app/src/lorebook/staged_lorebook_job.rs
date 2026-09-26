@@ -30,8 +30,8 @@ pub fn select_staged_lorebook_settings(
     )
 }
 
-/// Legacy `LOREBOOK_GENERATOR_DEFAULTS` over the model's lorebook generator
-/// slot; the generator settings' output cap applies where the slot sets none.
+/// `LOREBOOK_GENERATOR_DEFAULTS` over the model's lorebook generator slot;
+/// the generator settings' output cap applies where the slot sets none.
 /// llama.cpp gets no context length, so the runtime picks its automatic one.
 pub fn staged_lorebook_parameter_defaults(
     settings: &lettuce_settings::LorebookGeneratorSettings,

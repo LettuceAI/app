@@ -1,8 +1,7 @@
-//! Scene images for a direct chat message (legacy `chat_generate_scene_image`
-//! and `build_scene_generation_request`): the request is built from the
+//! Scene images for a direct chat message: the request is built from the
 //! character, persona and background references, run as an image job with
-//! legacy's three attempts on a missing image, and the first image is added to
-//! the message.
+//! three attempts on a missing image, and the first image is added to the
+//! message.
 
 use std::time::Duration;
 
@@ -85,8 +84,8 @@ pub(crate) struct SceneSubject {
     pub(crate) references: Vec<AssetId>,
     pub(crate) source: Option<ReferenceSource>,
     /// What the stored media alone suggest, before unreadable images are
-    /// skipped: legacy's writer hints counted the stored design ids and the
-    /// avatar path.
+    /// skipped: the writer hints count the stored design ids and the avatar
+    /// path.
     pub(crate) stored_design_count: usize,
     pub(crate) stored_source: Option<ReferenceSource>,
 }
@@ -123,7 +122,7 @@ impl SceneSubject {
     }
 }
 
-/// The prompt and input images of a remote scene image, in legacy's order:
+/// The prompt and input images of a remote scene image, in this order:
 /// character references, the chat background, persona references. Past the
 /// request's input bound, persona references are dropped first.
 fn remote_scene_prompt(
@@ -278,8 +277,8 @@ fn remote_scene_prompt(
     )
 }
 
-/// Legacy `lora_applies_to_scene_prompt`: a LoRA without keywords always
-/// applies, otherwise one of its keywords must appear in the prompt.
+/// A LoRA without keywords always applies, otherwise one of its keywords
+/// must appear in the prompt.
 fn applies_to_prompt(lora: &StableDiffusionLora, prompt: &str) -> bool {
     let prompt = prompt.to_lowercase();
     lora.keywords.is_empty()
@@ -291,7 +290,7 @@ fn applies_to_prompt(lora: &StableDiffusionLora, prompt: &str) -> bool {
             .any(|keyword| prompt.contains(&keyword.to_lowercase()))
 }
 
-/// Legacy `persona_scene_name`: the nickname, else the title.
+/// The persona's nickname, else its title.
 fn persona_scene_name(persona: &lettuce_characters::Persona) -> String {
     persona
         .nickname
@@ -589,8 +588,7 @@ impl StoredSceneReferences {
     }
 
     /// The references with only the images `media` can read; without media
-    /// (a local image model) no image is sent, as legacy's local scenes had
-    /// none.
+    /// (a local image model) no image is sent.
     pub(crate) fn resolve<D: ImageMedia + ?Sized>(&self, media: Option<&D>) -> SceneReferences {
         SceneReferences {
             character: self.character.resolve(media),
@@ -603,8 +601,8 @@ impl StoredSceneReferences {
     }
 }
 
-/// Legacy's effective chat background: the conversation's own (none when it
-/// hides it), else the selected or default scene's, else the character's.
+/// The effective chat background: the conversation's own (none when it hides
+/// it), else the selected or default scene's, else the character's.
 fn conversation_background(
     conversation: &lettuce_conversations::Conversation,
     character: &lettuce_characters::CharacterDetails,

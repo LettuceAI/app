@@ -1,8 +1,7 @@
-//! Scene image prompts for a direct chat message (legacy
-//! `chat_generate_scene_prompt`): a writer model turns the messages around
-//! the chosen one into one image prompt. It sees the character, persona and
-//! chat background images when the scene image model is remote, and the
-//! subjects' LoRA keywords when it runs locally.
+//! Scene image prompts for a direct chat message: a writer model turns the
+//! messages around the chosen one into one image prompt. It sees the
+//! character, persona and chat background images when the scene image model
+//! is remote, and the subjects' LoRA keywords when it runs locally.
 
 use std::collections::{BTreeMap, HashSet};
 use std::time::Duration;
@@ -546,8 +545,8 @@ where
         Ok(inference_request)
     }
 
-    /// Legacy's loaded session: the latest messages of the active branch plus
-    /// every older pinned one, oldest first, whatever their visibility.
+    /// The loaded window: the latest messages of the active branch plus every
+    /// older pinned one, oldest first, whatever their visibility.
     fn session_window(
         &self,
         conversation: &lettuce_conversations::Conversation,
@@ -599,7 +598,7 @@ struct WriterInputs<'a> {
     image_model_instructions: String,
 }
 
-/// Legacy `render_scene_generation_prompt_content`'s placeholder values.
+/// The placeholder values of the scene generation prompt.
 fn render_values(
     text: &RuntimeText,
     inputs: WriterInputs<'_>,
@@ -715,7 +714,7 @@ fn render_values(
     })
 }
 
-/// What a message shows now, without legacy inline image tokens.
+/// What a message shows now, without inline image tokens.
 fn shown_text(item: &TimelineItem) -> String {
     let parts = match item.message.active_render_source {
         MessageRenderSource::Candidate(_) => item
@@ -731,8 +730,8 @@ fn shown_text(item: &TimelineItem) -> String {
     strip_inline_image_tokens(&message_text(parts))
 }
 
-/// Legacy `strip_inline_image_tokens`: drops every `{{image:…}}` span; an
-/// unclosed span and what follows it stay.
+/// Drops every `{{image:…}}` span; an unclosed span and what follows it
+/// stay.
 fn strip_inline_image_tokens(text: &str) -> String {
     const PREFIX: &str = "{{image:";
     let mut out = String::with_capacity(text.len());
@@ -748,8 +747,8 @@ fn strip_inline_image_tokens(text: &str) -> String {
     out
 }
 
-/// Legacy `build_scene_prompt_context_messages`: the message and the two
-/// positions before it in the loaded window, as "Role: text" lines.
+/// The message and the two positions before it in the loaded window, as
+/// "Role: text" lines.
 fn recent_messages(
     text: &RuntimeText,
     window: &[TimelineItem],
@@ -793,7 +792,8 @@ fn recent_messages(
     Ok(context)
 }
 
-/// Legacy `build_scene_prompt_reference_hint`, from what the subject stores.
+/// The hint about a subject's reference images, from what the subject
+/// stores.
 fn reference_hint(text: &RuntimeText, subject: &SceneSubject) -> String {
     let name = (Variable::SubjectName, subject.name.clone());
     match subject.stored_source {
@@ -817,8 +817,7 @@ fn reference_hint(text: &RuntimeText, subject: &SceneSubject) -> String {
     .unwrap_or_default()
 }
 
-/// Legacy `build_scene_prompt_reference_text`: the subject's design notes
-/// and the hint about its reference images.
+/// The subject's design notes and the hint about its reference images.
 fn reference_text(text: &RuntimeText, subject: &SceneSubject) -> String {
     let notes = subject.design_notes.as_ref().map(|notes| {
         text.render_with(
@@ -838,12 +837,12 @@ fn reference_text(text: &RuntimeText, subject: &SceneSubject) -> String {
         .join("\n\n")
 }
 
-/// Whether legacy's reference text for the images actually sent is non-empty.
+/// Whether the reference text for the images actually sent is non-empty.
 fn has_reference_text(subject: &SceneSubject) -> bool {
     subject.design_notes.is_some() || subject.source.is_some()
 }
 
-/// Legacy `render_scene_generation_prompt_entries`.
+/// The scene generation prompt's rendered entries.
 fn render_entries(
     document: &PromptDocument,
     context: PromptRenderContext,
@@ -852,7 +851,7 @@ fn render_entries(
         .map_err(|_| ScenePromptError::InvalidPrompt)
 }
 
-/// The images an entry carries: its payload slot's, else those its legacy
+/// The images an entry carries: its payload slot's, else those its image
 /// tokens name.
 fn entry_images(entry: &FeatureEntry, references: &SceneReferences) -> Vec<AssetId> {
     let persona = || {
@@ -885,11 +884,10 @@ fn entry_images(entry: &FeatureEntry, references: &SceneReferences) -> Vec<Asset
     }
 }
 
-/// Legacy `scene_prompt_entry_to_message`. An entry with images becomes a
-/// user message with its text first; an image entry without images is
-/// dropped. Legacy replaced the tokens left in other entries with reference
-/// hints that were always empty there, so they are removed. A blank message
-/// is `Some(None)`: not sent, but still a position for in-chat placement.
+/// An entry with images becomes a user message with its text first; an
+/// image entry without images is dropped. Tokens left in other entries are
+/// removed. A blank message is `Some(None)`: not sent, but still a position
+/// for in-chat placement.
 fn entry_message(
     entry: &FeatureEntry,
     references: &SceneReferences,
@@ -926,8 +924,8 @@ fn entry_message(
     }))
 }
 
-/// Legacy `should_insert_in_chat_prompt_entry` against the number of
-/// relative messages.
+/// Whether an in-chat entry is inserted, against the number of relative
+/// messages.
 fn inserts_in_chat(entry: &FeatureEntry, turn_count: usize) -> bool {
     match entry.position {
         PromptEntryPosition::InChat => true,
@@ -942,8 +940,7 @@ fn inserts_in_chat(entry: &FeatureEntry, turn_count: usize) -> bool {
     }
 }
 
-/// The relative entries as messages, then legacy
-/// `insert_scene_in_chat_prompt_entries`: each in-chat entry lands `depth`
+/// The relative entries as messages, then each in-chat entry placed `depth`
 /// messages from the end, shifted by the entries placed before it (dropped
 /// ones included).
 fn writer_messages(
@@ -994,7 +991,7 @@ fn generated_text(outcome: &InferenceOutcome) -> Option<String> {
         .then(|| message_text(&candidate.parts))
 }
 
-/// Legacy's cleanup of the writer's answer.
+/// Cleans up the writer's answer.
 fn clean_scene_prompt(text: &str) -> String {
     condense(
         text.trim()

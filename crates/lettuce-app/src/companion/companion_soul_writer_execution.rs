@@ -151,11 +151,11 @@ impl<
         }
     }
 
-    /// One model's tool loop (legacy `run_with_target`). Once the model has
-    /// returned tool calls, a later round without calls, a provider failure or
-    /// the round cap ends the loop with the partial draft. A model that never
-    /// returned calls gets one structured-output request on the same model,
-    /// whose parsed operations all apply whether or not they include `done`.
+    /// One model's tool loop. Once the model has returned tool calls, a later
+    /// round without calls, a provider failure or the round cap ends the loop
+    /// with the partial draft. A model that never returned calls gets one
+    /// structured-output request on the same model, whose parsed operations
+    /// all apply whether or not they include `done`.
     #[allow(clippy::too_many_arguments)]
     async fn run_target(
         &self,

@@ -46,7 +46,7 @@ impl DirectConversationLaunchRequest {
 pub struct GroupConversationLaunchRequest {
     pub format_version: u32,
     /// A blank title is derived from the member display names instead of
-    /// being rejected, matching how the legacy create form named a cast.
+    /// being rejected.
     pub title: String,
     pub user: DirectUserParticipant,
     pub group_id: GroupId,

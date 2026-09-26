@@ -204,8 +204,8 @@ where
 }
 
 /// The conversation's companion state, created from the character's companion
-/// settings when a companion chat has none yet (legacy `current_state` falling
-/// back to `default_state`); `None` when the chat is not a companion chat.
+/// settings when a companion chat has none yet; `None` when the chat is not a
+/// companion chat.
 fn companion_state<S>(
     sources: &S,
     conversation: &lettuce_conversations::Conversation,
