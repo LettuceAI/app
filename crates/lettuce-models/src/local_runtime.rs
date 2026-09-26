@@ -527,8 +527,7 @@ impl StableDiffusionSettings {
         *self == Self::default()
     }
 
-    /// These settings with every field `overrides` sets taking its place, as
-    /// legacy image requests spread per-request settings over the model's.
+    /// These settings with every field `overrides` sets taking its place.
     /// The stable-diffusion.cpp binding always stays the model's.
     #[must_use]
     pub fn overlaid_by(&self, overrides: &Self) -> Self {
@@ -675,8 +674,8 @@ impl FeatureGenerationParameters {
     }
 }
 
-/// Per-model sampling overrides for each app feature (legacy
-/// `featureGenerationSettings`).
+/// Per-model sampling overrides for each app feature
+/// (`featureGenerationSettings`).
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FeatureParameters {
@@ -724,7 +723,7 @@ impl FeatureParameters {
 }
 
 /// Model settings a conversation or the app sets on top of (conversation) or
-/// underneath (app) a model's own settings; legacy resolved every field as
+/// underneath (app) a model's own settings; every field resolves as
 /// conversation, then model, then app. An unset field defers to the next
 /// layer.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]

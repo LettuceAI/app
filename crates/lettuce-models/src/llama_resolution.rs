@@ -1,15 +1,14 @@
-//! The llama.cpp settings one request runs with, resolved like legacy
-//! `resolve_llama_*`: each field from the session layer, then the model,
-//! then the app layer. A single-GPU pin is dropped when multi-GPU is enabled
-//! at the same or a more specific layer. Dynamic memory requests may replace
-//! the sampler with the legacy fixed memory sampler.
+//! The llama.cpp settings one request runs with: each field from the session
+//! layer, then the model, then the app layer. A single-GPU pin is dropped
+//! when multi-GPU is enabled at the same or a more specific layer. Dynamic
+//! memory requests may replace the sampler with the fixed memory sampler.
 
 use serde::{Deserialize, Serialize};
 
 use crate::{LlamaCppSettings, LlamaSamplerSettings, LlamaSamplerStage};
 
 /// Layers besides the model's own settings. For app features the session
-/// layer is the feature slot's sampler, as legacy's synthetic session was.
+/// layer is the feature slot's sampler.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LlamaResolutionInput {
@@ -21,8 +20,8 @@ pub struct LlamaResolutionInput {
     pub memory_sampler: Option<LlamaMemorySampler>,
 }
 
-/// Legacy `sanitize_dynamic_memory_extra_body_fields`; direct and group
-/// memory differed in their DRY settings.
+/// Which dynamic memory sampler to apply; direct and group memory differ in
+/// their DRY settings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LlamaMemorySampler {

@@ -91,7 +91,7 @@ pub struct ResolvedChatParameters {
     pub reasoning_budget_tokens: Option<u32>,
     pub prompt_caching: Option<PromptCaching>,
     pub total_completion_allowance: Option<u32>,
-    /// Legacy `forceSendThinkingState`: the model's value, else the session's.
+    /// `forceSendThinkingState`: the model's value, else the session's.
     #[serde(default)]
     pub send_thinking_state: bool,
     pub ollama: OllamaOptions,

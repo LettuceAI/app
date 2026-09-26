@@ -62,8 +62,8 @@ pub enum ProviderConfig {
     Ollama(OllamaConfig),
 }
 
-/// An Ollama account's settings beyond the standard ones (legacy credential
-/// config `sproutEnabled` / `sproutUrl` / `sproutApiKey`).
+/// An Ollama account's settings beyond the standard ones (`sproutEnabled` /
+/// `sproutUrl` / `sproutApiKey` in the credential config).
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OllamaConfig {
@@ -95,8 +95,8 @@ impl ProviderConfig {
     }
 }
 
-/// The API-format ComfyUI workflows a ComfyUI account runs (legacy
-/// credential config `txt2imgWorkflow` / `img2imgWorkflow`).
+/// The API-format ComfyUI workflows a ComfyUI account runs (`txt2imgWorkflow`
+/// / `img2imgWorkflow` in the credential config).
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ComfyUiConfig {
@@ -108,7 +108,7 @@ pub struct ComfyUiConfig {
 
 const MAX_COMFYUI_WORKFLOW_BYTES: usize = 4 * 1024 * 1024;
 
-/// The legacy custom (OpenAI- or Anthropic-format) provider settings.
+/// The custom (OpenAI- or Anthropic-format) provider settings.
 /// `models_path` being `None` means model fetching is disabled.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -577,8 +577,8 @@ pub struct ModelProfileConfig {
 
 /// The stored shape of [`ModelProfileConfig`]. Configs written before the
 /// feature slots existed carry `lorebook_generator_parameters`, which moves to
-/// the lorebook generator slot; the short-lived raw `legacy_advanced_settings`
-/// field is ignored because its keys are migrated from the legacy source.
+/// the lorebook generator slot; the raw `legacy_advanced_settings` field is
+/// ignored because its keys are migrated from their source.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ModelProfileConfigRecord {
@@ -681,8 +681,8 @@ pub enum ModelRepositoryError {
     Storage,
 }
 
-/// App-wide model settings underneath every model's own (legacy app
-/// `advanced_model_settings`), stored with the global settings row and
+/// App-wide model settings underneath every model's own
+/// (`advanced_model_settings`), stored with the global settings row and
 /// revisioned with it.
 pub trait GlobalModelSettingsRepository: Send + Sync {
     fn global_model_settings(&self)
@@ -709,8 +709,8 @@ pub trait ProviderAccountRepository: Send + Sync {
 }
 
 /// Finds records by their natural identity, for installers that register
-/// the same account or model again (legacy matched by provider and label,
-/// and by model name).
+/// the same account or model again (by provider and label, and by model
+/// name).
 pub trait ModelLookup: Send + Sync {
     fn account_by_kind_and_label(
         &self,
