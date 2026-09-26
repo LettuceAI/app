@@ -618,7 +618,19 @@ mod tests {
                 effective_at: None,
                 visible_in_chat: false,
                 scene_edited: false,
-                usage: usage(None, None),
+                usage: if role == "assistant" {
+                    lettuce_transfer::LegacyBackupMessageUsage {
+                        first_token_ms: Some(55),
+                        tokens_per_second: Some(9.5),
+                        mtp_stats_json: Some(
+                            r#"{"draftTokens":4,"rounds":3,"drafted":12,"accepted":9,"tokensPerRound":4.0,"draftAcceptance":0.75}"#
+                                .to_owned(),
+                        ),
+                        ..usage(None, None)
+                    }
+                } else {
+                    usage(None, None)
+                },
                 model_source_id: None,
                 selected_variant_source_id: selected,
                 pinned: false,
@@ -675,7 +687,11 @@ mod tests {
                             ordinal: 0,
                             content: "First take".to_owned(),
                             created_at: 120,
-                            usage: usage(Some(12), Some(4)),
+                            usage: lettuce_transfer::LegacyBackupMessageUsage {
+                                first_token_ms: Some(40),
+                                tokens_per_second: Some(12.5),
+                                ..usage(Some(12), Some(4))
+                            },
                             reasoning: None,
                         },
                         lettuce_transfer::LegacyBackupDirectMessageVariant {
@@ -691,6 +707,7 @@ mod tests {
                 ),
             ],
         };
+        let reply_source_id = session.messages[1].source_id.clone();
         let memory_id = lettuce_types::MemoryId::new();
         let session_memory = lettuce_transfer::LegacyBackupMemoryEmbeddingOwner {
             ordinal: 0,
@@ -1051,6 +1068,43 @@ mod tests {
         );
         let reply = &history.messages[1];
         assert_eq!(reply.candidates.len(), 2);
+        let first_stats = backend
+            .database()
+            .llm_generation_metric_for_message(
+                &conv(session_id).to_string(),
+                &reply.message.id.to_string(),
+            )
+            .expect("message stats")
+            .expect("the selected variant keeps the message's stats");
+        assert_eq!(
+            first_stats.id,
+            reply.candidates[1].attempt_id.to_string(),
+            "the newest generation of the message is its selected variant"
+        );
+        assert_eq!(
+            first_stats.summary,
+            serde_json::json!({
+                "ttftMs": 55,
+                "decodeTokensPerSecond": 9.5,
+                "mtpStats": {
+                    "draftTokens": 4,
+                    "rounds": 3,
+                    "drafted": 12,
+                    "accepted": 9,
+                    "tokensPerRound": 4.0,
+                    "draftAcceptance": 0.75,
+                },
+            })
+        );
+        assert!(
+            backend
+                .database()
+                .llm_generation_metrics(None)
+                .expect("metrics list")
+                .is_empty(),
+            "imported speed stats stay with their messages, out of the metrics list"
+        );
+        let reply_ids = (reply.message.id, reply.candidates[1].attempt_id);
         assert_eq!(
             reply.message.active_render_source,
             lettuce_conversations::MessageRenderSource::Candidate(
@@ -1305,6 +1359,48 @@ mod tests {
             )
             .expect("materialize group conversations");
         assert_eq!(group_conversation_receipt.record_count, 1);
+        backend
+            .legacy_llm_metrics_importer()
+            .execute(
+                &admission,
+                &plan,
+                &lettuce_transfer::LegacyBackupLlmMetricsPlan {
+                    metrics: vec![lettuce_transfer::LegacyLlmMetricRecord {
+                        id: "gen-reply".to_owned(),
+                        created_at: 126,
+                        model_path: Some("/models/reply.gguf".to_owned()),
+                        summary_json: r#"{"ttftMs":50}"#.to_owned(),
+                        samples_json: r#"[{"tMs":1}]"#.to_owned(),
+                        message_source_id: Some(reply_source_id.clone()),
+                    }],
+                    ..lettuce_transfer::LegacyBackupLlmMetricsPlan::default()
+                },
+                TimestampMillis::new(58),
+            )
+            .expect("materialize llm metrics");
+        let replaced = backend
+            .database()
+            .llm_generation_metric_for_message(
+                &conv(session_id).to_string(),
+                &reply_ids.0.to_string(),
+            )
+            .expect("message metric")
+            .expect("the full legacy row");
+        assert_eq!(replaced.id, reply_ids.1.to_string());
+        assert_eq!(replaced.summary, serde_json::json!({"ttftMs": 50}));
+        assert_eq!(replaced.samples.map(|samples| samples.len()), Some(1));
+        let listed = backend
+            .database()
+            .llm_generation_metrics(None)
+            .expect("metrics list");
+        assert_eq!(
+            listed
+                .iter()
+                .map(|metric| metric.id.clone())
+                .collect::<Vec<_>>(),
+            vec![reply_ids.1.to_string()],
+            "the full legacy row replaces the message's imported stats and joins the list"
+        );
         let graph =
             lettuce_transfer::ProviderBackupSource::read_provider_backup_graph(backend.database())
                 .expect("backup graph with group conversation");

@@ -1202,6 +1202,18 @@ pub struct LegacyConversationRecord {
     /// Legacy per-message companion effects whose generation turn the import
     /// wrote.
     pub companion_effects: Vec<lettuce_companions::CompanionTurnEffect>,
+    /// Speed stats of the imported generations, each kept for its candidate.
+    pub generation_stats: Vec<LegacyGenerationStats>,
+}
+
+/// The per-message speed stats of one imported generation, stored as the
+/// summary of a message-only `llm_generation_metrics` row under the
+/// generation's attempt id.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LegacyGenerationStats {
+    pub attempt_id: lettuce_types::GenerationAttemptId,
+    pub created_at: TimestampMillis,
+    pub summary: serde_json::Value,
 }
 
 /// The companion runtime state a legacy companion session seeds, with its

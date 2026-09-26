@@ -1395,9 +1395,16 @@ impl LegacyImportRepository for Database {
             let metric = &entry.metric;
             transaction
                 .execute(
-                    "INSERT OR IGNORE INTO llm_generation_metrics
+                    "INSERT INTO llm_generation_metrics
                         (id, created_at, model_path, summary_json, samples_json)
-                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                     VALUES (?1, ?2, ?3, ?4, ?5)
+                     ON CONFLICT(id) DO UPDATE SET
+                        created_at = excluded.created_at,
+                        model_path = excluded.model_path,
+                        summary_json = excluded.summary_json,
+                        samples_json = excluded.samples_json,
+                        message_stats_only = 0
+                     WHERE llm_generation_metrics.message_stats_only = 1",
                     params![
                         id,
                         metric.created_at,
@@ -2683,6 +2690,23 @@ fn materialize_conversations(
             crate::conversation::state_adapter::insert_restored_effect_in(&transaction, effect)
                 .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
         }
+        for stats in &record.generation_stats {
+            if !stats.summary.is_object() {
+                return Err(LegacyImportRepositoryError::InvalidInput);
+            }
+            transaction
+                .execute(
+                    "INSERT OR IGNORE INTO llm_generation_metrics
+                        (id, created_at, model_path, summary_json, samples_json, message_stats_only)
+                     VALUES (?1, ?2, NULL, ?3, '[]', 1)",
+                    params![
+                        stats.attempt_id.to_string(),
+                        stats.created_at.get(),
+                        stats.summary.to_string(),
+                    ],
+                )
+                .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
+        }
     }
     for (character_id, facts) in &request.companion_souls {
         crate::companion::soul_adapter::replace_facts_in(
@@ -2752,7 +2776,7 @@ fn legacy_llm_metric_ids(
         transaction
             .query_row(
                 "SELECT created_at, model_path, summary_json, samples_json
-                 FROM llm_generation_metrics WHERE id = ?1",
+                 FROM llm_generation_metrics WHERE id = ?1 AND message_stats_only = 0",
                 [id],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
@@ -2764,6 +2788,8 @@ fn legacy_llm_metric_ids(
 /// Keeps each row's legacy id except for the newest row of each message with
 /// exactly one selected-candidate attempt: that row takes the attempt id,
 /// unless a different row already holds it (in the table or in this import).
+/// The message's imported speed stats do not hold it: the full row replaces
+/// them.
 fn choose_llm_metric_ids(
     metrics: &[lettuce_transfer::LegacyLlmMetricImport],
     attempts: &BTreeMap<String, Vec<String>>,

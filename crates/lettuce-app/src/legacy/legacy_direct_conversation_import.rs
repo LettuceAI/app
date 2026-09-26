@@ -153,7 +153,57 @@ pub(crate) struct TimelineMessage<'a> {
     pub selected_variant_source_id: Option<&'a str>,
     pub reasoning: Option<&'a str>,
     pub attachments_json: &'a str,
+    /// The message row's speed stats, which are its selected variant's.
+    pub speed: TimelineSpeed<'a>,
     pub variants: Vec<TimelineVariant<'a>>,
+}
+
+/// A row's generation speed columns (`first_token_ms`, `tokens_per_second`,
+/// and `mtp_stats`, which holds MTP and DFlash stats alike).
+#[derive(Clone, Copy, Default)]
+pub(crate) struct TimelineSpeed<'a> {
+    pub first_token_ms: Option<u64>,
+    pub tokens_per_second: Option<f64>,
+    pub mtp_stats_json: Option<&'a str>,
+}
+
+impl TimelineSpeed<'_> {
+    fn is_empty(&self) -> bool {
+        self.first_token_ms.is_none()
+            && self.tokens_per_second.is_none()
+            && self.mtp_stats_json.is_none()
+    }
+
+    /// The summary a local generation records for its message, with the
+    /// runtime's keys; an `mtp_stats` value that is not JSON is left out.
+    fn summary(&self, variant: &TimelineVariant<'_>) -> serde_json::Value {
+        let mut summary = serde_json::Map::new();
+        let mut put = |key: &str, value: Option<serde_json::Value>| {
+            if let Some(value) = value {
+                summary.insert(key.to_owned(), value);
+            }
+        };
+        put("promptTokens", variant.prompt_tokens.map(Into::into));
+        put(
+            "completionTokens",
+            variant.completion_tokens.map(Into::into),
+        );
+        put("totalTokens", variant.total_tokens.map(Into::into));
+        put("ttftMs", self.first_token_ms.map(Into::into));
+        put(
+            "decodeTokensPerSecond",
+            self.tokens_per_second
+                .and_then(serde_json::Number::from_f64)
+                .map(serde_json::Value::Number),
+        );
+        put(
+            "mtpStats",
+            self.mtp_stats_json
+                .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
+                .filter(|value| !value.is_null()),
+        );
+        serde_json::Value::Object(summary)
+    }
 }
 
 pub(crate) struct TimelineVariant<'a> {
@@ -167,6 +217,7 @@ pub(crate) struct TimelineVariant<'a> {
     /// Legacy group variants kept their own attachments; direct ones had none.
     pub attachments_json: Option<&'a str>,
     pub author: Option<ConversationParticipantId>,
+    pub speed: TimelineSpeed<'a>,
 }
 
 pub(crate) struct LegacyConversationSource<'a> {
@@ -591,6 +642,11 @@ where
                 selected_variant_source_id: row.selected_variant_source_id.as_deref(),
                 reasoning: row.reasoning.as_deref(),
                 attachments_json: &row.attachments_json,
+                speed: TimelineSpeed {
+                    first_token_ms: row.usage.first_token_ms,
+                    tokens_per_second: row.usage.tokens_per_second,
+                    mtp_stats_json: row.usage.mtp_stats_json.as_deref(),
+                },
                 variants: row
                     .variants
                     .iter()
@@ -604,6 +660,11 @@ where
                         reasoning: variant.reasoning.as_deref(),
                         attachments_json: None,
                         author: Some(character),
+                        speed: TimelineSpeed {
+                            first_token_ms: variant.usage.first_token_ms,
+                            tokens_per_second: variant.usage.tokens_per_second,
+                            mtp_stats_json: variant.usage.mtp_stats_json.as_deref(),
+                        },
                     })
                     .collect(),
             })
@@ -1742,6 +1803,8 @@ pub(crate) fn conversation_record(
         messages: Vec::new(),
         turns: Vec::new(),
         usage: Vec::new(),
+        generation_stats: Vec::new(),
+        unlinked_stats: 0,
     };
     let mut parent: Option<(MessageId, MessageRole)> = None;
     for (index, message) in source.messages.iter().enumerate() {
@@ -1749,6 +1812,13 @@ pub(crate) fn conversation_record(
             .then(|| scene_origin.clone())
             .flatten();
         parent = Some(writer.push(message, parent, origin)?);
+    }
+    if writer.unlinked_stats > 0 {
+        tracing::warn!(
+            conversation_id = %conversation_id,
+            skipped = writer.unlinked_stats,
+            "legacy speed stats of replies imported without a generation were not kept"
+        );
     }
     let conversation = Conversation {
         id: conversation_id,
@@ -1816,6 +1886,7 @@ pub(crate) fn conversation_record(
         },
         turns: writer.turns,
         usage: writer.usage,
+        generation_stats: writer.generation_stats,
         snapshots: source.snapshots,
         memory,
         pool: None,
@@ -1834,6 +1905,8 @@ struct SessionWriter<'a> {
     messages: Vec<BackupMessage>,
     turns: Vec<GenerationTurn>,
     usage: Vec<UsageEvent>,
+    generation_stats: Vec<lettuce_transfer::LegacyGenerationStats>,
+    unlinked_stats: usize,
 }
 
 impl SessionWriter<'_> {
@@ -1896,6 +1969,17 @@ impl SessionWriter<'_> {
             && !legacy.variants.is_empty()
             && parent.is_some()
             && self.model.is_some();
+        if !variants_as_candidates {
+            self.unlinked_stats += legacy
+                .variants
+                .iter()
+                .enumerate()
+                .filter(|(index, variant)| !variant_speed(legacy, variant, *index).is_empty())
+                .count()
+                .max(usize::from(
+                    legacy.variants.is_empty() && !legacy.speed.is_empty(),
+                ));
+        }
         let active_render_source = if variants_as_candidates {
             self.push_candidates(legacy, message_id, parent, &mut candidates)?
         } else if legacy.variants.is_empty() {
@@ -2140,6 +2224,15 @@ impl SessionWriter<'_> {
                 }),
                 _ => UsageCounters::Unavailable(UsageUnavailableReason::ProviderOmitted),
             };
+            let speed = variant_speed(legacy, variant, index);
+            if !speed.is_empty() {
+                self.generation_stats
+                    .push(lettuce_transfer::LegacyGenerationStats {
+                        attempt_id,
+                        created_at: at,
+                        summary: speed.summary(variant),
+                    });
+            }
             self.usage.push(UsageEvent {
                 id: usage_event_id,
                 record: UsageRecord {
@@ -2183,6 +2276,20 @@ impl SessionWriter<'_> {
         Ok(MessageRenderSource::Candidate(
             active.or(previous).ok_or(Error::InvalidInput)?,
         ))
+    }
+}
+
+/// A variant's own speed stats; the rendered variant without any falls back
+/// to the message row's, which are the rendered variant's.
+fn variant_speed<'a>(
+    legacy: &TimelineMessage<'a>,
+    variant: &TimelineVariant<'a>,
+    index: usize,
+) -> TimelineSpeed<'a> {
+    if variant.speed.is_empty() && index == active_variant_index(legacy) {
+        legacy.speed
+    } else {
+        variant.speed
     }
 }
 

@@ -1098,9 +1098,14 @@ generation that falls out of the newest 500, or is cleared, keeps its summary
 count; `llm_generation_metric_for_message` still returns it. Triggers
 delete such a kept row when its candidate is deleted (including a hard-deleted
 conversation) or its message is tombstoned, in the same statement's
-transaction. Not yet carried:
-the per-message stats columns of an imported legacy database or backup, which
-need their variants' attempt ids at import (legacy import follow-up).
+transaction.
+
+The per-message stats columns of a legacy database or backup
+(`messages`/`message_variants`/`group_messages`/`group_message_variants`
+`first_token_ms`, `tokens_per_second`, `mtp_stats`, added by legacy migrations
+v69-v70 and v75-v76) are written by the conversation import stages as
+`message_stats_only` rows under each imported candidate's attempt id, with the
+runtime's summary keys (see lettuce-app).
 
 Legacy metric rows are imported by the `llm_metrics` stage of a legacy
 database import, after both conversation stages: rows keep their legacy id,
@@ -1109,8 +1114,9 @@ that the newest row attached to each imported message is stored under the
 attempt id of that message's selected candidate so
 `llm_generation_metric_for_message` finds it. A message imported without
 candidates, a link to a message that was not imported, or an attempt id a
-different row already holds leaves the legacy id. Inserts ignore rows that
-already exist. Carrying device-local state into a restored file keeps the new
+different row already holds leaves the legacy id; a message's imported speed
+stats row does not count as held, and the full legacy row replaces it (and
+joins the metrics list). Inserts ignore other rows that already exist. Carrying device-local state into a restored file keeps the new
 file's rows: a previous metric is skipped when the new file has its id or a
 row with the same `created_at`, `model_path` and `summary_json` (the same
 legacy generation re-keyed under an attempt id derived from a changed source

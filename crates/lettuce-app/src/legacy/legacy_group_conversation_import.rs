@@ -21,7 +21,7 @@ use lettuce_types::{
 
 use crate::launch::documents;
 use crate::legacy::legacy_direct_conversation_import::{
-    ImportContext, LegacyConversationSource, SessionSettingsSource, TimelineMessage,
+    ImportContext, LegacyConversationSource, SessionSettingsSource, TimelineMessage, TimelineSpeed,
     TimelineVariant, committed_stage, conversation_record, import_context, launch_key, legacy_user,
     memory_owner, parse, persona_selection, selected_model, session_settings,
 };
@@ -272,6 +272,11 @@ where
                     reasoning: variant.reasoning.as_deref(),
                     attachments_json: Some(&variant.attachments_json),
                     author: author(variant.speaker_character_source_id.as_ref())?,
+                    speed: TimelineSpeed {
+                        first_token_ms: variant.usage.first_token_ms,
+                        tokens_per_second: variant.usage.tokens_per_second,
+                        mtp_stats_json: variant.usage.mtp_stats_json.as_deref(),
+                    },
                 });
             }
             messages.push(TimelineMessage {
@@ -288,6 +293,11 @@ where
                 selected_variant_source_id: row.selected_variant_source_id.as_deref(),
                 reasoning: row.reasoning.as_deref(),
                 attachments_json: &row.attachments_json,
+                speed: TimelineSpeed {
+                    first_token_ms: row.usage.first_token_ms,
+                    tokens_per_second: row.usage.tokens_per_second,
+                    mtp_stats_json: row.usage.mtp_stats_json.as_deref(),
+                },
                 variants,
             });
         }

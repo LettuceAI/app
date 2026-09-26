@@ -965,6 +965,19 @@ unknown or duplicate ids, a missing lore-entry title, a tool unavailable for
 the draft) have their own texts. An error while replaying a stored round other
 than a storage failure fails the attempt.
 
+Legacy speed stats: the direct and group conversation importers carry each
+legacy assistant variant's `first_token_ms`, `tokens_per_second` and
+`mtp_stats` (legacy `storage_manager/sessions.rs` `json_usage_summary`; the
+column held MTP and DFlash stats alike) into a message-only
+`llm_generation_metrics` row keyed to the imported candidate's attempt, with
+the keys the local runtime records (`ttftMs`, `decodeTokensPerSecond`,
+`mtpStats`, plus the variant's `promptTokens`/`completionTokens`/`totalTokens`
+when known). The variant legacy rendered falls back to the message row's
+stats, which held the shown variant's. An `mtp_stats` value that is not JSON is
+left out, as legacy's reader dropped it. Replies imported as revisions (no
+resolvable model or no parent) have no attempt; their stats are not kept and a
+warning counts them per conversation.
+
 Reply images: before finalizing, `ConversationGenerationJobRunner` stores each
 image on the provider candidate through its `ReplyMediaStore`
 (`with_reply_media`; `LocalMediaBlobStore` implements it) as a persistent

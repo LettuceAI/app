@@ -7,7 +7,7 @@ use lettuce_types::{CharacterId, ContentHash, ConversationId, TimestampMillis};
 use uuid::Uuid;
 
 use crate::legacy::legacy_direct_conversation_import::{
-    ImportContext, LegacyConversationSource, SessionSettingsSource, TimelineMessage,
+    ImportContext, LegacyConversationSource, SessionSettingsSource, TimelineMessage, TimelineSpeed,
     TimelineVariant, conversation_record, legacy_user, persona_selection, selected_model,
     session_settings,
 };
@@ -194,6 +194,7 @@ where
                         selected_variant_source_id: line.selected.as_deref(),
                         reasoning: None,
                         attachments_json: "[]",
+                        speed: TimelineSpeed::default(),
                         variants: line
                             .variants
                             .iter()
@@ -207,6 +208,7 @@ where
                                 reasoning: None,
                                 attachments_json: None,
                                 author: Some(character),
+                                speed: TimelineSpeed::default(),
                             })
                             .collect(),
                     })
@@ -421,6 +423,7 @@ where
                         selected_variant_source_id: line.selected.as_deref(),
                         reasoning: None,
                         attachments_json: "[]",
+                        speed: TimelineSpeed::default(),
                         variants: line
                             .variants
                             .iter()
@@ -434,6 +437,7 @@ where
                                 reasoning: None,
                                 attachments_json: Some("[]"),
                                 author: *author,
+                                speed: TimelineSpeed::default(),
                             })
                             .collect(),
                     })
