@@ -1,103 +1,54 @@
 # lettuce-characters
 
-Typed authored aggregates for characters, personas, reusable group profiles,
-scenes, scene variants, presentation, and conversation starters.
+The authored library records: characters, personas, reusable groups, scenes and their variants, conversation starters, and the presentation (crops, gradients, cards, chat appearance, widgets) attached to them.
 
-## Contract
+These are mutable library records guarded by optimistic `Revision` checks. "Versioned" here means closed, format-versioned payloads and compare-and-swap mutations, not an immutable history of authored edits. A conversation keeps its own launch snapshot of what it was started from (`lettuce-conversations`), so editing a library record does not rewrite existing history.
 
-The aggregates are mutable library records with optimistic `Revision` checks;
-“versioned” describes closed, format-versioned payloads and CAS mutations, not
-an immutable authored-history table. A conversation will copy a complete launch
-snapshot later, so editing a library profile cannot rewrite existing history.
+The crate is pure. Persistence and migrations (`lettuce-database`), media ingestion and cleanup (`lettuce-media`), transfer envelopes (`lettuce-transfer`), prompt rendering and lorebook matching (`lettuce-context`), conversations and Tauri commands are elsewhere. Companion Soul math and live state live in `lettuce-companions`.
 
-The crate preserves the selected authored surface, including creator provenance,
-localized notes, sources, tags, defaults, voice and image
-recommendation values, crop/gradient/card presentation, the sparse chat
-appearance vocabulary and recursive widget tree, group speaker/memory/persona
-choices, multiple ordered scenes, per-scene and per-variant directions, selected
-variants, inline assets, and starter message ordering.
+## Aggregates
 
-`CharacterProfile` also keeps the authored legacy `scenario` and the ordered
-`rules` list. Both live in `profile_json` with serde defaults, so existing rows
-and backups decode unchanged. Legacy rendered `{{rules}}` as empty text and never
-rendered the scenario; the rewrite preserves the data without changing prompt
-output.
+| Module | Records |
+| --- | --- |
+| `character.rs` | `Character`, `CharacterProfile`, `CharacterProvenance`, `CharacterDefaults`, `CharacterMedia`, voice and image recommendations |
+| `persona.rs` | `Persona`, `PersonaMedia`, `PersonaDraftUpdate`, `PersonaDefaultState` |
+| `group.rs` | `GroupProfile`, `GroupMember` |
+| `scene.rs` | `Scene`, `SceneVariant`, `SceneDocumentV1`, `SceneAssetLink` |
+| `starter.rs` | `ConversationStarter`, `StarterMessage` |
+| `presentation.rs` | `CharacterPresentationV1`, `ChatAppearanceV1`, `Crop`, the widget tree |
+| `selection.rs` | `LifecycleStatus`, `Selection<T>`, chat mode, speaker selection, memory policy |
+| `ports.rs` | create plans, details aggregates, draft updates, the repository and reader traits |
 
-All media references use `AssetId`. Widget image locators are either logical
-asset references or an explicit unresolved import token; native paths, data
-URLs, bytes, and serving logic are not domain values. Prompt and lorebook IDs
-are typed references only; their documents, matching, and bindings belong to
-`lettuce-context`. Voice profiles and model artifacts are typed references, with
-an unresolved legacy voice/recommendation form available only for import
-adapters.
+A character carries its authored text and metadata: creator provenance, localized notes, sources, tags, the scenario and the ordered rules list (both inside `profile_json` with serde defaults, so older rows and backups decode unchanged), defaults (prompt, lorebooks, model, voice, interaction and memory settings), image recommendations, media, presentation, multiple ordered scenes with per-scene and per-variant directions and a selected variant, and ordered starters.
 
-## Repository boundary
+A group is a reusable profile of at least two members with at least one active: member order, mute and model overrides, persona, chat mode, speaker selection, memory policy, prompt defaults, presentation, background, whether character lorebooks are disabled, and an optional starting scene.
 
-`CharacterRepository`, `PersonaRepository`, `GroupRepository`,
-`SceneRepository`, and `StarterRepository` are synchronous, lifecycle-specific
-ports. Character scene and starter mutations carry the character ID and
-expected root revision. Groups load their optional complete starting scene with
-the group atomically; that zero-or-one scene can be changed only through the
-group port, not the multi-scene character port. Ports intentionally do not
-expose generic save/upsert/partial patch operations, transactions, SQL, row
-DTOs, or hard-delete methods. Dependency readers and the named
-profile-duplication port make impact analysis and transactional duplication
-explicit while excluding conversations, memories, companion runtime state, and
-other live data.
+### Companion characters
 
-Operational structs use `serde(deny_unknown_fields)` and explicit format
-versions. Constructors and `validate` methods enforce finite crops and
-appearance numbers, bounded authored text, contiguous ordering, unique child
-IDs, selected-variant ownership, scene asset/document agreement, starter
-selection semantics, the persona media/card invariants, and the reusable-group
-minimum of two members with at least one active member.
+A companion character may own an authored Soul configuration in its versioned defaults document; roleplay characters reject one. The character aggregate owns the twelve authored identity fields, the baseline affect, regulation style and relationship defaults the `lettuce-companions` state math starts from, the companion prompt-template reference and style notes. It rejects non-finite or out-of-range math inputs and oversized style notes. Fact normalization, live Soul invariants and the emotion and relationship transitions belong to `lettuce-companions`; runtime state, memory, prompting, classifiers and launch coordination are outside this crate.
 
-Every authored aggregate with a revision and timestamps rejects revision zero
-and `created_at > updated_at`. Character/persona media and scene association
-lists reject reuse of one logical `AssetId` across slots. Presentation exposes
-deterministic recursive logical-asset references; unresolved legacy widget
-tokens are excluded.
+## References
 
-Complete character and group detail aggregates are serializable and validate by
-reusing their create-plan invariants. This lets the transfer boundary preserve
-their owned ordered graphs without defining a parallel backup-only character
-model.
+All media references are `AssetId`s. Widget image locators are either a logical asset reference or an explicit unresolved import token; native paths, data URLs, bytes and serving logic are never domain values. Prompt and lorebook ids are typed references only; the documents, bindings and matching belong to `lettuce-context`. Voice profiles and model artifacts are typed references too, with an unresolved legacy voice or recommendation form available only to import adapters.
 
-Scene draft updates carry only scalar draft fields. Asset replacement is a
-complete base-and-variant association operation, and scene/starter mutations
-use the character root revision as their authoritative CAS token. Removing a
-scene rejects starter dependencies even when a replacement default scene is
-provided. Profile duplication requests identify a source and destination root;
-the source graph supplies all child data and the result reports typed ID
-remaps while reporting all retained media, scene, widget, prompt, lorebook,
-model, voice, and artifact references. `LifecycleStatus` controls library
-visibility; archived scenes remain authored records and may remain selectable
-according to the owning aggregate's existing policy. Persistence does not
-invent reference exclusion rules.
+Presentation exposes a deterministic, recursive list of the logical asset references it contains (unresolved widget tokens excluded). Character and persona media and scene associations reject reusing one `AssetId` across slots.
 
-Persona authored edits use the closed `PersonaDraftUpdate` shape, so identity,
-lifecycle, media associations, and revision metadata remain repository-owned.
-`PersonaSearch` carries `include_archived` explicitly so callers can choose
-library visibility consistently with listing.
-The default persona is a separate revisioned `PersonaDefaultState`; reads use a
-single `PersonaDefaultSnapshot` and changing it does not bump the persona
-revision. Archiving carries both persona and optional default CAS tokens and
-returns a `PersonaArchiveResult`, allowing an adapter to clear a current
-default atomically while exposing the new singleton revision without another
-read.
+## Validation
 
-Persistence, migrations, media ingestion/GC, transfer compatibility envelopes,
-prompt rendering, lorebook matching, conversations, and Tauri commands remain
-outside this crate.
+Operational structs use `serde(deny_unknown_fields)` and explicit format versions. Constructors and `validate` enforce finite crop and appearance numbers, bounded authored text, contiguous ordering, unique child ids, that a selected variant belongs to its scene, that scene assets agree with the scene document, starter selection rules, the persona media and card invariants, and the group membership minimum. Every aggregate with a revision and timestamps rejects revision zero and `created_at > updated_at`.
 
-Companion characters may own a typed authored Soul configuration in their
-existing versioned defaults document. Roleplay characters reject that config.
-The character aggregate owns the twelve authored identity fields plus the
-legacy baseline affect, regulation style, and relationship defaults used by
-the pure `lettuce-companions` state math, along with the nested companion
-prompt-template reference and style notes. It rejects non-finite or
-out-of-range math inputs and oversized style notes. `lettuce-companions` owns
-fact normalization, live Soul invariants, and pure runtime
-emotion/relationship transitions; runtime state persistence, memory,
-prompting, classifiers, and launch coordination remain outside this authored
-slice.
+The complete `CharacterDetails` and `GroupDetails` aggregates are serializable and validate by reusing their create-plan invariants, so the transfer boundary can carry their ordered graphs without a separate backup-only model.
+
+## Repositories
+
+`CharacterRepository`, `PersonaRepository`, `GroupRepository`, `SceneRepository` and `StarterRepository` are synchronous ports with one method per lifecycle operation: revise the profile, update defaults or presentation, attach, detach or reorder media, add, update, remove or reorder scenes, variants, starters and starter messages, change a starter's scene, prompt or lorebooks, set members, archive, restore and so on. There is deliberately no generic save, upsert or partial patch, no transaction or SQL in the interface, no row DTOs and no hard delete.
+
+- Scene and starter mutations carry the character id and the expected root revision; the character root revision is the CAS token for its whole graph.
+- Scene draft updates carry only scalar fields. Replacing assets is a complete base-and-variant association operation. Removing a scene fails while a starter depends on it, even when a replacement default scene is given.
+- A group loads its optional starting scene atomically with the group, and that scene changes only through the group port, never through the character scene port.
+- Persona edits use the closed `PersonaDraftUpdate`, so identity, lifecycle, media and revision metadata stay with the repository. `PersonaSearch` takes `include_archived` explicitly.
+- The default persona is a separate revisioned `PersonaDefaultState`, read as one `PersonaDefaultSnapshot`; changing it does not bump the persona's revision. Archiving takes the persona's and the default's CAS tokens and returns a `PersonaArchiveResult`, so an adapter can clear a current default atomically and report the new default revision without another read.
+
+`LifecycleStatus` controls library visibility. Archived scenes remain authored records and may stay selectable according to the owning aggregate's policy; persistence does not invent exclusion rules.
+
+`CharacterDependencyReader`, `PersonaDependencyReader` and `GroupDependencyReader` report what references a record, for impact analysis before archive or delete. `ProfileDuplicateRepository` duplicates a profile transactionally: the request names source and destination roots, the source graph supplies all child data, and the result reports typed id remaps plus every retained media, scene, widget, prompt, lorebook, model, voice and artifact reference. Duplication and dependency reports exclude conversations, memories, companion runtime state and other live data.
