@@ -198,11 +198,27 @@ where
             context,
             SessionSettingsSource {
                 author_note: session.author_note.as_deref(),
-                prompt_source_id: session.group_conversation_prompt_source_id.as_deref(),
+                prompt_source_id: session
+                    .group_conversation_prompt_source_id
+                    .as_deref()
+                    .filter(|_| {
+                        session_override(
+                            &session.config_overrides_json,
+                            "groupChatPromptTemplateId",
+                        )
+                    }),
                 prompt_purposes: &[lettuce_context::PromptPurpose::GroupChatConversational],
                 prompt_snapshot_purpose:
                     lettuce_conversations::PromptPurposeSnapshot::GroupConversational,
-                roleplay_prompt_source_id: session.group_roleplay_prompt_source_id.as_deref(),
+                roleplay_prompt_source_id: session
+                    .group_roleplay_prompt_source_id
+                    .as_deref()
+                    .filter(|_| {
+                        session_override(
+                            &session.config_overrides_json,
+                            "groupChatRoleplayPromptTemplateId",
+                        )
+                    }),
                 participant_overrides: lettuce_conversations::ParticipantOverrides {
                     members: session_override(&session.config_overrides_json, "characterIds"),
                     muted: session_override(&session.config_overrides_json, "mutedCharacterIds"),

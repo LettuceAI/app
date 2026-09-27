@@ -192,7 +192,24 @@ mod tests {
                     condense: false,
                     created_at: TimestampMillis::new(2),
                     updated_at: TimestampMillis::new(2),
-                }],
+                }]
+                .into_iter()
+                .chain(
+                    [
+                        ("legacy-group-talk", PromptPurpose::GroupChatConversational),
+                        ("legacy-group-play", PromptPurpose::GroupChatRoleplay),
+                    ]
+                    .map(|(source_id, purpose)| LegacyPromptCandidate {
+                        source_id: source_id.to_owned(),
+                        name: source_id.to_owned(),
+                        purpose,
+                        entries: Vec::new(),
+                        condense: false,
+                        created_at: TimestampMillis::new(2),
+                        updated_at: TimestampMillis::new(2),
+                    }),
+                )
+                .collect(),
                 default_prompt_source_id: None,
                 deprecated_system_prompt: None,
             },
@@ -231,7 +248,7 @@ mod tests {
             schema_version: 92,
             provider_accounts: 1,
             models: 1,
-            prompts: 1,
+            prompts: 3,
             personas: 0,
             characters: 4,
             lorebooks: 1,
@@ -1302,8 +1319,8 @@ mod tests {
             speaker_selection: "director".to_owned(),
             memory_policy: "dynamic".to_owned(),
             character_model_overrides: std::collections::BTreeMap::new(),
-            group_conversation_prompt_source_id: None,
-            group_roleplay_prompt_source_id: None,
+            group_conversation_prompt_source_id: Some("legacy-group-talk".to_owned()),
+            group_roleplay_prompt_source_id: Some("legacy-group-play".to_owned()),
             starting_scene_json: None,
             starting_scene_override: None,
             background_image_locator: None,
@@ -1311,8 +1328,7 @@ mod tests {
             lorebooks_overridden: false,
             disable_character_lorebooks: true,
             author_note: None,
-            config_overrides_json:
-                r#"{"chatType":"conversation","disableCharacterLorebooks":true}"#.to_owned(),
+            config_overrides_json: r#"{"chatType":"conversation","disableCharacterLorebooks":true,"groupChatRoleplayPromptTemplateId":"legacy-group-play"}"#.to_owned(),
             memories_json: "[]".to_owned(),
             memory_embeddings_json: "[]".to_owned(),
             memory_summary: String::new(),
@@ -1437,6 +1453,32 @@ mod tests {
             Some(lettuce_conversations::GroupChatModeSnapshot::Conversation)
         );
         assert_eq!(own.disable_character_lorebooks, Some(true));
+        let assigned = |source: &str| {
+            admission
+                .assignments
+                .iter()
+                .find_map(|assignment| match assignment {
+                    LegacyImportAssignment::Prompt {
+                        legacy_id,
+                        destination_id,
+                    } if legacy_id == source => Some(*destination_id),
+                    _ => None,
+                })
+                .expect("group prompt assignment")
+        };
+        assert_eq!(
+            (own.prompt.as_ref(), own.prompt_provenance),
+            (
+                None,
+                lettuce_conversations::SettingProvenance::LaunchInherited
+            ),
+            "a conversation-mode prompt the session only took from its group follows the group"
+        );
+        assert_eq!(
+            own.roleplay_prompt.as_ref().map(|prompt| prompt.source_id),
+            Some(assigned("legacy-group-play")),
+            "the roleplay prompt the session set itself stays its own"
+        );
         let imported_group = GroupId::from_uuid(scope.uuid(group_id.as_uuid()));
         let revision = GroupRepository::get(backend.database(), imported_group)
             .expect("read group")
