@@ -8,90 +8,110 @@
   "rules": {
     "react/rules-of-hooks": "error",
     "react/only-export-components": ["warn", { "allowConstantExport": true }],
+    "react/jsx-no-literals": [
+      "error",
+      {
+        "noStrings": true,
+        "ignoreProps": true,
+        "restrictedAttributes": [
+          "title",
+          "label",
+          "description",
+          "message",
+          "placeholder",
+          "alt",
+          "aria-label",
+          "aria-description",
+          "aria-placeholder",
+          "aria-roledescription",
+          "aria-valuetext",
+          "retryLabel",
+          "confirmLabel",
+          "cancelLabel",
+          "submitLabel",
+          "backLabel",
+          "createLabel",
+          "emptyMessage",
+          "searchPlaceholder"
+        ]
+      }
+    ],
+    "no-restricted-globals": [
+      "error",
+      {
+        "globals": [{ "name": "__TAURI_INTERNALS__", "message": "Only src/api/ may detect or use the Tauri runtime." }],
+        "checkGlobalObject": true
+      }
+    ],
+    "no-restricted-properties": [
+      "error",
+      { "property": "__TAURI_INTERNALS__", "message": "Only src/api/ may detect or use the Tauri runtime." }
+    ],
     "no-restricted-imports": [
       "error",
       {
         "patterns": [
-          {
-            "regex": "^@tauri-apps/",
-            "message": "Only src/api/ may talk to Tauri; use the API client."
-          },
-          {
-            "regex": "^@/features/[^/]+/.+",
-            "message": "Import another feature only through its public index: @/features/<name>."
-          },
-          {
-            "regex": "^@/api/generated/",
-            "allowTypeImports": true,
-            "message": "Only types may come from the generated bindings outside src/api; call the backend through @/api/client."
-          },
-          {
-            "regex": "^@/api/(tauri-transport|mock-transport)",
-            "message": "Transports are chosen by @/api/client; nothing outside src/api imports one."
-          }
+          { "regex": "^@tauri-apps/", "message": "Only src/api/ may talk to Tauri; use the API client." },
+          { "regex": "^@/features/[^/]+/.+", "message": "Import another feature only through its public index: @/features/<name>." },
+          { "regex": "^@/api/generated/", "allowTypeImports": true, "message": "Only types may come from the generated bindings outside src/api; call the backend through @/api/client." },
+          { "regex": "^@/api/(tauri-transport|mock-transport)", "message": "Transports are chosen by @/api/client; nothing outside src/api imports one." }
         ]
       }
     ]
   },
   "overrides": [
     {
-      "files": ["src/api/**"],
-      "rules": {
-        "no-restricted-imports": "off"
-      }
-    },
-    {
-      "files": ["src/**/*.test.ts", "src/**/*.test.tsx"],
+      "files": ["**/src/shared/**", "**/src/entities/**"],
       "rules": {
         "no-restricted-imports": [
           "error",
           {
             "patterns": [
-              {
-                "regex": "^@tauri-apps/",
-                "message": "Only src/api/ may talk to Tauri; use the API client."
-              },
-              {
-                "regex": "^@/features/[^/]+/.+",
-                "message": "Import another feature only through its public index: @/features/<name>."
-              },
-              {
-                "regex": "^@/api/(generated/|tauri-transport)",
-                "allowTypeImports": true,
-                "message": "Tests drive the UI through the mock transport, never Tauri."
-              }
+              { "regex": "^@tauri-apps/", "message": "Only src/api/ may talk to Tauri; use the API client." },
+              { "regex": "^@/features(/|$)", "message": "shared/ and entities/ may not import features." },
+              { "regex": "^@/api/generated/", "allowTypeImports": true, "message": "Only types may come from the generated bindings outside src/api; call the backend through @/api/client." },
+              { "regex": "^@/api/(tauri-transport|mock-transport)", "message": "Transports are chosen by @/api/client; nothing outside src/api imports one." }
             ]
           }
         ]
       }
     },
     {
-      "files": ["src/shared/**", "src/entities/**", "test/lint-fixtures/src/shared/**", "test/lint-fixtures/src/entities/**"],
+      "files": ["**/src/**/*.test.ts", "**/src/**/*.test.tsx"],
       "rules": {
         "no-restricted-imports": [
           "error",
           {
             "patterns": [
-              {
-                "regex": "^@tauri-apps/",
-                "message": "Only src/api/ may talk to Tauri; use the API client."
-              },
-              {
-                "regex": "^@/features(/|$)",
-                "message": "shared/ and entities/ may not import features."
-              },
-              {
-                "regex": "^@/api/generated/",
-                "allowTypeImports": true,
-                "message": "Only types may come from the generated bindings outside src/api; call the backend through @/api/client."
-              },
-              {
-                "regex": "^@/api/(tauri-transport|mock-transport)",
-                "message": "Transports are chosen by @/api/client; nothing outside src/api imports one."
-              }
+              { "regex": "^@tauri-apps/", "message": "Only src/api/ may talk to Tauri; use the API client." },
+              { "regex": "^@/features/[^/]+/.+", "message": "Import another feature only through its public index: @/features/<name>." },
+              { "regex": "^@/api/(generated/|tauri-transport)", "allowTypeImports": true, "message": "Tests drive the UI through the mock transport, never Tauri." }
             ]
           }
         ]
+      }
+    },
+    {
+      "files": ["**/src/shared/**/*.test.ts", "**/src/shared/**/*.test.tsx", "**/src/entities/**/*.test.ts", "**/src/entities/**/*.test.tsx", "**/src/shared/testing/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              { "regex": "^@tauri-apps/", "message": "Only src/api/ may talk to Tauri; use the API client." },
+              { "regex": "^@/features(/|$)", "message": "shared/ and entities/ may not import features." },
+              { "regex": "^@/api/(generated/|tauri-transport)", "allowTypeImports": true, "message": "Tests drive the UI through the mock transport, never Tauri." }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["**/src/api/**"],
+      "rules": {
+        "no-restricted-imports": "off",
+        "no-restricted-globals": "off",
+        "no-restricted-properties": "off"
       }
     }
   ]

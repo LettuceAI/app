@@ -62,6 +62,13 @@ describe("relative imports respect layer boundaries", () => {
     expect(leaks.map(({ file, target }) => `${relative(src, file)} -> ${relative(src, target)}`)).toEqual([]);
   });
 
+  it("mention __TAURI_INTERNALS__ only inside src/api, including as a string such as an `in` check", () => {
+    const outside = files
+      .filter((file) => segments(file)[0] !== "api")
+      .filter((file) => readFileSync(file, "utf8").includes("__TAURI_INTERNALS__"));
+    expect(outside.map((file) => relative(src, file))).toEqual([]);
+  });
+
   it("scans the source tree", () => {
     expect(edges.length).toBeGreaterThan(0);
   });

@@ -22,6 +22,7 @@ export default mergeConfig(
             name: "tooling",
             environment: "node",
             include: ["test/**/*.test.ts"],
+            exclude: ["test/lint-fixtures/**"],
           },
         },
       ],

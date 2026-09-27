@@ -21,36 +21,64 @@ function lint(fixture: string): Diagnostic[] {
   return (JSON.parse(output) as { diagnostics: Diagnostic[] }).diagnostics;
 }
 
-function restrictedImports(fixture: string): string[] {
-  return lint(fixture)
-    .filter((diagnostic) => diagnostic.code === "eslint(no-restricted-imports)")
-    .map((diagnostic) => diagnostic.help ?? "");
+function findings(fixture: string): string[] {
+  return lint(fixture).map((diagnostic) =>
+    diagnostic.code === "eslint(no-restricted-imports)" ? `imports: ${diagnostic.help ?? ""}` : diagnostic.code,
+  );
 }
 
-describe("import boundaries", () => {
+const tauriOnlyInApi = "imports: Only src/api/ may talk to Tauri; use the API client.";
+const noFeaturesBelow = "imports: shared/ and entities/ may not import features.";
+const featureIndexOnly = "imports: Import another feature only through its public index: @/features/<name>.";
+const typesOnlyFromBindings =
+  "imports: Only types may come from the generated bindings outside src/api; call the backend through @/api/client.";
+const transportsInApi = "imports: Transports are chosen by @/api/client; nothing outside src/api imports one.";
+
+describe("lint boundaries", () => {
   it("rejects a @tauri-apps import outside src/api", () => {
-    expect(restrictedImports("src/shared/tauri-import.ts")).toEqual([
-      "Only src/api/ may talk to Tauri; use the API client.",
-    ]);
+    expect(findings("src/shared/tauri-import.ts")).toEqual([tauriOnlyInApi]);
   });
 
   it("rejects shared/ importing a feature", () => {
-    expect(restrictedImports("src/shared/feature-import.ts")).toEqual([
-      "shared/ and entities/ may not import features.",
-    ]);
+    expect(findings("src/shared/feature-import.ts")).toEqual([noFeaturesBelow]);
+  });
+
+  it("rejects entities/ importing a feature", () => {
+    expect(findings("src/entities/feature-import.ts")).toEqual([noFeaturesBelow]);
+  });
+
+  it("lets a shared test use the mock transport but still not a feature", () => {
+    expect(findings("src/shared/helper.test.ts")).toEqual([noFeaturesBelow]);
   });
 
   it("rejects a feature reaching into another feature's internals", () => {
-    expect(restrictedImports("src/features/alpha/deep-import.ts")).toEqual([
-      "Import another feature only through its public index: @/features/<name>.",
-    ]);
+    expect(findings("src/features/alpha/deep-import.ts")).toEqual([featureIndexOnly]);
   });
 
   it("rejects value imports of the generated bindings outside src/api", () => {
-    expect(restrictedImports("src/features/alpha/generated-value-import.ts")).toHaveLength(1);
+    expect(findings("src/features/alpha/generated-value-import.ts")).toEqual([typesOnlyFromBindings]);
   });
 
   it("allows type imports of the generated contract types", () => {
-    expect(restrictedImports("src/features/alpha/generated-type-import.ts")).toEqual([]);
+    expect(findings("src/features/alpha/generated-type-import.ts")).toEqual([]);
+  });
+
+  it("rejects importing a transport outside src/api", () => {
+    expect(findings("src/features/alpha/transport-import.ts")).toEqual([transportsInApi, transportsInApi]);
+  });
+
+  it("rejects touching __TAURI_INTERNALS__ outside src/api", () => {
+    expect(findings("src/features/alpha/shell-detection.ts").sort()).toEqual([
+      "eslint(no-restricted-globals)",
+      "eslint(no-restricted-properties)",
+    ]);
+  });
+
+  it("exempts src/api from the Tauri, transport and runtime rules", () => {
+    expect(findings("src/api/allowed.ts")).toEqual([]);
+  });
+
+  it("rejects literal text and literal text props in JSX, but not class names or data attributes", () => {
+    expect(findings("src/features/alpha/Literal.tsx")).toEqual(["react(jsx-no-literals)", "react(jsx-no-literals)"]);
   });
 });
