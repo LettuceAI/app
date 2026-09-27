@@ -123,7 +123,16 @@ pub(crate) fn record_result(
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub(crate) enum LocalModelJobFailure {
-    OllamaServer { message: String },
+    OllamaServer {
+        message: String,
+    },
+    /// Startup settled an interrupted folder move: finished it when it had
+    /// committed, else undid it, keeping the entries it could not prove its
+    /// own; `None` when it found nothing to do or a newer move superseded it.
+    FolderMoveResolved {
+        committed: Option<bool>,
+        kept: Vec<String>,
+    },
 }
 
 const OLLAMA_OFFLINE: &str = "ollama-offline";
@@ -146,7 +155,7 @@ pub(crate) fn ollama_failure(
         OLLAMA_SERVER_ERROR => dto::OllamaFailure::ServerError {
             message: match stored {
                 Some(LocalModelJobFailure::OllamaServer { message }) => message.clone(),
-                None => String::new(),
+                Some(LocalModelJobFailure::FolderMoveResolved { .. }) | None => String::new(),
             },
         },
         _ => return None,
@@ -464,9 +473,11 @@ pub(crate) fn resume_gguf_install(
 
 /// Settles what an earlier process left of local model jobs: a folder move
 /// never runs unattended, so a queued one is cancelled (a running one was
-/// interrupted by restart recovery), and every interrupted move's copies
-/// are removed or, when it had committed, its originals. Returns the moves
-/// it cancelled.
+/// interrupted by restart recovery). Only the newest unresolved move is then
+/// resolved from its manifest (its copies, or once committed its originals,
+/// removed where their counterpart proves them redundant); older unresolved
+/// moves are marked superseded, and a resolved move's leftover manifest is
+/// only removed, never applied again. Returns the moves it cancelled.
 pub(crate) fn recover_local_model_jobs(context: &ApiContext) -> Result<Vec<JobId>, ApiError> {
     let database = context.backend().database();
     let mut cancelled = Vec::new();
@@ -499,21 +510,58 @@ pub(crate) fn recover_local_model_jobs(context: &ApiContext) -> Result<Vec<JobId
     let Some(app_folder) = context.app_folder() else {
         return Ok(cancelled);
     };
+    let mut latest_seen = false;
     for job in all_jobs(context, JobKind::ModelsFolderMove)? {
-        let detail = database
-            .local_model_job(job.id)
-            .map_err(internal)?
-            .and_then(|record| serde_json::from_value::<LocalModelJobDetail>(record.detail).ok());
-        if let Some(LocalModelJobDetail::ModelsFolderMove {
-            to,
-            move_existing: true,
-            ..
-        }) = detail
-            && let Err(error) =
-                crate::recover_models_folder_move(database, app_folder, Path::new(&to))
-        {
-            tracing::warn!(job_id = %job.id, %error, "an interrupted models folder move could not be cleaned up");
+        if !job.state.is_terminal() {
+            continue;
         }
+        let Some(record) = database.local_model_job(job.id).map_err(internal)? else {
+            continue;
+        };
+        let Ok(LocalModelJobDetail::ModelsFolderMove {
+            to, move_existing, ..
+        }) = serde_json::from_value::<LocalModelJobDetail>(record.detail)
+        else {
+            continue;
+        };
+        let move_id = job.id.to_string();
+        let to = PathBuf::from(to);
+        if record.result.is_some() || record.failure.is_some() {
+            if let Err(error) = crate::discard_models_folder_manifest(&to, &move_id) {
+                tracing::warn!(job_id = %job.id, %error, "a resolved move's manifest could not be removed");
+            }
+            continue;
+        }
+        let resolution = if latest_seen || !move_existing {
+            LocalModelJobFailure::FolderMoveResolved {
+                committed: None,
+                kept: Vec::new(),
+            }
+        } else {
+            latest_seen = true;
+            match crate::recover_models_folder_move(database, app_folder, &to, &move_id) {
+                Ok(Some(resolution)) => {
+                    if !resolution.kept.is_empty() {
+                        tracing::warn!(job_id = %job.id, kept = ?resolution.kept, "an interrupted models folder move kept entries it could not prove its own");
+                    }
+                    LocalModelJobFailure::FolderMoveResolved {
+                        committed: Some(resolution.committed),
+                        kept: resolution.kept,
+                    }
+                }
+                Ok(None) => LocalModelJobFailure::FolderMoveResolved {
+                    committed: None,
+                    kept: Vec::new(),
+                },
+                Err(error) => {
+                    tracing::warn!(job_id = %job.id, %error, "an interrupted models folder move could not be resolved");
+                    continue;
+                }
+            }
+        };
+        database
+            .record_local_model_job_failure(job.id, &encode(&resolution)?)
+            .map_err(internal)?;
     }
     Ok(cancelled)
 }
@@ -1380,6 +1428,7 @@ async fn move_folder(context: &ApiContext, started: &Arc<StartedJob>) -> Settlem
         return Settlement::Cancelled;
     }
     let cancellation = started.cancellation.clone();
+    let move_id = started.job_id.to_string();
     let moving = context.blocking(move |context| {
         if move_existing && folder_busy(context, Path::new(&from)).is_some() {
             return Ok(Settlement::Failed(job_error(
@@ -1411,6 +1460,7 @@ async fn move_folder(context: &ApiContext, started: &Arc<StartedJob>) -> Settlem
                 &to,
                 move_existing,
                 context.now(),
+                &move_id,
                 &|| cancellation.is_cancelled(),
             ) {
                 Ok(change) => Settlement::Succeeded(Some(LocalModelJobResult::ModelsFolderMoved {

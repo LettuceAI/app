@@ -1035,8 +1035,9 @@ async fn a_queued_or_interrupted_folder_move_is_cancelled_and_cleaned_at_restart
     std::fs::write(
         target.join(crate::MODELS_MOVE_MANIFEST),
         serde_json::json!({
+            "move_id": accepted.job_id,
             "from": root.to_string_lossy(),
-            "entries": ["org--m"],
+            "entries": [original_entry(&root, "org--m")],
         })
         .to_string(),
     )
@@ -1100,5 +1101,74 @@ async fn a_queued_download_for_another_folder_is_cancelled_at_restart() {
         .expect("other folder");
     let restarted = restart(context).await;
     assert_eq!(state(&restarted, job_id(&accepted)), JobState::Cancelled);
+    std::fs::remove_dir_all(folder).ok();
+}
+
+fn original_entry(root: &Path, name: &str) -> serde_json::Value {
+    let file = root.join(name).join("m.gguf");
+    let metadata = std::fs::metadata(&file).expect("original");
+    let modified = metadata
+        .modified()
+        .expect("mtime")
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("after epoch")
+        .as_secs();
+    serde_json::json!({
+        "name": name,
+        "measure": {"bytes": metadata.len(), "files": 1, "modified": modified},
+    })
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_committed_moves_leftover_manifest_is_never_applied_again() {
+    let (harness, folder) = local_harness("stale-manifest");
+    let context = &harness.context;
+    let root = crate::llm_models_root(&lettuce_settings::DeviceSettings::default(), &folder);
+    std::fs::create_dir_all(root.join("org--m")).expect("folder");
+    std::fs::write(root.join("org--m").join("m.gguf"), MODEL_BYTES).expect("model");
+    let target = folder.join("elsewhere");
+    let manifest = serde_json::json!({
+        "from": root.to_string_lossy(),
+        "entries": [original_entry(&root, "org--m")],
+    });
+    let moved = local_models_dir_set(
+        context,
+        dto::LocalModelsDirSetRequest {
+            path: target.to_string_lossy().into_owned(),
+            move_existing: true,
+            client_operation_id: "move-1".to_owned(),
+        },
+    )
+    .await
+    .expect("move");
+    run(&runner(context, None)).await;
+    assert_eq!(state(context, job_id(&moved)), JobState::Succeeded);
+    let mut leftover = manifest.clone();
+    leftover["move_id"] = serde_json::json!(moved.job_id);
+    std::fs::write(
+        target.join(crate::MODELS_MOVE_MANIFEST),
+        leftover.to_string(),
+    )
+    .expect("a manifest whose removal failed");
+    let back = local_models_dir_set(
+        context,
+        dto::LocalModelsDirSetRequest {
+            path: root.to_string_lossy().into_owned(),
+            move_existing: false,
+            client_operation_id: "back".to_owned(),
+        },
+    )
+    .await
+    .expect("switch back");
+    run(&runner(context, None)).await;
+    assert_eq!(state(context, job_id(&back)), JobState::Succeeded);
+    let restarted = restart(context).await;
+    let _ = restart(&restarted).await;
+    assert_eq!(
+        std::fs::read(target.join("org--m").join("m.gguf")).expect("the model stays"),
+        MODEL_BYTES,
+        "the committed move's manifest must not be applied again"
+    );
+    assert!(!target.join(crate::MODELS_MOVE_MANIFEST).exists());
     std::fs::remove_dir_all(folder).ok();
 }

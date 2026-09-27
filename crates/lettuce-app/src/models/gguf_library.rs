@@ -339,14 +339,134 @@ fn remove_path(path: &Path) -> std::io::Result<()> {
 }
 
 /// The file in the destination folder that marks a move in progress: the
-/// folder it copies from and the entries it copies.
+/// move it belongs to, the folder it copies from and each entry it copies
+/// with the entry's size.
 pub const MODELS_MOVE_MANIFEST: &str = ".lettuce-models-move.json";
 const COPY_CHUNK_BYTES: usize = 1 << 20;
 
+/// An entry's total bytes and file count, and for an original the newest
+/// modification time of its files.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct Measure {
+    bytes: u64,
+    files: u64,
+    modified: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct ManifestEntry {
+    name: String,
+    measure: Measure,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 struct MoveManifest {
+    move_id: String,
     from: String,
-    entries: Vec<String>,
+    entries: Vec<ManifestEntry>,
+}
+
+fn measure(path: &Path) -> Option<Measure> {
+    let metadata = std::fs::symlink_metadata(path).ok()?;
+    if metadata.is_dir() {
+        let mut total = Measure {
+            bytes: 0,
+            files: 0,
+            modified: None,
+        };
+        for entry in std::fs::read_dir(path).ok()?.flatten() {
+            let inner = measure(&entry.path())?;
+            total.bytes = total.bytes.saturating_add(inner.bytes);
+            total.files = total.files.saturating_add(inner.files);
+            total.modified = total.modified.max(inner.modified);
+        }
+        return Some(total);
+    }
+    Some(Measure {
+        bytes: metadata.len(),
+        files: 1,
+        modified: metadata
+            .modified()
+            .ok()
+            .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|since| since.as_secs()),
+    })
+}
+
+/// What resolving a move left alone because it could not prove the entry
+/// was its own copy (or that the copy is complete).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MoveResolution {
+    pub committed: bool,
+    pub kept: Vec<String>,
+}
+
+/// Removes the copies in `to` whose original is still in `from` unchanged.
+fn undo_copies(from: &Path, to: &Path, entries: &[ManifestEntry]) -> Vec<String> {
+    let mut kept = Vec::new();
+    for entry in entries {
+        let copy = to.join(&entry.name);
+        if std::fs::symlink_metadata(&copy).is_err() {
+            continue;
+        }
+        if measure(&from.join(&entry.name)) == Some(entry.measure) {
+            if let Err(error) = remove_path(&copy) {
+                tracing::warn!(path = %copy.display(), %error, "a models folder copy could not be removed");
+                kept.push(entry.name.clone());
+            }
+        } else {
+            tracing::warn!(path = %copy.display(), "a models folder entry was kept: its original changed or is gone");
+            kept.push(entry.name.clone());
+        }
+    }
+    kept
+}
+
+/// Removes the originals in `from` whose copy in `to` is complete.
+fn remove_originals(from: &Path, to: &Path, entries: &[ManifestEntry]) -> Vec<String> {
+    let mut kept = Vec::new();
+    for entry in entries {
+        let original = from.join(&entry.name);
+        if std::fs::symlink_metadata(&original).is_err() {
+            continue;
+        }
+        let copied = measure(&to.join(&entry.name)).is_some_and(|copy| {
+            copy.bytes == entry.measure.bytes && copy.files == entry.measure.files
+        });
+        if copied {
+            if let Err(error) = remove_path(&original) {
+                tracing::warn!(path = %original.display(), %error, "a moved original could not be removed");
+                kept.push(entry.name.clone());
+            }
+        } else {
+            tracing::warn!(path = %original.display(), "an original was kept: its copy is missing or incomplete");
+            kept.push(entry.name.clone());
+        }
+    }
+    kept
+}
+
+fn read_manifest(to: &Path) -> Result<Option<MoveManifest>, String> {
+    match std::fs::read(to.join(MODELS_MOVE_MANIFEST)) {
+        Ok(bytes) => serde_json::from_slice(&bytes)
+            .map(Some)
+            .map_err(|error| format!("The move manifest is unreadable: {error}")),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+/// Removes the manifest `move_id` left in `to` without applying it, for a
+/// move already resolved.
+pub fn discard_models_folder_manifest(to: &Path, move_id: &str) -> Result<bool, String> {
+    match read_manifest(to)? {
+        Some(manifest) if manifest.move_id == move_id => {
+            std::fs::remove_file(to.join(MODELS_MOVE_MANIFEST))
+                .map_err(|error| error.to_string())?;
+            Ok(true)
+        }
+        _ => Ok(false),
+    }
 }
 
 /// Why a models folder move stopped; a move that stops removes its copies.
@@ -433,34 +553,22 @@ pub fn check_folder_move(from: &Path, to: &Path) -> Result<(), FolderMoveError> 
     Ok(())
 }
 
-fn remove_entries(folder: &Path, entries: &[String]) {
-    for entry in entries {
-        let path = folder.join(entry);
-        if let Err(error) = remove_path(&path)
-            && error.kind() != std::io::ErrorKind::NotFound
-        {
-            tracing::warn!(path = %path.display(), %error, "a models folder entry could not be removed");
-        }
-    }
-}
-
-/// Finishes or undoes a move a crash or shutdown interrupted, from the
-/// manifest in `to`: when the stored folder is `to` the move committed and
-/// the originals go, else the copies go. Returns whether `to` held one.
+/// Finishes or undoes the move `move_id` a crash or shutdown interrupted,
+/// from its manifest in `to`: when the stored folder is `to` the move
+/// committed and each original whose copy is complete goes, else each copy
+/// whose original is still there unchanged goes. Entries it cannot prove
+/// are kept and reported. `None` when `to` holds no manifest of this move.
 pub fn recover_models_folder_move<R>(
     repository: &R,
     app_folder: &Path,
     to: &Path,
-) -> Result<bool, String>
+    move_id: &str,
+) -> Result<Option<MoveResolution>, String>
 where
     R: DeviceSettingsStore + ?Sized,
 {
-    let manifest_path = to.join(MODELS_MOVE_MANIFEST);
-    let manifest = match std::fs::read(&manifest_path) {
-        Ok(bytes) => serde_json::from_slice::<MoveManifest>(&bytes)
-            .map_err(|error| format!("The move manifest is unreadable: {error}"))?,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(error) => return Err(error.to_string()),
+    let Some(manifest) = read_manifest(to)?.filter(|manifest| manifest.move_id == move_id) else {
+        return Ok(None);
     };
     let current = llm_models_root(
         &repository
@@ -468,20 +576,27 @@ where
             .map_err(|error| error.to_string())?,
         app_folder,
     );
-    if paths_equal(&current, to) {
-        remove_entries(Path::new(&manifest.from), &manifest.entries);
+    let from = Path::new(&manifest.from);
+    let committed = paths_equal(&current, to);
+    let kept = if committed {
+        remove_originals(from, to, &manifest.entries)
     } else {
-        remove_entries(to, &manifest.entries);
+        undo_copies(from, to, &manifest.entries)
+    };
+    if let Err(error) = std::fs::remove_file(to.join(MODELS_MOVE_MANIFEST)) {
+        tracing::warn!(%error, "a resolved move manifest could not be removed");
     }
-    std::fs::remove_file(&manifest_path).map_err(|error| error.to_string())?;
-    Ok(true)
+    Ok(Some(MoveResolution { committed, kept }))
 }
 
 /// Copies every entry of `from` into `to` under a manifest, lets `commit`
 /// point the stored paths and the folder setting at the copies, then removes
-/// the originals and the manifest. A failure or cancellation before the
-/// commit removes the copies again.
+/// the originals whose copies are complete and the manifest; a manifest that
+/// cannot be removed then is left for the next start. A failure or
+/// cancellation before the commit removes the copies whose originals are
+/// unchanged.
 fn migrate_models_dir(
+    move_id: &str,
     from: &Path,
     to: &Path,
     cancelled: &dyn Fn() -> bool,
@@ -489,18 +604,22 @@ fn migrate_models_dir(
 ) -> Result<(u32, u32), FolderMoveError> {
     std::fs::create_dir_all(to).map_err(copy_error)?;
     check_folder_move(from, to)?;
-    let mut entries: Vec<String> = Vec::new();
+    let mut entries: Vec<ManifestEntry> = Vec::new();
     if from.exists() {
         for entry in std::fs::read_dir(from).map_err(copy_error)? {
             let name = entry.map_err(copy_error)?.file_name();
             let name = name.to_string_lossy().into_owned();
-            if name != MODELS_MOVE_MANIFEST {
-                entries.push(name);
+            if name == MODELS_MOVE_MANIFEST {
+                continue;
             }
+            let measure = measure(&from.join(&name))
+                .ok_or_else(|| FolderMoveError::Copy(format!("\"{name}\" could not be read")))?;
+            entries.push(ManifestEntry { name, measure });
         }
     }
     let manifest_path = to.join(MODELS_MOVE_MANIFEST);
     let manifest = serde_json::to_vec(&MoveManifest {
+        move_id: move_id.to_owned(),
         from: from.to_string_lossy().into_owned(),
         entries: entries.clone(),
     })
@@ -512,12 +631,15 @@ fn migrate_models_dir(
         file.sync_all().map_err(copy_error)?;
     }
     let undo = |error: FolderMoveError| {
-        remove_entries(to, &entries);
-        let _ = std::fs::remove_file(&manifest_path);
+        let kept = undo_copies(from, to, &entries);
+        if kept.is_empty() {
+            let _ = std::fs::remove_file(&manifest_path);
+        }
         error
     };
     for entry in &entries {
-        copy_cancellable(&from.join(entry), &to.join(entry), cancelled).map_err(undo)?;
+        copy_cancellable(&from.join(&entry.name), &to.join(&entry.name), cancelled)
+            .map_err(undo)?;
     }
     if let Ok(folder) = std::fs::File::open(to) {
         let _ = folder.sync_all();
@@ -526,8 +648,12 @@ fn migrate_models_dir(
         return Err(undo(FolderMoveError::Cancelled));
     }
     let rewired = commit().map_err(undo)?;
-    remove_entries(from, &entries);
-    std::fs::remove_file(&manifest_path).map_err(copy_error)?;
+    let kept = remove_originals(from, to, &entries);
+    if kept.is_empty()
+        && let Err(error) = std::fs::remove_file(&manifest_path)
+    {
+        tracing::warn!(%error, "the move manifest is left for the next start");
+    }
     Ok((u32::try_from(entries.len()).unwrap_or(u32::MAX), rewired))
 }
 
@@ -549,6 +675,7 @@ pub fn set_llm_models_dir<R>(
     new_dir: &str,
     move_existing: bool,
     now: TimestampMillis,
+    move_id: &str,
     cancelled: &dyn Fn() -> bool,
 ) -> Result<LlmModelsDirChange, FolderMoveError>
 where
@@ -585,7 +712,7 @@ where
         new_path.to_string_lossy().into_owned(),
     );
     let (moved_entries, rewired_models) =
-        migrate_models_dir(&old_path, &new_path, cancelled, || {
+        migrate_models_dir(move_id, &old_path, &new_path, cancelled, || {
             let device = repository
                 .load_device_settings()
                 .map_err(|error| storage(&error))?;
@@ -822,6 +949,7 @@ mod tests {
             &target.to_string_lossy(),
             true,
             TimestampMillis::new(3),
+            "move-1",
             &|| false,
         )
         .expect("move");
@@ -849,6 +977,7 @@ mod tests {
             &root.to_string_lossy(),
             false,
             TimestampMillis::new(4),
+            "move-2",
             &|| false,
         )
         .expect("back");
@@ -925,6 +1054,7 @@ mod tests {
                 &target.to_string_lossy(),
                 true,
                 TimestampMillis::new(3),
+                "move-1",
                 &cancel_on_third,
             ),
             Err(FolderMoveError::Cancelled)
@@ -948,6 +1078,7 @@ mod tests {
                 &inside.to_string_lossy(),
                 true,
                 TimestampMillis::new(4),
+                "move-2",
                 &|| false,
             ),
             Err(FolderMoveError::DestinationInsideSource),
@@ -961,31 +1092,50 @@ mod tests {
         std::fs::remove_dir_all(&app).expect("cleanup");
     }
 
+    fn manifest_of(root: &Path, names: &[&str]) -> Vec<u8> {
+        serde_json::to_vec(&MoveManifest {
+            move_id: "move-1".to_owned(),
+            from: root.to_string_lossy().into_owned(),
+            entries: names
+                .iter()
+                .map(|name| ManifestEntry {
+                    name: (*name).to_owned(),
+                    measure: measure(&root.join(name)).expect("original"),
+                })
+                .collect(),
+        })
+        .expect("manifest")
+    }
+
     #[test]
     fn an_interrupted_move_is_undone_or_finished_at_the_next_start() {
         let (app, root, backend) = library_with_model("crash");
         let database = backend.database();
         let target = app.join("elsewhere");
+        let manifest = manifest_of(&root, &["org--m", "notes.txt"]);
         std::fs::create_dir_all(target.join("org--m")).expect("partial copy");
         std::fs::write(target.join("org--m").join("m.gguf"), b"part").expect("partial");
         std::fs::write(target.join("unrelated.gguf"), b"mine").expect("unrelated");
-        let manifest = serde_json::to_vec(&MoveManifest {
-            from: root.to_string_lossy().into_owned(),
-            entries: vec!["org--m".to_owned(), "notes.txt".to_owned()],
-        })
-        .expect("manifest");
         std::fs::write(target.join(MODELS_MOVE_MANIFEST), &manifest).expect("manifest");
         assert_eq!(
-            recover_models_folder_move(database, &app, &target),
-            Ok(true)
+            recover_models_folder_move(database, &app, &target, "other-move"),
+            Ok(None),
+            "a manifest of another move is not applied"
+        );
+        assert_eq!(
+            recover_models_folder_move(database, &app, &target, "move-1"),
+            Ok(Some(MoveResolution {
+                committed: false,
+                kept: Vec::new(),
+            }))
         );
         assert!(!target.join("org--m").exists(), "the partial copy is gone");
         assert!(target.join("unrelated.gguf").exists());
         assert!(root.join("org--m").join("m.gguf").exists());
         assert!(!target.join(MODELS_MOVE_MANIFEST).exists());
         assert_eq!(
-            recover_models_folder_move(database, &app, &target),
-            Ok(false)
+            recover_models_folder_move(database, &app, &target, "move-1"),
+            Ok(None)
         );
         copy_cancellable(&root.join("org--m"), &target.join("org--m"), &|| false).expect("copy");
         std::fs::write(target.join(MODELS_MOVE_MANIFEST), &manifest).expect("manifest");
@@ -993,15 +1143,47 @@ mod tests {
         device.llm_models_dir = Some(target.to_string_lossy().into_owned());
         database.save_device_settings(device).expect("committed");
         assert_eq!(
-            recover_models_folder_move(database, &app, &target),
-            Ok(true)
+            recover_models_folder_move(database, &app, &target, "move-1"),
+            Ok(Some(MoveResolution {
+                committed: true,
+                kept: vec!["notes.txt".to_owned()],
+            })),
+            "an original whose copy is missing stays"
         );
         assert!(target.join("org--m").join("m.gguf").exists());
         assert!(
             !root.join("org--m").exists(),
             "the committed move's originals go"
         );
-        assert!(!root.join("notes.txt").exists());
+        assert!(root.join("notes.txt").exists());
+        std::fs::remove_dir_all(&app).expect("cleanup");
+    }
+
+    #[test]
+    fn undoing_a_move_keeps_an_entry_whose_original_is_gone() {
+        let (app, root, backend) = library_with_model("hand-moved");
+        let database = backend.database();
+        let target = app.join("elsewhere");
+        let manifest = manifest_of(&root, &["org--m", "notes.txt"]);
+        std::fs::create_dir_all(&target).expect("target");
+        std::fs::write(target.join(MODELS_MOVE_MANIFEST), &manifest).expect("manifest");
+        std::fs::rename(root.join("org--m"), target.join("org--m")).expect("moved by hand");
+        std::fs::write(target.join("notes.txt"), b"x").expect("copy");
+        std::fs::write(root.join("notes.txt"), b"changed").expect("original changed");
+        assert_eq!(
+            recover_models_folder_move(database, &app, &target, "move-1"),
+            Ok(Some(MoveResolution {
+                committed: false,
+                kept: vec!["org--m".to_owned(), "notes.txt".to_owned()],
+            }))
+        );
+        assert_eq!(
+            std::fs::read(target.join("org--m").join("m.gguf"))
+                .expect("the only copy stays")
+                .len(),
+            3 << 20
+        );
+        assert!(target.join("notes.txt").exists());
         std::fs::remove_dir_all(&app).expect("cleanup");
     }
 
