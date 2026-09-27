@@ -56,7 +56,7 @@ The offload planner, the context sizing and the runnability scoring (in `lettuce
 
 ## Generation
 
-`LlamaRuntime::start` spawns the `lettuce-llama` thread. Requests run one at a time on it, because the thread owns the model slot and the hot context cache; `generate` queues a request and `unload` drops the model. After each request the worker publishes the files it still holds open (the loaded model, its projector and draft model, and the models of cached contexts), which `resident_files` returns, so the app can unload before it deletes or moves such a file. For each request the handler:
+`LlamaRuntime::start` spawns the `lettuce-llama` thread. Requests run one at a time on it, because the thread owns the model slot and the hot context cache; `generate` queues a request and `unload` drops the model. The worker publishes the files it holds open, which `resident_files` returns, so the app can unload before it deletes or moves such a file: when a request starts it adds the files the request names, right before a load it adds the files the load opens (the model, the projector, the MTP or DFlash drafter), after the load and after the request it publishes what the engine and the cached contexts (models and draft models) still hold, and an unload clears them. For each request the handler:
 
 1. Resolves the request (`request`): sampler profile defaults and filters, deduplicated devices, MTP and DFlash draft bounds, and the thinking switch (`/think` or `/no_think` in the messages, then the explicit flag, then a requested reasoning format).
 2. Plans, using the per-model smart offload cache, the native fitter behind its gate, multi-GPU distribution and draft model placement.

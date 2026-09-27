@@ -1322,6 +1322,15 @@ impl LlamaEngine {
         )
     }
 
+    /// The draft model's file, when one is loaded.
+    #[must_use]
+    pub fn draft_path(&self) -> Option<String> {
+        self.state
+            .lock()
+            .ok()
+            .and_then(|guard| guard.mtp_model_path.clone())
+    }
+
     /// Unloads when a different model is loaded; reports whether it did.
     pub fn unload_if_model_differs(&self, model_path: &str) -> Result<bool, LlamaEngineError> {
         let loaded_path = self

@@ -325,7 +325,10 @@ impl LlamaRuntime {
         std::thread::Builder::new()
             .name("lettuce-llama".to_string())
             .spawn(move || {
-                let mut worker = WorkerState::default();
+                let mut worker = WorkerState {
+                    resident: published,
+                    ..WorkerState::default()
+                };
                 while let Ok(job) = receiver.recv() {
                     match job {
                         WorkerJob::Generate {
@@ -334,30 +337,34 @@ impl LlamaRuntime {
                             reports,
                             done,
                         } => {
+                            worker.publish(&request.requested_files());
                             let result = generate(
                                 &mut worker,
                                 &request,
                                 observer.as_ref(),
                                 reports.as_ref(),
                             );
-                            publish_resident(&worker, &published);
+                            worker.publish(&[]);
                             done(result);
                         }
                         WorkerJob::Unload { done } => {
                             worker.hot.clear();
                             let result = worker.engine.unload().map_err(Into::into);
-                            publish_resident(&worker, &published);
+                            worker.publish(&[]);
                             done(result);
                         }
                     }
                 }
                 worker.hot.clear();
+                worker.publish(&[]);
             })?;
         Ok(Self { sender, resident })
     }
 
-    /// The model files the worker holds open after its last request: the
-    /// loaded model, its sidecars and the models of cached contexts.
+    /// The model files the worker holds open, or may open for the request
+    /// it runs: the loaded model and its sidecars, the models and draft
+    /// models of cached contexts, and while a request runs the files it
+    /// names, published before anything loads.
     #[must_use]
     pub fn resident_files(&self) -> Vec<String> {
         self.resident
@@ -398,17 +405,36 @@ impl LlamaRuntime {
 struct WorkerState {
     engine: LlamaEngine,
     hot: HotContextCache,
+    resident: Arc<Mutex<Vec<String>>>,
 }
 
-fn publish_resident(worker: &WorkerState, resident: &Mutex<Vec<String>>) {
-    let mut files = worker.engine.loaded_paths();
-    for path in worker.hot.model_paths() {
-        if !files.contains(&path) {
-            files.push(path);
+/// Every distinct path of `groups`, in order.
+fn resident_set<'a>(groups: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+    let mut files: Vec<String> = Vec::new();
+    for path in groups {
+        if !path.trim().is_empty() && !files.iter().any(|file| file == path) {
+            files.push(path.to_owned());
         }
     }
-    if let Ok(mut resident) = resident.lock() {
-        *resident = files;
+    files
+}
+
+impl WorkerState {
+    /// Publishes the files the engine and the cached contexts hold, plus
+    /// `pending` (files a load is about to open).
+    fn publish(&self, pending: &[&str]) {
+        let engine = self.engine.loaded_paths();
+        let hot = self.hot.model_paths();
+        let files = resident_set(
+            engine
+                .iter()
+                .chain(hot.iter())
+                .map(String::as_str)
+                .chain(pending.iter().copied()),
+        );
+        if let Ok(mut resident) = self.resident.lock() {
+            *resident = files;
+        }
     }
 }
 
@@ -422,6 +448,7 @@ struct HotTextContext {
     model: Arc<LlamaModel>,
     draft_model: Arc<LlamaModel>,
     model_path: String,
+    draft_path: Option<String>,
     cache_key: String,
     context_key: String,
     tokens: Vec<LlamaToken>,
@@ -460,7 +487,10 @@ impl HotContextCache {
     fn model_paths(&self) -> Vec<String> {
         self.entries
             .iter()
-            .map(|cached| cached.model_path.clone())
+            .flat_map(|cached| {
+                std::iter::once(&cached.model_path).chain(cached.draft_path.as_ref())
+            })
+            .cloned()
             .collect()
     }
 
@@ -538,7 +568,7 @@ impl HotContextCache {
         dflash_runtime: Option<DflashRuntime<'_>>,
         model: Arc<LlamaModel>,
         draft_model: Arc<LlamaModel>,
-        model_path: &str,
+        (model_path, draft_path): (&str, Option<String>),
         cache_key: String,
         context_key: String,
         tokens: Vec<LlamaToken>,
@@ -595,6 +625,7 @@ impl HotContextCache {
             model,
             draft_model,
             model_path: model_path.to_string(),
+            draft_path,
             cache_key,
             context_key,
             tokens,
@@ -1767,6 +1798,11 @@ impl Run<'_> {
             },
         };
         let request_id = self.request.request_id.as_deref();
+        worker.publish(&[
+            model_path,
+            active_mmproj_path.unwrap_or_default(),
+            mtp_external_path.as_deref().unwrap_or_default(),
+        ]);
         let hot = &mut worker.hot;
         let engine = worker.engine.load(
             Some(self.observer),
@@ -1787,6 +1823,7 @@ impl Run<'_> {
             },
             || hot.clear(),
         )?;
+        worker.publish(&[]);
         let mtp_draft_model = engine.mtp_model.clone();
         let model = engine.model.as_ref();
         let backend = engine.backend.as_ref();
@@ -3327,13 +3364,14 @@ impl Run<'_> {
                 true
             };
             if cache_ready && let Some(cache_key) = self.prompt_cache_key.clone() {
+                let draft_path = worker.engine.draft_path();
                 let evicted = worker.hot.store(
                     ctx,
                     mtp_runtime.take(),
                     dflash_runtime.take(),
                     engine.model.clone(),
                     hot_draft_model.clone(),
-                    model_path,
+                    (model_path, draft_path),
                     cache_key,
                     context_key,
                     tokens,
@@ -3812,6 +3850,111 @@ mod tests {
     }
 
     #[test]
+    fn resident_files_name_distinct_paths_and_follow_each_publish() {
+        assert_eq!(
+            resident_set(["/m/a.gguf", "", "/m/b.gguf", "/m/a.gguf", "  "]),
+            ["/m/a.gguf", "/m/b.gguf"]
+        );
+        let worker = WorkerState::default();
+        worker.publish(&["/m/model.gguf", "/m/mmproj.gguf"]);
+        assert_eq!(
+            *worker.resident.lock().expect("resident"),
+            ["/m/model.gguf", "/m/mmproj.gguf"]
+        );
+        worker.publish(&[]);
+        assert!(worker.resident.lock().expect("resident").is_empty());
+        let request = LlamaGenerationRequest {
+            model_path: "/m/model.gguf".into(),
+            runtime: crate::request::LlamaRuntimeInput {
+                mmproj_path: Some("/m/mmproj.gguf".into()),
+                mtp_model_path: Some("/m/mtp.gguf".into()),
+                dflash_model_path: Some("/m/dflash.gguf".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert_eq!(
+            request.requested_files(),
+            [
+                "/m/model.gguf",
+                "/m/mmproj.gguf",
+                "/m/mtp.gguf",
+                "/m/dflash.gguf"
+            ]
+        );
+    }
+
+    /// Holds the request inside the worker until the test lets it go.
+    struct GatedReports {
+        entered: std::sync::Mutex<Option<mpsc::Sender<()>>>,
+        release: std::sync::Mutex<mpsc::Receiver<()>>,
+    }
+
+    impl RuntimeReportStore for GatedReports {
+        fn load(&self, _model_path: &str) -> Result<Option<Value>, String> {
+            if let Some(entered) = self.entered.lock().expect("entered").take() {
+                let _ = entered.send(());
+                let _ = self.release.lock().expect("release").recv();
+            }
+            Ok(None)
+        }
+        fn store(&self, _model_path: &str, _report: &Value) -> Result<bool, String> {
+            Ok(true)
+        }
+    }
+
+    #[test]
+    fn a_running_request_publishes_its_files_before_it_loads_them() {
+        let dir = std::env::temp_dir().join(format!("lettuce-resident-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("dir");
+        let model = dir.join("model.gguf");
+        std::fs::write(&model, b"not a gguf").expect("model");
+        let model = model.to_string_lossy().into_owned();
+        let runtime = LlamaRuntime::start().expect("worker");
+        let (entered, entered_signal) = mpsc::channel();
+        let (release, release_signal) = mpsc::channel();
+        let reports = Arc::new(GatedReports {
+            entered: std::sync::Mutex::new(Some(entered)),
+            release: std::sync::Mutex::new(release_signal),
+        });
+        let (done, finished) = mpsc::channel();
+        runtime.generate(
+            LlamaGenerationRequest {
+                model_path: model.clone(),
+                messages: vec![json!({"role": "user", "content": "hi"})],
+                runtime: crate::request::LlamaRuntimeInput {
+                    gpu_layers: Some(0),
+                    strict_mode: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            Arc::new(Recorder::default()),
+            reports,
+            Box::new(move |result| {
+                let _ = done.send(result.is_ok());
+            }),
+        );
+        let reached = entered_signal
+            .recv_timeout(std::time::Duration::from_secs(30))
+            .is_ok();
+        if reached {
+            assert_eq!(runtime.resident_files(), [model.clone()]);
+            release.send(()).expect("release");
+        }
+        let succeeded = finished
+            .recv_timeout(std::time::Duration::from_secs(60))
+            .expect("the request ended");
+        assert!(!succeeded);
+        assert!(
+            runtime.resident_files().is_empty(),
+            "a failed load leaves nothing open"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+        assert!(reached, "the request reached its runtime report");
+    }
+
+    #[test]
     #[ignore = "needs a local GGUF model in LETTUCE_PLAN_MODEL (drafters in LETTUCE_MTP_MODEL, LETTUCE_DFLASH_MODEL, LETTUCE_DSPARK_MODEL)"]
     fn generates_on_cpu_and_reuses_the_prompt_cache() {
         let Ok(path) = std::env::var("LETTUCE_PLAN_MODEL") else {
@@ -3846,6 +3989,7 @@ mod tests {
         eprintln!("first: {:?} {:?}", first.content, first.usage);
         assert!(first.content.contains("Paris"));
         assert!(first.usage.completion_tokens > 0);
+        assert!(runtime.resident_files().contains(&path));
         assert_eq!(
             observer.deltas.lock().expect("deltas").concat().trim(),
             first.content
