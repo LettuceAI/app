@@ -184,3 +184,53 @@ async fn a_delete_interrupted_between_cancel_and_purge_completes_next_time() {
     delete(&harness, &chat).await.expect("delete after restart");
     assert!(gone(&harness.context, &chat));
 }
+
+/// A reply whose job already ended without settling its turn does not keep
+/// the chat busy: the delete settles the turn and completes.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_live_reply_whose_job_already_ended_does_not_block_a_delete() {
+    let harness = harness(Reply::Text("Never sent."));
+    let chat = launch(&harness, "delete-ended-job").await;
+    let accepted = send(
+        &harness,
+        &chat,
+        "delete-ended-job-send",
+        "Hello",
+        Arc::new(RecordingStream::default()),
+    )
+    .await
+    .expect("send");
+    let database = harness.context.backend().database();
+    let job_id = ConversationReader::get_turn(database, accepted.turn_id.parse().expect("turn"))
+        .expect("turn")
+        .attempts
+        .iter()
+        .find_map(|attempt| attempt.job_id)
+        .expect("job");
+    let at = harness.context.now();
+    let requested = lettuce_jobs::JobStore::append_and_transition(
+        database,
+        lettuce_jobs::JobMutation::RequestCancellation {
+            id: job_id,
+            reason: lettuce_jobs::CancellationReason::User,
+            at,
+        },
+    )
+    .expect("request cancellation");
+    lettuce_jobs::JobStore::append_and_transition(
+        database,
+        lettuce_jobs::JobMutation::FinishQueuedCancellation {
+            id: job_id,
+            at: requested.updated_at,
+        },
+    )
+    .expect("the job ends on its own");
+    assert!(
+        ConversationOverviewReader::live_turn(database, chat.parse().expect("id"))
+            .expect("live turn")
+            .is_some(),
+        "the turn is still unsettled"
+    );
+    delete(&harness, &chat).await.expect("delete");
+    assert!(gone(&harness.context, &chat));
+}

@@ -405,8 +405,101 @@ pub(crate) fn persist_changes(
                 )
                 .map_err(|_| StoreError::Storage)?;
         }
+        let ended_now = snapshot.is_terminal()
+            && before
+                .get(id)
+                .is_some_and(|stored| !stored.snapshot.is_terminal());
+        if ended_now && snapshot.kind == lettuce_jobs::JobKind::MemoryExtraction {
+            settle_memory_attempts_of_ended_job(transaction, snapshot)?;
+        }
     }
     Ok(())
+}
+
+/// A memory job that ended (failed, cancelled or interrupted) without its
+/// runner settling its attempt leaves no live attempt behind: a created
+/// attempt is cancelled, a processing one cancelled with a cancelled job and
+/// interrupted otherwise. A live attempt would keep its conversation busy.
+fn settle_memory_attempts_of_ended_job(
+    transaction: &Transaction<'_>,
+    job: &JobSnapshot,
+) -> Result<(), StoreError> {
+    let processing_to = if job.state == lettuce_jobs::JobState::Cancelled {
+        "cancelled"
+    } else {
+        "interrupted"
+    };
+    transaction
+        .execute(
+            "UPDATE dynamic_memory_run_attempts \
+             SET status = CASE status WHEN 'created' THEN 'cancelled' ELSE ?2 END, \
+                 revision = revision + 1, \
+                 finished_at = max(?3, updated_at), \
+                 updated_at = max(?3, updated_at) \
+             WHERE job_id = ?1 AND status IN ('created', 'processing')",
+            params![job.id.to_string(), processing_to, job.updated_at.get()],
+        )
+        .map_err(|_| StoreError::Storage)?;
+    Ok(())
+}
+
+impl Database {
+    /// Settles every live memory attempt of the conversation whose job has
+    /// already ended, as `settle_memory_attempts_of_ended_job` does when the
+    /// job ends; answers how many were settled.
+    pub fn settle_memory_attempts_of_ended_jobs(
+        &self,
+        conversation_id: lettuce_types::ConversationId,
+    ) -> Result<usize, StoreError> {
+        let mut connection = self.connection.lock().map_err(|_| StoreError::Storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| StoreError::Storage)?;
+        let terminal = [
+            lettuce_jobs::JobState::Succeeded,
+            lettuce_jobs::JobState::Failed,
+            lettuce_jobs::JobState::Cancelled,
+            lettuce_jobs::JobState::Interrupted,
+        ]
+        .into_iter()
+        .map(enum_name)
+        .collect::<Result<Vec<_>, _>>()?;
+        let jobs = {
+            let mut statement = transaction
+                .prepare(
+                    "SELECT DISTINCT attempt.job_id FROM dynamic_memory_run_attempts attempt \
+                     JOIN dynamic_memory_runs run ON run.id = attempt.run_id \
+                     JOIN jobs job ON job.id = attempt.job_id \
+                     WHERE run.conversation_id = ?1 \
+                       AND attempt.status IN ('created', 'processing') \
+                       AND job.state IN (?2, ?3, ?4, ?5)",
+                )
+                .map_err(|_| StoreError::Storage)?;
+            statement
+                .query_map(
+                    params![
+                        conversation_id.to_string(),
+                        terminal[0],
+                        terminal[1],
+                        terminal[2],
+                        terminal[3],
+                    ],
+                    |row| row.get::<_, String>(0),
+                )
+                .and_then(|rows| rows.collect::<Result<Vec<_>, _>>())
+                .map_err(|_| StoreError::Storage)?
+        };
+        let ids = jobs
+            .iter()
+            .map(|id| id.parse::<JobId>().map_err(|_| StoreError::InvalidData))
+            .collect::<Result<Vec<_>, _>>()?;
+        let records = select_ids(&transaction, ids)?;
+        for record in records.values() {
+            settle_memory_attempts_of_ended_job(&transaction, &record.snapshot)?;
+        }
+        transaction.commit().map_err(|_| StoreError::Storage)?;
+        Ok(records.len())
+    }
 }
 
 fn enum_name(value: impl serde::Serialize) -> Result<String, StoreError> {

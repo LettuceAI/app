@@ -8672,3 +8672,129 @@ async fn deleting_a_chat_during_its_memory_run_cancels_the_run_first() {
     ));
     assert_eq!(inference.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
 }
+
+/// Starts a memory cycle whose provider never answers and stops it the way
+/// an app exit does, leaving its attempt processing and its job claimed.
+async fn memory_cycle_cut_by_exit(
+    backend: &AppBackend,
+    prefix: &str,
+) -> (ConversationId, lettuce_types::JobId) {
+    let scenario = finalized_dynamic_turn(backend, prefix).await;
+    let conversation_id = scenario.conversation_id;
+    let inference = CancelledOnlyInference {
+        runtime: std::sync::Arc::clone(backend.inference_runtime()),
+        entered: tokio::sync::Notify::new(),
+        calls: Default::default(),
+    };
+    let engine = ScenarioEmbeddingEngine;
+    let host = backend.companion_memory_host(&engine, &inference);
+    let scheduler = crate::PostTurnMemoryScheduler::new();
+    assert!(scheduler.enqueue(conversation_id));
+    let clock = FakeClock::new(TimestampMillis::new(1_030));
+    let follow_up = crate::CompanionFollowUpHost::new(backend.database(), &inference);
+    tokio::select! {
+        () = host.drive(
+            &scheduler,
+            conversation_id,
+            WorkerId::new(),
+            LEASE,
+            &clock,
+            &follow_up,
+        ) => panic!("the cycle must still be running"),
+        () = inference.entered.notified() => {}
+    }
+    let job_id = JobStore::list(
+        backend.database(),
+        lettuce_jobs::JobQuery {
+            state: None,
+            kind: Some(lettuce_jobs::JobKind::MemoryExtraction),
+            subject: None,
+            page: PageRequest {
+                cursor: None,
+                limit: PageLimit::new(10),
+            },
+        },
+    )
+    .expect("memory jobs")
+    .items
+    .into_iter()
+    .find(|job| job.subject.id.as_str() == conversation_id.to_string())
+    .expect("the cycle's job")
+    .id;
+    assert_eq!(
+        backend
+            .database()
+            .purge_conversation(conversation_id, TimestampMillis::new(1_031)),
+        Err(lettuce_database::PurgeError::Busy),
+        "the cut cycle's attempt is still processing"
+    );
+    (conversation_id, job_id)
+}
+
+/// A memory job restarted after an exit and then cancelled while queued
+/// settles its attempt, so the chat's delete completes.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_restarted_memory_job_cancelled_while_queued_leaves_the_chat_deletable() {
+    let backend =
+        std::sync::Arc::new(AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend"));
+    let (conversation_id, job_id) = memory_cycle_cut_by_exit(&backend, "restart-cancel").await;
+    backend
+        .recover_after_restart(TimestampMillis::new(1_040))
+        .expect("restart recovery");
+    let restarted = JobStore::get(backend.database(), job_id)
+        .expect("job")
+        .expect("job exists");
+    assert_eq!(
+        restarted.state,
+        JobState::Queued,
+        "the cycle is queued again"
+    );
+    let context = crate::api::conversation_delete_tests::context_over(
+        std::sync::Arc::clone(&backend),
+        std::sync::Arc::new(UnavailableInference),
+    );
+    crate::api::conversation_delete(
+        &context,
+        lettuce_contracts::ConversationRequest {
+            conversation_id: conversation_id.to_string(),
+        },
+    )
+    .await
+    .expect("the delete cancels the queued cycle and completes");
+    assert!(matches!(
+        ConversationReader::get(backend.database(), conversation_id),
+        Err(lettuce_conversations::ConversationRepositoryError::NotFound)
+    ));
+    assert_eq!(
+        JobStore::get(backend.database(), job_id)
+            .expect("job")
+            .expect("job exists")
+            .state,
+        JobState::Cancelled
+    );
+}
+
+/// Startup failing a memory job the app stopped during too often leaves no
+/// live attempt behind it.
+#[tokio::test(flavor = "multi_thread")]
+async fn failing_an_interrupted_memory_job_settles_its_attempt() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let (conversation_id, job_id) = memory_cycle_cut_by_exit(&backend, "restart-fail").await;
+    backend
+        .recover_after_restart(TimestampMillis::new(1_040))
+        .expect("restart recovery");
+    let queued = JobStore::get(backend.database(), job_id)
+        .expect("job")
+        .expect("job exists");
+    let failed = crate::jobs::job_recovery::fail_interrupted_job(
+        backend.database(),
+        &queued,
+        TimestampMillis::new(1_050),
+    )
+    .expect("fail the job");
+    assert_eq!(failed.state, JobState::Failed);
+    backend
+        .database()
+        .purge_conversation(conversation_id, TimestampMillis::new(1_060))
+        .expect("no live attempt keeps the chat busy");
+}

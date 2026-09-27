@@ -112,25 +112,47 @@ pub(crate) fn cancel_conversation_work(
     {
         let turn = ConversationReader::get_turn(database, turn_id)
             .map_err(IntoApiError::into_api_error)?;
-        if let Some(job_id) = turn
+        let job_id = turn
             .attempts
             .iter()
             .filter(|attempt| attempt.job_id.is_some())
             .max_by_key(|attempt| attempt.ordinal)
-            .and_then(|attempt| attempt.job_id)
-            && let ConversationGenerationCancellationOutcome::QueuedCancelled(_) = context
-                .backend()
-                .conversation_generation_cancellation()
-                .cancel(job_id, CancellationReason::User, context.now())
-                .map_err(IntoApiError::into_api_error)?
-        {
-            context.settle_turn(
-                conversation_id,
-                turn_id,
-                dto::GenerationEvent::Cancelled {
-                    turn_id: turn_id.to_string(),
-                },
-            );
+            .and_then(|attempt| attempt.job_id);
+        let outcome = match job_id {
+            Some(job_id) => Some(
+                context
+                    .backend()
+                    .conversation_generation_cancellation()
+                    .cancel(job_id, CancellationReason::User, context.now())
+                    .map_err(IntoApiError::into_api_error)?,
+            ),
+            None => None,
+        };
+        match outcome {
+            Some(ConversationGenerationCancellationOutcome::QueuedCancelled(_)) => {
+                context.settle_turn(
+                    conversation_id,
+                    turn_id,
+                    dto::GenerationEvent::Cancelled {
+                        turn_id: turn_id.to_string(),
+                    },
+                );
+            }
+            Some(ConversationGenerationCancellationOutcome::Requested { .. }) => {}
+            Some(
+                ConversationGenerationCancellationOutcome::AlreadyTerminal(_)
+                | ConversationGenerationCancellationOutcome::NotFound,
+            )
+            | None => {
+                context
+                    .backend()
+                    .conversation_generation_dispatcher()
+                    .settle_unrunnable_turn(&turn, context.now())
+                    .map_err(IntoApiError::into_api_error)?;
+                if let Some(event) = super::worker::settled_event(database, turn_id)? {
+                    context.settle_turn(conversation_id, turn_id, event);
+                }
+            }
         }
     }
     let subject = SubjectId::new(conversation_id.to_string()).map_err(|_| {
@@ -190,7 +212,11 @@ pub(crate) fn cancel_conversation_work(
         }
         match page.next_cursor {
             Some(next) => cursor = Some(next),
-            None => return Ok(()),
+            None => break,
         }
     }
+    database
+        .settle_memory_attempts_of_ended_jobs(conversation_id)
+        .map_err(IntoApiError::into_api_error)?;
+    Ok(())
 }
