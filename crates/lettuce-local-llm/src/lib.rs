@@ -19,6 +19,7 @@ pub mod generation;
 pub mod hardware;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod llama;
+pub mod model_files;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod mtp;
 pub mod offload;

@@ -1384,7 +1384,22 @@ async fn move_folder(context: &ApiContext, started: &Arc<StartedJob>) -> Settlem
                 "models-folder-busy",
             )));
         }
+        let block = if move_existing {
+            match context.backend().block_llama_folder(Path::new(&from)) {
+                Ok(block) => Some(block),
+                Err(_) => {
+                    return Ok(Settlement::Failed(job_error(
+                        JobErrorCode::ResourceUnavailable,
+                        true,
+                        "models-folder-busy",
+                    )));
+                }
+            }
+        } else {
+            None
+        };
         let app_folder = crate::api::local_models::app_folder(context)?.to_path_buf();
+        let _block = block;
         Ok(
             match crate::set_llm_models_dir(
                 context.backend().database(),

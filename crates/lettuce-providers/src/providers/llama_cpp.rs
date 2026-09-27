@@ -44,6 +44,7 @@ use crate::media::{
 use crate::streaming::stream_normalize::StreamDelta;
 
 const LOCAL_FAILURE_CODE: &str = "LOCAL_INFERENCE_FAILED";
+const MODEL_FOLDER_MOVING_CODE: &str = "LOCAL_MODEL_FOLDER_MOVING";
 const LOCAL_MODEL_NOT_PICKED_CODE: &str = "LOCAL_MODEL_FILE_NOT_PICKED";
 
 /// Another local runtime that must give way before llama.cpp runs; the
@@ -225,6 +226,15 @@ pub(crate) async fn run(
         Ok(Err(LlamaGenerationError::Aborted)) => return streamed.stopped(),
         Ok(Err(LlamaGenerationError::WorkerStopped)) | Err(_) => {
             return Err(AdapterError::Transport);
+        }
+        Ok(Err(LlamaGenerationError::ModelFolderMoving(path))) => {
+            return Err(AdapterError::Provider(ProviderFailure {
+                kind: ProviderFailureKind::Unavailable,
+                status: 503,
+                code: Some(MODEL_FOLDER_MOVING_CODE.to_owned()),
+                message: Some(format!("the models folder of {path} is being moved")),
+                request_id: None,
+            }));
         }
         Ok(Err(LlamaGenerationError::Failed(message))) => {
             return Err(AdapterError::Provider(ProviderFailure {

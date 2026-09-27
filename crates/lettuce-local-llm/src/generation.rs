@@ -14,8 +14,8 @@ use std::collections::VecDeque;
 use std::io::Cursor;
 use std::num::NonZeroU32;
 use std::path::Path;
+use std::sync::Arc;
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use base64::Engine as _;
@@ -46,6 +46,7 @@ use crate::hardware::{
     get_per_device_free_vram, list_gpu_devices,
 };
 use crate::llama::{flash_attention_type, load_model_metadata, shared_backend};
+use crate::model_files::ModelFileRegistry;
 use crate::mtp::{MtpRuntime, discover_external_mtp, model_has_mtp};
 use crate::offload::{
     FlashAttentionPolicy, MultiGpuDistribution, OffloadRequest, context_bucket_upper,
@@ -250,6 +251,9 @@ pub enum LlamaGenerationError {
     Failed(String),
     #[error("llama.cpp inference worker stopped")]
     WorkerStopped,
+    /// The request names a file in a models folder that is being moved.
+    #[error("the models folder of {0} is being moved")]
+    ModelFolderMoving(String),
 }
 
 impl From<LlamaEngineError> for LlamaGenerationError {
@@ -287,6 +291,7 @@ type UnloadDone = Box<dyn FnOnce(Result<(), LlamaGenerationError>) + Send>;
 
 enum WorkerJob {
     Generate {
+        ticket: u64,
         request: Box<LlamaGenerationRequest>,
         observer: Arc<dyn GenerationObserver>,
         reports: Arc<dyn RuntimeReportStore>,
@@ -302,7 +307,7 @@ enum WorkerJob {
 #[derive(Debug)]
 pub struct LlamaRuntime {
     sender: mpsc::Sender<WorkerJob>,
-    resident: Arc<Mutex<Vec<String>>>,
+    files: Arc<ModelFileRegistry>,
 }
 
 impl std::fmt::Debug for WorkerJob {
@@ -319,25 +324,30 @@ impl std::fmt::Debug for WorkerJob {
 
 impl LlamaRuntime {
     pub fn start() -> std::io::Result<Self> {
+        Self::start_with(Arc::new(ModelFileRegistry::default()))
+    }
+
+    /// Starts the worker publishing into `files`, which the app also uses to
+    /// block a folder while it moves.
+    pub fn start_with(files: Arc<ModelFileRegistry>) -> std::io::Result<Self> {
         let (sender, receiver) = mpsc::channel::<WorkerJob>();
-        let resident = Arc::new(Mutex::new(Vec::new()));
-        let published = Arc::clone(&resident);
+        let published = Arc::clone(&files);
         std::thread::Builder::new()
             .name("lettuce-llama".to_string())
             .spawn(move || {
                 let mut worker = WorkerState {
-                    resident: published,
+                    files: published,
                     ..WorkerState::default()
                 };
                 while let Ok(job) = receiver.recv() {
                     match job {
                         WorkerJob::Generate {
+                            ticket,
                             request,
                             observer,
                             reports,
                             done,
                         } => {
-                            worker.publish(&request.requested_files());
                             let result = generate(
                                 &mut worker,
                                 &request,
@@ -345,6 +355,7 @@ impl LlamaRuntime {
                                 reports.as_ref(),
                             );
                             worker.publish(&[]);
+                            worker.files.finish(ticket);
                             done(result);
                         }
                         WorkerJob::Unload { done } => {
@@ -358,19 +369,16 @@ impl LlamaRuntime {
                 worker.hot.clear();
                 worker.publish(&[]);
             })?;
-        Ok(Self { sender, resident })
+        Ok(Self { sender, files })
     }
 
-    /// The model files the worker holds open, or may open for the request
-    /// it runs: the loaded model and its sidecars, the models and draft
-    /// models of cached contexts, and while a request runs the files it
-    /// names, published before anything loads.
+    /// The model files the worker holds open, or may open for a request
+    /// queued or running: the loaded model and its sidecars, the models and
+    /// draft models of cached contexts, and the files every queued request
+    /// names, recorded when it is enqueued.
     #[must_use]
     pub fn resident_files(&self) -> Vec<String> {
-        self.resident
-            .lock()
-            .map(|files| files.clone())
-            .unwrap_or_default()
+        self.files.files()
     }
 
     pub fn generate(
@@ -380,14 +388,28 @@ impl LlamaRuntime {
         reports: Arc<dyn RuntimeReportStore>,
         done: GenerationDone,
     ) {
-        if let Err(mpsc::SendError(WorkerJob::Generate { done, .. })) =
+        let requested = request
+            .requested_files()
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        let ticket = match self.files.enqueue(requested) {
+            Ok(ticket) => ticket,
+            Err(moving) => {
+                done(Err(LlamaGenerationError::ModelFolderMoving(moving.path)));
+                return;
+            }
+        };
+        if let Err(mpsc::SendError(WorkerJob::Generate { done, ticket, .. })) =
             self.sender.send(WorkerJob::Generate {
+                ticket,
                 request: Box::new(request),
                 observer,
                 reports,
                 done,
             })
         {
+            self.files.finish(ticket);
             done(Err(LlamaGenerationError::WorkerStopped));
         }
     }
@@ -405,36 +427,21 @@ impl LlamaRuntime {
 struct WorkerState {
     engine: LlamaEngine,
     hot: HotContextCache,
-    resident: Arc<Mutex<Vec<String>>>,
-}
-
-/// Every distinct path of `groups`, in order.
-fn resident_set<'a>(groups: impl IntoIterator<Item = &'a str>) -> Vec<String> {
-    let mut files: Vec<String> = Vec::new();
-    for path in groups {
-        if !path.trim().is_empty() && !files.iter().any(|file| file == path) {
-            files.push(path.to_owned());
-        }
-    }
-    files
+    files: Arc<ModelFileRegistry>,
 }
 
 impl WorkerState {
     /// Publishes the files the engine and the cached contexts hold, plus
     /// `pending` (files a load is about to open).
     fn publish(&self, pending: &[&str]) {
-        let engine = self.engine.loaded_paths();
-        let hot = self.hot.model_paths();
-        let files = resident_set(
-            engine
-                .iter()
-                .chain(hot.iter())
-                .map(String::as_str)
-                .chain(pending.iter().copied()),
-        );
-        if let Ok(mut resident) = self.resident.lock() {
-            *resident = files;
-        }
+        let files = self
+            .engine
+            .loaded_paths()
+            .into_iter()
+            .chain(self.hot.model_paths())
+            .chain(pending.iter().map(|path| (*path).to_owned()))
+            .collect();
+        self.files.publish(files);
     }
 }
 
@@ -3850,19 +3857,12 @@ mod tests {
     }
 
     #[test]
-    fn resident_files_name_distinct_paths_and_follow_each_publish() {
-        assert_eq!(
-            resident_set(["/m/a.gguf", "", "/m/b.gguf", "/m/a.gguf", "  "]),
-            ["/m/a.gguf", "/m/b.gguf"]
-        );
+    fn a_request_names_its_files_and_publishing_replaces_the_held_set() {
         let worker = WorkerState::default();
-        worker.publish(&["/m/model.gguf", "/m/mmproj.gguf"]);
-        assert_eq!(
-            *worker.resident.lock().expect("resident"),
-            ["/m/model.gguf", "/m/mmproj.gguf"]
-        );
+        worker.publish(&["/m/model.gguf", "/m/mmproj.gguf", ""]);
+        assert_eq!(worker.files.files(), ["/m/model.gguf", "/m/mmproj.gguf"]);
         worker.publish(&[]);
-        assert!(worker.resident.lock().expect("resident").is_empty());
+        assert!(worker.files.files().is_empty());
         let request = LlamaGenerationRequest {
             model_path: "/m/model.gguf".into(),
             runtime: crate::request::LlamaRuntimeInput {
@@ -3882,6 +3882,31 @@ mod tests {
                 "/m/dflash.gguf"
             ]
         );
+    }
+
+    #[test]
+    fn a_request_for_a_moving_folder_is_refused_before_it_is_queued() {
+        let files = Arc::new(ModelFileRegistry::default());
+        let runtime = LlamaRuntime::start_with(Arc::clone(&files)).expect("worker");
+        let block = files.block(Path::new("/moving")).expect("block");
+        let (done, result) = mpsc::channel();
+        runtime.generate(
+            LlamaGenerationRequest {
+                model_path: "/moving/model.gguf".into(),
+                ..Default::default()
+            },
+            Arc::new(Recorder::default()),
+            Arc::new(MemoryReports::default()),
+            Box::new(move |outcome| {
+                let _ = done.send(outcome.err());
+            }),
+        );
+        assert!(matches!(
+            result.recv().expect("result"),
+            Some(LlamaGenerationError::ModelFolderMoving(path)) if path == "/moving/model.gguf"
+        ));
+        assert!(runtime.resident_files().is_empty());
+        drop(block);
     }
 
     /// Holds the request inside the worker until the test lets it go.

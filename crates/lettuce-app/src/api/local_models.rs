@@ -96,14 +96,8 @@ impl LocalModelsState {
     }
 }
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn backend_resident_files(context: &ApiContext) -> Vec<String> {
     context.backend().local_llama_resident_files()
-}
-
-#[cfg(any(target_os = "android", target_os = "ios"))]
-fn backend_resident_files(_context: &ApiContext) -> Vec<String> {
-    Vec::new()
 }
 
 pub(crate) fn unsupported_on_mobile(what: &str) -> ApiError {
