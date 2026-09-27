@@ -17,7 +17,29 @@ while IFS= read -r source; do
     "$crate_root/lettuce-model-hub/"*|*/tests.rs|*_tests.rs|*/tests/*) continue ;;
   esac
   found="$(HF_TERMS="$hf_terms" awk '
+    function strip_raw(text,    start, rest, ending) {
+      if (in_raw) {
+        ending = index(text, "\"#")
+        if (!ending) { return "" }
+        text = substr(text, ending + 2)
+        in_raw = 0
+      }
+      while ((start = index(text, "r#\"")) > 0) {
+        rest = substr(text, start + 3)
+        ending = index(rest, "\"#")
+        if (!ending) {
+          in_raw = 1
+          return substr(text, 1, start - 1)
+        }
+        text = substr(text, 1, start - 1) substr(rest, ending + 2)
+      }
+      return text
+    }
     function braces(text,    opened, closed) {
+      text = strip_raw(text)
+      gsub(/\047([^\047\\]|\\.)\047/, "", text)
+      gsub(/"([^"\\]|\\.)*"/, "", text)
+      sub(/\/\/.*$/, "", text)
       opened = gsub(/\{/, "{", text)
       closed = gsub(/\}/, "}", text)
       return opened - closed
