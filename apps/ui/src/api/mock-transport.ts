@@ -1,26 +1,33 @@
-import type { AppEvent, AppStatus } from "./generated/bindings";
+import type { ApiError, AppEvent, AppStatus } from "./generated/bindings";
 import type {
   CallCommandName,
   CommandArgs,
+  CommandData,
   CommandName,
   CommandOutcome,
+  StreamArgs,
   StreamCommandName,
   StreamEvent,
-  StreamRequest,
+  StreamOptions,
   Transport,
 } from "./transport";
 
 type Awaitable<T> = T | Promise<T>;
 
+export type MockOutcome<K extends CommandName> =
+  | { status: "ok"; data: CommandData<K> }
+  | { status: "error"; error: ApiError };
+
 export type MockCallHandlers = {
-  [K in CallCommandName]?: (...args: CommandArgs<K>) => Awaitable<CommandOutcome<K>>;
+  [K in CallCommandName]?: (...args: CommandArgs<K>) => Awaitable<MockOutcome<K>>;
 };
 
+/** `emit` keeps delivering after the handler settles, until the caller aborts its signal. */
 export type MockStreamHandlers = {
   [K in StreamCommandName]?: (
-    request: StreamRequest<K>,
+    args: StreamArgs<K>,
     emit: (event: StreamEvent<K>) => void,
-  ) => Awaitable<CommandOutcome<K>>;
+  ) => Awaitable<MockOutcome<K>>;
 };
 
 export interface MockTransportOptions {
@@ -54,7 +61,7 @@ function unhandled<K extends CommandName>(command: K): CommandOutcome<K> {
 }
 
 type AnyCallHandler = (...args: unknown[]) => Awaitable<unknown>;
-type AnyStreamHandler = (request: unknown, emit: (event: unknown) => void) => Awaitable<unknown>;
+type AnyStreamHandler = (args: unknown, emit: (event: unknown) => void) => Awaitable<unknown>;
 
 /** An in-memory transport for tests and for running the UI in a plain browser. */
 export function createMockTransport(options: MockTransportOptions = {}): MockTransport {
@@ -71,12 +78,17 @@ export function createMockTransport(options: MockTransportOptions = {}): MockTra
     },
     async stream<K extends StreamCommandName>(
       command: K,
-      request: StreamRequest<K>,
+      args: StreamArgs<K>,
       onEvent: (event: StreamEvent<K>) => void,
+      streamOptions: StreamOptions = {},
     ) {
       const handler = streams[command] as AnyStreamHandler | undefined;
       if (!handler) return unhandled(command);
-      return (await handler(request, onEvent as (event: unknown) => void)) as CommandOutcome<K>;
+      const { signal } = streamOptions;
+      const emit = (event: unknown) => {
+        if (!signal?.aborted) onEvent(event as StreamEvent<K>);
+      };
+      return (await handler(args, emit)) as CommandOutcome<K>;
     },
     async subscribe(listener) {
       listeners.add(listener);

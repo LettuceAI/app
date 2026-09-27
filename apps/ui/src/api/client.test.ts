@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { ApiFailure, createApiClient, detectEnvironment, selectTransport } from "./client";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ApiFailure, createApiClient, isApiError, isInsideShell, selectTransport } from "./client";
+import type { GenerationEvent } from "./generated/bindings";
 import { createMockTransport, mockAppStatus } from "./mock-transport";
 import type { Transport } from "./transport";
 
@@ -29,6 +30,22 @@ describe("createApiClient", () => {
     });
   });
 
+  it("turns an error outcome that is not an ApiError into a transport failure", async () => {
+    const transport: Transport = {
+      kind: "mock",
+      call: async () => ({ status: "error", error: "unknown command app_status" }),
+      stream: async () => ({ status: "error", error: { code: 7 } }),
+      subscribe: async () => () => {},
+    };
+    const api = createApiClient(transport);
+    await expect(api.call("appStatus")).rejects.toMatchObject({
+      code: "transport",
+      message: "unknown command app_status",
+      details: null,
+    });
+    await expect(api.stream("jobWatch", [{ job_id: "j1" }], () => {})).rejects.toMatchObject({ code: "transport" });
+  });
+
   it("turns a transport that throws into a transport ApiFailure keeping the cause", async () => {
     const broken = new Error("ipc closed");
     const transport: Transport = {
@@ -40,7 +57,7 @@ describe("createApiClient", () => {
     const api = createApiClient(transport);
     for (const pending of [
       api.call("appStatus"),
-      api.stream("jobWatch", { job_id: "j1" }, () => {}),
+      api.stream("jobWatch", [{ job_id: "j1" }], () => {}),
       api.subscribe(() => {}),
     ]) {
       const failure = await pending.catch((error: unknown) => error);
@@ -67,26 +84,33 @@ describe("createApiClient", () => {
     expect(failure).toMatchObject({ code: "unsupported" });
   });
 
-  it("delivers stream events before the command settles", async () => {
+  it("delivers stream events in order, also after the call settles, until the signal aborts", async () => {
+    let emitLater: ((event: GenerationEvent) => void) | undefined;
     const api = createApiClient(
       createMockTransport({
         streams: {
-          conversationSend: (request, emit) => {
+          conversationSend: ([request], emit) => {
             emit({ type: "started", turn_id: "t1" });
-            emit({ type: "delta", turn_id: "t1", text: request.text, reasoning: null });
-            return { status: "ok", data: { user_message_id: "m1", turn_id: "t1" } };
+            emitLater = emit;
+            return { status: "ok", data: { user_message_id: "m1", turn_id: request.conversation_id } };
           },
         },
       }),
     );
     const events: string[] = [];
+    const controller = new AbortController();
     const accepted = await api.stream(
       "conversationSend",
-      { conversation_id: "c1", text: "hi", client_operation_id: "op1" },
+      [{ conversation_id: "c1", text: "hi", client_operation_id: "op1" }],
       (event) => events.push(event.type),
+      { signal: controller.signal },
     );
-    expect(accepted).toEqual({ user_message_id: "m1", turn_id: "t1" });
-    expect(events).toEqual(["started", "delta"]);
+    expect(accepted).toEqual({ user_message_id: "m1", turn_id: "c1" });
+    emitLater?.({ type: "delta", turn_id: "t1", text: "hi", reasoning: null });
+    emitLater?.({ type: "completed", turn_id: "t1", message_id: "m2" });
+    controller.abort();
+    emitLater?.({ type: "cancelled", turn_id: "t1" });
+    expect(events).toEqual(["started", "delta", "completed"]);
   });
 
   it("forwards app events to subscribers until they unsubscribe", async () => {
@@ -101,26 +125,43 @@ describe("createApiClient", () => {
   });
 });
 
+describe("isApiError", () => {
+  it("accepts only objects with a known code, a message and nullable details", () => {
+    expect(isApiError({ code: "busy", message: "m", details: null })).toBe(true);
+    expect(isApiError({ code: "model_required", message: "m", details: { type: "model", model: "emotion" } })).toBe(true);
+    expect(isApiError("busy")).toBe(false);
+    expect(isApiError(null)).toBe(false);
+    expect(isApiError({ code: "toString", message: "m", details: null })).toBe(false);
+    expect(isApiError({ code: "busy", details: null })).toBe(false);
+    expect(isApiError({ code: "busy", message: "m", details: "x" })).toBe(false);
+  });
+});
+
 describe("selectTransport", () => {
-  it("uses Tauri when the shell is present, even in development", async () => {
-    await expect(selectTransport({ hasTauri: true, allowMock: true })).resolves.toMatchObject({ kind: "tauri" });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("uses Tauri when the shell is present", async () => {
+    await expect(selectTransport(true)).resolves.toMatchObject({ kind: "tauri" });
   });
 
   it("uses the mock in a plain browser during development", async () => {
-    await expect(selectTransport({ hasTauri: false, allowMock: true })).resolves.toMatchObject({ kind: "mock" });
+    await expect(selectTransport(false)).resolves.toMatchObject({ kind: "mock" });
   });
 
   it("fails typed in a production build outside the shell", async () => {
-    const failure = await selectTransport({ hasTauri: false, allowMock: false }).catch((error: unknown) => error);
+    vi.stubEnv("DEV", false);
+    const failure = await selectTransport(false).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(ApiFailure);
     expect(failure).toMatchObject({ code: "transport" });
   });
 
   it("detects the shell from window.__TAURI_INTERNALS__", () => {
-    expect(detectEnvironment().hasTauri).toBe(false);
+    expect(isInsideShell()).toBe(false);
     Object.defineProperty(window, "__TAURI_INTERNALS__", { value: {}, configurable: true });
     try {
-      expect(detectEnvironment().hasTauri).toBe(true);
+      expect(isInsideShell()).toBe(true);
     } finally {
       Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
     }
