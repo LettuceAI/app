@@ -440,6 +440,11 @@ export type HfModelFile = {
 /**  A repository's downloadable files, smallest first, and its GGUF summary. */
 export type HfModelInfo = {
 	model_id: string,
+	/**
+	 *  The commit the files were listed at; runnability and downloads pass
+	 *  it back.
+	 */
+	revision: string | null,
 	author: string,
 	likes: number,
 	downloads: number,
@@ -575,6 +580,7 @@ export type HfRecommendation = {
  */
 export type HfRecommendationRequest = {
 	model_id: string,
+	revision: string | null,
 	files: HfRunnabilityFile[],
 	ollama_account_id: string | null,
 	sidecar_reserve_bytes: number | null,
@@ -605,6 +611,11 @@ export type HfRunnabilityFile = {
  */
 export type HfRunnabilityRequest = {
 	model_id: string,
+	/**
+	 *  The commit to read headers at (`HfModelInfo::revision`); `main` when
+	 *  absent.
+	 */
+	revision: string | null,
 	files: HfRunnabilityFile[],
 	ollama_account_id: string | null,
 };

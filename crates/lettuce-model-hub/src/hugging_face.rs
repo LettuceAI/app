@@ -839,6 +839,8 @@ pub struct HfModelFile {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HfModelInfo {
     pub model_id: String,
+    /// The commit the files were listed at.
+    pub revision: Option<String>,
     pub author: String,
     pub likes: i64,
     pub downloads: i64,
@@ -853,6 +855,8 @@ pub struct HfModelInfo {
 struct ModelDetail {
     #[serde(rename = "modelId")]
     model_id: String,
+    #[serde(default)]
+    sha: Option<String>,
     #[serde(default)]
     likes: i64,
     #[serde(default)]
@@ -943,6 +947,7 @@ pub fn model_info(
     Ok(HfModelInfo {
         author: author_of(detail.author, model_id),
         model_id: detail.model_id,
+        revision: detail.sha,
         likes: detail.likes,
         downloads: detail.downloads,
         tags: detail.tags,

@@ -87,6 +87,9 @@ pub struct HfModelFile {
 #[serde(deny_unknown_fields)]
 pub struct HfModelInfo {
     pub model_id: String,
+    /// The commit the files were listed at; runnability and downloads pass
+    /// it back.
+    pub revision: Option<String>,
     pub author: String,
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub likes: i64,
@@ -211,6 +214,9 @@ pub struct HfRunnabilityFile {
 #[serde(deny_unknown_fields)]
 pub struct HfRunnabilityRequest {
     pub model_id: String,
+    /// The commit to read headers at (`HfModelInfo::revision`); `main` when
+    /// absent.
+    pub revision: Option<String>,
     pub files: Vec<HfRunnabilityFile>,
     pub ollama_account_id: Option<String>,
 }
@@ -246,6 +252,7 @@ pub struct HfPlanChoice {
 #[serde(deny_unknown_fields)]
 pub struct HfRecommendationRequest {
     pub model_id: String,
+    pub revision: Option<String>,
     pub files: Vec<HfRunnabilityFile>,
     pub ollama_account_id: Option<String>,
     #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]

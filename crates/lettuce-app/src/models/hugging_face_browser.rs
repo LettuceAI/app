@@ -24,7 +24,7 @@ pub struct HuggingFaceBrowser {
     client: JsonClient,
     endpoint: String,
     avatars: Mutex<HashMap<String, String>>,
-    pub(crate) headers: Mutex<HashMap<(String, String), lettuce_model_hub::GgufModelMeta>>,
+    pub(crate) headers: Mutex<HashMap<(String, String, String), lettuce_model_hub::GgufModelMeta>>,
 }
 
 fn message(text: impl Into<String>) -> HfBrowseError {

@@ -149,12 +149,20 @@ pub async fn sprout_runnability_hardware<S: SecretStore + ?Sized>(
     lettuce_model_hub::sprout_hardware(&endpoint, &response.body).map(Some)
 }
 
+/// A repository at a revision: the commit the model page pinned, else
+/// `main`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RemoteModel<'a> {
+    pub id: &'a str,
+    pub revision: &'a str,
+}
+
 impl HuggingFaceBrowser {
     async fn remote_gguf_meta<S, H>(
         &self,
         secrets: &S,
         source: &H,
-        model_id: &str,
+        model: RemoteModel<'_>,
         files: &[RunnabilityFile],
     ) -> Result<Option<GgufModelMeta>, HfBrowseError>
     where
@@ -168,7 +176,11 @@ impl HuggingFaceBrowser {
         else {
             return Ok(None);
         };
-        let key = (model_id.to_owned(), representative.filename.clone());
+        let key = (
+            model.id.to_owned(),
+            model.revision.to_owned(),
+            representative.filename.clone(),
+        );
         if let Some(cached) = self
             .headers
             .lock()
@@ -178,7 +190,7 @@ impl HuggingFaceBrowser {
             return Ok(Some(cached.clone()));
         }
         let meta = self
-            .read_remote_gguf_meta(secrets, source, model_id, representative)
+            .read_remote_gguf_meta(secrets, source, model, representative)
             .await?;
         if let Some(meta) = &meta {
             self.headers
@@ -189,11 +201,14 @@ impl HuggingFaceBrowser {
         Ok(meta)
     }
 
+    /// The header of `representative`, read within the browse budget as a
+    /// whole (both reads together); `None` when it could not be read in
+    /// time.
     async fn read_remote_gguf_meta<S, H>(
         &self,
         secrets: &S,
         source: &H,
-        model_id: &str,
+        model: RemoteModel<'_>,
         representative: &RunnabilityFile,
     ) -> Result<Option<GgufModelMeta>, HfBrowseError>
     where
@@ -203,24 +218,30 @@ impl HuggingFaceBrowser {
         let token = Self::saved_token(secrets).await?;
         let read = |length| {
             source.read_prefix(
-                model_id,
-                "main",
+                model.id,
+                model.revision,
                 &representative.filename,
                 length,
                 token.as_ref(),
             )
         };
-        let Some(probe) = read(GGUF_HEADER_PROBE_BYTES).await else {
-            return Ok(None);
+        let reading = async {
+            let probe = read(GGUF_HEADER_PROBE_BYTES).await?;
+            let first = lettuce_model_hub::parse_gguf_meta(&probe);
+            if first.as_ref().is_none_or(GgufModelMeta::has_essentials) {
+                return first;
+            }
+            read(GGUF_HEADER_RETRY_BYTES)
+                .await
+                .and_then(|data| lettuce_model_hub::parse_gguf_meta(&data))
+                .or(first)
         };
-        let first = lettuce_model_hub::parse_gguf_meta(&probe);
-        if first.as_ref().is_none_or(GgufModelMeta::has_essentials) {
-            return Ok(first);
-        }
-        Ok(read(GGUF_HEADER_RETRY_BYTES)
-            .await
-            .and_then(|data| lettuce_model_hub::parse_gguf_meta(&data))
-            .or(first))
+        Ok(
+            tokio::time::timeout(lettuce_network::BROWSE_TIMEOUT, reading)
+                .await
+                .ok()
+                .flatten(),
+        )
     }
 
     /// A score per file, estimated from the smallest file's GGUF header,
@@ -229,7 +250,7 @@ impl HuggingFaceBrowser {
         &self,
         secrets: &S,
         source: &H,
-        model_id: &str,
+        model: RemoteModel<'_>,
         files: &[RunnabilityFile],
         hardware: RunnabilityHardware,
         defaults: RunnabilityDefaults,
@@ -241,13 +262,11 @@ impl HuggingFaceBrowser {
         if files.is_empty() {
             return Ok((Vec::new(), false));
         }
-        let meta = self
-            .remote_gguf_meta(secrets, source, model_id, files)
-            .await?;
+        let meta = self.remote_gguf_meta(secrets, source, model, files).await?;
         Ok((
             lettuce_model_hub::runnability_scores(
                 files,
-                model_id,
+                model.id,
                 meta.as_ref(),
                 hardware,
                 defaults,
@@ -262,7 +281,7 @@ impl HuggingFaceBrowser {
         &self,
         secrets: &S,
         source: &H,
-        model_id: &str,
+        model: RemoteModel<'_>,
         files: &[RunnabilityFile],
         hardware: RunnabilityHardware,
         defaults: RunnabilityDefaults,
@@ -274,13 +293,11 @@ impl HuggingFaceBrowser {
         if files.is_empty() {
             return Ok((RecommendationData::empty(), false));
         }
-        let meta = self
-            .remote_gguf_meta(secrets, source, model_id, files)
-            .await?;
+        let meta = self.remote_gguf_meta(secrets, source, model, files).await?;
         Ok((
             lettuce_model_hub::build_recommendation(
                 files,
-                model_id,
+                model.id,
                 meta.as_ref(),
                 hardware,
                 defaults.context_length,
@@ -376,6 +393,11 @@ mod tests {
 
     use super::*;
 
+    const MAIN: RemoteModel<'static> = RemoteModel {
+        id: "org/m",
+        revision: "main",
+    };
+
     struct Header {
         bytes: Vec<u8>,
         reads: Mutex<Vec<(String, u64)>>,
@@ -400,6 +422,95 @@ mod tests {
                 .min(self.bytes.len());
             Some(self.bytes[..end].to_vec())
         }
+    }
+
+    struct Stalled;
+
+    #[async_trait]
+    impl GgufHeaderSource for Stalled {
+        async fn read_prefix(
+            &self,
+            _model_id: &str,
+            _revision: &str,
+            _filename: &str,
+            _length: u64,
+            _token: Option<&SecretValue>,
+        ) -> Option<Vec<u8>> {
+            std::future::pending().await
+        }
+    }
+
+    struct Revisions(Mutex<Vec<String>>);
+
+    #[async_trait]
+    impl GgufHeaderSource for Revisions {
+        async fn read_prefix(
+            &self,
+            _model_id: &str,
+            revision: &str,
+            _filename: &str,
+            length: u64,
+            _token: Option<&SecretValue>,
+        ) -> Option<Vec<u8>> {
+            self.0.lock().expect("revisions").push(revision.to_owned());
+            let bytes = header();
+            let end = usize::try_from(length).expect("length").min(bytes.len());
+            Some(bytes[..end].to_vec())
+        }
+    }
+
+    fn hardware() -> RunnabilityHardware {
+        RunnabilityHardware {
+            available_ram: Some(32_000_000_000),
+            available_vram: Some(12_000_000_000),
+            supports_gpu_offload: true,
+            unified_memory: false,
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_header_that_never_arrives_gives_up_after_the_browse_budget() {
+        let browser = HuggingFaceBrowser::new(lettuce_network::JsonClient::new().expect("client"));
+        let files = [file("m-Q4_K_M.gguf", 4_000_000_000)];
+        let started = tokio::time::Instant::now();
+        let (scores, metadata) = browser
+            .runnability(
+                &InMemorySecretStore::default(),
+                &Stalled,
+                MAIN,
+                &files,
+                hardware(),
+                RunnabilityDefaults::new(None, None),
+            )
+            .await
+            .expect("scores without a header");
+        assert!(!metadata);
+        assert_eq!(scores.len(), 1);
+        assert_eq!(started.elapsed(), lettuce_network::BROWSE_TIMEOUT);
+    }
+
+    #[tokio::test]
+    async fn headers_are_cached_per_revision() {
+        let browser = HuggingFaceBrowser::new(lettuce_network::JsonClient::new().expect("client"));
+        let source = Revisions(Mutex::new(Vec::new()));
+        let files = [file("m-Q4_K_M.gguf", 4_000_000_000)];
+        for revision in ["aaa", "aaa", "bbb"] {
+            browser
+                .runnability(
+                    &InMemorySecretStore::default(),
+                    &source,
+                    RemoteModel {
+                        id: "org/m",
+                        revision,
+                    },
+                    &files,
+                    hardware(),
+                    RunnabilityDefaults::new(None, None),
+                )
+                .await
+                .expect("scores");
+        }
+        assert_eq!(*source.0.lock().expect("revisions"), ["aaa", "bbb"]);
     }
 
     fn header() -> Vec<u8> {
@@ -458,7 +569,7 @@ mod tests {
             file("m-F16.gguf", 0),
         ];
         let (scores, metadata) = browser
-            .runnability(&secrets, &source, "org/m", &files, hardware, defaults)
+            .runnability(&secrets, &source, MAIN, &files, hardware, defaults)
             .await
             .expect("scores");
         assert!(metadata);
@@ -468,7 +579,7 @@ mod tests {
             [("org/m/m-Q4_K_M.gguf".to_owned(), GGUF_HEADER_PROBE_BYTES)]
         );
         let (recommendation, _) = browser
-            .recommendation(&secrets, &source, "org/m", &files, hardware, defaults)
+            .recommendation(&secrets, &source, MAIN, &files, hardware, defaults)
             .await
             .expect("recommendation");
         assert_eq!(recommendation.model_max_context, 8192);
@@ -485,7 +596,7 @@ mod tests {
         };
         let fresh = || HuggingFaceBrowser::new(lettuce_network::JsonClient::new().expect("client"));
         let (recommendation, _) = fresh()
-            .recommendation(&secrets, &truncated, "org/m", &files, hardware, defaults)
+            .recommendation(&secrets, &truncated, MAIN, &files, hardware, defaults)
             .await
             .expect("recommendation");
         assert!(recommendation.arch.expect("arch").incomplete_parse);
@@ -501,7 +612,7 @@ mod tests {
         );
         assert_eq!(
             browser
-                .recommendation(&secrets, &source, "org/m", &[], hardware, defaults)
+                .recommendation(&secrets, &source, MAIN, &[], hardware, defaults)
                 .await
                 .expect("empty"),
             (RecommendationData::empty(), false)
@@ -511,7 +622,7 @@ mod tests {
             reads: Mutex::new(Vec::new()),
         };
         let (scores, metadata) = fresh()
-            .runnability(&secrets, &unreadable, "org/m", &files, hardware, defaults)
+            .runnability(&secrets, &unreadable, MAIN, &files, hardware, defaults)
             .await
             .expect("scores without a header");
         assert_eq!(scores.len(), 3);

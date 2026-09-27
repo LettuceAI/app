@@ -21,7 +21,8 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const GENERATION_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const TRANSFER_TIMEOUT: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
-const BROWSE_TIMEOUT: Duration = Duration::from_secs(30);
+/// The whole budget of a catalog read (`RequestTimeout::Browse`).
+pub const BROWSE_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_RETRIES: u32 = 2;
 const MAX_RETRY_AFTER: Duration = Duration::from_secs(30);
 const REFERER_HEADER: &str = "https://github.com/LettuceAI/";

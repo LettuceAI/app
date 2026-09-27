@@ -95,6 +95,7 @@ pub async fn hf_model_files(
         .map_err(hf_error)?;
     Ok(dto::HfModelInfo {
         model_id: info.model_id,
+        revision: info.revision,
         author: info.author,
         likes: info.likes,
         downloads: info.downloads,
@@ -263,6 +264,13 @@ pub async fn hf_runnability(
     request: dto::HfRunnabilityRequest,
 ) -> Result<dto::HfRunnability, ApiError> {
     let model_id = required(&request.model_id, "model_id")?;
+    let revision = request
+        .revision
+        .as_deref()
+        .map(str::trim)
+        .filter(|revision| !revision.is_empty())
+        .unwrap_or("main")
+        .to_owned();
     let Some(hardware) = hardware(context, request.ollama_account_id.as_deref()).await? else {
         return Ok(dto::HfRunnability {
             hardware_available: false,
@@ -275,7 +283,10 @@ pub async fn hf_runnability(
         .runnability(
             context.secret_store().as_ref(),
             &header_source()?,
-            &model_id,
+            crate::RemoteModel {
+                id: &model_id,
+                revision: &revision,
+            },
             &files,
             hardware,
             defaults(context).await?,
@@ -416,6 +427,13 @@ pub async fn hf_recommendation(
     request: dto::HfRecommendationRequest,
 ) -> Result<dto::HfRecommendation, ApiError> {
     let model_id = required(&request.model_id, "model_id")?;
+    let revision = request
+        .revision
+        .as_deref()
+        .map(str::trim)
+        .filter(|revision| !revision.is_empty())
+        .unwrap_or("main")
+        .to_owned();
     let hardware = hardware(context, request.ollama_account_id.as_deref()).await?;
     let files = runnability_files(&request.files);
     let (recommendation, metadata_available) = match hardware {
@@ -423,7 +441,10 @@ pub async fn hf_recommendation(
             .recommendation(
                 context.secret_store().as_ref(),
                 &header_source()?,
-                &model_id,
+                crate::RemoteModel {
+                    id: &model_id,
+                    revision: &revision,
+                },
                 &files,
                 hardware,
                 defaults(context).await?,
