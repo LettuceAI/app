@@ -11,7 +11,7 @@ use lettuce_conversations::{
     BranchStatus, Conversation, ConversationAggregate, ConversationBranch,
     ConversationRepositoryError, GenerationInput, GenerationTarget, GenerationTurn,
     GenerationTurnStatus, IdempotencyKey, InitialMessageOrigin, Message, MessageRenderSource,
-    MessageRevision, MessageVisibility, OperationToken, ProtectedSnapshotRef, SnapshotSelection,
+    MessageRevision, MessageVisibility, OperationToken, ProtectedSnapshotRef,
 };
 use lettuce_transfer::{BackupConversation, BackupMessage};
 use lettuce_types::{
@@ -184,11 +184,7 @@ pub(crate) fn root_snapshot_references(root: &SyncConversationRoot) -> Vec<Prote
             .cloned()
             .collect::<Vec<_>>();
     for participant in &conversation.participants {
-        if let SnapshotSelection::Inherited(model) | SnapshotSelection::Explicit(model) =
-            &participant.model_selection
-        {
-            references.push(model.snapshot_ref.clone());
-        }
+        references.extend(participant.snapshot_references().into_iter().cloned());
     }
     if let Some(settings) = &conversation.current_settings {
         references.extend(

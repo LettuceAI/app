@@ -566,6 +566,29 @@ impl GroupMemberLaunchSnapshot {
     }
 }
 
+/// Every protected snapshot a group member snapshot references.
+#[must_use]
+pub fn group_member_snapshot_references(
+    member: &GroupMemberLaunchSnapshot,
+) -> Vec<&ProtectedSnapshotRef> {
+    let mut refs = vec![&member.character.snapshot_ref];
+    if let SnapshotSelection::Inherited(books) | SnapshotSelection::Explicit(books) =
+        &member.lorebooks
+    {
+        refs.extend(books.iter().map(|book| &book.snapshot_ref));
+    }
+    if let SnapshotSelection::Inherited(value) | SnapshotSelection::Explicit(value) =
+        &member.model_override
+    {
+        refs.push(&value.snapshot_ref);
+    }
+    if let SnapshotSelection::Inherited(value) | SnapshotSelection::Explicit(value) = &member.prompt
+    {
+        refs.push(&value.snapshot_ref);
+    }
+    refs
+}
+
 impl ValidateSnapshot for GroupMemberLaunchSnapshot {
     fn validate_snapshot(&self, field: &'static str) -> Result<(), ValidationError> {
         self.character.validate_snapshot(field)?;

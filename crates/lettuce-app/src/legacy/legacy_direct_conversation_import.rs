@@ -1250,6 +1250,11 @@ pub(crate) fn session_settings<S: DirectLaunchSources>(
             speaker_selection: input.speaker_selection,
             chat_mode: input.chat_mode,
             disable_character_lorebooks: input.disable_character_lorebooks,
+            roleplay_prompt: None,
+            roleplay_prompt_provenance: Default::default(),
+            members_overridden: false,
+            muted_overridden: false,
+            member_models_overridden: false,
         }),
         drafts,
     ))
@@ -1822,6 +1827,7 @@ pub(crate) fn conversation_record(
                 revision: Revision::INITIAL,
                 created_at,
                 updated_at: created_at,
+                member_snapshot: None,
             })
             .collect(),
         current_settings: source.settings,

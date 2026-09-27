@@ -144,6 +144,7 @@ pub(crate) fn operation_kind(value: &str) -> Result<OperationKind, ConversationR
         "restore" => OperationKind::Restore,
         "rename" => OperationKind::Rename,
         "participant_policy" => OperationKind::ParticipantPolicy,
+        "participant_add" => OperationKind::ParticipantAdd,
         "settings" => OperationKind::Settings,
         "attach_job" => OperationKind::AttachJob,
         "resolve_speaker" => OperationKind::ResolveSpeaker,
@@ -2650,7 +2651,9 @@ fn overview_conversation(
         .optional()
         .map_err(slice::db)?
         .ok_or(ConversationRepositoryError::NotFound)?;
-    let mut statement = transaction.prepare("SELECT id, role, ordinal, source_kind, source_id, enabled, muted, display_name, authored_description, model_selection_json, revision, created_at, updated_at FROM conversation_participants WHERE conversation_id = ?1 ORDER BY ordinal, id").map_err(slice::db)?;
+    let mut statement = transaction
+        .prepare(slice::PARTICIPANTS_SELECT)
+        .map_err(slice::db)?;
     for row in statement
         .query_map([conversation_id.to_string()], slice::read_participant)
         .map_err(slice::db)?
@@ -2659,7 +2662,11 @@ fn overview_conversation(
     }
     drop(statement);
     let settings = transaction
-        .query_row("SELECT revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance, speaker_selection, speaker_selection_provenance, companion_clock_json, model_settings_json, background_asset_id, background_hidden, chat_mode, disable_character_lorebooks FROM conversation_settings WHERE conversation_id = ?1", [conversation_id.to_string()], slice::read_settings)
+        .query_row(
+            slice::SETTINGS_SELECT,
+            [conversation_id.to_string()],
+            slice::read_settings,
+        )
         .optional()
         .map_err(slice::db)?;
     if let Some(settings) = &settings {

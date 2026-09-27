@@ -100,11 +100,16 @@ pub fn resolve_effective_settings(
                     });
                 }
             };
-            let member = details
-                .group
-                .members
-                .iter()
-                .find(|member| member.character.source_id == character_id)
+            let member = participant
+                .member_snapshot
+                .as_deref()
+                .or_else(|| {
+                    details
+                        .group
+                        .members
+                        .iter()
+                        .find(|member| member.character.source_id == character_id)
+                })
                 .ok_or(ValidationError::InvalidReference {
                     field: "effective_settings.selected_speaker",
                 })?;
@@ -151,12 +156,25 @@ pub fn resolve_effective_settings(
                     |settings| settings.voice.clone(),
                     None,
                 ),
-                prompt: current_or_launch(
-                    conversation,
-                    |settings| settings.prompt_provenance,
-                    |settings| settings.prompt.clone(),
-                    launch_prompt,
-                ),
+                prompt: match conversation
+                    .current_settings
+                    .as_ref()
+                    .and_then(|settings| settings.chat_mode)
+                    .unwrap_or(details.group.chat_mode)
+                {
+                    GroupChatModeSnapshot::Conversation => current_or_launch(
+                        conversation,
+                        |settings| settings.prompt_provenance,
+                        |settings| settings.prompt.clone(),
+                        launch_prompt,
+                    ),
+                    GroupChatModeSnapshot::Roleplay => current_or_launch(
+                        conversation,
+                        |settings| settings.roleplay_prompt_provenance,
+                        |settings| settings.roleplay_prompt.clone(),
+                        launch_prompt,
+                    ),
+                },
                 lorebooks: group_lorebooks(
                     conversation,
                     selection_value(&details.group.lorebooks).unwrap_or_default(),
@@ -453,6 +471,7 @@ mod tests {
             revision: Revision::INITIAL,
             created_at: TimestampMillis::UNIX_EPOCH,
             updated_at: TimestampMillis::UNIX_EPOCH,
+            member_snapshot: None,
         }
     }
 
@@ -659,6 +678,11 @@ mod tests {
                 companion_clock: PatchValue::Keep,
                 background: PatchValue::Keep,
                 model_settings: PatchValue::Keep,
+                roleplay_prompt: Default::default(),
+                chat_mode: Default::default(),
+                disable_character_lorebooks: Default::default(),
+                follow_group_members: false,
+                follow_group_member_models: false,
             }
             .apply(None, None)
             .expect("settings override"),

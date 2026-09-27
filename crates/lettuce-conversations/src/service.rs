@@ -589,6 +589,17 @@ impl<R: ConversationRepository> ConversationManager<R> {
             .map_err(Into::into)
     }
 
+    pub fn add_participant(
+        &self,
+        add: crate::PreparedParticipantAdd,
+        now: TimestampMillis,
+    ) -> Result<ParticipantPolicyResult, ConversationServiceError> {
+        add.command().validate()?;
+        self.repository
+            .add_participant(add, now)
+            .map_err(Into::into)
+    }
+
     pub fn update_settings(
         &self,
         update: crate::PreparedConversationSettingsUpdate,

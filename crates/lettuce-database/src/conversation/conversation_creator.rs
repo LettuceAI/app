@@ -130,6 +130,7 @@ fn make_aggregate(
             display_name: participant.display_name.clone(),
             authored_description: participant.authored_description.clone(),
             model_selection: participant.model_selection.clone(),
+            member_snapshot: None,
             revision: Revision::INITIAL,
             created_at: now,
             updated_at: now,

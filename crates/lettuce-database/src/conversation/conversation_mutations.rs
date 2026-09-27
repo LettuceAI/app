@@ -1355,6 +1355,87 @@ fn verify_current_snapshot(
         .map_err(ConversationRepositoryError::ArtifactReference)
 }
 
+fn attach_snapshot_ref(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    artifact_id: lettuce_types::SnapshotArtifactId,
+) -> Result<(), ConversationRepositoryError> {
+    transaction
+        .execute(
+            "INSERT OR IGNORE INTO conversation_snapshot_refs (conversation_id, artifact_id) VALUES (?1, ?2)",
+            params![conversation_id.to_string(), artifact_id.to_string()],
+        )
+        .map_err(slice::db)?;
+    Ok(())
+}
+
+fn write_participant_change(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    change: &lettuce_conversations::ParticipantPolicyChange,
+    now: TimestampMillis,
+) -> Result<(), ConversationRepositoryError> {
+    let model_selection_json = match &change.model_override {
+        Some(selection) => {
+            if let SnapshotSelection::Inherited(model) | SnapshotSelection::Explicit(model) =
+                selection
+            {
+                verify_current_snapshot(transaction, &model.snapshot_ref)?;
+                attach_snapshot_ref(transaction, conversation_id, model.snapshot_ref.artifact_id)?;
+            }
+            Some(slice::encode(selection)?)
+        }
+        None => None,
+    };
+    transaction
+        .execute(
+            "UPDATE conversation_participants SET enabled = COALESCE(?3, enabled), muted = COALESCE(?4, muted), model_selection_json = COALESCE(?5, model_selection_json), revision = revision + 1, updated_at = ?6 WHERE conversation_id = ?1 AND id = ?2",
+            params![
+                conversation_id.to_string(),
+                change.participant_id.to_string(),
+                change.enabled.map(i64::from),
+                change.muted.map(i64::from),
+                model_selection_json,
+                now.get(),
+            ],
+        )
+        .map_err(kernel::map_constraint)?;
+    Ok(())
+}
+
+/// Marks the participant aspects the conversation now owns in its settings,
+/// creating the settings record when there is none. Returns the new settings
+/// revision when a flag changed.
+fn take_participant_overrides(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    conversation: &lettuce_conversations::Conversation,
+    overrides: lettuce_conversations::ParticipantOverrides,
+    now: TimestampMillis,
+) -> Result<Option<Revision>, ConversationRepositoryError> {
+    let current = read_current_settings(transaction, conversation_id)?;
+    let before = current.clone().unwrap_or_else(|| {
+        lettuce_conversations::CurrentConversationSettings::inherited(Revision::INITIAL)
+    });
+    let mut next = before.clone();
+    next.members_overridden |= overrides.members;
+    next.muted_overridden |= overrides.muted;
+    next.member_models_overridden |= overrides.member_models;
+    if next == before {
+        return Ok(None);
+    }
+    if let Some(current) = &current {
+        next.revision = current
+            .revision
+            .next()
+            .map_err(|_| ConversationRepositoryError::Storage)?;
+    }
+    next.validate_against_kind(&conversation.kind)
+        .map_err(ConversationRepositoryError::Invalid)?;
+    write_settings(transaction, conversation_id, &next, current.is_none(), now)?;
+    Ok(Some(next.revision))
+}
+
 fn verify_settings_snapshot(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
@@ -1490,7 +1571,7 @@ fn read_current_settings(
 {
     transaction
         .query_row(
-            "SELECT revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance, speaker_selection, speaker_selection_provenance, companion_clock_json, model_settings_json, background_asset_id, background_hidden, chat_mode, disable_character_lorebooks FROM conversation_settings WHERE conversation_id = ?1",
+            slice::SETTINGS_SELECT,
             [conversation_id.to_string()],
             slice::read_settings,
         )
@@ -1517,10 +1598,15 @@ pub(crate) fn write_settings(
     let lorebooks = settings.lorebooks.as_ref().map(slice::encode).transpose()?;
     let persona = settings.persona.as_ref().map(slice::encode).transpose()?;
     let scene = settings.scene.as_ref().map(slice::encode).transpose()?;
+    let roleplay_prompt = settings
+        .roleplay_prompt
+        .as_ref()
+        .map(slice::encode)
+        .transpose()?;
     if create {
         transaction
             .execute(
-                "INSERT INTO conversation_settings (conversation_id, revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance, speaker_selection, speaker_selection_provenance, created_at, updated_at, companion_clock_json, model_settings_json, background_asset_id, background_hidden, chat_mode, disable_character_lorebooks) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?20, ?21, ?19, ?19, ?22, ?23, ?24, ?25, ?26, ?27)",
+                "INSERT INTO conversation_settings (conversation_id, revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance, speaker_selection, speaker_selection_provenance, created_at, updated_at, companion_clock_json, model_settings_json, background_asset_id, background_hidden, chat_mode, disable_character_lorebooks, roleplay_prompt_json, roleplay_prompt_provenance, members_overridden, muted_overridden, member_models_overridden) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?20, ?21, ?19, ?19, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32)",
                 params![
                     conversation_id.to_string(),
                     revision,
@@ -1549,6 +1635,11 @@ pub(crate) fn write_settings(
                     crate::conversation::conversation_vertical_slice::background_hidden(settings.background),
                     settings.chat_mode.map(slice::chat_mode_name),
                     settings.disable_character_lorebooks,
+                    roleplay_prompt,
+                    slice::provenance_name(settings.roleplay_prompt_provenance),
+                    settings.members_overridden,
+                    settings.muted_overridden,
+                    settings.member_models_overridden,
                 ],
             )
             .map_err(kernel::map_constraint)?;
@@ -1556,7 +1647,7 @@ pub(crate) fn write_settings(
     }
     let changed = transaction
         .execute(
-            "UPDATE conversation_settings SET revision = ?2, author_note = ?3, author_note_provenance = ?4, memory_json = ?5, memory_provenance = ?6, model_override_json = ?7, model_provenance = ?8, voice_json = ?9, voice_provenance = ?10, prompt_json = ?11, prompt_provenance = ?12, lorebooks_json = ?13, lorebooks_provenance = ?14, persona_json = ?15, persona_provenance = ?16, scene_json = ?17, scene_provenance = ?18, updated_at = ?19, speaker_selection = ?21, speaker_selection_provenance = ?22, companion_clock_json = ?23, model_settings_json = ?24, background_asset_id = ?25, background_hidden = ?26, chat_mode = ?27, disable_character_lorebooks = ?28 WHERE conversation_id = ?1 AND revision = ?20",
+            "UPDATE conversation_settings SET revision = ?2, author_note = ?3, author_note_provenance = ?4, memory_json = ?5, memory_provenance = ?6, model_override_json = ?7, model_provenance = ?8, voice_json = ?9, voice_provenance = ?10, prompt_json = ?11, prompt_provenance = ?12, lorebooks_json = ?13, lorebooks_provenance = ?14, persona_json = ?15, persona_provenance = ?16, scene_json = ?17, scene_provenance = ?18, updated_at = ?19, speaker_selection = ?21, speaker_selection_provenance = ?22, companion_clock_json = ?23, model_settings_json = ?24, background_asset_id = ?25, background_hidden = ?26, chat_mode = ?27, disable_character_lorebooks = ?28, roleplay_prompt_json = ?29, roleplay_prompt_provenance = ?30, members_overridden = ?31, muted_overridden = ?32, member_models_overridden = ?33 WHERE conversation_id = ?1 AND revision = ?20",
             params![
                 conversation_id.to_string(),
                 revision,
@@ -1586,6 +1677,11 @@ pub(crate) fn write_settings(
                     crate::conversation::conversation_vertical_slice::background_hidden(settings.background),
                 settings.chat_mode.map(slice::chat_mode_name),
                 settings.disable_character_lorebooks,
+                roleplay_prompt,
+                slice::provenance_name(settings.roleplay_prompt_provenance),
+                settings.members_overridden,
+                settings.muted_overridden,
+                settings.member_models_overridden,
             ],
         )
         .map_err(kernel::map_constraint)?;
@@ -4727,53 +4823,51 @@ impl ConversationRepository for Database {
                 command
                     .validate_against_participants(&current.participants)
                     .map_err(ConversationRepositoryError::Invalid)?;
-                let model_selection_json = match &command.model_override {
-                    Some(selection) => {
-                        if let SnapshotSelection::Inherited(model)
-                        | SnapshotSelection::Explicit(model) = selection
-                        {
-                            verify_current_snapshot(transaction, &model.snapshot_ref)?;
-                            transaction
-                                .execute(
-                                    "INSERT OR IGNORE INTO conversation_snapshot_refs (conversation_id, artifact_id) VALUES (?1, ?2)",
-                                    params![
-                                        context.conversation_id.to_string(),
-                                        model.snapshot_ref.artifact_id.to_string()
-                                    ],
-                                )
-                                .map_err(slice::db)?;
-                        }
-                        Some(slice::encode(selection)?)
-                    }
-                    None => None,
-                };
-                transaction
-                    .execute(
-                        "UPDATE conversation_participants SET enabled = COALESCE(?3, enabled), muted = COALESCE(?4, muted), model_selection_json = COALESCE(?5, model_selection_json), revision = revision + 1, updated_at = ?6 WHERE conversation_id = ?1 AND id = ?2",
-                        params![
-                            context.conversation_id.to_string(),
-                            command.participant_id.to_string(),
-                            command.enabled.map(i64::from),
-                            command.muted.map(i64::from),
-                            model_selection_json,
-                            context.now.get(),
-                        ],
-                    )
-                    .map_err(kernel::map_constraint)?;
+                let changes = command.changes();
+                for change in &changes {
+                    write_participant_change(
+                        transaction,
+                        context.conversation_id,
+                        change,
+                        context.now,
+                    )?;
+                }
+                let settings_revision = take_participant_overrides(
+                    transaction,
+                    context.conversation_id,
+                    &current,
+                    command.overrides,
+                    context.now,
+                )?;
                 let revision =
                     kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
-                Ok(kernel::Staged {
-                    value: conversation_value(transaction, context.conversation_id)?,
-                    result: OperationResultRef::Conversation(context.conversation_id),
-                    events: vec![kernel::StagedEvent {
+                let mut events = changes
+                    .iter()
+                    .map(|change| kernel::StagedEvent {
                         conversation_revision: revision,
                         at: context.now,
                         event: ConversationOutboxEvent::ParticipantPolicyChanged {
                             conversation_id: context.conversation_id,
-                            participant_id: command.participant_id,
+                            participant_id: change.participant_id,
                             at: context.now,
                         },
-                    }],
+                    })
+                    .collect::<Vec<_>>();
+                if let Some(settings_revision) = settings_revision {
+                    events.push(kernel::StagedEvent {
+                        conversation_revision: revision,
+                        at: context.now,
+                        event: ConversationOutboxEvent::SettingsChanged {
+                            conversation_id: context.conversation_id,
+                            settings_revision,
+                            at: context.now,
+                        },
+                    });
+                }
+                Ok(kernel::Staged {
+                    value: conversation_value(transaction, context.conversation_id)?,
+                    result: OperationResultRef::Conversation(context.conversation_id),
+                    events,
                 })
             },
             |transaction, operation| {
@@ -4790,6 +4884,164 @@ impl ConversationRepository for Database {
                     return Err(ConversationRepositoryError::Conflict);
                 }
                 conversation_value(transaction, command.conversation_id)
+            },
+        )
+    }
+
+    /// A character already in the conversation keeps its row and is enabled
+    /// again; a new one gets the next ordinal, its member snapshot and no
+    /// model of its own.
+    fn add_participant(
+        &self,
+        add: lettuce_conversations::PreparedParticipantAdd,
+        now: TimestampMillis,
+    ) -> Result<ParticipantPolicyResult, ConversationRepositoryError> {
+        add.command()
+            .validate()
+            .map_err(ConversationRepositoryError::Invalid)?;
+        let conversation_id = add.command().conversation_id;
+        let participant_id = add.command().participant_id;
+        let operation = add.command().operation.clone();
+        kernel::run_mutation(
+            self,
+            conversation_id,
+            OperationKind::ParticipantAdd,
+            &operation,
+            now,
+            move |transaction, context| {
+                let (command, drafts) = add.into_parts();
+                let conversation = kernel::cas_conversation(
+                    transaction,
+                    context.conversation_id,
+                    command.expected_revision,
+                )?;
+                kernel::require_writable(&conversation)?;
+                let current = conversation_value(transaction, context.conversation_id)?;
+                if !current.kind.is_group() {
+                    return Err(ConversationRepositoryError::Invalid(
+                        lettuce_conversations::ValidationError::InvalidReference {
+                            field: "participant_add.conversation",
+                        },
+                    ));
+                }
+                let existing = current.participants.iter().find(|participant| {
+                    participant.source
+                        == lettuce_conversations::ParticipantSource::Character(command.character_id)
+                });
+                match (existing, &command.member) {
+                    (Some(participant), None) if participant.id == command.participant_id => {
+                        transaction
+                            .execute(
+                                "UPDATE conversation_participants SET enabled = 1, revision = revision + 1, updated_at = ?3 WHERE conversation_id = ?1 AND id = ?2",
+                                params![
+                                    context.conversation_id.to_string(),
+                                    participant.id.to_string(),
+                                    context.now.get(),
+                                ],
+                            )
+                            .map_err(kernel::map_constraint)?;
+                    }
+                    (None, Some(member)) => {
+                        for draft in drafts {
+                            let reference =
+                                conversation_artifact_adapter::stage_snapshot_in_transaction(
+                                    transaction,
+                                    draft,
+                                    context.now,
+                                )
+                                .map_err(ConversationRepositoryError::ArtifactReference)?;
+                            attach_snapshot_ref(
+                                transaction,
+                                context.conversation_id,
+                                reference.artifact_id,
+                            )?;
+                        }
+                        for reference in
+                            lettuce_conversations::group_member_snapshot_references(member)
+                        {
+                            verify_current_snapshot(transaction, reference)?;
+                            attach_snapshot_ref(
+                                transaction,
+                                context.conversation_id,
+                                reference.artifact_id,
+                            )?;
+                        }
+                        let ordinal = i64::try_from(current.participants.len())
+                            .map_err(|_| ConversationRepositoryError::Storage)?;
+                        transaction
+                            .execute(
+                                "INSERT INTO conversation_participants (conversation_id, id, role, ordinal, source_kind, source_id, enabled, muted, display_name, authored_description, model_selection_json, member_snapshot_json, revision, created_at, updated_at) VALUES (?1, ?2, 'character', ?3, 'character', ?4, 1, ?5, ?6, NULL, ?7, ?8, 1, ?9, ?9)",
+                                params![
+                                    context.conversation_id.to_string(),
+                                    command.participant_id.to_string(),
+                                    ordinal,
+                                    command.character_id.to_string(),
+                                    i64::from(command.muted),
+                                    command.display_name,
+                                    slice::encode(&SnapshotSelection::<
+                                        lettuce_conversations::ModelSelectionSnapshot,
+                                    >::Disabled)?,
+                                    slice::encode(member)?,
+                                    context.now.get(),
+                                ],
+                            )
+                            .map_err(kernel::map_constraint)?;
+                    }
+                    _ => return Err(ConversationRepositoryError::Conflict),
+                }
+                let settings_revision = take_participant_overrides(
+                    transaction,
+                    context.conversation_id,
+                    &current,
+                    lettuce_conversations::ParticipantOverrides {
+                        members: command.override_members,
+                        muted: false,
+                        member_models: false,
+                    },
+                    context.now,
+                )?;
+                let revision =
+                    kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
+                let mut events = vec![kernel::StagedEvent {
+                    conversation_revision: revision,
+                    at: context.now,
+                    event: ConversationOutboxEvent::ParticipantPolicyChanged {
+                        conversation_id: context.conversation_id,
+                        participant_id: command.participant_id,
+                        at: context.now,
+                    },
+                }];
+                if let Some(settings_revision) = settings_revision {
+                    events.push(kernel::StagedEvent {
+                        conversation_revision: revision,
+                        at: context.now,
+                        event: ConversationOutboxEvent::SettingsChanged {
+                            conversation_id: context.conversation_id,
+                            settings_revision,
+                            at: context.now,
+                        },
+                    });
+                }
+                Ok(kernel::Staged {
+                    value: conversation_value(transaction, context.conversation_id)?,
+                    result: OperationResultRef::Conversation(context.conversation_id),
+                    events,
+                })
+            },
+            move |transaction, operation| {
+                let added = recorded_events(transaction, conversation_id, operation)?
+                    .into_iter()
+                    .any(|event| {
+                        matches!(
+                            event,
+                            ConversationOutboxEvent::ParticipantPolicyChanged { participant_id: id, .. }
+                                if id == participant_id
+                        )
+                    });
+                if !added {
+                    return Err(ConversationRepositoryError::Conflict);
+                }
+                conversation_value(transaction, conversation_id)
             },
         )
     }
@@ -8264,6 +8516,11 @@ mod tests {
                             companion_clock: PatchValue::Keep,
                             background: PatchValue::Keep,
                             model_settings: PatchValue::Keep,
+                            roleplay_prompt: Default::default(),
+                            chat_mode: Default::default(),
+                            disable_character_lorebooks: Default::default(),
+                            follow_group_members: false,
+                            follow_group_member_models: false,
                         },
                     },
                     Vec::new(),
@@ -12566,6 +12823,8 @@ mod tests {
                     enabled: None,
                     muted: Some(true),
                     model_override: None,
+                    materialize: Vec::new(),
+                    overrides: Default::default(),
                 },
                 TimestampMillis::new(20),
             )
@@ -12598,6 +12857,8 @@ mod tests {
                     enabled: Some(false),
                     muted: None,
                     model_override: Some(SnapshotSelection::Explicit(model.clone())),
+                    materialize: Vec::new(),
+                    overrides: Default::default(),
                 },
                 TimestampMillis::new(21),
             )
@@ -12639,6 +12900,8 @@ mod tests {
                     enabled: None,
                     muted: Some(false),
                     model_override: Some(SnapshotSelection::Explicit(model_snapshot())),
+                    materialize: Vec::new(),
+                    overrides: Default::default(),
                 },
                 TimestampMillis::new(22),
             ),
@@ -12654,6 +12917,8 @@ mod tests {
                     enabled: Some(false),
                     muted: None,
                     model_override: None,
+                    materialize: Vec::new(),
+                    overrides: Default::default(),
                 },
                 TimestampMillis::new(23),
             ),
@@ -12678,6 +12943,11 @@ mod tests {
                 companion_clock: PatchValue::Keep,
                 background: PatchValue::Keep,
                 model_settings: PatchValue::Keep,
+                roleplay_prompt: Default::default(),
+                chat_mode: Default::default(),
+                disable_character_lorebooks: Default::default(),
+                follow_group_members: false,
+                follow_group_member_models: false,
             }
         };
         let prepared = |command: UpdateConversationSettings| {
@@ -13193,6 +13463,11 @@ mod tests {
                 persona: PatchValue::Keep,
                 scene: PatchValue::Keep,
                 speaker_selection: PatchValue::Keep,
+                roleplay_prompt: Default::default(),
+                chat_mode: Default::default(),
+                disable_character_lorebooks: Default::default(),
+                follow_group_members: false,
+                follow_group_member_models: false,
             }
         };
         let create = fixture
@@ -13331,6 +13606,11 @@ mod tests {
                     persona: PatchValue::Keep,
                     scene,
                     speaker_selection: PatchValue::Keep,
+                    roleplay_prompt: Default::default(),
+                    chat_mode: Default::default(),
+                    disable_character_lorebooks: Default::default(),
+                    follow_group_members: false,
+                    follow_group_member_models: false,
                 }
             };
         fixture
@@ -13364,7 +13644,10 @@ mod tests {
                     conversation_id: fixture.conversation_id,
                     expected_settings_revision: Some(Revision::INITIAL),
                     operation: token("group-settings-scene", "56"),
-                    patch: patch(PatchValue::Keep, PatchValue::Set(scene)),
+                    patch: CurrentConversationSettingsPatch {
+                        chat_mode: PatchValue::Set(GroupChatModeSnapshot::Conversation),
+                        ..patch(PatchValue::Keep, PatchValue::Set(scene))
+                    },
                 },
                 vec![scene_draft],
             )
@@ -14114,5 +14397,273 @@ mod tests {
             &asset.to_string(),
         );
         assert_eq!(media_changes, 0);
+    }
+
+    fn added_member(
+        character: CharacterId,
+        payload: &[u8],
+    ) -> (GroupMemberLaunchSnapshot, SnapshotArtifactDraft) {
+        let (reference, draft) = artifact(SnapshotSource::Character(character), payload);
+        (
+            GroupMemberLaunchSnapshot {
+                character: CharacterLaunchSnapshot {
+                    snapshot_ref: reference,
+                    source_id: character,
+                    source_revision: Revision::INITIAL,
+                    name: "Third".into(),
+                    nickname: None,
+                },
+                ordinal: 2,
+                enabled: true,
+                muted: false,
+                model_override: SnapshotSelection::Disabled,
+                lorebooks: SnapshotSelection::Disabled,
+                prompt: SnapshotSelection::Disabled,
+            },
+            draft,
+        )
+    }
+
+    fn add_command(
+        fixture: &Fixture,
+        expected_revision: Revision,
+        key: &str,
+        digest: &str,
+        participant_id: ConversationParticipantId,
+        character: CharacterId,
+        member: Option<GroupMemberLaunchSnapshot>,
+        override_members: bool,
+    ) -> lettuce_conversations::AddConversationParticipant {
+        lettuce_conversations::AddConversationParticipant {
+            conversation_id: fixture.conversation_id,
+            expected_revision,
+            operation: token(key, digest),
+            participant_id,
+            character_id: character,
+            display_name: "Third".into(),
+            muted: false,
+            member,
+            override_members,
+        }
+    }
+
+    #[test]
+    fn a_member_added_after_launch_gets_its_own_row_and_snapshot() {
+        let fixture = group_fixture();
+        let character = CharacterId::new();
+        let participant_id = ConversationParticipantId::new();
+        let (member, draft) = added_member(character, b"third");
+        let added = fixture
+            .database
+            .add_participant(
+                lettuce_conversations::PreparedParticipantAdd::new(
+                    add_command(
+                        &fixture,
+                        fixture.revision,
+                        "add-third",
+                        "a1",
+                        participant_id,
+                        character,
+                        Some(member.clone()),
+                        false,
+                    ),
+                    vec![draft],
+                )
+                .expect("prepared add"),
+                TimestampMillis::new(30),
+            )
+            .expect("add");
+        let row = added
+            .value
+            .participants
+            .iter()
+            .find(|participant| participant.id == participant_id)
+            .expect("added row");
+        assert_eq!(row.ordinal, 3);
+        assert!(row.enabled);
+        assert_eq!(row.member_snapshot.as_deref(), Some(&member));
+        assert_eq!(row.model_selection, SnapshotSelection::Disabled);
+        assert!(
+            added.value.current_settings.is_none(),
+            "a member the group gained is added without owning the member list"
+        );
+        let aggregate = ConversationReader::get(&*fixture.database, fixture.conversation_id)
+            .expect("aggregate");
+        aggregate.validate().expect("valid aggregate");
+        assert!(
+            lettuce_conversations::resolve_effective_settings(
+                &aggregate.conversation,
+                Some(participant_id)
+            )
+            .is_ok(),
+            "an added member can speak"
+        );
+
+        let (member, draft) = added_member(character, b"third");
+        let replay = fixture
+            .database
+            .add_participant(
+                lettuce_conversations::PreparedParticipantAdd::new(
+                    add_command(
+                        &fixture,
+                        fixture.revision,
+                        "add-third",
+                        "a1",
+                        participant_id,
+                        character,
+                        Some(member),
+                        false,
+                    ),
+                    vec![draft],
+                )
+                .expect("prepared replay"),
+                TimestampMillis::new(31),
+            )
+            .expect("replay");
+        assert_eq!(replay.operation, added.operation);
+        assert_eq!(
+            replay
+                .value
+                .participants
+                .iter()
+                .filter(|participant| participant.id == participant_id)
+                .count(),
+            1
+        );
+        let (member, draft) = added_member(character, b"third");
+        let conflict = fixture.database.add_participant(
+            lettuce_conversations::PreparedParticipantAdd::new(
+                add_command(
+                    &fixture,
+                    added.value.revision,
+                    "add-third",
+                    "b2",
+                    participant_id,
+                    character,
+                    Some(member),
+                    false,
+                ),
+                vec![draft],
+            )
+            .expect("prepared conflict"),
+            TimestampMillis::new(32),
+        );
+        assert_eq!(conflict.err(), Some(ConversationRepositoryError::Conflict));
+
+        let (member, draft) = added_member(character, b"third again");
+        let duplicate = fixture.database.add_participant(
+            lettuce_conversations::PreparedParticipantAdd::new(
+                add_command(
+                    &fixture,
+                    added.value.revision,
+                    "add-third-again",
+                    "c3",
+                    ConversationParticipantId::new(),
+                    character,
+                    Some(member),
+                    false,
+                ),
+                vec![draft],
+            )
+            .expect("prepared duplicate"),
+            TimestampMillis::new(33),
+        );
+        assert_eq!(duplicate.err(), Some(ConversationRepositoryError::Conflict));
+    }
+
+    #[test]
+    fn re_adding_a_removed_member_enables_its_row_and_owns_the_member_list() {
+        let fixture = group_fixture();
+        let removed = fixture.characters[1];
+        let disabled = fixture
+            .database
+            .update_participant_policy(
+                &UpdateParticipantPolicy {
+                    conversation_id: fixture.conversation_id,
+                    participant_id: removed,
+                    expected_revision: fixture.revision,
+                    operation: token("remove-second", "d4"),
+                    enabled: Some(false),
+                    muted: None,
+                    model_override: None,
+                    materialize: vec![lettuce_conversations::ParticipantPolicyChange {
+                        participant_id: fixture.characters[0],
+                        enabled: Some(true),
+                        muted: None,
+                        model_override: None,
+                    }],
+                    overrides: lettuce_conversations::ParticipantOverrides {
+                        members: true,
+                        muted: false,
+                        member_models: false,
+                    },
+                },
+                TimestampMillis::new(40),
+            )
+            .expect("remove");
+        let settings = disabled.value.current_settings.clone().expect("settings");
+        assert!(settings.members_overridden);
+        assert!(!settings.muted_overridden);
+        assert_eq!(settings.revision, Revision::INITIAL);
+        let settings_events = disabled
+            .outbox
+            .iter()
+            .filter(|record| {
+                matches!(
+                    record.event,
+                    ConversationOutboxEvent::SettingsChanged { .. }
+                )
+            })
+            .count();
+        assert_eq!(settings_events, 1);
+        let character = match disabled
+            .value
+            .participants
+            .iter()
+            .find(|participant| participant.id == removed)
+            .expect("removed")
+            .source
+        {
+            ParticipantSource::Character(id) => id,
+            _ => unreachable!(),
+        };
+        let readded = fixture
+            .database
+            .add_participant(
+                lettuce_conversations::PreparedParticipantAdd::new(
+                    add_command(
+                        &fixture,
+                        disabled.value.revision,
+                        "readd-second",
+                        "e5",
+                        removed,
+                        character,
+                        None,
+                        true,
+                    ),
+                    Vec::new(),
+                )
+                .expect("prepared re-add"),
+                TimestampMillis::new(41),
+            )
+            .expect("re-add");
+        let row = readded
+            .value
+            .participants
+            .iter()
+            .find(|participant| participant.id == removed)
+            .expect("row kept");
+        assert!(row.enabled);
+        assert_eq!(row.ordinal, 2, "the kept row keeps its place");
+        assert_eq!(readded.value.participants.len(), 3);
+        assert_eq!(
+            readded
+                .value
+                .current_settings
+                .as_ref()
+                .map(|settings| settings.revision),
+            Some(Revision::INITIAL),
+            "the member list was already the conversation's own"
+        );
     }
 }

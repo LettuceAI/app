@@ -416,10 +416,8 @@ pub(crate) fn insert_snapshot_refs(
         references.insert(reference.artifact_id, reference);
     }
     for participant in &conversation.participants {
-        if let SnapshotSelection::Inherited(model) | SnapshotSelection::Explicit(model) =
-            &participant.model_selection
-        {
-            references.insert(model.snapshot_ref.artifact_id, &model.snapshot_ref);
+        for reference in participant.snapshot_references() {
+            references.insert(reference.artifact_id, reference);
         }
     }
     if let ConversationKind::Group(details) = &conversation.kind {
