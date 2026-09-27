@@ -65,11 +65,25 @@ impl RecordingStream {
 }
 
 #[derive(Default)]
-pub(super) struct RecordingEvents(Mutex<Vec<ApiEvent>>);
+pub(super) struct RecordingEvents(Mutex<Vec<ApiEvent>>, tokio::sync::Notify);
 
 impl ApiEventSink for RecordingEvents {
     fn emit(&self, event: ApiEvent) {
         self.0.lock().expect("api events").push(event);
+        self.1.notify_one();
+    }
+}
+
+impl RecordingEvents {
+    /// Waits until the recorded events satisfy `done`.
+    pub(super) async fn until(&self, done: impl Fn(&[ApiEvent]) -> bool) {
+        loop {
+            let notified = self.1.notified();
+            if done(&self.0.lock().expect("api events")) {
+                return;
+            }
+            notified.await;
+        }
     }
 }
 

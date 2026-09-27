@@ -5770,6 +5770,7 @@ mod tests {
                 "conversation_branches",
                 "conversation_changes",
                 "conversation_initial_message_origins",
+                "conversation_launch_intents",
                 "conversation_memory_spaces",
                 "conversation_message_candidates",
                 "conversation_message_revisions",

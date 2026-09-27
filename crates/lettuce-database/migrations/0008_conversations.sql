@@ -27,6 +27,13 @@ CREATE INDEX conversations_group_source_idx
     ON conversations(json_extract(kind_json, '$.value.details.group.source_id'), updated_at DESC, id)
     WHERE kind = 'group';
 
+-- The digest of the launch request a conversation was created with, so a
+-- later launch under the same key can be compared without re-preparing it.
+CREATE TABLE conversation_launch_intents (
+    conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE RESTRICT,
+    intent_digest TEXT NOT NULL CHECK (length(intent_digest) = 64)
+) STRICT;
+
 -- The conversation change feed: one row per conversation that changed, moved
 -- to a new position on every write. Every mutation bumps the conversation
 -- row, so the row triggers cover messages, settings, archive and rename; a

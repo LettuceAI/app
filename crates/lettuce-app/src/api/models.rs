@@ -359,14 +359,16 @@ pub(crate) fn required_models(
     conversation: &Conversation,
 ) -> Result<Vec<RequiredModel>, ApiError> {
     let companion =
-        crate::companion::companion_clock::companion_clock_context(database, conversation)
-            .map_err(|_| {
-                api_error(
+        match crate::companion::companion_clock::companion_clock_context(database, conversation) {
+            Ok(clock) => clock.companion,
+            Err(crate::companion::companion_clock::CompanionClockError::MissingCharacter) => false,
+            Err(_) => {
+                return Err(api_error(
                     ApiErrorCode::Internal,
                     "the companion state could not be read",
-                )
-            })?
-            .companion;
+                ));
+            }
+        };
     let mut needed = Vec::new();
     if companion {
         needed.push(RequiredModel::Emotion);

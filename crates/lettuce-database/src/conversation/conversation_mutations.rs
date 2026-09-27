@@ -8715,6 +8715,127 @@ mod tests {
     }
 
     #[test]
+    fn equal_update_times_keep_one_latest_row_with_the_lowest_id() {
+        let database = std::rc::Rc::new(Database::open_in_memory().expect("database"));
+        let character = CharacterId::new();
+        let chats = (0..3)
+            .map(|_| direct_fixture_for(database.clone(), character))
+            .collect::<Vec<_>>();
+        for chat in &chats {
+            set_updated_at(&database, chat.conversation_id, 500);
+        }
+        let lowest = chats
+            .iter()
+            .map(|chat| chat.conversation_id)
+            .min_by_key(ToString::to_string)
+            .expect("a chat");
+        let latest = lettuce_conversations::ConversationOverviewReader::latest_per_character(
+            database.as_ref(),
+            &PageRequest::default(),
+        )
+        .expect("latest");
+        assert_eq!(listed_ids(&latest), vec![lowest]);
+        assert_eq!(latest.next_cursor, None);
+    }
+
+    #[test]
+    fn a_cursor_only_continues_the_list_it_came_from() {
+        use lettuce_conversations::ConversationOverviewReader;
+        let database = std::rc::Rc::new(Database::open_in_memory().expect("database"));
+        let character = CharacterId::new();
+        let group = GroupId::new();
+        for _ in 0..2 {
+            direct_fixture_for(database.clone(), character);
+            group_fixture_for(database.clone(), group);
+        }
+        let one = |cursor: Option<String>| PageRequest {
+            cursor,
+            limit: PageLimit::new(1),
+        };
+        let queries = [
+            ConversationQuery::default(),
+            ConversationQuery {
+                lifecycle: Some(ConversationLifecycle::Archived),
+                ..ConversationQuery::default()
+            },
+            ConversationQuery {
+                kind: Some(lettuce_conversations::ConversationKindTag::Direct),
+                ..ConversationQuery::default()
+            },
+            ConversationQuery {
+                character_id: Some(character),
+                ..ConversationQuery::default()
+            },
+            ConversationQuery {
+                source_group_id: Some(group),
+                ..ConversationQuery::default()
+            },
+        ];
+        let latest_cursor = database
+            .latest_per_character(&one(None))
+            .expect("latest")
+            .next_cursor;
+        assert!(latest_cursor.is_none(), "one character has one latest chat");
+        let group_cursor = database
+            .overview_page(&ConversationQuery {
+                page: one(None),
+                ..queries[4].clone()
+            })
+            .expect("group page")
+            .next_cursor
+            .expect("a group cursor");
+        for (index, query) in queries.iter().enumerate() {
+            let result = database.overview_page(&ConversationQuery {
+                page: one(Some(group_cursor.clone())),
+                ..query.clone()
+            });
+            if index == 4 {
+                assert!(result.is_ok(), "the cursor continues its own list");
+            } else {
+                assert!(
+                    matches!(result, Err(ConversationRepositoryError::Invalid(_))),
+                    "query {index} accepted a cursor of another list"
+                );
+            }
+        }
+        assert!(matches!(
+            database.latest_per_character(&one(Some(group_cursor.clone()))),
+            Err(ConversationRepositoryError::Invalid(_))
+        ));
+        assert!(matches!(
+            database.latest_per_group(&one(Some(group_cursor))),
+            Err(ConversationRepositoryError::Invalid(_))
+        ));
+    }
+
+    #[test]
+    fn a_send_replayed_after_a_new_archive_returns_its_result_and_keeps_the_archive() {
+        let mut fixture = direct_fixture();
+        archive_fixture(&mut fixture, "replay-archive-one", 10);
+        let command = send_command(&fixture, "replay-restoring-send", "cd", text("hello"));
+        let sent = fixture
+            .database
+            .begin_send(&command, TimestampMillis::new(20))
+            .expect("send restores");
+        assert_eq!(lifecycle_of(&fixture), ConversationLifecycle::Active);
+        fixture.revision = conversation_revision(&fixture);
+        settle_succeeded(&fixture, &sent.value.turn, 30);
+        fixture.revision = conversation_revision(&fixture);
+        archive_fixture(&mut fixture, "replay-archive-two", 40);
+        let archived_revision = fixture.revision;
+
+        let replay = fixture
+            .database
+            .begin_send(&command, TimestampMillis::new(50))
+            .expect("the send replays");
+        assert_eq!(replay.operation, sent.operation);
+        assert_eq!(replay.outbox, sent.outbox);
+        assert_eq!(replay.value.turn.id, sent.value.turn.id);
+        assert_eq!(lifecycle_of(&fixture), ConversationLifecycle::Archived);
+        assert_eq!(conversation_revision(&fixture), archived_revision);
+    }
+
+    #[test]
     fn a_purge_leaves_a_removed_change() {
         use lettuce_conversations::ConversationChangeFeed;
         let fixture = direct_fixture();

@@ -1,9 +1,16 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
 
 use lettuce_characters::StarterRole;
 use lettuce_contracts::{self as dto, ApiErrorCode, ApiErrorDetails, ApiEvent};
 use lettuce_conversations::{
-    ArchiveConversation, ConversationReader, ConversationRepository, OperationToken,
+    ArchiveConversation, ConversationChangeFeed, ConversationReader, ConversationRepository,
+    OperationToken,
 };
 use lettuce_types::{CharacterId, ContentHash, ConversationId, TimestampMillis};
 
@@ -425,58 +432,66 @@ async fn a_direct_launch_takes_a_title_scene_and_starter_of_its_character_only()
     assert_eq!(view.title, "Ada");
 }
 
-fn conversation_events(harness: &Harness) -> Vec<ApiEvent> {
-    api_events(harness)
-        .into_iter()
+fn conversation_events(events: &[ApiEvent]) -> Vec<ApiEvent> {
+    events
+        .iter()
         .filter(|event| {
             matches!(
                 event,
                 ApiEvent::ConversationChanged { .. } | ApiEvent::ConversationRemoved { .. }
             )
         })
+        .cloned()
         .collect()
 }
 
-async fn until_events(harness: &Harness, count: usize) {
-    for _ in 0..500 {
-        if conversation_events(harness).len() >= count {
-            return;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    panic!("fewer than {count} conversation events");
+fn run_feed(
+    context: &super::ApiContext,
+    feed: ConversationFeed,
+) -> (
+    tokio::sync::oneshot::Sender<()>,
+    tokio::task::JoinHandle<()>,
+) {
+    let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+    let context = context.clone();
+    let running = tokio::spawn(async move {
+        feed.run(context, async move {
+            let _ = stopped.await;
+        })
+        .await;
+    });
+    (stop, running)
 }
 
-#[tokio::test(flavor = "multi_thread")]
+/// Lets an hour of paused time pass, far past any coalescing or retry delay.
+async fn idle_for_an_hour() {
+    tokio::time::sleep(Duration::from_secs(60 * 60)).await;
+}
+
+#[tokio::test(start_paused = true)]
 async fn conversation_changes_are_published_once_per_commit_and_never_while_idle() {
     let harness = harness(Reply::Text("Hello."));
     let context = harness.context.clone();
     let feed = ConversationFeed::start(&context).await.expect("feed");
     let reads = feed.reads();
-    let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
-    let running = tokio::spawn({
-        let context = context.clone();
-        async move {
-            feed.run(context, async move {
-                let _ = stopped.await;
-            })
-            .await;
-        }
-    });
-    tokio::time::sleep(Duration::from_millis(600)).await;
-    assert!(conversation_events(&harness).is_empty());
-    assert_eq!(reads.load(std::sync::atomic::Ordering::SeqCst), 0);
+    let (stop, running) = run_feed(&context, feed);
+    idle_for_an_hour().await;
+    assert!(conversation_events(&api_events(&harness)).is_empty());
+    assert_eq!(reads.load(Ordering::SeqCst), 0);
 
     let conversation_id = launch(&harness, "feed-launch").await;
-    until_events(&harness, 1).await;
-    tokio::time::sleep(Duration::from_millis(400)).await;
+    harness
+        .events
+        .until(|events| !conversation_events(events).is_empty())
+        .await;
+    idle_for_an_hour().await;
     assert_eq!(
-        conversation_events(&harness),
+        conversation_events(&api_events(&harness)),
         vec![ApiEvent::ConversationChanged {
             conversation_id: conversation_id.clone()
         }]
     );
-    let after_launch = reads.load(std::sync::atomic::Ordering::SeqCst);
+    assert_eq!(reads.load(Ordering::SeqCst), 1);
 
     let refused = conversation_launch_direct(
         &context,
@@ -491,12 +506,9 @@ async fn conversation_changes_are_published_once_per_commit_and_never_while_idle
     .await
     .expect_err("an unknown character writes nothing");
     assert_eq!(refused.code, ApiErrorCode::NotFound);
-    tokio::time::sleep(Duration::from_millis(600)).await;
-    assert_eq!(conversation_events(&harness).len(), 1);
-    assert_eq!(
-        reads.load(std::sync::atomic::Ordering::SeqCst),
-        after_launch
-    );
+    idle_for_an_hour().await;
+    assert_eq!(conversation_events(&api_events(&harness)).len(), 1);
+    assert_eq!(reads.load(Ordering::SeqCst), 1);
 
     let id: ConversationId = conversation_id.parse().expect("id");
     context
@@ -504,11 +516,229 @@ async fn conversation_changes_are_published_once_per_commit_and_never_while_idle
         .database()
         .purge_conversation(id, TimestampMillis::new(10_000))
         .expect("purge");
-    until_events(&harness, 2).await;
+    harness
+        .events
+        .until(|events| conversation_events(events).len() == 2)
+        .await;
     assert_eq!(
-        conversation_events(&harness)[1],
+        conversation_events(&api_events(&harness))[1],
         ApiEvent::ConversationRemoved { conversation_id }
     );
     stop.send(()).expect("stop");
     running.await.expect("feed task");
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_failed_change_read_is_retried_without_another_signal() {
+    let harness = harness(Reply::Text("Hello."));
+    let context = harness.context.clone();
+    let failures = Arc::new(AtomicUsize::new(1));
+    let remaining = Arc::clone(&failures);
+    let feed = ConversationFeed::start_reading(
+        &context,
+        Arc::new(move |context: &super::ApiContext, after, limit| {
+            if remaining
+                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |left| {
+                    left.checked_sub(1)
+                })
+                .is_ok()
+            {
+                return Err(dto::ApiError {
+                    code: ApiErrorCode::Internal,
+                    message: "injected read failure".into(),
+                    details: None,
+                });
+            }
+            context
+                .backend()
+                .database()
+                .conversation_changes_since(after, limit)
+                .map_err(|_| dto::ApiError {
+                    code: ApiErrorCode::Internal,
+                    message: "change read failed".into(),
+                    details: None,
+                })
+        }),
+    )
+    .await
+    .expect("feed");
+    let reads = feed.reads();
+    let (stop, running) = run_feed(&context, feed);
+
+    let conversation_id = launch(&harness, "retry-launch").await;
+    harness
+        .events
+        .until(|events| !conversation_events(events).is_empty())
+        .await;
+    assert_eq!(failures.load(Ordering::SeqCst), 0);
+    assert_eq!(reads.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        conversation_events(&api_events(&harness)),
+        vec![ApiEvent::ConversationChanged { conversation_id }]
+    );
+    idle_for_an_hour().await;
+    assert_eq!(
+        reads.load(Ordering::SeqCst),
+        2,
+        "a successful read stops retrying"
+    );
+    stop.send(()).expect("stop");
+    running.await.expect("feed task");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_launch_key_reused_for_another_request_conflicts() {
+    let harness = harness(Reply::Text("Hello."));
+    let database = harness.context.backend().database();
+    let first_scene = text_scene(CharacterId::new(), 0, "A quiet library.");
+    let second_scene = text_scene(CharacterId::new(), 1, "A busy market.");
+    let starter = starter_with(
+        CharacterId::new(),
+        0,
+        "Greeting",
+        vec![message(StarterRole::Assistant, "Welcome back.")],
+    );
+    let (first_scene_id, second_scene_id, starter_id) =
+        (first_scene.id, second_scene.id, starter.id);
+    let character = seed_character(
+        database,
+        vec![first_scene, second_scene],
+        Vec::new(),
+        vec![starter],
+        |_| {},
+    );
+    let foreign_scene = text_scene(CharacterId::new(), 0, "Elsewhere.");
+    let foreign_scene_id = foreign_scene.id;
+    seed_character(
+        database,
+        vec![foreign_scene],
+        Vec::new(),
+        Vec::new(),
+        |_| {},
+    );
+    let group_id = two_member_group(database);
+
+    let key = "reused-key";
+    let launched = launch_with(
+        &harness,
+        character,
+        key,
+        Some("Library"),
+        Some(first_scene_id.to_string()),
+        None,
+    )
+    .await
+    .expect("launch");
+    assert_eq!(
+        launch_with(
+            &harness,
+            character,
+            key,
+            Some("Library"),
+            Some(first_scene_id.to_string()),
+            None,
+        )
+        .await
+        .expect("the same request replays"),
+        launched
+    );
+    for (label, title, scene, starter) in [
+        ("title", Some("Market"), Some(first_scene_id), None),
+        ("scene", Some("Library"), Some(second_scene_id), None),
+        (
+            "foreign scene",
+            Some("Library"),
+            Some(foreign_scene_id),
+            None,
+        ),
+        (
+            "starter",
+            Some("Library"),
+            Some(first_scene_id),
+            Some(starter_id),
+        ),
+    ] {
+        let error = launch_with(
+            &harness,
+            character,
+            key,
+            title,
+            scene.map(|id| id.to_string()),
+            starter.map(|id| id.to_string()),
+        )
+        .await
+        .expect_err(label);
+        assert_eq!(error.code, ApiErrorCode::Conflict, "{label}");
+    }
+    let error = conversation_launch_group(
+        &harness.context,
+        dto::LaunchGroupRequest {
+            group_id: group_id.to_string(),
+            client_operation_id: key.into(),
+        },
+    )
+    .await
+    .expect_err("a group launch under a direct launch's key");
+    assert_eq!(error.code, ApiErrorCode::Conflict);
+    let error = conversation_launch_group(
+        &harness.context,
+        dto::LaunchGroupRequest {
+            group_id: lettuce_types::GroupId::new().to_string(),
+            client_operation_id: key.into(),
+        },
+    )
+    .await
+    .expect_err("an unpreparable group launch under a direct launch's key");
+    assert_eq!(error.code, ApiErrorCode::Conflict);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_chat_whose_character_is_gone_needs_no_companion_model() {
+    let harness = harness(Reply::Text("Hello."));
+    let conversation_id = launch(&harness, "gone-character").await;
+    let database = harness.context.backend().database();
+    let mut conversation = ConversationReader::get(database, conversation_id.parse().expect("id"))
+        .expect("conversation")
+        .conversation;
+    let lettuce_conversations::ConversationKind::Direct(details) = &mut conversation.kind else {
+        panic!("a direct chat");
+    };
+    details.character.source_id = CharacterId::new();
+    let settings = lettuce_settings::GlobalSettingsStore::load(database)
+        .expect("settings")
+        .settings;
+    assert_eq!(
+        super::models::required_models(database, &settings, &conversation).expect("required"),
+        Vec::new()
+    );
+}
+
+#[test]
+fn a_tombstoned_chat_takes_no_send() {
+    use lettuce_conversations::ConversationLifecycle;
+    assert!(super::conversations::can_send(
+        ConversationLifecycle::Active,
+        false,
+        true
+    ));
+    assert!(super::conversations::can_send(
+        ConversationLifecycle::Archived,
+        false,
+        true
+    ));
+    assert!(!super::conversations::can_send(
+        ConversationLifecycle::Tombstoned,
+        false,
+        true
+    ));
+    assert!(!super::conversations::can_send(
+        ConversationLifecycle::Active,
+        true,
+        true
+    ));
+    assert!(!super::conversations::can_send(
+        ConversationLifecycle::Active,
+        false,
+        false
+    ));
 }

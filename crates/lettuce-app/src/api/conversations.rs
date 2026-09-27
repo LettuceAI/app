@@ -257,11 +257,14 @@ pub async fn conversation_open(
             let messages = message_page(context, conversation_id, branch.id, None, None)?;
             let pending_turn = ConversationOverviewReader::live_turn(database, conversation_id)
                 .map_err(IntoApiError::into_api_error)?;
-            let can_send = pending_turn.is_none()
-                && conversation
+            let can_send = can_send(
+                conversation.lifecycle,
+                pending_turn.is_some(),
+                conversation
                     .participants
                     .iter()
-                    .any(|participant| participant.role == ParticipantRole::User);
+                    .any(|participant| participant.role == ParticipantRole::User),
+            );
             let missing_models = MissingModels::new(context)?.of(context, &conversation)?;
             Ok(dto::ConversationView {
                 id: conversation.id.to_string(),
@@ -290,6 +293,17 @@ pub async fn conversation_open(
             })
         })
         .await
+}
+
+/// A chat takes a send unless it is tombstoned (sync can leave one behind),
+/// a turn is still unsettled, or it has no user participant; an archived
+/// chat stays usable.
+pub(super) const fn can_send(
+    lifecycle: ConversationLifecycle,
+    pending_turn: bool,
+    has_user: bool,
+) -> bool {
+    !matches!(lifecycle, ConversationLifecycle::Tombstoned) && !pending_turn && has_user
 }
 
 pub async fn conversation_messages(

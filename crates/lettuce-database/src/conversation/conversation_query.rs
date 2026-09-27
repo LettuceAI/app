@@ -2370,6 +2370,29 @@ fn read_candidate_page(
     })
 }
 
+impl lettuce_conversations::ConversationLaunchIntentReader for Database {
+    fn launch_intent(
+        &self,
+        conversation_id: ConversationId,
+    ) -> Result<Option<lettuce_types::ContentHash>, ConversationRepositoryError> {
+        let connection = open_read(self)?;
+        let digest: Option<String> = connection
+            .query_row(
+                "SELECT intent_digest FROM conversation_launch_intents WHERE conversation_id = ?1",
+                [conversation_id.to_string()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(slice::db)?;
+        digest
+            .map(|digest| {
+                lettuce_types::ContentHash::parse(digest)
+                    .map_err(|_| ConversationRepositoryError::Storage)
+            })
+            .transpose()
+    }
+}
+
 impl lettuce_conversations::ConversationChangeFeed for Database {
     fn conversation_change_position(&self) -> Result<u64, ConversationRepositoryError> {
         let connection = open_read(self)?;

@@ -106,6 +106,65 @@ struct DirectLaunchIntentV1 {
     timeline: Vec<IntentTimelineEntryV1>,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(deny_unknown_fields)]
+struct LaunchRequestV1 {
+    format_version: u32,
+    conversation_kind: &'static str,
+    operation_key: String,
+    title: String,
+    user_display_name: String,
+    user_authored_description: Option<String>,
+    character_id: Option<CharacterId>,
+    group_id: Option<GroupId>,
+    scene: IntentSelectionV1<SceneId>,
+    starter: IntentSelectionV1<ConversationStarterId>,
+    persona: IntentSelectionV1<PersonaId>,
+}
+
+fn request_digest(request: &LaunchRequestV1) -> Option<ContentHash> {
+    let encoded = serde_json::to_vec(request).ok()?;
+    ContentHash::parse(blake3::hash(&encoded).to_hex().to_string()).ok()
+}
+
+/// Digests only what the caller asked for, no resolved source, so it can be
+/// compared with a launch that already exists even when the request no
+/// longer prepares.
+pub(crate) fn direct_launch_intent(
+    request: &DirectConversationLaunchRequest,
+) -> Option<ContentHash> {
+    request_digest(&LaunchRequestV1 {
+        format_version: LAUNCH_INTENT_FORMAT_V1,
+        conversation_kind: "direct",
+        operation_key: request.operation_key.as_str().to_owned(),
+        title: request.title.clone(),
+        user_display_name: request.user.display_name.clone(),
+        user_authored_description: request.user.authored_description.clone(),
+        character_id: Some(request.character_id),
+        group_id: None,
+        scene: request.scene.into(),
+        starter: request.starter.into(),
+        persona: request.persona.into(),
+    })
+}
+
+/// The group counterpart of [`direct_launch_intent`].
+pub(crate) fn group_launch_intent(request: &GroupConversationLaunchRequest) -> Option<ContentHash> {
+    request_digest(&LaunchRequestV1 {
+        format_version: LAUNCH_INTENT_FORMAT_V1,
+        conversation_kind: "group",
+        operation_key: request.operation_key.as_str().to_owned(),
+        title: request.title.clone(),
+        user_display_name: request.user.display_name.clone(),
+        user_authored_description: request.user.authored_description.clone(),
+        character_id: None,
+        group_id: Some(request.group_id),
+        scene: IntentSelectionV1::Inherit,
+        starter: IntentSelectionV1::Inherit,
+        persona: request.persona.into(),
+    })
+}
+
 /// Digests the caller's intent plus every resolved source revision and payload
 /// digest, so reusing one operation key after an edit conflicts instead of
 /// silently replaying the older launch.

@@ -975,6 +975,15 @@ pub trait ConversationChangeFeed: Send + Sync {
     ) -> Result<Vec<ConversationChange>, ConversationRepositoryError>;
 }
 
+/// The launch request digest a conversation was created with, when its
+/// launch recorded one.
+pub trait ConversationLaunchIntentReader: Send + Sync {
+    fn launch_intent(
+        &self,
+        conversation_id: ConversationId,
+    ) -> Result<Option<lettuce_types::ContentHash>, ConversationRepositoryError>;
+}
+
 /// Unsettled turns of every conversation, oldest first.
 pub trait LiveTurnReader: Send + Sync {
     fn live_turns(&self, limit: u32) -> Result<Vec<GenerationTurnId>, ConversationRepositoryError>;
