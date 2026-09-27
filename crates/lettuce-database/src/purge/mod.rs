@@ -192,8 +192,7 @@ impl<'c> Purge<'c> {
                 "SELECT EXISTS(SELECT 1 FROM conversation_turns WHERE conversation_id = ?1 AND status NOT IN {TERMINAL_TURN})
                  OR EXISTS(SELECT 1 FROM dynamic_memory_run_attempts attempt
                            JOIN dynamic_memory_runs run ON run.id = attempt.run_id
-                           WHERE run.conversation_id = ?1 AND attempt.status IN ('created', 'processing'))
-                 OR EXISTS(SELECT 1 FROM companion_turn_effects WHERE conversation_id = ?1 AND status = 'processing')"
+                           WHERE run.conversation_id = ?1 AND attempt.status IN ('created', 'processing'))"
             ),
             &[Value::Text(id.to_owned())],
         )

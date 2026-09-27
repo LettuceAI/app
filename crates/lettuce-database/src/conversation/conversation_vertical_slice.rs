@@ -41,6 +41,22 @@ pub(crate) const PARTICIPANTS_SELECT: &str = "SELECT id, role, ordinal, source_k
 /// Every settings column `read_settings` reads, in order.
 pub(crate) const SETTINGS_SELECT: &str = "SELECT revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance, speaker_selection, speaker_selection_provenance, companion_clock_json, model_settings_json, background_asset_id, background_hidden, chat_mode, disable_character_lorebooks, roleplay_prompt_json, roleplay_prompt_provenance, members_overridden, muted_overridden, member_models_overridden FROM conversation_settings WHERE conversation_id = ?1";
 
+/// `direct` or `group`.
+pub(crate) fn conversation_kind_name(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+) -> Result<String, ConversationRepositoryError> {
+    transaction
+        .query_row(
+            "SELECT kind FROM conversations WHERE id = ?1",
+            [conversation_id.to_string()],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(db)?
+        .ok_or(ConversationRepositoryError::NotFound)
+}
+
 pub(crate) fn encode<T: Serialize>(value: &T) -> Result<String, ConversationRepositoryError> {
     serde_json::to_string(&Document {
         format_version: FORMAT_VERSION,

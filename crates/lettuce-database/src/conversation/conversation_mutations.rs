@@ -1791,6 +1791,33 @@ pub(crate) fn encode_speaker_details(
     })
 }
 
+/// Which participant flags the stored rows decide. A group conversation
+/// that follows its group's member list or mutes leaves those to the
+/// application, which resolves them from the group each turn.
+pub(crate) struct RowsDecide {
+    pub(crate) enabled: bool,
+    pub(crate) muted: bool,
+}
+
+pub(crate) fn rows_decide_participants(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+) -> Result<RowsDecide, ConversationRepositoryError> {
+    if slice::conversation_kind_name(transaction, conversation_id)? != "group" {
+        return Ok(RowsDecide {
+            enabled: true,
+            muted: true,
+        });
+    }
+    let settings = read_current_settings(transaction, conversation_id)?;
+    Ok(RowsDecide {
+        enabled: settings
+            .as_ref()
+            .is_some_and(|settings| settings.members_overridden),
+        muted: settings.is_some_and(|settings| settings.muted_overridden),
+    })
+}
+
 fn validate_resolved_speaker(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
@@ -1808,10 +1835,14 @@ fn validate_resolved_speaker(
     let Some((role, enabled, muted)) = participant else {
         return Err(ConversationRepositoryError::Conflict);
     };
-    if role != "character" || !enabled {
+    let rows = rows_decide_participants(transaction, conversation_id)?;
+    if role != "character" || (!enabled && rows.enabled) {
         return Err(ConversationRepositoryError::Conflict);
     }
-    if decision.method != lettuce_conversations::SpeakerDecisionMethod::Explicit && muted {
+    if decision.method != lettuce_conversations::SpeakerDecisionMethod::Explicit
+        && muted
+        && rows.muted
+    {
         return Err(ConversationRepositoryError::Conflict);
     }
     if turn.forced_speaker != Some(decision.participant_id) && turn.forced_speaker.is_some() {
@@ -7650,6 +7681,35 @@ mod tests {
     }
 
     #[test]
+    fn a_conversation_following_its_group_decides_members_and_mutes_in_the_application() {
+        let fixture = group_fixture();
+        let (turn, selecting_revision) = group_selecting_turn(&fixture, "resolve-follow");
+        fixture
+            .database
+            .connection()
+            .expect("connection")
+            .execute(
+                "UPDATE conversation_participants SET muted = 1, enabled = 0 WHERE conversation_id = ?1 AND id = ?2",
+                params![fixture.conversation_id.to_string(), fixture.characters[0].to_string()],
+            )
+            .expect("stale launch row");
+        fixture
+            .database
+            .resolve_group_speaker(
+                &resolve_speaker_command(
+                    &fixture,
+                    turn.id,
+                    selecting_revision,
+                    fixture.characters[0],
+                    SpeakerDecisionMethod::Heuristic,
+                    "resolve-follow-decision",
+                ),
+                TimestampMillis::new(30),
+            )
+            .expect("the group's current members and mutes decide, not the launch row");
+    }
+
+    #[test]
     fn resolving_group_speaker_rejects_admission_and_participant_mismatches() {
         let fixture = group_fixture();
         let (turn, selecting_revision) = group_selecting_turn(&fixture, "resolve-reject");
@@ -7733,6 +7793,15 @@ mod tests {
             Err(ConversationRepositoryError::Conflict)
         );
 
+        fixture
+            .database
+            .connection()
+            .expect("connection")
+            .execute(
+                "INSERT INTO conversation_settings (conversation_id, revision, author_note_provenance, memory_provenance, model_provenance, voice_provenance, prompt_provenance, lorebooks_provenance, persona_provenance, scene_provenance, members_overridden, muted_overridden, created_at, updated_at) VALUES (?1, 1, 'launch_inherited', 'launch_inherited', 'launch_inherited', 'launch_inherited', 'launch_inherited', 'launch_inherited', 'launch_inherited', 'launch_inherited', 1, 1, 0, 0)",
+                [fixture.conversation_id.to_string()],
+            )
+            .expect("own the member list and muted flags");
         fixture
             .database
             .connection()
@@ -14427,8 +14496,7 @@ mod tests {
     fn add_command(
         fixture: &Fixture,
         expected_revision: Revision,
-        key: &str,
-        digest: &str,
+        operation: OperationToken,
         participant_id: ConversationParticipantId,
         character: CharacterId,
         member: Option<GroupMemberLaunchSnapshot>,
@@ -14437,7 +14505,7 @@ mod tests {
         lettuce_conversations::AddConversationParticipant {
             conversation_id: fixture.conversation_id,
             expected_revision,
-            operation: token(key, digest),
+            operation,
             participant_id,
             character_id: character,
             display_name: "Third".into(),
@@ -14460,8 +14528,7 @@ mod tests {
                     add_command(
                         &fixture,
                         fixture.revision,
-                        "add-third",
-                        "a1",
+                        token("add-third", "a1"),
                         participant_id,
                         character,
                         Some(member.clone()),
@@ -14507,8 +14574,7 @@ mod tests {
                     add_command(
                         &fixture,
                         fixture.revision,
-                        "add-third",
-                        "a1",
+                        token("add-third", "a1"),
                         participant_id,
                         character,
                         Some(member),
@@ -14536,8 +14602,7 @@ mod tests {
                 add_command(
                     &fixture,
                     added.value.revision,
-                    "add-third",
-                    "b2",
+                    token("add-third", "b2"),
                     participant_id,
                     character,
                     Some(member),
@@ -14556,8 +14621,7 @@ mod tests {
                 add_command(
                     &fixture,
                     added.value.revision,
-                    "add-third-again",
-                    "c3",
+                    token("add-third-again", "c3"),
                     ConversationParticipantId::new(),
                     character,
                     Some(member),
@@ -14634,8 +14698,7 @@ mod tests {
                     add_command(
                         &fixture,
                         disabled.value.revision,
-                        "readd-second",
-                        "e5",
+                        token("readd-second", "e5"),
                         removed,
                         character,
                         None,
