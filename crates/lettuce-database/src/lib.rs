@@ -5847,6 +5847,8 @@ mod tests {
                 "legacy_usage_records",
                 "llama_runtime_reports",
                 "llm_generation_metrics",
+                "local_model_jobs",
+                "local_model_operations",
                 "lorebook_entries",
                 "lorebooks",
                 "media_assets",
