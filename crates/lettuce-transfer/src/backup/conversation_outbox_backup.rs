@@ -411,6 +411,7 @@ fn operation_kind_rank(kind: OperationKind) -> u8 {
         OperationKind::PrepareGeneration => 23,
         OperationKind::ResolveSpeaker => 24,
         OperationKind::AppendMessage => 25,
+        OperationKind::ParticipantAdd => 26,
     }
 }
 

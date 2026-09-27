@@ -83,6 +83,7 @@ struct ApiContextInner {
     shutdown: CancellationToken,
     jobs: JobHostState,
     conversations_changed: Arc<tokio::sync::Notify>,
+    committed: tokio::sync::watch::Sender<u64>,
     app_usage: AppActiveUsageTracker,
     legacy_database_detected: AtomicBool,
 }
@@ -112,6 +113,16 @@ impl ApiContext {
             .backend
             .database()
             .on_conversation_change(move || signal.notify_one());
+        let (committed, _) = tokio::sync::watch::channel(0_u64);
+        for listen in [
+            lettuce_database::Database::on_job_change,
+            lettuce_database::Database::on_conversation_change,
+        ] {
+            let committed = committed.clone();
+            listen(parts.backend.database(), move || {
+                committed.send_modify(|count| *count = count.wrapping_add(1));
+            });
+        }
         Self {
             inner: Arc::new(ApiContextInner {
                 models: ModelSlots::new(Arc::clone(&parts.models)),
@@ -121,6 +132,7 @@ impl ApiContext {
                 shutdown: CancellationToken::new(),
                 jobs,
                 conversations_changed,
+                committed,
                 app_usage: AppActiveUsageTracker::new(now),
                 legacy_database_detected: AtomicBool::new(false),
             }),
@@ -308,6 +320,12 @@ impl ApiContext {
     /// before the call that no caller has waited for yet.
     pub(crate) async fn conversations_changed(&self) {
         self.inner.conversations_changed.notified().await;
+    }
+
+    /// Changes after each committed transaction that changed a job or a
+    /// conversation; a caller waits on it for work it cancelled to settle.
+    pub(crate) fn committed_changes(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.inner.committed.subscribe()
     }
 
     pub(crate) fn legacy_database_detected(&self) -> bool {

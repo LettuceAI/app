@@ -85,10 +85,8 @@ impl ConversationHistoryBackup {
                 insert_snapshot(&mut snapshots, reference)?;
             }
             for participant in &conversation.participants {
-                if let SnapshotSelection::Inherited(model) | SnapshotSelection::Explicit(model) =
-                    &participant.model_selection
-                {
-                    insert_snapshot(&mut snapshots, &model.snapshot_ref)?;
+                for reference in participant.snapshot_references() {
+                    insert_snapshot(&mut snapshots, reference)?;
                 }
             }
             if let ConversationKind::Group(details) = &conversation.kind {

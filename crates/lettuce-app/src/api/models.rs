@@ -373,9 +373,13 @@ pub(crate) fn required_models(
     if companion {
         needed.push(RequiredModel::Emotion);
     }
-    if companion
-        || crate::companion::companion_memory_host::dynamic_memory_on(conversation, settings)
-    {
+    let dynamic = crate::companion::companion_memory_host::dynamic_memory_on(
+        database,
+        conversation,
+        settings,
+    )
+    .map_err(IntoApiError::into_api_error)?;
+    if companion || dynamic {
         needed.push(RequiredModel::Embedding);
     }
     Ok(needed)

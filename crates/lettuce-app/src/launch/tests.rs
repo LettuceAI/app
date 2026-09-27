@@ -464,7 +464,7 @@ fn plain_character(database: &Database) -> CharacterId {
     seed_character(database, Vec::new(), Vec::new(), Vec::new(), |_| {})
 }
 
-fn seed_lorebook(database: &Database, name: &str) -> LorebookId {
+pub(crate) fn seed_lorebook(database: &Database, name: &str) -> LorebookId {
     LorebookRepository::create(
         database,
         LorebookMetadataDraft {
@@ -481,7 +481,7 @@ fn seed_lorebook(database: &Database, name: &str) -> LorebookId {
     .id
 }
 
-fn seed_prompt(
+pub(crate) fn seed_prompt(
     database: &Database,
     name: &str,
     purpose: PromptPurpose,
@@ -584,7 +584,7 @@ pub(crate) fn set_application_default_model(database: &Database, id: ModelProfil
         .expect("save settings");
 }
 
-fn seed_persona(database: &Database, title: &str) -> PersonaId {
+pub(crate) fn seed_persona(database: &Database, title: &str) -> PersonaId {
     let persona = Persona::new(
         PersonaId::new(),
         title.into(),
@@ -12331,11 +12331,11 @@ fn backend() -> AppBackend {
     AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend")
 }
 
-fn seed_named_character(database: &Database, name: &str) -> CharacterId {
+pub(crate) fn seed_named_character(database: &Database, name: &str) -> CharacterId {
     seed_named_character_with(database, name, |_| {})
 }
 
-fn seed_named_character_with(
+pub(crate) fn seed_named_character_with(
     database: &Database,
     name: &str,
     mutate: impl FnOnce(&mut CharacterDefaults),
@@ -12375,7 +12375,7 @@ fn seed_named_character_with(
     id
 }
 
-fn member(character_id: CharacterId, ordinal: u32) -> GroupMember {
+pub(crate) fn member(character_id: CharacterId, ordinal: u32) -> GroupMember {
     GroupMember {
         character_id,
         ordinal,
@@ -12384,7 +12384,7 @@ fn member(character_id: CharacterId, ordinal: u32) -> GroupMember {
     }
 }
 
-fn group_starting_scene(text: &str) -> GroupStartingScene {
+pub(crate) fn group_starting_scene(text: &str) -> GroupStartingScene {
     GroupStartingScene {
         scene: Scene::new(
             SceneId::new(),
@@ -12398,7 +12398,7 @@ fn group_starting_scene(text: &str) -> GroupStartingScene {
     }
 }
 
-fn seed_group(
+pub(crate) fn seed_group(
     database: &Database,
     members: Vec<GroupMember>,
     starting_scene: Option<GroupStartingScene>,

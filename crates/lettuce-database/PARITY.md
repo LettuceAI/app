@@ -57,6 +57,7 @@ Facts about how `lettuce-database` relates to the legacy app (2.2.x). The crate 
 - Wrong-shaped provider or model JSON is recorded as a skip and the record kept. Legacy's frontend salvage dropped the whole provider (with every model on it) or model, and wrong headers or advanced settings also failed its typed Rust settings read.
 - A deleted character is removed from its groups instead of leaving a dangling id.
 - Legacy `companion_turn_effects` and `sync_v2_conflicts` rows are preserved verbatim in the run's provenance instead of being lost.
+- A purge no longer waits for companion effects that are still processing. They wait for the next memory cycle, which may never come (no embedding model, a cycle interval not reached), so a companion chat with dynamic memory could not be deleted between cycles; a running cycle is still covered by its run attempt. Legacy had no guard at all (`old-code/src-tauri/src/storage_manager/sessions.rs:3794-3816`).
 
 ## Decisions
 

@@ -21,7 +21,7 @@ use super::*;
 use crate::AppBackend;
 
 /// Files on the local disk, as the desktop shell reaches them.
-pub(super) struct StdFiles;
+pub(crate) struct StdFiles;
 
 impl FileAccess for StdFiles {
     fn describe(&self, uri: &str) -> Result<FileDescription, FileAccessError> {
@@ -50,7 +50,7 @@ impl FileAccess for StdFiles {
 }
 
 #[derive(Default)]
-struct RecordingStream(Mutex<Vec<GenerationEvent>>);
+pub(super) struct RecordingStream(Mutex<Vec<GenerationEvent>>);
 
 impl GenerationEventSink for RecordingStream {
     fn emit(&self, event: GenerationEvent) {
@@ -59,13 +59,13 @@ impl GenerationEventSink for RecordingStream {
 }
 
 impl RecordingStream {
-    fn events(&self) -> Vec<GenerationEvent> {
+    pub(super) fn events(&self) -> Vec<GenerationEvent> {
         self.0.lock().expect("stream events").clone()
     }
 }
 
 #[derive(Default)]
-pub(super) struct RecordingEvents(Mutex<Vec<ApiEvent>>, tokio::sync::Notify);
+pub(crate) struct RecordingEvents(Mutex<Vec<ApiEvent>>, tokio::sync::Notify);
 
 impl ApiEventSink for RecordingEvents {
     fn emit(&self, event: ApiEvent) {
@@ -97,7 +97,7 @@ pub(super) enum Reply {
 pub(super) struct FakeProvider {
     runtime: Arc<InferenceRuntime>,
     reply: Reply,
-    entered: tokio::sync::Notify,
+    pub(super) entered: tokio::sync::Notify,
     pub(super) requests: Mutex<Vec<InferenceRequest>>,
 }
 
@@ -260,7 +260,7 @@ pub(super) fn create_character(
     character_id
 }
 
-async fn launch(harness: &Harness, key: &str) -> String {
+pub(super) async fn launch(harness: &Harness, key: &str) -> String {
     conversation_launch_direct(
         &harness.context,
         dto::LaunchDirectRequest {
@@ -276,7 +276,7 @@ async fn launch(harness: &Harness, key: &str) -> String {
     .conversation_id
 }
 
-async fn send(
+pub(super) async fn send(
     harness: &Harness,
     conversation_id: &str,
     key: &str,

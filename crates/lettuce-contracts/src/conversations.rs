@@ -375,3 +375,326 @@ pub struct CharacterPage {
     pub items: Vec<CharacterSummary>,
     pub next_cursor: Option<String>,
 }
+
+/// Where a setting's current value comes from: the conversation's own
+/// choice (which the user can reset), its group, its character, its launch,
+/// or the app default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum SettingSource {
+    Conversation,
+    Group,
+    Character,
+    Launch,
+    AppDefault,
+}
+
+/// A setting that names one source; `id` is none when the setting is off.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct SettingChoice {
+    pub id: Option<String>,
+    pub source: SettingSource,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct SettingChoices {
+    pub ids: Vec<String>,
+    pub source: SettingSource,
+}
+
+/// The background the chat shows: an image, hidden, or (neither) whatever
+/// the scene, character or group shows.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct SettingBackground {
+    pub asset: Option<AssetRef>,
+    pub hidden: bool,
+    pub source: SettingSource,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryMode {
+    Manual,
+    Dynamic,
+    Disabled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct SettingMemory {
+    pub mode: MemoryMode,
+    pub source: SettingSource,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct SettingChatMode {
+    pub mode: GroupChatMode,
+    pub source: SettingSource,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct SettingFlag {
+    pub value: bool,
+    pub source: SettingSource,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum SpeakerSelectionMethod {
+    Llm,
+    Heuristic,
+    RoundRobin,
+    Director,
+    DirectorAction,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct SettingSpeakerSelection {
+    pub method: SpeakerSelectionMethod,
+    pub source: SettingSource,
+}
+
+/// A group participant as the chat uses it now.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct ParticipantSettings {
+    pub participant_id: String,
+    pub character_id: Option<String>,
+    pub name: String,
+    pub enabled: bool,
+    pub muted: bool,
+    /// The member's own model; none follows the character's default model.
+    pub model: SettingChoice,
+}
+
+/// A group chat's members: where the member list, the muted flags and the
+/// members' models come from, and each member as the chat uses it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct GroupMembersSettings {
+    pub members_source: SettingSource,
+    pub muted_source: SettingSource,
+    pub models_source: SettingSource,
+    pub participants: Vec<ParticipantSettings>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct ConversationSettingsGetRequest {
+    pub conversation_id: String,
+}
+
+/// Every setting of a chat with its current value and where it comes from.
+/// A field whose source is `conversation` is the chat's own and can be
+/// reset. Group-only fields are none for a one-to-one chat.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct ConversationSettingsView {
+    pub conversation_id: String,
+    pub kind: ConversationKind,
+    pub title: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub revision: u64,
+    /// The revision a settings update passes; none until the chat has
+    /// settings of its own.
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
+    pub settings_revision: Option<u64>,
+    pub author_note: Option<String>,
+    pub persona: SettingChoice,
+    /// The one-to-one prompt, or a group's conversation-mode prompt.
+    pub prompt: SettingChoice,
+    /// A group's roleplay-mode prompt.
+    pub roleplay_prompt: Option<SettingChoice>,
+    pub lorebooks: SettingChoices,
+    pub model: SettingChoice,
+    pub background: SettingBackground,
+    pub scene: SettingChoice,
+    pub memory: SettingMemory,
+    pub chat_mode: Option<SettingChatMode>,
+    pub disable_character_lorebooks: Option<SettingFlag>,
+    pub speaker_selection: Option<SettingSpeakerSelection>,
+    pub members: Option<GroupMembersSettings>,
+}
+
+/// Name a source, turn the setting off, or reset it to what the chat
+/// follows.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ChoiceChange {
+    Set { id: String },
+    None,
+    Reset,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum IdChange {
+    Set { id: String },
+    Reset,
+}
+
+/// An empty list turns the chat's lorebooks off.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum LorebooksChange {
+    Set { ids: Vec<String> },
+    Reset,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum BackgroundChange {
+    Image { asset_id: String },
+    Hidden,
+    Reset,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum MemoryModeChange {
+    Set { mode: MemoryMode },
+    Reset,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ChatModeChange {
+    Set { mode: GroupChatMode },
+    Reset,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum FlagChange {
+    Set { value: bool },
+    Reset,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum SpeakerSelectionChange {
+    Set { method: SpeakerSelectionMethod },
+    Reset,
+}
+
+/// The fields a settings update changes; an absent field is kept.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct ConversationSettingsPatch {
+    pub persona: Option<ChoiceChange>,
+    pub prompt: Option<ChoiceChange>,
+    pub roleplay_prompt: Option<ChoiceChange>,
+    pub lorebooks: Option<LorebooksChange>,
+    pub model: Option<IdChange>,
+    pub background: Option<BackgroundChange>,
+    pub scene: Option<IdChange>,
+    /// Trimmed; blank removes the note.
+    pub author_note: Option<String>,
+    pub speaker_selection: Option<SpeakerSelectionChange>,
+    pub memory: Option<MemoryModeChange>,
+    pub chat_mode: Option<ChatModeChange>,
+    pub disable_character_lorebooks: Option<FlagChange>,
+    /// The members and their muted flags follow the group again.
+    #[serde(default)]
+    pub reset_members: bool,
+    /// The members' models follow the group again.
+    #[serde(default)]
+    pub reset_member_models: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct ConversationSettingsUpdateRequest {
+    pub conversation_id: String,
+    /// The settings revision the change was made against; none when the chat
+    /// has no settings of its own yet.
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
+    pub expected_settings_revision: Option<u64>,
+    pub patch: ConversationSettingsPatch,
+}
+
+/// The revisions a conversation change left.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct ConversationRevisions {
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub revision: u64,
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
+    pub settings_revision: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct ConversationRenameRequest {
+    pub conversation_id: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub expected_revision: u64,
+    /// Trimmed; blank is refused.
+    pub title: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct ConversationRequest {
+    pub conversation_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct ConversationParticipantAddRequest {
+    pub conversation_id: String,
+    pub character_id: String,
+    /// Idempotency key: repeating an add with the same key returns the first
+    /// add's result.
+    pub client_operation_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct ConversationParticipantUpdateRequest {
+    pub conversation_id: String,
+    pub participant_id: String,
+    pub enabled: Option<bool>,
+    pub muted: Option<bool>,
+    /// The member's own model, or reset to follow the character's default.
+    pub model: Option<IdChange>,
+    /// Idempotency key: repeating an update with the same key and request
+    /// returns the first update's result; another request under the key is
+    /// `Conflict`.
+    pub client_operation_id: String,
+}

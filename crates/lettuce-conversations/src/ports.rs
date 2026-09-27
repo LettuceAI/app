@@ -810,6 +810,7 @@ pub enum OperationKind {
     Restore,
     Rename,
     ParticipantPolicy,
+    ParticipantAdd,
     Settings,
     AttachJob,
     PrepareGeneration,
@@ -1285,6 +1286,14 @@ pub trait ConversationRepository: ConversationCreator {
         update: crate::PreparedConversationSettingsUpdate,
         now: TimestampMillis,
     ) -> Result<SettingsResult, ConversationRepositoryError>;
+    /// Emits [`ConversationOutboxEvent::ParticipantPolicyChanged`] for the
+    /// added or re-enabled participant, and `SettingsChanged` when the
+    /// conversation takes over its member list.
+    fn add_participant(
+        &self,
+        add: crate::PreparedParticipantAdd,
+        now: TimestampMillis,
+    ) -> Result<ParticipantPolicyResult, ConversationRepositoryError>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

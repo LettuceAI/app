@@ -15,6 +15,7 @@ mod error;
 mod generation;
 mod scene_tag;
 mod initial_inference;
+mod membership;
 mod model;
 mod ports;
 mod service;
@@ -34,6 +35,7 @@ pub use error::*;
 pub use generation::*;
 pub use scene_tag::*;
 pub use initial_inference::*;
+pub use membership::*;
 pub use model::*;
 pub use ports::*;
 pub use service::*;
@@ -276,6 +278,7 @@ mod tests {
                 revision: Revision::INITIAL,
                 created_at: now,
                 updated_at: now,
+                member_snapshot: None,
             }],
             current_settings: None,
             revision: Revision::INITIAL,
@@ -1074,6 +1077,11 @@ mod tests {
             companion_clock: PatchValue::Keep,
             background: PatchValue::Keep,
             model_settings: PatchValue::Keep,
+            roleplay_prompt: Default::default(),
+            chat_mode: Default::default(),
+            disable_character_lorebooks: Default::default(),
+            follow_group_members: false,
+            follow_group_member_models: false,
         };
         assert!(
             PreparedConversationSettingsUpdate::new(command(patch.clone()), Vec::new()).is_ok()
@@ -1634,6 +1642,7 @@ mod tests {
             revision: Revision::INITIAL,
             created_at: now,
             updated_at: now,
+            member_snapshot: None,
         };
         assert!(participant.validate().is_err());
     }
@@ -1856,6 +1865,7 @@ mod tests {
             revision: Revision::INITIAL,
             created_at: TimestampMillis::UNIX_EPOCH,
             updated_at: TimestampMillis::UNIX_EPOCH,
+            member_snapshot: None,
         }
     }
 
@@ -2207,6 +2217,7 @@ mod tests {
             revision: Revision::INITIAL,
             created_at: TimestampMillis::UNIX_EPOCH,
             updated_at: TimestampMillis::UNIX_EPOCH,
+            member_snapshot: None,
         };
         let kind = ConversationKind::Group(group_details(
             group_id,
@@ -2278,6 +2289,7 @@ mod tests {
             revision: Revision::INITIAL,
             created_at: TimestampMillis::UNIX_EPOCH,
             updated_at: TimestampMillis::UNIX_EPOCH,
+            member_snapshot: None,
         };
         let mut conversation = Conversation {
             id: conversation_id,
@@ -2354,6 +2366,7 @@ mod tests {
             revision: Revision::INITIAL,
             created_at: TimestampMillis::UNIX_EPOCH,
             updated_at: TimestampMillis::UNIX_EPOCH,
+            member_snapshot: None,
         }];
         assert!(
             command
@@ -2532,6 +2545,11 @@ mod tests {
             companion_clock: PatchValue::Keep,
             background: PatchValue::Keep,
             model_settings: PatchValue::Keep,
+            roleplay_prompt: Default::default(),
+            chat_mode: Default::default(),
+            disable_character_lorebooks: Default::default(),
+            follow_group_members: false,
+            follow_group_member_models: false,
         };
         let command = UpdateConversationSettings {
             conversation_id: ConversationId::new(),
@@ -2589,6 +2607,11 @@ mod tests {
             speaker_selection_provenance: SettingProvenance::LaunchInherited,
             chat_mode: None,
             disable_character_lorebooks: None,
+            roleplay_prompt: None,
+            roleplay_prompt_provenance: Default::default(),
+            members_overridden: false,
+            muted_overridden: false,
+            member_models_overridden: false,
         };
         let preserved = patch
             .apply(Some(&existing), Some(Revision::INITIAL))
@@ -2633,6 +2656,11 @@ mod tests {
             companion_clock: PatchValue::Keep,
             background: PatchValue::Keep,
             model_settings: PatchValue::Keep,
+            roleplay_prompt: Default::default(),
+            chat_mode: Default::default(),
+            disable_character_lorebooks: Default::default(),
+            follow_group_members: false,
+            follow_group_member_models: false,
         };
         let created = set.apply(None, None).expect("create settings");
         assert_eq!(created.revision, Revision::INITIAL);
@@ -2660,6 +2688,11 @@ mod tests {
             companion_clock: PatchValue::Keep,
             background: PatchValue::Keep,
             model_settings: PatchValue::Keep,
+            roleplay_prompt: Default::default(),
+            chat_mode: Default::default(),
+            disable_character_lorebooks: Default::default(),
+            follow_group_members: false,
+            follow_group_member_models: false,
         };
         let inherited = use_launch_default
             .apply(Some(&created), Some(Revision::INITIAL))
@@ -2699,6 +2732,11 @@ mod tests {
             companion_clock: PatchValue::Keep,
             background: PatchValue::Keep,
             model_settings: PatchValue::Keep,
+            roleplay_prompt: Default::default(),
+            chat_mode: Default::default(),
+            disable_character_lorebooks: Default::default(),
+            follow_group_members: false,
+            follow_group_member_models: false,
         };
         let disabled = clear
             .apply(Some(&created), Some(Revision::INITIAL))
@@ -2834,6 +2872,11 @@ mod tests {
             companion_clock: PatchValue::Keep,
             background: PatchValue::Keep,
             model_settings: PatchValue::Keep,
+            roleplay_prompt: Default::default(),
+            chat_mode: Default::default(),
+            disable_character_lorebooks: Default::default(),
+            follow_group_members: false,
+            follow_group_member_models: false,
         };
         let current = patch.apply(None, None).expect("context settings");
         assert_eq!(current.prompt, Some(prompt.clone()));
@@ -2877,14 +2920,45 @@ mod tests {
         if let ConversationKind::Group(details) = &mut group_roleplay.kind {
             details.group.chat_mode = GroupChatModeSnapshot::Roleplay;
         }
+        let mut roleplay_in_conversation_slot = current.clone();
+        roleplay_in_conversation_slot
+            .prompt
+            .as_mut()
+            .expect("prompt")
+            .purpose = PromptPurposeSnapshot::GroupRoleplay;
+        assert!(
+            roleplay_in_conversation_slot
+                .validate_against_kind(&group_roleplay.kind)
+                .is_err()
+        );
         let mut roleplay_settings = current.clone();
-        roleplay_settings.prompt.as_mut().expect("prompt").purpose =
-            PromptPurposeSnapshot::GroupRoleplay;
+        let mut roleplay_prompt = roleplay_settings.prompt.take().expect("prompt");
+        roleplay_prompt.purpose = PromptPurposeSnapshot::GroupRoleplay;
+        roleplay_settings.prompt_provenance = SettingProvenance::LaunchInherited;
+        roleplay_settings.roleplay_prompt = Some(roleplay_prompt.clone());
+        roleplay_settings.roleplay_prompt_provenance = SettingProvenance::CurrentOverride;
         assert!(
             roleplay_settings
                 .validate_against_kind(&group_roleplay.kind)
                 .is_ok()
         );
+        assert!(
+            roleplay_settings.validate_against_kind(&group.kind).is_ok(),
+            "each chat mode keeps its own prompt slot"
+        );
+        let mut conversational = roleplay_prompt;
+        conversational.purpose = PromptPurposeSnapshot::GroupConversational;
+        roleplay_settings.prompt = Some(conversational);
+        roleplay_settings.prompt_provenance = SettingProvenance::CurrentOverride;
+        assert!(
+            roleplay_settings
+                .validate_against_kind(&group_roleplay.kind)
+                .is_ok()
+        );
+        let mut direct_roleplay = roleplay_settings.clone();
+        direct_roleplay.prompt = None;
+        direct_roleplay.prompt_provenance = SettingProvenance::LaunchInherited;
+        assert!(direct_roleplay.validate_against_kind(&direct.kind).is_err());
 
         let mut invalid = patch.clone();
         invalid.lorebooks = PatchValue::Set(Vec::new());
@@ -2943,6 +3017,11 @@ mod tests {
             speaker_selection_provenance: SettingProvenance::LaunchInherited,
             chat_mode: None,
             disable_character_lorebooks: None,
+            roleplay_prompt: None,
+            roleplay_prompt_provenance: Default::default(),
+            members_overridden: false,
+            muted_overridden: false,
+            member_models_overridden: false,
         };
         assert!(settings.validate().is_ok());
         settings.revision = Revision::new(0);
@@ -2992,6 +3071,7 @@ mod tests {
                     revision: Revision::INITIAL,
                     created_at: now,
                     updated_at: now,
+                    member_snapshot: None,
                 },
                 ConversationParticipant {
                     id: ConversationParticipantId::new(),
@@ -3006,6 +3086,7 @@ mod tests {
                     revision: Revision::INITIAL,
                     created_at: now,
                     updated_at: now,
+                    member_snapshot: None,
                 },
             ],
             current_settings: None,
@@ -3046,6 +3127,7 @@ mod tests {
             revision: Revision::INITIAL,
             created_at: TimestampMillis::UNIX_EPOCH,
             updated_at: TimestampMillis::UNIX_EPOCH,
+            member_snapshot: None,
         }
     }
 

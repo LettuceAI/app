@@ -872,25 +872,142 @@ pub struct UpdateParticipantPolicy {
     pub enabled: Option<bool>,
     pub muted: Option<bool>,
     pub model_override: Option<crate::snapshot::SnapshotSelection<ModelSelectionSnapshot>>,
+    /// Values written to other participants in the same change: what they
+    /// followed from the group before the conversation took over that
+    /// aspect.
+    #[serde(default)]
+    pub materialize: Vec<ParticipantPolicyChange>,
+    /// The aspects the conversation owns from this change on.
+    #[serde(default)]
+    pub overrides: ParticipantOverrides,
+}
+
+/// New values for one participant; `None` keeps a value.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ParticipantPolicyChange {
+    pub participant_id: ConversationParticipantId,
+    pub enabled: Option<bool>,
+    pub muted: Option<bool>,
+    pub model_override: Option<crate::snapshot::SnapshotSelection<ModelSelectionSnapshot>>,
+}
+
+/// Which participant aspects a group conversation owns instead of following
+/// its group: the member list, the muted flags, the members' models.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ParticipantOverrides {
+    pub members: bool,
+    pub muted: bool,
+    pub member_models: bool,
+}
+
+impl ParticipantOverrides {
+    #[must_use]
+    pub const fn any(self) -> bool {
+        self.members || self.muted || self.member_models
+    }
 }
 
 impl UpdateParticipantPolicy {
+    /// Every participant change the command writes, the named participant
+    /// last.
+    #[must_use]
+    pub fn changes(&self) -> Vec<ParticipantPolicyChange> {
+        let mut changes = self.materialize.clone();
+        changes.push(ParticipantPolicyChange {
+            participant_id: self.participant_id,
+            enabled: self.enabled,
+            muted: self.muted,
+            model_override: self.model_override.clone(),
+        });
+        changes
+    }
+
     pub fn validate_against_participants(
         &self,
         participants: &[crate::model::ConversationParticipant],
     ) -> Result<(), ValidationError> {
-        let participant = participants
-            .iter()
-            .find(|participant| participant.id == self.participant_id)
-            .ok_or(ValidationError::InvalidReference {
-                field: "participant_policy.participant_id",
-            })?;
-        if participant.role != ParticipantRole::Character {
-            return Err(ValidationError::InvalidReference {
-                field: "participant_policy.character",
-            });
+        validate_unique(
+            "participant_policy.participant_ids",
+            self.changes().iter().map(|change| change.participant_id),
+        )?;
+        for change in self.changes() {
+            let participant = participants
+                .iter()
+                .find(|participant| participant.id == change.participant_id)
+                .ok_or(ValidationError::InvalidReference {
+                    field: "participant_policy.participant_id",
+                })?;
+            if participant.role != ParticipantRole::Character {
+                return Err(ValidationError::InvalidReference {
+                    field: "participant_policy.character",
+                });
+            }
+            if let Some(model) = &change.model_override {
+                model.validate("participant_policy.model_override")?;
+            }
         }
         Ok(())
+    }
+}
+
+/// Adds a character to a group conversation, or enables the row it kept from
+/// an earlier membership. A new row carries `member`, the member snapshot
+/// the application built like a launch does; re-enabling an existing row
+/// carries none.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AddConversationParticipant {
+    pub conversation_id: ConversationId,
+    pub expected_revision: Revision,
+    pub operation: OperationToken,
+    pub participant_id: ConversationParticipantId,
+    pub character_id: lettuce_types::CharacterId,
+    pub display_name: String,
+    pub muted: bool,
+    pub member: Option<crate::snapshot::GroupMemberLaunchSnapshot>,
+    /// A membership edit by the user: the conversation stops following the
+    /// group's member list, and every other participant keeps in its row
+    /// the enabled flag it followed from the group when the add commits. A
+    /// member the group gained after launch is added without it.
+    pub override_members: bool,
+}
+
+impl AddConversationParticipant {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        validate_expected(self.expected_revision)?;
+        validate_text(
+            "participant_add.display_name",
+            &self.display_name,
+            crate::validation::MAX_DISPLAY_CHARS * 4,
+            false,
+        )?;
+        if let Some(member) = &self.member {
+            member.validate()?;
+            if member.character.source_id != self.character_id {
+                return Err(ValidationError::InvalidReference {
+                    field: "participant_add.member",
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+/// The rule every group conversation keeps: at least one enabled, unmuted
+/// character. `participants` are the effective values after a change.
+pub fn require_active_member(
+    participants: &[crate::model::ConversationParticipant],
+) -> Result<(), ValidationError> {
+    if participants.iter().any(|participant| {
+        participant.role == ParticipantRole::Character && participant.enabled && !participant.muted
+    }) {
+        Ok(())
+    } else {
+        Err(ValidationError::Invariant {
+            field: "conversation.group.active_member",
+        })
     }
 }
 
@@ -994,6 +1111,25 @@ pub struct CurrentConversationSettingsPatch {
     /// to the group's method.
     #[serde(default)]
     pub speaker_selection: PatchValue<crate::snapshot::GroupSpeakerSelectionSnapshot>,
+    /// Group conversations only: the roleplay-mode prompt; `prompt` is the
+    /// conversation-mode one.
+    #[serde(default)]
+    pub roleplay_prompt: PatchValue<PromptLaunchSnapshot>,
+    /// Group conversations only; it cannot be cleared, only set or returned
+    /// to the group's.
+    #[serde(default)]
+    pub chat_mode: PatchValue<crate::snapshot::GroupChatModeSnapshot>,
+    /// Group conversations only; it cannot be cleared, only set or returned
+    /// to the group's.
+    #[serde(default)]
+    pub disable_character_lorebooks: PatchValue<bool>,
+    /// Group conversations only: the members and their muted flags follow
+    /// the group again.
+    #[serde(default)]
+    pub follow_group_members: bool,
+    /// Group conversations only: the members' models follow the group again.
+    #[serde(default)]
+    pub follow_group_member_models: bool,
 }
 
 impl CurrentConversationSettingsPatch {
@@ -1012,6 +1148,19 @@ impl CurrentConversationSettingsPatch {
             return Err(ValidationError::InvalidReference {
                 field: "conversation_settings.speaker_selection",
             });
+        }
+        if matches!(self.chat_mode, PatchValue::Clear) {
+            return Err(ValidationError::InvalidReference {
+                field: "conversation_settings.chat_mode",
+            });
+        }
+        if matches!(self.disable_character_lorebooks, PatchValue::Clear) {
+            return Err(ValidationError::InvalidReference {
+                field: "conversation_settings.disable_character_lorebooks",
+            });
+        }
+        if let PatchValue::Set(prompt) = &self.roleplay_prompt {
+            prompt.validate()?;
         }
         if let PatchValue::Set(note) = &self.author_note {
             validate_text(
@@ -1111,32 +1260,7 @@ impl CurrentConversationSettingsPatch {
                 PatchValue::UseLaunchDefault => (None, SettingProvenance::LaunchInherited),
             }
         }
-        let empty = crate::model::CurrentConversationSettings {
-            companion_clock: None,
-            background: None,
-            model_settings: Default::default(),
-            revision,
-            author_note: None,
-            author_note_provenance: SettingProvenance::LaunchInherited,
-            memory: None,
-            memory_provenance: SettingProvenance::LaunchInherited,
-            model_override: None,
-            model_provenance: SettingProvenance::LaunchInherited,
-            voice: None,
-            voice_provenance: SettingProvenance::LaunchInherited,
-            prompt: None,
-            prompt_provenance: SettingProvenance::LaunchInherited,
-            lorebooks: None,
-            lorebooks_provenance: SettingProvenance::LaunchInherited,
-            persona: None,
-            persona_provenance: SettingProvenance::LaunchInherited,
-            scene: None,
-            scene_provenance: SettingProvenance::LaunchInherited,
-            speaker_selection: None,
-            speaker_selection_provenance: SettingProvenance::LaunchInherited,
-            chat_mode: None,
-            disable_character_lorebooks: None,
-        };
+        let empty = crate::model::CurrentConversationSettings::inherited(revision);
         let base = current.unwrap_or(&empty);
         let (author_note, author_note_provenance) = apply_value(
             &self.author_note,
@@ -1192,6 +1316,12 @@ impl CurrentConversationSettingsPatch {
             base.speaker_selection_provenance,
             current.is_some(),
         );
+        let (roleplay_prompt, roleplay_prompt_provenance) = apply_value(
+            &self.roleplay_prompt,
+            base.roleplay_prompt.as_ref(),
+            base.roleplay_prompt_provenance,
+            current.is_some(),
+        );
         let result = crate::model::CurrentConversationSettings {
             companion_clock: match self.companion_clock {
                 PatchValue::Keep => base.companion_clock,
@@ -1227,8 +1357,22 @@ impl CurrentConversationSettingsPatch {
             scene_provenance,
             speaker_selection,
             speaker_selection_provenance,
-            chat_mode: base.chat_mode,
-            disable_character_lorebooks: base.disable_character_lorebooks,
+            chat_mode: match self.chat_mode {
+                PatchValue::Keep => base.chat_mode,
+                PatchValue::Set(mode) => Some(mode),
+                PatchValue::Clear | PatchValue::UseLaunchDefault => None,
+            },
+            disable_character_lorebooks: match self.disable_character_lorebooks {
+                PatchValue::Keep => base.disable_character_lorebooks,
+                PatchValue::Set(disabled) => Some(disabled),
+                PatchValue::Clear | PatchValue::UseLaunchDefault => None,
+            },
+            roleplay_prompt,
+            roleplay_prompt_provenance,
+            members_overridden: base.members_overridden && !self.follow_group_members,
+            muted_overridden: base.muted_overridden && !self.follow_group_members,
+            member_models_overridden: base.member_models_overridden
+                && !self.follow_group_member_models,
         };
         result.validate()?;
         Ok(result)
@@ -1301,6 +1445,7 @@ pub enum ConversationMutation {
     Restore(RestoreConversation),
     Rename(RenameConversation),
     ParticipantPolicy(UpdateParticipantPolicy),
+    ParticipantAdd(AddConversationParticipant),
     Settings(UpdateConversationSettings),
 }
 
@@ -1352,6 +1497,7 @@ impl ConversationMutation {
             Self::Restore(command) => validate_expected(command.expected_revision),
             Self::Rename(command) => command.validate(),
             Self::ParticipantPolicy(command) => validate_expected(command.expected_revision),
+            Self::ParticipantAdd(command) => command.validate(),
             Self::Settings(command) => command.validate(),
         }
     }
@@ -1406,6 +1552,92 @@ mod tests {
         );
         command.title = "Renamed".into();
         command.validate().expect("valid title");
+    }
+
+    #[test]
+    fn group_switches_cannot_be_cleared_and_resets_follow_the_group() {
+        for patch in [
+            CurrentConversationSettingsPatch {
+                chat_mode: PatchValue::Clear,
+                ..CurrentConversationSettingsPatch::default()
+            },
+            CurrentConversationSettingsPatch {
+                disable_character_lorebooks: PatchValue::Clear,
+                ..CurrentConversationSettingsPatch::default()
+            },
+        ] {
+            assert!(patch.apply(None, None).is_err());
+        }
+        let set = CurrentConversationSettingsPatch {
+            chat_mode: PatchValue::Set(crate::snapshot::GroupChatModeSnapshot::Roleplay),
+            disable_character_lorebooks: PatchValue::Set(true),
+            ..CurrentConversationSettingsPatch::default()
+        }
+        .apply(None, None)
+        .expect("set");
+        assert_eq!(
+            set.chat_mode,
+            Some(crate::snapshot::GroupChatModeSnapshot::Roleplay)
+        );
+        assert_eq!(set.disable_character_lorebooks, Some(true));
+        let mut owned = set.clone();
+        owned.members_overridden = true;
+        owned.muted_overridden = true;
+        owned.member_models_overridden = true;
+        let reset = CurrentConversationSettingsPatch {
+            chat_mode: PatchValue::UseLaunchDefault,
+            disable_character_lorebooks: PatchValue::UseLaunchDefault,
+            follow_group_members: true,
+            ..CurrentConversationSettingsPatch::default()
+        }
+        .apply(Some(&owned), Some(owned.revision))
+        .expect("reset");
+        assert_eq!(reset.chat_mode, None);
+        assert_eq!(reset.disable_character_lorebooks, None);
+        assert!(!reset.members_overridden && !reset.muted_overridden);
+        assert!(reset.member_models_overridden);
+        let models = CurrentConversationSettingsPatch {
+            follow_group_member_models: true,
+            ..CurrentConversationSettingsPatch::default()
+        }
+        .apply(Some(&reset), Some(reset.revision))
+        .expect("reset models");
+        assert!(!models.member_models_overridden);
+    }
+
+    #[test]
+    fn a_group_keeps_one_enabled_unmuted_character() {
+        let participant = |role, enabled, muted| crate::model::ConversationParticipant {
+            id: ConversationParticipantId::new(),
+            role,
+            ordinal: 0,
+            enabled,
+            muted,
+            source: match role {
+                ParticipantRole::Character => {
+                    ParticipantSource::Character(lettuce_types::CharacterId::new())
+                }
+                _ => ParticipantSource::User,
+            },
+            display_name: "Name".into(),
+            authored_description: None,
+            model_selection: crate::snapshot::SnapshotSelection::Disabled,
+            member_snapshot: None,
+            revision: Revision::INITIAL,
+            created_at: TimestampMillis::new(1),
+            updated_at: TimestampMillis::new(1),
+        };
+        let user = participant(ParticipantRole::User, true, false);
+        let muted = participant(ParticipantRole::Character, true, true);
+        let disabled = participant(ParticipantRole::Character, false, false);
+        let active = participant(ParticipantRole::Character, true, false);
+        assert_eq!(
+            require_active_member(&[user.clone(), muted.clone(), disabled.clone()]),
+            Err(ValidationError::Invariant {
+                field: "conversation.group.active_member"
+            })
+        );
+        assert!(require_active_member(&[user, muted, disabled, active]).is_ok());
     }
 }
 

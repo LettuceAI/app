@@ -321,6 +321,84 @@ impl PreparedConversationSettingsUpdate {
     }
 }
 
+/// A participant add with the snapshot artifacts its member snapshot needs,
+/// staged in the add's own transaction. Every draft must be one of the
+/// member's references; a reference without a draft must already be stored.
+pub struct PreparedParticipantAdd {
+    command: crate::commands::AddConversationParticipant,
+    artifacts: Vec<SnapshotArtifactDraft>,
+}
+
+impl PreparedParticipantAdd {
+    pub fn new(
+        command: crate::commands::AddConversationParticipant,
+        artifacts: Vec<SnapshotArtifactDraft>,
+    ) -> Result<Self, PreparedConversationSettingsUpdateError> {
+        command
+            .validate()
+            .map_err(PreparedConversationSettingsUpdateError::InvalidCommand)?;
+        let references: Vec<&ProtectedSnapshotRef> = command
+            .member
+            .as_ref()
+            .map(crate::snapshot::group_member_snapshot_references)
+            .unwrap_or_default();
+        let mut supplied = std::collections::HashSet::<SnapshotArtifactId>::new();
+        for draft in &artifacts {
+            let artifact_id = draft.artifact_id;
+            draft.validate().map_err(|source| {
+                PreparedConversationSettingsUpdateError::InvalidArtifact {
+                    artifact_id,
+                    source,
+                }
+            })?;
+            if !supplied.insert(artifact_id) {
+                return Err(PreparedConversationSettingsUpdateError::DuplicateArtifact {
+                    artifact_id,
+                });
+            }
+            let Some(reference) = references
+                .iter()
+                .find(|reference| reference.artifact_id == artifact_id)
+            else {
+                return Err(
+                    PreparedConversationSettingsUpdateError::UnexpectedArtifact { artifact_id },
+                );
+            };
+            if draft.reference() != **reference {
+                return Err(PreparedConversationSettingsUpdateError::ReferenceMismatch {
+                    artifact_id,
+                });
+            }
+        }
+        Ok(Self { command, artifacts })
+    }
+
+    #[must_use]
+    pub fn command(&self) -> &crate::commands::AddConversationParticipant {
+        &self.command
+    }
+
+    #[must_use]
+    pub fn into_parts(
+        self,
+    ) -> (
+        crate::commands::AddConversationParticipant,
+        Vec<SnapshotArtifactDraft>,
+    ) {
+        (self.command, self.artifacts)
+    }
+}
+
+impl fmt::Debug for PreparedParticipantAdd {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PreparedParticipantAdd")
+            .field("command", &self.command)
+            .field("artifacts", &self.artifacts.len())
+            .finish()
+    }
+}
+
 impl fmt::Debug for PreparedConversationSettingsUpdate {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let artifact_ids: Vec<_> = self
@@ -683,22 +761,7 @@ pub fn conversation_snapshot_references(kind: &ConversationKind) -> Vec<&Protect
             let group = &details.group;
             refs.push(&group.snapshot_ref);
             for member in &group.members {
-                refs.push(&member.character.snapshot_ref);
-                if let SnapshotSelection::Inherited(books) | SnapshotSelection::Explicit(books) =
-                    &member.lorebooks
-                {
-                    refs.extend(books.iter().map(|book| &book.snapshot_ref));
-                }
-                if let SnapshotSelection::Inherited(value) | SnapshotSelection::Explicit(value) =
-                    &member.model_override
-                {
-                    refs.push(&value.snapshot_ref);
-                }
-                if let SnapshotSelection::Inherited(value) | SnapshotSelection::Explicit(value) =
-                    &member.prompt
-                {
-                    refs.push(&value.snapshot_ref);
-                }
+                refs.extend(crate::snapshot::group_member_snapshot_references(member));
             }
             if let SnapshotSelection::Inherited(value) | SnapshotSelection::Explicit(value) =
                 &group.memory
@@ -763,6 +826,9 @@ pub fn conversation_settings_snapshot_references(
     if let Some(prompt) = &settings.prompt {
         refs.push(&prompt.snapshot_ref);
     }
+    if let Some(prompt) = &settings.roleplay_prompt {
+        refs.push(&prompt.snapshot_ref);
+    }
     if let Some(lorebooks) = &settings.lorebooks {
         refs.extend(lorebooks.iter().map(|book| &book.snapshot_ref));
     }
@@ -796,6 +862,9 @@ fn conversation_settings_patch_snapshot_references(
         refs.push(&voice.snapshot_ref);
     }
     if let PatchValue::Set(prompt) = &patch.prompt {
+        refs.push(&prompt.snapshot_ref);
+    }
+    if let PatchValue::Set(prompt) = &patch.roleplay_prompt {
         refs.push(&prompt.snapshot_ref);
     }
     if let PatchValue::Set(lorebooks) = &patch.lorebooks {

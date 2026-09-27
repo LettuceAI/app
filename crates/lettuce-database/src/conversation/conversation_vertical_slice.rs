@@ -13,7 +13,7 @@ use lettuce_conversations::{
     Conversation, ConversationAggregate, ConversationBranch, ConversationKind,
     ConversationLifecycle, ConversationParticipant, ConversationRepositoryError,
     CurrentConversationSettings, ParticipantRole, ParticipantSource, ProtectedSnapshotRef,
-    SettingProvenance, SnapshotSelection, SnapshotSource,
+    SettingProvenance, SnapshotSource,
 };
 use lettuce_types::{ConversationId, Revision, TimestampMillis};
 use rusqlite::{OptionalExtension, Row, Transaction, TransactionBehavior, params};
@@ -33,6 +33,28 @@ const FORMAT_VERSION: u32 = 1;
 struct Document<T> {
     format_version: u32,
     value: T,
+}
+
+/// Every participant column `read_participant` reads, in order.
+pub(crate) const PARTICIPANTS_SELECT: &str = "SELECT id, role, ordinal, source_kind, source_id, enabled, muted, display_name, authored_description, model_selection_json, revision, created_at, updated_at, member_snapshot_json FROM conversation_participants WHERE conversation_id = ?1 ORDER BY ordinal, id";
+
+/// Every settings column `read_settings` reads, in order.
+pub(crate) const SETTINGS_SELECT: &str = "SELECT revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance, speaker_selection, speaker_selection_provenance, companion_clock_json, model_settings_json, background_asset_id, background_hidden, chat_mode, disable_character_lorebooks, roleplay_prompt_json, roleplay_prompt_provenance, members_overridden, muted_overridden, member_models_overridden FROM conversation_settings WHERE conversation_id = ?1";
+
+/// `direct` or `group`.
+pub(crate) fn conversation_kind_name(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+) -> Result<String, ConversationRepositoryError> {
+    transaction
+        .query_row(
+            "SELECT kind FROM conversations WHERE id = ?1",
+            [conversation_id.to_string()],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(db)?
+        .ok_or(ConversationRepositoryError::NotFound)
 }
 
 pub(crate) fn encode<T: Serialize>(value: &T) -> Result<String, ConversationRepositoryError> {
@@ -167,7 +189,7 @@ pub(crate) fn save_participants(
     for participant in &conversation.participants {
         let (source_kind, source_id) = source_columns(participant.source);
         let revision = sql_revision(participant.revision)?;
-        transaction.execute("INSERT INTO conversation_participants (conversation_id, id, role, ordinal, source_kind, source_id, enabled, muted, display_name, authored_description, model_selection_json, revision, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14) ON CONFLICT(conversation_id, id) DO UPDATE SET role = excluded.role, ordinal = excluded.ordinal, source_kind = excluded.source_kind, source_id = excluded.source_id, enabled = excluded.enabled, muted = excluded.muted, display_name = excluded.display_name, authored_description = excluded.authored_description, model_selection_json = excluded.model_selection_json, revision = excluded.revision, created_at = excluded.created_at, updated_at = excluded.updated_at", params![conversation.id.to_string(), participant.id.to_string(), role_name(participant.role), i64::from(participant.ordinal), source_kind, source_id, participant.enabled as i64, participant.muted as i64, participant.display_name, participant.authored_description, encode(&participant.model_selection)?, revision, participant.created_at.get(), participant.updated_at.get()]).map_err(db)?;
+        transaction.execute("INSERT INTO conversation_participants (conversation_id, id, role, ordinal, source_kind, source_id, enabled, muted, display_name, authored_description, model_selection_json, revision, created_at, updated_at, member_snapshot_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15) ON CONFLICT(conversation_id, id) DO UPDATE SET role = excluded.role, ordinal = excluded.ordinal, source_kind = excluded.source_kind, source_id = excluded.source_id, enabled = excluded.enabled, muted = excluded.muted, display_name = excluded.display_name, authored_description = excluded.authored_description, model_selection_json = excluded.model_selection_json, revision = excluded.revision, created_at = excluded.created_at, updated_at = excluded.updated_at, member_snapshot_json = excluded.member_snapshot_json", params![conversation.id.to_string(), participant.id.to_string(), role_name(participant.role), i64::from(participant.ordinal), source_kind, source_id, participant.enabled as i64, participant.muted as i64, participant.display_name, participant.authored_description, encode(&participant.model_selection)?, revision, participant.created_at.get(), participant.updated_at.get(), participant.member_snapshot.as_deref().map(encode).transpose()?]).map_err(db)?;
     }
     Ok(())
 }
@@ -180,7 +202,7 @@ pub(crate) fn save_settings(
         return Ok(());
     };
     let revision = sql_revision(settings.revision)?;
-    transaction.execute("INSERT INTO conversation_settings (conversation_id, revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance, speaker_selection, speaker_selection_provenance, created_at, updated_at, companion_clock_json, model_settings_json, background_asset_id, background_hidden, chat_mode, disable_character_lorebooks) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28) ON CONFLICT(conversation_id) DO UPDATE SET revision = excluded.revision, author_note = excluded.author_note, author_note_provenance = excluded.author_note_provenance, memory_json = excluded.memory_json, memory_provenance = excluded.memory_provenance, model_override_json = excluded.model_override_json, model_provenance = excluded.model_provenance, voice_json = excluded.voice_json, voice_provenance = excluded.voice_provenance, prompt_json = excluded.prompt_json, prompt_provenance = excluded.prompt_provenance, lorebooks_json = excluded.lorebooks_json, lorebooks_provenance = excluded.lorebooks_provenance, persona_json = excluded.persona_json, persona_provenance = excluded.persona_provenance, scene_json = excluded.scene_json, scene_provenance = excluded.scene_provenance, speaker_selection = excluded.speaker_selection, speaker_selection_provenance = excluded.speaker_selection_provenance, created_at = excluded.created_at, updated_at = excluded.updated_at, companion_clock_json = excluded.companion_clock_json, model_settings_json = excluded.model_settings_json, background_asset_id = excluded.background_asset_id, background_hidden = excluded.background_hidden, chat_mode = excluded.chat_mode, disable_character_lorebooks = excluded.disable_character_lorebooks", params![conversation.id.to_string(), revision, settings.author_note, provenance_name(settings.author_note_provenance), settings.memory.as_ref().map(encode).transpose()?, provenance_name(settings.memory_provenance), settings.model_override.as_ref().map(encode).transpose()?, provenance_name(settings.model_provenance), settings.voice.as_ref().map(encode).transpose()?, provenance_name(settings.voice_provenance), settings.prompt.as_ref().map(encode).transpose()?, provenance_name(settings.prompt_provenance), settings.lorebooks.as_ref().map(encode).transpose()?, provenance_name(settings.lorebooks_provenance), settings.persona.as_ref().map(encode).transpose()?, provenance_name(settings.persona_provenance), settings.scene.as_ref().map(encode).transpose()?, provenance_name(settings.scene_provenance), settings.speaker_selection.map(speaker_selection_name), provenance_name(settings.speaker_selection_provenance), conversation.created_at.get(), conversation.updated_at.get(), settings.companion_clock.as_ref().map(encode).transpose()?, encode_model_settings(&settings.model_settings)?, background_asset(settings.background), background_hidden(settings.background), settings.chat_mode.map(chat_mode_name), settings.disable_character_lorebooks]).map_err(db)?;
+    transaction.execute("INSERT INTO conversation_settings (conversation_id, revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance, speaker_selection, speaker_selection_provenance, created_at, updated_at, companion_clock_json, model_settings_json, background_asset_id, background_hidden, chat_mode, disable_character_lorebooks, roleplay_prompt_json, roleplay_prompt_provenance, members_overridden, muted_overridden, member_models_overridden) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33) ON CONFLICT(conversation_id) DO UPDATE SET revision = excluded.revision, author_note = excluded.author_note, author_note_provenance = excluded.author_note_provenance, memory_json = excluded.memory_json, memory_provenance = excluded.memory_provenance, model_override_json = excluded.model_override_json, model_provenance = excluded.model_provenance, voice_json = excluded.voice_json, voice_provenance = excluded.voice_provenance, prompt_json = excluded.prompt_json, prompt_provenance = excluded.prompt_provenance, lorebooks_json = excluded.lorebooks_json, lorebooks_provenance = excluded.lorebooks_provenance, persona_json = excluded.persona_json, persona_provenance = excluded.persona_provenance, scene_json = excluded.scene_json, scene_provenance = excluded.scene_provenance, speaker_selection = excluded.speaker_selection, speaker_selection_provenance = excluded.speaker_selection_provenance, created_at = excluded.created_at, updated_at = excluded.updated_at, companion_clock_json = excluded.companion_clock_json, model_settings_json = excluded.model_settings_json, background_asset_id = excluded.background_asset_id, background_hidden = excluded.background_hidden, chat_mode = excluded.chat_mode, disable_character_lorebooks = excluded.disable_character_lorebooks, roleplay_prompt_json = excluded.roleplay_prompt_json, roleplay_prompt_provenance = excluded.roleplay_prompt_provenance, members_overridden = excluded.members_overridden, muted_overridden = excluded.muted_overridden, member_models_overridden = excluded.member_models_overridden", params![conversation.id.to_string(), revision, settings.author_note, provenance_name(settings.author_note_provenance), settings.memory.as_ref().map(encode).transpose()?, provenance_name(settings.memory_provenance), settings.model_override.as_ref().map(encode).transpose()?, provenance_name(settings.model_provenance), settings.voice.as_ref().map(encode).transpose()?, provenance_name(settings.voice_provenance), settings.prompt.as_ref().map(encode).transpose()?, provenance_name(settings.prompt_provenance), settings.lorebooks.as_ref().map(encode).transpose()?, provenance_name(settings.lorebooks_provenance), settings.persona.as_ref().map(encode).transpose()?, provenance_name(settings.persona_provenance), settings.scene.as_ref().map(encode).transpose()?, provenance_name(settings.scene_provenance), settings.speaker_selection.map(speaker_selection_name), provenance_name(settings.speaker_selection_provenance), conversation.created_at.get(), conversation.updated_at.get(), settings.companion_clock.as_ref().map(encode).transpose()?, encode_model_settings(&settings.model_settings)?, background_asset(settings.background), background_hidden(settings.background), settings.chat_mode.map(chat_mode_name), settings.disable_character_lorebooks, settings.roleplay_prompt.as_ref().map(encode).transpose()?, provenance_name(settings.roleplay_prompt_provenance), settings.members_overridden, settings.muted_overridden, settings.member_models_overridden]).map_err(db)?;
     Ok(())
 }
 
@@ -278,6 +300,7 @@ impl Database {
                 revision: Revision::INITIAL,
                 created_at: now,
                 updated_at: now,
+                member_snapshot: None,
             })
             .collect();
         let conversation = Conversation {
@@ -382,7 +405,7 @@ where
         .map_err(db)?
         .ok_or(ConversationRepositoryError::NotFound)?;
     let mut participants = Vec::new();
-    let mut statement = transaction.prepare("SELECT id, role, ordinal, source_kind, source_id, enabled, muted, display_name, authored_description, model_selection_json, revision, created_at, updated_at FROM conversation_participants WHERE conversation_id = ?1 ORDER BY ordinal, id").map_err(db)?;
+    let mut statement = transaction.prepare(PARTICIPANTS_SELECT).map_err(db)?;
     for row in statement
         .query_map([id.to_string()], read_participant)
         .map_err(db)?
@@ -489,12 +512,10 @@ where
     // launch snapshot-ref relation.
     for participant in &participants {
         if participant.role == ParticipantRole::Character {
-            if let SnapshotSelection::Inherited(model) | SnapshotSelection::Explicit(model) =
-                &participant.model_selection
-            {
+            for reference in participant.snapshot_references() {
                 crate::conversation::conversation_artifact_adapter::verify_snapshot_in_transaction(
                     transaction,
-                    &model.snapshot_ref,
+                    reference,
                 )
                 .map_err(|_| ConversationRepositoryError::Storage)?;
             }
@@ -502,7 +523,7 @@ where
     }
 
     let settings = transaction
-        .query_row("SELECT revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance, speaker_selection, speaker_selection_provenance, companion_clock_json, model_settings_json, background_asset_id, background_hidden, chat_mode, disable_character_lorebooks FROM conversation_settings WHERE conversation_id = ?1", [id.to_string()], read_settings)
+        .query_row(SETTINGS_SELECT, [id.to_string()], read_settings)
         .optional()
         .map_err(db)?;
     if let Some(settings) = &settings {
@@ -584,6 +605,11 @@ pub(crate) fn read_participant(row: &Row<'_>) -> Result<ConversationParticipant,
         display_name: row.get(7)?,
         authored_description: row.get(8)?,
         model_selection: decode(&row.get::<_, String>(9)?)
+            .map_err(|_| rusqlite::Error::InvalidQuery)?,
+        member_snapshot: row
+            .get::<_, Option<String>>(13)?
+            .map(|value| decode(&value))
+            .transpose()
             .map_err(|_| rusqlite::Error::InvalidQuery)?,
         revision: rev(row.get(10)?).map_err(|_| rusqlite::Error::InvalidQuery)?,
         created_at: TimestampMillis::new(row.get(11)?),
@@ -690,6 +716,15 @@ pub(crate) fn read_settings(row: &Row<'_>) -> Result<CurrentConversationSettings
             .map(|value| chat_mode_from_name(&value))
             .transpose()?,
         disable_character_lorebooks: row.get(24)?,
+        roleplay_prompt: row
+            .get::<_, Option<String>>(25)?
+            .map(|v| decode(&v))
+            .transpose()
+            .map_err(|_| rusqlite::Error::InvalidQuery)?,
+        roleplay_prompt_provenance: provenance_from_name(&row.get::<_, String>(26)?)?,
+        members_overridden: row.get(27)?,
+        muted_overridden: row.get(28)?,
+        member_models_overridden: row.get(29)?,
     })
 }
 

@@ -461,6 +461,10 @@ where
         .blocking(move |context| {
             let database = context.backend().database();
             let now = context.now();
+            if !replay {
+                crate::conversation::ensure_group_members(database, conversation_id, now)
+                    .map_err(super::conversation_settings::edit_error)?;
+            }
             let conversation = ConversationReader::get(database, conversation_id)
                 .map_err(IntoApiError::into_api_error)?
                 .conversation;

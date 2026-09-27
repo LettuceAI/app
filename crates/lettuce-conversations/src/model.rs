@@ -55,6 +55,10 @@ pub struct ConversationParticipant {
     pub display_name: String,
     pub authored_description: Option<String>,
     pub model_selection: SnapshotSelection<ModelSelectionSnapshot>,
+    /// The member snapshot of a character added to a group conversation
+    /// after launch; launch members live in the group launch snapshot.
+    #[serde(default)]
+    pub member_snapshot: Option<Box<crate::snapshot::GroupMemberLaunchSnapshot>>,
     pub revision: Revision,
     pub created_at: TimestampMillis,
     pub updated_at: TimestampMillis,
@@ -137,9 +141,61 @@ pub struct CurrentConversationSettings {
     /// override of the group's; `None` follows the group.
     #[serde(default)]
     pub disable_character_lorebooks: Option<bool>,
+    /// A group conversation's own roleplay-mode prompt; `prompt` holds the
+    /// conversation-mode one.
+    #[serde(default)]
+    pub roleplay_prompt: Option<crate::snapshot::PromptLaunchSnapshot>,
+    #[serde(default)]
+    pub roleplay_prompt_provenance: crate::commands::SettingProvenance,
+    /// The participants' enabled flags are the conversation's own instead of
+    /// the group's member list.
+    #[serde(default)]
+    pub members_overridden: bool,
+    /// The participants' muted flags are the conversation's own.
+    #[serde(default)]
+    pub muted_overridden: bool,
+    /// The participants' model choices are the conversation's own.
+    #[serde(default)]
+    pub member_models_overridden: bool,
 }
 
 impl CurrentConversationSettings {
+    /// A record with every field following its launch value.
+    #[must_use]
+    pub fn inherited(revision: Revision) -> Self {
+        Self {
+            companion_clock: None,
+            model_settings: Default::default(),
+            background: None,
+            revision,
+            author_note: None,
+            author_note_provenance: crate::commands::SettingProvenance::LaunchInherited,
+            memory: None,
+            memory_provenance: crate::commands::SettingProvenance::LaunchInherited,
+            model_override: None,
+            model_provenance: crate::commands::SettingProvenance::LaunchInherited,
+            voice: None,
+            voice_provenance: crate::commands::SettingProvenance::LaunchInherited,
+            prompt: None,
+            prompt_provenance: crate::commands::SettingProvenance::LaunchInherited,
+            lorebooks: None,
+            lorebooks_provenance: crate::commands::SettingProvenance::LaunchInherited,
+            persona: None,
+            persona_provenance: crate::commands::SettingProvenance::LaunchInherited,
+            scene: None,
+            scene_provenance: crate::commands::SettingProvenance::LaunchInherited,
+            speaker_selection: None,
+            speaker_selection_provenance: crate::commands::SettingProvenance::LaunchInherited,
+            chat_mode: None,
+            disable_character_lorebooks: None,
+            roleplay_prompt: None,
+            roleplay_prompt_provenance: crate::commands::SettingProvenance::LaunchInherited,
+            members_overridden: false,
+            muted_overridden: false,
+            member_models_overridden: false,
+        }
+    }
+
     pub fn validate(&self) -> Result<(), ValidationError> {
         if let Some(clock) = self.companion_clock {
             clock.validate()?;
@@ -279,6 +335,17 @@ impl CurrentConversationSettings {
         if let Some(prompt) = &self.prompt {
             prompt.validate()?;
         }
+        if self.roleplay_prompt.is_some()
+            != (self.roleplay_prompt_provenance
+                == crate::commands::SettingProvenance::CurrentOverride)
+        {
+            return Err(ValidationError::InvalidReference {
+                field: "conversation_settings.roleplay_prompt_provenance",
+            });
+        }
+        if let Some(prompt) = &self.roleplay_prompt {
+            prompt.validate()?;
+        }
         if let Some(lorebooks) = &self.lorebooks {
             if lorebooks.is_empty() {
                 return Err(ValidationError::InvalidValue {
@@ -326,17 +393,21 @@ impl CurrentConversationSettings {
                 field: "conversation_settings.speaker_selection",
             });
         }
+        if matches!(kind, ConversationKind::Direct(_))
+            && (self.roleplay_prompt_provenance
+                != crate::commands::SettingProvenance::LaunchInherited
+                || self.members_overridden
+                || self.muted_overridden
+                || self.member_models_overridden)
+        {
+            return Err(ValidationError::InvalidReference {
+                field: "conversation_settings.group_overrides",
+            });
+        }
         let expected_prompt = match kind {
             ConversationKind::Direct(_) => crate::snapshot::PromptPurposeSnapshot::Direct,
-            ConversationKind::Group(details) => {
-                match self.chat_mode.unwrap_or(details.group.chat_mode) {
-                    crate::snapshot::GroupChatModeSnapshot::Conversation => {
-                        crate::snapshot::PromptPurposeSnapshot::GroupConversational
-                    }
-                    crate::snapshot::GroupChatModeSnapshot::Roleplay => {
-                        crate::snapshot::PromptPurposeSnapshot::GroupRoleplay
-                    }
-                }
+            ConversationKind::Group(_) => {
+                crate::snapshot::PromptPurposeSnapshot::GroupConversational
             }
         };
         if self
@@ -348,13 +419,17 @@ impl CurrentConversationSettings {
                 field: "conversation_settings.prompt.purpose",
             });
         }
-        if matches!(
-            kind,
-            ConversationKind::Group(details)
-                if self.chat_mode.unwrap_or(details.group.chat_mode)
-                    == crate::snapshot::GroupChatModeSnapshot::Conversation
-                    && self.scene.is_some()
-        ) {
+        if self.roleplay_prompt.as_ref().is_some_and(|prompt| {
+            prompt.purpose != crate::snapshot::PromptPurposeSnapshot::GroupRoleplay
+        }) {
+            return Err(ValidationError::InvalidReference {
+                field: "conversation_settings.roleplay_prompt.purpose",
+            });
+        }
+        if matches!(kind, ConversationKind::Group(_))
+            && self.chat_mode == Some(crate::snapshot::GroupChatModeSnapshot::Conversation)
+            && self.scene.is_some()
+        {
             return Err(ValidationError::InvalidReference {
                 field: "conversation_settings.scene",
             });
@@ -404,7 +479,31 @@ impl ConversationParticipant {
                 field: "participant.non_character_model",
             });
         }
+        if let Some(member) = &self.member_snapshot {
+            member.validate()?;
+            if self.source != ParticipantSource::Character(member.character.source_id) {
+                return Err(ValidationError::InvalidReference {
+                    field: "participant.member_snapshot",
+                });
+            }
+        }
         Ok(())
+    }
+
+    /// Every protected snapshot this participant references: its model and,
+    /// for a member added after launch, its member snapshot.
+    #[must_use]
+    pub fn snapshot_references(&self) -> Vec<&crate::snapshot::ProtectedSnapshotRef> {
+        let mut references = Vec::new();
+        if let SnapshotSelection::Inherited(model) | SnapshotSelection::Explicit(model) =
+            &self.model_selection
+        {
+            references.push(&model.snapshot_ref);
+        }
+        if let Some(member) = &self.member_snapshot {
+            references.extend(crate::snapshot::group_member_snapshot_references(member));
+        }
+        references
     }
 }
 
@@ -514,6 +613,15 @@ impl Conversation {
                         field: "conversation.direct.participants",
                     });
                 }
+                if self
+                    .participants
+                    .iter()
+                    .any(|participant| participant.member_snapshot.is_some())
+                {
+                    return Err(ValidationError::Invariant {
+                        field: "conversation.direct.participants",
+                    });
+                }
                 if let ConversationKind::Direct(details) = &self.kind {
                     let character = self
                         .participants
@@ -530,9 +638,19 @@ impl Conversation {
             }
             ConversationKind::Group(details) => {
                 details.validate_participants(&self.participants)?;
+                validate_unique(
+                    "conversation.group.participant_characters",
+                    self.participants
+                        .iter()
+                        .filter_map(|participant| match participant.source {
+                            ParticipantSource::Character(id) => Some(id),
+                            _ => None,
+                        }),
+                )?;
                 let characters: std::collections::HashMap<_, _> = self
                     .participants
                     .iter()
+                    .filter(|participant| participant.member_snapshot.is_none())
                     .filter_map(|participant| match participant.source {
                         ParticipantSource::Character(id) => Some((id, participant)),
                         _ => None,
@@ -558,7 +676,7 @@ impl Conversation {
                 let character_ids: std::collections::HashSet<_> = self
                     .participants
                     .iter()
-                    .filter(|p| p.role == ParticipantRole::Character)
+                    .filter(|p| p.role == ParticipantRole::Character && p.member_snapshot.is_none())
                     .map(|p| p.id)
                     .collect();
                 if policy_ids != character_ids {
@@ -1031,7 +1149,10 @@ impl GroupConversationDetails {
         }
         let character_count = participants
             .iter()
-            .filter(|participant| participant.role == ParticipantRole::Character)
+            .filter(|participant| {
+                participant.role == ParticipantRole::Character
+                    && participant.member_snapshot.is_none()
+            })
             .count();
         if self.initial_participant_policy.members.len() != character_count {
             return Err(ValidationError::InvalidReference {

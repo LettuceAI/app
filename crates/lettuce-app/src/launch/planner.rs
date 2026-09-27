@@ -49,7 +49,7 @@ use crate::BuiltInPromptId;
 
 const MAX_DISPLAY_BYTES: usize = 1024;
 
-fn dynamic_memory_policy_snapshot(
+pub(crate) fn dynamic_memory_policy_snapshot(
     mode: lettuce_conversations::MemoryModeSnapshot,
     settings: &DynamicMemorySettings,
 ) -> Option<DynamicMemoryPolicySnapshot> {
@@ -1536,7 +1536,7 @@ fn collect_prompt(
         .expect("every resolved prompt is registered before its snapshot is used")
 }
 
-fn character_snapshot(
+pub(crate) fn character_snapshot(
     character: &lettuce_characters::Character,
     draft: &SnapshotArtifactDraft,
 ) -> CharacterLaunchSnapshot {

@@ -8,13 +8,30 @@ use lettuce_companions::{
 };
 use lettuce_conversations::{
     ContinueConversation, ContinueConversationResult, ConversationReader, ConversationRepository,
-    ConversationRepositoryError, MemoryModeSnapshot, MessagePart, OperationKind, SendConversation,
-    SendConversationResult, resolve_effective_settings,
+    ConversationRepositoryError, MessagePart, OperationKind, SendConversation,
+    SendConversationResult,
 };
 use lettuce_jobs::handle::CancellationToken;
 use lettuce_types::TimestampMillis;
 
 use crate::{CompanionEmotionEngine, CompanionEmotionGenerationError};
+
+/// Whether the chat's live memory mode is dynamic (`live_sources::live_memory`).
+fn live_dynamic_memory<S>(
+    sources: &S,
+    conversation: &lettuce_conversations::Conversation,
+) -> Result<bool, CompanionTurnError>
+where
+    S: CharacterRepository
+        + lettuce_characters::GroupRepository
+        + lettuce_settings::GlobalSettingsStore,
+{
+    let settings = lettuce_settings::GlobalSettingsStore::load(sources)
+        .map_err(|_| ConversationRepositoryError::Storage)?
+        .settings;
+    crate::generation::live_sources::live_memory_is_dynamic(sources, conversation, &settings)
+        .map_err(|_| ConversationRepositoryError::Storage.into())
+}
 
 #[derive(Debug)]
 pub struct CompanionTurnCoordinator<'a, S, E: ?Sized> {
@@ -26,6 +43,8 @@ impl<S, E> CompanionTurnCoordinator<'_, S, E>
 where
     S: ConversationRepository
         + CharacterRepository
+        + lettuce_characters::GroupRepository
+        + lettuce_settings::GlobalSettingsStore
         + CompanionStateRepository
         + CompanionConversationContinuer,
     E: ?Sized,
@@ -70,10 +89,7 @@ where
         };
         let companion =
             companion_state(self.sources, &aggregate.conversation, owner, now)?.is_some();
-        let dynamic = resolve_effective_settings(&aggregate.conversation, None)
-            .map_err(ConversationRepositoryError::Invalid)?
-            .memory
-            .is_some_and(|memory| memory.mode == MemoryModeSnapshot::Dynamic);
+        let dynamic = live_dynamic_memory(self.sources, &aggregate.conversation)?;
         if !companion || !dynamic {
             return self
                 .sources
@@ -97,6 +113,8 @@ impl<S, E> CompanionTurnCoordinator<'_, S, E>
 where
     S: ConversationRepository
         + CharacterRepository
+        + lettuce_characters::GroupRepository
+        + lettuce_settings::GlobalSettingsStore
         + CompanionStateRepository
         + CompanionConversationSender,
     E: CompanionEmotionEngine + ?Sized,
@@ -185,10 +203,7 @@ where
                 now: effective_now,
             },
         );
-        let effect_seed = resolve_effective_settings(&aggregate.conversation, None)
-            .map_err(ConversationRepositoryError::Invalid)?
-            .memory
-            .is_some_and(|memory| memory.mode == MemoryModeSnapshot::Dynamic)
+        let effect_seed = live_dynamic_memory(self.sources, &aggregate.conversation)?
             .then(|| CompanionTurnEffectSeed::from_transition(&transition));
         let prepared = PreparedCompanionSend::new(
             command.clone(),

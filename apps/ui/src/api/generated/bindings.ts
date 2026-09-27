@@ -14,6 +14,14 @@ export const commands = {
 	generationCancel: (request: GenerationCancelRequest) => typedError<null, ApiError>(__TAURI_INVOKE("generation_cancel", { request })),
 	conversationLaunchDirect: (request: LaunchDirectRequest) => typedError<LaunchDirectResponse, ApiError>(__TAURI_INVOKE("conversation_launch_direct", { request })),
 	conversationLaunchGroup: (request: LaunchGroupRequest) => typedError<LaunchGroupResponse, ApiError>(__TAURI_INVOKE("conversation_launch_group", { request })),
+	conversationSettingsGet: (request: ConversationSettingsGetRequest) => typedError<ConversationSettingsView, ApiError>(__TAURI_INVOKE("conversation_settings_get", { request })),
+	conversationSettingsUpdate: (request: ConversationSettingsUpdateRequest) => typedError<ConversationSettingsView, ApiError>(__TAURI_INVOKE("conversation_settings_update", { request })),
+	conversationRename: (request: ConversationRenameRequest) => typedError<ConversationRevisions, ApiError>(__TAURI_INVOKE("conversation_rename", { request })),
+	conversationArchive: (request: ConversationRequest) => typedError<ConversationRevisions, ApiError>(__TAURI_INVOKE("conversation_archive", { request })),
+	conversationRestore: (request: ConversationRequest) => typedError<ConversationRevisions, ApiError>(__TAURI_INVOKE("conversation_restore", { request })),
+	conversationDelete: (request: ConversationRequest) => typedError<null, ApiError>(__TAURI_INVOKE("conversation_delete", { request })),
+	conversationParticipantAdd: (request: ConversationParticipantAddRequest) => typedError<ConversationRevisions, ApiError>(__TAURI_INVOKE("conversation_participant_add", { request })),
+	conversationParticipantUpdate: (request: ConversationParticipantUpdateRequest) => typedError<ConversationRevisions, ApiError>(__TAURI_INVOKE("conversation_participant_update", { request })),
 	charactersList: (request: CharactersListRequest) => typedError<CharacterPage, ApiError>(__TAURI_INVOKE("characters_list", { request })),
 	jobsList: (request: JobsListRequest) => typedError<JobPage, ApiError>(__TAURI_INVOKE("jobs_list", { request })),
 	jobGet: (request: JobGetRequest) => typedError<JobView, ApiError>(__TAURI_INVOKE("job_get", { request })),
@@ -104,6 +112,8 @@ export type AssetsIngestRequest = {
 	role: AssetIngestRole,
 };
 
+export type BackgroundChange = { type: "image"; asset_id: string } | { type: "hidden" } | { type: "reset" };
+
 /**  The selected branch and the message it currently ends at. */
 export type BranchHead = {
 	branch_id: string,
@@ -128,6 +138,14 @@ export type CharactersListRequest = {
 	limit: number | null,
 };
 
+export type ChatModeChange = { type: "set"; mode: GroupChatMode } | { type: "reset" };
+
+/**
+ *  Name a source, turn the setting off, or reset it to what the chat
+ *  follows.
+ */
+export type ChoiceChange = { type: "set"; id: string } | { type: "none" } | { type: "reset" };
+
 export type ConversationKind = "direct" | "group";
 
 export type ConversationMessagesRequest = {
@@ -146,6 +164,48 @@ export type ConversationPage = {
 	next_cursor: string | null,
 };
 
+export type ConversationParticipantAddRequest = {
+	conversation_id: string,
+	character_id: string,
+	/**
+	 *  Idempotency key: repeating an add with the same key returns the first
+	 *  add's result.
+	 */
+	client_operation_id: string,
+};
+
+export type ConversationParticipantUpdateRequest = {
+	conversation_id: string,
+	participant_id: string,
+	enabled: boolean | null,
+	muted: boolean | null,
+	/**  The member's own model, or reset to follow the character's default. */
+	model: IdChange | null,
+	/**
+	 *  Idempotency key: repeating an update with the same key and request
+	 *  returns the first update's result; another request under the key is
+	 *  `Conflict`.
+	 */
+	client_operation_id: string,
+};
+
+export type ConversationRenameRequest = {
+	conversation_id: string,
+	expected_revision: number,
+	/**  Trimmed; blank is refused. */
+	title: string,
+};
+
+export type ConversationRequest = {
+	conversation_id: string,
+};
+
+/**  The revisions a conversation change left. */
+export type ConversationRevisions = {
+	revision: number,
+	settings_revision: number | null,
+};
+
 export type ConversationSendRequest = {
 	conversation_id: string,
 	text: string,
@@ -154,6 +214,73 @@ export type ConversationSendRequest = {
 	 *  the first send's result.
 	 */
 	client_operation_id: string,
+};
+
+export type ConversationSettingsGetRequest = {
+	conversation_id: string,
+};
+
+/**  The fields a settings update changes; an absent field is kept. */
+export type ConversationSettingsPatch = {
+	persona: ChoiceChange | null,
+	prompt: ChoiceChange | null,
+	roleplay_prompt: ChoiceChange | null,
+	lorebooks: LorebooksChange | null,
+	model: IdChange | null,
+	background: BackgroundChange | null,
+	scene: IdChange | null,
+	/**  Trimmed; blank removes the note. */
+	author_note: string | null,
+	speaker_selection: SpeakerSelectionChange | null,
+	memory: MemoryModeChange | null,
+	chat_mode: ChatModeChange | null,
+	disable_character_lorebooks: FlagChange | null,
+	/**  The members and their muted flags follow the group again. */
+	reset_members?: boolean,
+	/**  The members' models follow the group again. */
+	reset_member_models?: boolean,
+};
+
+export type ConversationSettingsUpdateRequest = {
+	conversation_id: string,
+	/**
+	 *  The settings revision the change was made against; none when the chat
+	 *  has no settings of its own yet.
+	 */
+	expected_settings_revision: number | null,
+	patch: ConversationSettingsPatch,
+};
+
+/**
+ *  Every setting of a chat with its current value and where it comes from.
+ *  A field whose source is `conversation` is the chat's own and can be
+ *  reset. Group-only fields are none for a one-to-one chat.
+ */
+export type ConversationSettingsView = {
+	conversation_id: string,
+	kind: ConversationKind,
+	title: string,
+	revision: number,
+	/**
+	 *  The revision a settings update passes; none until the chat has
+	 *  settings of its own.
+	 */
+	settings_revision: number | null,
+	author_note: string | null,
+	persona: SettingChoice,
+	/**  The one-to-one prompt, or a group's conversation-mode prompt. */
+	prompt: SettingChoice,
+	/**  A group's roleplay-mode prompt. */
+	roleplay_prompt: SettingChoice | null,
+	lorebooks: SettingChoices,
+	model: SettingChoice,
+	background: SettingBackground,
+	scene: SettingChoice,
+	memory: SettingMemory,
+	chat_mode: SettingChatMode | null,
+	disable_character_lorebooks: SettingFlag | null,
+	speaker_selection: SettingSpeakerSelection | null,
+	members: GroupMembersSettings | null,
 };
 
 /**  What a conversation was started from. */
@@ -236,6 +363,8 @@ export type FilesInspectRequest = {
 	source: FileSource,
 };
 
+export type FlagChange = { type: "set"; value: boolean } | { type: "reset" };
+
 export type GenerationCancelRequest = {
 	turn_id: string,
 };
@@ -249,6 +378,19 @@ export type GenerationEvent = { type: "started"; turn_id: string } | { type: "de
 export type GenerationFailureCode = "invalid_conversation" | "missing_model" | "context_unavailable" | "speaker_unavailable" | "provider_unavailable" | "provider_rejected" | "empty_output" | "timed_out" | "recovery_unavailable" | "embedding_unavailable" | "internal";
 
 export type GroupChatMode = "conversation" | "roleplay";
+
+/**
+ *  A group chat's members: where the member list, the muted flags and the
+ *  members' models come from, and each member as the chat uses it.
+ */
+export type GroupMembersSettings = {
+	members_source: SettingSource,
+	muted_source: SettingSource,
+	models_source: SettingSource,
+	participants: ParticipantSettings[],
+};
+
+export type IdChange = { type: "set"; id: string } | { type: "reset" };
 
 export type JobCancelRequest = {
 	job_id: string,
@@ -395,7 +537,14 @@ export type LaunchGroupResponse = {
  */
 export type LifecycleFilter = "active" | "archived" | "all";
 
+/**  An empty list turns the chat's lorebooks off. */
+export type LorebooksChange = { type: "set"; ids: string[] } | { type: "reset" };
+
 export type MediaRole = "inline" | "attachment" | "avatar" | "scene" | "reference";
+
+export type MemoryMode = "manual" | "dynamic" | "disabled";
+
+export type MemoryModeChange = { type: "set"; mode: MemoryMode } | { type: "reset" };
 
 /**
  *  One page of visible messages in conversation order, oldest first;
@@ -411,6 +560,17 @@ export type MessagePartView = { type: "text"; text: string } | { type: "media"; 
 export type MessageRole = "user" | "assistant" | "system" | "scene";
 
 export type ParticipantRole = "user" | "character" | "system";
+
+/**  A group participant as the chat uses it now. */
+export type ParticipantSettings = {
+	participant_id: string,
+	character_id: string | null,
+	name: string,
+	enabled: boolean,
+	muted: boolean,
+	/**  The member's own model; none follows the character's default model. */
+	model: SettingChoice,
+};
 
 export type ParticipantView = {
 	id: string,
@@ -454,6 +614,58 @@ export type SendAccepted = {
 	user_message_id: string,
 	turn_id: string,
 };
+
+/**
+ *  The background the chat shows: an image, hidden, or (neither) whatever
+ *  the scene, character or group shows.
+ */
+export type SettingBackground = {
+	asset: AssetRef | null,
+	hidden: boolean,
+	source: SettingSource,
+};
+
+export type SettingChatMode = {
+	mode: GroupChatMode,
+	source: SettingSource,
+};
+
+/**  A setting that names one source; `id` is none when the setting is off. */
+export type SettingChoice = {
+	id: string | null,
+	source: SettingSource,
+};
+
+export type SettingChoices = {
+	ids: string[],
+	source: SettingSource,
+};
+
+export type SettingFlag = {
+	value: boolean,
+	source: SettingSource,
+};
+
+export type SettingMemory = {
+	mode: MemoryMode,
+	source: SettingSource,
+};
+
+/**
+ *  Where a setting's current value comes from: the conversation's own
+ *  choice (which the user can reset), its group, its character, its launch,
+ *  or the app default.
+ */
+export type SettingSource = "conversation" | "group" | "character" | "launch" | "app_default";
+
+export type SettingSpeakerSelection = {
+	method: SpeakerSelectionMethod,
+	source: SettingSource,
+};
+
+export type SpeakerSelectionChange = { type: "set"; method: SpeakerSelectionMethod } | { type: "reset" };
+
+export type SpeakerSelectionMethod = "llm" | "heuristic" | "round_robin" | "director" | "director_action";
 
 export type TimelineMessage = {
 	id: string,

@@ -288,13 +288,18 @@ impl SpeakerInferenceRepository for Database {
             transaction.commit().map_err(slice::db)?;
             return Ok(record);
         }
-        let valid_participant: bool = transaction
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM conversation_participants WHERE conversation_id = ?1 AND id = ?2 AND role = 'character' AND enabled = 1 AND muted = 0)",
-                params![binding.conversation_id.to_string(), decision.participant_id.to_string()],
-                |row| row.get(0),
-            )
-            .map_err(slice::db)?;
+        let valid_participant =
+            crate::conversation::conversation_mutations::effective_participants_in(
+                &transaction,
+                binding.conversation_id,
+            )?
+            .iter()
+            .any(|participant| {
+                participant.id == decision.participant_id
+                    && participant.role == lettuce_conversations::ParticipantRole::Character
+                    && participant.enabled
+                    && !participant.muted
+            });
         if !valid_participant || now < record.admitted_at {
             return Err(ConversationRepositoryError::Conflict);
         }
