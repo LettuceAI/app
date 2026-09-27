@@ -1,15 +1,16 @@
 import { Channel } from "@tauri-apps/api/core";
 import { commands, events } from "./generated/bindings";
-import type {
-  CallCommandName,
-  CommandArgs,
-  CommandOutcome,
-  StreamArgs,
-  StreamChannelsAreLast,
-  StreamCommandName,
-  StreamEvent,
-  StreamOptions,
-  Transport,
+import {
+  abortedBeforeSend,
+  type CallCommandName,
+  type CommandArgs,
+  type CommandOutcome,
+  type StreamArgs,
+  type StreamChannelsAreLast,
+  type StreamCommandName,
+  type StreamEvent,
+  type StreamOptions,
+  type Transport,
 } from "./transport";
 
 type AnyCall = (...args: unknown[]) => Promise<unknown>;
@@ -35,12 +36,27 @@ export function createTauriTransport(): Transport {
       options: StreamOptions = {},
     ) {
       const { signal } = options;
-      const channel = new Channel<StreamEvent<K>>(signal?.aborted ? detached : onEvent);
-      signal?.addEventListener("abort", () => {
+      if (signal?.aborted) return Promise.resolve(abortedBeforeSend(command));
+      const channel = new Channel<StreamEvent<K>>(onEvent);
+      const detach = () => {
         channel.onmessage = detached;
-      }, { once: true });
+      };
+      signal?.addEventListener("abort", detach, { once: true });
+      const release = () => {
+        detach();
+        signal?.removeEventListener("abort", detach);
+      };
       const invoke = commands[command] as AnyCall;
-      return invoke(...args, channel) as Promise<CommandOutcome<K>>;
+      return (invoke(...args, channel) as Promise<CommandOutcome<K>>).then(
+        (outcome) => {
+          if (outcome.status === "error") release();
+          return outcome;
+        },
+        (error: unknown) => {
+          release();
+          throw error;
+        },
+      );
     },
     async subscribe(listener) {
       return events.appEvent.listen((event) => listener(event.payload));

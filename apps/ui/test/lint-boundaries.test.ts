@@ -78,7 +78,11 @@ describe("lint boundaries", () => {
     expect(findings("src/api/allowed.ts")).toEqual([]);
   });
 
-  it("rejects literal text and literal text props in JSX, but not class names or data attributes", () => {
-    expect(findings("src/features/alpha/Literal.tsx")).toEqual(["react(jsx-no-literals)", "react(jsx-no-literals)"]);
+  it("rejects literal text and literal text props in JSX, but not class names, data attributes or a space expression", () => {
+    expect(findings("src/features/alpha/Literal.tsx")).toEqual([
+      "react(jsx-no-literals)",
+      "react(jsx-no-literals)",
+      "react(jsx-no-literals)",
+    ]);
   });
 });

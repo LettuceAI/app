@@ -8,7 +8,10 @@ export interface AppEventBridgeProps {
   queryClient: QueryClient;
 }
 
-/** Subscribes once to the application event stream and invalidates the queries each event affects. */
+/**
+ * Subscribes once to the application event stream and invalidates the queries each event affects.
+ * Once the subscription is live it invalidates every query, covering events that fired before it.
+ */
 export function AppEventBridge({ api, queryClient }: AppEventBridgeProps) {
   const [failure, setFailure] = useState<{ error: unknown } | null>(null);
 
@@ -20,8 +23,12 @@ export function AppEventBridge({ api, queryClient }: AppEventBridgeProps) {
         for (const queryKey of invalidationsFor(event)) void queryClient.invalidateQueries({ queryKey });
       })
       .then((stop) => {
-        if (active) unsubscribe = stop;
-        else stop();
+        if (!active) {
+          stop();
+          return;
+        }
+        unsubscribe = stop;
+        void queryClient.invalidateQueries();
       })
       .catch((error: unknown) => {
         if (active) setFailure({ error });

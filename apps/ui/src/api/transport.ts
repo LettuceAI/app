@@ -55,8 +55,19 @@ export type Unsubscribe = () => void;
 export type TransportKind = "tauri" | "mock";
 
 export interface StreamOptions {
-  /** Aborting detaches the event handler; no event reaches it afterwards. */
+  /**
+   * Aborting detaches the event handler; no event reaches it afterwards. A signal that is already
+   * aborted cancels the stream before the command is sent.
+   */
   signal?: AbortSignal;
+}
+
+/** The outcome of a stream whose signal was aborted before the command was sent. */
+export function abortedBeforeSend<K extends CommandName>(command: K): CommandOutcome<K> {
+  return {
+    status: "error",
+    error: { code: "cancelled", message: `${command} was aborted before it was sent`, details: null },
+  };
 }
 
 /**
@@ -67,7 +78,7 @@ export interface StreamOptions {
  * settles, and the terminal event (completed, failed, cancelled) lives in the stream, not in the
  * promise. The handler stays attached until the caller aborts `signal`, which it does on unmount or
  * after the terminal event. The Tauri transport then drops the channel's handler; a server transport
- * closes its subscription.
+ * closes its subscription. A stream whose call fails detaches at once, since no events follow.
  */
 export interface Transport {
   readonly kind: TransportKind;

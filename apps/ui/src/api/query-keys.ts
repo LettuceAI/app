@@ -9,6 +9,7 @@ export const queryKeys = {
     all: ["conversations"] as const,
     lists: () => [...queryKeys.conversations.all, "list"] as const,
     detail: (conversationId: string) => [...queryKeys.conversations.all, "detail", conversationId] as const,
+    messages: (conversationId: string) => [...queryKeys.conversations.detail(conversationId), "messages"] as const,
   },
   jobs: {
     all: ["jobs"] as const,

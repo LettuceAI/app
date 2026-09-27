@@ -1,15 +1,16 @@
 import type { ApiError, AppEvent, AppStatus } from "./generated/bindings";
-import type {
-  CallCommandName,
-  CommandArgs,
-  CommandData,
-  CommandName,
-  CommandOutcome,
-  StreamArgs,
-  StreamCommandName,
-  StreamEvent,
-  StreamOptions,
-  Transport,
+import {
+  abortedBeforeSend,
+  type CallCommandName,
+  type CommandArgs,
+  type CommandData,
+  type CommandName,
+  type CommandOutcome,
+  type StreamArgs,
+  type StreamCommandName,
+  type StreamEvent,
+  type StreamOptions,
+  type Transport,
 } from "./transport";
 
 type Awaitable<T> = T | Promise<T>;
@@ -82,13 +83,22 @@ export function createMockTransport(options: MockTransportOptions = {}): MockTra
       onEvent: (event: StreamEvent<K>) => void,
       streamOptions: StreamOptions = {},
     ) {
+      const { signal } = streamOptions;
+      if (signal?.aborted) return abortedBeforeSend(command);
       const handler = streams[command] as AnyStreamHandler | undefined;
       if (!handler) return unhandled(command);
-      const { signal } = streamOptions;
+      let released = false;
       const emit = (event: unknown) => {
-        if (!signal?.aborted) onEvent(event as StreamEvent<K>);
+        if (!released && !signal?.aborted) onEvent(event as StreamEvent<K>);
       };
-      return (await handler(args, emit)) as CommandOutcome<K>;
+      try {
+        const outcome = (await handler(args, emit)) as CommandOutcome<K>;
+        if (outcome.status === "error") released = true;
+        return outcome;
+      } catch (error) {
+        released = true;
+        throw error;
+      }
     },
     async subscribe(listener) {
       listeners.add(listener);

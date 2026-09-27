@@ -31,22 +31,48 @@ async function setup() {
     queryKeys.jobs.detail("j2"),
     queryKeys.jobs.lists(),
     queryKeys.conversations.detail("c1"),
+    queryKeys.conversations.messages("c1"),
+    queryKeys.conversations.detail("c2"),
     queryKeys.app.status(),
   ];
-  for (const key of keys) queryClient.setQueryData(key, { seeded: true });
+  const seed = () => {
+    for (const key of keys) queryClient.setQueryData(key, { seeded: true });
+  };
+  seed();
+  const invalidated = () =>
+    keys.filter((key) => queryClient.getQueryState(key)?.isInvalidated).map((key) => key.join("/"));
   const view = await act(async () =>
     render(<AppEventBridge api={createApiClient(transport)} queryClient={queryClient} />),
   );
-  const invalidated = () =>
-    keys.filter((key) => queryClient.getQueryState(key)?.isInvalidated).map((key) => key.join("/"));
-  return { transport, invalidated, view };
+  const afterSubscribe = invalidated();
+  seed();
+  return { transport, invalidated, afterSubscribe, view };
 }
 
 describe("AppEventBridge", () => {
+  it("invalidates every query once the subscription is live, covering events it missed", async () => {
+    const { afterSubscribe } = await setup();
+    expect(afterSubscribe).toEqual([
+      "jobs/detail/j1",
+      "jobs/detail/j2",
+      "jobs/list",
+      "conversations/detail/c1",
+      "conversations/detail/c1/messages",
+      "conversations/detail/c2",
+      "app/status",
+    ]);
+  });
+
   it("invalidates the queries an app event maps to and nothing else", async () => {
     const { transport, invalidated } = await setup();
     await act(async () => transport.emitAppEvent({ type: "job_updated", job }));
     expect(invalidated()).toEqual(["jobs/detail/j1", "jobs/list"]);
+  });
+
+  it("refreshes a conversation and its messages when a generation settles", async () => {
+    const { transport, invalidated } = await setup();
+    await act(async () => transport.emitAppEvent({ type: "generation_settled", conversation_id: "c1", turn_id: "t1" }));
+    expect(invalidated()).toEqual(["conversations/detail/c1", "conversations/detail/c1/messages"]);
   });
 
   it("ignores event types the table does not know", async () => {

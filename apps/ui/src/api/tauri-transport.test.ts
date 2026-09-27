@@ -1,6 +1,6 @@
 import { emit } from "@tauri-apps/api/event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiFailure, createApiClient } from "./client";
 import type { AppEvent, JobEvent, JobView } from "./generated/bindings";
 import { createTauriTransport } from "./tauri-transport";
@@ -88,6 +88,52 @@ describe("tauri transport streams", () => {
     controller.abort();
     deliver(channel, 2, { type: "completed", job: { ...job, state: "succeeded" } });
     expect(seen).toEqual(["progress", "progress"]);
+  });
+
+  it("cancels without sending the command when the signal is already aborted", async () => {
+    const sent: string[] = [];
+    mockIPC((command) => {
+      sent.push(command);
+      return job;
+    });
+    const controller = new AbortController();
+    controller.abort();
+    const failure = await createApiClient(createTauriTransport())
+      .stream("jobWatch", [{ job_id: "j1" }], () => {}, { signal: controller.signal })
+      .catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(ApiFailure);
+    expect(failure).toMatchObject({ code: "cancelled" });
+    expect(sent).toEqual([]);
+  });
+
+  it("detaches the handler and removes its abort listener when the call fails", async () => {
+    let channel: ChannelHandle | undefined;
+    mockIPC((_command, payload) => {
+      channel = (payload as { onEvent: ChannelHandle }).onEvent;
+      throw { code: "not_found", message: "no such job", details: null };
+    });
+    const controller = new AbortController();
+    const removeListener = vi.spyOn(controller.signal, "removeEventListener");
+    const seen: string[] = [];
+    await expect(
+      createApiClient(createTauriTransport()).stream("jobWatch", [{ job_id: "j1" }], (event) => seen.push(event.type), {
+        signal: controller.signal,
+      }),
+    ).rejects.toMatchObject({ code: "not_found" });
+    if (!channel) throw new Error("the command never received its channel");
+    deliver(channel, 0, { type: "progress", job });
+    expect(seen).toEqual([]);
+    expect(removeListener).toHaveBeenCalledWith("abort", expect.any(Function));
+  });
+
+  it("keeps the abort listener after a successful call so late events can still be detached", async () => {
+    mockIPC(() => job);
+    const controller = new AbortController();
+    const removeListener = vi.spyOn(controller.signal, "removeEventListener");
+    await createApiClient(createTauriTransport()).stream("jobWatch", [{ job_id: "j1" }], () => {}, {
+      signal: controller.signal,
+    });
+    expect(removeListener).not.toHaveBeenCalled();
   });
 
   it("forwards app events to subscribers", async () => {

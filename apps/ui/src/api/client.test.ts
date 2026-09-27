@@ -113,6 +113,50 @@ describe("createApiClient", () => {
     expect(events).toEqual(["started", "delta", "completed"]);
   });
 
+  it("cancels a stream whose signal is already aborted without running the command", async () => {
+    let ran = false;
+    const api = createApiClient(
+      createMockTransport({
+        streams: {
+          jobWatch: () => {
+            ran = true;
+            return { status: "error", error: { code: "internal", message: "unreachable", details: null } };
+          },
+        },
+      }),
+    );
+    const controller = new AbortController();
+    controller.abort();
+    const failure = await api
+      .stream("jobWatch", [{ job_id: "j1" }], () => {}, { signal: controller.signal })
+      .catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(ApiFailure);
+    expect(failure).toMatchObject({ code: "cancelled" });
+    expect(ran).toBe(false);
+  });
+
+  it("detaches a stream whose call fails", async () => {
+    let emitLater: ((event: GenerationEvent) => void) | undefined;
+    const api = createApiClient(
+      createMockTransport({
+        streams: {
+          conversationSend: (_args, emit) => {
+            emitLater = emit;
+            return { status: "error", error: { code: "busy", message: "turn running", details: null } };
+          },
+        },
+      }),
+    );
+    const events: string[] = [];
+    await expect(
+      api.stream("conversationSend", [{ conversation_id: "c1", text: "hi", client_operation_id: "op1" }], (event) =>
+        events.push(event.type),
+      ),
+    ).rejects.toMatchObject({ code: "busy" });
+    emitLater?.({ type: "started", turn_id: "t1" });
+    expect(events).toEqual([]);
+  });
+
   it("forwards app events to subscribers until they unsubscribe", async () => {
     const transport = createMockTransport();
     const api = createApiClient(transport);
