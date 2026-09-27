@@ -236,7 +236,8 @@ impl OnnxRuntimeDownloadSource for ArtifactDownloadClient {
                     lettuce_network::ArtifactDownloadError::InvalidRequest,
                 ) => ArtifactSourceError::InvalidRequest,
                 ArtifactProbeError::Download(
-                    lettuce_network::ArtifactDownloadError::InvalidResponse,
+                    lettuce_network::ArtifactDownloadError::InvalidResponse
+                    | lettuce_network::ArtifactDownloadError::Refused { .. },
                 ) => ArtifactSourceError::InvalidResponse,
             })
     }

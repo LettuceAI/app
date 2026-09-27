@@ -11,6 +11,7 @@ Facts about how `lettuce-model-hub` relates to the legacy app (2.2.x). The crate
 - `PinnedArtifactStore` checks only the size when no digest is known, as legacy did for release assets without one.
 - The Hugging Face browser keeps legacy's search behavior, author and avatar lookup order, README handling and error texts for unauthorized and gated responses. Quantization names follow legacy's list.
 - `inspect_legacy_embedding_install` reads legacy's `v4-model.int8.onnx` and `v4-tokenizer.json` in place.
+- The download planner's formulas (`maxContextForBpv`, `KV_BPV`, `gpuOffloadLayerCount`, `modelOffloadToGpuLayers`) lived in the legacy frontend (`HuggingFaceBrowserPage.tsx` 163-199, 650-666, 701-704); they are ported verbatim, including their bytes-per-value table that differs from the runnability score's, and pinned by parity tests with numbers from the legacy functions.
 
 ## Deliberate differences from legacy
 
@@ -20,6 +21,9 @@ Facts about how `lettuce-model-hub` relates to the legacy app (2.2.x). The crate
 - Quantization naming: legacy labeled `BF16` files `F16`, did not know `TQ1_0`, `TQ2_0` and `MXFP4`, and hid every file with `imatrix` in its name. Importance-matrix quants are now listed and flagged; only the importance-matrix data file is dropped. The runnability score keeps the full-precision quality for `UD-BF16` files, which legacy scored as `F16`.
 - Legacy's GPU-candidate pass paired files with the wrong file's context limits whenever an earlier file had no size. Corrected.
 - A second concurrent install of the same pinned file fails with `Busy` instead of appending to the same partial.
+- Legacy's errors were strings the UI matched (`HfTokenMenu.tsx` 15-17); refusals, missing repositories, rate limits and unreachable hosts are now typed `HfFailure`s, with legacy's texts kept as the message.
+- Legacy reported every failed token check, including an unreachable Hugging Face, as an invalid token (`image_bundle.rs` 116-121); only a 401 is invalid now, anything else is unknown.
+- Legacy sized every file 0 when the file tree request failed (`hf_browser/mod.rs` 2371-2375), which made every file unrunnable in the UI; `model_info` now needs the tree and the browse call fails instead.
 
 ## History
 

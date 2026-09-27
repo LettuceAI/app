@@ -21,11 +21,12 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const GENERATION_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const TRANSFER_TIMEOUT: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
+const BROWSE_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_RETRIES: u32 = 2;
 const MAX_RETRY_AFTER: Duration = Duration::from_secs(30);
 const REFERER_HEADER: &str = "https://github.com/LettuceAI/";
 const TITLE_HEADER: &str = "LettuceAI";
-const ARTIFACT_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+const ARTIFACT_IDLE_TIMEOUT: Duration = Duration::from_secs(120);
 const MAX_ARTIFACT_REDIRECTS: usize = 5;
 const MAX_JSON_REDIRECTS: usize = 10;
 
@@ -192,6 +193,10 @@ pub enum ArtifactDownloadError {
     InvalidResponse,
     #[error("artifact transport failed")]
     Transport,
+    /// The server answered with a status other than 200 or 206;
+    /// `signed_in` says whether a token went with the request.
+    #[error("artifact request was refused with status {status}")]
+    Refused { status: u16, signed_in: bool },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -434,9 +439,9 @@ impl ArtifactDownloadClient {
         if offset > 0 {
             request = request.header(header::RANGE, format!("bytes={offset}-"));
         }
-        let response = request
-            .send()
+        let response = tokio::time::timeout(ARTIFACT_IDLE_TIMEOUT, request.send())
             .await
+            .map_err(|_| ArtifactDownloadError::Transport)?
             .map_err(|_| ArtifactDownloadError::Transport)?;
         let status = response.status().as_u16();
         let start = if status == 206 {
@@ -444,7 +449,10 @@ impl ArtifactDownloadClient {
         } else if status == 200 {
             0
         } else {
-            return Err(ArtifactDownloadError::InvalidResponse);
+            return Err(ArtifactDownloadError::Refused {
+                status,
+                signed_in: token.is_some(),
+            });
         };
         let remaining = expected_size
             .checked_sub(start)
@@ -558,6 +566,9 @@ pub enum RequestTimeout {
     /// A long streamed transfer such as a model pull: sent once, with no
     /// practical total deadline; only the stream's idle timeout applies.
     Transfer,
+    /// 30-second catalog read (a model hub page, a hardware probe), sent
+    /// once.
+    Browse,
 }
 
 /// Per-request transport choices owned by the caller's provider policy.
@@ -576,6 +587,10 @@ impl RequestPolicy {
     };
     pub const PROBE: Self = Self {
         timeout: RequestTimeout::Probe,
+        allow_invalid_tls: false,
+    };
+    pub const BROWSE: Self = Self {
+        timeout: RequestTimeout::Browse,
         allow_invalid_tls: false,
     };
 }
@@ -1280,7 +1295,7 @@ fn same_host_redirects() -> redirect::Policy {
 fn retries_for(policy: RequestPolicy) -> u32 {
     match policy.timeout {
         RequestTimeout::Generation => MAX_RETRIES,
-        RequestTimeout::Probe | RequestTimeout::Transfer => 0,
+        RequestTimeout::Probe | RequestTimeout::Transfer | RequestTimeout::Browse => 0,
     }
 }
 
@@ -1289,13 +1304,16 @@ fn timeout_for(policy: RequestPolicy) -> Duration {
         RequestTimeout::Generation => GENERATION_TIMEOUT,
         RequestTimeout::Probe => PROBE_TIMEOUT,
         RequestTimeout::Transfer => TRANSFER_TIMEOUT,
+        RequestTimeout::Browse => BROWSE_TIMEOUT,
     }
 }
 
 fn idle_timeout_for(policy: RequestPolicy) -> Duration {
     match policy.timeout {
         RequestTimeout::Transfer => GENERATION_TIMEOUT,
-        RequestTimeout::Generation | RequestTimeout::Probe => timeout_for(policy),
+        RequestTimeout::Generation | RequestTimeout::Probe | RequestTimeout::Browse => {
+            timeout_for(policy)
+        }
     }
 }
 

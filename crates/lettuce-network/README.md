@@ -27,6 +27,7 @@ Provider requests (`JsonClient` and `BulkHttpClient` except `fetch_url`) carry t
 | --- | --- | --- |
 | `Generation` | 30 min | 2 |
 | `Probe` (key verification) | 10 s | 0 |
+| `Browse` (a model hub page, a hardware probe) | 30 s | 0 |
 | `Transfer` (e.g. a model pull) | 7 days, idle timeout 30 min | 0 |
 
 The connect timeout is always 10 s. `delete_json` never retries. Otherwise a retry happens on a 5xx, on a 429 (after `Retry-After` when it is at most 30 s; a longer `Retry-After` returns the response instead), on a timeout, and on a connection failure, with 200 ms then 400 ms backoff. A streamed POST retries only before any body bytes have reached the caller.
@@ -49,7 +50,7 @@ Image generation requests and results: `get`, `post_json` and `post_multipart` (
 
 Downloads of large pinned files. It follows at most five redirects and only to https, and a stream never reads past the expected size.
 
-- `open_hugging_face(url, offset, expected_size)` and `open_https(...)` send an optional `Range` from `offset`, accept `200` (from zero) or a `206` whose `Content-Range` matches the expected total, and return an `ArtifactDownloadStream` whose `start()` says where the bytes begin. Chunks wait at most 30 s. Backpressure and cancellation stay with the caller, who also verifies size and digest.
+- `open_hugging_face(url, offset, expected_size)` and `open_https(...)` send an optional `Range` from `offset`, accept `200` (from zero) or a `206` whose `Content-Range` matches the expected total, and return an `ArtifactDownloadStream` whose `start()` says where the bytes begin. The response and every chunk wait at most 120 s; a refusal (any status but 200 and 206) is `Refused { status, signed_in }`, where `signed_in` says whether a token went with the request. Backpressure and cancellation stay with the caller, who also verifies size and digest.
 - `with_hugging_face_token(token, endpoint)` signs Hugging Face requests in for gated repositories, but only for URLs with the endpoint's origin. `with_civitai_token` signs requests to `civitai.com` hosts only; neither token follows a redirect to another host.
 - `probe_https_size` learns a file's size from a one-byte ranged request. `read_hugging_face_prefix` reads the first bytes of a file, for example a GGUF header.
 

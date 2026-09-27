@@ -124,6 +124,15 @@ impl crate::AppBackend {
         .map_err(Into::into)
     }
 
+    /// The model files llama.cpp holds open; none before the runtime first
+    /// ran.
+    #[must_use]
+    pub fn local_llama_resident_files(&self) -> Vec<String> {
+        self.started_local_llama()
+            .map(|local_llama| local_llama.runtime().resident_files())
+            .unwrap_or_default()
+    }
+
     /// Frees the loaded model and its cached contexts; nothing to do before
     /// the runtime first ran.
     pub async fn unload_local_llama(&self) -> Result<(), LocalLlamaCommandError> {

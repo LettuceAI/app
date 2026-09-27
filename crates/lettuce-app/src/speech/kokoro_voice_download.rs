@@ -654,9 +654,9 @@ fn classify_error(error: &KokoroVoiceDownloadError) -> (JobErrorCode, bool, &'st
 fn map_source_error(error: ArtifactDownloadError) -> KokoroVoiceDownloadSourceError {
     match error {
         ArtifactDownloadError::Transport => KokoroVoiceDownloadSourceError::Transport,
-        ArtifactDownloadError::InvalidRequest | ArtifactDownloadError::InvalidResponse => {
-            KokoroVoiceDownloadSourceError::InvalidResponse
-        }
+        ArtifactDownloadError::InvalidRequest
+        | ArtifactDownloadError::InvalidResponse
+        | ArtifactDownloadError::Refused { .. } => KokoroVoiceDownloadSourceError::InvalidResponse,
     }
 }
 

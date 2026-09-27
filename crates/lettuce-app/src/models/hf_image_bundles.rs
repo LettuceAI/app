@@ -913,7 +913,7 @@ pub fn component_library(
             }
         }
     }
-    if let Ok(models) = crate::downloaded_ggufs(llm_root) {
+    if let Ok(models) = crate::downloaded_ggufs(llm_root, std::slice::from_ref(&paths.image_root)) {
         entries.extend(
             models
                 .into_iter()

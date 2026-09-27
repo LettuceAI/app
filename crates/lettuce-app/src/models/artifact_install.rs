@@ -15,7 +15,7 @@ use lettuce_jobs::{
     handle::{CancellationToken, JobHandle},
 };
 use lettuce_model_hub::{
-    PinnedArtifact, PinnedArtifactError, PinnedArtifactPreparation, PinnedArtifactStore,
+    HfFailure, PinnedArtifact, PinnedArtifactError, PinnedArtifactPreparation, PinnedArtifactStore,
     PinnedDownload,
 };
 use lettuce_network::{ArtifactDownloadClient, ArtifactDownloadError, ArtifactDownloadStream};
@@ -98,6 +98,63 @@ pub enum ArtifactSourceError {
     InvalidResponse,
     #[error("artifact download request is invalid")]
     InvalidRequest,
+    /// The server refused the file with `status`; `signed_in` says whether
+    /// a token went with the request.
+    #[error("artifact download was refused with status {status}")]
+    Refused { status: u16, signed_in: bool },
+}
+
+const HF_TOKEN_MISSING: &str = "hf-token-missing";
+const HF_TOKEN_INVALID: &str = "hf-token-invalid";
+const HF_GATED: &str = "hf-gated";
+const HF_NOT_FOUND: &str = "hf-not-found";
+const HF_RATE_LIMITED: &str = "hf-rate-limited";
+const HF_OFFLINE: &str = "hf-offline";
+const INSTALL_FAILED: &str = "artifact install failed";
+
+/// The job error a failed Hugging Face download records.
+fn hf_job_error(failure: &HfFailure) -> (JobErrorCode, bool, &'static str) {
+    match failure {
+        HfFailure::TokenMissing => (JobErrorCode::Authentication, false, HF_TOKEN_MISSING),
+        HfFailure::TokenInvalid => (JobErrorCode::Authentication, false, HF_TOKEN_INVALID),
+        HfFailure::GatedAccess { .. } => (JobErrorCode::Authentication, false, HF_GATED),
+        HfFailure::NotFound => (JobErrorCode::ResourceUnavailable, false, HF_NOT_FOUND),
+        HfFailure::RateLimited => (JobErrorCode::ResourceUnavailable, true, HF_RATE_LIMITED),
+        HfFailure::Offline => (JobErrorCode::ResourceUnavailable, true, HF_OFFLINE),
+    }
+}
+
+/// The Hugging Face failure a job error recorded, with `model_id` as the
+/// gated repository.
+#[must_use]
+pub fn hf_failure_of_job_error(label: &str, model_id: &str) -> Option<HfFailure> {
+    Some(match label {
+        HF_TOKEN_MISSING => HfFailure::TokenMissing,
+        HF_TOKEN_INVALID => HfFailure::TokenInvalid,
+        HF_GATED => HfFailure::GatedAccess {
+            model_id: model_id.to_owned(),
+        },
+        HF_NOT_FOUND => HfFailure::NotFound,
+        HF_RATE_LIMITED => HfFailure::RateLimited,
+        HF_OFFLINE => HfFailure::Offline,
+        _ => return None,
+    })
+}
+
+/// Why opening a Hugging Face file failed: a refusal by its status, a
+/// transport failure as offline.
+fn opening_failed(source: &ArtifactSource, error: ArtifactSourceError) -> ArtifactInstallError {
+    let ArtifactSource::HuggingFace { repository, .. } = source else {
+        return error.into();
+    };
+    let failure = match error {
+        ArtifactSourceError::Refused { status, signed_in } => {
+            lettuce_model_hub::status_failure(status, repository, signed_in)
+        }
+        ArtifactSourceError::Transport => Some(HfFailure::Offline),
+        ArtifactSourceError::InvalidResponse | ArtifactSourceError::InvalidRequest => None,
+    };
+    failure.map_or_else(|| error.into(), ArtifactInstallError::HuggingFace)
 }
 
 #[async_trait]
@@ -121,6 +178,9 @@ fn map_download_error(error: ArtifactDownloadError) -> ArtifactSourceError {
         ArtifactDownloadError::InvalidRequest => ArtifactSourceError::InvalidRequest,
         ArtifactDownloadError::InvalidResponse => ArtifactSourceError::InvalidResponse,
         ArtifactDownloadError::Transport => ArtifactSourceError::Transport,
+        ArtifactDownloadError::Refused { status, signed_in } => {
+            ArtifactSourceError::Refused { status, signed_in }
+        }
     }
 }
 
@@ -204,6 +264,8 @@ pub enum ArtifactInstallError {
     InvalidWork,
     #[error("artifact install was cancelled")]
     Cancelled,
+    #[error("Hugging Face refused the download: {0:?}")]
+    HuggingFace(HfFailure),
     #[error("artifact install could not be finished: {0}")]
     Finish(String),
 }
@@ -543,14 +605,13 @@ impl<J: JobStore + ?Sized> ArtifactInstallCoordinator<'_, J> {
             }
             Err(error) => {
                 tracing::warn!(install = %work.plan.install_id, %error, "artifact install failed");
+                let (code, retryable, label) = match &error {
+                    ArtifactInstallError::HuggingFace(failure) => hf_job_error(failure),
+                    _ => (JobErrorCode::ResourceUnavailable, false, INSTALL_FAILED),
+                };
                 let job = self.jobs.append_and_transition(JobMutation::Fail {
                     claim: work.claim.claim,
-                    error: JobError::new(
-                        JobErrorCode::ResourceUnavailable,
-                        false,
-                        "artifact install failed",
-                    )
-                    .expect("constant error label"),
+                    error: JobError::new(code, retryable, label).expect("constant error label"),
                     at,
                 })?;
                 Ok(ArtifactInstallRunResult::Failed { error, job })
@@ -614,7 +675,8 @@ impl<J: JobStore + ?Sized> ArtifactInstallCoordinator<'_, J> {
         }
         let mut body = source
             .open(&planned.source, download.offset(), size)
-            .await?;
+            .await
+            .map_err(|error| opening_failed(&planned.source, error))?;
         if body.start() != download.offset() {
             if body.start() != 0 {
                 return Err(ArtifactSourceError::InvalidResponse.into());

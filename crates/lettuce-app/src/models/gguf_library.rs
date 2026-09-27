@@ -15,6 +15,7 @@ use crate::llm_models_root;
 pub struct DownloadedGguf {
     /// The repository the folder was named after.
     pub model_id: String,
+    /// The path below the repository folder, `/`-separated.
     pub filename: String,
     pub path: String,
     pub size: u64,
@@ -42,45 +43,215 @@ fn created(root: &Path) -> Result<(), String> {
         .map_err(|error| format!("Failed to create GGUF models dir: {error}"))
 }
 
-/// The `.gguf` files one folder below `root`, with their header facts.
-pub fn downloaded_ggufs(root: &Path) -> Result<Vec<DownloadedGguf>, String> {
+fn hidden(name: &std::ffi::OsStr) -> bool {
+    name.to_string_lossy().starts_with('.')
+}
+
+/// The `.gguf` files below each repository folder of `root`, nested
+/// folders included, with their header facts; hidden folders (partial
+/// downloads) and the `skipped` folders (image models kept below the
+/// models folder) are left out.
+pub fn downloaded_ggufs(root: &Path, skipped: &[PathBuf]) -> Result<Vec<DownloadedGguf>, String> {
     created(root)?;
     let entries =
         std::fs::read_dir(root).map_err(|error| format!("Failed to read models dir: {error}"))?;
     let mut found = Vec::new();
     for entry in entries.flatten() {
         let folder = entry.path();
-        if !folder.is_dir() {
+        if !folder.is_dir()
+            || hidden(&entry.file_name())
+            || skipped.iter().any(|skipped| paths_equal(skipped, &folder))
+        {
             continue;
         }
         let model_id = entry.file_name().to_string_lossy().replace("--", "/");
-        let Ok(files) = std::fs::read_dir(&folder) else {
-            continue;
-        };
-        for file in files.flatten() {
-            let path = file.path();
-            let filename = file.file_name().to_string_lossy().into_owned();
-            if !filename.to_lowercase().ends_with(".gguf") {
+        let mut pending = vec![folder.clone()];
+        while let Some(directory) = pending.pop() {
+            let Ok(files) = std::fs::read_dir(&directory) else {
                 continue;
+            };
+            for file in files.flatten() {
+                let path = file.path();
+                if path.is_dir() {
+                    if !hidden(&file.file_name()) {
+                        pending.push(path);
+                    }
+                    continue;
+                }
+                let name = file.file_name().to_string_lossy().into_owned();
+                if !name.to_lowercase().ends_with(".gguf") {
+                    continue;
+                }
+                let filename = path
+                    .strip_prefix(&folder)
+                    .unwrap_or(&path)
+                    .components()
+                    .map(|part| part.as_os_str().to_string_lossy().into_owned())
+                    .collect::<Vec<_>>()
+                    .join("/");
+                let meta = crate::models::model_runnability::local_gguf_meta(&path);
+                let path_text = path.to_string_lossy().into_owned();
+                let is_mmproj = name.to_lowercase().contains("mmproj");
+                found.push(DownloadedGguf {
+                    model_id: model_id.clone(),
+                    is_mmproj,
+                    is_dflash: !is_mmproj && is_dflash_drafter(&path_text),
+                    is_mtp: lettuce_model_hub::is_mtp_asset(&filename),
+                    size: file.metadata().map_or(0, |metadata| metadata.len()),
+                    quantization: lettuce_model_hub::extract_quantization(&path_text),
+                    architecture: meta.as_ref().and_then(|meta| meta.architecture.clone()),
+                    context_length: meta.as_ref().and_then(|meta| meta.context_length),
+                    filename,
+                    path: path_text,
+                });
             }
-            let meta = crate::models::model_runnability::local_gguf_meta(&path);
-            let path_text = path.to_string_lossy().into_owned();
-            let is_mmproj = filename.to_lowercase().contains("mmproj");
-            found.push(DownloadedGguf {
-                model_id: model_id.clone(),
-                is_mmproj,
-                is_dflash: !is_mmproj && is_dflash_drafter(&path_text),
-                is_mtp: lettuce_model_hub::is_mtp_asset(&filename),
-                size: file.metadata().map_or(0, |metadata| metadata.len()),
-                quantization: lettuce_model_hub::extract_quantization(&path_text),
-                architecture: meta.as_ref().and_then(|meta| meta.architecture.clone()),
-                context_length: meta.as_ref().and_then(|meta| meta.context_length),
-                filename,
-                path: path_text,
-            });
         }
     }
+    found.sort_by(|a, b| (&a.model_id, &a.filename).cmp(&(&b.model_id, &b.filename)));
     Ok(found)
+}
+
+/// Which path of a model points at a file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModelPathField {
+    Model,
+    Mmproj,
+    Mtp,
+    Dflash,
+}
+
+/// A saved llama.cpp model (or, without an id, the global model defaults)
+/// whose paths point at a file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelFileReference {
+    pub model_profile_id: Option<lettuce_types::ModelProfileId>,
+    pub display_name: Option<String>,
+    pub fields: Vec<ModelPathField>,
+}
+
+fn same_file_path(candidate: Option<&str>, target: &str) -> bool {
+    candidate.is_some_and(|candidate| {
+        !candidate.is_empty() && candidate.replace('\\', "/") == target.replace('\\', "/")
+    })
+}
+
+fn llama_fields(
+    model_path: Option<&str>,
+    llama: &lettuce_models::LlamaCppSettings,
+    target: &str,
+) -> Vec<ModelPathField> {
+    [
+        (ModelPathField::Model, model_path),
+        (ModelPathField::Mmproj, llama.mmproj_path.as_deref()),
+        (ModelPathField::Mtp, llama.mtp_model_path.as_deref()),
+        (ModelPathField::Dflash, llama.dflash_model_path.as_deref()),
+    ]
+    .into_iter()
+    .filter(|(_, path)| same_file_path(*path, target))
+    .map(|(field, _)| field)
+    .collect()
+}
+
+/// Every llama.cpp model and the global model defaults, read once to find
+/// the ones whose paths point at a file.
+#[derive(Debug)]
+pub struct ModelFileReferences {
+    profiles: Vec<(lettuce_models::ModelProfile, bool)>,
+    defaults: lettuce_models::LlamaCppSettings,
+}
+
+impl ModelFileReferences {
+    pub fn load<R>(repository: &R) -> Result<Self, String>
+    where
+        R: lettuce_models::ModelCatalog + lettuce_models::GlobalModelSettingsRepository + ?Sized,
+    {
+        let llama_accounts = repository
+            .provider_accounts()
+            .map_err(|error| error.to_string())?
+            .into_iter()
+            .filter(|account| account.protocol == lettuce_models::ProviderProtocol::LlamaCpp)
+            .map(|account| account.id)
+            .collect::<Vec<_>>();
+        let profiles = repository
+            .model_profiles()
+            .map_err(|error| error.to_string())?
+            .into_iter()
+            .map(|profile| {
+                let llama = llama_accounts.contains(&profile.provider_account_id);
+                (profile, llama)
+            })
+            .collect();
+        let (defaults, _) = repository
+            .global_model_settings()
+            .map_err(|error| error.to_string())?;
+        Ok(Self {
+            profiles,
+            defaults: defaults.llama_cpp,
+        })
+    }
+
+    /// The models, and the global defaults, whose paths point at `path`.
+    #[must_use]
+    pub fn of(&self, path: &str) -> Vec<ModelFileReference> {
+        let mut references = self
+            .profiles
+            .iter()
+            .filter_map(|(profile, llama)| {
+                let model_path = llama.then_some(profile.external_model_id.as_str());
+                let fields = llama_fields(model_path, &profile.config.llama_cpp, path);
+                (!fields.is_empty()).then(|| ModelFileReference {
+                    model_profile_id: Some(profile.id),
+                    display_name: Some(profile.display_name.clone()),
+                    fields,
+                })
+            })
+            .collect::<Vec<_>>();
+        let fields = llama_fields(None, &self.defaults, path);
+        if !fields.is_empty() {
+            references.push(ModelFileReference {
+                model_profile_id: None,
+                display_name: None,
+                fields,
+            });
+        }
+        references
+    }
+}
+
+/// The llama.cpp models, and the global model defaults, whose paths point
+/// at `path`.
+pub fn model_file_references<R>(
+    repository: &R,
+    path: &str,
+) -> Result<Vec<ModelFileReference>, String>
+where
+    R: lettuce_models::ModelCatalog + lettuce_models::GlobalModelSettingsRepository + ?Sized,
+{
+    Ok(ModelFileReferences::load(repository)?.of(path))
+}
+
+pub const OUTSIDE_MODELS_FOLDER: &str = "Cannot delete files outside the models directory";
+
+/// Whether `file_path` exists; an error when it is not inside `root` or one
+/// of `image_roots`.
+pub fn deletable_model(
+    root: &Path,
+    image_roots: &[PathBuf],
+    file_path: &str,
+) -> Result<bool, String> {
+    let path = PathBuf::from(file_path);
+    if !path.exists() {
+        return Ok(false);
+    }
+    let resolved = std::fs::canonicalize(&path)
+        .map_err(|error| format!("Failed to delete model file: {error}"))?;
+    let inside = |folder: &Path| {
+        std::fs::canonicalize(folder).is_ok_and(|folder| resolved.starts_with(folder))
+    };
+    if !inside(root) && !image_roots.iter().any(|image| inside(image)) {
+        return Err(OUTSIDE_MODELS_FOLDER.to_owned());
+    }
+    Ok(true)
 }
 
 /// Deletes a model file inside `root` or one of `image_roots`, and its
@@ -90,18 +261,10 @@ pub fn delete_downloaded_model(
     image_roots: &[PathBuf],
     file_path: &str,
 ) -> Result<(), String> {
-    let path = PathBuf::from(file_path);
-    if !path.exists() {
+    if !deletable_model(root, image_roots, file_path)? {
         return Ok(());
     }
-    let resolved = std::fs::canonicalize(&path)
-        .map_err(|error| format!("Failed to delete model file: {error}"))?;
-    let inside = |folder: &Path| {
-        std::fs::canonicalize(folder).is_ok_and(|folder| resolved.starts_with(folder))
-    };
-    if !inside(root) && !image_roots.iter().any(|image| inside(image)) {
-        return Err("Cannot delete files outside the models directory".to_owned());
-    }
+    let path = PathBuf::from(file_path);
     std::fs::remove_file(&path).map_err(|error| format!("Failed to delete model file: {error}"))?;
     if let Some(parent) = path.parent()
         && parent != root
@@ -160,7 +323,7 @@ pub fn llm_models_dir_info(
     })
 }
 
-fn paths_equal(a: &Path, b: &Path) -> bool {
+pub(crate) fn paths_equal(a: &Path, b: &Path) -> bool {
     a == b
         || matches!(
             (std::fs::canonicalize(a), std::fs::canonicalize(b)),
@@ -529,9 +692,8 @@ mod tests {
             &GgufModelSetup::default(),
             TimestampMillis::new(2),
         )
-        .expect("model")
-        .profile;
-        let listed = downloaded_ggufs(&root).expect("list");
+        .expect("model");
+        let listed = downloaded_ggufs(&root, &[]).expect("list");
         assert_eq!(listed.len(), 2);
         assert!(listed.iter().all(|file| file.model_id == "org/m"));
         let info = llm_models_dir_info(&DeviceSettings::default(), &app).expect("info");
@@ -606,7 +768,7 @@ mod tests {
         gguf_with_u32(&folder.join("m-Q4_K_M.gguf"), "llama.block_count", 32);
         gguf_with_u32(&folder.join("drafter.gguf"), "dflash.block_size", 16);
         gguf_with_u32(&folder.join("mmproj-m.gguf"), "dflash.block_size", 16);
-        let listed = downloaded_ggufs(&app).expect("list");
+        let listed = downloaded_ggufs(&app, &[]).expect("list");
         let flag = |name: &str| {
             listed
                 .iter()
@@ -619,6 +781,96 @@ mod tests {
         assert!(!flag("m-Q4_K_M.gguf"));
         assert!(!flag("mmproj-m.gguf"));
         std::fs::remove_dir_all(&app).expect("cleanup");
+    }
+
+    #[test]
+    fn nested_repository_files_are_listed_and_the_image_folder_is_not() {
+        let app = scratch("nested");
+        let root = app.join("library");
+        let nested = root.join("org--m").join("Q4");
+        std::fs::create_dir_all(&nested).expect("nested");
+        std::fs::write(nested.join("m-Q4_K_M.gguf"), b"GGUF").expect("nested model");
+        std::fs::create_dir_all(root.join("org--m").join("mtp")).expect("mtp");
+        std::fs::write(root.join("org--m").join("mtp").join("draft.gguf"), b"GGUF").expect("mtp");
+        std::fs::write(root.join("org--m").join("top.gguf"), b"GGUF").expect("top");
+        let partial = root.join(".downloads");
+        std::fs::create_dir_all(&partial).expect("partials");
+        std::fs::write(partial.join("x.gguf"), b"GGUF").expect("partial");
+        let image = root.join("image").join("components").join("abc");
+        std::fs::create_dir_all(&image).expect("image");
+        std::fs::write(image.join("encoder.gguf"), b"GGUF").expect("encoder");
+        let listed = downloaded_ggufs(&root, &[root.join("image")]).expect("list");
+        assert_eq!(
+            listed
+                .iter()
+                .map(|file| (file.model_id.as_str(), file.filename.as_str(), file.is_mtp))
+                .collect::<Vec<_>>(),
+            [
+                ("org/m", "Q4/m-Q4_K_M.gguf", false),
+                ("org/m", "mtp/draft.gguf", true),
+                ("org/m", "top.gguf", false),
+            ],
+            "legacy listed only files directly inside a repository folder"
+        );
+        assert_eq!(listed[0].quantization, "Q4_K_M");
+        std::fs::remove_dir_all(&app).expect("cleanup");
+    }
+
+    #[test]
+    fn references_name_every_llama_model_path_and_the_global_defaults() {
+        use lettuce_models::GlobalModelSettingsRepository;
+        let backend = crate::AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+        let database = backend.database();
+        let root = Path::new("/models");
+        let download = GgufDownload {
+            model_id: "org/m".to_owned(),
+            model_file: "m.gguf".to_owned(),
+            mmproj_file: Some("mmproj.gguf".to_owned()),
+            mtp_file: None,
+        };
+        let installed = download.installed(root);
+        let model = register_downloaded_gguf(
+            database,
+            root,
+            &download,
+            &GgufModelSetup::default(),
+            TimestampMillis::new(2),
+        )
+        .expect("model");
+        let mmproj = installed.mmproj_path.clone().expect("mmproj");
+        let (mut defaults, revision) = database.global_model_settings().expect("defaults");
+        defaults.llama_cpp.mmproj_path = Some(mmproj.clone());
+        database
+            .save_global_model_settings(defaults, revision, TimestampMillis::new(3))
+            .expect("save defaults");
+        assert_eq!(
+            model_file_references(database, &installed.model_path).expect("model"),
+            [ModelFileReference {
+                model_profile_id: Some(model.id),
+                display_name: Some(model.display_name.clone()),
+                fields: vec![ModelPathField::Model],
+            }]
+        );
+        assert_eq!(
+            model_file_references(database, &mmproj).expect("mmproj"),
+            [
+                ModelFileReference {
+                    model_profile_id: Some(model.id),
+                    display_name: Some(model.display_name.clone()),
+                    fields: vec![ModelPathField::Mmproj],
+                },
+                ModelFileReference {
+                    model_profile_id: None,
+                    display_name: None,
+                    fields: vec![ModelPathField::Mmproj],
+                },
+            ]
+        );
+        assert!(
+            model_file_references(database, "/elsewhere.gguf")
+                .expect("none")
+                .is_empty()
+        );
     }
 
     #[test]

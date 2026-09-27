@@ -900,20 +900,18 @@ struct TreeLfs {
 }
 
 /// The repository's GGUF files (and, for image models, safetensors), smallest
-/// first, sized from the file tree; `tree` is `None` when the tree could not
-/// be read.
+/// first, sized from the file tree.
 pub fn model_info(
     model_id: &str,
     detail: &[u8],
-    tree: Option<&[u8]>,
+    tree: &[u8],
     mode: HfBrowseMode,
 ) -> Result<HfModelInfo, HfBrowseError> {
     let detail: ModelDetail = serde_json::from_slice(detail).map_err(|error| {
         HfBrowseError::Message(format!("Failed to parse model detail: {error}"))
     })?;
-    let sizes = tree
-        .and_then(|tree| serde_json::from_slice::<Vec<TreeEntry>>(tree).ok())
-        .unwrap_or_default()
+    let sizes = serde_json::from_slice::<Vec<TreeEntry>>(tree)
+        .map_err(|error| HfBrowseError::Message(format!("Failed to parse file tree: {error}")))?
         .into_iter()
         .filter(|entry| entry.entry_type == "file")
         .map(|entry| {
@@ -1086,6 +1084,11 @@ pub struct HfAuthStatus {
 pub enum HfAuthErrorKind {
     MissingToken,
     InvalidOrExpired,
+    /// Hugging Face could not say: it was unreachable (`offline`) or
+    /// answered with an error that is not a refusal.
+    Unknown {
+        offline: bool,
+    },
 }
 
 impl HfAuthStatus {
@@ -1110,6 +1113,16 @@ impl HfAuthStatus {
     }
 
     #[must_use]
+    pub const fn unknown(offline: bool) -> Self {
+        Self {
+            saved: true,
+            valid: false,
+            username: None,
+            error_kind: Some(HfAuthErrorKind::Unknown { offline }),
+        }
+    }
+
+    #[must_use]
     pub const fn valid(username: String) -> Self {
         Self {
             saved: true,
@@ -1128,7 +1141,12 @@ pub fn whoami_username(
     body: &[u8],
 ) -> Result<String, HfBrowseError> {
     let message = match status {
-        401 => "The Hugging Face token is invalid or expired.".to_owned(),
+        401 => {
+            return Err(HfBrowseError::Failed {
+                failure: HfFailure::TokenInvalid,
+                message: "The Hugging Face token is invalid or expired.".to_owned(),
+            });
+        }
         200..=299 => {
             #[derive(Deserialize)]
             struct WhoAmI {
@@ -1160,10 +1178,74 @@ pub enum HfResource {
     Repository,
 }
 
+/// Why a Hugging Face request failed, in terms the app can act on: ask for
+/// a token, replace it, accept a gated license, or wait.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HfFailure {
+    TokenMissing,
+    TokenInvalid,
+    GatedAccess { model_id: String },
+    NotFound,
+    RateLimited,
+    Offline,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum HfBrowseError {
     #[error("{0}")]
     Message(String),
+    #[error("{message}")]
+    Failed { failure: HfFailure, message: String },
+}
+
+impl HfBrowseError {
+    #[must_use]
+    pub const fn failure(&self) -> Option<&HfFailure> {
+        match self {
+            Self::Message(_) => None,
+            Self::Failed { failure, .. } => Some(failure),
+        }
+    }
+
+    /// A request that never got an answer.
+    #[must_use]
+    pub fn offline(message: impl Into<String>) -> Self {
+        Self::Failed {
+            failure: HfFailure::Offline,
+            message: message.into(),
+        }
+    }
+}
+
+/// The failure an HTTP status means, when it means one: 401 (a missing or
+/// refused token), 403 (a gated repository), 404 and 429.
+#[must_use]
+pub fn status_failure(status: u16, model_id: &str, token_saved: bool) -> Option<HfFailure> {
+    Some(match status {
+        401 if token_saved => HfFailure::TokenInvalid,
+        401 => HfFailure::TokenMissing,
+        403 => HfFailure::GatedAccess {
+            model_id: model_id.to_owned(),
+        },
+        404 => HfFailure::NotFound,
+        429 => HfFailure::RateLimited,
+        _ => return None,
+    })
+}
+
+/// `message` for a non-success `status`, typed when the status means a
+/// failure the app can act on.
+#[must_use]
+pub fn status_error(
+    status: u16,
+    model_id: &str,
+    token_saved: bool,
+    message: String,
+) -> HfBrowseError {
+    match status_failure(status, model_id, token_saved) {
+        Some(failure) => HfBrowseError::Failed { failure, message },
+        None => HfBrowseError::Message(message),
+    }
 }
 
 /// The text for an unauthorized or forbidden response, `None` for others.
@@ -1192,7 +1274,7 @@ pub fn access_error(
         },
         _ => return None,
     };
-    Some(HfBrowseError::Message(message))
+    Some(status_error(status, model_id, token_saved, message))
 }
 
 #[cfg(test)]
@@ -1276,8 +1358,8 @@ mod tests {
                 {"rfilename": "mtp/draft-Q8_0.gguf"},
                 {"rfilename": "README.md"}
             ], "gguf": {"total": 7, "architecture": "llama", "context_length": 8192}}"#,
-            Some(br#"[{"type": "file", "path": "model-UD-Q4_K_M.gguf", "size": 1, "lfs": {"size": 500}},
-                     {"type": "file", "path": "mmproj-F16.gguf", "size": 100}]"#),
+            br#"[{"type": "file", "path": "model-UD-Q4_K_M.gguf", "size": 1, "lfs": {"size": 500}},
+                     {"type": "file", "path": "mmproj-F16.gguf", "size": 100}]"#,
             HfBrowseMode::Llm,
         )
         .expect("info");
@@ -1440,9 +1522,12 @@ mod tests {
         assert_eq!(readme_body("# Plain"), "# Plain");
         assert_eq!(
             access_error(403, HfResource::Model, "org/m", false),
-            Some(HfBrowseError::Message(
-                "Accept access to org/m on Hugging Face, then retry.".to_owned()
-            ))
+            Some(HfBrowseError::Failed {
+                failure: HfFailure::GatedAccess {
+                    model_id: "org/m".to_owned()
+                },
+                message: "Accept access to org/m on Hugging Face, then retry.".to_owned()
+            })
         );
         assert_eq!(access_error(404, HfResource::List, "", true), None);
         assert_eq!(
@@ -1454,6 +1539,45 @@ mod tests {
             Err(HfBrowseError::Message(
                 "Hugging Face did not return an account name.".to_owned()
             ))
+        );
+    }
+
+    #[test]
+    fn refusals_name_what_the_app_can_do_about_them() {
+        let failure = |status, saved| status_failure(status, "org/m", saved);
+        assert_eq!(failure(401, false), Some(HfFailure::TokenMissing));
+        assert_eq!(failure(401, true), Some(HfFailure::TokenInvalid));
+        assert_eq!(
+            failure(403, true),
+            Some(HfFailure::GatedAccess {
+                model_id: "org/m".to_owned()
+            })
+        );
+        assert_eq!(failure(404, true), Some(HfFailure::NotFound));
+        assert_eq!(failure(429, false), Some(HfFailure::RateLimited));
+        assert_eq!(failure(500, false), None);
+        let error = access_error(401, HfResource::Repository, "org/m", false).expect("refused");
+        assert_eq!(error.failure(), Some(&HfFailure::TokenMissing));
+        assert_eq!(
+            error.to_string(),
+            "This Hugging Face repository requires an access token."
+        );
+        assert_eq!(
+            status_error(500, "org/m", false, "boom".to_owned()),
+            HfBrowseError::Message("boom".to_owned())
+        );
+        assert_eq!(
+            HfBrowseError::offline("down").failure(),
+            Some(&HfFailure::Offline)
+        );
+        assert!(
+            model_info(
+                "org/m",
+                br#"{"modelId": "org/m"}"#,
+                b"<html>",
+                HfBrowseMode::Llm
+            )
+            .is_err()
         );
     }
 }
