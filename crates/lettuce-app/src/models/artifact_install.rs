@@ -98,6 +98,9 @@ pub enum ArtifactSourceError {
     InvalidResponse,
     #[error("artifact download request is invalid")]
     InvalidRequest,
+    /// No response or no bytes arrived within the stall timeout.
+    #[error("artifact download stalled and timed out")]
+    TimedOut,
     /// The server refused the file with `status`; `signed_in` says whether
     /// a token went with the request.
     #[error("artifact download was refused with status {status}")]
@@ -168,7 +171,9 @@ fn opening_failed(source: &ArtifactSource, error: ArtifactSourceError) -> Artifa
             lettuce_model_hub::status_failure(status, repository, signed_in)
         }
         ArtifactSourceError::Transport => Some(HfFailure::Offline),
-        ArtifactSourceError::InvalidResponse | ArtifactSourceError::InvalidRequest => None,
+        ArtifactSourceError::TimedOut
+        | ArtifactSourceError::InvalidResponse
+        | ArtifactSourceError::InvalidRequest => None,
     };
     failure.map_or_else(|| error.into(), ArtifactInstallError::HuggingFace)
 }
@@ -194,6 +199,7 @@ fn map_download_error(error: ArtifactDownloadError) -> ArtifactSourceError {
         ArtifactDownloadError::InvalidRequest => ArtifactSourceError::InvalidRequest,
         ArtifactDownloadError::InvalidResponse => ArtifactSourceError::InvalidResponse,
         ArtifactDownloadError::Transport => ArtifactSourceError::Transport,
+        ArtifactDownloadError::TimedOut => ArtifactSourceError::TimedOut,
         ArtifactDownloadError::Refused { status, signed_in } => {
             ArtifactSourceError::Refused { status, signed_in }
         }
@@ -623,6 +629,9 @@ impl<J: JobStore + ?Sized> ArtifactInstallCoordinator<'_, J> {
                 tracing::warn!(install = %work.plan.install_id, %error, "artifact install failed");
                 let (code, retryable, label) = match &error {
                     ArtifactInstallError::HuggingFace(failure) => hf_job_error(failure),
+                    ArtifactInstallError::Source(ArtifactSourceError::TimedOut) => {
+                        (JobErrorCode::TimedOut, true, "artifact-download-timed-out")
+                    }
                     _ => (JobErrorCode::ResourceUnavailable, false, INSTALL_FAILED),
                 };
                 let job = self.jobs.append_and_transition(JobMutation::Fail {

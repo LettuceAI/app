@@ -533,7 +533,9 @@ fn download_asset_id(model: &RemoteWhisperModel) -> AssetId {
 
 fn map_source_error(error: ArtifactDownloadError) -> WhisperDownloadSourceError {
     match error {
-        ArtifactDownloadError::Transport => WhisperDownloadSourceError::Transport,
+        ArtifactDownloadError::Transport | ArtifactDownloadError::TimedOut => {
+            WhisperDownloadSourceError::Transport
+        }
         ArtifactDownloadError::InvalidRequest | ArtifactDownloadError::InvalidResponse => {
             WhisperDownloadSourceError::InvalidResponse
         }

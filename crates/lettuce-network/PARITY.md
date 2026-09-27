@@ -20,7 +20,8 @@ Facts about how `lettuce-network` relates to the legacy app (2.2.x). The crate R
 - Redirects are followed only on the host the request went to and never from https down to http, so no credential reaches another host; a cross-host redirect is returned as the response. Legacy's default client followed any redirect.
 - Streams are cancelled by dropping their owner instead of a detached reader task, and keep socket backpressure.
 - Hugging Face browsing and the Sprout `/specs` read use the 30 s, no-retry `Browse` timeout, as legacy's Hugging Face client (`image_bundle.rs` 45-59) and Sprout client (`sprout.rs` 36-94 over `hf_browser/mod.rs` 1988-1994) did; they had used the 10 s probe and the 30-minute generation budget with retries.
-- An artifact download fails after 120 s without a chunk, legacy's stall timeout (`hf_browser/mod.rs` 2840-2848); it had been 30 s. The wait for the response head is bounded the same way, which legacy did not bound.
+- An artifact download fails as `TimedOut` after 120 s without a chunk, legacy's stall timeout (`hf_browser/mod.rs` 2840-2848); it had been 30 s. The wait for the response head is bounded the same way, which legacy did not bound. The artifact client connects within 30 s, legacy's download client's connect timeout (`hf_browser/mod.rs` 2742); it had been 10 s.
+- Hugging Face browsing keeps the 10 s connect timeout inside its 30 s budget: the JSON client is built once with the provider transport's connect limit (legacy's provider transport used 10 s), and legacy's browse client had no connect limit of its own, only the 30 s total.
 
 ## Not wired yet
 

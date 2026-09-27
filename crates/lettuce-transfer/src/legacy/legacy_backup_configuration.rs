@@ -1114,8 +1114,6 @@ fn shorten_name(value: &str, field: String, lossy: &mut Vec<String>) -> String {
     value[..end].to_owned()
 }
 
-/// Legacy `sdDefaultSize` (read by scene generation only, no writer):
-/// trimmed, and dropped when blank or longer than an image option may be.
 /// The local runnability context default; a value outside the range the
 /// settings accept is dropped and recorded.
 fn llama_default_context_length(
@@ -1159,6 +1157,8 @@ fn llama_default_kv_cache_type(
     kv_type
 }
 
+/// Legacy `sdDefaultSize` (read by scene generation only, no writer):
+/// trimmed, and dropped when blank or longer than an image option may be.
 fn scene_default_size(
     advanced: &Map<String, Value>,
     notices: &mut Vec<LegacyBackupConversionNotice>,

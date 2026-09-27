@@ -1065,3 +1065,22 @@ async fn a_queued_or_interrupted_folder_move_is_cancelled_and_cleaned_at_restart
     );
     std::fs::remove_dir_all(folder).ok();
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stalled_download_times_out_instead_of_reading_as_offline() {
+    let (harness, folder) = local_harness("stalled");
+    let context = &harness.context;
+    hugging_face(context).await;
+    let accepted = hf_download(context, download("op-stall", "m-Q8_0.gguf", setup(8192)))
+        .await
+        .expect("download");
+    run(&runner(context, Some(ArtifactSourceError::TimedOut))).await;
+    let failure = view(context, job_id(&accepted))
+        .await
+        .failure
+        .expect("failed");
+    assert_eq!(failure.code, dto::JobFailureCode::TimedOut);
+    assert!(failure.retryable);
+    assert_eq!(failure.hugging_face, None);
+    std::fs::remove_dir_all(folder).ok();
+}

@@ -595,7 +595,9 @@ fn abandons_partial(error: &KokoroDownloadError) -> bool {
 
 fn map_source_error(error: ArtifactDownloadError) -> KokoroDownloadSourceError {
     match error {
-        ArtifactDownloadError::Transport => KokoroDownloadSourceError::Transport,
+        ArtifactDownloadError::Transport | ArtifactDownloadError::TimedOut => {
+            KokoroDownloadSourceError::Transport
+        }
         ArtifactDownloadError::InvalidRequest | ArtifactDownloadError::InvalidResponse => {
             KokoroDownloadSourceError::InvalidResponse
         }

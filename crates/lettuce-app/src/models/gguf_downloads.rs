@@ -61,19 +61,6 @@ pub fn image_model_roots(device: &DeviceSettings, app_folder: &Path) -> Vec<Path
     }
 }
 
-/// The stable-diffusion.cpp layout below the app folder with the image
-/// folder the models folder setting gives.
-#[must_use]
-pub fn local_diffusion_paths(
-    device: &DeviceSettings,
-    app_folder: &Path,
-) -> lettuce_image_generation::sd_runtime::layout::DiffusionPaths {
-    lettuce_image_generation::sd_runtime::layout::DiffusionPaths::legacy_layout(
-        app_folder,
-        image_models_root(device, app_folder),
-    )
-}
-
 /// The files of one GGUF install.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GgufDownload {
