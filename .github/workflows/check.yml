@@ -31,3 +31,21 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Check Vulkan build
         run: cargo check -p lettuce-tauri --features vulkan
+
+  ui:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Check
+        run: bun run check
+      - name: Build
+        run: bun run build
