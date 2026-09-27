@@ -720,6 +720,8 @@ fn map_settings(
         "helpMeReplyConversationalPromptTemplateId",
         "embeddingDimensions",
         "manualModeContextWindow",
+        "llamaDefaultContextLength",
+        "llamaDefaultKvCacheType",
         "summarisationModelId",
         "groupSpeakerSelectionModelId",
         "lorebookGeneratorModelId",
@@ -846,6 +848,8 @@ fn map_settings(
             manual_mode_context_window: optional_u32(advanced, "manualModeContextWindow")?
                 .unwrap_or(50),
             lorebook_scan_depth: lettuce_settings::DEFAULT_LOREBOOK_SCAN_DEPTH,
+            llama_default_context_length: llama_default_context_length(advanced, notices),
+            llama_default_kv_cache_type: llama_default_kv_cache_type(advanced, notices),
         },
         default_provider_account_id,
         default_model_profile_id,
@@ -1112,6 +1116,49 @@ fn shorten_name(value: &str, field: String, lossy: &mut Vec<String>) -> String {
 
 /// Legacy `sdDefaultSize` (read by scene generation only, no writer):
 /// trimmed, and dropped when blank or longer than an image option may be.
+/// The local runnability context default; a value outside the range the
+/// settings accept is dropped and recorded.
+fn llama_default_context_length(
+    advanced: &Map<String, Value>,
+    notices: &mut Vec<LegacyBackupConversionNotice>,
+) -> Option<u32> {
+    let value = advanced
+        .get("llamaDefaultContextLength")
+        .filter(|value| !value.is_null())?;
+    let length = value
+        .as_u64()
+        .and_then(|length| u32::try_from(length).ok())
+        .filter(|length| lettuce_settings::LLAMA_DEFAULT_CONTEXT_LENGTH_RANGE.contains(length));
+    if length.is_none() {
+        notices.push(notice(
+            LegacyBackupConversionNoticeKind::Lossy,
+            LegacyBackupDocumentKind::Settings,
+            "advanced_settings.llamaDefaultContextLength",
+        ));
+    }
+    length
+}
+
+/// The local runnability KV cache default; an unknown type is dropped and
+/// recorded.
+fn llama_default_kv_cache_type(
+    advanced: &Map<String, Value>,
+    notices: &mut Vec<LegacyBackupConversionNotice>,
+) -> Option<lettuce_settings::LlamaDefaultKvCacheType> {
+    let value = advanced
+        .get("llamaDefaultKvCacheType")
+        .filter(|value| !value.is_null())?;
+    let kv_type = serde_json::from_value(value.clone()).ok();
+    if kv_type.is_none() {
+        notices.push(notice(
+            LegacyBackupConversionNoticeKind::Lossy,
+            LegacyBackupDocumentKind::Settings,
+            "advanced_settings.llamaDefaultKvCacheType",
+        ));
+    }
+    kv_type
+}
+
 fn scene_default_size(
     advanced: &Map<String, Value>,
     notices: &mut Vec<LegacyBackupConversionNotice>,
@@ -4490,6 +4537,8 @@ mod tests {
             "appUpdateChecksEnabled": false,
             "embeddingDimensions": 512,
             "manualModeContextWindow": 30,
+            "llamaDefaultContextLength": 16384,
+            "llamaDefaultKvCacheType": "q4_0",
             "summarisationModelId": model_id,
             "groupSpeakerSelectionModelId": model_id,
             "lorebookGeneratorModelId": model_id,
@@ -4770,6 +4819,14 @@ mod tests {
         assert!(!debug.contains("audio-secret"));
         assert_eq!(plan.settings.value.embedding.dimensions, Some(512));
         assert_eq!(plan.settings.value.manual_mode_context_window, 30);
+        assert_eq!(
+            plan.settings.value.llama_default_context_length,
+            Some(16_384)
+        );
+        assert_eq!(
+            plan.settings.value.llama_default_kv_cache_type,
+            Some(lettuce_settings::LlamaDefaultKvCacheType::Q4_0)
+        );
         let memory = &plan.settings.value.dynamic_memory;
         assert!(memory.enabled);
         assert_eq!(memory.summary_message_interval, 12);
