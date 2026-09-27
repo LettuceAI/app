@@ -39,6 +39,107 @@ fn parse_job_id(text: &str) -> rusqlite::Result<JobId> {
     })
 }
 
+fn parse_value(text: Option<String>) -> rusqlite::Result<Option<Value>> {
+    text.map(|text| {
+        serde_json::from_str(&text).map_err(|error| {
+            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, error.into())
+        })
+    })
+    .transpose()
+}
+
+/// Every local model job's stored detail, result and failure, for a backup.
+pub(crate) fn jobs_in(
+    connection: &rusqlite::Connection,
+) -> rusqlite::Result<Vec<lettuce_transfer::BackupLocalModelJob>> {
+    let mut statement = connection.prepare(
+        "SELECT job_id, detail_json, result_json, failure_json FROM local_model_jobs
+         ORDER BY job_id",
+    )?;
+    statement
+        .query_map([], |row| {
+            Ok(lettuce_transfer::BackupLocalModelJob {
+                job_id: parse_job_id(&row.get::<_, String>(0)?)?,
+                detail: parse_value(Some(row.get(1)?))?.unwrap_or(Value::Null),
+                result: parse_value(row.get(2)?)?,
+                failure: parse_value(row.get(3)?)?,
+            })
+        })?
+        .collect()
+}
+
+/// Every client operation, for a backup.
+pub(crate) fn operations_in(
+    connection: &rusqlite::Connection,
+) -> rusqlite::Result<Vec<lettuce_transfer::BackupLocalModelOperation>> {
+    let mut statement = connection.prepare(
+        "SELECT operation_key, request_digest, job_id FROM local_model_operations
+         ORDER BY operation_key",
+    )?;
+    statement
+        .query_map([], |row| {
+            Ok(lettuce_transfer::BackupLocalModelOperation {
+                operation_key: row.get(0)?,
+                request_digest: row.get(1)?,
+                job_id: parse_job_id(&row.get::<_, String>(2)?)?,
+            })
+        })?
+        .collect()
+}
+
+/// Every refused install's repository, for a backup.
+pub(crate) fn refusals_in(
+    connection: &rusqlite::Connection,
+) -> rusqlite::Result<Vec<lettuce_transfer::BackupHuggingFaceRefusal>> {
+    let mut statement = connection
+        .prepare("SELECT job_id, repository FROM hugging_face_job_refusals ORDER BY job_id")?;
+    statement
+        .query_map([], |row| {
+            Ok(lettuce_transfer::BackupHuggingFaceRefusal {
+                job_id: parse_job_id(&row.get::<_, String>(0)?)?,
+                repository: row.get(1)?,
+            })
+        })?
+        .collect()
+}
+
+/// Writes a restored backup's local model job rows.
+pub(crate) fn insert_restored_in(
+    connection: &rusqlite::Connection,
+    backup: &lettuce_transfer::JobBackup,
+) -> Result<(), DatabaseError> {
+    for job in &backup.local_model_jobs {
+        connection.execute(
+            "INSERT INTO local_model_jobs (job_id, detail_json, result_json, failure_json)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![
+                job.job_id.to_string(),
+                object_text(&job.detail)?,
+                job.result.as_ref().map(object_text).transpose()?,
+                job.failure.as_ref().map(object_text).transpose()?,
+            ],
+        )?;
+    }
+    for operation in &backup.local_model_operations {
+        connection.execute(
+            "INSERT INTO local_model_operations (operation_key, request_digest, job_id)
+             VALUES (?1, ?2, ?3)",
+            params![
+                operation.operation_key,
+                operation.request_digest,
+                operation.job_id.to_string()
+            ],
+        )?;
+    }
+    for refusal in &backup.hugging_face_refusals {
+        connection.execute(
+            "INSERT INTO hugging_face_job_refusals (job_id, repository) VALUES (?1, ?2)",
+            params![refusal.job_id.to_string(), refusal.repository],
+        )?;
+    }
+    Ok(())
+}
+
 impl Database {
     pub fn local_model_job(
         &self,

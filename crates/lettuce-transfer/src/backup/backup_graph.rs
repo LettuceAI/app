@@ -1764,6 +1764,9 @@ mod tests {
                 speech_transcriptions: Vec::new(),
                 speech_syntheses: Vec::new(),
                 image_generations: Vec::new(),
+                local_model_jobs: Vec::new(),
+                local_model_operations: Vec::new(),
+                hugging_face_refusals: Vec::new(),
             },
             conversation_usage: crate::ConversationUsageBackup {
                 version: crate::CONVERSATION_USAGE_BACKUP_VERSION,

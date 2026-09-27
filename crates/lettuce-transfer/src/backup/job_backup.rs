@@ -18,6 +18,40 @@ pub struct JobBackup {
     pub speech_syntheses: Vec<lettuce_speech::SynthesisRecord>,
     #[serde(default)]
     pub image_generations: Vec<lettuce_image_generation::ImageGenerationRecord>,
+    #[serde(default)]
+    pub local_model_jobs: Vec<BackupLocalModelJob>,
+    #[serde(default)]
+    pub local_model_operations: Vec<BackupLocalModelOperation>,
+    #[serde(default)]
+    pub hugging_face_refusals: Vec<BackupHuggingFaceRefusal>,
+}
+
+/// What a local model job (a download, a pull, a folder move) works on,
+/// produced and failed with, as the app stored it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackupLocalModelJob {
+    pub job_id: JobId,
+    pub detail: serde_json::Value,
+    pub result: Option<serde_json::Value>,
+    pub failure: Option<serde_json::Value>,
+}
+
+/// A client operation key and the job it started.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackupLocalModelOperation {
+    pub operation_key: String,
+    pub request_digest: String,
+    pub job_id: JobId,
+}
+
+/// The Hugging Face repository a failed install was refused by.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackupHuggingFaceRefusal {
+    pub job_id: JobId,
+    pub repository: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -81,6 +115,43 @@ impl JobBackup {
                 return Err(JobBackupError::InvalidData);
             }
         }
+        self.local_model_jobs.sort_by_key(|job| job.job_id);
+        self.local_model_operations
+            .sort_by(|a, b| a.operation_key.cmp(&b.operation_key));
+        self.hugging_face_refusals
+            .sort_by_key(|refusal| refusal.job_id);
+        let object =
+            |value: Option<&serde_json::Value>| value.is_none_or(serde_json::Value::is_object);
+        let mut described = BTreeSet::new();
+        for job in &self.local_model_jobs {
+            if !job_ids.contains(&job.job_id)
+                || !described.insert(job.job_id)
+                || !job.detail.is_object()
+                || !object(job.result.as_ref())
+                || !object(job.failure.as_ref())
+            {
+                return Err(JobBackupError::InvalidData);
+            }
+        }
+        let mut keys = BTreeSet::new();
+        for operation in &self.local_model_operations {
+            if !job_ids.contains(&operation.job_id)
+                || operation.operation_key.trim().is_empty()
+                || operation.request_digest.is_empty()
+                || !keys.insert(operation.operation_key.as_str())
+            {
+                return Err(JobBackupError::InvalidData);
+            }
+        }
+        let mut refused = BTreeSet::new();
+        for refusal in &self.hugging_face_refusals {
+            if !job_ids.contains(&refusal.job_id)
+                || refusal.repository.trim().is_empty()
+                || !refused.insert(refusal.job_id)
+            {
+                return Err(JobBackupError::InvalidData);
+            }
+        }
         Ok(())
     }
 
@@ -132,7 +203,22 @@ mod tests {
             speech_transcriptions: Vec::new(),
             speech_syntheses: Vec::new(),
             image_generations: Vec::new(),
+            local_model_jobs: Vec::new(),
+            local_model_operations: Vec::new(),
+            hugging_face_refusals: Vec::new(),
         };
         assert!(backup.canonicalize_and_validate().is_ok());
+        backup
+            .local_model_operations
+            .push(BackupLocalModelOperation {
+                operation_key: "hf_download:op".to_owned(),
+                request_digest: "digest".to_owned(),
+                job_id: JobId::new(),
+            });
+        assert_eq!(
+            backup.canonicalize_and_validate(),
+            Err(JobBackupError::InvalidData),
+            "an operation must name a job of the backup"
+        );
     }
 }
