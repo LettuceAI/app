@@ -968,14 +968,10 @@ pub struct AddConversationParticipant {
     pub muted: bool,
     pub member: Option<crate::snapshot::GroupMemberLaunchSnapshot>,
     /// A membership edit by the user: the conversation stops following the
-    /// group's member list. A member the group gained after launch is added
-    /// without it.
+    /// group's member list, and every other participant keeps in its row
+    /// the enabled flag it followed from the group when the add commits. A
+    /// member the group gained after launch is added without it.
     pub override_members: bool,
-    /// Values written to the other participants in the same change: the
-    /// enabled flags they followed from the group before the conversation
-    /// took over its member list.
-    #[serde(default)]
-    pub materialize: Vec<ParticipantPolicyChange>,
 }
 
 impl AddConversationParticipant {
@@ -987,19 +983,6 @@ impl AddConversationParticipant {
             crate::validation::MAX_DISPLAY_CHARS * 4,
             false,
         )?;
-        validate_unique(
-            "participant_add.materialize",
-            self.materialize.iter().map(|change| change.participant_id),
-        )?;
-        if self
-            .materialize
-            .iter()
-            .any(|change| change.participant_id == self.participant_id)
-        {
-            return Err(ValidationError::InvalidReference {
-                field: "participant_add.materialize",
-            });
-        }
         if let Some(member) = &self.member {
             member.validate()?;
             if member.character.source_id != self.character_id {

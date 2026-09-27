@@ -1,6 +1,6 @@
 //! Deleting a conversation, stopping what still runs for it first.
 
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
 use lettuce_conversations::{
@@ -14,7 +14,10 @@ use lettuce_types::{ConversationId, PageLimit, PageRequest};
 
 use super::ApiContext;
 use super::error::{IntoApiError, api_error, parse_id};
-use crate::{ConversationGenerationCancellationOutcome, HardDeleteError, MediaGarbageScope};
+use crate::{
+    ConversationGenerationCancellationOutcome, ConversationGenerationDispatchError,
+    HardDeleteError, MediaGarbageScope,
+};
 
 /// How long a delete waits for the work it cancelled to settle. The runners
 /// settle a cancelled turn or memory run as soon as they see its token, so
@@ -30,13 +33,27 @@ pub async fn conversation_delete(
     context: &ApiContext,
     request: dto::ConversationRequest,
 ) -> Result<(), ApiError> {
+    delete_with(context, request, Arc::new(|_: &ApiContext| {})).await
+}
+
+/// Runs between reading an unrunnable turn and settling it.
+pub(crate) type BeforeSettle = Arc<dyn Fn(&ApiContext) + Send + Sync>;
+
+/// `conversation_delete` with `before_settle` run between reading a turn
+/// that cannot run and settling it.
+pub(crate) async fn delete_with(
+    context: &ApiContext,
+    request: dto::ConversationRequest,
+    before_settle: BeforeSettle,
+) -> Result<(), ApiError> {
     let conversation_id: ConversationId = parse_id(&request.conversation_id, "conversation_id")?;
     let mut changes = context.committed_changes();
     let deadline = tokio::time::Instant::now() + DELETE_SETTLE_LIMIT;
     loop {
         changes.borrow_and_update();
+        let hook = Arc::clone(&before_settle);
         let deleted = context
-            .blocking(move |context| delete_step(context, conversation_id))
+            .blocking(move |context| delete_step(context, conversation_id, &hook))
             .await?;
         if deleted {
             context.wake_workers();
@@ -61,13 +78,17 @@ pub async fn conversation_delete(
 
 /// Cancels what still runs for the conversation and tries the purge once.
 /// Answers whether the conversation is gone.
-fn delete_step(context: &ApiContext, conversation_id: ConversationId) -> Result<bool, ApiError> {
+fn delete_step(
+    context: &ApiContext,
+    conversation_id: ConversationId,
+    before_settle: &BeforeSettle,
+) -> Result<bool, ApiError> {
     match ConversationReader::get(context.backend().database(), conversation_id) {
         Ok(_) => {}
         Err(ConversationRepositoryError::NotFound) => return Ok(true),
         Err(error) => return Err(error.into_api_error()),
     }
-    cancel_conversation_work(context, conversation_id)?;
+    cancel_work(context, conversation_id, before_settle)?;
     match purge(context, conversation_id) {
         Ok(()) | Err(PurgeError::NotFound) => Ok(true),
         Err(PurgeError::Busy) => Ok(false),
@@ -102,9 +123,24 @@ fn purge(context: &ApiContext, conversation_id: ConversationId) -> Result<(), Pu
 /// Requests cancellation of the conversation's unsettled turn and memory
 /// runs. A queued job is cancelled at once; a running one is signalled and
 /// settles through its runner.
+#[cfg(test)]
 pub(crate) fn cancel_conversation_work(
     context: &ApiContext,
     conversation_id: ConversationId,
+) -> Result<(), ApiError> {
+    cancel_work(
+        context,
+        conversation_id,
+        &(Arc::new(|_: &ApiContext| {}) as BeforeSettle),
+    )
+}
+
+/// A turn read before another write moved it on (a job attached, a stage
+/// appended) is left for the next step, which reads it again.
+fn cancel_work(
+    context: &ApiContext,
+    conversation_id: ConversationId,
+    before_settle: &BeforeSettle,
 ) -> Result<(), ApiError> {
     let database = context.backend().database();
     if let Some(turn_id) = ConversationOverviewReader::live_turn(database, conversation_id)
@@ -144,13 +180,22 @@ pub(crate) fn cancel_conversation_work(
                 | ConversationGenerationCancellationOutcome::NotFound,
             )
             | None => {
-                context
+                before_settle(context);
+                match context
                     .backend()
                     .conversation_generation_dispatcher()
                     .settle_unrunnable_turn(&turn, context.now())
-                    .map_err(IntoApiError::into_api_error)?;
-                if let Some(event) = super::worker::settled_event(database, turn_id)? {
-                    context.settle_turn(conversation_id, turn_id, event);
+                {
+                    Ok(()) => {
+                        if let Some(event) = super::worker::settled_event(database, turn_id)? {
+                            context.settle_turn(conversation_id, turn_id, event);
+                        }
+                    }
+                    Err(ConversationGenerationDispatchError::Repository(
+                        ConversationRepositoryError::StaleRevision { .. }
+                        | ConversationRepositoryError::Conflict,
+                    )) => {}
+                    Err(error) => return Err(error.into_api_error()),
                 }
             }
         }

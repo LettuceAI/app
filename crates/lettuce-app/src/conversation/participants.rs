@@ -151,27 +151,6 @@ pub fn add_group_member(
                 )
             }
         };
-        let members_owned = conversation
-            .current_settings
-            .as_ref()
-            .is_some_and(|settings| settings.members_overridden);
-        let materialize = if override_members && !members_owned {
-            live_sources::effective_participants(&conversation, profile.as_ref())
-                .into_iter()
-                .filter(|participant| {
-                    participant.role == ParticipantRole::Character
-                        && participant.id != participant_id
-                })
-                .map(|participant| ParticipantPolicyChange {
-                    participant_id: participant.id,
-                    enabled: Some(participant.enabled),
-                    muted: None,
-                    model_override: None,
-                })
-                .collect()
-        } else {
-            Vec::new()
-        };
         let command = AddConversationParticipant {
             conversation_id,
             expected_revision: conversation.revision,
@@ -182,7 +161,6 @@ pub fn add_group_member(
             muted: member.as_ref().is_some_and(|member| member.muted),
             member,
             override_members,
-            materialize,
         };
         let prepared = PreparedParticipantAdd::new(command, drafts)
             .map_err(|_| ConversationEditError::Snapshot)?;

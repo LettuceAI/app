@@ -1431,3 +1431,181 @@ async fn a_forced_speaker_the_group_removed_is_refused() {
         )
     );
 }
+
+/// A retry of a turn whose forced speaker the group removed since is refused
+/// when it begins.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_retry_whose_forced_speaker_the_group_removed_is_refused() {
+    let harness = harness(Reply::Text("Hello."));
+    let database = harness.context.backend().database();
+    let ada = seed_named_character(database, "Ada");
+    let bea = seed_named_character(database, "Bea");
+    let cleo = seed_named_character(database, "Cleo");
+    let group_id = seed_group(
+        database,
+        vec![member(ada, 0), member(bea, 1), member(cleo, 2)],
+        None,
+        |group| group.speaker_selection = SpeakerSelection::Director,
+    );
+    let chat = launch_group(&harness, group_id, "retry-forced").await;
+    let conversation = stored(&harness, &chat);
+    let user = conversation
+        .participants
+        .iter()
+        .find(|participant| participant.source == ParticipantSource::User)
+        .expect("user")
+        .id;
+    lettuce_conversations::ConversationRepository::append_user_message(
+        database,
+        &lettuce_conversations::SendConversation {
+            conversation_id: conversation.id,
+            branch_id: conversation.active_branch_id,
+            expected_revision: conversation.revision,
+            operation: token("retry-forced-message"),
+            message: lettuce_conversations::MessageDraft {
+                role: lettuce_conversations::MessageRole::User,
+                author_participant_id: Some(user),
+                parts: vec![lettuce_conversations::MessagePart::Text {
+                    text: "Bea, say something".into(),
+                }],
+                visibility: lettuce_conversations::MessageVisibility::Visible,
+                pinned: false,
+                scene_edited: false,
+            },
+            swap_roles: false,
+        },
+        harness.context.now(),
+    )
+    .expect("director message");
+    let bea_participant = conversation
+        .participants
+        .iter()
+        .find(|participant| participant.source == ParticipantSource::Character(bea))
+        .expect("bea")
+        .id;
+    let begun = lettuce_conversations::ConversationRepository::begin_continue(
+        database,
+        &lettuce_conversations::ContinueConversation {
+            conversation_id: conversation.id,
+            branch_id: conversation.active_branch_id,
+            expected_revision: stored(&harness, &chat).revision,
+            forced_speaker: Some(bea_participant),
+            swap_roles: false,
+            operation: token("retry-forced-continue"),
+        },
+        harness.context.now(),
+    )
+    .expect("bea continues")
+    .value;
+    harness
+        .context
+        .backend()
+        .conversation_generation_dispatcher()
+        .settle_unrunnable_turn(&begun.turn, harness.context.now())
+        .expect("the turn that never ran is cancelled");
+    GroupRepository::replace_members(
+        database,
+        group_id,
+        group_revision(&harness, group_id),
+        vec![member(ada, 0), member(cleo, 1)],
+        NOW,
+    )
+    .expect("bea leaves the group");
+    let cancelled = ConversationReader::get_turn(database, begun.turn.id).expect("turn");
+    let refused = lettuce_conversations::ConversationRepository::begin_retry(
+        database,
+        &lettuce_conversations::RetryGeneration {
+            conversation_id: conversation.id,
+            branch_id: conversation.active_branch_id,
+            turn_id: begun.turn.id,
+            expected_revision: stored(&harness, &chat).revision,
+            expected_turn_revision: cancelled.revision,
+            operation: token("retry-forced-retry"),
+        },
+        harness.context.now(),
+    )
+    .expect_err("bea is no longer a member");
+    assert_eq!(
+        refused,
+        lettuce_conversations::ConversationRepositoryError::Invalid(
+            lettuce_conversations::ValidationError::InvalidReference {
+                field: "generation_turn.forced_speaker"
+            }
+        )
+    );
+}
+
+/// An add that takes over the member list keeps, for the others, the group
+/// membership at commit, even when the group changed after the add was
+/// prepared.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_add_keeps_the_membership_the_group_had_at_commit() {
+    let harness = harness(Reply::Text("Hello."));
+    let database = harness.context.backend().database();
+    let ada = seed_named_character(database, "Ada");
+    let bea = seed_named_character(database, "Bea");
+    let cleo = seed_named_character(database, "Cleo");
+    let dan = seed_named_character(database, "Dan");
+    let group_id = seed_group(
+        database,
+        vec![member(ada, 0), member(bea, 1), member(cleo, 2)],
+        None,
+        |_| {},
+    );
+    let chat = launch_group(&harness, group_id, "add-at-commit").await;
+    let conversation = stored(&harness, &chat);
+    let details = lettuce_characters::CharacterRepository::get(database, dan)
+        .expect("dan")
+        .expect("dan exists");
+    let draft = crate::launch::documents::draft(
+        lettuce_types::SnapshotArtifactId::new(),
+        details.character.revision,
+        crate::launch::documents::character_body(&details.character),
+    )
+    .expect("draft");
+    let prepared = lettuce_conversations::PreparedParticipantAdd::new(
+        lettuce_conversations::AddConversationParticipant {
+            conversation_id: conversation.id,
+            expected_revision: conversation.revision,
+            operation: token("add-at-commit-dan"),
+            participant_id: crate::conversation::member_participant_id(conversation.id, dan),
+            character_id: dan,
+            display_name: "Dan".into(),
+            muted: false,
+            member: Some(lettuce_conversations::GroupMemberLaunchSnapshot {
+                character: crate::launch::planner::character_snapshot(&details.character, &draft),
+                ordinal: 3,
+                enabled: true,
+                muted: false,
+                model_override: lettuce_conversations::SnapshotSelection::Disabled,
+                lorebooks: lettuce_conversations::SnapshotSelection::Disabled,
+                prompt: lettuce_conversations::SnapshotSelection::Disabled,
+            }),
+            override_members: true,
+        },
+        vec![draft],
+    )
+    .expect("prepared add");
+    GroupRepository::replace_members(
+        database,
+        group_id,
+        group_revision(&harness, group_id),
+        vec![member(ada, 0), member(cleo, 1)],
+        NOW,
+    )
+    .expect("bea leaves the group after the add was prepared");
+    lettuce_conversations::ConversationRepository::add_participant(
+        database,
+        prepared,
+        harness.context.now(),
+    )
+    .expect("add dan");
+    let after = view(&harness, &chat).await;
+    assert!(member_view(&after, ada).is_some_and(|ada| ada.enabled));
+    assert!(
+        member_view(&after, bea).is_some_and(|bea| !bea.enabled),
+        "the group's membership at commit decides"
+    );
+    assert!(member_view(&after, cleo).is_some_and(|cleo| cleo.enabled));
+    assert!(member_view(&after, dan).is_some_and(|dan| dan.enabled));
+}

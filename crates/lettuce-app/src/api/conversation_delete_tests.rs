@@ -234,3 +234,79 @@ async fn a_live_reply_whose_job_already_ended_does_not_block_a_delete() {
     delete(&harness, &chat).await.expect("delete");
     assert!(gone(&harness.context, &chat));
 }
+
+/// A job attached to a turn between the delete reading it and settling it
+/// moves the turn on; the delete reads it again and cancels the queued job
+/// instead of failing.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_job_attached_while_the_delete_settles_its_turn_is_cancelled_next() {
+    let harness = harness(Reply::Text("Never sent."));
+    let chat = launch(&harness, "delete-race").await;
+    let conversation_id: ConversationId = chat.parse().expect("id");
+    let database = harness.context.backend().database();
+    let conversation = ConversationReader::get(database, conversation_id)
+        .expect("conversation")
+        .conversation;
+    let user = conversation
+        .participants
+        .iter()
+        .find(|participant| participant.role == lettuce_conversations::ParticipantRole::User)
+        .expect("user")
+        .id;
+    let begun = lettuce_conversations::ConversationRepository::begin_send(
+        database,
+        &lettuce_conversations::SendConversation {
+            conversation_id,
+            branch_id: conversation.active_branch_id,
+            expected_revision: conversation.revision,
+            operation: crate::conversation::edit_operation("delete-race-send".into(), &[b"race"])
+                .expect("token"),
+            message: lettuce_conversations::MessageDraft {
+                role: lettuce_conversations::MessageRole::User,
+                author_participant_id: Some(user),
+                parts: vec![lettuce_conversations::MessagePart::Text {
+                    text: "Hello".into(),
+                }],
+                visibility: lettuce_conversations::MessageVisibility::Visible,
+                pinned: false,
+                scene_edited: false,
+            },
+            swap_roles: false,
+        },
+        harness.context.now(),
+    )
+    .expect("a turn without a job yet")
+    .value;
+    let scheduled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let hook: super::conversation_delete::BeforeSettle = {
+        let scheduled = Arc::clone(&scheduled);
+        Arc::new(move |context: &ApiContext| {
+            if !scheduled.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                context
+                    .backend()
+                    .conversation_generation_dispatcher()
+                    .schedule(&begun, context.now())
+                    .expect("the send's job is attached meanwhile");
+            }
+        })
+    };
+    super::conversation_delete::delete_with(
+        &harness.context,
+        dto::ConversationRequest {
+            conversation_id: chat.clone(),
+        },
+        hook,
+    )
+    .await
+    .expect("the delete reads the turn again");
+    assert!(scheduled.load(std::sync::atomic::Ordering::SeqCst));
+    assert!(gone(&harness.context, &chat));
+    assert!(
+        harness
+            .provider
+            .requests
+            .lock()
+            .expect("requests")
+            .is_empty()
+    );
+}

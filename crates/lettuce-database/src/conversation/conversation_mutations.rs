@@ -204,13 +204,24 @@ fn require_speaker_shape(
         return Err(invalid("generation_turn.swap_roles"));
     }
     if let Some(forced) = forced_speaker {
-        let conversation = conversation_value(transaction, conversation_id)?;
-        let membership = group_membership_in(transaction, &conversation)?;
-        if !lettuce_conversations::is_effective_member(&conversation, membership.as_ref(), forced) {
-            return Err(invalid("generation_turn.forced_speaker"));
-        }
+        require_effective_forced_speaker(transaction, conversation_id, forced)?;
     }
     Ok(())
+}
+
+/// A forced speaker must be an enabled member of the conversation now.
+fn require_effective_forced_speaker(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    forced: ConversationParticipantId,
+) -> Result<(), ConversationRepositoryError> {
+    let conversation = conversation_value(transaction, conversation_id)?;
+    let membership = group_membership_in(transaction, &conversation)?;
+    if lettuce_conversations::is_effective_member(&conversation, membership.as_ref(), forced) {
+        Ok(())
+    } else {
+        Err(invalid("generation_turn.forced_speaker"))
+    }
 }
 
 /// Work already in flight settles even after the conversation is archived:
@@ -2635,6 +2646,23 @@ impl ConversationRepository for Database {
                         return Err(ConversationRepositoryError::Conflict);
                     }
                 }
+                let forced_speaker: Option<String> = transaction
+                    .query_row(
+                        "SELECT forced_speaker_participant_id FROM conversation_turns WHERE conversation_id = ?1 AND id = ?2",
+                        params![
+                            context.conversation_id.to_string(),
+                            command.turn_id.to_string(),
+                        ],
+                        |row| row.get(0),
+                    )
+                    .map_err(slice::db)?;
+                if let Some(forced) = forced_speaker {
+                    require_effective_forced_speaker(
+                        transaction,
+                        context.conversation_id,
+                        slice::parse_id(forced)?,
+                    )?;
+                }
                 let turn_id = GenerationTurnId::new();
                 transaction
                     .execute(
@@ -5003,23 +5031,32 @@ impl ConversationRepository for Database {
                         },
                     ));
                 }
-                for change in &command.materialize {
-                    if !current.participants.iter().any(|participant| {
-                        participant.id == change.participant_id
-                            && participant.role == lettuce_conversations::ParticipantRole::Character
-                    }) {
-                        return Err(ConversationRepositoryError::Invalid(
-                            lettuce_conversations::ValidationError::InvalidReference {
-                                field: "participant_add.materialize",
+                let members_owned = current
+                    .current_settings
+                    .as_ref()
+                    .is_some_and(|settings| settings.members_overridden);
+                if command.override_members && !members_owned {
+                    let membership = group_membership_in(transaction, &current)?;
+                    for participant in
+                        lettuce_conversations::effective_participants(&current, membership.as_ref())
+                    {
+                        if participant.role != lettuce_conversations::ParticipantRole::Character
+                            || participant.id == command.participant_id
+                        {
+                            continue;
+                        }
+                        write_participant_change(
+                            transaction,
+                            context.conversation_id,
+                            &lettuce_conversations::ParticipantPolicyChange {
+                                participant_id: participant.id,
+                                enabled: Some(participant.enabled),
+                                muted: None,
+                                model_override: None,
                             },
-                        ));
+                            context.now,
+                        )?;
                     }
-                    write_participant_change(
-                        transaction,
-                        context.conversation_id,
-                        change,
-                        context.now,
-                    )?;
                 }
                 let existing = current.participants.iter().find(|participant| {
                     participant.source
@@ -14579,7 +14616,6 @@ mod tests {
             muted: false,
             member,
             override_members,
-            materialize: Vec::new(),
         }
     }
 
