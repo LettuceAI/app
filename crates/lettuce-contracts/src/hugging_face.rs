@@ -271,6 +271,35 @@ pub enum HfPlanGpuMode {
     GpuUnavailable,
 }
 
+/// How much memory the planner's choice leaves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum HfHeadroomStatus {
+    Comfortable,
+    Ok,
+    Tight,
+    Risky,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum HfRunStatus {
+    Yes,
+    Borderline,
+    No,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum HfSpeed {
+    Fast,
+    Medium,
+    Slow,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
@@ -337,6 +366,12 @@ pub struct HfPlan {
     pub upgrade: Option<HfPlanUpgrade>,
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub default_context: u64,
+    pub headroom: HfHeadroomStatus,
+    pub run: HfRunStatus,
+    pub prefill_speed: HfSpeed,
+    pub generation_speed: HfSpeed,
+    /// The KV offload a download with this choice stores.
+    pub offload_kqv: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

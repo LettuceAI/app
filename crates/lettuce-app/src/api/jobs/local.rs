@@ -385,7 +385,15 @@ fn gguf_model_setup(setup: &dto::HfDownloadSetup, mtp_bundled: bool) -> GgufMode
         kv_type: setup.kv_type.clone(),
         offload_kqv: setup.offload_kqv,
         gpu_layers: setup.gpu_layers,
-        model_offload: model_offload(setup.model_offload),
+        model_offload: setup.model_offload.map_or_else(
+            || {
+                lettuce_model_hub::gpu_layers_to_model_offload(
+                    setup.gpu_layers.map(i64::from),
+                    None,
+                )
+            },
+            |offload| model_offload(Some(offload)),
+        ),
         mtp_bundled,
     }
 }

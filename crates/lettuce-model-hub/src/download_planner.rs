@@ -554,6 +554,110 @@ pub fn planner_score(
     }
 }
 
+/// How much memory a choice leaves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HeadroomStatus {
+    Comfortable,
+    Ok,
+    Tight,
+    Risky,
+}
+
+/// The headroom a choice needing `total_needed` of `total_available` bytes
+/// leaves: risky when it does not fit, comfortable from 4 GB or a quarter
+/// left, ok from 1.5 GB or an eighth, tight below.
+#[must_use]
+pub fn headroom_status(total_needed: f64, total_available: f64) -> HeadroomStatus {
+    let remaining = total_available - total_needed;
+    if total_available <= 0.0 || total_needed > total_available {
+        return HeadroomStatus::Risky;
+    }
+    let ratio = remaining / total_available.max(1.0);
+    if remaining >= 4_000_000_000.0 || ratio >= 0.25 {
+        HeadroomStatus::Comfortable
+    } else if remaining >= 1_500_000_000.0 || ratio >= 0.12 {
+        HeadroomStatus::Ok
+    } else {
+        HeadroomStatus::Tight
+    }
+}
+
+/// Whether a choice runs, by its planner score.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunStatus {
+    Yes,
+    Borderline,
+    No,
+}
+
+#[must_use]
+pub const fn run_status(score: u32) -> RunStatus {
+    if score >= 75 {
+        RunStatus::Yes
+    } else if score >= 55 {
+        RunStatus::Borderline
+    } else {
+        RunStatus::No
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlannerSpeed {
+    Fast,
+    Medium,
+    Slow,
+}
+
+/// The prompt processing and generation speed a placement gives.
+#[must_use]
+pub const fn planner_performance(mode: PlannerGpuMode) -> (PlannerSpeed, PlannerSpeed) {
+    match mode {
+        PlannerGpuMode::Full | PlannerGpuMode::NearFull => (PlannerSpeed::Fast, PlannerSpeed::Fast),
+        PlannerGpuMode::KvSpill | PlannerGpuMode::RamModelVramCtx => {
+            (PlannerSpeed::Medium, PlannerSpeed::Medium)
+        }
+        PlannerGpuMode::KvHeavySpill | PlannerGpuMode::MostLayers | PlannerGpuMode::HalfLayers => {
+            (PlannerSpeed::Slow, PlannerSpeed::Medium)
+        }
+        PlannerGpuMode::FewLayers
+        | PlannerGpuMode::RamModelRamCtx
+        | PlannerGpuMode::Cpu
+        | PlannerGpuMode::GpuUnavailable => (PlannerSpeed::Slow, PlannerSpeed::Slow),
+    }
+}
+
+/// The offload choice a stored GPU layer count means: none is automatic,
+/// zero or less the CPU, every layer the GPU, anything else mixed.
+#[must_use]
+pub fn gpu_layers_to_model_offload(
+    gpu_layers: Option<i64>,
+    total_layers: Option<u64>,
+) -> ModelOffload {
+    let Some(layers) = gpu_layers else {
+        return ModelOffload::Auto;
+    };
+    if layers <= 0 {
+        return ModelOffload::Cpu;
+    }
+    match total_layers.filter(|total| *total > 0) {
+        Some(total) if u64::try_from(layers).is_ok_and(|layers| layers >= total) => {
+            ModelOffload::Gpu
+        }
+        _ => ModelOffload::Mixed,
+    }
+}
+
+/// Whether llama.cpp offloads the KV cache for a placement: no choice when
+/// automatic.
+#[must_use]
+pub const fn kv_placement_to_offload_kqv(placement: PlannerKvPlacement) -> Option<bool> {
+    match placement {
+        PlannerKvPlacement::Auto => None,
+        PlannerKvPlacement::Ram => Some(false),
+        PlannerKvPlacement::Vram => Some(true),
+    }
+}
+
 /// A file the planner can choose.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlannerFile {
@@ -664,6 +768,13 @@ pub struct PlannerReport {
     pub upgrade: Option<PlannerUpgrade>,
     /// The context the planner sets when this file is picked.
     pub default_context: u64,
+    pub headroom: HeadroomStatus,
+    pub run: RunStatus,
+    /// Prompt processing and generation speed.
+    pub performance: (PlannerSpeed, PlannerSpeed),
+    /// The KV offload a download with this choice stores; none without GPU
+    /// offload.
+    pub offload_kqv: Option<bool>,
 }
 
 #[expect(
@@ -950,6 +1061,14 @@ pub fn planner_report(model: &PlannerModel, choice: &PlannerChoice) -> Option<Pl
         requested_gpu_layers,
         upgrade,
         default_context: optimal.min(max_context),
+        headroom: headroom_status(total_needed, total),
+        run: run_status(score.score),
+        performance: planner_performance(score.gpu_mode),
+        offload_kqv: if model.supports_gpu_offload {
+            kv_placement_to_offload_kqv(choice.kv_placement)
+        } else {
+            None
+        },
     })
 }
 
@@ -1354,6 +1473,93 @@ mod tests {
                 "{}: expected {}\n got {actual}",
                 case["name"],
                 case["expected"]
+            );
+        }
+    }
+
+    #[test]
+    fn statuses_match_the_legacy_planner() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/legacy_planner_status.json"))
+                .expect("fixture");
+        let headroom_name = |status| match status {
+            HeadroomStatus::Comfortable => "comfortableLabel",
+            HeadroomStatus::Ok => "okLabel",
+            HeadroomStatus::Tight => "tightLabel",
+            HeadroomStatus::Risky => "riskyLabel",
+        };
+        for case in fixture["headroom"].as_array().expect("headroom") {
+            let args = case["args"].as_array().expect("args");
+            assert_eq!(
+                headroom_name(headroom_status(number(&args[0]), number(&args[1]))),
+                case["expected"],
+                "{case}"
+            );
+        }
+        for case in fixture["run"].as_array().expect("run") {
+            let score = u32::try_from(whole(&case["args"][0])).expect("score");
+            let name = match run_status(score) {
+                RunStatus::Yes => "yesLabel",
+                RunStatus::Borderline => "borderlineLabel",
+                RunStatus::No => "noLabel",
+            };
+            assert_eq!(name, case["expected"], "{case}");
+        }
+        let speed = |speed| match speed {
+            PlannerSpeed::Fast => "fast",
+            PlannerSpeed::Medium => "medium",
+            PlannerSpeed::Slow => "slow",
+        };
+        let modes = [
+            PlannerGpuMode::Full,
+            PlannerGpuMode::NearFull,
+            PlannerGpuMode::KvSpill,
+            PlannerGpuMode::KvHeavySpill,
+            PlannerGpuMode::RamModelVramCtx,
+            PlannerGpuMode::RamModelRamCtx,
+            PlannerGpuMode::MostLayers,
+            PlannerGpuMode::HalfLayers,
+            PlannerGpuMode::FewLayers,
+            PlannerGpuMode::Cpu,
+            PlannerGpuMode::GpuUnavailable,
+        ];
+        for case in fixture["performance"].as_array().expect("performance") {
+            let mode = modes
+                .into_iter()
+                .find(|mode| gpu_mode_name(*mode) == case["args"][0])
+                .expect("mode");
+            let (prefill, generation) = planner_performance(mode);
+            assert_eq!(
+                serde_json::json!([speed(prefill), speed(generation)]),
+                case["expected"],
+                "{case}"
+            );
+        }
+        let offload_name = |offload| match offload {
+            ModelOffload::Auto => "auto",
+            ModelOffload::Cpu => "cpu",
+            ModelOffload::Gpu => "gpu",
+            ModelOffload::Mixed => "mixed",
+        };
+        for case in fixture["offload"].as_array().expect("offload") {
+            let args = case["args"].as_array().expect("args");
+            assert_eq!(
+                offload_name(gpu_layers_to_model_offload(
+                    args[0].as_i64(),
+                    args[1].as_u64()
+                )),
+                case["expected"],
+                "{case}"
+            );
+        }
+        for case in fixture["kqv"].as_array().expect("kqv") {
+            let offload = kv_placement_to_offload_kqv(placement(
+                case["args"][0].as_str().expect("placement"),
+            ));
+            assert_eq!(
+                offload.map_or(serde_json::Value::Null, serde_json::Value::Bool),
+                case["expected"],
+                "{case}"
             );
         }
     }

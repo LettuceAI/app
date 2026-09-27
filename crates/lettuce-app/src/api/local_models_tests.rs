@@ -1172,3 +1172,40 @@ async fn a_committed_moves_leftover_manifest_is_never_applied_again() {
     assert!(!target.join(crate::MODELS_MOVE_MANIFEST).exists());
     std::fs::remove_dir_all(folder).ok();
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_download_without_an_offload_choice_reads_it_from_its_layer_count() {
+    let (harness, folder) = local_harness("offload-from-layers");
+    let context = &harness.context;
+    hugging_face(context).await;
+    let accepted = hf_download(
+        context,
+        download(
+            "op-cpu",
+            "m-Q8_0.gguf",
+            dto::HfDownloadSetup {
+                gpu_layers: Some(0),
+                create_model: true,
+                ..dto::HfDownloadSetup::default()
+            },
+        ),
+    )
+    .await
+    .expect("download");
+    run(&runner(context, None)).await;
+    let Some(dto::JobResultDto::ModelInstalled {
+        model_profile_id: Some(profile),
+        ..
+    }) = view(context, job_id(&accepted)).await.result
+    else {
+        panic!("a model");
+    };
+    let profile = lettuce_models::ModelProfileRepository::get(
+        context.backend().database(),
+        profile.parse().expect("id"),
+    )
+    .expect("read")
+    .expect("model");
+    assert_eq!(profile.config.llama_cpp.gpu_layers, Some(0));
+    std::fs::remove_dir_all(folder).ok();
+}

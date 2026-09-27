@@ -383,7 +383,29 @@ fn plan_report(
             score: upgrade.score,
         }),
         default_context: report.default_context,
+        headroom: match report.headroom {
+            lettuce_model_hub::HeadroomStatus::Comfortable => dto::HfHeadroomStatus::Comfortable,
+            lettuce_model_hub::HeadroomStatus::Ok => dto::HfHeadroomStatus::Ok,
+            lettuce_model_hub::HeadroomStatus::Tight => dto::HfHeadroomStatus::Tight,
+            lettuce_model_hub::HeadroomStatus::Risky => dto::HfHeadroomStatus::Risky,
+        },
+        run: match report.run {
+            lettuce_model_hub::RunStatus::Yes => dto::HfRunStatus::Yes,
+            lettuce_model_hub::RunStatus::Borderline => dto::HfRunStatus::Borderline,
+            lettuce_model_hub::RunStatus::No => dto::HfRunStatus::No,
+        },
+        prefill_speed: speed(report.performance.0),
+        generation_speed: speed(report.performance.1),
+        offload_kqv: report.offload_kqv,
     })
+}
+
+const fn speed(speed: lettuce_model_hub::PlannerSpeed) -> dto::HfSpeed {
+    match speed {
+        lettuce_model_hub::PlannerSpeed::Fast => dto::HfSpeed::Fast,
+        lettuce_model_hub::PlannerSpeed::Medium => dto::HfSpeed::Medium,
+        lettuce_model_hub::PlannerSpeed::Slow => dto::HfSpeed::Slow,
+    }
 }
 
 /// The recommendation, the planner's limits next to the chosen sidecars and,

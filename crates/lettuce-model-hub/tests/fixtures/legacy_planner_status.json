@@ -1,0 +1,319 @@
+{
+ "headroom": [
+  {
+   "args": [
+    10000000000,
+    0
+   ],
+   "expected": "riskyLabel"
+  },
+  {
+   "args": [
+    10000000000,
+    9000000000
+   ],
+   "expected": "riskyLabel"
+  },
+  {
+   "args": [
+    5000000000,
+    6000000000
+   ],
+   "expected": "okLabel"
+  },
+  {
+   "args": [
+    6000000000,
+    16000000000
+   ],
+   "expected": "comfortableLabel"
+  },
+  {
+   "args": [
+    15000000000,
+    16000000000
+   ],
+   "expected": "tightLabel"
+  },
+  {
+   "args": [
+    14000000000,
+    16000000000
+   ],
+   "expected": "okLabel"
+  },
+  {
+   "args": [
+    13500000000,
+    16000000000
+   ],
+   "expected": "okLabel"
+  },
+  {
+   "args": [
+    15000000000,
+    20000000000
+   ],
+   "expected": "comfortableLabel"
+  },
+  {
+   "args": [
+    17000000000,
+    20000000000
+   ],
+   "expected": "okLabel"
+  },
+  {
+   "args": [
+    18400000000,
+    20000000000
+   ],
+   "expected": "okLabel"
+  },
+  {
+   "args": [
+    18600000000,
+    20000000000
+   ],
+   "expected": "tightLabel"
+  },
+  {
+   "args": [
+    1000000000,
+    1000000000
+   ],
+   "expected": "tightLabel"
+  },
+  {
+   "args": [
+    0,
+    0
+   ],
+   "expected": "riskyLabel"
+  },
+  {
+   "args": [
+    2000000000,
+    2500000000
+   ],
+   "expected": "okLabel"
+  }
+ ],
+ "run": [
+  {
+   "args": [
+    0
+   ],
+   "expected": "noLabel"
+  },
+  {
+   "args": [
+    54
+   ],
+   "expected": "noLabel"
+  },
+  {
+   "args": [
+    55
+   ],
+   "expected": "borderlineLabel"
+  },
+  {
+   "args": [
+    74
+   ],
+   "expected": "borderlineLabel"
+  },
+  {
+   "args": [
+    75
+   ],
+   "expected": "yesLabel"
+  },
+  {
+   "args": [
+    100
+   ],
+   "expected": "yesLabel"
+  }
+ ],
+ "performance": [
+  {
+   "args": [
+    "full"
+   ],
+   "expected": [
+    "fast",
+    "fast"
+   ]
+  },
+  {
+   "args": [
+    "nearFull"
+   ],
+   "expected": [
+    "fast",
+    "fast"
+   ]
+  },
+  {
+   "args": [
+    "kvSpill"
+   ],
+   "expected": [
+    "medium",
+    "medium"
+   ]
+  },
+  {
+   "args": [
+    "kvHeavySpill"
+   ],
+   "expected": [
+    "slow",
+    "medium"
+   ]
+  },
+  {
+   "args": [
+    "ramModelVramCtx"
+   ],
+   "expected": [
+    "medium",
+    "medium"
+   ]
+  },
+  {
+   "args": [
+    "ramModelRamCtx"
+   ],
+   "expected": [
+    "slow",
+    "slow"
+   ]
+  },
+  {
+   "args": [
+    "mostLayers"
+   ],
+   "expected": [
+    "slow",
+    "medium"
+   ]
+  },
+  {
+   "args": [
+    "halfLayers"
+   ],
+   "expected": [
+    "slow",
+    "medium"
+   ]
+  },
+  {
+   "args": [
+    "fewLayers"
+   ],
+   "expected": [
+    "slow",
+    "slow"
+   ]
+  },
+  {
+   "args": [
+    "cpu"
+   ],
+   "expected": [
+    "slow",
+    "slow"
+   ]
+  },
+  {
+   "args": [
+    "gpuUnavailable"
+   ],
+   "expected": [
+    "slow",
+    "slow"
+   ]
+  }
+ ],
+ "offload": [
+  {
+   "args": [
+    null,
+    33
+   ],
+   "expected": "auto"
+  },
+  {
+   "args": [
+    0,
+    33
+   ],
+   "expected": "cpu"
+  },
+  {
+   "args": [
+    -1,
+    null
+   ],
+   "expected": "cpu"
+  },
+  {
+   "args": [
+    33,
+    33
+   ],
+   "expected": "gpu"
+  },
+  {
+   "args": [
+    40,
+    33
+   ],
+   "expected": "gpu"
+  },
+  {
+   "args": [
+    10,
+    33
+   ],
+   "expected": "mixed"
+  },
+  {
+   "args": [
+    10,
+    null
+   ],
+   "expected": "mixed"
+  },
+  {
+   "args": [
+    5,
+    0
+   ],
+   "expected": "mixed"
+  }
+ ],
+ "kqv": [
+  {
+   "args": [
+    "auto"
+   ],
+   "expected": null
+  },
+  {
+   "args": [
+    "ram"
+   ],
+   "expected": false
+  },
+  {
+   "args": [
+    "vram"
+   ],
+   "expected": true
+  }
+ ]
+}

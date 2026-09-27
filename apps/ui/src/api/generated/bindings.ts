@@ -398,6 +398,9 @@ export type HfFileRecommendation = {
 	max_context_by_kv_type: HfKvContextLimit[],
 };
 
+/**  How much memory the planner's choice leaves. */
+export type HfHeadroomStatus = "comfortable" | "ok" | "tight" | "risky";
+
 export type HfKvContextLimit = {
 	kv_type: string,
 	max_context: number,
@@ -502,6 +505,12 @@ export type HfPlan = {
 	requested_gpu_layers: number | null,
 	upgrade: HfPlanUpgrade | null,
 	default_context: number,
+	headroom: HfHeadroomStatus,
+	run: HfRunStatus,
+	prefill_speed: HfSpeed,
+	generation_speed: HfSpeed,
+	/**  The KV offload a download with this choice stores. */
+	offload_kqv: boolean | null,
 };
 
 /**  The planner's current choice for one file. */
@@ -572,6 +581,8 @@ export type HfRecommendationRequest = {
 	plan: HfPlanChoice | null,
 };
 
+export type HfRunStatus = "yes" | "borderline" | "no";
+
 /**
  *  Scores per file. `hardware_available` is false for an Ollama account
  *  without a Sprout probe (no scores then); `metadata_available` is false
@@ -624,6 +635,8 @@ export type HfSearchResults = {
 };
 
 export type HfSort = "trending_score" | "downloads" | "likes" | "last_modified";
+
+export type HfSpeed = "fast" | "medium" | "slow";
 
 /**
  *  Whether the saved token works. `Unknown` means Hugging Face could not be

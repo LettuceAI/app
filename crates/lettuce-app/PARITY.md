@@ -177,7 +177,7 @@ Facts about how `lettuce-app` relates to the legacy app (2.2.x): what follows le
 - Hugging Face failures are typed for browse calls and download jobs (token missing or refused, gated, not found, rate limited, offline); legacy's UI matched error strings (`HfTokenMenu.tsx` 15-17). A token check that cannot reach Hugging Face is unknown, not invalid (`image_bundle.rs` 116-121). A file tree that cannot be read fails the call instead of listing every file at size 0 (`hf_browser/mod.rs` 2371-2375). Runnability without a readable GGUF header says so (`metadata_available`), where legacy scored silently (`hf_browser/mod.rs` 3581-3591); a token the store cannot read fails it.
 - An Ollama pull is a job: cancelling a queued pull stops it, which legacy only showed (`hf_browser/mod.rs` 2523-2541), and a stream that ends without success fails it (`ollama/mod.rs` 1042-1059). Its failures are typed (offline, credentials, the server's words, incomplete) where legacy passed error strings (`ollama/mod.rs` 886-1060).
 - On mobile, GGUF downloads and the folder move are refused by the backend; legacy hid them in the UI only (`HuggingFaceBrowserPage.tsx` 1484-1497).
-- The download planner's limits come from `hf_recommendation`; legacy computed them in the page (`HuggingFaceBrowserPage.tsx` 163-199, 650-666, 701-704).
+- The download planner's limits, report and statuses come from `hf_recommendation`; legacy computed them in the page (`HuggingFaceBrowserPage.tsx` 163-704). A download without an offload choice reads it from its layer count as the page did (`HuggingFaceBrowserPage.tsx` 2214-2216).
 
 ## Decisions
 
