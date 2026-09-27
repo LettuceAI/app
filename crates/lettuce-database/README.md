@@ -13,6 +13,7 @@ Domain crates own their rules and describe persistence as synchronous repository
 | Path | What it holds |
 | --- | --- |
 | `lib.rs` | `Database`, migrations, settings, provider accounts, model profiles, media blobs and assets |
+| `change_signal.rs` | The commit-hook signal that tells listeners which change feeds (jobs, conversations) a committed transaction wrote |
 | `conversation/` | Creator, mutation kernel and mutations, queries, artifacts, dispatch checkpoints, tools, companion state, chat import, historical writer |
 | `memory/` | Memory spaces, summaries, embeddings, dynamic-memory runs and rewinds, consolidation runs, scheduled notes |
 | `companion/` | Soul state, growth runs, Soul-writer runs |
@@ -20,7 +21,7 @@ Domain crates own their rules and describe persistence as synchronous repository
 | `lorebook/` | Lorebooks and bindings, entry and keyword runs, staged lorebook projects |
 | `media/` | Transcriptions, ASR learning, TTS configuration and syntheses, Whisper manifests, image generations, LoRA library, playground history |
 | `models/` | Local llama.cpp reports and metrics, model lookup, model path relocation, device-local carry-over |
-| `job_adapter.rs`, `usage_adapter.rs` | The durable job store and its `JobCatalog` read model (filtered listing, change feed over the `job_changes` positions, commit-hook notification of committed job changes), the usage ledger and cost bases |
+| `job_adapter.rs`, `usage_adapter.rs` | The durable job store and its `JobCatalog` read model (filtered listing, change feed over the `job_changes` positions), the usage ledger and cost bases |
 | `sync/` | Journal, state scan, incoming changes, conflicts, per-domain snapshot codecs, secret versions |
 | `backup/` | Backup export source, restore admission, restore writer |
 | `legacy/` | Legacy database preflight and documents, import admission and stages, backup of import evidence |
@@ -115,7 +116,7 @@ Every other conversation mutation runs through `run_mutation` in `conversation_m
 
 1. Open an immediate transaction.
 2. Look up the operation record for the conversation, operation kind and idempotency key. A hit with the same request digest replays: the stored operation and outbox rows are returned and the value is rehydrated from current state, without running the body. A hit with a different digest is a conflict.
-3. Run the body: CAS the conversation revision, require an active conversation (except for restore), stage the writes and describe the outbox events.
+3. Run the body: CAS the conversation revision, refuse a tombstoned conversation, stage the writes and describe the outbox events. An archived conversation takes every mutation; the user writes (send, added user message, continue, regenerate, retry) set it back to active in the same transaction and stage the same `ConversationLifecycleChanged` event an explicit restore records, so a failed write leaves it archived.
 4. Insert the operation record, whose scalar result columns are projections of the stored reference.
 5. Allocate contiguous per-conversation outbox sequences and append the events.
 6. Commit.
@@ -144,7 +145,9 @@ Snapshot and provider replay bytes live in private artifact tables (`conversatio
 
 `conversation_query` is read-only and snapshot-consistent: it owns the SQL projections, cursor decoding and the conversion of rows into validated domain values. `LiveTurnReader` lists unsettled turns across conversations for job recovery.
 
-`ConversationOverviewReader` serves the conversation list and chat screens. `overview_page` pages conversations like `ConversationReader::page` and, in the same read transaction, adds each one's active branch, participants and newest visible non-system message on that branch (timeline pages are scanned newest first until one is found). `live_turn` names a conversation's oldest unsettled turn, and `candidate_counts` counts the reply candidates of the listed messages.
+`ConversationOverviewReader` serves the conversation list and chat screens. `overview_page` pages conversations like `ConversationReader::page` and, in the same read transaction, adds each one's conversation row with participants and current settings (without the artifact verification of a full aggregate read), its newest visible non-system message on the active branch (timeline pages are scanned newest first until one is found) and the count of visible non-system messages on that branch, counted for the whole page in one recursive query over the branch ancestry. `ConversationQuery` filters by lifecycle (none lists active and archived, never tombstoned), kind, character and source group; the WHERE clause is built from the filters present so the partial expression indexes `conversations_direct_character_idx` and `conversations_group_source_idx` over the source id in `kind_json` serve the character and group filters, and the cursor scope includes the filters. `latest_per_character` and `latest_per_group` page the newest non-tombstoned conversation of every character or group, walking the update-time index and skipping a row when the same source has a newer one (an index probe per row). `live_turn` names a conversation's oldest unsettled turn, and `candidate_counts` counts the reply candidates of the listed messages.
+
+`conversation_changes` is the conversation change feed: triggers on `conversations` move a conversation's single row to a new AUTOINCREMENT position on every insert and update (every mutation bumps the row, so messages, settings, lifecycle and title changes all count) and leave a `removed` row when a purge deletes it. `ConversationChangeFeed` reads the latest position and the changes after one. `change_signal.rs` watches the feed tables with the update hook, reports the feeds a transaction wrote from the commit hook and forgets them on rollback, so `on_conversation_change` and `on_job_change` listeners hear only committed changes.
 
 ### Historical conversations
 

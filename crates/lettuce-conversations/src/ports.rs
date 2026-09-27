@@ -56,9 +56,16 @@ pub enum ConversationKindTag {
     Group,
 }
 
+/// A conversation list filter. `lifecycle: None` lists active and archived
+/// conversations; tombstoned ones are listed only when asked for by name.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ConversationQuery {
     pub lifecycle: Option<crate::model::ConversationLifecycle>,
+    pub kind: Option<ConversationKindTag>,
+    /// Direct conversations with this character.
+    pub character_id: Option<lettuce_types::CharacterId>,
+    /// Group conversations launched from this group.
+    pub source_group_id: Option<lettuce_types::GroupId>,
     pub page: PageRequest,
 }
 
@@ -944,19 +951,47 @@ pub trait ConversationReader: Send + Sync {
     ) -> Result<KeysetPage<ConversationOutboxRecord>, ConversationRepositoryError>;
 }
 
+/// One conversation's latest change: the feed position of its latest
+/// committed write, and whether that write removed it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ConversationChange {
+    pub conversation_id: ConversationId,
+    pub position: u64,
+    pub removed: bool,
+}
+
+/// The conversation change feed: every committed write moves its
+/// conversation to a new, higher position, so a reader that remembers the
+/// last position it read sees each changed conversation once.
+pub trait ConversationChangeFeed: Send + Sync {
+    /// The position of the latest change, 0 before any.
+    fn conversation_change_position(&self) -> Result<u64, ConversationRepositoryError>;
+
+    /// Changes after `after`, in position order, at most `limit`.
+    fn conversation_changes_since(
+        &self,
+        after: u64,
+        limit: u32,
+    ) -> Result<Vec<ConversationChange>, ConversationRepositoryError>;
+}
+
 /// Unsettled turns of every conversation, oldest first.
 pub trait LiveTurnReader: Send + Sync {
     fn live_turns(&self, limit: u32) -> Result<Vec<GenerationTurnId>, ConversationRepositoryError>;
 }
 
-/// One conversation list row, read from one storage snapshot.
+/// One conversation list row, read from one storage snapshot. The
+/// conversation carries its row, participants and current settings; its
+/// launch snapshots are not verified against their artifacts, which only a
+/// full `ConversationReader::get` does.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConversationOverview {
     pub summary: ConversationSummary,
-    pub active_branch_id: ConversationBranchId,
-    pub participants: Vec<crate::model::ConversationParticipant>,
+    pub conversation: Conversation,
     /// The newest visible non-system message on the active branch.
     pub last_message: Option<TimelineItem>,
+    /// Visible messages of every role but System on the active branch.
+    pub message_count: u64,
 }
 
 /// Read models behind the conversation list and chat screens.
@@ -965,6 +1000,20 @@ pub trait ConversationOverviewReader: Send + Sync {
     fn overview_page(
         &self,
         query: &ConversationQuery,
+    ) -> Result<KeysetPage<ConversationOverview>, ConversationRepositoryError>;
+
+    /// For every character with a direct conversation that is not
+    /// tombstoned, its newest one (archived included), newest first, ordered
+    /// `updated_at DESC, id` like the conversation list.
+    fn latest_per_character(
+        &self,
+        page: &PageRequest,
+    ) -> Result<KeysetPage<ConversationOverview>, ConversationRepositoryError>;
+
+    /// The same for every group with a group conversation.
+    fn latest_per_group(
+        &self,
+        page: &PageRequest,
     ) -> Result<KeysetPage<ConversationOverview>, ConversationRepositoryError>;
 
     /// The conversation's oldest unsettled turn.
@@ -1024,8 +1073,11 @@ pub trait ConversationCreator: ConversationReader {
     ) -> Result<CreateConversationResult, ConversationRepositoryError>;
 }
 
-/// Mutations other than [`Self::restore`] require an Active conversation;
-/// adapters answer [`ConversationRepositoryError::Conflict`] otherwise.  The
+/// Mutations accept an Active or Archived conversation and answer
+/// [`ConversationRepositoryError::Conflict`] for a tombstoned one. The user
+/// writes (send, append user message, continue, regenerate, retry) restore an
+/// archived conversation to Active in the same transaction and record the
+/// restore's outbox event; every other mutation keeps the lifecycle.  The
 /// begin methods additionally require that no non-terminal turn exists on the
 /// conversation.  Adapters enforce that single in-flight rule; its supporting
 /// index is deferred.

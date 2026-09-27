@@ -251,6 +251,9 @@ async fn launch(harness: &Harness, key: &str) -> String {
         &harness.context,
         dto::LaunchDirectRequest {
             character_id: harness.character_id.to_string(),
+            title: None,
+            scene_id: None,
+            starter_id: None,
             client_operation_id: key.into(),
         },
     )
@@ -644,6 +647,9 @@ async fn invalid_requests_map_to_stable_codes() {
         &harness.context,
         dto::LaunchDirectRequest {
             character_id: CharacterId::new().to_string(),
+            title: None,
+            scene_id: None,
+            starter_id: None,
             client_operation_id: "missing-character".into(),
         },
     )
@@ -1166,6 +1172,7 @@ async fn conversations_page_through_ties_on_updated_at() {
             dto::ConversationsListRequest {
                 cursor: cursor.take(),
                 limit: Some(2),
+                ..dto::ConversationsListRequest::default()
             },
         )
         .await
@@ -1192,6 +1199,7 @@ async fn conversations_page_through_ties_on_updated_at() {
         dto::ConversationsListRequest {
             cursor: None,
             limit: Some(u32::MAX),
+            ..dto::ConversationsListRequest::default()
         },
     )
     .await

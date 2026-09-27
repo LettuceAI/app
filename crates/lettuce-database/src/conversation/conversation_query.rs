@@ -2370,6 +2370,52 @@ fn read_candidate_page(
     })
 }
 
+impl lettuce_conversations::ConversationChangeFeed for Database {
+    fn conversation_change_position(&self) -> Result<u64, ConversationRepositoryError> {
+        let connection = open_read(self)?;
+        let position: Option<i64> = connection
+            .query_row(
+                "SELECT max(position) FROM conversation_changes",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(slice::db)?;
+        u64::try_from(position.unwrap_or(0)).map_err(|_| ConversationRepositoryError::Storage)
+    }
+
+    fn conversation_changes_since(
+        &self,
+        after: u64,
+        limit: u32,
+    ) -> Result<Vec<lettuce_conversations::ConversationChange>, ConversationRepositoryError> {
+        let after = i64::try_from(after).map_err(|_| cursor_error())?;
+        let connection = open_read(self)?;
+        let mut statement = connection
+            .prepare("SELECT conversation_id, position, removed FROM conversation_changes WHERE position > ?1 ORDER BY position LIMIT ?2")
+            .map_err(slice::db)?;
+        let mut changes = Vec::new();
+        for row in statement
+            .query_map(params![after, i64::from(limit)], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            })
+            .map_err(slice::db)?
+        {
+            let (conversation_id, position, removed) = row.map_err(slice::db)?;
+            changes.push(lettuce_conversations::ConversationChange {
+                conversation_id: parse(conversation_id)?,
+                position: u64::try_from(position)
+                    .map_err(|_| ConversationRepositoryError::Storage)?,
+                removed: removed != 0,
+            });
+        }
+        Ok(changes)
+    }
+}
+
 impl lettuce_conversations::LiveTurnReader for Database {
     fn live_turns(&self, limit: u32) -> Result<Vec<GenerationTurnId>, ConversationRepositoryError> {
         let connection = open_read(self)?;
@@ -2395,6 +2441,13 @@ impl lettuce_conversations::LiveTurnReader for Database {
 
 const PREVIEW_SCAN_PAGE: u16 = 20;
 
+/// The character of a direct conversation's `kind_json`; the partial index
+/// `conversations_direct_character_idx` is built on this exact expression.
+const DIRECT_CHARACTER_SQL: &str = "json_extract(kind_json, '$.value.details.character.source_id')";
+/// The source group of a group conversation's `kind_json`, indexed by
+/// `conversations_group_source_idx`.
+const GROUP_SOURCE_SQL: &str = "json_extract(kind_json, '$.value.details.group.source_id')";
+
 impl lettuce_conversations::ConversationOverviewReader for Database {
     fn overview_page(
         &self,
@@ -2406,39 +2459,25 @@ impl lettuce_conversations::ConversationOverviewReader for Database {
             .transaction_with_behavior(TransactionBehavior::Deferred)
             .map_err(slice::db)?;
         let page = read_summary_page(&transaction, query)?;
-        let mut items = Vec::with_capacity(page.items.len());
-        for summary in page.items {
-            let active_branch_id: ConversationBranchId = parse(
-                transaction
-                    .query_row(
-                        "SELECT active_branch_id FROM conversations WHERE id = ?1",
-                        [summary.id.to_string()],
-                        |row| row.get(0),
-                    )
-                    .map_err(slice::db)?,
-            )?;
-            let mut participants = Vec::new();
-            let mut statement = transaction.prepare("SELECT id, role, ordinal, source_kind, source_id, enabled, muted, display_name, authored_description, model_selection_json, revision, created_at, updated_at FROM conversation_participants WHERE conversation_id = ?1 ORDER BY ordinal, id").map_err(slice::db)?;
-            for row in statement
-                .query_map([summary.id.to_string()], slice::read_participant)
-                .map_err(slice::db)?
-            {
-                participants.push(row.map_err(slice::db)?);
-            }
-            drop(statement);
-            let last_message = newest_visible_message(&transaction, summary.id, active_branch_id)?;
-            items.push(lettuce_conversations::ConversationOverview {
-                summary,
-                active_branch_id,
-                participants,
-                last_message,
-            });
-        }
+        let value = overviews(&transaction, page)?;
         transaction.commit().map_err(slice::db)?;
-        Ok(Page {
-            items,
-            next_cursor: page.next_cursor,
-        })
+        Ok(value)
+    }
+
+    fn latest_per_character(
+        &self,
+        page: &PageRequest,
+    ) -> Result<KeysetPage<lettuce_conversations::ConversationOverview>, ConversationRepositoryError>
+    {
+        self.latest_per_source(ConversationKindTag::Direct, page)
+    }
+
+    fn latest_per_group(
+        &self,
+        page: &PageRequest,
+    ) -> Result<KeysetPage<lettuce_conversations::ConversationOverview>, ConversationRepositoryError>
+    {
+        self.latest_per_source(ConversationKindTag::Group, page)
     }
 
     fn live_turn(
@@ -2509,12 +2548,206 @@ fn newest_visible_message(
     }
 }
 
+impl Database {
+    fn latest_per_source(
+        &self,
+        kind: ConversationKindTag,
+        page: &PageRequest,
+    ) -> Result<KeysetPage<lettuce_conversations::ConversationOverview>, ConversationRepositoryError>
+    {
+        let (kind_name, source) = match kind {
+            ConversationKindTag::Direct => ("direct", DIRECT_CHARACTER_SQL),
+            ConversationKindTag::Group => ("group", GROUP_SOURCE_SQL),
+        };
+        let newest = format!(
+            "c.kind = '{kind_name}' AND c.lifecycle <> 'tombstoned' AND NOT EXISTS (SELECT 1 FROM conversations AS n WHERE n.kind = '{kind_name}' AND n.lifecycle <> 'tombstoned' AND {} = {} AND (n.updated_at > c.updated_at OR (n.updated_at = c.updated_at AND n.id < c.id)))",
+            source.replace("kind_json", "n.kind_json"),
+            source.replace("kind_json", "c.kind_json"),
+        );
+        let mut connection = open_read(self)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Deferred)
+            .map_err(slice::db)?;
+        let summaries = keyset_summaries(
+            &transaction,
+            &format!("latest:{kind_name}"),
+            &newest,
+            Vec::new(),
+            page,
+        )?;
+        let value = overviews(&transaction, summaries)?;
+        transaction.commit().map_err(slice::db)?;
+        Ok(value)
+    }
+}
+
+fn overviews(
+    transaction: &Transaction<'_>,
+    page: KeysetPage<ConversationSummary>,
+) -> Result<KeysetPage<lettuce_conversations::ConversationOverview>, ConversationRepositoryError> {
+    let counts = message_counts(
+        transaction,
+        &page
+            .items
+            .iter()
+            .map(|summary| summary.id)
+            .collect::<Vec<_>>(),
+    )?;
+    let mut items = Vec::with_capacity(page.items.len());
+    for summary in page.items {
+        let conversation = overview_conversation(transaction, summary.id)?;
+        let last_message =
+            newest_visible_message(transaction, summary.id, conversation.active_branch_id)?;
+        let message_count = counts.get(&summary.id).copied().unwrap_or(0);
+        items.push(lettuce_conversations::ConversationOverview {
+            summary,
+            conversation,
+            last_message,
+            message_count,
+        });
+    }
+    Ok(Page {
+        items,
+        next_cursor: page.next_cursor,
+    })
+}
+
+/// The conversation row with its participants and current settings, without
+/// the artifact verification a full aggregate read does.
+fn overview_conversation(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+) -> Result<lettuce_conversations::Conversation, ConversationRepositoryError> {
+    let mut conversation = transaction
+        .query_row(
+            "SELECT lifecycle, title, active_branch_id, kind_json, revision, created_at, updated_at, kind FROM conversations WHERE id = ?1",
+            [conversation_id.to_string()],
+            |row| slice::read_conversation_row(row, conversation_id),
+        )
+        .optional()
+        .map_err(slice::db)?
+        .ok_or(ConversationRepositoryError::NotFound)?;
+    let mut statement = transaction.prepare("SELECT id, role, ordinal, source_kind, source_id, enabled, muted, display_name, authored_description, model_selection_json, revision, created_at, updated_at FROM conversation_participants WHERE conversation_id = ?1 ORDER BY ordinal, id").map_err(slice::db)?;
+    for row in statement
+        .query_map([conversation_id.to_string()], slice::read_participant)
+        .map_err(slice::db)?
+    {
+        conversation.participants.push(row.map_err(slice::db)?);
+    }
+    drop(statement);
+    let settings = transaction
+        .query_row("SELECT revision, author_note, author_note_provenance, memory_json, memory_provenance, model_override_json, model_provenance, voice_json, voice_provenance, prompt_json, prompt_provenance, lorebooks_json, lorebooks_provenance, persona_json, persona_provenance, scene_json, scene_provenance, speaker_selection, speaker_selection_provenance, companion_clock_json, model_settings_json, background_asset_id, background_hidden, chat_mode, disable_character_lorebooks FROM conversation_settings WHERE conversation_id = ?1", [conversation_id.to_string()], slice::read_settings)
+        .optional()
+        .map_err(slice::db)?;
+    if let Some(settings) = &settings {
+        settings
+            .validate_against_kind(&conversation.kind)
+            .map_err(|_| ConversationRepositoryError::Storage)?;
+    }
+    conversation.current_settings = settings;
+    Ok(conversation)
+}
+
+/// Visible messages of every role but System on each conversation's active
+/// branch, in one query for the whole page.
+fn message_counts(
+    transaction: &Transaction<'_>,
+    conversation_ids: &[ConversationId],
+) -> Result<std::collections::HashMap<ConversationId, u64>, ConversationRepositoryError> {
+    if conversation_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    let ids = serde_json::to_string(
+        &conversation_ids
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>(),
+    )
+    .map_err(|_| ConversationRepositoryError::Storage)?;
+    let mut statement = transaction
+        .prepare("WITH RECURSIVE ancestry(conversation_id, id) AS (SELECT branch.conversation_id, coalesce(branch.head_message_id, branch.fork_message_id) FROM conversations AS conversation JOIN conversation_branches AS branch ON branch.conversation_id = conversation.id AND branch.id = conversation.active_branch_id WHERE conversation.id IN (SELECT value FROM json_each(?1)) AND coalesce(branch.head_message_id, branch.fork_message_id) IS NOT NULL UNION ALL SELECT m.conversation_id, m.parent_message_id FROM conversation_messages AS m JOIN ancestry ON m.conversation_id = ancestry.conversation_id AND m.id = ancestry.id WHERE m.parent_message_id IS NOT NULL) SELECT m.conversation_id, count(*) FROM conversation_messages AS m JOIN ancestry ON m.conversation_id = ancestry.conversation_id AND m.id = ancestry.id WHERE m.visibility = 'visible' AND m.role <> 'system' GROUP BY m.conversation_id")
+        .map_err(slice::db)?;
+    let mut counts = std::collections::HashMap::new();
+    for row in statement
+        .query_map([ids], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })
+        .map_err(slice::db)?
+    {
+        let (conversation_id, count) = row.map_err(slice::db)?;
+        counts.insert(
+            parse(conversation_id)?,
+            u64::try_from(count).map_err(|_| ConversationRepositoryError::Storage)?,
+        );
+    }
+    Ok(counts)
+}
+
+fn lifecycle_name(value: ConversationLifecycle) -> &'static str {
+    match value {
+        ConversationLifecycle::Active => "active",
+        ConversationLifecycle::Archived => "archived",
+        ConversationLifecycle::Tombstoned => "tombstoned",
+    }
+}
+
 fn read_summary_page(
     transaction: &Transaction<'_>,
     query: &ConversationQuery,
 ) -> Result<KeysetPage<ConversationSummary>, ConversationRepositoryError> {
-    let scope = format!("conversations:{:?}", query.lifecycle);
-    let cursor = decode_cursor(query.page.cursor.as_ref(), &scope)?;
+    let scope = format!(
+        "conversations:{:?}:{:?}:{:?}:{:?}",
+        query.lifecycle, query.kind, query.character_id, query.source_group_id
+    );
+    let mut conditions = Vec::new();
+    let mut values: Vec<String> = Vec::new();
+    match query.lifecycle {
+        Some(lifecycle) => {
+            values.push(lifecycle_name(lifecycle).to_owned());
+            conditions.push(format!("c.lifecycle = ?{}", values.len()));
+        }
+        None => conditions.push("c.lifecycle <> 'tombstoned'".to_owned()),
+    }
+    match query.kind {
+        Some(ConversationKindTag::Direct) => conditions.push("c.kind = 'direct'".to_owned()),
+        Some(ConversationKindTag::Group) => conditions.push("c.kind = 'group'".to_owned()),
+        None => {}
+    }
+    if let Some(character_id) = query.character_id {
+        values.push(character_id.to_string());
+        conditions.push(format!(
+            "c.kind = 'direct' AND {} = ?{}",
+            DIRECT_CHARACTER_SQL.replace("kind_json", "c.kind_json"),
+            values.len()
+        ));
+    }
+    if let Some(group_id) = query.source_group_id {
+        values.push(group_id.to_string());
+        conditions.push(format!(
+            "c.kind = 'group' AND {} = ?{}",
+            GROUP_SOURCE_SQL.replace("kind_json", "c.kind_json"),
+            values.len()
+        ));
+    }
+    keyset_summaries(
+        transaction,
+        &scope,
+        &conditions.join(" AND "),
+        values,
+        &query.page,
+    )
+}
+
+/// One page of conversations matching `condition` (over the alias `c`, with
+/// `values` bound as `?1..`), ordered `updated_at DESC, id`.
+fn keyset_summaries(
+    transaction: &Transaction<'_>,
+    scope: &str,
+    condition: &str,
+    values: Vec<String>,
+    page: &PageRequest,
+) -> Result<KeysetPage<ConversationSummary>, ConversationRepositoryError> {
+    let cursor = decode_cursor(page.cursor.as_ref(), scope)?;
     if let Some(cursor) = cursor.as_ref() {
         validate_cursor_number(cursor, true)?;
         let _: ConversationId = validate_cursor_id(cursor)?;
@@ -2525,50 +2758,52 @@ fn read_summary_page(
         .unwrap_or(i64::MAX);
     let id = cursor
         .as_ref()
-        .map(|value| value.text.as_str())
-        .unwrap_or("\u{ffff}");
-    let limit = i64::from(query.page.limit.get());
-    let lifecycle = query.lifecycle.map(|value| match value {
-        ConversationLifecycle::Active => "active",
-        ConversationLifecycle::Archived => "archived",
-        ConversationLifecycle::Tombstoned => "tombstoned",
-    });
-    let mut statement = transaction.prepare("SELECT id, title, lifecycle, kind, revision, updated_at FROM conversations WHERE (?1 IS NULL OR lifecycle = ?1) AND (updated_at < ?2 OR (updated_at = ?2 AND id > ?3)) ORDER BY updated_at DESC, id LIMIT ?4").map_err(slice::db)?;
+        .map(|value| value.text.clone())
+        .unwrap_or_else(|| "\u{ffff}".to_owned());
+    let base = values.len();
+    let after = format!(
+        "(c.updated_at < ?{} OR (c.updated_at = ?{} AND c.id > ?{}))",
+        base + 1,
+        base + 1,
+        base + 2
+    );
+    let filter = if condition.is_empty() {
+        after
+    } else {
+        format!("{condition} AND {after}")
+    };
+    let mut statement = transaction
+        .prepare(&format!(
+            "SELECT c.id, c.title, c.lifecycle, c.kind, c.revision, c.updated_at FROM conversations AS c WHERE {filter} ORDER BY c.updated_at DESC, c.id LIMIT ?{}",
+            base + 3
+        ))
+        .map_err(slice::db)?;
+    let mut bound = bind_values(&values);
+    bound.push(Box::new(updated));
+    bound.push(Box::new(id));
+    bound.push(Box::new(i64::from(page.limit.get())));
     let mut items = Vec::new();
     for row in statement
-        .query_map(params![lifecycle, updated, id, limit], |row| {
-            let id: ConversationId =
-                parse(row.get(0)?).map_err(|_| rusqlite::Error::InvalidQuery)?;
-            let lifecycle = match row.get::<_, String>(2)?.as_str() {
-                "active" => ConversationLifecycle::Active,
-                "archived" => ConversationLifecycle::Archived,
-                "tombstoned" => ConversationLifecycle::Tombstoned,
-                _ => return Err(rusqlite::Error::InvalidQuery),
-            };
-            let kind = match row.get::<_, String>(3)?.as_str() {
-                "direct" => ConversationKindTag::Direct,
-                "group" => ConversationKindTag::Group,
-                _ => return Err(rusqlite::Error::InvalidQuery),
-            };
-            Ok(ConversationSummary {
-                id,
-                title: row.get(1)?,
-                lifecycle,
-                kind,
-                revision: slice::rev(row.get(4)?).map_err(|_| rusqlite::Error::InvalidQuery)?,
-                updated_at: timestamp(row.get(5)?),
-            })
-        })
+        .query_map(rusqlite::params_from_iter(bound.iter()), read_summary_row)
         .map_err(slice::db)?
     {
         items.push(row.map_err(slice::db)?);
     }
     drop(statement);
     let next_cursor = if let Some(last) = items.last() {
-        let has_more: bool = transaction.query_row("SELECT EXISTS(SELECT 1 FROM conversations WHERE (?1 IS NULL OR lifecycle = ?1) AND (updated_at < ?2 OR (updated_at = ?2 AND id > ?3)))", params![lifecycle, last.updated_at.get(), last.id.to_string()], |row| row.get(0)).map_err(slice::db)?;
+        let mut bound = bind_values(&values);
+        bound.push(Box::new(last.updated_at.get()));
+        bound.push(Box::new(last.id.to_string()));
+        let has_more: bool = transaction
+            .query_row(
+                &format!("SELECT EXISTS(SELECT 1 FROM conversations AS c WHERE {filter})"),
+                rusqlite::params_from_iter(bound.iter()),
+                |row| row.get(0),
+            )
+            .map_err(slice::db)?;
         if has_more {
             Some(encode_cursor(
-                &scope,
+                scope,
                 &last.id.to_string(),
                 last.updated_at.get(),
             )?)
@@ -2579,6 +2814,36 @@ fn read_summary_page(
         None
     };
     Ok(Page { items, next_cursor })
+}
+
+fn bind_values(values: &[String]) -> Vec<Box<dyn rusqlite::ToSql>> {
+    values
+        .iter()
+        .map(|value| Box::new(value.clone()) as Box<dyn rusqlite::ToSql>)
+        .collect()
+}
+
+fn read_summary_row(row: &Row<'_>) -> rusqlite::Result<ConversationSummary> {
+    let id: ConversationId = parse(row.get(0)?).map_err(|_| rusqlite::Error::InvalidQuery)?;
+    let lifecycle = match row.get::<_, String>(2)?.as_str() {
+        "active" => ConversationLifecycle::Active,
+        "archived" => ConversationLifecycle::Archived,
+        "tombstoned" => ConversationLifecycle::Tombstoned,
+        _ => return Err(rusqlite::Error::InvalidQuery),
+    };
+    let kind = match row.get::<_, String>(3)?.as_str() {
+        "direct" => ConversationKindTag::Direct,
+        "group" => ConversationKindTag::Group,
+        _ => return Err(rusqlite::Error::InvalidQuery),
+    };
+    Ok(ConversationSummary {
+        id,
+        title: row.get(1)?,
+        lifecycle,
+        kind,
+        revision: slice::rev(row.get(4)?).map_err(|_| rusqlite::Error::InvalidQuery)?,
+        updated_at: timestamp(row.get(5)?),
+    })
 }
 
 impl ConversationReader for Database {
@@ -3993,6 +4258,7 @@ mod tests {
                     cursor: None,
                     limit: lettuce_types::PageLimit::new(1),
                 },
+                ..ConversationQuery::default()
             },
         )
         .expect("page");
@@ -4006,6 +4272,7 @@ mod tests {
                     cursor: Some(cursor),
                     limit: lettuce_types::PageLimit::new(1),
                 },
+                ..ConversationQuery::default()
             },
         )
         .expect("second page");
@@ -4027,6 +4294,7 @@ mod tests {
                     cursor: None,
                     limit: lettuce_types::PageLimit::new(1),
                 },
+                ..ConversationQuery::default()
             },
         )
         .expect("page");
@@ -4039,6 +4307,7 @@ mod tests {
                     cursor: Some(cursor),
                     limit: lettuce_types::PageLimit::new(1),
                 },
+                ..ConversationQuery::default()
             },
         )
         .expect_err("scope mismatch");
@@ -4051,6 +4320,7 @@ mod tests {
                     cursor: Some("not-hex".into()),
                     limit: lettuce_types::PageLimit::new(1),
                 },
+                ..ConversationQuery::default()
             },
         )
         .expect_err("malformed cursor");
@@ -4924,6 +5194,7 @@ mod tests {
             &ConversationQuery {
                 lifecycle: None,
                 page: PageRequest::default(),
+                ..ConversationQuery::default()
             },
         )
         .expect("snapshot page");
@@ -4967,6 +5238,7 @@ mod tests {
                     cursor: None,
                     limit: lettuce_types::PageLimit::new(1),
                 },
+                ..ConversationQuery::default()
             },
         )
         .expect("first conversation page");
@@ -4979,6 +5251,7 @@ mod tests {
                     cursor: Some(cursor),
                     limit: lettuce_types::PageLimit::new(1),
                 },
+                ..ConversationQuery::default()
             },
         )
         .expect("second conversation page");
@@ -5066,13 +5339,13 @@ mod tests {
         assert_eq!(page.items.len(), 1);
         let overview = &page.items[0];
         assert_eq!(overview.summary.id, conversation_id);
-        assert_eq!(overview.participants.len(), 2);
+        assert_eq!(overview.conversation.participants.len(), 2);
         let last = overview.last_message.as_ref().expect("last message");
         assert_eq!(last.message.role, MessageRole::Assistant);
         let timeline = ConversationReader::timeline_page(
             &database,
             conversation_id,
-            overview.active_branch_id,
+            overview.conversation.active_branch_id,
             &PageRequest::default(),
         )
         .expect("timeline");

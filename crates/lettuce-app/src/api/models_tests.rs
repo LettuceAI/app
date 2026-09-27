@@ -81,6 +81,7 @@ struct CountingModels {
     installed: AtomicBool,
     loadable: AtomicBool,
     failing_emotion: AtomicBool,
+    absent: std::sync::Mutex<Vec<RequiredModel>>,
     checks: AtomicUsize,
     prepares: AtomicUsize,
     loads: AtomicUsize,
@@ -94,6 +95,11 @@ impl CountingModels {
         Arc::new(models)
     }
 
+    fn has(&self, model: RequiredModel) -> bool {
+        self.installed.load(Ordering::SeqCst)
+            && !self.absent.lock().expect("absent models").contains(&model)
+    }
+
     fn calls(&self) -> (usize, usize, usize) {
         (
             self.checks.load(Ordering::SeqCst),
@@ -105,9 +111,9 @@ impl CountingModels {
 
 #[async_trait]
 impl ModelLoader for CountingModels {
-    fn installed(&self, _context: &ApiContext, _model: RequiredModel) -> bool {
+    fn installed(&self, _context: &ApiContext, model: RequiredModel) -> bool {
         self.checks.fetch_add(1, Ordering::SeqCst);
-        self.installed.load(Ordering::SeqCst)
+        self.has(model)
     }
 
     async fn prepare(&self, _context: &ApiContext) -> bool {
@@ -117,7 +123,7 @@ impl ModelLoader for CountingModels {
 
     fn embedding(&self, _context: &ApiContext) -> ModelLoad<Arc<dyn MemoryEmbeddingEngine>> {
         self.loads.fetch_add(1, Ordering::SeqCst);
-        if !self.installed.load(Ordering::SeqCst) {
+        if !self.has(RequiredModel::Embedding) {
             ModelLoad::NotInstalled
         } else if self.loadable.load(Ordering::SeqCst) {
             ModelLoad::Loaded(Arc::new(FixedEmbedding))
@@ -128,7 +134,7 @@ impl ModelLoader for CountingModels {
 
     fn emotion(&self, _context: &ApiContext) -> ModelLoad<Arc<dyn CompanionEmotionEngine>> {
         self.loads.fetch_add(1, Ordering::SeqCst);
-        if !self.installed.load(Ordering::SeqCst) {
+        if !self.has(RequiredModel::Emotion) {
             ModelLoad::NotInstalled
         } else if self.failing_emotion.load(Ordering::SeqCst) {
             ModelLoad::Loaded(Arc::new(FailingEmotion))
@@ -180,6 +186,9 @@ async fn launch(harness: &Harness, character_id: CharacterId, key: &str) -> Stri
         &harness.context,
         dto::LaunchDirectRequest {
             character_id: character_id.to_string(),
+            title: None,
+            scene_id: None,
+            starter_id: None,
             client_operation_id: key.into(),
         },
     )
@@ -472,4 +481,114 @@ async fn adopting_legacy_embedding_files_forgets_a_missing_model() {
         .expect("workers started");
     workers.stop().await;
     std::fs::remove_dir_all(root).ok();
+}
+
+fn without(models: &CountingModels, model: RequiredModel) {
+    models.absent.lock().expect("absent models").push(model);
+}
+
+async fn missing_in_list_and_view(harness: &Harness, conversation_id: &str) -> Vec<RequiredModel> {
+    let listed = super::conversations_list(
+        &harness.context,
+        dto::ConversationsListRequest {
+            lifecycle: Some(dto::LifecycleFilter::All),
+            ..dto::ConversationsListRequest::default()
+        },
+    )
+    .await
+    .expect("list")
+    .items
+    .into_iter()
+    .find(|item| item.id == conversation_id)
+    .expect("listed")
+    .missing_models;
+    let view = conversation_open(
+        &harness.context,
+        dto::ConversationOpenRequest {
+            conversation_id: conversation_id.into(),
+        },
+    )
+    .await
+    .expect("open");
+    assert_eq!(view.missing_models, listed);
+    listed
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_companion_chat_misses_the_emotion_model_without_loading_anything() {
+    let models = CountingModels::new(true, true);
+    without(&models, RequiredModel::Emotion);
+    let harness = harness_with_models(Arc::clone(&models));
+    let companion = create_character(
+        harness.context.backend().database(),
+        "Mira",
+        companion_defaults(),
+    );
+    let conversation_id = launch(&harness, companion, "missing-emotion").await;
+    assert_eq!(
+        missing_in_list_and_view(&harness, &conversation_id).await,
+        vec![RequiredModel::Emotion]
+    );
+    let (_, prepares, loads) = models.calls();
+    assert_eq!((prepares, loads), (0, 0), "listing never loads a model");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_companion_chat_needs_the_embedding_model_too() {
+    let models = CountingModels::new(true, true);
+    without(&models, RequiredModel::Embedding);
+    let harness = harness_with_models(Arc::clone(&models));
+    let companion = create_character(
+        harness.context.backend().database(),
+        "Mira",
+        companion_defaults(),
+    );
+    let conversation_id = launch(&harness, companion, "missing-embedding").await;
+    assert_eq!(
+        missing_in_list_and_view(&harness, &conversation_id).await,
+        vec![RequiredModel::Embedding]
+    );
+    let (_, prepares, loads) = models.calls();
+    assert_eq!((prepares, loads), (0, 0));
+    let error = send(&harness, &conversation_id, "companion-no-embedding")
+        .await
+        .expect_err("a companion send needs the embedding model");
+    assert_eq!(error.code, ApiErrorCode::ModelRequired);
+    assert_eq!(model_of(&error), Some(RequiredModel::Embedding));
+    assert_untouched(&harness, &conversation_id).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_dynamic_memory_chat_misses_the_embedding_model_and_a_manual_one_misses_nothing() {
+    let models = CountingModels::new(false, false);
+    let harness = harness_with_models(Arc::clone(&models));
+    enable_dynamic_memory(&harness);
+    let dynamic = create_character(
+        harness.context.backend().database(),
+        "Rin",
+        dynamic_defaults(),
+    );
+    let dynamic_chat = launch(&harness, dynamic, "missing-dynamic").await;
+    let manual_chat = launch(&harness, harness.character_id, "missing-manual").await;
+    assert_eq!(
+        missing_in_list_and_view(&harness, &dynamic_chat).await,
+        vec![RequiredModel::Embedding]
+    );
+    assert_eq!(
+        missing_in_list_and_view(&harness, &manual_chat).await,
+        Vec::new()
+    );
+    let (_, prepares, loads) = models.calls();
+    assert_eq!((prepares, loads), (0, 0));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_model_change_tells_every_window_to_re_read_missing_models() {
+    let models = CountingModels::new(false, false);
+    let harness = harness_with_models(Arc::clone(&models));
+    harness.context.models_changed();
+    assert_eq!(
+        super::tests::api_events(&harness),
+        vec![dto::ApiEvent::RequiredModelsChanged]
+    );
 }

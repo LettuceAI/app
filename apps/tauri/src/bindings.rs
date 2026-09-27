@@ -18,11 +18,14 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
     tauri_specta::Builder::<R>::new()
         .commands(collect_commands![
             commands::conversations::conversations_list,
+            commands::conversations::conversations_latest_by_character,
+            commands::conversations::conversations_latest_by_group,
             commands::conversations::conversation_open,
             commands::conversations::conversation_messages,
             commands::conversations::conversation_send,
             commands::conversations::generation_cancel,
             commands::conversations::conversation_launch_direct,
+            commands::conversations::conversation_launch_group,
             commands::characters::characters_list,
             commands::jobs::jobs_list,
             commands::jobs::job_get,

@@ -2539,7 +2539,7 @@ mod tests {
         assert_eq!(receipt.conversations, vec![conversation_id]);
         assert_eq!(
             remaining_rows(&database, "conversation_id", &id),
-            Vec::new()
+            vec![("conversation_changes".to_owned(), 1)]
         );
         assert_eq!(remaining_rows(&database, "id", &id), Vec::new());
         let connection = database.connection().expect("lock");

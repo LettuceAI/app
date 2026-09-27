@@ -50,6 +50,10 @@ pub struct ApiError {
 }
 
 /// Application-wide events the host broadcasts to every window.
+/// `ConversationChanged` follows a committed write to the conversation (lists
+/// and open views re-read it), `ConversationRemoved` its purge, and
+/// `RequiredModelsChanged` an optional model's install, switch, removal or
+/// adoption (open views re-read their missing models).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
@@ -61,6 +65,13 @@ pub enum ApiEvent {
     JobUpdated {
         job: crate::JobView,
     },
+    ConversationChanged {
+        conversation_id: String,
+    },
+    ConversationRemoved {
+        conversation_id: String,
+    },
+    RequiredModelsChanged,
 }
 
 /// A stored media asset and the URL the host serves it at; the UI loads

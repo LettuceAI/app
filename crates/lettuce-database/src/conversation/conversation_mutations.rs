@@ -208,7 +208,7 @@ fn require_speaker_shape(
 
 /// Work already in flight settles even after the conversation is archived:
 /// archiving is metadata, and a turn that cannot finish would strand its
-/// attempt forever. Admission is the half that requires an active aggregate.
+/// attempt forever.
 fn require_settleable(lifecycle: ConversationLifecycle) -> Result<(), ConversationRepositoryError> {
     match lifecycle {
         ConversationLifecycle::Active | ConversationLifecycle::Archived => Ok(()),
@@ -217,8 +217,9 @@ fn require_settleable(lifecycle: ConversationLifecycle) -> Result<(), Conversati
 }
 
 /// Settings carry no conversation revision, so admission reads the lifecycle
-/// directly instead of swapping it.
-fn require_active_conversation(
+/// directly instead of swapping it; like every mutation it accepts an
+/// archived conversation and leaves it archived.
+fn require_writable_conversation(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
 ) -> Result<(), ConversationRepositoryError> {
@@ -231,10 +232,7 @@ fn require_active_conversation(
         .optional()
         .map_err(slice::db)?
         .ok_or(ConversationRepositoryError::NotFound)?;
-    match slice::lifecycle_from_name(&lifecycle)? {
-        ConversationLifecycle::Active => Ok(()),
-        _ => Err(ConversationRepositoryError::Conflict),
-    }
+    require_settleable(slice::lifecycle_from_name(&lifecycle)?)
 }
 
 /// `append_event` has no expected revision to compare, so it reads the
@@ -1989,6 +1987,22 @@ impl Database {
     }
 }
 
+fn restored_events(
+    restored: bool,
+    context: &kernel::MutationCtx,
+    revision: Revision,
+) -> Vec<kernel::StagedEvent> {
+    if restored {
+        vec![kernel::restored_event(
+            context.conversation_id,
+            revision,
+            context.now,
+        )]
+    } else {
+        Vec::new()
+    }
+}
+
 pub(crate) fn begin_send_with_hook<F>(
     database: &Database,
     command: &SendConversation,
@@ -2018,7 +2032,8 @@ where
                 context.conversation_id,
                 command.expected_revision,
             )?;
-            kernel::require_active(&conversation)?;
+            kernel::require_writable(&conversation)?;
+            let restored = kernel::restore_for_user_write(transaction, &conversation)?;
             require_active_branch(transaction, context.conversation_id, command.branch_id)?;
             require_no_live_turn(transaction, context.conversation_id)?;
             require_speaker_shape(
@@ -2057,21 +2072,23 @@ where
             let revision =
                 kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
             let value = begin_generation(transaction, context.conversation_id, turn_id)?;
+            let mut events = restored_events(restored, context, revision);
+            events.push(kernel::StagedEvent {
+                conversation_revision: revision,
+                at: context.now,
+                event: lettuce_conversations::ConversationOutboxEvent::MessageCommitted {
+                    conversation_id: context.conversation_id,
+                    branch_id: command.branch_id,
+                    message_id,
+                    revision_id: Some(revision_id),
+                    candidate_id: None,
+                    at: context.now,
+                },
+            });
             Ok(kernel::Staged {
                 value,
                 result: OperationResultRef::Turn(turn_id),
-                events: vec![kernel::StagedEvent {
-                    conversation_revision: revision,
-                    at: context.now,
-                    event: lettuce_conversations::ConversationOutboxEvent::MessageCommitted {
-                        conversation_id: context.conversation_id,
-                        branch_id: command.branch_id,
-                        message_id,
-                        revision_id: Some(revision_id),
-                        candidate_id: None,
-                        at: context.now,
-                    },
-                }],
+                events,
             })
         },
         |transaction, operation| {
@@ -2106,7 +2123,8 @@ where
                 context.conversation_id,
                 command.expected_revision,
             )?;
-            kernel::require_active(&conversation)?;
+            kernel::require_writable(&conversation)?;
+            let restored = kernel::restore_for_user_write(transaction, &conversation)?;
             require_active_branch(transaction, context.conversation_id, command.branch_id)?;
             require_no_live_turn(transaction, context.conversation_id)?;
             require_speaker_shape(
@@ -2141,12 +2159,13 @@ where
             )?;
             insert_first_attempt(transaction, context.conversation_id, turn_id)?;
             hook(transaction, turn_id)?;
-            kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
+            let revision =
+                kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
             let value = begin_generation(transaction, context.conversation_id, turn_id)?;
             Ok(kernel::Staged {
                 value,
                 result: OperationResultRef::Turn(turn_id),
-                events: Vec::new(),
+                events: restored_events(restored, context, revision),
             })
         },
         |transaction, operation| {
@@ -2202,7 +2221,8 @@ impl ConversationRepository for Database {
                     context.conversation_id,
                     command.expected_revision,
                 )?;
-                kernel::require_active(&conversation)?;
+                kernel::require_writable(&conversation)?;
+                let restored = kernel::restore_for_user_write(transaction, &conversation)?;
                 require_active_branch(transaction, context.conversation_id, command.branch_id)?;
                 require_no_live_turn(transaction, context.conversation_id)?;
                 let parent_message_id =
@@ -2211,21 +2231,23 @@ impl ConversationRepository for Database {
                     insert_user_message(transaction, command, parent_message_id, context.now)?;
                 let revision =
                     kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
+                let mut events = restored_events(restored, context, revision);
+                events.push(kernel::StagedEvent {
+                    conversation_revision: revision,
+                    at: context.now,
+                    event: ConversationOutboxEvent::MessageCommitted {
+                        conversation_id: context.conversation_id,
+                        branch_id: command.branch_id,
+                        message_id,
+                        revision_id: Some(revision_id),
+                        candidate_id: None,
+                        at: context.now,
+                    },
+                });
                 Ok(kernel::Staged {
                     value: load_message(transaction, context.conversation_id, message_id)?,
                     result: OperationResultRef::Message(message_id),
-                    events: vec![kernel::StagedEvent {
-                        conversation_revision: revision,
-                        at: context.now,
-                        event: ConversationOutboxEvent::MessageCommitted {
-                            conversation_id: context.conversation_id,
-                            branch_id: command.branch_id,
-                            message_id,
-                            revision_id: Some(revision_id),
-                            candidate_id: None,
-                            at: context.now,
-                        },
-                    }],
+                    events,
                 })
             },
             |transaction, operation| match operation.result {
@@ -2258,7 +2280,8 @@ impl ConversationRepository for Database {
                     context.conversation_id,
                     command.expected_revision,
                 )?;
-                kernel::require_active(&conversation)?;
+                kernel::require_writable(&conversation)?;
+                let restored = kernel::restore_for_user_write(transaction, &conversation)?;
                 require_active_branch(transaction, context.conversation_id, command.branch_id)?;
                 require_no_live_turn(transaction, context.conversation_id)?;
                 cas_turn(
@@ -2355,12 +2378,13 @@ impl ConversationRepository for Database {
                     context.now,
                 )?;
                 insert_first_attempt(transaction, context.conversation_id, turn_id)?;
-                kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
+                let revision =
+                    kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
                 let value = begin_generation(transaction, context.conversation_id, turn_id)?;
                 Ok(kernel::Staged {
                     value,
                     result: OperationResultRef::Turn(turn_id),
-                    events: Vec::new(),
+                    events: restored_events(restored, context, revision),
                 })
             },
             |transaction, operation| {
@@ -2391,7 +2415,8 @@ impl ConversationRepository for Database {
                     context.conversation_id,
                     command.expected_revision,
                 )?;
-                kernel::require_active(&conversation)?;
+                kernel::require_writable(&conversation)?;
+                let restored = kernel::restore_for_user_write(transaction, &conversation)?;
                 require_active_branch(transaction, context.conversation_id, command.branch_id)?;
                 require_no_live_turn(transaction, context.conversation_id)?;
                 cas_turn(
@@ -2450,12 +2475,13 @@ impl ConversationRepository for Database {
                     )
                     .map_err(kernel::map_constraint)?;
                 insert_first_attempt(transaction, context.conversation_id, turn_id)?;
-                kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
+                let revision =
+                    kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
                 let value = begin_generation(transaction, context.conversation_id, turn_id)?;
                 Ok(kernel::Staged {
                     value,
                     result: OperationResultRef::Turn(turn_id),
-                    events: Vec::new(),
+                    events: restored_events(restored, context, revision),
                 })
             },
             |transaction, operation| {
@@ -3823,7 +3849,7 @@ impl ConversationRepository for Database {
                     context.conversation_id,
                     command.expected_revision,
                 )?;
-                kernel::require_active(&conversation)?;
+                kernel::require_writable(&conversation)?;
                 let author: Option<String> = transaction
                     .query_row(
                         "SELECT author_participant_id FROM conversation_message_candidates WHERE conversation_id = ?1 AND id = ?2 AND message_id = ?3",
@@ -3967,7 +3993,7 @@ impl ConversationRepository for Database {
                     context.conversation_id,
                     command.expected_revision,
                 )?;
-                kernel::require_active(&conversation)?;
+                kernel::require_writable(&conversation)?;
                 require_no_live_turn(transaction, context.conversation_id)?;
                 let source = load_branch(
                     transaction,
@@ -4063,7 +4089,7 @@ impl ConversationRepository for Database {
                     context.conversation_id,
                     command.expected_revision,
                 )?;
-                kernel::require_active(&conversation)?;
+                kernel::require_writable(&conversation)?;
                 require_no_live_turn(transaction, context.conversation_id)?;
                 let branch = load_branch(transaction, context.conversation_id, command.branch_id)?;
                 if branch.status != lettuce_conversations::BranchStatus::Active {
@@ -4124,7 +4150,7 @@ impl ConversationRepository for Database {
                     context.conversation_id,
                     command.expected_revision,
                 )?;
-                kernel::require_active(&conversation)?;
+                kernel::require_writable(&conversation)?;
                 let state =
                     message_state(transaction, context.conversation_id, command.message_id)?;
                 if state.visibility == "tombstoned" {
@@ -4319,7 +4345,7 @@ impl ConversationRepository for Database {
                     context.conversation_id,
                     command.expected_revision,
                 )?;
-                kernel::require_active(&conversation)?;
+                kernel::require_writable(&conversation)?;
                 let state =
                     message_state(transaction, context.conversation_id, command.message_id)?;
                 if state.visibility == "tombstoned" {
@@ -4387,7 +4413,7 @@ impl ConversationRepository for Database {
                     context.conversation_id,
                     command.expected_revision,
                 )?;
-                kernel::require_active(&conversation)?;
+                kernel::require_writable(&conversation)?;
                 let state =
                     message_state(transaction, context.conversation_id, command.message_id)?;
                 if state.visibility == "tombstoned" {
@@ -4577,8 +4603,9 @@ impl ConversationRepository for Database {
         )
     }
 
-    /// Archiving is metadata only: an in-flight generation keeps running and
-    /// settles normally, while new work waits for a restore.
+    /// Archiving only hides the conversation from lists: an in-flight
+    /// generation settles normally and the conversation stays usable, a user
+    /// write restoring it.
     fn archive(
         &self,
         command: &ArchiveConversation,
@@ -4635,7 +4662,7 @@ impl ConversationRepository for Database {
                     context.conversation_id,
                     command.expected_revision,
                 )?;
-                kernel::require_active(&conversation)?;
+                kernel::require_writable(&conversation)?;
                 transaction
                     .execute(
                         "UPDATE conversations SET title = ?2 WHERE id = ?1",
@@ -4695,7 +4722,7 @@ impl ConversationRepository for Database {
                     context.conversation_id,
                     command.expected_revision,
                 )?;
-                kernel::require_active(&conversation)?;
+                kernel::require_writable(&conversation)?;
                 let current = conversation_value(transaction, context.conversation_id)?;
                 command
                     .validate_against_participants(&current.participants)
@@ -4784,7 +4811,7 @@ impl ConversationRepository for Database {
             now,
             move |transaction, context| {
                 let (command, drafts) = update.into_parts();
-                require_active_conversation(transaction, context.conversation_id)?;
+                require_writable_conversation(transaction, context.conversation_id)?;
                 let kind_json: String = transaction
                     .query_row(
                         "SELECT kind_json FROM conversations WHERE id = ?1",
@@ -4895,10 +4922,10 @@ mod tests {
         SnapshotSource,
     };
     use lettuce_conversations::{
-        CurrentConversationSettingsPatch, PatchValue, RenameConversation, ResolveGroupSpeaker,
-        RestoreConversation, SelectBranch, SelectedSpeakerDecision, SpeakerDecisionMethod,
-        SpeakerFallback, TombstoneMessage, UpdateConversationSettings, UpdateMessageFlags,
-        UpdateParticipantPolicy,
+        ConversationQuery, CurrentConversationSettingsPatch, PatchValue, RenameConversation,
+        ResolveGroupSpeaker, RestoreConversation, SelectBranch, SelectedSpeakerDecision,
+        SpeakerDecisionMethod, SpeakerFallback, TombstoneMessage, UpdateConversationSettings,
+        UpdateMessageFlags, UpdateParticipantPolicy,
     };
     use lettuce_types::{
         AssetId, CharacterId, ContentHash, GroupId, JobId, MediaBlobId, MessageCandidateId,
@@ -5005,8 +5032,11 @@ mod tests {
     }
 
     fn direct_fixture_on(database: std::rc::Rc<Database>) -> Fixture {
+        direct_fixture_for(database, CharacterId::new())
+    }
+
+    fn direct_fixture_for(database: std::rc::Rc<Database>, character_id: CharacterId) -> Fixture {
         let conversation_id = ConversationId::new();
-        let character_id = CharacterId::new();
         let (character_ref, character_draft) =
             artifact(SnapshotSource::Character(character_id), b"character");
         let user_participant = ConversationParticipantId::new();
@@ -5077,8 +5107,11 @@ mod tests {
     }
 
     fn group_fixture_on(database: std::rc::Rc<Database>) -> Fixture {
+        group_fixture_for(database, GroupId::new())
+    }
+
+    fn group_fixture_for(database: std::rc::Rc<Database>, group_id: GroupId) -> Fixture {
         let conversation_id = ConversationId::new();
-        let group_id = GroupId::new();
         let first_character = CharacterId::new();
         let second_character = CharacterId::new();
         let (group_ref, group_draft) = artifact(SnapshotSource::Group(group_id), b"group");
@@ -5818,7 +5851,7 @@ mod tests {
     }
 
     #[test]
-    fn send_rejects_stale_revisions_foreign_branches_and_archived_conversations() {
+    fn send_rejects_stale_revisions_foreign_branches_and_tombstoned_conversations() {
         let fixture = direct_fixture();
         let mut stale = send_command(&fixture, "send-stale", "cd", text("hello"));
         stale.expected_revision = Revision::new(9);
@@ -5850,11 +5883,20 @@ mod tests {
                 [fixture.conversation_id.to_string()],
             )
             .expect("archive");
-        let archived = send_command(&fixture, "send-archived", "cd", text("hello"));
+        fixture
+            .database
+            .connection()
+            .expect("connection")
+            .execute(
+                "UPDATE conversations SET lifecycle = 'tombstoned' WHERE id = ?1",
+                [fixture.conversation_id.to_string()],
+            )
+            .expect("tombstone");
+        let tombstoned = send_command(&fixture, "send-tombstoned", "cd", text("hello"));
         assert_eq!(
             fixture
                 .database
-                .begin_send(&archived, TimestampMillis::new(22)),
+                .begin_send(&tombstoned, TimestampMillis::new(22)),
             Err(ConversationRepositoryError::Conflict)
         );
         let turns: i64 = scalar(
@@ -7976,7 +8018,7 @@ mod tests {
     }
 
     #[test]
-    fn archived_conversations_settle_in_flight_work_but_admit_none() {
+    fn archived_conversations_settle_in_flight_work_and_stay_usable() {
         let mut fixture = direct_fixture();
         let send = fixture
             .database
@@ -8052,33 +8094,17 @@ mod tests {
         );
         fixture.revision = conversation_revision(&fixture);
 
-        assert_eq!(
-            fixture.database.begin_send(
-                &send_command(&fixture, "send-while-archived", "cd", text("again")),
-                TimestampMillis::new(31)
-            ),
-            Err(ConversationRepositoryError::Conflict),
-            "new work waits for a restore"
-        );
-        fixture
-            .database
-            .restore(
-                &RestoreConversation {
-                    conversation_id: fixture.conversation_id,
-                    expected_revision: fixture.revision,
-                    operation: token("restore-midturn", "cd"),
-                },
-                TimestampMillis::new(32),
-            )
-            .expect("restore");
-        fixture.revision = conversation_revision(&fixture);
         let resumed = fixture
             .database
             .begin_send(
-                &send_command(&fixture, "send-after-restore", "cd", text("again")),
-                TimestampMillis::new(33),
+                &send_command(&fixture, "send-while-archived", "cd", text("again")),
+                TimestampMillis::new(31),
             )
-            .expect("restored conversations admit work");
+            .expect("an archived conversation admits a send");
+        assert_eq!(
+            resumed.value.conversation.lifecycle,
+            ConversationLifecycle::Active
+        );
 
         fixture
             .database
@@ -8108,6 +8134,613 @@ mod tests {
             "a tombstoned conversation settles nothing"
         );
     }
+    fn archive_fixture(fixture: &mut Fixture, key: &str, at: i64) {
+        fixture
+            .database
+            .archive(
+                &ArchiveConversation {
+                    conversation_id: fixture.conversation_id,
+                    expected_revision: fixture.revision,
+                    operation: token(key, "cd"),
+                },
+                TimestampMillis::new(at),
+            )
+            .expect("archive");
+        fixture.revision = conversation_revision(fixture);
+    }
+
+    fn lifecycle_of(fixture: &Fixture) -> ConversationLifecycle {
+        ConversationReader::get(fixture.database.as_ref(), fixture.conversation_id)
+            .expect("aggregate")
+            .conversation
+            .lifecycle
+    }
+
+    #[test]
+    fn a_send_restores_an_archived_conversation_in_its_own_commit() {
+        let mut fixture = direct_fixture();
+        archive_fixture(&mut fixture, "archive-before-send", 10);
+        let command = send_command(&fixture, "send-archived", "cd", text("hello"));
+        let sent = fixture
+            .database
+            .begin_send(&command, TimestampMillis::new(20))
+            .expect("an archived conversation accepts a send");
+        assert_eq!(lifecycle_of(&fixture), ConversationLifecycle::Active);
+        assert_eq!(
+            sent.value.conversation.revision,
+            conversation_revision(&fixture)
+        );
+        assert!(matches!(
+            sent.outbox.as_slice(),
+            [
+                ConversationOutboxRecord {
+                    event: ConversationOutboxEvent::ConversationLifecycleChanged {
+                        lifecycle: ConversationLifecycle::Active,
+                        ..
+                    },
+                    ..
+                },
+                ConversationOutboxRecord {
+                    event: ConversationOutboxEvent::MessageCommitted { .. },
+                    ..
+                },
+            ]
+        ));
+        assert!(sent.outbox.iter().all(|record| {
+            record.operation_record_id == sent.operation.id
+                && record.conversation_revision == sent.value.conversation.revision
+        }));
+        outbox_reads_back(&fixture, &sent.outbox);
+        let replay = fixture
+            .database
+            .begin_send(&command, TimestampMillis::new(30))
+            .expect("the same send replays");
+        assert_eq!(replay.outbox, sent.outbox);
+    }
+
+    #[test]
+    fn a_failed_send_leaves_an_archived_conversation_archived() {
+        let mut fixture = direct_fixture();
+        archive_fixture(&mut fixture, "archive-before-failed-send", 10);
+        let archived_revision = fixture.revision;
+        let result = begin_send_with_hook(
+            fixture.database.as_ref(),
+            &send_command(&fixture, "send-archived-fails", "cd", text("hello")),
+            TimestampMillis::new(20),
+            |_, _, _| Err(ConversationRepositoryError::Storage),
+        );
+        assert_eq!(result, Err(ConversationRepositoryError::Storage));
+        assert_eq!(lifecycle_of(&fixture), ConversationLifecycle::Archived);
+        assert_eq!(conversation_revision(&fixture), archived_revision);
+        let lifecycle_events = |lifecycle: &str| -> i64 {
+            scalar(
+                &fixture.database,
+                &format!(
+                    "SELECT count(*) FROM conversation_outbox WHERE conversation_id = ?1 AND json_extract(event_json, '$.value.kind') = 'conversation_lifecycle_changed' AND json_extract(event_json, '$.value.value.lifecycle') = '{lifecycle}'"
+                ),
+                &fixture.conversation_id.to_string(),
+            )
+        };
+        assert_eq!(lifecycle_events("archived"), 1);
+        assert_eq!(lifecycle_events("active"), 0);
+    }
+
+    #[test]
+    fn user_writes_restore_while_other_mutations_keep_the_archive() {
+        let mut fixture = direct_fixture();
+        archive_fixture(&mut fixture, "archive-before-rename", 10);
+        let renamed = fixture
+            .database
+            .rename(
+                &RenameConversation {
+                    conversation_id: fixture.conversation_id,
+                    expected_revision: fixture.revision,
+                    operation: token("rename-archived", "cd"),
+                    title: "Still hidden".into(),
+                },
+                TimestampMillis::new(20),
+            )
+            .expect("an archived conversation can be renamed");
+        assert_eq!(renamed.value.lifecycle, ConversationLifecycle::Archived);
+        fixture.revision = conversation_revision(&fixture);
+        let settings = fixture
+            .database
+            .update_settings(
+                PreparedConversationSettingsUpdate::new(
+                    UpdateConversationSettings {
+                        conversation_id: fixture.conversation_id,
+                        expected_settings_revision: None,
+                        operation: token("settings-archived", "cd"),
+                        patch: CurrentConversationSettingsPatch {
+                            author_note: PatchValue::Set("be brief".into()),
+                            memory: PatchValue::Keep,
+                            model_override: PatchValue::Keep,
+                            voice: PatchValue::Keep,
+                            prompt: PatchValue::Keep,
+                            lorebooks: PatchValue::Keep,
+                            persona: PatchValue::Keep,
+                            scene: PatchValue::Keep,
+                            speaker_selection: PatchValue::Keep,
+                            companion_clock: PatchValue::Keep,
+                            background: PatchValue::Keep,
+                            model_settings: PatchValue::Keep,
+                        },
+                    },
+                    Vec::new(),
+                )
+                .expect("prepared settings"),
+                TimestampMillis::new(21),
+            )
+            .expect("an archived conversation takes a settings edit");
+        assert_eq!(settings.value.lifecycle, ConversationLifecycle::Archived);
+        assert_eq!(lifecycle_of(&fixture), ConversationLifecycle::Archived);
+        fixture.revision = conversation_revision(&fixture);
+        let appended = fixture
+            .database
+            .append_user_message(
+                &send_command(&fixture, "append-archived", "cd", text("note")),
+                TimestampMillis::new(22),
+            )
+            .expect("an archived conversation takes a user message");
+        assert!(matches!(
+            appended.outbox.first().map(|record| &record.event),
+            Some(ConversationOutboxEvent::ConversationLifecycleChanged {
+                lifecycle: ConversationLifecycle::Active,
+                ..
+            })
+        ));
+        assert_eq!(lifecycle_of(&fixture), ConversationLifecycle::Active);
+    }
+
+    #[test]
+    fn a_tombstoned_conversation_still_refuses_a_send() {
+        let fixture = direct_fixture();
+        fixture
+            .database
+            .connection()
+            .expect("connection")
+            .execute(
+                "UPDATE conversations SET lifecycle = 'tombstoned' WHERE id = ?1",
+                [fixture.conversation_id.to_string()],
+            )
+            .expect("raw tombstone");
+        assert_eq!(
+            fixture.database.begin_send(
+                &send_command(&fixture, "send-tombstoned", "cd", text("hello")),
+                TimestampMillis::new(20)
+            ),
+            Err(ConversationRepositoryError::Conflict)
+        );
+    }
+
+    fn set_updated_at(database: &Database, conversation_id: ConversationId, at: i64) {
+        database
+            .connection()
+            .expect("connection")
+            .execute(
+                "UPDATE conversations SET updated_at = ?2 WHERE id = ?1",
+                params![conversation_id.to_string(), at],
+            )
+            .expect("updated_at");
+    }
+
+    fn listed(
+        database: &Database,
+        query: ConversationQuery,
+    ) -> lettuce_types::Page<lettuce_conversations::ConversationOverview> {
+        lettuce_conversations::ConversationOverviewReader::overview_page(database, &query)
+            .expect("overview page")
+    }
+
+    fn listed_ids(
+        page: &lettuce_types::Page<lettuce_conversations::ConversationOverview>,
+    ) -> Vec<ConversationId> {
+        page.items.iter().map(|item| item.summary.id).collect()
+    }
+
+    #[test]
+    fn conversation_lists_filter_by_source_lifecycle_and_kind() {
+        let database = std::rc::Rc::new(Database::open_in_memory().expect("database"));
+        let character = CharacterId::new();
+        let group = GroupId::new();
+        let mut older = direct_fixture_for(database.clone(), character);
+        let newer = direct_fixture_for(database.clone(), character);
+        let other = direct_fixture_for(database.clone(), CharacterId::new());
+        let grouped = group_fixture_for(database.clone(), group);
+        let other_group = group_fixture_for(database.clone(), GroupId::new());
+        archive_fixture(&mut older, "archive-older", 90);
+        for (conversation_id, at) in [
+            (older.conversation_id, 100),
+            (newer.conversation_id, 200),
+            (other.conversation_id, 300),
+            (grouped.conversation_id, 150),
+            (other_group.conversation_id, 50),
+        ] {
+            set_updated_at(&database, conversation_id, at);
+        }
+
+        assert_eq!(
+            listed_ids(&listed(&database, ConversationQuery::default())),
+            vec![
+                other.conversation_id,
+                newer.conversation_id,
+                grouped.conversation_id,
+                older.conversation_id,
+                other_group.conversation_id,
+            ]
+        );
+        assert_eq!(
+            listed_ids(&listed(
+                &database,
+                ConversationQuery {
+                    lifecycle: Some(ConversationLifecycle::Archived),
+                    ..ConversationQuery::default()
+                }
+            )),
+            vec![older.conversation_id]
+        );
+        assert_eq!(
+            listed_ids(&listed(
+                &database,
+                ConversationQuery {
+                    character_id: Some(character),
+                    ..ConversationQuery::default()
+                }
+            )),
+            vec![newer.conversation_id, older.conversation_id]
+        );
+        assert_eq!(
+            listed_ids(&listed(
+                &database,
+                ConversationQuery {
+                    lifecycle: Some(ConversationLifecycle::Active),
+                    character_id: Some(character),
+                    ..ConversationQuery::default()
+                }
+            )),
+            vec![newer.conversation_id]
+        );
+        assert_eq!(
+            listed_ids(&listed(
+                &database,
+                ConversationQuery {
+                    source_group_id: Some(group),
+                    ..ConversationQuery::default()
+                }
+            )),
+            vec![grouped.conversation_id]
+        );
+        assert_eq!(
+            listed_ids(&listed(
+                &database,
+                ConversationQuery {
+                    kind: Some(lettuce_conversations::ConversationKindTag::Group),
+                    ..ConversationQuery::default()
+                }
+            )),
+            vec![grouped.conversation_id, other_group.conversation_id]
+        );
+
+        let first = listed(
+            &database,
+            ConversationQuery {
+                character_id: Some(character),
+                page: PageRequest {
+                    cursor: None,
+                    limit: PageLimit::new(1),
+                },
+                ..ConversationQuery::default()
+            },
+        );
+        assert_eq!(listed_ids(&first), vec![newer.conversation_id]);
+        let cursor = first.next_cursor.clone().expect("a second page");
+        let second = listed(
+            &database,
+            ConversationQuery {
+                character_id: Some(character),
+                page: PageRequest {
+                    cursor: Some(cursor.clone()),
+                    limit: PageLimit::new(1),
+                },
+                ..ConversationQuery::default()
+            },
+        );
+        assert_eq!(listed_ids(&second), vec![older.conversation_id]);
+        assert_eq!(second.next_cursor, None);
+        assert!(matches!(
+            lettuce_conversations::ConversationOverviewReader::overview_page(
+                database.as_ref(),
+                &ConversationQuery {
+                    page: PageRequest {
+                        cursor: Some(cursor),
+                        limit: PageLimit::new(1),
+                    },
+                    ..ConversationQuery::default()
+                },
+            ),
+            Err(ConversationRepositoryError::Invalid(_))
+        ));
+
+        database
+            .connection()
+            .expect("connection")
+            .execute(
+                "UPDATE conversations SET lifecycle = 'tombstoned' WHERE id = ?1",
+                [other.conversation_id.to_string()],
+            )
+            .expect("tombstone");
+        assert!(
+            !listed_ids(&listed(&database, ConversationQuery::default()))
+                .contains(&other.conversation_id)
+        );
+        assert_eq!(
+            listed_ids(&listed(
+                &database,
+                ConversationQuery {
+                    lifecycle: Some(ConversationLifecycle::Tombstoned),
+                    ..ConversationQuery::default()
+                }
+            )),
+            vec![other.conversation_id]
+        );
+    }
+
+    #[test]
+    fn source_filters_and_latest_reads_use_their_indexes() {
+        let database = Database::open_in_memory().expect("database");
+        let connection = database.connection().expect("connection");
+        for (sql, index) in [
+            (
+                "SELECT c.id FROM conversations AS c WHERE c.lifecycle <> 'tombstoned' AND c.kind = 'direct' AND json_extract(c.kind_json, '$.value.details.character.source_id') = ?1 ORDER BY c.updated_at DESC, c.id",
+                "conversations_direct_character_idx",
+            ),
+            (
+                "SELECT c.id FROM conversations AS c WHERE c.lifecycle <> 'tombstoned' AND c.kind = 'group' AND json_extract(c.kind_json, '$.value.details.group.source_id') = ?1 ORDER BY c.updated_at DESC, c.id",
+                "conversations_group_source_idx",
+            ),
+            (
+                "SELECT c.id FROM conversations AS c WHERE c.kind = 'direct' AND c.lifecycle <> 'tombstoned' AND NOT EXISTS (SELECT 1 FROM conversations AS n WHERE n.kind = 'direct' AND n.lifecycle <> 'tombstoned' AND json_extract(n.kind_json, '$.value.details.character.source_id') = json_extract(c.kind_json, '$.value.details.character.source_id') AND (n.updated_at > c.updated_at OR (n.updated_at = c.updated_at AND n.id < c.id))) ORDER BY c.updated_at DESC, c.id",
+                "conversations_direct_character_idx",
+            ),
+        ] {
+            let plan = connection
+                .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+                .and_then(|mut statement| {
+                    let values = vec!["x"; statement.parameter_count()];
+                    statement
+                        .query_map(rusqlite::params_from_iter(values), |row| {
+                            row.get::<_, String>(3)
+                        })?
+                        .collect::<rusqlite::Result<Vec<_>>>()
+                })
+                .expect("query plan")
+                .join("\n");
+            assert!(plan.contains(index), "{index} unused:\n{plan}");
+        }
+    }
+
+    #[test]
+    fn the_latest_conversation_of_each_source_includes_archived_ones() {
+        let database = std::rc::Rc::new(Database::open_in_memory().expect("database"));
+        let first_character = CharacterId::new();
+        let second_character = CharacterId::new();
+        let early = direct_fixture_for(database.clone(), first_character);
+        let mut late = direct_fixture_for(database.clone(), first_character);
+        let second = direct_fixture_for(database.clone(), second_character);
+        let gone = direct_fixture_for(database.clone(), CharacterId::new());
+        archive_fixture(&mut late, "archive-latest", 150);
+        let group = GroupId::new();
+        let older_group_chat = group_fixture_for(database.clone(), group);
+        let newer_group_chat = group_fixture_for(database.clone(), group);
+        let other_group_chat = group_fixture_for(database.clone(), GroupId::new());
+        for (conversation_id, at) in [
+            (early.conversation_id, 100),
+            (late.conversation_id, 200),
+            (second.conversation_id, 150),
+            (gone.conversation_id, 400),
+            (older_group_chat.conversation_id, 100),
+            (newer_group_chat.conversation_id, 300),
+            (other_group_chat.conversation_id, 200),
+        ] {
+            set_updated_at(&database, conversation_id, at);
+        }
+        database
+            .connection()
+            .expect("connection")
+            .execute(
+                "UPDATE conversations SET lifecycle = 'tombstoned' WHERE id = ?1",
+                [gone.conversation_id.to_string()],
+            )
+            .expect("tombstone");
+
+        let page = |limit: u16, cursor: Option<String>| PageRequest {
+            cursor,
+            limit: PageLimit::new(limit),
+        };
+        let latest = lettuce_conversations::ConversationOverviewReader::latest_per_character(
+            database.as_ref(),
+            &page(10, None),
+        )
+        .expect("latest per character");
+        assert_eq!(
+            listed_ids(&latest),
+            vec![late.conversation_id, second.conversation_id]
+        );
+        assert_eq!(
+            latest.items[0].summary.lifecycle,
+            ConversationLifecycle::Archived
+        );
+        let first = lettuce_conversations::ConversationOverviewReader::latest_per_character(
+            database.as_ref(),
+            &page(1, None),
+        )
+        .expect("first page");
+        assert_eq!(listed_ids(&first), vec![late.conversation_id]);
+        let rest = lettuce_conversations::ConversationOverviewReader::latest_per_character(
+            database.as_ref(),
+            &page(1, first.next_cursor.clone()),
+        )
+        .expect("second page");
+        assert_eq!(listed_ids(&rest), vec![second.conversation_id]);
+        assert_eq!(rest.next_cursor, None);
+
+        let groups = lettuce_conversations::ConversationOverviewReader::latest_per_group(
+            database.as_ref(),
+            &page(10, None),
+        )
+        .expect("latest per group");
+        assert_eq!(
+            listed_ids(&groups),
+            vec![
+                newer_group_chat.conversation_id,
+                other_group_chat.conversation_id
+            ]
+        );
+    }
+
+    #[test]
+    fn message_counts_cover_visible_non_system_messages_of_the_active_branch() {
+        let mut fixture = direct_fixture();
+        let empty = listed(&fixture.database, ConversationQuery::default());
+        assert_eq!(empty.items[0].message_count, 0);
+        let messages = conversation_with_two_exchanges(&mut fixture, "count");
+        assert_eq!(
+            listed(&fixture.database, ConversationQuery::default()).items[0].message_count,
+            4
+        );
+        fixture
+            .database
+            .connection()
+            .expect("connection")
+            .execute(
+                "UPDATE conversation_messages SET visibility = 'hidden' WHERE id = ?1",
+                [messages[2].to_string()],
+            )
+            .expect("hide");
+        assert_eq!(
+            listed(&fixture.database, ConversationQuery::default()).items[0].message_count,
+            3
+        );
+        fixture.revision = conversation_revision(&fixture);
+        fixture
+            .database
+            .fork_branch(
+                &ForkBranch {
+                    conversation_id: fixture.conversation_id,
+                    source_branch_id: fixture.branch_id,
+                    at_message_id: Some(messages[1]),
+                    expected_revision: fixture.revision,
+                    operation: token("count-fork", "cd"),
+                },
+                TimestampMillis::new(300),
+            )
+            .expect("fork");
+        assert_eq!(
+            listed(&fixture.database, ConversationQuery::default()).items[0].message_count,
+            2
+        );
+    }
+
+    #[test]
+    fn committed_conversation_writes_move_the_change_feed_and_signal_once() {
+        use lettuce_conversations::ConversationChangeFeed;
+        let mut fixture = direct_fixture();
+        let signals = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = std::sync::Arc::clone(&signals);
+        fixture.database.on_conversation_change(move || {
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        });
+        let jobs = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let job_counter = std::sync::Arc::clone(&jobs);
+        fixture.database.on_job_change(move || {
+            job_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        });
+        let start = fixture
+            .database
+            .conversation_change_position()
+            .expect("position");
+        assert!(start > 0, "creating the conversation recorded a change");
+
+        let sent = fixture
+            .database
+            .begin_send(
+                &send_command(&fixture, "feed-send", "cd", text("hello")),
+                TimestampMillis::new(20),
+            )
+            .expect("send");
+        fixture.revision = sent.value.conversation.revision;
+        assert_eq!(signals.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(jobs.load(std::sync::atomic::Ordering::SeqCst), 0);
+        let changes = fixture
+            .database
+            .conversation_changes_since(start, 10)
+            .expect("changes");
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].conversation_id, fixture.conversation_id);
+        assert!(!changes[0].removed);
+        let after_send = changes[0].position;
+
+        {
+            let mut connection = fixture.database.connection().expect("connection");
+            let transaction = connection.transaction().expect("transaction");
+            transaction
+                .execute(
+                    "UPDATE conversations SET title = 'never' WHERE id = ?1",
+                    [fixture.conversation_id.to_string()],
+                )
+                .expect("uncommitted write");
+        }
+        assert_eq!(signals.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(
+            fixture.database.begin_send(
+                &send_command(&fixture, "feed-refused", "cd", text("again")),
+                TimestampMillis::new(21),
+            ),
+            Err(ConversationRepositoryError::Conflict)
+        );
+        assert_eq!(signals.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(
+            fixture
+                .database
+                .conversation_changes_since(after_send, 10)
+                .expect("no change"),
+            Vec::new()
+        );
+
+        fixture
+            .database
+            .purge_conversation(fixture.conversation_id, TimestampMillis::new(30))
+            .expect_err("a live turn blocks the purge");
+        assert_eq!(signals.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn a_purge_leaves_a_removed_change() {
+        use lettuce_conversations::ConversationChangeFeed;
+        let fixture = direct_fixture();
+        let signals = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = std::sync::Arc::clone(&signals);
+        fixture.database.on_conversation_change(move || {
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        });
+        let start = fixture
+            .database
+            .conversation_change_position()
+            .expect("position");
+        fixture
+            .database
+            .purge_conversation(fixture.conversation_id, TimestampMillis::new(30))
+            .expect("purge");
+        assert_eq!(signals.load(std::sync::atomic::Ordering::SeqCst), 1);
+        let changes = fixture
+            .database
+            .conversation_changes_since(start, 10)
+            .expect("changes");
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].conversation_id, fixture.conversation_id);
+        assert!(changes[0].removed);
+    }
+
     #[test]
     fn an_over_long_composed_turn_key_is_rejected_before_any_write() {
         let fixture = direct_fixture();
@@ -11580,7 +12213,7 @@ mod tests {
     }
 
     #[test]
-    fn archiving_blocks_mutations_until_restore() {
+    fn archive_and_restore_follow_the_lifecycle_transitions() {
         let mut fixture = direct_fixture();
         let archived = fixture
             .database
@@ -11603,13 +12236,6 @@ mod tests {
         ));
         fixture.revision = conversation_revision(&fixture);
 
-        assert_eq!(
-            fixture.database.begin_send(
-                &send_command(&fixture, "send-archived", "cd", text("hello")),
-                TimestampMillis::new(21)
-            ),
-            Err(ConversationRepositoryError::Conflict)
-        );
         assert_eq!(
             fixture.database.archive(
                 &ArchiveConversation {
@@ -11763,8 +12389,9 @@ mod tests {
                 TimestampMillis::new(25),
             )
             .expect("archive");
-        assert_eq!(
-            fixture.database.rename(
+        let renamed_archived = fixture
+            .database
+            .rename(
                 &RenameConversation {
                     conversation_id: fixture.conversation_id,
                     expected_revision: archived.value.revision,
@@ -11772,8 +12399,11 @@ mod tests {
                     title: "Archived title".into(),
                 },
                 TimestampMillis::new(26),
-            ),
-            Err(ConversationRepositoryError::Conflict)
+            )
+            .expect("an archived conversation can be renamed");
+        assert_eq!(
+            renamed_archived.value.lifecycle,
+            ConversationLifecycle::Archived
         );
     }
 
@@ -13011,7 +13641,7 @@ mod tests {
         assert_eq!(receipt.media_candidates, 3);
         assert_eq!(
             remaining_rows(&fixture.database, "conversation_id", &id),
-            vec![usage_events]
+            vec![("conversation_changes".to_owned(), 1), usage_events]
         );
         assert_eq!(remaining_rows(&fixture.database, "id", &id), Vec::new());
         assert_eq!(

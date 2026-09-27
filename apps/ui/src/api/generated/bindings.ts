@@ -6,11 +6,14 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 /** Commands */
 export const commands = {
 	conversationsList: (request: ConversationsListRequest) => typedError<ConversationPage, ApiError>(__TAURI_INVOKE("conversations_list", { request })),
+	conversationsLatestByCharacter: (request: LatestConversationsRequest) => typedError<LatestConversationPage, ApiError>(__TAURI_INVOKE("conversations_latest_by_character", { request })),
+	conversationsLatestByGroup: (request: LatestConversationsRequest) => typedError<LatestConversationPage, ApiError>(__TAURI_INVOKE("conversations_latest_by_group", { request })),
 	conversationOpen: (request: ConversationOpenRequest) => typedError<ConversationView, ApiError>(__TAURI_INVOKE("conversation_open", { request })),
 	conversationMessages: (request: ConversationMessagesRequest) => typedError<MessagePage, ApiError>(__TAURI_INVOKE("conversation_messages", { request })),
 	conversationSend: (request: ConversationSendRequest, onEvent: Channel<GenerationEvent>) => typedError<SendAccepted, ApiError>(__TAURI_INVOKE("conversation_send", { request, onEvent })),
 	generationCancel: (request: GenerationCancelRequest) => typedError<null, ApiError>(__TAURI_INVOKE("generation_cancel", { request })),
 	conversationLaunchDirect: (request: LaunchDirectRequest) => typedError<LaunchDirectResponse, ApiError>(__TAURI_INVOKE("conversation_launch_direct", { request })),
+	conversationLaunchGroup: (request: LaunchGroupRequest) => typedError<LaunchGroupResponse, ApiError>(__TAURI_INVOKE("conversation_launch_group", { request })),
 	charactersList: (request: CharactersListRequest) => typedError<CharacterPage, ApiError>(__TAURI_INVOKE("characters_list", { request })),
 	jobsList: (request: JobsListRequest) => typedError<JobPage, ApiError>(__TAURI_INVOKE("jobs_list", { request })),
 	jobGet: (request: JobGetRequest) => typedError<JobView, ApiError>(__TAURI_INVOKE("job_get", { request })),
@@ -50,8 +53,14 @@ export type ApiErrorCode = "not_found" | "conflict" | "invalid_input" | "unsuppo
 
 export type ApiErrorDetails = { type: "invalid_field"; field: string } | { type: "model"; model: RequiredModel };
 
-/**  Application-wide events the host broadcasts to every window. */
-export type ApiEvent = { type: "generation_settled"; conversation_id: string; turn_id: string } | { type: "job_updated"; job: JobView };
+/**
+ *  Application-wide events the host broadcasts to every window.
+ *  `ConversationChanged` follows a committed write to the conversation (lists
+ *  and open views re-read it), `ConversationRemoved` its purge, and
+ *  `RequiredModelsChanged` an optional model's install, switch, removal or
+ *  adoption (open views re-read their missing models).
+ */
+export type ApiEvent = { type: "generation_settled"; conversation_id: string; turn_id: string } | { type: "job_updated"; job: JobView } | { type: "conversation_changed"; conversation_id: string } | { type: "conversation_removed"; conversation_id: string } | { type: "required_models_changed" };
 
 /**  The application-wide event every window receives. */
 export type AppEvent = ApiEvent;
@@ -147,13 +156,28 @@ export type ConversationSendRequest = {
 	client_operation_id: string,
 };
 
+/**  What a conversation was started from. */
+export type ConversationSource = { type: "direct"; character_id: string } | { type: "group"; group_id: string };
+
 export type ConversationSummary = {
 	id: string,
 	kind: ConversationKind,
 	title: string,
 	avatars: AssetRef[],
+	/**
+	 *  The newest visible message's text on the selected branch, at most 400
+	 *  characters.
+	 */
 	last_message_preview: string | null,
 	updated_at: number,
+	archived: boolean,
+	source: ConversationSource,
+	/**  Visible messages on the selected branch, system notes excluded. */
+	message_count: number,
+	/**  Group chats only. */
+	chat_mode: GroupChatMode | null,
+	/**  Optional models the chat needs that are not installed. */
+	missing_models: RequiredModel[],
 };
 
 export type ConversationView = {
@@ -166,9 +190,28 @@ export type ConversationView = {
 	/**  The turn still running or queued, if any; a send waits for it. */
 	pending_turn_id: string | null,
 	can_send: boolean,
+	/**
+	 *  The conversation revision a later change passes as its expected
+	 *  revision.
+	 */
+	revision: number,
+	/**  The revision of the chat's own settings, once it has any. */
+	settings_revision: number | null,
+	archived: boolean,
+	source: ConversationSource,
+	/**  Group chats only. */
+	chat_mode: GroupChatMode | null,
+	/**  Optional models the chat needs that are not installed. */
+	missing_models: RequiredModel[],
 };
 
 export type ConversationsListRequest = {
+	kind: ConversationKind | null,
+	/**  One-to-one chats with this character. */
+	character_id: string | null,
+	/**  Group chats launched from this group. */
+	source_group_id: string | null,
+	lifecycle: LifecycleFilter | null,
 	cursor: string | null,
 	limit: number | null,
 };
@@ -204,6 +247,8 @@ export type GenerationCancelRequest = {
 export type GenerationEvent = { type: "started"; turn_id: string } | { type: "delta"; turn_id: string; text: string | null; reasoning: string | null } | { type: "completed"; turn_id: string; message_id: string } | { type: "failed"; turn_id: string; code: GenerationFailureCode } | { type: "cancelled"; turn_id: string };
 
 export type GenerationFailureCode = "invalid_conversation" | "missing_model" | "context_unavailable" | "speaker_unavailable" | "provider_unavailable" | "provider_rejected" | "empty_output" | "timed_out" | "recovery_unavailable" | "embedding_unavailable" | "internal";
+
+export type GroupChatMode = "conversation" | "roleplay";
 
 export type JobCancelRequest = {
 	job_id: string,
@@ -295,14 +340,60 @@ export type JobsListRequest = {
 	limit: number | null,
 };
 
+/**  A character's or group's newest conversation, archived included. */
+export type LatestConversation = {
+	/**  The character or group id. */
+	source_id: string,
+	conversation: ConversationSummary,
+};
+
+/**
+ *  One newest conversation per character or group, most recently updated
+ *  first.
+ */
+export type LatestConversationPage = {
+	items: LatestConversation[],
+	next_cursor: string | null,
+};
+
+export type LatestConversationsRequest = {
+	cursor: string | null,
+	limit: number | null,
+};
+
 export type LaunchDirectRequest = {
 	character_id: string,
+	/**  Trimmed; blank or absent uses the character's name. */
+	title: string | null,
+	/**  A scene of the character; absent uses its default scene. */
+	scene_id: string | null,
+	/**  A chat template of the character; absent starts without one. */
+	starter_id: string | null,
 	client_operation_id: string,
 };
 
 export type LaunchDirectResponse = {
 	conversation_id: string,
 };
+
+export type LaunchGroupRequest = {
+	group_id: string,
+	/**
+	 *  Idempotency key: repeating a launch with the same key returns the
+	 *  first launch's conversation.
+	 */
+	client_operation_id: string,
+};
+
+export type LaunchGroupResponse = {
+	conversation_id: string,
+};
+
+/**
+ *  Which conversations a list shows; archived ones are only hidden from the
+ *  default list.
+ */
+export type LifecycleFilter = "active" | "archived" | "all";
 
 export type MediaRole = "inline" | "attachment" | "avatar" | "scene" | "reference";
 
@@ -374,6 +465,7 @@ export type TimelineMessage = {
 	/**  The shown reply variant's ordinal; set on generated replies only. */
 	candidate_index: number | null,
 	candidate_count: number,
+	pinned: boolean,
 };
 
 /* Tauri Specta runtime */

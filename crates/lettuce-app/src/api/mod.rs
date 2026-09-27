@@ -7,6 +7,7 @@ mod app;
 mod assets;
 mod characters;
 mod context;
+mod conversation_feed;
 mod conversations;
 mod error;
 mod events;
@@ -19,6 +20,8 @@ mod startup;
 mod worker;
 
 #[cfg(test)]
+mod conversation_list_tests;
+#[cfg(test)]
 mod foundation_tests;
 #[cfg(test)]
 mod models_tests;
@@ -30,8 +33,9 @@ pub use assets::{AssetBytes, AssetRange, AssetRead, OPEN_RANGE_CHUNK, read_asset
 pub use characters::characters_list;
 pub use context::{ApiContext, ApiContextParts, ApiDatabaseFiles, ApiMediaStore};
 pub use conversations::{
-    conversation_launch_direct, conversation_messages, conversation_open, conversation_send,
-    conversations_list, generation_cancel,
+    conversation_launch_direct, conversation_launch_group, conversation_messages,
+    conversation_open, conversation_send, conversations_latest_by_character,
+    conversations_latest_by_group, conversations_list, generation_cancel,
 };
 pub use events::{ApiEventSink, GenerationEventSink, JobEventSink};
 pub use files::{

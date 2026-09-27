@@ -144,6 +144,8 @@ impl IntoApiError for ConversationLaunchError {
             Self::InvalidRequest { field } => {
                 return invalid_field(field, self.to_string());
             }
+            Self::SceneNotOwned { .. } => return invalid_field("scene_id", self.to_string()),
+            Self::StarterNotOwned { .. } => return invalid_field("starter_id", self.to_string()),
             Self::CharacterNotFound { .. }
             | Self::GroupNotFound { .. }
             | Self::MemberCharacterNotFound { .. }
@@ -159,9 +161,7 @@ impl IntoApiError for ConversationLaunchError {
             | Self::MemberCharacterArchived { .. }
             | Self::TooFewMembers { .. }
             | Self::AllMembersMuted { .. }
-            | Self::SceneNotOwned { .. }
             | Self::SceneNotOwnedByGroup { .. }
-            | Self::StarterNotOwned { .. }
             | Self::PersonaInactive { .. }
             | Self::PromptWrongPurpose { .. }
             | Self::PromptArchived { .. }

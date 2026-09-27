@@ -5,8 +5,9 @@ use std::collections::HashMap;
 use lettuce_characters::{Character, CharacterMediaSlot, CharacterRepository};
 use lettuce_contracts as dto;
 use lettuce_conversations::{
-    ConversationKind, ConversationKindTag, ConversationParticipant, MediaAssetRole, MessagePart,
-    MessageRenderSource, MessageRole, ParticipantRole, ParticipantSource, TimelineItem,
+    ConversationKind, ConversationKindTag, ConversationParticipant, GroupChatModeSnapshot,
+    MediaAssetRole, MessagePart, MessageRenderSource, MessageRole, ParticipantRole,
+    ParticipantSource, TimelineItem,
 };
 use lettuce_types::{AssetId, CharacterId, MessageId, PageLimit};
 
@@ -136,6 +137,32 @@ pub(crate) fn shown_text(item: &TimelineItem) -> Option<String> {
     (!text.trim().is_empty()).then_some(text)
 }
 
+/// Characters a list preview keeps of a message's text.
+const PREVIEW_CHARACTERS: usize = 400;
+
+/// A message's shown text as a list preview, cut to 400 characters.
+pub(crate) fn preview_text(item: &TimelineItem) -> Option<String> {
+    shown_text(item).map(|text| text.chars().take(PREVIEW_CHARACTERS).collect())
+}
+
+pub(crate) fn conversation_source(kind: &ConversationKind) -> dto::ConversationSource {
+    match kind {
+        ConversationKind::Direct(details) => dto::ConversationSource::Direct {
+            character_id: details.character.source_id.to_string(),
+        },
+        ConversationKind::Group(details) => dto::ConversationSource::Group {
+            group_id: details.group.source_id.to_string(),
+        },
+    }
+}
+
+pub(crate) const fn group_chat_mode(mode: GroupChatModeSnapshot) -> dto::GroupChatMode {
+    match mode {
+        GroupChatModeSnapshot::Conversation => dto::GroupChatMode::Conversation,
+        GroupChatModeSnapshot::Roleplay => dto::GroupChatMode::Roleplay,
+    }
+}
+
 pub(crate) fn timeline_message(
     context: &ApiContext,
     item: &TimelineItem,
@@ -173,5 +200,6 @@ pub(crate) fn timeline_message(
             .get(&item.message.id)
             .copied()
             .unwrap_or_default(),
+        pinned: item.message.pinned,
     }
 }
