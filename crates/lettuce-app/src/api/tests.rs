@@ -65,11 +65,25 @@ impl RecordingStream {
 }
 
 #[derive(Default)]
-pub(super) struct RecordingEvents(Mutex<Vec<ApiEvent>>);
+pub(super) struct RecordingEvents(Mutex<Vec<ApiEvent>>, tokio::sync::Notify);
 
 impl ApiEventSink for RecordingEvents {
     fn emit(&self, event: ApiEvent) {
         self.0.lock().expect("api events").push(event);
+        self.1.notify_one();
+    }
+}
+
+impl RecordingEvents {
+    /// Waits until the recorded events satisfy `done`.
+    pub(super) async fn until(&self, done: impl Fn(&[ApiEvent]) -> bool) {
+        loop {
+            let notified = self.1.notified();
+            if done(&self.0.lock().expect("api events")) {
+                return;
+            }
+            notified.await;
+        }
     }
 }
 
@@ -251,6 +265,9 @@ async fn launch(harness: &Harness, key: &str) -> String {
         &harness.context,
         dto::LaunchDirectRequest {
             character_id: harness.character_id.to_string(),
+            title: None,
+            scene_id: None,
+            starter_id: None,
             client_operation_id: key.into(),
         },
     )
@@ -644,6 +661,9 @@ async fn invalid_requests_map_to_stable_codes() {
         &harness.context,
         dto::LaunchDirectRequest {
             character_id: CharacterId::new().to_string(),
+            title: None,
+            scene_id: None,
+            starter_id: None,
             client_operation_id: "missing-character".into(),
         },
     )
@@ -1166,6 +1186,7 @@ async fn conversations_page_through_ties_on_updated_at() {
             dto::ConversationsListRequest {
                 cursor: cursor.take(),
                 limit: Some(2),
+                ..dto::ConversationsListRequest::default()
             },
         )
         .await
@@ -1192,6 +1213,7 @@ async fn conversations_page_through_ties_on_updated_at() {
         dto::ConversationsListRequest {
             cursor: None,
             limit: Some(u32::MAX),
+            ..dto::ConversationsListRequest::default()
         },
     )
     .await

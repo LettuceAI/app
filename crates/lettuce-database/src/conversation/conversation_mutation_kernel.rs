@@ -232,16 +232,51 @@ pub(crate) fn cas_conversation(
     })
 }
 
-/// Every mutation except restore requires an Active conversation, per the
-/// `ConversationRepository` contract.
-pub(crate) fn require_active(
+/// Archiving only hides a conversation from lists, so every mutation accepts
+/// an archived conversation; a tombstoned one takes no more writes.
+pub(crate) fn require_writable(
     conversation: &CasConversation,
 ) -> Result<(), ConversationRepositoryError> {
     match conversation.lifecycle {
-        ConversationLifecycle::Active => Ok(()),
-        ConversationLifecycle::Archived | ConversationLifecycle::Tombstoned => {
-            Err(ConversationRepositoryError::Conflict)
-        }
+        ConversationLifecycle::Active | ConversationLifecycle::Archived => Ok(()),
+        ConversationLifecycle::Tombstoned => Err(ConversationRepositoryError::Conflict),
+    }
+}
+
+/// A user write to an archived conversation brings it back: its lifecycle
+/// returns to Active in the write's own transaction. Returns whether it did,
+/// so the write records `restored_event` after its revision bump.
+pub(crate) fn restore_for_user_write(
+    transaction: &Transaction<'_>,
+    conversation: &CasConversation,
+) -> Result<bool, ConversationRepositoryError> {
+    if conversation.lifecycle != ConversationLifecycle::Archived {
+        return Ok(false);
+    }
+    transaction
+        .execute(
+            "UPDATE conversations SET lifecycle = 'active' WHERE id = ?1",
+            [conversation.conversation_id.to_string()],
+        )
+        .map_err(map_constraint)?;
+    Ok(true)
+}
+
+/// The outbox event of a restore made by a user write, the same event an
+/// explicit restore records.
+pub(crate) fn restored_event(
+    conversation_id: ConversationId,
+    revision: Revision,
+    at: TimestampMillis,
+) -> StagedEvent {
+    StagedEvent {
+        conversation_revision: revision,
+        at,
+        event: ConversationOutboxEvent::ConversationLifecycleChanged {
+            conversation_id,
+            lifecycle: ConversationLifecycle::Active,
+            at,
+        },
     }
 }
 
@@ -866,7 +901,7 @@ mod tests {
         let current =
             cas_conversation(&transaction, conversation_id, Revision::INITIAL).expect("cas");
         assert_eq!(current.lifecycle, ConversationLifecycle::Active);
-        assert_eq!(require_active(&current), Ok(()));
+        assert_eq!(require_writable(&current), Ok(()));
 
         let bumped = bump_conversation(&transaction, conversation_id, TimestampMillis::new(40))
             .expect("bump");
@@ -891,8 +926,17 @@ mod tests {
         let archived =
             cas_conversation(&transaction, conversation_id, Revision::new(2)).expect("cas");
         assert_eq!(archived.lifecycle, ConversationLifecycle::Archived);
+        assert_eq!(require_writable(&archived), Ok(()));
+        transaction
+            .execute(
+                "UPDATE conversations SET lifecycle = 'tombstoned' WHERE id = ?1",
+                [conversation_id.to_string()],
+            )
+            .expect("tombstone");
+        let tombstoned =
+            cas_conversation(&transaction, conversation_id, Revision::new(2)).expect("cas");
         assert_eq!(
-            require_active(&archived),
+            require_writable(&tombstoned),
             Err(ConversationRepositoryError::Conflict)
         );
         assert_eq!(
@@ -1015,7 +1059,7 @@ mod tests {
                 ran.set(ran.get() + 1);
                 let current =
                     cas_conversation(transaction, context.conversation_id, Revision::INITIAL)?;
-                require_active(&current)?;
+                require_writable(&current)?;
                 let revision =
                     bump_conversation(transaction, context.conversation_id, context.now)?;
                 Ok(Staged {

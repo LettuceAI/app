@@ -4,7 +4,8 @@ use lettuce_app::api::{self, ApiContext, GenerationEventSink};
 use lettuce_contracts::{
     ApiError, ConversationMessagesRequest, ConversationOpenRequest, ConversationPage,
     ConversationSendRequest, ConversationView, ConversationsListRequest, GenerationCancelRequest,
-    GenerationEvent, LaunchDirectRequest, LaunchDirectResponse, MessagePage, SendAccepted,
+    GenerationEvent, LatestConversationPage, LatestConversationsRequest, LaunchDirectRequest,
+    LaunchDirectResponse, LaunchGroupRequest, LaunchGroupResponse, MessagePage, SendAccepted,
 };
 use tauri::{State, ipc::Channel};
 
@@ -15,6 +16,24 @@ pub async fn conversations_list(
     request: ConversationsListRequest,
 ) -> Result<ConversationPage, ApiError> {
     api::conversations_list(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn conversations_latest_by_character(
+    context: State<'_, ApiContext>,
+    request: LatestConversationsRequest,
+) -> Result<LatestConversationPage, ApiError> {
+    api::conversations_latest_by_character(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn conversations_latest_by_group(
+    context: State<'_, ApiContext>,
+    request: LatestConversationsRequest,
+) -> Result<LatestConversationPage, ApiError> {
+    api::conversations_latest_by_group(&context, request).await
 }
 
 #[tauri::command]
@@ -61,6 +80,15 @@ pub async fn conversation_launch_direct(
     request: LaunchDirectRequest,
 ) -> Result<LaunchDirectResponse, ApiError> {
     api::conversation_launch_direct(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn conversation_launch_group(
+    context: State<'_, ApiContext>,
+    request: LaunchGroupRequest,
+) -> Result<LaunchGroupResponse, ApiError> {
+    api::conversation_launch_group(&context, request).await
 }
 
 /// A send's generation stream, delivered over the command's IPC channel.

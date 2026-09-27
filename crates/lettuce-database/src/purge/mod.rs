@@ -285,6 +285,7 @@ impl<'c> Purge<'c> {
             "conversation_operations",
             "conversation_settings",
             "conversation_participants",
+            "conversation_launch_intents",
         ] {
             self.delete(table, "conversation_id = ?1", one)?;
         }

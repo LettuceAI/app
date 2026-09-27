@@ -40,12 +40,47 @@ pub enum MediaRole {
     Reference,
 }
 
+/// Which conversations a list shows; archived ones are only hidden from the
+/// default list.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum LifecycleFilter {
+    #[default]
+    Active,
+    Archived,
+    All,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct ConversationsListRequest {
+    pub kind: Option<ConversationKind>,
+    /// One-to-one chats with this character.
+    pub character_id: Option<String>,
+    /// Group chats launched from this group.
+    pub source_group_id: Option<String>,
+    pub lifecycle: Option<LifecycleFilter>,
     pub cursor: Option<String>,
     pub limit: Option<u32>,
+}
+
+/// What a conversation was started from.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ConversationSource {
+    Direct { character_id: String },
+    Group { group_id: String },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum GroupChatMode {
+    Conversation,
+    Roleplay,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -56,9 +91,20 @@ pub struct ConversationSummary {
     pub kind: ConversationKind,
     pub title: String,
     pub avatars: Vec<AssetRef>,
+    /// The newest visible message's text on the selected branch, at most 400
+    /// characters.
     pub last_message_preview: Option<String>,
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub updated_at: i64,
+    pub archived: bool,
+    pub source: ConversationSource,
+    /// Visible messages on the selected branch, system notes excluded.
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub message_count: u64,
+    /// Group chats only.
+    pub chat_mode: Option<GroupChatMode>,
+    /// Optional models the chat needs that are not installed.
+    pub missing_models: Vec<crate::RequiredModel>,
 }
 
 /// Conversations, most recently updated first.
@@ -67,6 +113,34 @@ pub struct ConversationSummary {
 #[serde(deny_unknown_fields)]
 pub struct ConversationPage {
     pub items: Vec<ConversationSummary>,
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct LatestConversationsRequest {
+    pub cursor: Option<String>,
+    pub limit: Option<u32>,
+}
+
+/// A character's or group's newest conversation, archived included.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct LatestConversation {
+    /// The character or group id.
+    pub source_id: String,
+    pub conversation: ConversationSummary,
+}
+
+/// One newest conversation per character or group, most recently updated
+/// first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct LatestConversationPage {
+    pub items: Vec<LatestConversation>,
     pub next_cursor: Option<String>,
 }
 
@@ -110,6 +184,19 @@ pub struct ConversationView {
     /// The turn still running or queued, if any; a send waits for it.
     pub pending_turn_id: Option<String>,
     pub can_send: bool,
+    /// The conversation revision a later change passes as its expected
+    /// revision.
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub revision: u64,
+    /// The revision of the chat's own settings, once it has any.
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
+    pub settings_revision: Option<u64>,
+    pub archived: bool,
+    pub source: ConversationSource,
+    /// Group chats only.
+    pub chat_mode: Option<GroupChatMode>,
+    /// Optional models the chat needs that are not installed.
+    pub missing_models: Vec<crate::RequiredModel>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -143,6 +230,7 @@ pub struct TimelineMessage {
     /// The shown reply variant's ordinal; set on generated replies only.
     pub candidate_index: Option<u16>,
     pub candidate_count: u32,
+    pub pinned: bool,
 }
 
 /// One page of visible messages in conversation order, oldest first;
@@ -230,6 +318,12 @@ pub struct GenerationCancelRequest {
 #[serde(deny_unknown_fields)]
 pub struct LaunchDirectRequest {
     pub character_id: String,
+    /// Trimmed; blank or absent uses the character's name.
+    pub title: Option<String>,
+    /// A scene of the character; absent uses its default scene.
+    pub scene_id: Option<String>,
+    /// A chat template of the character; absent starts without one.
+    pub starter_id: Option<String>,
     pub client_operation_id: String,
 }
 
@@ -237,6 +331,23 @@ pub struct LaunchDirectRequest {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct LaunchDirectResponse {
+    pub conversation_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct LaunchGroupRequest {
+    pub group_id: String,
+    /// Idempotency key: repeating a launch with the same key returns the
+    /// first launch's conversation.
+    pub client_operation_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct LaunchGroupResponse {
     pub conversation_id: String,
 }
 

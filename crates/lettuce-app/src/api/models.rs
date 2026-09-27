@@ -11,7 +11,7 @@ use std::{
 use async_trait::async_trait;
 use lettuce_companions::EmotionClassification;
 use lettuce_contracts::{ApiError, ApiErrorCode, RequiredModel};
-use lettuce_conversations::ConversationReader;
+use lettuce_conversations::{Conversation, ConversationReader};
 use lettuce_embeddings::{
     EmbeddingDimensions, EmbeddingRequest, EmbeddingVector, SimilarityCalibration,
 };
@@ -246,6 +246,12 @@ impl ModelSlots {
         *lock(&self.emotion) = Slot::Unknown;
     }
 
+    /// Whether `model` is installed, from its install record; a loaded model
+    /// is installed.
+    pub(crate) fn installed(&self, context: &ApiContext, model: RequiredModel) -> bool {
+        self.known(model) == Some(true) || self.loader.installed(context, model)
+    }
+
     fn known(&self, model: RequiredModel) -> Option<bool> {
         match model {
             RequiredModel::Embedding => match &*lock(&self.embedding) {
@@ -344,9 +350,66 @@ impl ModelSlots {
     }
 }
 
-/// What a conversation needs before its turn starts, read from its live
-/// settings: companion chats need the emotion model, chats with dynamic
-/// memory the embedding model.
+/// The optional models a conversation needs, read from its live state
+/// without loading anything: a companion chat needs the emotion and the
+/// embedding model, a chat with dynamic memory the embedding model.
+pub(crate) fn required_models(
+    database: &lettuce_database::Database,
+    settings: &lettuce_settings::GlobalSettings,
+    conversation: &Conversation,
+) -> Result<Vec<RequiredModel>, ApiError> {
+    let companion =
+        match crate::companion::companion_clock::companion_clock_context(database, conversation) {
+            Ok(clock) => clock.companion,
+            Err(crate::companion::companion_clock::CompanionClockError::MissingCharacter) => false,
+            Err(_) => {
+                return Err(api_error(
+                    ApiErrorCode::Internal,
+                    "the companion state could not be read",
+                ));
+            }
+        };
+    let mut needed = Vec::new();
+    if companion {
+        needed.push(RequiredModel::Emotion);
+    }
+    if companion
+        || crate::companion::companion_memory_host::dynamic_memory_on(conversation, settings)
+    {
+        needed.push(RequiredModel::Embedding);
+    }
+    Ok(needed)
+}
+
+/// The optional models installed now, from their install records; nothing
+/// is loaded.
+pub(crate) fn installed_models(context: &ApiContext) -> Vec<RequiredModel> {
+    [RequiredModel::Embedding, RequiredModel::Emotion]
+        .into_iter()
+        .filter(|model| context.models().installed(context, *model))
+        .collect()
+}
+
+/// The models `required` names that `installed` lacks.
+pub(crate) fn missing_models(
+    required: &[RequiredModel],
+    installed: &[RequiredModel],
+) -> Vec<RequiredModel> {
+    required
+        .iter()
+        .copied()
+        .filter(|model| !installed.contains(model))
+        .collect()
+}
+
+fn global_settings(
+    database: &lettuce_database::Database,
+) -> Result<lettuce_settings::GlobalSettings, ApiError> {
+    GlobalSettingsStore::load(database)
+        .map(|stored| stored.settings)
+        .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))
+}
+
 fn needed_models(
     context: &ApiContext,
     conversation_id: ConversationId,
@@ -355,29 +418,38 @@ fn needed_models(
     let conversation = ConversationReader::get(database, conversation_id)
         .map_err(IntoApiError::into_api_error)?
         .conversation;
-    let mut needed = Vec::new();
-    let companion =
-        crate::companion::companion_clock::companion_clock_context(database, &conversation)
-            .map_err(|_| {
-                api_error(
-                    ApiErrorCode::Internal,
-                    "the companion state could not be read",
-                )
-            })?
-            .companion;
-    if companion {
-        needed.push(RequiredModel::Emotion);
+    required_models(database, &global_settings(database)?, &conversation)
+}
+
+/// Missing models of many conversations, reading the settings and the
+/// install records once.
+pub(crate) struct MissingModels {
+    settings: lettuce_settings::GlobalSettings,
+    installed: Option<Vec<RequiredModel>>,
+}
+
+impl MissingModels {
+    pub(crate) fn new(context: &ApiContext) -> Result<Self, ApiError> {
+        Ok(Self {
+            settings: global_settings(context.backend().database())?,
+            installed: None,
+        })
     }
-    let embedding = context.embedding();
-    let dynamic = context
-        .backend()
-        .companion_memory_host(embedding.as_ref(), context.inference())
-        .dynamic_memory_active(conversation_id)
-        .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?;
-    if dynamic {
-        needed.push(RequiredModel::Embedding);
+
+    pub(crate) fn of(
+        &mut self,
+        context: &ApiContext,
+        conversation: &Conversation,
+    ) -> Result<Vec<RequiredModel>, ApiError> {
+        let required = required_models(context.backend().database(), &self.settings, conversation)?;
+        if required.is_empty() {
+            return Ok(required);
+        }
+        let installed = self
+            .installed
+            .get_or_insert_with(|| installed_models(context));
+        Ok(missing_models(&required, installed))
     }
-    Ok(needed)
 }
 
 /// Fails with `ModelRequired` or `ModelUnavailable` unless every optional

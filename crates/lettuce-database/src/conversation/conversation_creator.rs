@@ -518,6 +518,7 @@ where
         return Err(ConversationRepositoryError::Conflict);
     }
 
+    let launch_intent = launch.launch_intent().cloned();
     let (plan, drafts) = launch.into_parts();
     let expected = expected_snapshot_refs(&plan)?;
     let staged = stage_artifacts(&transaction, drafts, now)?;
@@ -535,6 +536,14 @@ where
     let root_branch_id = ConversationBranchId::new();
     let aggregate = make_aggregate(&plan, root_branch_id, now)?;
     conversation_vertical_slice::save_conversation(&transaction, &aggregate.conversation)?;
+    if let Some(intent) = launch_intent {
+        transaction
+            .execute(
+                "INSERT INTO conversation_launch_intents (conversation_id, intent_digest) VALUES (?1, ?2)",
+                params![plan.conversation_id.to_string(), intent.as_str()],
+            )
+            .map_err(conversation_vertical_slice::db)?;
+    }
     if conversation_uses_memory(&plan.kind) {
         match memory {
             MemoryBinding::PerConversation => {

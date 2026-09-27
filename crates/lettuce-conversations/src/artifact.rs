@@ -242,6 +242,7 @@ impl SnapshotArtifactDraft {
 pub struct PreparedConversationLaunch {
     plan: CreateConversationPlan,
     artifacts: Vec<SnapshotArtifactDraft>,
+    launch_intent: Option<ContentHash>,
 }
 
 pub struct PreparedConversationSettingsUpdate {
@@ -394,7 +395,26 @@ impl PreparedConversationLaunch {
             }
         }
 
-        Ok(Self { plan, artifacts })
+        Ok(Self {
+            plan,
+            artifacts,
+            launch_intent: None,
+        })
+    }
+
+    /// Records the digest of the caller's launch request (its fields only,
+    /// not the sources it resolved), stored with the conversation so a later
+    /// request under the same key can be told apart even when it can no
+    /// longer be prepared.
+    #[must_use]
+    pub fn with_launch_intent(mut self, digest: ContentHash) -> Self {
+        self.launch_intent = Some(digest);
+        self
+    }
+
+    #[must_use]
+    pub fn launch_intent(&self) -> Option<&ContentHash> {
+        self.launch_intent.as_ref()
     }
 
     #[must_use]

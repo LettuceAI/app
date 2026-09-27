@@ -18,6 +18,7 @@ Facts about how `lettuce-conversations` relates to the legacy app (2.2.x). The c
 ## Deliberate differences from legacy
 
 - An explicit speaker missing from the cast is a typed error, never a panic.
+- Every mutation accepts an archived conversation, like legacy where archiving was a list flag only (`old-code/src-tauri/src/storage_manager/sessions.rs:3819-3829`); a user write (send, added user message, continue, regenerate, retry) also restores it to Active in the same transaction, which legacy never did.
 
 ## History
 

@@ -179,8 +179,8 @@ impl ConversationGenerationWorker {
     }
 }
 
-const RETRY_MIN: Duration = Duration::from_millis(250);
-const RETRY_MAX: Duration = Duration::from_secs(30);
+pub(super) const RETRY_MIN: Duration = Duration::from_millis(250);
+pub(super) const RETRY_MAX: Duration = Duration::from_secs(30);
 
 /// A worker loop's step and what it waits on between steps.
 pub(super) trait WorkerStep {

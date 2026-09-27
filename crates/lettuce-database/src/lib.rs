@@ -2,6 +2,7 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
+mod change_signal;
 mod job_adapter;
 mod usage_adapter;
 mod conversation;
@@ -255,7 +256,7 @@ pub enum DatabaseError {
 
 pub struct Database {
     connection: Mutex<Connection>,
-    job_changes: std::sync::Arc<job_adapter::JobChangeSignal>,
+    changes: std::sync::Arc<change_signal::ChangeSignal>,
     /// Set when foreign key enforcement could not be restored after a purge;
     /// every later use of the connection then fails.
     foreign_keys_lost: std::sync::atomic::AtomicBool,
@@ -275,10 +276,10 @@ impl Database {
         apply_migrations(&mut connection, MIGRATIONS)?;
         initialize_settings(&connection)?;
         rebaseline_sync_journal(&mut connection)?;
-        let job_changes = job_adapter::JobChangeSignal::install(&connection)?;
+        let changes = change_signal::ChangeSignal::install(&connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
-            job_changes,
+            changes,
             foreign_keys_lost: std::sync::atomic::AtomicBool::new(false),
         })
     }
@@ -290,10 +291,10 @@ impl Database {
         apply_migrations(&mut connection, MIGRATIONS)?;
         initialize_settings(&connection)?;
         rebaseline_sync_journal(&mut connection)?;
-        let job_changes = job_adapter::JobChangeSignal::install(&connection)?;
+        let changes = change_signal::ChangeSignal::install(&connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
-            job_changes,
+            changes,
             foreign_keys_lost: std::sync::atomic::AtomicBool::new(false),
         })
     }
@@ -5767,7 +5768,9 @@ mod tests {
                 "companion_turn_effect_source_messages",
                 "companion_turn_effects",
                 "conversation_branches",
+                "conversation_changes",
                 "conversation_initial_message_origins",
+                "conversation_launch_intents",
                 "conversation_memory_spaces",
                 "conversation_message_candidates",
                 "conversation_message_revisions",

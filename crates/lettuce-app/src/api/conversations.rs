@@ -3,28 +3,30 @@ use std::{collections::HashMap, sync::Arc};
 use lettuce_characters::CharacterRepository;
 use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
 use lettuce_conversations::{
-    BeginGeneration, ConversationLifecycle, ConversationOverviewReader, ConversationQuery,
-    ConversationReader, ConversationRepositoryError, GenerationInput, IdempotencyKey, MessageDraft,
-    MessagePart, MessageRole, MessageVisibility, OperationKind, OperationToken, ParticipantRole,
-    ParticipantSource, SendConversation, ValidationError,
+    BeginGeneration, ConversationKindTag, ConversationLifecycle, ConversationOverview,
+    ConversationOverviewReader, ConversationQuery, ConversationReader, ConversationRepositoryError,
+    GenerationInput, IdempotencyKey, MessageDraft, MessagePart, MessageRole, MessageVisibility,
+    OperationKind, OperationToken, ParticipantRole, ParticipantSource, SendConversation,
+    ValidationError,
 };
 use lettuce_jobs::{CancellationReason, handle::CancellationToken};
 use lettuce_types::{
-    CharacterId, ContentHash, ConversationBranchId, ConversationId, GenerationTurnId, PageRequest,
-    TimestampMillis,
+    CharacterId, ContentHash, ConversationBranchId, ConversationId, ConversationStarterId,
+    GenerationTurnId, GroupId, PageRequest, SceneId, TimestampMillis,
 };
 
 use super::ApiContext;
 use super::error::{IntoApiError, api_error, invalid_field, parse_id};
 use super::events::GenerationEventSink;
 use super::mapping::{self, AvatarLookup};
-use super::models::require_conversation_models;
+use super::models::{MissingModels, require_conversation_models};
 use super::worker::settled_event;
 use crate::{
     CompanionTurnCoordinator, CompanionTurnError, ConversationGenerationAdmission,
     ConversationGenerationCancellationOutcome, ConversationGenerationDispatchError,
     ConversationLaunchError, DIRECT_LAUNCH_REQUEST_FORMAT_V1, DirectConversationLaunchRequest,
-    DirectUserParticipant, LaunchSelection,
+    DirectUserParticipant, GROUP_LAUNCH_REQUEST_FORMAT_V1, GroupConversationLaunchRequest,
+    LaunchSelection,
 };
 
 const DEFAULT_USER_DISPLAY_NAME: &str = "User";
@@ -45,52 +47,183 @@ fn operation_key(value: String) -> Result<IdempotencyKey, ApiError> {
     })
 }
 
+fn lifecycle_filter(filter: Option<dto::LifecycleFilter>) -> Option<ConversationLifecycle> {
+    match filter.unwrap_or_default() {
+        dto::LifecycleFilter::Active => Some(ConversationLifecycle::Active),
+        dto::LifecycleFilter::Archived => Some(ConversationLifecycle::Archived),
+        dto::LifecycleFilter::All => None,
+    }
+}
+
+const fn kind_filter(kind: dto::ConversationKind) -> ConversationKindTag {
+    match kind {
+        dto::ConversationKind::Direct => ConversationKindTag::Direct,
+        dto::ConversationKind::Group => ConversationKindTag::Group,
+    }
+}
+
+/// The list row of one conversation. The group chat mode is read live like a
+/// turn reads it.
+fn conversation_summary(
+    context: &ApiContext,
+    overview: &ConversationOverview,
+    avatars: &mut AvatarLookup,
+    missing: &mut MissingModels,
+) -> Result<dto::ConversationSummary, ApiError> {
+    let database = context.backend().database();
+    let conversation = &overview.conversation;
+    let mut summary_avatars = Vec::new();
+    for participant in &conversation.participants {
+        if let ParticipantSource::Character(character_id) = participant.source
+            && let Some(asset_id) = avatars
+                .avatar(database, character_id)
+                .map_err(IntoApiError::into_api_error)?
+        {
+            summary_avatars.push(context.asset_ref(asset_id));
+        }
+    }
+    Ok(dto::ConversationSummary {
+        id: overview.summary.id.to_string(),
+        kind: mapping::conversation_kind_tag(overview.summary.kind),
+        title: overview.summary.title.clone(),
+        avatars: summary_avatars,
+        last_message_preview: overview
+            .last_message
+            .as_ref()
+            .and_then(mapping::preview_text),
+        updated_at: overview.summary.updated_at.get(),
+        archived: overview.summary.lifecycle == ConversationLifecycle::Archived,
+        source: mapping::conversation_source(&conversation.kind),
+        message_count: overview.message_count,
+        chat_mode: chat_mode(context, conversation)?,
+        missing_models: missing.of(context, conversation)?,
+    })
+}
+
+fn chat_mode(
+    context: &ApiContext,
+    conversation: &lettuce_conversations::Conversation,
+) -> Result<Option<dto::GroupChatMode>, ApiError> {
+    Ok(
+        crate::generation::live_sources::live_group(context.backend().database(), conversation)
+            .map_err(IntoApiError::into_api_error)?
+            .map(|group| mapping::group_chat_mode(group.chat_mode)),
+    )
+}
+
+fn summaries(
+    context: &ApiContext,
+    overviews: &[ConversationOverview],
+) -> Result<Vec<dto::ConversationSummary>, ApiError> {
+    let mut avatars = AvatarLookup::default();
+    let mut missing = MissingModels::new(context)?;
+    overviews
+        .iter()
+        .map(|overview| conversation_summary(context, overview, &mut avatars, &mut missing))
+        .collect()
+}
+
+/// Conversations, most recently updated first: active ones unless the
+/// request asks for archived ones or all, optionally only one kind, one
+/// character's one-to-one chats or one group's chats.
 pub async fn conversations_list(
     context: &ApiContext,
     request: dto::ConversationsListRequest,
 ) -> Result<dto::ConversationPage, ApiError> {
+    let character_id: Option<CharacterId> = request
+        .character_id
+        .as_deref()
+        .map(|id| parse_id(id, "character_id"))
+        .transpose()?;
+    let source_group_id: Option<GroupId> = request
+        .source_group_id
+        .as_deref()
+        .map(|id| parse_id(id, "source_group_id"))
+        .transpose()?;
     context
         .blocking(move |context| {
-            let database = context.backend().database();
             let page = ConversationOverviewReader::overview_page(
-                database,
+                context.backend().database(),
                 &ConversationQuery {
-                    lifecycle: Some(ConversationLifecycle::Active),
+                    lifecycle: lifecycle_filter(request.lifecycle),
+                    kind: request.kind.map(kind_filter),
+                    character_id,
+                    source_group_id,
                     page: page_request(request.cursor, request.limit),
                 },
             )
-            .map_err(IntoApiError::into_api_error)?;
-            let mut avatars = AvatarLookup::default();
-            let mut items = Vec::with_capacity(page.items.len());
-            for overview in page.items {
-                let mut summary_avatars = Vec::new();
-                for participant in &overview.participants {
-                    if let ParticipantSource::Character(character_id) = participant.source
-                        && let Some(asset_id) = avatars
-                            .avatar(database, character_id)
-                            .map_err(IntoApiError::into_api_error)?
-                    {
-                        summary_avatars.push(context.asset_ref(asset_id));
-                    }
-                }
-                items.push(dto::ConversationSummary {
-                    id: overview.summary.id.to_string(),
-                    kind: mapping::conversation_kind_tag(overview.summary.kind),
-                    title: overview.summary.title,
-                    avatars: summary_avatars,
-                    last_message_preview: overview
-                        .last_message
-                        .as_ref()
-                        .and_then(mapping::shown_text),
-                    updated_at: overview.summary.updated_at.get(),
-                });
-            }
+            .map_err(|error| cursor_error(error, "cursor"))?;
             Ok(dto::ConversationPage {
+                items: summaries(context, &page.items)?,
+                next_cursor: page.next_cursor,
+            })
+        })
+        .await
+}
+
+/// Each character's newest one-to-one chat, archived included, so the chats
+/// screen can show a character unless its newest chat is archived.
+pub async fn conversations_latest_by_character(
+    context: &ApiContext,
+    request: dto::LatestConversationsRequest,
+) -> Result<dto::LatestConversationPage, ApiError> {
+    latest_by_source(context, request, ConversationKindTag::Direct).await
+}
+
+/// Each group's newest chat, archived included.
+pub async fn conversations_latest_by_group(
+    context: &ApiContext,
+    request: dto::LatestConversationsRequest,
+) -> Result<dto::LatestConversationPage, ApiError> {
+    latest_by_source(context, request, ConversationKindTag::Group).await
+}
+
+async fn latest_by_source(
+    context: &ApiContext,
+    request: dto::LatestConversationsRequest,
+    kind: ConversationKindTag,
+) -> Result<dto::LatestConversationPage, ApiError> {
+    context
+        .blocking(move |context| {
+            let database = context.backend().database();
+            let page = page_request(request.cursor, request.limit);
+            let page = match kind {
+                ConversationKindTag::Direct => {
+                    ConversationOverviewReader::latest_per_character(database, &page)
+                }
+                ConversationKindTag::Group => {
+                    ConversationOverviewReader::latest_per_group(database, &page)
+                }
+            }
+            .map_err(|error| cursor_error(error, "cursor"))?;
+            let items = summaries(context, &page.items)?
+                .into_iter()
+                .map(|conversation| {
+                    let source_id = match &conversation.source {
+                        dto::ConversationSource::Direct { character_id } => character_id.clone(),
+                        dto::ConversationSource::Group { group_id } => group_id.clone(),
+                    };
+                    dto::LatestConversation {
+                        source_id,
+                        conversation,
+                    }
+                })
+                .collect();
+            Ok(dto::LatestConversationPage {
                 items,
                 next_cursor: page.next_cursor,
             })
         })
         .await
+}
+
+fn cursor_error(error: ConversationRepositoryError, field: &str) -> ApiError {
+    match error {
+        ConversationRepositoryError::Invalid(ValidationError::InvalidValue {
+            field: "page.cursor",
+        }) => invalid_field(field, "the cursor is not valid for this list"),
+        error => error.into_api_error(),
+    }
 }
 
 pub async fn conversation_open(
@@ -124,16 +257,18 @@ pub async fn conversation_open(
             let messages = message_page(context, conversation_id, branch.id, None, None)?;
             let pending_turn = ConversationOverviewReader::live_turn(database, conversation_id)
                 .map_err(IntoApiError::into_api_error)?;
-            let can_send = conversation.lifecycle == ConversationLifecycle::Active
-                && pending_turn.is_none()
-                && conversation
+            let can_send = can_send(
+                conversation.lifecycle,
+                pending_turn.is_some(),
+                conversation
                     .participants
                     .iter()
-                    .any(|participant| participant.role == ParticipantRole::User);
+                    .any(|participant| participant.role == ParticipantRole::User),
+            );
+            let missing_models = MissingModels::new(context)?.of(context, &conversation)?;
             Ok(dto::ConversationView {
                 id: conversation.id.to_string(),
                 kind: mapping::conversation_kind(&conversation.kind),
-                title: conversation.title,
                 participants,
                 branch: dto::BranchHead {
                     branch_id: branch.id.to_string(),
@@ -145,9 +280,30 @@ pub async fn conversation_open(
                 messages,
                 pending_turn_id: pending_turn.map(|id| id.to_string()),
                 can_send,
+                revision: conversation.revision.get(),
+                settings_revision: conversation
+                    .current_settings
+                    .as_ref()
+                    .map(|settings| settings.revision.get()),
+                archived: conversation.lifecycle == ConversationLifecycle::Archived,
+                source: mapping::conversation_source(&conversation.kind),
+                chat_mode: chat_mode(context, &conversation)?,
+                missing_models,
+                title: conversation.title,
             })
         })
         .await
+}
+
+/// A chat takes a send unless it is tombstoned (sync can leave one behind),
+/// a turn is still unsettled, or it has no user participant; an archived
+/// chat stays usable.
+pub(super) const fn can_send(
+    lifecycle: ConversationLifecycle,
+    pending_turn: bool,
+    has_user: bool,
+) -> bool {
+    !matches!(lifecycle, ConversationLifecycle::Tombstoned) && !pending_turn && has_user
 }
 
 pub async fn conversation_messages(
@@ -494,14 +650,28 @@ pub async fn generation_cancel(
         .await
 }
 
-/// Starts a one-to-one chat with a character, inheriting its scene, starter
-/// and the default persona. Repeating the call with the same key returns the
-/// same conversation.
+/// Starts a one-to-one chat with a character: titled `title` (trimmed) or
+/// the character's name, with the chosen scene or the character's default
+/// scene, the chosen chat template if any, and the default persona. A scene
+/// or template of another character is `InvalidInput` naming the field.
+/// Repeating the call with the same key returns the same conversation.
 pub async fn conversation_launch_direct(
     context: &ApiContext,
     request: dto::LaunchDirectRequest,
 ) -> Result<dto::LaunchDirectResponse, ApiError> {
     let character_id: CharacterId = parse_id(&request.character_id, "character_id")?;
+    let scene = match request.scene_id.as_deref() {
+        Some(id) => LaunchSelection::Explicit(parse_id::<SceneId>(id, "scene_id")?),
+        None => LaunchSelection::Inherit,
+    };
+    let starter = match request.starter_id.as_deref() {
+        Some(id) => LaunchSelection::Explicit(parse_id::<ConversationStarterId>(id, "starter_id")?),
+        None => LaunchSelection::Inherit,
+    };
+    let title = request
+        .title
+        .map(|title| title.trim().to_owned())
+        .filter(|title| !title.is_empty());
     let operation_key = operation_key(request.client_operation_id)?;
     context
         .blocking(move |context| {
@@ -511,14 +681,14 @@ pub async fn conversation_launch_direct(
                 .ok_or_else(|| api_error(ApiErrorCode::NotFound, "the character was not found"))?;
             let launch = DirectConversationLaunchRequest {
                 format_version: DIRECT_LAUNCH_REQUEST_FORMAT_V1,
-                title: character.character.profile.name.clone(),
+                title: title.unwrap_or_else(|| character.character.profile.name.clone()),
                 user: DirectUserParticipant {
                     display_name: DEFAULT_USER_DISPLAY_NAME.to_owned(),
                     authored_description: None,
                 },
                 character_id,
-                scene: LaunchSelection::Inherit,
-                starter: LaunchSelection::Inherit,
+                scene,
+                starter,
                 persona: LaunchSelection::Inherit,
                 operation_key,
             };
@@ -533,6 +703,45 @@ pub async fn conversation_launch_direct(
                 Err(error) => return Err(error.into_api_error()),
             };
             Ok(dto::LaunchDirectResponse {
+                conversation_id: conversation_id.to_string(),
+            })
+        })
+        .await
+}
+
+/// Starts a chat from a group profile, titled with the group's name and
+/// taking its members, settings and persona. Repeating the call with the
+/// same key returns the same conversation.
+pub async fn conversation_launch_group(
+    context: &ApiContext,
+    request: dto::LaunchGroupRequest,
+) -> Result<dto::LaunchGroupResponse, ApiError> {
+    let group_id: GroupId = parse_id(&request.group_id, "group_id")?;
+    let operation_key = operation_key(request.client_operation_id)?;
+    context
+        .blocking(move |context| {
+            let launch = GroupConversationLaunchRequest {
+                format_version: GROUP_LAUNCH_REQUEST_FORMAT_V1,
+                title: String::new(),
+                user: DirectUserParticipant {
+                    display_name: DEFAULT_USER_DISPLAY_NAME.to_owned(),
+                    authored_description: None,
+                },
+                group_id,
+                persona: LaunchSelection::Inherit,
+                operation_key,
+            };
+            let conversation_id = match context
+                .backend()
+                .launch_group_conversation(&launch, context.now())
+            {
+                Ok(created) => created.value.conversation.id,
+                Err(ConversationLaunchError::AlreadyLaunched { conversation_id }) => {
+                    conversation_id
+                }
+                Err(error) => return Err(error.into_api_error()),
+            };
+            Ok(dto::LaunchGroupResponse {
                 conversation_id: conversation_id.to_string(),
             })
         })

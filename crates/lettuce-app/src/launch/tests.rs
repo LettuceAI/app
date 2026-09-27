@@ -363,7 +363,7 @@ fn scene_with(character_id: CharacterId, ordinal: u32, parts: Vec<ScenePart>) ->
     .expect("scene")
 }
 
-fn text_scene(character_id: CharacterId, ordinal: u32, text: &str) -> Scene {
+pub(crate) fn text_scene(character_id: CharacterId, ordinal: u32, text: &str) -> Scene {
     scene_with(
         character_id,
         ordinal,
@@ -371,7 +371,7 @@ fn text_scene(character_id: CharacterId, ordinal: u32, text: &str) -> Scene {
     )
 }
 
-fn starter_with(
+pub(crate) fn starter_with(
     character_id: CharacterId,
     ordinal: u32,
     name: &str,
@@ -388,7 +388,7 @@ fn starter_with(
     .expect("starter")
 }
 
-fn message(role: StarterRole, content: &str) -> StarterMessage {
+pub(crate) fn message(role: StarterRole, content: &str) -> StarterMessage {
     StarterMessage {
         id: StarterMessageId::new(),
         role,
@@ -422,7 +422,7 @@ fn character_with(
     .expect("character")
 }
 
-fn seed_character(
+pub(crate) fn seed_character(
     database: &Database,
     scenes: Vec<Scene>,
     variants: Vec<SceneVariant>,
@@ -12427,7 +12427,7 @@ fn seed_group(
     id
 }
 
-fn two_member_group(database: &Database) -> GroupId {
+pub(crate) fn two_member_group(database: &Database) -> GroupId {
     let first = seed_named_character(database, "Ada");
     let second = seed_named_character(database, "Bea");
     seed_group(

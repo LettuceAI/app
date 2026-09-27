@@ -10,6 +10,7 @@ use std::{
 use lettuce_contracts::{ApiError, ApiErrorCode};
 use lettuce_jobs::WorkerId;
 
+use super::conversation_feed::ConversationFeed;
 use super::error::api_error;
 use super::jobs::{JobFeed, JobHandlers, JobRunner, recover_queued_installs};
 use super::{ApiContext, ConversationGenerationWorker};
@@ -114,16 +115,18 @@ impl ApiWorkers {
 }
 
 /// Starts the application. Before returning, so commands are served only
-/// afterwards, it takes the job change feed's position, settles what the
-/// previous process left running, detects legacy data and records legacy v4
-/// embedding files. Then, on its own thread, it resumes background memory
-/// and companion jobs, recovers queued installs, sweeps orphaned media files,
-/// and last starts the conversation generation worker and the job runner
-/// with the job change feed. It downloads and loads nothing: optional models
-/// load when a chat needs them.
+/// afterwards, it takes the job and conversation change feeds' positions,
+/// settles what the previous process left running, detects legacy data and
+/// records legacy v4 embedding files. Then, on its own thread, it resumes
+/// background memory and companion jobs, recovers queued installs, sweeps
+/// orphaned media files, and last starts the conversation generation worker,
+/// the job runner with the job change feed, and the conversation change
+/// feed. It downloads and loads nothing: optional models load when a chat
+/// needs them.
 pub async fn startup(context: &ApiContext) -> Result<ApiWorkers, ApiError> {
     let steps: Steps = Arc::new(Mutex::new(Vec::new()));
     let feed = JobFeed::start(context).await?;
+    let conversation_feed = ConversationFeed::start(context).await?;
     context
         .blocking(|context| context.recover_after_restart())
         .await?;
@@ -159,7 +162,7 @@ pub async fn startup(context: &ApiContext) -> Result<ApiWorkers, ApiError> {
                 if *stopped.borrow() {
                     return;
                 }
-                match start_workers(&context, feed, &stopped) {
+                match start_workers(&context, feed, conversation_feed, &stopped) {
                     Ok(started) => {
                         threads
                             .lock()
@@ -334,6 +337,7 @@ async fn until_stopped(mut stopped: tokio::sync::watch::Receiver<bool>) {
 fn start_workers(
     context: &ApiContext,
     feed: JobFeed,
+    conversation_feed: ConversationFeed,
     stopped: &tokio::sync::watch::Receiver<bool>,
 ) -> std::io::Result<Vec<JoinHandle<()>>> {
     let generation = ConversationGenerationWorker::new(context.clone());
@@ -348,5 +352,13 @@ fn start_workers(
             tokio::join!(runner.run(until_stopped(stopped.clone())), feed);
         })
     })?;
-    Ok(vec![conversation, jobs])
+    let changes_context = context.clone();
+    let changes = worker_thread("conversation-changes", stopped, move |stopped| {
+        Box::pin(async move {
+            conversation_feed
+                .run(changes_context, until_stopped(stopped))
+                .await;
+        })
+    })?;
+    Ok(vec![conversation, jobs, changes])
 }

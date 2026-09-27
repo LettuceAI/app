@@ -82,6 +82,7 @@ struct ApiContextInner {
     wake: tokio::sync::Notify,
     shutdown: CancellationToken,
     jobs: JobHostState,
+    conversations_changed: Arc<tokio::sync::Notify>,
     app_usage: AppActiveUsageTracker,
     legacy_database_detected: AtomicBool,
 }
@@ -105,6 +106,12 @@ impl ApiContext {
             .backend
             .database()
             .on_job_change(move || changed.notify_one());
+        let conversations_changed = Arc::new(tokio::sync::Notify::new());
+        let signal = Arc::clone(&conversations_changed);
+        parts
+            .backend
+            .database()
+            .on_conversation_change(move || signal.notify_one());
         Self {
             inner: Arc::new(ApiContextInner {
                 models: ModelSlots::new(Arc::clone(&parts.models)),
@@ -113,6 +120,7 @@ impl ApiContext {
                 wake: tokio::sync::Notify::new(),
                 shutdown: CancellationToken::new(),
                 jobs,
+                conversations_changed,
                 app_usage: AppActiveUsageTracker::new(now),
                 legacy_database_detected: AtomicBool::new(false),
             }),
@@ -269,9 +277,11 @@ impl ApiContext {
     }
 
     /// Forgets the loaded optional models after an install, switch or
-    /// removal; the next use loads what is installed then.
+    /// removal, so the next use loads what is installed then, and tells
+    /// every window to re-read the models its chats miss.
     pub fn models_changed(&self) {
         self.inner.models.forget();
+        self.emit(lettuce_contracts::ApiEvent::RequiredModelsChanged);
     }
 
     pub(crate) fn files(&self) -> &dyn FileAccess {
@@ -292,6 +302,12 @@ impl ApiContext {
 
     pub(crate) fn jobs(&self) -> &JobHostState {
         &self.inner.jobs
+    }
+
+    /// Resolves after a committed conversation change, including one made
+    /// before the call that no caller has waited for yet.
+    pub(crate) async fn conversations_changed(&self) {
+        self.inner.conversations_changed.notified().await;
     }
 
     pub(crate) fn legacy_database_detected(&self) -> bool {

@@ -20,6 +20,47 @@ CREATE TABLE conversations (
         DEFERRABLE INITIALLY DEFERRED
 ) STRICT;
 CREATE INDEX conversations_updated_idx ON conversations(updated_at DESC, id ASC);
+CREATE INDEX conversations_direct_character_idx
+    ON conversations(json_extract(kind_json, '$.value.details.character.source_id'), updated_at DESC, id)
+    WHERE kind = 'direct';
+CREATE INDEX conversations_group_source_idx
+    ON conversations(json_extract(kind_json, '$.value.details.group.source_id'), updated_at DESC, id)
+    WHERE kind = 'group';
+
+-- The digest of the launch request a conversation was created with, so a
+-- later launch under the same key can be compared without re-preparing it.
+CREATE TABLE conversation_launch_intents (
+    conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE RESTRICT,
+    intent_digest TEXT NOT NULL CHECK (length(intent_digest) = 64)
+) STRICT;
+
+-- The conversation change feed: one row per conversation that changed, moved
+-- to a new position on every write. Every mutation bumps the conversation
+-- row, so the row triggers cover messages, settings, archive and rename; a
+-- purge leaves a removed row behind.
+CREATE TABLE conversation_changes (
+    position INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id TEXT NOT NULL UNIQUE,
+    removed INTEGER NOT NULL CHECK (removed IN (0, 1))
+) STRICT;
+
+CREATE TRIGGER conversations_record_insert AFTER INSERT ON conversations
+BEGIN
+    DELETE FROM conversation_changes WHERE conversation_id = NEW.id;
+    INSERT INTO conversation_changes (conversation_id, removed) VALUES (NEW.id, 0);
+END;
+
+CREATE TRIGGER conversations_record_update AFTER UPDATE ON conversations
+BEGIN
+    DELETE FROM conversation_changes WHERE conversation_id = NEW.id;
+    INSERT INTO conversation_changes (conversation_id, removed) VALUES (NEW.id, 0);
+END;
+
+CREATE TRIGGER conversations_record_delete AFTER DELETE ON conversations
+BEGIN
+    DELETE FROM conversation_changes WHERE conversation_id = OLD.id;
+    INSERT INTO conversation_changes (conversation_id, removed) VALUES (OLD.id, 1);
+END;
 
 CREATE TABLE conversation_participants (
     conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE RESTRICT,

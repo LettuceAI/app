@@ -813,6 +813,7 @@ mod tests {
         let result = manager.page(&ConversationQuery {
             lifecycle: None,
             page: lettuce_types::PageRequest::default(),
+            ..ConversationQuery::default()
         });
         assert!(matches!(
             result,

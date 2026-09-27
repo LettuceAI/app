@@ -98,16 +98,18 @@ Ordinary repositories have no artifact read-back, and IPC never carries raw arti
 
 Every mutation is a command carrying the expected revision and an `OperationToken` (idempotency key plus request digest). `ConversationMutation` enumerates them: send, continue, regenerate, retry, cancel, choose candidate, edit, flags, fork, select branch, tombstone, archive, restore, rename, participant policy and settings.
 
-A repository returns `MutationCommit<T>`: the value, the `OperationRecord` and the outbox records, all written in one transaction. Replaying the same operation returns the original operation and outbox records with the value rehydrated from current state; the same key with a different request conflicts. Reads return plain values and create no operation or outbox record. Mutations other than restore require an active conversation, and the begin methods require that no non-terminal turn exists, so a conversation has at most one turn in flight.
+A repository returns `MutationCommit<T>`: the value, the `OperationRecord` and the outbox records, all written in one transaction. Replaying the same operation returns the original operation and outbox records with the value rehydrated from current state; the same key with a different request conflicts. Reads return plain values and create no operation or outbox record. Mutations accept an active or archived conversation and refuse a tombstoned one; the user writes (send, added user message, continue, regenerate, retry) restore an archived conversation to active in the same transaction, recording the restore's outbox event, while every other mutation keeps the lifecycle. The begin methods require that no non-terminal turn exists, so a conversation has at most one turn in flight.
 
 Some command details:
 
 - `ForkBranch` forks at a message or, without one, at the source head; forking a headless branch is a conflict.
 - `TombstoneMessage` takes a `DescendantPolicy`: `Preserve`, `Tombstone` or `Fork`. Tombstoning descendants leaves the branch head where it is, because a tombstone is a flag and the timeline still renders the entries. The policy is branch-local; cross-branch descendants belong to `Fork` or branch archival.
-- `ArchiveConversation` is metadata only; an in-flight generation keeps running.
+- `ArchiveConversation` only hides a conversation from default lists; an in-flight generation keeps running and the conversation stays usable.
 - `append_user_message` adds a user message without starting a reply. A group director uses it and then continues with a forced speaker.
 
 Outbox events (`ConversationCreated`, `MessageCommitted`, `MessageRevised`, `MessageTombstoned` and the turn events) carry typed ids, stages and counters, plus `AssetReferenceDelta`s that tell the media crate which assets became active, historical or released. Terminal turn events carry the attempt, usage, message and candidate references and bounded memory revision references, so consumers can be idempotent by turn id without reading conversation internals.
+
+Reads: `ConversationReader` returns aggregates, timelines and summaries. `ConversationQuery` filters a summary page by lifecycle (none lists active and archived conversations, never tombstoned ones), kind, character (direct conversations with it) and source group (group conversations launched from it). `ConversationOverviewReader` adds what list screens show: the conversation with its participants and current settings, the newest visible non-system message and the count of visible non-system messages on the active branch; `latest_per_character` and `latest_per_group` page the newest non-tombstoned conversation of each character or group. `ConversationChangeFeed` names the conversations whose latest committed write is after a position, and whether that write removed them, so a reader that keeps its position sees each change once.
 
 ## Generation turns
 

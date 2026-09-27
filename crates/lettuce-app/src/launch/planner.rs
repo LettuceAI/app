@@ -12,16 +12,17 @@ use lettuce_context::{
     PromptLookupResult, PromptPurpose, PromptRepository,
 };
 use lettuce_conversations::{
-    CharacterLaunchSnapshot, ConversationCreator, ConversationKind, ConversationParticipantDraft,
-    ConversationReader, ConversationRepositoryError, CreateConversationPlan,
-    CreateConversationResult, DirectConversationDetails, DynamicMemoryPolicySnapshot,
-    GroupChatModeSnapshot, GroupConversationDetails, GroupLaunchSnapshot,
-    GroupMemberLaunchSnapshot, GroupParticipantPolicyDocument, GroupParticipantPolicySnapshot,
-    IdempotencyKey, InitialMessageDraft, InitialMessageOrigin, InitialTimelineDraft,
-    LorebookLaunchSnapshot, MemoryRetrievalStrategySnapshot, MemorySettingsSnapshot, MessagePart,
-    MessageRole, ModelSelectionSnapshot, OperationToken, ParticipantRole, ParticipantSource,
-    PersonaLaunchSnapshot, PreparedConversationLaunch, PromptLaunchSnapshot, PromptPurposeSnapshot,
-    SceneLaunchSnapshot, SnapshotArtifactDraft, SnapshotSelection, StarterLaunchSnapshot,
+    CharacterLaunchSnapshot, ConversationCreator, ConversationKind, ConversationLaunchIntentReader,
+    ConversationParticipantDraft, ConversationReader, ConversationRepositoryError,
+    CreateConversationPlan, CreateConversationResult, DirectConversationDetails,
+    DynamicMemoryPolicySnapshot, GroupChatModeSnapshot, GroupConversationDetails,
+    GroupLaunchSnapshot, GroupMemberLaunchSnapshot, GroupParticipantPolicyDocument,
+    GroupParticipantPolicySnapshot, IdempotencyKey, InitialMessageDraft, InitialMessageOrigin,
+    InitialTimelineDraft, LorebookLaunchSnapshot, MemoryRetrievalStrategySnapshot,
+    MemorySettingsSnapshot, MessagePart, MessageRole, ModelSelectionSnapshot, OperationToken,
+    ParticipantRole, ParticipantSource, PersonaLaunchSnapshot, PreparedConversationLaunch,
+    PromptLaunchSnapshot, PromptPurposeSnapshot, SceneLaunchSnapshot, SnapshotArtifactDraft,
+    SnapshotSelection, StarterLaunchSnapshot,
 };
 use lettuce_models::{
     ModelKind, ModelProfile, ModelProfileRepository, ProviderAccount, ProviderAccountRepository,
@@ -33,7 +34,8 @@ use lettuce_types::{
 use std::collections::HashSet;
 
 use super::digest::{
-    GroupLaunchIntent, GroupMemberIntent, direct_request_digest, group_request_digest,
+    GroupLaunchIntent, GroupMemberIntent, direct_launch_intent, direct_request_digest,
+    group_launch_intent, group_request_digest,
 };
 use super::documents;
 use super::error::{ConversationLaunchError, LaunchSourceError};
@@ -84,6 +86,7 @@ pub trait DirectLaunchSources:
     + GlobalSettingsStore
     + ConversationCreator
     + CompanionConversationCreator
+    + ConversationLaunchIntentReader
 {
 }
 
@@ -107,6 +110,7 @@ impl<T> DirectLaunchSources for T where
         + GlobalSettingsStore
         + ConversationCreator
         + CompanionConversationCreator
+        + ConversationLaunchIntentReader
 {
 }
 
@@ -140,10 +144,12 @@ where
         request: &DirectConversationLaunchRequest,
         now: TimestampMillis,
     ) -> Result<CreateConversationResult, ConversationLaunchError> {
+        let intent = direct_launch_intent(request)
+            .ok_or(ConversationLaunchError::InvalidRequest { field: "request" })?;
         let (launch, companion) = match self.prepare_direct_parts(request) {
-            Ok(launch) => launch,
+            Ok((launch, companion)) => (launch.with_launch_intent(intent), companion),
             Err(error) => {
-                return Err(self.already_launched_or(&request.operation_key, error));
+                return Err(self.already_launched_or(&request.operation_key, &intent, error));
             }
         };
         if let Some((owner, initial, time_awareness)) = companion {
@@ -169,17 +175,27 @@ where
     }
 
     /// A source archived or deleted after a committed launch must not look
-    /// like a fresh failure; the caller is told to open what already exists.
+    /// like a fresh failure: the same request under the key is told to open
+    /// what already exists, while a different request (another kind, source,
+    /// title, scene or starter, or a conversation whose launch recorded no
+    /// request) conflicts.
     fn already_launched_or(
         &self,
         operation_key: &IdempotencyKey,
+        intent: &lettuce_types::ContentHash,
         error: ConversationLaunchError,
     ) -> ConversationLaunchError {
         let conversation_id = launch_conversation_id(operation_key);
-        if ConversationReader::get(self.sources, conversation_id).is_ok() {
-            return ConversationLaunchError::AlreadyLaunched { conversation_id };
+        if ConversationReader::get(self.sources, conversation_id).is_err() {
+            return error;
         }
-        error
+        match self.sources.launch_intent(conversation_id) {
+            Ok(Some(stored)) if &stored == intent => {
+                ConversationLaunchError::AlreadyLaunched { conversation_id }
+            }
+            Ok(_) => ConversationLaunchError::CreateConflict,
+            Err(error) => LaunchSourceError::Conversation(error).into(),
+        }
     }
 
     pub fn prepare_direct(
@@ -818,10 +834,12 @@ where
         request: &GroupConversationLaunchRequest,
         now: TimestampMillis,
     ) -> Result<CreateConversationResult, ConversationLaunchError> {
+        let intent = group_launch_intent(request)
+            .ok_or(ConversationLaunchError::InvalidRequest { field: "request" })?;
         let launch = match self.prepare_group(request, now) {
-            Ok(launch) => launch,
+            Ok(launch) => launch.with_launch_intent(intent),
             Err(error) => {
-                return Err(self.already_launched_or(&request.operation_key, error));
+                return Err(self.already_launched_or(&request.operation_key, &intent, error));
             }
         };
         ConversationCreator::create(self.sources, launch, now).map_err(|error| match error {

@@ -23,6 +23,21 @@ use crate::{
     MemoryCreateSeed, MemoryEmbeddingEngine,
 };
 
+/// Whether a conversation runs dynamic memory now: its memory mode is
+/// dynamic and, for a one-to-one chat, the global dynamic memory switch is on
+/// (group chats have no global switch).
+pub(crate) fn dynamic_memory_on(
+    conversation: &lettuce_conversations::Conversation,
+    settings: &lettuce_settings::GlobalSettings,
+) -> bool {
+    let dynamic_session = effective_memory(conversation)
+        .is_some_and(|memory| memory.mode == MemoryModeSnapshot::Dynamic);
+    match conversation.kind {
+        ConversationKind::Group(_) => dynamic_session,
+        ConversationKind::Direct(_) => dynamic_session && settings.dynamic_memory.enabled,
+    }
+}
+
 /// Everything the memory job runner reads from live settings and the
 /// conversation at cycle start.
 #[derive(Debug, Clone)]
@@ -322,17 +337,14 @@ where
         let settings = GlobalSettingsStore::load(self.repository)
             .map_err(CompanionMemoryHostError::Settings)?
             .settings;
-        let group = matches!(aggregate.conversation.kind, ConversationKind::Group(_));
-        let dynamic = if group {
+        if !dynamic_memory_on(&aggregate.conversation, &settings) {
+            return Ok(None);
+        }
+        let dynamic = if matches!(aggregate.conversation.kind, ConversationKind::Group(_)) {
             settings.effective_group_dynamic_memory()
         } else {
             &settings.dynamic_memory
         };
-        let dynamic_session = effective_memory(&aggregate.conversation)
-            .is_some_and(|memory| memory.mode == MemoryModeSnapshot::Dynamic);
-        if !dynamic_session || (!group && !dynamic.enabled) {
-            return Ok(None);
-        }
         Ok(Some(ActiveMemoryCycle {
             settings: dynamic.clone(),
             companion: self.is_companion(&aggregate.conversation)?,
