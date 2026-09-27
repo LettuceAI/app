@@ -382,8 +382,9 @@ fn gguf_model_setup(setup: &dto::HfDownloadSetup, mtp_bundled: bool) -> GgufMode
 }
 
 /// Hands a queued GGUF install an earlier process admitted back to the
-/// runner from its stored detail; `false` when the job is no GGUF install
-/// with one.
+/// runner from its stored detail; `false` (the job is then cancelled) when
+/// the job is no GGUF install with one or its folder is not the models
+/// folder in use (such as a backup restored from another machine).
 pub(crate) fn resume_gguf_install(
     context: &ApiContext,
     job: &JobSnapshot,
@@ -411,6 +412,9 @@ pub(crate) fn resume_gguf_install(
         return Ok(false);
     }
     let root = PathBuf::from(root);
+    if !crate::models::gguf_library::paths_equal(&root, &models_root(context)?) {
+        return Ok(false);
+    }
     let plan = crate::ArtifactInstallPlan {
         install_id,
         root: root.clone(),

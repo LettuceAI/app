@@ -1084,3 +1084,21 @@ async fn a_stalled_download_times_out_instead_of_reading_as_offline() {
     assert_eq!(failure.hugging_face, None);
     std::fs::remove_dir_all(folder).ok();
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_queued_download_for_another_folder_is_cancelled_at_restart() {
+    let (harness, folder) = local_harness("restart-other-root");
+    let context = &harness.context;
+    hugging_face(context).await;
+    let accepted = hf_download(context, download("op-o", "m-Q8_0.gguf", setup(8192)))
+        .await
+        .expect("download");
+    let database = context.backend().database();
+    let mut device = database.load_device_settings().expect("device");
+    device.llm_models_dir = Some(folder.join("other").to_string_lossy().into_owned());
+    lettuce_settings::DeviceSettingsStore::save_device_settings(database, device)
+        .expect("other folder");
+    let restarted = restart(context).await;
+    assert_eq!(state(&restarted, job_id(&accepted)), JobState::Cancelled);
+    std::fs::remove_dir_all(folder).ok();
+}
