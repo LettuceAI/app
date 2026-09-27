@@ -8,7 +8,7 @@ This is not a visual redesign mandate. Existing interaction patterns that work c
 
 ## Current application behavior
 
-The current frontend has broad product areas for onboarding, character/persona authoring, direct chat, group chat, memories/companion state, lorebooks/prompts, discovery, image playground/library, model/provider/runtime management, speech, backup/sync, usage, host API, a now-dead Engine integration and developer support. Engine is removal scope, not a target feature.
+The current frontend has broad product areas for onboarding, character/persona authoring, direct chat, group chat, memories/companion state, lorebooks/prompts, discovery, image playground/library, model/provider/runtime management, speech, backup/sync, usage, host API, a now-dead Engine integration and developer support. Engine, discovery and the host API are approved removals, not target features.
 
 The largest concentration is settings, with many pages that are actually full product workflows: model discovery/install, Stable Diffusion, LoRA library, Kokoro studio, embedding tests, companion downloads and lore generation. Direct and group chat duplicate layout, history, search, memories, settings and appearance. `App.tsx` owns a very large flat route table. Core storage wrappers expose broad schemas and command-shaped methods. Numerous UI components carry fields named `path` for avatars, attachments, models and LoRAs, making native filesystem representation part of UI state.
 
@@ -26,9 +26,11 @@ apps/ui/src/
     error-boundaries/
   api/
     generated/             # generated only; never hand-edited
-    client.ts              # transport/error/event setup
+    transport.ts           # transport interface
+    tauri-transport.ts     # the only Tauri-aware implementation
+    mock-transport.ts      # in-memory transport for tests and browser dev
+    client.ts              # typed client and error normalization
     query-keys.ts
-    mocks/
   features/
     onboarding/
     characters/
@@ -45,12 +47,10 @@ apps/ui/src/
     media-library/
     speech/
     creation/
-    discovery/
     transfer/
     backup/
     sync/
     usage/
-    host-api/
     settings/
     diagnostics/
   entities/
@@ -69,19 +69,18 @@ apps/ui/src/
   styles/
 ```
 
-`features` may import `entities`, `shared` and generated API modules. `entities` may import `shared` and generated contract types. `shared` cannot import a feature. Features do not import each other's internals; a small public `index.ts` exports supported components/use cases. ESLint dependency rules enforce this.
+`features` may import `entities`, `shared` and generated API modules. `entities` may import `shared` and generated contract types. `shared` cannot import a feature. Features do not import each other's internals; a small public `index.ts` exports supported components/use cases. oxlint import rules and an architecture test enforce this.
 
 ## Backend access
 
-All backend communication goes through generated feature clients from `lettuce-contracts`. There is no raw `invoke`, command-name constant, handwritten backend response type or generic `storageRepo`.
+All backend communication goes through the typed client in `src/api/`, whose types are generated from `lettuce-contracts` by tauri-specta. There is no raw `invoke`, command-name constant, handwritten backend response type or generic `storageRepo`.
 
 Each generated operation exposes:
 
 - Typed request and response.
 - Stable error code union and safe details.
-- Abort/cancellation integration where supported.
-- Query/mutation metadata used to create consistent hooks.
-- Event correlation types for jobs and streaming.
+- Per-request streams with an abort signal (generation, job watch).
+- App events (`ApiEvent`) that invalidate query keys.
 
 Feature API files wrap generated calls only to add frontend cache behavior or compose view models. They cannot rename fields into a second domain schema. Runtime validation remains at the external boundary for persisted browser state, URLs and compatibility data; generated IPC results should not be parsed again with a parallel Zod schema.
 
@@ -105,7 +104,6 @@ Proposed primary information architecture:
 - Chats: unified conversation list with direct/group filters.
 - Characters: characters, personas and groups as adjacent libraries.
 - Create: manual and assisted creation.
-- Discover.
 - Studio: image playground, media library, voices and prompt/lore authoring.
 - Models: provider connections, model profiles, installed models, downloads and runtimes.
 - Settings: application behavior, appearance, privacy/security, sync/backup, usage, integrations and diagnostics.
@@ -124,9 +122,9 @@ Editing creates a revision; regeneration creates a candidate; branching selects 
 
 ## Media and image behavior
 
-Every persistent visual/audio value is an `AssetRef { id, kind, revision? }`. A shared asset component resolves a controlled asset URL, requests the appropriate derivative and handles pending, quarantined, missing and deleted states. UI code never converts native paths, joins filenames, or asks whether a string is base64 versus a path.
+Every persistent visual/audio value is an `AssetRef { asset_id, url }` whose URL the backend supplies (the `lettuce-asset://` scheme under Tauri). A shared asset component renders that URL and handles pending, quarantined, missing and deleted states. UI code never converts native paths, joins filenames, or asks whether a string is base64 versus a path.
 
-File selection returns an external-file grant token. Upload calls media ingestion and receives an `AssetId` plus validation result. Crop/round/banner editing stores a transform specification and requests a derivative; it does not maintain three independent avatar paths. Drag/drop, clipboard and remote-import entry points share the same ingestion mutation.
+File selection returns a `FileSource` (a path, or a `content://` URI on Android). Upload calls `assets_ingest` and receives an `AssetRef`; media never crosses IPC as bytes or base64. Crop/round/banner editing stores a transform specification and requests a derivative; it does not maintain three independent avatar paths. Drag/drop, clipboard and remote-import entry points share the same ingestion mutation.
 
 The media library queries catalog assets by kind, source, association, date and retention class. It can show “used by” references and a safe cleanup preview. Generated images appear as job outputs and become conversation attachments only through an explicit attach action. The image playground builds its form from `ImageCapabilities`, disables unsupported fields with an explanation, displays per-output progress/failure and preserves the exact request snapshot for “reuse settings.” LoRAs and checkpoints are model artifacts referenced by ID, not paths.
 
@@ -191,31 +189,33 @@ Errors use stable codes mapped to localized titles/actions. Raw backend strings 
 - Visual regression for shared shell, message types, forms, job center and critical responsive layouts.
 - Performance fixtures with thousands of conversations/messages/assets/models.
 
-## Migration sequence
+## Build sequence
+
+The frontend is built fresh against the new domain API; nothing is migrated from `old-code/src`, which stays the behavioral reference.
 
 ### 1. Boundary and shell
 
-Generate API clients around current commands, introduce query/error/job infrastructure, modularize routes and ban new raw invokes. No feature behavior changes yet.
+Typed transport, query/error/event infrastructure, lazy routes, i18n and lint boundaries (done: the scaffold).
 
 ### 2. Assets and shared entities
 
-Introduce `AssetRef`, common media rendering/ingestion, job components, IDs/revisions and model-profile selectors. Compatibility adapters translate legacy paths while screens migrate; adapters are deleted after media cutover.
+Asset rendering and ingestion, job components, ids/revisions and model-profile selectors.
 
 ### 3. Conversation spine
 
-Build the unified conversation feature against new backend read models and mutations. Migrate direct chat, then group chat by enabling participant controls. Retire duplicate group components only after parity for history, search, memories, lore, appearance and settings.
+One conversation feature for direct and group chats over the conversation read models and mutations: timeline, composer, history, search, branches, memories, settings.
 
 ### 4. Authoring and knowledge
 
-Move characters, personas, groups, lorebooks, prompts, memory, companions and creation proposals. Replace storage-shaped forms with domain drafts/import plans.
+Characters, personas, groups, lorebooks, prompts, memory, companions and creation proposals.
 
 ### 5. AI studios and model operations
 
-Move providers/profiles, model hub, downloads, local runtimes, image playground/library, ASR and TTS to capability/job APIs.
+Providers and profiles, model hub, downloads, local runtimes, image playground and library, ASR and TTS over capability and job APIs.
 
 ### 6. Operational features
 
-Move discovery/transfer, backup, sync, usage, host API and diagnostics. Delete Engine routes, API wrappers, schemas, onboarding/settings entries and localization made unreachable by that removal. Remove the last generic storage schema/repository and raw native path type.
+Build transfer, backup, sync, usage and diagnostics.
 
 ## Frontend completion gates
 
@@ -227,4 +227,3 @@ Move discovery/transfer, backup, sync, usage, host API and diagnostics. Delete E
 - No backend record has a second handwritten TypeScript schema.
 - Every route has loading, empty, recoverable error and unavailable-capability behavior.
 - Existing locale coverage is retained for all changed user-facing copy.
-- Old `core/storage`, duplicate group-chat implementation and compatibility asset-path adapters are deleted before the refactor is declared complete.
