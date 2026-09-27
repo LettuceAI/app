@@ -14,8 +14,8 @@ use std::collections::VecDeque;
 use std::io::Cursor;
 use std::num::NonZeroU32;
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use base64::Engine as _;
@@ -302,6 +302,7 @@ enum WorkerJob {
 #[derive(Debug)]
 pub struct LlamaRuntime {
     sender: mpsc::Sender<WorkerJob>,
+    resident: Arc<Mutex<Vec<String>>>,
 }
 
 impl std::fmt::Debug for WorkerJob {
@@ -319,6 +320,8 @@ impl std::fmt::Debug for WorkerJob {
 impl LlamaRuntime {
     pub fn start() -> std::io::Result<Self> {
         let (sender, receiver) = mpsc::channel::<WorkerJob>();
+        let resident = Arc::new(Mutex::new(Vec::new()));
+        let published = Arc::clone(&resident);
         std::thread::Builder::new()
             .name("lettuce-llama".to_string())
             .spawn(move || {
@@ -330,21 +333,37 @@ impl LlamaRuntime {
                             observer,
                             reports,
                             done,
-                        } => done(generate(
-                            &mut worker,
-                            &request,
-                            observer.as_ref(),
-                            reports.as_ref(),
-                        )),
+                        } => {
+                            let result = generate(
+                                &mut worker,
+                                &request,
+                                observer.as_ref(),
+                                reports.as_ref(),
+                            );
+                            publish_resident(&worker, &published);
+                            done(result);
+                        }
                         WorkerJob::Unload { done } => {
                             worker.hot.clear();
-                            done(worker.engine.unload().map_err(Into::into));
+                            let result = worker.engine.unload().map_err(Into::into);
+                            publish_resident(&worker, &published);
+                            done(result);
                         }
                     }
                 }
                 worker.hot.clear();
             })?;
-        Ok(Self { sender })
+        Ok(Self { sender, resident })
+    }
+
+    /// The model files the worker holds open after its last request: the
+    /// loaded model, its sidecars and the models of cached contexts.
+    #[must_use]
+    pub fn resident_files(&self) -> Vec<String> {
+        self.resident
+            .lock()
+            .map(|files| files.clone())
+            .unwrap_or_default()
     }
 
     pub fn generate(
@@ -379,6 +398,18 @@ impl LlamaRuntime {
 struct WorkerState {
     engine: LlamaEngine,
     hot: HotContextCache,
+}
+
+fn publish_resident(worker: &WorkerState, resident: &Mutex<Vec<String>>) {
+    let mut files = worker.engine.loaded_paths();
+    for path in worker.hot.model_paths() {
+        if !files.contains(&path) {
+            files.push(path);
+        }
+    }
+    if let Ok(mut resident) = resident.lock() {
+        *resident = files;
+    }
 }
 
 /// A context kept after a run for prompt-prefix reuse. The contexts borrow
@@ -424,6 +455,13 @@ impl HotContextCache {
             .iter()
             .map(|cached| cached.allocated_bytes)
             .sum();
+    }
+
+    fn model_paths(&self) -> Vec<String> {
+        self.entries
+            .iter()
+            .map(|cached| cached.model_path.clone())
+            .collect()
     }
 
     fn holds_model(&self, model_path: &str) -> bool {
