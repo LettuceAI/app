@@ -1,0 +1,40 @@
+{
+  "app": {
+    "name": "LettuceAI"
+  },
+  "status": {
+    "loading": "Connecting to the app…",
+    "version": "Version",
+    "platform": "Platform"
+  },
+  "platform": {
+    "windows": "Windows",
+    "macos": "macOS",
+    "linux": "Linux",
+    "android": "Android",
+    "ios": "iOS",
+    "other": "Other"
+  },
+  "actions": {
+    "retry": "Try again",
+    "reload": "Reload"
+  },
+  "errors": {
+    "fatalTitle": "Something went wrong",
+    "fatalDescription": "The app hit an unexpected problem. Reloading usually fixes it.",
+    "loadTitle": "Couldn't load this",
+    "code": {
+      "not_found": "It no longer exists.",
+      "conflict": "It changed somewhere else. Reload and try again.",
+      "invalid_input": "Something in the request isn't valid.",
+      "unsupported": "This isn't supported here.",
+      "unavailable": "It isn't available right now.",
+      "cancelled": "It was cancelled.",
+      "busy": "The app is busy. Try again in a moment.",
+      "internal": "The app ran into an internal error.",
+      "model_required": "A required model isn't installed.",
+      "model_unavailable": "A required model couldn't be loaded.",
+      "transport": "The app's backend couldn't be reached."
+    }
+  }
+}

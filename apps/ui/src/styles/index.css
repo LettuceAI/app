@@ -1,0 +1,11 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+@import "@lettuceai/crisp/styles.css";
+
+@source "../../node_modules/@lettuceai/crisp/dist";
+
+html,
+body,
+#root {
+  height: 100%;
+}
