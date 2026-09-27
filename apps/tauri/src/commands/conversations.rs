@@ -3,9 +3,12 @@ use std::sync::Arc;
 use lettuce_app::api::{self, ApiContext, GenerationEventSink};
 use lettuce_contracts::{
     ApiError, ConversationMessagesRequest, ConversationOpenRequest, ConversationPage,
-    ConversationSendRequest, ConversationView, ConversationsListRequest, GenerationCancelRequest,
-    GenerationEvent, LatestConversationPage, LatestConversationsRequest, LaunchDirectRequest,
-    LaunchDirectResponse, LaunchGroupRequest, LaunchGroupResponse, MessagePage, SendAccepted,
+    ConversationParticipantAddRequest, ConversationParticipantUpdateRequest,
+    ConversationRenameRequest, ConversationRequest, ConversationRevisions, ConversationSendRequest,
+    ConversationSettingsGetRequest, ConversationSettingsUpdateRequest, ConversationSettingsView,
+    ConversationView, ConversationsListRequest, GenerationCancelRequest, GenerationEvent,
+    LatestConversationPage, LatestConversationsRequest, LaunchDirectRequest, LaunchDirectResponse,
+    LaunchGroupRequest, LaunchGroupResponse, MessagePage, SendAccepted,
 };
 use tauri::{State, ipc::Channel};
 
@@ -89,6 +92,78 @@ pub async fn conversation_launch_group(
     request: LaunchGroupRequest,
 ) -> Result<LaunchGroupResponse, ApiError> {
     api::conversation_launch_group(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn conversation_settings_get(
+    context: State<'_, ApiContext>,
+    request: ConversationSettingsGetRequest,
+) -> Result<ConversationSettingsView, ApiError> {
+    api::conversation_settings_get(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn conversation_settings_update(
+    context: State<'_, ApiContext>,
+    request: ConversationSettingsUpdateRequest,
+) -> Result<ConversationSettingsView, ApiError> {
+    api::conversation_settings_update(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn conversation_rename(
+    context: State<'_, ApiContext>,
+    request: ConversationRenameRequest,
+) -> Result<ConversationRevisions, ApiError> {
+    api::conversation_rename(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn conversation_archive(
+    context: State<'_, ApiContext>,
+    request: ConversationRequest,
+) -> Result<ConversationRevisions, ApiError> {
+    api::conversation_archive(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn conversation_restore(
+    context: State<'_, ApiContext>,
+    request: ConversationRequest,
+) -> Result<ConversationRevisions, ApiError> {
+    api::conversation_restore(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn conversation_delete(
+    context: State<'_, ApiContext>,
+    request: ConversationRequest,
+) -> Result<(), ApiError> {
+    api::conversation_delete(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn conversation_participant_add(
+    context: State<'_, ApiContext>,
+    request: ConversationParticipantAddRequest,
+) -> Result<ConversationRevisions, ApiError> {
+    api::conversation_participant_add(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn conversation_participant_update(
+    context: State<'_, ApiContext>,
+    request: ConversationParticipantUpdateRequest,
+) -> Result<ConversationRevisions, ApiError> {
+    api::conversation_participant_update(&context, request).await
 }
 
 /// A send's generation stream, delivered over the command's IPC channel.

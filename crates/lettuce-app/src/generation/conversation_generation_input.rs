@@ -616,12 +616,22 @@ where
     ) -> Result<(), ConversationGenerationInputError> {
         let aggregate = ConversationReader::get(self.repository, work.conversation_id)
             .map_err(ConversationGenerationInputError::Repository)?;
-        let ConversationKind::Group(details) = &aggregate.conversation.kind else {
+        let Some(live) =
+            crate::generation::live_sources::live_group(self.repository, &aggregate.conversation)
+                .map_err(|_| {
+                ConversationGenerationInputError::Context(
+                    ContextAssemblyError::ConversationUnavailable,
+                )
+            })?
+        else {
             return Ok(());
         };
-        let speaker_selection =
-            lettuce_conversations::effective_speaker_selection(&aggregate.conversation)
-                .unwrap_or(details.group.speaker_selection);
+        let speaker_selection = live.speaker_selection;
+        let mut conversation = aggregate.conversation.clone();
+        conversation.participants = crate::generation::live_sources::effective_participants(
+            &aggregate.conversation,
+            live.profile.as_ref(),
+        );
         let mut turn = ConversationReader::get_turn(self.repository, work.turn_id)
             .map_err(ConversationGenerationInputError::Repository)?;
         if turn.selected_speaker.is_some()
@@ -700,9 +710,8 @@ where
                 .then_some(item.message.author_participant_id)
                 .flatten()
         });
-        let profiles = self.current_character_profiles(&aggregate.conversation)?;
-        let participants = aggregate
-            .conversation
+        let profiles = self.current_character_profiles(&conversation)?;
+        let participants = conversation
             .participants
             .iter()
             .filter(|participant| {
@@ -728,12 +737,9 @@ where
             })
             .collect();
         let mention_source = match turn.input {
-            GenerationInput::UserMessage { message_id } => user_message_mention(
-                &aggregate.conversation,
-                &timeline.items,
-                message_id,
-                &profiles,
-            ),
+            GenerationInput::UserMessage { message_id } => {
+                user_message_mention(&conversation, &timeline.items, message_id, &profiles)
+            }
             GenerationInput::ExistingHead { .. } | GenerationInput::ExistingCandidate { .. } => {
                 None
             }
@@ -751,15 +757,8 @@ where
         let selected_speaker = if mention_source.is_none()
             && speaker_selection == lettuce_conversations::GroupSpeakerSelectionSnapshot::Llm
         {
-            self.select_speaker_via_llm(
-                work,
-                &aggregate.conversation,
-                &profiles,
-                &turn,
-                &policy_request,
-                now,
-            )
-            .await?
+            self.select_speaker_via_llm(work, &conversation, &profiles, &turn, &policy_request, now)
+                .await?
         } else {
             select_group_speaker(&policy_request, speaker_selection)
                 .map_err(|_| ConversationGenerationInputError::SpeakerUnavailable)?
@@ -1032,10 +1031,11 @@ where
         &self,
         conversation: &lettuce_conversations::Conversation,
         effective: Option<lettuce_conversations::ModelSelectionSnapshot>,
+        speaker: Option<lettuce_types::ConversationParticipantId>,
     ) -> Result<lettuce_conversations::ModelSelectionSnapshot, ConversationGenerationInputError>
     {
         let ConversationKind::Direct(details) = &conversation.kind else {
-            return effective.ok_or(ConversationGenerationInputError::MissingModel);
+            return self.live_group_member_model(conversation, effective, speaker);
         };
         let overridden = conversation
             .current_settings
@@ -1065,6 +1065,74 @@ where
             .model_profile_id
             .or(app_default)
             .ok_or(ConversationGenerationInputError::MissingModel)?;
+        self.live_model_for(conversation.id, model_profile_id, effective)
+    }
+
+    /// A group speaker's model (`live_sources::member_model`): a model the
+    /// conversation chose, else the group's current model for the member,
+    /// else the character's current default model, then the app default.
+    fn live_group_member_model(
+        &self,
+        conversation: &lettuce_conversations::Conversation,
+        effective: Option<lettuce_conversations::ModelSelectionSnapshot>,
+        speaker: Option<lettuce_types::ConversationParticipantId>,
+    ) -> Result<lettuce_conversations::ModelSelectionSnapshot, ConversationGenerationInputError>
+    {
+        let unavailable = || {
+            ConversationGenerationInputError::Context(ContextAssemblyError::ConversationUnavailable)
+        };
+        let participant = speaker
+            .and_then(|speaker| {
+                conversation
+                    .participants
+                    .iter()
+                    .find(|participant| participant.id == speaker)
+            })
+            .ok_or(ConversationGenerationInputError::SpeakerUnavailable)?;
+        let live = crate::generation::live_sources::live_group(self.repository, conversation)
+            .map_err(|_| unavailable())?;
+        let model_profile_id = match crate::generation::live_sources::member_model(
+            conversation,
+            participant,
+            live.as_ref().and_then(|live| live.profile.as_ref()),
+        ) {
+            crate::generation::live_sources::MemberModel::Snapshot(model) => return Ok(model),
+            crate::generation::live_sources::MemberModel::Profile(id) => id,
+            crate::generation::live_sources::MemberModel::Live => {
+                let lettuce_conversations::ParticipantSource::Character(character_id) =
+                    participant.source
+                else {
+                    return Err(ConversationGenerationInputError::SpeakerUnavailable);
+                };
+                let character = CharacterRepository::get(self.repository, character_id)
+                    .map_err(|_| unavailable())?;
+                let app_default = lettuce_settings::GlobalSettingsStore::load(self.repository)
+                    .map_err(ConversationGenerationInputError::Settings)?
+                    .default_model_profile_id;
+                match character.and_then(|character| character.character.defaults.model_profile_id)
+                {
+                    Some(id) => id,
+                    None => match app_default {
+                        Some(id) => id,
+                        None => {
+                            return effective.ok_or(ConversationGenerationInputError::MissingModel);
+                        }
+                    },
+                }
+            }
+        };
+        self.live_model_for(conversation.id, model_profile_id, effective)
+    }
+
+    /// The stored snapshot when it names the live revisions of the model and
+    /// its account, else a conversation snapshot of them.
+    fn live_model_for(
+        &self,
+        conversation_id: lettuce_types::ConversationId,
+        model_profile_id: lettuce_types::ModelProfileId,
+        effective: Option<lettuce_conversations::ModelSelectionSnapshot>,
+    ) -> Result<lettuce_conversations::ModelSelectionSnapshot, ConversationGenerationInputError>
+    {
         let profile = ModelProfileRepository::get(self.repository, model_profile_id)
             .map_err(ConversationGenerationInputError::ModelRepository)?
             .ok_or(ConversationGenerationInputError::MissingModel)?;
@@ -1079,7 +1147,7 @@ where
         }) {
             return Ok(stored);
         }
-        self.live_model_snapshot(conversation.id, &profile, &account)
+        self.live_model_snapshot(conversation_id, &profile, &account)
             .map_err(|_| ConversationGenerationInputError::MissingModel)
     }
 
@@ -1139,13 +1207,21 @@ where
                 .map(|speaker| speaker.participant_id),
         )
         .map_err(|_| ConversationGenerationInputError::InvalidTurn)?;
-        let memory_settings = settings.memory.as_ref();
-        if memory_settings.is_some_and(|memory| !memory.selected_revision_ids.is_empty()) {
-            return Err(ConversationGenerationInputError::MemoryInputUnavailable);
-        }
         let global_settings = lettuce_settings::GlobalSettingsStore::load(self.repository)
             .map_err(ConversationGenerationInputError::Settings)?
             .settings;
+        let live_memory = crate::generation::live_sources::live_memory(
+            self.repository,
+            &aggregate.conversation,
+            &global_settings,
+        )
+        .map_err(|_| {
+            ConversationGenerationInputError::Context(ContextAssemblyError::ConversationUnavailable)
+        })?;
+        let memory_settings = live_memory.as_ref();
+        if memory_settings.is_some_and(|memory| !memory.selected_revision_ids.is_empty()) {
+            return Err(ConversationGenerationInputError::MemoryInputUnavailable);
+        }
         let group = matches!(aggregate.conversation.kind, ConversationKind::Group(_));
         let clock = crate::companion::companion_clock::companion_clock_context(
             self.repository,
@@ -1171,7 +1247,13 @@ where
             .filter(|_| turn.status != lettuce_conversations::GenerationTurnStatus::Recovering);
         let model = match recorded_model.or(turn.requested_model_override.clone()) {
             Some(model) => model,
-            None => self.live_chat_model(&aggregate.conversation, settings.model)?,
+            None => self.live_chat_model(
+                &aggregate.conversation,
+                settings.model,
+                selected_speaker
+                    .as_ref()
+                    .map(|speaker| speaker.participant_id),
+            )?,
         };
         let stored_model = ModelProfileRepository::get(self.repository, model.source_id)
             .map_err(ConversationGenerationInputError::ModelRepository)?
@@ -1393,25 +1475,31 @@ where
         conversation: &lettuce_conversations::Conversation,
         turn: &lettuce_conversations::GenerationTurn,
     ) -> Result<Option<SelectedSpeakerDecision>, ConversationGenerationInputError> {
-        let ConversationKind::Group(details) = &conversation.kind else {
+        if !matches!(conversation.kind, ConversationKind::Group(_)) {
             return Ok(None);
-        };
+        }
         if let Some(decision) = &turn.selected_speaker {
             return Ok(Some(decision.clone()));
         }
         let (participant_id, method, reference) = if let Some(participant_id) = turn.forced_speaker
         {
-            let method = match lettuce_conversations::effective_speaker_selection(conversation)
-                .unwrap_or(details.group.speaker_selection)
-            {
-                lettuce_conversations::GroupSpeakerSelectionSnapshot::Director => {
-                    SpeakerDecisionMethod::Director
-                }
-                lettuce_conversations::GroupSpeakerSelectionSnapshot::DirectorAction => {
-                    SpeakerDecisionMethod::DirectorAction
-                }
-                _ => SpeakerDecisionMethod::Explicit,
-            };
+            let method =
+                match crate::generation::live_sources::live_group(self.repository, conversation)
+                    .map_err(|_| {
+                        ConversationGenerationInputError::Context(
+                            ContextAssemblyError::ConversationUnavailable,
+                        )
+                    })?
+                    .map(|live| live.speaker_selection)
+                {
+                    Some(lettuce_conversations::GroupSpeakerSelectionSnapshot::Director) => {
+                        SpeakerDecisionMethod::Director
+                    }
+                    Some(lettuce_conversations::GroupSpeakerSelectionSnapshot::DirectorAction) => {
+                        SpeakerDecisionMethod::DirectorAction
+                    }
+                    _ => SpeakerDecisionMethod::Explicit,
+                };
             (participant_id, method, None)
         } else if let GenerationTarget::ExistingCandidate {
             message_id,

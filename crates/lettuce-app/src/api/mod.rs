@@ -7,7 +7,9 @@ mod app;
 mod assets;
 mod characters;
 mod context;
+mod conversation_delete;
 mod conversation_feed;
+mod conversation_settings;
 mod conversations;
 mod error;
 mod events;
@@ -20,7 +22,11 @@ mod startup;
 mod worker;
 
 #[cfg(test)]
+pub(crate) mod conversation_delete_tests;
+#[cfg(test)]
 mod conversation_list_tests;
+#[cfg(test)]
+mod conversation_settings_tests;
 #[cfg(test)]
 mod foundation_tests;
 #[cfg(test)]
@@ -32,6 +38,12 @@ pub use app::{app_status, app_ui_state_update, purge_notice_dismiss, purge_notic
 pub use assets::{AssetBytes, AssetRange, AssetRead, OPEN_RANGE_CHUNK, read_asset};
 pub use characters::characters_list;
 pub use context::{ApiContext, ApiContextParts, ApiDatabaseFiles, ApiMediaStore};
+pub use conversation_delete::conversation_delete;
+pub use conversation_settings::{
+    conversation_archive, conversation_participant_add, conversation_participant_update,
+    conversation_rename, conversation_restore, conversation_settings_get,
+    conversation_settings_update,
+};
 pub use conversations::{
     conversation_launch_direct, conversation_launch_group, conversation_messages,
     conversation_open, conversation_send, conversations_latest_by_character,

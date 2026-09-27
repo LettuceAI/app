@@ -696,6 +696,7 @@ impl AppBackend {
         inference: &'a I,
     ) -> crate::CompanionMemoryHostCoordinator<'a, Database, E, I> {
         crate::CompanionMemoryHostCoordinator::new(self.database.as_ref(), engine, inference)
+            .with_inference_runtime(self.inference_runtime.as_ref())
     }
 
     #[must_use]

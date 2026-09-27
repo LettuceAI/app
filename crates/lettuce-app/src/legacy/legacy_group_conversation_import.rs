@@ -182,19 +182,6 @@ where
         let ConversationKind::Group(details) = &plan.kind else {
             return Err(Error::InvalidInput);
         };
-        let (prompt_source_id, prompt_purpose, prompt_snapshot_purpose) =
-            match details.group.chat_mode {
-                lettuce_conversations::GroupChatModeSnapshot::Conversation => (
-                    session.group_conversation_prompt_source_id.as_deref(),
-                    lettuce_context::PromptPurpose::GroupChatConversational,
-                    lettuce_conversations::PromptPurposeSnapshot::GroupConversational,
-                ),
-                lettuce_conversations::GroupChatModeSnapshot::Roleplay => (
-                    session.group_roleplay_prompt_source_id.as_deref(),
-                    lettuce_context::PromptPurpose::GroupChatRoleplay,
-                    lettuce_conversations::PromptPurposeSnapshot::GroupRoleplay,
-                ),
-            };
         let speaker_selection = match session.speaker_selection.as_str() {
             "llm" => lettuce_conversations::GroupSpeakerSelectionSnapshot::Llm,
             "heuristic" => lettuce_conversations::GroupSpeakerSelectionSnapshot::Heuristic,
@@ -211,9 +198,19 @@ where
             context,
             SessionSettingsSource {
                 author_note: session.author_note.as_deref(),
-                prompt_source_id,
-                prompt_purposes: &[prompt_purpose],
-                prompt_snapshot_purpose,
+                prompt_source_id: session.group_conversation_prompt_source_id.as_deref(),
+                prompt_purposes: &[lettuce_context::PromptPurpose::GroupChatConversational],
+                prompt_snapshot_purpose:
+                    lettuce_conversations::PromptPurposeSnapshot::GroupConversational,
+                roleplay_prompt_source_id: session.group_roleplay_prompt_source_id.as_deref(),
+                participant_overrides: lettuce_conversations::ParticipantOverrides {
+                    members: session_override(&session.config_overrides_json, "characterIds"),
+                    muted: session_override(&session.config_overrides_json, "mutedCharacterIds"),
+                    member_models: session_override(
+                        &session.config_overrides_json,
+                        "characterModelOverrides",
+                    ),
+                },
                 lorebook_source_ids: session
                     .lorebooks_overridden
                     .then_some(session.lorebook_source_ids.as_slice()),

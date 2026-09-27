@@ -1,0 +1,186 @@
+use std::sync::Arc;
+
+use lettuce_contracts::{self as dto, ApiEvent, GenerationEvent};
+use lettuce_conversations::{
+    ConversationOverviewReader, ConversationReader, ConversationRepositoryError, InferencePort,
+};
+use lettuce_types::ConversationId;
+
+use super::tests::{
+    Harness, RecordingEvents, RecordingStream, Reply, StdFiles, harness, launch, send,
+};
+use super::*;
+use crate::AppBackend;
+
+/// An API context over `backend` that answers every provider call with
+/// `inference`.
+pub(crate) fn context_over(
+    backend: Arc<AppBackend>,
+    inference: Arc<dyn InferencePort>,
+) -> ApiContext {
+    ApiContext::new(ApiContextParts {
+        backend,
+        secret_store: Arc::new(lettuce_settings::InMemorySecretStore::new()),
+        inference,
+        models: Arc::new(NoModels),
+        media: None,
+        events: Arc::new(RecordingEvents::default()),
+        clock: Arc::new(lettuce_jobs::SystemClock),
+        files: Arc::new(StdFiles),
+        app_folder: None,
+        resource_dir: None,
+        database_files: None,
+        asset_url_base: "test-asset://host".into(),
+    })
+}
+
+fn gone(context: &ApiContext, conversation_id: &str) -> bool {
+    matches!(
+        ConversationReader::get(
+            context.backend().database(),
+            conversation_id.parse::<ConversationId>().expect("id"),
+        ),
+        Err(ConversationRepositoryError::NotFound)
+    )
+}
+
+async fn delete(harness: &Harness, conversation_id: &str) -> Result<(), dto::ApiError> {
+    conversation_delete(
+        &harness.context,
+        dto::ConversationRequest {
+            conversation_id: conversation_id.into(),
+        },
+    )
+    .await
+}
+
+/// A delete during a streaming reply cancels the reply, waits for it to
+/// settle and then deletes the chat; the caller never sees `Busy`. A
+/// repeated delete succeeds.
+#[tokio::test(flavor = "multi_thread")]
+async fn deleting_a_chat_while_it_streams_cancels_the_reply_first() {
+    let harness = harness(Reply::UntilCancelled);
+    let chat = launch(&harness, "delete-streaming").await;
+    let stream = Arc::new(RecordingStream::default());
+    let accepted = send(
+        &harness,
+        &chat,
+        "delete-streaming-send",
+        "Wait",
+        stream.clone(),
+    )
+    .await
+    .expect("send");
+    let worker = ConversationGenerationWorker::new(harness.context.clone());
+    let (ran, deleted) = tokio::join!(worker.run_once(), async {
+        harness.provider.entered.notified().await;
+        delete(&harness, &chat).await
+    });
+    assert!(ran.expect("worker ran"));
+    deleted.expect("the delete waited for the cancelled reply");
+    assert!(gone(&harness.context, &chat));
+    assert!(stream.events().iter().any(|event| matches!(
+        event,
+        GenerationEvent::Cancelled { turn_id } if *turn_id == accepted.turn_id
+    )));
+    harness
+        .events
+        .until(|events| {
+            events.iter().any(|event| {
+                matches!(event, ApiEvent::GenerationSettled { turn_id, .. } if *turn_id == accepted.turn_id)
+            })
+        })
+        .await;
+    delete(&harness, &chat)
+        .await
+        .expect("deleting a deleted chat succeeds");
+}
+
+/// A delete of a chat whose reply is still queued settles the reply at once.
+#[tokio::test(flavor = "multi_thread")]
+async fn deleting_a_chat_with_a_queued_reply_settles_it_and_deletes() {
+    let harness = harness(Reply::Text("Never sent."));
+    let chat = launch(&harness, "delete-queued").await;
+    let stream = Arc::new(RecordingStream::default());
+    send(
+        &harness,
+        &chat,
+        "delete-queued-send",
+        "Hello",
+        stream.clone(),
+    )
+    .await
+    .expect("send");
+    delete(&harness, &chat).await.expect("delete");
+    assert!(gone(&harness.context, &chat));
+    assert!(
+        stream
+            .events()
+            .iter()
+            .any(|event| matches!(event, GenerationEvent::Cancelled { .. }))
+    );
+    assert!(
+        harness
+            .provider
+            .requests
+            .lock()
+            .expect("requests")
+            .is_empty()
+    );
+}
+
+/// The app stopping between a delete's cancellation and its purge leaves the
+/// cancelled turn to restart recovery; the next delete then completes.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_delete_interrupted_between_cancel_and_purge_completes_next_time() {
+    let harness = harness(Reply::UntilCancelled);
+    let chat = launch(&harness, "delete-crash").await;
+    let conversation_id: ConversationId = chat.parse().expect("id");
+    send(
+        &harness,
+        &chat,
+        "delete-crash-send",
+        "Wait",
+        Arc::new(RecordingStream::default()),
+    )
+    .await
+    .expect("send");
+    let worker = ConversationGenerationWorker::new(harness.context.clone());
+    let running = tokio::spawn(async move { worker.run_once().await });
+    harness.provider.entered.notified().await;
+    running.abort();
+    let _ = running.await;
+    harness
+        .context
+        .blocking(move |context| {
+            super::conversation_delete::cancel_conversation_work(context, conversation_id)
+        })
+        .await
+        .expect("the cancellation is recorded");
+    let turn = ConversationOverviewReader::live_turn(
+        harness.context.backend().database(),
+        conversation_id,
+    )
+    .expect("live turn")
+    .expect("the reply is still unsettled");
+    let job_id = ConversationReader::get_turn(harness.context.backend().database(), turn)
+        .expect("turn")
+        .attempts
+        .iter()
+        .find_map(|attempt| attempt.job_id)
+        .expect("job");
+    assert_eq!(
+        lettuce_jobs::JobStore::get(harness.context.backend().database(), job_id)
+            .expect("job")
+            .expect("job exists")
+            .state,
+        lettuce_jobs::JobState::CancellationRequested,
+        "the cancellation was recorded before the app stopped"
+    );
+    harness
+        .context
+        .recover_after_restart()
+        .expect("restart recovery");
+    delete(&harness, &chat).await.expect("delete after restart");
+    assert!(gone(&harness.context, &chat));
+}

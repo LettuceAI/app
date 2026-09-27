@@ -4,8 +4,7 @@ use lettuce_companions::CompanionStateRepository;
 use lettuce_context::{LifecycleStatus, PromptDocument, PromptPurpose, PromptRepository};
 use lettuce_conversations::{
     ConversationKind, ConversationReader, ConversationRepositoryError, GenerationOperation,
-    InferencePort, MemoryModeSnapshot, OutputPolicy, ResolvedInferenceProfile, SafetyContext,
-    ToolPolicy, effective_memory,
+    InferencePort, OutputPolicy, ResolvedInferenceProfile, SafetyContext, ToolPolicy,
 };
 use lettuce_jobs::{CancellationReason, JobStore, ResourceAvailability, WorkerId};
 use lettuce_memory::{DynamicMemoryRunMode, DynamicMemoryStructuredFallbackFormat, MemoryPolicy};
@@ -26,16 +25,20 @@ use crate::{
 /// Whether a conversation runs dynamic memory now: its memory mode is
 /// dynamic and, for a one-to-one chat, the global dynamic memory switch is on
 /// (group chats have no global switch).
-pub(crate) fn dynamic_memory_on(
+pub(crate) fn dynamic_memory_on<S>(
+    sources: &S,
     conversation: &lettuce_conversations::Conversation,
     settings: &lettuce_settings::GlobalSettings,
-) -> bool {
-    let dynamic_session = effective_memory(conversation)
-        .is_some_and(|memory| memory.mode == MemoryModeSnapshot::Dynamic);
-    match conversation.kind {
+) -> Result<bool, lettuce_characters::RepositoryError>
+where
+    S: lettuce_characters::CharacterRepository + lettuce_characters::GroupRepository + ?Sized,
+{
+    let dynamic_session =
+        crate::generation::live_sources::live_memory_is_dynamic(sources, conversation, settings)?;
+    Ok(match conversation.kind {
         ConversationKind::Group(_) => dynamic_session,
         ConversationKind::Direct(_) => dynamic_session && settings.dynamic_memory.enabled,
-    }
+    })
 }
 
 /// Everything the memory job runner reads from live settings and the
@@ -99,6 +102,7 @@ pub trait CompanionMemoryHostSources:
     + lettuce_companions::CompanionTurnEffectRepository
     + CompanionStateRepository
     + lettuce_characters::CharacterRepository
+    + lettuce_characters::GroupRepository
     + GlobalSettingsStore
     + ConversationReader
     + ModelProfileRepository
@@ -120,6 +124,7 @@ impl<T> CompanionMemoryHostSources for T where
         + lettuce_companions::CompanionTurnEffectRepository
         + CompanionStateRepository
         + lettuce_characters::CharacterRepository
+        + lettuce_characters::GroupRepository
         + GlobalSettingsStore
         + ConversationReader
         + ModelProfileRepository
@@ -138,6 +143,7 @@ pub struct CompanionMemoryHostCoordinator<'a, R: ?Sized, E: ?Sized, I: ?Sized> {
     repository: &'a R,
     engine: &'a E,
     inference: &'a I,
+    inference_runtime: Option<&'a lettuce_inference::InferenceRuntime>,
 }
 
 impl<'a, R: ?Sized, E: ?Sized, I: ?Sized> CompanionMemoryHostCoordinator<'a, R, E, I> {
@@ -147,7 +153,32 @@ impl<'a, R: ?Sized, E: ?Sized, I: ?Sized> CompanionMemoryHostCoordinator<'a, R, 
             repository,
             engine,
             inference,
+            inference_runtime: None,
         }
+    }
+
+    /// Registers each running cycle's cancellation under its job, so a
+    /// cancellation by job id (a conversation delete) stops it.
+    #[must_use]
+    pub const fn with_inference_runtime(
+        mut self,
+        runtime: &'a lettuce_inference::InferenceRuntime,
+    ) -> Self {
+        self.inference_runtime = Some(runtime);
+        self
+    }
+}
+
+/// A running cycle's cancellation, registered under its job until the cycle
+/// ends.
+struct CycleCancellation<'a> {
+    runtime: &'a lettuce_inference::InferenceRuntime,
+    job_id: lettuce_types::JobId,
+}
+
+impl Drop for CycleCancellation<'_> {
+    fn drop(&mut self) {
+        let _ = self.runtime.unregister_cancellation(self.job_id);
     }
 }
 
@@ -337,7 +368,9 @@ where
         let settings = GlobalSettingsStore::load(self.repository)
             .map_err(CompanionMemoryHostError::Settings)?
             .settings;
-        if !dynamic_memory_on(&aggregate.conversation, &settings) {
+        if !dynamic_memory_on(self.repository, &aggregate.conversation, &settings)
+            .map_err(CompanionMemoryHostError::Character)?
+        {
             return Ok(None);
         }
         let dynamic = if matches!(aggregate.conversation.kind, ConversationKind::Group(_)) {
@@ -518,6 +551,15 @@ where
             }
         };
         let engine = self.engine;
+        let _registered = self.inference_runtime.and_then(|runtime| {
+            runtime
+                .register_cancellation(work.handle.id(), work.handle.cancellation_token())
+                .ok()
+                .map(|()| CycleCancellation {
+                    runtime,
+                    job_id: work.handle.id(),
+                })
+        });
         let result = CompanionMemoryJobRunner::new(
             self.engine,
             self.repository,

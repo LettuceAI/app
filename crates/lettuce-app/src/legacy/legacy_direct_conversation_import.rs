@@ -136,6 +136,12 @@ pub(crate) struct SessionSettingsSource<'a> {
     pub chat_mode: Option<lettuce_conversations::GroupChatModeSnapshot>,
     /// A group session's own `disableCharacterLorebooks` override.
     pub disable_character_lorebooks: Option<bool>,
+    /// A group session's roleplay-mode prompt, kept in its own slot.
+    pub roleplay_prompt_source_id: Option<&'a str>,
+    /// Which of its members, muted flags and member models a group session
+    /// set itself (`characterIds`, `mutedCharacterIds`,
+    /// `characterModelOverrides`).
+    pub participant_overrides: lettuce_conversations::ParticipantOverrides,
 }
 
 /// One legacy chat row in the shape both direct and group sessions share.
@@ -593,6 +599,8 @@ where
                 persona_disabled: session.persona_disabled,
                 chat_mode: None,
                 disable_character_lorebooks: None,
+                roleplay_prompt_source_id: None,
+                participant_overrides: lettuce_conversations::ParticipantOverrides::default(),
                 model_settings: &session.generation_settings.model_settings,
                 background: context.background(
                     &session.source_id,
@@ -1124,36 +1132,50 @@ pub(crate) fn session_settings<S: DirectLaunchSources>(
         .author_note
         .filter(|note| !note.trim().is_empty())
         .map(str::to_owned);
-    let mut prompt = None;
-    if let Some(destination) = input
-        .prompt_source_id
-        .and_then(|id| context.prompts.get(id))
-    {
-        for purpose in input.prompt_purposes {
+    let mut prompt_snapshot = |prompt_source_id: Option<&str>,
+                               purposes: &[lettuce_context::PromptPurpose],
+                               purpose: lettuce_conversations::PromptPurposeSnapshot,
+                               slot: &str|
+     -> Result<Option<PromptLaunchSnapshot>, Error> {
+        let Some(destination) = prompt_source_id.and_then(|id| context.prompts.get(id)) else {
+            return Ok(None);
+        };
+        for lookup in purposes {
             if let PromptLookupResult::Available { document } =
-                PromptRepository::lookup_exact(sources, *destination, *purpose)
+                PromptRepository::lookup_exact(sources, *destination, *lookup)
                     .map_err(|_| Error::Storage)?
             {
                 let draft = crate::launch::documents::draft(
-                    SnapshotArtifactId::from_uuid(
-                        context.scope.derived(source_id, "settings:prompt"),
-                    ),
+                    SnapshotArtifactId::from_uuid(context.scope.derived(source_id, slot)),
                     document.revision,
                     crate::launch::documents::prompt_body(&document),
                 )
                 .map_err(|_| Error::InvalidInput)?;
-                prompt = Some(PromptLaunchSnapshot {
+                let snapshot = PromptLaunchSnapshot {
                     snapshot_ref: draft.reference(),
                     source_id: document.id,
                     source_revision: document.revision,
                     title: document.name.clone(),
-                    purpose: input.prompt_snapshot_purpose,
-                });
+                    purpose,
+                };
                 drafts.push(draft);
-                break;
+                return Ok(Some(snapshot));
             }
         }
-    }
+        Ok(None)
+    };
+    let prompt = prompt_snapshot(
+        input.prompt_source_id,
+        input.prompt_purposes,
+        input.prompt_snapshot_purpose,
+        "settings:prompt",
+    )?;
+    let roleplay_prompt = prompt_snapshot(
+        input.roleplay_prompt_source_id,
+        &[lettuce_context::PromptPurpose::GroupChatRoleplay],
+        lettuce_conversations::PromptPurposeSnapshot::GroupRoleplay,
+        "settings:roleplay-prompt",
+    )?;
     let lorebooks = input
         .lorebook_source_ids
         .map(|ids| {
@@ -1217,6 +1239,8 @@ pub(crate) fn session_settings<S: DirectLaunchSources>(
         && !input.persona_disabled
         && input.chat_mode.is_none()
         && input.disable_character_lorebooks.is_none()
+        && roleplay_prompt.is_none()
+        && !input.participant_overrides.any()
     {
         return Ok((None, drafts));
     }
@@ -1250,11 +1274,11 @@ pub(crate) fn session_settings<S: DirectLaunchSources>(
             speaker_selection: input.speaker_selection,
             chat_mode: input.chat_mode,
             disable_character_lorebooks: input.disable_character_lorebooks,
-            roleplay_prompt: None,
-            roleplay_prompt_provenance: Default::default(),
-            members_overridden: false,
-            muted_overridden: false,
-            member_models_overridden: false,
+            roleplay_prompt_provenance: provenance(roleplay_prompt.is_some()),
+            roleplay_prompt,
+            members_overridden: input.participant_overrides.members,
+            muted_overridden: input.participant_overrides.muted,
+            member_models_overridden: input.participant_overrides.member_models,
         }),
         drafts,
     ))

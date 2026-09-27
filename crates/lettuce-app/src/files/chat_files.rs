@@ -153,6 +153,8 @@ where
                 persona_disabled: false,
                 chat_mode: None,
                 disable_character_lorebooks: None,
+                roleplay_prompt_source_id: None,
+                participant_overrides: lettuce_conversations::ParticipantOverrides::default(),
                 model_settings: &model_settings,
                 background: None,
                 companion_clock: launch_companion
@@ -365,6 +367,8 @@ where
                 persona_disabled: false,
                 chat_mode: None,
                 disable_character_lorebooks: None,
+                roleplay_prompt_source_id: None,
+                participant_overrides: lettuce_conversations::ParticipantOverrides::default(),
                 model_settings: &lettuce_models::ModelSettingsLayer::default(),
                 background: None,
                 companion_clock: None,

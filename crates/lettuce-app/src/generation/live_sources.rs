@@ -2,21 +2,26 @@
 //! conversation's persona, group and characters, re-read each turn.
 
 use lettuce_characters::{
-    GroupProfile, GroupRepository, LifecycleStatus, Persona, PersonaRepository, RepositoryError,
-    Selection,
+    CharacterRepository, GroupProfile, GroupRepository, GroupStartingScene, LifecycleStatus,
+    Persona, PersonaRepository, RepositoryError, Selection,
 };
 use lettuce_conversations::{
-    Conversation, ConversationKind, GroupChatModeSnapshot, SettingProvenance, SnapshotSelection,
+    Conversation, ConversationKind, ConversationParticipant, GroupChatModeSnapshot,
+    GroupSpeakerSelectionSnapshot, MemoryModeSnapshot, MemorySettingsSnapshot, ParticipantSource,
+    SettingProvenance, SnapshotSelection,
 };
+use lettuce_types::{CharacterId, ModelProfileId};
 
-/// A group conversation's live profile and the group settings a turn uses:
-/// the conversation's own chat mode and character-lorebook switch, else the
-/// group's current values, else the launch values when the group no longer
+/// A group conversation's live profile and the group settings a turn uses.
+/// Each value is the conversation's own when it overrides it, else the
+/// group's current one, else the launch value when the group no longer
 /// exists.
 pub(crate) struct LiveGroup {
     pub(crate) profile: Option<GroupProfile>,
+    pub(crate) starting_scene: Option<GroupStartingScene>,
     pub(crate) chat_mode: GroupChatModeSnapshot,
     pub(crate) disable_character_lorebooks: bool,
+    pub(crate) speaker_selection: GroupSpeakerSelectionSnapshot,
 }
 
 pub(crate) fn live_group<S: GroupRepository + ?Sized>(
@@ -27,7 +32,10 @@ pub(crate) fn live_group<S: GroupRepository + ?Sized>(
         return Ok(None);
     };
     let launch = &details.group;
-    let profile = sources.get(launch.source_id)?.map(|details| details.group);
+    let (profile, starting_scene) = match sources.get(launch.source_id)? {
+        Some(details) => (Some(details.group), details.starting_scene),
+        None => (None, None),
+    };
     let own = conversation.current_settings.as_ref();
     let chat_mode = own
         .and_then(|settings| settings.chat_mode)
@@ -45,11 +53,226 @@ pub(crate) fn live_group<S: GroupRepository + ?Sized>(
                 .map(|profile| profile.disable_character_lorebooks)
         })
         .unwrap_or(launch.disable_character_lorebook);
+    let speaker_selection = own
+        .filter(|settings| {
+            settings.speaker_selection_provenance == SettingProvenance::CurrentOverride
+        })
+        .and_then(|settings| settings.speaker_selection)
+        .or_else(|| {
+            profile.as_ref().map(|profile| {
+                crate::launch::policy::group_speaker_selection(profile.speaker_selection)
+            })
+        })
+        .unwrap_or(launch.speaker_selection);
     Ok(Some(LiveGroup {
         profile,
+        starting_scene,
         chat_mode,
         disable_character_lorebooks,
+        speaker_selection,
     }))
+}
+
+/// The participants a group turn uses. Each aspect the conversation owns
+/// (its member list, muted flags) comes from its own rows; otherwise a
+/// character is enabled while it is one of the group's current members and
+/// muted as the group mutes it. When the group no longer exists, launch
+/// members keep their launch values and later members their rows. A
+/// one-to-one chat's participants are its rows.
+pub(crate) fn effective_participants(
+    conversation: &Conversation,
+    profile: Option<&GroupProfile>,
+) -> Vec<ConversationParticipant> {
+    let ConversationKind::Group(details) = &conversation.kind else {
+        return conversation.participants.clone();
+    };
+    let own = conversation.current_settings.as_ref();
+    let members_owned = own.is_some_and(|settings| settings.members_overridden);
+    let muted_owned = own.is_some_and(|settings| settings.muted_overridden);
+    conversation
+        .participants
+        .iter()
+        .map(|participant| {
+            let mut participant = participant.clone();
+            let ParticipantSource::Character(character_id) = participant.source else {
+                return participant;
+            };
+            match profile {
+                Some(profile) => {
+                    let member = profile
+                        .members
+                        .iter()
+                        .find(|member| member.character_id == character_id);
+                    if !members_owned {
+                        participant.enabled = member.is_some();
+                    }
+                    if !muted_owned && let Some(member) = member {
+                        participant.muted = member.muted;
+                    }
+                }
+                None => {
+                    let launch = details
+                        .initial_participant_policy
+                        .members
+                        .iter()
+                        .find(|policy| policy.participant_id == participant.id);
+                    if let Some(launch) = launch {
+                        if !members_owned {
+                            participant.enabled = launch.enabled;
+                        }
+                        if !muted_owned {
+                            participant.muted = launch.muted;
+                        }
+                    }
+                }
+            }
+            participant
+        })
+        .collect()
+}
+
+/// The group's current members a group conversation has no row for yet, in
+/// cast order. Empty while the conversation owns its member list, for a
+/// group that no longer exists and for a one-to-one chat.
+pub(crate) fn missing_group_members(
+    conversation: &Conversation,
+    profile: Option<&GroupProfile>,
+) -> Vec<CharacterId> {
+    let (ConversationKind::Group(_), Some(profile)) = (&conversation.kind, profile) else {
+        return Vec::new();
+    };
+    if conversation
+        .current_settings
+        .as_ref()
+        .is_some_and(|settings| settings.members_overridden)
+    {
+        return Vec::new();
+    }
+    let mut members = profile.members.iter().collect::<Vec<_>>();
+    members.sort_by_key(|member| member.ordinal);
+    members
+        .into_iter()
+        .map(|member| member.character_id)
+        .filter(|character_id| {
+            !conversation.participants.iter().any(|participant| {
+                participant.source == ParticipantSource::Character(*character_id)
+            })
+        })
+        .collect()
+}
+
+/// Where a group speaker's model comes from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum MemberModel {
+    /// A model the conversation chose: its own model override, or a
+    /// participant model it owns.
+    Snapshot(lettuce_conversations::ModelSelectionSnapshot),
+    /// The group's current model for the member.
+    Profile(ModelProfileId),
+    /// The character's current default model, then the app default.
+    Live,
+}
+
+/// A group speaker's model: the conversation's own model override, then the
+/// participant's own model when the conversation owns the members' models
+/// (or the group no longer exists), else the group's current model for the
+/// member; without either, the character's live default.
+pub(crate) fn member_model(
+    conversation: &Conversation,
+    participant: &ConversationParticipant,
+    profile: Option<&GroupProfile>,
+) -> MemberModel {
+    let own = conversation.current_settings.as_ref();
+    if let Some(model) = own
+        .filter(|settings| settings.model_provenance == SettingProvenance::CurrentOverride)
+        .and_then(|settings| settings.model_override.clone())
+    {
+        return MemberModel::Snapshot(model);
+    }
+    let owned = own.is_some_and(|settings| settings.member_models_overridden);
+    match (profile, owned) {
+        (Some(profile), false) => {
+            let ParticipantSource::Character(character_id) = participant.source else {
+                return MemberModel::Live;
+            };
+            profile
+                .members
+                .iter()
+                .find(|member| member.character_id == character_id)
+                .and_then(|member| member.model_profile_override)
+                .map_or(MemberModel::Live, MemberModel::Profile)
+        }
+        _ => match &participant.model_selection {
+            SnapshotSelection::Explicit(model) => MemberModel::Snapshot(model.clone()),
+            SnapshotSelection::Inherited(_) | SnapshotSelection::Disabled => MemberModel::Live,
+        },
+    }
+}
+
+/// The memory settings a conversation runs with now: its own setting, else
+/// the live character's memory mode (one-to-one) or the group's current one,
+/// else the launch value when the source no longer exists. A live mode equal
+/// to the launch mode keeps the launch settings, frozen policy included; a
+/// different one takes the current global policy, as a launch would.
+pub(crate) fn live_memory<S: CharacterRepository + GroupRepository + ?Sized>(
+    sources: &S,
+    conversation: &Conversation,
+    settings: &lettuce_settings::GlobalSettings,
+) -> Result<Option<MemorySettingsSnapshot>, RepositoryError> {
+    if let Some(own) = conversation.current_settings.as_ref() {
+        match own.memory_provenance {
+            SettingProvenance::CurrentOverride => return Ok(own.memory.clone()),
+            SettingProvenance::Disabled => return Ok(None),
+            SettingProvenance::LaunchInherited => {}
+        }
+    }
+    let (launch, live_mode, policy) = match &conversation.kind {
+        ConversationKind::Direct(details) => (
+            selection_value(&details.memory),
+            CharacterRepository::get(sources, details.character.source_id)?
+                .map(|character| crate::launch::policy::memory_mode(&character.character.defaults)),
+            &settings.dynamic_memory,
+        ),
+        ConversationKind::Group(details) => (
+            selection_value(&details.group.memory),
+            GroupRepository::get(sources, details.group.source_id)?
+                .map(|group| crate::launch::policy::memory_mode_of(group.group.memory_policy)),
+            settings.effective_group_dynamic_memory(),
+        ),
+    };
+    Ok(match live_mode {
+        Some(mode) if launch.as_ref().is_none_or(|launch| launch.mode != mode) => {
+            Some(MemorySettingsSnapshot {
+                policy_ref: None,
+                mode,
+                selected_revision_ids: Vec::new(),
+                dynamic_policy: crate::launch::planner::dynamic_memory_policy_snapshot(
+                    mode, policy,
+                ),
+            })
+        }
+        _ => launch,
+    })
+}
+
+/// Whether the conversation's memory mode is dynamic now (before the global
+/// switch one-to-one chats also need).
+pub(crate) fn live_memory_is_dynamic<S: CharacterRepository + GroupRepository + ?Sized>(
+    sources: &S,
+    conversation: &Conversation,
+    settings: &lettuce_settings::GlobalSettings,
+) -> Result<bool, RepositoryError> {
+    Ok(live_memory(sources, conversation, settings)?
+        .is_some_and(|memory| memory.mode == MemoryModeSnapshot::Dynamic))
+}
+
+fn selection_value<T: Clone>(selection: &SnapshotSelection<T>) -> Option<T> {
+    match selection {
+        SnapshotSelection::Inherited(value) | SnapshotSelection::Explicit(value) => {
+            Some(value.clone())
+        }
+        SnapshotSelection::Disabled => None,
+    }
 }
 
 /// The persona a turn speaks to, read live. A persona the conversation turned

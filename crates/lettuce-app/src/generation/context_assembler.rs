@@ -136,7 +136,35 @@ where
                 self.live_group_prompt(&aggregate.conversation, group, speaker_character)?
             }
         };
-        snapshot.read_live_characters(self.sources, live_group.as_ref())?;
+        let owned_cast = live_group
+            .as_ref()
+            .filter(|_| {
+                aggregate
+                    .conversation
+                    .current_settings
+                    .as_ref()
+                    .is_some_and(|settings| settings.members_overridden)
+            })
+            .map(|_| {
+                let mut participants = aggregate
+                    .conversation
+                    .participants
+                    .iter()
+                    .filter(|participant| participant.enabled)
+                    .collect::<Vec<_>>();
+                participants.sort_by_key(|participant| participant.ordinal);
+                participants
+                    .into_iter()
+                    .filter_map(|participant| match participant.source {
+                        lettuce_conversations::ParticipantSource::Character(id) => Some(id),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+            });
+        snapshot.read_live_characters(self.sources, live_group.as_ref(), owned_cast.as_deref())?;
+        if let Some(group) = &live_group {
+            snapshot.follow_group_scene(&aggregate.conversation, group);
+        }
         let TimelineSelection {
             window: selected_window,
             omitted_messages,
@@ -693,18 +721,23 @@ where
         speaker: Option<CharacterId>,
     ) -> Result<Option<PromptSnapshot>, ContextAssemblyError> {
         let unavailable = || ContextAssemblyError::ConversationUnavailable;
-        let selected = match conversation
-            .current_settings
-            .as_ref()
-            .map(|settings| (settings.prompt_provenance, settings.prompt.as_ref()))
-        {
+        let roleplay = live.chat_mode == lettuce_conversations::GroupChatModeSnapshot::Roleplay;
+        let selected = match conversation.current_settings.as_ref().map(|settings| {
+            if roleplay {
+                (
+                    settings.roleplay_prompt_provenance,
+                    settings.roleplay_prompt.as_ref(),
+                )
+            } else {
+                (settings.prompt_provenance, settings.prompt.as_ref())
+            }
+        }) {
             Some((SettingProvenance::Disabled, _)) => return Ok(None),
             Some((SettingProvenance::CurrentOverride, prompt)) => {
                 prompt.map(|prompt| prompt.source_id)
             }
             _ => None,
         };
-        let roleplay = live.chat_mode == lettuce_conversations::GroupChatModeSnapshot::Roleplay;
         let member = speaker
             .map(|id| CharacterRepository::get(self.sources, id))
             .transpose()
@@ -1404,11 +1437,19 @@ fn conversation_order(
     Ok(chain)
 }
 
+struct BundleScene {
+    reference: Option<lettuce_conversations::ProtectedSnapshotRef>,
+    source_id: lettuce_types::SceneId,
+    body: SceneSnapshotBodyV1,
+}
+
 struct SnapshotBundle {
     characters: Vec<(ConversationParticipant, CharacterSnapshotBodyV1)>,
     persona: Option<PersonaSnapshotBodyV1>,
     prompt: Option<PromptSnapshot>,
-    scene: Option<(SceneLaunchSnapshot, SceneSnapshotBodyV1)>,
+    /// The scene's launch or override reference (which ties it to the
+    /// timeline's scene message), its id and body.
+    scene: Option<BundleScene>,
     /// A group's current members in cast order, for `{{group_characters}}`.
     group_members: Vec<CharacterSnapshotBodyV1>,
 }
@@ -1468,6 +1509,22 @@ impl SnapshotBundle {
                         .ok_or(ContextAssemblyError::MissingSpeaker)?;
                     characters.push((participant, body));
                 }
+                let added = aggregate
+                    .conversation
+                    .participants
+                    .iter()
+                    .filter_map(|participant| {
+                        participant
+                            .member_snapshot
+                            .as_deref()
+                            .map(|member| (participant, member))
+                    })
+                    .collect::<Vec<_>>();
+                for (participant, member) in added {
+                    let body =
+                        materialize_character(materializer, conversation_id, &member.character)?;
+                    characters.push((participant.clone(), body));
+                }
             }
         }
         let persona = settings
@@ -1488,8 +1545,11 @@ impl SnapshotBundle {
             .scene
             .as_ref()
             .map(|snapshot| {
-                materialize_scene(materializer, conversation_id, snapshot)
-                    .map(|body| (snapshot.clone(), body))
+                materialize_scene(materializer, conversation_id, snapshot).map(|body| BundleScene {
+                    reference: Some(snapshot.snapshot_ref.clone()),
+                    source_id: snapshot.source_id,
+                    body,
+                })
             })
             .transpose()?;
         let group_members = match &aggregate.conversation.kind {
@@ -1513,6 +1573,7 @@ impl SnapshotBundle {
         &mut self,
         sources: &S,
         group: Option<&crate::generation::live_sources::LiveGroup>,
+        owned_cast: Option<&[CharacterId]>,
     ) -> Result<(), ContextAssemblyError> {
         let live = |id: CharacterId| {
             CharacterRepository::get(sources, id)
@@ -1527,13 +1588,25 @@ impl SnapshotBundle {
                 *body = current;
             }
         }
-        match group.and_then(|group| group.profile.as_ref()) {
-            Some(profile) => {
+        let cast = match (owned_cast, group.and_then(|group| group.profile.as_ref())) {
+            (Some(cast), _) => Some(cast.to_vec()),
+            (None, Some(profile)) => {
                 let mut members = profile.members.iter().collect::<Vec<_>>();
                 members.sort_by_key(|member| member.ordinal);
-                self.group_members = members
+                Some(
+                    members
+                        .into_iter()
+                        .map(|member| member.character_id)
+                        .collect(),
+                )
+            }
+            (None, None) => None,
+        };
+        match cast {
+            Some(cast) => {
+                self.group_members = cast
                     .into_iter()
-                    .map(|member| live(member.character_id))
+                    .map(live)
                     .collect::<Result<Vec<_>, _>>()?
                     .into_iter()
                     .flatten()
@@ -1550,11 +1623,51 @@ impl SnapshotBundle {
         Ok(())
     }
 
+    /// A group conversation that does not choose its own scene follows the
+    /// group's current starting scene. The launch scene's reference is kept
+    /// while the group still starts with it, so an edited scene message
+    /// still applies.
+    fn follow_group_scene(
+        &mut self,
+        conversation: &lettuce_conversations::Conversation,
+        group: &crate::generation::live_sources::LiveGroup,
+    ) {
+        let own = conversation
+            .current_settings
+            .as_ref()
+            .is_some_and(|settings| {
+                settings.scene_provenance != SettingProvenance::LaunchInherited
+            });
+        let Some(profile) = group.profile.as_ref().filter(|_| !own) else {
+            return;
+        };
+        let live = profile.starting_scene_id.and_then(|scene_id| {
+            group.starting_scene.as_ref().filter(|starting| {
+                starting.scene.id == scene_id
+                    && starting.scene.status == lettuce_characters::LifecycleStatus::Active
+            })
+        });
+        self.scene = live.map(|starting| BundleScene {
+            reference: self
+                .scene
+                .as_ref()
+                .filter(|scene| scene.source_id == starting.scene.id)
+                .and_then(|scene| scene.reference.clone()),
+            source_id: starting.scene.id,
+            body: crate::launch::documents::scene_body(&starting.scene, &starting.variants),
+        });
+    }
+
     fn scene_values(
         &self,
         timeline: &[&TimelineItem],
     ) -> Result<(String, String), ContextAssemblyError> {
-        let Some((snapshot, body)) = self.scene.as_ref() else {
+        let Some(BundleScene {
+            reference,
+            source_id,
+            body,
+        }) = self.scene.as_ref()
+        else {
             return Ok((String::new(), String::new()));
         };
         let (mut content, mut direction) = selected_scene_content(body);
@@ -1567,7 +1680,7 @@ impl SnapshotBundle {
                             origin,
                             lettuce_conversations::InitialMessageOrigin::SelectedScene {
                                 snapshot_ref
-                            } if snapshot_ref == &snapshot.snapshot_ref
+                            } if Some(snapshot_ref) == reference.as_ref()
                         )
                     })
                     && parts(item).iter().any(|part| {
@@ -1579,7 +1692,7 @@ impl SnapshotBundle {
                                     AnnotationPayload::SceneEdited {
                                         scene_id: Some(scene_id),
                                         ..
-                                    } if scene_id == snapshot.source_id
+                                    } if scene_id == *source_id
                                 )
                         )
                     })
@@ -1596,7 +1709,7 @@ impl SnapshotBundle {
                                 direction,
                             } = annotation.payload
                             {
-                                if scene_id == Some(snapshot.source_id) {
+                                if scene_id == Some(*source_id) {
                                     override_direction = direction;
                                 }
                             }
@@ -3272,7 +3385,11 @@ mod tests {
             characters: Vec::new(),
             persona: None,
             prompt: None,
-            scene: Some((snapshot, body)),
+            scene: Some(BundleScene {
+                reference: Some(snapshot.snapshot_ref.clone()),
+                source_id: snapshot.source_id,
+                body,
+            }),
             group_members: Vec::new(),
         };
         let (scene, direction) = bundle.scene_values(&[&item]).expect("scene");

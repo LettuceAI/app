@@ -135,27 +135,52 @@ pub(crate) fn direct_prompt<S: PromptRepository + ?Sized>(
     character: Option<PromptDocumentId>,
     app_default: Option<PromptDocumentId>,
 ) -> Result<Option<PromptDocument>, PromptRepositoryError> {
+    Ok(
+        direct_prompt_with_source(sources, selected, starter, character, app_default)?
+            .map(|(document, _)| document),
+    )
+}
+
+/// Which step of a prompt chain answered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PromptSource {
+    Conversation,
+    Starter,
+    Character,
+    Group,
+    AppDefault,
+}
+
+/// `direct_prompt` and the step that answered.
+pub(crate) fn direct_prompt_with_source<S: PromptRepository + ?Sized>(
+    sources: &S,
+    selected: Option<PromptDocumentId>,
+    starter: Option<PromptDocumentId>,
+    character: Option<PromptDocumentId>,
+    app_default: Option<PromptDocumentId>,
+) -> Result<Option<(PromptDocument, PromptSource)>, PromptRepositoryError> {
     let candidates = selected
         .into_iter()
         .flat_map(|id| {
             DIRECT_SELECTION_PURPOSES
                 .into_iter()
-                .map(move |purpose| (id, purpose))
+                .map(move |purpose| (id, purpose, PromptSource::Conversation))
         })
         .chain(starter.into_iter().flat_map(|id| {
             STARTER_PROMPT_PURPOSES
                 .into_iter()
-                .map(move |purpose| (id, purpose))
+                .map(move |purpose| (id, purpose, PromptSource::Starter))
         }))
-        .chain(character.map(|id| (id, PromptPurpose::DirectChat)));
-    for (prompt_id, purpose) in candidates {
+        .chain(character.map(|id| (id, PromptPurpose::DirectChat, PromptSource::Character)));
+    for (prompt_id, purpose, source) in candidates {
         if let PromptLookupResult::Available { document } =
             sources.lookup_exact(prompt_id, purpose)?
         {
-            return Ok(Some(document));
+            return Ok(Some((document, source)));
         }
     }
-    direct_app_default_prompt(sources, app_default)
+    Ok(direct_app_default_prompt(sources, app_default)?
+        .map(|document| (document, PromptSource::AppDefault)))
 }
 
 /// A group speaker's prompt for the chat mode, read live each turn: the
@@ -167,6 +192,16 @@ pub(crate) fn group_prompt<S: PromptRepository + ?Sized>(
     chat_mode: GroupChatModeSnapshot,
     candidates: [Option<PromptDocumentId>; 3],
 ) -> Result<Option<PromptDocument>, PromptRepositoryError> {
+    Ok(group_prompt_with_source(sources, chat_mode, candidates)?.map(|(document, _)| document))
+}
+
+/// `group_prompt` and the step that answered: the conversation, the
+/// speaker, the group or the bundled prompt.
+pub(crate) fn group_prompt_with_source<S: PromptRepository + ?Sized>(
+    sources: &S,
+    chat_mode: GroupChatModeSnapshot,
+    candidates: [Option<PromptDocumentId>; 3],
+) -> Result<Option<(PromptDocument, PromptSource)>, PromptRepositoryError> {
     let (purpose, built_in) = match chat_mode {
         GroupChatModeSnapshot::Conversation => (
             PromptPurpose::GroupChatConversational,
@@ -177,14 +212,25 @@ pub(crate) fn group_prompt<S: PromptRepository + ?Sized>(
             crate::BuiltInPromptId::GroupChatRoleplay,
         ),
     };
-    for prompt_id in candidates.into_iter().flatten() {
+    let steps = [
+        PromptSource::Conversation,
+        PromptSource::Character,
+        PromptSource::Group,
+    ];
+    for (prompt_id, source) in candidates.into_iter().zip(steps) {
+        let Some(prompt_id) = prompt_id else {
+            continue;
+        };
         if let PromptLookupResult::Available { document } =
             sources.lookup_exact(prompt_id, purpose)?
         {
-            return Ok(Some(document));
+            return Ok(Some((document, source)));
         }
     }
-    crate::generation::built_in_prompts::active_built_in_prompt(sources, built_in)
+    Ok(
+        crate::generation::built_in_prompts::active_built_in_prompt(sources, built_in)?
+            .map(|document| (document, PromptSource::AppDefault)),
+    )
 }
 
 /// The tail of the direct-chat chain: the app default prompt when it is an

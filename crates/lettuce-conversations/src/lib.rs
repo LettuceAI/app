@@ -2941,9 +2941,7 @@ mod tests {
                 .is_ok()
         );
         assert!(
-            roleplay_settings
-                .validate_against_kind(&group.kind)
-                .is_ok(),
+            roleplay_settings.validate_against_kind(&group.kind).is_ok(),
             "each chat mode keeps its own prompt slot"
         );
         let mut conversational = roleplay_prompt;

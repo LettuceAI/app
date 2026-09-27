@@ -8591,3 +8591,84 @@ async fn a_resumed_attempt_whose_saved_inputs_changed_after_preparation_recovers
     ));
     assert!(inference.requests.lock().expect("requests").is_empty());
 }
+
+/// A memory cycle's provider call that answers only when its job is
+/// cancelled.
+struct CancelledOnlyInference {
+    runtime: std::sync::Arc<lettuce_inference::InferenceRuntime>,
+    entered: tokio::sync::Notify,
+    calls: std::sync::atomic::AtomicUsize,
+}
+
+#[async_trait::async_trait]
+impl InferencePort for CancelledOnlyInference {
+    async fn run(&self, request: InferenceRequest) -> Result<InferenceOutcome, PortError> {
+        self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.entered.notify_one();
+        let job = request.cancellation.ok_or(PortError::Unavailable)?;
+        self.runtime
+            .cancelled(job)
+            .await
+            .map_err(|_| PortError::Unavailable)?;
+        Err(PortError::Cancelled)
+    }
+}
+
+/// A delete during a chat's memory cycle cancels the cycle, waits for it to
+/// settle and then deletes the chat, without the caller ever seeing `Busy`.
+#[tokio::test(flavor = "multi_thread")]
+async fn deleting_a_chat_during_its_memory_run_cancels_the_run_first() {
+    let backend =
+        std::sync::Arc::new(AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend"));
+    let scenario = finalized_dynamic_turn(&backend, "delete-memory").await;
+    let conversation_id = scenario.conversation_id;
+    let inference = std::sync::Arc::new(CancelledOnlyInference {
+        runtime: std::sync::Arc::clone(backend.inference_runtime()),
+        entered: tokio::sync::Notify::new(),
+        calls: Default::default(),
+    });
+    let context = crate::api::conversation_delete_tests::context_over(
+        std::sync::Arc::clone(&backend),
+        inference.clone(),
+    );
+    let engine = ScenarioEmbeddingEngine;
+    let host = backend.companion_memory_host(&engine, inference.as_ref());
+    let scheduler = crate::PostTurnMemoryScheduler::new();
+    assert!(scheduler.enqueue(conversation_id));
+    let clock = FakeClock::new(TimestampMillis::new(1_030));
+    let follow_up = crate::CompanionFollowUpHost::new(backend.database(), inference.as_ref());
+    let delete = async {
+        inference.entered.notified().await;
+        assert!(
+            backend
+                .database()
+                .purge_conversation(conversation_id, TimestampMillis::new(1_031))
+                .is_err_and(|error| error == lettuce_database::PurgeError::Busy),
+            "a bare purge refuses the running cycle"
+        );
+        crate::api::conversation_delete(
+            &context,
+            lettuce_contracts::ConversationRequest {
+                conversation_id: conversation_id.to_string(),
+            },
+        )
+        .await
+    };
+    let ((), deleted) = tokio::join!(
+        host.drive(
+            &scheduler,
+            conversation_id,
+            WorkerId::new(),
+            LEASE,
+            &clock,
+            &follow_up,
+        ),
+        delete
+    );
+    deleted.expect("the delete waited for the cancelled cycle");
+    assert!(matches!(
+        ConversationReader::get(backend.database(), conversation_id),
+        Err(lettuce_conversations::ConversationRepositoryError::NotFound)
+    ));
+    assert_eq!(inference.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+}

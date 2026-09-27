@@ -8,6 +8,7 @@
 pub mod api;
 mod app_version;
 mod composition;
+mod conversation;
 mod launch;
 mod companion;
 mod memory;
@@ -27,6 +28,7 @@ mod deletion;
 
 pub use app_version::app_version;
 pub use composition::*;
+pub use conversation::*;
 pub use launch::*;
 pub use companion::*;
 pub use memory::*;
