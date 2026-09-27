@@ -38,7 +38,8 @@ END;
 CREATE TABLE local_model_jobs (
     job_id TEXT PRIMARY KEY REFERENCES jobs(id) ON DELETE CASCADE,
     detail_json TEXT NOT NULL CHECK (json_valid(detail_json) AND json_type(detail_json) = 'object'),
-    result_json TEXT CHECK (result_json IS NULL OR (json_valid(result_json) AND json_type(result_json) = 'object'))
+    result_json TEXT CHECK (result_json IS NULL OR (json_valid(result_json) AND json_type(result_json) = 'object')),
+    failure_json TEXT CHECK (failure_json IS NULL OR (json_valid(failure_json) AND json_type(failure_json) = 'object'))
 ) STRICT;
 
 CREATE TABLE local_model_operations (

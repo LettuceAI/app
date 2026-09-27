@@ -44,6 +44,20 @@ pub enum HfFailure {
     Offline,
 }
 
+/// Why an Ollama server request failed: it could not be reached (worth a
+/// retry), the account's credentials could not be read or were refused, the
+/// server answered with its own error, or a pull ended before it completed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum OllamaFailure {
+    Offline,
+    CredentialsUnavailable,
+    CredentialsRefused,
+    ServerError { message: String },
+    Incomplete,
+}
+
 /// What keeps the local models folder busy: an install into it, a move of
 /// it, or a model llama.cpp holds open from it (the UI offers to unload).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -62,6 +76,7 @@ pub enum ApiErrorDetails {
     InvalidField { field: String },
     Model { model: RequiredModel },
     HuggingFace { failure: HfFailure },
+    Ollama { failure: OllamaFailure },
     LocalModelsBusy { reason: LocalModelsBusyReason },
 }
 

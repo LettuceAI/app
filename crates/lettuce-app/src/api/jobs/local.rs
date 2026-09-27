@@ -105,17 +105,54 @@ pub(crate) fn record_result(
     Ok(())
 }
 
+/// Why a local model job failed, beyond its error label: the words an
+/// Ollama server used.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub(crate) enum LocalModelJobFailure {
+    OllamaServer { message: String },
+}
+
+const OLLAMA_OFFLINE: &str = "ollama-offline";
+const OLLAMA_CREDENTIALS_UNAVAILABLE: &str = "ollama-credentials-unavailable";
+const OLLAMA_CREDENTIALS_REFUSED: &str = "ollama-credentials-refused";
+const OLLAMA_SERVER_ERROR: &str = "ollama-server-error";
+const OLLAMA_INCOMPLETE: &str = "ollama-pull-incomplete";
+
+/// The typed failure an Ollama pull's error label (and the stored server
+/// words) name.
+pub(crate) fn ollama_failure(
+    label: &str,
+    stored: Option<&LocalModelJobFailure>,
+) -> Option<dto::OllamaFailure> {
+    Some(match label {
+        OLLAMA_OFFLINE => dto::OllamaFailure::Offline,
+        OLLAMA_CREDENTIALS_UNAVAILABLE => dto::OllamaFailure::CredentialsUnavailable,
+        OLLAMA_CREDENTIALS_REFUSED => dto::OllamaFailure::CredentialsRefused,
+        OLLAMA_INCOMPLETE => dto::OllamaFailure::Incomplete,
+        OLLAMA_SERVER_ERROR => dto::OllamaFailure::ServerError {
+            message: match stored {
+                Some(LocalModelJobFailure::OllamaServer { message }) => message.clone(),
+                None => String::new(),
+            },
+        },
+        _ => return None,
+    })
+}
+
 /// The download center's view of a local model job: its detail, what it
-/// produced and, for a download, the repository.
+/// produced and why it failed.
 pub(crate) struct LocalJobView {
     pub detail: Option<dto::JobSubjectDetail>,
     pub result: Option<dto::JobResultDto>,
+    pub failure: Option<LocalModelJobFailure>,
 }
 
 pub(crate) fn local_job_view(context: &ApiContext, job: &JobSnapshot) -> LocalJobView {
     let empty = LocalJobView {
         detail: None,
         result: None,
+        failure: None,
     };
     if !matches!(
         job.kind,
@@ -181,6 +218,9 @@ pub(crate) fn local_job_view(context: &ApiContext, job: &JobSnapshot) -> LocalJo
     LocalJobView {
         detail: Some(detail),
         result,
+        failure: record
+            .failure
+            .and_then(|failure| serde_json::from_value(failure).ok()),
     }
 }
 
@@ -737,6 +777,7 @@ fn claim_local(
 enum Settlement {
     Succeeded(Option<LocalModelJobResult>),
     Failed(JobError),
+    FailedWith(JobError, LocalModelJobFailure),
     Cancelled,
 }
 
@@ -790,6 +831,16 @@ fn settle(
                 .map_err(IntoApiError::into_api_error)?;
         }
         Settlement::Failed(error) => {
+            database
+                .append_and_transition(JobMutation::Fail { claim, error, at })
+                .map_err(IntoApiError::into_api_error)?;
+        }
+        Settlement::FailedWith(error, failure) => {
+            if let Err(error) =
+                database.record_local_model_job_failure(started.job_id, &encode(&failure)?)
+            {
+                tracing::warn!(job_id = %started.job_id, %error, "a local model job's failure could not be recorded");
+            }
             database
                 .append_and_transition(JobMutation::Fail { claim, error, at })
                 .map_err(IntoApiError::into_api_error)?;
@@ -972,19 +1023,48 @@ async fn pull(context: &ApiContext, started: &Arc<StartedJob>) -> Settlement {
         Ok(()) => Settlement::Succeeded(Some(LocalModelJobResult::ModelPulled {
             model: model.clone(),
         })),
-        Err(lettuce_providers::OllamaHubError::Incomplete) => Settlement::Failed(job_error(
-            JobErrorCode::WorkerFailed,
-            true,
-            "ollama-pull-incomplete",
-        )),
         Err(error) => {
             tracing::warn!(job_id = %started.job_id, %error, "an Ollama pull failed");
-            Settlement::Failed(job_error(
-                JobErrorCode::ResourceUnavailable,
-                false,
-                "ollama-pull-failed",
-            ))
+            pull_failure(error)
         }
+    }
+}
+
+fn pull_failure(error: lettuce_providers::OllamaHubError) -> Settlement {
+    use lettuce_providers::OllamaHubError;
+    match error {
+        OllamaHubError::Unreachable(_) => Settlement::Failed(job_error(
+            JobErrorCode::ResourceUnavailable,
+            true,
+            OLLAMA_OFFLINE,
+        )),
+        OllamaHubError::Credentials => Settlement::Failed(job_error(
+            JobErrorCode::Authentication,
+            false,
+            OLLAMA_CREDENTIALS_UNAVAILABLE,
+        )),
+        OllamaHubError::CredentialsRefused { .. } => Settlement::Failed(job_error(
+            JobErrorCode::Authentication,
+            false,
+            OLLAMA_CREDENTIALS_REFUSED,
+        )),
+        OllamaHubError::Server(message) => Settlement::FailedWith(
+            job_error(JobErrorCode::WorkerFailed, false, OLLAMA_SERVER_ERROR),
+            LocalModelJobFailure::OllamaServer { message },
+        ),
+        OllamaHubError::Incomplete => Settlement::Failed(job_error(
+            JobErrorCode::WorkerFailed,
+            true,
+            OLLAMA_INCOMPLETE,
+        )),
+        OllamaHubError::NotOllama | OllamaHubError::EmptyReference => Settlement::Failed(
+            job_error(JobErrorCode::InvalidInput, false, "ollama-pull-invalid"),
+        ),
+        OllamaHubError::Message(_) => Settlement::Failed(job_error(
+            JobErrorCode::ResourceUnavailable,
+            false,
+            "ollama-pull-failed",
+        )),
     }
 }
 

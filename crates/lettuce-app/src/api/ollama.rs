@@ -13,12 +13,26 @@ use super::ApiContext;
 use super::error::{api_error, invalid_field, parse_id};
 
 pub(crate) fn ollama_error(error: OllamaHubError) -> ApiError {
-    match error {
-        OllamaHubError::NotOllama => invalid_field("provider_account_id", error.to_string()),
-        OllamaHubError::EmptyReference => invalid_field("model", error.to_string()),
-        OllamaHubError::Credentials | OllamaHubError::Incomplete | OllamaHubError::Message(_) => {
-            api_error(ApiErrorCode::Unavailable, error.to_string())
+    let failure = match &error {
+        OllamaHubError::NotOllama => {
+            return invalid_field("provider_account_id", error.to_string());
         }
+        OllamaHubError::EmptyReference => return invalid_field("model", error.to_string()),
+        OllamaHubError::Message(_) => {
+            return api_error(ApiErrorCode::Unavailable, error.to_string());
+        }
+        OllamaHubError::Unreachable(_) => dto::OllamaFailure::Offline,
+        OllamaHubError::Credentials => dto::OllamaFailure::CredentialsUnavailable,
+        OllamaHubError::CredentialsRefused { .. } => dto::OllamaFailure::CredentialsRefused,
+        OllamaHubError::Server(message) => dto::OllamaFailure::ServerError {
+            message: message.clone(),
+        },
+        OllamaHubError::Incomplete => dto::OllamaFailure::Incomplete,
+    };
+    ApiError {
+        code: ApiErrorCode::Unavailable,
+        message: error.to_string(),
+        details: Some(lettuce_contracts::ApiErrorDetails::Ollama { failure }),
     }
 }
 

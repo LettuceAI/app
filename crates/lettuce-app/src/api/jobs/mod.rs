@@ -233,6 +233,9 @@ pub(crate) fn job_view(context: &ApiContext, job: &JobSnapshot) -> dto::JobView 
             })
             .flatten()
             .map(|failure| super::error::hf_failure(&failure)),
+            ollama: (job.kind == JobKind::ModelPull)
+                .then(|| local::ollama_failure(error.message.as_str(), local.failure.as_ref()))
+                .flatten(),
         }),
         result: local.result.or_else(|| {
             job.outcome.as_ref().and_then(|outcome| {

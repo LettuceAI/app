@@ -10,6 +10,7 @@ use crate::{Database, DatabaseError};
 pub struct LocalModelJobRecord {
     pub detail: Value,
     pub result: Option<Value>,
+    pub failure: Option<Value>,
 }
 
 /// The job a client operation started, and the digest of its request.
@@ -43,18 +44,20 @@ impl Database {
         &self,
         job_id: JobId,
     ) -> Result<Option<LocalModelJobRecord>, DatabaseError> {
-        let row: Option<(String, Option<String>)> = self
+        let row: Option<(String, Option<String>, Option<String>)> = self
             .connection()?
             .query_row(
-                "SELECT detail_json, result_json FROM local_model_jobs WHERE job_id = ?1",
+                "SELECT detail_json, result_json, failure_json FROM local_model_jobs
+                 WHERE job_id = ?1",
                 params![job_id.to_string()],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .optional()?;
-        Ok(row.and_then(|(detail, result)| {
+        Ok(row.and_then(|(detail, result, failure)| {
             Some(LocalModelJobRecord {
                 detail: serde_json::from_str(&detail).ok()?,
                 result: result.and_then(|result| serde_json::from_str(&result).ok()),
+                failure: failure.and_then(|failure| serde_json::from_str(&failure).ok()),
             })
         }))
     }
@@ -116,6 +119,19 @@ impl Database {
                 |row| row.get(0),
             )
             .optional()?)
+    }
+
+    /// Stores why a job failed; `false` when the job has no detail row.
+    pub fn record_local_model_job_failure(
+        &self,
+        job_id: JobId,
+        failure: &Value,
+    ) -> Result<bool, DatabaseError> {
+        let text = object_text(failure)?;
+        Ok(self.connection()?.execute(
+            "UPDATE local_model_jobs SET failure_json = ?2 WHERE job_id = ?1",
+            params![job_id.to_string(), text],
+        )? == 1)
     }
 
     pub fn local_model_operation(
@@ -227,6 +243,7 @@ mod tests {
             Some(LocalModelJobRecord {
                 detail: json!({"repo": "org/m"}),
                 result: Some(json!({"model_path": "/m"})),
+                failure: None,
             })
         );
         assert!(database.record_local_model_job(first, &json!([])).is_err());

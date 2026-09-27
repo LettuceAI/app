@@ -19,11 +19,29 @@ pub enum OllamaHubError {
     EmptyReference,
     #[error("The provider's credentials could not be read.")]
     Credentials,
+    /// The server refused the account's credentials (401 or 403).
+    #[error("Ollama refused the credentials ({status}).")]
+    CredentialsRefused { status: u16 },
+    /// The server could not be reached or the connection broke.
+    #[error("Ollama could not be reached: {0}")]
+    Unreachable(String),
+    /// The server's own error, as it worded it.
+    #[error("{0}")]
+    Server(String),
     /// The pull stream ended without reporting success or an error.
     #[error("The Ollama pull ended before the model was complete.")]
     Incomplete,
     #[error("{0}")]
     Message(String),
+}
+
+fn request_failed(what: &str, error: lettuce_network::JsonClientError) -> OllamaHubError {
+    match error {
+        lettuce_network::JsonClientError::Transport => {
+            OllamaHubError::Unreachable(format!("{what}: {error}"))
+        }
+        error => OllamaHubError::Message(format!("{what}: {error}")),
+    }
 }
 
 /// A model the Ollama server has.
@@ -83,12 +101,27 @@ async fn connect<'a, S: SecretStore + ?Sized>(
     })
 }
 
+/// A non-success answer: refused credentials, else the server's `error`
+/// text (or the body when it has none).
 fn returned(status: u16, body: &[u8]) -> OllamaHubError {
-    OllamaHubError::Message(format!(
-        "Ollama returned {}: {}",
-        lettuce_network::status_text(status),
-        String::from_utf8_lossy(body)
-    ))
+    if matches!(status, 401 | 403) {
+        return OllamaHubError::CredentialsRefused { status };
+    }
+    let text = serde_json::from_slice::<Value>(body)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("error")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        });
+    OllamaHubError::Server(text.unwrap_or_else(|| {
+        format!(
+            "Ollama returned {}: {}",
+            lettuce_network::status_text(status),
+            String::from_utf8_lossy(body)
+        )
+    }))
 }
 
 fn text(value: Option<&Value>) -> Option<String> {
@@ -134,7 +167,7 @@ pub(crate) async fn inventory<S: SecretStore + ?Sized>(
             connection.policy,
         )
         .await
-        .map_err(|error| OllamaHubError::Message(error.to_string()))?;
+        .map_err(|error| request_failed("Ollama inventory request failed", error))?;
     if !(200..300).contains(&response.status) {
         return Err(returned(response.status, &response.body));
     }
@@ -161,9 +194,7 @@ pub(crate) async fn delete<S: SecretStore + ?Sized>(
             connection.policy,
         )
         .await
-        .map_err(|error| {
-            OllamaHubError::Message(format!("Ollama delete request failed: {error}"))
-        })?;
+        .map_err(|error| request_failed("Ollama delete request failed", error))?;
     if !(200..300).contains(&response.status) {
         return Err(returned(response.status, &response.body));
     }
@@ -317,7 +348,7 @@ pub(crate) async fn pull<S: SecretStore + ?Sized>(
             },
         )
         .await
-        .map_err(|error| OllamaHubError::Message(format!("Ollama pull request failed: {error}")))?;
+        .map_err(|error| request_failed("Ollama pull request failed", error))?;
     if !(200..300).contains(&stream.status) {
         let body = stream.read_error_body().await.unwrap_or_default();
         return Err(returned(stream.status, &body));
@@ -326,7 +357,7 @@ pub(crate) async fn pull<S: SecretStore + ?Sized>(
     while let Some(chunk) = stream
         .next_chunk()
         .await
-        .map_err(|error| OllamaHubError::Message(format!("Ollama pull stream error: {error}")))?
+        .map_err(|error| request_failed("Ollama pull stream error", error))?
     {
         for line in reader.feed(&chunk) {
             match line {
@@ -340,12 +371,12 @@ pub(crate) async fn pull<S: SecretStore + ?Sized>(
                     on_progress(reader.complete());
                     return Ok(());
                 }
-                PullLine::Failed(error) => return Err(OllamaHubError::Message(error)),
+                PullLine::Failed(error) => return Err(OllamaHubError::Server(error)),
             }
         }
     }
     match reader.finish() {
-        Some(PullLine::Failed(error)) => Err(OllamaHubError::Message(error)),
+        Some(PullLine::Failed(error)) => Err(OllamaHubError::Server(error)),
         Some(PullLine::Done) => {
             on_progress(reader.complete());
             Ok(())
@@ -377,6 +408,26 @@ mod tests {
                 family: Some("llama".to_owned()),
             }]
         );
+    }
+
+    #[test]
+    fn refusals_name_credentials_and_keep_the_servers_words() {
+        assert_eq!(
+            returned(401, b"{}"),
+            OllamaHubError::CredentialsRefused { status: 401 }
+        );
+        assert_eq!(
+            returned(404, br#"{"error":"pull model manifest: file does not exist"}"#),
+            OllamaHubError::Server("pull model manifest: file does not exist".to_owned())
+        );
+        assert_eq!(
+            returned(500, b"boom"),
+            OllamaHubError::Server("Ollama returned 500 Internal Server Error: boom".to_owned())
+        );
+        assert!(matches!(
+            request_failed("x", lettuce_network::JsonClientError::Transport),
+            OllamaHubError::Unreachable(_)
+        ));
     }
 
     #[test]

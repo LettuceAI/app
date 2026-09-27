@@ -155,6 +155,8 @@ pub struct JobFailureDto {
     pub model: Option<crate::RequiredModel>,
     /// Why Hugging Face refused a download.
     pub hugging_face: Option<crate::HfFailure>,
+    /// Why an Ollama pull failed.
+    pub ollama: Option<crate::OllamaFailure>,
 }
 
 /// What a finished job produced, where the job kind has a typed result.

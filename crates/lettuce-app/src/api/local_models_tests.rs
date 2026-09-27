@@ -704,10 +704,9 @@ async fn pulls_report_success_and_fail_when_the_stream_stops_short() {
         dto::JobStateDto::Failed,
         "legacy reported a pull that ended without success as complete"
     );
-    assert_eq!(
-        failed.failure.map(|failure| failure.code),
-        Some(dto::JobFailureCode::WorkerFailed)
-    );
+    let failure = failed.failure.expect("failure");
+    assert_eq!(failure.code, dto::JobFailureCode::WorkerFailed);
+    assert_eq!(failure.ollama, Some(dto::OllamaFailure::Incomplete));
     let succeeded = view(context, job_id(&pulled)).await;
     assert_eq!(succeeded.state, dto::JobStateDto::Succeeded);
     assert_eq!(
@@ -868,6 +867,74 @@ async fn any_refused_hugging_face_install_names_its_repository() {
             .and_then(|failure| failure.hugging_face),
         Some(dto::HfFailure::GatedAccess {
             model_id: "org/gated-bundle".to_owned()
+        })
+    );
+    std::fs::remove_dir_all(folder).ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn pull_failures_name_the_server_error_the_credentials_or_an_offline_server() {
+    let (harness, folder) = local_harness("pull-failures");
+    let context = &harness.context;
+    let (endpoint, _) = serve(Arc::new(|_: &str| {
+        (
+            200,
+            "{\"error\":\"pull model manifest: file does not exist\"}\n".to_owned(),
+        )
+    }))
+    .await;
+    let server = ollama_account(context, endpoint);
+    let (endpoint, _) = serve(Arc::new(|_: &str| (401, "{}".to_owned()))).await;
+    let refused = ollama_account(context, endpoint);
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let closed = format!("http://{}", listener.local_addr().expect("address"));
+    drop(listener);
+    let offline = ollama_account(context, closed);
+    let jobs = [
+        ollama_pull(context, pull(server, "missing", "fail-1"))
+            .await
+            .expect("pull"),
+        ollama_pull(context, pull(refused, "llama3", "fail-2"))
+            .await
+            .expect("pull"),
+        ollama_pull(context, pull(offline, "llama3", "fail-3"))
+            .await
+            .expect("pull"),
+    ];
+    run(&runner(context, None)).await;
+    let mut failures = Vec::new();
+    for accepted in &jobs {
+        let failure = view(context, job_id(accepted))
+            .await
+            .failure
+            .expect("failed");
+        failures.push((failure.ollama, failure.retryable));
+    }
+    assert_eq!(
+        failures,
+        [
+            (
+                Some(dto::OllamaFailure::ServerError {
+                    message: "pull model manifest: file does not exist".to_owned()
+                }),
+                false
+            ),
+            (Some(dto::OllamaFailure::CredentialsRefused), false),
+            (Some(dto::OllamaFailure::Offline), true),
+        ]
+    );
+    let listed = ollama_models_list(
+        context,
+        dto::OllamaModelsRequest {
+            provider_account_id: refused.to_string(),
+        },
+    )
+    .await
+    .expect_err("refused");
+    assert_eq!(
+        listed.details,
+        Some(ApiErrorDetails::Ollama {
+            failure: dto::OllamaFailure::CredentialsRefused
         })
     );
     std::fs::remove_dir_all(folder).ok();
