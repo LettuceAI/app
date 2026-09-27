@@ -46,13 +46,21 @@ Current settings also carry:
 - `model_settings`, a `lettuce_models::ModelSettingsLayer` of chat parameters, llama.cpp and stable-diffusion settings. Each unset field defers to the model and then the app settings. It is stored as `conversation_settings.model_settings_json` (NULL when empty) and travels with the conversation in backups; generation input passes it as the session layer of chat parameter resolution.
 - `background`: `Image { asset_id }` or `Hidden`. `None` follows the selected scene, then the character (direct) or group. It is stored as `background_asset_id` and `background_hidden`, the asset must be an image, and deleting a referenced asset is restricted. It travels in backups and sync with its media.
 - `companion_clock` for direct conversations (see Time below).
-- For groups, `speaker_selection`, `chat_mode` and `disable_character_lorebooks` as overrides of the group's launch values.
+- For groups, `speaker_selection`, `chat_mode` and `disable_character_lorebooks` as the conversation's own values; `None` follows the group, which the application reads live.
+- For groups, two prompt slots: `prompt` for conversation mode and `roleplay_prompt` for roleplay mode, so each chat mode keeps its own choice. A direct conversation has only `prompt`.
+- For groups, `members_overridden`, `muted_overridden` and `member_models_overridden`: which participant aspects the conversation owns. An aspect it does not own follows the group live; the participant rows are then not the authority for it.
 
-The speaker-selection patch can set a method or return to the one the group was launched with; it cannot be cleared, and setting it on a direct conversation is rejected. `effective_speaker_selection` falls back to the launch-time group method.
+The speaker-selection, chat-mode and character-lorebook patches can set a value or return to following the group (`UseLaunchDefault`); they cannot be cleared, and setting them on a direct conversation is rejected. `follow_group_members` returns the member list and muted flags to the group, `follow_group_member_models` the members' models; a patch never takes ownership of them, only the participant commands do. `effective_speaker_selection` and `resolve_effective_settings` answer from the conversation alone (own value, else launch value); the application layers the live group over them. A group scene override is refused only while the conversation's own chat mode is conversation, because a group chat's mode can follow the group into roleplay.
 
 ### Participants
 
-A participant has a role (`User`, `Character`, `System`), an ordinal, enabled and muted flags, a typed `ParticipantSource`, and the display name, description and model selection it had at launch. A group has exactly one user participant, at least one character and no system participant, and its initial participant policy lists one entry per character. `UpdateParticipantPolicy` changes the enabled, muted and model-override values later.
+A participant has a role (`User`, `Character`, `System`), an ordinal, enabled and muted flags, a typed `ParticipantSource`, and the display name, description and model selection it had at launch. A group has exactly one user participant, at least one character and no system participant, one participant per character, and its initial participant policy lists one entry per launch member.
+
+A character added to a group conversation after launch has a participant row that carries its own `member_snapshot` (a `GroupMemberLaunchSnapshot` the application built like a launch member's, with its character snapshot artifact); launch members stay in the group launch snapshot. `resolve_effective_settings` and `ConversationParticipant::snapshot_references` read either.
+
+- `AddConversationParticipant` adds a character with its member snapshot at the next ordinal, or re-enables the row the character kept from an earlier membership (the command then carries no snapshot). With `override_members` the conversation takes ownership of its member list; without it the character joins as one of the group's current members. `PreparedParticipantAdd` stages the snapshot artifacts in the add's own transaction.
+- `UpdateParticipantPolicy` changes one participant's enabled, muted and model values, writes `materialize` values to other participants in the same transaction and marks the `overrides` it takes ownership of. The application materializes what the other participants followed from the group at that moment, so taking ownership of an aspect never changes it for anyone else.
+- `require_active_member` is the rule every group keeps: at least one enabled, unmuted character in the effective participants after a change.
 
 ## Branches and messages
 
@@ -96,7 +104,7 @@ Ordinary repositories have no artifact read-back, and IPC never carries raw arti
 
 ## Mutations
 
-Every mutation is a command carrying the expected revision and an `OperationToken` (idempotency key plus request digest). `ConversationMutation` enumerates them: send, continue, regenerate, retry, cancel, choose candidate, edit, flags, fork, select branch, tombstone, archive, restore, rename, participant policy and settings.
+Every mutation is a command carrying the expected revision and an `OperationToken` (idempotency key plus request digest). `ConversationMutation` enumerates them: send, continue, regenerate, retry, cancel, choose candidate, edit, flags, fork, select branch, tombstone, archive, restore, rename, participant policy, participant add and settings.
 
 A repository returns `MutationCommit<T>`: the value, the `OperationRecord` and the outbox records, all written in one transaction. Replaying the same operation returns the original operation and outbox records with the value rehydrated from current state; the same key with a different request conflicts. Reads return plain values and create no operation or outbox record. Mutations accept an active or archived conversation and refuse a tombstoned one; the user writes (send, added user message, continue, regenerate, retry) restore an archived conversation to active in the same transaction, recording the restore's outbox event, while every other mutation keeps the lifecycle. The begin methods require that no non-terminal turn exists, so a conversation has at most one turn in flight.
 

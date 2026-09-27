@@ -14,10 +14,15 @@ Facts about how `lettuce-conversations` relates to the legacy app (2.2.x). The c
 - `CurrentConversationSettings.model_settings` is the legacy session `advanced_model_settings`. Legacy resolved every field as session, then model, then app, and an unset field deferred to the next layer.
 - A conversation background of `None` follows the selected scene, then the character or group, like legacy.
 - The verified direct and group dynamic-memory tool scenarios are pinned in `fixtures/legacy-import/dynamic-memory-tool-scenarios-v1.json`.
+- A group conversation keeps one prompt choice per chat mode, like legacy's two session columns picked by chat type (`old-code/src-tauri/src/storage_manager/group_sessions.rs:2453-2499`).
+- At least one member must stay active, as legacy refused muting every member (`group_sessions.rs:2316-2325`); the rule covers removing a member too.
+- Adding a character that was removed before enables its kept row, as legacy kept participation rows and reused them on re-add (`group_sessions.rs:1984-2028`).
+- The member list, muted flags and member models are owned separately, like legacy's `characterIds`, `mutedCharacterIds` and `characterModelOverrides` override keys (`group_sessions.rs:510-615`).
 
 ## Deliberate differences from legacy
 
 - An explicit speaker missing from the cast is a typed error, never a panic.
+- A group scene override is refused only when the conversation's own chat mode is conversation; before, the launch chat mode decided, which a chat that follows its group into roleplay could no longer use.
 - Every mutation accepts an archived conversation, like legacy where archiving was a list flag only (`old-code/src-tauri/src/storage_manager/sessions.rs:3819-3829`); a user write (send, added user message, continue, regenerate, retry) also restores it to Active in the same transaction, which legacy never did.
 
 ## History
@@ -30,7 +35,5 @@ Facts about how `lettuce-conversations` relates to the legacy app (2.2.x). The c
 
 ## Not wired yet
 
-- Adding a character to an existing group conversation (legacy `group_session_add_character`) is not implemented. It needs a member launch snapshot and a participant insert behind a new command, deferred to the command-surface phase.
-- Until conversations follow their group live, the speaker-selection fallback is the launch-time group method, not the group's current one.
 - The single in-flight turn rule is enforced by the adapters; its supporting index is deferred.
 - Several async ports in `ports.rs` (`LaunchResolver`, `SpeakerPolicy`, `ModelResolver`, `MediaPort`, `MemoryPort`, `CompanionPort`, `JobPort`, `Clock`, `ConversationApplication`) have no implementation outside this crate; `lettuce-app` composes the generation flow directly.

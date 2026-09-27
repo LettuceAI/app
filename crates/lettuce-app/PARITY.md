@@ -15,6 +15,12 @@ Facts about how `lettuce-app` relates to the legacy app (2.2.x): what follows le
 - Lorebooks are read live on every turn the way legacy re-read them (`prompt_engine.rs` 2309-2366, `group_chat_manager/mod.rs` 4897-4945); an empty or disabled group selection is legacy's empty `lorebookIds`; entries order by legacy display order.
 - Persona resolution: legacy `choose_persona` (`storage.rs` 509-521), legacy `persona_disabled`, group persona order (`group_sessions.rs` 560-563), a missing persona as in legacy `load_persona`. Group chat mode and character-lorebook switch follow `group_sessions.rs` 509-600; the legacy importer fills the conversation's values from a session's `config_overrides` `chatType` and `disableCharacterLorebooks`.
 - A retry reads whatever is saved when it runs, as legacy did.
+- A group chat follows its group's current value for each of legacy's thirteen profile keys (members, muted members, persona, chat mode, starting scene, background, lorebooks, character-lorebook switch, speaker selection, memory mode, member models and both prompts) unless the chat set the key itself, as legacy `resolve_group_session_config` read the live profile for every key without an override (`old-code/src-tauri/src/storage_manager/group_sessions.rs:510-615`). A reset removes the chat's own value; members and muted members reset together as the legacy settings page did (`old-code/src/ui/pages/group-chats/GroupChatSettingsPage.tsx:256-267`). A chat whose group is gone keeps its launch values, like legacy's session columns when the profile was missing (`group_sessions.rs:537-546`).
+- A group member's model is the chat's own choice, else the group's model for the member, else the character's current default model, else the app default, read live, as legacy group chats called `select_model_with_credential` with the session's resolved override (`old-code/src-tauri/src/group_chat_manager/mod.rs:5872-5893`).
+- A one-to-one chat reads its character's current memory mode every turn unless it set one itself, as legacy `is_dynamic_memory_active` read the live character (`old-code/src-tauri/src/chat_manager/prompting/turn_builder.rs:14-24`); a mode that differs from the launch mode takes the current global memory policy.
+- Adding a member to a group chat enables the row it kept when it was a member before (`group_sessions.rs:1984-2028`); companions may be added. At least one enabled, unmuted member remains (`group_sessions.rs:2316-2325`); the two-member minimum on remove stays a frontend rule as in legacy (`old-code/src/ui/pages/group-chats/hooks/useGroupChatSettingsController.ts:199-217`).
+- A group chat keeps one prompt choice per chat mode (`group_sessions.rs:2453-2499`); the legacy group importer imports both.
+- An author note is trimmed and a blank one removed, and an empty lorebook selection turns the chat's lorebooks off, as legacy stored `[]` as an override (`old-code/src-tauri/src/storage_manager/sessions.rs:593-636`, `group_sessions.rs:1839-1876`).
 - Runtime text sections carry legacy wording. Depth counting follows legacy `insert_in_chat_prompt_entries`; condensing follows legacy `condense_entries_into_single_system_message` (direct and group). Identity tokens resolve like legacy.
 - Legacy sent manual memories twice, in the Key Memories section and in the "Relevant memories" block (`prompt_engine.rs` 3813-3852, `completion.rs` 352-410); the rewrite keeps the duplication.
 - The companion state and scheduled-note lines are byte-identical to legacy by default.
@@ -123,6 +129,11 @@ Facts about how `lettuce-app` relates to the legacy app (2.2.x): what follows le
 - Legacy's 90-second per-memory embedding timeout and progress toast are not ported; the embedding call follows the job's cancellation.
 - Calendar arithmetic is checked; legacy panicked on inputs like "200000000000 days ago".
 - The history window is bounded by the 512-message context policy; legacy loaded only the latest 120 messages.
+- The rewrite never mirrors group profile values into its chats; legacy copied every edited profile key into the columns of chats that did not override it (`old-code/src-tauri/src/storage_manager/group_characters.rs:143-215`). Every reader resolves the chat's values live instead, and participant rows are the authority only for what the chat owns.
+- A member the group gained after a chat launched gets its participant row, with a character snapshot like a launch member's, when a send needs it (or a settings read or participant edit shows it); legacy kept only the id list. The row is created once however often the send is retried or raced, and the member follows its model live.
+- A blank title is refused; legacy's backend stored it (`sessions.rs:3832-3847`).
+- Deleting a chat whose reply or memory cycle is still running cancels that work, waits for it to settle and then deletes; legacy deleted underneath it and let the running flow fail its final write (`sessions.rs:3794-3816`, `group_sessions.rs:1962-1982`). Memory cycles register their cancellation under their job for this.
+- A group chat's settings show where every value comes from (the chat, its group, its character, its launch or the app default) instead of legacy's per-key reset flags.
 - Legacy stripped a leading `- ` from the whole numbered memory line, so a memory whose text is only dashes lost the space before its note; the rewrite strips the memory text only.
 - The author and swap notes name `{{persona.name}}`; legacy wrote "user" or "the user persona".
 - Legacy's turn-effect diff was taken before decay; the run's starting snapshot is post-decay, which matters only for an existing memory from the current window whose importance changed.
@@ -243,7 +254,7 @@ Everything the Tauri phase (phase (c)) still has to connect:
 - Passing the Pure mode level to `CivitaiBrowser`.
 - TTS preview caching.
 - Scene images: optimistic placeholders and the askFirst approval flow.
-- Adding a character to an existing group conversation (see lettuce-conversations).
+- Continue, regenerate and retry must call `ensure_group_members` before they begin, as `conversation_send` does, when they get their API commands.
 
 ## Planned features (not legacy)
 
