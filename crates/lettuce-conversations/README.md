@@ -28,6 +28,7 @@ The public surface is kept small. Invariants live in the domain types and their 
 | `initial_inference.rs`, `speaker_inference.rs` | Durable checkpoints for the first provider call and for LLM speaker selection |
 | `speaker_policy.rs` | Deterministic group speaker selection and `@mention` parsing |
 | `effective_settings.rs` | Resolves launch values against conversation overrides |
+| `membership.rs` | The participants a group conversation uses now: its own rows or its group's current membership |
 | `clock.rs` | `CompanionClockSettings` and effective time |
 | `scene_tag.rs` | Extracts the `<img>…</img>` scene prompt from a reply |
 
@@ -58,9 +59,10 @@ A participant has a role (`User`, `Character`, `System`), an ordinal, enabled an
 
 A character added to a group conversation after launch has a participant row that carries its own `member_snapshot` (a `GroupMemberLaunchSnapshot` the application built like a launch member's, with its character snapshot artifact); launch members stay in the group launch snapshot. `resolve_effective_settings` and `ConversationParticipant::snapshot_references` read either.
 
-- `AddConversationParticipant` adds a character with its member snapshot at the next ordinal, or re-enables the row the character kept from an earlier membership (the command then carries no snapshot). With `override_members` the conversation takes ownership of its member list; without it the character joins as one of the group's current members. `PreparedParticipantAdd` stages the snapshot artifacts in the add's own transaction.
+- `AddConversationParticipant` adds a character with its member snapshot at the next ordinal, or re-enables the row the character kept from an earlier membership (the command then carries no snapshot). With `override_members` the conversation takes ownership of its member list, and `materialize` carries the enabled flags the other participants followed from the group so they keep them; without it the character joins as one of the group's current members. `PreparedParticipantAdd` stages the snapshot artifacts in the add's own transaction.
 - `UpdateParticipantPolicy` changes one participant's enabled, muted and model values, writes `materialize` values to other participants in the same transaction and marks the `overrides` it takes ownership of. The application materializes what the other participants followed from the group at that moment, so taking ownership of an aspect never changes it for anyone else.
 - `require_active_member` is the rule every group keeps: at least one enabled, unmuted character in the effective participants after a change.
+- `effective_participants` (`membership.rs`) gives the participants a group conversation uses: its rows for the aspects it owns, a `GroupMembership` (the group's current members and mutes) for the rest, the launch policy when there is no group. `is_effective_member` answers for one participant. The application and the database adapter both call it, so a turn and a commit judge membership the same way.
 
 ## Branches and messages
 
