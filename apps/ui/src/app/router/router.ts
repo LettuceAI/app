@@ -7,6 +7,7 @@ import {
 import type { QueryClient } from "@tanstack/react-query";
 import type { ApiClient } from "@/api/client";
 import { RouteErrorState } from "../error-boundaries/RouteErrorState";
+import { RouteNotFound } from "../error-boundaries/RouteNotFound";
 import { AppShell } from "../shell/AppShell";
 
 export interface RouterContext {
@@ -34,6 +35,7 @@ export function createAppRouter(context: RouterContext, options: AppRouterOption
     routeTree,
     context,
     defaultErrorComponent: RouteErrorState,
+    defaultNotFoundComponent: RouteNotFound,
     defaultPreload: "intent",
     ...(options.history ? { history: options.history } : {}),
   });

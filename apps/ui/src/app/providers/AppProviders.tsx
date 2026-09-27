@@ -4,7 +4,9 @@ import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import { MotionConfig } from "framer-motion";
 import type { i18n } from "i18next";
 import { I18nextProvider } from "react-i18next";
+import type { ApiClient } from "@/api/client";
 import { FatalErrorBoundary } from "../error-boundaries/FatalErrorBoundary";
+import { AppEventBridge } from "./AppEventBridge";
 
 export interface ShellProvidersProps {
   i18n: i18n;
@@ -25,13 +27,17 @@ export function ShellProviders({ i18n, children }: ShellProvidersProps) {
 }
 
 export interface AppProvidersProps extends ShellProvidersProps {
+  api: ApiClient;
   queryClient: QueryClient;
 }
 
-export function AppProviders({ i18n, queryClient, children }: AppProvidersProps) {
+export function AppProviders({ i18n, api, queryClient, children }: AppProvidersProps) {
   return (
     <ShellProviders i18n={i18n}>
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      <QueryClientProvider client={queryClient}>
+        <AppEventBridge api={api} queryClient={queryClient} />
+        {children}
+      </QueryClientProvider>
     </ShellProviders>
   );
 }

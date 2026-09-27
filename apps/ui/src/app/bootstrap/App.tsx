@@ -4,7 +4,7 @@ import type { AppRuntime } from "./runtime";
 
 export function App({ runtime }: { runtime: AppRuntime }) {
   return (
-    <AppProviders i18n={runtime.i18n} queryClient={runtime.queryClient}>
+    <AppProviders i18n={runtime.i18n} api={runtime.api} queryClient={runtime.queryClient}>
       <RouterProvider router={runtime.router} />
     </AppProviders>
   );

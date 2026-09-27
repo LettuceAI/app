@@ -23,6 +23,8 @@
     "fatalTitle": "Something went wrong",
     "fatalDescription": "The app hit an unexpected problem. Reloading usually fixes it.",
     "loadTitle": "Couldn't load this",
+    "notFoundTitle": "Nothing here",
+    "notFoundDescription": "This page doesn't exist in the app.",
     "code": {
       "not_found": "It no longer exists.",
       "conflict": "It changed somewhere else. Reload and try again.",
