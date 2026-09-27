@@ -17,54 +17,82 @@ impl ModelPathRelocation for Database {
             .connection()
             .map_err(|_| ModelRepositoryError::Storage)?;
         let transaction = connection.transaction().map_err(model_error)?;
-        let rows = {
-            let mut statement = transaction
+        let changed = relocate_in(&transaction, relocate, now)?;
+        transaction.commit().map_err(model_error)?;
+        Ok(changed)
+    }
+
+    fn relocate_model_paths_and_save_device(
+        &self,
+        relocate: &dyn Fn(&str) -> Option<String>,
+        device: lettuce_settings::DeviceSettings,
+        now: TimestampMillis,
+    ) -> Result<u32, ModelRepositoryError> {
+        device
+            .validate()
+            .map_err(|_| ModelRepositoryError::InvalidData)?;
+        let mut connection = self
+            .connection()
+            .map_err(|_| ModelRepositoryError::Storage)?;
+        let transaction = connection.transaction().map_err(model_error)?;
+        let changed = relocate_in(&transaction, relocate, now)?;
+        crate::write_device_settings(&transaction, &device).map_err(model_error)?;
+        transaction.commit().map_err(model_error)?;
+        Ok(changed)
+    }
+}
+
+fn relocate_in(
+    transaction: &rusqlite::Transaction<'_>,
+    relocate: &dyn Fn(&str) -> Option<String>,
+    now: TimestampMillis,
+) -> Result<u32, ModelRepositoryError> {
+    let rows = {
+        let mut statement = transaction
                 .prepare(
                     "SELECT p.id, p.provider_account_id, p.external_model_id, p.display_name, \
                      p.kind, p.config_json, p.revision, p.created_at, p.updated_at, a.protocol \
                      FROM model_profiles p JOIN provider_accounts a ON a.id = p.provider_account_id",
                 )
                 .map_err(model_error)?;
-            statement
-                .query_map([], |row| {
-                    Ok((
-                        model_from_row(row)?,
-                        parse_provider_protocol(&row.get::<_, String>(9)?)?,
-                    ))
-                })
-                .map_err(model_error)?
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(model_error)?
-        };
-        let mut changed = 0_u32;
-        for (mut profile, protocol) in rows {
-            if !lettuce_models::relocate_profile_paths(&mut profile, protocol, relocate) {
-                continue;
-            }
-            validate_profile(&profile)?;
-            let config = encode_versioned(&profile.config, MODEL_PROFILE_CONFIG_FORMAT_VERSION)
-                .map_err(|_| ModelRepositoryError::InvalidData)?;
-            let next = profile
-                .revision
-                .next()
-                .map_err(|_| ModelRepositoryError::Storage)?;
-            transaction
-                .execute(
-                    "UPDATE model_profiles SET external_model_id=?2, config_json=?3, revision=?4, \
-                     updated_at=?5 WHERE id=?1 AND revision=?6",
-                    params![
-                        profile.id.to_string(),
-                        profile.external_model_id,
-                        config,
-                        to_i64(next.get()).map_err(model_error)?,
-                        now.get().max(profile.updated_at.get()),
-                        to_i64(profile.revision.get()).map_err(model_error)?,
-                    ],
-                )
-                .map_err(model_error)?;
-            changed += 1;
+        statement
+            .query_map([], |row| {
+                Ok((
+                    model_from_row(row)?,
+                    parse_provider_protocol(&row.get::<_, String>(9)?)?,
+                ))
+            })
+            .map_err(model_error)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(model_error)?
+    };
+    let mut changed = 0_u32;
+    for (mut profile, protocol) in rows {
+        if !lettuce_models::relocate_profile_paths(&mut profile, protocol, relocate) {
+            continue;
         }
-        transaction.commit().map_err(model_error)?;
-        Ok(changed)
+        validate_profile(&profile)?;
+        let config = encode_versioned(&profile.config, MODEL_PROFILE_CONFIG_FORMAT_VERSION)
+            .map_err(|_| ModelRepositoryError::InvalidData)?;
+        let next = profile
+            .revision
+            .next()
+            .map_err(|_| ModelRepositoryError::Storage)?;
+        transaction
+            .execute(
+                "UPDATE model_profiles SET external_model_id=?2, config_json=?3, revision=?4, \
+                     updated_at=?5 WHERE id=?1 AND revision=?6",
+                params![
+                    profile.id.to_string(),
+                    profile.external_model_id,
+                    config,
+                    to_i64(next.get()).map_err(model_error)?,
+                    now.get().max(profile.updated_at.get()),
+                    to_i64(profile.revision.get()).map_err(model_error)?,
+                ],
+            )
+            .map_err(model_error)?;
+        changed += 1;
     }
+    Ok(changed)
 }

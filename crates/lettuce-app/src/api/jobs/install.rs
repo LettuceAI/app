@@ -333,10 +333,10 @@ fn admit(context: &ApiContext, work: InstallWork) -> Result<(JobSnapshot, Instal
     })
 }
 
-/// Queued installs whose work this process does not hold cannot run: the
-/// Thymos install its hint describes is taken up again, every other one is
-/// cancelled so a new request admits a fresh job. Returns the cancelled
-/// jobs.
+/// Queued installs whose work this process does not hold: a GGUF download
+/// resumes from the detail stored with it and the Thymos install from its
+/// hint; every other one is cancelled so a new request admits a fresh job.
+/// Returns the cancelled jobs.
 pub(crate) fn recover_queued_installs(context: &ApiContext) -> Result<Vec<JobId>, ApiError> {
     let database = context.backend().database();
     let mut waiting = Vec::new();
@@ -372,6 +372,15 @@ pub(crate) fn recover_queued_installs(context: &ApiContext) -> Result<Vec<JobId>
     for job in waiting {
         if context.jobs().has_install(job.id) {
             continue;
+        }
+        if job.state == JobState::Queued {
+            match super::local::resume_gguf_install(context, &job) {
+                Ok(true) => continue,
+                Ok(false) => {}
+                Err(error) => {
+                    tracing::warn!(job_id = %job.id, message = %error.message, "a queued GGUF install could not be resumed");
+                }
+            }
         }
         match cancel_waiting(context, &job) {
             Ok(()) => cancelled.push(job.id),

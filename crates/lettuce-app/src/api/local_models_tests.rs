@@ -939,3 +939,129 @@ async fn pull_failures_name_the_server_error_the_credentials_or_an_offline_serve
     );
     std::fs::remove_dir_all(folder).ok();
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn concurrent_downloads_of_one_file_with_different_setups_admit_one() {
+    let (harness, folder) = local_harness("concurrent");
+    let context = &harness.context;
+    hugging_face(context).await;
+    let (first, second) = tokio::join!(
+        hf_download(context, download("op-x", "m-Q8_0.gguf", setup(8192))),
+        hf_download(context, download("op-y", "m-Q8_0.gguf", setup(4096))),
+    );
+    let outcomes = [first, second];
+    assert_eq!(outcomes.iter().filter(|outcome| outcome.is_ok()).count(), 1);
+    assert!(outcomes.iter().any(|outcome| {
+        outcome
+            .as_ref()
+            .is_err_and(|error| error.code == ApiErrorCode::Conflict)
+    }));
+    std::fs::remove_dir_all(folder).ok();
+}
+
+async fn restart(context: &ApiContext) -> ApiContext {
+    let restarted = context.restarted();
+    restarted
+        .blocking(|context| {
+            context.recover_after_restart()?;
+            super::jobs::recover_queued_installs(context)?;
+            super::jobs::recover_local_model_jobs(context)?;
+            Ok(())
+        })
+        .await
+        .expect("recovered");
+    restarted
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn queued_downloads_and_pulls_resume_after_a_restart() {
+    let (harness, folder) = local_harness("restart-resume");
+    let context = &harness.context;
+    hugging_face(context).await;
+    let (endpoint, _) = serve(Arc::new(|_: &str| {
+        (200, "{\"status\":\"success\"}\n".to_owned())
+    }))
+    .await;
+    let account = ollama_account(context, endpoint);
+    let download = hf_download(context, download("op-r", "Q4/m-Q4_K_M.gguf", setup(8192)))
+        .await
+        .expect("download");
+    let pull = ollama_pull(context, pull(account, "llama3:8b", "pull-r"))
+        .await
+        .expect("pull");
+    let restarted = restart(context).await;
+    assert_eq!(state(&restarted, job_id(&download)), JobState::Queued);
+    run(&runner(&restarted, None)).await;
+    let installed = view(&restarted, job_id(&download)).await;
+    assert_eq!(
+        installed.state,
+        dto::JobStateDto::Succeeded,
+        "the previous process's install work was lost and the job was cancelled"
+    );
+    assert!(matches!(
+        installed.result,
+        Some(dto::JobResultDto::ModelInstalled {
+            model_profile_id: Some(_),
+            ..
+        })
+    ));
+    assert_eq!(
+        view(&restarted, job_id(&pull)).await.state,
+        dto::JobStateDto::Succeeded
+    );
+    std::fs::remove_dir_all(folder).ok();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_queued_or_interrupted_folder_move_is_cancelled_and_cleaned_at_restart() {
+    let (harness, folder) = local_harness("restart-move");
+    let context = &harness.context;
+    let root = crate::llm_models_root(&lettuce_settings::DeviceSettings::default(), &folder);
+    std::fs::create_dir_all(root.join("org--m")).expect("folder");
+    std::fs::write(root.join("org--m").join("m.gguf"), MODEL_BYTES).expect("model");
+    let target = folder.join("elsewhere");
+    let accepted = local_models_dir_set(
+        context,
+        dto::LocalModelsDirSetRequest {
+            path: target.to_string_lossy().into_owned(),
+            move_existing: true,
+            client_operation_id: "move-r".to_owned(),
+        },
+    )
+    .await
+    .expect("move");
+    std::fs::create_dir_all(target.join("org--m")).expect("partial copy");
+    std::fs::write(target.join("org--m").join("m.gguf"), b"GG").expect("partial");
+    std::fs::write(
+        target.join(crate::MODELS_MOVE_MANIFEST),
+        serde_json::json!({
+            "from": root.to_string_lossy(),
+            "entries": ["org--m"],
+        })
+        .to_string(),
+    )
+    .expect("manifest");
+    let restarted = restart(context).await;
+    assert_eq!(state(&restarted, job_id(&accepted)), JobState::Cancelled);
+    assert!(
+        !target.join("org--m").exists(),
+        "the partial copy is removed"
+    );
+    assert!(!target.join(crate::MODELS_MOVE_MANIFEST).exists());
+    assert_eq!(
+        std::fs::read(root.join("org--m").join("m.gguf")).expect("original"),
+        MODEL_BYTES
+    );
+    run(&runner(&restarted, None)).await;
+    assert_eq!(state(&restarted, job_id(&accepted)), JobState::Cancelled);
+    assert_eq!(
+        restarted
+            .backend()
+            .database()
+            .load_device_settings()
+            .expect("device")
+            .llm_models_dir,
+        None
+    );
+    std::fs::remove_dir_all(folder).ok();
+}

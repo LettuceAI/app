@@ -207,6 +207,28 @@ impl ApiContext {
         }))
     }
 
+    /// A new context over the same backend and host services, as a
+    /// restarted process would open them: no job, watch or install work of
+    /// this one carries over.
+    #[cfg(test)]
+    pub(crate) fn restarted(&self) -> Self {
+        let parts = &self.inner.parts;
+        Self::new(ApiContextParts {
+            backend: Arc::clone(&parts.backend),
+            secret_store: Arc::clone(&parts.secret_store),
+            inference: Arc::clone(&parts.inference),
+            models: Arc::clone(&parts.models),
+            media: parts.media.clone(),
+            events: Arc::clone(&parts.events),
+            clock: Arc::clone(&parts.clock),
+            files: Arc::clone(&parts.files),
+            app_folder: parts.app_folder.clone(),
+            resource_dir: parts.resource_dir.clone(),
+            database_files: None,
+            asset_url_base: parts.asset_url_base.clone(),
+        })
+    }
+
     #[must_use]
     pub fn backend(&self) -> &AppBackend {
         &self.inner.parts.backend

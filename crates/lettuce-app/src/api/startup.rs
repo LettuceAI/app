@@ -12,7 +12,9 @@ use lettuce_jobs::WorkerId;
 
 use super::conversation_feed::ConversationFeed;
 use super::error::api_error;
-use super::jobs::{JobFeed, JobHandlers, JobRunner, recover_queued_installs};
+use super::jobs::{
+    JobFeed, JobHandlers, JobRunner, recover_local_model_jobs, recover_queued_installs,
+};
 use super::{ApiContext, ConversationGenerationWorker};
 use crate::{CompanionFollowUpHost, EmbeddingModelCoordinator, MediaGarbageScope};
 
@@ -239,6 +241,18 @@ async fn finish_startup(
         Ok(_) => {}
         Err(error) => {
             tracing::warn!(code = ?error.code, message = %error.message, "queued installs could not be recovered");
+        }
+    }
+    match context.blocking(recover_local_model_jobs).await {
+        Ok(cancelled) if !cancelled.is_empty() => {
+            tracing::info!(
+                cancelled = cancelled.len(),
+                "cancelled models folder moves the previous process queued"
+            );
+        }
+        Ok(_) => {}
+        Err(error) => {
+            tracing::warn!(code = ?error.code, message = %error.message, "local model jobs could not be recovered");
         }
     }
     record(steps, StartupStep::RecoverQueuedInstalls);

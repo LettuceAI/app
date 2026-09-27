@@ -39,6 +39,17 @@ pub(crate) struct StoredGgufSetup {
     pub mtp_bundled: bool,
 }
 
+/// One pinned file of a stored GGUF install.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct StoredArtifact {
+    pub repository: String,
+    pub revision: String,
+    pub path: String,
+    pub local_segments: Vec<String>,
+    pub byte_size: u64,
+    pub sha256: Option<String>,
+}
+
 /// What a local model job works on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -52,6 +63,8 @@ pub(crate) enum LocalModelJobDetail {
         display_name: String,
         root: String,
         setup: Box<StoredGgufSetup>,
+        install_id: String,
+        artifacts: Vec<StoredArtifact>,
     },
     ModelPull {
         provider_account_id: String,
@@ -356,6 +369,176 @@ fn folder_move_active(context: &ApiContext) -> Result<(), ApiError> {
     }
 }
 
+fn gguf_model_setup(setup: &dto::HfDownloadSetup, mtp_bundled: bool) -> GgufModelSetup {
+    GgufModelSetup {
+        display_name: setup.display_name.clone(),
+        context_length: setup.context_length,
+        kv_type: setup.kv_type.clone(),
+        offload_kqv: setup.offload_kqv,
+        gpu_layers: setup.gpu_layers,
+        model_offload: model_offload(setup.model_offload),
+        mtp_bundled,
+    }
+}
+
+/// Hands a queued GGUF install an earlier process admitted back to the
+/// runner from its stored detail; `false` when the job is no GGUF install
+/// with one.
+pub(crate) fn resume_gguf_install(
+    context: &ApiContext,
+    job: &JobSnapshot,
+) -> Result<bool, ApiError> {
+    let record = context
+        .backend()
+        .database()
+        .local_model_job(job.id)
+        .map_err(internal)?;
+    let Some(LocalModelJobDetail::ModelDownload {
+        repo,
+        file,
+        mmproj_file,
+        mtp_file,
+        root,
+        setup,
+        install_id,
+        artifacts,
+        ..
+    }) = record.and_then(|record| serde_json::from_value(record.detail).ok())
+    else {
+        return Ok(false);
+    };
+    if artifacts.is_empty() {
+        return Ok(false);
+    }
+    let root = PathBuf::from(root);
+    let plan = crate::ArtifactInstallPlan {
+        install_id,
+        root: root.clone(),
+        artifacts: artifacts
+            .into_iter()
+            .map(|stored| {
+                let source = crate::ArtifactSource::HuggingFace {
+                    repository: stored.repository,
+                    revision: stored.revision,
+                    path: stored.path,
+                };
+                crate::PlannedArtifact {
+                    artifact: lettuce_model_hub::PinnedArtifact {
+                        source_identity: source.identity(),
+                        local_segments: stored.local_segments,
+                        byte_size: stored.byte_size,
+                        sha256: stored.sha256,
+                    },
+                    source,
+                }
+            })
+            .collect(),
+    };
+    let finish = InstallFinish::Gguf {
+        root,
+        download: GgufDownload {
+            model_id: repo,
+            model_file: file,
+            mmproj_file,
+            mtp_file,
+        },
+        create_model: setup
+            .setup
+            .create_model
+            .then(|| gguf_model_setup(&setup.setup, setup.mtp_bundled)),
+    };
+    context.jobs().put_install(
+        job.id,
+        InstallWork::Artifact {
+            plan,
+            finish: Box::new(finish),
+        },
+    );
+    context.jobs().wake();
+    Ok(true)
+}
+
+/// Settles what an earlier process left of local model jobs: a folder move
+/// never runs unattended, so a queued one is cancelled (a running one was
+/// interrupted by restart recovery), and every interrupted move's copies
+/// are removed or, when it had committed, its originals. Returns the moves
+/// it cancelled.
+pub(crate) fn recover_local_model_jobs(context: &ApiContext) -> Result<Vec<JobId>, ApiError> {
+    let database = context.backend().database();
+    let mut cancelled = Vec::new();
+    for job in active_jobs(context, JobKind::ModelsFolderMove, None)? {
+        if job.claim.is_some() {
+            continue;
+        }
+        let at = context.now().max(job.updated_at);
+        let requested = if job.state == JobState::Queued {
+            database
+                .append_and_transition(JobMutation::RequestCancellation {
+                    id: job.id,
+                    reason: CancellationReason::Recovery,
+                    at,
+                })
+                .map_err(IntoApiError::into_api_error)?
+        } else {
+            job.clone()
+        };
+        if requested.state == JobState::CancellationRequested {
+            database
+                .append_and_transition(JobMutation::FinishQueuedCancellation {
+                    id: job.id,
+                    at: at.max(requested.updated_at),
+                })
+                .map_err(IntoApiError::into_api_error)?;
+            cancelled.push(job.id);
+        }
+    }
+    let Some(app_folder) = context.app_folder() else {
+        return Ok(cancelled);
+    };
+    for job in all_jobs(context, JobKind::ModelsFolderMove)? {
+        let detail = database
+            .local_model_job(job.id)
+            .map_err(internal)?
+            .and_then(|record| serde_json::from_value::<LocalModelJobDetail>(record.detail).ok());
+        if let Some(LocalModelJobDetail::ModelsFolderMove {
+            to,
+            move_existing: true,
+            ..
+        }) = detail
+            && let Err(error) =
+                crate::recover_models_folder_move(database, app_folder, Path::new(&to))
+        {
+            tracing::warn!(job_id = %job.id, %error, "an interrupted models folder move could not be cleaned up");
+        }
+    }
+    Ok(cancelled)
+}
+
+/// Every job of `kind`, whatever its state.
+fn all_jobs(context: &ApiContext, kind: JobKind) -> Result<Vec<JobSnapshot>, ApiError> {
+    let database = context.backend().database();
+    let mut jobs = Vec::new();
+    let mut cursor = None;
+    loop {
+        let page = database
+            .list_jobs(&JobListFilter {
+                kinds: vec![kind],
+                states: Vec::new(),
+                subject: None,
+                page: PageRequest {
+                    cursor: cursor.take(),
+                    limit: PageLimit::new(ACTIVE_PAGE),
+                },
+            })
+            .map_err(IntoApiError::into_api_error)?;
+        jobs.extend(page.items);
+        match page.next_cursor {
+            Some(next) => cursor = Some(next),
+            None => return Ok(jobs),
+        }
+    }
+}
+
 const fn model_offload(offload: Option<dto::HfModelOffload>) -> lettuce_model_hub::ModelOffload {
     match offload {
         Some(dto::HfModelOffload::Cpu) => lettuce_model_hub::ModelOffload::Cpu,
@@ -463,16 +646,29 @@ pub(crate) async fn admit_gguf_download(
         })
         .unwrap_or_default();
     let setup = request.setup;
-    let model_setup = GgufModelSetup {
-        display_name: setup.display_name.clone(),
-        context_length: setup.context_length,
-        kv_type: setup.kv_type.clone(),
-        offload_kqv: setup.offload_kqv,
-        gpu_layers: setup.gpu_layers,
-        model_offload: model_offload(setup.model_offload),
-        mtp_bundled: request.mtp_bundled,
-    };
+    let model_setup = gguf_model_setup(&setup, request.mtp_bundled);
+    let artifacts = plan
+        .artifacts
+        .iter()
+        .filter_map(|planned| match &planned.source {
+            crate::ArtifactSource::HuggingFace {
+                repository,
+                revision,
+                path,
+            } => Some(StoredArtifact {
+                repository: repository.clone(),
+                revision: revision.clone(),
+                path: path.clone(),
+                local_segments: planned.artifact.local_segments.clone(),
+                byte_size: planned.artifact.byte_size,
+                sha256: planned.artifact.sha256.clone(),
+            }),
+            crate::ArtifactSource::Https { .. } => None,
+        })
+        .collect();
     let detail = encode(&LocalModelJobDetail::ModelDownload {
+        install_id: plan.install_id.clone(),
+        artifacts,
         repo,
         revision: pinned,
         file,
@@ -645,11 +841,16 @@ pub(crate) async fn admit_models_folder_move(
             folder_move_active(context)?;
             let from = models_root(context)?;
             let to = PathBuf::from(&path);
-            if move_existing
-                && !crate::models::gguf_library::paths_equal(&from, &to)
-                && let Some(reason) = folder_busy(context, &from)
-            {
-                return Err(busy(reason));
+            if move_existing && !crate::models::gguf_library::paths_equal(&from, &to) {
+                if let Some(reason) = folder_busy(context, &from) {
+                    return Err(busy(reason));
+                }
+                crate::check_folder_move(&from, &to).map_err(|error| match error {
+                    crate::FolderMoveError::DestinationNotEmpty(_) => {
+                        api_error(ApiErrorCode::Conflict, error.to_string())
+                    }
+                    error => invalid_field("path", error.to_string()),
+                })?;
             }
             let uuid = stable_uuid(&["models-folder-move", &key]);
             let subject = JobSubject::new(SubjectKind::Maintenance, MODELS_FOLDER_SUBJECT)
@@ -1068,6 +1269,40 @@ fn pull_failure(error: lettuce_providers::OllamaHubError) -> Settlement {
     }
 }
 
+fn folder_move_failure(error: &crate::FolderMoveError) -> Settlement {
+    use crate::FolderMoveError;
+    let (code, retryable, label) = match error {
+        FolderMoveError::Cancelled => return Settlement::Cancelled,
+        FolderMoveError::EmptyPath => (
+            JobErrorCode::InvalidInput,
+            false,
+            "models-folder-path-empty",
+        ),
+        FolderMoveError::DestinationInsideSource => (
+            JobErrorCode::InvalidInput,
+            false,
+            "models-folder-destination-inside-source",
+        ),
+        FolderMoveError::DestinationNotEmpty(_) => (
+            JobErrorCode::InvalidInput,
+            false,
+            "models-folder-destination-not-empty",
+        ),
+        FolderMoveError::Copy(_) => (
+            JobErrorCode::StorageFailure,
+            true,
+            "models-folder-copy-failed",
+        ),
+        FolderMoveError::Storage(_) => (
+            JobErrorCode::StorageFailure,
+            true,
+            "models-folder-paths-unsaved",
+        ),
+    };
+    tracing::warn!(%error, "the models folder could not be moved");
+    Settlement::Failed(job_error(code, retryable, label))
+}
+
 /// Runs models folder moves in the download lane, so no download writes
 /// into the folder while it moves.
 #[derive(Debug, Default)]
@@ -1121,8 +1356,9 @@ impl ClaimedJob for ClaimedFolderMove {
     }
 }
 
-/// Moves the folder once nothing uses it; a cancellation only counts
-/// before the move starts, since the copy then runs to its end.
+/// Moves the folder once nothing uses it. A cancellation (the user's or
+/// shutdown's) stops the copy between files and chunks and removes the
+/// copies; one that arrives after the paths were saved lets the move end.
 async fn move_folder(context: &ApiContext, started: &Arc<StartedJob>) -> Settlement {
     let LocalModelJobDetail::ModelsFolderMove {
         from,
@@ -1139,31 +1375,33 @@ async fn move_folder(context: &ApiContext, started: &Arc<StartedJob>) -> Settlem
     if started.cancellation.is_cancelled() {
         return Settlement::Cancelled;
     }
-    let job = Arc::clone(started);
+    let cancellation = started.cancellation.clone();
     let moving = context.blocking(move |context| {
         if move_existing && folder_busy(context, Path::new(&from)).is_some() {
-            return Ok(Err(job_error(
+            return Ok(Settlement::Failed(job_error(
                 JobErrorCode::ResourceUnavailable,
                 true,
                 "models-folder-busy",
             )));
         }
         let app_folder = crate::api::local_models::app_folder(context)?.to_path_buf();
-        Ok(crate::set_llm_models_dir(
-            context.backend().database(),
-            &app_folder,
-            &to,
-            move_existing,
-            context.now(),
+        Ok(
+            match crate::set_llm_models_dir(
+                context.backend().database(),
+                &app_folder,
+                &to,
+                move_existing,
+                context.now(),
+                &|| cancellation.is_cancelled(),
+            ) {
+                Ok(change) => Settlement::Succeeded(Some(LocalModelJobResult::ModelsFolderMoved {
+                    path: change.path.to_string_lossy().into_owned(),
+                    moved_entries: change.moved_entries,
+                    rewired_models: change.rewired_models,
+                })),
+                Err(error) => folder_move_failure(&error),
+            },
         )
-        .map_err(|error| {
-            tracing::warn!(job_id = %job.job_id, %error, "the models folder could not be moved");
-            job_error(
-                JobErrorCode::StorageFailure,
-                false,
-                "models-folder-move-failed",
-            )
-        }))
     });
     tokio::pin!(moving);
     let renew_every = LOCAL_JOB_LEASE / 3;
@@ -1188,17 +1426,12 @@ async fn move_folder(context: &ApiContext, started: &Arc<StartedJob>) -> Settlem
         }
     };
     match moved {
-        Ok(Ok(change)) => Settlement::Succeeded(Some(LocalModelJobResult::ModelsFolderMoved {
-            path: change.path.to_string_lossy().into_owned(),
-            moved_entries: change.moved_entries,
-            rewired_models: change.rewired_models,
-        })),
-        Ok(Err(error)) => Settlement::Failed(error),
+        Ok(settlement) => settlement,
         Err(error) => {
             tracing::warn!(job_id = %started.job_id, message = %error.message, "the models folder move could not run");
             Settlement::Failed(job_error(
                 JobErrorCode::StorageFailure,
-                false,
+                true,
                 "models-folder-move-failed",
             ))
         }
