@@ -3939,7 +3939,7 @@ mod tests {
             .recv_timeout(std::time::Duration::from_secs(30))
             .is_ok();
         if reached {
-            assert_eq!(runtime.resident_files(), [model.clone()]);
+            assert_eq!(runtime.resident_files(), std::slice::from_ref(&model));
             release.send(()).expect("release");
         }
         let succeeded = finished

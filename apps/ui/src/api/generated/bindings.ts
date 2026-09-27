@@ -75,7 +75,7 @@ export type ApiError = {
  */
 export type ApiErrorCode = "not_found" | "conflict" | "invalid_input" | "unsupported" | "unavailable" | "cancelled" | "busy" | "internal" | "model_required" | "model_unavailable";
 
-export type ApiErrorDetails = { type: "invalid_field"; field: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason };
+export type ApiErrorDetails = { type: "invalid_field"; field: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason };
 
 /**
  *  Application-wide events the host broadcasts to every window.
@@ -655,6 +655,8 @@ export type JobFailureDto = {
 	model: RequiredModel | null,
 	/**  Why Hugging Face refused a download. */
 	hugging_face: HfFailure | null,
+	/**  Why an Ollama pull failed. */
+	ollama: OllamaFailure | null,
 };
 
 export type JobGetRequest = {
@@ -1030,6 +1032,13 @@ export type MessagePage = {
 export type MessagePartView = { type: "text"; text: string } | { type: "media"; asset: AssetRef; role: MediaRole };
 
 export type MessageRole = "user" | "assistant" | "system" | "scene";
+
+/**
+ *  Why an Ollama server request failed: it could not be reached (worth a
+ *  retry), the account's credentials could not be read or were refused, the
+ *  server answered with its own error, or a pull ended before it completed.
+ */
+export type OllamaFailure = { type: "offline" } | { type: "credentials_unavailable" } | { type: "credentials_refused" } | { type: "server_error"; message: string } | { type: "incomplete" };
 
 /**  A model an Ollama server has. */
 export type OllamaModel = {
