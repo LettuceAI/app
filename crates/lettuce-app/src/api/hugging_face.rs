@@ -299,9 +299,99 @@ pub async fn hf_runnability(
     })
 }
 
+const fn plan_offload(offload: dto::HfModelOffload) -> lettuce_model_hub::ModelOffload {
+    match offload {
+        dto::HfModelOffload::Auto => lettuce_model_hub::ModelOffload::Auto,
+        dto::HfModelOffload::Cpu => lettuce_model_hub::ModelOffload::Cpu,
+        dto::HfModelOffload::Gpu => lettuce_model_hub::ModelOffload::Gpu,
+        dto::HfModelOffload::Mixed => lettuce_model_hub::ModelOffload::Mixed,
+    }
+}
+
+const fn plan_gpu_mode(mode: lettuce_model_hub::PlannerGpuMode) -> dto::HfPlanGpuMode {
+    use lettuce_model_hub::PlannerGpuMode as Mode;
+    match mode {
+        Mode::Full => dto::HfPlanGpuMode::Full,
+        Mode::NearFull => dto::HfPlanGpuMode::NearFull,
+        Mode::KvSpill => dto::HfPlanGpuMode::KvSpill,
+        Mode::KvHeavySpill => dto::HfPlanGpuMode::KvHeavySpill,
+        Mode::RamModelVramCtx => dto::HfPlanGpuMode::RamModelVramCtx,
+        Mode::RamModelRamCtx => dto::HfPlanGpuMode::RamModelRamCtx,
+        Mode::MostLayers => dto::HfPlanGpuMode::MostLayers,
+        Mode::HalfLayers => dto::HfPlanGpuMode::HalfLayers,
+        Mode::FewLayers => dto::HfPlanGpuMode::FewLayers,
+        Mode::Cpu => dto::HfPlanGpuMode::Cpu,
+        Mode::GpuUnavailable => dto::HfPlanGpuMode::GpuUnavailable,
+    }
+}
+
+/// The planner's report for `choice` over `recommendation`.
+fn plan_report(
+    recommendation: &lettuce_model_hub::RecommendationData,
+    choice: &dto::HfPlanChoice,
+    sidecar_reserve_bytes: u64,
+) -> Option<dto::HfPlan> {
+    let report = lettuce_model_hub::planner_report(
+        &lettuce_model_hub::PlannerModel::from_recommendation(recommendation),
+        &lettuce_model_hub::PlannerChoice {
+            filename: choice.filename.clone(),
+            kv_type: choice.kv_type.clone(),
+            model_offload: plan_offload(choice.model_offload),
+            kv_placement: match choice.kv_placement {
+                dto::HfKvPlacement::Auto => lettuce_model_hub::PlannerKvPlacement::Auto,
+                dto::HfKvPlacement::Ram => lettuce_model_hub::PlannerKvPlacement::Ram,
+                dto::HfKvPlacement::Vram => lettuce_model_hub::PlannerKvPlacement::Vram,
+            },
+            context_length: choice.context_length,
+            sidecar_reserve_bytes,
+        },
+    )?;
+    Some(dto::HfPlan {
+        filename: report.filename,
+        max_context: report.max_context,
+        context_length: report.context_length,
+        effective_kv_context: report.effective_kv_context,
+        kv_bytes: report.kv_bytes,
+        overhead_bytes: report.overhead_bytes,
+        total_needed_bytes: report.total_needed_bytes,
+        gpu_resident_bytes: report.gpu_resident_bytes,
+        headroom_bytes: report.headroom_bytes,
+        vram_budget_bytes: report.vram_budget_bytes,
+        score: report.score.score,
+        label: super::local_models::runnability_label(report.score.label),
+        fits_vram: report.score.fits_vram,
+        gpu_mode: plan_gpu_mode(report.score.gpu_mode),
+        gpu_score: report.score.gpu_score,
+        memory_score: report.memory_score,
+        kv_score: report.kv_score,
+        gpu_optimal_context: report.gpu_optimal_context,
+        ram_max_context: report.ram_max_context,
+        show_gpu_planning: report.show_gpu_planning,
+        offload_percent: report.offload_percent,
+        total_layers: report.total_layers,
+        recommended_layers: report.recommended_layers,
+        full_gpu_context: report.full_gpu_context,
+        kv_distribution: report.kv_distribution.map(|kv| dto::HfPlanKvDistribution {
+            vram_percent: kv.vram_percent,
+            on_vram_bytes: kv.on_vram_bytes,
+            on_ram_bytes: kv.on_ram_bytes,
+        }),
+        mixed_gpu_layers: report.mixed_gpu_layers,
+        requested_gpu_layers: report.requested_gpu_layers,
+        upgrade: report.upgrade.map(|upgrade| dto::HfPlanUpgrade {
+            filename: upgrade.filename,
+            score: upgrade.score,
+        }),
+        default_context: report.default_context,
+    })
+}
+
+/// The recommendation, the planner's limits next to the chosen sidecars and,
+/// for the planner's current choice, its full report; the GGUF header is
+/// read once per file for the life of the process.
 pub async fn hf_recommendation(
     context: &ApiContext,
-    request: dto::HfRunnabilityRequest,
+    request: dto::HfRecommendationRequest,
 ) -> Result<dto::HfRecommendation, ApiError> {
     let model_id = required(&request.model_id, "model_id")?;
     let hardware = hardware(context, request.ollama_account_id.as_deref()).await?;
@@ -320,10 +410,12 @@ pub async fn hf_recommendation(
             .map_err(hf_error)?,
         None => (lettuce_model_hub::RecommendationData::empty(), false),
     };
-    let limits = lettuce_model_hub::planner_limits(
-        &recommendation,
-        request.sidecar_reserve_bytes.unwrap_or(0),
-    );
+    let sidecar_reserve_bytes = request.sidecar_reserve_bytes.unwrap_or(0);
+    let limits = lettuce_model_hub::planner_limits(&recommendation, sidecar_reserve_bytes);
+    let plan = request
+        .plan
+        .as_ref()
+        .and_then(|choice| plan_report(&recommendation, choice, sidecar_reserve_bytes));
     Ok(dto::HfRecommendation {
         hardware_available: hardware.is_some(),
         metadata_available,
@@ -387,6 +479,7 @@ pub async fn hf_recommendation(
                 bytes_per_value: *bytes_per_value,
             })
             .collect(),
+        plan,
     })
 }
 

@@ -11,7 +11,7 @@ Facts about how `lettuce-model-hub` relates to the legacy app (2.2.x). The crate
 - `PinnedArtifactStore` checks only the size when no digest is known, as legacy did for release assets without one.
 - The Hugging Face browser keeps legacy's search behavior, author and avatar lookup order, README handling and error texts for unauthorized and gated responses. Quantization names follow legacy's list.
 - `inspect_legacy_embedding_install` reads legacy's `v4-model.int8.onnx` and `v4-tokenizer.json` in place.
-- The download planner's formulas (`maxContextForBpv`, `KV_BPV`, `gpuOffloadLayerCount`, `modelOffloadToGpuLayers`) lived in the legacy frontend (`HuggingFaceBrowserPage.tsx` 163-199, 650-666, 701-704); they are ported verbatim, including their bytes-per-value table that differs from the runnability score's, and pinned by parity tests with numbers from the legacy functions.
+- The download planner's formulas lived in the legacy frontend (`HuggingFaceBrowserPage.tsx` 163-420 `KV_BPV`, `maxContextForBpv`, `computeGpuOptimalContext`, `computeRamMaxContext`, `calcScore`; 650-666 and 701-704 the layer counts; 868-1000 and 1170-1185 the detail report; 1969-2004 the mixed layers; 3598-3627 the upgrade suggestion; 3746-3770 the file switch default). They are ported verbatim, including their bytes-per-value table and score that differ from the runnability score's, and `tests/fixtures/legacy_planner.json` pins every output against the legacy functions run with bun on the same inputs.
 
 ## Deliberate differences from legacy
 

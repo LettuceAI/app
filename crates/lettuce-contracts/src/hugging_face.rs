@@ -205,8 +205,7 @@ pub struct HfRunnabilityFile {
 }
 
 /// Files of `model_id` judged against this machine, or against the machine
-/// behind an Ollama account's Sprout probe. `sidecar_reserve_bytes` (the
-/// projector and draft model chosen) only affects the planner's limits.
+/// behind an Ollama account's Sprout probe.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
@@ -214,8 +213,130 @@ pub struct HfRunnabilityRequest {
     pub model_id: String,
     pub files: Vec<HfRunnabilityFile>,
     pub ollama_account_id: Option<String>,
+}
+
+/// Where the planner is asked to keep the KV cache.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum HfKvPlacement {
+    Auto,
+    Ram,
+    Vram,
+}
+
+/// The planner's current choice for one file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct HfPlanChoice {
+    pub filename: String,
+    pub kv_type: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub context_length: u64,
+    pub model_offload: HfModelOffload,
+    pub kv_placement: HfKvPlacement,
+}
+
+/// A recommendation for the files of `model_id`; `sidecar_reserve_bytes`
+/// (the projector and draft model chosen) and `plan` (the planner's
+/// current choice) shape the planner's limits and report.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct HfRecommendationRequest {
+    pub model_id: String,
+    pub files: Vec<HfRunnabilityFile>,
+    pub ollama_account_id: Option<String>,
     #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
     pub sidecar_reserve_bytes: Option<u64>,
+    pub plan: Option<HfPlanChoice>,
+}
+
+/// Where the planner expects the model and its KV cache to live.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum HfPlanGpuMode {
+    Full,
+    NearFull,
+    KvSpill,
+    KvHeavySpill,
+    RamModelVramCtx,
+    RamModelRamCtx,
+    MostLayers,
+    HalfLayers,
+    FewLayers,
+    Cpu,
+    GpuUnavailable,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct HfPlanKvDistribution {
+    pub vram_percent: u32,
+    pub on_vram_bytes: f64,
+    pub on_ram_bytes: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct HfPlanUpgrade {
+    pub filename: String,
+    pub score: u32,
+}
+
+/// The planner's report for its choice: the context it allows and uses,
+/// the memory it needs, its score, the GPU plan (offload share, layers, the
+/// longest all-VRAM context when the chosen one spills, the KV split), the
+/// GPU layer count a download stores, a better quantization and the context
+/// the file switch suggests.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct HfPlan {
+    pub filename: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub max_context: u64,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub context_length: u64,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub effective_kv_context: u64,
+    pub kv_bytes: f64,
+    pub overhead_bytes: f64,
+    pub total_needed_bytes: f64,
+    pub gpu_resident_bytes: f64,
+    pub headroom_bytes: f64,
+    pub vram_budget_bytes: f64,
+    pub score: u32,
+    pub label: RunnabilityLabel,
+    pub fits_vram: bool,
+    pub gpu_mode: HfPlanGpuMode,
+    pub gpu_score: f64,
+    pub memory_score: u32,
+    pub kv_score: u32,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub gpu_optimal_context: u64,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub ram_max_context: u64,
+    pub show_gpu_planning: bool,
+    pub offload_percent: u32,
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
+    pub total_layers: Option<u64>,
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
+    pub recommended_layers: Option<u64>,
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
+    pub full_gpu_context: Option<u64>,
+    pub kv_distribution: Option<HfPlanKvDistribution>,
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
+    pub mixed_gpu_layers: Option<u64>,
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
+    pub requested_gpu_layers: Option<u64>,
+    pub upgrade: Option<HfPlanUpgrade>,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub default_context: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -346,6 +467,7 @@ pub struct HfRecommendation {
     #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
     pub gpu_layer_count: Option<u64>,
     pub kv_types: Vec<HfKvType>,
+    pub plan: Option<HfPlan>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

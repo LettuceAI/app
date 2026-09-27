@@ -151,6 +151,7 @@ pub async fn sprout_runnability_hardware<S: SecretStore + ?Sized>(
 
 impl HuggingFaceBrowser {
     async fn remote_gguf_meta<S, H>(
+        &self,
         secrets: &S,
         source: &H,
         model_id: &str,
@@ -167,6 +168,38 @@ impl HuggingFaceBrowser {
         else {
             return Ok(None);
         };
+        let key = (model_id.to_owned(), representative.filename.clone());
+        if let Some(cached) = self
+            .headers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&key)
+        {
+            return Ok(Some(cached.clone()));
+        }
+        let meta = self
+            .read_remote_gguf_meta(secrets, source, model_id, representative)
+            .await?;
+        if let Some(meta) = &meta {
+            self.headers
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .insert(key, meta.clone());
+        }
+        Ok(meta)
+    }
+
+    async fn read_remote_gguf_meta<S, H>(
+        &self,
+        secrets: &S,
+        source: &H,
+        model_id: &str,
+        representative: &RunnabilityFile,
+    ) -> Result<Option<GgufModelMeta>, HfBrowseError>
+    where
+        S: SecretStore + ?Sized,
+        H: GgufHeaderSource + ?Sized,
+    {
         let token = Self::saved_token(secrets).await?;
         let read = |length| {
             source.read_prefix(
@@ -208,7 +241,9 @@ impl HuggingFaceBrowser {
         if files.is_empty() {
             return Ok((Vec::new(), false));
         }
-        let meta = Self::remote_gguf_meta(secrets, source, model_id, files).await?;
+        let meta = self
+            .remote_gguf_meta(secrets, source, model_id, files)
+            .await?;
         Ok((
             lettuce_model_hub::runnability_scores(
                 files,
@@ -239,7 +274,9 @@ impl HuggingFaceBrowser {
         if files.is_empty() {
             return Ok((RecommendationData::empty(), false));
         }
-        let meta = Self::remote_gguf_meta(secrets, source, model_id, files).await?;
+        let meta = self
+            .remote_gguf_meta(secrets, source, model_id, files)
+            .await?;
         Ok((
             lettuce_model_hub::build_recommendation(
                 files,
@@ -437,11 +474,17 @@ mod tests {
         assert_eq!(recommendation.model_max_context, 8192);
         assert_eq!(recommendation.files.len(), 2);
         assert!(recommendation.best.is_some());
+        assert_eq!(
+            source.reads.lock().expect("reads").len(),
+            1,
+            "a header read once is reused"
+        );
         let truncated = Header {
             bytes: header()[..90].to_vec(),
             reads: Mutex::new(Vec::new()),
         };
-        let (recommendation, _) = browser
+        let fresh = || HuggingFaceBrowser::new(lettuce_network::JsonClient::new().expect("client"));
+        let (recommendation, _) = fresh()
             .recommendation(&secrets, &truncated, "org/m", &files, hardware, defaults)
             .await
             .expect("recommendation");
@@ -467,7 +510,7 @@ mod tests {
             bytes: b"not a gguf".to_vec(),
             reads: Mutex::new(Vec::new()),
         };
-        let (scores, metadata) = browser
+        let (scores, metadata) = fresh()
             .runnability(&secrets, &unreadable, "org/m", &files, hardware, defaults)
             .await
             .expect("scores without a header");

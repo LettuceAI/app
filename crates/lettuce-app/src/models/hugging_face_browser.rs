@@ -17,12 +17,14 @@ use lettuce_settings::{
 
 const AVATAR_CONCURRENCY: usize = 6;
 
-/// Browses Hugging Face; avatars are cached for the browser's lifetime.
+/// Browses Hugging Face; avatars and the GGUF headers read for runnability
+/// are cached for the browser's lifetime.
 #[derive(Debug)]
 pub struct HuggingFaceBrowser {
     client: JsonClient,
     endpoint: String,
     avatars: Mutex<HashMap<String, String>>,
+    pub(crate) headers: Mutex<HashMap<(String, String), lettuce_model_hub::GgufModelMeta>>,
 }
 
 fn message(text: impl Into<String>) -> HfBrowseError {
@@ -91,6 +93,7 @@ impl HuggingFaceBrowser {
             client,
             endpoint: endpoint.into(),
             avatars: Mutex::new(HashMap::new()),
+            headers: Mutex::new(HashMap::new()),
         }
     }
 

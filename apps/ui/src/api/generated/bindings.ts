@@ -41,7 +41,7 @@ export const commands = {
 	hfAuthor: (request: HfAuthorRequest) => typedError<HfAuthor, ApiError>(__TAURI_INVOKE("hf_author", { request })),
 	hfAvatars: (request: HfAvatarsRequest) => typedError<HfAvatars, ApiError>(__TAURI_INVOKE("hf_avatars", { request })),
 	hfRunnability: (request: HfRunnabilityRequest) => typedError<HfRunnability, ApiError>(__TAURI_INVOKE("hf_runnability", { request })),
-	hfRecommendation: (request: HfRunnabilityRequest) => typedError<HfRecommendation, ApiError>(__TAURI_INVOKE("hf_recommendation", { request })),
+	hfRecommendation: (request: HfRecommendationRequest) => typedError<HfRecommendation, ApiError>(__TAURI_INVOKE("hf_recommendation", { request })),
 	hfDownload: (request: HfDownloadRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("hf_download", { request })),
 	hfAuthStatus: () => typedError<HfTokenStatus, ApiError>(__TAURI_INVOKE("hf_auth_status")),
 	hfAuthSave: (request: HfAuthSaveRequest) => typedError<HfTokenStatus, ApiError>(__TAURI_INVOKE("hf_auth_save", { request })),
@@ -403,6 +403,9 @@ export type HfKvContextLimit = {
 	max_context: number,
 };
 
+/**  Where the planner is asked to keep the KV cache. */
+export type HfKvPlacement = "auto" | "ram" | "vram";
+
 export type HfKvType = {
 	kv_type: string,
 	bytes_per_value: number | null,
@@ -462,6 +465,68 @@ export type HfModelSummary = {
 	trending_score: number | null,
 };
 
+/**
+ *  The planner's report for its choice: the context it allows and uses,
+ *  the memory it needs, its score, the GPU plan (offload share, layers, the
+ *  longest all-VRAM context when the chosen one spills, the KV split), the
+ *  GPU layer count a download stores, a better quantization and the context
+ *  the file switch suggests.
+ */
+export type HfPlan = {
+	filename: string,
+	max_context: number,
+	context_length: number,
+	effective_kv_context: number,
+	kv_bytes: number | null,
+	overhead_bytes: number | null,
+	total_needed_bytes: number | null,
+	gpu_resident_bytes: number | null,
+	headroom_bytes: number | null,
+	vram_budget_bytes: number | null,
+	score: number,
+	label: RunnabilityLabel,
+	fits_vram: boolean,
+	gpu_mode: HfPlanGpuMode,
+	gpu_score: number | null,
+	memory_score: number,
+	kv_score: number,
+	gpu_optimal_context: number,
+	ram_max_context: number,
+	show_gpu_planning: boolean,
+	offload_percent: number,
+	total_layers: number | null,
+	recommended_layers: number | null,
+	full_gpu_context: number | null,
+	kv_distribution: HfPlanKvDistribution | null,
+	mixed_gpu_layers: number | null,
+	requested_gpu_layers: number | null,
+	upgrade: HfPlanUpgrade | null,
+	default_context: number,
+};
+
+/**  The planner's current choice for one file. */
+export type HfPlanChoice = {
+	filename: string,
+	kv_type: string,
+	context_length: number,
+	model_offload: HfModelOffload,
+	kv_placement: HfKvPlacement,
+};
+
+/**  Where the planner expects the model and its KV cache to live. */
+export type HfPlanGpuMode = "full" | "near_full" | "kv_spill" | "kv_heavy_spill" | "ram_model_vram_ctx" | "ram_model_ram_ctx" | "most_layers" | "half_layers" | "few_layers" | "cpu" | "gpu_unavailable";
+
+export type HfPlanKvDistribution = {
+	vram_percent: number,
+	on_vram_bytes: number | null,
+	on_ram_bytes: number | null,
+};
+
+export type HfPlanUpgrade = {
+	filename: string,
+	score: number,
+};
+
 /**  The model card without its front matter. */
 export type HfReadme = {
 	markdown: string,
@@ -491,6 +556,20 @@ export type HfRecommendation = {
 	best: HfBestRecommendation | null,
 	gpu_layer_count: number | null,
 	kv_types: HfKvType[],
+	plan: HfPlan | null,
+};
+
+/**
+ *  A recommendation for the files of `model_id`; `sidecar_reserve_bytes`
+ *  (the projector and draft model chosen) and `plan` (the planner's
+ *  current choice) shape the planner's limits and report.
+ */
+export type HfRecommendationRequest = {
+	model_id: string,
+	files: HfRunnabilityFile[],
+	ollama_account_id: string | null,
+	sidecar_reserve_bytes: number | null,
+	plan: HfPlanChoice | null,
 };
 
 /**
@@ -511,14 +590,12 @@ export type HfRunnabilityFile = {
 
 /**
  *  Files of `model_id` judged against this machine, or against the machine
- *  behind an Ollama account's Sprout probe. `sidecar_reserve_bytes` (the
- *  projector and draft model chosen) only affects the planner's limits.
+ *  behind an Ollama account's Sprout probe.
  */
 export type HfRunnabilityRequest = {
 	model_id: string,
 	files: HfRunnabilityFile[],
 	ollama_account_id: string | null,
-	sidecar_reserve_bytes: number | null,
 };
 
 export type HfRunnabilityScore = {

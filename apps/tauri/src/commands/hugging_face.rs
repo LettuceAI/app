@@ -2,8 +2,8 @@ use lettuce_app::api::{self, ApiContext};
 use lettuce_contracts::{
     ApiError, HfAuthSaveRequest, HfAuthor, HfAuthorRequest, HfAvatars, HfAvatarsRequest,
     HfDownloadRequest, HfModelInfo, HfModelRequest, HfReadme, HfReadmeRequest, HfRecommendation,
-    HfRunnability, HfRunnabilityRequest, HfSearchRequest, HfSearchResults, HfTokenStatus,
-    JobAccepted,
+    HfRecommendationRequest, HfRunnability, HfRunnabilityRequest, HfSearchRequest, HfSearchResults,
+    HfTokenStatus, JobAccepted,
 };
 use tauri::State;
 
@@ -65,7 +65,7 @@ pub async fn hf_runnability(
 #[specta::specta]
 pub async fn hf_recommendation(
     context: State<'_, ApiContext>,
-    request: HfRunnabilityRequest,
+    request: HfRecommendationRequest,
 ) -> Result<HfRecommendation, ApiError> {
     api::hf_recommendation(&context, request).await
 }
