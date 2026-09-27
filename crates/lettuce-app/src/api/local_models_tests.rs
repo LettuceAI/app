@@ -821,3 +821,54 @@ async fn a_running_pull_stops_when_cancelled() {
         .expect("the pull request was dropped");
     std::fs::remove_dir_all(folder).ok();
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn any_refused_hugging_face_install_names_its_repository() {
+    let (harness, folder) = local_harness("refused-bundle");
+    let context = &harness.context;
+    let source = ArtifactSource::HuggingFace {
+        repository: "org/gated-bundle".to_owned(),
+        revision: "a".repeat(40),
+        path: "vae.safetensors".to_owned(),
+    };
+    let plan = crate::ArtifactInstallPlan {
+        install_id: "bundle".to_owned(),
+        root: folder.join("bundle"),
+        artifacts: vec![crate::PlannedArtifact {
+            artifact: lettuce_model_hub::PinnedArtifact {
+                source_identity: source.identity(),
+                local_segments: vec!["vae.safetensors".to_owned()],
+                byte_size: MODEL_BYTES.len() as u64,
+                sha256: Some(format!("{:x}", Sha256::digest(MODEL_BYTES))),
+            },
+            source,
+        }],
+    };
+    let accepted = admit_install(
+        context,
+        InstallWork::Artifact {
+            plan,
+            finish: Box::new(InstallFinish::Files),
+        },
+    )
+    .await
+    .expect("admit");
+    run(&runner(
+        context,
+        Some(ArtifactSourceError::Refused {
+            status: 403,
+            signed_in: true,
+        }),
+    ))
+    .await;
+    assert_eq!(
+        view(context, job_id(&accepted))
+            .await
+            .failure
+            .and_then(|failure| failure.hugging_face),
+        Some(dto::HfFailure::GatedAccess {
+            model_id: "org/gated-bundle".to_owned()
+        })
+    );
+    std::fs::remove_dir_all(folder).ok();
+}

@@ -93,6 +93,31 @@ impl Database {
         )? == 1)
     }
 
+    /// Records the repository a refused or unreachable download came from.
+    pub fn record_hugging_face_refusal(
+        &self,
+        job_id: JobId,
+        repository: &str,
+    ) -> Result<(), DatabaseError> {
+        self.connection()?.execute(
+            "INSERT INTO hugging_face_job_refusals (job_id, repository) VALUES (?1, ?2)
+             ON CONFLICT(job_id) DO UPDATE SET repository = excluded.repository",
+            params![job_id.to_string(), repository],
+        )?;
+        Ok(())
+    }
+
+    pub fn hugging_face_refusal(&self, job_id: JobId) -> Result<Option<String>, DatabaseError> {
+        Ok(self
+            .connection()?
+            .query_row(
+                "SELECT repository FROM hugging_face_job_refusals WHERE job_id = ?1",
+                params![job_id.to_string()],
+                |row| row.get(0),
+            )
+            .optional()?)
+    }
+
     pub fn local_model_operation(
         &self,
         operation_key: &str,
@@ -220,6 +245,17 @@ mod tests {
         assert_eq!(
             database.local_model_operation("op").expect("read"),
             Some(recorded)
+        );
+        assert_eq!(database.hugging_face_refusal(first).expect("read"), None);
+        database
+            .record_hugging_face_refusal(first, "org/gated")
+            .expect("refusal");
+        assert_eq!(
+            database
+                .hugging_face_refusal(first)
+                .expect("read")
+                .as_deref(),
+            Some("org/gated")
         );
     }
 }

@@ -219,15 +219,20 @@ pub(crate) fn job_view(context: &ApiContext, job: &JobSnapshot) -> dto::JobView 
             model: (error.code == JobErrorCode::CapabilityUnavailable
                 && error.message.as_str() == crate::EMBEDDING_UNAVAILABLE_JOB_ERROR)
                 .then_some(dto::RequiredModel::Embedding),
-            hugging_face: (job.kind == JobKind::ArtifactInstall)
-                .then(|| {
-                    crate::hf_failure_of_job_error(
-                        error.message.as_str(),
-                        local.repo.as_deref().unwrap_or_default(),
-                    )
-                })
-                .flatten()
-                .map(|failure| super::error::hf_failure(&failure)),
+            hugging_face: (job.kind == JobKind::ArtifactInstall
+                && crate::is_hf_job_error(error.message.as_str()))
+            .then(|| {
+                let repository = context
+                    .backend()
+                    .database()
+                    .hugging_face_refusal(job.id)
+                    .ok()
+                    .flatten()
+                    .unwrap_or_default();
+                crate::hf_failure_of_job_error(error.message.as_str(), &repository)
+            })
+            .flatten()
+            .map(|failure| super::error::hf_failure(&failure)),
         }),
         result: local.result.or_else(|| {
             job.outcome.as_ref().and_then(|outcome| {

@@ -124,6 +124,22 @@ fn hf_job_error(failure: &HfFailure) -> (JobErrorCode, bool, &'static str) {
     }
 }
 
+/// The job error of a download Hugging Face refused with `status`, when the
+/// status means an `HfFailure`.
+#[must_use]
+pub fn hf_refusal_job_error(
+    status: u16,
+    signed_in: bool,
+) -> Option<(JobErrorCode, bool, &'static str)> {
+    lettuce_model_hub::status_failure(status, "", signed_in).map(|failure| hf_job_error(&failure))
+}
+
+/// Whether a job error is a Hugging Face refusal or an unreachable host.
+#[must_use]
+pub fn is_hf_job_error(label: &str) -> bool {
+    hf_failure_of_job_error(label, "").is_some()
+}
+
 /// The Hugging Face failure a job error recorded, with `model_id` as the
 /// gated repository.
 #[must_use]

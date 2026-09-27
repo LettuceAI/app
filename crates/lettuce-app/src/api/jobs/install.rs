@@ -119,6 +119,22 @@ impl InstallWork {
         }
     }
 
+    /// The Hugging Face repository the install downloads from, if any.
+    pub(crate) fn hugging_face_repository(&self) -> Option<&str> {
+        match self {
+            Self::Artifact { plan, .. } => plan.artifacts.iter().find_map(|planned| match &planned
+                .source
+            {
+                crate::ArtifactSource::HuggingFace { repository, .. } => Some(repository.as_str()),
+                crate::ArtifactSource::Https { .. } => None,
+            }),
+            Self::Whisper { .. } => Some(crate::WHISPER_REPOSITORY),
+            Self::KokoroModel { .. } | Self::KokoroVoices { .. } => {
+                Some(lettuce_model_hub::KOKORO_REPOSITORY)
+            }
+        }
+    }
+
     /// GGUF, stable-diffusion.cpp, CivitAI, Hugging Face bundle, Whisper
     /// and Kokoro downloads share one sequential queue, as legacy's download
     /// queue did; the embedding and emotion models each have their own.
@@ -758,8 +774,17 @@ impl ClaimedJob for ClaimedInstall {
             ClaimedWork::KokoroModel(work) => work.job.id,
             ClaimedWork::KokoroVoices(work) => work.job.id,
         };
+        let repository = work.hugging_face_repository().map(str::to_owned);
         let result = run_claimed(&context, work, claimed, source).await;
         context.jobs().forget_install(job_id);
+        if let Some(repository) = repository {
+            let recorded = context
+                .blocking(move |context| record_refusal(context, job_id, &repository))
+                .await;
+            if let Err(error) = recorded {
+                tracing::warn!(%job_id, message = %error.message, "a refused download's repository could not be recorded");
+            }
+        }
         result
     }
 }
@@ -855,6 +880,26 @@ async fn run_claimed(
                 .map_err(internal)?;
         }
         _ => return Err(internal("install work does not match its claim")),
+    }
+    Ok(())
+}
+
+/// Keeps the repository of a download Hugging Face refused or never
+/// answered, so its failure names the gated repository.
+fn record_refusal(context: &ApiContext, job_id: JobId, repository: &str) -> Result<(), ApiError> {
+    let database = context.backend().database();
+    let Some(job) = database.get(job_id).map_err(IntoApiError::into_api_error)? else {
+        return Ok(());
+    };
+    if job.state == JobState::Failed
+        && job
+            .error
+            .as_ref()
+            .is_some_and(|error| crate::is_hf_job_error(error.message.as_str()))
+    {
+        database
+            .record_hugging_face_refusal(job_id, repository)
+            .map_err(internal)?;
     }
     Ok(())
 }

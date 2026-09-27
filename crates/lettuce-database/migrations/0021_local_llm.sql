@@ -48,3 +48,8 @@ CREATE TABLE local_model_operations (
 ) STRICT;
 
 CREATE INDEX local_model_operations_job_idx ON local_model_operations(job_id);
+
+CREATE TABLE hugging_face_job_refusals (
+    job_id TEXT PRIMARY KEY REFERENCES jobs(id) ON DELETE CASCADE,
+    repository TEXT NOT NULL CHECK (length(trim(repository)) > 0)
+) STRICT;

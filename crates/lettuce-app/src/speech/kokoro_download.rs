@@ -23,6 +23,9 @@ pub enum KokoroDownloadSourceError {
     Transport,
     #[error("Kokoro download response is invalid")]
     InvalidResponse,
+    /// Hugging Face refused the file with `status`.
+    #[error("the download was refused with status {status}")]
+    Refused { status: u16, signed_in: bool },
 }
 
 #[async_trait]
@@ -557,6 +560,13 @@ fn classify_error(error: &KokoroDownloadError) -> (JobErrorCode, bool, &'static 
             true,
             "download storage unavailable",
         ),
+        KokoroDownloadError::Source(KokoroDownloadSourceError::Refused { status, signed_in }) => {
+            crate::hf_refusal_job_error(*status, *signed_in).unwrap_or((
+                JobErrorCode::IntegrityFailure,
+                false,
+                "download integrity failed",
+            ))
+        }
         KokoroDownloadError::Install(
             KokoroInstallError::Mismatch | KokoroInstallError::InvalidArtifact,
         )
@@ -586,9 +596,12 @@ fn abandons_partial(error: &KokoroDownloadError) -> bool {
 fn map_source_error(error: ArtifactDownloadError) -> KokoroDownloadSourceError {
     match error {
         ArtifactDownloadError::Transport => KokoroDownloadSourceError::Transport,
-        ArtifactDownloadError::InvalidRequest
-        | ArtifactDownloadError::InvalidResponse
-        | ArtifactDownloadError::Refused { .. } => KokoroDownloadSourceError::InvalidResponse,
+        ArtifactDownloadError::InvalidRequest | ArtifactDownloadError::InvalidResponse => {
+            KokoroDownloadSourceError::InvalidResponse
+        }
+        ArtifactDownloadError::Refused { status, signed_in } => {
+            KokoroDownloadSourceError::Refused { status, signed_in }
+        }
     }
 }
 

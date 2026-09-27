@@ -5825,6 +5825,7 @@ mod tests {
                 "group_scene_variants",
                 "group_starting_scenes",
                 "groups",
+                "hugging_face_job_refusals",
                 "image_generation_outputs",
                 "image_generations",
                 "image_loras",

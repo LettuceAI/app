@@ -110,14 +110,12 @@ pub(crate) fn record_result(
 pub(crate) struct LocalJobView {
     pub detail: Option<dto::JobSubjectDetail>,
     pub result: Option<dto::JobResultDto>,
-    pub repo: Option<String>,
 }
 
 pub(crate) fn local_job_view(context: &ApiContext, job: &JobSnapshot) -> LocalJobView {
     let empty = LocalJobView {
         detail: None,
         result: None,
-        repo: None,
     };
     if !matches!(
         job.kind,
@@ -158,38 +156,31 @@ pub(crate) fn local_job_view(context: &ApiContext, job: &JobSnapshot) -> LocalJo
                 rewired_models,
             },
         });
-    let (detail, repo) = match detail {
+    let detail = match detail {
         LocalModelJobDetail::ModelDownload {
             repo,
             file,
             display_name,
             ..
-        } => (
-            dto::JobSubjectDetail::ModelDownload {
-                repo: repo.clone(),
-                file,
-                display_name,
-            },
-            Some(repo),
-        ),
+        } => dto::JobSubjectDetail::ModelDownload {
+            repo,
+            file,
+            display_name,
+        },
         LocalModelJobDetail::ModelPull {
             provider_account_id,
             model,
-        } => (
-            dto::JobSubjectDetail::ModelPull {
-                provider_account_id,
-                model,
-            },
-            None,
-        ),
+        } => dto::JobSubjectDetail::ModelPull {
+            provider_account_id,
+            model,
+        },
         LocalModelJobDetail::ModelsFolderMove { from, to, .. } => {
-            (dto::JobSubjectDetail::ModelsFolderMove { from, to }, None)
+            dto::JobSubjectDetail::ModelsFolderMove { from, to }
         }
     };
     LocalJobView {
         detail: Some(detail),
         result,
-        repo,
     }
 }
 
