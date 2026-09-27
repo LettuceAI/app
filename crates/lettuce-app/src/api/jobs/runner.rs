@@ -99,9 +99,11 @@ impl JobHandlers {
 
     #[must_use]
     pub fn standard() -> Self {
-        Self::new(vec![Arc::new(ArtifactInstallHandler::new(Arc::new(
-            NetworkInstallSources,
-        )))])
+        Self::new(vec![
+            Arc::new(ArtifactInstallHandler::new(Arc::new(NetworkInstallSources))),
+            Arc::new(super::local::ModelPullHandler),
+            Arc::new(super::local::ModelsFolderMoveHandler),
+        ])
     }
 
     fn kinds(&self) -> Vec<JobKind> {

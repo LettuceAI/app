@@ -6,13 +6,19 @@ mod api;
 mod app;
 mod conversations;
 mod files;
+mod hugging_face;
 mod jobs;
+mod local_models;
+mod ollama;
 
 pub use api::*;
 pub use app::*;
 pub use conversations::*;
 pub use files::*;
+pub use hugging_face::*;
 pub use jobs::*;
+pub use local_models::*;
+pub use ollama::*;
 
 use lettuce_types::ProviderAccountId;
 use serde::{Deserialize, Serialize};

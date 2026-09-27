@@ -21,6 +21,7 @@ use super::error::{IntoApiError, api_error};
 use super::events::{ApiEventSink, GenerationEventSink};
 use super::files::FileAccess;
 use super::jobs::JobHostState;
+use super::local_models::LocalModelsState;
 use super::models::{ApiEmbedding, ApiEmotion, InstalledModels, ModelLoader, ModelSlots};
 use crate::{
     AppActiveUsageTracker, AppBackend, AppDatabaseLocation, CompanionEmotionEngine,
@@ -85,6 +86,7 @@ struct ApiContextInner {
     conversations_changed: Arc<tokio::sync::Notify>,
     app_usage: AppActiveUsageTracker,
     legacy_database_detected: AtomicBool,
+    local_models: LocalModelsState,
 }
 
 impl std::fmt::Debug for ApiContext {
@@ -123,6 +125,7 @@ impl ApiContext {
                 conversations_changed,
                 app_usage: AppActiveUsageTracker::new(now),
                 legacy_database_detected: AtomicBool::new(false),
+                local_models: LocalModelsState::default(),
             }),
         }
     }
@@ -302,6 +305,10 @@ impl ApiContext {
 
     pub(crate) fn jobs(&self) -> &JobHostState {
         &self.inner.jobs
+    }
+
+    pub(crate) fn local_models(&self) -> &LocalModelsState {
+        &self.inner.local_models
     }
 
     /// Resolves after a committed conversation change, including one made

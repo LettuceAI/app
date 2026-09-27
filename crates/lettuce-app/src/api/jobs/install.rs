@@ -29,7 +29,7 @@ use crate::{
 /// progress and the install stage renew it.
 const INSTALL_LEASE: Duration = Duration::from_secs(30 * 60);
 const RECOVERY_PAGE: u16 = 200;
-const DOWNLOAD_LANE: &str = "install:downloads";
+pub(super) const DOWNLOAD_LANE: &str = "install:downloads";
 
 /// A stable-diffusion.cpp catalog variant and the engine build it runs on.
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -109,6 +109,16 @@ pub enum InstallWork {
 }
 
 impl InstallWork {
+    /// The folder the install writes below.
+    pub(crate) fn root(&self) -> &std::path::Path {
+        match self {
+            Self::Artifact { plan, .. } => &plan.root,
+            Self::Whisper { install_root, .. }
+            | Self::KokoroModel { install_root, .. }
+            | Self::KokoroVoices { install_root, .. } => install_root,
+        }
+    }
+
     /// GGUF, stable-diffusion.cpp, CivitAI, Hugging Face bundle, Whisper
     /// and Kokoro downloads share one sequential queue, as legacy's download
     /// queue did; the embedding and emotion models each have their own.
@@ -788,6 +798,7 @@ async fn run_claimed(
                     context.models_changed();
                 }
                 let finisher = context.clone();
+                let job_id = claimed.job.id;
                 let result = ArtifactInstallCoordinator::new(database)
                     .run_then(
                         claimed,
@@ -795,7 +806,7 @@ async fn run_claimed(
                         reason,
                         now,
                         move |paths, _| async move {
-                            finish_artifact(&finisher, &plan, finish, paths)
+                            finish_artifact(&finisher, job_id, &plan, finish, paths)
                                 .await
                                 .map_err(ArtifactInstallError::Finish)
                         },
@@ -852,6 +863,7 @@ async fn run_claimed(
 /// stage; an error fails the job.
 async fn finish_artifact(
     context: &ApiContext,
+    job_id: JobId,
     plan: &ArtifactInstallPlan,
     finish: InstallFinish,
     paths: Vec<PathBuf>,
@@ -861,15 +873,29 @@ async fn finish_artifact(
     match finish {
         InstallFinish::Files | InstallFinish::CompanionEmotion { .. } => Ok(()),
         InstallFinish::Gguf {
-            create_model: None, ..
-        } => Ok(()),
-        InstallFinish::Gguf {
             root,
             download,
-            create_model: Some(setup),
-        } => crate::register_downloaded_gguf(database, &root, &download, &setup, now)
-            .map(|_| ())
-            .map_err(|error| error.to_string()),
+            create_model,
+        } => {
+            let model_profile_id = match create_model {
+                Some(setup) => Some(
+                    crate::register_downloaded_gguf(database, &root, &download, &setup, now)
+                        .map_err(|error| error.to_string())?
+                        .id
+                        .to_string(),
+                ),
+                None => None,
+            };
+            super::local::record_result(
+                context,
+                job_id,
+                &super::local::LocalModelJobResult::ModelInstalled {
+                    model_path: download.installed(&root).model_path,
+                    model_profile_id,
+                },
+            )
+            .map_err(|error| error.message)
+        }
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         InstallFinish::StableDiffusionRuntime {
             paths: layout,

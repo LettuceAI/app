@@ -66,6 +66,30 @@ check_dependency_owner keyring crates/lettuce-settings
 check_dependency_owner cap-std crates/lettuce-platform
 check_dependency_owner cap-primitives crates/lettuce-platform
 
+# Hugging Face requests are built and parsed in lettuce-model-hub only: no
+# other production source may spell its host or an API path.
+hf_pattern='"[^"]*(huggingface\.co|/api/models|/api/whoami|/api/users/|/api/organizations/|/resolve/main)[^"]*"'
+hf_violations=""
+while IFS= read -r source; do
+  [[ -z "$source" ]] && continue
+  case "$source" in
+    "$crate_root/lettuce-model-hub/"*|*/tests.rs|*_tests.rs|*/tests/*) continue ;;
+  esac
+  found="$(HF_PATTERN="$hf_pattern" awk '
+    /^[[:space:]]*#\[cfg\(test\)\]/ { exit }
+    /^[[:space:]]*\/\// { next }
+    $0 ~ ENVIRON["HF_PATTERN"] { print FILENAME ":" FNR ": " $0 }
+  ' "$source")"
+  if [[ -n "$found" ]]; then
+    hf_violations+="$found"$'\n'
+  fi
+done < <(rg -l -e 'huggingface\.co|/api/models|/api/whoami|/api/users/|/api/organizations/|/resolve/main' --glob '*.rs' "$crate_root" "$app_root" || true)
+if [[ -n "$hf_violations" ]]; then
+  printf '%s' "$hf_violations" >&2
+  echo "Hugging Face hosts and API paths belong to crates/lettuce-model-hub" >&2
+  exit 1
+fi
+
 app_tree="$(cargo tree --manifest-path "$repo_root/Cargo.toml" -p lettuce-app --edges normal,build --prefix none --offline)"
 if rg -q '^(tauri|tauri-[a-z-]+|wry|tao|specta|specta-[a-z-]+) v' <<<"$app_tree"; then
   echo "lettuce-app must stay free of Tauri and specta" >&2

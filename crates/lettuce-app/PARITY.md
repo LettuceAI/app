@@ -81,6 +81,8 @@ Facts about how `lettuce-app` relates to the legacy app (2.2.x): what follows le
 - Kokoro keeps the legacy starter pack, model override, blend document and optional `lexicon.json`.
 - Downloads delete their partial on cancel or permanent failure, as legacy deleted its `.tmp` on cancel, stall and failure. Whisper and Kokoro check at use time only what legacy checked, that the files are present.
 - `register_downloaded_gguf` adds the model the old browser created; the first model becomes the default as legacy's `addOrUpdateModel` did. Sprout runnability uses the remote hardware as legacy did.
+- The GGUF models folder, the image folder below a chosen one (`hf_browser/mod.rs` 502-507), the download path `<folder>/<owner--repo>/<file>` (2646-2660), the delete rules and the folder move's refusal of a destination that already holds an entry follow legacy. `llama_devices` returns an empty list on mobile and the llama commands refuse there, as legacy did (`llama_cpp/mod.rs` 5320-5423).
+- Runnability and recommendations assume the settings' `llama_default_context_length` and `llama_default_kv_cache_type` as legacy's `llama_runtime_defaults` did (`hf_browser/mod.rs` 1416-1439). Pull progress is written at most every 150 ms, legacy's throttle (`ollama/mod.rs` 1025-1026).
 - ONNX Runtime follows legacy `ensure_ort_init`, reusing legacy's download folder; Kokoro calls it first on every platform as legacy's TTS commands did. The download is checked by size, as legacy checked nothing.
 
 ### Files
@@ -162,6 +164,21 @@ Facts about how `lettuce-app` relates to the legacy app (2.2.x): what follows le
 - A launched one-to-one chat is titled with the request's title or the character's name; legacy titles depended on the entry point ("New Chat", "Chat with X", i18n strings; `old-code/src/core/storage/repo.ts:1565` and its callers).
 - A companion chat needs the embedding model as well as the emotion model, as legacy's requirement check asked for both (`old-code/src/ui/modelRequirements.ts:86-90`); legacy also required its NER and router models, which are not ported. Lists and open chats report the missing models; legacy had no per-chat state and checked only at character creation and after sync (`modelRequirements.ts:55-97`).
 
+### Local models
+
+- A GGUF install is one job for the model, its projector and its MTP draft model, pinned to a revision with SHA-256 and size checked and partials resumed; legacy queued three unpinned items without any integrity check (`HuggingFaceBrowserPage.tsx` 2301-2409, `hf_browser/mod.rs` 2557-2624). A file already on disk is hashed again before it counts as installed.
+- A second request for an install already queued or running joins it with the same setup and is `Conflict` with another; legacy downloaded twice, and the first rewrite silently replaced the queued setup. A retried `client_operation_id` replays its job.
+- The model is created by the job's finisher whether or not the browser page is open, and a llama.cpp model already using the file is reused; legacy created it from the page only (`HuggingFaceBrowserPage.tsx` 2183-2299) and added a new model on every completed download (`repo.ts` 949-967).
+- The downloaded list includes files in nested repository folders (`Q4/x.gguf`), which legacy downloaded but never listed (`hf_browser/mod.rs` 3002-3063).
+- Deleting a model file unloads llama.cpp first when it holds the file and returns the models still pointing at it; legacy warned from the page, deleted without unloading and left the paths dangling (`InstalledModelsPage.tsx` 348-411). The folder check resolves the path, which legacy's `starts_with` did not (`hf_browser/mod.rs` 3213-3248). The list names each file's models, which legacy looked up in the page before a delete.
+- Adopting a file unloads llama.cpp when it holds the file, as the editor did before moving (`EditModelPage.tsx` 1331-1336), and deletes the original over an existing destination only when both hold the same bytes; legacy deleted the source whenever the destination name existed (`hf_browser/mod.rs` 3454-3465).
+- The models folder move is a job refused while an install writes into the folder or llama.cpp holds a model from it, and downloads are refused while it is pending; legacy moved synchronously and let a running download finish into the moved folder (`hf_browser/mod.rs` 3287-3402). It also rewires DFlash drafter and stable-diffusion.cpp paths, which legacy left pointing at the old folder (`hf_browser/mod.rs` 3340-3380).
+- `llama_context_info` counts the DFlash drafter, which the editor never sent (`EditModelPage.tsx` 2692-2710, a bug); `llamaMainGpu`, which the backend ignored (`llama_cpp/desktop/context.rs` 722), is not part of the request.
+- Hugging Face failures are typed for browse calls and download jobs (token missing or refused, gated, not found, rate limited, offline); legacy's UI matched error strings (`HfTokenMenu.tsx` 15-17). A token check that cannot reach Hugging Face is unknown, not invalid (`image_bundle.rs` 116-121). A file tree that cannot be read fails the call instead of listing every file at size 0 (`hf_browser/mod.rs` 2371-2375). Runnability without a readable GGUF header says so (`metadata_available`), where legacy scored silently (`hf_browser/mod.rs` 3581-3591); a token the store cannot read fails it.
+- An Ollama pull is a job: cancelling a queued pull stops it, which legacy only showed (`hf_browser/mod.rs` 2523-2541), and a stream that ends without success fails it (`ollama/mod.rs` 1042-1059).
+- On mobile, GGUF downloads and the folder move are refused by the backend; legacy hid them in the UI only (`HuggingFaceBrowserPage.tsx` 1484-1497).
+- The download planner's limits come from `hf_recommendation`; legacy computed them in the page (`HuggingFaceBrowserPage.tsx` 163-199, 650-666, 701-704).
+
 ## Decisions
 
 - 2026-09-11: speakers whose character is gone become disabled, muted "Unknown" members of an imported group conversation.
@@ -183,6 +200,7 @@ Facts about how `lettuce-app` relates to the legacy app (2.2.x): what follows le
 - A crash between growth success and consolidation admission loses the consolidation (legacy lost it too). With a shared pool, overlapping memory passes of two chats can count one chat's new memories as fresh for the other's growth.
 - An `artifact_id` image recommendation (made by the new app) has no resolvable LoRA file yet, so it binds as having no LoRA.
 - Install work lives in the job runner's memory, since the job store keeps only the job: a queued install an earlier process admitted is cancelled at startup (a queued Thymos install resumes from its hint), and the next request admits a new job that resumes the verified and partial files.
+- A models folder move interrupted by a crash leaves its copies in the destination (the originals and stored paths stay as they were), and the next move there is refused until the folder is emptied; one interrupted after the paths were rewired leaves the originals behind. Queued moves and pulls survive a restart and run then.
 - A Thymos job that succeeded without a readable hint cannot be finished, since the job store does not record the pinned revision; the next admission installs again.
 - Creation helper drafts do not show the avatar, background, model, prompt, gradient and image-gallery lines (the fields do not exist yet) or the non-native fallback-protocol entry (the legacy UI never enabled it).
 - The creation helper's avatar prompt path (template text, untrimmed, no conditions) is not ported.

@@ -15,7 +15,7 @@ The crate knows nothing about what a job does. It has no Tauri, SQLite, provider
 
 ## Kinds and subjects
 
-`JobKind` names the operation: artifact install and verify, runtime prepare, model load, memory extraction and consolidation, companion growth, consolidation and Soul writer, conversation generation, vector index build, creation run, image generation, media transform, transfer import and export, backup export and restore, sync session, speech transcription and synthesis, embedding benchmark, maintenance.
+`JobKind` names the operation: artifact install and verify, runtime prepare, model load, memory extraction and consolidation, companion growth, consolidation and Soul writer, conversation generation, vector index build, creation run, image generation, media transform, transfer import and export, backup export and restore, sync session, speech transcription and synthesis, embedding benchmark, maintenance, an Ollama model pull and a models folder move.
 
 Kinds are split finely on purpose. Companion Soul growth runs after a successful memory job and must fail or retry without touching that completed job, so it has its own kind. Companion consolidation follows a successful growth job, targets the character's Soul, and likewise must not change the growth job when it skips, fails or retries, so it is separate from generic memory consolidation. The feature input and checkpoints of these jobs belong to the application. `ConversationGeneration` is one direct conversation generation attempt.
 

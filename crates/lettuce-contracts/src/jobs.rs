@@ -29,6 +29,8 @@ pub enum JobKindDto {
     SpeechSynthesize,
     EmbeddingBenchmark,
     Maintenance,
+    ModelPull,
+    ModelsFolderMove,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -63,6 +65,7 @@ pub enum JobSubjectKindDto {
     Runtime,
     ModelProfile,
     Maintenance,
+    ProviderModel,
 }
 
 /// What a job works on.
@@ -72,6 +75,28 @@ pub enum JobSubjectKindDto {
 pub struct JobSubjectDto {
     pub kind: JobSubjectKindDto,
     pub id: String,
+}
+
+/// What the download center shows for a model job: the repository file a
+/// download installs, the model an Ollama server pulls, the folders a move
+/// goes between.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum JobSubjectDetail {
+    ModelDownload {
+        repo: String,
+        file: String,
+        display_name: String,
+    },
+    ModelPull {
+        provider_account_id: String,
+        model: String,
+    },
+    ModelsFolderMove {
+        from: String,
+        to: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -128,20 +153,48 @@ pub struct JobFailureDto {
     pub retryable: bool,
     /// The optional model whose absence failed the job.
     pub model: Option<crate::RequiredModel>,
+    /// Why Hugging Face refused a download.
+    pub hugging_face: Option<crate::HfFailure>,
 }
 
 /// What a finished job produced, where the job kind has a typed result.
+/// `ModelInstalled` names a downloaded model's path and, when the download
+/// asked for one, the llama.cpp model it became.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum JobResultDto {
     ArtifactInstalled,
-    Asset { asset: AssetRef },
-    GenerationTurn { turn_id: String },
-    Conversation { conversation_id: String },
-    Group { group_id: String },
-    Character { character_id: String },
-    ModelProfile { model_profile_id: String },
+    Asset {
+        asset: AssetRef,
+    },
+    GenerationTurn {
+        turn_id: String,
+    },
+    Conversation {
+        conversation_id: String,
+    },
+    Group {
+        group_id: String,
+    },
+    Character {
+        character_id: String,
+    },
+    ModelProfile {
+        model_profile_id: String,
+    },
+    ModelInstalled {
+        model_path: String,
+        model_profile_id: Option<String>,
+    },
+    ModelPulled {
+        model: String,
+    },
+    ModelsFolderMoved {
+        path: String,
+        moved_entries: u32,
+        rewired_models: u32,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -151,6 +204,7 @@ pub struct JobView {
     pub id: String,
     pub kind: JobKindDto,
     pub subject: JobSubjectDto,
+    pub subject_detail: Option<JobSubjectDetail>,
     pub state: JobStateDto,
     pub progress: JobProgressDto,
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]

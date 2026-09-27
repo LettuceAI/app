@@ -171,6 +171,14 @@ impl JobHostState {
         lock(&self.installs).get(&job_id).cloned()
     }
 
+    /// The folders the installs this process holds write below.
+    pub(crate) fn install_roots(&self) -> Vec<(JobId, std::path::PathBuf)> {
+        lock(&self.installs)
+            .iter()
+            .map(|(job_id, work)| (*job_id, work.root().to_path_buf()))
+            .collect()
+    }
+
     pub(crate) fn has_install(&self, job_id: JobId) -> bool {
         lock(&self.installs).contains_key(&job_id)
     }

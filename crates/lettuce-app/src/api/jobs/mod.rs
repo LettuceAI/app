@@ -4,6 +4,7 @@
 
 mod feed;
 mod install;
+mod local;
 mod runner;
 mod state;
 
@@ -32,6 +33,8 @@ pub(crate) use install::recover_queued_installs;
 pub use install::{
     ArtifactInstallHandler, InstallFinish, InstallSources, InstallWork, NetworkInstallSources,
 };
+pub use local::{ModelPullHandler, ModelsFolderMoveHandler};
+pub(crate) use local::{admit_gguf_download, admit_model_pull, admit_models_folder_move};
 pub use runner::{ClaimedJob, JobHandler, JobHandlers, JobLane, JobProgressSink, JobRunner};
 pub(crate) use state::JobHostState;
 
@@ -197,6 +200,7 @@ pub(crate) fn job_event(job: &JobSnapshot, view: dto::JobView) -> (dto::JobEvent
 }
 
 pub(crate) fn job_view(context: &ApiContext, job: &JobSnapshot) -> dto::JobView {
+    let local = local::local_job_view(context, job);
     dto::JobView {
         id: job.id.to_string(),
         kind: job_kind_dto(job.kind),
@@ -204,6 +208,7 @@ pub(crate) fn job_view(context: &ApiContext, job: &JobSnapshot) -> dto::JobView 
             kind: subject_kind_dto(job.subject.kind),
             id: job.subject.id.to_string(),
         },
+        subject_detail: local.detail,
         state: job_state_dto(job.state),
         progress: progress(job),
         created_at: job.created_at.get(),
@@ -214,11 +219,22 @@ pub(crate) fn job_view(context: &ApiContext, job: &JobSnapshot) -> dto::JobView 
             model: (error.code == JobErrorCode::CapabilityUnavailable
                 && error.message.as_str() == crate::EMBEDDING_UNAVAILABLE_JOB_ERROR)
                 .then_some(dto::RequiredModel::Embedding),
+            hugging_face: (job.kind == JobKind::ArtifactInstall)
+                .then(|| {
+                    crate::hf_failure_of_job_error(
+                        error.message.as_str(),
+                        local.repo.as_deref().unwrap_or_default(),
+                    )
+                })
+                .flatten()
+                .map(|failure| super::error::hf_failure(&failure)),
         }),
-        result: job.outcome.as_ref().and_then(|outcome| {
-            let (JobOutcome::Success { result_ref } | JobOutcome::Partial { result_ref, .. }) =
-                outcome;
-            job_result(context, result_ref)
+        result: local.result.or_else(|| {
+            job.outcome.as_ref().and_then(|outcome| {
+                let (JobOutcome::Success { result_ref } | JobOutcome::Partial { result_ref, .. }) =
+                    outcome;
+                job_result(context, result_ref)
+            })
         }),
     }
 }
@@ -359,6 +375,8 @@ mirror!(
         SpeechSynthesize,
         EmbeddingBenchmark,
         Maintenance,
+        ModelPull,
+        ModelsFolderMove,
     ]
 );
 
@@ -399,5 +417,6 @@ mirror!(
         Runtime,
         ModelProfile,
         Maintenance,
+        ProviderModel,
     ]
 );
