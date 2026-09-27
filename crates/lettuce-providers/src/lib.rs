@@ -2810,6 +2810,33 @@ mod integration_tests {
     }
 
     #[tokio::test]
+    async fn an_ollama_pull_that_ends_without_success_fails() {
+        let (store, owner, key_ref) = keyed_store().await;
+        let network = Arc::new(JsonClient::new().expect("client"));
+        let providers = RemoteProviders::new(Arc::clone(&store), Arc::clone(&network));
+        let body = "{\"status\":\"pulling ab\",\"completed\":4,\"total\":8}\n";
+        let (endpoint, _request) = test_server(http_json(body)).await;
+        let ollama = account(
+            "ollama",
+            ProviderProtocol::Ollama,
+            Some(endpoint),
+            ProviderConfig::Standard,
+            Some(key_ref),
+            owner,
+        );
+        let mut seen = Vec::new();
+        assert_eq!(
+            providers
+                .ollama_pull(&ollama, "hf.co/org/m:Q4_K_M", &mut |progress| {
+                    seen.push(progress.status);
+                })
+                .await,
+            Err(crate::OllamaHubError::Incomplete)
+        );
+        assert_eq!(seen, ["downloading"]);
+    }
+
+    #[tokio::test]
     async fn model_listing_follows_each_family_shape() {
         let (store, owner, key_ref) = keyed_store().await;
         let network = Arc::new(JsonClient::new().expect("client"));

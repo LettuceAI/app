@@ -19,6 +19,9 @@ pub enum OllamaHubError {
     EmptyReference,
     #[error("The provider's credentials could not be read.")]
     Credentials,
+    /// The pull stream ended without reporting success or an error.
+    #[error("The Ollama pull ended before the model was complete.")]
+    Incomplete,
     #[error("{0}")]
     Message(String),
 }
@@ -347,7 +350,7 @@ pub(crate) async fn pull<S: SecretStore + ?Sized>(
             on_progress(reader.complete());
             Ok(())
         }
-        _ => Ok(()),
+        _ => Err(OllamaHubError::Incomplete),
     }
 }
 
