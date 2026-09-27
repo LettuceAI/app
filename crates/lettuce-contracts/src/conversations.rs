@@ -693,4 +693,8 @@ pub struct ConversationParticipantUpdateRequest {
     pub muted: Option<bool>,
     /// The member's own model, or reset to follow the character's default.
     pub model: Option<IdChange>,
+    /// Idempotency key: repeating an update with the same key and request
+    /// returns the first update's result; another request under the key is
+    /// `Conflict`.
+    pub client_operation_id: String,
 }

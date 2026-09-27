@@ -998,7 +998,9 @@ pub async fn conversation_participant_add(
 /// Enables, disables, mutes or unmutes a group member, or sets or resets its
 /// model. The chat owns what the change touches from then on. At least one
 /// enabled, unmuted member must remain; the change that would leave none is
-/// `InvalidInput` naming `conversation.group.active_member`.
+/// `InvalidInput` naming `conversation.group.active_member`. Repeating the
+/// call with the same key and request returns the first result; another
+/// request under the key is `Conflict`.
 pub async fn conversation_participant_update(
     context: &ApiContext,
     request: dto::ConversationParticipantUpdateRequest,
@@ -1006,8 +1008,17 @@ pub async fn conversation_participant_update(
     let conversation_id: ConversationId = parse_id(&request.conversation_id, "conversation_id")?;
     let participant_id: ConversationParticipantId =
         parse_id(&request.participant_id, "participant_id")?;
-    let digest = serde_json::to_vec(&request)
-        .map_err(|_| api_error(ApiErrorCode::Internal, "the change could not be encoded"))?;
+    let key = request.client_operation_id.clone();
+    let digest = serde_json::to_vec(&(
+        &request.conversation_id,
+        &request.participant_id,
+        request.enabled,
+        request.muted,
+        &request.model,
+    ))
+    .map_err(|_| api_error(ApiErrorCode::Internal, "the change could not be encoded"))?;
+    let operation = conversation::edit_operation(key, &[b"lettuce-participant-update-v1", &digest])
+        .map_err(edit_error)?;
     let change = conversation::ParticipantChange {
         enabled: request.enabled,
         muted: request.muted,
@@ -1019,15 +1030,6 @@ pub async fn conversation_participant_update(
     context
         .blocking(move |context| {
             let database = context.backend().database();
-            let revision = ConversationReader::get(database, conversation_id)
-                .map_err(IntoApiError::into_api_error)?
-                .conversation
-                .revision;
-            let operation = conversation::edit_operation(
-                format!("participant.{}.{}", participant_id, revision.get()),
-                &[b"lettuce-participant-update-v1", &digest],
-            )
-            .map_err(edit_error)?;
             let updated = conversation::update_group_participant(
                 database,
                 conversation_id,

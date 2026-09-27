@@ -181,6 +181,12 @@ export type ConversationParticipantUpdateRequest = {
 	muted: boolean | null,
 	/**  The member's own model, or reset to follow the character's default. */
 	model: IdChange | null,
+	/**
+	 *  Idempotency key: repeating an update with the same key and request
+	 *  returns the first update's result; another request under the key is
+	 *  `Conflict`.
+	 */
+	client_operation_id: string,
 };
 
 export type ConversationRenameRequest = {

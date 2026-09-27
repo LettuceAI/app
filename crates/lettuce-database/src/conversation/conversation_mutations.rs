@@ -203,6 +203,13 @@ fn require_speaker_shape(
     if group && swap_roles {
         return Err(invalid("generation_turn.swap_roles"));
     }
+    if let Some(forced) = forced_speaker {
+        let conversation = conversation_value(transaction, conversation_id)?;
+        let membership = group_membership_in(transaction, &conversation)?;
+        if !lettuce_conversations::is_effective_member(&conversation, membership.as_ref(), forced) {
+            return Err(invalid("generation_turn.forced_speaker"));
+        }
+    }
     Ok(())
 }
 
@@ -1791,31 +1798,76 @@ pub(crate) fn encode_speaker_details(
     })
 }
 
-/// Which participant flags the stored rows decide. A group conversation
-/// that follows its group's member list or mutes leaves those to the
-/// application, which resolves them from the group each turn.
-pub(crate) struct RowsDecide {
-    pub(crate) enabled: bool,
-    pub(crate) muted: bool,
+/// The group's current membership a group conversation follows, read in
+/// the caller's transaction; none for a one-to-one chat or a group that no
+/// longer exists.
+pub(crate) fn group_membership_in(
+    transaction: &Transaction<'_>,
+    conversation: &lettuce_conversations::Conversation,
+) -> Result<Option<lettuce_conversations::GroupMembership>, ConversationRepositoryError> {
+    let ConversationKind::Group(details) = &conversation.kind else {
+        return Ok(None);
+    };
+    let group_id = details.group.source_id.to_string();
+    let exists: bool = transaction
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM groups WHERE id = ?1)",
+            [&group_id],
+            |row| row.get(0),
+        )
+        .map_err(slice::db)?;
+    if !exists {
+        return Ok(None);
+    }
+    let mut statement = transaction
+        .prepare(
+            "SELECT character_id, muted FROM group_members WHERE group_id = ?1 ORDER BY ordinal",
+        )
+        .map_err(slice::db)?;
+    let members = statement
+        .query_map([&group_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? != 0))
+        })
+        .map_err(slice::db)?
+        .map(|row| {
+            let (character_id, muted) = row.map_err(slice::db)?;
+            Ok(lettuce_conversations::GroupMembershipMember {
+                character_id: slice::parse_id(character_id)?,
+                muted,
+            })
+        })
+        .collect::<Result<Vec<_>, ConversationRepositoryError>>()?;
+    Ok(Some(lettuce_conversations::GroupMembership { members }))
 }
 
-pub(crate) fn rows_decide_participants(
+/// The participants a conversation uses now, read in the caller's
+/// transaction (`lettuce_conversations::effective_participants`).
+pub(crate) fn effective_participants_in(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
-) -> Result<RowsDecide, ConversationRepositoryError> {
+) -> Result<Vec<lettuce_conversations::ConversationParticipant>, ConversationRepositoryError> {
+    let conversation = conversation_value(transaction, conversation_id)?;
+    let membership = group_membership_in(transaction, &conversation)?;
+    Ok(lettuce_conversations::effective_participants(
+        &conversation,
+        membership.as_ref(),
+    ))
+}
+
+/// A group conversation keeps one enabled, unmuted character after a
+/// participant change.
+fn require_active_member_in(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+) -> Result<(), ConversationRepositoryError> {
     if slice::conversation_kind_name(transaction, conversation_id)? != "group" {
-        return Ok(RowsDecide {
-            enabled: true,
-            muted: true,
-        });
+        return Ok(());
     }
-    let settings = read_current_settings(transaction, conversation_id)?;
-    Ok(RowsDecide {
-        enabled: settings
-            .as_ref()
-            .is_some_and(|settings| settings.members_overridden),
-        muted: settings.is_some_and(|settings| settings.muted_overridden),
-    })
+    lettuce_conversations::require_active_member(&effective_participants_in(
+        transaction,
+        conversation_id,
+    )?)
+    .map_err(ConversationRepositoryError::Invalid)
 }
 
 fn validate_resolved_speaker(
@@ -1824,24 +1876,19 @@ fn validate_resolved_speaker(
     turn: &GenerationTurn,
     decision: &SelectedSpeakerDecision,
 ) -> Result<(), ConversationRepositoryError> {
-    let participant: Option<(String, bool, bool)> = transaction
-        .query_row(
-            "SELECT role, enabled, muted FROM conversation_participants WHERE conversation_id = ?1 AND id = ?2",
-            params![conversation_id.to_string(), decision.participant_id.to_string()],
-            |row| Ok((row.get(0)?, row.get::<_, i64>(1)? != 0, row.get::<_, i64>(2)? != 0)),
-        )
-        .optional()
-        .map_err(slice::db)?;
-    let Some((role, enabled, muted)) = participant else {
+    let effective = effective_participants_in(transaction, conversation_id)?;
+    let Some(participant) = effective
+        .iter()
+        .find(|participant| participant.id == decision.participant_id)
+    else {
         return Err(ConversationRepositoryError::Conflict);
     };
-    let rows = rows_decide_participants(transaction, conversation_id)?;
-    if role != "character" || (!enabled && rows.enabled) {
+    if participant.role != lettuce_conversations::ParticipantRole::Character || !participant.enabled
+    {
         return Err(ConversationRepositoryError::Conflict);
     }
     if decision.method != lettuce_conversations::SpeakerDecisionMethod::Explicit
-        && muted
-        && rows.muted
+        && participant.muted
     {
         return Err(ConversationRepositoryError::Conflict);
     }
@@ -4870,6 +4917,7 @@ impl ConversationRepository for Database {
                     command.overrides,
                     context.now,
                 )?;
+                require_active_member_in(transaction, context.conversation_id)?;
                 let revision =
                     kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
                 let mut events = changes
@@ -4955,6 +5003,24 @@ impl ConversationRepository for Database {
                         },
                     ));
                 }
+                for change in &command.materialize {
+                    if !current.participants.iter().any(|participant| {
+                        participant.id == change.participant_id
+                            && participant.role == lettuce_conversations::ParticipantRole::Character
+                    }) {
+                        return Err(ConversationRepositoryError::Invalid(
+                            lettuce_conversations::ValidationError::InvalidReference {
+                                field: "participant_add.materialize",
+                            },
+                        ));
+                    }
+                    write_participant_change(
+                        transaction,
+                        context.conversation_id,
+                        change,
+                        context.now,
+                    )?;
+                }
                 let existing = current.participants.iter().find(|participant| {
                     participant.source
                         == lettuce_conversations::ParticipantSource::Character(command.character_id)
@@ -5031,6 +5097,7 @@ impl ConversationRepository for Database {
                     },
                     context.now,
                 )?;
+                require_active_member_in(transaction, context.conversation_id)?;
                 let revision =
                     kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
                 let mut events = vec![kernel::StagedEvent {
@@ -7681,7 +7748,7 @@ mod tests {
     }
 
     #[test]
-    fn a_conversation_following_its_group_decides_members_and_mutes_in_the_application() {
+    fn a_conversation_whose_group_is_gone_decides_speakers_by_its_launch_values() {
         let fixture = group_fixture();
         let (turn, selecting_revision) = group_selecting_turn(&fixture, "resolve-follow");
         fixture
@@ -7706,7 +7773,7 @@ mod tests {
                 ),
                 TimestampMillis::new(30),
             )
-            .expect("the group's current members and mutes decide, not the launch row");
+            .expect("without its group the launch values decide, not a stale row");
     }
 
     #[test]
@@ -14512,6 +14579,7 @@ mod tests {
             muted: false,
             member,
             override_members,
+            materialize: Vec::new(),
         }
     }
 

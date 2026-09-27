@@ -2,15 +2,14 @@ use lettuce_characters::{CharacterRepository, GroupProfile, LifecycleStatus};
 use lettuce_conversations::{
     AddConversationParticipant, Conversation, ConversationKind, ConversationParticipant,
     ConversationReader, ConversationRepository, ConversationRepositoryError,
-    CurrentConversationSettings, GroupMemberLaunchSnapshot, ModelSelectionSnapshot, OperationToken,
-    ParticipantOverrides, ParticipantPolicyChange, ParticipantRole, ParticipantSource,
-    PreparedParticipantAdd, SnapshotSelection, UpdateParticipantPolicy, require_active_member,
+    GroupMemberLaunchSnapshot, ModelSelectionSnapshot, OperationToken, ParticipantOverrides,
+    ParticipantPolicyChange, ParticipantRole, ParticipantSource, PreparedParticipantAdd,
+    SnapshotSelection, UpdateParticipantPolicy,
 };
 use lettuce_database::Database;
 use lettuce_models::{ModelKind, ModelProfileRepository, ProviderAccountRepository};
 use lettuce_types::{
-    CharacterId, ConversationId, ConversationParticipantId, ModelProfileId, Revision,
-    TimestampMillis,
+    CharacterId, ConversationId, ConversationParticipantId, ModelProfileId, TimestampMillis,
 };
 
 use super::{Change, ConversationEditError, edit_operation, snapshot_artifact_id};
@@ -152,6 +151,27 @@ pub fn add_group_member(
                 )
             }
         };
+        let members_owned = conversation
+            .current_settings
+            .as_ref()
+            .is_some_and(|settings| settings.members_overridden);
+        let materialize = if override_members && !members_owned {
+            live_sources::effective_participants(&conversation, profile.as_ref())
+                .into_iter()
+                .filter(|participant| {
+                    participant.role == ParticipantRole::Character
+                        && participant.id != participant_id
+                })
+                .map(|participant| ParticipantPolicyChange {
+                    participant_id: participant.id,
+                    enabled: Some(participant.enabled),
+                    muted: None,
+                    model_override: None,
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
         let command = AddConversationParticipant {
             conversation_id,
             expected_revision: conversation.revision,
@@ -162,6 +182,7 @@ pub fn add_group_member(
             muted: member.as_ref().is_some_and(|member| member.muted),
             member,
             override_members,
+            materialize,
         };
         let prepared = PreparedParticipantAdd::new(command, drafts)
             .map_err(|_| ConversationEditError::Snapshot)?;
@@ -206,8 +227,8 @@ pub fn ensure_group_members(
 /// Changes one participant of a group conversation. Each aspect it touches
 /// (member list, muted flags, models) becomes the conversation's own; the
 /// other participants keep what they followed from the group, written into
-/// their rows in the same change. At least one enabled, unmuted character
-/// must remain.
+/// their rows in the same change. The conversation command refuses a change
+/// that leaves no enabled, unmuted character.
 pub fn update_group_participant(
     database: &Database,
     conversation_id: ConversationId,
@@ -295,11 +316,6 @@ pub fn update_group_participant(
             materialize,
             overrides,
         };
-        require_active_member(&after(&conversation, &command, profile.as_ref())).map_err(
-            |error| {
-                ConversationEditError::Conversation(ConversationRepositoryError::Invalid(error))
-            },
-        )?;
         match ConversationRepository::update_participant_policy(database, &command, now) {
             Ok(updated) => return Ok(updated.value),
             Err(ConversationRepositoryError::StaleRevision { .. })
@@ -307,38 +323,6 @@ pub fn update_group_participant(
             Err(error) => return Err(error.into()),
         }
     }
-}
-
-/// The effective participants once `command` is written.
-fn after(
-    conversation: &Conversation,
-    command: &UpdateParticipantPolicy,
-    profile: Option<&GroupProfile>,
-) -> Vec<ConversationParticipant> {
-    let mut next = conversation.clone();
-    for change in command.changes() {
-        if let Some(participant) = next
-            .participants
-            .iter_mut()
-            .find(|participant| participant.id == change.participant_id)
-        {
-            if let Some(enabled) = change.enabled {
-                participant.enabled = enabled;
-            }
-            if let Some(muted) = change.muted {
-                participant.muted = muted;
-            }
-        }
-    }
-    let mut settings = next
-        .current_settings
-        .take()
-        .unwrap_or_else(|| CurrentConversationSettings::inherited(Revision::INITIAL));
-    settings.members_overridden |= command.overrides.members;
-    settings.muted_overridden |= command.overrides.muted;
-    settings.member_models_overridden |= command.overrides.member_models;
-    next.current_settings = Some(settings);
-    live_sources::effective_participants(&next, profile)
 }
 
 /// The model a participant follows from its group, as the row value it keeps

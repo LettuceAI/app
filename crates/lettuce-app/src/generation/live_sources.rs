@@ -73,62 +73,30 @@ pub(crate) fn live_group<S: GroupRepository + ?Sized>(
     }))
 }
 
-/// The participants a group turn uses. Each aspect the conversation owns
-/// (its member list, muted flags) comes from its own rows; otherwise a
-/// character is enabled while it is one of the group's current members and
-/// muted as the group mutes it. When the group no longer exists, launch
-/// members keep their launch values and later members their rows. A
-/// one-to-one chat's participants are its rows.
+/// The participants a group turn uses (`lettuce_conversations::effective_participants`
+/// over the group's current membership).
 pub(crate) fn effective_participants(
     conversation: &Conversation,
     profile: Option<&GroupProfile>,
 ) -> Vec<ConversationParticipant> {
-    let ConversationKind::Group(details) = &conversation.kind else {
-        return conversation.participants.clone();
-    };
-    let own = conversation.current_settings.as_ref();
-    let members_owned = own.is_some_and(|settings| settings.members_overridden);
-    let muted_owned = own.is_some_and(|settings| settings.muted_overridden);
-    conversation
-        .participants
-        .iter()
-        .map(|participant| {
-            let mut participant = participant.clone();
-            let ParticipantSource::Character(character_id) = participant.source else {
-                return participant;
-            };
-            match profile {
-                Some(profile) => {
-                    let member = profile
-                        .members
-                        .iter()
-                        .find(|member| member.character_id == character_id);
-                    if !members_owned {
-                        participant.enabled = member.is_some();
-                    }
-                    if !muted_owned && let Some(member) = member {
-                        participant.muted = member.muted;
-                    }
-                }
-                None => {
-                    let launch = details
-                        .initial_participant_policy
-                        .members
-                        .iter()
-                        .find(|policy| policy.participant_id == participant.id);
-                    if let Some(launch) = launch {
-                        if !members_owned {
-                            participant.enabled = launch.enabled;
-                        }
-                        if !muted_owned {
-                            participant.muted = launch.muted;
-                        }
-                    }
-                }
-            }
-            participant
-        })
-        .collect()
+    lettuce_conversations::effective_participants(
+        conversation,
+        profile.map(group_membership).as_ref(),
+    )
+}
+
+/// A group profile's members as the conversation domain sees them.
+pub(crate) fn group_membership(profile: &GroupProfile) -> lettuce_conversations::GroupMembership {
+    lettuce_conversations::GroupMembership {
+        members: profile
+            .members
+            .iter()
+            .map(|member| lettuce_conversations::GroupMembershipMember {
+                character_id: member.character_id,
+                muted: member.muted,
+            })
+            .collect(),
+    }
 }
 
 /// The group's current members a group conversation has no row for yet, in

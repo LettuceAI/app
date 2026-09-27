@@ -122,6 +122,25 @@ async fn participant_update(
     enabled: Option<bool>,
     muted: Option<bool>,
 ) -> Result<dto::ConversationRevisions, dto::ApiError> {
+    participant_update_keyed(
+        harness,
+        conversation_id,
+        participant_id,
+        enabled,
+        muted,
+        &uuid::Uuid::new_v4().to_string(),
+    )
+    .await
+}
+
+async fn participant_update_keyed(
+    harness: &Harness,
+    conversation_id: &str,
+    participant_id: &str,
+    enabled: Option<bool>,
+    muted: Option<bool>,
+    key: &str,
+) -> Result<dto::ConversationRevisions, dto::ApiError> {
     conversation_participant_update(
         &harness.context,
         dto::ConversationParticipantUpdateRequest {
@@ -130,6 +149,7 @@ async fn participant_update(
             enabled,
             muted,
             model: None,
+            client_operation_id: key.into(),
         },
     )
     .await
@@ -1127,4 +1147,287 @@ async fn a_direct_chat_follows_its_characters_memory_mode() {
     .await
     .expect("reset");
     assert_eq!(reset.memory.mode, dto::MemoryMode::Dynamic);
+}
+
+fn token(key: &str) -> lettuce_conversations::OperationToken {
+    crate::conversation::edit_operation(key.into(), &[key.as_bytes()]).expect("token")
+}
+
+fn stored(harness: &Harness, chat: &str) -> lettuce_conversations::Conversation {
+    ConversationReader::get(
+        harness.context.backend().database(),
+        chat.parse().expect("id"),
+    )
+    .expect("conversation")
+    .conversation
+}
+
+/// Adding a member to a chat that follows its group keeps, for everyone
+/// else, the membership it followed: a member the group removed stays out
+/// though its launch row says enabled, and one the group has stays in
+/// though its row says disabled.
+#[tokio::test(flavor = "multi_thread")]
+async fn adding_a_member_keeps_the_membership_the_chat_followed() {
+    let harness = harness(Reply::Text("Hello."));
+    let database = harness.context.backend().database();
+    let ada = seed_named_character(database, "Ada");
+    let bea = seed_named_character(database, "Bea");
+    let cleo = seed_named_character(database, "Cleo");
+    let dan = seed_named_character(database, "Dan");
+    let group_id = seed_group(
+        database,
+        vec![member(ada, 0), member(bea, 1), member(cleo, 2)],
+        None,
+        |_| {},
+    );
+    let removed_chat = launch_group(&harness, group_id, "materialize-removed").await;
+    let disabled_chat = launch_group(&harness, group_id, "materialize-disabled").await;
+    let launched = view(&harness, &disabled_chat).await;
+    participant_update(
+        &harness,
+        &disabled_chat,
+        &member_view(&launched, ada).expect("ada").participant_id,
+        Some(false),
+        None,
+    )
+    .await
+    .expect("remove ada in the chat");
+    let owned = view(&harness, &disabled_chat).await;
+    update(
+        &harness,
+        &disabled_chat,
+        owned.settings_revision,
+        dto::ConversationSettingsPatch {
+            reset_members: true,
+            ..dto::ConversationSettingsPatch::default()
+        },
+    )
+    .await
+    .expect("follow the group's members again");
+    GroupRepository::replace_members(
+        database,
+        group_id,
+        group_revision(&harness, group_id),
+        vec![member(ada, 0), member(cleo, 1)],
+        NOW,
+    )
+    .expect("bea leaves the group");
+
+    for (chat, key) in [
+        (&removed_chat, "materialize-removed-add"),
+        (&disabled_chat, "materialize-disabled-add"),
+    ] {
+        conversation_participant_add(
+            &harness.context,
+            dto::ConversationParticipantAddRequest {
+                conversation_id: chat.clone(),
+                character_id: dan.to_string(),
+                client_operation_id: key.into(),
+            },
+        )
+        .await
+        .expect("add dan");
+        let after = view(&harness, chat).await;
+        assert_eq!(
+            after.members.as_ref().expect("members").members_source,
+            dto::SettingSource::Conversation
+        );
+        assert!(member_view(&after, ada).is_some_and(|ada| ada.enabled));
+        assert!(
+            member_view(&after, bea).is_some_and(|bea| !bea.enabled),
+            "the member the group removed stays out"
+        );
+        assert!(member_view(&after, cleo).is_some_and(|cleo| cleo.enabled));
+        assert!(member_view(&after, dan).is_some_and(|dan| dan.enabled));
+    }
+}
+
+/// A participant update repeated with its key returns the first result;
+/// another change under the key conflicts.
+#[tokio::test(flavor = "multi_thread")]
+async fn participant_updates_replay_by_their_key() {
+    let harness = harness(Reply::Text("Hello."));
+    let database = harness.context.backend().database();
+    let ada = seed_named_character(database, "Ada");
+    let bea = seed_named_character(database, "Bea");
+    let group_id = seed_group(database, vec![member(ada, 0), member(bea, 1)], None, |_| {});
+    let chat = launch_group(&harness, group_id, "keyed-update").await;
+    let ada_id = member_view(&view(&harness, &chat).await, ada)
+        .expect("ada")
+        .participant_id
+        .clone();
+    let first = participant_update_keyed(&harness, &chat, &ada_id, None, Some(true), "mute-ada")
+        .await
+        .expect("mute ada");
+    let again = participant_update_keyed(&harness, &chat, &ada_id, None, Some(true), "mute-ada")
+        .await
+        .expect("repeated");
+    assert_eq!(again, first);
+    let other = participant_update_keyed(&harness, &chat, &ada_id, None, Some(false), "mute-ada")
+        .await
+        .expect_err("another change under the key");
+    assert_eq!(other.code, ApiErrorCode::Conflict);
+}
+
+/// The active-member rule holds against the group as it stands when the
+/// change commits: a mute prepared while another member was active is
+/// refused once the group removed that member.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_active_member_rule_reads_the_group_at_commit() {
+    let harness = harness(Reply::Text("Hello."));
+    let database = harness.context.backend().database();
+    let ada = seed_named_character(database, "Ada");
+    let bea = seed_named_character(database, "Bea");
+    let cleo = seed_named_character(database, "Cleo");
+    let mut muted_cleo = member(cleo, 2);
+    muted_cleo.muted = true;
+    let group_id = seed_group(
+        database,
+        vec![member(ada, 0), member(bea, 1), muted_cleo],
+        None,
+        |_| {},
+    );
+    let chat = launch_group(&harness, group_id, "rule-at-commit").await;
+    let conversation = stored(&harness, &chat);
+    let participant = |character| {
+        conversation
+            .participants
+            .iter()
+            .find(|participant| participant.source == ParticipantSource::Character(character))
+            .expect("participant")
+            .id
+    };
+    let command = lettuce_conversations::UpdateParticipantPolicy {
+        conversation_id: conversation.id,
+        participant_id: participant(ada),
+        expected_revision: conversation.revision,
+        operation: token("rule-at-commit-mute"),
+        enabled: None,
+        muted: Some(true),
+        model_override: None,
+        materialize: vec![
+            lettuce_conversations::ParticipantPolicyChange {
+                participant_id: participant(bea),
+                enabled: None,
+                muted: Some(false),
+                model_override: None,
+            },
+            lettuce_conversations::ParticipantPolicyChange {
+                participant_id: participant(cleo),
+                enabled: None,
+                muted: Some(true),
+                model_override: None,
+            },
+        ],
+        overrides: lettuce_conversations::ParticipantOverrides {
+            members: false,
+            muted: true,
+            member_models: false,
+        },
+    };
+    let mut still_muted_cleo = member(cleo, 1);
+    still_muted_cleo.muted = true;
+    GroupRepository::replace_members(
+        database,
+        group_id,
+        group_revision(&harness, group_id),
+        vec![member(ada, 0), still_muted_cleo],
+        NOW,
+    )
+    .expect("the group removes bea meanwhile");
+    let refused = lettuce_conversations::ConversationRepository::update_participant_policy(
+        database,
+        &command,
+        harness.context.now(),
+    )
+    .expect_err("no active member would remain");
+    assert_eq!(
+        refused,
+        lettuce_conversations::ConversationRepositoryError::Invalid(
+            lettuce_conversations::ValidationError::Invariant {
+                field: "conversation.group.active_member"
+            }
+        )
+    );
+}
+
+/// A forced speaker the group removed is refused when the turn begins.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_forced_speaker_the_group_removed_is_refused() {
+    let harness = harness(Reply::Text("Hello."));
+    let database = harness.context.backend().database();
+    let ada = seed_named_character(database, "Ada");
+    let bea = seed_named_character(database, "Bea");
+    let cleo = seed_named_character(database, "Cleo");
+    let group_id = seed_group(
+        database,
+        vec![member(ada, 0), member(bea, 1), member(cleo, 2)],
+        None,
+        |group| group.speaker_selection = SpeakerSelection::Director,
+    );
+    let chat = launch_group(&harness, group_id, "forced-removed").await;
+    let conversation = stored(&harness, &chat);
+    let user = conversation
+        .participants
+        .iter()
+        .find(|participant| participant.source == ParticipantSource::User)
+        .expect("user")
+        .id;
+    lettuce_conversations::ConversationRepository::append_user_message(
+        database,
+        &lettuce_conversations::SendConversation {
+            conversation_id: conversation.id,
+            branch_id: conversation.active_branch_id,
+            expected_revision: conversation.revision,
+            operation: token("forced-removed-message"),
+            message: lettuce_conversations::MessageDraft {
+                role: lettuce_conversations::MessageRole::User,
+                author_participant_id: Some(user),
+                parts: vec![lettuce_conversations::MessagePart::Text {
+                    text: "Bea, say something".into(),
+                }],
+                visibility: lettuce_conversations::MessageVisibility::Visible,
+                pinned: false,
+                scene_edited: false,
+            },
+            swap_roles: false,
+        },
+        harness.context.now(),
+    )
+    .expect("director message");
+    GroupRepository::replace_members(
+        database,
+        group_id,
+        group_revision(&harness, group_id),
+        vec![member(ada, 0), member(cleo, 1)],
+        NOW,
+    )
+    .expect("bea leaves the group");
+    let bea_participant = conversation
+        .participants
+        .iter()
+        .find(|participant| participant.source == ParticipantSource::Character(bea))
+        .expect("bea")
+        .id;
+    let refused = lettuce_conversations::ConversationRepository::begin_continue(
+        database,
+        &lettuce_conversations::ContinueConversation {
+            conversation_id: conversation.id,
+            branch_id: conversation.active_branch_id,
+            expected_revision: stored(&harness, &chat).revision,
+            forced_speaker: Some(bea_participant),
+            swap_roles: false,
+            operation: token("forced-removed-continue"),
+        },
+        harness.context.now(),
+    )
+    .expect_err("bea is no longer a member");
+    assert_eq!(
+        refused,
+        lettuce_conversations::ConversationRepositoryError::Invalid(
+            lettuce_conversations::ValidationError::InvalidReference {
+                field: "generation_turn.forced_speaker"
+            }
+        )
+    );
 }
