@@ -634,11 +634,25 @@ where
         );
         let mut turn = ConversationReader::get_turn(self.repository, work.turn_id)
             .map_err(ConversationGenerationInputError::Repository)?;
-        if turn.selected_speaker.is_some()
-            || turn.forced_speaker.is_some()
-            || matches!(turn.target, GenerationTarget::ExistingCandidate { .. })
-        {
+        if turn.selected_speaker.is_some() || turn.forced_speaker.is_some() {
             return Ok(());
+        }
+        if let GenerationTarget::ExistingCandidate {
+            prior_candidate_id, ..
+        } = turn.target
+        {
+            let author = self
+                .repository
+                .get_candidate(prior_candidate_id)
+                .map_err(ConversationGenerationInputError::Repository)?
+                .author_participant_id;
+            let author_speaks = conversation
+                .participants
+                .iter()
+                .any(|participant| participant.id == author && participant.enabled);
+            if author_speaks {
+                return Ok(());
+            }
         }
         if matches!(
             speaker_selection,
@@ -3500,12 +3514,7 @@ mod tests {
             })
             .collect::<Vec<_>>();
         let source = items[599].message.id;
-        let kept = context_timeline(
-            items,
-            ContextWindowPolicy::default(),
-            10,
-            source,
-        );
+        let kept = context_timeline(items, ContextWindowPolicy::default(), 10, source);
         let indices = kept
             .iter()
             .map(|item| item.message.created_at.get())

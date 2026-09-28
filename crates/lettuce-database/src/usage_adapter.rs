@@ -325,6 +325,7 @@ fn unavailable_name(value: UsageUnavailableReason) -> &'static str {
         UsageUnavailableReason::NotAdmitted => "not_admitted",
         UsageUnavailableReason::CancelledBeforeResponse => "cancelled_before_response",
         UsageUnavailableReason::ProviderOmitted => "provider_omitted",
+        UsageUnavailableReason::Imported => "imported",
         UsageUnavailableReason::TransportFailed => "transport_failed",
     }
 }
@@ -344,6 +345,7 @@ fn parse_unavailable(value: &str) -> Result<UsageUnavailableReason, UsageLedgerE
         "not_admitted" => Ok(UsageUnavailableReason::NotAdmitted),
         "cancelled_before_response" => Ok(UsageUnavailableReason::CancelledBeforeResponse),
         "provider_omitted" => Ok(UsageUnavailableReason::ProviderOmitted),
+        "imported" => Ok(UsageUnavailableReason::Imported),
         "transport_failed" => Ok(UsageUnavailableReason::TransportFailed),
         _ => Err(UsageLedgerError::Storage),
     }

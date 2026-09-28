@@ -260,15 +260,19 @@ where
                 .iter()
                 .find_map(|member| selected_model(&member.model_override))
         });
-        let author = |id: Option<&String>| -> Result<Option<ConversationParticipantId>, Error> {
-            id.map(|id| {
-                authors
-                    .get(&parse_character(context.scope, id)?)
-                    .copied()
-                    .ok_or(Error::InvalidInput)
-            })
-            .transpose()
-        };
+        let unknown = unknown_speaker(context.scope, session);
+        let author =
+            |id: Option<&String>, role: &str| -> Result<Option<ConversationParticipantId>, Error> {
+                match id {
+                    Some(id) => authors
+                        .get(&parse_character(context.scope, id)?)
+                        .copied()
+                        .map(Some)
+                        .ok_or(Error::InvalidInput),
+                    None if role == "assistant" => Ok(authors.get(&unknown).copied()),
+                    None => Ok(None),
+                }
+            };
         let mut rows = session.messages.iter().collect::<Vec<_>>();
         rows.sort_by_key(|message| message.ordinal);
         let mut messages = Vec::with_capacity(rows.len());
@@ -284,7 +288,7 @@ where
                     total_tokens: variant.usage.total_tokens,
                     reasoning: variant.reasoning.as_deref(),
                     attachments_json: Some(&variant.attachments_json),
-                    author: author(variant.speaker_character_source_id.as_ref())?,
+                    author: author(variant.speaker_character_source_id.as_ref(), &row.role)?,
                     speed: TimelineSpeed {
                         first_token_ms: variant.usage.first_token_ms,
                         tokens_per_second: variant.usage.tokens_per_second,
@@ -301,7 +305,7 @@ where
                 visible_in_chat: true,
                 pinned: row.pinned,
                 scene_edited: false,
-                author: author(row.speaker_character_source_id.as_ref())?,
+                author: author(row.speaker_character_source_id.as_ref(), &row.role)?,
                 model_source_id: row.model_source_id.as_deref(),
                 selected_variant_source_id: row.selected_variant_source_id.as_deref(),
                 reasoning: row.reasoning.as_deref(),
@@ -381,6 +385,9 @@ fn session_cast<S: DirectLaunchSources>(
         if !wanted.contains(&id) {
             wanted.push(id);
         }
+    }
+    if has_speakerless_reply(session) {
+        wanted.push(unknown_speaker(scope, session));
     }
     let listed = session
         .member_source_ids
@@ -578,6 +585,28 @@ fn new_member<S: DirectLaunchSources>(
     };
     snapshots.push(draft);
     Ok((member, participant))
+}
+
+/// The character standing in for the speaker of legacy replies that recorded
+/// none (`group_messages.speaker_character_id` was nullable); it is not a real
+/// character, so the cast holds it disabled and muted like any missing one.
+fn unknown_speaker(
+    scope: lettuce_transfer::LegacyIdScope,
+    session: &LegacyBackupGroupSession,
+) -> CharacterId {
+    CharacterId::from_uuid(scope.derived(&session.source_id, "unknown-speaker"))
+}
+
+fn has_speakerless_reply(session: &LegacyBackupGroupSession) -> bool {
+    session.messages.iter().any(|message| {
+        message.role == "assistant"
+            && message.speaker_character_source_id.is_none()
+            && (message.variants.is_empty()
+                || message
+                    .variants
+                    .iter()
+                    .any(|variant| variant.speaker_character_source_id.is_none()))
+    })
 }
 
 fn unknown_character(character_id: CharacterId) -> CharacterSnapshotBodyV1 {

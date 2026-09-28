@@ -297,7 +297,9 @@ pub struct MessageCandidate {
     pub author_participant_id: ConversationParticipantId,
     pub ordinal: u16,
     pub parts: Vec<MessagePart>,
-    pub model: ModelSelectionSnapshot,
+    /// `None` marks a candidate imported from another app: no model call
+    /// produced it.
+    pub model: Option<ModelSelectionSnapshot>,
     pub created_at: TimestampMillis,
     pub provider_replay: Option<ReplayArtifactRef>,
 }
@@ -307,7 +309,9 @@ impl MessageCandidate {
         for part in &self.parts {
             part.validate()?;
         }
-        self.model.validate_snapshot("message_candidate.model")?;
+        if let Some(model) = &self.model {
+            model.validate_snapshot("message_candidate.model")?;
+        }
         if let Some(replay) = &self.provider_replay {
             replay.validate()?;
             if replay.retention != ReplayRetention::Conversation {

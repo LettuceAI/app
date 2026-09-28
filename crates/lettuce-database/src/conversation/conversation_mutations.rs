@@ -2236,9 +2236,14 @@ fn validate_resolved_speaker(
             .optional()
             .map_err(slice::db)?
             .ok_or(ConversationRepositoryError::NotFound)?;
-        let target_author = slice::parse_id(target_author)?;
-        turn.validate_regeneration_speaker(Some(target_author), Some(decision.participant_id))
-            .map_err(ConversationRepositoryError::Invalid)?;
+        let target_author: ConversationParticipantId = slice::parse_id(target_author)?;
+        let author_speaks = effective
+            .iter()
+            .any(|participant| participant.id == target_author && participant.enabled);
+        if author_speaks {
+            turn.validate_regeneration_speaker(Some(target_author), Some(decision.participant_id))
+                .map_err(ConversationRepositoryError::Invalid)?;
+        }
     }
     Ok(())
 }

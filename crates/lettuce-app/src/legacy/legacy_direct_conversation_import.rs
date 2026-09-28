@@ -1971,10 +1971,7 @@ impl SessionWriter<'_> {
         };
         let mut revisions = Vec::new();
         let mut candidates = Vec::new();
-        let variants_as_candidates = role == MessageRole::Assistant
-            && !legacy.variants.is_empty()
-            && parent.is_some()
-            && self.model.is_some();
+        let variants_as_candidates = role == MessageRole::Assistant && parent.is_some();
         if !variants_as_candidates {
             self.unlinked_stats += legacy
                 .variants
@@ -2102,40 +2099,62 @@ impl SessionWriter<'_> {
         candidates: &mut Vec<MessageCandidate>,
     ) -> Result<MessageRenderSource, Error> {
         let (parent_id, parent_role) = parent.ok_or(Error::InvalidInput)?;
-        let model = self.model.clone().ok_or(Error::InvalidInput)?;
-        let (usage_model, usage_provider, usage_model_revision, usage_provider_revision) = legacy
+        let model = self.model.clone();
+        let imported_variant = TimelineVariant {
+            source_id: legacy.source_id,
+            content: legacy.content,
+            created_at: legacy.created_at,
+            prompt_tokens: None,
+            completion_tokens: None,
+            total_tokens: None,
+            reasoning: legacy.reasoning,
+            attachments_json: None,
+            author: legacy.author,
+            speed: legacy.speed,
+        };
+        let imported = legacy.variants.is_empty();
+        let variants: Vec<&TimelineVariant<'_>> = if imported {
+            vec![&imported_variant]
+        } else {
+            legacy.variants.iter().collect()
+        };
+        let usage_identity = legacy
             .model_source_id
             .and_then(|id| id.parse::<ModelProfileId>().ok())
             .and_then(|id| self.context.models.get(&id))
-            .map_or(
+            .map(|(model_id, provider_id)| {
                 (
-                    model.source_id,
-                    model.provider_account_id,
-                    model.source_revision,
-                    model.provider_account_revision,
-                ),
-                |(model_id, provider_id)| {
+                    *model_id,
+                    *provider_id,
+                    Revision::INITIAL,
+                    Revision::INITIAL,
+                )
+            })
+            .or_else(|| {
+                model.as_ref().map(|model| {
                     (
-                        *model_id,
-                        *provider_id,
-                        Revision::INITIAL,
-                        Revision::INITIAL,
+                        model.source_id,
+                        model.provider_account_id,
+                        model.source_revision,
+                        model.provider_account_revision,
                     )
-                },
-            );
+                })
+            })
+            .filter(|_| !imported);
         let mut previous: Option<MessageCandidateId> = None;
         let mut active = None;
         let active_index = active_variant_index(legacy);
-        for (index, variant) in legacy.variants.iter().enumerate() {
-            let candidate_id =
-                MessageCandidateId::from_uuid(self.context.scope.source(variant.source_id));
-            let turn_id =
-                GenerationTurnId::from_uuid(self.context.scope.derived(variant.source_id, "turn"));
-            let attempt_id = GenerationAttemptId::from_uuid(
-                self.context.scope.derived(variant.source_id, "attempt"),
-            );
-            let usage_event_id =
-                UsageEventId::from_uuid(self.context.scope.derived(variant.source_id, "usage"));
+        for (index, variant) in variants.iter().copied().enumerate() {
+            let key = if imported {
+                format!("{}.imported", legacy.source_id)
+            } else {
+                variant.source_id.to_owned()
+            };
+            let candidate_id = MessageCandidateId::from_uuid(self.context.scope.source(&key));
+            let turn_id = GenerationTurnId::from_uuid(self.context.scope.derived(&key, "turn"));
+            let attempt_id =
+                GenerationAttemptId::from_uuid(self.context.scope.derived(&key, "attempt"));
+            let usage_event_id = UsageEventId::from_uuid(self.context.scope.derived(&key, "usage"));
             let at = timestamp(variant.created_at)?;
             let (operation, input, target) = match previous {
                 None if parent_role == MessageRole::User => (
@@ -2187,7 +2206,7 @@ impl SessionWriter<'_> {
                 guidance: None,
                 requested_model_override: None,
                 forced_speaker: None,
-                resolved_model: Some(model.clone()),
+                resolved_model: if imported { None } else { model.clone() },
                 prompt: None,
                 lorebooks: Vec::new(),
                 memory: None,
@@ -2228,6 +2247,7 @@ impl SessionWriter<'_> {
                     input_tokens,
                     output_tokens,
                 }),
+                _ if imported => UsageCounters::Unavailable(UsageUnavailableReason::Imported),
                 _ => UsageCounters::Unavailable(UsageUnavailableReason::ProviderOmitted),
             };
             let speed = variant_speed(legacy, variant, index);
@@ -2246,10 +2266,10 @@ impl SessionWriter<'_> {
                     attempt_id,
                     outcome: UsageOutcome::Succeeded,
                     usage: counters,
-                    model_profile_id: Some(usage_model),
-                    model_revision: Some(usage_model_revision),
-                    provider_account_id: Some(usage_provider),
-                    provider_account_revision: Some(usage_provider_revision),
+                    model_profile_id: usage_identity.map(|identity| identity.0),
+                    model_revision: usage_identity.map(|identity| identity.2),
+                    provider_account_id: usage_identity.map(|identity| identity.1),
+                    provider_account_revision: usage_identity.map(|identity| identity.3),
                     recorded_at: at,
                 },
             });
@@ -2270,7 +2290,7 @@ impl SessionWriter<'_> {
                         .flatten()),
                     self.variant_attachments(legacy, variant, index == active_index),
                 ),
-                model: model.clone(),
+                model: if imported { None } else { model.clone() },
                 created_at: at,
                 provider_replay: None,
             });

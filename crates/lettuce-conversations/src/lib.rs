@@ -3221,7 +3221,7 @@ mod tests {
             parts: vec![MessagePart::Text {
                 text: "reply".into(),
             }],
-            model: contract_model(),
+            model: Some(contract_model()),
             created_at: now,
             provider_replay: None,
         };

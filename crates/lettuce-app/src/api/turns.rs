@@ -284,10 +284,7 @@ where
                     (MessageRenderSource::Candidate(id), _) => *id,
                     (MessageRenderSource::Revision(_), Some(revision)) => {
                         revision.supersedes_candidate_id.ok_or_else(|| {
-                            api_error(
-                                ApiErrorCode::Unsupported,
-                                "the reply has no generated variant to regenerate from",
-                            )
+                            invalid_field("message_id", "the reply has nothing to regenerate from")
                         })?
                     }
                     (MessageRenderSource::Revision(_), None) => {

@@ -117,7 +117,9 @@ impl ConversationHistoryBackup {
                     }
                 }
                 for candidate in &message.candidates {
-                    insert_snapshot(&mut snapshots, &candidate.model.snapshot_ref)?;
+                    if let Some(model) = &candidate.model {
+                        insert_snapshot(&mut snapshots, &model.snapshot_ref)?;
+                    }
                     if let Some(reference) = &candidate.provider_replay {
                         insert_replay(&mut replays, reference)?;
                     }

@@ -159,7 +159,7 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
         .await
     }
 
-    async fn replace(
+    pub(crate) async fn replace(
         &self,
         restore_id: OperationId,
         import: &LegacyDatabaseImportPlan,
@@ -770,7 +770,7 @@ mod tests {
             .iter()
             .find(|message| message.message.role == lettuce_conversations::MessageRole::Assistant)
             .expect("assistant reply");
-        let attached = reply.revisions[0]
+        let attached = reply.candidates[0]
             .parts
             .iter()
             .find_map(|part| match part {

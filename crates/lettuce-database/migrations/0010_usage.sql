@@ -17,7 +17,7 @@ CREATE TABLE usage_events (
     output_tokens INTEGER CHECK (output_tokens IS NULL OR output_tokens >= 0),
     unavailable_reason TEXT CHECK (
         unavailable_reason IS NULL OR unavailable_reason IN (
-            'not_admitted', 'cancelled_before_response', 'provider_omitted', 'transport_failed'
+            'not_admitted', 'cancelled_before_response', 'provider_omitted', 'transport_failed', 'imported'
         )
     ),
     model_profile_id TEXT,

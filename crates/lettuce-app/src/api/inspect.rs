@@ -83,7 +83,10 @@ pub(super) fn snapshot_view(
         candidate_id: candidate.id.to_string(),
         operation: operation(record.request.operation),
         model: dto::PromptModel {
-            display_name: candidate.model.display_name.clone(),
+            display_name: candidate.model.as_ref().map_or_else(
+                || profile.external_model_id.clone(),
+                |model| model.display_name.clone(),
+            ),
             external_model_id: profile.external_model_id.clone(),
             provider_kind: profile.provider_kind.clone(),
         },

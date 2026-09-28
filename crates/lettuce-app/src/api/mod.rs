@@ -41,6 +41,8 @@ mod help_me_reply_tests;
 #[cfg(test)]
 mod inspect_tests;
 #[cfg(test)]
+mod legacy_regenerate_tests;
+#[cfg(test)]
 mod local_models_tests;
 #[cfg(test)]
 mod messages_tests;

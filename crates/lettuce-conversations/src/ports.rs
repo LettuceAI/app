@@ -2444,6 +2444,7 @@ pub enum UsageUnavailableReason {
     CancelledBeforeResponse,
     ProviderOmitted,
     TransportFailed,
+    Imported,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
