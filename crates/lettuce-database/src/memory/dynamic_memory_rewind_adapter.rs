@@ -1,15 +1,19 @@
 use std::{collections::HashSet, str::FromStr};
 
+use lettuce_conversations::{
+    ConversationRepositoryError, DescendantPolicy, TombstoneMessageResult,
+};
 use lettuce_memory::{
     DynamicMemorySuffixRewind, DynamicMemorySuffixRewindError, DynamicMemorySuffixRewindReceipt,
     DynamicMemorySuffixRewindRepository, MemoryChangeSet, MemoryRepositoryError, MemorySummary,
+    PendingSuffixRewind, PendingSuffixRewindRepository,
 };
 use lettuce_types::{DynamicMemoryRunId, OperationId};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 
 use crate::{
-    Database, decode_versioned, encode_versioned, memory::dynamic_memory_run_adapter,
-    memory::memory_adapter,
+    Database, conversation::conversation_mutations, decode_versioned, encode_versioned,
+    memory::dynamic_memory_run_adapter, memory::memory_adapter,
 };
 
 const JSON_VERSION: u32 = 1;
@@ -272,6 +276,102 @@ pub(crate) fn undo_runs(
         },
     )
     .map_err(memory_error)
+}
+
+impl PendingSuffixRewindRepository for Database {
+    fn tombstone_suffix(
+        &self,
+        pending: &PendingSuffixRewind,
+        now: lettuce_types::TimestampMillis,
+    ) -> Result<TombstoneMessageResult, ConversationRepositoryError> {
+        if pending.tombstone.descendants != DescendantPolicy::Tombstone
+            || pending.summary_message_interval == 0
+        {
+            return Err(ConversationRepositoryError::Invalid(
+                lettuce_conversations::ValidationError::InvalidValue {
+                    field: "pending_suffix_rewind",
+                },
+            ));
+        }
+        let payload = encode_versioned(pending, JSON_VERSION)
+            .map_err(|_| ConversationRepositoryError::Storage)?;
+        conversation_mutations::tombstone_with(self, &pending.tombstone, now, |transaction, _| {
+            transaction
+                .execute(
+                    "INSERT INTO dynamic_memory_pending_suffix_rewinds
+                            (conversation_id,operation_key,pending_json,recorded_at)
+                         VALUES (?1,?2,?3,?4)",
+                    params![
+                        pending.tombstone.conversation_id.to_string(),
+                        pending.tombstone.operation.key.as_str(),
+                        payload,
+                        now.get(),
+                    ],
+                )
+                .map_err(|_| ConversationRepositoryError::Storage)?;
+            Ok(())
+        })
+    }
+
+    fn record_empty_suffix(
+        &self,
+        pending: &PendingSuffixRewind,
+        now: lettuce_types::TimestampMillis,
+    ) -> Result<
+        lettuce_conversations::MutationCommit<lettuce_conversations::Conversation>,
+        ConversationRepositoryError,
+    > {
+        conversation_mutations::record_empty_suffix(
+            self,
+            pending.tombstone.conversation_id,
+            pending.after_message_id,
+            pending.tombstone.expected_revision,
+            &pending.tombstone.operation,
+            now,
+        )
+    }
+
+    fn pending_suffix_rewinds(
+        &self,
+        conversation_id: Option<lettuce_types::ConversationId>,
+    ) -> Result<Vec<PendingSuffixRewind>, DynamicMemorySuffixRewindError> {
+        let connection = self.connection().map_err(storage)?;
+        let mut statement = connection
+            .prepare(
+                "SELECT pending_json FROM dynamic_memory_pending_suffix_rewinds
+                  WHERE ?1 IS NULL OR conversation_id = ?1
+                  ORDER BY recorded_at, conversation_id, operation_key",
+            )
+            .map_err(storage)?;
+        statement
+            .query_map([conversation_id.map(|id| id.to_string())], |row| {
+                row.get::<_, String>(0)
+            })
+            .map_err(storage)?
+            .map(|payload| {
+                decode_versioned::<PendingSuffixRewind>(&payload.map_err(storage)?, JSON_VERSION)
+                    .map_err(storage)
+            })
+            .collect()
+    }
+
+    fn clear_pending_suffix_rewind(
+        &self,
+        pending: &PendingSuffixRewind,
+    ) -> Result<(), DynamicMemorySuffixRewindError> {
+        let connection = self.connection().map_err(storage)?;
+        connection
+            .execute(
+                "DELETE FROM dynamic_memory_pending_suffix_rewinds
+                  WHERE conversation_id = ?1 AND operation_key = ?2",
+                params![
+                    pending.tombstone.conversation_id.to_string(),
+                    pending.tombstone.operation.key.as_str(),
+                ],
+            )
+            .map_err(storage)?;
+        Ok(())
+    }
 }
 
 impl DynamicMemorySuffixRewindRepository for Database {

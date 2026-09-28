@@ -249,6 +249,21 @@ CREATE TABLE dynamic_memory_suffix_rewinds (
     UNIQUE (operation_id, conversation_id)
 ) STRICT;
 
+CREATE TABLE dynamic_memory_pending_suffix_rewinds (
+    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE RESTRICT,
+    operation_key TEXT NOT NULL,
+    completed INTEGER NOT NULL DEFAULT 0 CHECK (completed IN (0, 1)),
+    pending_json TEXT NOT NULL CHECK (
+        json_valid(pending_json)
+        AND json_extract(pending_json, '$.format_version') = 1
+    ),
+    recorded_at INTEGER NOT NULL,
+    PRIMARY KEY (conversation_id, operation_key)
+) STRICT;
+
+CREATE INDEX dynamic_memory_pending_suffix_rewinds_order_idx
+    ON dynamic_memory_pending_suffix_rewinds(recorded_at, conversation_id, operation_key);
+
 CREATE TABLE companion_turn_effect_invalidations (
     operation_id TEXT NOT NULL,
     conversation_id TEXT NOT NULL,

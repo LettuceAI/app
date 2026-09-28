@@ -1,10 +1,13 @@
 use lettuce_types::{
     CompanionEffectId, ConversationId, DynamicMemoryRunId, GenerationAttemptId, GenerationTurnId,
-    MemoryId, MemorySpaceId, OperationId, Revision, TimestampMillis,
+    MemoryId, MemorySpaceId, MessageId, OperationId, Revision, TimestampMillis,
 };
 use serde::{Deserialize, Serialize};
 
-use lettuce_conversations::{InferenceUsage, ProviderNeutralContext};
+use lettuce_conversations::{
+    Conversation, ConversationRepositoryError, InferenceUsage, MutationCommit,
+    ProviderNeutralContext, TombstoneMessage, TombstoneMessageResult,
+};
 
 use crate::{
     DynamicMemoryAttempt, DynamicMemoryAttemptFailureCode, DynamicMemoryAttemptRecovery,
@@ -316,6 +319,45 @@ pub trait DynamicMemorySuffixRewindRepository: Send + Sync {
         &self,
         rewind: DynamicMemorySuffixRewind,
     ) -> Result<DynamicMemorySuffixRewindReceipt, DynamicMemorySuffixRewindError>;
+}
+
+/// A delete-after whose memory rewind is owed: the suffix tombstone and the
+/// summary interval the rewind rebuilds with.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PendingSuffixRewind {
+    pub after_message_id: MessageId,
+    pub tombstone: TombstoneMessage,
+    pub summary_message_interval: u32,
+}
+
+pub trait PendingSuffixRewindRepository: Send + Sync {
+    /// Tombstones the suffix and records the owed rewind in one
+    /// transaction. A replay records nothing.
+    fn tombstone_suffix(
+        &self,
+        pending: &PendingSuffixRewind,
+        now: TimestampMillis,
+    ) -> Result<TombstoneMessageResult, ConversationRepositoryError>;
+
+    /// Records the delete-after of an anchor with nothing after it as a
+    /// durable operation that changes nothing, so a replay after later
+    /// messages remove none of them.
+    fn record_empty_suffix(
+        &self,
+        pending: &PendingSuffixRewind,
+        now: TimestampMillis,
+    ) -> Result<MutationCommit<Conversation>, ConversationRepositoryError>;
+
+    fn pending_suffix_rewinds(
+        &self,
+        conversation_id: Option<ConversationId>,
+    ) -> Result<Vec<PendingSuffixRewind>, DynamicMemorySuffixRewindError>;
+
+    fn clear_pending_suffix_rewind(
+        &self,
+        pending: &PendingSuffixRewind,
+    ) -> Result<(), DynamicMemorySuffixRewindError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

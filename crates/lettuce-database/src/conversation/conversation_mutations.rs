@@ -1508,6 +1508,311 @@ fn edit_result(
     })
 }
 
+/// What an edit wrote: its revision, the branch of the message and the
+/// media reference changes of the new and the retired render owner.
+struct WrittenEdit {
+    revision_id: MessageRevisionId,
+    branch_id: ConversationBranchId,
+    owned_deltas: Vec<(MediaOwner, Vec<AssetReferenceDelta>)>,
+}
+
+/// Appends the edit's revision and makes it the message's render; the
+/// caller checks the conversation and bumps it.
+fn write_edit(
+    transaction: &Transaction<'_>,
+    context: &kernel::MutationCtx,
+    command: &EditMessage,
+) -> Result<WrittenEdit, ConversationRepositoryError> {
+    let state = message_state(transaction, context.conversation_id, command.message_id)?;
+    if state.visibility == "tombstoned" {
+        return Err(ConversationRepositoryError::Conflict);
+    }
+    if command.draft.scene_edited && state.role != "scene" {
+        return Err(invalid("message_edit.scene_edited"));
+    }
+    require_no_live_turn_for_message(transaction, context.conversation_id, command.message_id)?;
+    let sequence: i64 = transaction
+        .query_row(
+            "SELECT COALESCE(max(sequence) + 1, 1) FROM conversation_message_revisions WHERE conversation_id = ?1 AND message_id = ?2",
+            params![
+                context.conversation_id.to_string(),
+                command.message_id.to_string(),
+            ],
+            |row| row.get(0),
+        )
+        .map_err(slice::db)?;
+    let revision_id = MessageRevisionId::new();
+    let supersedes = match (state.active_candidate_id, state.active_revision_id) {
+        (Some(candidate_id), _) => Some(candidate_id.to_string()),
+        (None, Some(active)) => transaction
+            .query_row(
+                "SELECT supersedes_candidate_id FROM conversation_message_revisions WHERE conversation_id = ?1 AND id = ?2",
+                params![context.conversation_id.to_string(), active.to_string()],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .map_err(slice::db)?,
+        (None, None) => None,
+    };
+    transaction
+        .execute(
+            "INSERT INTO conversation_message_revisions (conversation_id, id, message_id, branch_id, sequence, parts_json, authored_at, source_turn_id, provider_replay_artifact_id, provider_replay_retention, supersedes_candidate_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, NULL, NULL, ?8)",
+            params![
+                context.conversation_id.to_string(),
+                revision_id.to_string(),
+                command.message_id.to_string(),
+                state.branch_id.to_string(),
+                sequence,
+                slice::encode(&command.draft.parts)?,
+                context.now.get(),
+                supersedes,
+            ],
+        )
+        .map_err(kernel::map_constraint)?;
+    for (part_ordinal, part) in command.draft.parts.iter().enumerate() {
+        let MessagePart::MediaAsset { asset_id, role } = part else {
+            continue;
+        };
+        transaction
+            .execute(
+                "INSERT INTO revision_media_refs (conversation_id, message_revision_id, part_ordinal, asset_id, media_role, state, created_at) VALUES (?1, ?2, ?3, ?4, ?5, 'active', ?6)",
+                params![
+                    context.conversation_id.to_string(),
+                    revision_id.to_string(),
+                    i64::try_from(part_ordinal).map_err(|_| ConversationRepositoryError::Storage)?,
+                    asset_id.to_string(),
+                    conversation_creator::media_role_name(*role),
+                    context.now.get(),
+                ],
+            )
+            .map_err(kernel::map_constraint)?;
+    }
+    transaction
+        .execute(
+            "UPDATE conversation_messages SET active_revision_id = ?3, active_candidate_id = NULL, visibility = ?4, pinned = ?5, scene_edited = ?6, revision = revision + 1, updated_at = ?7 WHERE conversation_id = ?1 AND id = ?2",
+            params![
+                context.conversation_id.to_string(),
+                command.message_id.to_string(),
+                revision_id.to_string(),
+                kernel::message_visibility_name(command.draft.visibility),
+                i64::from(command.draft.pinned),
+                i64::from(command.draft.scene_edited),
+                context.now.get(),
+            ],
+        )
+        .map_err(kernel::map_constraint)?;
+    let created = MediaOwner::Revision(revision_id);
+    let mut owned_deltas = vec![(
+        created,
+        owner_deltas(
+            &owner_assets(transaction, context.conversation_id, created)?,
+            created,
+            AssetReferenceState::Active,
+        ),
+    )];
+    if let Some(retired) = state.render_owner() {
+        set_owner_media_state(transaction, context.conversation_id, retired, "historical")?;
+        let assets = owner_assets(transaction, context.conversation_id, retired)?;
+        owned_deltas.push((
+            retired,
+            owner_deltas(&assets, retired, AssetReferenceState::Historical),
+        ));
+    }
+    Ok(WrittenEdit {
+        revision_id,
+        branch_id: state.branch_id,
+        owned_deltas,
+    })
+}
+
+fn edit_events(
+    context: &kernel::MutationCtx,
+    revision: Revision,
+    message_id: MessageId,
+    written: &WrittenEdit,
+) -> Vec<kernel::StagedEvent> {
+    let mut events = vec![kernel::StagedEvent {
+        conversation_revision: revision,
+        at: context.now,
+        event: ConversationOutboxEvent::MessageRevised {
+            conversation_id: context.conversation_id,
+            branch_id: written.branch_id,
+            message_id,
+            revision_id: written.revision_id,
+            at: context.now,
+        },
+    }];
+    for (owner, changes) in &written.owned_deltas {
+        if changes.is_empty() {
+            continue;
+        }
+        events.push(kernel::StagedEvent {
+            conversation_revision: revision,
+            at: context.now,
+            event: owner_event(
+                context.conversation_id,
+                *owner,
+                changes.clone(),
+                context.now,
+            ),
+        });
+    }
+    events
+}
+
+fn replayed_edit(
+    transaction: &Transaction<'_>,
+    command: &EditMessage,
+    operation: &lettuce_conversations::OperationRecord,
+) -> Result<EditResult, ConversationRepositoryError> {
+    replayed_message(operation, command.message_id)?;
+    let mut recorded = None;
+    for event in recorded_events(transaction, command.conversation_id, operation)? {
+        match event {
+            ConversationOutboxEvent::MessageRevised {
+                message_id,
+                revision_id,
+                ..
+            } if message_id == command.message_id => recorded = Some(revision_id),
+            _ => {}
+        }
+    }
+    let revision_id = recorded.ok_or(ConversationRepositoryError::Conflict)?;
+    let deltas = recorded_deltas(transaction, command.conversation_id, operation)?;
+    edit_result(
+        transaction,
+        command.conversation_id,
+        command.message_id,
+        revision_id,
+        deltas,
+    )
+}
+
+/// Applies a settings update: its CAS on the settings revision, its patch
+/// and the snapshot artifacts it stages. The caller bumps the conversation
+/// and records the change.
+fn write_settings_update(
+    transaction: &Transaction<'_>,
+    context: &kernel::MutationCtx,
+    command: &lettuce_conversations::UpdateConversationSettings,
+    drafts: Vec<lettuce_conversations::SnapshotArtifactDraft>,
+) -> Result<lettuce_conversations::CurrentConversationSettings, ConversationRepositoryError> {
+    require_writable_conversation(transaction, context.conversation_id)?;
+    let kind = conversation_kind(transaction, context.conversation_id)?;
+    let current = read_current_settings(transaction, context.conversation_id)?;
+    match (command.cas_requirement(), &current) {
+        (SettingsCasRequirement::CreateOnly, Some(_)) => {
+            return Err(ConversationRepositoryError::Conflict);
+        }
+        (SettingsCasRequirement::Exact(expected), None) => {
+            return Err(ConversationRepositoryError::StaleRevision {
+                expected,
+                actual: Revision::INITIAL,
+            });
+        }
+        (SettingsCasRequirement::Exact(expected), Some(settings))
+            if settings.revision != expected =>
+        {
+            return Err(ConversationRepositoryError::StaleRevision {
+                expected,
+                actual: settings.revision,
+            });
+        }
+        _ => {}
+    }
+    let next = command
+        .patch
+        .apply(current.as_ref(), command.expected_settings_revision)
+        .map_err(ConversationRepositoryError::Invalid)?;
+    next.validate_against_kind(&kind)
+        .map_err(ConversationRepositoryError::Invalid)?;
+    for draft in drafts {
+        let reference = conversation_artifact_adapter::stage_snapshot_in_transaction(
+            transaction,
+            draft,
+            context.now,
+        )
+        .map_err(ConversationRepositoryError::ArtifactReference)?;
+        transaction
+            .execute(
+                "INSERT OR IGNORE INTO conversation_snapshot_refs (conversation_id, artifact_id) VALUES (?1, ?2)",
+                params![
+                    context.conversation_id.to_string(),
+                    reference.artifact_id.to_string()
+                ],
+            )
+            .map_err(slice::db)?;
+    }
+    for reference in lettuce_conversations::conversation_settings_snapshot_references(&next) {
+        verify_settings_snapshot(transaction, context.conversation_id, reference)?;
+    }
+    write_settings(
+        transaction,
+        context.conversation_id,
+        &next,
+        current.is_none(),
+        context.now,
+    )?;
+    Ok(next)
+}
+
+fn conversation_kind(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+) -> Result<ConversationKind, ConversationRepositoryError> {
+    let kind_json: String = transaction
+        .query_row(
+            "SELECT kind_json FROM conversations WHERE id = ?1",
+            [conversation_id.to_string()],
+            |row| row.get(0),
+        )
+        .map_err(slice::db)?;
+    slice::decode(&kind_json).map_err(|_| ConversationRepositoryError::Storage)
+}
+
+/// Turns a one-to-one conversation's scene setting off when its scene
+/// message is tombstoned; a setting already off changes nothing. Answers the
+/// new settings revision when it wrote one.
+fn clear_scene_setting(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    now: TimestampMillis,
+) -> Result<Option<Revision>, ConversationRepositoryError> {
+    let ConversationKind::Direct(details) = conversation_kind(transaction, conversation_id)? else {
+        return Ok(None);
+    };
+    let current = read_current_settings(transaction, conversation_id)?;
+    let already_off = match &current {
+        Some(settings) => match settings.scene_provenance {
+            lettuce_conversations::SettingProvenance::Disabled => true,
+            lettuce_conversations::SettingProvenance::CurrentOverride => false,
+            lettuce_conversations::SettingProvenance::LaunchInherited => {
+                matches!(
+                    details.scene,
+                    lettuce_conversations::SnapshotSelection::Disabled
+                )
+            }
+        },
+        None => matches!(
+            details.scene,
+            lettuce_conversations::SnapshotSelection::Disabled
+        ),
+    };
+    if already_off {
+        return Ok(None);
+    }
+    let next = lettuce_conversations::CurrentConversationSettingsPatch {
+        scene: lettuce_conversations::PatchValue::Clear,
+        ..lettuce_conversations::CurrentConversationSettingsPatch::default()
+    }
+    .apply(
+        current.as_ref(),
+        current.as_ref().map(|settings| settings.revision),
+    )
+    .map_err(ConversationRepositoryError::Invalid)?;
+    write_settings(transaction, conversation_id, &next, current.is_none(), now)?;
+    Ok(Some(next.revision))
+}
+
 /// Descendants of one message on its own branch. The policy is branch-local
 /// by contract: a fork's subtree belongs to that fork, not to this tombstone.
 fn branch_descendants(
@@ -2365,6 +2670,274 @@ where
 
 /// Every port method is implemented here; the kernel owns the shared
 /// transaction, idempotency and outbox order they all run through.
+/// Tombstones `command` and runs `also` in the same transaction before it
+/// commits; a replay runs neither.
+pub(crate) fn tombstone_with<F>(
+    database: &Database,
+    command: &TombstoneMessage,
+    now: TimestampMillis,
+    also: F,
+) -> Result<TombstoneMessageResult, ConversationRepositoryError>
+where
+    F: FnOnce(&Transaction<'_>, &kernel::MutationCtx) -> Result<(), ConversationRepositoryError>,
+{
+    lettuce_conversations::ConversationMutation::Tombstone(command.clone())
+        .validate()
+        .map_err(ConversationRepositoryError::Invalid)?;
+    kernel::run_mutation(
+        database,
+        command.conversation_id,
+        OperationKind::Tombstone,
+        &command.operation,
+        now,
+        |transaction, context| {
+            let conversation = kernel::cas_conversation(
+                transaction,
+                context.conversation_id,
+                command.expected_revision,
+            )?;
+            kernel::require_writable(&conversation)?;
+            let state = message_state(transaction, context.conversation_id, command.message_id)?;
+            if state.visibility == "tombstoned" {
+                return Err(ConversationRepositoryError::Conflict);
+            }
+            require_no_live_turn_for_message(
+                transaction,
+                context.conversation_id,
+                command.message_id,
+            )?;
+            let descendants = match command.descendants {
+                DescendantPolicy::Tombstone => branch_descendants(
+                    transaction,
+                    context.conversation_id,
+                    state.branch_id,
+                    command.message_id,
+                )?,
+                DescendantPolicy::Preserve | DescendantPolicy::Fork => Vec::new(),
+            };
+            for descendant in &descendants {
+                require_no_live_turn_for_message(
+                    transaction,
+                    context.conversation_id,
+                    *descendant,
+                )?;
+            }
+            let mut owned_deltas = Vec::new();
+            let mut affected_revision_ids = Vec::new();
+            let mut scene_tombstoned = false;
+            for message_id in std::iter::once(command.message_id).chain(descendants.clone()) {
+                let affected = message_state(transaction, context.conversation_id, message_id)?;
+                scene_tombstoned |= affected.role == "scene";
+                transaction
+                    .execute(
+                        "UPDATE conversation_messages SET visibility = 'tombstoned', revision = revision + 1, updated_at = ?3 WHERE conversation_id = ?1 AND id = ?2",
+                        params![
+                            context.conversation_id.to_string(),
+                            message_id.to_string(),
+                            context.now.get(),
+                        ],
+                    )
+                    .map_err(kernel::map_constraint)?;
+                if let Some(revision_id) = affected.active_revision_id {
+                    affected_revision_ids.push(revision_id);
+                }
+                if let Some(owner) = affected.render_owner() {
+                    set_owner_media_state(
+                        transaction,
+                        context.conversation_id,
+                        owner,
+                        "historical",
+                    )?;
+                    let assets = owner_assets(transaction, context.conversation_id, owner)?;
+                    if !assets.is_empty() {
+                        owned_deltas.push((
+                            owner,
+                            owner_deltas(&assets, owner, AssetReferenceState::Released),
+                        ));
+                    }
+                }
+            }
+            retreat_branch_head(
+                transaction,
+                context.conversation_id,
+                state.branch_id,
+                context.now,
+            )?;
+            let forked_branch = match command.descendants {
+                DescendantPolicy::Fork => {
+                    let parent_message_id = state
+                        .parent_message_id
+                        .ok_or(ConversationRepositoryError::Conflict)?;
+                    let parent =
+                        message_state(transaction, context.conversation_id, parent_message_id)?;
+                    let branch_id = ConversationBranchId::new();
+                    transaction
+                        .execute(
+                            "INSERT INTO conversation_branches (conversation_id, id, parent_branch_id, fork_message_id, head_message_id, status, revision, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, NULL, 'active', 1, ?5, ?5)",
+                            params![
+                                context.conversation_id.to_string(),
+                                branch_id.to_string(),
+                                parent.branch_id.to_string(),
+                                parent_message_id.to_string(),
+                                context.now.get(),
+                            ],
+                        )
+                        .map_err(kernel::map_constraint)?;
+                    select_active_branch(transaction, context.conversation_id, branch_id)?;
+                    Some(load_branch(
+                        transaction,
+                        context.conversation_id,
+                        branch_id,
+                    )?)
+                }
+                DescendantPolicy::Preserve | DescendantPolicy::Tombstone => None,
+            };
+            let settings_revision = if scene_tombstoned {
+                clear_scene_setting(transaction, context.conversation_id, context.now)?
+            } else {
+                None
+            };
+            let revision =
+                kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
+            let asset_reference_deltas: Vec<AssetReferenceDelta> = owned_deltas
+                .iter()
+                .flat_map(|(_, changes)| changes.iter().cloned())
+                .collect();
+            let value = TombstoneResult {
+                conversation: conversation_value(transaction, context.conversation_id)?,
+                message: load_message(transaction, context.conversation_id, command.message_id)?,
+                descendant_count: u32::try_from(descendants.len())
+                    .map_err(|_| ConversationRepositoryError::Storage)?,
+                asset_reference_deltas: asset_reference_deltas.clone(),
+                forked_branch: forked_branch.clone(),
+            };
+            value
+                .validate_for_policy(command.descendants)
+                .map_err(ConversationRepositoryError::Invalid)?;
+            let mut events = vec![kernel::StagedEvent {
+                conversation_revision: revision,
+                at: context.now,
+                event: ConversationOutboxEvent::MessageTombstoned {
+                    conversation_id: context.conversation_id,
+                    branch_id: state.branch_id,
+                    message_id: command.message_id,
+                    descendants: command.descendants,
+                    affected_message_ids: descendants,
+                    affected_revision_ids,
+                    asset_reference_deltas,
+                    at: context.now,
+                },
+            }];
+            if let Some(branch) = &forked_branch {
+                events.push(kernel::StagedEvent {
+                    conversation_revision: revision,
+                    at: context.now,
+                    event: ConversationOutboxEvent::BranchForked {
+                        conversation_id: context.conversation_id,
+                        branch_id: branch.id,
+                        at: context.now,
+                    },
+                });
+            }
+            if let Some(settings_revision) = settings_revision {
+                events.push(kernel::StagedEvent {
+                    conversation_revision: revision,
+                    at: context.now,
+                    event: ConversationOutboxEvent::SettingsChanged {
+                        conversation_id: context.conversation_id,
+                        settings_revision,
+                        at: context.now,
+                    },
+                });
+            }
+            also(transaction, context)?;
+            Ok(kernel::Staged {
+                value,
+                result: OperationResultRef::Message(command.message_id),
+                events,
+            })
+        },
+        |transaction, operation| {
+            replayed_message(operation, command.message_id)?;
+            let message = load_message(transaction, command.conversation_id, command.message_id)?;
+            if message.visibility != lettuce_conversations::MessageVisibility::Tombstoned {
+                return Err(ConversationRepositoryError::Conflict);
+            }
+            let mut forked_branch = None;
+            let mut descendant_count = 0;
+            for event in recorded_events(transaction, command.conversation_id, operation)? {
+                match event {
+                    ConversationOutboxEvent::MessageTombstoned {
+                        affected_message_ids,
+                        ..
+                    } => {
+                        descendant_count = u32::try_from(affected_message_ids.len())
+                            .map_err(|_| ConversationRepositoryError::Storage)?;
+                    }
+                    ConversationOutboxEvent::BranchForked { branch_id, .. } => {
+                        forked_branch = Some(load_branch(
+                            transaction,
+                            command.conversation_id,
+                            branch_id,
+                        )?);
+                    }
+                    _ => {}
+                }
+            }
+            Ok(TombstoneResult {
+                conversation: conversation_value(transaction, command.conversation_id)?,
+                message,
+                descendant_count,
+                asset_reference_deltas: recorded_deltas(
+                    transaction,
+                    command.conversation_id,
+                    operation,
+                )?,
+                forked_branch,
+            })
+        },
+    )
+}
+
+/// Records `operation` as a delete-after that removed nothing after
+/// `anchor_id`; a replay answers the conversation as it stands.
+pub(crate) fn record_empty_suffix(
+    database: &Database,
+    conversation_id: ConversationId,
+    anchor_id: MessageId,
+    expected_revision: lettuce_types::Revision,
+    operation: &lettuce_conversations::OperationToken,
+    now: TimestampMillis,
+) -> Result<
+    lettuce_conversations::MutationCommit<lettuce_conversations::Conversation>,
+    ConversationRepositoryError,
+> {
+    kernel::run_mutation(
+        database,
+        conversation_id,
+        OperationKind::Tombstone,
+        operation,
+        now,
+        |transaction, context| {
+            let conversation =
+                kernel::cas_conversation(transaction, context.conversation_id, expected_revision)?;
+            kernel::require_writable(&conversation)?;
+            message_state(transaction, context.conversation_id, anchor_id)?;
+            Ok(kernel::Staged {
+                value: conversation_value(transaction, context.conversation_id)?,
+                result: OperationResultRef::Message(anchor_id),
+                events: Vec::new(),
+            })
+        },
+        |transaction, record| {
+            if record.result != OperationResultRef::Message(anchor_id) {
+                return Err(ConversationRepositoryError::Conflict);
+            }
+            conversation_value(transaction, conversation_id)
+        },
+    )
+}
+
 impl ConversationRepository for Database {
     fn artifact_store(&self) -> &dyn lettuce_conversations::ConversationArtifactStore {
         self
@@ -4353,146 +4926,18 @@ impl ConversationRepository for Database {
                     command.expected_revision,
                 )?;
                 kernel::require_writable(&conversation)?;
-                let state =
-                    message_state(transaction, context.conversation_id, command.message_id)?;
-                if state.visibility == "tombstoned" {
-                    return Err(ConversationRepositoryError::Conflict);
-                }
-                if command.draft.scene_edited && state.role != "scene" {
-                    return Err(invalid("message_edit.scene_edited"));
-                }
-                require_no_live_turn_for_message(
-                    transaction,
-                    context.conversation_id,
-                    command.message_id,
-                )?;
-                let sequence: i64 = transaction
-                    .query_row(
-                        "SELECT COALESCE(max(sequence) + 1, 1) FROM conversation_message_revisions WHERE conversation_id = ?1 AND message_id = ?2",
-                        params![
-                            context.conversation_id.to_string(),
-                            command.message_id.to_string(),
-                        ],
-                        |row| row.get(0),
-                    )
-                    .map_err(slice::db)?;
-                let revision_id = MessageRevisionId::new();
-                let supersedes = match (state.active_candidate_id, state.active_revision_id) {
-                    (Some(candidate_id), _) => Some(candidate_id.to_string()),
-                    (None, Some(active)) => transaction
-                        .query_row(
-                            "SELECT supersedes_candidate_id FROM conversation_message_revisions WHERE conversation_id = ?1 AND id = ?2",
-                            params![context.conversation_id.to_string(), active.to_string()],
-                            |row| row.get::<_, Option<String>>(0),
-                        )
-                        .map_err(slice::db)?,
-                    (None, None) => None,
-                };
-                transaction
-                    .execute(
-                        "INSERT INTO conversation_message_revisions (conversation_id, id, message_id, branch_id, sequence, parts_json, authored_at, source_turn_id, provider_replay_artifact_id, provider_replay_retention, supersedes_candidate_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, NULL, NULL, ?8)",
-                        params![
-                            context.conversation_id.to_string(),
-                            revision_id.to_string(),
-                            command.message_id.to_string(),
-                            state.branch_id.to_string(),
-                            sequence,
-                            slice::encode(&command.draft.parts)?,
-                            context.now.get(),
-                            supersedes,
-                        ],
-                    )
-                    .map_err(kernel::map_constraint)?;
-                for (part_ordinal, part) in command.draft.parts.iter().enumerate() {
-                    let MessagePart::MediaAsset { asset_id, role } = part else {
-                        continue;
-                    };
-                    transaction
-                        .execute(
-                            "INSERT INTO revision_media_refs (conversation_id, message_revision_id, part_ordinal, asset_id, media_role, state, created_at) VALUES (?1, ?2, ?3, ?4, ?5, 'active', ?6)",
-                            params![
-                                context.conversation_id.to_string(),
-                                revision_id.to_string(),
-                                i64::try_from(part_ordinal)
-                                    .map_err(|_| ConversationRepositoryError::Storage)?,
-                                asset_id.to_string(),
-                                conversation_creator::media_role_name(*role),
-                                context.now.get(),
-                            ],
-                        )
-                        .map_err(kernel::map_constraint)?;
-                }
-                transaction
-                    .execute(
-                        "UPDATE conversation_messages SET active_revision_id = ?3, active_candidate_id = NULL, visibility = ?4, pinned = ?5, scene_edited = ?6, revision = revision + 1, updated_at = ?7 WHERE conversation_id = ?1 AND id = ?2",
-                        params![
-                            context.conversation_id.to_string(),
-                            command.message_id.to_string(),
-                            revision_id.to_string(),
-                            kernel::message_visibility_name(command.draft.visibility),
-                            i64::from(command.draft.pinned),
-                            i64::from(command.draft.scene_edited),
-                            context.now.get(),
-                        ],
-                    )
-                    .map_err(kernel::map_constraint)?;
-                let created = MediaOwner::Revision(revision_id);
-                let mut owned_deltas = vec![(
-                    created,
-                    owner_deltas(
-                        &owner_assets(transaction, context.conversation_id, created)?,
-                        created,
-                        AssetReferenceState::Active,
-                    ),
-                )];
-                if let Some(retired) = state.render_owner() {
-                    set_owner_media_state(
-                        transaction,
-                        context.conversation_id,
-                        retired,
-                        "historical",
-                    )?;
-                    let assets = owner_assets(transaction, context.conversation_id, retired)?;
-                    owned_deltas.push((
-                        retired,
-                        owner_deltas(&assets, retired, AssetReferenceState::Historical),
-                    ));
-                }
+                let written = write_edit(transaction, context, command)?;
                 let revision =
                     kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
-                let mut events = vec![kernel::StagedEvent {
-                    conversation_revision: revision,
-                    at: context.now,
-                    event: ConversationOutboxEvent::MessageRevised {
-                        conversation_id: context.conversation_id,
-                        branch_id: state.branch_id,
-                        message_id: command.message_id,
-                        revision_id,
-                        at: context.now,
-                    },
-                }];
-                for (owner, changes) in &owned_deltas {
-                    if changes.is_empty() {
-                        continue;
-                    }
-                    events.push(kernel::StagedEvent {
-                        conversation_revision: revision,
-                        at: context.now,
-                        event: owner_event(
-                            context.conversation_id,
-                            *owner,
-                            changes.clone(),
-                            context.now,
-                        ),
-                    });
-                }
+                let events = edit_events(context, revision, command.message_id, &written);
                 Ok(kernel::Staged {
                     value: edit_result(
                         transaction,
                         context.conversation_id,
                         command.message_id,
-                        revision_id,
-                        owned_deltas
+                        written.revision_id,
+                        written
+                            .owned_deltas
                             .into_iter()
                             .flat_map(|(_, changes)| changes)
                             .collect(),
@@ -4501,29 +4946,70 @@ impl ConversationRepository for Database {
                     events,
                 })
             },
-            |transaction, operation| {
-                replayed_message(operation, command.message_id)?;
-                let mut recorded = None;
-                for event in recorded_events(transaction, command.conversation_id, operation)? {
-                    match event {
-                        ConversationOutboxEvent::MessageRevised {
-                            message_id,
-                            revision_id,
-                            ..
-                        } if message_id == command.message_id => recorded = Some(revision_id),
-                        _ => {}
-                    }
-                }
-                let revision_id = recorded.ok_or(ConversationRepositoryError::Conflict)?;
-                let deltas = recorded_deltas(transaction, command.conversation_id, operation)?;
-                edit_result(
+            |transaction, operation| replayed_edit(transaction, command, operation),
+        )
+    }
+
+    fn select_scene(
+        &self,
+        selection: lettuce_conversations::PreparedSceneSelection,
+        now: TimestampMillis,
+    ) -> Result<EditMessageResult, ConversationRepositoryError> {
+        let command = selection.edit().clone();
+        kernel::run_mutation(
+            self,
+            command.conversation_id,
+            OperationKind::Edit,
+            &command.operation,
+            now,
+            |transaction, context| {
+                let (edit, settings) = selection.into_parts();
+                let conversation = kernel::cas_conversation(
                     transaction,
-                    command.conversation_id,
-                    command.message_id,
-                    revision_id,
-                    deltas,
-                )
+                    context.conversation_id,
+                    edit.expected_revision,
+                )?;
+                kernel::require_writable(&conversation)?;
+                if !matches!(
+                    conversation_kind(transaction, context.conversation_id)?,
+                    ConversationKind::Direct(_)
+                ) || message_state(transaction, context.conversation_id, edit.message_id)?.role
+                    != "scene"
+                {
+                    return Err(invalid("scene_selection.message"));
+                }
+                let written = write_edit(transaction, context, &edit)?;
+                let (settings_command, drafts) = settings.into_parts();
+                let next = write_settings_update(transaction, context, &settings_command, drafts)?;
+                let revision =
+                    kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
+                let mut events = edit_events(context, revision, edit.message_id, &written);
+                events.push(kernel::StagedEvent {
+                    conversation_revision: revision,
+                    at: context.now,
+                    event: ConversationOutboxEvent::SettingsChanged {
+                        conversation_id: context.conversation_id,
+                        settings_revision: next.revision,
+                        at: context.now,
+                    },
+                });
+                Ok(kernel::Staged {
+                    value: edit_result(
+                        transaction,
+                        context.conversation_id,
+                        edit.message_id,
+                        written.revision_id,
+                        written
+                            .owned_deltas
+                            .into_iter()
+                            .flat_map(|(_, changes)| changes)
+                            .collect(),
+                    )?,
+                    result: OperationResultRef::Message(edit.message_id),
+                    events,
+                })
             },
+            |transaction, operation| replayed_edit(transaction, &command, operation),
         )
     }
 
@@ -4600,209 +5086,7 @@ impl ConversationRepository for Database {
         command: &TombstoneMessage,
         now: TimestampMillis,
     ) -> Result<TombstoneMessageResult, ConversationRepositoryError> {
-        lettuce_conversations::ConversationMutation::Tombstone(command.clone())
-            .validate()
-            .map_err(ConversationRepositoryError::Invalid)?;
-        kernel::run_mutation(
-            self,
-            command.conversation_id,
-            OperationKind::Tombstone,
-            &command.operation,
-            now,
-            |transaction, context| {
-                let conversation = kernel::cas_conversation(
-                    transaction,
-                    context.conversation_id,
-                    command.expected_revision,
-                )?;
-                kernel::require_writable(&conversation)?;
-                let state =
-                    message_state(transaction, context.conversation_id, command.message_id)?;
-                if state.visibility == "tombstoned" {
-                    return Err(ConversationRepositoryError::Conflict);
-                }
-                require_no_live_turn_for_message(
-                    transaction,
-                    context.conversation_id,
-                    command.message_id,
-                )?;
-                let descendants = match command.descendants {
-                    DescendantPolicy::Tombstone => branch_descendants(
-                        transaction,
-                        context.conversation_id,
-                        state.branch_id,
-                        command.message_id,
-                    )?,
-                    DescendantPolicy::Preserve | DescendantPolicy::Fork => Vec::new(),
-                };
-                for descendant in &descendants {
-                    require_no_live_turn_for_message(
-                        transaction,
-                        context.conversation_id,
-                        *descendant,
-                    )?;
-                }
-                let mut owned_deltas = Vec::new();
-                let mut affected_revision_ids = Vec::new();
-                for message_id in std::iter::once(command.message_id).chain(descendants.clone()) {
-                    let affected = message_state(transaction, context.conversation_id, message_id)?;
-                    transaction
-                        .execute(
-                            "UPDATE conversation_messages SET visibility = 'tombstoned', revision = revision + 1, updated_at = ?3 WHERE conversation_id = ?1 AND id = ?2",
-                            params![
-                                context.conversation_id.to_string(),
-                                message_id.to_string(),
-                                context.now.get(),
-                            ],
-                        )
-                        .map_err(kernel::map_constraint)?;
-                    if let Some(revision_id) = affected.active_revision_id {
-                        affected_revision_ids.push(revision_id);
-                    }
-                    if let Some(owner) = affected.render_owner() {
-                        set_owner_media_state(
-                            transaction,
-                            context.conversation_id,
-                            owner,
-                            "historical",
-                        )?;
-                        let assets = owner_assets(transaction, context.conversation_id, owner)?;
-                        if !assets.is_empty() {
-                            owned_deltas.push((
-                                owner,
-                                owner_deltas(&assets, owner, AssetReferenceState::Released),
-                            ));
-                        }
-                    }
-                }
-                retreat_branch_head(
-                    transaction,
-                    context.conversation_id,
-                    state.branch_id,
-                    context.now,
-                )?;
-                let forked_branch = match command.descendants {
-                    DescendantPolicy::Fork => {
-                        let parent_message_id = state
-                            .parent_message_id
-                            .ok_or(ConversationRepositoryError::Conflict)?;
-                        let parent =
-                            message_state(transaction, context.conversation_id, parent_message_id)?;
-                        let branch_id = ConversationBranchId::new();
-                        transaction
-                            .execute(
-                                "INSERT INTO conversation_branches (conversation_id, id, parent_branch_id, fork_message_id, head_message_id, status, revision, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, NULL, 'active', 1, ?5, ?5)",
-                                params![
-                                    context.conversation_id.to_string(),
-                                    branch_id.to_string(),
-                                    parent.branch_id.to_string(),
-                                    parent_message_id.to_string(),
-                                    context.now.get(),
-                                ],
-                            )
-                            .map_err(kernel::map_constraint)?;
-                        select_active_branch(transaction, context.conversation_id, branch_id)?;
-                        Some(load_branch(
-                            transaction,
-                            context.conversation_id,
-                            branch_id,
-                        )?)
-                    }
-                    DescendantPolicy::Preserve | DescendantPolicy::Tombstone => None,
-                };
-                let revision =
-                    kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
-                let asset_reference_deltas: Vec<AssetReferenceDelta> = owned_deltas
-                    .iter()
-                    .flat_map(|(_, changes)| changes.iter().cloned())
-                    .collect();
-                let value = TombstoneResult {
-                    conversation: conversation_value(transaction, context.conversation_id)?,
-                    message: load_message(
-                        transaction,
-                        context.conversation_id,
-                        command.message_id,
-                    )?,
-                    descendant_count: u32::try_from(descendants.len())
-                        .map_err(|_| ConversationRepositoryError::Storage)?,
-                    asset_reference_deltas: asset_reference_deltas.clone(),
-                    forked_branch: forked_branch.clone(),
-                };
-                value
-                    .validate_for_policy(command.descendants)
-                    .map_err(ConversationRepositoryError::Invalid)?;
-                let mut events = vec![kernel::StagedEvent {
-                    conversation_revision: revision,
-                    at: context.now,
-                    event: ConversationOutboxEvent::MessageTombstoned {
-                        conversation_id: context.conversation_id,
-                        branch_id: state.branch_id,
-                        message_id: command.message_id,
-                        descendants: command.descendants,
-                        affected_message_ids: descendants,
-                        affected_revision_ids,
-                        asset_reference_deltas,
-                        at: context.now,
-                    },
-                }];
-                if let Some(branch) = &forked_branch {
-                    events.push(kernel::StagedEvent {
-                        conversation_revision: revision,
-                        at: context.now,
-                        event: ConversationOutboxEvent::BranchForked {
-                            conversation_id: context.conversation_id,
-                            branch_id: branch.id,
-                            at: context.now,
-                        },
-                    });
-                }
-                Ok(kernel::Staged {
-                    value,
-                    result: OperationResultRef::Message(command.message_id),
-                    events,
-                })
-            },
-            |transaction, operation| {
-                replayed_message(operation, command.message_id)?;
-                let message =
-                    load_message(transaction, command.conversation_id, command.message_id)?;
-                if message.visibility != lettuce_conversations::MessageVisibility::Tombstoned {
-                    return Err(ConversationRepositoryError::Conflict);
-                }
-                let mut forked_branch = None;
-                let mut descendant_count = 0;
-                for event in recorded_events(transaction, command.conversation_id, operation)? {
-                    match event {
-                        ConversationOutboxEvent::MessageTombstoned {
-                            affected_message_ids,
-                            ..
-                        } => {
-                            descendant_count = u32::try_from(affected_message_ids.len())
-                                .map_err(|_| ConversationRepositoryError::Storage)?;
-                        }
-                        ConversationOutboxEvent::BranchForked { branch_id, .. } => {
-                            forked_branch = Some(load_branch(
-                                transaction,
-                                command.conversation_id,
-                                branch_id,
-                            )?);
-                        }
-                        _ => {}
-                    }
-                }
-                Ok(TombstoneResult {
-                    conversation: conversation_value(transaction, command.conversation_id)?,
-                    message,
-                    descendant_count,
-                    asset_reference_deltas: recorded_deltas(
-                        transaction,
-                        command.conversation_id,
-                        operation,
-                    )?,
-                    forked_branch,
-                })
-            },
-        )
+        tombstone_with(self, command, now, |_, _| Ok(()))
     }
 
     /// Archiving only hides the conversation from lists: an in-flight
@@ -5198,72 +5482,7 @@ impl ConversationRepository for Database {
             now,
             move |transaction, context| {
                 let (command, drafts) = update.into_parts();
-                require_writable_conversation(transaction, context.conversation_id)?;
-                let kind_json: String = transaction
-                    .query_row(
-                        "SELECT kind_json FROM conversations WHERE id = ?1",
-                        [context.conversation_id.to_string()],
-                        |row| row.get(0),
-                    )
-                    .map_err(slice::db)?;
-                let kind: ConversationKind =
-                    slice::decode(&kind_json).map_err(|_| ConversationRepositoryError::Storage)?;
-                let current = read_current_settings(transaction, context.conversation_id)?;
-                match (command.cas_requirement(), &current) {
-                    (SettingsCasRequirement::CreateOnly, Some(_)) => {
-                        return Err(ConversationRepositoryError::Conflict);
-                    }
-                    (SettingsCasRequirement::Exact(expected), None) => {
-                        return Err(ConversationRepositoryError::StaleRevision {
-                            expected,
-                            actual: Revision::INITIAL,
-                        });
-                    }
-                    (SettingsCasRequirement::Exact(expected), Some(settings))
-                        if settings.revision != expected =>
-                    {
-                        return Err(ConversationRepositoryError::StaleRevision {
-                            expected,
-                            actual: settings.revision,
-                        });
-                    }
-                    _ => {}
-                }
-                let next = command
-                    .patch
-                    .apply(current.as_ref(), command.expected_settings_revision)
-                    .map_err(ConversationRepositoryError::Invalid)?;
-                next.validate_against_kind(&kind)
-                    .map_err(ConversationRepositoryError::Invalid)?;
-                for draft in drafts {
-                    let reference = conversation_artifact_adapter::stage_snapshot_in_transaction(
-                        transaction,
-                        draft,
-                        context.now,
-                    )
-                    .map_err(ConversationRepositoryError::ArtifactReference)?;
-                    transaction
-                        .execute(
-                            "INSERT OR IGNORE INTO conversation_snapshot_refs (conversation_id, artifact_id) VALUES (?1, ?2)",
-                            params![
-                                context.conversation_id.to_string(),
-                                reference.artifact_id.to_string()
-                            ],
-                        )
-                        .map_err(slice::db)?;
-                }
-                for reference in
-                    lettuce_conversations::conversation_settings_snapshot_references(&next)
-                {
-                    verify_settings_snapshot(transaction, context.conversation_id, reference)?;
-                }
-                write_settings(
-                    transaction,
-                    context.conversation_id,
-                    &next,
-                    current.is_none(),
-                    context.now,
-                )?;
+                let next = write_settings_update(transaction, context, &command, drafts)?;
                 let revision =
                     kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
                 Ok(kernel::Staged {

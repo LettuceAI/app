@@ -1281,6 +1281,184 @@ fn hydrate_timeline(
     Ok(result)
 }
 
+const ANCESTRY_SQL: &str = "WITH RECURSIVE ancestry(id) AS (SELECT coalesce(head_message_id, fork_message_id) FROM conversation_branches WHERE conversation_id = ?1 AND id = ?2 AND coalesce(head_message_id, fork_message_id) IS NOT NULL UNION ALL SELECT m.parent_message_id FROM conversation_messages AS m JOIN ancestry ON m.id = ancestry.id WHERE m.conversation_id = ?1 AND m.parent_message_id IS NOT NULL)";
+
+const TIMELINE_COLUMNS: &str = "m.conversation_id, m.id, m.branch_id, m.parent_message_id, m.author_participant_id, m.role, m.logical_time, m.effective_time, m.visibility, m.pinned, m.scene_edited, m.timeline_ordinal, m.active_revision_id, m.active_candidate_id, m.revision, m.created_at, m.updated_at";
+
+const OLDER_THAN: &str = "(m.timeline_ordinal < ?3 OR (m.timeline_ordinal = ?3 AND m.id > ?4))";
+
+const NEWER_THAN: &str = "(m.timeline_ordinal > ?3 OR (m.timeline_ordinal = ?3 AND m.id < ?4))";
+
+fn older_scope(conversation_id: ConversationId, branch_id: ConversationBranchId) -> String {
+    format!("timeline:{conversation_id}:{branch_id}")
+}
+
+fn newer_scope(conversation_id: ConversationId, branch_id: ConversationBranchId) -> String {
+    format!("timeline-after:{conversation_id}:{branch_id}")
+}
+
+fn active_branch_path(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
+) -> Result<Vec<ConversationBranch>, ConversationRepositoryError> {
+    let branches = branch_path(transaction, conversation_id, branch_id)?;
+    let selected = branches
+        .last()
+        .ok_or(ConversationRepositoryError::Storage)?;
+    if selected.status != lettuce_conversations::BranchStatus::Active {
+        return Err(ConversationRepositoryError::Invalid(
+            lettuce_conversations::ValidationError::InvalidReference {
+                field: "timeline_page.selected_branch",
+            },
+        ));
+    }
+    Ok(branches)
+}
+
+fn timeline_has(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
+    side: &str,
+    ordinal: i64,
+    message_id: MessageId,
+) -> Result<bool, ConversationRepositoryError> {
+    transaction
+        .query_row(
+            &format!(
+                "{ANCESTRY_SQL} SELECT EXISTS(SELECT 1 FROM conversation_messages AS m JOIN ancestry ON ancestry.id = m.id WHERE m.conversation_id = ?1 AND {side})"
+            ),
+            params![
+                conversation_id.to_string(),
+                branch_id.to_string(),
+                ordinal,
+                message_id.to_string()
+            ],
+            |row| row.get(0),
+        )
+        .map_err(slice::db)
+}
+
+/// The branch timeline oldest first, after the message a newer-side cursor
+/// names or from the first message.
+fn hydrate_timeline_after(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
+    page: &PageRequest,
+) -> Result<TimelinePage, ConversationRepositoryError> {
+    let branches = active_branch_path(transaction, conversation_id, branch_id)?;
+    let scope = newer_scope(conversation_id, branch_id);
+    let cursor = decode_cursor(page.cursor.as_ref(), &scope)?;
+    if let Some(cursor) = cursor.as_ref() {
+        validate_cursor_number(cursor, cursor.number > 0)?;
+        let _: MessageId = validate_cursor_id(cursor)?;
+    }
+    let cursor_number = cursor.as_ref().map_or(0, |cursor| cursor.number);
+    let cursor_id = cursor.as_ref().map_or("", |cursor| cursor.text.as_str());
+    let mut statement = transaction
+        .prepare(&format!(
+            "{ANCESTRY_SQL} SELECT {TIMELINE_COLUMNS} FROM conversation_messages AS m JOIN ancestry ON ancestry.id = m.id WHERE m.conversation_id = ?1 AND {NEWER_THAN} ORDER BY m.timeline_ordinal, m.id DESC LIMIT ?5"
+        ))
+        .map_err(slice::db)?;
+    let mut items = Vec::new();
+    let mut last_ordinal = None;
+    for row in statement
+        .query_map(
+            params![
+                conversation_id.to_string(),
+                branch_id.to_string(),
+                cursor_number,
+                cursor_id,
+                i64::from(page.limit.get())
+            ],
+            |row| message_row(transaction, row).map_err(|_| rusqlite::Error::InvalidQuery),
+        )
+        .map_err(slice::db)?
+    {
+        let (item, ordinal) = row.map_err(slice::db)?;
+        items.push(item);
+        last_ordinal = Some(ordinal);
+    }
+    drop(statement);
+    let next_cursor = match (items.last(), last_ordinal) {
+        (Some(last), Some(ordinal))
+            if timeline_has(
+                transaction,
+                conversation_id,
+                branch_id,
+                NEWER_THAN,
+                ordinal,
+                last.message.id,
+            )? =>
+        {
+            Some(encode_cursor(
+                &scope,
+                &last.message.id.to_string(),
+                ordinal,
+            )?)
+        }
+        _ => None,
+    };
+    let result = TimelinePage {
+        conversation_id,
+        selected_branch_id: branch_id,
+        branch_path: branches,
+        items,
+        boundary_parent_id: None,
+        next_cursor,
+    };
+    result
+        .validate_page()
+        .map_err(|_| ConversationRepositoryError::Storage)?;
+    Ok(result)
+}
+
+fn hydrate_timeline_anchor(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
+    message_id: MessageId,
+) -> Result<lettuce_conversations::TimelineAnchor, ConversationRepositoryError> {
+    active_branch_path(transaction, conversation_id, branch_id)?;
+    let (item, ordinal) = transaction
+        .query_row(
+            &format!(
+                "{ANCESTRY_SQL} SELECT {TIMELINE_COLUMNS} FROM conversation_messages AS m JOIN ancestry ON ancestry.id = m.id WHERE m.conversation_id = ?1 AND m.id = ?3"
+            ),
+            params![
+                conversation_id.to_string(),
+                branch_id.to_string(),
+                message_id.to_string()
+            ],
+            |row| message_row(transaction, row).map_err(|_| rusqlite::Error::InvalidQuery),
+        )
+        .optional()
+        .map_err(slice::db)?
+        .ok_or(ConversationRepositoryError::NotFound)?;
+    let cursor =
+        |side: &str, scope: String| -> Result<Option<String>, ConversationRepositoryError> {
+            if timeline_has(
+                transaction,
+                conversation_id,
+                branch_id,
+                side,
+                ordinal,
+                message_id,
+            )? {
+                encode_cursor(&scope, &message_id.to_string(), ordinal).map(Some)
+            } else {
+                Ok(None)
+            }
+        };
+    Ok(lettuce_conversations::TimelineAnchor {
+        older_cursor: cursor(OLDER_THAN, older_scope(conversation_id, branch_id))?,
+        newer_cursor: cursor(NEWER_THAN, newer_scope(conversation_id, branch_id))?,
+        item,
+    })
+}
+
 /// Hydrates every message on a branch in timeline order.  Creation uses this
 /// bounded form immediately after inserting the initial chain so the
 /// aggregate, message revisions, media projections, and origin rows are all
@@ -2545,6 +2723,62 @@ impl lettuce_conversations::ConversationOverviewReader for Database {
             }
         }
         Ok(counts)
+    }
+
+    fn message_count(
+        &self,
+        conversation_id: ConversationId,
+    ) -> Result<u64, ConversationRepositoryError> {
+        let mut connection = open_read(self)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Deferred)
+            .map_err(slice::db)?;
+        let exists: bool = transaction
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM conversations WHERE id = ?1)",
+                [conversation_id.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(slice::db)?;
+        if !exists {
+            return Err(ConversationRepositoryError::NotFound);
+        }
+        let count = message_counts(&transaction, &[conversation_id])?
+            .get(&conversation_id)
+            .copied()
+            .unwrap_or(0);
+        transaction.commit().map_err(slice::db)?;
+        Ok(count)
+    }
+
+    fn timeline_page_after(
+        &self,
+        conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
+        page: &PageRequest,
+    ) -> Result<TimelinePage, ConversationRepositoryError> {
+        let mut connection = open_read(self)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Deferred)
+            .map_err(slice::db)?;
+        let value = hydrate_timeline_after(&transaction, conversation_id, branch_id, page)?;
+        transaction.commit().map_err(slice::db)?;
+        Ok(value)
+    }
+
+    fn timeline_anchor(
+        &self,
+        conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
+        message_id: MessageId,
+    ) -> Result<lettuce_conversations::TimelineAnchor, ConversationRepositoryError> {
+        let mut connection = open_read(self)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Deferred)
+            .map_err(slice::db)?;
+        let value = hydrate_timeline_anchor(&transaction, conversation_id, branch_id, message_id)?;
+        transaction.commit().map_err(slice::db)?;
+        Ok(value)
     }
 }
 

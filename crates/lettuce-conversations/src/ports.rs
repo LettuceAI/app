@@ -1039,6 +1039,44 @@ pub trait ConversationOverviewReader: Send + Sync {
         conversation_id: ConversationId,
         message_ids: &[MessageId],
     ) -> Result<Vec<(MessageId, u32)>, ConversationRepositoryError>;
+
+    /// Visible messages of every role but System on the active branch, the
+    /// count a list row shows.
+    fn message_count(
+        &self,
+        conversation_id: ConversationId,
+    ) -> Result<u64, ConversationRepositoryError>;
+
+    /// A page of the branch's timeline in conversation order, oldest first:
+    /// from its first message, or after the message a cursor of this read or
+    /// of `timeline_anchor` names. `next_cursor` continues with newer
+    /// messages.
+    fn timeline_page_after(
+        &self,
+        conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
+        page: &PageRequest,
+    ) -> Result<TimelinePage, ConversationRepositoryError>;
+
+    /// A message on the branch's timeline, whatever its visibility, with the
+    /// cursors that page the older messages (`timeline_page`) and the newer
+    /// ones (`timeline_page_after`). A message off the timeline is
+    /// `NotFound`.
+    fn timeline_anchor(
+        &self,
+        conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
+        message_id: MessageId,
+    ) -> Result<TimelineAnchor, ConversationRepositoryError>;
+}
+
+/// A message on a branch timeline and where the timeline continues around
+/// it; a side without messages has no cursor.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TimelineAnchor {
+    pub item: TimelineItem,
+    pub older_cursor: Option<String>,
+    pub newer_cursor: Option<String>,
 }
 
 /// Materializes one protected launch snapshot through the conversation's
@@ -1246,6 +1284,13 @@ pub trait ConversationRepository: ConversationCreator {
         command: &EditMessage,
         now: TimestampMillis,
     ) -> Result<EditMessageResult, ConversationRepositoryError>;
+    /// Commits the scene setting and the scene message's new revision in one
+    /// transaction, recorded as an edit of that message.
+    fn select_scene(
+        &self,
+        selection: crate::PreparedSceneSelection,
+        now: TimestampMillis,
+    ) -> Result<EditMessageResult, ConversationRepositoryError>;
     /// Emits [`ConversationOutboxEvent::MessageFlagsChanged`].  A tombstoned
     /// message can never be restored, so adapters answer
     /// [`ConversationRepositoryError::Conflict`] for one.
@@ -1255,7 +1300,9 @@ pub trait ConversationRepository: ConversationCreator {
         now: TimestampMillis,
     ) -> Result<UpdateMessageFlagsResult, ConversationRepositoryError>;
     /// Tombstoning a root message under [`crate::commands::DescendantPolicy::Fork`]
-    /// is a conflict: there is no parent message to fork from.
+    /// is a conflict: there is no parent message to fork from. Tombstoning
+    /// the scene message of a one-to-one conversation also turns its scene
+    /// setting off in the same transaction.
     fn tombstone_message(
         &self,
         command: &TombstoneMessage,

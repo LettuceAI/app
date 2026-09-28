@@ -357,7 +357,11 @@ impl<'c> Purge<'c> {
         for table in ["memory_embedding_projections", "memory_items"] {
             self.delete(table, &format!("({in_spaces})"), &values)?;
         }
-        for table in ["dynamic_memory_pending_approvals", "memory_synced_cursors"] {
+        for table in [
+            "dynamic_memory_pending_approvals",
+            "dynamic_memory_pending_suffix_rewinds",
+            "memory_synced_cursors",
+        ] {
             self.delete(table, "conversation_id = ?1", &values[..1])?;
         }
         self.delete("conversation_memory_spaces", &by_owner, &values)?;
