@@ -8,7 +8,9 @@ use std::{
 
 use futures_util::FutureExt;
 use lettuce_contracts::{ApiError, ApiEvent};
-use lettuce_conversations::{ConversationChange, ConversationChangeFeed};
+use lettuce_conversations::{
+    ConversationChange, ConversationChangeFeed, MessageSignal, MessageSignalKind,
+};
 
 use super::ApiContext;
 use super::error::IntoApiError;
@@ -36,11 +38,14 @@ fn database_changes(
 
 /// Follows the conversation change feed and publishes each changed
 /// conversation once per read, as `ApiEvent::ConversationChanged` or, when a
-/// purge removed it, `ApiEvent::ConversationRemoved`. It reads only after the
-/// database signalled a committed conversation change, or to retry a read
-/// that failed, after a delay that doubles from 250 ms to 30 s.
+/// purge removed it, `ApiEvent::ConversationRemoved`; the message signal feed
+/// beside it publishes a settled companion effect and a changed scene image
+/// follow-up the same way. It reads only after the database signalled a
+/// committed change, or to retry a read that failed, after a delay that
+/// doubles from 250 ms to 30 s.
 pub(crate) struct ConversationFeed {
     position: u64,
+    signals: u64,
     reads: Arc<AtomicUsize>,
     read: Arc<ChangeRead>,
 }
@@ -61,8 +66,18 @@ impl ConversationFeed {
                     .map_err(IntoApiError::into_api_error)
             })
             .await?;
+        let signals = context
+            .blocking(|context| {
+                context
+                    .backend()
+                    .database()
+                    .message_signal_position()
+                    .map_err(IntoApiError::into_api_error)
+            })
+            .await?;
         Ok(Self {
             position,
+            signals,
             reads: Arc::new(AtomicUsize::new(0)),
             read,
         })
@@ -133,8 +148,43 @@ impl ConversationFeed {
                 self.position = change.position;
             }
             if !full || self.position == after {
+                break;
+            }
+        }
+        loop {
+            let after = self.signals;
+            let signals = context
+                .blocking(move |context| {
+                    context
+                        .backend()
+                        .database()
+                        .message_signals_since(after, FEED_PAGE)
+                        .map_err(IntoApiError::into_api_error)
+                })
+                .await?;
+            let full = signals.len() >= FEED_PAGE as usize;
+            for signal in &signals {
+                context.emit(signal_event(signal));
+                self.signals = signal.position;
+            }
+            if !full || self.signals == after {
                 return Ok(());
             }
         }
+    }
+}
+
+fn signal_event(signal: &MessageSignal) -> ApiEvent {
+    let conversation_id = signal.conversation_id.to_string();
+    let message_id = signal.message_id.to_string();
+    match signal.kind {
+        MessageSignalKind::CompanionEffectSettled => ApiEvent::MessageEffectSettled {
+            conversation_id,
+            message_id,
+        },
+        MessageSignalKind::SceneImageChanged => ApiEvent::MessageSceneImageChanged {
+            conversation_id,
+            message_id,
+        },
     }
 }

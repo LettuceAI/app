@@ -373,6 +373,30 @@ BEGIN
     SELECT RAISE(ABORT, 'terminal companion turn effect children are immutable');
 END;
 
+-- The message change feed: one row per (kind, message), moved to a new
+-- position each time it happens, so a reader that remembers the last
+-- position it read sees every message that changed once. A settled
+-- companion turn effect and a scene image follow-up write it from triggers.
+CREATE TABLE message_signals (
+    position INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL CHECK (kind IN ('companion_effect_settled', 'scene_image_changed')),
+    conversation_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    UNIQUE (kind, conversation_id, message_id)
+) STRICT;
+
+CREATE TRIGGER companion_turn_effects_signal_settled
+AFTER UPDATE OF status ON companion_turn_effects
+WHEN OLD.status = 'processing' AND NEW.status IN ('ready', 'failed')
+BEGIN
+    DELETE FROM message_signals
+    WHERE kind = 'companion_effect_settled'
+      AND conversation_id = NEW.conversation_id
+      AND message_id = NEW.assistant_message_id;
+    INSERT INTO message_signals (kind, conversation_id, message_id)
+    VALUES ('companion_effect_settled', NEW.conversation_id, NEW.assistant_message_id);
+END;
+
 CREATE TABLE companion_memory_pools (
     character_id TEXT PRIMARY KEY REFERENCES characters(id) ON DELETE CASCADE,
     space_id TEXT NOT NULL UNIQUE REFERENCES memory_spaces(id) ON DELETE RESTRICT

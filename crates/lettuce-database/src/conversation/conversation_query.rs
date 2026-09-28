@@ -2747,6 +2747,68 @@ impl lettuce_conversations::ConversationChangeFeed for Database {
         }
         Ok(changes)
     }
+
+    fn message_signal_position(&self) -> Result<u64, ConversationRepositoryError> {
+        let connection = open_read(self)?;
+        let position: Option<i64> = connection
+            .query_row("SELECT max(position) FROM message_signals", [], |row| {
+                row.get(0)
+            })
+            .map_err(slice::db)?;
+        u64::try_from(position.unwrap_or(0)).map_err(|_| ConversationRepositoryError::Storage)
+    }
+
+    fn message_signals_since(
+        &self,
+        after: u64,
+        limit: u32,
+    ) -> Result<Vec<lettuce_conversations::MessageSignal>, ConversationRepositoryError> {
+        self.message_signal_rows(after, limit)
+    }
+}
+
+impl Database {
+    fn message_signal_rows(
+        &self,
+        after: u64,
+        limit: u32,
+    ) -> Result<Vec<lettuce_conversations::MessageSignal>, ConversationRepositoryError> {
+        let after = i64::try_from(after).map_err(|_| cursor_error())?;
+        let connection = open_read(self)?;
+        let mut statement = connection
+            .prepare("SELECT position, kind, conversation_id, message_id FROM message_signals WHERE position > ?1 ORDER BY position LIMIT ?2")
+            .map_err(slice::db)?;
+        let mut signals = Vec::new();
+        for row in statement
+            .query_map(params![after, i64::from(limit)], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                ))
+            })
+            .map_err(slice::db)?
+        {
+            let (position, kind, conversation_id, message_id) = row.map_err(slice::db)?;
+            signals.push(lettuce_conversations::MessageSignal {
+                position: u64::try_from(position)
+                    .map_err(|_| ConversationRepositoryError::Storage)?,
+                kind: match kind.as_str() {
+                    "companion_effect_settled" => {
+                        lettuce_conversations::MessageSignalKind::CompanionEffectSettled
+                    }
+                    "scene_image_changed" => {
+                        lettuce_conversations::MessageSignalKind::SceneImageChanged
+                    }
+                    _ => return Err(ConversationRepositoryError::Storage),
+                },
+                conversation_id: parse(conversation_id)?,
+                message_id: parse(message_id)?,
+            });
+        }
+        Ok(signals)
+    }
 }
 
 impl lettuce_conversations::LiveTurnReader for Database {
@@ -2811,6 +2873,22 @@ impl lettuce_conversations::ConversationOverviewReader for Database {
     ) -> Result<KeysetPage<lettuce_conversations::ConversationOverview>, ConversationRepositoryError>
     {
         self.latest_per_source(ConversationKindTag::Group, page)
+    }
+
+    fn conversation_of_message(
+        &self,
+        message_id: MessageId,
+    ) -> Result<Option<ConversationId>, ConversationRepositoryError> {
+        let connection = open_read(self)?;
+        let id: Option<String> = connection
+            .query_row(
+                "SELECT conversation_id FROM conversation_messages WHERE id = ?1",
+                [message_id.to_string()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(slice::db)?;
+        id.map(parse).transpose()
     }
 
     fn live_turn(

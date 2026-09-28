@@ -16,6 +16,7 @@ mod events;
 mod file_kind;
 mod files;
 mod hugging_face;
+mod inspect;
 mod jobs;
 mod local_models;
 mod mapping;
@@ -34,6 +35,8 @@ mod conversation_list_tests;
 mod conversation_settings_tests;
 #[cfg(test)]
 mod foundation_tests;
+#[cfg(test)]
+mod inspect_tests;
 #[cfg(test)]
 mod local_models_tests;
 #[cfg(test)]
@@ -67,6 +70,10 @@ pub use files::{
 pub use hugging_face::{
     hf_auth_clear, hf_auth_save, hf_auth_status, hf_author, hf_avatars, hf_download,
     hf_model_files, hf_readme, hf_recommendation, hf_runnability, hf_search,
+};
+pub use inspect::{
+    conversation_participation_stats, conversation_speaker_selection_preview,
+    message_companion_effect, message_prompt_snapshot,
 };
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub use jobs::CatalogVariant;

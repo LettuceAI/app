@@ -381,7 +381,7 @@ const fn failure_code(failure: Option<GenerationFailureCode>) -> dto::Generation
 
 /// Used without a media store: a reply carrying images fails instead of
 /// losing them.
-struct UnstoredReplyMedia;
+pub(super) struct UnstoredReplyMedia;
 
 impl ReplyMediaStore for UnstoredReplyMedia {
     fn store_reply_image(

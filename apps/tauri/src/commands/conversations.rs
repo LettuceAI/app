@@ -12,10 +12,12 @@ use lettuce_contracts::{
     ConversationsListRequest, GenerationAccepted, GenerationCancelRequest, GenerationEvent,
     LatestConversationPage, LatestConversationsRequest, LaunchDirectRequest, LaunchDirectResponse,
     LaunchGroupRequest, LaunchGroupResponse, MemoryRewindRetryOutcome, MemoryRewindRetryRequest,
-    MessageCandidatePage, MessageCandidateSelectRequest, MessageChanged, MessageCount,
-    MessageDeleteRequest, MessageEditRequest, MessageHistoryRequest, MessagePage,
-    MessagePinRequest, MessageRevisionPage, MessageSceneSelectRequest, MessageWindow,
-    MessagesDeleteResult, SearchHitPage, SendAccepted,
+    MessageCandidatePage, MessageCandidateSelectRequest, MessageChanged, MessageCompanionEffect,
+    MessageCompanionEffectRequest, MessageCount, MessageDeleteRequest, MessageEditRequest,
+    MessageHistoryRequest, MessagePage, MessagePinRequest, MessagePromptSnapshotRequest,
+    MessageRevisionPage, MessageSceneSelectRequest, MessageWindow, MessagesDeleteResult,
+    ParticipationStats, PromptSnapshot, SearchHitPage, SendAccepted, SpeakerSelectionPreview,
+    SpeakerSelectionPreviewRequest,
 };
 use tauri::{State, ipc::Channel};
 
@@ -228,6 +230,42 @@ pub async fn conversation_add_user_message(
     request: ConversationAddUserMessageRequest,
 ) -> Result<MessageChanged, ApiError> {
     api::conversation_add_user_message(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn message_prompt_snapshot(
+    context: State<'_, ApiContext>,
+    request: MessagePromptSnapshotRequest,
+) -> Result<PromptSnapshot, ApiError> {
+    api::message_prompt_snapshot(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn conversation_speaker_selection_preview(
+    context: State<'_, ApiContext>,
+    request: SpeakerSelectionPreviewRequest,
+) -> Result<SpeakerSelectionPreview, ApiError> {
+    api::conversation_speaker_selection_preview(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn conversation_participation_stats(
+    context: State<'_, ApiContext>,
+    request: ConversationRequest,
+) -> Result<ParticipationStats, ApiError> {
+    api::conversation_participation_stats(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn message_companion_effect(
+    context: State<'_, ApiContext>,
+    request: MessageCompanionEffectRequest,
+) -> Result<Option<MessageCompanionEffect>, ApiError> {
+    api::message_companion_effect(&context, request).await
 }
 
 #[tauri::command]

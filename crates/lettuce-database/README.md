@@ -154,6 +154,8 @@ Snapshot and provider replay bytes live in private artifact tables (`conversatio
 
 `conversation_changes` is the conversation change feed: triggers on `conversations` move a conversation's single row to a new AUTOINCREMENT position on every insert and update (every mutation bumps the row, so messages, settings, lifecycle and title changes all count) and leave a `removed` row when a purge deletes it. `ConversationChangeFeed` reads the latest position and the changes after one. `change_signal.rs` watches the feed tables with the update hook, reports the feeds a transaction wrote from the commit hook and forgets them on rollback, so `on_conversation_change` and `on_job_change` listeners hear only committed changes.
 
+`message_signals` is the message change feed beside it: one row per (kind, conversation, message), moved to a new AUTOINCREMENT position each time it happens, written by a trigger when a companion turn effect leaves `processing`. The change signal treats it as part of the conversation feed, so `on_conversation_change` listeners hear it, and `ConversationChangeFeed::message_signals_since` reads it; the purge deletes a conversation's rows.
+
 The shared-message check that keeps a delete from changing another branch (`suffix_shared_with_other_branches` and the in-transaction `any_on_other_branches`) walks the ancestry of every other active branch, so it costs O(branches × depth); a delete-after runs it twice, once in the coordinator's pre-scan and once as the guard inside the tombstone transaction. Triggers on `dynamic_memory_pending_suffix_rewinds` record the conversation in `conversation_changes`, so recording or clearing a failed owed rewind reaches the change feed.
 
 ### Historical conversations

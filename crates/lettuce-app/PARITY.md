@@ -208,6 +208,10 @@ Facts about how `lettuce-app` relates to the legacy app (2.2.x): what follows le
 - Adding a user message to a group chat fails `Busy` while a turn is live and trims its text; legacy checked neither (`old-code/src-tauri/src/group_chat_manager/mod.rs:6397-6406,4598-4640`). It works in one-to-one chats too.
 - A companion send without an emotion engine is `ModelRequired`; legacy took the neutral update (`old-code/src-tauri/src/embedding/emotion.rs:83-85`).
 - Regenerate, continue and retry check exactly the models they use, before anything is written, and finish the memory rewinds a delete owes the chat first; legacy had no such checks and ran with empty memories when retrieval failed (`old-code/src-tauri/src/chat_manager/memory/flow.rs:1407-1417`, recorded above).
+- Participation is derived from the selected branch's visible replies on each read; legacy kept cumulative counters that a generation incremented (a regeneration only when the speaker changed) and nothing decremented, so a delete, a rewind or another branch never changed them (`old-code/src-tauri/src/storage_manager/group_sessions.rs:643-690`, `group_chat_manager/mod.rs:4578-4595,7115`). The newest reply's message and time come from the same scan.
+- The prompt snapshot is the request recorded when the reply was sent, with the sections recorded beside it; legacy rebuilt it from the current session, character and settings, so an edit since gave another prompt and a deleted model an error (`old-code/src-tauri/src/chat_manager/commands/mod.rs:40-128,491-720`). It is not limited to development builds and covers group replies and every operation; a reply whose request was never recorded (imported ones) has no snapshot, where legacy rebuilt one.
+- The speaker selection prompt preview is ported although legacy's UI never called it (`old-code/src-tauri/src/group_chat_manager/mod.rs:7398-7407`).
+- A companion effect's settlement is an event; the effect view polled every 1500 ms while it was processing (`old-code/src/ui/pages/chats/components/MessageActionsBottomSheet.tsx:316-318`).
 
 ## Decisions
 

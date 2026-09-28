@@ -711,31 +711,7 @@ where
                 .flatten()
         });
         let profiles = self.current_character_profiles(&conversation)?;
-        let participants = conversation
-            .participants
-            .iter()
-            .filter(|participant| {
-                participant.role == lettuce_conversations::ParticipantRole::Character
-            })
-            .map(|participant| SpeakerParticipantState {
-                id: participant.id,
-                eligible: participant.enabled && profiles.contains_key(&participant.id),
-                muted: participant.muted,
-                speak_count: u32::try_from(
-                    timeline
-                        .items
-                        .iter()
-                        .filter(|item| {
-                            item.message.role == MessageRole::Assistant
-                                && item.message.author_participant_id == Some(participant.id)
-                        })
-                        .count(),
-                )
-                .unwrap_or(u32::MAX),
-                last_spoke_turn: None,
-                last_spoke_at: None,
-            })
-            .collect();
+        let participants = speaker_states(&conversation, &profiles, &timeline.items);
         let mention_source = match turn.input {
             GenerationInput::UserMessage { message_id } => {
                 user_message_mention(&conversation, &timeline.items, message_id, &profiles)
@@ -782,6 +758,94 @@ where
             )
             .map_err(ConversationGenerationInputError::Repository)?;
         Ok(())
+    }
+
+    /// The prompt the chat's LLM speaker selection sends for its next reply,
+    /// rendered from the live cast, the selected branch and, when given, a
+    /// user message not sent yet; nothing is sent to a provider. `None` for a
+    /// one-to-one chat.
+    pub(crate) fn speaker_selection_preview(
+        &self,
+        conversation_id: lettuce_types::ConversationId,
+        user_message: Option<&str>,
+        now: TimestampMillis,
+    ) -> Result<Option<String>, ConversationGenerationInputError> {
+        let aggregate = ConversationReader::get(self.repository, conversation_id)
+            .map_err(ConversationGenerationInputError::Repository)?;
+        let unavailable = || {
+            ConversationGenerationInputError::Context(ContextAssemblyError::ConversationUnavailable)
+        };
+        let Some(live) =
+            crate::generation::live_sources::live_group(self.repository, &aggregate.conversation)
+                .map_err(|_| unavailable())?
+        else {
+            return Ok(None);
+        };
+        let mut conversation = aggregate.conversation.clone();
+        conversation.participants = crate::generation::live_sources::effective_participants(
+            &aggregate.conversation,
+            live.profile.as_ref(),
+        );
+        let profiles = self.current_character_profiles(&conversation)?;
+        let mut items = self
+            .timeline(conversation_id, conversation.active_branch_id)?
+            .items;
+        if let Some(text) = user_message.map(str::trim).filter(|text| !text.is_empty()) {
+            let user = conversation
+                .participants
+                .iter()
+                .find(|participant| {
+                    participant.role == lettuce_conversations::ParticipantRole::User
+                })
+                .ok_or_else(unavailable)?;
+            items.push(unsent_user_message(&conversation, user.id, text, now));
+        }
+        let prior_speaker = items.iter().rev().find_map(|item| {
+            (item.message.role == MessageRole::Assistant)
+                .then_some(item.message.author_participant_id)
+                .flatten()
+        });
+        let available = conversation
+            .participants
+            .iter()
+            .filter(|participant| {
+                participant.role == lettuce_conversations::ParticipantRole::Character
+                    && participant.enabled
+                    && !participant.muted
+                    && profiles.contains_key(&participant.id)
+            })
+            .collect::<Vec<_>>();
+        if available.is_empty() {
+            return Err(ConversationGenerationInputError::SpeakerUnavailable);
+        }
+        let policy = SpeakerPolicyRequest {
+            conversation_id,
+            branch_id: conversation.active_branch_id,
+            operation: if user_message.is_some() {
+                lettuce_conversations::GenerationOperation::Send
+            } else {
+                lettuce_conversations::GenerationOperation::Continue
+            },
+            forced_speaker: None,
+            mention_source: None,
+            participants: speaker_states(&conversation, &profiles, &items),
+            prior_speaker,
+            timeline: items,
+        };
+        let text = crate::generation::runtime_text::RuntimeText::load(
+            self.repository,
+            crate::BuiltInPromptId::GroupSpeakerSelection,
+        )
+        .map_err(|_| {
+            ConversationGenerationInputError::Context(ContextAssemblyError::RuntimeTextUnavailable)
+        })?;
+        speaker_selection_prompt(&text, &profiles, &policy, &available)
+            .map(Some)
+            .map_err(|_| {
+                ConversationGenerationInputError::Context(
+                    ContextAssemblyError::RuntimeTextUnavailable,
+                )
+            })
     }
 
     fn current_character_profiles(
@@ -2083,6 +2147,83 @@ fn user_message_mention(
         .map(|(id, profile)| (*id, profile.name.as_str()));
     let candidates = display_names.chain(names).collect::<Vec<_>>();
     lettuce_conversations::mentioned_participant(&text, &candidates)
+}
+
+fn speaker_states(
+    conversation: &lettuce_conversations::Conversation,
+    profiles: &HashMap<
+        lettuce_types::ConversationParticipantId,
+        lettuce_characters::CharacterProfile,
+    >,
+    items: &[lettuce_conversations::TimelineItem],
+) -> Vec<SpeakerParticipantState> {
+    conversation
+        .participants
+        .iter()
+        .filter(|participant| participant.role == lettuce_conversations::ParticipantRole::Character)
+        .map(|participant| SpeakerParticipantState {
+            id: participant.id,
+            eligible: participant.enabled && profiles.contains_key(&participant.id),
+            muted: participant.muted,
+            speak_count: u32::try_from(
+                items
+                    .iter()
+                    .filter(|item| {
+                        item.message.role == MessageRole::Assistant
+                            && item.message.author_participant_id == Some(participant.id)
+                    })
+                    .count(),
+            )
+            .unwrap_or(u32::MAX),
+            last_spoke_turn: None,
+            last_spoke_at: None,
+        })
+        .collect()
+}
+
+/// A user message that is not stored, appended to the timeline a preview
+/// renders.
+fn unsent_user_message(
+    conversation: &lettuce_conversations::Conversation,
+    author: lettuce_types::ConversationParticipantId,
+    text: &str,
+    now: TimestampMillis,
+) -> lettuce_conversations::TimelineItem {
+    let message_id = lettuce_types::MessageId::new();
+    let revision_id = lettuce_types::MessageRevisionId::new();
+    lettuce_conversations::TimelineItem {
+        message: lettuce_conversations::Message {
+            id: message_id,
+            conversation_id: conversation.id,
+            branch_id: conversation.active_branch_id,
+            parent_message_id: None,
+            author_participant_id: Some(author),
+            role: MessageRole::User,
+            logical_time: now,
+            effective_time: now,
+            visibility: lettuce_conversations::MessageVisibility::Visible,
+            pinned: false,
+            scene_edited: false,
+            active_render_source: lettuce_conversations::MessageRenderSource::Revision(revision_id),
+            revision: lettuce_types::Revision::INITIAL,
+            created_at: now,
+            updated_at: now,
+        },
+        active_revision: Some(lettuce_conversations::MessageRevision {
+            id: revision_id,
+            message_id,
+            sequence: lettuce_types::Revision::INITIAL,
+            parts: vec![lettuce_conversations::MessagePart::Text {
+                text: text.to_owned(),
+            }],
+            authored_at: now,
+            source_turn_id: None,
+            provider_replay: None,
+            supersedes_candidate_id: None,
+        }),
+        active_candidate: None,
+        initial_origin: None,
+    }
 }
 
 fn speaker_selection_prompt(

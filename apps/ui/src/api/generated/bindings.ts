@@ -29,6 +29,22 @@ export const commands = {
 	conversationRetry: (request: ConversationRetryRequest, onEvent: Channel<GenerationEvent>) => typedError<GenerationAccepted, ApiError>(__TAURI_INVOKE("conversation_retry", { request, onEvent })),
 	conversationAddUserMessage: (request: ConversationAddUserMessageRequest) => typedError<MessageChanged, ApiError>(__TAURI_INVOKE("conversation_add_user_message", { request })),
 	generationCancel: (request: GenerationCancelRequest) => typedError<null, ApiError>(__TAURI_INVOKE("generation_cancel", { request })),
+	messagePromptSnapshot: (request: MessagePromptSnapshotRequest) => typedError<PromptSnapshot, ApiError>(__TAURI_INVOKE("message_prompt_snapshot", { request })),
+	conversationSpeakerSelectionPreview: (request: SpeakerSelectionPreviewRequest) => typedError<SpeakerSelectionPreview, ApiError>(__TAURI_INVOKE("conversation_speaker_selection_preview", { request })),
+	conversationParticipationStats: (request: ConversationRequest) => typedError<ParticipationStats, ApiError>(__TAURI_INVOKE("conversation_participation_stats", { request })),
+	messageCompanionEffect: (request: MessageCompanionEffectRequest) => typedError<{
+	status: CompanionEffectStatus,
+	summary: string | null,
+	relationship: RelationshipChange,
+	felt: EmotionChange,
+	expressed: EmotionChange,
+	blocked: EmotionChange,
+	signals_added: string[],
+	signals_removed: string[],
+	memories_added: string[],
+	memories_updated: string[],
+	memories_superseded: string[],
+} | null, ApiError>(__TAURI_INVOKE("message_companion_effect", { request })),
 	conversationLaunchDirect: (request: LaunchDirectRequest) => typedError<LaunchDirectResponse, ApiError>(__TAURI_INVOKE("conversation_launch_direct", { request })),
 	conversationLaunchGroup: (request: LaunchGroupRequest) => typedError<LaunchGroupResponse, ApiError>(__TAURI_INVOKE("conversation_launch_group", { request })),
 	conversationSettingsGet: (request: ConversationSettingsGetRequest) => typedError<ConversationSettingsView, ApiError>(__TAURI_INVOKE("conversation_settings_get", { request })),
@@ -107,9 +123,18 @@ export type ApiErrorDetails = { type: "invalid_field"; field: string } | { type:
  *  `ConversationChanged` follows a committed write to the conversation (lists
  *  and open views re-read it), `ConversationRemoved` its purge, and
  *  `RequiredModelsChanged` an optional model's install, switch, removal or
- *  adoption (open views re-read their missing models).
+ *  adoption (open views re-read their missing models). `MessageEffectSettled`
+ *  and `MessageSceneImageChanged` follow a message's companion effect and
+ *  scene image follow-up.
  */
-export type ApiEvent = { type: "generation_settled"; conversation_id: string; turn_id: string } | { type: "job_updated"; job: JobView } | { type: "conversation_changed"; conversation_id: string } | { type: "conversation_removed"; conversation_id: string } | { type: "required_models_changed" };
+export type ApiEvent = { type: "generation_settled"; conversation_id: string; turn_id: string } | { type: "job_updated"; job: JobView } | { type: "conversation_changed"; conversation_id: string } | { type: "conversation_removed"; conversation_id: string } | { type: "required_models_changed" } | 
+/**
+ *  The companion effect of a reply settled (`message_companion_effect`
+ *  reads it).
+ */
+{ type: "message_effect_settled"; conversation_id: string; message_id: string } | 
+/**  A reply's scene image follow-up changed state. */
+{ type: "message_scene_image_changed"; conversation_id: string; message_id: string };
 
 /**  The application-wide event every window receives. */
 export type AppEvent = ApiEvent;
@@ -186,6 +211,8 @@ export type ChatModeChange = { type: "set"; mode: GroupChatMode } | { type: "res
  *  follows.
  */
 export type ChoiceChange = { type: "set"; id: string } | { type: "none" } | { type: "reset" };
+
+export type CompanionEffectStatus = "processing" | "ready" | "failed" | "invalidated";
 
 /**
  *  Adds a user message without a reply, for a director who then continues
@@ -468,6 +495,19 @@ export type ConversationsListRequest = {
 	lifecycle: LifecycleFilter | null,
 	cursor: string | null,
 	limit: number | null,
+};
+
+export type EmotionChange = {
+	warmth: number | null,
+	trust: number | null,
+	calm: number | null,
+	vulnerability: number | null,
+	longing: number | null,
+	hurt: number | null,
+	tension: number | null,
+	irritation: number | null,
+	affection_intensity: number | null,
+	reassurance_need: number | null,
 };
 
 export type FileInspection = {
@@ -1348,6 +1388,29 @@ export type MessageChanged = {
 	revision: number,
 };
 
+/**
+ *  What a reply changed about a companion: how the relationship and the
+ *  felt, expressed and blocked emotions moved, the signals that came or
+ *  went and, once the memory cycle settled, the memories it wrote.
+ */
+export type MessageCompanionEffect = {
+	status: CompanionEffectStatus,
+	summary: string | null,
+	relationship: RelationshipChange,
+	felt: EmotionChange,
+	expressed: EmotionChange,
+	blocked: EmotionChange,
+	signals_added: string[],
+	signals_removed: string[],
+	memories_added: string[],
+	memories_updated: string[],
+	memories_superseded: string[],
+};
+
+export type MessageCompanionEffectRequest = {
+	message_id: string,
+};
+
 /**  Visible messages on the selected branch, system notes excluded. */
 export type MessageCount = {
 	count: number,
@@ -1403,6 +1466,11 @@ export type MessagePinRequest = {
 	expected_revision: number,
 	pinned: boolean,
 	client_operation_id: string,
+};
+
+/**  Asks for the request a reply was generated from. */
+export type MessagePromptSnapshotRequest = {
+	message_id: string,
 };
 
 export type MessageRevisionPage = {
@@ -1516,6 +1584,104 @@ export type ParticipantView = {
 	avatar: AssetRef | null,
 };
 
+/**  One character's share of the replies on the selected branch. */
+export type ParticipationStat = {
+	participant_id: string,
+	character_id: string | null,
+	name: string,
+	enabled: boolean,
+	muted: boolean,
+	/**  Visible replies the participant spoke on the selected branch. */
+	message_count: number,
+	/**  The share of all replies, rounded to a whole percent. */
+	percent: number,
+	last_spoke_message_id: string | null,
+	last_spoke_at: number | null,
+};
+
+/**  Who spoke how much on the selected branch, derived from its timeline. */
+export type ParticipationStats = {
+	items: ParticipationStat[],
+	total_messages: number,
+};
+
+/**
+ *  How much of the chat the request carried and what it is estimated to
+ *  cost.
+ */
+export type PromptBudget = {
+	selected_messages: number,
+	omitted_messages: number,
+	input_bytes: number,
+	estimated_input_tokens: number,
+	truncated: boolean,
+};
+
+export type PromptMessage = {
+	role: MessageRole,
+	parts: PromptPart[],
+};
+
+/**
+ *  The model a request was sent to; nothing that identifies the account or
+ *  its credentials.
+ */
+export type PromptModel = {
+	display_name: string,
+	external_model_id: string,
+	provider_kind: string,
+};
+
+export type PromptOperation = "send" | "continue" | "regenerate";
+
+/**  The sampling parameters a request resolved to. */
+export type PromptParameters = {
+	temperature: number | null,
+	top_p: number | null,
+	top_k: number | null,
+	max_output_tokens: number | null,
+	context_length: number | null,
+	frequency_penalty: number | null,
+	presence_penalty: number | null,
+	repetition_penalty: number | null,
+};
+
+export type PromptPart = { type: "text"; text: string } | { type: "media"; asset: AssetRef; role: MediaRole } | { type: "tool_call"; name: string; arguments: string } | { type: "tool_result"; name: string; output: string };
+
+/**
+ *  What one source contributed to the prompt, with its estimated tokens. A
+ *  lorebook entry or prompt entry is labelled with its title or name, the
+ *  character and persona with theirs.
+ */
+export type PromptSection = {
+	kind: PromptSectionKind,
+	label: string | null,
+	estimated_tokens: number,
+};
+
+export type PromptSectionKind = "character" | "persona" | "scene" | "lorebook" | "memories" | "author_note" | "companion_state" | "scheduled_notes" | "group_cast" | "prompt_entry";
+
+/**  Why a request has no per-section breakdown. */
+export type PromptSectionsUnavailable = "predates_breakdown";
+
+/**
+ *  The request a reply was generated from, exactly as it was recorded when
+ *  it was sent. The sections are recorded with it, so they show what was
+ *  sent even when the character, persona or lorebooks changed since.
+ */
+export type PromptSnapshot = {
+	turn_id: string,
+	candidate_id: string,
+	operation: PromptOperation,
+	model: PromptModel,
+	streaming: boolean,
+	parameters: PromptParameters,
+	messages: PromptMessage[],
+	budget: PromptBudget,
+	sections: PromptSection[] | null,
+	sections_unavailable: PromptSectionsUnavailable | null,
+};
+
 export type PurgeNoticeDismissRequest = {
 	id: string,
 };
@@ -1538,6 +1704,14 @@ export type PurgeNoticeView = {
 	entity_id: string,
 	reason: PurgeNoticeReasonDto,
 	recorded_at: number,
+};
+
+export type RelationshipChange = {
+	closeness: number | null,
+	trust: number | null,
+	affection: number | null,
+	tension: number | null,
+	stability: number | null,
 };
 
 /**
@@ -1620,6 +1794,19 @@ export type SettingSpeakerSelection = {
 export type SpeakerSelectionChange = { type: "set"; method: SpeakerSelectionMethod } | { type: "reset" };
 
 export type SpeakerSelectionMethod = "llm" | "heuristic" | "round_robin" | "director" | "director_action";
+
+export type SpeakerSelectionPreview = {
+	prompt: string,
+};
+
+/**
+ *  Renders the prompt the next LLM speaker selection would send in a group
+ *  chat, for a user message that is not sent yet when `user_message` is set.
+ */
+export type SpeakerSelectionPreviewRequest = {
+	conversation_id: string,
+	user_message: string | null,
+};
 
 export type TimelineMessage = {
 	id: string,

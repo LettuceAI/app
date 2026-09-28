@@ -103,7 +103,7 @@ pub(crate) const fn message_role(role: MessageRole) -> dto::MessageRole {
     }
 }
 
-const fn media_role(role: MediaAssetRole) -> dto::MediaRole {
+pub(crate) const fn media_role(role: MediaAssetRole) -> dto::MediaRole {
     match role {
         MediaAssetRole::Inline => dto::MediaRole::Inline,
         MediaAssetRole::Attachment => dto::MediaRole::Attachment,

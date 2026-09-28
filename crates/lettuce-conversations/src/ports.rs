@@ -984,6 +984,35 @@ pub trait ConversationChangeFeed: Send + Sync {
         after: u64,
         limit: u32,
     ) -> Result<Vec<ConversationChange>, ConversationRepositoryError>;
+
+    /// The position of the latest message signal, 0 before any.
+    fn message_signal_position(&self) -> Result<u64, ConversationRepositoryError>;
+
+    /// Message signals after `after`, in position order, at most `limit`.
+    fn message_signals_since(
+        &self,
+        after: u64,
+        limit: u32,
+    ) -> Result<Vec<MessageSignal>, ConversationRepositoryError>;
+}
+
+/// What happened to a message that lists and open views cannot see in the
+/// conversation's own row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MessageSignalKind {
+    /// The companion effect of a reply settled.
+    CompanionEffectSettled,
+    /// A reply's scene image follow-up changed state.
+    SceneImageChanged,
+}
+
+/// One message's latest signal of a kind, at its feed position.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MessageSignal {
+    pub position: u64,
+    pub kind: MessageSignalKind,
+    pub conversation_id: ConversationId,
+    pub message_id: MessageId,
 }
 
 /// The launch request digest a conversation was created with, when its
@@ -1035,6 +1064,12 @@ pub trait ConversationOverviewReader: Send + Sync {
         &self,
         page: &PageRequest,
     ) -> Result<KeysetPage<ConversationOverview>, ConversationRepositoryError>;
+
+    /// The conversation a message belongs to.
+    fn conversation_of_message(
+        &self,
+        message_id: MessageId,
+    ) -> Result<Option<ConversationId>, ConversationRepositoryError>;
 
     /// The conversation's oldest unsettled turn.
     fn live_turn(
@@ -1915,6 +1950,38 @@ pub struct ContextAttributions {
     pub prompt: Option<PromptAttribution>,
     pub lorebooks: Vec<LorebookAttribution>,
     pub memory: Option<MemoryAttribution>,
+    /// What each source contributed to the prompt, recorded when the context
+    /// was assembled; `None` for a context assembled before sections were
+    /// recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sections: Option<Vec<ContextSection>>,
+}
+
+/// The kind of source a prompt section came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ContextSectionKind {
+    Character,
+    Persona,
+    Scene,
+    Lorebook,
+    Memories,
+    AuthorNote,
+    CompanionState,
+    ScheduledNotes,
+    GroupCast,
+    PromptEntry,
+}
+
+/// One source's share of a prompt: the character, the persona, one
+/// activated lorebook entry, one prompt entry and so on, with the tokens its
+/// text is estimated to take.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ContextSection {
+    pub kind: ContextSectionKind,
+    pub label: Option<String>,
+    pub estimated_tokens: u32,
 }
 
 impl ContextAttributions {

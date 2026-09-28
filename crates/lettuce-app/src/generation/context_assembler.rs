@@ -25,12 +25,12 @@ use lettuce_context::{
 use lettuce_context::{PromptRepository, RenderedPrompt, render_prompt};
 use lettuce_conversations::{
     AnnotationPayload, BranchStatus, ContextAssemblyError, ContextAttributions,
-    ContextBudgetReport, ContextRequest, ConversationAggregate, ConversationKind,
-    ConversationReader, ConversationSnapshotMaterializer, EffectiveConversationSettings,
-    GenerationOperation, LorebookAttribution, MemoryPromptLine, MessagePart, MessageRenderSource,
-    MessageRole, PromptAttribution, ProviderContextPart, ProviderNeutralContext,
-    ProviderNeutralMessage, SettingProvenance, SnapshotDocumentBody, SnapshotDocumentKind,
-    SnapshotSelection, TimelineItem,
+    ContextBudgetReport, ContextRequest, ContextSection, ContextSectionKind, ConversationAggregate,
+    ConversationKind, ConversationReader, ConversationSnapshotMaterializer,
+    EffectiveConversationSettings, GenerationOperation, LorebookAttribution, MemoryPromptLine,
+    MessagePart, MessageRenderSource, MessageRole, PromptAttribution, ProviderContextPart,
+    ProviderNeutralContext, ProviderNeutralMessage, SettingProvenance, SnapshotDocumentBody,
+    SnapshotDocumentKind, SnapshotSelection, TimelineItem,
 };
 use lettuce_conversations::{
     CharacterSnapshotBodyV1, ConversationParticipant, PersonaSnapshotBodyV1,
@@ -312,6 +312,62 @@ where
         runtime_values.context_summary = memory_summary.clone();
         runtime_values.key_memories = key_lines.clone();
         resolve_substituted_values(&mut runtime_values, group);
+        let mut sections = Vec::new();
+        push_section(
+            &mut sections,
+            ContextSectionKind::Character,
+            Some(runtime_values.character_name.clone()),
+            &runtime_values.character_description,
+        );
+        push_section(
+            &mut sections,
+            ContextSectionKind::Persona,
+            Some(runtime_values.persona_name.clone()),
+            &runtime_values.persona_description,
+        );
+        push_section(
+            &mut sections,
+            ContextSectionKind::Scene,
+            None,
+            &format!(
+                "{}\n{}",
+                runtime_values.scene, runtime_values.scene_direction
+            ),
+        );
+        for entry in &lore_entries {
+            push_section(
+                &mut sections,
+                ContextSectionKind::Lorebook,
+                Some(entry.entry.title.clone()),
+                &entry.entry.content,
+            );
+        }
+        push_section(
+            &mut sections,
+            ContextSectionKind::Memories,
+            None,
+            &format!("{memory_summary}\n{key_lines}"),
+        );
+        push_section(
+            &mut sections,
+            ContextSectionKind::AuthorNote,
+            None,
+            &runtime_values.author_note,
+        );
+        for (kind, variable) in [
+            (
+                ContextSectionKind::CompanionState,
+                PromptVariable::CompanionState,
+            ),
+            (
+                ContextSectionKind::ScheduledNotes,
+                PromptVariable::ScheduledNotes,
+            ),
+        ] {
+            if let Some(text) = runtime_values.purpose_values.get(&variable) {
+                push_section(&mut sections, kind, None, text);
+            }
+        }
         let names = PromptRenderValues {
             character_name: runtime_values.character_name.clone(),
             persona_name: runtime_values.persona_name.clone(),
@@ -385,6 +441,7 @@ where
             } else {
                 let list = group_characters(&snapshot.group_members, speaker_character, &runtime)?;
                 let list = values.resolve_names(&list);
+                push_section(&mut sections, ContextSectionKind::GroupCast, None, &list);
                 values
                     .purpose_values
                     .insert(PromptVariable::GroupCharacters, list);
@@ -421,6 +478,25 @@ where
             (None, Default::default())
         };
 
+        for message in rendered_prompt
+            .relative
+            .iter()
+            .chain(&rendered_prompt.in_chat)
+        {
+            push_section(
+                &mut sections,
+                ContextSectionKind::PromptEntry,
+                prompt
+                    .and_then(|document| {
+                        document
+                            .entries
+                            .iter()
+                            .find(|entry| entry.id == message.entry_id)
+                    })
+                    .map(|entry| entry.name.clone()),
+                &message.content,
+            );
+        }
         let (mut messages, in_chat) = prompt_messages(&rendered_prompt)?;
         let mut placement = Placement {
             turn_context: rendered_prompt
@@ -602,6 +678,7 @@ where
                         .map(|memory| memory.attribution.clone())
                 })
                 .flatten(),
+            sections: Some(sections),
         };
         let budget = budget_report(&messages, omitted_messages)?;
         let context = ProviderNeutralContext {
@@ -2840,6 +2917,23 @@ fn speaker_character(
             lettuce_conversations::ParticipantSource::Character(id) => Some(id),
             _ => None,
         })
+}
+
+fn push_section(
+    sections: &mut Vec<ContextSection>,
+    kind: ContextSectionKind,
+    label: Option<String>,
+    text: &str,
+) {
+    let text = text.trim();
+    if text.is_empty() {
+        return;
+    }
+    sections.push(ContextSection {
+        kind,
+        label,
+        estimated_tokens: u32::try_from(text.len().div_ceil(4)).unwrap_or(u32::MAX),
+    });
 }
 
 fn budget_report(

@@ -7841,6 +7841,7 @@ mod tests {
                     memory: Some(lettuce_conversations::MemoryAttribution {
                         revision_id: lettuce_types::MemoryRevisionId::new(),
                     }),
+                    ..Default::default()
                 },
             };
             if group && mode != "director" {

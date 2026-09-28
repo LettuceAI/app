@@ -96,7 +96,9 @@ pub struct ApiError {
 /// `ConversationChanged` follows a committed write to the conversation (lists
 /// and open views re-read it), `ConversationRemoved` its purge, and
 /// `RequiredModelsChanged` an optional model's install, switch, removal or
-/// adoption (open views re-read their missing models).
+/// adoption (open views re-read their missing models). `MessageEffectSettled`
+/// and `MessageSceneImageChanged` follow a message's companion effect and
+/// scene image follow-up.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
@@ -115,6 +117,17 @@ pub enum ApiEvent {
         conversation_id: String,
     },
     RequiredModelsChanged,
+    /// The companion effect of a reply settled (`message_companion_effect`
+    /// reads it).
+    MessageEffectSettled {
+        conversation_id: String,
+        message_id: String,
+    },
+    /// A reply's scene image follow-up changed state.
+    MessageSceneImageChanged {
+        conversation_id: String,
+        message_id: String,
+    },
 }
 
 /// A stored media asset and the URL the host serves it at; the UI loads

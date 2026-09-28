@@ -5863,6 +5863,7 @@ mod tests {
                 "memory_summaries",
                 "memory_summary_source_messages",
                 "memory_synced_cursors",
+                "message_signals",
                 "model_profiles",
                 "persona_defaults",
                 "persona_lorebook_bindings",

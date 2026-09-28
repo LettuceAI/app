@@ -11,7 +11,7 @@ use lettuce_types::ConversationId;
 use super::tests::{Harness, RecordingStream, Reply, harness, launch, send};
 use super::*;
 
-fn conversation(harness: &Harness, id: &str) -> lettuce_conversations::Conversation {
+pub(super) fn conversation(harness: &Harness, id: &str) -> lettuce_conversations::Conversation {
     ConversationReader::get(
         harness.context.backend().database(),
         id.parse::<ConversationId>().expect("id"),
@@ -20,7 +20,7 @@ fn conversation(harness: &Harness, id: &str) -> lettuce_conversations::Conversat
     .conversation
 }
 
-async fn open(harness: &Harness, id: &str) -> dto::ConversationView {
+pub(super) async fn open(harness: &Harness, id: &str) -> dto::ConversationView {
     conversation_open(
         &harness.context,
         dto::ConversationOpenRequest {
@@ -31,14 +31,14 @@ async fn open(harness: &Harness, id: &str) -> dto::ConversationView {
     .expect("open")
 }
 
-async fn run_generation(harness: &Harness) {
+pub(super) async fn run_generation(harness: &Harness) {
     let worker = ConversationGenerationWorker::new(harness.context.clone());
     assert!(worker.run_once().await.expect("worker ran"));
 }
 
 /// A chat with one user message and its settled reply; returns the
 /// conversation and the reply's message id.
-async fn replied_chat(harness: &Harness, key: &str) -> (String, String) {
+pub(super) async fn replied_chat(harness: &Harness, key: &str) -> (String, String) {
     let chat = launch(harness, &format!("{key}-launch")).await;
     send(
         harness,
@@ -62,7 +62,7 @@ async fn replied_chat(harness: &Harness, key: &str) -> (String, String) {
     (chat, reply)
 }
 
-fn regenerate_request(
+pub(super) fn regenerate_request(
     harness: &Harness,
     chat: &str,
     message: &str,
@@ -80,7 +80,11 @@ fn regenerate_request(
     }
 }
 
-fn continue_request(harness: &Harness, chat: &str, key: &str) -> dto::ConversationContinueRequest {
+pub(super) fn continue_request(
+    harness: &Harness,
+    chat: &str,
+    key: &str,
+) -> dto::ConversationContinueRequest {
     dto::ConversationContinueRequest {
         conversation_id: chat.into(),
         expected_revision: conversation(harness, chat).revision.get(),
@@ -643,16 +647,17 @@ async fn an_archived_chat_is_restored_by_each_turn_operation() {
     );
 }
 
-struct Cast {
-    chat: String,
-    group_id: lettuce_types::GroupId,
-    ada: lettuce_types::ConversationParticipantId,
-    bea: lettuce_types::ConversationParticipantId,
-    ada_character: lettuce_types::CharacterId,
-    cleo_character: lettuce_types::CharacterId,
+pub(super) struct Cast {
+    pub(super) chat: String,
+    pub(super) group_id: lettuce_types::GroupId,
+    pub(super) ada: lettuce_types::ConversationParticipantId,
+    pub(super) bea: lettuce_types::ConversationParticipantId,
+    pub(super) cleo: lettuce_types::ConversationParticipantId,
+    pub(super) ada_character: lettuce_types::CharacterId,
+    pub(super) cleo_character: lettuce_types::CharacterId,
 }
 
-async fn group_cast(harness: &Harness, key: &str) -> Cast {
+pub(super) async fn group_cast(harness: &Harness, key: &str) -> Cast {
     let database = harness.context.backend().database();
     let ada_character = crate::launch::tests::seed_named_character(database, "Ada");
     let bea_character = crate::launch::tests::seed_named_character(database, "Bea");
@@ -691,6 +696,7 @@ async fn group_cast(harness: &Harness, key: &str) -> Cast {
     Cast {
         ada: participant(ada_character),
         bea: participant(bea_character),
+        cleo: participant(cleo_character),
         chat,
         group_id,
         ada_character,
@@ -698,7 +704,7 @@ async fn group_cast(harness: &Harness, key: &str) -> Cast {
     }
 }
 
-fn author_of(view: &dto::ConversationView, message: &str) -> Option<String> {
+pub(super) fn author_of(view: &dto::ConversationView, message: &str) -> Option<String> {
     view.messages
         .items
         .iter()
