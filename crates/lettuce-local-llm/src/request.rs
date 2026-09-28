@@ -196,6 +196,18 @@ pub struct ResolvedThinking {
 }
 
 impl LlamaGenerationRequest {
+    /// The model files the request names: the model, its projector and its
+    /// MTP and DFlash draft models.
+    #[must_use]
+    pub fn requested_files(&self) -> Vec<&str> {
+        let runtime = &self.runtime;
+        std::iter::once(self.model_path.as_str())
+            .chain(runtime.mmproj_path.as_deref())
+            .chain(runtime.mtp_model_path.as_deref())
+            .chain(runtime.dflash_model_path.as_deref())
+            .collect()
+    }
+
     #[must_use]
     pub fn is_cancelled(&self) -> bool {
         self.cancel.load(Ordering::Relaxed)

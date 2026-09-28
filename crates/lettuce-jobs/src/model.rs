@@ -351,6 +351,8 @@ pub enum JobKind {
     SpeechSynthesize,
     EmbeddingBenchmark,
     Maintenance,
+    ModelPull,
+    ModelsFolderMove,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -369,6 +371,7 @@ pub enum SubjectKind {
     Runtime,
     ModelProfile,
     Maintenance,
+    ProviderModel,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

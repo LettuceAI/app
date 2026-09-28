@@ -136,7 +136,7 @@ pub async fn sprout_runnability_hardware<S: SecretStore + ?Sized>(
             }],
             auth,
             Vec::new(),
-            lettuce_network::RequestPolicy::GENERATION,
+            lettuce_network::RequestPolicy::BROWSE,
         )
         .await
         .map_err(|error| format!("Failed to reach Sprout at {endpoint}: {error}"))?;
@@ -149,11 +149,20 @@ pub async fn sprout_runnability_hardware<S: SecretStore + ?Sized>(
     lettuce_model_hub::sprout_hardware(&endpoint, &response.body).map(Some)
 }
 
+/// A repository at a revision: the commit the model page pinned, else
+/// `main`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RemoteModel<'a> {
+    pub id: &'a str,
+    pub revision: &'a str,
+}
+
 impl HuggingFaceBrowser {
     async fn remote_gguf_meta<S, H>(
+        &self,
         secrets: &S,
         source: &H,
-        model_id: &str,
+        model: RemoteModel<'_>,
         files: &[RunnabilityFile],
     ) -> Result<Option<GgufModelMeta>, HfBrowseError>
     where
@@ -167,82 +176,133 @@ impl HuggingFaceBrowser {
         else {
             return Ok(None);
         };
-        let Ok(token) = Self::saved_token(secrets).await else {
-            return Ok(None);
-        };
+        let key = (
+            model.id.to_owned(),
+            model.revision.to_owned(),
+            representative.filename.clone(),
+        );
+        if let Some(cached) = self
+            .headers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&key)
+        {
+            return Ok(Some(cached.clone()));
+        }
+        let meta = self
+            .read_remote_gguf_meta(secrets, source, model, representative)
+            .await?;
+        if let Some(meta) = &meta {
+            self.headers
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .insert(key, meta.clone());
+        }
+        Ok(meta)
+    }
+
+    /// The header of `representative`, read within the browse budget as a
+    /// whole (both reads together); `None` when it could not be read in
+    /// time.
+    async fn read_remote_gguf_meta<S, H>(
+        &self,
+        secrets: &S,
+        source: &H,
+        model: RemoteModel<'_>,
+        representative: &RunnabilityFile,
+    ) -> Result<Option<GgufModelMeta>, HfBrowseError>
+    where
+        S: SecretStore + ?Sized,
+        H: GgufHeaderSource + ?Sized,
+    {
+        let token = Self::saved_token(secrets).await?;
         let read = |length| {
             source.read_prefix(
-                model_id,
-                "main",
+                model.id,
+                model.revision,
                 &representative.filename,
                 length,
                 token.as_ref(),
             )
         };
-        let Some(probe) = read(GGUF_HEADER_PROBE_BYTES).await else {
-            return Ok(None);
+        let reading = async {
+            let probe = read(GGUF_HEADER_PROBE_BYTES).await?;
+            let first = lettuce_model_hub::parse_gguf_meta(&probe);
+            if first.as_ref().is_none_or(GgufModelMeta::has_essentials) {
+                return first;
+            }
+            read(GGUF_HEADER_RETRY_BYTES)
+                .await
+                .and_then(|data| lettuce_model_hub::parse_gguf_meta(&data))
+                .or(first)
         };
-        let first = lettuce_model_hub::parse_gguf_meta(&probe);
-        if first.as_ref().is_none_or(GgufModelMeta::has_essentials) {
-            return Ok(first);
-        }
-        Ok(read(GGUF_HEADER_RETRY_BYTES)
-            .await
-            .and_then(|data| lettuce_model_hub::parse_gguf_meta(&data))
-            .or(first))
+        Ok(
+            tokio::time::timeout(lettuce_network::BROWSE_TIMEOUT, reading)
+                .await
+                .ok()
+                .flatten(),
+        )
     }
 
-    /// A score per file, estimated from the smallest file's GGUF header.
+    /// A score per file, estimated from the smallest file's GGUF header,
+    /// and whether that header could be read.
     pub async fn runnability<S, H>(
         &self,
         secrets: &S,
         source: &H,
-        model_id: &str,
+        model: RemoteModel<'_>,
         files: &[RunnabilityFile],
         hardware: RunnabilityHardware,
         defaults: RunnabilityDefaults,
-    ) -> Result<Vec<RunnabilityScore>, HfBrowseError>
+    ) -> Result<(Vec<RunnabilityScore>, bool), HfBrowseError>
     where
         S: SecretStore + ?Sized,
         H: GgufHeaderSource + ?Sized,
     {
         if files.is_empty() {
-            return Ok(Vec::new());
+            return Ok((Vec::new(), false));
         }
-        let meta = Self::remote_gguf_meta(secrets, source, model_id, files).await?;
-        Ok(lettuce_model_hub::runnability_scores(
-            files,
-            model_id,
-            meta.as_ref(),
-            hardware,
-            defaults,
+        let meta = self.remote_gguf_meta(secrets, source, model, files).await?;
+        Ok((
+            lettuce_model_hub::runnability_scores(
+                files,
+                model.id,
+                meta.as_ref(),
+                hardware,
+                defaults,
+            ),
+            meta.is_some(),
         ))
     }
 
-    /// Context limits per file and the recommended file, context and KV type.
+    /// Context limits per file and the recommended file, context and KV
+    /// type, and whether the GGUF header could be read.
     pub async fn recommendation<S, H>(
         &self,
         secrets: &S,
         source: &H,
-        model_id: &str,
+        model: RemoteModel<'_>,
         files: &[RunnabilityFile],
         hardware: RunnabilityHardware,
         defaults: RunnabilityDefaults,
-    ) -> Result<RecommendationData, HfBrowseError>
+    ) -> Result<(RecommendationData, bool), HfBrowseError>
     where
         S: SecretStore + ?Sized,
         H: GgufHeaderSource + ?Sized,
     {
         if files.is_empty() {
-            return Ok(RecommendationData::empty());
+            return Ok((RecommendationData::empty(), false));
         }
-        let meta = Self::remote_gguf_meta(secrets, source, model_id, files).await?;
-        Ok(lettuce_model_hub::build_recommendation(
-            files,
-            model_id,
-            meta.as_ref(),
-            hardware,
-            defaults.context_length,
+        let meta = self.remote_gguf_meta(secrets, source, model, files).await?;
+        Ok((
+            lettuce_model_hub::build_recommendation(
+                files,
+                model.id,
+                meta.as_ref(),
+                hardware,
+                defaults.context_length,
+            ),
+            meta.is_some(),
         ))
     }
 }
@@ -295,13 +355,14 @@ fn sidecar_bytes(sidecars: &LocalModelSidecars<'_>) -> u64 {
     file_size(sidecars.mmproj_path).saturating_add(drafter)
 }
 
-/// The score of a downloaded GGUF file on `hardware`.
+/// The score of a downloaded GGUF file on `hardware`, and whether its GGUF
+/// header could be read.
 pub fn local_file_runnability(
     file_path: &str,
     sidecars: &LocalModelSidecars<'_>,
     hardware: RunnabilityHardware,
     defaults: RunnabilityDefaults,
-) -> Result<LocalRunnability, String> {
+) -> Result<(LocalRunnability, bool), String> {
     let path = Path::new(file_path);
     if !path.exists() {
         return Err("File does not exist".to_owned());
@@ -310,13 +371,17 @@ pub fn local_file_runnability(
         .map(|metadata| metadata.len())
         .map_err(|error| format!("Failed to read file metadata: {error}"))?;
     let sidecar_bytes = sidecar_bytes(sidecars);
-    Ok(lettuce_model_hub::local_runnability(
-        file_path,
-        size,
-        local_gguf_meta(path).as_ref(),
-        hardware,
-        sidecar_bytes,
-        defaults,
+    let meta = local_gguf_meta(path);
+    Ok((
+        lettuce_model_hub::local_runnability(
+            file_path,
+            size,
+            meta.as_ref(),
+            hardware,
+            sidecar_bytes,
+            defaults,
+        ),
+        meta.is_some(),
     ))
 }
 
@@ -327,6 +392,11 @@ mod tests {
     use lettuce_settings::InMemorySecretStore;
 
     use super::*;
+
+    const MAIN: RemoteModel<'static> = RemoteModel {
+        id: "org/m",
+        revision: "main",
+    };
 
     struct Header {
         bytes: Vec<u8>,
@@ -352,6 +422,95 @@ mod tests {
                 .min(self.bytes.len());
             Some(self.bytes[..end].to_vec())
         }
+    }
+
+    struct Stalled;
+
+    #[async_trait]
+    impl GgufHeaderSource for Stalled {
+        async fn read_prefix(
+            &self,
+            _model_id: &str,
+            _revision: &str,
+            _filename: &str,
+            _length: u64,
+            _token: Option<&SecretValue>,
+        ) -> Option<Vec<u8>> {
+            std::future::pending().await
+        }
+    }
+
+    struct Revisions(Mutex<Vec<String>>);
+
+    #[async_trait]
+    impl GgufHeaderSource for Revisions {
+        async fn read_prefix(
+            &self,
+            _model_id: &str,
+            revision: &str,
+            _filename: &str,
+            length: u64,
+            _token: Option<&SecretValue>,
+        ) -> Option<Vec<u8>> {
+            self.0.lock().expect("revisions").push(revision.to_owned());
+            let bytes = header();
+            let end = usize::try_from(length).expect("length").min(bytes.len());
+            Some(bytes[..end].to_vec())
+        }
+    }
+
+    fn hardware() -> RunnabilityHardware {
+        RunnabilityHardware {
+            available_ram: Some(32_000_000_000),
+            available_vram: Some(12_000_000_000),
+            supports_gpu_offload: true,
+            unified_memory: false,
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_header_that_never_arrives_gives_up_after_the_browse_budget() {
+        let browser = HuggingFaceBrowser::new(lettuce_network::JsonClient::new().expect("client"));
+        let files = [file("m-Q4_K_M.gguf", 4_000_000_000)];
+        let started = tokio::time::Instant::now();
+        let (scores, metadata) = browser
+            .runnability(
+                &InMemorySecretStore::default(),
+                &Stalled,
+                MAIN,
+                &files,
+                hardware(),
+                RunnabilityDefaults::new(None, None),
+            )
+            .await
+            .expect("scores without a header");
+        assert!(!metadata);
+        assert_eq!(scores.len(), 1);
+        assert_eq!(started.elapsed(), lettuce_network::BROWSE_TIMEOUT);
+    }
+
+    #[tokio::test]
+    async fn headers_are_cached_per_revision() {
+        let browser = HuggingFaceBrowser::new(lettuce_network::JsonClient::new().expect("client"));
+        let source = Revisions(Mutex::new(Vec::new()));
+        let files = [file("m-Q4_K_M.gguf", 4_000_000_000)];
+        for revision in ["aaa", "aaa", "bbb"] {
+            browser
+                .runnability(
+                    &InMemorySecretStore::default(),
+                    &source,
+                    RemoteModel {
+                        id: "org/m",
+                        revision,
+                    },
+                    &files,
+                    hardware(),
+                    RunnabilityDefaults::new(None, None),
+                )
+                .await
+                .expect("scores");
+        }
+        assert_eq!(*source.0.lock().expect("revisions"), ["aaa", "bbb"]);
     }
 
     fn header() -> Vec<u8> {
@@ -409,28 +568,35 @@ mod tests {
             file("m-Q4_K_M.gguf", 4_000_000_000),
             file("m-F16.gguf", 0),
         ];
-        let scores = browser
-            .runnability(&secrets, &source, "org/m", &files, hardware, defaults)
+        let (scores, metadata) = browser
+            .runnability(&secrets, &source, MAIN, &files, hardware, defaults)
             .await
             .expect("scores");
+        assert!(metadata);
         assert_eq!(scores.len(), 3);
         assert_eq!(
             source.reads.lock().expect("reads").as_slice(),
             [("org/m/m-Q4_K_M.gguf".to_owned(), GGUF_HEADER_PROBE_BYTES)]
         );
-        let recommendation = browser
-            .recommendation(&secrets, &source, "org/m", &files, hardware, defaults)
+        let (recommendation, _) = browser
+            .recommendation(&secrets, &source, MAIN, &files, hardware, defaults)
             .await
             .expect("recommendation");
         assert_eq!(recommendation.model_max_context, 8192);
         assert_eq!(recommendation.files.len(), 2);
         assert!(recommendation.best.is_some());
+        assert_eq!(
+            source.reads.lock().expect("reads").len(),
+            1,
+            "a header read once is reused"
+        );
         let truncated = Header {
             bytes: header()[..90].to_vec(),
             reads: Mutex::new(Vec::new()),
         };
-        let recommendation = browser
-            .recommendation(&secrets, &truncated, "org/m", &files, hardware, defaults)
+        let fresh = || HuggingFaceBrowser::new(lettuce_network::JsonClient::new().expect("client"));
+        let (recommendation, _) = fresh()
+            .recommendation(&secrets, &truncated, MAIN, &files, hardware, defaults)
             .await
             .expect("recommendation");
         assert!(recommendation.arch.expect("arch").incomplete_parse);
@@ -446,11 +612,21 @@ mod tests {
         );
         assert_eq!(
             browser
-                .recommendation(&secrets, &source, "org/m", &[], hardware, defaults)
+                .recommendation(&secrets, &source, MAIN, &[], hardware, defaults)
                 .await
                 .expect("empty"),
-            RecommendationData::empty()
+            (RecommendationData::empty(), false)
         );
+        let unreadable = Header {
+            bytes: b"not a gguf".to_vec(),
+            reads: Mutex::new(Vec::new()),
+        };
+        let (scores, metadata) = fresh()
+            .runnability(&secrets, &unreadable, MAIN, &files, hardware, defaults)
+            .await
+            .expect("scores without a header");
+        assert_eq!(scores.len(), 3);
+        assert!(!metadata);
     }
 
     #[tokio::test]
@@ -552,16 +728,17 @@ mod tests {
         let defaults = RunnabilityDefaults::new(None, None);
         let model_path = model.to_string_lossy().into_owned();
         let mmproj_path = mmproj.to_string_lossy().into_owned();
-        let bare = local_file_runnability(
+        let (bare, metadata) = local_file_runnability(
             &model_path,
             &LocalModelSidecars::default(),
             hardware,
             defaults,
         )
         .expect("bare");
+        assert!(metadata);
         assert_eq!(bare.quantization, "Q4_K_M");
         assert_eq!(bare.model_size, header().len() as u64);
-        let with_projector = local_file_runnability(
+        let (with_projector, _) = local_file_runnability(
             &model_path,
             &LocalModelSidecars {
                 mmproj_path: Some(&mmproj_path),

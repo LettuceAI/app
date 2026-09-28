@@ -1803,6 +1803,36 @@ mod tests {
         )
         .expect("create backup job")
         .job;
+        let local_database = backend.database();
+        local_database
+            .record_local_model_job(
+                backup_job.id,
+                &serde_json::json!({
+                    "type": "model_download",
+                    "repo": "org/m",
+                    "file": "m.gguf",
+                    "display_name": "m"
+                }),
+            )
+            .expect("local model detail");
+        local_database
+            .record_local_model_job_result(
+                backup_job.id,
+                &serde_json::json!({"type": "model_installed", "model_path": "/models/m.gguf"}),
+            )
+            .expect("local model result");
+        local_database
+            .record_local_model_job_failure(
+                backup_job.id,
+                &serde_json::json!({"type": "ollama_server", "message": "busy"}),
+            )
+            .expect("local model failure");
+        local_database
+            .record_local_model_operation("hf_download:op", "digest", backup_job.id)
+            .expect("local model operation");
+        local_database
+            .record_hugging_face_refusal(backup_job.id, "org/gated")
+            .expect("refusal");
         let claimed_at = TimestampMillis::new(backup_job.updated_at.get() + 1);
         let claim = JobStore::claim(
             backend.database(),
@@ -2036,6 +2066,32 @@ mod tests {
         assert_eq!(round_trip.creation, restore_plan.graph.creation);
         assert_eq!(round_trip.job_backup, restore_plan.graph.job_backup);
         assert_eq!(round_trip.job_backup.speech_transcriptions.len(), 1);
+        assert_eq!(round_trip.job_backup.local_model_jobs.len(), 1);
+        assert_eq!(round_trip.job_backup.local_model_operations.len(), 1);
+        assert_eq!(round_trip.job_backup.hugging_face_refusals.len(), 1);
+        let restored_job = restored
+            .local_model_job(backup_job.id)
+            .expect("restored local model job")
+            .expect("restored detail");
+        assert_eq!(restored_job.detail["repo"], "org/m");
+        assert_eq!(
+            restored_job.result,
+            Some(serde_json::json!({"type": "model_installed", "model_path": "/models/m.gguf"}))
+        );
+        assert_eq!(
+            restored
+                .local_model_operation("hf_download:op")
+                .expect("restored operation")
+                .map(|operation| operation.job_id),
+            Some(backup_job.id)
+        );
+        assert_eq!(
+            restored
+                .hugging_face_refusal(backup_job.id)
+                .expect("restored refusal")
+                .as_deref(),
+            Some("org/gated")
+        );
         assert_eq!(
             round_trip.companion_state,
             restore_plan.graph.companion_state

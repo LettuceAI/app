@@ -29,7 +29,7 @@ use crate::{
 /// progress and the install stage renew it.
 const INSTALL_LEASE: Duration = Duration::from_secs(30 * 60);
 const RECOVERY_PAGE: u16 = 200;
-const DOWNLOAD_LANE: &str = "install:downloads";
+pub(super) const DOWNLOAD_LANE: &str = "install:downloads";
 
 /// A stable-diffusion.cpp catalog variant and the engine build it runs on.
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -109,6 +109,32 @@ pub enum InstallWork {
 }
 
 impl InstallWork {
+    /// The folder the install writes below.
+    pub(crate) fn root(&self) -> &std::path::Path {
+        match self {
+            Self::Artifact { plan, .. } => &plan.root,
+            Self::Whisper { install_root, .. }
+            | Self::KokoroModel { install_root, .. }
+            | Self::KokoroVoices { install_root, .. } => install_root,
+        }
+    }
+
+    /// The Hugging Face repository the install downloads from, if any.
+    pub(crate) fn hugging_face_repository(&self) -> Option<&str> {
+        match self {
+            Self::Artifact { plan, .. } => plan.artifacts.iter().find_map(|planned| match &planned
+                .source
+            {
+                crate::ArtifactSource::HuggingFace { repository, .. } => Some(repository.as_str()),
+                crate::ArtifactSource::Https { .. } => None,
+            }),
+            Self::Whisper { .. } => Some(crate::WHISPER_REPOSITORY),
+            Self::KokoroModel { .. } | Self::KokoroVoices { .. } => {
+                Some(lettuce_model_hub::KOKORO_REPOSITORY)
+            }
+        }
+    }
+
     /// GGUF, stable-diffusion.cpp, CivitAI, Hugging Face bundle, Whisper
     /// and Kokoro downloads share one sequential queue, as legacy's download
     /// queue did; the embedding and emotion models each have their own.
@@ -307,10 +333,10 @@ fn admit(context: &ApiContext, work: InstallWork) -> Result<(JobSnapshot, Instal
     })
 }
 
-/// Queued installs whose work this process does not hold cannot run: the
-/// Thymos install its hint describes is taken up again, every other one is
-/// cancelled so a new request admits a fresh job. Returns the cancelled
-/// jobs.
+/// Queued installs whose work this process does not hold: a GGUF download
+/// resumes from the detail stored with it and the Thymos install from its
+/// hint; every other one is cancelled so a new request admits a fresh job.
+/// Returns the cancelled jobs.
 pub(crate) fn recover_queued_installs(context: &ApiContext) -> Result<Vec<JobId>, ApiError> {
     let database = context.backend().database();
     let mut waiting = Vec::new();
@@ -346,6 +372,15 @@ pub(crate) fn recover_queued_installs(context: &ApiContext) -> Result<Vec<JobId>
     for job in waiting {
         if context.jobs().has_install(job.id) {
             continue;
+        }
+        if job.state == JobState::Queued {
+            match super::local::resume_gguf_install(context, &job) {
+                Ok(true) => continue,
+                Ok(false) => {}
+                Err(error) => {
+                    tracing::warn!(job_id = %job.id, message = %error.message, "a queued GGUF install could not be resumed");
+                }
+            }
         }
         match cancel_waiting(context, &job) {
             Ok(()) => cancelled.push(job.id),
@@ -748,8 +783,17 @@ impl ClaimedJob for ClaimedInstall {
             ClaimedWork::KokoroModel(work) => work.job.id,
             ClaimedWork::KokoroVoices(work) => work.job.id,
         };
+        let repository = work.hugging_face_repository().map(str::to_owned);
         let result = run_claimed(&context, work, claimed, source).await;
         context.jobs().forget_install(job_id);
+        if let Some(repository) = repository {
+            let recorded = context
+                .blocking(move |context| record_refusal(context, job_id, &repository))
+                .await;
+            if let Err(error) = recorded {
+                tracing::warn!(%job_id, message = %error.message, "a refused download's repository could not be recorded");
+            }
+        }
         result
     }
 }
@@ -788,6 +832,7 @@ async fn run_claimed(
                     context.models_changed();
                 }
                 let finisher = context.clone();
+                let job_id = claimed.job.id;
                 let result = ArtifactInstallCoordinator::new(database)
                     .run_then(
                         claimed,
@@ -795,7 +840,7 @@ async fn run_claimed(
                         reason,
                         now,
                         move |paths, _| async move {
-                            finish_artifact(&finisher, &plan, finish, paths)
+                            finish_artifact(&finisher, job_id, &plan, finish, paths)
                                 .await
                                 .map_err(ArtifactInstallError::Finish)
                         },
@@ -848,10 +893,31 @@ async fn run_claimed(
     Ok(())
 }
 
+/// Keeps the repository of a download Hugging Face refused or never
+/// answered, so its failure names the gated repository.
+fn record_refusal(context: &ApiContext, job_id: JobId, repository: &str) -> Result<(), ApiError> {
+    let database = context.backend().database();
+    let Some(job) = database.get(job_id).map_err(IntoApiError::into_api_error)? else {
+        return Ok(());
+    };
+    if job.state == JobState::Failed
+        && job
+            .error
+            .as_ref()
+            .is_some_and(|error| crate::is_hf_job_error(error.message.as_str()))
+    {
+        database
+            .record_hugging_face_refusal(job_id, repository)
+            .map_err(internal)?;
+    }
+    Ok(())
+}
+
 /// Completes an install whose files are verified, as the job's `install`
 /// stage; an error fails the job.
 async fn finish_artifact(
     context: &ApiContext,
+    job_id: JobId,
     plan: &ArtifactInstallPlan,
     finish: InstallFinish,
     paths: Vec<PathBuf>,
@@ -861,15 +927,29 @@ async fn finish_artifact(
     match finish {
         InstallFinish::Files | InstallFinish::CompanionEmotion { .. } => Ok(()),
         InstallFinish::Gguf {
-            create_model: None, ..
-        } => Ok(()),
-        InstallFinish::Gguf {
             root,
             download,
-            create_model: Some(setup),
-        } => crate::register_downloaded_gguf(database, &root, &download, &setup, now)
-            .map(|_| ())
-            .map_err(|error| error.to_string()),
+            create_model,
+        } => {
+            let model_profile_id = match create_model {
+                Some(setup) => Some(
+                    crate::register_downloaded_gguf(database, &root, &download, &setup, now)
+                        .map_err(|error| error.to_string())?
+                        .id
+                        .to_string(),
+                ),
+                None => None,
+            };
+            super::local::record_result(
+                context,
+                job_id,
+                &super::local::LocalModelJobResult::ModelInstalled {
+                    model_path: download.installed(&root).model_path,
+                    model_profile_id,
+                },
+            )
+            .map_err(|error| error.message)
+        }
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         InstallFinish::StableDiffusionRuntime {
             paths: layout,

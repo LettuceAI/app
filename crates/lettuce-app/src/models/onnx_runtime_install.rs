@@ -229,14 +229,16 @@ impl OnnxRuntimeDownloadSource for ArtifactDownloadClient {
             .await
             .map_err(|error| match error {
                 ArtifactProbeError::Refused(_) => ArtifactSourceError::InvalidResponse,
-                ArtifactProbeError::Download(lettuce_network::ArtifactDownloadError::Transport) => {
-                    ArtifactSourceError::Transport
-                }
+                ArtifactProbeError::Download(
+                    lettuce_network::ArtifactDownloadError::Transport
+                    | lettuce_network::ArtifactDownloadError::TimedOut,
+                ) => ArtifactSourceError::Transport,
                 ArtifactProbeError::Download(
                     lettuce_network::ArtifactDownloadError::InvalidRequest,
                 ) => ArtifactSourceError::InvalidRequest,
                 ArtifactProbeError::Download(
-                    lettuce_network::ArtifactDownloadError::InvalidResponse,
+                    lettuce_network::ArtifactDownloadError::InvalidResponse
+                    | lettuce_network::ArtifactDownloadError::Refused { .. },
                 ) => ArtifactSourceError::InvalidResponse,
             })
     }

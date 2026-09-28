@@ -4,9 +4,9 @@
 
 use std::path::{Path, PathBuf};
 
-use lettuce_model_hub::{HfBrowseError, HfResource, PinnedArtifact};
+use lettuce_model_hub::{HfBrowseError, HfResource, ModelOffload, PinnedArtifact};
 use lettuce_models::{
-    ModelLookup, ModelProfileRepository, ProviderAccount, ProviderAccountRepository,
+    ModelLookup, ModelProfile, ModelProfileRepository, ProviderAccount, ProviderAccountRepository,
     ProviderConfig, ProviderProtocol,
 };
 use lettuce_settings::{DeviceSettings, SecretOwnerId, SecretStore};
@@ -14,8 +14,8 @@ use lettuce_types::{ProviderAccountId, Revision, TimestampMillis};
 use serde_json::{Map, Value, json};
 
 use crate::{
-    ArtifactInstallPlan, ArtifactSource, HuggingFaceBrowser, ImportedModelFile,
-    ModelFileCoordinator, ModelFileError, PlannedArtifact,
+    ArtifactInstallPlan, ArtifactSource, HuggingFaceBrowser, ModelFileCoordinator, ModelFileError,
+    PlannedArtifact,
 };
 
 pub const LOCAL_LLAMA_PROVIDER_KIND: &str = "llamacpp";
@@ -31,6 +31,34 @@ pub fn llm_models_root(device: &DeviceSettings, app_folder: &Path) -> PathBuf {
         .map(str::trim)
         .filter(|dir| !dir.is_empty())
         .map_or_else(|| app_folder.join("models").join("gguf"), PathBuf::from)
+}
+
+/// Where image models go: `image` below the chosen models folder, else
+/// `<app folder>/models/image`.
+#[must_use]
+pub fn image_models_root(device: &DeviceSettings, app_folder: &Path) -> PathBuf {
+    device
+        .llm_models_dir
+        .as_deref()
+        .map(str::trim)
+        .filter(|dir| !dir.is_empty())
+        .map_or_else(
+            || app_folder.join("models").join("image"),
+            |dir| PathBuf::from(dir).join("image"),
+        )
+}
+
+/// The image model folders: the one in use and, when the models folder was
+/// moved, the app's own one whose files stay in use.
+#[must_use]
+pub fn image_model_roots(device: &DeviceSettings, app_folder: &Path) -> Vec<PathBuf> {
+    let configured = image_models_root(device, app_folder);
+    let default = app_folder.join("models").join("image");
+    if configured == default {
+        vec![configured]
+    } else {
+        vec![configured, default]
+    }
 }
 
 /// The files of one GGUF install.
@@ -121,24 +149,28 @@ impl HuggingFaceBrowser {
         }
     }
 
-    /// The download pinned to the repository's current revision, sizes and
-    /// digests, below `root`.
+    /// The download pinned to `revision` (the repository's current one when
+    /// absent), with sizes and digests, below `root`.
     pub async fn gguf_install_plan<S: SecretStore + ?Sized>(
         &self,
         secrets: &S,
         root: &Path,
         download: &GgufDownload,
+        revision: Option<&str>,
     ) -> Result<ArtifactInstallPlan, HfBrowseError> {
         let token = Self::saved_token(secrets).await?;
-        let response = self
-            .get(
-                &lettuce_model_hub::model_pin_request(&download.model_id),
-                token.as_ref(),
-            )
-            .await
-            .map_err(|error| {
-                HfBrowseError::Message(format!("Failed to fetch model detail: {error}"))
-            })?;
+        let request = match revision
+            .map(str::trim)
+            .filter(|revision| !revision.is_empty())
+        {
+            Some(revision) => {
+                lettuce_model_hub::model_revision_pin_request(&download.model_id, revision)
+            }
+            None => lettuce_model_hub::model_pin_request(&download.model_id),
+        };
+        let response = self.get(&request, token.as_ref()).await.map_err(|error| {
+            HfBrowseError::offline(format!("Failed to fetch model detail: {error}"))
+        })?;
         if let Some(error) = lettuce_model_hub::access_error(
             response.status,
             HfResource::Model,
@@ -148,11 +180,16 @@ impl HuggingFaceBrowser {
             return Err(error);
         }
         if !(200..300).contains(&response.status) {
-            return Err(HfBrowseError::Message(format!(
-                "Model not found ({}): {}",
-                lettuce_network::status_text(response.status),
-                download.model_id
-            )));
+            return Err(lettuce_model_hub::status_error(
+                response.status,
+                &download.model_id,
+                token.is_some(),
+                format!(
+                    "Model not found ({}): {}",
+                    lettuce_network::status_text(response.status),
+                    download.model_id
+                ),
+            ));
         }
         let pinned = lettuce_model_hub::pinned_files(
             &download.model_id,
@@ -195,18 +232,9 @@ pub struct GgufModelSetup {
     pub kv_type: Option<String>,
     pub offload_kqv: Option<bool>,
     pub gpu_layers: Option<u32>,
-    pub model_offload: GgufModelOffload,
+    pub model_offload: ModelOffload,
     /// The model file carries its own MTP head.
     pub mtp_bundled: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum GgufModelOffload {
-    #[default]
-    Auto,
-    Cpu,
-    Gpu,
-    Mixed,
 }
 
 /// The installed files of a download.
@@ -220,9 +248,9 @@ pub struct InstalledGguf {
 impl GgufModelSetup {
     fn advanced_model_settings(&self, installed: &InstalledGguf) -> Map<String, Value> {
         let gpu_layers = match self.model_offload {
-            GgufModelOffload::Cpu => Some(0),
-            GgufModelOffload::Gpu => self.gpu_layers,
-            GgufModelOffload::Auto | GgufModelOffload::Mixed => None,
+            ModelOffload::Cpu => Some(0),
+            ModelOffload::Gpu => self.gpu_layers,
+            ModelOffload::Auto | ModelOffload::Mixed => None,
         };
         let context_length = self
             .context_length
@@ -295,15 +323,36 @@ where
     )
 }
 
+/// A llama.cpp model already using `model_path`, the oldest first.
+pub fn llama_model_for_path<R>(
+    repository: &R,
+    model_path: &str,
+) -> Result<Option<ModelProfile>, ModelFileError>
+where
+    R: lettuce_models::ModelCatalog + ?Sized,
+{
+    let llama_accounts = repository
+        .provider_accounts()?
+        .into_iter()
+        .filter(|account| account.protocol == ProviderProtocol::LlamaCpp)
+        .map(|account| account.id)
+        .collect::<Vec<_>>();
+    Ok(repository.model_profiles()?.into_iter().find(|profile| {
+        profile.external_model_id == model_path
+            && llama_accounts.contains(&profile.provider_account_id)
+    }))
+}
+
 /// Adds the downloaded model as a llama.cpp chat model: image input when it
 /// has a projector, MTP when it has a draft model or carries its own head.
+/// A llama.cpp model already using the file is returned instead.
 pub fn register_downloaded_gguf<R>(
     repository: &R,
     root: &Path,
     download: &GgufDownload,
     setup: &GgufModelSetup,
     now: TimestampMillis,
-) -> Result<ImportedModelFile, ModelFileError>
+) -> Result<ModelProfile, ModelFileError>
 where
     R: lettuce_models::ModelCatalog
         + lettuce_settings::GlobalSettingsStore
@@ -312,29 +361,34 @@ where
         + ProviderAccountRepository
         + ?Sized,
 {
-    local_llama_account(repository, now)?;
     let installed = download.installed(root);
+    if let Some(existing) = llama_model_for_path(repository, &installed.model_path)? {
+        return Ok(existing);
+    }
+    local_llama_account(repository, now)?;
     let input_scopes = if installed.mmproj_path.is_some() {
         vec!["text".to_owned(), "image".to_owned()]
     } else {
         vec!["text".to_owned()]
     };
-    ModelFileCoordinator::new(repository).create(
-        lettuce_transfer::ImportedModel {
-            name: installed.model_path.clone(),
-            provider_id: LOCAL_LLAMA_PROVIDER_KIND.to_owned(),
-            provider_label: LOCAL_LLAMA_PROVIDER_LABEL.to_owned(),
-            display_name: setup
-                .display_name
-                .clone()
-                .filter(|name| !name.is_empty())
-                .unwrap_or_else(|| download.default_display_name()),
-            input_scopes,
-            output_scopes: vec!["text".to_owned()],
-            advanced_model_settings: setup.advanced_model_settings(&installed),
-        },
-        now,
-    )
+    ModelFileCoordinator::new(repository)
+        .create(
+            lettuce_transfer::ImportedModel {
+                name: installed.model_path.clone(),
+                provider_id: LOCAL_LLAMA_PROVIDER_KIND.to_owned(),
+                provider_label: LOCAL_LLAMA_PROVIDER_LABEL.to_owned(),
+                display_name: setup
+                    .display_name
+                    .clone()
+                    .filter(|name| !name.is_empty())
+                    .unwrap_or_else(|| download.default_display_name()),
+                input_scopes,
+                output_scopes: vec!["text".to_owned()],
+                advanced_model_settings: setup.advanced_model_settings(&installed),
+            },
+            now,
+        )
+        .map(|imported| imported.profile)
 }
 
 #[cfg(test)]
@@ -383,7 +437,7 @@ mod tests {
         );
         let root = Path::new("/models");
         let plan = browser
-            .gguf_install_plan(&InMemorySecretStore::default(), root, &download())
+            .gguf_install_plan(&InMemorySecretStore::default(), root, &download(), None)
             .await
             .expect("plan");
         assert_eq!(
@@ -407,14 +461,13 @@ mod tests {
         let database = backend.database();
         let root = Path::new("/models");
         let setup = GgufModelSetup {
-            model_offload: GgufModelOffload::Cpu,
+            model_offload: ModelOffload::Cpu,
             mtp_bundled: true,
             ..GgufModelSetup::default()
         };
-        let created =
+        let profile =
             register_downloaded_gguf(database, root, &download(), &setup, TimestampMillis::new(5))
                 .expect("model");
-        let profile = created.profile;
         assert_eq!(profile.display_name, "Model-Q4_K_M");
         assert_eq!(
             lettuce_settings::GlobalSettingsStore::load(database)
@@ -445,33 +498,48 @@ mod tests {
             profile.config.capabilities.input_modalities.image,
             lettuce_models::CapabilityStatus::Supported
         );
-        let again = register_downloaded_gguf(
+        let mixed = GgufModelSetup {
+            display_name: Some("Mine".to_owned()),
+            context_length: Some(32768),
+            kv_type: Some("q4_0".to_owned()),
+            gpu_layers: Some(20),
+            model_offload: ModelOffload::Mixed,
+            ..GgufModelSetup::default()
+        };
+        let reused = register_downloaded_gguf(
             database,
             root,
             &GgufDownload {
                 mmproj_file: None,
                 ..download()
             },
-            &GgufModelSetup {
-                display_name: Some("Mine".to_owned()),
-                context_length: Some(32768),
-                kv_type: Some("q4_0".to_owned()),
-                gpu_layers: Some(20),
-                model_offload: GgufModelOffload::Mixed,
-                ..GgufModelSetup::default()
-            },
+            &mixed,
             TimestampMillis::new(6),
         )
-        .expect("second model");
+        .expect("same file");
         assert_eq!(
-            again.profile.provider_account_id,
-            profile.provider_account_id
+            reused, profile,
+            "legacy created a second model for every completed download of the same file"
         );
-        assert_eq!(again.profile.display_name, "Mine");
-        assert_eq!(again.profile.config.llama_cpp.gpu_layers, None);
-        assert_eq!(again.profile.config.llama_cpp.mtp_enabled, None);
+        let again = register_downloaded_gguf(
+            database,
+            root,
+            &GgufDownload {
+                model_file: "Model-Q8_0.gguf".to_owned(),
+                mmproj_file: None,
+                ..download()
+            },
+            &mixed,
+            TimestampMillis::new(7),
+        )
+        .expect("second model");
+        assert_ne!(again.id, profile.id);
+        assert_eq!(again.provider_account_id, profile.provider_account_id);
+        assert_eq!(again.display_name, "Mine");
+        assert_eq!(again.config.llama_cpp.gpu_layers, None);
+        assert_eq!(again.config.llama_cpp.mtp_enabled, None);
         assert_eq!(
-            ModelProfileRepository::get(database, again.profile.id)
+            ModelProfileRepository::get(database, again.id)
                 .expect("get")
                 .expect("stored")
                 .config

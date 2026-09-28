@@ -20,6 +20,7 @@ const job: JobView = {
   id: "j1",
   kind: "maintenance",
   subject: { kind: "maintenance", id: "m1" },
+  subject_detail: null,
   state: "running",
   progress: { current: 0, total: null, unit: null, label_code: null, bytes_per_second: null },
   created_at: 0,

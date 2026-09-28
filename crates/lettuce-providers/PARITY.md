@@ -34,6 +34,7 @@ Facts about how `lettuce-providers` relates to the legacy app (2.2.x). The crate
 - A stop keeps every image already received with the partial reply, and a stop after only images keeps the images. Legacy discarded the whole reply on abort.
 - A `custom` or `lettuce-host` image account without an endpoint fails instead of sending its key to api.openai.com.
 - An Ollama pull has only an idle timeout (legacy had none; a 30-minute total limit would kill large pulls), and pull lines are split on bytes, so a character across chunks survives (legacy corrupted it).
+- An Ollama pull whose stream ends without a `success` line or an error is `OllamaHubError::Incomplete`; legacy reported it as complete (`ollama/mod.rs` 1042-1059).
 
 ## Known gaps
 

@@ -46,6 +46,7 @@ use crate::hardware::{
     get_per_device_free_vram, list_gpu_devices,
 };
 use crate::llama::{flash_attention_type, load_model_metadata, shared_backend};
+use crate::model_files::ModelFileRegistry;
 use crate::mtp::{MtpRuntime, discover_external_mtp, model_has_mtp};
 use crate::offload::{
     FlashAttentionPolicy, MultiGpuDistribution, OffloadRequest, context_bucket_upper,
@@ -250,6 +251,9 @@ pub enum LlamaGenerationError {
     Failed(String),
     #[error("llama.cpp inference worker stopped")]
     WorkerStopped,
+    /// The request names a file in a models folder that is being moved.
+    #[error("the models folder of {0} is being moved")]
+    ModelFolderMoving(String),
 }
 
 impl From<LlamaEngineError> for LlamaGenerationError {
@@ -287,6 +291,7 @@ type UnloadDone = Box<dyn FnOnce(Result<(), LlamaGenerationError>) + Send>;
 
 enum WorkerJob {
     Generate {
+        ticket: u64,
         request: Box<LlamaGenerationRequest>,
         observer: Arc<dyn GenerationObserver>,
         reports: Arc<dyn RuntimeReportStore>,
@@ -302,6 +307,7 @@ enum WorkerJob {
 #[derive(Debug)]
 pub struct LlamaRuntime {
     sender: mpsc::Sender<WorkerJob>,
+    files: Arc<ModelFileRegistry>,
 }
 
 impl std::fmt::Debug for WorkerJob {
@@ -318,33 +324,61 @@ impl std::fmt::Debug for WorkerJob {
 
 impl LlamaRuntime {
     pub fn start() -> std::io::Result<Self> {
+        Self::start_with(Arc::new(ModelFileRegistry::default()))
+    }
+
+    /// Starts the worker publishing into `files`, which the app also uses to
+    /// block a folder while it moves.
+    pub fn start_with(files: Arc<ModelFileRegistry>) -> std::io::Result<Self> {
         let (sender, receiver) = mpsc::channel::<WorkerJob>();
+        let published = Arc::clone(&files);
         std::thread::Builder::new()
             .name("lettuce-llama".to_string())
             .spawn(move || {
-                let mut worker = WorkerState::default();
+                let mut worker = WorkerState {
+                    files: published,
+                    ..WorkerState::default()
+                };
                 while let Ok(job) = receiver.recv() {
                     match job {
                         WorkerJob::Generate {
+                            ticket,
                             request,
                             observer,
                             reports,
                             done,
-                        } => done(generate(
-                            &mut worker,
-                            &request,
-                            observer.as_ref(),
-                            reports.as_ref(),
-                        )),
+                        } => {
+                            let result = generate(
+                                &mut worker,
+                                &request,
+                                observer.as_ref(),
+                                reports.as_ref(),
+                            );
+                            worker.publish(&[]);
+                            worker.files.finish(ticket);
+                            done(result);
+                        }
                         WorkerJob::Unload { done } => {
                             worker.hot.clear();
-                            done(worker.engine.unload().map_err(Into::into));
+                            let result = worker.engine.unload().map_err(Into::into);
+                            worker.publish(&[]);
+                            done(result);
                         }
                     }
                 }
                 worker.hot.clear();
+                worker.publish(&[]);
             })?;
-        Ok(Self { sender })
+        Ok(Self { sender, files })
+    }
+
+    /// The model files the worker holds open, or may open for a request
+    /// queued or running: the loaded model and its sidecars, the models and
+    /// draft models of cached contexts, and the files every queued request
+    /// names, recorded when it is enqueued.
+    #[must_use]
+    pub fn resident_files(&self) -> Vec<String> {
+        self.files.files()
     }
 
     pub fn generate(
@@ -354,14 +388,28 @@ impl LlamaRuntime {
         reports: Arc<dyn RuntimeReportStore>,
         done: GenerationDone,
     ) {
-        if let Err(mpsc::SendError(WorkerJob::Generate { done, .. })) =
+        let requested = request
+            .requested_files()
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        let ticket = match self.files.enqueue(requested) {
+            Ok(ticket) => ticket,
+            Err(moving) => {
+                done(Err(LlamaGenerationError::ModelFolderMoving(moving.path)));
+                return;
+            }
+        };
+        if let Err(mpsc::SendError(WorkerJob::Generate { done, ticket, .. })) =
             self.sender.send(WorkerJob::Generate {
+                ticket,
                 request: Box::new(request),
                 observer,
                 reports,
                 done,
             })
         {
+            self.files.finish(ticket);
             done(Err(LlamaGenerationError::WorkerStopped));
         }
     }
@@ -379,6 +427,22 @@ impl LlamaRuntime {
 struct WorkerState {
     engine: LlamaEngine,
     hot: HotContextCache,
+    files: Arc<ModelFileRegistry>,
+}
+
+impl WorkerState {
+    /// Publishes the files the engine and the cached contexts hold, plus
+    /// `pending` (files a load is about to open).
+    fn publish(&self, pending: &[&str]) {
+        let files = self
+            .engine
+            .loaded_paths()
+            .into_iter()
+            .chain(self.hot.model_paths())
+            .chain(pending.iter().map(|path| (*path).to_owned()))
+            .collect();
+        self.files.publish(files);
+    }
 }
 
 /// A context kept after a run for prompt-prefix reuse. The contexts borrow
@@ -391,6 +455,7 @@ struct HotTextContext {
     model: Arc<LlamaModel>,
     draft_model: Arc<LlamaModel>,
     model_path: String,
+    draft_path: Option<String>,
     cache_key: String,
     context_key: String,
     tokens: Vec<LlamaToken>,
@@ -424,6 +489,16 @@ impl HotContextCache {
             .iter()
             .map(|cached| cached.allocated_bytes)
             .sum();
+    }
+
+    fn model_paths(&self) -> Vec<String> {
+        self.entries
+            .iter()
+            .flat_map(|cached| {
+                std::iter::once(&cached.model_path).chain(cached.draft_path.as_ref())
+            })
+            .cloned()
+            .collect()
     }
 
     fn holds_model(&self, model_path: &str) -> bool {
@@ -500,7 +575,7 @@ impl HotContextCache {
         dflash_runtime: Option<DflashRuntime<'_>>,
         model: Arc<LlamaModel>,
         draft_model: Arc<LlamaModel>,
-        model_path: &str,
+        (model_path, draft_path): (&str, Option<String>),
         cache_key: String,
         context_key: String,
         tokens: Vec<LlamaToken>,
@@ -557,6 +632,7 @@ impl HotContextCache {
             model,
             draft_model,
             model_path: model_path.to_string(),
+            draft_path,
             cache_key,
             context_key,
             tokens,
@@ -1729,6 +1805,11 @@ impl Run<'_> {
             },
         };
         let request_id = self.request.request_id.as_deref();
+        worker.publish(&[
+            model_path,
+            active_mmproj_path.unwrap_or_default(),
+            mtp_external_path.as_deref().unwrap_or_default(),
+        ]);
         let hot = &mut worker.hot;
         let engine = worker.engine.load(
             Some(self.observer),
@@ -1749,6 +1830,7 @@ impl Run<'_> {
             },
             || hot.clear(),
         )?;
+        worker.publish(&[]);
         let mtp_draft_model = engine.mtp_model.clone();
         let model = engine.model.as_ref();
         let backend = engine.backend.as_ref();
@@ -3289,13 +3371,14 @@ impl Run<'_> {
                 true
             };
             if cache_ready && let Some(cache_key) = self.prompt_cache_key.clone() {
+                let draft_path = worker.engine.draft_path();
                 let evicted = worker.hot.store(
                     ctx,
                     mtp_runtime.take(),
                     dflash_runtime.take(),
                     engine.model.clone(),
                     hot_draft_model.clone(),
-                    model_path,
+                    (model_path, draft_path),
                     cache_key,
                     context_key,
                     tokens,
@@ -3774,6 +3857,129 @@ mod tests {
     }
 
     #[test]
+    fn a_request_names_its_files_and_publishing_replaces_the_held_set() {
+        let worker = WorkerState::default();
+        worker.publish(&["/m/model.gguf", "/m/mmproj.gguf", ""]);
+        assert_eq!(worker.files.files(), ["/m/model.gguf", "/m/mmproj.gguf"]);
+        worker.publish(&[]);
+        assert!(worker.files.files().is_empty());
+        let request = LlamaGenerationRequest {
+            model_path: "/m/model.gguf".into(),
+            runtime: crate::request::LlamaRuntimeInput {
+                mmproj_path: Some("/m/mmproj.gguf".into()),
+                mtp_model_path: Some("/m/mtp.gguf".into()),
+                dflash_model_path: Some("/m/dflash.gguf".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert_eq!(
+            request.requested_files(),
+            [
+                "/m/model.gguf",
+                "/m/mmproj.gguf",
+                "/m/mtp.gguf",
+                "/m/dflash.gguf"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_request_for_a_moving_folder_is_refused_before_it_is_queued() {
+        let files = Arc::new(ModelFileRegistry::default());
+        let runtime = LlamaRuntime::start_with(Arc::clone(&files)).expect("worker");
+        let block = files.block(Path::new("/moving")).expect("block");
+        let (done, result) = mpsc::channel();
+        runtime.generate(
+            LlamaGenerationRequest {
+                model_path: "/moving/model.gguf".into(),
+                ..Default::default()
+            },
+            Arc::new(Recorder::default()),
+            Arc::new(MemoryReports::default()),
+            Box::new(move |outcome| {
+                let _ = done.send(outcome.err());
+            }),
+        );
+        assert!(matches!(
+            result.recv().expect("result"),
+            Some(LlamaGenerationError::ModelFolderMoving(path)) if path == "/moving/model.gguf"
+        ));
+        assert!(runtime.resident_files().is_empty());
+        drop(block);
+    }
+
+    /// Holds the request inside the worker until the test lets it go.
+    struct GatedReports {
+        entered: std::sync::Mutex<Option<mpsc::Sender<()>>>,
+        release: std::sync::Mutex<mpsc::Receiver<()>>,
+    }
+
+    impl RuntimeReportStore for GatedReports {
+        fn load(&self, _model_path: &str) -> Result<Option<Value>, String> {
+            if let Some(entered) = self.entered.lock().expect("entered").take() {
+                let _ = entered.send(());
+                let _ = self.release.lock().expect("release").recv();
+            }
+            Ok(None)
+        }
+        fn store(&self, _model_path: &str, _report: &Value) -> Result<bool, String> {
+            Ok(true)
+        }
+    }
+
+    #[test]
+    fn a_running_request_publishes_its_files_before_it_loads_them() {
+        let dir = std::env::temp_dir().join(format!("lettuce-resident-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("dir");
+        let model = dir.join("model.gguf");
+        std::fs::write(&model, b"not a gguf").expect("model");
+        let model = model.to_string_lossy().into_owned();
+        let runtime = LlamaRuntime::start().expect("worker");
+        let (entered, entered_signal) = mpsc::channel();
+        let (release, release_signal) = mpsc::channel();
+        let reports = Arc::new(GatedReports {
+            entered: std::sync::Mutex::new(Some(entered)),
+            release: std::sync::Mutex::new(release_signal),
+        });
+        let (done, finished) = mpsc::channel();
+        runtime.generate(
+            LlamaGenerationRequest {
+                model_path: model.clone(),
+                messages: vec![json!({"role": "user", "content": "hi"})],
+                runtime: crate::request::LlamaRuntimeInput {
+                    gpu_layers: Some(0),
+                    strict_mode: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            Arc::new(Recorder::default()),
+            reports,
+            Box::new(move |result| {
+                let _ = done.send(result.is_ok());
+            }),
+        );
+        let reached = entered_signal
+            .recv_timeout(std::time::Duration::from_secs(30))
+            .is_ok();
+        if reached {
+            assert_eq!(runtime.resident_files(), std::slice::from_ref(&model));
+            release.send(()).expect("release");
+        }
+        let succeeded = finished
+            .recv_timeout(std::time::Duration::from_secs(60))
+            .expect("the request ended");
+        assert!(!succeeded);
+        assert!(
+            runtime.resident_files().is_empty(),
+            "a failed load leaves nothing open"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+        assert!(reached, "the request reached its runtime report");
+    }
+
+    #[test]
     #[ignore = "needs a local GGUF model in LETTUCE_PLAN_MODEL (drafters in LETTUCE_MTP_MODEL, LETTUCE_DFLASH_MODEL, LETTUCE_DSPARK_MODEL)"]
     fn generates_on_cpu_and_reuses_the_prompt_cache() {
         let Ok(path) = std::env::var("LETTUCE_PLAN_MODEL") else {
@@ -3808,6 +4014,7 @@ mod tests {
         eprintln!("first: {:?} {:?}", first.content, first.usage);
         assert!(first.content.contains("Paris"));
         assert!(first.usage.completion_tokens > 0);
+        assert!(runtime.resident_files().contains(&path));
         assert_eq!(
             observer.deltas.lock().expect("deltas").concat().trim(),
             first.content

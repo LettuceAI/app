@@ -1,7 +1,6 @@
 //! The GGUF models folder: what is in it, deleting from it, moving it
 //! (files and the model paths that point into it) and moving a model into it.
 
-use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use lettuce_models::ModelPathRelocation;
@@ -15,6 +14,7 @@ use crate::llm_models_root;
 pub struct DownloadedGguf {
     /// The repository the folder was named after.
     pub model_id: String,
+    /// The path below the repository folder, `/`-separated.
     pub filename: String,
     pub path: String,
     pub size: u64,
@@ -42,45 +42,215 @@ fn created(root: &Path) -> Result<(), String> {
         .map_err(|error| format!("Failed to create GGUF models dir: {error}"))
 }
 
-/// The `.gguf` files one folder below `root`, with their header facts.
-pub fn downloaded_ggufs(root: &Path) -> Result<Vec<DownloadedGguf>, String> {
+fn hidden(name: &std::ffi::OsStr) -> bool {
+    name.to_string_lossy().starts_with('.')
+}
+
+/// The `.gguf` files below each repository folder of `root`, nested
+/// folders included, with their header facts; hidden folders (partial
+/// downloads) and the `skipped` folders (image models kept below the
+/// models folder) are left out.
+pub fn downloaded_ggufs(root: &Path, skipped: &[PathBuf]) -> Result<Vec<DownloadedGguf>, String> {
     created(root)?;
     let entries =
         std::fs::read_dir(root).map_err(|error| format!("Failed to read models dir: {error}"))?;
     let mut found = Vec::new();
     for entry in entries.flatten() {
         let folder = entry.path();
-        if !folder.is_dir() {
+        if !folder.is_dir()
+            || hidden(&entry.file_name())
+            || skipped.iter().any(|skipped| paths_equal(skipped, &folder))
+        {
             continue;
         }
         let model_id = entry.file_name().to_string_lossy().replace("--", "/");
-        let Ok(files) = std::fs::read_dir(&folder) else {
-            continue;
-        };
-        for file in files.flatten() {
-            let path = file.path();
-            let filename = file.file_name().to_string_lossy().into_owned();
-            if !filename.to_lowercase().ends_with(".gguf") {
+        let mut pending = vec![folder.clone()];
+        while let Some(directory) = pending.pop() {
+            let Ok(files) = std::fs::read_dir(&directory) else {
                 continue;
+            };
+            for file in files.flatten() {
+                let path = file.path();
+                if path.is_dir() {
+                    if !hidden(&file.file_name()) {
+                        pending.push(path);
+                    }
+                    continue;
+                }
+                let name = file.file_name().to_string_lossy().into_owned();
+                if !name.to_lowercase().ends_with(".gguf") {
+                    continue;
+                }
+                let filename = path
+                    .strip_prefix(&folder)
+                    .unwrap_or(&path)
+                    .components()
+                    .map(|part| part.as_os_str().to_string_lossy().into_owned())
+                    .collect::<Vec<_>>()
+                    .join("/");
+                let meta = crate::models::model_runnability::local_gguf_meta(&path);
+                let path_text = path.to_string_lossy().into_owned();
+                let is_mmproj = name.to_lowercase().contains("mmproj");
+                found.push(DownloadedGguf {
+                    model_id: model_id.clone(),
+                    is_mmproj,
+                    is_dflash: !is_mmproj && is_dflash_drafter(&path_text),
+                    is_mtp: lettuce_model_hub::is_mtp_asset(&filename),
+                    size: file.metadata().map_or(0, |metadata| metadata.len()),
+                    quantization: lettuce_model_hub::extract_quantization(&path_text),
+                    architecture: meta.as_ref().and_then(|meta| meta.architecture.clone()),
+                    context_length: meta.as_ref().and_then(|meta| meta.context_length),
+                    filename,
+                    path: path_text,
+                });
             }
-            let meta = crate::models::model_runnability::local_gguf_meta(&path);
-            let path_text = path.to_string_lossy().into_owned();
-            let is_mmproj = filename.to_lowercase().contains("mmproj");
-            found.push(DownloadedGguf {
-                model_id: model_id.clone(),
-                is_mmproj,
-                is_dflash: !is_mmproj && is_dflash_drafter(&path_text),
-                is_mtp: lettuce_model_hub::is_mtp_asset(&filename),
-                size: file.metadata().map_or(0, |metadata| metadata.len()),
-                quantization: lettuce_model_hub::extract_quantization(&path_text),
-                architecture: meta.as_ref().and_then(|meta| meta.architecture.clone()),
-                context_length: meta.as_ref().and_then(|meta| meta.context_length),
-                filename,
-                path: path_text,
-            });
         }
     }
+    found.sort_by(|a, b| (&a.model_id, &a.filename).cmp(&(&b.model_id, &b.filename)));
     Ok(found)
+}
+
+/// Which path of a model points at a file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModelPathField {
+    Model,
+    Mmproj,
+    Mtp,
+    Dflash,
+}
+
+/// A saved llama.cpp model (or, without an id, the global model defaults)
+/// whose paths point at a file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelFileReference {
+    pub model_profile_id: Option<lettuce_types::ModelProfileId>,
+    pub display_name: Option<String>,
+    pub fields: Vec<ModelPathField>,
+}
+
+fn same_file_path(candidate: Option<&str>, target: &str) -> bool {
+    candidate.is_some_and(|candidate| {
+        !candidate.is_empty() && candidate.replace('\\', "/") == target.replace('\\', "/")
+    })
+}
+
+fn llama_fields(
+    model_path: Option<&str>,
+    llama: &lettuce_models::LlamaCppSettings,
+    target: &str,
+) -> Vec<ModelPathField> {
+    [
+        (ModelPathField::Model, model_path),
+        (ModelPathField::Mmproj, llama.mmproj_path.as_deref()),
+        (ModelPathField::Mtp, llama.mtp_model_path.as_deref()),
+        (ModelPathField::Dflash, llama.dflash_model_path.as_deref()),
+    ]
+    .into_iter()
+    .filter(|(_, path)| same_file_path(*path, target))
+    .map(|(field, _)| field)
+    .collect()
+}
+
+/// Every llama.cpp model and the global model defaults, read once to find
+/// the ones whose paths point at a file.
+#[derive(Debug)]
+pub struct ModelFileReferences {
+    profiles: Vec<(lettuce_models::ModelProfile, bool)>,
+    defaults: lettuce_models::LlamaCppSettings,
+}
+
+impl ModelFileReferences {
+    pub fn load<R>(repository: &R) -> Result<Self, String>
+    where
+        R: lettuce_models::ModelCatalog + lettuce_models::GlobalModelSettingsRepository + ?Sized,
+    {
+        let llama_accounts = repository
+            .provider_accounts()
+            .map_err(|error| error.to_string())?
+            .into_iter()
+            .filter(|account| account.protocol == lettuce_models::ProviderProtocol::LlamaCpp)
+            .map(|account| account.id)
+            .collect::<Vec<_>>();
+        let profiles = repository
+            .model_profiles()
+            .map_err(|error| error.to_string())?
+            .into_iter()
+            .map(|profile| {
+                let llama = llama_accounts.contains(&profile.provider_account_id);
+                (profile, llama)
+            })
+            .collect();
+        let (defaults, _) = repository
+            .global_model_settings()
+            .map_err(|error| error.to_string())?;
+        Ok(Self {
+            profiles,
+            defaults: defaults.llama_cpp,
+        })
+    }
+
+    /// The models, and the global defaults, whose paths point at `path`.
+    #[must_use]
+    pub fn of(&self, path: &str) -> Vec<ModelFileReference> {
+        let mut references = self
+            .profiles
+            .iter()
+            .filter_map(|(profile, llama)| {
+                let model_path = llama.then_some(profile.external_model_id.as_str());
+                let fields = llama_fields(model_path, &profile.config.llama_cpp, path);
+                (!fields.is_empty()).then(|| ModelFileReference {
+                    model_profile_id: Some(profile.id),
+                    display_name: Some(profile.display_name.clone()),
+                    fields,
+                })
+            })
+            .collect::<Vec<_>>();
+        let fields = llama_fields(None, &self.defaults, path);
+        if !fields.is_empty() {
+            references.push(ModelFileReference {
+                model_profile_id: None,
+                display_name: None,
+                fields,
+            });
+        }
+        references
+    }
+}
+
+/// The llama.cpp models, and the global model defaults, whose paths point
+/// at `path`.
+pub fn model_file_references<R>(
+    repository: &R,
+    path: &str,
+) -> Result<Vec<ModelFileReference>, String>
+where
+    R: lettuce_models::ModelCatalog + lettuce_models::GlobalModelSettingsRepository + ?Sized,
+{
+    Ok(ModelFileReferences::load(repository)?.of(path))
+}
+
+pub const OUTSIDE_MODELS_FOLDER: &str = "Cannot delete files outside the models directory";
+
+/// Whether `file_path` exists; an error when it is not inside `root` or one
+/// of `image_roots`.
+pub fn deletable_model(
+    root: &Path,
+    image_roots: &[PathBuf],
+    file_path: &str,
+) -> Result<bool, String> {
+    let path = PathBuf::from(file_path);
+    if !path.exists() {
+        return Ok(false);
+    }
+    let resolved = std::fs::canonicalize(&path)
+        .map_err(|error| format!("Failed to delete model file: {error}"))?;
+    let inside = |folder: &Path| {
+        std::fs::canonicalize(folder).is_ok_and(|folder| resolved.starts_with(folder))
+    };
+    if !inside(root) && !image_roots.iter().any(|image| inside(image)) {
+        return Err(OUTSIDE_MODELS_FOLDER.to_owned());
+    }
+    Ok(true)
 }
 
 /// Deletes a model file inside `root` or one of `image_roots`, and its
@@ -90,18 +260,10 @@ pub fn delete_downloaded_model(
     image_roots: &[PathBuf],
     file_path: &str,
 ) -> Result<(), String> {
-    let path = PathBuf::from(file_path);
-    if !path.exists() {
+    if !deletable_model(root, image_roots, file_path)? {
         return Ok(());
     }
-    let resolved = std::fs::canonicalize(&path)
-        .map_err(|error| format!("Failed to delete model file: {error}"))?;
-    let inside = |folder: &Path| {
-        std::fs::canonicalize(folder).is_ok_and(|folder| resolved.starts_with(folder))
-    };
-    if !inside(root) && !image_roots.iter().any(|image| inside(image)) {
-        return Err("Cannot delete files outside the models directory".to_owned());
-    }
+    let path = PathBuf::from(file_path);
     std::fs::remove_file(&path).map_err(|error| format!("Failed to delete model file: {error}"))?;
     if let Some(parent) = path.parent()
         && parent != root
@@ -160,7 +322,7 @@ pub fn llm_models_dir_info(
     })
 }
 
-fn paths_equal(a: &Path, b: &Path) -> bool {
+pub(crate) fn paths_equal(a: &Path, b: &Path) -> bool {
     a == b
         || matches!(
             (std::fs::canonicalize(a), std::fs::canonicalize(b)),
@@ -176,79 +338,370 @@ fn remove_path(path: &Path) -> std::io::Result<()> {
     }
 }
 
-fn copy_recursive(source: &Path, destination: &Path) -> Result<(), String> {
+/// The file in the destination folder that marks a move in progress: the
+/// move it belongs to, the folder it copies from and each entry it copies
+/// with the entry's size.
+pub const MODELS_MOVE_MANIFEST: &str = ".lettuce-models-move.json";
+const COPY_CHUNK_BYTES: usize = 1 << 20;
+
+/// An entry's total bytes and file count, and for an original the newest
+/// modification time of its files.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct Measure {
+    bytes: u64,
+    files: u64,
+    modified: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct ManifestEntry {
+    name: String,
+    measure: Measure,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct MoveManifest {
+    move_id: String,
+    from: String,
+    entries: Vec<ManifestEntry>,
+}
+
+fn measure(path: &Path) -> Option<Measure> {
+    let metadata = std::fs::symlink_metadata(path).ok()?;
+    if metadata.is_dir() {
+        let mut total = Measure {
+            bytes: 0,
+            files: 0,
+            modified: None,
+        };
+        for entry in std::fs::read_dir(path).ok()? {
+            let inner = measure(&entry.ok()?.path())?;
+            total.bytes = total.bytes.saturating_add(inner.bytes);
+            total.files = total.files.saturating_add(inner.files);
+            total.modified = total.modified.max(inner.modified);
+        }
+        return Some(total);
+    }
+    Some(Measure {
+        bytes: metadata.len(),
+        files: 1,
+        modified: metadata
+            .modified()
+            .ok()
+            .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|since| since.as_secs()),
+    })
+}
+
+/// What resolving a move left alone because it could not prove the entry
+/// was its own copy (or that the copy is complete).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MoveResolution {
+    pub committed: bool,
+    pub kept: Vec<String>,
+}
+
+fn redundant_tree(candidate: &Path, retained: &Path, partial: bool) -> std::io::Result<bool> {
+    use std::io::Read;
+    let candidate_meta = std::fs::symlink_metadata(candidate)?;
+    let retained_meta = std::fs::symlink_metadata(retained)?;
+    if candidate_meta.is_dir() && retained_meta.is_dir() {
+        for entry in std::fs::read_dir(candidate)? {
+            let entry = entry?;
+            if !redundant_tree(&entry.path(), &retained.join(entry.file_name()), partial)? {
+                return Ok(false);
+            }
+        }
+        return Ok(true);
+    }
+    if !candidate_meta.is_file() || !retained_meta.is_file()
+        || candidate_meta.len() > retained_meta.len()
+        || (!partial && candidate_meta.len() != retained_meta.len())
+    {
+        return Ok(false);
+    }
+    let mut candidate = std::fs::File::open(candidate)?;
+    let mut retained = std::fs::File::open(retained)?;
+    let mut candidate_buffer = vec![0_u8; COPY_CHUNK_BYTES];
+    let mut retained_buffer = vec![0_u8; COPY_CHUNK_BYTES];
+    loop {
+        let read = candidate.read(&mut candidate_buffer)?;
+        if read == 0 {
+            return Ok(true);
+        }
+        retained.read_exact(&mut retained_buffer[..read])?;
+        if candidate_buffer[..read] != retained_buffer[..read] {
+            return Ok(false);
+        }
+    }
+}
+
+/// Removes the copies in `to` whose original is still in `from` unchanged.
+fn undo_copies(from: &Path, to: &Path, entries: &[ManifestEntry]) -> Vec<String> {
+    let mut kept = Vec::new();
+    for entry in entries {
+        let copy = to.join(&entry.name);
+        match std::fs::symlink_metadata(&copy) {
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(_) => {
+                kept.push(entry.name.clone());
+                continue;
+            }
+        }
+        if measure(&from.join(&entry.name)) == Some(entry.measure)
+            && matches!(redundant_tree(&copy, &from.join(&entry.name), true), Ok(true))
+        {
+            if let Err(error) = remove_path(&copy) {
+                tracing::warn!(path = %copy.display(), %error, "a models folder copy could not be removed");
+                kept.push(entry.name.clone());
+            }
+        } else {
+            tracing::warn!(path = %copy.display(), "a models folder entry was kept: its original changed or is gone");
+            kept.push(entry.name.clone());
+        }
+    }
+    kept
+}
+
+/// Removes the originals in `from` whose copy in `to` is complete.
+fn remove_originals(from: &Path, to: &Path, entries: &[ManifestEntry]) -> Vec<String> {
+    let mut kept = Vec::new();
+    for entry in entries {
+        let original = from.join(&entry.name);
+        match std::fs::symlink_metadata(&original) {
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(_) => {
+                kept.push(entry.name.clone());
+                continue;
+            }
+        }
+        let copied = measure(&to.join(&entry.name)).is_some_and(|copy| {
+            copy.bytes == entry.measure.bytes && copy.files == entry.measure.files
+        });
+        if copied && matches!(redundant_tree(&original, &to.join(&entry.name), false), Ok(true)) {
+            if let Err(error) = remove_path(&original) {
+                tracing::warn!(path = %original.display(), %error, "a moved original could not be removed");
+                kept.push(entry.name.clone());
+            }
+        } else {
+            tracing::warn!(path = %original.display(), "an original was kept: its copy is missing or incomplete");
+            kept.push(entry.name.clone());
+        }
+    }
+    kept
+}
+
+fn read_manifest(to: &Path) -> Result<Option<MoveManifest>, String> {
+    match std::fs::read(to.join(MODELS_MOVE_MANIFEST)) {
+        Ok(bytes) => serde_json::from_slice(&bytes)
+            .map(Some)
+            .map_err(|error| format!("The move manifest is unreadable: {error}")),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+/// Removes the manifest `move_id` left in `to` without applying it, for a
+/// move already resolved.
+pub fn discard_models_folder_manifest(to: &Path, move_id: &str) -> Result<bool, String> {
+    match read_manifest(to)? {
+        Some(manifest) if manifest.move_id == move_id => {
+            std::fs::remove_file(to.join(MODELS_MOVE_MANIFEST))
+                .map_err(|error| error.to_string())?;
+            Ok(true)
+        }
+        _ => Ok(false),
+    }
+}
+
+/// Why a models folder move stopped; a move that stops removes its copies.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum FolderMoveError {
+    #[error("New models folder path is empty")]
+    EmptyPath,
+    #[error("The new models folder is inside the current one")]
+    DestinationInsideSource,
+    #[error("Destination already contains \"{0}\". Pick an empty folder.")]
+    DestinationNotEmpty(String),
+    #[error("the models folder move was cancelled")]
+    Cancelled,
+    #[error("Failed to copy the models: {0}")]
+    Copy(String),
+    #[error("The model paths could not be saved: {0}")]
+    Storage(String),
+}
+
+fn copy_error(error: std::io::Error) -> FolderMoveError {
+    FolderMoveError::Copy(error.to_string())
+}
+
+/// Copies `source` to `destination` in chunks, checking `cancelled` before
+/// each chunk and each directory entry.
+fn copy_cancellable(
+    source: &Path,
+    destination: &Path,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<(), FolderMoveError> {
+    use std::io::{Read, Write};
+    if cancelled() {
+        return Err(FolderMoveError::Cancelled);
+    }
     if source.is_dir() {
-        std::fs::create_dir_all(destination).map_err(|error| error.to_string())?;
-        for entry in std::fs::read_dir(source).map_err(|error| error.to_string())? {
-            let entry = entry.map_err(|error| error.to_string())?;
-            copy_recursive(&entry.path(), &destination.join(entry.file_name()))?;
+        std::fs::create_dir_all(destination).map_err(copy_error)?;
+        for entry in std::fs::read_dir(source).map_err(copy_error)? {
+            let entry = entry.map_err(copy_error)?;
+            copy_cancellable(
+                &entry.path(),
+                &destination.join(entry.file_name()),
+                cancelled,
+            )?;
         }
-    } else {
-        if let Some(parent) = destination.parent() {
-            std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+    if let Some(parent) = destination.parent() {
+        std::fs::create_dir_all(parent).map_err(copy_error)?;
+    }
+    let mut input = std::fs::File::open(source).map_err(copy_error)?;
+    let mut output = std::fs::File::create_new(destination).map_err(copy_error)?;
+    let mut buffer = vec![0_u8; COPY_CHUNK_BYTES];
+    loop {
+        if cancelled() {
+            return Err(FolderMoveError::Cancelled);
         }
-        std::fs::copy(source, destination).map_err(|error| error.to_string())?;
-        if let Ok(file) = std::fs::File::open(destination) {
-            file.sync_all().map_err(|error| error.to_string())?;
+        let read = input.read(&mut buffer).map_err(copy_error)?;
+        if read == 0 {
+            break;
+        }
+        output.write_all(&buffer[..read]).map_err(copy_error)?;
+    }
+    output.sync_all().map_err(copy_error)
+}
+
+/// Refuses a destination inside the source folder (the copy would copy
+/// itself) and one that already holds an entry the source has.
+pub fn check_folder_move(from: &Path, to: &Path) -> Result<(), FolderMoveError> {
+    let resolve = |path: &Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let (from_resolved, to_resolved) = (resolve(from), resolve(to));
+    if to_resolved != from_resolved && to_resolved.starts_with(&from_resolved) {
+        return Err(FolderMoveError::DestinationInsideSource);
+    }
+    let Ok(entries) = std::fs::read_dir(from) else {
+        return Ok(());
+    };
+    for entry in entries.flatten() {
+        if to.join(entry.file_name()).exists() {
+            return Err(FolderMoveError::DestinationNotEmpty(
+                entry.file_name().to_string_lossy().into_owned(),
+            ));
         }
     }
     Ok(())
 }
 
-/// Copies every entry of `from` into the empty-for-them `to`, lets
-/// `rewire` point stored paths at the copies, then removes the originals;
-/// a failure before that removes the copies again.
+/// Finishes or undoes the move `move_id` a crash or shutdown interrupted,
+/// from its manifest in `to`: when the stored folder is `to` the move
+/// committed and each original whose copy is complete goes, else each copy
+/// whose original is still there unchanged goes. Entries it cannot prove
+/// are kept and reported. `None` when `to` holds no manifest of this move.
+pub fn recover_models_folder_move<R>(
+    repository: &R,
+    app_folder: &Path,
+    to: &Path,
+    move_id: &str,
+) -> Result<Option<MoveResolution>, String>
+where
+    R: DeviceSettingsStore + ?Sized,
+{
+    let Some(manifest) = read_manifest(to)?.filter(|manifest| manifest.move_id == move_id) else {
+        return Ok(None);
+    };
+    let current = llm_models_root(
+        &repository
+            .load_device_settings()
+            .map_err(|error| error.to_string())?,
+        app_folder,
+    );
+    let from = Path::new(&manifest.from);
+    let committed = paths_equal(&current, to);
+    let kept = if committed {
+        remove_originals(from, to, &manifest.entries)
+    } else {
+        undo_copies(from, to, &manifest.entries)
+    };
+    if let Err(error) = std::fs::remove_file(to.join(MODELS_MOVE_MANIFEST)) {
+        tracing::warn!(%error, "a resolved move manifest could not be removed");
+    }
+    Ok(Some(MoveResolution { committed, kept }))
+}
+
+/// Copies every entry of `from` into `to` under a manifest, lets `commit`
+/// point the stored paths and the folder setting at the copies, then removes
+/// the originals whose copies are complete and the manifest; a manifest that
+/// cannot be removed then is left for the next start. A failure or
+/// cancellation before the commit removes the copies whose originals are
+/// unchanged.
 fn migrate_models_dir(
+    move_id: &str,
     from: &Path,
     to: &Path,
-    rewire: impl FnOnce(&str, &str) -> Result<u32, String>,
-) -> Result<(u32, u32), String> {
-    if !from.exists() {
-        return Ok((0, 0));
-    }
-    std::fs::create_dir_all(to)
-        .map_err(|error| format!("Failed to create destination folder: {error}"))?;
-    let mut sources: Vec<(OsString, PathBuf)> = Vec::new();
-    for entry in
-        std::fs::read_dir(from).map_err(|error| format!("Failed to read models folder: {error}"))?
-    {
-        let entry = entry.map_err(|error| error.to_string())?;
-        sources.push((entry.file_name(), entry.path()));
-    }
-    if let Some((name, _)) = sources.iter().find(|(name, _)| to.join(name).exists()) {
-        return Err(format!(
-            "Destination already contains \"{}\". Pick an empty folder.",
-            name.to_string_lossy()
-        ));
-    }
-    let mut copies: Vec<PathBuf> = Vec::new();
-    for (name, source) in &sources {
-        let destination = to.join(name);
-        if let Err(error) = copy_recursive(source, &destination) {
-            for copy in &copies {
-                let _ = remove_path(copy);
+    cancelled: &dyn Fn() -> bool,
+    commit: impl FnOnce() -> Result<u32, FolderMoveError>,
+) -> Result<(u32, u32), FolderMoveError> {
+    std::fs::create_dir_all(to).map_err(copy_error)?;
+    check_folder_move(from, to)?;
+    let mut entries: Vec<ManifestEntry> = Vec::new();
+    if from.exists() {
+        for entry in std::fs::read_dir(from).map_err(copy_error)? {
+            let name = entry.map_err(copy_error)?.file_name();
+            let name = name.to_string_lossy().into_owned();
+            if name == MODELS_MOVE_MANIFEST {
+                continue;
             }
-            let _ = remove_path(&destination);
-            return Err(error);
+            let measure = measure(&from.join(&name))
+                .ok_or_else(|| FolderMoveError::Copy(format!("\"{name}\" could not be read")))?;
+            entries.push(ManifestEntry { name, measure });
         }
-        copies.push(destination);
+    }
+    let manifest_path = to.join(MODELS_MOVE_MANIFEST);
+    let manifest = serde_json::to_vec(&MoveManifest {
+        move_id: move_id.to_owned(),
+        from: from.to_string_lossy().into_owned(),
+        entries: entries.clone(),
+    })
+    .map_err(|error| FolderMoveError::Copy(error.to_string()))?;
+    {
+        use std::io::Write;
+        let mut file = std::fs::File::create_new(&manifest_path).map_err(copy_error)?;
+        file.write_all(&manifest).map_err(copy_error)?;
+        file.sync_all().map_err(copy_error)?;
+    }
+    let undo = |error: FolderMoveError| {
+        let kept = undo_copies(from, to, &entries);
+        if kept.is_empty() {
+            let _ = std::fs::remove_file(&manifest_path);
+        }
+        error
+    };
+    for entry in &entries {
+        copy_cancellable(&from.join(&entry.name), &to.join(&entry.name), cancelled)
+            .map_err(undo)?;
     }
     if let Ok(folder) = std::fs::File::open(to) {
         let _ = folder.sync_all();
     }
-    let rewired = match rewire(&from.to_string_lossy(), &to.to_string_lossy()) {
-        Ok(count) => count,
-        Err(error) => {
-            for copy in &copies {
-                let _ = remove_path(copy);
-            }
-            return Err(error);
-        }
-    };
-    for (_, source) in &sources {
-        let _ = remove_path(source);
+    if cancelled() {
+        return Err(undo(FolderMoveError::Cancelled));
     }
-    Ok((u32::try_from(copies.len()).unwrap_or(u32::MAX), rewired))
+    let rewired = commit().map_err(undo)?;
+    let kept = remove_originals(from, to, &entries);
+    if kept.is_empty()
+        && let Err(error) = std::fs::remove_file(&manifest_path)
+    {
+        tracing::warn!(%error, "the move manifest is left for the next start");
+    }
+    Ok((u32::try_from(entries.len()).unwrap_or(u32::MAX), rewired))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -260,64 +713,64 @@ pub struct LlmModelsDirChange {
 
 /// Uses `new_dir` for GGUF models (the app's own folder again when it is
 /// that one), first moving what the current folder holds and pointing the
-/// stored model paths at the moved files when `move_existing` is set.
+/// stored model paths at the moved files when `move_existing` is set. The
+/// paths and the folder setting change in one transaction; `cancelled` is
+/// checked between files and chunks.
 pub fn set_llm_models_dir<R>(
     repository: &R,
     app_folder: &Path,
     new_dir: &str,
     move_existing: bool,
     now: TimestampMillis,
-) -> Result<LlmModelsDirChange, String>
+    move_id: &str,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<LlmModelsDirChange, FolderMoveError>
 where
     R: DeviceSettingsStore + ModelPathRelocation + ?Sized,
 {
     let new_path = PathBuf::from(new_dir.trim());
     if new_path.as_os_str().is_empty() {
-        return Err("New models folder path is empty".to_owned());
+        return Err(FolderMoveError::EmptyPath);
     }
-    let old_path = llm_models_root(
-        &repository
-            .load_device_settings()
-            .map_err(|error| error.to_string())?,
-        app_folder,
-    );
-    std::fs::create_dir_all(&new_path)
-        .map_err(|error| format!("Failed to create models folder: {error}"))?;
+    let storage = |error: &dyn std::fmt::Display| FolderMoveError::Storage(error.to_string());
+    let device = repository
+        .load_device_settings()
+        .map_err(|error| storage(&error))?;
+    let old_path = llm_models_root(&device, app_folder);
+    std::fs::create_dir_all(&new_path).map_err(copy_error)?;
     let chosen = (!paths_equal(&new_path, &default_root(app_folder)))
         .then(|| new_path.to_string_lossy().into_owned());
-    let persist = || -> Result<(), String> {
-        let mut device = repository
-            .load_device_settings()
-            .map_err(|error| error.to_string())?;
+    let with_folder = |mut device: DeviceSettings| {
         device.llm_models_dir.clone_from(&chosen);
-        repository
-            .save_device_settings(device)
-            .map_err(|error| error.to_string())
+        device
     };
     if !move_existing || paths_equal(&old_path, &new_path) {
-        persist()?;
+        repository
+            .save_device_settings(with_folder(device))
+            .map_err(|error| storage(&error))?;
         return Ok(LlmModelsDirChange {
             path: new_path,
             moved_entries: 0,
             rewired_models: 0,
         });
     }
-    let (moved_entries, rewired_models) = migrate_models_dir(&old_path, &new_path, |old, new| {
-        let relocate = |from: &str, to: &str| {
+    let (old, new) = (
+        old_path.to_string_lossy().into_owned(),
+        new_path.to_string_lossy().into_owned(),
+    );
+    let (moved_entries, rewired_models) =
+        migrate_models_dir(move_id, &old_path, &new_path, cancelled, || {
+            let device = repository
+                .load_device_settings()
+                .map_err(|error| storage(&error))?;
             repository
-                .relocate_model_paths(
-                    &|path| lettuce_models::rewrite_path_prefix(path, from, to),
+                .relocate_model_paths_and_save_device(
+                    &|path| lettuce_models::rewrite_path_prefix(path, &old, &new),
+                    with_folder(device),
                     now,
                 )
-                .map_err(|error| error.to_string())
-        };
-        let rewired = relocate(old, new)?;
-        if let Err(error) = persist() {
-            relocate(new, old)?;
-            return Err(error);
-        }
-        Ok(rewired)
-    })?;
+                .map_err(|error| storage(&error))
+        })?;
     Ok(LlmModelsDirChange {
         path: new_path,
         moved_entries,
@@ -529,9 +982,8 @@ mod tests {
             &GgufModelSetup::default(),
             TimestampMillis::new(2),
         )
-        .expect("model")
-        .profile;
-        let listed = downloaded_ggufs(&root).expect("list");
+        .expect("model");
+        let listed = downloaded_ggufs(&root, &[]).expect("list");
         assert_eq!(listed.len(), 2);
         assert!(listed.iter().all(|file| file.model_id == "org/m"));
         let info = llm_models_dir_info(&DeviceSettings::default(), &app).expect("info");
@@ -544,6 +996,8 @@ mod tests {
             &target.to_string_lossy(),
             true,
             TimestampMillis::new(3),
+            "move-1",
+            &|| false,
         )
         .expect("move");
         assert_eq!((change.moved_entries, change.rewired_models), (2, 1));
@@ -570,6 +1024,8 @@ mod tests {
             &root.to_string_lossy(),
             false,
             TimestampMillis::new(4),
+            "move-2",
+            &|| false,
         )
         .expect("back");
         assert_eq!(
@@ -606,7 +1062,7 @@ mod tests {
         gguf_with_u32(&folder.join("m-Q4_K_M.gguf"), "llama.block_count", 32);
         gguf_with_u32(&folder.join("drafter.gguf"), "dflash.block_size", 16);
         gguf_with_u32(&folder.join("mmproj-m.gguf"), "dflash.block_size", 16);
-        let listed = downloaded_ggufs(&app).expect("list");
+        let listed = downloaded_ggufs(&app, &[]).expect("list");
         let flag = |name: &str| {
             listed
                 .iter()
@@ -619,6 +1075,279 @@ mod tests {
         assert!(!flag("m-Q4_K_M.gguf"));
         assert!(!flag("mmproj-m.gguf"));
         std::fs::remove_dir_all(&app).expect("cleanup");
+    }
+
+    fn library_with_model(label: &str) -> (PathBuf, PathBuf, crate::AppBackend) {
+        let app = scratch(label);
+        let backend = crate::AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+        let root = llm_models_root(&DeviceSettings::default(), &app);
+        std::fs::create_dir_all(root.join("org--m")).expect("folder");
+        std::fs::write(root.join("org--m").join("m.gguf"), vec![7_u8; 3 << 20]).expect("model");
+        std::fs::write(root.join("notes.txt"), b"x").expect("notes");
+        (app, root, backend)
+    }
+
+    #[test]
+    fn a_cancelled_move_removes_its_copies_and_keeps_everything_else() {
+        let (app, root, backend) = library_with_model("cancel");
+        let database = backend.database();
+        let target = app.join("elsewhere");
+        let checks = std::sync::atomic::AtomicU32::new(0);
+        let cancel_on_third = || checks.fetch_add(1, std::sync::atomic::Ordering::SeqCst) >= 2;
+        assert_eq!(
+            set_llm_models_dir(
+                database,
+                &app,
+                &target.to_string_lossy(),
+                true,
+                TimestampMillis::new(3),
+                "move-1",
+                &cancel_on_third,
+            ),
+            Err(FolderMoveError::Cancelled)
+        );
+        assert!(root.join("org--m").join("m.gguf").exists());
+        assert!(!target.join("org--m").exists());
+        assert!(!target.join("notes.txt").exists());
+        assert!(!target.join(MODELS_MOVE_MANIFEST).exists());
+        assert_eq!(
+            database
+                .load_device_settings()
+                .expect("device")
+                .llm_models_dir,
+            None
+        );
+        let inside = root.join("nested");
+        assert_eq!(
+            set_llm_models_dir(
+                database,
+                &app,
+                &inside.to_string_lossy(),
+                true,
+                TimestampMillis::new(4),
+                "move-2",
+                &|| false,
+            ),
+            Err(FolderMoveError::DestinationInsideSource),
+            "legacy copied the folder into itself"
+        );
+        std::fs::create_dir_all(target.join("notes.txt")).expect("clash");
+        assert_eq!(
+            check_folder_move(&root, &target),
+            Err(FolderMoveError::DestinationNotEmpty("notes.txt".to_owned()))
+        );
+        std::fs::remove_dir_all(&app).expect("cleanup");
+    }
+
+    fn manifest_of(root: &Path, names: &[&str]) -> Vec<u8> {
+        serde_json::to_vec(&MoveManifest {
+            move_id: "move-1".to_owned(),
+            from: root.to_string_lossy().into_owned(),
+            entries: names
+                .iter()
+                .map(|name| ManifestEntry {
+                    name: (*name).to_owned(),
+                    measure: measure(&root.join(name)).expect("original"),
+                })
+                .collect(),
+        })
+        .expect("manifest")
+    }
+
+    #[test]
+    fn an_interrupted_move_is_undone_or_finished_at_the_next_start() {
+        let (app, root, backend) = library_with_model("crash");
+        let database = backend.database();
+        let target = app.join("elsewhere");
+        let manifest = manifest_of(&root, &["org--m", "notes.txt"]);
+        std::fs::create_dir_all(target.join("org--m")).expect("partial copy");
+        std::fs::write(target.join("org--m").join("m.gguf"), [7_u8; 4]).expect("partial");
+        std::fs::write(target.join("unrelated.gguf"), b"mine").expect("unrelated");
+        std::fs::write(target.join(MODELS_MOVE_MANIFEST), &manifest).expect("manifest");
+        assert_eq!(
+            recover_models_folder_move(database, &app, &target, "other-move"),
+            Ok(None),
+            "a manifest of another move is not applied"
+        );
+        assert_eq!(
+            recover_models_folder_move(database, &app, &target, "move-1"),
+            Ok(Some(MoveResolution {
+                committed: false,
+                kept: Vec::new(),
+            }))
+        );
+        assert!(!target.join("org--m").exists(), "the partial copy is gone");
+        assert!(target.join("unrelated.gguf").exists());
+        assert!(root.join("org--m").join("m.gguf").exists());
+        assert!(!target.join(MODELS_MOVE_MANIFEST).exists());
+        assert_eq!(
+            recover_models_folder_move(database, &app, &target, "move-1"),
+            Ok(None)
+        );
+        copy_cancellable(&root.join("org--m"), &target.join("org--m"), &|| false).expect("copy");
+        std::fs::write(target.join(MODELS_MOVE_MANIFEST), &manifest).expect("manifest");
+        let mut device = database.load_device_settings().expect("device");
+        device.llm_models_dir = Some(target.to_string_lossy().into_owned());
+        database.save_device_settings(device).expect("committed");
+        assert_eq!(
+            recover_models_folder_move(database, &app, &target, "move-1"),
+            Ok(Some(MoveResolution {
+                committed: true,
+                kept: vec!["notes.txt".to_owned()],
+            })),
+            "an original whose copy is missing stays"
+        );
+        assert!(target.join("org--m").join("m.gguf").exists());
+        assert!(
+            !root.join("org--m").exists(),
+            "the committed move's originals go"
+        );
+        assert!(root.join("notes.txt").exists());
+        std::fs::remove_dir_all(&app).expect("cleanup");
+    }
+
+    #[test]
+    fn recovery_preserves_changed_contents_on_both_sides() {
+        for committed in [false, true] {
+            let (app, root, backend) = library_with_model("changed-recovery");
+            let target = app.join("elsewhere");
+            let manifest = manifest_of(&root, &["notes.txt"]);
+            std::fs::create_dir_all(&target).expect("target");
+            std::fs::write(target.join("notes.txt"), b"x").expect("copy");
+            std::fs::write(target.join(MODELS_MOVE_MANIFEST), manifest).expect("manifest");
+            if committed {
+                let mut device = backend.database().load_device_settings().expect("device");
+                device.llm_models_dir = Some(target.to_string_lossy().into_owned());
+                backend.database().save_device_settings(device).expect("commit");
+                std::fs::write(root.join("notes.txt"), b"y").expect("changed source");
+            } else {
+                std::fs::write(target.join("notes.txt"), b"y").expect("changed destination");
+            }
+            let resolution = recover_models_folder_move(backend.database(), &app, &target, "move-1")
+                .expect("recover").expect("resolution");
+            assert_eq!(resolution.kept, ["notes.txt"]);
+            assert!(root.join("notes.txt").exists());
+            assert!(target.join("notes.txt").exists());
+            std::fs::remove_dir_all(&app).expect("cleanup");
+        }
+    }
+
+    #[test]
+    fn undoing_a_move_keeps_an_entry_whose_original_is_gone() {
+        let (app, root, backend) = library_with_model("hand-moved");
+        let database = backend.database();
+        let target = app.join("elsewhere");
+        let manifest = manifest_of(&root, &["org--m", "notes.txt"]);
+        std::fs::create_dir_all(&target).expect("target");
+        std::fs::write(target.join(MODELS_MOVE_MANIFEST), &manifest).expect("manifest");
+        std::fs::rename(root.join("org--m"), target.join("org--m")).expect("moved by hand");
+        std::fs::write(target.join("notes.txt"), b"x").expect("copy");
+        std::fs::write(root.join("notes.txt"), b"changed").expect("original changed");
+        assert_eq!(
+            recover_models_folder_move(database, &app, &target, "move-1"),
+            Ok(Some(MoveResolution {
+                committed: false,
+                kept: vec!["org--m".to_owned(), "notes.txt".to_owned()],
+            }))
+        );
+        assert_eq!(
+            std::fs::read(target.join("org--m").join("m.gguf"))
+                .expect("the only copy stays")
+                .len(),
+            3 << 20
+        );
+        assert!(target.join("notes.txt").exists());
+        std::fs::remove_dir_all(&app).expect("cleanup");
+    }
+
+    #[test]
+    fn nested_repository_files_are_listed_and_the_image_folder_is_not() {
+        let app = scratch("nested");
+        let root = app.join("library");
+        let nested = root.join("org--m").join("Q4");
+        std::fs::create_dir_all(&nested).expect("nested");
+        std::fs::write(nested.join("m-Q4_K_M.gguf"), b"GGUF").expect("nested model");
+        std::fs::create_dir_all(root.join("org--m").join("mtp")).expect("mtp");
+        std::fs::write(root.join("org--m").join("mtp").join("draft.gguf"), b"GGUF").expect("mtp");
+        std::fs::write(root.join("org--m").join("top.gguf"), b"GGUF").expect("top");
+        let partial = root.join(".downloads");
+        std::fs::create_dir_all(&partial).expect("partials");
+        std::fs::write(partial.join("x.gguf"), b"GGUF").expect("partial");
+        let image = root.join("image").join("components").join("abc");
+        std::fs::create_dir_all(&image).expect("image");
+        std::fs::write(image.join("encoder.gguf"), b"GGUF").expect("encoder");
+        let listed = downloaded_ggufs(&root, &[root.join("image")]).expect("list");
+        assert_eq!(
+            listed
+                .iter()
+                .map(|file| (file.model_id.as_str(), file.filename.as_str(), file.is_mtp))
+                .collect::<Vec<_>>(),
+            [
+                ("org/m", "Q4/m-Q4_K_M.gguf", false),
+                ("org/m", "mtp/draft.gguf", true),
+                ("org/m", "top.gguf", false),
+            ],
+            "legacy listed only files directly inside a repository folder"
+        );
+        assert_eq!(listed[0].quantization, "Q4_K_M");
+        std::fs::remove_dir_all(&app).expect("cleanup");
+    }
+
+    #[test]
+    fn references_name_every_llama_model_path_and_the_global_defaults() {
+        use lettuce_models::GlobalModelSettingsRepository;
+        let backend = crate::AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+        let database = backend.database();
+        let root = Path::new("/models");
+        let download = GgufDownload {
+            model_id: "org/m".to_owned(),
+            model_file: "m.gguf".to_owned(),
+            mmproj_file: Some("mmproj.gguf".to_owned()),
+            mtp_file: None,
+        };
+        let installed = download.installed(root);
+        let model = register_downloaded_gguf(
+            database,
+            root,
+            &download,
+            &GgufModelSetup::default(),
+            TimestampMillis::new(2),
+        )
+        .expect("model");
+        let mmproj = installed.mmproj_path.clone().expect("mmproj");
+        let (mut defaults, revision) = database.global_model_settings().expect("defaults");
+        defaults.llama_cpp.mmproj_path = Some(mmproj.clone());
+        database
+            .save_global_model_settings(defaults, revision, TimestampMillis::new(3))
+            .expect("save defaults");
+        assert_eq!(
+            model_file_references(database, &installed.model_path).expect("model"),
+            [ModelFileReference {
+                model_profile_id: Some(model.id),
+                display_name: Some(model.display_name.clone()),
+                fields: vec![ModelPathField::Model],
+            }]
+        );
+        assert_eq!(
+            model_file_references(database, &mmproj).expect("mmproj"),
+            [
+                ModelFileReference {
+                    model_profile_id: Some(model.id),
+                    display_name: Some(model.display_name.clone()),
+                    fields: vec![ModelPathField::Mmproj],
+                },
+                ModelFileReference {
+                    model_profile_id: None,
+                    display_name: None,
+                    fields: vec![ModelPathField::Mmproj],
+                },
+            ]
+        );
+        assert!(
+            model_file_references(database, "/elsewhere.gguf")
+                .expect("none")
+                .is_empty()
+        );
     }
 
     #[test]

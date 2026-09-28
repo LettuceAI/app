@@ -21,6 +21,7 @@ use super::error::{IntoApiError, api_error};
 use super::events::{ApiEventSink, GenerationEventSink};
 use super::files::FileAccess;
 use super::jobs::JobHostState;
+use super::local_models::LocalModelsState;
 use super::models::{ApiEmbedding, ApiEmotion, InstalledModels, ModelLoader, ModelSlots};
 use crate::{
     AppActiveUsageTracker, AppBackend, AppDatabaseLocation, CompanionEmotionEngine,
@@ -86,6 +87,7 @@ struct ApiContextInner {
     committed: tokio::sync::watch::Sender<u64>,
     app_usage: AppActiveUsageTracker,
     legacy_database_detected: AtomicBool,
+    local_models: LocalModelsState,
 }
 
 impl std::fmt::Debug for ApiContext {
@@ -135,6 +137,7 @@ impl ApiContext {
                 committed,
                 app_usage: AppActiveUsageTracker::new(now),
                 legacy_database_detected: AtomicBool::new(false),
+                local_models: LocalModelsState::default(),
             }),
         }
     }
@@ -214,6 +217,28 @@ impl ApiContext {
             }),
             asset_url_base,
         }))
+    }
+
+    /// A new context over the same backend and host services, as a
+    /// restarted process would open them: no job, watch or install work of
+    /// this one carries over.
+    #[cfg(test)]
+    pub(crate) fn restarted(&self) -> Self {
+        let parts = &self.inner.parts;
+        Self::new(ApiContextParts {
+            backend: Arc::clone(&parts.backend),
+            secret_store: Arc::clone(&parts.secret_store),
+            inference: Arc::clone(&parts.inference),
+            models: Arc::clone(&parts.models),
+            media: parts.media.clone(),
+            events: Arc::clone(&parts.events),
+            clock: Arc::clone(&parts.clock),
+            files: Arc::clone(&parts.files),
+            app_folder: parts.app_folder.clone(),
+            resource_dir: parts.resource_dir.clone(),
+            database_files: None,
+            asset_url_base: parts.asset_url_base.clone(),
+        })
     }
 
     #[must_use]
@@ -314,6 +339,10 @@ impl ApiContext {
 
     pub(crate) fn jobs(&self) -> &JobHostState {
         &self.inner.jobs
+    }
+
+    pub(crate) fn local_models(&self) -> &LocalModelsState {
+        &self.inner.local_models
     }
 
     /// Resolves after a committed conversation change, including one made

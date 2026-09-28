@@ -24,6 +24,7 @@ Facts about how `lettuce-settings` relates to the legacy app (2.2.x). The crate 
 - The optional group-chat memory policy beside the direct one matches legacy's settings editor and persistence owner.
 - The legacy import stores `meta.hugging_face_access_token` and `meta.civitai_access_token` at the app-wide secret references (blank ones stay unset, as legacy read them), only where the store has none, so a token already set in the new app is kept. A failed restore removes the ones it wrote.
 - The normalized app-wide direct prompt selection is set by legacy transfer only when the selected source template was admitted.
+- `llama_default_context_length` (512 to 1,048,576) and `llama_default_kv_cache_type` (`auto`, `f16`, `q8_0`, `q4_0`) are legacy's `advancedSettings.llamaDefaultContextLength` and `llamaDefaultKvCacheType` (`schemas.ts` 3342-3343), global and synced like legacy; they only feed local runnability estimates (`hf_browser/mod.rs` 1416-1439), and the legacy import carries them (a value outside the range is dropped and recorded).
 
 ## Deliberate differences from legacy
 

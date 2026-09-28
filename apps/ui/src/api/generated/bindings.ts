@@ -33,6 +33,30 @@ export const commands = {
 	appUiStateUpdate: (request: AppUiStateUpdateRequest) => typedError<AppUiStateView, ApiError>(__TAURI_INVOKE("app_ui_state_update", { request })),
 	purgeNoticesList: () => typedError<PurgeNoticeList, ApiError>(__TAURI_INVOKE("purge_notices_list")),
 	purgeNoticeDismiss: (request: PurgeNoticeDismissRequest) => typedError<null, ApiError>(__TAURI_INVOKE("purge_notice_dismiss", { request })),
+	llamaDevices: () => typedError<LlamaDeviceList, ApiError>(__TAURI_INVOKE("llama_devices")),
+	llamaContextInfo: (request: LlamaContextInfoRequest) => typedError<LlamaContextInfo, ApiError>(__TAURI_INVOKE("llama_context_info", { request })),
+	llamaChatTemplate: (request: LlamaChatTemplateRequest) => typedError<LlamaChatTemplate, ApiError>(__TAURI_INVOKE("llama_chat_template", { request })),
+	llamaUnload: () => typedError<null, ApiError>(__TAURI_INVOKE("llama_unload")),
+	localModelsList: () => typedError<LocalModelList, ApiError>(__TAURI_INVOKE("local_models_list")),
+	localModelDelete: (request: LocalModelDeleteRequest) => typedError<LocalModelDeleted, ApiError>(__TAURI_INVOKE("local_model_delete", { request })),
+	localModelAdopt: (request: LocalModelAdoptRequest) => typedError<LocalModelAdopted, ApiError>(__TAURI_INVOKE("local_model_adopt", { request })),
+	localModelsDirGet: () => typedError<LocalModelsDir, ApiError>(__TAURI_INVOKE("local_models_dir_get")),
+	localModelsDirSet: (request: LocalModelsDirSetRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("local_models_dir_set", { request })),
+	localFileRunnability: (request: LocalFileRunnabilityRequest) => typedError<LocalFileRunnability, ApiError>(__TAURI_INVOKE("local_file_runnability", { request })),
+	hfSearch: (request: HfSearchRequest) => typedError<HfSearchResults, ApiError>(__TAURI_INVOKE("hf_search", { request })),
+	hfModelFiles: (request: HfModelRequest) => typedError<HfModelInfo, ApiError>(__TAURI_INVOKE("hf_model_files", { request })),
+	hfReadme: (request: HfReadmeRequest) => typedError<HfReadme, ApiError>(__TAURI_INVOKE("hf_readme", { request })),
+	hfAuthor: (request: HfAuthorRequest) => typedError<HfAuthor, ApiError>(__TAURI_INVOKE("hf_author", { request })),
+	hfAvatars: (request: HfAvatarsRequest) => typedError<HfAvatars, ApiError>(__TAURI_INVOKE("hf_avatars", { request })),
+	hfRunnability: (request: HfRunnabilityRequest) => typedError<HfRunnability, ApiError>(__TAURI_INVOKE("hf_runnability", { request })),
+	hfRecommendation: (request: HfRecommendationRequest) => typedError<HfRecommendation, ApiError>(__TAURI_INVOKE("hf_recommendation", { request })),
+	hfDownload: (request: HfDownloadRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("hf_download", { request })),
+	hfAuthStatus: () => typedError<HfTokenStatus, ApiError>(__TAURI_INVOKE("hf_auth_status")),
+	hfAuthSave: (request: HfAuthSaveRequest) => typedError<HfTokenStatus, ApiError>(__TAURI_INVOKE("hf_auth_save", { request })),
+	hfAuthClear: () => typedError<null, ApiError>(__TAURI_INVOKE("hf_auth_clear")),
+	ollamaModelsList: (request: OllamaModelsRequest) => typedError<OllamaModelList, ApiError>(__TAURI_INVOKE("ollama_models_list", { request })),
+	ollamaModelDelete: (request: OllamaModelDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("ollama_model_delete", { request })),
+	ollamaPull: (request: OllamaPullRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("ollama_pull", { request })),
 };
 
 /** Events */
@@ -59,7 +83,7 @@ export type ApiError = {
  */
 export type ApiErrorCode = "not_found" | "conflict" | "invalid_input" | "unsupported" | "unavailable" | "cancelled" | "busy" | "internal" | "model_required" | "model_unavailable";
 
-export type ApiErrorDetails = { type: "invalid_field"; field: string } | { type: "model"; model: RequiredModel };
+export type ApiErrorDetails = { type: "invalid_field"; field: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason };
 
 /**
  *  Application-wide events the host broadcasts to every window.
@@ -377,6 +401,9 @@ export type GenerationEvent = { type: "started"; turn_id: string } | { type: "de
 
 export type GenerationFailureCode = "invalid_conversation" | "missing_model" | "context_unavailable" | "speaker_unavailable" | "provider_unavailable" | "provider_rejected" | "empty_output" | "timed_out" | "recovery_unavailable" | "embedding_unavailable" | "internal";
 
+/**  Where a model and its KV cache would live. */
+export type GpuModeDto = "full" | "near_full" | "kv_spill" | "kv_heavy_spill" | "ram_model_vram_ctx" | "ram_model_ram_ctx" | "most_layers" | "half_layers" | "few_layers" | "cpu";
+
 export type GroupChatMode = "conversation" | "roleplay";
 
 /**
@@ -390,7 +417,390 @@ export type GroupMembersSettings = {
 	participants: ParticipantSettings[],
 };
 
+export type HfAuthSaveRequest = {
+	token: string,
+};
+
+export type HfAuthor = {
+	profile: HfAuthorProfile,
+	models: HfModelSummary[],
+};
+
+export type HfAuthorOverview = {
+	name: string,
+	fullname: string | null,
+	avatar_url: string | null,
+	details: string | null,
+	kind: string | null,
+	is_pro: boolean,
+	num_models: number,
+	num_datasets: number,
+	num_spaces: number,
+	num_likes: number,
+	num_followers: number,
+	num_following: number,
+	created_at: string | null,
+};
+
+/**
+ *  The author's profile, or why neither the user nor the organization
+ *  profile could be read.
+ */
+export type HfAuthorProfile = { type: "found"; overview: HfAuthorOverview } | { type: "unavailable"; failure: HfFailure | null };
+
+/**
+ *  An author's GGUF models (`limit` defaults to 50, capped at 100) and
+ *  profile.
+ */
+export type HfAuthorRequest = {
+	author: string,
+	search: string | null,
+	limit: number | null,
+	sort: HfSort | null,
+	offset: number | null,
+};
+
+/**  An author's avatar; `url` is `None` when neither lookup found one. */
+export type HfAvatar = {
+	author: string,
+	url: string | null,
+};
+
+export type HfAvatars = {
+	avatars: HfAvatar[],
+};
+
+export type HfAvatarsRequest = {
+	authors: string[],
+};
+
+export type HfBestRecommendation = {
+	filename: string,
+	context_length: number,
+	kv_type: string,
+	score: number,
+	viable: boolean,
+};
+
+/**  Chat models (GGUF files) or image models. */
+export type HfBrowseMode = "llm" | "image";
+
+/**
+ *  Downloads a GGUF file with its projector and MTP draft model as one
+ *  job, pinned to `revision` (the current one when absent).
+ */
+export type HfDownloadRequest = {
+	repo: string,
+	revision: string | null,
+	file: string,
+	mmproj_file: string | null,
+	mtp_file: string | null,
+	/**  The model file carries its own MTP head. */
+	mtp_bundled: boolean,
+	setup: HfDownloadSetup,
+	client_operation_id: string,
+};
+
+/**
+ *  How a downloaded model is set up; with `create_model` it becomes a
+ *  llama.cpp model (an existing one with the same file is reused).
+ */
+export type HfDownloadSetup = {
+	display_name: string | null,
+	context_length: number | null,
+	kv_type: string | null,
+	offload_kqv: boolean | null,
+	gpu_layers: number | null,
+	model_offload: HfModelOffload | null,
+	create_model: boolean,
+};
+
+/**
+ *  Why a Hugging Face request failed, for the UI to act on: ask for a
+ *  token, replace it, accept the repository's license, or wait.
+ */
+export type HfFailure = { type: "token_missing" } | { type: "token_invalid" } | { type: "gated_access"; model_id: string } | { type: "not_found" } | { type: "rate_limited" } | { type: "offline" };
+
+export type HfFileRecommendation = {
+	filename: string,
+	size: number,
+	quantization: string,
+	quant_quality: number,
+	max_context_f16: number,
+	max_context_q8_0: number,
+	max_context_q4_0: number,
+	optimal_gpu_ctx: number,
+	optimal_ram_ctx: number,
+	/**
+	 *  The planner's longest context per KV type, next to the chosen
+	 *  sidecars.
+	 */
+	max_context_by_kv_type: HfKvContextLimit[],
+};
+
+/**  How much memory the planner's choice leaves. */
+export type HfHeadroomStatus = "comfortable" | "ok" | "tight" | "risky";
+
+export type HfKvContextLimit = {
+	kv_type: string,
+	max_context: number,
+};
+
+/**  Where the planner is asked to keep the KV cache. */
+export type HfKvPlacement = "auto" | "ram" | "vram";
+
+export type HfKvType = {
+	kv_type: string,
+	bytes_per_value: number | null,
+};
+
+export type HfModelArch = {
+	architecture: string | null,
+	block_count: number | null,
+	embedding_length: number | null,
+	head_count: number | null,
+	head_count_kv: number | null,
+	context_length: number | null,
+	expert_count: number | null,
+	expert_used_count: number | null,
+	is_moe: boolean,
+	active_weight_ratio: number | null,
+	incomplete_parse: boolean,
+};
+
+export type HfModelFile = {
+	filename: string,
+	size: number,
+	quantization: string,
+	is_mmproj: boolean,
+	is_mtp: boolean,
+	imatrix: boolean,
+};
+
+/**  A repository's downloadable files, smallest first, and its GGUF summary. */
+export type HfModelInfo = {
+	model_id: string,
+	/**
+	 *  The commit the files were listed at; runnability and downloads pass
+	 *  it back.
+	 */
+	revision: string | null,
+	author: string,
+	likes: number,
+	downloads: number,
+	tags: string[],
+	architecture: string | null,
+	context_length: number | null,
+	parameter_count: number | null,
+	files: HfModelFile[],
+};
+
+export type HfModelOffload = "auto" | "cpu" | "gpu" | "mixed";
+
+export type HfModelRequest = {
+	model_id: string,
+	mode: HfBrowseMode,
+};
+
+export type HfModelSummary = {
+	model_id: string,
+	author: string,
+	likes: number,
+	downloads: number,
+	tags: string[],
+	pipeline_tag: string | null,
+	last_modified: string | null,
+	trending_score: number | null,
+};
+
+/**
+ *  The planner's report for its choice: the context it allows and uses,
+ *  the memory it needs, its score, the GPU plan (offload share, layers, the
+ *  longest all-VRAM context when the chosen one spills, the KV split), the
+ *  GPU layer count a download stores, a better quantization and the context
+ *  the file switch suggests.
+ */
+export type HfPlan = {
+	filename: string,
+	max_context: number,
+	context_length: number,
+	effective_kv_context: number,
+	kv_bytes: number | null,
+	overhead_bytes: number | null,
+	total_needed_bytes: number | null,
+	gpu_resident_bytes: number | null,
+	headroom_bytes: number | null,
+	vram_budget_bytes: number | null,
+	score: number,
+	label: RunnabilityLabel,
+	fits_vram: boolean,
+	gpu_mode: HfPlanGpuMode,
+	gpu_score: number | null,
+	memory_score: number,
+	kv_score: number,
+	gpu_optimal_context: number,
+	ram_max_context: number,
+	show_gpu_planning: boolean,
+	offload_percent: number,
+	total_layers: number | null,
+	recommended_layers: number | null,
+	full_gpu_context: number | null,
+	kv_distribution: HfPlanKvDistribution | null,
+	mixed_gpu_layers: number | null,
+	requested_gpu_layers: number | null,
+	upgrade: HfPlanUpgrade | null,
+	default_context: number,
+	headroom: HfHeadroomStatus,
+	run: HfRunStatus,
+	prefill_speed: HfSpeed,
+	generation_speed: HfSpeed,
+	/**  The KV offload a download with this choice stores. */
+	offload_kqv: boolean | null,
+};
+
+/**  The planner's current choice for one file. */
+export type HfPlanChoice = {
+	filename: string,
+	kv_type: string,
+	context_length: number,
+	model_offload: HfModelOffload,
+	kv_placement: HfKvPlacement,
+};
+
+/**  Where the planner expects the model and its KV cache to live. */
+export type HfPlanGpuMode = "full" | "near_full" | "kv_spill" | "kv_heavy_spill" | "ram_model_vram_ctx" | "ram_model_ram_ctx" | "most_layers" | "half_layers" | "few_layers" | "cpu" | "gpu_unavailable";
+
+export type HfPlanKvDistribution = {
+	vram_percent: number,
+	on_vram_bytes: number | null,
+	on_ram_bytes: number | null,
+};
+
+export type HfPlanUpgrade = {
+	filename: string,
+	score: number,
+};
+
+/**  The model card without its front matter. */
+export type HfReadme = {
+	markdown: string,
+};
+
+export type HfReadmeRequest = {
+	model_id: string,
+};
+
+/**
+ *  The recommended file, context and KV type, with the limits the download
+ *  planner shows. `gpu_layer_count` is every block plus the output layer.
+ */
+export type HfRecommendation = {
+	hardware_available: boolean,
+	metadata_available: boolean,
+	available_ram: number,
+	available_vram: number,
+	supports_gpu_offload: boolean,
+	unified_memory: boolean,
+	total_available: number,
+	kv_base_per_token: number | null,
+	kv_context_cap: number | null,
+	model_max_context: number,
+	arch: HfModelArch | null,
+	files: HfFileRecommendation[],
+	best: HfBestRecommendation | null,
+	gpu_layer_count: number | null,
+	kv_types: HfKvType[],
+	plan: HfPlan | null,
+};
+
+/**
+ *  A recommendation for the files of `model_id`; `sidecar_reserve_bytes`
+ *  (the projector and draft model chosen) and `plan` (the planner's
+ *  current choice) shape the planner's limits and report.
+ */
+export type HfRecommendationRequest = {
+	model_id: string,
+	revision: string | null,
+	files: HfRunnabilityFile[],
+	ollama_account_id: string | null,
+	sidecar_reserve_bytes: number | null,
+	plan: HfPlanChoice | null,
+};
+
+export type HfRunStatus = "yes" | "borderline" | "no";
+
+/**
+ *  Scores per file. `hardware_available` is false for an Ollama account
+ *  without a Sprout probe (no scores then); `metadata_available` is false
+ *  when the GGUF header could not be read, so the KV cache is not counted.
+ */
+export type HfRunnability = {
+	hardware_available: boolean,
+	metadata_available: boolean,
+	scores: HfRunnabilityScore[],
+};
+
+export type HfRunnabilityFile = {
+	filename: string,
+	size: number,
+};
+
+/**
+ *  Files of `model_id` judged against this machine, or against the machine
+ *  behind an Ollama account's Sprout probe.
+ */
+export type HfRunnabilityRequest = {
+	model_id: string,
+	/**
+	 *  The commit to read headers at (`HfModelInfo::revision`); `main` when
+	 *  absent.
+	 */
+	revision: string | null,
+	files: HfRunnabilityFile[],
+	ollama_account_id: string | null,
+};
+
+export type HfRunnabilityScore = {
+	filename: string,
+	score: number,
+	label: RunnabilityLabel,
+	fits_in_ram: boolean,
+	fits_in_vram: boolean,
+	gpu_mode: GpuModeDto,
+};
+
+/**  A model search. `limit` defaults to 20 and is capped at 100. */
+export type HfSearchRequest = {
+	query: string,
+	limit: number | null,
+	sort: HfSort | null,
+	offset: number | null,
+	author: string | null,
+	mode: HfBrowseMode,
+	/**  Also lists repositories without GGUF files. */
+	unfiltered: boolean,
+};
+
+export type HfSearchResults = {
+	models: HfModelSummary[],
+};
+
+export type HfSort = "trending_score" | "downloads" | "likes" | "last_modified";
+
+export type HfSpeed = "fast" | "medium" | "slow";
+
+/**
+ *  Whether the saved token works. `Unknown` means Hugging Face could not be
+ *  asked (`offline`) or answered with an error that is not a refusal.
+ */
+export type HfTokenStatus = { type: "missing" } | { type: "valid"; username: string } | { type: "invalid" } | { type: "unknown"; offline: boolean };
+
 export type IdChange = { type: "set"; id: string } | { type: "reset" };
+
+/**  Returned by every command that starts background work. */
+export type JobAccepted = {
+	job_id: string,
+};
 
 export type JobCancelRequest = {
 	job_id: string,
@@ -409,13 +819,17 @@ export type JobFailureDto = {
 	retryable: boolean,
 	/**  The optional model whose absence failed the job. */
 	model: RequiredModel | null,
+	/**  Why Hugging Face refused a download. */
+	hugging_face: HfFailure | null,
+	/**  Why an Ollama pull failed. */
+	ollama: OllamaFailure | null,
 };
 
 export type JobGetRequest = {
 	job_id: string,
 };
 
-export type JobKindDto = "artifact_install" | "artifact_verify" | "runtime_prepare" | "model_load" | "memory_extraction" | "memory_consolidation" | "companion_growth" | "companion_consolidation" | "companion_soul_writer" | "conversation_generation" | "vector_index_build" | "creation_run" | "image_generate" | "media_transform" | "transfer_import" | "transfer_export" | "backup_export" | "backup_restore" | "sync_session" | "speech_transcribe" | "speech_synthesize" | "embedding_benchmark" | "maintenance";
+export type JobKindDto = "artifact_install" | "artifact_verify" | "runtime_prepare" | "model_load" | "memory_extraction" | "memory_consolidation" | "companion_growth" | "companion_consolidation" | "companion_soul_writer" | "conversation_generation" | "vector_index_build" | "creation_run" | "image_generate" | "media_transform" | "transfer_import" | "transfer_export" | "backup_export" | "backup_restore" | "sync_session" | "speech_transcribe" | "speech_synthesize" | "embedding_benchmark" | "maintenance" | "model_pull" | "models_folder_move";
 
 export type JobPage = {
 	items: JobView[],
@@ -441,10 +855,21 @@ export type JobProgressDto = {
 
 export type JobProgressUnit = "bytes" | "items" | "permille";
 
-/**  What a finished job produced, where the job kind has a typed result. */
-export type JobResultDto = { type: "artifact_installed" } | { type: "asset"; asset: AssetRef } | { type: "generation_turn"; turn_id: string } | { type: "conversation"; conversation_id: string } | { type: "group"; group_id: string } | { type: "character"; character_id: string } | { type: "model_profile"; model_profile_id: string };
+/**
+ *  What a finished job produced, where the job kind has a typed result.
+ *  `ModelInstalled` names a downloaded model's path and, when the download
+ *  asked for one, the llama.cpp model it became.
+ */
+export type JobResultDto = { type: "artifact_installed" } | { type: "asset"; asset: AssetRef } | { type: "generation_turn"; turn_id: string } | { type: "conversation"; conversation_id: string } | { type: "group"; group_id: string } | { type: "character"; character_id: string } | { type: "model_profile"; model_profile_id: string } | { type: "model_installed"; model_path: string; model_profile_id: string | null } | { type: "model_pulled"; model: string } | { type: "models_folder_moved"; path: string; moved_entries: number; rewired_models: number };
 
 export type JobStateDto = "queued" | "claimed" | "running" | "cancellation_requested" | "cleaning_up" | "succeeded" | "failed" | "cancelled" | "interrupted";
+
+/**
+ *  What the download center shows for a model job: the repository file a
+ *  download installs, the model an Ollama server pulls, the folders a move
+ *  goes between.
+ */
+export type JobSubjectDetail = { type: "model_download"; repo: string; file: string; display_name: string } | { type: "model_pull"; provider_account_id: string; model: string } | { type: "models_folder_move"; from: string; to: string };
 
 /**  What a job works on. */
 export type JobSubjectDto = {
@@ -452,12 +877,13 @@ export type JobSubjectDto = {
 	id: string,
 };
 
-export type JobSubjectKindDto = "conversation" | "group" | "memory_space" | "creation_project" | "artifact_install" | "image_request" | "transfer_plan" | "backup" | "peer" | "speech_request" | "runtime" | "model_profile" | "maintenance";
+export type JobSubjectKindDto = "conversation" | "group" | "memory_space" | "creation_project" | "artifact_install" | "image_request" | "transfer_plan" | "backup" | "peer" | "speech_request" | "runtime" | "model_profile" | "maintenance" | "provider_model";
 
 export type JobView = {
 	id: string,
 	kind: JobKindDto,
 	subject: JobSubjectDto,
+	subject_detail: JobSubjectDetail | null,
 	state: JobStateDto,
 	progress: JobProgressDto,
 	created_at: number,
@@ -537,6 +963,227 @@ export type LaunchGroupResponse = {
  */
 export type LifecycleFilter = "active" | "archived" | "all";
 
+/**  The chat template embedded in a GGUF file. */
+export type LlamaChatTemplate = {
+	template: string,
+};
+
+export type LlamaChatTemplateRequest = {
+	target: LlamaModelFile,
+};
+
+/**  How a model fits this machine with the given settings. */
+export type LlamaContextInfo = {
+	max_context_length: number,
+	recommended_context_length: number | null,
+	available_memory_bytes: number | null,
+	available_vram_bytes: number | null,
+	model_size_bytes: number | null,
+	layer_count: number | null,
+	max_gpu_layers: number | null,
+	supports_gpu_offload: boolean | null,
+	selected_gpu_device_ids: number[] | null,
+	per_device_vram: LlamaDeviceMemory[] | null,
+	estimated_placement: LlamaPlacement | null,
+};
+
+export type LlamaContextInfoRequest = {
+	target: LlamaModelTarget,
+};
+
+/**  A GPU (or accelerator) llama.cpp can offload to. */
+export type LlamaDevice = {
+	index: number,
+	name: string,
+	description: string,
+	backend: string,
+	memory_total: number,
+	memory_free: number,
+	device_type: string,
+};
+
+/**  The devices llama.cpp can use; empty on mobile, where it does not run. */
+export type LlamaDeviceList = {
+	devices: LlamaDevice[],
+};
+
+export type LlamaDeviceMemory = {
+	index: number,
+	memory_free: number,
+	memory_total: number,
+};
+
+/**  Where a draft model (MTP) runs. */
+export type LlamaDraftPlacement = "auto" | "gpu" | "cpu";
+
+export type LlamaGpuDistribution = "balanced" | "proportional" | "priority" | "manual";
+
+export type LlamaGpuLayers = {
+	device_id: number,
+	layers: number,
+};
+
+export type LlamaKvPlacement = "auto" | "split" | "system_ram" | "pin";
+
+/**  A model file, or a saved llama.cpp model's file. */
+export type LlamaModelFile = { type: "file"; model: FileSource } | { type: "saved"; model_profile_id: string };
+
+/**
+ *  A model file with the editor's unsaved settings, or a saved llama.cpp
+ *  model with its stored ones.
+ */
+export type LlamaModelTarget = { type: "draft"; model: FileSource; settings: LlamaSettingsDraft } | { type: "saved"; model_profile_id: string };
+
+export type LlamaPlacement = {
+	total_gpu_layers: number,
+	per_device_layers: number[],
+};
+
+/**
+ *  The model editor's unsaved llama.cpp load settings. KV types are
+ *  llama.cpp type names (`f16`, `q8_0`, ...).
+ */
+export type LlamaSettingsDraft = {
+	offload_kqv: boolean | null,
+	kv_type: string | null,
+	kv_type_k: string | null,
+	kv_type_v: string | null,
+	gpu_layers: number | null,
+	multi_gpu_enabled: boolean | null,
+	gpu_device_ids: number[] | null,
+	gpu_distribution: LlamaGpuDistribution | null,
+	gpu_manual_layers: LlamaGpuLayers[] | null,
+	single_gpu_device_id: number | null,
+	kv_placement: LlamaKvPlacement | null,
+	priority_vram_limit_bytes: number | null,
+	mmproj: FileSource | null,
+	mtp_enabled: boolean | null,
+	mtp_placement: LlamaDraftPlacement | null,
+	mtp_model: FileSource | null,
+	dflash_enabled: boolean | null,
+	dflash_model: FileSource | null,
+};
+
+/**
+ *  How well a model file runs here. Without its GGUF header
+ *  (`metadata_available` false) the KV cache is not counted.
+ */
+export type LocalFileRunnability = {
+	score: number,
+	label: RunnabilityLabel,
+	fits_in_ram: boolean,
+	fits_in_vram: boolean,
+	memory_score: number,
+	gpu_score: number,
+	kv_score: number,
+	gpu_mode: GpuModeDto,
+	quant_score: number,
+	available_ram: number,
+	available_vram: number,
+	model_size: number,
+	quantization: string,
+	metadata_available: boolean,
+};
+
+export type LocalFileRunnabilityRequest = {
+	target: LocalRunnabilityTarget,
+};
+
+/**
+ *  Moves a model file into the models folder, in a folder named after
+ *  `model_name` (else the file's name).
+ */
+export type LocalModelAdoptRequest = {
+	source: FileSource,
+	model_name: string | null,
+};
+
+export type LocalModelAdopted = {
+	path: string,
+};
+
+export type LocalModelDeleteRequest = {
+	path: string,
+};
+
+/**
+ *  A deleted model file: whether llama.cpp was unloaded first because it
+ *  held the file, and the models still pointing at it.
+ */
+export type LocalModelDeleted = {
+	unloaded: boolean,
+	referencing_profiles: LocalModelReference[],
+};
+
+/**  A GGUF file in the models folder. */
+export type LocalModelFile = {
+	/**  The repository its folder is named after. */
+	repo: string,
+	/**  The path below the repository folder, `/`-separated. */
+	filename: string,
+	path: string,
+	size: number,
+	quantization: string,
+	is_mmproj: boolean,
+	is_mtp: boolean,
+	is_dflash: boolean,
+	architecture: string | null,
+	context_length: number | null,
+	used_by: LocalModelReference[],
+};
+
+export type LocalModelList = {
+	files: LocalModelFile[],
+};
+
+/**  Which path of a model points at a file. */
+export type LocalModelPathField = "model" | "mmproj" | "mtp" | "dflash";
+
+/**
+ *  A saved model (or, without an id, the global model defaults) whose
+ *  paths point at a file.
+ */
+export type LocalModelReference = {
+	model_profile_id: string | null,
+	display_name: string | null,
+	fields: LocalModelPathField[],
+};
+
+/**
+ *  What keeps the local models folder busy: an install into it, a move of
+ *  it, or a model llama.cpp holds open from it (the UI offers to unload).
+ */
+export type LocalModelsBusyReason = { type: "install_active"; job_id: string } | { type: "folder_move_active"; job_id: string } | { type: "model_loaded"; path: string };
+
+export type LocalModelsDir = {
+	path: string,
+	default_path: string,
+	is_custom: boolean,
+	model_count: number,
+};
+
+/**
+ *  Switches the models folder, moving what the current one holds and the
+ *  model paths into it when `move_existing` is set.
+ */
+export type LocalModelsDirSetRequest = {
+	path: string,
+	move_existing: boolean,
+	client_operation_id: string,
+};
+
+export type LocalRunnabilityTarget = { type: "draft"; model: FileSource; sidecars: LocalSidecarsDraft } | { type: "saved"; model_profile_id: string };
+
+/**  The files loaded next to a model the editor has not saved. */
+export type LocalSidecarsDraft = {
+	mmproj: FileSource | null,
+	mtp_enabled: boolean,
+	mtp_placement: LlamaDraftPlacement | null,
+	mtp_model: FileSource | null,
+	dflash_enabled: boolean,
+	dflash_model: FileSource | null,
+};
+
 /**  An empty list turns the chat's lorebooks off. */
 export type LorebooksChange = { type: "set"; ids: string[] } | { type: "reset" };
 
@@ -558,6 +1205,47 @@ export type MessagePage = {
 export type MessagePartView = { type: "text"; text: string } | { type: "media"; asset: AssetRef; role: MediaRole };
 
 export type MessageRole = "user" | "assistant" | "system" | "scene";
+
+/**
+ *  Why an Ollama server request failed: it could not be reached (worth a
+ *  retry), the account's credentials could not be read or were refused, the
+ *  server answered with its own error, or a pull ended before it completed.
+ */
+export type OllamaFailure = { type: "offline" } | { type: "credentials_unavailable" } | { type: "credentials_refused" } | { type: "server_error"; message: string } | { type: "incomplete" };
+
+/**  A model an Ollama server has. */
+export type OllamaModel = {
+	name: string,
+	size: number | null,
+	modified_at: string | null,
+	digest: string | null,
+	parameter_size: string | null,
+	quantization_level: string | null,
+	family: string | null,
+};
+
+export type OllamaModelDeleteRequest = {
+	provider_account_id: string,
+	model: string,
+};
+
+export type OllamaModelList = {
+	models: OllamaModel[],
+};
+
+export type OllamaModelsRequest = {
+	provider_account_id: string,
+};
+
+/**
+ *  Pulls `model` (`hf.co/<repo>:<quant>` for a Hugging Face file) into the
+ *  account's Ollama server as a job.
+ */
+export type OllamaPullRequest = {
+	provider_account_id: string,
+	model: string,
+	client_operation_id: string,
+};
 
 export type ParticipantRole = "user" | "character" | "system";
 
@@ -609,6 +1297,8 @@ export type PurgeNoticeView = {
  *  memory, the emotion model (Lettuce Thymos) for companion chats.
  */
 export type RequiredModel = "embedding" | "emotion";
+
+export type RunnabilityLabel = "excellent" | "good" | "marginal" | "poor" | "unrunnable";
 
 export type SendAccepted = {
 	user_message_id: string,

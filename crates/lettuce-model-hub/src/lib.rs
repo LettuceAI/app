@@ -3,6 +3,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 mod companion_emotion;
+mod download_planner;
 mod embedding;
 mod gguf_runnability;
 mod hugging_face;
@@ -14,6 +15,7 @@ mod sprout;
 mod whisper;
 
 pub use companion_emotion::*;
+pub use download_planner::*;
 pub use embedding::*;
 pub use gguf_runnability::*;
 pub use hugging_face::*;

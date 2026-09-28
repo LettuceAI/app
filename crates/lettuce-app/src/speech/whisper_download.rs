@@ -16,7 +16,7 @@ use lettuce_network::{ArtifactDownloadClient, ArtifactDownloadError, ArtifactDow
 use lettuce_types::{AssetId, JobId, TimestampMillis};
 use uuid::Uuid;
 
-const WHISPER_REPOSITORY: &str = "ggerganov/whisper.cpp";
+pub const WHISPER_REPOSITORY: &str = "ggerganov/whisper.cpp";
 const PROGRESS_INTERVAL_BYTES: u64 = 4 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
@@ -25,6 +25,9 @@ pub enum WhisperDownloadSourceError {
     Transport,
     #[error("Whisper download response is invalid")]
     InvalidResponse,
+    /// Hugging Face refused the file with `status`.
+    #[error("the download was refused with status {status}")]
+    Refused { status: u16, signed_in: bool },
 }
 
 #[async_trait]
@@ -530,9 +533,14 @@ fn download_asset_id(model: &RemoteWhisperModel) -> AssetId {
 
 fn map_source_error(error: ArtifactDownloadError) -> WhisperDownloadSourceError {
     match error {
-        ArtifactDownloadError::Transport => WhisperDownloadSourceError::Transport,
+        ArtifactDownloadError::Transport | ArtifactDownloadError::TimedOut => {
+            WhisperDownloadSourceError::Transport
+        }
         ArtifactDownloadError::InvalidRequest | ArtifactDownloadError::InvalidResponse => {
             WhisperDownloadSourceError::InvalidResponse
+        }
+        ArtifactDownloadError::Refused { status, signed_in } => {
+            WhisperDownloadSourceError::Refused { status, signed_in }
         }
     }
 }
@@ -550,6 +558,13 @@ fn classify_error(error: &WhisperDownloadError) -> (JobErrorCode, bool, &'static
             true,
             "download storage unavailable",
         ),
+        WhisperDownloadError::Source(WhisperDownloadSourceError::Refused { status, signed_in }) => {
+            crate::hf_refusal_job_error(*status, *signed_in).unwrap_or((
+                JobErrorCode::IntegrityFailure,
+                false,
+                "download integrity failed",
+            ))
+        }
         WhisperDownloadError::Model(WhisperModelError::Mismatch)
         | WhisperDownloadError::Source(WhisperDownloadSourceError::InvalidResponse) => (
             JobErrorCode::IntegrityFailure,
@@ -575,6 +590,34 @@ mod tests {
     use super::*;
     use lettuce_database::Database;
     use lettuce_jobs::{JobStore, events::JobEvent};
+
+    #[test]
+    fn a_refused_download_fails_with_the_hugging_face_reason() {
+        let refused = |status| {
+            classify_error(&WhisperDownloadError::Source(
+                WhisperDownloadSourceError::Refused {
+                    status,
+                    signed_in: false,
+                },
+            ))
+        };
+        assert_eq!(
+            refused(403),
+            (JobErrorCode::Authentication, false, "hf-gated")
+        );
+        assert_eq!(
+            refused(429),
+            (JobErrorCode::ResourceUnavailable, true, "hf-rate-limited")
+        );
+        assert_eq!(
+            refused(500),
+            (
+                JobErrorCode::IntegrityFailure,
+                false,
+                "download integrity failed"
+            )
+        );
+    }
 
     #[derive(Debug)]
     struct FixtureSource {

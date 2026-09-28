@@ -66,6 +66,8 @@ check_dependency_owner keyring crates/lettuce-settings
 check_dependency_owner cap-std crates/lettuce-platform
 check_dependency_owner cap-primitives crates/lettuce-platform
 
+bash "$repo_root/scripts/check-hugging-face-paths.sh" "$crate_root" "$app_root"
+
 app_tree="$(cargo tree --manifest-path "$repo_root/Cargo.toml" -p lettuce-app --edges normal,build --prefix none --offline)"
 if rg -q '^(tauri|tauri-[a-z-]+|wry|tao|specta|specta-[a-z-]+) v' <<<"$app_tree"; then
   echo "lettuce-app must stay free of Tauri and specta" >&2

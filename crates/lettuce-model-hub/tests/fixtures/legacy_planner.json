@@ -1,0 +1,2113 @@
+{
+ "plans": [
+  {
+   "name": "big-auto",
+   "rec": {
+    "availableRam": 32000000000,
+    "availableVram": 12000000000,
+    "totalAvailable": 44000000000,
+    "kvBasePerToken": 131072,
+    "kvContextCap": null,
+    "modelMaxContext": 131072,
+    "blockCount": 32,
+    "files": [
+     {
+      "filename": "m-Q2_K.gguf",
+      "size": 3000000000,
+      "quantQuality": 55
+     },
+     {
+      "filename": "m-Q4_K_M.gguf",
+      "size": 4900000000,
+      "quantQuality": 80
+     },
+     {
+      "filename": "m-Q8_0.gguf",
+      "size": 8500000000,
+      "quantQuality": 95
+     }
+    ]
+   },
+   "file": "m-Q4_K_M.gguf",
+   "kvType": "q8_0",
+   "modelOffload": "auto",
+   "kvPlacement": "auto",
+   "contextLength": 32768,
+   "sidecarReserveBytes": 0,
+   "supportsGpuOffload": true,
+   "expected": {
+    "maxCtx": 131072,
+    "clampedCtx": 32768,
+    "effectiveKvCtx": 32768,
+    "kvBytes": 4294967296,
+    "overhead": 245000000,
+    "totalNeeded": 9439967296,
+    "gpuResidentBytes": 9439967296,
+    "headroom": 34560032704,
+    "vramBudget": 10800000000,
+    "score": 95,
+    "label": "excellent",
+    "gpuMode": "full",
+    "gpuScore": 100,
+    "memoryScore": 100,
+    "kvScore": 100,
+    "detailFullGpuCtx": 43144,
+    "detailMaxRamCtx": 131072,
+    "showGpuPlanning": true,
+    "offloadPct": 100,
+    "detailTotalLayers": 33,
+    "detailRecLayers": 33,
+    "fullGpuCtx": null,
+    "kvDistribution": {
+     "kvVramPct": 100,
+     "kvOnVram": 4294967296,
+     "kvOnRam": 0
+    },
+    "mixed": 33,
+    "requestedGpuLayers": null,
+    "upgrade": {
+     "filename": "m-Q8_0.gguf",
+     "score": 93
+    },
+    "defaultContext": 43144
+   }
+  },
+  {
+   "name": "big-gpu-ram",
+   "rec": {
+    "availableRam": 32000000000,
+    "availableVram": 12000000000,
+    "totalAvailable": 44000000000,
+    "kvBasePerToken": 131072,
+    "kvContextCap": null,
+    "modelMaxContext": 131072,
+    "blockCount": 32,
+    "files": [
+     {
+      "filename": "m-Q2_K.gguf",
+      "size": 3000000000,
+      "quantQuality": 55
+     },
+     {
+      "filename": "m-Q4_K_M.gguf",
+      "size": 4900000000,
+      "quantQuality": 80
+     },
+     {
+      "filename": "m-Q8_0.gguf",
+      "size": 8500000000,
+      "quantQuality": 95
+     }
+    ]
+   },
+   "file": "m-Q8_0.gguf",
+   "kvType": "f16",
+   "modelOffload": "gpu",
+   "kvPlacement": "ram",
+   "contextLength": 65536,
+   "sidecarReserveBytes": 900000000,
+   "supportsGpuOffload": true,
+   "expected": {
+    "maxCtx": 122737,
+    "clampedCtx": 65536,
+    "effectiveKvCtx": 65536,
+    "kvBytes": 17179869184,
+    "overhead": 425000000,
+    "totalNeeded": 27004869184,
+    "gpuResidentBytes": 9825000000,
+    "headroom": 16995130816,
+    "vramBudget": 9900000000,
+    "score": 88,
+    "label": "excellent",
+    "gpuMode": "kvSpill",
+    "gpuScore": 92,
+    "memoryScore": 70,
+    "kvScore": 99,
+    "detailFullGpuCtx": 3719,
+    "detailMaxRamCtx": 122737,
+    "showGpuPlanning": true,
+    "offloadPct": 100,
+    "detailTotalLayers": 33,
+    "detailRecLayers": 33,
+    "fullGpuCtx": null,
+    "kvDistribution": {
+     "kvVramPct": 0,
+     "kvOnVram": 0,
+     "kvOnRam": 17179869184
+    },
+    "mixed": 33,
+    "requestedGpuLayers": 33,
+    "upgrade": null,
+    "defaultContext": 3719
+   }
+  },
+  {
+   "name": "big-mixed-vram",
+   "rec": {
+    "availableRam": 32000000000,
+    "availableVram": 12000000000,
+    "totalAvailable": 44000000000,
+    "kvBasePerToken": 131072,
+    "kvContextCap": null,
+    "modelMaxContext": 131072,
+    "blockCount": 32,
+    "files": [
+     {
+      "filename": "m-Q2_K.gguf",
+      "size": 3000000000,
+      "quantQuality": 55
+     },
+     {
+      "filename": "m-Q4_K_M.gguf",
+      "size": 4900000000,
+      "quantQuality": 80
+     },
+     {
+      "filename": "m-Q8_0.gguf",
+      "size": 8500000000,
+      "quantQuality": 95
+     }
+    ]
+   },
+   "file": "m-Q8_0.gguf",
+   "kvType": "q4_0",
+   "modelOffload": "mixed",
+   "kvPlacement": "vram",
+   "contextLength": 131072,
+   "sidecarReserveBytes": 0,
+   "supportsGpuOffload": true,
+   "expected": {
+    "maxCtx": 131072,
+    "clampedCtx": 131072,
+    "effectiveKvCtx": 131072,
+    "kvBytes": 8589934592,
+    "overhead": 425000000,
+    "totalNeeded": 17514934592,
+    "gpuResidentBytes": 17514934592,
+    "headroom": 26485065408,
+    "vramBudget": 10800000000,
+    "score": 89,
+    "label": "excellent",
+    "gpuMode": "mostLayers",
+    "gpuScore": 82,
+    "memoryScore": 85,
+    "kvScore": 100,
+    "detailFullGpuCtx": 28610,
+    "detailMaxRamCtx": 131072,
+    "showGpuPlanning": true,
+    "offloadPct": 100,
+    "detailTotalLayers": 33,
+    "detailRecLayers": 20,
+    "fullGpuCtx": 28610,
+    "kvDistribution": {
+     "kvVramPct": 100,
+     "kvOnVram": 8589934592,
+     "kvOnRam": 0
+    },
+    "mixed": 33,
+    "requestedGpuLayers": 33,
+    "upgrade": null,
+    "defaultContext": 28610
+   }
+  },
+  {
+   "name": "big-cpu",
+   "rec": {
+    "availableRam": 32000000000,
+    "availableVram": 12000000000,
+    "totalAvailable": 44000000000,
+    "kvBasePerToken": 131072,
+    "kvContextCap": null,
+    "modelMaxContext": 131072,
+    "blockCount": 32,
+    "files": [
+     {
+      "filename": "m-Q2_K.gguf",
+      "size": 3000000000,
+      "quantQuality": 55
+     },
+     {
+      "filename": "m-Q4_K_M.gguf",
+      "size": 4900000000,
+      "quantQuality": 80
+     },
+     {
+      "filename": "m-Q8_0.gguf",
+      "size": 8500000000,
+      "quantQuality": 95
+     }
+    ]
+   },
+   "file": "m-Q2_K.gguf",
+   "kvType": "q5_1",
+   "modelOffload": "cpu",
+   "kvPlacement": "auto",
+   "contextLength": 8192,
+   "sidecarReserveBytes": 0,
+   "supportsGpuOffload": true,
+   "expected": {
+    "maxCtx": 131072,
+    "clampedCtx": 8192,
+    "effectiveKvCtx": 8192,
+    "kvBytes": 738197504,
+    "overhead": 200000000,
+    "totalNeeded": 3938197504,
+    "gpuResidentBytes": 3938197504,
+    "headroom": 40061802496,
+    "vramBudget": 10800000000,
+    "score": 82,
+    "label": "excellent",
+    "gpuMode": "ramModelRamCtx",
+    "gpuScore": 82,
+    "memoryScore": 100,
+    "kvScore": 100,
+    "detailFullGpuCtx": 84339,
+    "detailMaxRamCtx": 131072,
+    "showGpuPlanning": false,
+    "offloadPct": 0,
+    "detailTotalLayers": 33,
+    "detailRecLayers": 0,
+    "fullGpuCtx": null,
+    "kvDistribution": {
+     "kvVramPct": 0,
+     "kvOnVram": 0,
+     "kvOnRam": 738197504
+    },
+    "mixed": 33,
+    "requestedGpuLayers": 0,
+    "upgrade": {
+     "filename": "m-Q8_0.gguf",
+     "score": 92
+    },
+    "defaultContext": 84339
+   }
+  },
+  {
+   "name": "small-auto",
+   "rec": {
+    "availableRam": 16000000000,
+    "availableVram": 6000000000,
+    "totalAvailable": 22000000000,
+    "kvBasePerToken": 98304,
+    "kvContextCap": 4096,
+    "modelMaxContext": 32768,
+    "blockCount": 40,
+    "files": [
+     {
+      "filename": "m-Q2_K.gguf",
+      "size": 3000000000,
+      "quantQuality": 55
+     },
+     {
+      "filename": "m-Q4_K_M.gguf",
+      "size": 4900000000,
+      "quantQuality": 80
+     },
+     {
+      "filename": "m-Q8_0.gguf",
+      "size": 8500000000,
+      "quantQuality": 95
+     }
+    ]
+   },
+   "file": "m-Q8_0.gguf",
+   "kvType": "q8_0",
+   "modelOffload": "auto",
+   "kvPlacement": "auto",
+   "contextLength": 16384,
+   "sidecarReserveBytes": 600000000,
+   "supportsGpuOffload": true,
+   "expected": {
+    "maxCtx": 32768,
+    "clampedCtx": 16384,
+    "effectiveKvCtx": 4096,
+    "kvBytes": 402653184,
+    "overhead": 425000000,
+    "totalNeeded": 9927653184,
+    "gpuResidentBytes": 9927653184,
+    "headroom": 12072346816,
+    "vramBudget": 4800000000,
+    "score": 89,
+    "label": "excellent",
+    "gpuMode": "ramModelRamCtx",
+    "gpuScore": 82,
+    "memoryScore": 85,
+    "kvScore": 100,
+    "detailFullGpuCtx": 0,
+    "detailMaxRamCtx": 32768,
+    "showGpuPlanning": true,
+    "offloadPct": 48,
+    "detailTotalLayers": 41,
+    "detailRecLayers": 19,
+    "fullGpuCtx": null,
+    "kvDistribution": {
+     "kvVramPct": 56,
+     "kvOnVram": 225485783.04000002,
+     "kvOnRam": 177167400.95999998
+    },
+    "mixed": 18,
+    "requestedGpuLayers": null,
+    "upgrade": null,
+    "defaultContext": 32768
+   }
+  },
+  {
+   "name": "small-gpu",
+   "rec": {
+    "availableRam": 16000000000,
+    "availableVram": 6000000000,
+    "totalAvailable": 22000000000,
+    "kvBasePerToken": 98304,
+    "kvContextCap": 4096,
+    "modelMaxContext": 32768,
+    "blockCount": 40,
+    "files": [
+     {
+      "filename": "m-Q2_K.gguf",
+      "size": 3000000000,
+      "quantQuality": 55
+     },
+     {
+      "filename": "m-Q4_K_M.gguf",
+      "size": 4900000000,
+      "quantQuality": 80
+     },
+     {
+      "filename": "m-Q8_0.gguf",
+      "size": 8500000000,
+      "quantQuality": 95
+     }
+    ]
+   },
+   "file": "m-Q4_K_M.gguf",
+   "kvType": "iq4_nl",
+   "modelOffload": "gpu",
+   "kvPlacement": "vram",
+   "contextLength": 2048,
+   "sidecarReserveBytes": 0,
+   "supportsGpuOffload": true,
+   "expected": {
+    "maxCtx": 32768,
+    "clampedCtx": 2048,
+    "effectiveKvCtx": 2048,
+    "kvBytes": 100663296,
+    "overhead": 245000000,
+    "totalNeeded": 5245663296,
+    "gpuResidentBytes": 5245663296,
+    "headroom": 16754336704,
+    "vramBudget": 5400000000,
+    "score": 95,
+    "label": "excellent",
+    "gpuMode": "full",
+    "gpuScore": 100,
+    "memoryScore": 100,
+    "kvScore": 100,
+    "detailFullGpuCtx": 32768,
+    "detailMaxRamCtx": 32768,
+    "showGpuPlanning": true,
+    "offloadPct": 100,
+    "detailTotalLayers": 41,
+    "detailRecLayers": 41,
+    "fullGpuCtx": null,
+    "kvDistribution": {
+     "kvVramPct": 100,
+     "kvOnVram": 100663296,
+     "kvOnRam": 0
+    },
+    "mixed": 41,
+    "requestedGpuLayers": 41,
+    "upgrade": null,
+    "defaultContext": 32768
+   }
+  },
+  {
+   "name": "small-mixed-ram",
+   "rec": {
+    "availableRam": 16000000000,
+    "availableVram": 6000000000,
+    "totalAvailable": 22000000000,
+    "kvBasePerToken": 98304,
+    "kvContextCap": 4096,
+    "modelMaxContext": 32768,
+    "blockCount": 40,
+    "files": [
+     {
+      "filename": "m-Q2_K.gguf",
+      "size": 3000000000,
+      "quantQuality": 55
+     },
+     {
+      "filename": "m-Q4_K_M.gguf",
+      "size": 4900000000,
+      "quantQuality": 80
+     },
+     {
+      "filename": "m-Q8_0.gguf",
+      "size": 8500000000,
+      "quantQuality": 95
+     }
+    ]
+   },
+   "file": "m-Q8_0.gguf",
+   "kvType": "q4_1",
+   "modelOffload": "mixed",
+   "kvPlacement": "ram",
+   "contextLength": 500,
+   "sidecarReserveBytes": 0,
+   "supportsGpuOffload": false,
+   "expected": {
+    "maxCtx": 32768,
+    "clampedCtx": 1024,
+    "effectiveKvCtx": 1024,
+    "kvBytes": 56623104,
+    "overhead": 425000000,
+    "totalNeeded": 8981623104,
+    "gpuResidentBytes": 8925000000,
+    "headroom": 13018376896,
+    "vramBudget": 5400000000,
+    "score": 83,
+    "label": "excellent",
+    "gpuMode": "halfLayers",
+    "gpuScore": 66.30588235294118,
+    "memoryScore": 85,
+    "kvScore": 100,
+    "detailFullGpuCtx": 0,
+    "detailMaxRamCtx": 32768,
+    "showGpuPlanning": true,
+    "offloadPct": 64,
+    "detailTotalLayers": 41,
+    "detailRecLayers": 24,
+    "fullGpuCtx": null,
+    "kvDistribution": {
+     "kvVramPct": 0,
+     "kvOnVram": 0,
+     "kvOnRam": 56623104
+    },
+    "mixed": 22,
+    "requestedGpuLayers": null,
+    "upgrade": null,
+    "defaultContext": 32768
+   }
+  },
+  {
+   "name": "cpu-auto",
+   "rec": {
+    "availableRam": 8000000000,
+    "availableVram": 0,
+    "totalAvailable": 8000000000,
+    "kvBasePerToken": 65536,
+    "kvContextCap": null,
+    "modelMaxContext": 8192,
+    "blockCount": 28,
+    "files": [
+     {
+      "filename": "m-Q2_K.gguf",
+      "size": 3000000000,
+      "quantQuality": 55
+     },
+     {
+      "filename": "m-Q4_K_M.gguf",
+      "size": 4900000000,
+      "quantQuality": 80
+     },
+     {
+      "filename": "m-Q8_0.gguf",
+      "size": 8500000000,
+      "quantQuality": 95
+     }
+    ]
+   },
+   "file": "m-Q4_K_M.gguf",
+   "kvType": "q8_0",
+   "modelOffload": "auto",
+   "kvPlacement": "auto",
+   "contextLength": 16384,
+   "sidecarReserveBytes": 0,
+   "supportsGpuOffload": false,
+   "expected": {
+    "maxCtx": 8192,
+    "clampedCtx": 8192,
+    "effectiveKvCtx": 8192,
+    "kvBytes": 536870912,
+    "overhead": 245000000,
+    "totalNeeded": 5681870912,
+    "gpuResidentBytes": 5681870912,
+    "headroom": 2318129088,
+    "vramBudget": 0,
+    "score": 76,
+    "label": "good",
+    "gpuMode": "ramModelRamCtx",
+    "gpuScore": 82,
+    "memoryScore": 50,
+    "kvScore": 100,
+    "detailFullGpuCtx": 0,
+    "detailMaxRamCtx": 8192,
+    "showGpuPlanning": false,
+    "offloadPct": 0,
+    "detailTotalLayers": 29,
+    "detailRecLayers": 0,
+    "fullGpuCtx": null,
+    "kvDistribution": null,
+    "mixed": null,
+    "requestedGpuLayers": null,
+    "upgrade": null,
+    "defaultContext": 8192
+   }
+  },
+  {
+   "name": "cpu-gpu",
+   "rec": {
+    "availableRam": 8000000000,
+    "availableVram": 0,
+    "totalAvailable": 8000000000,
+    "kvBasePerToken": 65536,
+    "kvContextCap": null,
+    "modelMaxContext": 8192,
+    "blockCount": 28,
+    "files": [
+     {
+      "filename": "m-Q2_K.gguf",
+      "size": 3000000000,
+      "quantQuality": 55
+     },
+     {
+      "filename": "m-Q4_K_M.gguf",
+      "size": 4900000000,
+      "quantQuality": 80
+     },
+     {
+      "filename": "m-Q8_0.gguf",
+      "size": 8500000000,
+      "quantQuality": 95
+     }
+    ]
+   },
+   "file": "m-Q2_K.gguf",
+   "kvType": "f32",
+   "modelOffload": "gpu",
+   "kvPlacement": "vram",
+   "contextLength": 4096,
+   "sidecarReserveBytes": 0,
+   "supportsGpuOffload": false,
+   "expected": {
+    "maxCtx": 8192,
+    "clampedCtx": 4096,
+    "effectiveKvCtx": 4096,
+    "kvBytes": 1073741824,
+    "overhead": 200000000,
+    "totalNeeded": 4273741824,
+    "gpuResidentBytes": 4273741824,
+    "headroom": 3726258176,
+    "vramBudget": 0,
+    "score": 46,
+    "label": "marginal",
+    "gpuMode": "gpuUnavailable",
+    "gpuScore": 0,
+    "memoryScore": 70,
+    "kvScore": 100,
+    "detailFullGpuCtx": 0,
+    "detailMaxRamCtx": 8192,
+    "showGpuPlanning": false,
+    "offloadPct": 0,
+    "detailTotalLayers": 29,
+    "detailRecLayers": 0,
+    "fullGpuCtx": null,
+    "kvDistribution": null,
+    "mixed": null,
+    "requestedGpuLayers": null,
+    "upgrade": null,
+    "defaultContext": 8192
+   }
+  },
+  {
+   "name": "nometa-auto",
+   "rec": {
+    "availableRam": 16000000000,
+    "availableVram": 8000000000,
+    "totalAvailable": 24000000000,
+    "kvBasePerToken": null,
+    "kvContextCap": null,
+    "modelMaxContext": 8192,
+    "blockCount": null,
+    "files": [
+     {
+      "filename": "m-Q2_K.gguf",
+      "size": 3000000000,
+      "quantQuality": 55
+     },
+     {
+      "filename": "m-Q4_K_M.gguf",
+      "size": 4900000000,
+      "quantQuality": 80
+     },
+     {
+      "filename": "m-Q8_0.gguf",
+      "size": 8500000000,
+      "quantQuality": 95
+     }
+    ]
+   },
+   "file": "m-Q4_K_M.gguf",
+   "kvType": "q8_0",
+   "modelOffload": "auto",
+   "kvPlacement": "auto",
+   "contextLength": 4096,
+   "sidecarReserveBytes": 0,
+   "supportsGpuOffload": true,
+   "expected": {
+    "maxCtx": 8192,
+    "clampedCtx": 4096,
+    "effectiveKvCtx": 4096,
+    "kvBytes": 0,
+    "overhead": 245000000,
+    "totalNeeded": 5145000000,
+    "gpuResidentBytes": 5145000000,
+    "headroom": 18855000000,
+    "vramBudget": 7200000000,
+    "score": 88,
+    "label": "excellent",
+    "gpuMode": "full",
+    "gpuScore": 100,
+    "memoryScore": 100,
+    "kvScore": 50,
+    "detailFullGpuCtx": 0,
+    "detailMaxRamCtx": 0,
+    "showGpuPlanning": true,
+    "offloadPct": 100,
+    "detailTotalLayers": null,
+    "detailRecLayers": null,
+    "fullGpuCtx": null,
+    "kvDistribution": null,
+    "mixed": null,
+    "requestedGpuLayers": null,
+    "upgrade": {
+     "filename": "m-Q8_0.gguf",
+     "score": 81
+    },
+    "defaultContext": 8192
+   }
+  }
+ ],
+ "scores": [
+  {
+   "args": [
+    6000000000,
+    80,
+    2000000000,
+    16000000000,
+    24000000000,
+    8000000000,
+    500000000
+   ],
+   "modelOffload": "auto",
+   "kvPlacement": "auto",
+   "expected": {
+    "score": 86,
+    "label": "excellent",
+    "fitsVram": true,
+    "gpuMode": "kvSpill",
+    "gpuScore": 84
+   }
+  },
+  {
+   "args": [
+    0,
+    50,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "modelOffload": "auto",
+   "kvPlacement": "auto",
+   "expected": {
+    "score": 33,
+    "label": "poor",
+    "fitsVram": false,
+    "gpuMode": "gpuUnavailable",
+    "gpuScore": 0
+   }
+  },
+  {
+   "args": [
+    9000000000,
+    95,
+    6000000000,
+    12000000000,
+    20000000000,
+    8000000000,
+    0
+   ],
+   "modelOffload": "auto",
+   "kvPlacement": "auto",
+   "expected": {
+    "score": 78,
+    "label": "good",
+    "fitsVram": false,
+    "gpuMode": "ramModelRamCtx",
+    "gpuScore": 82
+   }
+  },
+  {
+   "args": [
+    3000000000,
+    70,
+    500000000,
+    4000000000,
+    12000000000,
+    8000000000,
+    0
+   ],
+   "modelOffload": "auto",
+   "kvPlacement": "auto",
+   "expected": {
+    "score": 93,
+    "label": "excellent",
+    "fitsVram": true,
+    "gpuMode": "full",
+    "gpuScore": 100
+   }
+  },
+  {
+   "args": [
+    20000000000,
+    90,
+    4000000000,
+    16000000000,
+    24000000000,
+    8000000000,
+    0
+   ],
+   "modelOffload": "auto",
+   "kvPlacement": "auto",
+   "expected": {
+    "score": 10,
+    "label": "unrunnable",
+    "fitsVram": false,
+    "gpuMode": "fewLayers",
+    "gpuScore": 47.44
+   }
+  },
+  {
+   "args": [
+    6000000000,
+    80,
+    2000000000,
+    16000000000,
+    24000000000,
+    8000000000,
+    500000000
+   ],
+   "modelOffload": "auto",
+   "kvPlacement": "ram",
+   "expected": {
+    "score": 88,
+    "label": "excellent",
+    "fitsVram": false,
+    "gpuMode": "kvSpill",
+    "gpuScore": 92
+   }
+  },
+  {
+   "args": [
+    0,
+    50,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "modelOffload": "auto",
+   "kvPlacement": "ram",
+   "expected": {
+    "score": 33,
+    "label": "poor",
+    "fitsVram": false,
+    "gpuMode": "gpuUnavailable",
+    "gpuScore": 0
+   }
+  },
+  {
+   "args": [
+    9000000000,
+    95,
+    6000000000,
+    12000000000,
+    20000000000,
+    8000000000,
+    0
+   ],
+   "modelOffload": "auto",
+   "kvPlacement": "ram",
+   "expected": {
+    "score": 78,
+    "label": "good",
+    "fitsVram": false,
+    "gpuMode": "ramModelRamCtx",
+    "gpuScore": 82
+   }
+  },
+  {
+   "args": [
+    3000000000,
+    70,
+    500000000,
+    4000000000,
+    12000000000,
+    8000000000,
+    0
+   ],
+   "modelOffload": "auto",
+   "kvPlacement": "ram",
+   "expected": {
+    "score": 90,
+    "label": "excellent",
+    "fitsVram": false,
+    "gpuMode": "kvSpill",
+    "gpuScore": 92
+   }
+  },
+  {
+   "args": [
+    20000000000,
+    90,
+    4000000000,
+    16000000000,
+    24000000000,
+    8000000000,
+    0
+   ],
+   "modelOffload": "auto",
+   "kvPlacement": "ram",
+   "expected": {
+    "score": 10,
+    "label": "unrunnable",
+    "fitsVram": false,
+    "gpuMode": "fewLayers",
+    "gpuScore": 51.44
+   }
+  },
+  {
+   "args": [
+    6000000000,
+    80,
+    2000000000,
+    16000000000,
+    24000000000,
+    8000000000,
+    500000000
+   ],
+   "modelOffload": "auto",
+   "kvPlacement": "vram",
+   "expected": {
+    "score": 86,
+    "label": "excellent",
+    "fitsVram": true,
+    "gpuMode": "kvSpill",
+    "gpuScore": 84
+   }
+  },
+  {
+   "args": [
+    0,
+    50,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "modelOffload": "auto",
+   "kvPlacement": "vram",
+   "expected": {
+    "score": 33,
+    "label": "poor",
+    "fitsVram": false,
+    "gpuMode": "gpuUnavailable",
+    "gpuScore": 0
+   }
+  },
+  {
+   "args": [
+    9000000000,
+    95,
+    6000000000,
+    12000000000,
+    20000000000,
+    8000000000,
+    0
+   ],
+   "modelOffload": "auto",
+   "kvPlacement": "vram",
+   "expected": {
+    "score": 82,
+    "label": "excellent",
+    "fitsVram": false,
+    "gpuMode": "ramModelVramCtx",
+    "gpuScore": 92
+   }
+  },
+  {
+   "args": [
+    3000000000,
+    70,
+    500000000,
+    4000000000,
+    12000000000,
+    8000000000,
+    0
+   ],
+   "modelOffload": "auto",
+   "kvPlacement": "vram",
+   "expected": {
+    "score": 93,
+    "label": "excellent",
+    "fitsVram": true,
+    "gpuMode": "full",
+    "gpuScore": 100
+   }
+  },
+  {
+   "args": [
+    20000000000,
+    90,
+    4000000000,
+    16000000000,
+    24000000000,
+    8000000000,
+    0
+   ],
+   "modelOffload": "auto",
+   "kvPlacement": "vram",
+   "expected": {
+    "score": 10,
+    "label": "unrunnable",
+    "fitsVram": false,
+    "gpuMode": "fewLayers",
+    "gpuScore": 47.44
+   }
+  },
+  {
+   "args": [
+    6000000000,
+    80,
+    2000000000,
+    16000000000,
+    24000000000,
+    8000000000,
+    500000000
+   ],
+   "modelOffload": "cpu",
+   "kvPlacement": "auto",
+   "expected": {
+    "score": 85,
+    "label": "excellent",
+    "fitsVram": false,
+    "gpuMode": "ramModelRamCtx",
+    "gpuScore": 82
+   }
+  },
+  {
+   "args": [
+    0,
+    50,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "modelOffload": "cpu",
+   "kvPlacement": "auto",
+   "expected": {
+    "score": 33,
+    "label": "poor",
+    "fitsVram": false,
+    "gpuMode": "cpu",
+    "gpuScore": 0
+   }
+  },
+  {
+   "args": [
+    9000000000,
+    95,
+    6000000000,
+    12000000000,
+    20000000000,
+    8000000000,
+    0
+   ],
+   "modelOffload": "cpu",
+   "kvPlacement": "auto",
+   "expected": {
+    "score": 78,
+    "label": "good",
+    "fitsVram": false,
+    "gpuMode": "ramModelRamCtx",
+    "gpuScore": 82
+   }
+  },
+  {
+   "args": [
+    3000000000,
+    70,
+    500000000,
+    4000000000,
+    12000000000,
+    8000000000,
+    0
+   ],
+   "modelOffload": "cpu",
+   "kvPlacement": "auto",
+   "expected": {
+    "score": 86,
+    "label": "excellent",
+    "fitsVram": false,
+    "gpuMode": "ramModelRamCtx",
+    "gpuScore": 82
+   }
+  },
+  {
+   "args": [
+    20000000000,
+    90,
+    4000000000,
+    16000000000,
+    24000000000,
+    8000000000,
+    0
+   ],
+   "modelOffload": "cpu",
+   "kvPlacement": "auto",
+   "expected": {
+    "score": 10,
+    "label": "unrunnable",
+    "fitsVram": false,
+    "gpuMode": "cpu",
+    "gpuScore": 0
+   }
+  },
+  {
+   "args": [
+    6000000000,
+    80,
+    2000000000,
+    16000000000,
+    24000000000,
+    8000000000,
+    500000000
+   ],
+   "modelOffload": "cpu",
+   "kvPlacement": "ram",
+   "expected": {
+    "score": 85,
+    "label": "excellent",
+    "fitsVram": false,
+    "gpuMode": "ramModelRamCtx",
+    "gpuScore": 82
+   }
+  },
+  {
+   "args": [
+    0,
+    50,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "modelOffload": "cpu",
+   "kvPlacement": "ram",
+   "expected": {
+    "score": 33,
+    "label": "poor",
+    "fitsVram": false,
+    "gpuMode": "cpu",
+    "gpuScore": 0
+   }
+  },
+  {
+   "args": [
+    9000000000,
+    95,
+    6000000000,
+    12000000000,
+    20000000000,
+    8000000000,
+    0
+   ],
+   "modelOffload": "cpu",
+   "kvPlacement": "ram",
+   "expected": {
+    "score": 78,
+    "label": "good",
+    "fitsVram": false,
+    "gpuMode": "ramModelRamCtx",
+    "gpuScore": 82
+   }
+  },
+  {
+   "args": [
+    3000000000,
+    70,
+    500000000,
+    4000000000,
+    12000000000,
+    8000000000,
+    0
+   ],
+   "modelOffload": "cpu",
+   "kvPlacement": "ram",
+   "expected": {
+    "score": 86,
+    "label": "excellent",
+    "fitsVram": false,
+    "gpuMode": "ramModelRamCtx",
+    "gpuScore": 82
+   }
+  },
+  {
+   "args": [
+    20000000000,
+    90,
+    4000000000,
+    16000000000,
+    24000000000,
+    8000000000,
+    0
+   ],
+   "modelOffload": "cpu",
+   "kvPlacement": "ram",
+   "expected": {
+    "score": 10,
+    "label": "unrunnable",
+    "fitsVram": false,
+    "gpuMode": "cpu",
+    "gpuScore": 0
+   }
+  },
+  {
+   "args": [
+    6000000000,
+    80,
+    2000000000,
+    16000000000,
+    24000000000,
+    8000000000,
+    500000000
+   ],
+   "modelOffload": "cpu",
+   "kvPlacement": "vram",
+   "expected": {
+    "score": 88,
+    "label": "excellent",
+    "fitsVram": false,
+    "gpuMode": "ramModelVramCtx",
+    "gpuScore": 92
+   }
+  },
+  {
+   "args": [
+    0,
+    50,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "modelOffload": "cpu",
+   "kvPlacement": "vram",
+   "expected": {
+    "score": 33,
+    "label": "poor",
+    "fitsVram": false,
+    "gpuMode": "cpu",
+    "gpuScore": 0
+   }
+  },
+  {
+   "args": [
+    9000000000,
+    95,
+    6000000000,
+    12000000000,
+    20000000000,
+    8000000000,
+    0
+   ],
+   "modelOffload": "cpu",
+   "kvPlacement": "vram",
+   "expected": {
+    "score": 82,
+    "label": "excellent",
+    "fitsVram": false,
+    "gpuMode": "ramModelVramCtx",
+    "gpuScore": 92
+   }
+  },
+  {
+   "args": [
+    3000000000,
+    70,
+    500000000,
+    4000000000,
+    12000000000,
+    8000000000,
+    0
+   ],
+   "modelOffload": "cpu",
+   "kvPlacement": "vram",
+   "expected": {
+    "score": 90,
+    "label": "excellent",
+    "fitsVram": false,
+    "gpuMode": "ramModelVramCtx",
+    "gpuScore": 92
+   }
+  },
+  {
+   "args": [
+    20000000000,
+    90,
+    4000000000,
+    16000000000,
+    24000000000,
+    8000000000,
+    0
+   ],
+   "modelOffload": "cpu",
+   "kvPlacement": "vram",
+   "expected": {
+    "score": 10,
+    "label": "unrunnable",
+    "fitsVram": false,
+    "gpuMode": "ramModelVramCtx",
+    "gpuScore": 0
+   }
+  },
+  {
+   "args": [
+    6000000000,
+    80,
+    2000000000,
+    16000000000,
+    24000000000,
+    8000000000,
+    500000000
+   ],
+   "modelOffload": "gpu",
+   "kvPlacement": "auto",
+   "expected": {
+    "score": 86,
+    "label": "excellent",
+    "fitsVram": true,
+    "gpuMode": "kvSpill",
+    "gpuScore": 84
+   }
+  },
+  {
+   "args": [
+    0,
+    50,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "modelOffload": "gpu",
+   "kvPlacement": "auto",
+   "expected": {
+    "score": 33,
+    "label": "poor",
+    "fitsVram": false,
+    "gpuMode": "gpuUnavailable",
+    "gpuScore": 0
+   }
+  },
+  {
+   "args": [
+    9000000000,
+    95,
+    6000000000,
+    12000000000,
+    20000000000,
+    8000000000,
+    0
+   ],
+   "modelOffload": "gpu",
+   "kvPlacement": "auto",
+   "expected": {
+    "score": 52,
+    "label": "marginal",
+    "fitsVram": false,
+    "gpuMode": "gpuUnavailable",
+    "gpuScore": 8
+   }
+  },
+  {
+   "args": [
+    3000000000,
+    70,
+    500000000,
+    4000000000,
+    12000000000,
+    8000000000,
+    0
+   ],
+   "modelOffload": "gpu",
+   "kvPlacement": "auto",
+   "expected": {
+    "score": 93,
+    "label": "excellent",
+    "fitsVram": true,
+    "gpuMode": "full",
+    "gpuScore": 100
+   }
+  },
+  {
+   "args": [
+    20000000000,
+    90,
+    4000000000,
+    16000000000,
+    24000000000,
+    8000000000,
+    0
+   ],
+   "modelOffload": "gpu",
+   "kvPlacement": "auto",
+   "expected": {
+    "score": 10,
+    "label": "unrunnable",
+    "fitsVram": false,
+    "gpuMode": "gpuUnavailable",
+    "gpuScore": 8
+   }
+  },
+  {
+   "args": [
+    6000000000,
+    80,
+    2000000000,
+    16000000000,
+    24000000000,
+    8000000000,
+    500000000
+   ],
+   "modelOffload": "gpu",
+   "kvPlacement": "ram",
+   "expected": {
+    "score": 88,
+    "label": "excellent",
+    "fitsVram": false,
+    "gpuMode": "kvSpill",
+    "gpuScore": 92
+   }
+  },
+  {
+   "args": [
+    0,
+    50,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "modelOffload": "gpu",
+   "kvPlacement": "ram",
+   "expected": {
+    "score": 33,
+    "label": "poor",
+    "fitsVram": false,
+    "gpuMode": "gpuUnavailable",
+    "gpuScore": 0
+   }
+  },
+  {
+   "args": [
+    9000000000,
+    95,
+    6000000000,
+    12000000000,
+    20000000000,
+    8000000000,
+    0
+   ],
+   "modelOffload": "gpu",
+   "kvPlacement": "ram",
+   "expected": {
+    "score": 52,
+    "label": "marginal",
+    "fitsVram": false,
+    "gpuMode": "gpuUnavailable",
+    "gpuScore": 8
+   }
+  },
+  {
+   "args": [
+    3000000000,
+    70,
+    500000000,
+    4000000000,
+    12000000000,
+    8000000000,
+    0
+   ],
+   "modelOffload": "gpu",
+   "kvPlacement": "ram",
+   "expected": {
+    "score": 90,
+    "label": "excellent",
+    "fitsVram": false,
+    "gpuMode": "kvSpill",
+    "gpuScore": 92
+   }
+  },
+  {
+   "args": [
+    20000000000,
+    90,
+    4000000000,
+    16000000000,
+    24000000000,
+    8000000000,
+    0
+   ],
+   "modelOffload": "gpu",
+   "kvPlacement": "ram",
+   "expected": {
+    "score": 10,
+    "label": "unrunnable",
+    "fitsVram": false,
+    "gpuMode": "gpuUnavailable",
+    "gpuScore": 8
+   }
+  },
+  {
+   "args": [
+    6000000000,
+    80,
+    2000000000,
+    16000000000,
+    24000000000,
+    8000000000,
+    500000000
+   ],
+   "modelOffload": "gpu",
+   "kvPlacement": "vram",
+   "expected": {
+    "score": 86,
+    "label": "excellent",
+    "fitsVram": true,
+    "gpuMode": "kvSpill",
+    "gpuScore": 84
+   }
+  },
+  {
+   "args": [
+    0,
+    50,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "modelOffload": "gpu",
+   "kvPlacement": "vram",
+   "expected": {
+    "score": 33,
+    "label": "poor",
+    "fitsVram": false,
+    "gpuMode": "gpuUnavailable",
+    "gpuScore": 0
+   }
+  },
+  {
+   "args": [
+    9000000000,
+    95,
+    6000000000,
+    12000000000,
+    20000000000,
+    8000000000,
+    0
+   ],
+   "modelOffload": "gpu",
+   "kvPlacement": "vram",
+   "expected": {
+    "score": 52,
+    "label": "marginal",
+    "fitsVram": false,
+    "gpuMode": "gpuUnavailable",
+    "gpuScore": 8
+   }
+  },
+  {
+   "args": [
+    3000000000,
+    70,
+    500000000,
+    4000000000,
+    12000000000,
+    8000000000,
+    0
+   ],
+   "modelOffload": "gpu",
+   "kvPlacement": "vram",
+   "expected": {
+    "score": 93,
+    "label": "excellent",
+    "fitsVram": true,
+    "gpuMode": "full",
+    "gpuScore": 100
+   }
+  },
+  {
+   "args": [
+    20000000000,
+    90,
+    4000000000,
+    16000000000,
+    24000000000,
+    8000000000,
+    0
+   ],
+   "modelOffload": "gpu",
+   "kvPlacement": "vram",
+   "expected": {
+    "score": 10,
+    "label": "unrunnable",
+    "fitsVram": false,
+    "gpuMode": "gpuUnavailable",
+    "gpuScore": 8
+   }
+  },
+  {
+   "args": [
+    6000000000,
+    80,
+    2000000000,
+    16000000000,
+    24000000000,
+    8000000000,
+    500000000
+   ],
+   "modelOffload": "mixed",
+   "kvPlacement": "auto",
+   "expected": {
+    "score": 85,
+    "label": "excellent",
+    "fitsVram": false,
+    "gpuMode": "mostLayers",
+    "gpuScore": 82
+   }
+  },
+  {
+   "args": [
+    0,
+    50,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "modelOffload": "mixed",
+   "kvPlacement": "auto",
+   "expected": {
+    "score": 33,
+    "label": "poor",
+    "fitsVram": false,
+    "gpuMode": "cpu",
+    "gpuScore": 0
+   }
+  },
+  {
+   "args": [
+    9000000000,
+    95,
+    6000000000,
+    12000000000,
+    20000000000,
+    8000000000,
+    0
+   ],
+   "modelOffload": "mixed",
+   "kvPlacement": "auto",
+   "expected": {
+    "score": 74,
+    "label": "good",
+    "fitsVram": false,
+    "gpuMode": "mostLayers",
+    "gpuScore": 71.2
+   }
+  },
+  {
+   "args": [
+    3000000000,
+    70,
+    500000000,
+    4000000000,
+    12000000000,
+    8000000000,
+    0
+   ],
+   "modelOffload": "mixed",
+   "kvPlacement": "auto",
+   "expected": {
+    "score": 91,
+    "label": "excellent",
+    "fitsVram": true,
+    "gpuMode": "full",
+    "gpuScore": 96
+   }
+  },
+  {
+   "args": [
+    20000000000,
+    90,
+    4000000000,
+    16000000000,
+    24000000000,
+    8000000000,
+    0
+   ],
+   "modelOffload": "mixed",
+   "kvPlacement": "auto",
+   "expected": {
+    "score": 10,
+    "label": "unrunnable",
+    "fitsVram": false,
+    "gpuMode": "fewLayers",
+    "gpuScore": 47.44
+   }
+  },
+  {
+   "args": [
+    6000000000,
+    80,
+    2000000000,
+    16000000000,
+    24000000000,
+    8000000000,
+    500000000
+   ],
+   "modelOffload": "mixed",
+   "kvPlacement": "ram",
+   "expected": {
+    "score": 88,
+    "label": "excellent",
+    "fitsVram": false,
+    "gpuMode": "kvSpill",
+    "gpuScore": 92
+   }
+  },
+  {
+   "args": [
+    0,
+    50,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "modelOffload": "mixed",
+   "kvPlacement": "ram",
+   "expected": {
+    "score": 33,
+    "label": "poor",
+    "fitsVram": false,
+    "gpuMode": "cpu",
+    "gpuScore": 0
+   }
+  },
+  {
+   "args": [
+    9000000000,
+    95,
+    6000000000,
+    12000000000,
+    20000000000,
+    8000000000,
+    0
+   ],
+   "modelOffload": "mixed",
+   "kvPlacement": "ram",
+   "expected": {
+    "score": 76,
+    "label": "good",
+    "fitsVram": false,
+    "gpuMode": "mostLayers",
+    "gpuScore": 75.2
+   }
+  },
+  {
+   "args": [
+    3000000000,
+    70,
+    500000000,
+    4000000000,
+    12000000000,
+    8000000000,
+    0
+   ],
+   "modelOffload": "mixed",
+   "kvPlacement": "ram",
+   "expected": {
+    "score": 90,
+    "label": "excellent",
+    "fitsVram": false,
+    "gpuMode": "kvSpill",
+    "gpuScore": 92
+   }
+  },
+  {
+   "args": [
+    20000000000,
+    90,
+    4000000000,
+    16000000000,
+    24000000000,
+    8000000000,
+    0
+   ],
+   "modelOffload": "mixed",
+   "kvPlacement": "ram",
+   "expected": {
+    "score": 10,
+    "label": "unrunnable",
+    "fitsVram": false,
+    "gpuMode": "fewLayers",
+    "gpuScore": 51.44
+   }
+  },
+  {
+   "args": [
+    6000000000,
+    80,
+    2000000000,
+    16000000000,
+    24000000000,
+    8000000000,
+    500000000
+   ],
+   "modelOffload": "mixed",
+   "kvPlacement": "vram",
+   "expected": {
+    "score": 85,
+    "label": "excellent",
+    "fitsVram": false,
+    "gpuMode": "mostLayers",
+    "gpuScore": 82
+   }
+  },
+  {
+   "args": [
+    0,
+    50,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "modelOffload": "mixed",
+   "kvPlacement": "vram",
+   "expected": {
+    "score": 33,
+    "label": "poor",
+    "fitsVram": false,
+    "gpuMode": "cpu",
+    "gpuScore": 0
+   }
+  },
+  {
+   "args": [
+    9000000000,
+    95,
+    6000000000,
+    12000000000,
+    20000000000,
+    8000000000,
+    0
+   ],
+   "modelOffload": "mixed",
+   "kvPlacement": "vram",
+   "expected": {
+    "score": 74,
+    "label": "good",
+    "fitsVram": false,
+    "gpuMode": "mostLayers",
+    "gpuScore": 71.2
+   }
+  },
+  {
+   "args": [
+    3000000000,
+    70,
+    500000000,
+    4000000000,
+    12000000000,
+    8000000000,
+    0
+   ],
+   "modelOffload": "mixed",
+   "kvPlacement": "vram",
+   "expected": {
+    "score": 91,
+    "label": "excellent",
+    "fitsVram": true,
+    "gpuMode": "full",
+    "gpuScore": 96
+   }
+  },
+  {
+   "args": [
+    20000000000,
+    90,
+    4000000000,
+    16000000000,
+    24000000000,
+    8000000000,
+    0
+   ],
+   "modelOffload": "mixed",
+   "kvPlacement": "vram",
+   "expected": {
+    "score": 10,
+    "label": "unrunnable",
+    "fitsVram": false,
+    "gpuMode": "fewLayers",
+    "gpuScore": 47.44
+   }
+  }
+ ],
+ "gpuOptimal": [
+  {
+   "args": [
+    4000000000,
+    131072,
+    1,
+    12000000000,
+    131072,
+    null,
+    0
+   ],
+   "expected": 50354
+  },
+  {
+   "args": [
+    4000000000,
+    131072,
+    1,
+    12000000000,
+    131072,
+    4096,
+    0
+   ],
+   "expected": 131072
+  },
+  {
+   "args": [
+    10000000000,
+    131072,
+    1,
+    12000000000,
+    131072,
+    null,
+    0
+   ],
+   "expected": 2288
+  },
+  {
+   "args": [
+    4000000000,
+    null,
+    1,
+    12000000000,
+    131072,
+    null,
+    0
+   ],
+   "expected": 0
+  },
+  {
+   "args": [
+    4000000000,
+    131072,
+    2,
+    4600000000,
+    131072,
+    null,
+    300000000
+   ],
+   "expected": 0
+  },
+  {
+   "args": [
+    4000000000,
+    131072,
+    1,
+    16000000000,
+    131072,
+    null,
+    0
+   ],
+   "expected": 77819
+  },
+  {
+   "args": [
+    14000000000,
+    131072,
+    1,
+    16000000000,
+    131072,
+    null,
+    0
+   ],
+   "expected": 0
+  },
+  {
+   "args": [
+    4000000000,
+    98304,
+    0.5,
+    16000000000,
+    8192,
+    null,
+    1000000000
+   ],
+   "expected": 8192
+  },
+  {
+   "args": [
+    1000000000,
+    98304,
+    0.6875,
+    0,
+    8192,
+    null,
+    0
+   ],
+   "expected": 0
+  }
+ ],
+ "ramMax": [
+  {
+   "args": [
+    4000000000,
+    131072,
+    1,
+    12000000000,
+    131072,
+    null,
+    0
+   ],
+   "expected": 50354
+  },
+  {
+   "args": [
+    4000000000,
+    131072,
+    1,
+    12000000000,
+    131072,
+    4096,
+    0
+   ],
+   "expected": 131072
+  },
+  {
+   "args": [
+    10000000000,
+    131072,
+    1,
+    12000000000,
+    131072,
+    null,
+    0
+   ],
+   "expected": 2288
+  },
+  {
+   "args": [
+    4000000000,
+    null,
+    1,
+    12000000000,
+    131072,
+    null,
+    0
+   ],
+   "expected": 0
+  },
+  {
+   "args": [
+    4000000000,
+    131072,
+    2,
+    4600000000,
+    131072,
+    null,
+    300000000
+   ],
+   "expected": 0
+  },
+  {
+   "args": [
+    4000000000,
+    131072,
+    1,
+    16000000000,
+    131072,
+    null,
+    0
+   ],
+   "expected": 77819
+  },
+  {
+   "args": [
+    14000000000,
+    131072,
+    1,
+    16000000000,
+    131072,
+    null,
+    0
+   ],
+   "expected": 0
+  },
+  {
+   "args": [
+    4000000000,
+    98304,
+    0.5,
+    16000000000,
+    8192,
+    null,
+    1000000000
+   ],
+   "expected": 8192
+  },
+  {
+   "args": [
+    1000000000,
+    98304,
+    0.6875,
+    0,
+    8192,
+    null,
+    0
+   ],
+   "expected": 0
+  }
+ ]
+}

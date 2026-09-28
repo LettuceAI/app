@@ -520,7 +520,7 @@ mod tests {
     fn current_schema_fingerprint_is_stable_and_complete() {
         assert_eq!(
             current_sync_schema_fingerprint().as_str(),
-            "f6bbbd92f99fb6c8330bfae98a525430c07572475015ed1985094b044cd5d47e"
+            "e3f220d8089a6b0cc4fdd6165344f36d3a4acf9816d086780a6185ff3dcf26c3"
         );
     }
 

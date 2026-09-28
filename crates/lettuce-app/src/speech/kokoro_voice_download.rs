@@ -91,6 +91,9 @@ pub enum KokoroVoiceDownloadSourceError {
     Transport,
     #[error("Kokoro voice download response is invalid")]
     InvalidResponse,
+    /// Hugging Face refused the file with `status`.
+    #[error("the download was refused with status {status}")]
+    Refused { status: u16, signed_in: bool },
 }
 
 #[async_trait]
@@ -633,6 +636,14 @@ fn classify_error(error: &KokoroVoiceDownloadError) -> (JobErrorCode, bool, &'st
             true,
             "voice storage unavailable",
         ),
+        KokoroVoiceDownloadError::Source(KokoroVoiceDownloadSourceError::Refused {
+            status,
+            signed_in,
+        }) => crate::hf_refusal_job_error(*status, *signed_in).unwrap_or((
+            JobErrorCode::IntegrityFailure,
+            false,
+            "voice integrity failed",
+        )),
         KokoroVoiceDownloadError::Install(
             KokoroInstallError::Mismatch | KokoroInstallError::InvalidArtifact,
         )
@@ -653,9 +664,14 @@ fn classify_error(error: &KokoroVoiceDownloadError) -> (JobErrorCode, bool, &'st
 
 fn map_source_error(error: ArtifactDownloadError) -> KokoroVoiceDownloadSourceError {
     match error {
-        ArtifactDownloadError::Transport => KokoroVoiceDownloadSourceError::Transport,
+        ArtifactDownloadError::Transport | ArtifactDownloadError::TimedOut => {
+            KokoroVoiceDownloadSourceError::Transport
+        }
         ArtifactDownloadError::InvalidRequest | ArtifactDownloadError::InvalidResponse => {
             KokoroVoiceDownloadSourceError::InvalidResponse
+        }
+        ArtifactDownloadError::Refused { status, signed_in } => {
+            KokoroVoiceDownloadSourceError::Refused { status, signed_in }
         }
     }
 }

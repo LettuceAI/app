@@ -48,6 +48,45 @@ pub(crate) fn model_error(code: ApiErrorCode, model: RequiredModel) -> ApiError 
     }
 }
 
+pub(crate) fn hf_failure(failure: &lettuce_model_hub::HfFailure) -> lettuce_contracts::HfFailure {
+    use lettuce_contracts::HfFailure as Dto;
+    use lettuce_model_hub::HfFailure;
+    match failure {
+        HfFailure::TokenMissing => Dto::TokenMissing,
+        HfFailure::TokenInvalid => Dto::TokenInvalid,
+        HfFailure::GatedAccess { model_id } => Dto::GatedAccess {
+            model_id: model_id.clone(),
+        },
+        HfFailure::NotFound => Dto::NotFound,
+        HfFailure::RateLimited => Dto::RateLimited,
+        HfFailure::Offline => Dto::Offline,
+    }
+}
+
+/// A Hugging Face error: typed details when the failure is one the UI can
+/// act on (sign in, accept a license, wait, go online).
+pub(crate) fn hf_error(error: lettuce_model_hub::HfBrowseError) -> ApiError {
+    use lettuce_model_hub::HfFailure;
+    let message = error.to_string();
+    match error.failure() {
+        Some(failure) => ApiError {
+            code: match failure {
+                HfFailure::NotFound => ApiErrorCode::NotFound,
+                HfFailure::RateLimited => ApiErrorCode::Busy,
+                HfFailure::TokenMissing
+                | HfFailure::TokenInvalid
+                | HfFailure::GatedAccess { .. }
+                | HfFailure::Offline => ApiErrorCode::Unavailable,
+            },
+            message,
+            details: Some(ApiErrorDetails::HuggingFace {
+                failure: hf_failure(failure),
+            }),
+        },
+        None => api_error(ApiErrorCode::Unavailable, message),
+    }
+}
+
 /// Parses a contract id, naming the request field when it is not a UUID.
 pub(crate) fn parse_id<T: std::str::FromStr>(value: &str, field: &str) -> Result<T, ApiError> {
     value

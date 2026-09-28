@@ -185,7 +185,7 @@ Attachments are inlined as for the OpenAI envelope (text first, images as data U
 
 ### Ollama model store
 
-`ollama_inventory`, `ollama_delete` and `ollama_pull` talk to an Ollama account's server with its credentials. A pull reports each NDJSON progress line and is cancelled by dropping the future. It is sent once with only an idle timeout, since a total limit would kill large pulls. Lines are split on bytes, so a character split across chunks survives, and one progress line is capped at 1 MiB. A delete is never retried, because a lost response may hide a completed delete.
+`ollama_inventory`, `ollama_delete` and `ollama_pull` talk to an Ollama account's server with its credentials. A pull reports each NDJSON progress line and is cancelled by dropping the future. It is sent once with only an idle timeout, since a total limit would kill large pulls. Lines are split on bytes, so a character split across chunks survives, and one progress line is capped at 1 MiB. A delete is never retried, because a lost response may hide a completed delete. Failures are typed: `Unreachable` (no connection or a broken stream), `Credentials` (the secret could not be read), `CredentialsRefused` (401 or 403), `Server` with the server's own `error` text (an error line of a pull or a non-success answer), and `Incomplete` for a pull stream that ended without success.
 
 ### OpenRouter billing
 

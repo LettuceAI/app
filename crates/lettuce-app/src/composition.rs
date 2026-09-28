@@ -21,6 +21,7 @@ pub struct AppBackend {
     whisper_runtime: Arc<WhisperCppRuntime<Database>>,
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     local_llama: crate::image::local_diffusion::SharedLocalLlama,
+    llama_files: Arc<lettuce_local_llm::model_files::ModelFileRegistry>,
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     llama_events: Option<crate::LlamaEventSink>,
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -70,11 +71,28 @@ impl AppBackend {
             inference_runtime: Arc::new(InferenceRuntime::default()),
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             local_llama: Arc::new(std::sync::OnceLock::new()),
+            llama_files: Arc::default(),
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             llama_events: None,
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             local_diffusion: None,
         })
+    }
+
+    /// The model files llama.cpp holds open or a queued request names.
+    #[must_use]
+    pub fn local_llama_resident_files(&self) -> Vec<String> {
+        self.llama_files.files()
+    }
+
+    /// Keeps llama.cpp from opening a file inside `folder` until the guard
+    /// is dropped; refused with the file when it holds or is about to open
+    /// one there.
+    pub fn block_llama_folder(
+        &self,
+        folder: &Path,
+    ) -> Result<lettuce_local_llm::model_files::FolderBlock, String> {
+        self.llama_files.block(folder)
     }
 
     /// Sends the embedded llama.cpp runtime's frontend events to the host.
@@ -134,8 +152,10 @@ impl AppBackend {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     fn local_llama(&self) -> Option<lettuce_providers::LocalLlama> {
         self.local_llama
-            .get_or_init(
-                || match lettuce_local_llm::generation::LlamaRuntime::start() {
+            .get_or_init(|| {
+                match lettuce_local_llm::generation::LlamaRuntime::start_with(Arc::clone(
+                    &self.llama_files,
+                )) {
                     Ok(runtime) => {
                         let llama = lettuce_providers::LocalLlama::new(
                             Arc::new(runtime),
@@ -157,8 +177,8 @@ impl AppBackend {
                         tracing::warn!(%error, "llama.cpp inference worker failed to start");
                         None
                     }
-                },
-            )
+                }
+            })
             .clone()
     }
 

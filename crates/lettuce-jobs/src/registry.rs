@@ -58,6 +58,8 @@ impl From<JobKind> for JobKindKey {
             JobKind::CompanionConsolidation => 20,
             JobKind::CompanionSoulWriter => 21,
             JobKind::ConversationGeneration => 22,
+            JobKind::ModelPull => 23,
+            JobKind::ModelsFolderMove => 24,
         })
     }
 }
@@ -91,7 +93,7 @@ impl JobRegistry {
 mod tests {
     use super::{JobKind, JobKindKey};
 
-    const ALL_KINDS: [JobKind; 23] = [
+    const ALL_KINDS: [JobKind; 25] = [
         JobKind::ArtifactInstall,
         JobKind::ArtifactVerify,
         JobKind::RuntimePrepare,
@@ -115,6 +117,8 @@ mod tests {
         JobKind::SpeechSynthesize,
         JobKind::EmbeddingBenchmark,
         JobKind::Maintenance,
+        JobKind::ModelPull,
+        JobKind::ModelsFolderMove,
     ];
 
     #[test]
@@ -147,7 +151,9 @@ mod tests {
                 | JobKind::SpeechTranscribe
                 | JobKind::SpeechSynthesize
                 | JobKind::EmbeddingBenchmark
-                | JobKind::Maintenance => true,
+                | JobKind::Maintenance
+                | JobKind::ModelPull
+                | JobKind::ModelsFolderMove => true,
             };
             assert!(listed);
         }

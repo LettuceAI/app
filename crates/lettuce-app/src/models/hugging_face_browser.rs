@@ -17,16 +17,28 @@ use lettuce_settings::{
 
 const AVATAR_CONCURRENCY: usize = 6;
 
-/// Browses Hugging Face; avatars are cached for the browser's lifetime.
+/// Browses Hugging Face; avatars and the GGUF headers read for runnability
+/// are cached for the browser's lifetime.
 #[derive(Debug)]
 pub struct HuggingFaceBrowser {
     client: JsonClient,
     endpoint: String,
     avatars: Mutex<HashMap<String, String>>,
+    pub(crate) headers: Mutex<HashMap<(String, String, String), lettuce_model_hub::GgufModelMeta>>,
 }
 
 fn message(text: impl Into<String>) -> HfBrowseError {
     HfBrowseError::Message(text.into())
+}
+
+/// A request that failed before Hugging Face answered: offline when the
+/// transport failed, else a plain message.
+fn request_failed(what: &str, error: JsonClientError) -> HfBrowseError {
+    let text = format!("{what}: {error}");
+    match error {
+        JsonClientError::Transport => HfBrowseError::offline(text),
+        _ => message(text),
+    }
 }
 
 fn token_reference() -> (SecretRef, SecretPurpose) {
@@ -81,6 +93,7 @@ impl HuggingFaceBrowser {
             client,
             endpoint: endpoint.into(),
             avatars: Mutex::new(HashMap::new()),
+            headers: Mutex::new(HashMap::new()),
         }
     }
 
@@ -130,20 +143,19 @@ impl HuggingFaceBrowser {
                 }],
                 auth,
                 Vec::new(),
-                RequestPolicy::PROBE,
+                RequestPolicy::BROWSE,
             )
             .await
     }
 
-    async fn whoami(&self, token: &SecretValue) -> Result<String, HfBrowseError> {
-        let response = self
-            .get(&lettuce_model_hub::whoami_request(), Some(token))
+    async fn whoami_response(&self, token: &SecretValue) -> Result<JsonResponse, HfBrowseError> {
+        self.get(&lettuce_model_hub::whoami_request(), Some(token))
             .await
-            .map_err(|error| {
-                message(format!(
-                    "Could not validate the Hugging Face token: {error}"
-                ))
-            })?;
+            .map_err(|error| request_failed("Could not validate the Hugging Face token", error))
+    }
+
+    async fn whoami(&self, token: &SecretValue) -> Result<String, HfBrowseError> {
+        let response = self.whoami_response(token).await?;
         lettuce_model_hub::whoami_username(
             response.status,
             &lettuce_network::status_text(response.status),
@@ -151,7 +163,9 @@ impl HuggingFaceBrowser {
         )
     }
 
-    /// Whether a token is saved and still accepted.
+    /// Whether a token is saved and still accepted. Only a refusal makes a
+    /// saved token invalid; an unreachable Hugging Face or another error
+    /// leaves it unknown.
     pub async fn auth_status<S: SecretStore + ?Sized>(
         &self,
         secrets: &S,
@@ -159,10 +173,28 @@ impl HuggingFaceBrowser {
         let Some(token) = Self::saved_token(secrets).await? else {
             return Ok(HfAuthStatus::missing());
         };
-        Ok(match self.whoami(&token).await {
-            Ok(username) => HfAuthStatus::valid(username),
-            Err(_) => HfAuthStatus::invalid(),
-        })
+        let response = match self.whoami_response(&token).await {
+            Ok(response) => response,
+            Err(error) => {
+                return Ok(HfAuthStatus::unknown(matches!(
+                    error.failure(),
+                    Some(lettuce_model_hub::HfFailure::Offline)
+                )));
+            }
+        };
+        if response.status == 401 {
+            return Ok(HfAuthStatus::invalid());
+        }
+        Ok(
+            match lettuce_model_hub::whoami_username(
+                response.status,
+                &lettuce_network::status_text(response.status),
+                &response.body,
+            ) {
+                Ok(username) => HfAuthStatus::valid(username),
+                Err(_) => HfAuthStatus::unknown(false),
+            },
+        )
     }
 
     /// Saves the token once Hugging Face accepts it.
@@ -214,18 +246,23 @@ impl HuggingFaceBrowser {
         let response = self
             .get(request, token)
             .await
-            .map_err(|error| message(format!("HuggingFace API request failed: {error}")))?;
+            .map_err(|error| request_failed("HuggingFace API request failed", error))?;
         if let Some(error) =
             lettuce_model_hub::access_error(response.status, HfResource::List, "", token.is_some())
         {
             return Err(error);
         }
         if !(200..300).contains(&response.status) {
-            return Err(message(format!(
-                "HuggingFace API error {}: {}",
-                lettuce_network::status_text(response.status),
-                String::from_utf8_lossy(&response.body)
-            )));
+            return Err(lettuce_model_hub::status_error(
+                response.status,
+                "",
+                token.is_some(),
+                format!(
+                    "HuggingFace API error {}: {}",
+                    lettuce_network::status_text(response.status),
+                    String::from_utf8_lossy(&response.body)
+                ),
+            ));
         }
         lettuce_model_hub::parse_model_list(&response.body)
     }
@@ -268,12 +305,16 @@ impl HuggingFaceBrowser {
         let requests = lettuce_model_hub::author_overview_requests(author)?;
         let token = Self::saved_token(secrets).await?;
         let mut last_error = String::new();
+        let mut last_failure = None;
         for request in &requests {
             match self.get(request, token.as_ref()).await {
                 Ok(response) if (200..300).contains(&response.status) => {
                     match lettuce_model_hub::parse_author_overview(author, &response.body) {
                         Ok(overview) => return Ok(overview),
-                        Err(error) => last_error = error.to_string(),
+                        Err(error) => {
+                            last_error = error.to_string();
+                            last_failure = None;
+                        }
                     }
                 }
                 Ok(response) => {
@@ -283,14 +324,26 @@ impl HuggingFaceBrowser {
                         request.path,
                         lettuce_network::status_text(response.status)
                     );
+                    last_failure =
+                        lettuce_model_hub::status_failure(response.status, "", token.is_some());
                 }
-                Err(error) => last_error = error.to_string(),
+                Err(error) => {
+                    last_failure = request_failed("", error).failure().cloned();
+                    last_error = error.to_string();
+                }
             }
         }
-        Err(message(format!(
+        let text = format!(
             "Failed to fetch author overview for {}: {last_error}",
             author.trim()
-        )))
+        );
+        Err(match last_failure {
+            Some(failure) => HfBrowseError::Failed {
+                failure,
+                message: text,
+            },
+            None => message(text),
+        })
     }
 
     async fn avatar(&self, author: &str, token: Option<&SecretValue>) -> String {
@@ -328,10 +381,11 @@ impl HuggingFaceBrowser {
         }
         if !missing.is_empty() {
             let token = Self::saved_token(secrets).await?;
-            let fetched = futures_util::stream::iter(missing)
-                .map(|author| {
-                    let token = token.as_ref();
-                    async move { (author.to_owned(), self.avatar(author, token).await) }
+            let token = token.as_ref();
+            let fetched = futures_util::stream::iter(missing.into_iter().map(str::to_owned))
+                .map(|author: String| async move {
+                    let url = self.avatar(&author, token).await;
+                    (author, url)
                 })
                 .buffer_unordered(AVATAR_CONCURRENCY)
                 .collect::<Vec<_>>()
@@ -362,7 +416,7 @@ impl HuggingFaceBrowser {
                 token.as_ref(),
             )
             .await
-            .map_err(|error| message(format!("Failed to fetch model detail: {error}")))?;
+            .map_err(|error| request_failed("Failed to fetch model detail", error))?;
         if let Some(error) = lettuce_model_hub::access_error(
             detail.status,
             HfResource::Model,
@@ -372,10 +426,15 @@ impl HuggingFaceBrowser {
             return Err(error);
         }
         if !(200..300).contains(&detail.status) {
-            return Err(message(format!(
-                "Model not found ({}): {model_id}",
-                lettuce_network::status_text(detail.status)
-            )));
+            return Err(lettuce_model_hub::status_error(
+                detail.status,
+                model_id,
+                token.is_some(),
+                format!(
+                    "Model not found ({}): {model_id}",
+                    lettuce_network::status_text(detail.status)
+                ),
+            ));
         }
         let tree = self
             .get(
@@ -383,7 +442,7 @@ impl HuggingFaceBrowser {
                 token.as_ref(),
             )
             .await
-            .map_err(|error| message(format!("Failed to fetch file tree: {error}")))?;
+            .map_err(|error| request_failed("Failed to fetch file tree", error))?;
         if let Some(error) = lettuce_model_hub::access_error(
             tree.status,
             HfResource::Repository,
@@ -392,10 +451,18 @@ impl HuggingFaceBrowser {
         ) {
             return Err(error);
         }
-        let tree = (200..300)
-            .contains(&tree.status)
-            .then_some(tree.body.as_slice());
-        lettuce_model_hub::model_info(model_id, &detail.body, tree, mode)
+        if !(200..300).contains(&tree.status) {
+            return Err(lettuce_model_hub::status_error(
+                tree.status,
+                model_id,
+                token.is_some(),
+                format!(
+                    "Failed to fetch file tree ({}): {model_id}",
+                    lettuce_network::status_text(tree.status)
+                ),
+            ));
+        }
+        lettuce_model_hub::model_info(model_id, &detail.body, &tree.body, mode)
     }
 
     /// The model card without its front matter.
@@ -408,7 +475,7 @@ impl HuggingFaceBrowser {
         let response = self
             .get(&lettuce_model_hub::readme_request(model_id), token.as_ref())
             .await
-            .map_err(|error| message(format!("Failed to fetch README: {error}")))?;
+            .map_err(|error| request_failed("Failed to fetch README", error))?;
         if let Some(error) = lettuce_model_hub::access_error(
             response.status,
             HfResource::Model,
@@ -418,10 +485,12 @@ impl HuggingFaceBrowser {
             return Err(error);
         }
         if !(200..300).contains(&response.status) {
-            return Err(message(format!(
-                "README not found (HTTP {})",
-                response.status
-            )));
+            return Err(lettuce_model_hub::status_error(
+                response.status,
+                model_id,
+                token.is_some(),
+                format!("README not found (HTTP {})", response.status),
+            ));
         }
         Ok(lettuce_model_hub::readme_body(&String::from_utf8_lossy(
             &response.body,
@@ -490,7 +559,10 @@ mod tests {
         );
         assert_eq!(
             browser.save_token(&secrets, " bad ").await,
-            Err(message("The Hugging Face token is invalid or expired."))
+            Err(HfBrowseError::Failed {
+                failure: lettuce_model_hub::HfFailure::TokenInvalid,
+                message: "The Hugging Face token is invalid or expired.".to_owned()
+            })
         );
         assert_eq!(
             browser.auth_status(&secrets).await.expect("status"),
@@ -524,6 +596,34 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_saved_token_is_unknown_while_hugging_face_is_unreachable() {
+        let secrets = InMemorySecretStore::default();
+        let (endpoint, _seen) =
+            server(vec![(200, r#"{"name": "ada"}"#), (401, "{}"), (503, "{}")]).await;
+        let online = browser(endpoint);
+        online.save_token(&secrets, "good").await.expect("saved");
+        assert_eq!(
+            online.auth_status(&secrets).await.expect("refused"),
+            HfAuthStatus::invalid()
+        );
+        assert_eq!(
+            online.auth_status(&secrets).await.expect("server error"),
+            HfAuthStatus::unknown(false)
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+        let closed = format!("http://{}", listener.local_addr().expect("address"));
+        drop(listener);
+        assert_eq!(
+            browser(closed)
+                .auth_status(&secrets)
+                .await
+                .expect("offline"),
+            HfAuthStatus::unknown(true),
+            "legacy reported an unreachable Hugging Face as an invalid token"
+        );
+    }
+
+    #[tokio::test]
     async fn gated_models_and_missing_readmes_show_the_old_texts() {
         let secrets = InMemorySecretStore::default();
         let (endpoint, seen) = server(vec![
@@ -539,25 +639,29 @@ mod tests {
         ])
         .await;
         let browser = browser(endpoint);
-        let info = browser
+        let tree_failed = browser
             .model_files(&secrets, "org/m", HfBrowseMode::Llm)
             .await
-            .expect("files");
-        assert_eq!(info.files.len(), 1);
-        assert_eq!(info.files[0].size, 0);
+            .expect_err("legacy showed every file at size 0 when the tree failed");
+        assert_eq!(tree_failed.failure(), None);
         assert_eq!(
             browser.readme(&secrets, "org/m").await,
-            Err(message(
-                "Accept access to org/m on Hugging Face, then retry."
-            ))
+            Err(HfBrowseError::Failed {
+                failure: lettuce_model_hub::HfFailure::GatedAccess {
+                    model_id: "org/m".to_owned()
+                },
+                message: "Accept access to org/m on Hugging Face, then retry.".to_owned()
+            })
         );
         assert_eq!(
             browser.readme(&secrets, "org/m").await.as_deref(),
             Ok("# Card")
         );
+        let missing = browser.readme(&secrets, "org/m").await.expect_err("404");
+        assert_eq!(missing.to_string(), "README not found (HTTP 404)");
         assert_eq!(
-            browser.readme(&secrets, "org/m").await,
-            Err(message("README not found (HTTP 404)"))
+            missing.failure(),
+            Some(&lettuce_model_hub::HfFailure::NotFound)
         );
         let found = browser
             .author_models(&secrets, " org ", None, None, None, None)

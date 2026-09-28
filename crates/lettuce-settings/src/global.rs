@@ -7,6 +7,32 @@ pub const GLOBAL_SETTINGS_FORMAT_VERSION: u32 = 1;
 
 pub const DEFAULT_LOREBOOK_SCAN_DEPTH: u8 = 10;
 pub const LOREBOOK_SCAN_DEPTH_RANGE: RangeInclusive<u8> = 1..=20;
+pub const LLAMA_DEFAULT_CONTEXT_LENGTH_RANGE: RangeInclusive<u32> = 512..=1_048_576;
+
+/// The KV cache type local model estimates assume; `Auto` counts as f16.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LlamaDefaultKvCacheType {
+    #[serde(rename = "auto")]
+    Auto,
+    #[serde(rename = "f16")]
+    F16,
+    #[serde(rename = "q8_0")]
+    Q8_0,
+    #[serde(rename = "q4_0")]
+    Q4_0,
+}
+
+impl LlamaDefaultKvCacheType {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::F16 => "f16",
+            Self::Q8_0 => "q8_0",
+            Self::Q4_0 => "q4_0",
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -47,6 +73,13 @@ pub struct GlobalSettings {
     /// for keywords.
     #[serde(default = "default_lorebook_scan_depth")]
     pub lorebook_scan_depth: u8,
+    /// The context length local model estimates (runnability scores and
+    /// recommendations) assume; unset means 8192.
+    #[serde(default)]
+    pub llama_default_context_length: Option<u32>,
+    /// The KV cache type local model estimates assume; unset means `auto`.
+    #[serde(default)]
+    pub llama_default_kv_cache_type: Option<LlamaDefaultKvCacheType>,
 }
 
 const fn default_manual_mode_context_window() -> u32 {
@@ -82,6 +115,8 @@ impl Default for GlobalSettings {
             auto_download_character_card_avatars: true,
             manual_mode_context_window: default_manual_mode_context_window(),
             lorebook_scan_depth: DEFAULT_LOREBOOK_SCAN_DEPTH,
+            llama_default_context_length: None,
+            llama_default_kv_cache_type: None,
         }
     }
 }
@@ -93,6 +128,9 @@ impl GlobalSettings {
     pub fn within_bounds(&self) -> bool {
         self.ui_preferences.within_bounds()
             && LOREBOOK_SCAN_DEPTH_RANGE.contains(&self.lorebook_scan_depth)
+            && self
+                .llama_default_context_length
+                .is_none_or(|length| LLAMA_DEFAULT_CONTEXT_LENGTH_RANGE.contains(&length))
     }
 
     #[must_use]
@@ -733,6 +771,35 @@ mod tests {
         settings.group_dynamic_memory = Some(group.clone());
 
         assert_eq!(settings.effective_group_dynamic_memory(), &group);
+    }
+
+    #[test]
+    fn llama_runnability_defaults_read_like_legacy_and_stay_bounded() {
+        let older =
+            r#"{"pure_mode":"standard","analytics_enabled":true,"update_checks_enabled":true}"#;
+        let settings: GlobalSettings = serde_json::from_str(older).expect("older document");
+        assert_eq!(settings.llama_default_context_length, None);
+        assert_eq!(settings.llama_default_kv_cache_type, None);
+        let mut settings = GlobalSettings {
+            llama_default_context_length: Some(16_384),
+            llama_default_kv_cache_type: Some(LlamaDefaultKvCacheType::Q8_0),
+            ..GlobalSettings::default()
+        };
+        let json = serde_json::to_value(&settings).expect("json");
+        assert_eq!(json["llama_default_kv_cache_type"], "q8_0");
+        assert_eq!(
+            serde_json::from_value::<GlobalSettings>(json).expect("round trip"),
+            settings
+        );
+        assert!(settings.within_bounds());
+        for length in [511, 1_048_577] {
+            settings.llama_default_context_length = Some(length);
+            assert!(!settings.within_bounds());
+        }
+        for length in [512, 1_048_576] {
+            settings.llama_default_context_length = Some(length);
+            assert!(settings.within_bounds());
+        }
     }
 
     #[test]
