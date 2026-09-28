@@ -87,12 +87,17 @@ pub enum CompanionMemoryHostError {
     RuntimeInputs(CompanionMemoryRuntimeInputError),
     #[error("companion turn effects are unavailable: {0:?}")]
     Effects(lettuce_companions::CompanionTurnEffectRepositoryError),
+    #[error("an owed delete-after memory rewind could not finish: {0}")]
+    PendingRewind(crate::DynamicMemoryDeleteAfterError),
 }
 
 /// Every port the post-turn memory host reads; the composition root's
 /// database is one.
 pub trait CompanionMemoryHostSources:
     lettuce_memory::DynamicMemoryRunRepository
+    + lettuce_memory::DynamicMemorySuffixRewindRepository
+    + lettuce_memory::PendingSuffixRewindRepository
+    + lettuce_conversations::ConversationRepository
     + lettuce_memory::MemoryRepository
     + lettuce_memory::MemorySummaryRepository
     + lettuce_memory::DynamicMemoryApprovalRepository
@@ -115,6 +120,9 @@ pub trait CompanionMemoryHostSources:
 
 impl<T> CompanionMemoryHostSources for T where
     T: lettuce_memory::DynamicMemoryRunRepository
+        + lettuce_memory::DynamicMemorySuffixRewindRepository
+        + lettuce_memory::PendingSuffixRewindRepository
+        + lettuce_conversations::ConversationRepository
         + lettuce_memory::MemoryRepository
         + lettuce_memory::MemorySummaryRepository
         + lettuce_memory::DynamicMemoryApprovalRepository
@@ -202,6 +210,7 @@ where
         lease_for: Duration,
         allowed: &ResourceAvailability,
     ) -> Result<Vec<CompanionMemoryClaimedWork>, CompanionMemoryHostError> {
+        self.complete_pending_rewinds(conversation_id, now)?;
         if operation == GenerationOperation::Regenerate {
             return Ok(Vec::new());
         }
@@ -251,6 +260,7 @@ where
         lease_for: Duration,
         allowed: &ResourceAvailability,
     ) -> Result<Vec<CompanionMemoryClaimedWork>, CompanionMemoryHostError> {
+        self.complete_pending_rewinds(conversation_id, now)?;
         let Some(active) = self.active_cycle(conversation_id)? else {
             return Ok(Vec::new());
         };
@@ -357,6 +367,19 @@ where
         conversation_id: ConversationId,
     ) -> Result<bool, CompanionMemoryHostError> {
         Ok(self.active_cycle(conversation_id)?.is_some())
+    }
+
+    /// Finishes the memory rewinds a delete-after of the conversation still
+    /// owes, so a new cycle never starts from memory the rewind removes.
+    fn complete_pending_rewinds(
+        &self,
+        conversation_id: ConversationId,
+        now: TimestampMillis,
+    ) -> Result<(), CompanionMemoryHostError> {
+        crate::DynamicMemoryDeleteAfterCoordinator::new(self.repository, self.repository)
+            .complete_pending(Some(conversation_id), now)
+            .map(|_| ())
+            .map_err(CompanionMemoryHostError::PendingRewind)
     }
 
     fn active_cycle(

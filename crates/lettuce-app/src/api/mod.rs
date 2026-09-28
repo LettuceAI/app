@@ -17,6 +17,7 @@ mod file_kind;
 mod files;
 mod jobs;
 mod mapping;
+mod messages;
 mod models;
 mod startup;
 mod worker;
@@ -29,6 +30,8 @@ mod conversation_list_tests;
 mod conversation_settings_tests;
 #[cfg(test)]
 mod foundation_tests;
+#[cfg(test)]
+mod messages_tests;
 #[cfg(test)]
 mod models_tests;
 #[cfg(test)]
@@ -59,6 +62,11 @@ pub use jobs::{
     ArtifactInstallHandler, ClaimedJob, InstallFinish, InstallSources, InstallWork, JobHandler,
     JobHandlers, JobLane, JobProgressSink, JobRunner, NetworkInstallSources, admit_install,
     job_cancel, job_get, job_watch, jobs_list,
+};
+pub use messages::{
+    conversation_message_count, conversation_messages_around, conversation_pinned_messages,
+    conversation_search, message_candidate_select, message_candidates, message_delete,
+    message_edit, message_pin, message_revisions, message_scene_select, messages_delete_after,
 };
 pub use models::{InstalledModels, ModelLoad, ModelLoader, NoModels};
 pub use startup::{ApiWorkers, StartupStep, startup};

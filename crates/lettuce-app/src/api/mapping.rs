@@ -94,7 +94,7 @@ pub(crate) const fn conversation_kind(kind: &ConversationKind) -> dto::Conversat
     }
 }
 
-const fn message_role(role: MessageRole) -> dto::MessageRole {
+pub(crate) const fn message_role(role: MessageRole) -> dto::MessageRole {
     match role {
         MessageRole::User => dto::MessageRole::User,
         MessageRole::Assistant => dto::MessageRole::Assistant,
@@ -163,14 +163,14 @@ pub(crate) const fn group_chat_mode(mode: GroupChatModeSnapshot) -> dto::GroupCh
     }
 }
 
-pub(crate) fn timeline_message(
+/// The text and media parts a message shows, and its reasoning.
+pub(crate) fn part_views(
     context: &ApiContext,
-    item: &TimelineItem,
-    candidate_counts: &HashMap<MessageId, u32>,
-) -> dto::TimelineMessage {
+    source: &[MessagePart],
+) -> (Vec<dto::MessagePartView>, Option<String>) {
     let mut parts = Vec::new();
     let mut reasoning = Vec::new();
-    for part in shown_parts(item) {
+    for part in source {
         match part {
             MessagePart::Text { text } => {
                 parts.push(dto::MessagePartView::Text { text: text.clone() })
@@ -185,12 +185,21 @@ pub(crate) fn timeline_message(
             | MessagePart::Annotation { .. } => {}
         }
     }
+    (parts, (!reasoning.is_empty()).then(|| reasoning.join("\n")))
+}
+
+pub(crate) fn timeline_message(
+    context: &ApiContext,
+    item: &TimelineItem,
+    candidate_counts: &HashMap<MessageId, u32>,
+) -> dto::TimelineMessage {
+    let (parts, reasoning) = part_views(context, shown_parts(item));
     dto::TimelineMessage {
         id: item.message.id.to_string(),
         role: message_role(item.message.role),
         author_participant_id: item.message.author_participant_id.map(|id| id.to_string()),
         parts,
-        reasoning: (!reasoning.is_empty()).then(|| reasoning.join("\n")),
+        reasoning,
         created_at: item.message.created_at.get(),
         candidate_index: item
             .active_candidate

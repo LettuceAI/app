@@ -200,6 +200,18 @@ fn cancel_work(
             }
         }
     }
+    cancel_memory_work(context, conversation_id).map(|_| ())
+}
+
+/// Requests cancellation of the conversation's unfinished memory jobs: a
+/// queued one ends at once, a running one is signalled and settles through
+/// its runner. Answers how many are still unfinished.
+pub(crate) fn cancel_memory_work(
+    context: &ApiContext,
+    conversation_id: ConversationId,
+) -> Result<usize, ApiError> {
+    let database = context.backend().database();
+    let mut unfinished = 0;
     let subject = SubjectId::new(conversation_id.to_string()).map_err(|_| {
         api_error(
             ApiErrorCode::Internal,
@@ -253,6 +265,8 @@ fn cancel_work(
                         at: at.max(requested.updated_at),
                     })
                     .map_err(IntoApiError::into_api_error)?;
+            } else {
+                unfinished += 1;
             }
         }
         match page.next_cursor {
@@ -263,5 +277,5 @@ fn cancel_work(
     database
         .settle_memory_attempts_of_ended_jobs(conversation_id)
         .map_err(IntoApiError::into_api_error)?;
-    Ok(())
+    Ok(unfinished)
 }

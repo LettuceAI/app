@@ -25,6 +25,7 @@ const LEGACY_FOLDER: &str = "lettuce";
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StartupStep {
     RecoverAfterRestart,
+    CompletePendingRewinds,
     DetectLegacyDatabase,
     AdoptLegacyEmbedding,
     ResumeMemoryJobs,
@@ -116,8 +117,9 @@ impl ApiWorkers {
 
 /// Starts the application. Before returning, so commands are served only
 /// afterwards, it takes the job and conversation change feeds' positions,
-/// settles what the previous process left running, detects legacy data and
-/// records legacy v4 embedding files. Then, on its own thread, it resumes
+/// settles what the previous process left running, finishes the memory
+/// rewinds delete-after still owes, detects legacy data and records legacy
+/// v4 embedding files. Then, on its own thread, it resumes
 /// background memory and companion jobs, recovers queued installs, sweeps
 /// orphaned media files, and last starts the conversation generation worker,
 /// the job runner with the job change feed, and the conversation change
@@ -131,6 +133,8 @@ pub async fn startup(context: &ApiContext) -> Result<ApiWorkers, ApiError> {
         .blocking(|context| context.recover_after_restart())
         .await?;
     record(&steps, StartupStep::RecoverAfterRestart);
+    complete_pending_rewinds(context).await?;
+    record(&steps, StartupStep::CompletePendingRewinds);
     let detected = context
         .blocking(|context| Ok(legacy_database_present(context)))
         .await?;
@@ -249,6 +253,25 @@ async fn finish_startup(
         tracing::warn!(code = ?error.code, message = %error.message, "orphaned media files could not be swept");
     }
     record(steps, StartupStep::SweepOrphanMedia);
+}
+
+pub(super) async fn complete_pending_rewinds(context: &ApiContext) -> Result<(), ApiError> {
+    let completed = context
+        .blocking(|context| {
+            let database = context.backend().database();
+            crate::DynamicMemoryDeleteAfterCoordinator::new(database, database)
+                .complete_pending(None, context.now())
+                .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))
+        })
+        .await?;
+    if completed > 0 {
+        context.jobs().wake();
+        tracing::info!(
+            completed,
+            "finished memory rewinds a delete-after still owed"
+        );
+    }
+    Ok(())
 }
 
 fn legacy_database_present(context: &ApiContext) -> bool {

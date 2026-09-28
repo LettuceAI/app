@@ -111,6 +111,38 @@ pub fn apply_settings_change(
     )
 }
 
+/// The settings update that selects one of the conversation's scenes, under
+/// `operation` against the settings revision the conversation has now, and
+/// the text its scene message shows for it. A scene that is not the
+/// conversation's is `InvalidInput` naming `scene_id`.
+pub fn prepare_scene_selection(
+    database: &Database,
+    conversation: &Conversation,
+    scene_id: SceneId,
+    operation: OperationToken,
+) -> Result<(PreparedConversationSettingsUpdate, Option<String>), ConversationEditError> {
+    let mut builder = Builder {
+        database,
+        conversation,
+        drafts: Vec::new(),
+    };
+    let (scene, text) = builder.scene(scene_id)?;
+    let prepared = PreparedConversationSettingsUpdate::new(
+        UpdateConversationSettings {
+            conversation_id: conversation.id,
+            expected_settings_revision: conversation.settings_revision(),
+            operation,
+            patch: CurrentConversationSettingsPatch {
+                scene: PatchValue::Set(scene),
+                ..CurrentConversationSettingsPatch::default()
+            },
+        },
+        builder.drafts,
+    )
+    .map_err(|_| ConversationEditError::Snapshot)?;
+    Ok((prepared, text))
+}
+
 struct Builder<'a> {
     database: &'a Database,
     conversation: &'a Conversation,
@@ -237,7 +269,7 @@ impl Builder<'_> {
         }
         if let Some(change) = &change.scene {
             patch.scene = match change {
-                Change::Set(id) => PatchValue::Set(self.scene(*id)?),
+                Change::Set(id) => PatchValue::Set(self.scene(*id)?.0),
                 Change::Reset => PatchValue::UseLaunchDefault,
             };
         }
@@ -394,7 +426,10 @@ impl Builder<'_> {
         Ok(snapshot)
     }
 
-    fn scene(&mut self, id: SceneId) -> Result<SceneLaunchSnapshot, ConversationEditError> {
+    fn scene(
+        &mut self,
+        id: SceneId,
+    ) -> Result<(SceneLaunchSnapshot, Option<String>), ConversationEditError> {
         let (scene, variants) = match &self.conversation.kind {
             ConversationKind::Direct(details) => {
                 let character =
@@ -430,12 +465,15 @@ impl Builder<'_> {
             scene.revision,
             documents::scene_body(&scene, &variants),
         )?;
-        Ok(SceneLaunchSnapshot {
-            snapshot_ref: self.stage(draft),
-            source_id: scene.id,
-            source_revision: scene.revision,
-            title: policy::scene_title(text.as_deref(), scene.ordinal),
-        })
+        Ok((
+            SceneLaunchSnapshot {
+                snapshot_ref: self.stage(draft),
+                source_id: scene.id,
+                source_revision: scene.revision,
+                title: policy::scene_title(text.as_deref(), scene.ordinal),
+            },
+            text,
+        ))
     }
 
     fn memory(

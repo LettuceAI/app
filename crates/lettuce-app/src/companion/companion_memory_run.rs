@@ -474,7 +474,7 @@ fn stable_attempt_id(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::sync::Mutex;
 
     use lettuce_companions::{
@@ -887,7 +887,7 @@ mod tests {
         }
     }
 
-    fn profile() -> ResolvedInferenceProfile {
+    pub(crate) fn profile() -> ResolvedInferenceProfile {
         let account_id = ProviderAccountId::new();
         let profile_id = ModelProfileId::new();
         let account = ProviderAccount {
