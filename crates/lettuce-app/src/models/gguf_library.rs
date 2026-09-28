@@ -374,8 +374,8 @@ fn measure(path: &Path) -> Option<Measure> {
             files: 0,
             modified: None,
         };
-        for entry in std::fs::read_dir(path).ok()?.flatten() {
-            let inner = measure(&entry.path())?;
+        for entry in std::fs::read_dir(path).ok()? {
+            let inner = measure(&entry.ok()?.path())?;
             total.bytes = total.bytes.saturating_add(inner.bytes);
             total.files = total.files.saturating_add(inner.files);
             total.modified = total.modified.max(inner.modified);
@@ -401,15 +401,57 @@ pub struct MoveResolution {
     pub kept: Vec<String>,
 }
 
+fn redundant_tree(candidate: &Path, retained: &Path, partial: bool) -> std::io::Result<bool> {
+    use std::io::Read;
+    let candidate_meta = std::fs::symlink_metadata(candidate)?;
+    let retained_meta = std::fs::symlink_metadata(retained)?;
+    if candidate_meta.is_dir() && retained_meta.is_dir() {
+        for entry in std::fs::read_dir(candidate)? {
+            let entry = entry?;
+            if !redundant_tree(&entry.path(), &retained.join(entry.file_name()), partial)? {
+                return Ok(false);
+            }
+        }
+        return Ok(true);
+    }
+    if !candidate_meta.is_file() || !retained_meta.is_file()
+        || candidate_meta.len() > retained_meta.len()
+        || (!partial && candidate_meta.len() != retained_meta.len())
+    {
+        return Ok(false);
+    }
+    let mut candidate = std::fs::File::open(candidate)?;
+    let mut retained = std::fs::File::open(retained)?;
+    let mut candidate_buffer = vec![0_u8; COPY_CHUNK_BYTES];
+    let mut retained_buffer = vec![0_u8; COPY_CHUNK_BYTES];
+    loop {
+        let read = candidate.read(&mut candidate_buffer)?;
+        if read == 0 {
+            return Ok(true);
+        }
+        retained.read_exact(&mut retained_buffer[..read])?;
+        if candidate_buffer[..read] != retained_buffer[..read] {
+            return Ok(false);
+        }
+    }
+}
+
 /// Removes the copies in `to` whose original is still in `from` unchanged.
 fn undo_copies(from: &Path, to: &Path, entries: &[ManifestEntry]) -> Vec<String> {
     let mut kept = Vec::new();
     for entry in entries {
         let copy = to.join(&entry.name);
-        if std::fs::symlink_metadata(&copy).is_err() {
-            continue;
+        match std::fs::symlink_metadata(&copy) {
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(_) => {
+                kept.push(entry.name.clone());
+                continue;
+            }
         }
-        if measure(&from.join(&entry.name)) == Some(entry.measure) {
+        if measure(&from.join(&entry.name)) == Some(entry.measure)
+            && matches!(redundant_tree(&copy, &from.join(&entry.name), true), Ok(true))
+        {
             if let Err(error) = remove_path(&copy) {
                 tracing::warn!(path = %copy.display(), %error, "a models folder copy could not be removed");
                 kept.push(entry.name.clone());
@@ -427,13 +469,18 @@ fn remove_originals(from: &Path, to: &Path, entries: &[ManifestEntry]) -> Vec<St
     let mut kept = Vec::new();
     for entry in entries {
         let original = from.join(&entry.name);
-        if std::fs::symlink_metadata(&original).is_err() {
-            continue;
+        match std::fs::symlink_metadata(&original) {
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(_) => {
+                kept.push(entry.name.clone());
+                continue;
+            }
         }
         let copied = measure(&to.join(&entry.name)).is_some_and(|copy| {
             copy.bytes == entry.measure.bytes && copy.files == entry.measure.files
         });
-        if copied {
+        if copied && matches!(redundant_tree(&original, &to.join(&entry.name), false), Ok(true)) {
             if let Err(error) = remove_path(&original) {
                 tracing::warn!(path = %original.display(), %error, "a moved original could not be removed");
                 kept.push(entry.name.clone());
@@ -1114,7 +1161,7 @@ mod tests {
         let target = app.join("elsewhere");
         let manifest = manifest_of(&root, &["org--m", "notes.txt"]);
         std::fs::create_dir_all(target.join("org--m")).expect("partial copy");
-        std::fs::write(target.join("org--m").join("m.gguf"), b"part").expect("partial");
+        std::fs::write(target.join("org--m").join("m.gguf"), [7_u8; 4]).expect("partial");
         std::fs::write(target.join("unrelated.gguf"), b"mine").expect("unrelated");
         std::fs::write(target.join(MODELS_MOVE_MANIFEST), &manifest).expect("manifest");
         assert_eq!(
@@ -1157,6 +1204,32 @@ mod tests {
         );
         assert!(root.join("notes.txt").exists());
         std::fs::remove_dir_all(&app).expect("cleanup");
+    }
+
+    #[test]
+    fn recovery_preserves_changed_contents_on_both_sides() {
+        for committed in [false, true] {
+            let (app, root, backend) = library_with_model("changed-recovery");
+            let target = app.join("elsewhere");
+            let manifest = manifest_of(&root, &["notes.txt"]);
+            std::fs::create_dir_all(&target).expect("target");
+            std::fs::write(target.join("notes.txt"), b"x").expect("copy");
+            std::fs::write(target.join(MODELS_MOVE_MANIFEST), manifest).expect("manifest");
+            if committed {
+                let mut device = backend.database().load_device_settings().expect("device");
+                device.llm_models_dir = Some(target.to_string_lossy().into_owned());
+                backend.database().save_device_settings(device).expect("commit");
+                std::fs::write(root.join("notes.txt"), b"y").expect("changed source");
+            } else {
+                std::fs::write(target.join("notes.txt"), b"y").expect("changed destination");
+            }
+            let resolution = recover_models_folder_move(backend.database(), &app, &target, "move-1")
+                .expect("recover").expect("resolution");
+            assert_eq!(resolution.kept, ["notes.txt"]);
+            assert!(root.join("notes.txt").exists());
+            assert!(target.join("notes.txt").exists());
+            std::fs::remove_dir_all(&app).expect("cleanup");
+        }
     }
 
     #[test]
