@@ -59,7 +59,7 @@ Each migration belongs to one domain and holds all of that domain's tables, trig
 | 10 | Usage events, job inference usage, cost bases, legacy usage records |
 | 11 | Creation helper workflows, lorebook runs and staged projects, apply receipts |
 | 12 | Companion Soul, growth, consolidation and Soul-writer runs, scheduled notes |
-| 13 | Companion relationships, sessions, continuity, turn effects, suffix rewinds, memory pools |
+| 13 | Companion relationships, sessions, continuity, turn effects, suffix rewinds and the ones a delete-after still owes, memory pools |
 | 14 | Speech transcriptions |
 | 15 | Installed Whisper models |
 | 16 | ASR vocabulary, corrections, ignored suggestions, voice examples |

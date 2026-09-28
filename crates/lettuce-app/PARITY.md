@@ -172,6 +172,13 @@ Facts about how `lettuce-app` relates to the legacy app (2.2.x): what follows le
 - `message_count` counts visible messages of every role but System on the selected branch; legacy counted every stored message of the session (`sessions.rs:2384-2388`, `group_sessions.rs:1131`).
 - A launched one-to-one chat is titled with the request's title or the character's name; legacy titles depended on the entry point ("New Chat", "Chat with X", i18n strings; `old-code/src/core/storage/repo.ts:1565` and its callers).
 - A companion chat needs the embedding model as well as the emotion model, as legacy's requirement check asked for both (`old-code/src/ui/modelRequirements.ts:86-90`); legacy also required its NER and router models, which are not ported. Lists and open chats report the missing models; legacy had no per-chat state and checked only at character creation and after sync (`modelRequirements.ts:55-97`).
+- Message search covers the whole selected branch, oldest first and paged. Legacy's direct search read only the latest 120 messages plus the pinned ones (`old-code/src-tauri/src/chat_manager/persistence/storage.rs:333-368`), did not trim the query (`chat_manager/commands/mod.rs:1345-1380`) and left scene messages out; the group search trimmed, matched scene messages and read the whole chat (`storage_manager/group_sessions.rs:2734-2764`). One rule now serves both kinds: trimmed query, an empty one finds nothing without reading, user, reply and scene messages, the shown text only.
+- `message_attach` is not ported. Its only caller was the in-chat image directive flow, an approved removal; no legacy screen attached media to an existing message (`old-code/src/ui/pages/chats/hooks/useChatEnhancementsController.ts:299-310,463-477`). An edit can still remove attachments through `keep_media`, as the legacy edit sheet could.
+- Deleting the starting scene message turns the chat's scene setting off in the same transaction; legacy cleared `selectedSceneId` in a second save after the delete (`useChatMessageActionsController.ts:278-311`). Nothing in the backend refuses a pinned message; legacy blocked it only in the UI.
+- Delete-after is one transaction: the suffix tombstone and a durable record of the memory rewind it owes commit together, and the rewind finishes right after, at startup, or before the chat's next memory cycle, whichever comes first. Legacy deleted the rows in one transaction and rewound memory in a separate call (`old-code/src-tauri/src/storage_manager/sessions.rs:3358-3417`), so a crash between them left memory ahead of the chat.
+- Delete-after is branch-aware. Legacy branches were separate sessions, so a delete stayed local to its session (`old-code/src-tauri/src/storage_manager/sessions.rs:3358-3417`). When every message to remove belongs to the selected branch, they are tombstoned. When some belong to the branch it came from (the anchor lies before the fork point), the rewrite forks a new branch at the anchor, selects it and deletes nothing, so the other branches stay intact; the old branch remains in the list until the user deletes it. The response says which happened (`Tombstoned` or `Branched`).
+- An anchor with nothing after it records a durable no-op under its key: repeating the request after later messages arrived removes none of them, and another request under the key is `Conflict`. A message a user already deleted does not count as part of the suffix.
+- An edit that names no `keep_media` drops every attachment, as the legacy sheet's `attachmentsOverride` did (`useChatMessageActionsController.ts:227-248`); a group edit keeps the earlier text in its revision history instead of leaving the variants unchanged (`storage_manager/group_sessions.rs:2780-2826`).
 
 ## Decisions
 
@@ -255,6 +262,7 @@ Everything the Tauri phase (phase (c)) still has to connect:
 - TTS preview caching.
 - Scene images: optimistic placeholders and the askFirst approval flow.
 - Continue, regenerate and retry must call `ensure_group_members` before they begin, as `conversation_send` does, when they get their API commands.
+- Memory of a branch that delete-after forks: the new branch starts from the conversation's single memory space, so memory is not yet "as of the anchor". Seeding it belongs with branch-aware memory.
 
 ## Planned features (not legacy)
 
