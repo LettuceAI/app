@@ -631,3 +631,49 @@ async fn a_group_reply_asks_for_no_scene_image() {
     .expect_err("a group chat");
     assert_eq!(refused.code, ApiErrorCode::Unsupported);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn deleting_a_chat_removes_what_its_feature_jobs_stored() {
+    let scene = scene_harness(
+        Reply::Text(TAGGED),
+        vec![Outcome::Image],
+        SceneGenerationMode::Auto,
+    );
+    let context = &scene.harness.context;
+    let (chat, reply) = reply_with_scene(&scene.harness, "purge").await;
+    let image_job: lettuce_types::JobId = reply_of(context, &chat, &reply)
+        .await
+        .scene_image
+        .expect("an image")
+        .job_id
+        .expect("its job")
+        .parse()
+        .expect("job id");
+    let helper = conversation_help_me_reply(
+        context,
+        dto::ConversationHelpMeReplyRequest {
+            conversation_id: chat.clone(),
+            mode: dto::HelpMeReplyMode::Enrich,
+            current_draft: Some("a private draft".into()),
+            swap_places: false,
+            client_operation_id: "purge-help".into(),
+        },
+    )
+    .await
+    .expect("help me reply");
+    run_jobs(context).await;
+    let helper: lettuce_types::JobId = helper.job_id.parse().expect("job id");
+    let database = context.backend().database();
+    assert!(database.local_model_job(helper).expect("detail").is_some());
+    assert!(lettuce_image_generation::ImageGenerationRepository::get(database, image_job).is_ok());
+    conversation_delete(
+        context,
+        dto::ConversationRequest {
+            conversation_id: chat,
+        },
+    )
+    .await
+    .expect("delete");
+    assert!(database.local_model_job(helper).expect("detail").is_none());
+    assert!(lettuce_image_generation::ImageGenerationRepository::get(database, image_job).is_err());
+}

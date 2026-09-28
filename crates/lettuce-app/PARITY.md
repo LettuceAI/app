@@ -246,6 +246,7 @@ Facts about how `lettuce-app` relates to the legacy app (2.2.x): what follows le
 - Creation helper drafts do not show the avatar, background, model, prompt, gradient and image-gallery lines (the fields do not exist yet) or the non-native fallback-protocol entry (the legacy UI never enabled it).
 - The creation helper's avatar prompt path (template text, untrimmed, no conditions) is not ported.
 - The per-model DynamicMemory sampler profile and order, min_p, typical_p and DRY resets of legacy have no destination before the llama.cpp runtime slice.
+- A reply that shows an imported revision and has no generated variant (a legacy message without variants) cannot be regenerated: `conversation_regenerate` answers `Unsupported`. Legacy created a variant from the current content first (`old-code/src-tauri/src/chat_manager/flows/regenerate.rs:417-423`). A turn's target and input name a prior candidate whose model, attempt and turn a candidate row requires (`lettuce-database/migrations/0008_conversations.sql:319-320,457-492`), and an import without variants has none to name, so regenerating from a revision needs a turn shape for it.
 
 ## History
 

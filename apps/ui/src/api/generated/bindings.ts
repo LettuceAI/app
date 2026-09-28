@@ -1896,8 +1896,8 @@ export type TimelineMessage = {
 	candidate_count: number,
 	pinned: boolean,
 	/**
-	 *  The scene image the reply asked for, or that was asked of it, while
-	 *  it is not finished or failed.
+	 *  The scene image the reply asked for, or that was asked of it, until
+	 *  its image is on the message or the user dismissed it.
 	 */
 	scene_image: SceneImageView | null,
 };

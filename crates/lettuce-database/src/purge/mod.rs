@@ -259,6 +259,18 @@ impl<'c> Purge<'c> {
             .map_err(storage)?;
         self.delete("companion_continuity_episodes", "conversation_id = ?1", one)?;
         self.delete("scene_image_follow_ups", "conversation_id = ?1", one)?;
+        self.delete(
+            "local_model_jobs",
+            "job_id IN (SELECT id FROM jobs WHERE kind = 'creation_run' AND subject_kind = 'conversation' AND subject_id = ?1)",
+            one,
+        )?;
+        let scene_generations = "source = 'scene' AND json_extract(request_json, '$.value.attribution.conversation_id') = ?1";
+        self.delete(
+            "image_generation_outputs",
+            &format!("job_id IN (SELECT job_id FROM image_generations WHERE {scene_generations})"),
+            one,
+        )?;
+        self.delete("image_generations", scene_generations, one)?;
         self.delete("companion_consolidation_runs", "conversation_id = ?1", one)?;
         self.delete("creation_lorebook_entry_runs", "conversation_id = ?1", one)?;
         self.memory(Some(id), &own_spaces)?;

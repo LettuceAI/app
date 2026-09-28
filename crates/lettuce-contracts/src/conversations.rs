@@ -508,8 +508,8 @@ pub struct TimelineMessage {
     pub candidate_index: Option<u16>,
     pub candidate_count: u32,
     pub pinned: bool,
-    /// The scene image the reply asked for, or that was asked of it, while
-    /// it is not finished or failed.
+    /// The scene image the reply asked for, or that was asked of it, until
+    /// its image is on the message or the user dismissed it.
     pub scene_image: Option<SceneImageView>,
 }
 

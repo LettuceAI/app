@@ -961,3 +961,49 @@ async fn a_reply_a_child_branch_shows_regenerates_on_its_owner_and_is_refused_fr
     assert_eq!(shown.candidate_count, 2);
     assert_eq!(view.messages.items.len(), 2);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn retrying_a_turn_of_an_archived_chat_restores_it() {
+    let harness = harness(Reply::Text("Hello."));
+    let chat = launch(&harness, "retry-archived-launch").await;
+    let accepted = send(
+        &harness,
+        &chat,
+        "retry-archived-send",
+        "Stop me",
+        Arc::new(RecordingStream::default()),
+    )
+    .await
+    .expect("send");
+    generation_cancel(
+        &harness.context,
+        dto::GenerationCancelRequest {
+            turn_id: accepted.turn_id.clone(),
+        },
+    )
+    .await
+    .expect("cancel");
+    conversation_archive(
+        &harness.context,
+        dto::ConversationRequest {
+            conversation_id: chat.clone(),
+        },
+    )
+    .await
+    .expect("archive");
+    conversation_retry(
+        &harness.context,
+        dto::ConversationRetryRequest {
+            conversation_id: chat.clone(),
+            turn_id: accepted.turn_id,
+            client_operation_id: "retry-archived-1".into(),
+        },
+        Arc::new(RecordingStream::default()),
+    )
+    .await
+    .expect("retry on an archived chat");
+    assert_eq!(
+        conversation(&harness, &chat).lifecycle,
+        ConversationLifecycle::Active
+    );
+}
