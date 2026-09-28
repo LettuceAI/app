@@ -2743,3 +2743,118 @@ async fn a_failed_owed_rewind_shows_on_the_view_and_list_and_a_retry_clears_it()
     .expect("retry of a chat that owes nothing");
     assert_eq!(idle, dto::MemoryRewindRetryOutcome::NothingOwed);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failing_owed_rewind_refuses_every_operation_that_begins_a_turn() {
+    let harness = harness(Reply::Text("Hello."));
+    let broken = memory_chat(&harness, "owed-turns").await;
+    let owed = tombstone_without_rewind(&harness, &broken, "owed-turns-1");
+    let database = harness.context.backend().database();
+    let record = ConversationReader::operation_record(
+        database,
+        broken.conversation_id,
+        OperationKind::Tombstone,
+        &owed.tombstone.operation,
+    )
+    .expect("record")
+    .expect("tombstone record");
+    let earlier = extra_memory_run(&harness, &broken, broken.first, "owed-turns-extra");
+    DynamicMemorySuffixRewindRepository::rewind_dynamic_memory_suffix(
+        database,
+        lettuce_memory::DynamicMemorySuffixRewind {
+            operation_id: OperationId::from_uuid(record.id.as_uuid()),
+            conversation_id: broken.conversation_id,
+            invalid_run_id: Some(earlier),
+            expected_memory_revision: memory_revision(&harness, broken.conversation_id),
+            invalidated_effect_ids: Vec::new(),
+            at: harness.context.now(),
+        },
+    )
+    .expect("a receipt that disagrees with the owed rewind");
+    super::startup::complete_pending_rewinds(&harness.context)
+        .await
+        .expect("startup goes on");
+    assert_eq!(pending_of(&harness, broken.conversation_id).len(), 1);
+
+    let chat = broken.conversation_id.to_string();
+    let stream = || Arc::new(RecordingStream::default());
+    let revision = revision(&harness, broken.conversation_id);
+    let sent = send(&harness, &chat, "owed-turns-send", "Hello", stream())
+        .await
+        .expect_err("send");
+    let regenerated = conversation_regenerate(
+        &harness.context,
+        dto::ConversationRegenerateRequest {
+            conversation_id: chat.clone(),
+            message_id: broken.first.to_string(),
+            expected_revision: revision,
+            client_operation_id: "owed-turns-regen".into(),
+            guidance: None,
+            model_profile_id: None,
+            forced_speaker_participant_id: None,
+            swap_places: false,
+        },
+        stream(),
+    )
+    .await
+    .expect_err("regenerate");
+    let continued = conversation_continue(
+        &harness.context,
+        dto::ConversationContinueRequest {
+            conversation_id: chat.clone(),
+            expected_revision: revision,
+            client_operation_id: "owed-turns-continue".into(),
+            forced_speaker_participant_id: None,
+            swap_places: false,
+        },
+        stream(),
+    )
+    .await
+    .expect_err("continue");
+    let retried = conversation_retry(
+        &harness.context,
+        dto::ConversationRetryRequest {
+            conversation_id: chat.clone(),
+            turn_id: uuid::Uuid::new_v4().to_string(),
+            client_operation_id: "owed-turns-retry".into(),
+        },
+        stream(),
+    )
+    .await
+    .expect_err("retry");
+    for error in [sent, regenerated, continued, retried] {
+        assert_eq!(error.code, ApiErrorCode::Unavailable, "{error:?}");
+        assert_eq!(
+            error.details,
+            Some(ApiErrorDetails::PendingMemoryRewind {
+                conversation_id: chat.clone()
+            })
+        );
+    }
+    assert_eq!(pending_of(&harness, broken.conversation_id).len(), 1);
+    assert!(
+        ConversationOverviewReader::live_turn(database, broken.conversation_id)
+            .expect("live turn")
+            .is_none()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_owed_rewind_a_crash_left_finishes_before_a_turn_begins() {
+    let harness = harness(Reply::Text("Hello."));
+    let chat = memory_chat(&harness, "owed-before-turn").await;
+    let owed = tombstone_without_rewind(&harness, &chat, "owed-before-turn-1");
+    assert!(rewind_receipt(&harness, chat.conversation_id, &owed.tombstone.operation).is_none());
+    let text = "Hello again";
+    send(
+        &harness,
+        &chat.conversation_id.to_string(),
+        "owed-before-turn-send",
+        text,
+        Arc::new(RecordingStream::default()),
+    )
+    .await
+    .expect("the owed rewind finishes, then the send begins");
+    assert!(rewind_receipt(&harness, chat.conversation_id, &owed.tombstone.operation).is_some());
+    assert!(pending_of(&harness, chat.conversation_id).is_empty());
+}

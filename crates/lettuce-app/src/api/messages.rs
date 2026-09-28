@@ -27,7 +27,7 @@ use crate::conversation;
 /// The timeline page a search or pinned list reads at a time.
 const SCAN_PAGE: u16 = 200;
 
-fn expected_revision(value: u64) -> Result<Revision, ApiError> {
+pub(super) fn expected_revision(value: u64) -> Result<Revision, ApiError> {
     if value == 0 {
         return Err(invalid_field(
             "expected_revision",
@@ -37,7 +37,7 @@ fn expected_revision(value: u64) -> Result<Revision, ApiError> {
     Ok(Revision::new(value))
 }
 
-fn operation(key: String, parts: &[&[u8]]) -> Result<OperationToken, ApiError> {
+pub(super) fn operation(key: String, parts: &[&[u8]]) -> Result<OperationToken, ApiError> {
     conversation::edit_operation(key, parts).map_err(edit_error)
 }
 
@@ -56,7 +56,7 @@ fn cursor_field(error: ConversationRepositoryError, field: &str) -> ApiError {
     }
 }
 
-fn active_branch(
+pub(super) fn active_branch(
     context: &ApiContext,
     conversation_id: ConversationId,
 ) -> Result<ConversationBranchId, ApiError> {
@@ -69,7 +69,7 @@ fn active_branch(
 }
 
 /// The message as it stands on the active branch, whatever its visibility.
-fn on_timeline(
+pub(super) fn on_timeline(
     context: &ApiContext,
     conversation_id: ConversationId,
     branch_id: ConversationBranchId,
@@ -92,7 +92,7 @@ fn on_timeline(
 
 /// Whether `operation` already ran as `kind`; the same key with another
 /// request is `Conflict`.
-fn replayed(
+pub(super) fn replayed(
     context: &ApiContext,
     conversation_id: ConversationId,
     kind: OperationKind,
@@ -146,7 +146,7 @@ fn visible(page: &TimelinePage) -> impl Iterator<Item = &TimelineItem> {
 }
 
 /// A changed message as the chat shows it now.
-fn changed(
+pub(super) fn changed(
     context: &ApiContext,
     message: lettuce_conversations::Message,
     revision: u64,
@@ -182,7 +182,9 @@ fn changed(
 }
 
 /// The conversation revision a commit left.
-fn committed_revision(outbox: &[lettuce_conversations::ConversationOutboxRecord]) -> u64 {
+pub(super) fn committed_revision(
+    outbox: &[lettuce_conversations::ConversationOutboxRecord],
+) -> u64 {
     outbox
         .iter()
         .map(|record| record.conversation_revision.get())
@@ -192,7 +194,7 @@ fn committed_revision(outbox: &[lettuce_conversations::ConversationOutboxRecord]
 
 /// The message after a replayed edit: as it stands now, with the current
 /// conversation revision.
-fn current_message(
+pub(super) fn current_message(
     context: &ApiContext,
     conversation_id: ConversationId,
     message_id: MessageId,
@@ -532,7 +534,7 @@ fn summary_message_interval(
     .summary_message_interval)
 }
 
-fn delete_after_error(
+pub(super) fn delete_after_error(
     context: &ApiContext,
     conversation_id: ConversationId,
     error: crate::DynamicMemoryDeleteAfterError,

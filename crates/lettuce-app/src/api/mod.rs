@@ -23,6 +23,7 @@ mod messages;
 mod models;
 mod ollama;
 mod startup;
+mod turns;
 mod worker;
 
 #[cfg(test)]
@@ -41,6 +42,8 @@ mod messages_tests;
 mod models_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod turns_tests;
 
 pub use app::{app_status, app_ui_state_update, purge_notice_dismiss, purge_notices_list};
 pub use assets::{AssetBytes, AssetRange, AssetRead, OPEN_RANGE_CHUNK, read_asset};
@@ -86,4 +89,8 @@ pub use messages::{
 pub use models::{InstalledModels, ModelLoad, ModelLoader, NoModels};
 pub use ollama::{ollama_model_delete, ollama_models_list, ollama_pull};
 pub use startup::{ApiWorkers, StartupStep, startup};
+pub use turns::{
+    conversation_add_user_message, conversation_continue, conversation_regenerate,
+    conversation_retry,
+};
 pub use worker::ConversationGenerationWorker;

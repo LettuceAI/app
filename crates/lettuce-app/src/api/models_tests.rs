@@ -15,7 +15,7 @@ use lettuce_jobs::{SystemClock, handle::CancellationToken};
 use lettuce_settings::GlobalSettingsStore;
 use lettuce_types::{CharacterId, ConversationId};
 
-use super::models::require_conversation_models;
+use super::models::{TurnOperation, require_conversation_models};
 use super::tests::{Harness, Reply, create_character, harness_in};
 use super::{
     ApiContext, ModelLoad, ModelLoader, conversation_launch_direct, conversation_open,
@@ -325,11 +325,11 @@ async fn installed_models_load_once_until_they_change() {
     let conversation_id = launch(&harness, companion, "lazy-launch").await;
     let conversation: ConversationId = conversation_id.parse().expect("id");
     assert_eq!(models.calls(), (0, 0, 0));
-    require_conversation_models(&harness.context, conversation)
+    require_conversation_models(&harness.context, conversation, TurnOperation::Send)
         .await
         .expect("models load");
     assert_eq!(models.calls(), (2, 2, 2));
-    require_conversation_models(&harness.context, conversation)
+    require_conversation_models(&harness.context, conversation, TurnOperation::Send)
         .await
         .expect("models stay loaded");
     assert_eq!(models.calls(), (2, 2, 2));
@@ -343,7 +343,7 @@ async fn installed_models_load_once_until_they_change() {
     assert_eq!(models.calls(), (2, 2, 2));
 
     harness.context.models_changed();
-    require_conversation_models(&harness.context, conversation)
+    require_conversation_models(&harness.context, conversation, TurnOperation::Send)
         .await
         .expect("models reload");
     assert_eq!(models.calls(), (4, 4, 4));
@@ -461,7 +461,7 @@ async fn adopting_legacy_embedding_files_forgets_a_missing_model() {
     );
     let conversation_id = launch(&harness, character, "adopt-launch").await;
     let conversation: ConversationId = conversation_id.parse().expect("id");
-    let missing = require_conversation_models(&harness.context, conversation)
+    let missing = require_conversation_models(&harness.context, conversation, TurnOperation::Send)
         .await
         .expect_err("no model yet");
     assert_eq!(missing.code, ApiErrorCode::ModelRequired);
@@ -473,7 +473,7 @@ async fn adopting_legacy_embedding_files_forgets_a_missing_model() {
     models.installed.store(true, Ordering::SeqCst);
     models.loadable.store(true, Ordering::SeqCst);
     let workers = super::startup(&harness.context).await.expect("startup");
-    require_conversation_models(&harness.context, conversation)
+    require_conversation_models(&harness.context, conversation, TurnOperation::Send)
         .await
         .expect("the adopted model loads");
     tokio::time::timeout(Duration::from_secs(30), workers.started())
@@ -591,4 +591,211 @@ async fn a_model_change_tells_every_window_to_re_read_missing_models() {
         super::tests::api_events(&harness),
         vec![dto::ApiEvent::RequiredModelsChanged]
     );
+}
+
+async fn settle_generation(harness: &Harness) {
+    let worker = super::ConversationGenerationWorker::new(harness.context.clone());
+    while worker.run_once().await.expect("worker") {}
+}
+
+async fn regenerate(
+    harness: &Harness,
+    conversation_id: &str,
+    message_id: &str,
+    key: &str,
+) -> Result<dto::GenerationAccepted, dto::ApiError> {
+    let revision = conversation_open(
+        &harness.context,
+        dto::ConversationOpenRequest {
+            conversation_id: conversation_id.into(),
+        },
+    )
+    .await
+    .expect("open")
+    .revision;
+    super::conversation_regenerate(
+        &harness.context,
+        dto::ConversationRegenerateRequest {
+            conversation_id: conversation_id.into(),
+            message_id: message_id.into(),
+            expected_revision: revision,
+            client_operation_id: key.into(),
+            guidance: None,
+            model_profile_id: None,
+            forced_speaker_participant_id: None,
+            swap_places: false,
+        },
+        Arc::new(NoStream),
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_regenerate_needs_the_embedding_model_only_and_only_in_a_dynamic_chat() {
+    let models = CountingModels::new(true, true);
+    let harness = harness_with_models(Arc::clone(&models));
+    let companion = create_character(
+        harness.context.backend().database(),
+        "Mira",
+        companion_defaults(),
+    );
+    let chat = launch(&harness, companion, "regen-models-launch").await;
+    send(&harness, &chat, "regen-models-send")
+        .await
+        .expect("a companion send with both models");
+    settle_generation(&harness).await;
+    let reply = conversation_open(
+        &harness.context,
+        dto::ConversationOpenRequest {
+            conversation_id: chat.clone(),
+        },
+    )
+    .await
+    .expect("open")
+    .messages
+    .items
+    .iter()
+    .find(|message| message.role == dto::MessageRole::Assistant)
+    .expect("reply")
+    .id
+    .clone();
+
+    without(&models, RequiredModel::Emotion);
+    harness.context.models_changed();
+    regenerate(&harness, &chat, &reply, "regen-models-1")
+        .await
+        .expect("no classification, so no emotion model");
+    settle_generation(&harness).await;
+
+    enable_dynamic_memory(&harness);
+    super::conversation_settings_update(
+        &harness.context,
+        dto::ConversationSettingsUpdateRequest {
+            conversation_id: chat.clone(),
+            expected_settings_revision: None,
+            patch: dto::ConversationSettingsPatch {
+                memory: Some(dto::MemoryModeChange::Set {
+                    mode: dto::MemoryMode::Dynamic,
+                }),
+                ..dto::ConversationSettingsPatch::default()
+            },
+        },
+    )
+    .await
+    .expect("dynamic memory");
+    models.absent.lock().expect("absent models").clear();
+    without(&models, RequiredModel::Embedding);
+    harness.context.models_changed();
+    let before = conversation_open(
+        &harness.context,
+        dto::ConversationOpenRequest {
+            conversation_id: chat.clone(),
+        },
+    )
+    .await
+    .expect("open");
+    let error = regenerate(&harness, &chat, &reply, "regen-models-2")
+        .await
+        .expect_err("retrieval needs the embedding model");
+    assert_eq!(error.code, ApiErrorCode::ModelRequired);
+    assert_eq!(model_of(&error), Some(RequiredModel::Embedding));
+    let after = conversation_open(
+        &harness.context,
+        dto::ConversationOpenRequest {
+            conversation_id: chat.clone(),
+        },
+    )
+    .await
+    .expect("open");
+    assert_eq!(after.revision, before.revision);
+    assert!(after.pending_turn_id.is_none());
+    let continued = super::conversation_continue(
+        &harness.context,
+        dto::ConversationContinueRequest {
+            conversation_id: chat.clone(),
+            expected_revision: after.revision,
+            client_operation_id: "regen-models-continue".into(),
+            forced_speaker_participant_id: None,
+            swap_places: false,
+        },
+        Arc::new(NoStream),
+    )
+    .await
+    .expect_err("a continue retrieves memory too");
+    assert_eq!(continued.code, ApiErrorCode::ModelRequired);
+    assert_eq!(model_of(&continued), Some(RequiredModel::Embedding));
+    let retried = super::conversation_retry(
+        &harness.context,
+        dto::ConversationRetryRequest {
+            conversation_id: chat.clone(),
+            turn_id: uuid::Uuid::new_v4().to_string(),
+            client_operation_id: "regen-models-retry".into(),
+        },
+        Arc::new(NoStream),
+    )
+    .await
+    .expect_err("a retry retrieves memory too");
+    assert_eq!(retried.code, ApiErrorCode::ModelRequired);
+
+    models.absent.lock().expect("absent models").clear();
+    without(&models, RequiredModel::Emotion);
+    harness.context.models_changed();
+    regenerate(&harness, &chat, &reply, "regen-models-3")
+        .await
+        .expect("the embedding model is enough");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_companion_send_without_an_emotion_engine_is_model_required() {
+    let models = CountingModels::new(true, true);
+    let harness = harness_with_models(Arc::clone(&models));
+    let companion = create_character(
+        harness.context.backend().database(),
+        "Mira",
+        companion_defaults(),
+    );
+    let chat = launch(&harness, companion, "no-engine-launch").await;
+    let database = harness.context.backend().database();
+    let stored = lettuce_conversations::ConversationReader::get(
+        database,
+        chat.parse().expect("conversation id"),
+    )
+    .expect("conversation")
+    .conversation;
+    let user = stored
+        .participants
+        .iter()
+        .find(|participant| participant.role == lettuce_conversations::ParticipantRole::User)
+        .expect("user")
+        .id;
+    let command = lettuce_conversations::SendConversation {
+        conversation_id: stored.id,
+        branch_id: stored.active_branch_id,
+        expected_revision: stored.revision,
+        operation: crate::conversation::edit_operation("no-engine".into(), &[b"send"])
+            .expect("token"),
+        message: lettuce_conversations::MessageDraft {
+            role: lettuce_conversations::MessageRole::User,
+            author_participant_id: Some(user),
+            parts: vec![lettuce_conversations::MessagePart::Text { text: "Hi".into() }],
+            visibility: lettuce_conversations::MessageVisibility::Visible,
+            pinned: false,
+            scene_edited: false,
+        },
+        swap_roles: false,
+    };
+    let error =
+        crate::CompanionTurnCoordinator::<_, dyn CompanionEmotionEngine>::new(database, None)
+            .begin_send(&command, harness.context.now(), &CancellationToken::new())
+            .expect_err("no emotion engine");
+    assert!(matches!(error, crate::CompanionTurnError::EmotionRequired));
+    let api = super::error::IntoApiError::into_api_error(error);
+    assert_eq!(api.code, ApiErrorCode::ModelRequired);
+    assert_eq!(
+        api.details,
+        Some(ApiErrorDetails::Model {
+            model: RequiredModel::Emotion
+        })
+    );
+    assert_untouched(&harness, &chat).await;
 }

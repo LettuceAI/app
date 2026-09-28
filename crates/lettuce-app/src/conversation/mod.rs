@@ -4,6 +4,7 @@
 mod participants;
 mod settings;
 
+pub(crate) use participants::conversation_model;
 pub use participants::{
     ParticipantChange, add_group_member, ensure_group_members, member_operation,
     member_participant_id, update_group_participant,

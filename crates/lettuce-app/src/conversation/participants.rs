@@ -329,7 +329,7 @@ fn group_member_model(
 }
 
 /// A snapshot of a chat model, stored and attached to the conversation.
-fn conversation_model(
+pub(crate) fn conversation_model(
     database: &Database,
     conversation_id: ConversationId,
     model_profile_id: ModelProfileId,

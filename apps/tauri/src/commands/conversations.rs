@@ -2,18 +2,20 @@ use std::sync::Arc;
 
 use lettuce_app::api::{self, ApiContext, GenerationEventSink};
 use lettuce_contracts::{
-    ApiError, ConversationMessagesAroundRequest, ConversationMessagesRequest,
-    ConversationOpenRequest, ConversationPage, ConversationParticipantAddRequest,
-    ConversationParticipantUpdateRequest, ConversationPinnedMessagesRequest,
-    ConversationRenameRequest, ConversationRequest, ConversationRevisions,
+    ApiError, ConversationAddUserMessageRequest, ConversationContinueRequest,
+    ConversationMessagesAroundRequest, ConversationMessagesRequest, ConversationOpenRequest,
+    ConversationPage, ConversationParticipantAddRequest, ConversationParticipantUpdateRequest,
+    ConversationPinnedMessagesRequest, ConversationRegenerateRequest, ConversationRenameRequest,
+    ConversationRequest, ConversationRetryRequest, ConversationRevisions,
     ConversationSearchRequest, ConversationSendRequest, ConversationSettingsGetRequest,
     ConversationSettingsUpdateRequest, ConversationSettingsView, ConversationView,
-    ConversationsListRequest, GenerationCancelRequest, GenerationEvent, LatestConversationPage,
-    LatestConversationsRequest, LaunchDirectRequest, LaunchDirectResponse, LaunchGroupRequest,
-    LaunchGroupResponse, MemoryRewindRetryOutcome, MemoryRewindRetryRequest, MessageCandidatePage,
-    MessageCandidateSelectRequest, MessageChanged, MessageCount, MessageDeleteRequest,
-    MessageEditRequest, MessageHistoryRequest, MessagePage, MessagePinRequest, MessageRevisionPage,
-    MessageSceneSelectRequest, MessageWindow, MessagesDeleteResult, SearchHitPage, SendAccepted,
+    ConversationsListRequest, GenerationAccepted, GenerationCancelRequest, GenerationEvent,
+    LatestConversationPage, LatestConversationsRequest, LaunchDirectRequest, LaunchDirectResponse,
+    LaunchGroupRequest, LaunchGroupResponse, MemoryRewindRetryOutcome, MemoryRewindRetryRequest,
+    MessageCandidatePage, MessageCandidateSelectRequest, MessageChanged, MessageCount,
+    MessageDeleteRequest, MessageEditRequest, MessageHistoryRequest, MessagePage,
+    MessagePinRequest, MessageRevisionPage, MessageSceneSelectRequest, MessageWindow,
+    MessagesDeleteResult, SearchHitPage, SendAccepted,
 };
 use tauri::{State, ipc::Channel};
 
@@ -187,6 +189,45 @@ pub async fn conversation_send(
     on_event: Channel<GenerationEvent>,
 ) -> Result<SendAccepted, ApiError> {
     api::conversation_send(&context, request, Arc::new(ChannelSink(on_event))).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn conversation_regenerate(
+    context: State<'_, ApiContext>,
+    request: ConversationRegenerateRequest,
+    on_event: Channel<GenerationEvent>,
+) -> Result<GenerationAccepted, ApiError> {
+    api::conversation_regenerate(&context, request, Arc::new(ChannelSink(on_event))).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn conversation_continue(
+    context: State<'_, ApiContext>,
+    request: ConversationContinueRequest,
+    on_event: Channel<GenerationEvent>,
+) -> Result<GenerationAccepted, ApiError> {
+    api::conversation_continue(&context, request, Arc::new(ChannelSink(on_event))).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn conversation_retry(
+    context: State<'_, ApiContext>,
+    request: ConversationRetryRequest,
+    on_event: Channel<GenerationEvent>,
+) -> Result<GenerationAccepted, ApiError> {
+    api::conversation_retry(&context, request, Arc::new(ChannelSink(on_event))).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn conversation_add_user_message(
+    context: State<'_, ApiContext>,
+    request: ConversationAddUserMessageRequest,
+) -> Result<MessageChanged, ApiError> {
+    api::conversation_add_user_message(&context, request).await
 }
 
 #[tauri::command]

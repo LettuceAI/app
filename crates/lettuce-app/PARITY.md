@@ -198,6 +198,16 @@ Facts about how `lettuce-app` relates to the legacy app (2.2.x): what follows le
 - An Ollama pull is a job: cancelling a queued pull stops it, which legacy only showed (`hf_browser/mod.rs` 2523-2541), and a stream that ends without success fails it (`ollama/mod.rs` 1042-1059). Its failures are typed (offline, credentials, the server's words, incomplete) where legacy passed error strings (`ollama/mod.rs` 886-1060).
 - On mobile, GGUF downloads and the folder move are refused by the backend; legacy hid them in the UI only (`HuggingFaceBrowserPage.tsx` 1484-1497).
 - The download planner's limits, report and statuses come from `hf_recommendation`; legacy computed them in the page (`HuggingFaceBrowserPage.tsx` 163-704). A download without an offload choice reads it from its layer count as the page did (`HuggingFaceBrowserPage.tsx` 2214-2216).
+- Regenerate targets an assistant reply only; legacy also let a scene message through (`old-code/src-tauri/src/chat_manager/flows/regenerate.rs:102-148`). A one-to-one chat regenerates its newest message only, as legacy did; a group chat any reply (`old-code/src-tauri/src/group_chat_manager/mod.rs:6830-6955`).
+- A regenerated reply keeps each variant's own images, and the variants stay selectable; legacy replaced the message's attachments with the new ones and deleted the previous files (`regenerate.rs:727-802`).
+- A group regenerate is spoken by `forced_speaker_participant_id` or by the member who spoke the reply; the LLM speaker selection legacy fell back to for a reply without a speaker (`group_chat_manager/mod.rs:6830-6955`) has no case here, because an assistant message always has an author (`lettuce-database/migrations/0008_conversations.sql:206`; the importers refuse an assistant message without one, `legacy/legacy_direct_conversation_import.rs:1958`).
+- A regenerate of an older group reply works and commits its variant in one step; legacy wrote the variant and then failed with "Message not found after update" when the reply was older than the latest 100 messages (`group_chat_manager/mod.rs:7114-7126`).
+- A reply owned by a parent branch is refused from a child branch (`Unsupported`); the candidate, the turn and the message must belong to one branch (`lettuce-database/migrations/0008_conversations.sql:307,483`), and legacy had no branches. From the owning branch the new variant is added to the message every branch showing it sees; nothing is copied or forked.
+- Stopping a group reply keeps the streamed text as the reply; legacy persisted nothing and reloaded the messages (`old-code/src/ui/pages/group-chats/GroupChatPage.tsx:760-777,1040-1048`). Direct chats keep it as legacy did (`old-code/src/ui/pages/chats/hooks/useChatAbortController.ts:29-148`).
+- Cancelling a turn that is unknown, has no job or already settled succeeds, as legacy's `abort_request` always did (`old-code/src-tauri/src/api/mod.rs:367-391`); before, an unknown turn was `NotFound` and one without a job `Conflict`.
+- Adding a user message to a group chat fails `Busy` while a turn is live and trims its text; legacy checked neither (`old-code/src-tauri/src/group_chat_manager/mod.rs:6397-6406,4598-4640`). It works in one-to-one chats too.
+- A companion send without an emotion engine is `ModelRequired`; legacy took the neutral update (`old-code/src-tauri/src/embedding/emotion.rs:83-85`).
+- Regenerate, continue and retry check exactly the models they use, before anything is written, and finish the memory rewinds a delete owes the chat first; legacy had no such checks and ran with empty memories when retrieval failed (`old-code/src-tauri/src/chat_manager/memory/flow.rs:1407-1417`, recorded above).
 
 ## Decisions
 
@@ -281,7 +291,6 @@ Everything the Tauri phase (phase (c)) still has to connect:
 - Passing the Pure mode level to `CivitaiBrowser`.
 - TTS preview caching.
 - Scene images: optimistic placeholders and the askFirst approval flow.
-- Continue, regenerate and retry must call `ensure_group_members` before they begin, as `conversation_send` does, when they get their API commands.
 - Memory of a branch that a delete forks: the new branch starts from the conversation's single memory space, so memory is not yet "as of the anchor". Seeding it belongs with branch-aware memory.
 
 ## Planned features (not legacy)

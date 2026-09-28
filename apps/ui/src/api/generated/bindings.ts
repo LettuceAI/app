@@ -24,6 +24,10 @@ export const commands = {
 	conversationMessageCount: (request: ConversationRequest) => typedError<MessageCount, ApiError>(__TAURI_INVOKE("conversation_message_count", { request })),
 	conversationMessagesAround: (request: ConversationMessagesAroundRequest) => typedError<MessageWindow, ApiError>(__TAURI_INVOKE("conversation_messages_around", { request })),
 	conversationSend: (request: ConversationSendRequest, onEvent: Channel<GenerationEvent>) => typedError<SendAccepted, ApiError>(__TAURI_INVOKE("conversation_send", { request, onEvent })),
+	conversationRegenerate: (request: ConversationRegenerateRequest, onEvent: Channel<GenerationEvent>) => typedError<GenerationAccepted, ApiError>(__TAURI_INVOKE("conversation_regenerate", { request, onEvent })),
+	conversationContinue: (request: ConversationContinueRequest, onEvent: Channel<GenerationEvent>) => typedError<GenerationAccepted, ApiError>(__TAURI_INVOKE("conversation_continue", { request, onEvent })),
+	conversationRetry: (request: ConversationRetryRequest, onEvent: Channel<GenerationEvent>) => typedError<GenerationAccepted, ApiError>(__TAURI_INVOKE("conversation_retry", { request, onEvent })),
+	conversationAddUserMessage: (request: ConversationAddUserMessageRequest) => typedError<MessageChanged, ApiError>(__TAURI_INVOKE("conversation_add_user_message", { request })),
 	generationCancel: (request: GenerationCancelRequest) => typedError<null, ApiError>(__TAURI_INVOKE("generation_cancel", { request })),
 	conversationLaunchDirect: (request: LaunchDirectRequest) => typedError<LaunchDirectResponse, ApiError>(__TAURI_INVOKE("conversation_launch_direct", { request })),
 	conversationLaunchGroup: (request: LaunchGroupRequest) => typedError<LaunchGroupResponse, ApiError>(__TAURI_INVOKE("conversation_launch_group", { request })),
@@ -183,6 +187,29 @@ export type ChatModeChange = { type: "set"; mode: GroupChatMode } | { type: "res
  */
 export type ChoiceChange = { type: "set"; id: string } | { type: "none" } | { type: "reset" };
 
+/**
+ *  Adds a user message without a reply, for a director who then continues
+ *  with a chosen speaker. `text` is trimmed; blank is refused.
+ */
+export type ConversationAddUserMessageRequest = {
+	conversation_id: string,
+	text: string,
+	expected_revision: number,
+	client_operation_id: string,
+};
+
+/**
+ *  Generates a new reply after the newest message, from `forced_speaker_participant_id`
+ *  in a group chat or by the chat's speaker selection.
+ */
+export type ConversationContinueRequest = {
+	conversation_id: string,
+	expected_revision: number,
+	client_operation_id: string,
+	forced_speaker_participant_id: string | null,
+	swap_places: boolean,
+};
+
 export type ConversationKind = "direct" | "group";
 
 /**
@@ -250,6 +277,23 @@ export type ConversationPinnedMessagesRequest = {
 	limit: number | null,
 };
 
+/**
+ *  Generates another variant of a reply. `guidance` and `model_profile_id`
+ *  are trimmed and a blank one is none. In a group chat the reply is spoken
+ *  by `forced_speaker_participant_id`, else by the member who spoke the
+ *  message.
+ */
+export type ConversationRegenerateRequest = {
+	conversation_id: string,
+	message_id: string,
+	expected_revision: number,
+	client_operation_id: string,
+	guidance: string | null,
+	model_profile_id: string | null,
+	forced_speaker_participant_id: string | null,
+	swap_places: boolean,
+};
+
 export type ConversationRenameRequest = {
 	conversation_id: string,
 	expected_revision: number,
@@ -259,6 +303,13 @@ export type ConversationRenameRequest = {
 
 export type ConversationRequest = {
 	conversation_id: string,
+};
+
+/**  Starts a new turn that repeats a failed or cancelled one. */
+export type ConversationRetryRequest = {
+	conversation_id: string,
+	turn_id: string,
+	client_operation_id: string,
 };
 
 /**  The revisions a conversation change left. */
@@ -440,6 +491,11 @@ export type FilesInspectRequest = {
 };
 
 export type FlagChange = { type: "set"; value: boolean } | { type: "reset" };
+
+/**  A queued turn; its stream is the channel the request passed in. */
+export type GenerationAccepted = {
+	turn_id: string,
+};
 
 export type GenerationCancelRequest = {
 	turn_id: string,

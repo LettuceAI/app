@@ -90,6 +90,7 @@ impl RecordingEvents {
 pub(super) enum Reply {
     Text(&'static str),
     UntilCancelled,
+    PartialUntilCancelled(&'static str),
 }
 
 /// Streams "Hel" and "lo." when the request has a sink, then answers or
@@ -149,6 +150,28 @@ impl InferencePort for FakeProvider {
                     .await
                     .map_err(|_| PortError::Unavailable)?;
                 Err(PortError::Cancelled)
+            }
+            Reply::PartialUntilCancelled(text) => {
+                let job = request.cancellation.ok_or(PortError::Unavailable)?;
+                self.runtime
+                    .cancelled(job)
+                    .await
+                    .map_err(|_| PortError::Unavailable)?;
+                Ok(InferenceOutcome {
+                    provider_response_id: None,
+                    candidates: vec![InferenceCandidate {
+                        ordinal: 0,
+                        parts: vec![MessagePart::Text { text: text.into() }],
+                        tool_calls: vec![],
+                        provider_replay: None,
+                        media: Vec::new(),
+                    }],
+                    usage: None,
+                    finish_reason: lettuce_conversations::FinishReason::Cancelled,
+                    provider_finish_reason: None,
+                    provider_request_id: None,
+                    warning_codes: vec![],
+                })
             }
         }
     }

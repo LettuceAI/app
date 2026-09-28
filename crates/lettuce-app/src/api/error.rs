@@ -162,6 +162,9 @@ impl IntoApiError for CompanionTurnError {
             Self::EmotionUnavailable => {
                 model_error(ApiErrorCode::ModelUnavailable, RequiredModel::Emotion)
             }
+            Self::EmotionRequired => {
+                model_error(ApiErrorCode::ModelRequired, RequiredModel::Emotion)
+            }
             Self::State(lettuce_companions::CompanionStateRepositoryError::Conflict)
             | Self::State(lettuce_companions::CompanionStateRepositoryError::OperationMismatch) => {
                 api_error(ApiErrorCode::Conflict, self.to_string())

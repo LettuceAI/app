@@ -540,6 +540,70 @@ pub struct SendAccepted {
     pub turn_id: String,
 }
 
+/// Generates another variant of a reply. `guidance` and `model_profile_id`
+/// are trimmed and a blank one is none. In a group chat the reply is spoken
+/// by `forced_speaker_participant_id`, else by the member who spoke the
+/// message.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct ConversationRegenerateRequest {
+    pub conversation_id: String,
+    pub message_id: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub expected_revision: u64,
+    pub client_operation_id: String,
+    pub guidance: Option<String>,
+    pub model_profile_id: Option<String>,
+    pub forced_speaker_participant_id: Option<String>,
+    pub swap_places: bool,
+}
+
+/// Generates a new reply after the newest message, from `forced_speaker_participant_id`
+/// in a group chat or by the chat's speaker selection.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct ConversationContinueRequest {
+    pub conversation_id: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub expected_revision: u64,
+    pub client_operation_id: String,
+    pub forced_speaker_participant_id: Option<String>,
+    pub swap_places: bool,
+}
+
+/// Starts a new turn that repeats a failed or cancelled one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct ConversationRetryRequest {
+    pub conversation_id: String,
+    pub turn_id: String,
+    pub client_operation_id: String,
+}
+
+/// Adds a user message without a reply, for a director who then continues
+/// with a chosen speaker. `text` is trimmed; blank is refused.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct ConversationAddUserMessageRequest {
+    pub conversation_id: String,
+    pub text: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub expected_revision: u64,
+    pub client_operation_id: String,
+}
+
+/// A queued turn; its stream is the channel the request passed in.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct GenerationAccepted {
+    pub turn_id: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "snake_case")]

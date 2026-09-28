@@ -414,15 +414,55 @@ fn global_settings(
         .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))
 }
 
+/// The generation operations that begin a turn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TurnOperation {
+    Send,
+    Regenerate,
+    Continue,
+    Retry,
+}
+
+/// The optional models `operation` uses on `conversation`: a send classifies
+/// in a companion chat and retrieves memory in a dynamic-memory chat; the
+/// other operations only retrieve memory.
+pub(crate) fn operation_models(
+    database: &lettuce_database::Database,
+    settings: &lettuce_settings::GlobalSettings,
+    conversation: &Conversation,
+    operation: TurnOperation,
+) -> Result<Vec<RequiredModel>, ApiError> {
+    if operation == TurnOperation::Send {
+        return required_models(database, settings, conversation);
+    }
+    let dynamic = crate::companion::companion_memory_host::dynamic_memory_on(
+        database,
+        conversation,
+        settings,
+    )
+    .map_err(IntoApiError::into_api_error)?;
+    Ok(if dynamic {
+        vec![RequiredModel::Embedding]
+    } else {
+        Vec::new()
+    })
+}
+
 fn needed_models(
     context: &ApiContext,
     conversation_id: ConversationId,
+    operation: TurnOperation,
 ) -> Result<Vec<RequiredModel>, ApiError> {
     let database = context.backend().database();
     let conversation = ConversationReader::get(database, conversation_id)
         .map_err(IntoApiError::into_api_error)?
         .conversation;
-    required_models(database, &global_settings(database)?, &conversation)
+    operation_models(
+        database,
+        &global_settings(database)?,
+        &conversation,
+        operation,
+    )
 }
 
 /// Missing models of many conversations, reading the settings and the
@@ -457,14 +497,15 @@ impl MissingModels {
 }
 
 /// Fails with `ModelRequired` or `ModelUnavailable` unless every optional
-/// model the conversation needs is installed and loads; used before any
-/// turn is created, so a refused request writes nothing.
+/// model `operation` uses on the conversation is installed and loads; used
+/// before any turn is created, so a refused request writes nothing.
 pub(crate) async fn require_conversation_models(
     context: &ApiContext,
     conversation_id: ConversationId,
+    operation: TurnOperation,
 ) -> Result<(), ApiError> {
     let needed = context
-        .blocking(move |context| needed_models(context, conversation_id))
+        .blocking(move |context| needed_models(context, conversation_id, operation))
         .await?;
     for model in needed {
         context.models().require(context, model).await?;

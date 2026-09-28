@@ -19,7 +19,7 @@ use super::ApiContext;
 use super::error::{IntoApiError, api_error, invalid_field, parse_id};
 use super::events::GenerationEventSink;
 use super::mapping::{self, AvatarLookup};
-use super::models::{MissingModels, require_conversation_models};
+use super::models::{MissingModels, TurnOperation};
 use super::worker::settled_event;
 use crate::{
     CompanionTurnCoordinator, CompanionTurnError, ConversationGenerationAdmission,
@@ -474,7 +474,7 @@ where
             .await?
     };
     if !replay {
-        require_conversation_models(context, conversation_id).await?;
+        super::turns::preflight(context, conversation_id, TurnOperation::Send).await?;
     }
     let accepted = context
         .blocking(move |context| {
@@ -555,28 +555,11 @@ where
                     "a send did not start from a user message",
                 ));
             };
-            let turn_id = begun.turn.id;
             let accepted = dto::SendAccepted {
                 user_message_id: message_id.to_string(),
-                turn_id: turn_id.to_string(),
+                turn_id: begun.turn.id.to_string(),
             };
-            if let Some(event) = settled_event(database, turn_id)? {
-                events.emit(event);
-                return Ok(accepted);
-            }
-            context.attach_stream(turn_id, events);
-            match schedule(context, &begun, now) {
-                Ok(admission) if admission.job.state.is_terminal() => {
-                    if let Some(event) = settled_event(database, turn_id)? {
-                        context.finish_stream(turn_id, event);
-                    }
-                }
-                Ok(_) => {}
-                Err(error) => {
-                    unschedulable_send(context, conversation_id, turn_id);
-                    return Err(error.into_api_error());
-                }
-            }
+            schedule_begun(context, &begun, events, schedule, now)?;
             Ok(accepted)
         })
         .await?;
@@ -584,9 +567,47 @@ where
     Ok(accepted)
 }
 
-/// Settles a committed send whose reply could not be queued, so the
-/// conversation accepts the next send.
-fn unschedulable_send(
+/// Queues the reply of a begun turn and attaches its stream: a turn that
+/// already settled (a replayed request) sends its last event at once.
+pub(super) fn schedule_begun<S>(
+    context: &ApiContext,
+    begun: &BeginGeneration,
+    events: Arc<dyn GenerationEventSink>,
+    schedule: S,
+    now: TimestampMillis,
+) -> Result<(), ApiError>
+where
+    S: FnOnce(
+        &ApiContext,
+        &BeginGeneration,
+        TimestampMillis,
+    ) -> Result<ConversationGenerationAdmission, ConversationGenerationDispatchError>,
+{
+    let database = context.backend().database();
+    let turn_id = begun.turn.id;
+    if let Some(event) = settled_event(database, turn_id)? {
+        events.emit(event);
+        return Ok(());
+    }
+    context.attach_stream(turn_id, events);
+    match schedule(context, begun, now) {
+        Ok(admission) if admission.job.state.is_terminal() => {
+            if let Some(event) = settled_event(database, turn_id)? {
+                context.finish_stream(turn_id, event);
+            }
+        }
+        Ok(_) => {}
+        Err(error) => {
+            unschedulable_turn(context, begun.conversation.id, turn_id);
+            return Err(error.into_api_error());
+        }
+    }
+    Ok(())
+}
+
+/// Settles a committed turn whose reply could not be queued, so the
+/// conversation accepts the next request.
+fn unschedulable_turn(
     context: &ApiContext,
     conversation_id: ConversationId,
     turn_id: GenerationTurnId,
@@ -602,7 +623,7 @@ fn unschedulable_send(
                 .map_err(|error| error.to_string())
         });
     if let Err(error) = settled {
-        tracing::error!(%error, %turn_id, "a send whose reply could not be queued was not settled");
+        tracing::error!(%error, %turn_id, "a turn whose reply could not be queued was not settled");
     }
     let event = match settled_event(database, turn_id) {
         Ok(Some(event)) => event,
@@ -611,7 +632,7 @@ fn unschedulable_send(
             code: dto::GenerationFailureCode::Internal,
         },
         Err(error) => {
-            tracing::error!(code = ?error.code, message = %error.message, %turn_id, "a send whose reply could not be queued has no readable outcome");
+            tracing::error!(code = ?error.code, message = %error.message, %turn_id, "a turn whose reply could not be queued has no readable outcome");
             dto::GenerationEvent::Failed {
                 turn_id: turn_id.to_string(),
                 code: dto::GenerationFailureCode::Internal,
@@ -622,8 +643,9 @@ fn unschedulable_send(
 }
 
 /// Stops a turn. A queued turn is settled here; a running one is signalled
-/// and settled by the worker running it. Cancelling a settled turn is a
-/// no-op.
+/// and settled by the worker running it, which keeps the reply streamed so
+/// far. A turn that is unknown, has no job or already settled is left
+/// alone and the call succeeds.
 pub async fn generation_cancel(
     context: &ApiContext,
     request: dto::GenerationCancelRequest,
@@ -632,8 +654,11 @@ pub async fn generation_cancel(
     context
         .blocking(move |context| {
             let database = context.backend().database();
-            let turn = ConversationReader::get_turn(database, turn_id)
-                .map_err(IntoApiError::into_api_error)?;
+            let turn = match ConversationReader::get_turn(database, turn_id) {
+                Ok(turn) => turn,
+                Err(ConversationRepositoryError::NotFound) => return Ok(()),
+                Err(error) => return Err(error.into_api_error()),
+            };
             let Some(job_id) = turn
                 .attempts
                 .iter()
@@ -641,10 +666,7 @@ pub async fn generation_cancel(
                 .max_by_key(|attempt| attempt.ordinal)
                 .and_then(|attempt| attempt.job_id)
             else {
-                return Err(api_error(
-                    ApiErrorCode::Conflict,
-                    "the turn has no generation job to cancel",
-                ));
+                return Ok(());
             };
             match context
                 .backend()

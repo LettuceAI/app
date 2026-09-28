@@ -188,7 +188,7 @@ where
                     return Err(CompanionTurnError::Cancelled);
                 }
             },
-            None => unavailable_signal_bundle(),
+            None => return Err(CompanionTurnError::EmotionRequired),
         };
         let transition = apply_turn(
             &snapshot.state,
@@ -291,6 +291,8 @@ pub enum CompanionTurnError {
     Cancelled,
     #[error("the emotion model companion chats need is unavailable")]
     EmotionUnavailable,
+    #[error("a companion send needs an emotion engine")]
+    EmotionRequired,
 }
 
 impl From<CompanionStateRepositoryError> for CompanionTurnError {
