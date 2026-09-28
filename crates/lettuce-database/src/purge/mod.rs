@@ -258,6 +258,7 @@ impl<'c> Purge<'c> {
             )
             .map_err(storage)?;
         self.delete("companion_continuity_episodes", "conversation_id = ?1", one)?;
+        self.delete("scene_image_follow_ups", "conversation_id = ?1", one)?;
         self.delete("companion_consolidation_runs", "conversation_id = ?1", one)?;
         self.delete("creation_lorebook_entry_runs", "conversation_id = ?1", one)?;
         self.memory(Some(id), &own_spaces)?;

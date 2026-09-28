@@ -3,6 +3,7 @@
 //! conversation generation worker does not run.
 
 mod feed;
+mod image;
 mod install;
 mod local;
 mod runner;
@@ -27,6 +28,7 @@ use super::events::JobEventSink;
 use super::mapping;
 
 pub(crate) use feed::JobFeed;
+pub use image::ImageGenerateHandler;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub use install::CatalogVariant;
 pub use install::admit_install;
@@ -40,6 +42,7 @@ pub(crate) use local::{
 };
 pub use runner::{ClaimedJob, JobHandler, JobHandlers, JobLane, JobProgressSink, JobRunner};
 pub(crate) use state::JobHostState;
+pub(crate) use text::admit_scene_prompt;
 pub use text::{TextFeatureHandler, conversation_help_me_reply};
 
 pub async fn jobs_list(

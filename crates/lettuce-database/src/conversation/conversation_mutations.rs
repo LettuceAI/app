@@ -2493,6 +2493,36 @@ fn restored_events(
     }
 }
 
+/// Stores the scene image a finalized reply asks for, restarting the
+/// message's follow-up unless an image is being generated for it; a reply
+/// that asks for none removes the follow-up that is not generating.
+fn save_scene_follow_up(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    message_id: MessageId,
+    draft: Option<&lettuce_conversations::SceneFollowUpDraft>,
+    now: TimestampMillis,
+) -> Result<(), ConversationRepositoryError> {
+    match draft {
+        Some(draft) => transaction.execute(
+            "INSERT INTO scene_image_follow_ups (conversation_id, message_id, prompt, mode, state, generation, attempt, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, 'pending', 0, 0, ?5, ?5) ON CONFLICT (conversation_id, message_id) DO UPDATE SET prompt = excluded.prompt, mode = excluded.mode, state = 'pending', generation = generation + 1, attempt = 0, request_id = NULL, failure = NULL, updated_at = max(updated_at, excluded.updated_at) WHERE state NOT IN ('approved', 'running')",
+            params![
+                conversation_id.to_string(),
+                message_id.to_string(),
+                draft.prompt,
+                if draft.ask_first { "ask_first" } else { "auto" },
+                now.get(),
+            ],
+        ),
+        None => transaction.execute(
+            "DELETE FROM scene_image_follow_ups WHERE conversation_id = ?1 AND message_id = ?2 AND state NOT IN ('approved', 'running')",
+            params![conversation_id.to_string(), message_id.to_string()],
+        ),
+    }
+    .map_err(kernel::map_constraint)?;
+    Ok(())
+}
+
 pub(crate) fn begin_send_with_hook<F>(
     database: &Database,
     command: &SendConversation,
@@ -4041,6 +4071,13 @@ impl ConversationRepository for Database {
                         attempt_id,
                         author,
                     },
+                    context.now,
+                )?;
+                save_scene_follow_up(
+                    transaction,
+                    context.conversation_id,
+                    message_id,
+                    draft.scene_follow_up.as_ref(),
                     context.now,
                 )?;
                 crate::conversation::state_adapter::finalize_turn_effect_in(
@@ -6337,6 +6374,7 @@ mod tests {
             model: model_snapshot(),
             replay: None,
             outcome: GenerationCheckpointEvent::Completed,
+            scene_follow_up: None,
         }
     }
 

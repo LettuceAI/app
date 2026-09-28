@@ -16,7 +16,8 @@ use lettuce_contracts::{
     MessageCandidateSelectRequest, MessageChanged, MessageCompanionEffect,
     MessageCompanionEffectRequest, MessageCount, MessageDeleteRequest, MessageEditRequest,
     MessageHistoryRequest, MessagePage, MessagePinRequest, MessagePromptSnapshotRequest,
-    MessageRevisionPage, MessageSceneSelectRequest, MessageWindow, MessagesDeleteResult,
+    MessageRevisionPage, MessageSceneImageApproveRequest, MessageSceneImageGenerateRequest,
+    MessageSceneRequest, MessageSceneSelectRequest, MessageWindow, MessagesDeleteResult,
     ParticipationStats, PromptSnapshot, SearchHitPage, SendAccepted, SpeakerSelectionPreview,
     SpeakerSelectionPreviewRequest,
 };
@@ -240,6 +241,42 @@ pub async fn conversation_help_me_reply(
     request: ConversationHelpMeReplyRequest,
 ) -> Result<JobAccepted, ApiError> {
     api::conversation_help_me_reply(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn message_scene_image_approve(
+    context: State<'_, ApiContext>,
+    request: MessageSceneImageApproveRequest,
+) -> Result<JobAccepted, ApiError> {
+    api::message_scene_image_approve(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn message_scene_image_dismiss(
+    context: State<'_, ApiContext>,
+    request: MessageSceneRequest,
+) -> Result<(), ApiError> {
+    api::message_scene_image_dismiss(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn message_scene_image_generate(
+    context: State<'_, ApiContext>,
+    request: MessageSceneImageGenerateRequest,
+) -> Result<JobAccepted, ApiError> {
+    api::message_scene_image_generate(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn message_scene_prompt_generate(
+    context: State<'_, ApiContext>,
+    request: MessageSceneRequest,
+) -> Result<JobAccepted, ApiError> {
+    api::message_scene_prompt_generate(&context, request).await
 }
 
 #[tauri::command]

@@ -11,4 +11,7 @@ pub(crate) const SCENE_PROMPT_NO_REPLY: &str = "scene-prompt-no-reply";
 pub(crate) const SCENE_IMAGE_DISABLED: &str = "scene-image-disabled";
 pub(crate) const SCENE_IMAGE_NO_MODEL: &str = "scene-image-no-model";
 pub(crate) const SCENE_IMAGE_NO_IMAGE: &str = "scene-image-no-image";
+pub(crate) const SCENE_IMAGE_MESSAGE_UNAVAILABLE: &str = "scene-image-message-unavailable";
+pub(crate) const SCENE_IMAGE_INTERRUPTED: &str = "scene-image-interrupted";
+pub(crate) const SCENE_IMAGE_FAILED: &str = "scene-image-failed";
 pub(crate) const RESULT_STORAGE_FAILED: &str = "feature-result-storage-failed";

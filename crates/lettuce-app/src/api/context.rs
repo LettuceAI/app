@@ -11,6 +11,7 @@ use lettuce_contracts::{ApiError, ApiErrorCode, GenerationEvent};
 use lettuce_conversations::InferencePort;
 use lettuce_database::Database;
 use lettuce_embeddings::{EmbeddingDimensions, EmbeddingRequest, EmbeddingVector};
+use lettuce_image_generation::ImageProviderPort;
 use lettuce_jobs::{Clock, SystemClock, handle::CancellationToken};
 use lettuce_media::LocalMediaBlobStore;
 use lettuce_platform::{DirectorySnapshot, FilesystemAuthority, ManagedRoot};
@@ -45,6 +46,9 @@ pub struct ApiContextParts {
     pub backend: Arc<AppBackend>,
     pub secret_store: Arc<dyn SecretStore>,
     pub inference: Arc<dyn InferencePort>,
+    /// Generates images: the local engine or the remote provider that serves
+    /// an image model's account.
+    pub image_provider: Arc<dyn ImageProviderPort>,
     /// Loads the optional embedding and emotion models on first use.
     pub models: Arc<dyn ModelLoader>,
     pub media: Option<Arc<ApiMediaStore>>,
@@ -200,10 +204,21 @@ impl ApiContext {
                     )
                 })?,
         );
+        let image_provider: Arc<dyn ImageProviderPort> = Arc::new(
+            backend
+                .image_providers(Arc::clone(&secret_store), &tls)
+                .map_err(|error| {
+                    api_error(
+                        ApiErrorCode::Unavailable,
+                        format!("image provider runtime could not start: {error}"),
+                    )
+                })?,
+        );
         Ok(Self::new(ApiContextParts {
             backend,
             secret_store,
             inference,
+            image_provider,
             models: Arc::new(InstalledModels),
             media: Some(Arc::new(media)),
             events,
@@ -229,6 +244,7 @@ impl ApiContext {
             backend: Arc::clone(&parts.backend),
             secret_store: Arc::clone(&parts.secret_store),
             inference: Arc::clone(&parts.inference),
+            image_provider: Arc::clone(&parts.image_provider),
             models: Arc::clone(&parts.models),
             media: parts.media.clone(),
             events: Arc::clone(&parts.events),
@@ -272,6 +288,7 @@ impl ApiContext {
         for (turn_id, _) in &report.turns {
             self.forget_stream(*turn_id);
         }
+        super::scenes::recover(self);
         Ok(())
     }
 
@@ -300,6 +317,10 @@ impl ApiContext {
 
     pub(crate) fn inference(&self) -> &dyn InferencePort {
         self.inner.parts.inference.as_ref()
+    }
+
+    pub(crate) fn image_provider(&self) -> &dyn ImageProviderPort {
+        self.inner.parts.image_provider.as_ref()
     }
 
     /// The embedding engine for one use; the installed model loads at its

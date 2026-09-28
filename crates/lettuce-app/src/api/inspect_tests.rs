@@ -540,6 +540,7 @@ async fn a_settled_companion_effect_is_published_once_and_readable() {
                 model,
                 replay: None,
                 outcome: GenerationCheckpointEvent::Completed,
+                scene_follow_up: None,
             },
             UsageEventId::new(),
             TimestampMillis::new(harness.context.now().get() + 2),

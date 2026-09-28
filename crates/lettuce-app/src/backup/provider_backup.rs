@@ -1288,6 +1288,7 @@ mod tests {
                 model: effect_model,
                 replay: None,
                 outcome: GenerationCheckpointEvent::Completed,
+                scene_follow_up: None,
             },
             effect_usage.id,
             TimestampMillis::new(25),

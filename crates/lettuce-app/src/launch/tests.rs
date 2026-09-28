@@ -334,6 +334,7 @@ fn finalize_started_turn(
                 model,
                 replay: None,
                 outcome: GenerationCheckpointEvent::Completed,
+                scene_follow_up: None,
             },
             UsageEventId::new(),
             TimestampMillis::new(now + 10),
@@ -1384,7 +1385,8 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             .expect("dynamic memory space");
     assert_eq!(memory_space.revision, Revision::INITIAL);
     assert!(memory_space.items.is_empty());
-    let sent = CompanionTurnCoordinator::<_, ScenarioEmotionEngine>::new(&database, None)
+    let emotion = ScenarioEmotionEngine::new(Ok(None));
+    let sent = CompanionTurnCoordinator::new(&database, Some(&emotion))
         .begin_send(
             &direct_send_command(
                 &launched.value.conversation,
@@ -1451,6 +1453,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         model: model.clone(),
         replay: None,
         outcome: GenerationCheckpointEvent::Completed,
+        scene_follow_up: None,
     };
     let usage_event_id = UsageEventId::new();
     let finalized = database
@@ -3944,7 +3947,8 @@ async fn companion_context_assembles_live_prompt_state_deterministically() {
     let launched = ConversationLaunchPlanner::new(&database)
         .launch_direct(&launch, NOW)
         .expect("launch companion");
-    let sent = CompanionTurnCoordinator::<_, ScenarioEmotionEngine>::new(&database, None)
+    let emotion = ScenarioEmotionEngine::new(Ok(None));
+    let sent = CompanionTurnCoordinator::new(&database, Some(&emotion))
         .begin_send(
             &direct_send_command(
                 &launched.value.conversation,
@@ -4284,7 +4288,8 @@ async fn a_companion_turn_uses_its_companion_prompt_over_a_conversation_override
         Some(override_prompt),
         "the stored override is kept"
     );
-    let sent = CompanionTurnCoordinator::<_, ScenarioEmotionEngine>::new(&database, None)
+    let emotion = ScenarioEmotionEngine::new(Ok(None));
+    let sent = CompanionTurnCoordinator::new(&database, Some(&emotion))
         .begin_send(
             &direct_send_command(&conversation, "companion-override-send", "Hello."),
             TimestampMillis::new(NOW.get() + 10),
@@ -14662,6 +14667,46 @@ fn scene_png() -> lettuce_image_generation::ProviderImage {
     }
 }
 
+async fn run_scene_job<M, P>(
+    database: &Database,
+    media: &M,
+    provider: &P,
+    job_id: lettuce_types::JobId,
+    now: i64,
+) where
+    M: lettuce_image_generation::ImageMedia + ?Sized,
+    P: lettuce_image_generation::ImageProviderPort + ?Sized,
+{
+    let at = TimestampMillis::new(now);
+    let coordinator = crate::ImageGenerationCoordinator::new(database, database);
+    let work = coordinator
+        .claim(
+            job_id,
+            lettuce_jobs::WorkerId::new(),
+            at,
+            std::time::Duration::from_secs(60),
+            &lettuce_jobs::ResourceAvailability::all(),
+        )
+        .expect("claim")
+        .expect("claimed image job");
+    let (crate::ImageGenerationRunResult::Succeeded { record, .. }
+    | crate::ImageGenerationRunResult::Failed { record, .. }
+    | crate::ImageGenerationRunResult::Cancelled { record, .. }) = coordinator
+        .run(
+            work,
+            database,
+            media,
+            provider,
+            lettuce_jobs::CancellationReason::User,
+            at,
+        )
+        .await
+        .expect("run");
+    crate::SceneFollowUps::new(database, media)
+        .settle(&record, false, at)
+        .expect("settle");
+}
+
 #[tokio::test]
 async fn scene_images_retry_a_missing_image_and_attach_to_the_rendered_message() {
     use lettuce_media::LocalMediaBlobStore;
@@ -14732,26 +14777,67 @@ async fn scene_images_retry_a_missing_image_and_attach_to_the_rendered_message()
         outcomes: Mutex::new(VecDeque::from([Ok(Vec::new()), Ok(vec![scene_png()])])),
         prompts: Mutex::new(Vec::new()),
     };
-    let edited = crate::generate_scene_image(
+    let follow_ups = crate::SceneFollowUps::new(&database, &store);
+    lettuce_conversations::SceneFollowUpRepository::ensure_follow_up(
         &database,
-        &store,
-        &provider,
-        &crate::SceneImageRequest {
-            conversation_id: conversation.id,
-            message_id: welcome.message.id,
-            scene_prompt: "  A harbor at dusk ".into(),
-            request_id: RequestId::new(),
-        },
-        &lettuce_jobs::ResourceAvailability::all(),
-        TimestampMillis::new(NOW.get() + 10),
+        conversation.id,
+        welcome.message.id,
+        "  A harbor at dusk ",
+        lettuce_conversations::SceneFollowUpMode::Manual,
+        TimestampMillis::new(NOW.get() + 9),
     )
-    .await
-    .expect("scene image");
+    .expect("follow-up");
+    let (first, job) = follow_ups
+        .start(
+            conversation.id,
+            welcome.message.id,
+            &[lettuce_conversations::SceneFollowUpState::Pending],
+            None,
+            None,
+            TimestampMillis::new(NOW.get() + 10),
+        )
+        .expect("start");
+    assert_eq!(first.attempt, 1);
+    run_scene_job(&database, &store, &provider, job.id, NOW.get() + 11).await;
+    let retried = lettuce_conversations::SceneFollowUpRepository::get_follow_up(
+        &database,
+        conversation.id,
+        welcome.message.id,
+    )
+    .expect("follow-up")
+    .expect("exists");
+    assert_eq!(
+        (retried.state, retried.attempt),
+        (lettuce_conversations::SceneFollowUpState::Approved, 2)
+    );
+    let second = crate::job_of_scene_image_request(&database, retried.request_id.expect("request"))
+        .expect("job lookup")
+        .expect("the next attempt's job");
+    run_scene_job(&database, &store, &provider, second.id, NOW.get() + 12).await;
+    let done = lettuce_conversations::SceneFollowUpRepository::get_follow_up(
+        &database,
+        conversation.id,
+        welcome.message.id,
+    )
+    .expect("follow-up")
+    .expect("exists");
+    assert_eq!(done.state, lettuce_conversations::SceneFollowUpState::Done);
     assert_eq!(
         *provider.prompts.lock().expect("prompts"),
         vec!["A harbor at dusk".to_owned(), "A harbor at dusk".to_owned()]
     );
-    let parts = &edited.value.revision.parts;
+    let edited = ConversationReader::timeline_page(
+        &database,
+        conversation.id,
+        conversation.active_branch_id,
+        &lettuce_types::PageRequest::default(),
+    )
+    .expect("timeline")
+    .items
+    .into_iter()
+    .find(|item| item.message.id == welcome.message.id)
+    .expect("welcome message");
+    let parts = &edited.active_revision.as_ref().expect("revision").parts;
     assert_eq!(
         parts[..parts.len() - 1],
         welcome.active_revision.as_ref().expect("revision").parts[..]
@@ -14770,24 +14856,31 @@ async fn scene_images_retry_a_missing_image_and_attach_to_the_rendered_message()
         )])),
         prompts: Mutex::new(Vec::new()),
     };
-    let error = crate::generate_scene_image(
+    let (_, job) = follow_ups
+        .start(
+            conversation.id,
+            welcome.message.id,
+            &[lettuce_conversations::SceneFollowUpState::Done],
+            Some("Rain"),
+            None,
+            TimestampMillis::new(NOW.get() + 20),
+        )
+        .expect("start again");
+    run_scene_job(&database, &store, &refused, job.id, NOW.get() + 21).await;
+    let failed = lettuce_conversations::SceneFollowUpRepository::get_follow_up(
         &database,
-        &store,
-        &refused,
-        &crate::SceneImageRequest {
-            conversation_id: conversation.id,
-            message_id: welcome.message.id,
-            scene_prompt: "Rain".into(),
-            request_id: RequestId::new(),
-        },
-        &lettuce_jobs::ResourceAvailability::all(),
-        TimestampMillis::new(NOW.get() + 20),
+        conversation.id,
+        welcome.message.id,
     )
-    .await
-    .expect_err("provider failure");
+    .expect("follow-up")
+    .expect("exists");
     assert_eq!(
-        error,
-        crate::SceneImageError::Generation("Quota exceeded".into())
+        failed.state,
+        lettuce_conversations::SceneFollowUpState::Failed
+    );
+    assert_eq!(
+        failed.failure.as_deref(),
+        Some(crate::jobs::failure_labels::SCENE_IMAGE_FAILED)
     );
     assert_eq!(refused.prompts.lock().expect("prompts").len(), 1);
     std::fs::remove_dir_all(&root).ok();

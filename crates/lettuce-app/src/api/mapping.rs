@@ -192,6 +192,7 @@ pub(crate) fn timeline_message(
     context: &ApiContext,
     item: &TimelineItem,
     candidate_counts: &HashMap<MessageId, u32>,
+    scene_images: &HashMap<MessageId, dto::SceneImageView>,
 ) -> dto::TimelineMessage {
     let (parts, reasoning) = part_views(context, shown_parts(item));
     dto::TimelineMessage {
@@ -210,5 +211,6 @@ pub(crate) fn timeline_message(
             .copied()
             .unwrap_or_default(),
         pinned: item.message.pinned,
+        scene_image: scene_images.get(&item.message.id).cloned(),
     }
 }

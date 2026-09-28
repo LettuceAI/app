@@ -465,7 +465,11 @@ impl<
         reason: CancellationReason,
         now: TimestampMillis,
     ) -> Result<ImageGenerationRunResult, ImageGenerationError> {
-        let at = now.max(work.job.updated_at);
+        let current = self
+            .jobs
+            .get(work.job.id)?
+            .unwrap_or_else(|| work.job.clone());
+        let at = now.max(current.updated_at);
         let claim = work.claim.claim;
         match &work.record.state {
             ImageGenerationState::Pending => Err(ImageGenerationError::InvalidWork),
@@ -499,12 +503,14 @@ impl<
                 })
             }
             ImageGenerationState::Cancelled { .. } => {
-                self.jobs
-                    .append_and_transition(JobMutation::RequestCancellation {
-                        id: work.job.id,
-                        reason,
-                        at,
-                    })?;
+                if current.state != JobState::CancellationRequested {
+                    self.jobs
+                        .append_and_transition(JobMutation::RequestCancellation {
+                            id: work.job.id,
+                            reason,
+                            at,
+                        })?;
+                }
                 self.jobs
                     .append_and_transition(JobMutation::RequestCleanup {
                         claim: claim.clone(),

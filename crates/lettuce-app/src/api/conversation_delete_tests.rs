@@ -22,6 +22,7 @@ pub(crate) fn context_over(
         backend,
         secret_store: Arc::new(lettuce_settings::InMemorySecretStore::new()),
         inference,
+        image_provider: Arc::new(super::tests::NoImages),
         models: Arc::new(NoModels),
         media: None,
         events: Arc::new(RecordingEvents::default()),

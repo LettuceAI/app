@@ -1,9 +1,7 @@
-//! Scene images for a direct chat message: the request is built from the
-//! character, persona and background references, run as an image job with
-//! three attempts on a missing image, and the first image is added to the
-//! message.
-
-use std::time::Duration;
+//! Scene images for a direct chat message: the image request is built from
+//! the character, persona and background references, and the generated image
+//! is added to the message. The follow-up (`scene_follow_up.rs`) runs them as
+//! image jobs.
 
 use lettuce_characters::{
     CharacterMediaSlot, CharacterRepository, PersonaMediaSlot, PersonaRepository, SceneAssetSlot,
@@ -16,26 +14,19 @@ use lettuce_conversations::{
 };
 use lettuce_image_generation::sd_runtime::lora_library::LoraLibraryRepository;
 use lettuce_image_generation::{
-    ImageAttribution, ImageGenerationRepository, ImageGenerationRequest, ImageGenerationSource,
-    ImageGenerationState, ImageMedia, ImageOutputPolicy, ImageProviderPort,
+    ImageAttribution, ImageGenerationRequest, ImageGenerationSource, ImageMedia, ImageOutputPolicy,
 };
-use lettuce_jobs::{CancellationReason, JobStore, ResourceAvailability, WorkerId};
-use lettuce_models::{
-    ModelCatalog, ModelProfileRepository, ProviderAccountRepository, StableDiffusionLora,
-};
+use lettuce_models::{ModelCatalog, StableDiffusionLora};
 use lettuce_types::{
     AssetId, ContentHash, ConversationId, MessageId, PageLimit, PageRequest, RequestId,
     TimestampMillis,
 };
-use lettuce_usage::JobUsageLedger;
 
 use crate::generation::runtime_text::RuntimeText;
 use crate::{BuiltInPromptId, ImageFeature, ImageFeatureModelError, image_feature_model};
 
-const MAX_ATTEMPTS: u32 = 3;
 const MAX_INPUT_IMAGES: usize = 16;
 const DEFAULT_SIZE: &str = "1024x1024";
-const NO_IMAGES: &str = "No images found in response";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SceneImageRequest {
@@ -300,37 +291,30 @@ fn persona_scene_name(persona: &lettuce_characters::Persona) -> String {
         .to_owned()
 }
 
-fn derived_id(root: RequestId, label: &str) -> uuid::Uuid {
+pub(crate) fn derived_id(root: RequestId, label: &str) -> uuid::Uuid {
     uuid::Uuid::new_v5(&root.as_uuid(), label.as_bytes())
 }
 
-/// Generates a scene image for `request.message_id` and adds it to the
-/// message as an attachment. The message keeps its visible content: its
-/// rendered revision or candidate is revised with the image appended.
-pub async fn generate_scene_image<R, D, P>(
+/// The image request that draws `request.scene_prompt` for a message of a
+/// one-to-one chat: the scene model's request built from the character,
+/// persona and background references (a local model gets its LoRAs instead).
+/// `request.request_id` is the id of the image request.
+pub fn scene_generation_request<R, D>(
     repository: &R,
     media: &D,
-    provider: &P,
     request: &SceneImageRequest,
-    allowed: &ResourceAvailability,
     now: TimestampMillis,
-) -> Result<EditMessageResult, SceneImageError>
+) -> Result<ImageGenerationRequest, SceneImageError>
 where
-    R: ConversationRepository
+    R: ConversationReader
         + CharacterRepository
         + PersonaRepository
         + ModelCatalog
-        + ModelProfileRepository
-        + ProviderAccountRepository
         + lettuce_settings::GlobalSettingsStore
         + lettuce_context::PromptRepository
-        + ImageGenerationRepository
-        + JobUsageLedger
         + LoraLibraryRepository
-        + JobStore
         + ?Sized,
     D: ImageMedia + ?Sized,
-    P: ImageProviderPort + ?Sized,
 {
     let scene_prompt = request.scene_prompt.trim();
     if scene_prompt.is_empty() {
@@ -393,88 +377,26 @@ where
         .clone()
         .or_else(|| settings.image_generation.scene_default_size.clone())
         .or_else(|| Some(DEFAULT_SIZE.to_owned()));
-    let coordinator = crate::ImageGenerationCoordinator::new(repository, repository);
-    let mut asset = None;
-    let mut last_error = NO_IMAGES.to_owned();
-    for attempt in 1..=MAX_ATTEMPTS {
-        let generation = ImageGenerationRequest {
-            id: RequestId::from_uuid(derived_id(
-                request.request_id,
-                &format!("attempt-{attempt}"),
-            )),
-            model_profile_id: model.profile.id,
-            prompt: prompt.clone(),
-            settings: Default::default(),
-            input_images: input_images.clone(),
-            mask_image: None,
-            loras: loras.clone(),
-            size: size.clone(),
-            quality: None,
-            style: None,
-            count: 1,
-            source: ImageGenerationSource::Scene,
-            attribution: ImageAttribution {
-                conversation_id: Some(request.conversation_id),
-                character_id: Some(details.character.source_id),
-            },
-            output_policy: ImageOutputPolicy::Retained,
-            created_at: now,
-        };
-        let admitted = coordinator
-            .admit(generation, repository)
-            .map_err(|error| SceneImageError::Generation(error.to_string()))?;
-        let record = match coordinator
-            .claim(
-                admitted.job.id,
-                WorkerId::new(),
-                now,
-                Duration::from_secs(60 * 60),
-                allowed,
-            )
-            .map_err(|error| SceneImageError::Generation(error.to_string()))?
-        {
-            Some(work) => match coordinator
-                .run(
-                    work,
-                    repository,
-                    media,
-                    provider,
-                    CancellationReason::User,
-                    now,
-                )
-                .await
-                .map_err(|error| SceneImageError::Generation(error.to_string()))?
-            {
-                crate::ImageGenerationRunResult::Succeeded { record, .. }
-                | crate::ImageGenerationRunResult::Failed { record, .. }
-                | crate::ImageGenerationRunResult::Cancelled { record, .. } => record,
-            },
-            None => ImageGenerationRepository::get(repository, admitted.job.id)
-                .map_err(|_| SceneImageError::Storage)?,
-        };
-        match record.state {
-            ImageGenerationState::Succeeded { result } if !result.images.is_empty() => {
-                asset = Some(result.images[0].asset_id);
-                break;
-            }
-            ImageGenerationState::Succeeded { .. } => last_error = NO_IMAGES.to_owned(),
-            ImageGenerationState::Failed { message, .. }
-                if message.to_ascii_lowercase().contains("no image") =>
-            {
-                last_error = message;
-            }
-            ImageGenerationState::Failed { message, .. } => {
-                return Err(SceneImageError::Generation(message));
-            }
-            ImageGenerationState::Cancelled { .. } | ImageGenerationState::Pending => {
-                return Err(SceneImageError::Generation(
-                    "Image generation was interrupted.".to_owned(),
-                ));
-            }
-        }
-    }
-    let asset = asset.ok_or(SceneImageError::Generation(last_error))?;
-    attach_image(repository, request, asset, now)
+    Ok(ImageGenerationRequest {
+        id: request.request_id,
+        model_profile_id: model.profile.id,
+        prompt,
+        settings: Default::default(),
+        input_images,
+        mask_image: None,
+        loras,
+        size,
+        quality: None,
+        style: None,
+        count: 1,
+        source: ImageGenerationSource::Scene,
+        attribution: ImageAttribution {
+            conversation_id: Some(request.conversation_id),
+            character_id: Some(details.character.source_id),
+        },
+        output_policy: ImageOutputPolicy::Retained,
+        created_at: now,
+    })
 }
 
 /// The references of a remote scene image: each subject's readable design
@@ -633,7 +555,7 @@ fn conversation_background(
         .or_else(|| media_of(CharacterMediaSlot::Background).first().copied())
 }
 
-fn find_message<R: ConversationReader + ?Sized>(
+pub(crate) fn find_message<R: ConversationReader + ?Sized>(
     repository: &R,
     conversation: &lettuce_conversations::Conversation,
     message_id: MessageId,
@@ -662,16 +584,19 @@ fn find_message<R: ConversationReader + ?Sized>(
 
 /// Appends the image to what the message shows now, read again after the
 /// generation so an edit or candidate switch made meanwhile is kept.
-fn attach_image<R: ConversationRepository + ?Sized>(
+/// `seed` names the edit, so repeating the call adds the image once.
+pub fn attach_scene_image<R: ConversationRepository + ?Sized>(
     repository: &R,
-    request: &SceneImageRequest,
+    conversation_id: ConversationId,
+    message_id: MessageId,
+    seed: RequestId,
     asset: AssetId,
     now: TimestampMillis,
 ) -> Result<EditMessageResult, SceneImageError> {
-    let conversation = ConversationReader::get(repository, request.conversation_id)
+    let conversation = ConversationReader::get(repository, conversation_id)
         .map_err(|_| SceneImageError::ConversationNotFound)?
         .conversation;
-    let item = find_message(repository, &conversation, request.message_id)?;
+    let item = find_message(repository, &conversation, message_id)?;
     let parts = match item.message.active_render_source {
         MessageRenderSource::Candidate(_) => item
             .active_candidate
@@ -683,18 +608,18 @@ fn attach_image<R: ConversationRepository + ?Sized>(
             .map(|revision| revision.parts.clone()),
     }
     .ok_or(SceneImageError::MessageNotFound)?;
-    let key = derived_id(request.request_id, "attach");
+    let key = derived_id(seed, "attach");
     repository
         .edit_message(
             &EditMessage {
-                conversation_id: request.conversation_id,
-                message_id: request.message_id,
+                conversation_id,
+                message_id,
                 expected_revision: conversation.revision,
                 operation: OperationToken {
                     key: lettuce_jobs::IdempotencyKey::new(format!("scene-image-{key}"))
                         .map_err(|_| SceneImageError::Storage)?,
                     request_digest: ContentHash::parse(
-                        blake3::hash(format!("{}:{asset}", request.message_id).as_bytes())
+                        blake3::hash(format!("{message_id}:{asset}").as_bytes())
                             .to_hex()
                             .to_string(),
                     )

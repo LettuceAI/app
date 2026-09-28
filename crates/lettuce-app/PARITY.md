@@ -214,6 +214,11 @@ Facts about how `lettuce-app` relates to the legacy app (2.2.x): what follows le
 - A companion effect's settlement is an event; the effect view polled every 1500 ms while it was processing (`old-code/src/ui/pages/chats/components/MessageActionsBottomSheet.tsx:316-318`).
 - Help me reply runs as a job the caller watches: it streams text deltas through `job_watch` and the cleaned text is the job's result; legacy returned the text from the command and streamed on `api-normalized://{requestId}` (`old-code/src-tauri/src/chat_manager/reply_helper/mod.rs:104-167,313-330`). Cancelling ends the job `Cancelled` with no text; an empty text is the typed failure `HelpMeReplyNoReply` where legacy showed "Failed to extract text from response" (`reply_helper/mod.rs:312-323`), and the 5000 ms "reasoning" indicator is the UI's alone (`Chat.txt:1739-1743`).
 - The help me reply history is the last `history_count` visible messages of every role on the selected branch; legacy read the last ten of the loaded window, hidden system messages included (`reply_helper/mod.rs:88-102`, `chat_manager/persistence/storage.rs:544-549`). A group's cast is its enabled members; legacy named every character of the session (`old-code/src-tauri/src/group_chat_manager/mod.rs:7447-7460,7590-7640`).
+- The scene image a reply asks for is stored with the reply (`scene_image_follow_ups`), so an ask-first prompt survives a restart, where legacy kept the approval in the page's memory and lost it on reload (`old-code/src/ui/pages/chats/hooks/useChatEnhancementsController.ts:291,524-537`). A stopped reply asks for none, as legacy skipped aborted requests (`useChatEnhancementsController.ts:246-298`), and a message's scene tag is asked once per reply rather than once per page lifetime (`processedImageDirectiveMessagesRef`).
+- No placeholder attachment is written before an image exists; the message shows the follow-up's state instead, so a crash leaves no empty attachment (legacy persisted `data:""` before generating and a crash kept it, `useChatEnhancementsController.ts:370-402`). A failed image is a typed `failed` state, not a removed placeholder and a toast (`useChatEnhancementsController.ts:560-585`).
+- A scene image is an `ImageGenerate` job claimed by the job runner; `job_cancel` stops it and dismisses the follow-up. Legacy ran it inside the command with its own claim (`old-code/src-tauri/src/chat_manager/scene/mod.rs:1658-1806`). The three attempts on a missing image are kept, one job each.
+- Restarting cancels the queued and running image jobs (see startup recovery), so a scene image the app stopped during fails as `Interrupted` and the user asks again; legacy lost the request with the process and left the placeholder.
+- Scene image follow-ups are not part of a backup or a sync, like the jobs they start.
 
 ## Decisions
 
@@ -296,7 +301,6 @@ Everything the Tauri phase (phase (c)) still has to connect:
 - The analytics exit event.
 - Passing the Pure mode level to `CivitaiBrowser`.
 - TTS preview caching.
-- Scene images: optimistic placeholders and the askFirst approval flow.
 - Memory of a branch that a delete forks: the new branch starts from the conversation's single memory space, so memory is not yet "as of the anchor". Seeding it belongs with branch-aware memory.
 
 ## Planned features (not legacy)

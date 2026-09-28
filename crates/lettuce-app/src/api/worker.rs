@@ -160,6 +160,16 @@ impl ConversationGenerationWorker {
             }
         };
         if let Some(event) = settled_event(database, next.turn_id)? {
+            if let dto::GenerationEvent::Completed { message_id, .. } = &event
+                && let Ok(message_id) = message_id.parse()
+            {
+                let conversation_id = next.conversation_id;
+                context
+                    .blocking(move |context| {
+                        super::scenes::start_auto(context, conversation_id, message_id)
+                    })
+                    .await?;
+            }
             if ran {
                 context.settle_turn(next.conversation_id, next.turn_id, event);
             } else if context.finish_stream(next.turn_id, event) {

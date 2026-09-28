@@ -104,6 +104,7 @@ impl JobHandlers {
             Arc::new(super::local::ModelPullHandler),
             Arc::new(super::local::ModelsFolderMoveHandler),
             Arc::new(super::text::TextFeatureHandler),
+            Arc::new(super::image::ImageGenerateHandler),
         ])
     }
 

@@ -387,11 +387,12 @@ fn message_page(
             .map_err(IntoApiError::into_api_error)?
             .into_iter()
             .collect::<HashMap<_, _>>();
+    let scene_images = super::scenes::views(context, conversation_id, &with_candidates)?;
     Ok(dto::MessagePage {
         items: visible
             .iter()
             .rev()
-            .map(|item| mapping::timeline_message(context, item, &counts))
+            .map(|item| mapping::timeline_message(context, item, &counts, &scene_images))
             .collect(),
         next_cursor: page.next_cursor,
     })

@@ -508,6 +508,88 @@ pub struct TimelineMessage {
     pub candidate_index: Option<u16>,
     pub candidate_count: u32,
     pub pinned: bool,
+    /// The scene image the reply asked for, or that was asked of it, while
+    /// it is not finished or failed.
+    pub scene_image: Option<SceneImageView>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum SceneImageMode {
+    Auto,
+    AskFirst,
+    Manual,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum SceneImageState {
+    /// Waits for the user's approval, or is about to start.
+    Pending,
+    /// The image job is queued.
+    Approved,
+    Running,
+    /// The image is on the message.
+    Done,
+    Failed,
+    Dismissed,
+}
+
+/// Why a scene image failed, where the user can act on it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum SceneImageFailure {
+    Disabled,
+    NoModel,
+    NoImage,
+    MessageUnavailable,
+    /// The app stopped while it was generated.
+    Interrupted,
+    Failed,
+}
+
+/// The scene image of a reply. `job_id` is the image job, once one exists;
+/// watch it for progress. An approved image needs no further input.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct SceneImageView {
+    pub state: SceneImageState,
+    pub mode: SceneImageMode,
+    pub prompt: String,
+    pub job_id: Option<String>,
+    pub failure: Option<SceneImageFailure>,
+}
+
+/// Names one message.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MessageSceneRequest {
+    pub message_id: String,
+}
+
+/// Approves the scene image a reply asked for, with the prompt as the user
+/// edited it. `prompt` is trimmed and a blank one is refused; without it the
+/// reply's own prompt is used.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MessageSceneImageApproveRequest {
+    pub message_id: String,
+    pub prompt: Option<String>,
+}
+
+/// Asks for a scene image of a reply from `prompt` (trimmed, not blank).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MessageSceneImageGenerateRequest {
+    pub message_id: String,
+    pub prompt: String,
 }
 
 /// One page of visible messages in conversation order, oldest first;

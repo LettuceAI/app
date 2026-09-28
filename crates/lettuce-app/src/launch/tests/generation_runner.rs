@@ -5566,7 +5566,7 @@ fn companion_conversation_with_processing_effect(
     let launched = ConversationLaunchPlanner::new(database)
         .launch_direct(&request(character_id, &format!("{prefix}-launch")), NOW)
         .expect("launch companion");
-    let sent = CompanionTurnCoordinator::<_, ScenarioEmotionEngine>::new(database, None)
+    let sent = CompanionTurnCoordinator::new(database, Some(&ScenarioEmotionEngine::new(Ok(None))))
         .begin_send(
             &direct_send_command(
                 &launched.value.conversation,
@@ -5635,6 +5635,7 @@ fn companion_conversation_with_processing_effect(
                 model,
                 replay: None,
                 outcome: GenerationCheckpointEvent::Completed,
+                scene_follow_up: None,
             },
             UsageEventId::new(),
             TimestampMillis::new(NOW.get() + 10),

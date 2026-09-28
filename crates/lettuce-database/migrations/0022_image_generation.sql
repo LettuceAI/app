@@ -173,3 +173,63 @@ BEGIN
     VALUES ('playground_history_image', OLD.history_id || ':' || OLD.ordinal, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
     ON CONFLICT(entity_kind, entity_id) DO NOTHING;
 END;
+
+-- The scene image a reply asks for, kept by message so an ask-first prompt
+-- survives a restart: written with the reply, changed as the image job
+-- moves on. Not part of a backup or a sync; a purge removes it.
+CREATE TABLE scene_image_follow_ups (
+    conversation_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    prompt TEXT NOT NULL CHECK (length(trim(prompt)) > 0),
+    mode TEXT NOT NULL CHECK (mode IN ('auto', 'ask_first', 'manual')),
+    state TEXT NOT NULL CHECK (state IN ('pending', 'approved', 'running', 'done', 'failed', 'dismissed')),
+    generation INTEGER NOT NULL CHECK (generation >= 0),
+    attempt INTEGER NOT NULL CHECK (attempt >= 0),
+    request_id TEXT,
+    failure TEXT CHECK (failure IS NULL OR length(failure) > 0),
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (conversation_id, message_id),
+    FOREIGN KEY (conversation_id, message_id)
+        REFERENCES conversation_messages(conversation_id, id) ON DELETE RESTRICT,
+    CHECK (created_at <= updated_at),
+    CHECK ((state IN ('approved', 'running')) = (request_id IS NOT NULL) OR state IN ('done', 'failed', 'dismissed'))
+) STRICT;
+
+CREATE INDEX scene_image_follow_ups_request_idx
+    ON scene_image_follow_ups(request_id) WHERE request_id IS NOT NULL;
+CREATE INDEX scene_image_follow_ups_state_idx
+    ON scene_image_follow_ups(state, created_at, message_id);
+
+CREATE TRIGGER scene_image_follow_ups_signal_insert
+AFTER INSERT ON scene_image_follow_ups
+BEGIN
+    DELETE FROM message_signals
+    WHERE kind = 'scene_image_changed'
+      AND conversation_id = NEW.conversation_id
+      AND message_id = NEW.message_id;
+    INSERT INTO message_signals (kind, conversation_id, message_id)
+    VALUES ('scene_image_changed', NEW.conversation_id, NEW.message_id);
+END;
+
+CREATE TRIGGER scene_image_follow_ups_signal_update
+AFTER UPDATE ON scene_image_follow_ups
+BEGIN
+    DELETE FROM message_signals
+    WHERE kind = 'scene_image_changed'
+      AND conversation_id = NEW.conversation_id
+      AND message_id = NEW.message_id;
+    INSERT INTO message_signals (kind, conversation_id, message_id)
+    VALUES ('scene_image_changed', NEW.conversation_id, NEW.message_id);
+END;
+
+CREATE TRIGGER scene_image_follow_ups_signal_delete
+AFTER DELETE ON scene_image_follow_ups
+BEGIN
+    DELETE FROM message_signals
+    WHERE kind = 'scene_image_changed'
+      AND conversation_id = OLD.conversation_id
+      AND message_id = OLD.message_id;
+    INSERT INTO message_signals (kind, conversation_id, message_id)
+    VALUES ('scene_image_changed', OLD.conversation_id, OLD.message_id);
+END;

@@ -87,6 +87,24 @@ impl RecordingEvents {
     }
 }
 
+/// An image provider that serves nothing.
+pub(super) struct NoImages;
+
+#[async_trait::async_trait]
+impl lettuce_image_generation::ImageProviderPort for NoImages {
+    async fn generate(
+        &self,
+        request: lettuce_image_generation::ProviderImageRequest,
+    ) -> Result<
+        lettuce_image_generation::ProviderImageOutput,
+        lettuce_image_generation::ImageProviderError,
+    > {
+        Err(lettuce_image_generation::ImageProviderError::Unsupported(
+            request.account.provider_kind.clone(),
+        ))
+    }
+}
+
 pub(super) enum Reply {
     Text(&'static str),
     UntilCancelled,
@@ -204,7 +222,33 @@ pub(super) fn harness_in(
     app_folder: Option<std::path::PathBuf>,
     models: Arc<dyn ModelLoader>,
 ) -> Harness {
+    harness_full(reply, clock, media, app_folder, models, Arc::new(NoImages))
+}
+
+/// A harness whose context generates images with `images`.
+pub(super) fn harness_full(
+    reply: Reply,
+    clock: Arc<dyn lettuce_jobs::Clock>,
+    media: Option<Arc<ApiMediaStore>>,
+    app_folder: Option<std::path::PathBuf>,
+    models: Arc<dyn ModelLoader>,
+    images: Arc<dyn lettuce_image_generation::ImageProviderPort>,
+) -> Harness {
     let backend = Arc::new(AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend"));
+    harness_over(backend, reply, clock, media, app_folder, models, images)
+}
+
+/// A harness over `backend`, such as one opened on a file the media store
+/// shares.
+pub(super) fn harness_over(
+    backend: Arc<AppBackend>,
+    reply: Reply,
+    clock: Arc<dyn lettuce_jobs::Clock>,
+    media: Option<Arc<ApiMediaStore>>,
+    app_folder: Option<std::path::PathBuf>,
+    models: Arc<dyn ModelLoader>,
+    images: Arc<dyn lettuce_image_generation::ImageProviderPort>,
+) -> Harness {
     let database = backend.database();
     let model_id = crate::launch::tests::seed_model(database, ProviderProtocol::Ollama, "ollama");
     let mut model = ModelProfileRepository::get(database, model_id)
@@ -227,6 +271,7 @@ pub(super) fn harness_in(
         backend,
         secret_store: Arc::new(lettuce_settings::InMemorySecretStore::new()),
         inference: provider.clone(),
+        image_provider: images,
         models,
         media,
         events: events.clone(),

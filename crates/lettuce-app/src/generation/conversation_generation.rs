@@ -842,6 +842,9 @@ impl<
                 let scene_image = input.reply_images.and_then(|facts| {
                     crate::image::reply_images::take_scene_image(&mut candidate.parts, facts)
                 });
+                let scene_image = scene_image.filter(|_| {
+                    outcome.finish_reason != lettuce_conversations::FinishReason::Cancelled
+                });
                 let usage = self.attempt_job_usage(work, &attempt)?;
                 let aggregate = ConversationReader::get(self.repository, conversation_id)?;
                 let turn = self.repository.get_turn(work.turn_id)?;
@@ -871,6 +874,12 @@ impl<
                             model: input.model,
                             usage_recorded_at: settled_at,
                             finalized_at: now,
+                            scene_follow_up: scene_image.as_ref().map(|scene| {
+                                lettuce_conversations::SceneFollowUpDraft {
+                                    prompt: scene.prompt.clone(),
+                                    ask_first: scene.ask_first,
+                                }
+                            }),
                         },
                         evidence,
                     )
@@ -959,6 +968,7 @@ impl<
                     model: context.model,
                     replay: candidate.provider_replay,
                     outcome: GenerationCheckpointEvent::Completed,
+                    scene_follow_up: context.scene_follow_up,
                 },
                 usage_event_id,
                 context.finalized_at,
@@ -2247,6 +2257,7 @@ struct FinalizationContext {
     model: ModelSelectionSnapshot,
     usage_recorded_at: TimestampMillis,
     finalized_at: TimestampMillis,
+    scene_follow_up: Option<lettuce_conversations::SceneFollowUpDraft>,
 }
 
 fn validate_finalization_identity(

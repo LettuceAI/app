@@ -287,6 +287,10 @@ pub struct FinalizationDraft {
     pub model: ModelSelectionSnapshot,
     pub replay: Option<ReplayArtifactRef>,
     pub outcome: GenerationCheckpointEvent,
+    /// The scene image the reply asks for. The database stores it with the
+    /// reply, or removes the message's follow-up that is not generating when
+    /// there is none.
+    pub scene_follow_up: Option<crate::SceneFollowUpDraft>,
 }
 
 /// Atomic mutation result: state, idempotency record, and durable outbox

@@ -23,6 +23,7 @@ mod mapping;
 mod messages;
 mod models;
 mod ollama;
+mod scenes;
 mod startup;
 mod turns;
 mod worker;
@@ -45,6 +46,8 @@ mod local_models_tests;
 mod messages_tests;
 #[cfg(test)]
 mod models_tests;
+#[cfg(test)]
+mod scenes_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
@@ -80,10 +83,10 @@ pub use inspect::{
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub use jobs::CatalogVariant;
 pub use jobs::{
-    ArtifactInstallHandler, ClaimedJob, InstallFinish, InstallSources, InstallWork, JobHandler,
-    JobHandlers, JobLane, JobProgressSink, JobRunner, ModelPullHandler, ModelsFolderMoveHandler,
-    NetworkInstallSources, TextFeatureHandler, admit_install, conversation_help_me_reply,
-    job_cancel, job_get, job_watch, jobs_list,
+    ArtifactInstallHandler, ClaimedJob, ImageGenerateHandler, InstallFinish, InstallSources,
+    InstallWork, JobHandler, JobHandlers, JobLane, JobProgressSink, JobRunner, ModelPullHandler,
+    ModelsFolderMoveHandler, NetworkInstallSources, TextFeatureHandler, admit_install,
+    conversation_help_me_reply, job_cancel, job_get, job_watch, jobs_list,
 };
 pub use local_models::{
     llama_chat_template, llama_context_info, llama_devices, llama_unload, local_file_runnability,
@@ -98,6 +101,10 @@ pub use messages::{
 };
 pub use models::{InstalledModels, ModelLoad, ModelLoader, NoModels};
 pub use ollama::{ollama_model_delete, ollama_models_list, ollama_pull};
+pub use scenes::{
+    message_scene_image_approve, message_scene_image_dismiss, message_scene_image_generate,
+    message_scene_prompt_generate,
+};
 pub use startup::{ApiWorkers, StartupStep, startup};
 pub use turns::{
     conversation_add_user_message, conversation_continue, conversation_regenerate,

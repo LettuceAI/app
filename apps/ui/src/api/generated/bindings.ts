@@ -30,6 +30,10 @@ export const commands = {
 	conversationAddUserMessage: (request: ConversationAddUserMessageRequest) => typedError<MessageChanged, ApiError>(__TAURI_INVOKE("conversation_add_user_message", { request })),
 	generationCancel: (request: GenerationCancelRequest) => typedError<null, ApiError>(__TAURI_INVOKE("generation_cancel", { request })),
 	conversationHelpMeReply: (request: ConversationHelpMeReplyRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("conversation_help_me_reply", { request })),
+	messageSceneImageApprove: (request: MessageSceneImageApproveRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("message_scene_image_approve", { request })),
+	messageSceneImageDismiss: (request: MessageSceneRequest) => typedError<null, ApiError>(__TAURI_INVOKE("message_scene_image_dismiss", { request })),
+	messageSceneImageGenerate: (request: MessageSceneImageGenerateRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("message_scene_image_generate", { request })),
+	messageScenePromptGenerate: (request: MessageSceneRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("message_scene_prompt_generate", { request })),
 	messagePromptSnapshot: (request: MessagePromptSnapshotRequest) => typedError<PromptSnapshot, ApiError>(__TAURI_INVOKE("message_prompt_snapshot", { request })),
 	conversationSpeakerSelectionPreview: (request: SpeakerSelectionPreviewRequest) => typedError<SpeakerSelectionPreview, ApiError>(__TAURI_INVOKE("conversation_speaker_selection_preview", { request })),
 	conversationParticipationStats: (request: ConversationRequest) => typedError<ParticipationStats, ApiError>(__TAURI_INVOKE("conversation_participation_stats", { request })),
@@ -1516,6 +1520,27 @@ export type MessageRevisionView = {
 export type MessageRole = "user" | "assistant" | "system" | "scene";
 
 /**
+ *  Approves the scene image a reply asked for, with the prompt as the user
+ *  edited it. `prompt` is trimmed and a blank one is refused; without it the
+ *  reply's own prompt is used.
+ */
+export type MessageSceneImageApproveRequest = {
+	message_id: string,
+	prompt: string | null,
+};
+
+/**  Asks for a scene image of a reply from `prompt` (trimmed, not blank). */
+export type MessageSceneImageGenerateRequest = {
+	message_id: string,
+	prompt: string,
+};
+
+/**  Names one message. */
+export type MessageSceneRequest = {
+	message_id: string,
+};
+
+/**
  *  Switches a one-to-one chat's starting scene from its scene message: the
  *  chat's scene setting and the message's text both change.
  */
@@ -1746,6 +1771,33 @@ export type RequiredModel = "embedding" | "emotion";
 
 export type RunnabilityLabel = "excellent" | "good" | "marginal" | "poor" | "unrunnable";
 
+/**  Why a scene image failed, where the user can act on it. */
+export type SceneImageFailure = "disabled" | "no_model" | "no_image" | "message_unavailable" | 
+/**  The app stopped while it was generated. */
+"interrupted" | "failed";
+
+export type SceneImageMode = "auto" | "ask_first" | "manual";
+
+export type SceneImageState = 
+/**  Waits for the user's approval, or is about to start. */
+"pending" | 
+/**  The image job is queued. */
+"approved" | "running" | 
+/**  The image is on the message. */
+"done" | "failed" | "dismissed";
+
+/**
+ *  The scene image of a reply. `job_id` is the image job, once one exists;
+ *  watch it for progress. An approved image needs no further input.
+ */
+export type SceneImageView = {
+	state: SceneImageState,
+	mode: SceneImageMode,
+	prompt: string,
+	job_id: string | null,
+	failure: SceneImageFailure | null,
+};
+
 /**  A message whose shown text contains the query, ignoring case. */
 export type SearchHit = {
 	message_id: string,
@@ -1843,6 +1895,11 @@ export type TimelineMessage = {
 	candidate_index: number | null,
 	candidate_count: number,
 	pinned: boolean,
+	/**
+	 *  The scene image the reply asked for, or that was asked of it, while
+	 *  it is not finished or failed.
+	 */
+	scene_image: SceneImageView | null,
 };
 
 /* Tauri Specta runtime */

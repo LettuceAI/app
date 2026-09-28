@@ -5880,6 +5880,7 @@ mod tests {
                 "purge_rejournals",
                 "revision_media_refs",
                 "scene_assets",
+                "scene_image_follow_ups",
                 "scene_variants",
                 "scenes",
                 "schema_migrations",

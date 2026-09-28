@@ -133,9 +133,18 @@ fn timeline_messages(
     .map_err(IntoApiError::into_api_error)?
     .into_iter()
     .collect::<HashMap<_, _>>();
+    let scene_images = super::scenes::views(
+        context,
+        conversation_id,
+        &items
+            .iter()
+            .filter(|item| item.message.role == MessageRole::Assistant)
+            .map(|item| item.message.id)
+            .collect::<Vec<_>>(),
+    )?;
     Ok(items
         .iter()
-        .map(|item| mapping::timeline_message(context, item, &counts))
+        .map(|item| mapping::timeline_message(context, item, &counts, &scene_images))
         .collect())
 }
 

@@ -14,7 +14,7 @@ use lettuce_jobs::{
     JobKind, JobSnapshot, ResourceAvailability, WorkerId, handle::CancellationToken,
 };
 use lettuce_settings::GlobalSettingsStore;
-use lettuce_types::{ConversationId, JobId, RequestId};
+use lettuce_types::{ConversationId, JobId, MessageId, RequestId};
 
 use super::local::{
     LocalModelJobDetail, LocalModelJobResult, digest, encode, internal, operation_key,
@@ -84,6 +84,67 @@ pub async fn conversation_help_me_reply(
                         conversation_id: conversation_id.to_string(),
                         draft,
                         swap_places,
+                    })?,
+                )
+                .map_err(internal)?;
+            record_operation(context, &key, &request_digest, job.id)?;
+            Ok(job.id)
+        })
+        .await?;
+    context.jobs().wake();
+    Ok(dto::JobAccepted {
+        job_id: job_id.to_string(),
+    })
+}
+
+/// Queues the scene prompt writer for a message of a one-to-one chat and
+/// returns its job; repeating the request under its key returns the same
+/// job. A disabled scene feature is `Unsupported`.
+pub(crate) async fn admit_scene_prompt(
+    context: &ApiContext,
+    conversation_id: ConversationId,
+    message_id: MessageId,
+    key: String,
+) -> Result<dto::JobAccepted, ApiError> {
+    let key = operation_key("scene_prompt", &key)?;
+    let request_digest = digest(&(conversation_id.to_string(), message_id.to_string()))?;
+    let job_id = context
+        .blocking(move |context| {
+            if let Some(job_id) = replay(context, &key, &request_digest)? {
+                return Ok(job_id);
+            }
+            let database = context.backend().database();
+            let settings = GlobalSettingsStore::load(database)
+                .map_err(|_| api_error(ApiErrorCode::Internal, "the settings could not be read"))?
+                .settings;
+            if !settings.image_generation.scene_enabled {
+                return Err(api_error(
+                    ApiErrorCode::Unsupported,
+                    "Scene generation is disabled in settings",
+                ));
+            }
+            let Some(media) = context.media() else {
+                return Err(api_error(
+                    ApiErrorCode::Unavailable,
+                    "the media store is unavailable",
+                ));
+            };
+            let request_id = RequestId::from_uuid(stable_uuid(&["scene-prompt", &key]));
+            let request = ScenePromptRequest {
+                conversation_id,
+                message_id,
+                request_id,
+            };
+            let job = ScenePromptWriter::new(database, media, context.inference())
+                .admit(&request)
+                .map_err(internal)?;
+            database
+                .record_local_model_job(
+                    job.id,
+                    &encode(&LocalModelJobDetail::ScenePrompt {
+                        request_id: request_id.to_string(),
+                        conversation_id: conversation_id.to_string(),
+                        message_id: message_id.to_string(),
                     })?,
                 )
                 .map_err(internal)?;

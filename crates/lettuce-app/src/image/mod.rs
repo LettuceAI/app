@@ -11,6 +11,7 @@ pub(crate) mod local_diffusion_install;
 pub(crate) mod playground;
 pub(crate) mod provider_media;
 pub(crate) mod reply_images;
+pub(crate) mod scene_follow_up;
 pub(crate) mod scene_image;
 pub(crate) mod scene_loras;
 pub(crate) mod scene_prompt_writer;
@@ -28,7 +29,13 @@ pub use image_providers::AppImageProviders;
 pub use local_diffusion_install::*;
 pub use provider_media::*;
 pub use reply_images::{ReplyImageFacts, SceneImageFollowUp};
-pub use scene_image::{SceneImageError, SceneImageRequest, generate_scene_image};
+pub use scene_follow_up::{
+    MAX_ATTEMPTS as SCENE_IMAGE_MAX_ATTEMPTS, SceneFollowUpError as SceneImageFollowUpError,
+    SceneFollowUpSources, SceneFollowUps, job_of_scene_image_request,
+};
+pub use scene_image::{
+    SceneImageError, SceneImageRequest, attach_scene_image, scene_generation_request,
+};
 pub use scene_prompt_writer::{
     ScenePromptError, ScenePromptReply, ScenePromptRequest, ScenePromptSources, ScenePromptWriter,
 };
