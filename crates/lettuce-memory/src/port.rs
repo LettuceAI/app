@@ -358,6 +358,20 @@ pub trait PendingSuffixRewindRepository: Send + Sync {
         &self,
         pending: &PendingSuffixRewind,
     ) -> Result<(), DynamicMemorySuffixRewindError>;
+
+    /// Why the conversation's oldest failed owed rewind could not finish.
+    fn pending_rewind_failure(
+        &self,
+        conversation_id: ConversationId,
+    ) -> Result<Option<String>, DynamicMemorySuffixRewindError>;
+
+    /// Records why an owed rewind could not finish; the next attempt
+    /// overwrites it and a finished rewind removes the record with it.
+    fn fail_pending_suffix_rewind(
+        &self,
+        pending: &PendingSuffixRewind,
+        reason: &str,
+    ) -> Result<(), DynamicMemorySuffixRewindError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

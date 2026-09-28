@@ -166,6 +166,13 @@ fn prior_summary(
                JOIN dynamic_memory_summary_checkpoints checkpoint ON checkpoint.run_id=run.id
               WHERE run.conversation_id=?1 AND run.id<>?2 AND run.summary_window_end<=?3
                 AND run.space_id=?4
+                AND NOT EXISTS (
+                    SELECT 1 FROM dynamic_memory_suffix_rewinds rewind
+                      JOIN dynamic_memory_runs undone ON undone.id = rewind.invalid_run_id
+                     WHERE rewind.conversation_id = run.conversation_id
+                       AND undone.created_at <= run.created_at
+                       AND rewind.applied_at >= run.created_at
+                )
                 AND EXISTS (
                     SELECT 1 FROM dynamic_memory_run_attempts attempt
                      WHERE attempt.run_id=run.id AND attempt.status='succeeded'
@@ -295,22 +302,28 @@ impl PendingSuffixRewindRepository for Database {
         }
         let payload = encode_versioned(pending, JSON_VERSION)
             .map_err(|_| ConversationRepositoryError::Storage)?;
-        conversation_mutations::tombstone_with(self, &pending.tombstone, now, |transaction, _| {
-            transaction
-                .execute(
-                    "INSERT INTO dynamic_memory_pending_suffix_rewinds
+        conversation_mutations::tombstone_with(
+            self,
+            &pending.tombstone,
+            now,
+            true,
+            |transaction, _| {
+                transaction
+                    .execute(
+                        "INSERT INTO dynamic_memory_pending_suffix_rewinds
                             (conversation_id,operation_key,pending_json,recorded_at)
                          VALUES (?1,?2,?3,?4)",
-                    params![
-                        pending.tombstone.conversation_id.to_string(),
-                        pending.tombstone.operation.key.as_str(),
-                        payload,
-                        now.get(),
-                    ],
-                )
-                .map_err(|_| ConversationRepositoryError::Storage)?;
-            Ok(())
-        })
+                        params![
+                            pending.tombstone.conversation_id.to_string(),
+                            pending.tombstone.operation.key.as_str(),
+                            payload,
+                            now.get(),
+                        ],
+                    )
+                    .map_err(|_| ConversationRepositoryError::Storage)?;
+                Ok(())
+            },
+        )
     }
 
     fn record_empty_suffix(
@@ -367,6 +380,43 @@ impl PendingSuffixRewindRepository for Database {
                 params![
                     pending.tombstone.conversation_id.to_string(),
                     pending.tombstone.operation.key.as_str(),
+                ],
+            )
+            .map_err(storage)?;
+        Ok(())
+    }
+
+    fn pending_rewind_failure(
+        &self,
+        conversation_id: lettuce_types::ConversationId,
+    ) -> Result<Option<String>, DynamicMemorySuffixRewindError> {
+        let connection = self.connection().map_err(storage)?;
+        connection
+            .query_row(
+                "SELECT failure FROM dynamic_memory_pending_suffix_rewinds
+                  WHERE conversation_id = ?1 AND failure IS NOT NULL
+                  ORDER BY recorded_at, operation_key LIMIT 1",
+                [conversation_id.to_string()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(storage)
+    }
+
+    fn fail_pending_suffix_rewind(
+        &self,
+        pending: &PendingSuffixRewind,
+        reason: &str,
+    ) -> Result<(), DynamicMemorySuffixRewindError> {
+        let connection = self.connection().map_err(storage)?;
+        connection
+            .execute(
+                "UPDATE dynamic_memory_pending_suffix_rewinds SET failure = ?3
+                  WHERE conversation_id = ?1 AND operation_key = ?2",
+                params![
+                    pending.tombstone.conversation_id.to_string(),
+                    pending.tombstone.operation.key.as_str(),
+                    if reason.is_empty() { "unknown" } else { reason },
                 ],
             )
             .map_err(storage)?;

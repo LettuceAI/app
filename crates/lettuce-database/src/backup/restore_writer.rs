@@ -630,6 +630,19 @@ impl ProviderBackupRestoreWriter for Database {
                 )
                 .map_err(invalid)?;
         }
+        for owed in &graph.dynamic_memory.pending_suffix_rewinds {
+            transaction
+                .execute(
+                    "INSERT INTO dynamic_memory_pending_suffix_rewinds (conversation_id, operation_key, pending_json, recorded_at) VALUES (?1, ?2, ?3, ?4)",
+                    params![
+                        owed.pending.tombstone.conversation_id.to_string(),
+                        owed.pending.tombstone.operation.key.as_str(),
+                        crate::encode_versioned(&owed.pending, 1).map_err(invalid)?,
+                        owed.recorded_at.get()
+                    ],
+                )
+                .map_err(invalid)?;
+        }
         let mut runs = graph.dynamic_memory.runs.iter().collect::<Vec<_>>();
         runs.sort_by_key(|entry| (entry.run.created_at, entry.run.id));
         for entry in runs {

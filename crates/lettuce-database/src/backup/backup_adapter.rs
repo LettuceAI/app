@@ -449,6 +449,23 @@ fn read_dynamic_memory(
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
+    let pending_suffix_rewinds = transaction
+        .prepare("SELECT pending_json,recorded_at FROM dynamic_memory_pending_suffix_rewinds ORDER BY recorded_at,conversation_id,operation_key")
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(backup_error)?
+        .into_iter()
+        .map(|(payload, recorded_at)| {
+            Ok(lettuce_transfer::BackupPendingSuffixRewind {
+                pending: crate::decode_versioned(&payload, 1)
+                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                recorded_at: TimestampMillis::new(recorded_at),
+            })
+        })
+        .collect::<Result<Vec<_>, ProviderBackupSourceError>>()?;
     let run_ids = transaction
         .prepare("SELECT id FROM dynamic_memory_runs ORDER BY id")
         .and_then(|mut statement| {
@@ -515,6 +532,7 @@ fn read_dynamic_memory(
     Ok(DynamicMemoryBackup {
         version: DYNAMIC_MEMORY_BACKUP_VERSION,
         pending_approvals,
+        pending_suffix_rewinds,
         runs,
     })
 }

@@ -1804,6 +1804,7 @@ mod tests {
             dynamic_memory: crate::DynamicMemoryBackup {
                 version: crate::DYNAMIC_MEMORY_BACKUP_VERSION,
                 pending_approvals: Vec::new(),
+                pending_suffix_rewinds: Vec::new(),
                 runs: Vec::new(),
             },
         }
