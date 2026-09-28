@@ -331,6 +331,39 @@ pub struct PendingSuffixRewind {
     pub summary_message_interval: u32,
 }
 
+/// Why an owed rewind could not finish.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OwedRewindFailure {
+    /// Memory changed while it was rewound.
+    Conflict,
+    /// The stored rewind disagrees with what the chat holds now.
+    Inconsistent,
+    Storage,
+    Other,
+}
+
+impl OwedRewindFailure {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Conflict => "conflict",
+            Self::Inconsistent => "inconsistent",
+            Self::Storage => "storage",
+            Self::Other => "other",
+        }
+    }
+
+    #[must_use]
+    pub fn parse(value: &str) -> Self {
+        match value {
+            "conflict" => Self::Conflict,
+            "inconsistent" => Self::Inconsistent,
+            "storage" => Self::Storage,
+            _ => Self::Other,
+        }
+    }
+}
+
 pub trait PendingSuffixRewindRepository: Send + Sync {
     /// Tombstones the suffix and records the owed rewind in one
     /// transaction. A replay records nothing.
@@ -363,14 +396,14 @@ pub trait PendingSuffixRewindRepository: Send + Sync {
     fn pending_rewind_failure(
         &self,
         conversation_id: ConversationId,
-    ) -> Result<Option<String>, DynamicMemorySuffixRewindError>;
+    ) -> Result<Option<OwedRewindFailure>, DynamicMemorySuffixRewindError>;
 
     /// Records why an owed rewind could not finish; the next attempt
     /// overwrites it and a finished rewind removes the record with it.
     fn fail_pending_suffix_rewind(
         &self,
         pending: &PendingSuffixRewind,
-        reason: &str,
+        failure: OwedRewindFailure,
     ) -> Result<(), DynamicMemorySuffixRewindError>;
 }
 

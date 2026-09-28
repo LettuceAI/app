@@ -6,10 +6,11 @@ use lettuce_characters::{
 };
 use lettuce_contracts::{self as dto, ApiErrorCode, ApiErrorDetails};
 use lettuce_conversations::{
-    ConversationOverviewReader, ConversationReader, ConversationRepository, DescendantPolicy,
-    ForkBranch, InferenceCandidate, InferenceOutcome, InferencePort, InferenceRequest,
-    MediaAssetRole, MessageDraft, MessagePart, MessageRole, MessageVisibility, OperationKind,
-    ParticipantRole, PortError, RegenerateCandidate, SendConversation, TombstoneMessage,
+    ConversationChangeFeed, ConversationOverviewReader, ConversationReader, ConversationRepository,
+    DescendantPolicy, ForkBranch, InferenceCandidate, InferenceOutcome, InferencePort,
+    InferenceRequest, MediaAssetRole, MessageDraft, MessagePart, MessageRole, MessageVisibility,
+    OperationKind, ParticipantRole, PortError, RegenerateCandidate, SendConversation,
+    TombstoneMessage,
 };
 use lettuce_jobs::{
     JobKind, JobMutation, JobSpec, JobState, JobStore, JobSubject, OutcomeRef,
@@ -2224,6 +2225,30 @@ async fn a_failing_owed_rewind_is_recorded_per_chat_and_startup_goes_on() {
             .expect("failure")
             .is_none()
     );
+    let still = memory_rewind_retry(
+        &harness.context,
+        dto::MemoryRewindRetryRequest {
+            conversation_id: broken.conversation_id.to_string(),
+        },
+    )
+    .await
+    .expect("retry");
+    assert_eq!(
+        still,
+        dto::MemoryRewindRetryOutcome::StillFailing {
+            code: dto::MemoryRewindFailureCode::Inconsistent
+        }
+    );
+    assert_eq!(
+        open(&harness, broken.conversation_id).await.memory_blocked,
+        Some(dto::MemoryBlockedReason::OwedRewindFailed {
+            code: dto::MemoryRewindFailureCode::Inconsistent
+        })
+    );
+    assert_eq!(
+        open(&harness, healthy.conversation_id).await.memory_blocked,
+        None
+    );
     let error = messages_delete_after(
         &harness.context,
         delete_after_request(
@@ -2463,4 +2488,258 @@ fn extra_memory_run(
         })
         .expect("extra memory run");
     run_id
+}
+
+fn items_on(
+    harness: &Harness,
+    conversation_id: ConversationId,
+    branch_id: lettuce_types::ConversationBranchId,
+) -> Vec<lettuce_conversations::TimelineItem> {
+    let database = harness.context.backend().database();
+    let mut cursor = None;
+    let mut newest_first = Vec::new();
+    loop {
+        let page = ConversationReader::timeline_page(
+            database,
+            conversation_id,
+            branch_id,
+            &lettuce_types::PageRequest {
+                cursor,
+                limit: lettuce_types::PageLimit::new(50),
+            },
+        )
+        .expect("timeline");
+        newest_first.extend(page.items.iter().cloned());
+        match page.next_cursor {
+            Some(next) => cursor = Some(next),
+            None => break,
+        }
+    }
+    newest_first.reverse();
+    newest_first
+}
+
+fn shown_parts_of(item: &lettuce_conversations::TimelineItem) -> Vec<MessagePart> {
+    item.active_revision
+        .as_ref()
+        .map(|revision| revision.parts.clone())
+        .or_else(|| {
+            item.active_candidate
+                .as_ref()
+                .map(|candidate| candidate.parts.clone())
+        })
+        .expect("a render")
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_branched_delete_copies_media_pin_author_time_and_the_shown_variant() {
+    let harness = harness(Reply::Text("Copied reply."));
+    let conversation_id = launch_with(&harness, harness.character_id, "fidelity").await;
+    let database = harness.context.backend().database();
+    append(&harness, conversation_id, "fidelity-first", text("First"));
+    let middle = append(&harness, conversation_id, "fidelity-middle", text("Middle"));
+    let asset = image_asset(database, "ab");
+    let with_image = append(
+        &harness,
+        conversation_id,
+        "fidelity-image",
+        vec![
+            MessagePart::Text {
+                text: "Look".into(),
+            },
+            MessagePart::MediaAsset {
+                asset_id: asset,
+                role: MediaAssetRole::Attachment,
+            },
+        ],
+    );
+    message_pin(
+        &harness.context,
+        dto::MessagePinRequest {
+            conversation_id: conversation_id.to_string(),
+            message_id: with_image.to_string(),
+            expected_revision: revision(&harness, conversation_id),
+            pinned: true,
+            client_operation_id: "fidelity-pin".into(),
+        },
+    )
+    .await
+    .expect("pin");
+    send(
+        &harness,
+        &conversation_id.to_string(),
+        "fidelity-send",
+        "Question",
+        Arc::new(RecordingStream::default()),
+    )
+    .await
+    .expect("send");
+    assert!(
+        ConversationGenerationWorker::new(harness.context.clone())
+            .run_once()
+            .await
+            .expect("reply")
+    );
+    let root = active_branch_of(&harness, conversation_id);
+    fork_at(&harness, conversation_id, root, middle, "fidelity-fork");
+    select(&harness, conversation_id, root, "fidelity-back");
+    let before = items_on(&harness, conversation_id, root);
+    let position = before
+        .iter()
+        .position(|item| item.message.id == middle)
+        .expect("middle");
+    let originals = before[position + 1..].to_vec();
+    assert_eq!(originals.len(), 3);
+    assert!(originals[2].active_candidate.is_some());
+    let deleted = ConversationRepository::delete_message(
+        database,
+        &TombstoneMessage {
+            conversation_id,
+            message_id: middle,
+            expected_revision: Revision::new(revision(&harness, conversation_id)),
+            operation: crate::conversation::edit_operation("fidelity-delete".into(), &[b"d"])
+                .expect("token"),
+            descendants: DescendantPolicy::Preserve,
+        },
+        harness.context.now(),
+    )
+    .expect("delete");
+    let lettuce_conversations::DeleteMessageOutcome::Branched(branched) = deleted.value else {
+        panic!("another branch shows the message");
+    };
+    assert!(deleted.outbox.iter().all(|record| !matches!(
+        record.event,
+        lettuce_conversations::ConversationOutboxEvent::AssetReferencesChanged { .. }
+    )));
+    let after = items_on(&harness, conversation_id, branched.branch.id);
+    let copies = after[after.len() - 3..].to_vec();
+    for (copy, original) in copies.iter().zip(&originals) {
+        assert_ne!(copy.message.id, original.message.id);
+        assert_eq!(
+            copy.message.author_participant_id,
+            original.message.author_participant_id
+        );
+        assert_eq!(copy.message.role, original.message.role);
+        assert_eq!(copy.message.created_at, original.message.created_at);
+        assert_eq!(copy.message.effective_time, original.message.effective_time);
+        assert_eq!(copy.message.pinned, original.message.pinned);
+        assert_eq!(copy.message.scene_edited, original.message.scene_edited);
+        assert_eq!(copy.message.visibility, original.message.visibility);
+        assert_eq!(shown_parts_of(copy), shown_parts_of(original));
+    }
+    assert!(copies[0].message.pinned);
+    assert!(copies[2].active_candidate.is_none());
+    assert!(copies[2].active_revision.is_some());
+    assert_eq!(
+        items_on(&harness, conversation_id, root).len(),
+        before.len(),
+        "the original branch is unchanged"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn deleting_a_root_message_another_branch_shows_is_refused() {
+    let harness = harness(Reply::Text("Hello."));
+    let conversation_id = launch_with(&harness, harness.character_id, "root-delete").await;
+    let first = append(&harness, conversation_id, "root-delete-1", text("Root"));
+    let second = append(&harness, conversation_id, "root-delete-2", text("Second"));
+    let root = active_branch_of(&harness, conversation_id);
+    fork_at(&harness, conversation_id, root, second, "root-delete-fork");
+    let branches = branch_ids(&harness, conversation_id);
+    let error = message_delete(
+        &harness.context,
+        delete_after_request(
+            conversation_id,
+            first,
+            revision(&harness, conversation_id),
+            "root-delete-x",
+        ),
+    )
+    .await
+    .expect_err("no branch can start before the first message");
+    assert_eq!(error.code, ApiErrorCode::Unsupported);
+    assert_eq!(branch_ids(&harness, conversation_id), branches);
+    let shown = visible_ids(&open(&harness, conversation_id).await.messages.items);
+    assert!(shown.contains(&first.to_string()));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failed_owed_rewind_shows_on_the_view_and_list_and_a_retry_clears_it() {
+    let harness = harness(Reply::Text("Hello."));
+    let blocked = memory_chat(&harness, "blocked").await;
+    let other = memory_chat(&harness, "unblocked").await;
+    let database = harness.context.backend().database();
+    let owed = tombstone_without_rewind(&harness, &blocked, "blocked-1");
+    let before = ConversationChangeFeed::conversation_change_position(database).expect("position");
+    PendingSuffixRewindRepository::fail_pending_suffix_rewind(
+        database,
+        &owed,
+        lettuce_memory::OwedRewindFailure::Conflict,
+    )
+    .expect("record the failure");
+    let recorded =
+        ConversationChangeFeed::conversation_change_position(database).expect("position");
+    assert!(
+        recorded > before,
+        "recording the failure reaches the change feed"
+    );
+    let expected = Some(dto::MemoryBlockedReason::OwedRewindFailed {
+        code: dto::MemoryRewindFailureCode::Conflict,
+    });
+    assert_eq!(
+        open(&harness, blocked.conversation_id).await.memory_blocked,
+        expected
+    );
+    assert_eq!(
+        open(&harness, other.conversation_id).await.memory_blocked,
+        None
+    );
+    let list = conversations_list(
+        &harness.context,
+        dto::ConversationsListRequest {
+            kind: None,
+            character_id: None,
+            source_group_id: None,
+            lifecycle: None,
+            cursor: None,
+            limit: None,
+        },
+    )
+    .await
+    .expect("list");
+    for summary in &list.items {
+        let wanted = if summary.id == blocked.conversation_id.to_string() {
+            &expected
+        } else {
+            &None
+        };
+        assert_eq!(&summary.memory_blocked, wanted);
+    }
+    let retry = memory_rewind_retry(
+        &harness.context,
+        dto::MemoryRewindRetryRequest {
+            conversation_id: blocked.conversation_id.to_string(),
+        },
+    )
+    .await
+    .expect("retry");
+    assert_eq!(retry, dto::MemoryRewindRetryOutcome::Completed);
+    assert_eq!(
+        open(&harness, blocked.conversation_id).await.memory_blocked,
+        None
+    );
+    assert!(pending_of(&harness, blocked.conversation_id).is_empty());
+    assert!(
+        ConversationChangeFeed::conversation_change_position(database).expect("position")
+            > recorded
+    );
+    let idle = memory_rewind_retry(
+        &harness.context,
+        dto::MemoryRewindRetryRequest {
+            conversation_id: other.conversation_id.to_string(),
+        },
+    )
+    .await
+    .expect("retry of a chat that owes nothing");
+    assert_eq!(idle, dto::MemoryRewindRetryOutcome::NothingOwed);
 }

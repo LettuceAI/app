@@ -264,6 +264,27 @@ CREATE TABLE dynamic_memory_pending_suffix_rewinds (
 CREATE INDEX dynamic_memory_pending_suffix_rewinds_order_idx
     ON dynamic_memory_pending_suffix_rewinds(recorded_at, conversation_id, operation_key);
 
+CREATE TRIGGER dynamic_memory_pending_suffix_rewinds_record_insert
+AFTER INSERT ON dynamic_memory_pending_suffix_rewinds
+BEGIN
+    DELETE FROM conversation_changes WHERE conversation_id = NEW.conversation_id;
+    INSERT INTO conversation_changes (conversation_id, removed) VALUES (NEW.conversation_id, 0);
+END;
+
+CREATE TRIGGER dynamic_memory_pending_suffix_rewinds_record_update
+AFTER UPDATE ON dynamic_memory_pending_suffix_rewinds
+BEGIN
+    DELETE FROM conversation_changes WHERE conversation_id = NEW.conversation_id;
+    INSERT INTO conversation_changes (conversation_id, removed) VALUES (NEW.conversation_id, 0);
+END;
+
+CREATE TRIGGER dynamic_memory_pending_suffix_rewinds_record_delete
+AFTER DELETE ON dynamic_memory_pending_suffix_rewinds
+BEGIN
+    DELETE FROM conversation_changes WHERE conversation_id = OLD.conversation_id;
+    INSERT INTO conversation_changes (conversation_id, removed) VALUES (OLD.conversation_id, 0);
+END;
+
 CREATE TABLE companion_turn_effect_invalidations (
     operation_id TEXT NOT NULL,
     conversation_id TEXT NOT NULL,

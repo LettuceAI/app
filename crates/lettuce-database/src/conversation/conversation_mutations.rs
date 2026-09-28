@@ -12518,6 +12518,146 @@ mod tests {
     }
 
     #[test]
+    fn a_branched_delete_keeps_every_media_reference_and_copies_the_message_fields() {
+        let mut fixture = direct_fixture();
+        let messages = conversation_with_two_exchanges(&mut fixture, "copy-fidelity");
+        fixture.revision = conversation_revision(&fixture);
+        let asset = stage_media_asset(&fixture.database, "33");
+        fixture
+            .database
+            .edit_message(
+                &EditMessage {
+                    conversation_id: fixture.conversation_id,
+                    message_id: messages[2],
+                    expected_revision: fixture.revision,
+                    operation: token("copy-edit", "cd"),
+                    draft: lettuce_conversations::MessageEditDraft {
+                        parts: vec![
+                            text("look")[0].clone(),
+                            MessagePart::MediaAsset {
+                                asset_id: asset,
+                                role: lettuce_conversations::MediaAssetRole::Attachment,
+                            },
+                        ],
+                        visibility: MessageVisibility::Visible,
+                        pinned: true,
+                        scene_edited: false,
+                    },
+                },
+                TimestampMillis::new(150),
+            )
+            .expect("edit with media");
+        fixture
+            .database
+            .connection()
+            .expect("connection")
+            .execute(
+                "UPDATE conversation_messages SET scene_edited = 1 WHERE id = ?1",
+                [messages[2].to_string()],
+            )
+            .expect("mark scene edited");
+        fixture.revision = conversation_revision(&fixture);
+        let root = fixture.branch_id;
+        fixture
+            .database
+            .fork_branch(
+                &ForkBranch {
+                    conversation_id: fixture.conversation_id,
+                    source_branch_id: root,
+                    at_message_id: Some(messages[1]),
+                    expected_revision: fixture.revision,
+                    operation: token("copy-fork", "cd"),
+                },
+                TimestampMillis::new(160),
+            )
+            .expect("fork");
+        fixture.revision = conversation_revision(&fixture);
+        fixture
+            .database
+            .select_branch(
+                &SelectBranch {
+                    conversation_id: fixture.conversation_id,
+                    branch_id: root,
+                    expected_revision: fixture.revision,
+                    operation: token("copy-select", "cd"),
+                },
+                TimestampMillis::new(170),
+            )
+            .expect("select the root again");
+        fixture.revision = conversation_revision(&fixture);
+        let refs = |state: &str| -> i64 {
+            fixture
+                .database
+                .connection()
+                .expect("connection")
+                .query_row(
+                    "SELECT count(*) FROM revision_media_refs WHERE asset_id = ?1 AND state = ?2",
+                    params![asset.to_string(), state],
+                    |row| row.get(0),
+                )
+                .expect("count")
+        };
+        assert_eq!((refs("active"), refs("historical")), (1, 0));
+        let deleted = fixture
+            .database
+            .delete_message(
+                &TombstoneMessage {
+                    conversation_id: fixture.conversation_id,
+                    message_id: messages[1],
+                    expected_revision: fixture.revision,
+                    operation: token("copy-delete", "cd"),
+                    descendants: DescendantPolicy::Preserve,
+                },
+                TimestampMillis::new(180),
+            )
+            .expect("delete");
+        let lettuce_conversations::DeleteMessageOutcome::Branched(branched) = deleted.value else {
+            panic!("the fork shows the message");
+        };
+        assert!(deleted.outbox.iter().all(|record| !matches!(
+            record.event,
+            ConversationOutboxEvent::AssetReferencesChanged { .. }
+        )));
+        assert_eq!(
+            (refs("active"), refs("historical")),
+            (2, 0),
+            "the original reference stays and the copy adds one"
+        );
+        let page = |branch_id| {
+            let mut items = ConversationReader::timeline_page(
+                fixture.database.as_ref(),
+                fixture.conversation_id,
+                branch_id,
+                &PageRequest {
+                    cursor: None,
+                    limit: PageLimit::new(20),
+                },
+            )
+            .expect("timeline")
+            .items;
+            items.reverse();
+            items
+        };
+        let originals = page(root)[2..].to_vec();
+        let copies = page(branched.branch.id);
+        let copies = copies[copies.len() - 2..].to_vec();
+        assert_eq!(originals.len(), 2);
+        for (copy, original) in copies.iter().zip(&originals) {
+            assert_ne!(copy.message.id, original.message.id);
+            assert_eq!(
+                copy.message.author_participant_id,
+                original.message.author_participant_id
+            );
+            assert_eq!(copy.message.created_at, original.message.created_at);
+            assert_eq!(copy.message.pinned, original.message.pinned);
+            assert_eq!(copy.message.scene_edited, original.message.scene_edited);
+        }
+        assert!(copies[0].message.pinned && copies[0].message.scene_edited);
+        assert!(originals[1].active_candidate.is_some());
+        assert!(copies[1].active_candidate.is_none() && copies[1].active_revision.is_some());
+    }
+
+    #[test]
     fn an_owed_suffix_rewind_survives_a_backup_round_trip() {
         use lettuce_memory::PendingSuffixRewindRepository;
         let mut fixture = direct_fixture();

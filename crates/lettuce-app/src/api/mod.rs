@@ -65,8 +65,9 @@ pub use jobs::{
 };
 pub use messages::{
     conversation_message_count, conversation_messages_around, conversation_pinned_messages,
-    conversation_search, message_candidate_select, message_candidates, message_delete,
-    message_edit, message_pin, message_revisions, message_scene_select, messages_delete_after,
+    conversation_search, memory_rewind_retry, message_candidate_select, message_candidates,
+    message_delete, message_edit, message_pin, message_revisions, message_scene_select,
+    messages_delete_after,
 };
 pub use models::{InstalledModels, ModelLoad, ModelLoader, NoModels};
 pub use startup::{ApiWorkers, StartupStep, startup};

@@ -97,6 +97,7 @@ fn conversation_summary(
         message_count: overview.message_count,
         chat_mode: chat_mode(context, conversation)?,
         missing_models: missing.of(context, conversation)?,
+        memory_blocked: super::messages::memory_blocked(context, conversation.id)?,
     })
 }
 
@@ -289,6 +290,7 @@ pub async fn conversation_open(
                 source: mapping::conversation_source(&conversation.kind),
                 chat_mode: chat_mode(context, &conversation)?,
                 missing_models,
+                memory_blocked: super::messages::memory_blocked(context, conversation.id)?,
                 title: conversation.title,
             })
         })

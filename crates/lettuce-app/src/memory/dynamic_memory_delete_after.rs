@@ -314,7 +314,7 @@ where
                 Ok(_) => report.completed += 1,
                 Err(error) => {
                     self.repository
-                        .fail_pending_suffix_rewind(owed, &error.to_string())?;
+                        .fail_pending_suffix_rewind(owed, failure_of(&error))?;
                     report.failed.push((conversation, error));
                 }
             }
@@ -480,6 +480,21 @@ fn unchanged(conversation: Conversation) -> DynamicMemoryDeleteAfterResult {
         rewind: None,
         retained_effects: Vec::new(),
         rebuild_admission: None,
+    }
+}
+
+fn failure_of(error: &DynamicMemoryDeleteAfterError) -> lettuce_memory::OwedRewindFailure {
+    use lettuce_memory::OwedRewindFailure;
+    match error {
+        DynamicMemoryDeleteAfterError::Rewind(DynamicMemorySuffixRewindError::Conflict) => {
+            OwedRewindFailure::Conflict
+        }
+        DynamicMemoryDeleteAfterError::InvalidResult => OwedRewindFailure::Inconsistent,
+        DynamicMemoryDeleteAfterError::Rewind(DynamicMemorySuffixRewindError::Storage)
+        | DynamicMemoryDeleteAfterError::Conversation(ConversationRepositoryError::Storage) => {
+            OwedRewindFailure::Storage
+        }
+        _ => OwedRewindFailure::Other,
     }
 }
 

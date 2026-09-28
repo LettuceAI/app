@@ -1068,3 +1068,71 @@ pub async fn conversation_messages_around(
         })
         .await
 }
+
+fn failure_code(failure: lettuce_memory::OwedRewindFailure) -> dto::MemoryRewindFailureCode {
+    match failure {
+        lettuce_memory::OwedRewindFailure::Conflict => dto::MemoryRewindFailureCode::Conflict,
+        lettuce_memory::OwedRewindFailure::Inconsistent => {
+            dto::MemoryRewindFailureCode::Inconsistent
+        }
+        lettuce_memory::OwedRewindFailure::Storage => dto::MemoryRewindFailureCode::Storage,
+        lettuce_memory::OwedRewindFailure::Other => dto::MemoryRewindFailureCode::Other,
+    }
+}
+
+/// Why the conversation's memory is stopped: a rewind a delete owes failed.
+pub(super) fn memory_blocked(
+    context: &ApiContext,
+    conversation_id: ConversationId,
+) -> Result<Option<dto::MemoryBlockedReason>, ApiError> {
+    Ok(
+        lettuce_memory::PendingSuffixRewindRepository::pending_rewind_failure(
+            context.backend().database(),
+            conversation_id,
+        )
+        .map_err(|_| {
+            api_error(
+                ApiErrorCode::Internal,
+                "the owed memory rewinds could not be read",
+            )
+        })?
+        .map(|failure| dto::MemoryBlockedReason::OwedRewindFailed {
+            code: failure_code(failure),
+        }),
+    )
+}
+
+/// Retries the memory rewind a delete owes the chat now. A rewind that
+/// still fails stays recorded and is reported; nothing skips or discards it.
+pub async fn memory_rewind_retry(
+    context: &ApiContext,
+    request: dto::MemoryRewindRetryRequest,
+) -> Result<dto::MemoryRewindRetryOutcome, ApiError> {
+    let conversation_id: ConversationId = parse_id(&request.conversation_id, "conversation_id")?;
+    let outcome = context
+        .blocking(move |context| {
+            let database = context.backend().database();
+            ConversationReader::get(database, conversation_id)
+                .map_err(IntoApiError::into_api_error)?;
+            let report = crate::DynamicMemoryDeleteAfterCoordinator::new(database, database)
+                .complete_pending(Some(conversation_id), context.now())
+                .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?;
+            Ok(if report.failed.is_empty() {
+                if report.completed == 0 {
+                    dto::MemoryRewindRetryOutcome::NothingOwed
+                } else {
+                    dto::MemoryRewindRetryOutcome::Completed
+                }
+            } else {
+                match memory_blocked(context, conversation_id)? {
+                    Some(dto::MemoryBlockedReason::OwedRewindFailed { code }) => {
+                        dto::MemoryRewindRetryOutcome::StillFailing { code }
+                    }
+                    None => dto::MemoryRewindRetryOutcome::Completed,
+                }
+            })
+        })
+        .await?;
+    context.jobs().wake();
+    Ok(outcome)
+}

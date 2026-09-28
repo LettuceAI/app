@@ -1340,7 +1340,7 @@ fn timeline_has(
         .map_err(slice::db)
 }
 
-const OTHER_BRANCHES_SQL: &str = "oth(branch_id, id) AS (SELECT b.id, coalesce(b.head_message_id, b.fork_message_id) FROM conversation_branches AS b WHERE b.conversation_id = ?1 AND b.id <> ?2 AND coalesce(b.head_message_id, b.fork_message_id) IS NOT NULL UNION ALL SELECT oth.branch_id, m.parent_message_id FROM conversation_messages AS m JOIN oth ON m.id = oth.id WHERE m.conversation_id = ?1 AND m.parent_message_id IS NOT NULL)";
+const OTHER_BRANCHES_SQL: &str = "oth(branch_id, id) AS (SELECT b.id, coalesce(b.head_message_id, b.fork_message_id) FROM conversation_branches AS b WHERE b.conversation_id = ?1 AND b.id <> ?2 AND b.status = 'active' AND coalesce(b.head_message_id, b.fork_message_id) IS NOT NULL UNION ALL SELECT oth.branch_id, m.parent_message_id FROM conversation_messages AS m JOIN oth ON m.id = oth.id WHERE m.conversation_id = ?1 AND m.parent_message_id IS NOT NULL)";
 
 /// Whether a visible message after `after_ordinal` on `branch_id`'s
 /// timeline also lies on the timeline of another branch.

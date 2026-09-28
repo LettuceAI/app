@@ -13,6 +13,7 @@ export const commands = {
 	messageEdit: (request: MessageEditRequest) => typedError<MessageChanged, ApiError>(__TAURI_INVOKE("message_edit", { request })),
 	messageDelete: (request: MessageDeleteRequest) => typedError<MessagesDeleteResult, ApiError>(__TAURI_INVOKE("message_delete", { request })),
 	messagesDeleteAfter: (request: MessageDeleteRequest) => typedError<MessagesDeleteResult, ApiError>(__TAURI_INVOKE("messages_delete_after", { request })),
+	memoryRewindRetry: (request: MemoryRewindRetryRequest) => typedError<MemoryRewindRetryOutcome, ApiError>(__TAURI_INVOKE("memory_rewind_retry", { request })),
 	messagePin: (request: MessagePinRequest) => typedError<MessageChanged, ApiError>(__TAURI_INVOKE("message_pin", { request })),
 	messageCandidateSelect: (request: MessageCandidateSelectRequest) => typedError<MessageChanged, ApiError>(__TAURI_INVOKE("message_candidate_select", { request })),
 	messageSceneSelect: (request: MessageSceneSelectRequest) => typedError<MessageChanged, ApiError>(__TAURI_INVOKE("message_scene_select", { request })),
@@ -352,6 +353,8 @@ export type ConversationSummary = {
 	chat_mode: GroupChatMode | null,
 	/**  Optional models the chat needs that are not installed. */
 	missing_models: RequiredModel[],
+	/**  Why the chat's dynamic memory is stopped, when it is. */
+	memory_blocked: MemoryBlockedReason | null,
 };
 
 export type ConversationView = {
@@ -377,6 +380,8 @@ export type ConversationView = {
 	chat_mode: GroupChatMode | null,
 	/**  Optional models the chat needs that are not installed. */
 	missing_models: RequiredModel[],
+	/**  Why the chat's dynamic memory is stopped, when it is. */
+	memory_blocked: MemoryBlockedReason | null,
 };
 
 export type ConversationsListRequest = {
@@ -589,9 +594,23 @@ export type LorebooksChange = { type: "set"; ids: string[] } | { type: "reset" }
 
 export type MediaRole = "inline" | "attachment" | "avatar" | "scene" | "reference";
 
+/**  Why a chat's dynamic memory does not run. */
+export type MemoryBlockedReason = { type: "owed_rewind_failed"; code: MemoryRewindFailureCode };
+
 export type MemoryMode = "manual" | "dynamic" | "disabled";
 
 export type MemoryModeChange = { type: "set"; mode: MemoryMode } | { type: "reset" };
+
+/**  Why the memory rewind a delete owes could not finish. */
+export type MemoryRewindFailureCode = "conflict" | "inconsistent" | "storage" | "other";
+
+/**  What a retry of an owed memory rewind did. */
+export type MemoryRewindRetryOutcome = { type: "nothing_owed" } | { type: "completed" } | { type: "still_failing"; code: MemoryRewindFailureCode };
+
+/**  Asks for the memory rewind a chat owes to be finished now. */
+export type MemoryRewindRetryRequest = {
+	conversation_id: string,
+};
 
 export type MessageCandidatePage = {
 	items: MessageCandidateView[],

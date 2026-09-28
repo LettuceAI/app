@@ -105,6 +105,8 @@ pub struct ConversationSummary {
     pub chat_mode: Option<GroupChatMode>,
     /// Optional models the chat needs that are not installed.
     pub missing_models: Vec<crate::RequiredModel>,
+    /// Why the chat's dynamic memory is stopped, when it is.
+    pub memory_blocked: Option<MemoryBlockedReason>,
 }
 
 /// Conversations, most recently updated first.
@@ -197,6 +199,45 @@ pub struct ConversationView {
     pub chat_mode: Option<GroupChatMode>,
     /// Optional models the chat needs that are not installed.
     pub missing_models: Vec<crate::RequiredModel>,
+    /// Why the chat's dynamic memory is stopped, when it is.
+    pub memory_blocked: Option<MemoryBlockedReason>,
+}
+
+/// Why a chat's dynamic memory does not run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum MemoryBlockedReason {
+    OwedRewindFailed { code: MemoryRewindFailureCode },
+}
+
+/// Why the memory rewind a delete owes could not finish.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryRewindFailureCode {
+    Conflict,
+    Inconsistent,
+    Storage,
+    Other,
+}
+
+/// Asks for the memory rewind a chat owes to be finished now.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MemoryRewindRetryRequest {
+    pub conversation_id: String,
+}
+
+/// What a retry of an owed memory rewind did.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum MemoryRewindRetryOutcome {
+    NothingOwed,
+    Completed,
+    StillFailing { code: MemoryRewindFailureCode },
 }
 
 /// A page of the selected branch: without cursors the newest messages,

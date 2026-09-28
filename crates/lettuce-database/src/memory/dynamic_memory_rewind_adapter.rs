@@ -389,7 +389,7 @@ impl PendingSuffixRewindRepository for Database {
     fn pending_rewind_failure(
         &self,
         conversation_id: lettuce_types::ConversationId,
-    ) -> Result<Option<String>, DynamicMemorySuffixRewindError> {
+    ) -> Result<Option<lettuce_memory::OwedRewindFailure>, DynamicMemorySuffixRewindError> {
         let connection = self.connection().map_err(storage)?;
         connection
             .query_row(
@@ -397,16 +397,17 @@ impl PendingSuffixRewindRepository for Database {
                   WHERE conversation_id = ?1 AND failure IS NOT NULL
                   ORDER BY recorded_at, operation_key LIMIT 1",
                 [conversation_id.to_string()],
-                |row| row.get(0),
+                |row| row.get::<_, String>(0),
             )
             .optional()
+            .map(|value| value.map(|code| lettuce_memory::OwedRewindFailure::parse(&code)))
             .map_err(storage)
     }
 
     fn fail_pending_suffix_rewind(
         &self,
         pending: &PendingSuffixRewind,
-        reason: &str,
+        failure: lettuce_memory::OwedRewindFailure,
     ) -> Result<(), DynamicMemorySuffixRewindError> {
         let connection = self.connection().map_err(storage)?;
         connection
@@ -416,7 +417,7 @@ impl PendingSuffixRewindRepository for Database {
                 params![
                     pending.tombstone.conversation_id.to_string(),
                     pending.tombstone.operation.key.as_str(),
-                    if reason.is_empty() { "unknown" } else { reason },
+                    failure.as_str(),
                 ],
             )
             .map_err(storage)?;

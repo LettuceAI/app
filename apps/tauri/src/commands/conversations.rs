@@ -10,10 +10,10 @@ use lettuce_contracts::{
     ConversationSettingsUpdateRequest, ConversationSettingsView, ConversationView,
     ConversationsListRequest, GenerationCancelRequest, GenerationEvent, LatestConversationPage,
     LatestConversationsRequest, LaunchDirectRequest, LaunchDirectResponse, LaunchGroupRequest,
-    LaunchGroupResponse, MessageCandidatePage, MessageCandidateSelectRequest, MessageChanged,
-    MessageCount, MessageDeleteRequest, MessageEditRequest, MessageHistoryRequest, MessagePage,
-    MessagePinRequest, MessageRevisionPage, MessageSceneSelectRequest, MessageWindow,
-    MessagesDeleteResult, SearchHitPage, SendAccepted,
+    LaunchGroupResponse, MemoryRewindRetryOutcome, MemoryRewindRetryRequest, MessageCandidatePage,
+    MessageCandidateSelectRequest, MessageChanged, MessageCount, MessageDeleteRequest,
+    MessageEditRequest, MessageHistoryRequest, MessagePage, MessagePinRequest, MessageRevisionPage,
+    MessageSceneSelectRequest, MessageWindow, MessagesDeleteResult, SearchHitPage, SendAccepted,
 };
 use tauri::{State, ipc::Channel};
 
@@ -87,6 +87,15 @@ pub async fn messages_delete_after(
     request: MessageDeleteRequest,
 ) -> Result<MessagesDeleteResult, ApiError> {
     api::messages_delete_after(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn memory_rewind_retry(
+    context: State<'_, ApiContext>,
+    request: MemoryRewindRetryRequest,
+) -> Result<MemoryRewindRetryOutcome, ApiError> {
+    api::memory_rewind_retry(&context, request).await
 }
 
 #[tauri::command]

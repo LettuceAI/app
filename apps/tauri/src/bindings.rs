@@ -25,6 +25,7 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::conversations::message_edit,
             commands::conversations::message_delete,
             commands::conversations::messages_delete_after,
+            commands::conversations::memory_rewind_retry,
             commands::conversations::message_pin,
             commands::conversations::message_candidate_select,
             commands::conversations::message_scene_select,
