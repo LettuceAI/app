@@ -34,8 +34,15 @@ pub enum RequiredModel {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ApiErrorDetails {
-    InvalidField { field: String },
-    Model { model: RequiredModel },
+    InvalidField {
+        field: String,
+    },
+    Model {
+        model: RequiredModel,
+    },
+    PendingMemoryRewind {
+        conversation_id: String,
+    },
 }
 
 /// The error every API call returns. `message` is English diagnostic text

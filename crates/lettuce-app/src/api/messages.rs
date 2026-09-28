@@ -331,12 +331,14 @@ pub async fn message_edit(
         .await
 }
 
-/// Deletes one message; the messages after it stay. Deleting a one-to-one
+/// Deletes one message; the messages after it stay. A message another
+/// branch also shows is not deleted from that branch: a new branch without
+/// it is forked and selected instead (`Branched`). Deleting a one-to-one
 /// chat's scene message turns its scene setting off in the same change.
 pub async fn message_delete(
     context: &ApiContext,
     request: dto::MessageDeleteRequest,
-) -> Result<dto::MessagesDeleted, ApiError> {
+) -> Result<dto::MessagesDeleteResult, ApiError> {
     let conversation_id: ConversationId = parse_id(&request.conversation_id, "conversation_id")?;
     let message_id: MessageId = parse_id(&request.message_id, "message_id")?;
     let expected_revision = expected_revision(request.expected_revision)?;
@@ -350,7 +352,12 @@ pub async fn message_delete(
     )?;
     context
         .blocking(move |context| {
-            let deleted = ConversationRepository::tombstone_message(
+            let replay = replayed(context, conversation_id, OperationKind::Tombstone, &operation)?;
+            if !replay {
+                let branch_id = active_branch(context, conversation_id)?;
+                on_timeline(context, conversation_id, branch_id, message_id)?;
+            }
+            let deleted = ConversationRepository::delete_message(
                 context.backend().database(),
                 &TombstoneMessage {
                     conversation_id,
@@ -361,10 +368,30 @@ pub async fn message_delete(
                 },
                 context.now(),
             )
-            .map_err(IntoApiError::into_api_error)?;
-            Ok(dto::MessagesDeleted {
-                message_ids: vec![message_id.to_string()],
-                revision: deleted.value.conversation.revision.get(),
+            .map_err(|error| match error {
+                ConversationRepositoryError::Unsupported => api_error(
+                    ApiErrorCode::Unsupported,
+                    "the first message is shown by another branch and cannot be deleted from this one",
+                ),
+                error => error.into_api_error(),
+            })?;
+            Ok(match deleted.value {
+                lettuce_conversations::DeleteMessageOutcome::Tombstoned(tombstoned) => {
+                    dto::MessagesDeleteResult {
+                        outcome: dto::MessagesDeleteOutcome::Tombstoned {
+                            removed: vec![message_id.to_string()],
+                        },
+                        revision: tombstoned.conversation.revision.get(),
+                    }
+                }
+                lettuce_conversations::DeleteMessageOutcome::Branched(branch) => {
+                    dto::MessagesDeleteResult {
+                        outcome: dto::MessagesDeleteOutcome::Branched {
+                            branch_id: branch.branch.id.to_string(),
+                        },
+                        revision: branch.conversation.revision.get(),
+                    }
+                }
             })
         })
         .await
@@ -380,7 +407,7 @@ pub async fn message_delete(
 pub async fn messages_delete_after(
     context: &ApiContext,
     request: dto::MessageDeleteRequest,
-) -> Result<dto::MessagesDeleteAfterResult, ApiError> {
+) -> Result<dto::MessagesDeleteResult, ApiError> {
     let conversation_id: ConversationId = parse_id(&request.conversation_id, "conversation_id")?;
     let message_id: MessageId = parse_id(&request.message_id, "message_id")?;
     let expected_revision = expected_revision(request.expected_revision)?;
@@ -428,7 +455,7 @@ pub async fn messages_delete_after(
         .await?;
     context.jobs().wake();
     let outcome = match deleted.branch_id {
-        Some(branch_id) => dto::MessagesDeleteAfterOutcome::Branched {
+        Some(branch_id) => dto::MessagesDeleteOutcome::Branched {
             branch_id: branch_id.to_string(),
         },
         None => {
@@ -445,10 +472,10 @@ pub async fn messages_delete_after(
                     }
                 }
             }
-            dto::MessagesDeleteAfterOutcome::Tombstoned { removed }
+            dto::MessagesDeleteOutcome::Tombstoned { removed }
         }
     };
-    Ok(dto::MessagesDeleteAfterResult {
+    Ok(dto::MessagesDeleteResult {
         outcome,
         revision: deleted.conversation.revision.get(),
     })
@@ -524,6 +551,16 @@ fn delete_after_error(
                 "the conversation is still generating a reply",
             )
         }
+        crate::DynamicMemoryDeleteAfterError::OwedRewind {
+            conversation_id,
+            reason,
+        } => ApiError {
+            code: ApiErrorCode::Unavailable,
+            message: format!("a delete's memory rewind is still owed and failed: {reason}"),
+            details: Some(dto::ApiErrorDetails::PendingMemoryRewind {
+                conversation_id: conversation_id.to_string(),
+            }),
+        },
         crate::DynamicMemoryDeleteAfterError::Conversation(error) => error.into_api_error(),
         crate::DynamicMemoryDeleteAfterError::Rewind(
             lettuce_memory::DynamicMemorySuffixRewindError::Conflict,
@@ -790,39 +827,28 @@ fn scan_forward(
 ) -> Result<(Vec<TimelineItem>, Option<String>), ApiError> {
     let database = context.backend().database();
     let mut found = Vec::new();
+    let mut last_cursor = String::new();
     let mut page = PageRequest {
         cursor,
         limit: PageLimit::new(SCAN_PAGE),
     };
     loop {
-        let timeline = ConversationOverviewReader::timeline_page_after(
+        let scan = ConversationOverviewReader::timeline_scan_after(
             database,
             conversation_id,
             branch_id,
             &page,
         )
         .map_err(|error| cursor_field(error, "cursor"))?;
-        for item in timeline.items {
+        let timeline = scan.page;
+        for (item, item_cursor) in timeline.items.into_iter().zip(scan.item_cursors) {
             if matches(&item) {
                 found.push(item);
                 if found.len() > limit {
                     found.truncate(limit);
-                    let last = found.last().map(|item| item.message.id);
-                    let next = match last {
-                        Some(message_id) => {
-                            ConversationOverviewReader::timeline_anchor(
-                                database,
-                                conversation_id,
-                                branch_id,
-                                message_id,
-                            )
-                            .map_err(IntoApiError::into_api_error)?
-                            .newer_cursor
-                        }
-                        None => None,
-                    };
-                    return Ok((found, next));
+                    return Ok((found, Some(last_cursor)));
                 }
+                last_cursor = item_cursor;
             }
         }
         match timeline.next_cursor {

@@ -98,6 +98,7 @@ pub trait CompanionMemoryHostSources:
     + lettuce_memory::DynamicMemorySuffixRewindRepository
     + lettuce_memory::PendingSuffixRewindRepository
     + lettuce_conversations::ConversationRepository
+    + lettuce_conversations::ConversationOverviewReader
     + lettuce_memory::MemoryRepository
     + lettuce_memory::MemorySummaryRepository
     + lettuce_memory::DynamicMemoryApprovalRepository
@@ -123,6 +124,7 @@ impl<T> CompanionMemoryHostSources for T where
         + lettuce_memory::DynamicMemorySuffixRewindRepository
         + lettuce_memory::PendingSuffixRewindRepository
         + lettuce_conversations::ConversationRepository
+        + lettuce_conversations::ConversationOverviewReader
         + lettuce_memory::MemoryRepository
         + lettuce_memory::MemorySummaryRepository
         + lettuce_memory::DynamicMemoryApprovalRepository
@@ -378,6 +380,7 @@ where
     ) -> Result<(), CompanionMemoryHostError> {
         crate::DynamicMemoryDeleteAfterCoordinator::new(self.repository, self.repository)
             .complete_pending(Some(conversation_id), now)
+            .and_then(crate::PendingRewindReport::into_result)
             .map(|_| ())
             .map_err(CompanionMemoryHostError::PendingRewind)
     }

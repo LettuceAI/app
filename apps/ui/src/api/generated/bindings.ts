@@ -11,8 +11,8 @@ export const commands = {
 	conversationOpen: (request: ConversationOpenRequest) => typedError<ConversationView, ApiError>(__TAURI_INVOKE("conversation_open", { request })),
 	conversationMessages: (request: ConversationMessagesRequest) => typedError<MessagePage, ApiError>(__TAURI_INVOKE("conversation_messages", { request })),
 	messageEdit: (request: MessageEditRequest) => typedError<MessageChanged, ApiError>(__TAURI_INVOKE("message_edit", { request })),
-	messageDelete: (request: MessageDeleteRequest) => typedError<MessagesDeleted, ApiError>(__TAURI_INVOKE("message_delete", { request })),
-	messagesDeleteAfter: (request: MessageDeleteRequest) => typedError<MessagesDeleteAfterResult, ApiError>(__TAURI_INVOKE("messages_delete_after", { request })),
+	messageDelete: (request: MessageDeleteRequest) => typedError<MessagesDeleteResult, ApiError>(__TAURI_INVOKE("message_delete", { request })),
+	messagesDeleteAfter: (request: MessageDeleteRequest) => typedError<MessagesDeleteResult, ApiError>(__TAURI_INVOKE("messages_delete_after", { request })),
 	messagePin: (request: MessagePinRequest) => typedError<MessageChanged, ApiError>(__TAURI_INVOKE("message_pin", { request })),
 	messageCandidateSelect: (request: MessageCandidateSelectRequest) => typedError<MessageChanged, ApiError>(__TAURI_INVOKE("message_candidate_select", { request })),
 	messageSceneSelect: (request: MessageSceneSelectRequest) => typedError<MessageChanged, ApiError>(__TAURI_INVOKE("message_scene_select", { request })),
@@ -71,7 +71,7 @@ export type ApiError = {
  */
 export type ApiErrorCode = "not_found" | "conflict" | "invalid_input" | "unsupported" | "unavailable" | "cancelled" | "busy" | "internal" | "model_required" | "model_unavailable";
 
-export type ApiErrorDetails = { type: "invalid_field"; field: string } | { type: "model"; model: RequiredModel };
+export type ApiErrorDetails = { type: "invalid_field"; field: string } | { type: "model"; model: RequiredModel } | { type: "pending_memory_rewind"; conversation_id: string };
 
 /**
  *  Application-wide events the host broadcasts to every window.
@@ -724,26 +724,11 @@ export type MessageWindow = {
 	after_cursor: string | null,
 };
 
-/**
- *  What a delete-after did: it removed the messages the selected branch
- *  owns after the message, or, when some of them belong to the branch it
- *  came from, forked a new branch at the message, selected it and deleted
- *  nothing.
- */
-export type MessagesDeleteAfterOutcome = { type: "tombstoned"; removed: string[] } | { type: "branched"; branch_id: string };
+export type MessagesDeleteOutcome = { type: "tombstoned"; removed: string[] } | { type: "branched"; branch_id: string };
 
 /**  The outcome of a delete-after and the conversation revision it left. */
-export type MessagesDeleteAfterResult = {
-	outcome: MessagesDeleteAfterOutcome,
-	revision: number,
-};
-
-/**
- *  The messages a delete removed from the chat and the conversation
- *  revision it left.
- */
-export type MessagesDeleted = {
-	message_ids: string[],
+export type MessagesDeleteResult = {
+	outcome: MessagesDeleteOutcome,
 	revision: number,
 };
 

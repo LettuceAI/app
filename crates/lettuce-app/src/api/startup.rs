@@ -256,7 +256,7 @@ async fn finish_startup(
 }
 
 pub(super) async fn complete_pending_rewinds(context: &ApiContext) -> Result<(), ApiError> {
-    let completed = context
+    let report = context
         .blocking(|context| {
             let database = context.backend().database();
             crate::DynamicMemoryDeleteAfterCoordinator::new(database, database)
@@ -264,11 +264,18 @@ pub(super) async fn complete_pending_rewinds(context: &ApiContext) -> Result<(),
                 .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))
         })
         .await?;
-    if completed > 0 {
+    if report.completed > 0 {
         context.jobs().wake();
         tracing::info!(
-            completed,
+            completed = report.completed,
             "finished memory rewinds a delete-after still owed"
+        );
+    }
+    for (conversation_id, error) in &report.failed {
+        tracing::warn!(
+            %conversation_id,
+            %error,
+            "a memory rewind a delete-after owes could not finish; it is retried when the chat's memory is next used"
         );
     }
     Ok(())

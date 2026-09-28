@@ -318,25 +318,10 @@ pub struct MessageChanged {
     pub revision: u64,
 }
 
-/// The messages a delete removed from the chat and the conversation
-/// revision it left.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "specta", derive(specta::Type))]
-#[serde(deny_unknown_fields)]
-pub struct MessagesDeleted {
-    pub message_ids: Vec<String>,
-    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
-    pub revision: u64,
-}
-
-/// What a delete-after did: it removed the messages the selected branch
-/// owns after the message, or, when some of them belong to the branch it
-/// came from, forked a new branch at the message, selected it and deleted
-/// nothing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
-pub enum MessagesDeleteAfterOutcome {
+pub enum MessagesDeleteOutcome {
     Tombstoned { removed: Vec<String> },
     Branched { branch_id: String },
 }
@@ -345,8 +330,8 @@ pub enum MessagesDeleteAfterOutcome {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
-pub struct MessagesDeleteAfterResult {
-    pub outcome: MessagesDeleteAfterOutcome,
+pub struct MessagesDeleteResult {
+    pub outcome: MessagesDeleteOutcome,
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub revision: u64,
 }

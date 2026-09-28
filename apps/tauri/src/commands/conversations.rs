@@ -13,7 +13,7 @@ use lettuce_contracts::{
     LaunchGroupResponse, MessageCandidatePage, MessageCandidateSelectRequest, MessageChanged,
     MessageCount, MessageDeleteRequest, MessageEditRequest, MessageHistoryRequest, MessagePage,
     MessagePinRequest, MessageRevisionPage, MessageSceneSelectRequest, MessageWindow,
-    MessagesDeleteAfterResult, MessagesDeleted, SearchHitPage, SendAccepted,
+    MessagesDeleteResult, SearchHitPage, SendAccepted,
 };
 use tauri::{State, ipc::Channel};
 
@@ -76,7 +76,7 @@ pub async fn message_edit(
 pub async fn message_delete(
     context: State<'_, ApiContext>,
     request: MessageDeleteRequest,
-) -> Result<MessagesDeleted, ApiError> {
+) -> Result<MessagesDeleteResult, ApiError> {
     api::message_delete(&context, request).await
 }
 
@@ -85,7 +85,7 @@ pub async fn message_delete(
 pub async fn messages_delete_after(
     context: State<'_, ApiContext>,
     request: MessageDeleteRequest,
-) -> Result<MessagesDeleteAfterResult, ApiError> {
+) -> Result<MessagesDeleteResult, ApiError> {
     api::messages_delete_after(&context, request).await
 }
 
