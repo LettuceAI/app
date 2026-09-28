@@ -29,6 +29,7 @@ export const commands = {
 	conversationRetry: (request: ConversationRetryRequest, onEvent: Channel<GenerationEvent>) => typedError<GenerationAccepted, ApiError>(__TAURI_INVOKE("conversation_retry", { request, onEvent })),
 	conversationAddUserMessage: (request: ConversationAddUserMessageRequest) => typedError<MessageChanged, ApiError>(__TAURI_INVOKE("conversation_add_user_message", { request })),
 	generationCancel: (request: GenerationCancelRequest) => typedError<null, ApiError>(__TAURI_INVOKE("generation_cancel", { request })),
+	conversationHelpMeReply: (request: ConversationHelpMeReplyRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("conversation_help_me_reply", { request })),
 	messagePromptSnapshot: (request: MessagePromptSnapshotRequest) => typedError<PromptSnapshot, ApiError>(__TAURI_INVOKE("message_prompt_snapshot", { request })),
 	conversationSpeakerSelectionPreview: (request: SpeakerSelectionPreviewRequest) => typedError<SpeakerSelectionPreview, ApiError>(__TAURI_INVOKE("conversation_speaker_selection_preview", { request })),
 	conversationParticipationStats: (request: ConversationRequest) => typedError<ParticipationStats, ApiError>(__TAURI_INVOKE("conversation_participation_stats", { request })),
@@ -235,6 +236,20 @@ export type ConversationContinueRequest = {
 	client_operation_id: string,
 	forced_speaker_participant_id: string | null,
 	swap_places: boolean,
+};
+
+/**
+ *  Asks the help-me-reply model to write the user's next message. `Enrich`
+ *  improves `current_draft` when it is not blank; `New` ignores it. The text
+ *  streams as `JobEvent::TextDelta` on `job_watch` and the cleaned reply is
+ *  the job's `JobResultDto::GeneratedText`.
+ */
+export type ConversationHelpMeReplyRequest = {
+	conversation_id: string,
+	mode: HelpMeReplyMode,
+	current_draft: string | null,
+	swap_places: boolean,
+	client_operation_id: string,
 };
 
 export type ConversationKind = "direct" | "group";
@@ -564,6 +579,8 @@ export type GroupMembersSettings = {
 	models_source: SettingSource,
 	participants: ParticipantSettings[],
 };
+
+export type HelpMeReplyMode = "new" | "enrich";
 
 export type HfAuthSaveRequest = {
 	token: string,
@@ -965,6 +982,8 @@ export type JobFailureCode = "cancelled" | "invalid_input" | "authentication" | 
 export type JobFailureDto = {
 	code: JobFailureCode,
 	retryable: boolean,
+	/**  What a chat feature job needs the user to change. */
+	reason: JobFailureReason | null,
 	/**  The optional model whose absence failed the job. */
 	model: RequiredModel | null,
 	/**  Why Hugging Face refused a download. */
@@ -972,6 +991,9 @@ export type JobFailureDto = {
 	/**  Why an Ollama pull failed. */
 	ollama: OllamaFailure | null,
 };
+
+/**  Why a chat feature job failed, where the user can act on it. */
+export type JobFailureReason = "help_me_reply_disabled" | "help_me_reply_no_history" | "help_me_reply_no_model" | "help_me_reply_no_reply" | "scene_prompt_disabled" | "scene_prompt_no_model" | "scene_prompt_no_reply" | "scene_image_disabled" | "scene_image_no_model" | "scene_image_no_image";
 
 export type JobGetRequest = {
 	job_id: string,
@@ -1008,7 +1030,9 @@ export type JobProgressUnit = "bytes" | "items" | "permille";
  *  `ModelInstalled` names a downloaded model's path and, when the download
  *  asked for one, the llama.cpp model it became.
  */
-export type JobResultDto = { type: "artifact_installed" } | { type: "asset"; asset: AssetRef } | { type: "generation_turn"; turn_id: string } | { type: "conversation"; conversation_id: string } | { type: "group"; group_id: string } | { type: "character"; character_id: string } | { type: "model_profile"; model_profile_id: string } | { type: "model_installed"; model_path: string; model_profile_id: string | null } | { type: "model_pulled"; model: string } | { type: "models_folder_moved"; path: string; moved_entries: number; rewired_models: number };
+export type JobResultDto = { type: "artifact_installed" } | { type: "asset"; asset: AssetRef } | { type: "generation_turn"; turn_id: string } | { type: "conversation"; conversation_id: string } | { type: "group"; group_id: string } | { type: "character"; character_id: string } | { type: "model_profile"; model_profile_id: string } | { type: "model_installed"; model_path: string; model_profile_id: string | null } | { type: "model_pulled"; model: string } | { type: "models_folder_moved"; path: string; moved_entries: number; rewired_models: number } | 
+/**  The text a help-me-reply or scene prompt job wrote, cleaned. */
+{ type: "generated_text"; text: string };
 
 export type JobStateDto = "queued" | "claimed" | "running" | "cancellation_requested" | "cleaning_up" | "succeeded" | "failed" | "cancelled" | "interrupted";
 

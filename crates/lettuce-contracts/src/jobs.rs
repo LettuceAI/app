@@ -145,12 +145,31 @@ pub enum JobFailureCode {
     Unknown,
 }
 
+/// Why a chat feature job failed, where the user can act on it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum JobFailureReason {
+    HelpMeReplyDisabled,
+    HelpMeReplyNoHistory,
+    HelpMeReplyNoModel,
+    HelpMeReplyNoReply,
+    ScenePromptDisabled,
+    ScenePromptNoModel,
+    ScenePromptNoReply,
+    SceneImageDisabled,
+    SceneImageNoModel,
+    SceneImageNoImage,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct JobFailureDto {
     pub code: JobFailureCode,
     pub retryable: bool,
+    /// What a chat feature job needs the user to change.
+    pub reason: Option<JobFailureReason>,
     /// The optional model whose absence failed the job.
     pub model: Option<crate::RequiredModel>,
     /// Why Hugging Face refused a download.
@@ -196,6 +215,10 @@ pub enum JobResultDto {
         path: String,
         moved_entries: u32,
         rewired_models: u32,
+    },
+    /// The text a help-me-reply or scene prompt job wrote, cleaned.
+    GeneratedText {
+        text: String,
     },
 }
 

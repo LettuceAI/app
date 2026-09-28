@@ -7,6 +7,7 @@ mod install;
 mod local;
 mod runner;
 mod state;
+mod text;
 
 #[cfg(test)]
 mod tests;
@@ -39,6 +40,7 @@ pub(crate) use local::{
 };
 pub use runner::{ClaimedJob, JobHandler, JobHandlers, JobLane, JobProgressSink, JobRunner};
 pub(crate) use state::JobHostState;
+pub use text::{TextFeatureHandler, conversation_help_me_reply};
 
 pub async fn jobs_list(
     context: &ApiContext,
@@ -218,6 +220,7 @@ pub(crate) fn job_view(context: &ApiContext, job: &JobSnapshot) -> dto::JobView 
         failure: job.error.as_ref().map(|error| dto::JobFailureDto {
             code: failure_code(error.code),
             retryable: error.retryable,
+            reason: failure_reason(error.message.as_str()),
             model: (error.code == JobErrorCode::CapabilityUnavailable
                 && error.message.as_str() == crate::EMBEDDING_UNAVAILABLE_JOB_ERROR)
                 .then_some(dto::RequiredModel::Embedding),
@@ -320,6 +323,24 @@ fn job_result(context: &ApiContext, result: &OutcomeRef) -> Option<dto::JobResul
         | OutcomeRef::MemoryRun(_)
         | OutcomeRef::Checkpoint(_)
         | OutcomeRef::Request(_) => return None,
+    })
+}
+
+/// What a chat feature job needs changed, from the label its error carries.
+fn failure_reason(label: &str) -> Option<dto::JobFailureReason> {
+    use crate::jobs::failure_labels as labels;
+    Some(match label {
+        labels::HELP_ME_REPLY_DISABLED => dto::JobFailureReason::HelpMeReplyDisabled,
+        labels::HELP_ME_REPLY_NO_HISTORY => dto::JobFailureReason::HelpMeReplyNoHistory,
+        labels::HELP_ME_REPLY_NO_MODEL => dto::JobFailureReason::HelpMeReplyNoModel,
+        labels::HELP_ME_REPLY_NO_REPLY => dto::JobFailureReason::HelpMeReplyNoReply,
+        labels::SCENE_PROMPT_DISABLED => dto::JobFailureReason::ScenePromptDisabled,
+        labels::SCENE_PROMPT_NO_MODEL => dto::JobFailureReason::ScenePromptNoModel,
+        labels::SCENE_PROMPT_NO_REPLY => dto::JobFailureReason::ScenePromptNoReply,
+        labels::SCENE_IMAGE_DISABLED => dto::JobFailureReason::SceneImageDisabled,
+        labels::SCENE_IMAGE_NO_MODEL => dto::JobFailureReason::SceneImageNoModel,
+        labels::SCENE_IMAGE_NO_IMAGE => dto::JobFailureReason::SceneImageNoImage,
+        _ => return None,
     })
 }
 

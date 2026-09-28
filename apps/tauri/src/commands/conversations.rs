@@ -3,16 +3,17 @@ use std::sync::Arc;
 use lettuce_app::api::{self, ApiContext, GenerationEventSink};
 use lettuce_contracts::{
     ApiError, ConversationAddUserMessageRequest, ConversationContinueRequest,
-    ConversationMessagesAroundRequest, ConversationMessagesRequest, ConversationOpenRequest,
-    ConversationPage, ConversationParticipantAddRequest, ConversationParticipantUpdateRequest,
-    ConversationPinnedMessagesRequest, ConversationRegenerateRequest, ConversationRenameRequest,
-    ConversationRequest, ConversationRetryRequest, ConversationRevisions,
-    ConversationSearchRequest, ConversationSendRequest, ConversationSettingsGetRequest,
-    ConversationSettingsUpdateRequest, ConversationSettingsView, ConversationView,
-    ConversationsListRequest, GenerationAccepted, GenerationCancelRequest, GenerationEvent,
-    LatestConversationPage, LatestConversationsRequest, LaunchDirectRequest, LaunchDirectResponse,
-    LaunchGroupRequest, LaunchGroupResponse, MemoryRewindRetryOutcome, MemoryRewindRetryRequest,
-    MessageCandidatePage, MessageCandidateSelectRequest, MessageChanged, MessageCompanionEffect,
+    ConversationHelpMeReplyRequest, ConversationMessagesAroundRequest, ConversationMessagesRequest,
+    ConversationOpenRequest, ConversationPage, ConversationParticipantAddRequest,
+    ConversationParticipantUpdateRequest, ConversationPinnedMessagesRequest,
+    ConversationRegenerateRequest, ConversationRenameRequest, ConversationRequest,
+    ConversationRetryRequest, ConversationRevisions, ConversationSearchRequest,
+    ConversationSendRequest, ConversationSettingsGetRequest, ConversationSettingsUpdateRequest,
+    ConversationSettingsView, ConversationView, ConversationsListRequest, GenerationAccepted,
+    GenerationCancelRequest, GenerationEvent, JobAccepted, LatestConversationPage,
+    LatestConversationsRequest, LaunchDirectRequest, LaunchDirectResponse, LaunchGroupRequest,
+    LaunchGroupResponse, MemoryRewindRetryOutcome, MemoryRewindRetryRequest, MessageCandidatePage,
+    MessageCandidateSelectRequest, MessageChanged, MessageCompanionEffect,
     MessageCompanionEffectRequest, MessageCount, MessageDeleteRequest, MessageEditRequest,
     MessageHistoryRequest, MessagePage, MessagePinRequest, MessagePromptSnapshotRequest,
     MessageRevisionPage, MessageSceneSelectRequest, MessageWindow, MessagesDeleteResult,
@@ -230,6 +231,15 @@ pub async fn conversation_add_user_message(
     request: ConversationAddUserMessageRequest,
 ) -> Result<MessageChanged, ApiError> {
     api::conversation_add_user_message(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn conversation_help_me_reply(
+    context: State<'_, ApiContext>,
+    request: ConversationHelpMeReplyRequest,
+) -> Result<JobAccepted, ApiError> {
+    api::conversation_help_me_reply(&context, request).await
 }
 
 #[tauri::command]

@@ -117,6 +117,8 @@ pub enum ReplyHelperError {
     Cancelled,
     #[error("reply helper replay cleanup failed")]
     ReplayCleanup,
+    #[error("reply helper result could not be stored")]
+    ResultStorage,
 }
 
 impl From<crate::jobs::one_shot_job::OneShotJobError> for ReplyHelperError {
@@ -178,6 +180,15 @@ pub struct ReplyHelperCoordinator<'a, R: ?Sized, I: ?Sized> {
     repository: &'a R,
     inference: &'a I,
     cancellations: Option<&'a lettuce_inference::InferenceRuntime>,
+    cancellation: Option<&'a lettuce_jobs::handle::CancellationToken>,
+    recorder: Option<&'a dyn ResultRecorder>,
+}
+
+/// Stores a finished run's text before its job settles, so a reader of the
+/// settled job finds it.
+pub trait ResultRecorder: std::fmt::Debug + Send + Sync {
+    /// `false` when the text could not be stored.
+    fn record(&self, job_id: lettuce_types::JobId, text: &str) -> bool;
 }
 
 impl<'a, R: ?Sized, I: ?Sized> ReplyHelperCoordinator<'a, R, I> {
@@ -187,7 +198,26 @@ impl<'a, R: ?Sized, I: ?Sized> ReplyHelperCoordinator<'a, R, I> {
             repository,
             inference,
             cancellations: None,
+            cancellation: None,
+            recorder: None,
         }
+    }
+
+    /// Stops the run with `token` when its runner cancels the job.
+    #[must_use]
+    pub const fn with_cancellation(
+        mut self,
+        token: &'a lettuce_jobs::handle::CancellationToken,
+    ) -> Self {
+        self.cancellation = Some(token);
+        self
+    }
+
+    /// Hands each finished run's text to `recorder` before the job settles.
+    #[must_use]
+    pub const fn with_result_recorder(mut self, recorder: &'a dyn ResultRecorder) -> Self {
+        self.recorder = Some(recorder);
+        self
     }
 
     /// Registers each run's cancellation token in `runtime`, so a stop
@@ -244,6 +274,22 @@ where
     R: ReplyHelperSources + ?Sized,
     I: InferencePort + ?Sized,
 {
+    /// Queues the request as a job, or returns the one an earlier admission
+    /// of it created.
+    pub fn admit(&self, request: &ReplyHelperRequest) -> Result<JobSnapshot, ReplyHelperError> {
+        crate::jobs::one_shot_job::admit_one_shot(
+            self.repository,
+            crate::jobs::one_shot_job::OneShotJob {
+                name: "reply-helper",
+                stage: HELP_ME_REPLY_STAGE,
+                subject_kind: SubjectKind::Conversation,
+                subject: &request.conversation_id.to_string(),
+                request_id: request.request_id,
+            },
+        )
+        .map_err(ReplyHelperError::Jobs)
+    }
+
     pub async fn generate(
         &self,
         request: &ReplyHelperRequest,
@@ -273,8 +319,17 @@ where
                 lease_for,
                 allowed,
                 cancellations: self.cancellations,
+                cancellation: self.cancellation,
             },
-            |handle| async move { self.run(stored, request, &handle, now).await },
+            |handle| async move {
+                let text = self.run(stored, request, &handle, now).await?;
+                if let Some(recorder) = self.recorder
+                    && !recorder.record(handle.id(), &text)
+                {
+                    return Err(ReplyHelperError::ResultStorage);
+                }
+                Ok(text)
+            },
         )
         .await?;
         Ok(ReplyHelperReply { text, job })
@@ -360,6 +415,9 @@ where
                     let ParticipantSource::Character(character_id) = participant.source else {
                         continue;
                     };
+                    if !participant.enabled {
+                        continue;
+                    }
                     if let Some(details) = CharacterRepository::get(self.repository, character_id)
                         .map_err(ReplyHelperError::Character)?
                     {
@@ -505,8 +563,8 @@ where
         })
     }
 
-    /// The last `limit` visible user and assistant messages on the active
-    /// branch, oldest first, with their current text.
+    /// The last `limit` visible messages of every role on the active branch,
+    /// oldest first, with their current text.
     fn recent_dialogue(
         &self,
         conversation: &lettuce_conversations::Conversation,
@@ -530,12 +588,7 @@ where
                 if recent.len() >= limit {
                     break;
                 }
-                if item.message.visibility != MessageVisibility::Visible
-                    || !matches!(
-                        item.message.role,
-                        MessageRole::User | MessageRole::Assistant
-                    )
-                {
+                if item.message.visibility != MessageVisibility::Visible {
                     continue;
                 }
                 let parts = item
@@ -754,10 +807,20 @@ fn job_error(error: &ReplyHelperError) -> JobError {
                 "reply-helper-unavailable",
             )
         }
-        ReplyHelperError::Inference(_) | ReplyHelperError::EmptyResponse => (
+        ReplyHelperError::EmptyResponse => (
+            JobErrorCode::WorkerFailed,
+            false,
+            crate::jobs::failure_labels::HELP_ME_REPLY_NO_REPLY,
+        ),
+        ReplyHelperError::Inference(_) => (
             JobErrorCode::WorkerFailed,
             false,
             "reply-helper-inference-failed",
+        ),
+        ReplyHelperError::ResultStorage => (
+            JobErrorCode::StorageFailure,
+            true,
+            crate::jobs::failure_labels::RESULT_STORAGE_FAILED,
         ),
         ReplyHelperError::Jobs(_)
         | ReplyHelperError::Settings(_)
@@ -767,12 +830,23 @@ fn job_error(error: &ReplyHelperError) -> JobError {
             true,
             "reply-helper-storage-failed",
         ),
-        ReplyHelperError::Disabled
-        | ReplyHelperError::NoCharacters
-        | ReplyHelperError::NoHistory
-        | ReplyHelperError::MissingModel
+        ReplyHelperError::Disabled => (
+            JobErrorCode::InvalidInput,
+            false,
+            crate::jobs::failure_labels::HELP_ME_REPLY_DISABLED,
+        ),
+        ReplyHelperError::NoHistory => (
+            JobErrorCode::InvalidInput,
+            false,
+            crate::jobs::failure_labels::HELP_ME_REPLY_NO_HISTORY,
+        ),
+        ReplyHelperError::MissingModel | ReplyHelperError::ModelUnavailable => (
+            JobErrorCode::InvalidInput,
+            false,
+            crate::jobs::failure_labels::HELP_ME_REPLY_NO_MODEL,
+        ),
+        ReplyHelperError::NoCharacters
         | ReplyHelperError::InvalidModel(_)
-        | ReplyHelperError::ModelUnavailable
         | ReplyHelperError::MissingPrompt
         | ReplyHelperError::InvalidPrompt
         | ReplyHelperError::Cancelled => (

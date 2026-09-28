@@ -10,7 +10,8 @@ use lettuce_jobs::{
     CancellationPolicy, CancellationReason, ClaimRef, FiniteFraction, IdempotencyKey, JobError,
     JobKind, JobMutation, JobOutcome, JobPriority, JobSnapshot, JobSpec, JobState, JobStore,
     JobSubject, OutcomeRef, ProgressSnapshot, RecoveryPolicy, ResourceAvailability, ResourceClass,
-    StageSnapshot, StoreError, SubjectKind, WorkerId, handle::JobHandle,
+    StageSnapshot, StoreError, SubjectKind, WorkerId,
+    handle::{CancellationToken, JobHandle},
 };
 use lettuce_types::{RequestId, TimestampMillis};
 
@@ -46,6 +47,8 @@ pub(crate) struct OneShotLease<'a> {
     /// Where the running job's cancellation token is registered so a stop
     /// request for its job id reaches it.
     pub(crate) cancellations: Option<&'a InferenceRuntime>,
+    /// The token the run is stopped with, when its runner owns one.
+    pub(crate) cancellation: Option<&'a CancellationToken>,
 }
 
 struct CancellationRegistration<'a> {
@@ -57,6 +60,31 @@ impl Drop for CancellationRegistration<'_> {
     fn drop(&mut self) {
         let _ = self.runtime.unregister_cancellation(self.job_id);
     }
+}
+
+/// Admits the request as a queued job, or returns the one an earlier
+/// admission of it created.
+pub(crate) fn admit_one_shot<R>(
+    repository: &R,
+    job: OneShotJob<'_>,
+) -> Result<JobSnapshot, StoreError>
+where
+    R: JobStore + ?Sized,
+{
+    let spec = JobSpec::new(
+        JobKind::CreationRun,
+        JobSubject::new(job.subject_kind, job.subject.to_owned())
+            .expect("entity ids are safe job subjects"),
+        OutcomeRef::Request(job.request_id),
+    )
+    .with_idempotency_key(
+        IdempotencyKey::new(format!("{}-{}", job.name, job.request_id))
+            .expect("request ids are safe idempotency keys"),
+    )
+    .with_resources(vec![ResourceClass::Network])
+    .with_priority(JobPriority::Interactive)
+    .with_policies(RecoveryPolicy::Restart, CancellationPolicy::Cooperative);
+    Ok(repository.create_or_get(spec)?.job)
 }
 
 pub(crate) async fn run_one_shot_job<R, T, E, F, Fut>(
@@ -72,22 +100,12 @@ where
     Fut: Future<Output = Result<T, E>>,
 {
     let jobs = |error| E::from(OneShotJobError::Jobs(error));
-    let spec = JobSpec::new(
-        JobKind::CreationRun,
-        JobSubject::new(job.subject_kind, job.subject.to_owned())
-            .expect("entity ids are safe job subjects"),
-        OutcomeRef::Request(job.request_id),
-    )
-    .with_idempotency_key(
-        IdempotencyKey::new(format!("{}-{}", job.name, job.request_id))
-            .expect("request ids are safe idempotency keys"),
-    )
-    .with_resources(vec![ResourceClass::Network])
-    .with_priority(JobPriority::Interactive)
-    .with_policies(RecoveryPolicy::Restart, CancellationPolicy::Cooperative);
-    let admitted = repository.create_or_get(spec).map_err(jobs)?.job;
+    let admitted = admit_one_shot(repository, job).map_err(jobs)?;
     let at = lease.now.max(admitted.updated_at);
-    let handle = JobHandle::new(admitted.id);
+    let handle = match lease.cancellation {
+        Some(token) => JobHandle::with_cancellation(admitted.id, token.clone()),
+        None => JobHandle::new(admitted.id),
+    };
     let _registration = match lease.cancellations {
         Some(runtime) => {
             if runtime
@@ -162,6 +180,10 @@ where
     E: OneShotFailure,
 {
     let jobs = |error| E::from(OneShotJobError::Jobs(error));
+    let at = repository
+        .get(claim.job_id)
+        .map_err(jobs)?
+        .map_or(at, |job| at.max(job.updated_at));
     match result {
         Ok(value) => {
             repository
@@ -188,13 +210,19 @@ where
             Ok((value, job))
         }
         Err(error) if error.is_cancelled() => {
-            repository
-                .append_and_transition(JobMutation::RequestCancellation {
-                    id: claim.job_id,
-                    reason: CancellationReason::User,
-                    at,
-                })
-                .map_err(jobs)?;
+            let requested = repository
+                .get(claim.job_id)
+                .map_err(jobs)?
+                .is_some_and(|job| job.state == JobState::CancellationRequested);
+            if !requested {
+                repository
+                    .append_and_transition(JobMutation::RequestCancellation {
+                        id: claim.job_id,
+                        reason: CancellationReason::User,
+                        at,
+                    })
+                    .map_err(jobs)?;
+            }
             repository
                 .append_and_transition(JobMutation::RequestCleanup {
                     claim: claim.clone(),
@@ -267,6 +295,7 @@ mod tests {
                 lease_for: Duration::from_secs(30),
                 allowed: &allowed,
                 cancellations: Some(&runtime),
+                cancellation: None,
             },
             |handle| {
                 let runtime = &runtime;

@@ -243,6 +243,7 @@ where
                 lease_for,
                 allowed,
                 cancellations: self.cancellations,
+                cancellation: None,
             },
             |handle| async move { self.run(settings, writer, request, &handle, now).await },
         )

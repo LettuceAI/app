@@ -103,6 +103,7 @@ impl JobHandlers {
             Arc::new(ArtifactInstallHandler::new(Arc::new(NetworkInstallSources))),
             Arc::new(super::local::ModelPullHandler),
             Arc::new(super::local::ModelsFolderMoveHandler),
+            Arc::new(super::text::TextFeatureHandler),
         ])
     }
 

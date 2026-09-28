@@ -36,6 +36,8 @@ mod conversation_settings_tests;
 #[cfg(test)]
 mod foundation_tests;
 #[cfg(test)]
+mod help_me_reply_tests;
+#[cfg(test)]
 mod inspect_tests;
 #[cfg(test)]
 mod local_models_tests;
@@ -80,7 +82,8 @@ pub use jobs::CatalogVariant;
 pub use jobs::{
     ArtifactInstallHandler, ClaimedJob, InstallFinish, InstallSources, InstallWork, JobHandler,
     JobHandlers, JobLane, JobProgressSink, JobRunner, ModelPullHandler, ModelsFolderMoveHandler,
-    NetworkInstallSources, admit_install, job_cancel, job_get, job_watch, jobs_list,
+    NetworkInstallSources, TextFeatureHandler, admit_install, conversation_help_me_reply,
+    job_cancel, job_get, job_watch, jobs_list,
 };
 pub use local_models::{
     llama_chat_template, llama_context_info, llama_devices, llama_unload, local_file_runnability,

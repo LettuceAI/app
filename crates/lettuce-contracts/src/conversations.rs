@@ -607,6 +607,29 @@ pub struct GenerationAccepted {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "snake_case")]
+pub enum HelpMeReplyMode {
+    New,
+    Enrich,
+}
+
+/// Asks the help-me-reply model to write the user's next message. `Enrich`
+/// improves `current_draft` when it is not blank; `New` ignores it. The text
+/// streams as `JobEvent::TextDelta` on `job_watch` and the cleaned reply is
+/// the job's `JobResultDto::GeneratedText`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct ConversationHelpMeReplyRequest {
+    pub conversation_id: String,
+    pub mode: HelpMeReplyMode,
+    pub current_draft: Option<String>,
+    pub swap_places: bool,
+    pub client_operation_id: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
 pub enum GenerationFailureCode {
     InvalidConversation,
     MissingModel,

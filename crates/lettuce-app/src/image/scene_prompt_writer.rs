@@ -114,6 +114,8 @@ pub enum ScenePromptError {
     Cancelled,
     #[error("scene prompt replay cleanup failed")]
     ReplayCleanup,
+    #[error("scene prompt result could not be stored")]
+    ResultStorage,
 }
 
 impl From<crate::jobs::one_shot_job::OneShotJobError> for ScenePromptError {
@@ -151,15 +153,41 @@ impl crate::jobs::one_shot_job::OneShotFailure for ScenePromptError {
                     "scene-prompt-unavailable",
                 )
             }
-            Self::Inference(_) | Self::NoText | Self::Empty => (
+            Self::NoText | Self::Empty => (
+                JobErrorCode::WorkerFailed,
+                false,
+                crate::jobs::failure_labels::SCENE_PROMPT_NO_REPLY,
+            ),
+            Self::Inference(_) => (
                 JobErrorCode::WorkerFailed,
                 false,
                 "scene-prompt-inference-failed",
+            ),
+            Self::ResultStorage => (
+                JobErrorCode::StorageFailure,
+                true,
+                crate::jobs::failure_labels::RESULT_STORAGE_FAILED,
             ),
             Self::Jobs(_) | Self::Storage | Self::Model(ImageFeatureModelError::Storage) => (
                 JobErrorCode::StorageFailure,
                 true,
                 "scene-prompt-storage-failed",
+            ),
+            Self::Model(ImageFeatureModelError::SceneDisabled) => (
+                JobErrorCode::InvalidInput,
+                false,
+                crate::jobs::failure_labels::SCENE_PROMPT_DISABLED,
+            ),
+            Self::Model(
+                ImageFeatureModelError::NoImageModel
+                | ImageFeatureModelError::SceneModelUnsupported
+                | ImageFeatureModelError::SceneWriter(_)
+                | ImageFeatureModelError::NoModel
+                | ImageFeatureModelError::ModelNotFound,
+            ) => (
+                JobErrorCode::InvalidInput,
+                false,
+                crate::jobs::failure_labels::SCENE_PROMPT_NO_MODEL,
             ),
             Self::Model(_)
             | Self::ConversationNotFound
@@ -219,6 +247,8 @@ pub struct ScenePromptWriter<'a, R: ?Sized, D: ?Sized, I: ?Sized> {
     media: &'a D,
     inference: &'a I,
     cancellations: Option<&'a lettuce_inference::InferenceRuntime>,
+    cancellation: Option<&'a lettuce_jobs::handle::CancellationToken>,
+    recorder: Option<&'a dyn crate::ResultRecorder>,
 }
 
 impl<'a, R: ?Sized, D: ?Sized, I: ?Sized> ScenePromptWriter<'a, R, D, I> {
@@ -229,7 +259,26 @@ impl<'a, R: ?Sized, D: ?Sized, I: ?Sized> ScenePromptWriter<'a, R, D, I> {
             media,
             inference,
             cancellations: None,
+            cancellation: None,
+            recorder: None,
         }
+    }
+
+    /// Stops the run with `token` when its runner cancels the job.
+    #[must_use]
+    pub const fn with_cancellation(
+        mut self,
+        token: &'a lettuce_jobs::handle::CancellationToken,
+    ) -> Self {
+        self.cancellation = Some(token);
+        self
+    }
+
+    /// Hands each finished run's text to `recorder` before the job settles.
+    #[must_use]
+    pub const fn with_result_recorder(mut self, recorder: &'a dyn crate::ResultRecorder) -> Self {
+        self.recorder = Some(recorder);
+        self
     }
 
     /// Registers each run's cancellation token in `runtime`, so a stop
@@ -250,6 +299,25 @@ where
     D: ImageMedia + ?Sized,
     I: InferencePort + ?Sized,
 {
+    /// Queues the request as a job, or returns the one an earlier admission
+    /// of it created.
+    pub fn admit(
+        &self,
+        request: &ScenePromptRequest,
+    ) -> Result<lettuce_jobs::JobSnapshot, ScenePromptError> {
+        crate::jobs::one_shot_job::admit_one_shot(
+            self.repository,
+            crate::jobs::one_shot_job::OneShotJob {
+                name: "scene-prompt",
+                stage: STAGE,
+                subject_kind: SubjectKind::Conversation,
+                subject: &request.conversation_id.to_string(),
+                request_id: request.request_id,
+            },
+        )
+        .map_err(ScenePromptError::Jobs)
+    }
+
     pub async fn generate(
         &self,
         request: &ScenePromptRequest,
@@ -280,8 +348,17 @@ where
                 lease_for,
                 allowed,
                 cancellations: self.cancellations,
+                cancellation: self.cancellation,
             },
-            |handle| async move { self.run(settings, request, &handle, now).await },
+            |handle| async move {
+                let text = self.run(settings, request, &handle, now).await?;
+                if let Some(recorder) = self.recorder
+                    && !recorder.record(handle.id(), &text)
+                {
+                    return Err(ScenePromptError::ResultStorage);
+                }
+                Ok(text)
+            },
         )
         .await?;
         Ok(ScenePromptReply { text, job })

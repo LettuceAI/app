@@ -75,6 +75,17 @@ pub(crate) enum LocalModelJobDetail {
         to: String,
         move_existing: bool,
     },
+    HelpMeReply {
+        request_id: String,
+        conversation_id: String,
+        draft: Option<String>,
+        swap_places: bool,
+    },
+    ScenePrompt {
+        request_id: String,
+        conversation_id: String,
+        message_id: String,
+    },
 }
 
 /// What a local model job produced.
@@ -93,13 +104,16 @@ pub(crate) enum LocalModelJobResult {
         moved_entries: u32,
         rewired_models: u32,
     },
+    GeneratedText {
+        text: String,
+    },
 }
 
-fn internal(error: impl std::fmt::Display) -> ApiError {
+pub(super) fn internal(error: impl std::fmt::Display) -> ApiError {
     api_error(ApiErrorCode::Internal, error.to_string())
 }
 
-fn encode<T: Serialize>(value: &T) -> Result<serde_json::Value, ApiError> {
+pub(super) fn encode<T: Serialize>(value: &T) -> Result<serde_json::Value, ApiError> {
     serde_json::to_value(value).map_err(internal)
 }
 
@@ -178,7 +192,10 @@ pub(crate) fn local_job_view(context: &ApiContext, job: &JobSnapshot) -> LocalJo
     };
     if !matches!(
         job.kind,
-        JobKind::ArtifactInstall | JobKind::ModelPull | JobKind::ModelsFolderMove
+        JobKind::ArtifactInstall
+            | JobKind::ModelPull
+            | JobKind::ModelsFolderMove
+            | JobKind::CreationRun
     ) {
         return empty;
     }
@@ -214,8 +231,18 @@ pub(crate) fn local_job_view(context: &ApiContext, job: &JobSnapshot) -> LocalJo
                 moved_entries,
                 rewired_models,
             },
+            LocalModelJobResult::GeneratedText { text } => {
+                dto::JobResultDto::GeneratedText { text }
+            }
         });
     let detail = match detail {
+        LocalModelJobDetail::HelpMeReply { .. } | LocalModelJobDetail::ScenePrompt { .. } => {
+            return LocalJobView {
+                detail: None,
+                result,
+                failure: None,
+            };
+        }
         LocalModelJobDetail::ModelDownload {
             repo,
             file,
@@ -246,12 +273,12 @@ pub(crate) fn local_job_view(context: &ApiContext, job: &JobSnapshot) -> LocalJo
     }
 }
 
-fn digest<T: Serialize>(request: &T) -> Result<String, ApiError> {
+pub(super) fn digest<T: Serialize>(request: &T) -> Result<String, ApiError> {
     let encoded = serde_json::to_vec(request).map_err(internal)?;
     Ok(blake3::hash(&encoded).to_hex().to_string())
 }
 
-fn operation_key(command: &str, client_operation_id: &str) -> Result<String, ApiError> {
+pub(super) fn operation_key(command: &str, client_operation_id: &str) -> Result<String, ApiError> {
     let id = client_operation_id.trim();
     if id.is_empty() {
         return Err(invalid_field(
@@ -271,7 +298,11 @@ fn reused_key() -> ApiError {
 
 /// The job an earlier request with this key started; a different request
 /// under the same key is a conflict.
-fn replay(context: &ApiContext, key: &str, digest: &str) -> Result<Option<JobId>, ApiError> {
+pub(super) fn replay(
+    context: &ApiContext,
+    key: &str,
+    digest: &str,
+) -> Result<Option<JobId>, ApiError> {
     match context
         .backend()
         .database()
@@ -284,7 +315,7 @@ fn replay(context: &ApiContext, key: &str, digest: &str) -> Result<Option<JobId>
     }
 }
 
-fn record_operation(
+pub(super) fn record_operation(
     context: &ApiContext,
     key: &str,
     digest: &str,
@@ -790,7 +821,7 @@ pub(crate) async fn admit_gguf_download(
     })
 }
 
-fn stable_uuid(parts: &[&str]) -> Uuid {
+pub(super) fn stable_uuid(parts: &[&str]) -> Uuid {
     Uuid::new_v5(&Uuid::NAMESPACE_OID, parts.join("\0").as_bytes())
 }
 

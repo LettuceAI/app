@@ -33,12 +33,14 @@ impl JobWatch {
 }
 
 /// The API's per-process job state: watch streams, the cancellation tokens
-/// of running jobs, install work waiting for the runner, the runner's
-/// wake-up and the signal of committed job changes.
+/// of running jobs, install work waiting for the runner, the text a running
+/// job streamed so far, the runner's wake-up and the signal of committed job
+/// changes.
 pub(crate) struct JobHostState {
     watches: Mutex<HashMap<JobId, Vec<Arc<JobWatch>>>>,
     running: Mutex<HashMap<JobId, CancellationToken>>,
     installs: Mutex<HashMap<JobId, InstallWork>>,
+    streamed: Mutex<HashMap<JobId, (String, String)>>,
     wake: tokio::sync::Notify,
     changed: Arc<tokio::sync::Notify>,
 }
@@ -49,6 +51,7 @@ impl Default for JobHostState {
             watches: Mutex::new(HashMap::new()),
             running: Mutex::new(HashMap::new()),
             installs: Mutex::new(HashMap::new()),
+            streamed: Mutex::new(HashMap::new()),
             wake: tokio::sync::Notify::new(),
             changed: Arc::new(tokio::sync::Notify::new()),
         }
@@ -97,7 +100,17 @@ impl JobHostState {
         if terminal {
             watch.finish(event);
         } else if watch.send(event) {
-            watches.entry(job_id).or_default().push(watch);
+            let streamed = lock(&self.streamed).get(&job_id).cloned();
+            let open = match streamed {
+                Some((text, reasoning)) => watch.send(JobEvent::TextDelta {
+                    text: (!text.is_empty()).then_some(text),
+                    reasoning: (!reasoning.is_empty()).then_some(reasoning),
+                }),
+                None => true,
+            };
+            if open {
+                watches.entry(job_id).or_default().push(watch);
+            }
         }
         Ok(value)
     }
@@ -130,6 +143,12 @@ impl JobHostState {
         text: Option<String>,
         reasoning: Option<String>,
     ) {
+        {
+            let mut streamed = lock(&self.streamed);
+            let so_far = streamed.entry(job_id).or_default();
+            so_far.0.push_str(text.as_deref().unwrap_or_default());
+            so_far.1.push_str(reasoning.as_deref().unwrap_or_default());
+        }
         let mut watches = lock(&self.watches);
         if let Some(list) = watches.get_mut(&job_id) {
             list.retain(|watch| {
@@ -150,6 +169,7 @@ impl JobHostState {
 
     pub(crate) fn finish_running(&self, job_id: JobId) {
         lock(&self.running).remove(&job_id);
+        lock(&self.streamed).remove(&job_id);
     }
 
     /// Signals the job if this process runs it; returns whether it does.
