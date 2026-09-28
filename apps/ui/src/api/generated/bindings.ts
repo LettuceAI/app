@@ -10,6 +10,19 @@ export const commands = {
 	conversationsLatestByGroup: (request: LatestConversationsRequest) => typedError<LatestConversationPage, ApiError>(__TAURI_INVOKE("conversations_latest_by_group", { request })),
 	conversationOpen: (request: ConversationOpenRequest) => typedError<ConversationView, ApiError>(__TAURI_INVOKE("conversation_open", { request })),
 	conversationMessages: (request: ConversationMessagesRequest) => typedError<MessagePage, ApiError>(__TAURI_INVOKE("conversation_messages", { request })),
+	messageEdit: (request: MessageEditRequest) => typedError<MessageChanged, ApiError>(__TAURI_INVOKE("message_edit", { request })),
+	messageDelete: (request: MessageDeleteRequest) => typedError<MessagesDeleteResult, ApiError>(__TAURI_INVOKE("message_delete", { request })),
+	messagesDeleteAfter: (request: MessageDeleteRequest) => typedError<MessagesDeleteResult, ApiError>(__TAURI_INVOKE("messages_delete_after", { request })),
+	memoryRewindRetry: (request: MemoryRewindRetryRequest) => typedError<MemoryRewindRetryOutcome, ApiError>(__TAURI_INVOKE("memory_rewind_retry", { request })),
+	messagePin: (request: MessagePinRequest) => typedError<MessageChanged, ApiError>(__TAURI_INVOKE("message_pin", { request })),
+	messageCandidateSelect: (request: MessageCandidateSelectRequest) => typedError<MessageChanged, ApiError>(__TAURI_INVOKE("message_candidate_select", { request })),
+	messageSceneSelect: (request: MessageSceneSelectRequest) => typedError<MessageChanged, ApiError>(__TAURI_INVOKE("message_scene_select", { request })),
+	messageRevisions: (request: MessageHistoryRequest) => typedError<MessageRevisionPage, ApiError>(__TAURI_INVOKE("message_revisions", { request })),
+	messageCandidates: (request: MessageHistoryRequest) => typedError<MessageCandidatePage, ApiError>(__TAURI_INVOKE("message_candidates", { request })),
+	conversationSearch: (request: ConversationSearchRequest) => typedError<SearchHitPage, ApiError>(__TAURI_INVOKE("conversation_search", { request })),
+	conversationPinnedMessages: (request: ConversationPinnedMessagesRequest) => typedError<MessagePage, ApiError>(__TAURI_INVOKE("conversation_pinned_messages", { request })),
+	conversationMessageCount: (request: ConversationRequest) => typedError<MessageCount, ApiError>(__TAURI_INVOKE("conversation_message_count", { request })),
+	conversationMessagesAround: (request: ConversationMessagesAroundRequest) => typedError<MessageWindow, ApiError>(__TAURI_INVOKE("conversation_messages_around", { request })),
 	conversationSend: (request: ConversationSendRequest, onEvent: Channel<GenerationEvent>) => typedError<SendAccepted, ApiError>(__TAURI_INVOKE("conversation_send", { request, onEvent })),
 	generationCancel: (request: GenerationCancelRequest) => typedError<null, ApiError>(__TAURI_INVOKE("generation_cancel", { request })),
 	conversationLaunchDirect: (request: LaunchDirectRequest) => typedError<LaunchDirectResponse, ApiError>(__TAURI_INVOKE("conversation_launch_direct", { request })),
@@ -83,7 +96,7 @@ export type ApiError = {
  */
 export type ApiErrorCode = "not_found" | "conflict" | "invalid_input" | "unsupported" | "unavailable" | "cancelled" | "busy" | "internal" | "model_required" | "model_unavailable";
 
-export type ApiErrorDetails = { type: "invalid_field"; field: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason };
+export type ApiErrorDetails = { type: "invalid_field"; field: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "pending_memory_rewind"; conversation_id: string };
 
 /**
  *  Application-wide events the host broadcasts to every window.
@@ -172,9 +185,26 @@ export type ChoiceChange = { type: "set"; id: string } | { type: "none" } | { ty
 
 export type ConversationKind = "direct" | "group";
 
+/**
+ *  Messages around one message of the selected branch, for jumping to it:
+ *  up to `before` older messages, the message and up to `after` newer ones.
+ */
+export type ConversationMessagesAroundRequest = {
+	conversation_id: string,
+	message_id: string,
+	before: number,
+	after: number,
+};
+
+/**
+ *  A page of the selected branch: without cursors the newest messages,
+ *  with `before_cursor` older ones, with `after_cursor` newer ones (at most
+ *  one cursor).
+ */
 export type ConversationMessagesRequest = {
 	conversation_id: string,
 	before_cursor: string | null,
+	after_cursor?: string | null,
 	limit: number | null,
 };
 
@@ -213,6 +243,13 @@ export type ConversationParticipantUpdateRequest = {
 	client_operation_id: string,
 };
 
+/**  The pinned visible messages of the selected branch, oldest first. */
+export type ConversationPinnedMessagesRequest = {
+	conversation_id: string,
+	cursor: string | null,
+	limit: number | null,
+};
+
 export type ConversationRenameRequest = {
 	conversation_id: string,
 	expected_revision: number,
@@ -228,6 +265,17 @@ export type ConversationRequest = {
 export type ConversationRevisions = {
 	revision: number,
 	settings_revision: number | null,
+};
+
+/**
+ *  Searches the selected branch's visible messages. The query is trimmed;
+ *  an empty one finds nothing.
+ */
+export type ConversationSearchRequest = {
+	conversation_id: string,
+	query: string,
+	cursor: string | null,
+	limit: number | null,
 };
 
 export type ConversationSendRequest = {
@@ -329,6 +377,8 @@ export type ConversationSummary = {
 	chat_mode: GroupChatMode | null,
 	/**  Optional models the chat needs that are not installed. */
 	missing_models: RequiredModel[],
+	/**  Why the chat's dynamic memory is stopped, when it is. */
+	memory_blocked: MemoryBlockedReason | null,
 };
 
 export type ConversationView = {
@@ -354,6 +404,8 @@ export type ConversationView = {
 	chat_mode: GroupChatMode | null,
 	/**  Optional models the chat needs that are not installed. */
 	missing_models: RequiredModel[],
+	/**  Why the chat's dynamic memory is stopped, when it is. */
+	memory_blocked: MemoryBlockedReason | null,
 };
 
 export type ConversationsListRequest = {
@@ -1189,13 +1241,98 @@ export type LorebooksChange = { type: "set"; ids: string[] } | { type: "reset" }
 
 export type MediaRole = "inline" | "attachment" | "avatar" | "scene" | "reference";
 
+/**  Why a chat's dynamic memory does not run. */
+export type MemoryBlockedReason = { type: "owed_rewind_failed"; code: MemoryRewindFailureCode };
+
 export type MemoryMode = "manual" | "dynamic" | "disabled";
 
 export type MemoryModeChange = { type: "set"; mode: MemoryMode } | { type: "reset" };
 
+/**  Why the memory rewind a delete owes could not finish. */
+export type MemoryRewindFailureCode = "conflict" | "inconsistent" | "storage" | "other";
+
+/**  What a retry of an owed memory rewind did. */
+export type MemoryRewindRetryOutcome = { type: "nothing_owed" } | { type: "completed" } | { type: "still_failing"; code: MemoryRewindFailureCode };
+
+/**  Asks for the memory rewind a chat owes to be finished now. */
+export type MemoryRewindRetryRequest = {
+	conversation_id: string,
+};
+
+export type MessageCandidatePage = {
+	items: MessageCandidateView[],
+	next_cursor: string | null,
+};
+
+/**  Shows another reply variant of a message. */
+export type MessageCandidateSelectRequest = {
+	conversation_id: string,
+	message_id: string,
+	expected_revision: number,
+	candidate_id: string,
+	client_operation_id: string,
+};
+
+/**  One generated reply variant as it was generated, in variant order. */
+export type MessageCandidateView = {
+	id: string,
+	index: number,
+	author_participant_id: string | null,
+	parts: MessagePartView[],
+	reasoning: string | null,
+	created_at: number,
+};
+
+/**
+ *  A changed message as the chat shows it and the conversation revision the
+ *  change left.
+ */
+export type MessageChanged = {
+	message: TimelineMessage,
+	revision: number,
+};
+
+/**  Visible messages on the selected branch, system notes excluded. */
+export type MessageCount = {
+	count: number,
+};
+
+/**  Names one message for a delete or a delete of everything after it. */
+export type MessageDeleteRequest = {
+	conversation_id: string,
+	message_id: string,
+	expected_revision: number,
+	client_operation_id: string,
+};
+
+/**
+ *  Edits a message's text. `keep_media` names the attachments it keeps; an
+ *  edit can remove attachments, never add them.
+ */
+export type MessageEditRequest = {
+	conversation_id: string,
+	message_id: string,
+	expected_revision: number,
+	/**  Trimmed; blank is refused. */
+	text: string,
+	keep_media: string[],
+	/**
+	 *  Idempotency key: repeating the call with the same key and request
+	 *  returns the first result; another request under the key is
+	 *  `Conflict`.
+	 */
+	client_operation_id: string,
+};
+
+export type MessageHistoryRequest = {
+	message_id: string,
+	cursor: string | null,
+};
+
 /**
  *  One page of visible messages in conversation order, oldest first;
- *  `next_cursor` loads the page before it.
+ *  `next_cursor` loads the page before it, or after it for a page read with
+ *  `after_cursor` or a pinned-message page.
  */
 export type MessagePage = {
 	items: TimelineMessage[],
@@ -1204,7 +1341,62 @@ export type MessagePage = {
 
 export type MessagePartView = { type: "text"; text: string } | { type: "media"; asset: AssetRef; role: MediaRole };
 
+export type MessagePinRequest = {
+	conversation_id: string,
+	message_id: string,
+	expected_revision: number,
+	pinned: boolean,
+	client_operation_id: string,
+};
+
+export type MessageRevisionPage = {
+	items: MessageRevisionView[],
+	next_cursor: string | null,
+};
+
+/**  One saved version of a message's content, oldest first. */
+export type MessageRevisionView = {
+	id: string,
+	sequence: number,
+	parts: MessagePartView[],
+	reasoning: string | null,
+	authored_at: number,
+	/**  The reply variant this edit rewrote. */
+	supersedes_candidate_id: string | null,
+};
+
 export type MessageRole = "user" | "assistant" | "system" | "scene";
+
+/**
+ *  Switches a one-to-one chat's starting scene from its scene message: the
+ *  chat's scene setting and the message's text both change.
+ */
+export type MessageSceneSelectRequest = {
+	conversation_id: string,
+	message_id: string,
+	expected_revision: number,
+	scene_id: string,
+	client_operation_id: string,
+};
+
+/**
+ *  Visible messages in conversation order, oldest first. `before_cursor`
+ *  continues with older messages and `after_cursor` with newer ones, as
+ *  `ConversationMessagesRequest` cursors; none means that side is done.
+ */
+export type MessageWindow = {
+	items: TimelineMessage[],
+	before_cursor: string | null,
+	after_cursor: string | null,
+};
+
+export type MessagesDeleteOutcome = { type: "tombstoned"; removed: string[] } | { type: "branched"; branch_id: string };
+
+/**  The outcome of a delete-after and the conversation revision it left. */
+export type MessagesDeleteResult = {
+	outcome: MessagesDeleteOutcome,
+	revision: number,
+};
 
 /**
  *  Why an Ollama server request failed: it could not be reached (worth a
@@ -1299,6 +1491,22 @@ export type PurgeNoticeView = {
 export type RequiredModel = "embedding" | "emotion";
 
 export type RunnabilityLabel = "excellent" | "good" | "marginal" | "poor" | "unrunnable";
+
+/**  A message whose shown text contains the query, ignoring case. */
+export type SearchHit = {
+	message_id: string,
+	role: MessageRole,
+	/**  The speaker in a group chat. */
+	author_participant_id: string | null,
+	text: string,
+	created_at: number,
+};
+
+/**  Search hits oldest first; `next_cursor` continues with later hits. */
+export type SearchHitPage = {
+	items: SearchHit[],
+	next_cursor: string | null,
+};
 
 export type SendAccepted = {
 	user_message_id: string,

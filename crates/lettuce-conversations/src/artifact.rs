@@ -321,6 +321,55 @@ impl PreparedConversationSettingsUpdate {
     }
 }
 
+/// A scene choice shown on the scene message: the settings update that only
+/// sets the scene, and the edit that renders it on the message with
+/// `scene_edited` cleared, under one operation.
+#[derive(Debug)]
+pub struct PreparedSceneSelection {
+    edit: crate::commands::EditMessage,
+    settings: PreparedConversationSettingsUpdate,
+}
+
+impl PreparedSceneSelection {
+    pub fn new(
+        edit: crate::commands::EditMessage,
+        settings: PreparedConversationSettingsUpdate,
+    ) -> Result<Self, ValidationError> {
+        crate::commands::ConversationMutation::Edit(edit.clone()).validate()?;
+        let command = settings.command();
+        let scene_only = CurrentConversationSettingsPatch {
+            scene: command.patch.scene.clone(),
+            ..CurrentConversationSettingsPatch::default()
+        };
+        if command.conversation_id != edit.conversation_id
+            || command.operation != edit.operation
+            || !matches!(command.patch.scene, PatchValue::Set(_))
+            || command.patch != scene_only
+            || edit.draft.scene_edited
+        {
+            return Err(ValidationError::Invariant {
+                field: "scene_selection",
+            });
+        }
+        Ok(Self { edit, settings })
+    }
+
+    #[must_use]
+    pub fn edit(&self) -> &crate::commands::EditMessage {
+        &self.edit
+    }
+
+    #[must_use]
+    pub fn into_parts(
+        self,
+    ) -> (
+        crate::commands::EditMessage,
+        PreparedConversationSettingsUpdate,
+    ) {
+        (self.edit, self.settings)
+    }
+}
+
 /// A participant add with the snapshot artifacts its member snapshot needs,
 /// staged in the add's own transaction. Every draft must be one of the
 /// member's references; a reference without a draft must already be stored.

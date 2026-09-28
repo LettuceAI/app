@@ -97,6 +97,7 @@ fn conversation_summary(
         message_count: overview.message_count,
         chat_mode: chat_mode(context, conversation)?,
         missing_models: missing.of(context, conversation)?,
+        memory_blocked: super::messages::memory_blocked(context, conversation.id)?,
     })
 }
 
@@ -289,6 +290,7 @@ pub async fn conversation_open(
                 source: mapping::conversation_source(&conversation.kind),
                 chat_mode: chat_mode(context, &conversation)?,
                 missing_models,
+                memory_blocked: super::messages::memory_blocked(context, conversation.id)?,
                 title: conversation.title,
             })
         })
@@ -306,15 +308,32 @@ pub(super) const fn can_send(
     !matches!(lifecycle, ConversationLifecycle::Tombstoned) && !pending_turn && has_user
 }
 
+/// A page of the selected branch's visible messages: the newest, the ones
+/// before `before_cursor` or the ones after `after_cursor`.
 pub async fn conversation_messages(
     context: &ApiContext,
     request: dto::ConversationMessagesRequest,
 ) -> Result<dto::MessagePage, ApiError> {
     let conversation_id: ConversationId = parse_id(&request.conversation_id, "conversation_id")?;
+    if request.before_cursor.is_some() && request.after_cursor.is_some() {
+        return Err(invalid_field(
+            "after_cursor",
+            "a page reads before or after a cursor, not both",
+        ));
+    }
     context
         .blocking(move |context| {
             let aggregate = ConversationReader::get(context.backend().database(), conversation_id)
                 .map_err(IntoApiError::into_api_error)?;
+            if let Some(cursor) = request.after_cursor {
+                return super::messages::newer_page(
+                    context,
+                    conversation_id,
+                    aggregate.conversation.active_branch_id,
+                    cursor,
+                    request.limit,
+                );
+            }
             message_page(
                 context,
                 conversation_id,

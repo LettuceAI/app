@@ -1,10 +1,13 @@
 use lettuce_types::{
     CompanionEffectId, ConversationId, DynamicMemoryRunId, GenerationAttemptId, GenerationTurnId,
-    MemoryId, MemorySpaceId, OperationId, Revision, TimestampMillis,
+    MemoryId, MemorySpaceId, MessageId, OperationId, Revision, TimestampMillis,
 };
 use serde::{Deserialize, Serialize};
 
-use lettuce_conversations::{InferenceUsage, ProviderNeutralContext};
+use lettuce_conversations::{
+    Conversation, ConversationRepositoryError, InferenceUsage, MutationCommit,
+    ProviderNeutralContext, TombstoneMessage, TombstoneMessageResult,
+};
 
 use crate::{
     DynamicMemoryAttempt, DynamicMemoryAttemptFailureCode, DynamicMemoryAttemptRecovery,
@@ -316,6 +319,92 @@ pub trait DynamicMemorySuffixRewindRepository: Send + Sync {
         &self,
         rewind: DynamicMemorySuffixRewind,
     ) -> Result<DynamicMemorySuffixRewindReceipt, DynamicMemorySuffixRewindError>;
+}
+
+/// A delete-after whose memory rewind is owed: the suffix tombstone and the
+/// summary interval the rewind rebuilds with.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PendingSuffixRewind {
+    pub after_message_id: MessageId,
+    pub tombstone: TombstoneMessage,
+    pub summary_message_interval: u32,
+}
+
+/// Why an owed rewind could not finish.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OwedRewindFailure {
+    /// Memory changed while it was rewound.
+    Conflict,
+    /// The stored rewind disagrees with what the chat holds now.
+    Inconsistent,
+    Storage,
+    Other,
+}
+
+impl OwedRewindFailure {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Conflict => "conflict",
+            Self::Inconsistent => "inconsistent",
+            Self::Storage => "storage",
+            Self::Other => "other",
+        }
+    }
+
+    #[must_use]
+    pub fn parse(value: &str) -> Self {
+        match value {
+            "conflict" => Self::Conflict,
+            "inconsistent" => Self::Inconsistent,
+            "storage" => Self::Storage,
+            _ => Self::Other,
+        }
+    }
+}
+
+pub trait PendingSuffixRewindRepository: Send + Sync {
+    /// Tombstones the suffix and records the owed rewind in one
+    /// transaction. A replay records nothing.
+    fn tombstone_suffix(
+        &self,
+        pending: &PendingSuffixRewind,
+        now: TimestampMillis,
+    ) -> Result<TombstoneMessageResult, ConversationRepositoryError>;
+
+    /// Records the delete-after of an anchor with nothing after it as a
+    /// durable operation that changes nothing, so a replay after later
+    /// messages remove none of them.
+    fn record_empty_suffix(
+        &self,
+        pending: &PendingSuffixRewind,
+        now: TimestampMillis,
+    ) -> Result<MutationCommit<Conversation>, ConversationRepositoryError>;
+
+    fn pending_suffix_rewinds(
+        &self,
+        conversation_id: Option<ConversationId>,
+    ) -> Result<Vec<PendingSuffixRewind>, DynamicMemorySuffixRewindError>;
+
+    fn clear_pending_suffix_rewind(
+        &self,
+        pending: &PendingSuffixRewind,
+    ) -> Result<(), DynamicMemorySuffixRewindError>;
+
+    /// Why the conversation's oldest failed owed rewind could not finish.
+    fn pending_rewind_failure(
+        &self,
+        conversation_id: ConversationId,
+    ) -> Result<Option<OwedRewindFailure>, DynamicMemorySuffixRewindError>;
+
+    /// Records why an owed rewind could not finish; the next attempt
+    /// overwrites it and a finished rewind removes the record with it.
+    fn fail_pending_suffix_rewind(
+        &self,
+        pending: &PendingSuffixRewind,
+        failure: OwedRewindFailure,
+    ) -> Result<(), DynamicMemorySuffixRewindError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

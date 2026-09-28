@@ -59,7 +59,7 @@ Each migration belongs to one domain and holds all of that domain's tables, trig
 | 10 | Usage events, job inference usage, cost bases, legacy usage records |
 | 11 | Creation helper workflows, lorebook runs and staged projects, apply receipts |
 | 12 | Companion Soul, growth, consolidation and Soul-writer runs, scheduled notes |
-| 13 | Companion relationships, sessions, continuity, turn effects, suffix rewinds, memory pools |
+| 13 | Companion relationships, sessions, continuity, turn effects, suffix rewinds and the ones a delete-after still owes, memory pools |
 | 14 | Speech transcriptions |
 | 15 | Installed Whisper models |
 | 16 | ASR vocabulary, corrections, ignored suggestions, voice examples |
@@ -153,6 +153,8 @@ Snapshot and provider replay bytes live in private artifact tables (`conversatio
 `conversation_launch_intents` keeps the digest of the launch request a conversation was created with (written in the create transaction when the launch carries one, read by `ConversationLaunchIntentReader`, removed by the purge), so a launch under the same key can be compared without re-preparing it.
 
 `conversation_changes` is the conversation change feed: triggers on `conversations` move a conversation's single row to a new AUTOINCREMENT position on every insert and update (every mutation bumps the row, so messages, settings, lifecycle and title changes all count) and leave a `removed` row when a purge deletes it. `ConversationChangeFeed` reads the latest position and the changes after one. `change_signal.rs` watches the feed tables with the update hook, reports the feeds a transaction wrote from the commit hook and forgets them on rollback, so `on_conversation_change` and `on_job_change` listeners hear only committed changes.
+
+The shared-message check that keeps a delete from changing another branch (`suffix_shared_with_other_branches` and the in-transaction `any_on_other_branches`) walks the ancestry of every other active branch, so it costs O(branches × depth); a delete-after runs it twice, once in the coordinator's pre-scan and once as the guard inside the tombstone transaction. Triggers on `dynamic_memory_pending_suffix_rewinds` record the conversation in `conversation_changes`, so recording or clearing a failed owed rewind reaches the change feed.
 
 ### Historical conversations
 

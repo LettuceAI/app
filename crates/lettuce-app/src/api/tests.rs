@@ -445,6 +445,7 @@ async fn send_streams_deltas_completes_and_persists_the_reply() {
         dto::ConversationMessagesRequest {
             conversation_id: conversation_id.clone(),
             before_cursor: None,
+            after_cursor: None,
             limit: Some(1),
         },
     )
@@ -457,6 +458,7 @@ async fn send_streams_deltas_completes_and_persists_the_reply() {
         dto::ConversationMessagesRequest {
             conversation_id: conversation_id.clone(),
             before_cursor: newest.next_cursor.clone(),
+            after_cursor: None,
             limit: Some(1),
         },
     )
@@ -1230,6 +1232,7 @@ async fn message_cursor_errors_name_the_cursor_only_when_one_was_sent() {
         dto::ConversationMessagesRequest {
             conversation_id,
             before_cursor: Some("not-a-cursor".into()),
+            after_cursor: None,
             limit: None,
         },
     )

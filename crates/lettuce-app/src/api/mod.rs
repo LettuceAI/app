@@ -19,6 +19,7 @@ mod hugging_face;
 mod jobs;
 mod local_models;
 mod mapping;
+mod messages;
 mod models;
 mod ollama;
 mod startup;
@@ -34,6 +35,8 @@ mod conversation_settings_tests;
 mod foundation_tests;
 #[cfg(test)]
 mod local_models_tests;
+#[cfg(test)]
+mod messages_tests;
 #[cfg(test)]
 mod models_tests;
 #[cfg(test)]
@@ -73,6 +76,12 @@ pub use local_models::{
     llama_chat_template, llama_context_info, llama_devices, llama_unload, local_file_runnability,
     local_model_adopt, local_model_delete, local_models_dir_get, local_models_dir_set,
     local_models_list,
+};
+pub use messages::{
+    conversation_message_count, conversation_messages_around, conversation_pinned_messages,
+    conversation_search, memory_rewind_retry, message_candidate_select, message_candidates,
+    message_delete, message_edit, message_pin, message_revisions, message_scene_select,
+    messages_delete_after,
 };
 pub use models::{InstalledModels, ModelLoad, ModelLoader, NoModels};
 pub use ollama::{ollama_model_delete, ollama_models_list, ollama_pull};

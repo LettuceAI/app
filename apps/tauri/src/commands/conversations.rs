@@ -2,13 +2,18 @@ use std::sync::Arc;
 
 use lettuce_app::api::{self, ApiContext, GenerationEventSink};
 use lettuce_contracts::{
-    ApiError, ConversationMessagesRequest, ConversationOpenRequest, ConversationPage,
-    ConversationParticipantAddRequest, ConversationParticipantUpdateRequest,
-    ConversationRenameRequest, ConversationRequest, ConversationRevisions, ConversationSendRequest,
-    ConversationSettingsGetRequest, ConversationSettingsUpdateRequest, ConversationSettingsView,
-    ConversationView, ConversationsListRequest, GenerationCancelRequest, GenerationEvent,
-    LatestConversationPage, LatestConversationsRequest, LaunchDirectRequest, LaunchDirectResponse,
-    LaunchGroupRequest, LaunchGroupResponse, MessagePage, SendAccepted,
+    ApiError, ConversationMessagesAroundRequest, ConversationMessagesRequest,
+    ConversationOpenRequest, ConversationPage, ConversationParticipantAddRequest,
+    ConversationParticipantUpdateRequest, ConversationPinnedMessagesRequest,
+    ConversationRenameRequest, ConversationRequest, ConversationRevisions,
+    ConversationSearchRequest, ConversationSendRequest, ConversationSettingsGetRequest,
+    ConversationSettingsUpdateRequest, ConversationSettingsView, ConversationView,
+    ConversationsListRequest, GenerationCancelRequest, GenerationEvent, LatestConversationPage,
+    LatestConversationsRequest, LaunchDirectRequest, LaunchDirectResponse, LaunchGroupRequest,
+    LaunchGroupResponse, MemoryRewindRetryOutcome, MemoryRewindRetryRequest, MessageCandidatePage,
+    MessageCandidateSelectRequest, MessageChanged, MessageCount, MessageDeleteRequest,
+    MessageEditRequest, MessageHistoryRequest, MessagePage, MessagePinRequest, MessageRevisionPage,
+    MessageSceneSelectRequest, MessageWindow, MessagesDeleteResult, SearchHitPage, SendAccepted,
 };
 use tauri::{State, ipc::Channel};
 
@@ -55,6 +60,123 @@ pub async fn conversation_messages(
     request: ConversationMessagesRequest,
 ) -> Result<MessagePage, ApiError> {
     api::conversation_messages(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn message_edit(
+    context: State<'_, ApiContext>,
+    request: MessageEditRequest,
+) -> Result<MessageChanged, ApiError> {
+    api::message_edit(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn message_delete(
+    context: State<'_, ApiContext>,
+    request: MessageDeleteRequest,
+) -> Result<MessagesDeleteResult, ApiError> {
+    api::message_delete(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn messages_delete_after(
+    context: State<'_, ApiContext>,
+    request: MessageDeleteRequest,
+) -> Result<MessagesDeleteResult, ApiError> {
+    api::messages_delete_after(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn memory_rewind_retry(
+    context: State<'_, ApiContext>,
+    request: MemoryRewindRetryRequest,
+) -> Result<MemoryRewindRetryOutcome, ApiError> {
+    api::memory_rewind_retry(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn message_pin(
+    context: State<'_, ApiContext>,
+    request: MessagePinRequest,
+) -> Result<MessageChanged, ApiError> {
+    api::message_pin(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn message_candidate_select(
+    context: State<'_, ApiContext>,
+    request: MessageCandidateSelectRequest,
+) -> Result<MessageChanged, ApiError> {
+    api::message_candidate_select(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn message_scene_select(
+    context: State<'_, ApiContext>,
+    request: MessageSceneSelectRequest,
+) -> Result<MessageChanged, ApiError> {
+    api::message_scene_select(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn message_revisions(
+    context: State<'_, ApiContext>,
+    request: MessageHistoryRequest,
+) -> Result<MessageRevisionPage, ApiError> {
+    api::message_revisions(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn message_candidates(
+    context: State<'_, ApiContext>,
+    request: MessageHistoryRequest,
+) -> Result<MessageCandidatePage, ApiError> {
+    api::message_candidates(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn conversation_search(
+    context: State<'_, ApiContext>,
+    request: ConversationSearchRequest,
+) -> Result<SearchHitPage, ApiError> {
+    api::conversation_search(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn conversation_pinned_messages(
+    context: State<'_, ApiContext>,
+    request: ConversationPinnedMessagesRequest,
+) -> Result<MessagePage, ApiError> {
+    api::conversation_pinned_messages(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn conversation_message_count(
+    context: State<'_, ApiContext>,
+    request: ConversationRequest,
+) -> Result<MessageCount, ApiError> {
+    api::conversation_message_count(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn conversation_messages_around(
+    context: State<'_, ApiContext>,
+    request: ConversationMessagesAroundRequest,
+) -> Result<MessageWindow, ApiError> {
+    api::conversation_messages_around(&context, request).await
 }
 
 #[tauri::command]

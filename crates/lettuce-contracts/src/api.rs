@@ -78,6 +78,7 @@ pub enum ApiErrorDetails {
     HuggingFace { failure: HfFailure },
     Ollama { failure: OllamaFailure },
     LocalModelsBusy { reason: LocalModelsBusyReason },
+    PendingMemoryRewind { conversation_id: String },
 }
 
 /// The error every API call returns. `message` is English diagnostic text

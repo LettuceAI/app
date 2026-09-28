@@ -10,6 +10,7 @@ pub use participants::{
 };
 pub use settings::{
     BackgroundChange, Change, Choice, ConversationSettingsChange, apply_settings_change,
+    prepare_scene_selection,
 };
 
 use lettuce_conversations::{ConversationRepositoryError, IdempotencyKey, OperationToken};

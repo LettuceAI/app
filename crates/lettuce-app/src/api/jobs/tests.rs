@@ -710,6 +710,7 @@ async fn startup_recovers_before_it_starts_the_workers() {
         workers.steps(),
         vec![
             crate::api::StartupStep::RecoverAfterRestart,
+            crate::api::StartupStep::CompletePendingRewinds,
             crate::api::StartupStep::DetectLegacyDatabase,
             crate::api::StartupStep::AdoptLegacyEmbedding,
             crate::api::StartupStep::ResumeMemoryJobs,

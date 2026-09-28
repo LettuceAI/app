@@ -6,13 +6,15 @@ use lettuce_companions::{
 };
 use lettuce_conversations::{
     Conversation, ConversationOutboxEvent, ConversationRepository, ConversationRepositoryError,
-    DescendantPolicy, OperationToken, TombstoneMessage, TombstoneMessageResult,
+    DescendantPolicy, ForkBranch, MessageVisibility, OperationKind, OperationResultRef,
+    OperationToken, TombstoneMessage, TombstoneMessageResult,
 };
 use lettuce_jobs::JobStore;
 use lettuce_memory::{
     DynamicMemoryApprovalRepository, DynamicMemoryRunRepository, DynamicMemoryRunRepositoryError,
     DynamicMemorySuffixRewind, DynamicMemorySuffixRewindError, DynamicMemorySuffixRewindReceipt,
     DynamicMemorySuffixRewindRepository, MemoryRepository, MemoryRepositoryError,
+    PendingSuffixRewind, PendingSuffixRewindRepository,
 };
 use lettuce_types::{ConversationId, MessageId, OperationId, PageLimit, PageRequest, Revision};
 
@@ -29,6 +31,7 @@ pub struct DeleteAfterMessages {
 pub struct DynamicMemoryDeleteAfterResult {
     pub conversation: Conversation,
     pub tombstone: Option<TombstoneMessageResult>,
+    pub branch_id: Option<lettuce_types::ConversationBranchId>,
     pub rewind: Option<DynamicMemorySuffixRewindReceipt>,
     pub retained_effects: Vec<CompanionTurnEffect>,
     pub rebuild_admission: Option<crate::CompanionPostTurnMemoryAdmission>,
@@ -50,6 +53,35 @@ pub enum DynamicMemoryDeleteAfterError {
     Admission(#[from] crate::CompanionPostTurnMemoryAdmissionError),
     #[error("delete-after durable result is inconsistent")]
     InvalidResult,
+    #[error(
+        "a delete-after memory rewind is owed for conversation {conversation_id} and failed: {reason}"
+    )]
+    OwedRewind {
+        conversation_id: ConversationId,
+        reason: String,
+    },
+}
+
+/// The owed rewinds one `complete_pending` pass finished and the
+/// conversations whose rewind failed.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct PendingRewindReport {
+    pub completed: usize,
+    pub failed: Vec<(ConversationId, DynamicMemoryDeleteAfterError)>,
+}
+
+impl PendingRewindReport {
+    /// The first failure as the typed error a caller of one conversation
+    /// returns.
+    pub fn into_result(self) -> Result<usize, DynamicMemoryDeleteAfterError> {
+        match self.failed.into_iter().next() {
+            None => Ok(self.completed),
+            Some((conversation_id, error)) => Err(DynamicMemoryDeleteAfterError::OwedRewind {
+                conversation_id,
+                reason: error.to_string(),
+            }),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -68,14 +100,25 @@ impl<'a, R: ?Sized, J: ?Sized> DynamicMemoryDeleteAfterCoordinator<'a, R, J> {
 impl<R, J> DynamicMemoryDeleteAfterCoordinator<'_, R, J>
 where
     R: ConversationRepository
+        + lettuce_conversations::ConversationOverviewReader
         + DynamicMemoryRunRepository
         + DynamicMemorySuffixRewindRepository
         + MemoryRepository
         + CompanionTurnEffectRepository
         + DynamicMemoryApprovalRepository
+        + PendingSuffixRewindRepository
         + ?Sized,
     J: JobStore + ?Sized,
 {
+    /// Removes what follows the anchor on the selected branch. Rewinds a
+    /// crash left owed for the conversation finish first. When every
+    /// message after the anchor belongs to the selected branch alone, they
+    /// are tombstoned and the memory rewind that owes is recorded in the
+    /// same transaction, then rewound and cleared. When any of them is also
+    /// shown by another branch (an ancestor, or a branch forked from one of
+    /// them), a new branch is forked at the anchor and selected instead and
+    /// nothing is deleted. An anchor with nothing after it records a
+    /// durable no-op. Repeating the command replays it.
     pub fn delete_after(
         &self,
         command: &DeleteAfterMessages,
@@ -84,56 +127,206 @@ where
         if command.summary_message_interval == 0 {
             return Err(DynamicMemoryDeleteAfterError::InvalidResult);
         }
+        if self.recorded(command)?.is_none() {
+            self.complete_pending(Some(command.conversation_id), now)?
+                .into_result()?;
+        }
+        self.delete_after_recorded(command, now)
+    }
+
+    fn delete_after_recorded(
+        &self,
+        command: &DeleteAfterMessages,
+        now: lettuce_types::TimestampMillis,
+    ) -> Result<DynamicMemoryDeleteAfterResult, DynamicMemoryDeleteAfterError> {
         let aggregate = lettuce_conversations::ConversationReader::get(
             self.repository,
             command.conversation_id,
         )?;
-        let recorded = self
-            .repository
-            .operation_record(
-                command.conversation_id,
-                lettuce_conversations::OperationKind::Tombstone,
-                &command.operation,
-            )?
-            .and_then(|record| match record.result {
-                lettuce_conversations::OperationResultRef::Message(message_id) => Some(message_id),
-                _ => None,
-            });
-        let first_removed = match recorded {
-            Some(message_id) => Some(message_id),
-            None => self.first_descendant(
-                command.conversation_id,
-                aggregate.conversation.active_branch_id,
-                command.after_message_id,
-            )?,
-        };
-        let Some(first_removed_id) = first_removed else {
-            if aggregate.conversation.revision != command.expected_revision {
-                return Err(DynamicMemoryDeleteAfterError::Conversation(
-                    ConversationRepositoryError::StaleRevision {
-                        expected: command.expected_revision,
-                        actual: aggregate.conversation.revision,
-                    },
-                ));
+        let first_removed = match self.recorded(command)? {
+            Some(Recorded::Empty) => {
+                return Ok(unchanged(aggregate.conversation));
             }
-            return Ok(DynamicMemoryDeleteAfterResult {
-                conversation: aggregate.conversation,
-                tombstone: None,
-                rewind: None,
-                retained_effects: Vec::new(),
-                rebuild_admission: None,
-            });
+            Some(Recorded::Branch(branch_id)) => {
+                let branch = aggregate
+                    .branches
+                    .iter()
+                    .find(|branch| branch.id == branch_id)
+                    .ok_or(DynamicMemoryDeleteAfterError::InvalidResult)?;
+                if branch.fork_message_id != Some(command.after_message_id) {
+                    return Err(ConversationRepositoryError::Conflict.into());
+                }
+                return Ok(DynamicMemoryDeleteAfterResult {
+                    branch_id: Some(branch_id),
+                    ..unchanged(aggregate.conversation)
+                });
+            }
+            Some(Recorded::Suffix(message_id)) => message_id,
+            None => {
+                let active_branch_id = aggregate.conversation.active_branch_id;
+                let suffix = self.scan_suffix(
+                    command.conversation_id,
+                    active_branch_id,
+                    command.after_message_id,
+                )?;
+                match suffix.first_visible {
+                    None => return self.record_empty(command, now),
+                    Some(_)
+                        if self.repository.suffix_shared_with_other_branches(
+                            command.conversation_id,
+                            active_branch_id,
+                            command.after_message_id,
+                        )? =>
+                    {
+                        return self.fork_at_anchor(command, suffix.anchor_branch_id, now);
+                    }
+                    Some((message_id, _)) => message_id,
+                }
+            }
         };
-        let tombstone = self.repository.tombstone_message(
-            &TombstoneMessage {
+        let pending = self.pending(command, first_removed);
+        let tombstone = self.repository.tombstone_suffix(&pending, now)?;
+        let result = self.rewind(command, tombstone)?;
+        self.repository.clear_pending_suffix_rewind(&pending)?;
+        Ok(result)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn rewind_without_clearing(
+        &self,
+        command: &DeleteAfterMessages,
+        first_removed: MessageId,
+        now: lettuce_types::TimestampMillis,
+    ) -> Result<(), DynamicMemoryDeleteAfterError> {
+        let pending = self.pending(command, first_removed);
+        let tombstone = self.repository.tombstone_suffix(&pending, now)?;
+        self.rewind(command, tombstone)?;
+        Ok(())
+    }
+
+    fn pending(&self, command: &DeleteAfterMessages, message_id: MessageId) -> PendingSuffixRewind {
+        PendingSuffixRewind {
+            after_message_id: command.after_message_id,
+            tombstone: TombstoneMessage {
                 conversation_id: command.conversation_id,
-                message_id: first_removed_id,
+                message_id,
                 expected_revision: command.expected_revision,
                 operation: command.operation.clone(),
                 descendants: DescendantPolicy::Tombstone,
             },
+            summary_message_interval: command.summary_message_interval,
+        }
+    }
+
+    fn record_empty(
+        &self,
+        command: &DeleteAfterMessages,
+        now: lettuce_types::TimestampMillis,
+    ) -> Result<DynamicMemoryDeleteAfterResult, DynamicMemoryDeleteAfterError> {
+        let pending = self.pending(command, command.after_message_id);
+        let recorded = self.repository.record_empty_suffix(&pending, now)?;
+        Ok(unchanged(recorded.value))
+    }
+
+    fn fork_at_anchor(
+        &self,
+        command: &DeleteAfterMessages,
+        source_branch_id: lettuce_types::ConversationBranchId,
+        now: lettuce_types::TimestampMillis,
+    ) -> Result<DynamicMemoryDeleteAfterResult, DynamicMemoryDeleteAfterError> {
+        let forked = self.repository.fork_branch(
+            &ForkBranch {
+                conversation_id: command.conversation_id,
+                source_branch_id,
+                at_message_id: Some(command.after_message_id),
+                expected_revision: command.expected_revision,
+                operation: command.operation.clone(),
+            },
             now,
         )?;
+        Ok(DynamicMemoryDeleteAfterResult {
+            branch_id: Some(forked.value.branch.id),
+            ..unchanged(forked.value.conversation)
+        })
+    }
+
+    fn recorded(
+        &self,
+        command: &DeleteAfterMessages,
+    ) -> Result<Option<Recorded>, DynamicMemoryDeleteAfterError> {
+        for kind in [OperationKind::Tombstone, OperationKind::Fork] {
+            let Some(record) = self.repository.operation_record(
+                command.conversation_id,
+                kind,
+                &command.operation,
+            )?
+            else {
+                continue;
+            };
+            if record.operation.request_digest != command.operation.request_digest {
+                return Err(ConversationRepositoryError::Conflict.into());
+            }
+            return Ok(Some(match record.result {
+                OperationResultRef::Message(message_id)
+                    if message_id == command.after_message_id =>
+                {
+                    Recorded::Empty
+                }
+                OperationResultRef::Message(message_id) => Recorded::Suffix(message_id),
+                OperationResultRef::Branch(branch_id) => Recorded::Branch(branch_id),
+                _ => return Err(DynamicMemoryDeleteAfterError::InvalidResult),
+            }));
+        }
+        Ok(None)
+    }
+
+    /// Finishes every delete-after whose memory rewind is still owed, of one
+    /// conversation or of all, oldest first. A rewind that fails is recorded
+    /// on its conversation and reported; that conversation's later owed
+    /// rewinds wait, and the other conversations go on.
+    pub fn complete_pending(
+        &self,
+        conversation_id: Option<ConversationId>,
+        now: lettuce_types::TimestampMillis,
+    ) -> Result<PendingRewindReport, DynamicMemoryDeleteAfterError> {
+        let pending = self.repository.pending_suffix_rewinds(conversation_id)?;
+        let mut report = PendingRewindReport::default();
+        for owed in &pending {
+            let conversation = owed.tombstone.conversation_id;
+            if report
+                .failed
+                .iter()
+                .any(|(failed, _)| *failed == conversation)
+            {
+                continue;
+            }
+            let outcome = self.delete_after_recorded(
+                &DeleteAfterMessages {
+                    conversation_id: conversation,
+                    after_message_id: owed.after_message_id,
+                    expected_revision: owed.tombstone.expected_revision,
+                    operation: owed.tombstone.operation.clone(),
+                    summary_message_interval: owed.summary_message_interval,
+                },
+                now,
+            );
+            match outcome {
+                Ok(_) => report.completed += 1,
+                Err(error) => {
+                    self.repository
+                        .fail_pending_suffix_rewind(owed, failure_of(&error))?;
+                    report.failed.push((conversation, error));
+                }
+            }
+        }
+        Ok(report)
+    }
+
+    fn rewind(
+        &self,
+        command: &DeleteAfterMessages,
+        tombstone: TombstoneMessageResult,
+    ) -> Result<DynamicMemoryDeleteAfterResult, DynamicMemoryDeleteAfterError> {
         let (removed_message_ids, rewind_at) = removed_messages(&tombstone)?;
         let operation_id = OperationId::from_uuid(tombstone.operation.id.as_uuid());
         let active_space = self
@@ -223,18 +416,19 @@ where
         Ok(DynamicMemoryDeleteAfterResult {
             conversation: tombstone.value.conversation.clone(),
             tombstone: Some(tombstone),
+            branch_id: None,
             rewind,
             retained_effects,
             rebuild_admission,
         })
     }
 
-    fn first_descendant(
+    fn scan_suffix(
         &self,
         conversation_id: ConversationId,
         branch_id: lettuce_types::ConversationBranchId,
         anchor_id: MessageId,
-    ) -> Result<Option<MessageId>, DynamicMemoryDeleteAfterError> {
+    ) -> Result<Suffix, DynamicMemoryDeleteAfterError> {
         let mut cursor = None;
         let mut newer = None;
         loop {
@@ -248,9 +442,14 @@ where
             )?;
             for item in page.items {
                 if item.message.id == anchor_id {
-                    return Ok(newer);
+                    return Ok(Suffix {
+                        anchor_branch_id: item.message.branch_id,
+                        first_visible: newer,
+                    });
                 }
-                newer = Some(item.message.id);
+                if item.message.visibility != MessageVisibility::Tombstoned {
+                    newer = Some((item.message.id, item.message.branch_id));
+                }
             }
             let Some(next) = page.next_cursor else {
                 return Err(DynamicMemoryDeleteAfterError::Conversation(
@@ -259,6 +458,43 @@ where
             };
             cursor = Some(next);
         }
+    }
+}
+
+enum Recorded {
+    Empty,
+    Suffix(MessageId),
+    Branch(lettuce_types::ConversationBranchId),
+}
+
+struct Suffix {
+    anchor_branch_id: lettuce_types::ConversationBranchId,
+    first_visible: Option<(MessageId, lettuce_types::ConversationBranchId)>,
+}
+
+fn unchanged(conversation: Conversation) -> DynamicMemoryDeleteAfterResult {
+    DynamicMemoryDeleteAfterResult {
+        conversation,
+        tombstone: None,
+        branch_id: None,
+        rewind: None,
+        retained_effects: Vec::new(),
+        rebuild_admission: None,
+    }
+}
+
+fn failure_of(error: &DynamicMemoryDeleteAfterError) -> lettuce_memory::OwedRewindFailure {
+    use lettuce_memory::OwedRewindFailure;
+    match error {
+        DynamicMemoryDeleteAfterError::Rewind(DynamicMemorySuffixRewindError::Conflict) => {
+            OwedRewindFailure::Conflict
+        }
+        DynamicMemoryDeleteAfterError::InvalidResult => OwedRewindFailure::Inconsistent,
+        DynamicMemoryDeleteAfterError::Rewind(DynamicMemorySuffixRewindError::Storage)
+        | DynamicMemoryDeleteAfterError::Conversation(ConversationRepositoryError::Storage) => {
+            OwedRewindFailure::Storage
+        }
+        _ => OwedRewindFailure::Other,
     }
 }
 

@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use lettuce_memory::{
     DynamicMemoryAttempt, DynamicMemoryBackgroundRoundSettlement, DynamicMemoryInferenceRound,
     DynamicMemoryPendingApproval, DynamicMemoryRun, DynamicMemorySummaryCheckpoint,
+    PendingSuffixRewind,
 };
 use serde::{Deserialize, Serialize};
 
@@ -13,7 +14,17 @@ pub const DYNAMIC_MEMORY_BACKUP_VERSION: u32 = 1;
 pub struct DynamicMemoryBackup {
     pub version: u32,
     pub pending_approvals: Vec<DynamicMemoryPendingApproval>,
+    pub pending_suffix_rewinds: Vec<BackupPendingSuffixRewind>,
     pub runs: Vec<BackupDynamicMemoryRun>,
+}
+
+/// A delete-after whose memory rewind is still owed, with the time it was
+/// recorded; owed rewinds finish oldest first.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackupPendingSuffixRewind {
+    pub pending: PendingSuffixRewind,
+    pub recorded_at: lettuce_types::TimestampMillis,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -52,6 +63,18 @@ impl DynamicMemoryBackup {
         self.pending_approvals
             .sort_by_key(|approval| approval.conversation_id);
         self.runs.sort_by_key(|entry| entry.run.id);
+        self.pending_suffix_rewinds.sort_by(|left, right| {
+            (
+                left.recorded_at,
+                left.pending.tombstone.conversation_id,
+                left.pending.tombstone.operation.key.as_str(),
+            )
+                .cmp(&(
+                    right.recorded_at,
+                    right.pending.tombstone.conversation_id,
+                    right.pending.tombstone.operation.key.as_str(),
+                ))
+        });
         let conversations = history
             .conversations
             .iter()
@@ -105,6 +128,23 @@ impl DynamicMemoryBackup {
                 || !approval_ids.insert(approval.conversation_id)
                 || approval.prompted_message_count == 0
                 || approval.pending == approval.skipped
+            {
+                return Err(DynamicMemoryBackupError::InvalidData);
+            }
+        }
+        let mut owed_keys = BTreeSet::new();
+        for owed in &self.pending_suffix_rewinds {
+            let tombstone = &owed.pending.tombstone;
+            let removed = messages.get(&tombstone.message_id);
+            if !owed_keys.insert((
+                tombstone.conversation_id,
+                tombstone.operation.key.as_str().to_owned(),
+            )) || owed.pending.summary_message_interval == 0
+                || tombstone.descendants != lettuce_conversations::DescendantPolicy::Tombstone
+                || removed.is_none_or(|(conversation_id, _, _)| {
+                    *conversation_id != tombstone.conversation_id
+                })
+                || !messages.contains_key(&owed.pending.after_message_id)
             {
                 return Err(DynamicMemoryBackupError::InvalidData);
             }

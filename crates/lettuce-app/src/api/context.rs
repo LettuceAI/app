@@ -242,6 +242,11 @@ impl ApiContext {
     }
 
     #[must_use]
+    #[cfg(test)]
+    pub(super) fn shared_backend(&self) -> Arc<AppBackend> {
+        Arc::clone(&self.inner.parts.backend)
+    }
+
     pub fn backend(&self) -> &AppBackend {
         &self.inner.parts.backend
     }

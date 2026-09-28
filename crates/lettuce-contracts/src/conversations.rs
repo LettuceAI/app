@@ -105,6 +105,8 @@ pub struct ConversationSummary {
     pub chat_mode: Option<GroupChatMode>,
     /// Optional models the chat needs that are not installed.
     pub missing_models: Vec<crate::RequiredModel>,
+    /// Why the chat's dynamic memory is stopped, when it is.
+    pub memory_blocked: Option<MemoryBlockedReason>,
 }
 
 /// Conversations, most recently updated first.
@@ -197,15 +199,290 @@ pub struct ConversationView {
     pub chat_mode: Option<GroupChatMode>,
     /// Optional models the chat needs that are not installed.
     pub missing_models: Vec<crate::RequiredModel>,
+    /// Why the chat's dynamic memory is stopped, when it is.
+    pub memory_blocked: Option<MemoryBlockedReason>,
 }
 
+/// Why a chat's dynamic memory does not run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum MemoryBlockedReason {
+    OwedRewindFailed { code: MemoryRewindFailureCode },
+}
+
+/// Why the memory rewind a delete owes could not finish.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryRewindFailureCode {
+    Conflict,
+    Inconsistent,
+    Storage,
+    Other,
+}
+
+/// Asks for the memory rewind a chat owes to be finished now.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MemoryRewindRetryRequest {
+    pub conversation_id: String,
+}
+
+/// What a retry of an owed memory rewind did.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum MemoryRewindRetryOutcome {
+    NothingOwed,
+    Completed,
+    StillFailing { code: MemoryRewindFailureCode },
+}
+
+/// A page of the selected branch: without cursors the newest messages,
+/// with `before_cursor` older ones, with `after_cursor` newer ones (at most
+/// one cursor).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct ConversationMessagesRequest {
     pub conversation_id: String,
     pub before_cursor: Option<String>,
+    #[serde(default)]
+    pub after_cursor: Option<String>,
     pub limit: Option<u32>,
+}
+
+/// Messages around one message of the selected branch, for jumping to it:
+/// up to `before` older messages, the message and up to `after` newer ones.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct ConversationMessagesAroundRequest {
+    pub conversation_id: String,
+    pub message_id: String,
+    pub before: u32,
+    pub after: u32,
+}
+
+/// Visible messages in conversation order, oldest first. `before_cursor`
+/// continues with older messages and `after_cursor` with newer ones, as
+/// `ConversationMessagesRequest` cursors; none means that side is done.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MessageWindow {
+    pub items: Vec<TimelineMessage>,
+    pub before_cursor: Option<String>,
+    pub after_cursor: Option<String>,
+}
+
+/// Edits a message's text. `keep_media` names the attachments it keeps; an
+/// edit can remove attachments, never add them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MessageEditRequest {
+    pub conversation_id: String,
+    pub message_id: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub expected_revision: u64,
+    /// Trimmed; blank is refused.
+    pub text: String,
+    pub keep_media: Vec<String>,
+    /// Idempotency key: repeating the call with the same key and request
+    /// returns the first result; another request under the key is
+    /// `Conflict`.
+    pub client_operation_id: String,
+}
+
+/// Names one message for a delete or a delete of everything after it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MessageDeleteRequest {
+    pub conversation_id: String,
+    pub message_id: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub expected_revision: u64,
+    pub client_operation_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MessagePinRequest {
+    pub conversation_id: String,
+    pub message_id: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub expected_revision: u64,
+    pub pinned: bool,
+    pub client_operation_id: String,
+}
+
+/// Shows another reply variant of a message.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MessageCandidateSelectRequest {
+    pub conversation_id: String,
+    pub message_id: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub expected_revision: u64,
+    pub candidate_id: String,
+    pub client_operation_id: String,
+}
+
+/// Switches a one-to-one chat's starting scene from its scene message: the
+/// chat's scene setting and the message's text both change.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MessageSceneSelectRequest {
+    pub conversation_id: String,
+    pub message_id: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub expected_revision: u64,
+    pub scene_id: String,
+    pub client_operation_id: String,
+}
+
+/// A changed message as the chat shows it and the conversation revision the
+/// change left.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MessageChanged {
+    pub message: TimelineMessage,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub revision: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum MessagesDeleteOutcome {
+    Tombstoned { removed: Vec<String> },
+    Branched { branch_id: String },
+}
+
+/// The outcome of a delete-after and the conversation revision it left.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MessagesDeleteResult {
+    pub outcome: MessagesDeleteOutcome,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub revision: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MessageHistoryRequest {
+    pub message_id: String,
+    pub cursor: Option<String>,
+}
+
+/// One saved version of a message's content, oldest first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MessageRevisionView {
+    pub id: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub sequence: u64,
+    pub parts: Vec<MessagePartView>,
+    pub reasoning: Option<String>,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub authored_at: i64,
+    /// The reply variant this edit rewrote.
+    pub supersedes_candidate_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MessageRevisionPage {
+    pub items: Vec<MessageRevisionView>,
+    pub next_cursor: Option<String>,
+}
+
+/// One generated reply variant as it was generated, in variant order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MessageCandidateView {
+    pub id: String,
+    pub index: u16,
+    pub author_participant_id: Option<String>,
+    pub parts: Vec<MessagePartView>,
+    pub reasoning: Option<String>,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MessageCandidatePage {
+    pub items: Vec<MessageCandidateView>,
+    pub next_cursor: Option<String>,
+}
+
+/// Searches the selected branch's visible messages. The query is trimmed;
+/// an empty one finds nothing.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct ConversationSearchRequest {
+    pub conversation_id: String,
+    pub query: String,
+    pub cursor: Option<String>,
+    pub limit: Option<u32>,
+}
+
+/// A message whose shown text contains the query, ignoring case.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct SearchHit {
+    pub message_id: String,
+    pub role: MessageRole,
+    /// The speaker in a group chat.
+    pub author_participant_id: Option<String>,
+    pub text: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub created_at: i64,
+}
+
+/// Search hits oldest first; `next_cursor` continues with later hits.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct SearchHitPage {
+    pub items: Vec<SearchHit>,
+    pub next_cursor: Option<String>,
+}
+
+/// The pinned visible messages of the selected branch, oldest first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct ConversationPinnedMessagesRequest {
+    pub conversation_id: String,
+    pub cursor: Option<String>,
+    pub limit: Option<u32>,
+}
+
+/// Visible messages on the selected branch, system notes excluded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MessageCount {
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub count: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -234,7 +511,8 @@ pub struct TimelineMessage {
 }
 
 /// One page of visible messages in conversation order, oldest first;
-/// `next_cursor` loads the page before it.
+/// `next_cursor` loads the page before it, or after it for a page read with
+/// `after_cursor` or a pinned-message page.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
