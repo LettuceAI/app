@@ -214,8 +214,13 @@ where
             ImageGenerationCoordinator::new(self.repository, self.repository)
                 .admit(request, self.repository)
                 .map(|admission| admission.job)
-                .map_err(|error| {
-                    SceneFollowUpError::Image(SceneImageError::Generation(error.to_string()))
+                .map_err(|error| match error {
+                    crate::ImageGenerationError::Models(_)
+                    | crate::ImageGenerationError::Repository(_)
+                    | crate::ImageGenerationError::Jobs(_)
+                    | crate::ImageGenerationError::Usage
+                    | crate::ImageGenerationError::LoraLibrary(_) => SceneFollowUpError::Storage,
+                    _ => SceneFollowUpError::Image(SceneImageError::Generation(error.to_string())),
                 })
         });
         match built {
@@ -421,10 +426,22 @@ where
                         SceneFollowUpError::Image(error) => failure_label(error),
                         _ => labels::SCENE_IMAGE_FAILED,
                     };
-                    if let Err(storage) = self.fail(&follow_up, label, now) {
-                        failure.get_or_insert(storage);
+                    match self.fail(&follow_up, label, now) {
+                        Ok(_) => changed += 1,
+                        Err(storage) => {
+                            failure.get_or_insert(storage);
+                        }
                     }
-                    failure.get_or_insert(error);
+                    if matches!(
+                        error,
+                        SceneFollowUpError::Storage
+                            | SceneFollowUpError::Image(
+                                SceneImageError::Storage
+                                    | SceneImageError::Model(ImageFeatureModelError::Storage)
+                            )
+                    ) {
+                        failure.get_or_insert(error);
+                    }
                 }
             }
         }

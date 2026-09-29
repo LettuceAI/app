@@ -292,11 +292,9 @@ async fn the_snapshot_shows_what_was_assembled_even_after_the_character_changes(
         .expect("character section");
     assert_eq!(character.label.as_deref(), Some("Ada"));
     assert!(character.estimated_tokens > 0);
-    assert!(
-        sections
-            .iter()
-            .any(|section| section.kind == dto::PromptSectionKind::PromptEntry)
-    );
+    assert!(sections.iter().any(
+        |section| section.kind == dto::PromptSectionKind::PromptEntry && section.label.is_some()
+    ));
     assert!(before.sections_unavailable.is_none());
     assert_eq!(
         sections
@@ -682,4 +680,156 @@ async fn settled_companion_effect(retry: bool) {
     .await
     .expect("effect of a user message");
     assert_eq!(none, None);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn regeneration_guidance_breakdown_matches_dispatched_direct_and_group_content() {
+    for group in [true, false] {
+        let harness = harness(Reply::Text("Hello."));
+        let (chat, reply, character, speaker) = if group {
+            let cast = group_cast(&harness, "guidance-accounting").await;
+            send(&harness, &cast.chat, "guidance-send", "Hi", stream())
+                .await
+                .expect("send");
+            run_generation(&harness).await;
+            let view = open(&harness, &cast.chat).await;
+            let reply = view
+                .messages
+                .items
+                .iter()
+                .find(|item| item.role == dto::MessageRole::Assistant)
+                .expect("reply")
+                .id
+                .clone();
+            (
+                cast.chat,
+                reply,
+                cast.ada_character,
+                Some(cast.ada.to_string()),
+            )
+        } else {
+            let (chat, reply) = replied_chat(&harness, "direct-guidance-accounting").await;
+            (chat, reply, harness.character_id, None)
+        };
+        let database = harness.context.backend().database();
+        let details = CharacterRepository::get(database, character)
+            .expect("character")
+            .expect("exists");
+        let mut profile = details.character.profile;
+        let name = "A".repeat(33);
+        profile.name = name.clone();
+        CharacterRepository::revise_profile(
+            database,
+            character,
+            details.character.revision,
+            profile,
+            harness.context.now(),
+        )
+        .expect("rename");
+        let mut request = regenerate_request(&harness, &chat, &reply, "guidance-regenerate");
+        request.guidance = Some("{{char}}".into());
+        request.forced_speaker_participant_id = speaker;
+        conversation_regenerate(&harness.context, request, stream())
+            .await
+            .expect("regenerate");
+        run_generation(&harness).await;
+        let stored = snapshot(&harness, &reply)
+            .await
+            .expect("new dispatch snapshot");
+        assert_eq!(stored.operation, dto::PromptOperation::Regenerate);
+        let instruction = stored
+            .messages
+            .iter()
+            .map(text_of)
+            .find(|text| text.contains("[REGENERATE INSTRUCTION]"))
+            .expect("guidance instruction");
+        assert!(instruction.ends_with(if group { "{{char}}" } else { &name }));
+        assert_eq!(
+            stored
+                .sections
+                .expect("sections")
+                .iter()
+                .map(|section| section.estimated_tokens)
+                .sum::<u32>(),
+            stored.budget.estimated_input_tokens
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_snapshot_preserves_distinct_lore_titles_for_identical_placed_contents() {
+    use lettuce_context::{CharacterLorebookBindingRepository, LorebookRepository};
+    let harness = harness(Reply::Text("Hello."));
+    let database = harness.context.backend().database();
+    let book = LorebookRepository::create(
+        database,
+        lettuce_context::LorebookMetadataDraft {
+            name: "Shared content".into(),
+            detection_policy: lettuce_context::DetectionPolicy::RecentMessageWindow,
+            icon_asset_id: None,
+            behavior_version: lettuce_context::LorebookBehaviorVersion::LegacyV1,
+        },
+        [("First", true), ("Second", true), ("Disabled", false)]
+            .into_iter()
+            .map(|(title, enabled)| lettuce_context::LorebookEntryDraft {
+                title: title.into(),
+                enabled,
+                always_active: true,
+                keywords: Vec::new(),
+                case_sensitive: false,
+                match_mode: lettuce_context::KeywordMatchMode::Literal,
+                content: "  same {{char}}  ".into(),
+                priority: 0,
+            })
+            .collect(),
+        harness.context.now(),
+    )
+    .expect("lorebook");
+    let revision = CharacterRepository::get(database, harness.character_id)
+        .expect("character")
+        .expect("exists")
+        .character
+        .revision;
+    CharacterLorebookBindingRepository::bind_character_lorebook(
+        database,
+        harness.character_id,
+        revision,
+        lettuce_context::LorebookBindingCreate {
+            lorebook_id: book.book.id,
+            target: lettuce_context::BindingInsertionTarget::Append,
+        },
+        harness.context.now(),
+    )
+    .expect("bind");
+    let (_, reply) = replied_chat(&harness, "identical-lore-breakdown").await;
+    let stored = snapshot(&harness, &reply).await.expect("snapshot");
+    assert!(
+        stored
+            .messages
+            .iter()
+            .map(text_of)
+            .any(|text| text.contains("same Ada\n\nsame Ada"))
+    );
+    let sections = stored.sections.expect("sections");
+    assert_eq!(
+        sections
+            .iter()
+            .filter(|section| section.kind == dto::PromptSectionKind::Lorebook)
+            .map(|section| section.label.as_deref())
+            .collect::<Vec<_>>(),
+        vec![Some("First"), Some("Second")]
+    );
+    assert!(
+        sections
+            .iter()
+            .filter(|section| section.kind == dto::PromptSectionKind::PromptEntry)
+            .all(|section| section.label.is_some())
+    );
+    assert_eq!(
+        sections
+            .iter()
+            .map(|section| section.estimated_tokens)
+            .sum::<u32>(),
+        stored.budget.estimated_input_tokens
+    );
 }

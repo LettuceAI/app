@@ -501,3 +501,77 @@ async fn two_text_handlers_cannot_own_the_same_stream_or_provider_call() {
         .expect("exists");
     assert_eq!(ended.state, lettuce_jobs::JobState::Succeeded);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn generic_feature_details_and_receipts_round_trip_with_populated_backup() {
+    let harness = harness(Reply::Text("Draft."));
+    let (chat, _) = replied_chat(&harness, "generic-backup").await;
+    let input = request(&chat, "generic-backup-job");
+    let accepted = conversation_help_me_reply(&harness.context, input.clone())
+        .await
+        .expect("admit");
+    run_jobs(&harness).await;
+    use lettuce_conversations::{ConversationArtifactTransferPort, TrustedArtifactDescriptor};
+    use lettuce_transfer::{ProviderBackupRestoreWriter, ProviderBackupSource};
+    let database = harness.context.backend().database();
+    let mut graph = database.read_provider_backup_graph().expect("export graph");
+    lettuce_transfer::canonicalize_and_validate(&mut graph).expect("canonical graph");
+    let artifacts = lettuce_transfer::provider_backup_artifact_requirements(&graph)
+        .expect("artifact requirements")
+        .into_iter()
+        .map(|descriptor| {
+            let mut sink = BackupBytes(Vec::new());
+            match &descriptor {
+                TrustedArtifactDescriptor::Snapshot(reference) => {
+                    database.export_snapshot(reference.artifact_id, &mut sink)
+                }
+                TrustedArtifactDescriptor::Replay(reference) => {
+                    database.export_replay(reference.artifact_id, &mut sink)
+                }
+            }
+            .expect("export artifact");
+            lettuce_transfer::BackupConversationArtifact {
+                descriptor,
+                bytes: zeroize::Zeroizing::new(sink.0),
+            }
+        })
+        .collect::<Vec<_>>();
+    let restored = lettuce_database::Database::open_in_memory().expect("restore target");
+    restored
+        .restore_provider_backup_graph(&graph, &artifacts)
+        .expect("restore graph");
+    let mut round_trip = restored
+        .read_provider_backup_graph()
+        .expect("restored graph");
+    lettuce_transfer::canonicalize_and_validate(&mut round_trip).expect("canonical restored graph");
+    assert_eq!(round_trip, graph);
+    assert_eq!(graph.job_backup.job_details.len(), 1);
+    assert_eq!(graph.job_backup.job_operations.len(), 1);
+    assert!(graph.job_backup.local_model_jobs.is_empty());
+    let restarted = harness.context.restarted();
+    restarted.recover_after_restart().expect("recover");
+    assert_eq!(
+        conversation_help_me_reply(&restarted, input)
+            .await
+            .expect("replay"),
+        accepted
+    );
+}
+
+struct BackupBytes(Vec<u8>);
+
+impl lettuce_conversations::TrustedArtifactSink for BackupBytes {
+    fn begin(
+        &mut self,
+        _: &lettuce_conversations::TrustedArtifactDescriptor,
+    ) -> Result<(), lettuce_conversations::ArtifactTransferError> {
+        Ok(())
+    }
+    fn chunk(&mut self, bytes: &[u8]) -> Result<(), lettuce_conversations::ArtifactTransferError> {
+        self.0.extend_from_slice(bytes);
+        Ok(())
+    }
+    fn finish(&mut self) -> Result<(), lettuce_conversations::ArtifactTransferError> {
+        Ok(())
+    }
+}

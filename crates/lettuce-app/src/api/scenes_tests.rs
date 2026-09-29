@@ -884,3 +884,202 @@ async fn a_broken_deferred_scene_does_not_block_other_completions_or_events() {
     assert_eq!(media_count(&reply_of(context, &chat, &reply).await), 1);
     assert!(api_events(&scene.harness).iter().any(|event| matches!(event, ApiEvent::ConversationChanged { conversation_id } if conversation_id == &chat)));
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_recorded_scene_feature_failure_does_not_abort_startup() {
+    let scene = scene_harness(
+        Reply::Text(TAGGED),
+        vec![Outcome::Image],
+        SceneGenerationMode::AskFirst,
+    );
+    let context = &scene.harness.context;
+    let (broken_chat, broken_reply) =
+        reply_with_scene(&scene.harness, "startup-disabled-scene").await;
+    let (_, target) = super::scenes::scene_target(context, broken_reply.parse().expect("message"))
+        .expect("target");
+    context
+        .backend()
+        .database()
+        .change_follow_up(
+            broken_chat.parse().expect("chat"),
+            target,
+            &[SceneFollowUpState::Pending],
+            &lettuce_conversations::SceneFollowUpChange {
+                mode: Some(lettuce_conversations::SceneFollowUpMode::Auto),
+                ..Default::default()
+            },
+            context.now(),
+        )
+        .expect("auto follow-up before admission");
+    let (chat, reply) = reply_with_scene(&scene.harness, "startup-healthy-scene").await;
+    message_scene_image_approve(context, approve(&reply, None))
+        .await
+        .expect("admit healthy image");
+    conversation_continue(
+        context,
+        super::turns_tests::continue_request(&scene.harness, &chat, "startup-healthy-continue"),
+        Arc::new(RecordingStream::default()),
+    )
+    .await
+    .expect("continue");
+    run_jobs(context).await;
+    assert_eq!(
+        follow_up_state(context, &chat, &reply),
+        Some(SceneFollowUpState::AwaitingTurn)
+    );
+    ConversationGenerationWorker::new(context.clone())
+        .run_once()
+        .await
+        .expect("finish turn");
+    let database = context.backend().database();
+    let stored = GlobalSettingsStore::load(database).expect("settings");
+    let mut settings = stored.settings;
+    settings.image_generation.scene_enabled = false;
+    GlobalSettingsStore::save(
+        database,
+        settings,
+        stored.default_model_profile_id,
+        stored.revision,
+    )
+    .expect("disable scenes");
+    let restarted = context.restarted();
+    let workers = startup(&restarted)
+        .await
+        .expect("start workers despite recorded scene failure");
+    workers.started().await;
+    assert!(workers.steps().contains(&StartupStep::StartWorkers));
+    let failed = reply_of(&restarted, &broken_chat, &broken_reply)
+        .await
+        .scene_image
+        .expect("failed scene");
+    assert_eq!(failed.state, dto::SceneImageState::Failed);
+    assert_eq!(failed.failure, Some(dto::SceneImageFailure::Disabled));
+    workers.stop().await;
+    restarted.recover_after_restart().expect("repeat recovery");
+    assert_eq!(
+        follow_up_state(&restarted, &chat, &reply),
+        Some(SceneFollowUpState::Done)
+    );
+    assert_eq!(scene.images.calls(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn deferred_completion_keeps_a_newly_selected_candidate_and_preserves_the_old_image() {
+    let scene = scene_harness(
+        Reply::Text(TAGGED),
+        vec![Outcome::Image],
+        SceneGenerationMode::AskFirst,
+    );
+    let context = &scene.harness.context;
+    let (chat, reply) = reply_with_scene(&scene.harness, "deferred-switch").await;
+    let (_, target) =
+        super::scenes::scene_target(context, reply.parse().expect("message")).expect("target");
+    let lettuce_conversations::SceneFollowUpTarget::Candidate(old_candidate) = target else {
+        panic!("candidate")
+    };
+    message_scene_image_approve(context, approve(&reply, None))
+        .await
+        .expect("approve original image");
+    conversation_regenerate(
+        context,
+        super::turns_tests::regenerate_request(
+            &scene.harness,
+            &chat,
+            &reply,
+            "deferred-switch-regenerate",
+        ),
+        Arc::new(RecordingStream::default()),
+    )
+    .await
+    .expect("regenerate");
+    run_jobs(context).await;
+    assert_eq!(
+        follow_up_state(context, &chat, &reply),
+        Some(SceneFollowUpState::AwaitingTurn)
+    );
+    ConversationGenerationWorker::new(context.clone())
+        .run_once()
+        .await
+        .expect("new candidate");
+    let before = reply_of(context, &chat, &reply).await;
+    assert_eq!(media_count(&before), 0);
+    let mut feed = super::conversation_feed::ConversationFeed::start(context)
+        .await
+        .expect("feed");
+    feed.publish(context)
+        .await
+        .expect("complete original image");
+    assert_eq!(reply_of(context, &chat, &reply).await, before);
+    message_candidate_select(
+        context,
+        dto::MessageCandidateSelectRequest {
+            conversation_id: chat.clone(),
+            message_id: reply.clone(),
+            candidate_id: old_candidate.to_string(),
+            expected_revision: super::turns_tests::conversation(&scene.harness, &chat)
+                .revision
+                .get(),
+            client_operation_id: "select-original-image".into(),
+        },
+    )
+    .await
+    .expect("select original");
+    assert_eq!(media_count(&reply_of(context, &chat, &reply).await), 1);
+    feed.publish(context).await.expect("repeat completion");
+    assert_eq!(media_count(&reply_of(context, &chat, &reply).await), 1);
+    assert_eq!(scene.images.calls(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_deferred_scene_completes_after_empty_regeneration_cancellation() {
+    let scene = scene_harness(
+        Reply::Text(TAGGED),
+        vec![Outcome::Image],
+        SceneGenerationMode::AskFirst,
+    );
+    let context = &scene.harness.context;
+    let (chat, reply) = reply_with_scene(&scene.harness, "deferred-empty-cancel").await;
+    message_scene_image_approve(context, approve(&reply, None))
+        .await
+        .expect("approve image");
+    let accepted = conversation_regenerate(
+        context,
+        super::turns_tests::regenerate_request(
+            &scene.harness,
+            &chat,
+            &reply,
+            "deferred-empty-regenerate",
+        ),
+        Arc::new(RecordingStream::default()),
+    )
+    .await
+    .expect("regenerate");
+    run_jobs(context).await;
+    assert_eq!(
+        follow_up_state(context, &chat, &reply),
+        Some(SceneFollowUpState::AwaitingTurn)
+    );
+    generation_cancel(
+        context,
+        dto::GenerationCancelRequest {
+            turn_id: accepted.turn_id,
+        },
+    )
+    .await
+    .expect("cancel before output");
+    let mut feed = super::conversation_feed::ConversationFeed::start(context)
+        .await
+        .expect("feed");
+    feed.publish(context).await.expect("complete after cancel");
+    assert_eq!(
+        follow_up_state(context, &chat, &reply),
+        Some(SceneFollowUpState::Done)
+    );
+    assert_eq!(media_count(&reply_of(context, &chat, &reply).await), 1);
+    context
+        .restarted()
+        .recover_after_restart()
+        .expect("recover without replay");
+    assert_eq!(media_count(&reply_of(context, &chat, &reply).await), 1);
+    assert_eq!(scene.images.calls(), 1);
+}

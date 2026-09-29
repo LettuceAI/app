@@ -205,10 +205,20 @@ pub fn ensure_group_members(
     conversation_id: ConversationId,
     now: TimestampMillis,
 ) -> Result<Option<Revision>, ConversationEditError> {
-    let revision = ConversationReader::get(database, conversation_id)?
-        .conversation
-        .revision;
-    ensure_group_members_at(database, conversation_id, revision, now)
+    let mut attempt = 0;
+    loop {
+        attempt += 1;
+        let revision = ConversationReader::get(database, conversation_id)?
+            .conversation
+            .revision;
+        match ensure_group_members_at(database, conversation_id, revision, now) {
+            Err(ConversationEditError::Conversation(
+                ConversationRepositoryError::Conflict
+                | ConversationRepositoryError::StaleRevision { .. },
+            )) if attempt < REVISION_RETRIES => {}
+            result => return result,
+        }
+    }
 }
 
 pub(crate) fn ensure_group_members_at(

@@ -311,6 +311,7 @@ where
         runtime_values.author_note = runtime_values.author_note.trim().to_owned();
         runtime_values.context_summary = memory_summary.clone();
         runtime_values.key_memories = key_lines.clone();
+        let runtime_lore_sources = lore_sources(&lore_entries, &runtime_values, group);
         resolve_substituted_values(&mut runtime_values, group);
         let mut sections = Vec::new();
         let names = PromptRenderValues {
@@ -336,9 +337,13 @@ where
                 conditions: conditions.clone(),
                 values: runtime_values,
             },
+            direct,
+            runtime_lore_sources,
         )?;
 
-        let (prompt, rendered_prompt) = if let Some(document) = snapshot.prompt.as_ref() {
+        let (prompt, rendered_prompt, prompt_lore_sources) = if let Some(document) =
+            snapshot.prompt.as_ref()
+        {
             let mut values = prompt_values(
                 &aggregate,
                 &snapshot,
@@ -390,6 +395,7 @@ where
                     .purpose_values
                     .insert(PromptVariable::GroupCharacters, list);
             }
+            let prompt_lore_sources = lore_sources(&lore_entries, &values, group);
             resolve_substituted_values(&mut values, group);
             let without_scene;
             let rendered_document = if direct
@@ -417,9 +423,9 @@ where
                     tracing::warn!(?error, "prompt snapshot rendering failed");
                     ContextAssemblyError::PromptRender
                 })?;
-            (Some(document), rendered)
+            (Some(document), rendered, prompt_lore_sources)
         } else {
-            (None, Default::default())
+            (None, Default::default(), Vec::new())
         };
 
         for message in rendered_prompt
@@ -427,7 +433,21 @@ where
             .iter()
             .chain(&rendered_prompt.in_chat)
         {
-            sections.extend(rendered_sources(message, &names));
+            let label = prompt
+                .and_then(|document| {
+                    document
+                        .entries
+                        .iter()
+                        .find(|entry| entry.id == message.entry_id)
+                })
+                .map(|entry| entry.name.as_str());
+            sections.extend(rendered_sources(
+                message,
+                &names,
+                direct,
+                label,
+                &prompt_lore_sources,
+            ));
         }
         let (mut messages, in_chat) = prompt_messages(&rendered_prompt)?;
         let mut placement = Placement {
@@ -1080,6 +1100,8 @@ struct RuntimeSection {
 /// which of its sections a turn injects; their text, role and placement come
 /// from the catalog document, so a user edit or disabled entry is honored.
 struct RuntimeSections {
+    direct: bool,
+    lore_sources: Vec<LoreSource>,
     names: PromptRenderValues,
     text: crate::generation::runtime_text::RuntimeText,
     rendered: RenderedPrompt,
@@ -1089,6 +1111,8 @@ impl RuntimeSections {
     fn render<S: PromptRepository + ?Sized>(
         sources: &S,
         context: &PromptRenderContext,
+        direct: bool,
+        lore_sources: Vec<LoreSource>,
     ) -> Result<Self, ContextAssemblyError> {
         let text = crate::generation::runtime_text::RuntimeText::load(
             sources,
@@ -1100,6 +1124,8 @@ impl RuntimeSections {
             ContextAssemblyError::PromptRender
         })?;
         Ok(Self {
+            direct,
+            lore_sources,
             names: context.values.clone(),
             text,
             rendered,
@@ -1142,7 +1168,18 @@ impl RuntimeSections {
         })?;
         let provider_message = rendered_message(message).ok()?;
         Some(RuntimeSection {
-            sources: rendered_sources(message, &self.names),
+            sources: rendered_sources(
+                message,
+                &self.names,
+                self.direct,
+                self.text
+                    .document()
+                    .entries
+                    .iter()
+                    .find(|entry| entry.id == entry_id)
+                    .map(|entry| entry.name.as_str()),
+                &self.lore_sources,
+            ),
             text: message.content.trim().to_owned(),
             message: provider_message,
             depth,
@@ -2889,22 +2926,85 @@ struct SectionSource {
     bytes: usize,
 }
 
+struct LoreSource {
+    title: String,
+    start: usize,
+    end: usize,
+}
+
+fn lore_sources(
+    entries: &[ResolvedLorebookEntry],
+    values: &PromptRenderValues,
+    group: bool,
+) -> Vec<LoreSource> {
+    let mut offset = 0;
+    let mut sources = Vec::new();
+    for entry in entries {
+        let content = entry.entry.content.trim();
+        if content.is_empty() {
+            continue;
+        }
+        if !sources.is_empty() {
+            offset += 2;
+        }
+        let text = if group {
+            values.resolve_names(content)
+        } else {
+            values.resolve_identity(content)
+        };
+        let start = offset;
+        offset += text.len();
+        sources.push(LoreSource {
+            title: entry.entry.title.clone(),
+            start,
+            end: offset,
+        });
+    }
+    sources
+}
+
 fn rendered_sources(
     message: &lettuce_context::RenderedPromptMessage,
     names: &PromptRenderValues,
+    direct: bool,
+    entry_name: Option<&str>,
+    lore_sources: &[LoreSource],
 ) -> Vec<SectionSource> {
+    let final_bytes = |text: &str| {
+        if direct {
+            names.resolve_names(text).len()
+        } else {
+            text.len()
+        }
+    };
     let mut sources = Vec::new();
     let mut substituted = 0;
+    let trim_start = message.content.len() - message.content.trim_start().len();
+    let trim_end = message.content.trim_end().len();
     for value in &message.substitutions {
-        let trim_start = message.content.len() - message.content.trim_start().len();
-        let trim_end = message.content.trim_end().len();
         let start = value.start.max(trim_start);
         let end = value.end.min(trim_end);
         if start >= end {
             continue;
         }
-        let text = names.resolve_names(&message.content[start..end]);
-        substituted += text.len();
+        if value.placeholder == "{{lorebook}}" {
+            for lore in lore_sources {
+                let lore_start = (value.start + lore.start).max(start);
+                let lore_end = (value.start + lore.end).min(end);
+                if lore_start < lore_end {
+                    let bytes = final_bytes(&message.content[lore_start..lore_end]);
+                    substituted += bytes;
+                    sources.push(SectionSource {
+                        kind: ContextSectionKind::Lorebook,
+                        label: Some(lore.title.clone()),
+                        bytes,
+                    });
+                }
+            }
+            continue;
+        }
+        let bytes = final_bytes(&message.content[start..end]);
+        substituted += bytes;
         let kind = match value.placeholder.as_str() {
             "{{char.desc}}" | "{{ai_description}}" => ContextSectionKind::Character,
             "{{persona.desc}}"
@@ -2912,7 +3012,6 @@ fn rendered_sources(
             | "{{user.desc}}"
             | "{{user_description}}" => ContextSectionKind::Persona,
             "{{scene}}" | "{{scene_direction}}" => ContextSectionKind::Scene,
-            "{{lorebook}}" => ContextSectionKind::Lorebook,
             "{{context_summary}}"
             | "{{memory_summary}}"
             | "{{key_memories}}"
@@ -2930,22 +3029,16 @@ fn rendered_sources(
             ContextSectionKind::Persona if !names.persona_name.is_empty() => {
                 Some(names.persona_name.clone())
             }
+            ContextSectionKind::PromptEntry => entry_name.map(str::to_owned),
             _ => None,
         };
-        sources.push(SectionSource {
-            kind,
-            label,
-            bytes: text.len(),
-        });
+        sources.push(SectionSource { kind, label, bytes });
     }
-    let bytes = names
-        .resolve_names(message.content.trim())
-        .len()
-        .saturating_sub(substituted);
+    let bytes = final_bytes(message.content.trim()).saturating_sub(substituted);
     if bytes > 0 {
         sources.push(SectionSource {
             kind: ContextSectionKind::PromptEntry,
-            label: None,
+            label: entry_name.map(str::to_owned),
             bytes,
         });
     }
@@ -3086,7 +3179,7 @@ mod tests {
             persona_description: "same".into(),
             ..PromptRenderValues::default()
         };
-        let sources = rendered_sources(&entry, &values);
+        let sources = rendered_sources(&entry, &values, true, Some("Entry"), &[]);
         assert_eq!(sources.len(), 1);
         assert_eq!(sources[0].kind, ContextSectionKind::Persona);
         assert_eq!(sources[0].bytes, 4);
@@ -3094,9 +3187,64 @@ mod tests {
             substitutions: Vec::new(),
             ..entry
         };
-        let sources = rendered_sources(&literal, &values);
+        let sources = rendered_sources(&literal, &values, true, Some("Entry"), &[]);
         assert_eq!(sources.len(), 1);
         assert_eq!(sources[0].kind, ContextSectionKind::PromptEntry);
+    }
+
+    #[test]
+    fn identical_lore_contents_keep_individual_titles_only_when_placed() {
+        let entry = lettuce_context::RenderedPromptMessage {
+            entry_id: PromptEntryId::new(),
+            role: PromptEntryRole::System,
+            content: "  same\n\nsame  ".into(),
+            depth: 0,
+            payload: None,
+            substitutions: vec![lettuce_context::PromptSubstitution {
+                placeholder: "{{lorebook}}".into(),
+                text: "same\n\nsame".into(),
+                start: 2,
+                end: 12,
+            }],
+        };
+        let lore = vec![
+            LoreSource {
+                title: "First".into(),
+                start: 0,
+                end: 4,
+            },
+            LoreSource {
+                title: "Second".into(),
+                start: 6,
+                end: 10,
+            },
+        ];
+        let values = PromptRenderValues::default();
+        let sources = rendered_sources(&entry, &values, false, Some("Lore rules"), &lore);
+        assert_eq!(sources.iter().map(|source| source.bytes).sum::<usize>(), 10);
+        assert_eq!(
+            sources
+                .iter()
+                .filter(|source| source.kind == ContextSectionKind::Lorebook)
+                .map(|source| (source.label.as_deref(), source.bytes))
+                .collect::<Vec<_>>(),
+            vec![(Some("First"), 4), (Some("Second"), 4)]
+        );
+        assert_eq!(
+            sources.last().expect("separator").label.as_deref(),
+            Some("Lore rules")
+        );
+        let literal = lettuce_context::RenderedPromptMessage {
+            substitutions: Vec::new(),
+            ..entry
+        };
+        let sources = rendered_sources(&literal, &values, false, Some("Literal rules"), &lore);
+        assert!(
+            sources
+                .iter()
+                .all(|source| source.kind == ContextSectionKind::PromptEntry
+                    && source.label.as_deref() == Some("Literal rules"))
+        );
     }
 
     #[test]
