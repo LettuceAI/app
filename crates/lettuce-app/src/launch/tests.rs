@@ -14709,6 +14709,15 @@ async fn run_scene_job<M, P>(
 
 #[tokio::test]
 async fn scene_images_retry_a_missing_image_and_attach_to_the_rendered_message() {
+    starter_scene_image(false).await;
+}
+
+#[tokio::test]
+async fn a_starter_scene_image_does_not_overwrite_a_later_edit() {
+    starter_scene_image(true).await;
+}
+
+async fn starter_scene_image(edit_after_admission: bool) {
     use lettuce_media::LocalMediaBlobStore;
     use lettuce_models::CapabilityStatus;
     use lettuce_platform::{DirectorySnapshot, FilesystemAuthority, ManagedRoot};
@@ -14762,6 +14771,7 @@ async fn scene_images_retry_a_missing_image_and_attach_to_the_rendered_message()
     )
     .expect("timeline");
     let welcome = timeline.items.last().expect("welcome message");
+    let target = lettuce_conversations::SceneFollowUpTarget::StarterRevision(welcome.active_revision.as_ref().expect("starter revision").id);
     let store = LocalMediaBlobStore::new(
         authority.managed_files(),
         authority
@@ -14782,6 +14792,7 @@ async fn scene_images_retry_a_missing_image_and_attach_to_the_rendered_message()
         &database,
         conversation.id,
         welcome.message.id,
+        target,
         "  A harbor at dusk ",
         lettuce_conversations::SceneFollowUpMode::Manual,
         TimestampMillis::new(NOW.get() + 9),
@@ -14790,7 +14801,7 @@ async fn scene_images_retry_a_missing_image_and_attach_to_the_rendered_message()
     let (first, job) = follow_ups
         .start(
             conversation.id,
-            welcome.message.id,
+            target,
             &[lettuce_conversations::SceneFollowUpState::Pending],
             None,
             None,
@@ -14798,11 +14809,20 @@ async fn scene_images_retry_a_missing_image_and_attach_to_the_rendered_message()
         )
         .expect("start");
     assert_eq!(first.attempt, 1);
+    if edit_after_admission {
+        lettuce_conversations::ConversationRepository::edit_message(&database, &lettuce_conversations::EditMessage {
+            conversation_id: conversation.id, message_id: welcome.message.id,
+            expected_revision: ConversationReader::get(&database, conversation.id).expect("conversation").conversation.revision,
+            operation: crate::conversation::edit_operation("starter-later-edit".into(), &[b"edit"]).expect("token"),
+            draft: lettuce_conversations::MessageEditDraft { parts: vec![MessagePart::Text { text: "Later edit".into() }], visibility: lettuce_conversations::MessageVisibility::Visible, pinned: false, scene_edited: false },
+        }, TimestampMillis::new(NOW.get()+10)).expect("edit while image queued");
+    }
+
     run_scene_job(&database, &store, &provider, job.id, NOW.get() + 11).await;
     let retried = lettuce_conversations::SceneFollowUpRepository::get_follow_up(
         &database,
         conversation.id,
-        welcome.message.id,
+        target,
     )
     .expect("follow-up")
     .expect("exists");
@@ -14817,7 +14837,7 @@ async fn scene_images_retry_a_missing_image_and_attach_to_the_rendered_message()
     let done = lettuce_conversations::SceneFollowUpRepository::get_follow_up(
         &database,
         conversation.id,
-        welcome.message.id,
+        target,
     )
     .expect("follow-up")
     .expect("exists");
@@ -14837,6 +14857,12 @@ async fn scene_images_retry_a_missing_image_and_attach_to_the_rendered_message()
     .into_iter()
     .find(|item| item.message.id == welcome.message.id)
     .expect("welcome message");
+    if edit_after_admission {
+        assert_eq!(edited.active_revision.as_ref().expect("active edit").parts, vec![MessagePart::Text { text: "Later edit".into() }]);
+        let revisions = ConversationReader::page_message_revisions(&database, welcome.message.id, &lettuce_types::PageRequest::default()).expect("revision history");
+        let media = revisions.items.iter().flat_map(|revision| &revision.parts).filter(|part| matches!(part, MessagePart::MediaAsset { .. })).count();
+        assert_eq!(media, 1);
+    } else {
     let parts = &edited.active_revision.as_ref().expect("revision").parts;
     assert_eq!(
         parts[..parts.len() - 1],
@@ -14849,6 +14875,9 @@ async fn scene_images_retry_a_missing_image_and_attach_to_the_rendered_message()
             ..
         })
     ));
+    }
+    let record = lettuce_image_generation::ImageGenerationRepository::get(&database, second.id).expect("second record");
+    follow_ups.settle(&record, false, TimestampMillis::new(NOW.get()+13)).expect("repeat settlement");
 
     let refused = SceneImageProvider {
         outcomes: Mutex::new(VecDeque::from([Err(
@@ -14859,7 +14888,7 @@ async fn scene_images_retry_a_missing_image_and_attach_to_the_rendered_message()
     let (_, job) = follow_ups
         .start(
             conversation.id,
-            welcome.message.id,
+            target,
             &[lettuce_conversations::SceneFollowUpState::Done],
             Some("Rain"),
             None,
@@ -14870,7 +14899,7 @@ async fn scene_images_retry_a_missing_image_and_attach_to_the_rendered_message()
     let failed = lettuce_conversations::SceneFollowUpRepository::get_follow_up(
         &database,
         conversation.id,
-        welcome.message.id,
+        target,
     )
     .expect("follow-up")
     .expect("exists");

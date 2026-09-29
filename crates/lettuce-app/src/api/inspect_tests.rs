@@ -298,6 +298,14 @@ async fn the_snapshot_shows_what_was_assembled_even_after_the_character_changes(
             .any(|section| section.kind == dto::PromptSectionKind::PromptEntry)
     );
     assert!(before.sections_unavailable.is_none());
+    assert_eq!(
+        sections
+            .iter()
+            .map(|section| section.estimated_tokens)
+            .sum::<u32>(),
+        before.budget.estimated_input_tokens,
+        "only actually sent bytes count once"
+    );
     assert!(before.budget.estimated_input_tokens > 0);
     assert!(before.budget.selected_messages > 0);
     assert!(!before.model.external_model_id.is_empty());
@@ -408,6 +416,15 @@ async fn a_user_message_has_no_snapshot() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_settled_companion_effect_is_published_once_and_readable() {
+    settled_companion_effect(false).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_retried_companion_effect_is_applied_and_published_once() {
+    settled_companion_effect(true).await;
+}
+
+async fn settled_companion_effect(retry: bool) {
     let harness = harness_in(
         Reply::Text("Hello."),
         Arc::new(SystemClock),
@@ -476,9 +493,9 @@ async fn a_settled_companion_effect_is_published_once_and_readable() {
             &CancellationToken::new(),
         )
         .expect("companion send");
-    let turn_id = sent.value.turn.id;
+    let mut turn_id = sent.value.turn.id;
     let mut turn = sent.value.turn;
-    let attempt_id = sent.value.attempt.id;
+    let mut attempt_id = sent.value.attempt.id;
     let user_message_id = match &turn.input {
         lettuce_conversations::GenerationInput::UserMessage { message_id } => *message_id,
         _ => panic!("a send starts from a user message"),
@@ -486,6 +503,58 @@ async fn a_settled_companion_effect_is_published_once_and_readable() {
     let operation = |name: &str| {
         crate::conversation::edit_operation(name.into(), &[name.as_bytes()]).expect("token")
     };
+    if retry {
+        turn = database
+            .append_event(
+                turn_id,
+                turn.revision,
+                &operation("effect-failure-preparing"),
+                GenerationCheckpointEnvelope {
+                    turn_id,
+                    attempt_id,
+                    job_id: None,
+                    correlation_id: None,
+                    sequence: 1,
+                    event: GenerationCheckpointEvent::Stage {
+                        status: GenerationTurnStatus::Preparing,
+                    },
+                },
+                harness.context.now(),
+            )
+            .expect("prepare before failure")
+            .value;
+        database
+            .fail_generation(
+                turn_id,
+                attempt_id,
+                conversation(&harness, &chat).revision,
+                turn.revision,
+                &operation("effect-fail"),
+                lettuce_conversations::GenerationFailureCode::Internal,
+                UsageEventId::new(),
+                harness.context.now(),
+            )
+            .expect("fail before retry");
+        let source = ConversationReader::get_turn(database, turn_id).expect("failed source");
+        let command = lettuce_conversations::RetryGeneration {
+            conversation_id: conversation_before.id,
+            branch_id: conversation_before.active_branch_id,
+            turn_id,
+            expected_revision: conversation(&harness, &chat).revision,
+            expected_turn_revision: source.revision,
+            operation: operation("effect-retry"),
+        };
+        let retried = database
+            .begin_retry(&command, harness.context.now())
+            .expect("retry");
+        let replayed = database
+            .begin_retry(&command, harness.context.now())
+            .expect("retry replay");
+        assert_eq!(replayed.value.turn.id, retried.value.turn.id);
+        turn_id = retried.value.turn.id;
+        turn = retried.value.turn;
+        attempt_id = retried.value.attempt.id;
+    }
     for (sequence, status) in [
         GenerationTurnStatus::Preparing,
         GenerationTurnStatus::ContextPrepared,

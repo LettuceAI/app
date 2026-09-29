@@ -270,6 +270,8 @@ impl ProviderBackupRestoreWriter for Database {
             crate::media::image_generation_adapter::insert_restored_in(&transaction, record)
                 .map_err(invalid)?;
         }
+        crate::job_details_adapter::insert_restored_in(&transaction, &graph.job_backup)
+            .map_err(invalid)?;
         crate::models::local_model_jobs_adapter::insert_restored_in(
             &transaction,
             &graph.job_backup,
@@ -430,6 +432,13 @@ impl ProviderBackupRestoreWriter for Database {
                     runtime: &attempt_runtime,
                     companion: None,
                 },
+            )
+            .map_err(invalid)?;
+        }
+        for follow_up in &graph.conversation_history.scene_follow_ups {
+            crate::conversation::scene_follow_up_adapter::insert_restored_in(
+                &transaction,
+                follow_up,
             )
             .map_err(invalid)?;
         }

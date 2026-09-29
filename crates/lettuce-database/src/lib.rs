@@ -4,6 +4,9 @@
 
 mod change_signal;
 mod job_adapter;
+pub(crate) mod job_details_adapter;
+pub use job_adapter::ManualSceneImageAdmission;
+pub use job_details_adapter::{JobDetailRecord, JobOperation};
 mod usage_adapter;
 mod conversation;
 mod memory;
@@ -5832,8 +5835,10 @@ mod tests {
                 "image_loras",
                 "installed_whisper_models",
                 "job_changes",
+                "job_details",
                 "job_events",
                 "job_inference_usage",
+                "job_operations",
                 "job_usage_costs",
                 "jobs",
                 "legacy_import_asr_results",

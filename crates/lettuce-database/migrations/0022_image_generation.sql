@@ -174,32 +174,40 @@ BEGIN
     ON CONFLICT(entity_kind, entity_id) DO NOTHING;
 END;
 
--- The scene image a reply asks for, kept by message so an ask-first prompt
--- survives a restart: written with the reply, changed as the image job
--- moves on. Not part of a backup or a sync; a purge removes it.
+-- The scene image a reply variant asks for, so an ask-first prompt survives
+-- a restart: written with the variant, changed as the image job moves on.
+-- Part of a backup, never of a sync; a purge removes it.
 CREATE TABLE scene_image_follow_ups (
     conversation_id TEXT NOT NULL,
+    target_kind TEXT NOT NULL CHECK (target_kind IN ('candidate', 'starter_revision')),
+    target_id TEXT NOT NULL,
+    candidate_id TEXT,
+    starter_revision_id TEXT,
     message_id TEXT NOT NULL,
     prompt TEXT NOT NULL CHECK (length(trim(prompt)) > 0),
     mode TEXT NOT NULL CHECK (mode IN ('auto', 'ask_first', 'manual')),
-    state TEXT NOT NULL CHECK (state IN ('pending', 'approved', 'running', 'done', 'failed', 'dismissed')),
+    state TEXT NOT NULL CHECK (state IN ('pending', 'approved', 'running', 'awaiting_turn', 'done', 'failed', 'dismissed')),
     generation INTEGER NOT NULL CHECK (generation >= 0),
     attempt INTEGER NOT NULL CHECK (attempt >= 0),
     request_id TEXT,
     failure TEXT CHECK (failure IS NULL OR length(failure) > 0),
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
-    PRIMARY KEY (conversation_id, message_id),
-    FOREIGN KEY (conversation_id, message_id)
-        REFERENCES conversation_messages(conversation_id, id) ON DELETE RESTRICT,
+    PRIMARY KEY (conversation_id, target_kind, target_id),
+    CHECK ((target_kind = 'candidate' AND candidate_id IS NOT NULL AND starter_revision_id IS NULL AND target_id = candidate_id) OR
+           (target_kind = 'starter_revision' AND starter_revision_id IS NOT NULL AND candidate_id IS NULL AND target_id = starter_revision_id)),
+    FOREIGN KEY (conversation_id, message_id, candidate_id)
+        REFERENCES conversation_message_candidates(conversation_id, message_id, id) ON DELETE RESTRICT,
+    FOREIGN KEY (conversation_id, message_id, starter_revision_id)
+        REFERENCES conversation_message_revisions(conversation_id, message_id, id) ON DELETE RESTRICT,
     CHECK (created_at <= updated_at),
-    CHECK ((state IN ('approved', 'running')) = (request_id IS NOT NULL) OR state IN ('done', 'failed', 'dismissed'))
+    CHECK ((state IN ('approved', 'running', 'awaiting_turn')) = (request_id IS NOT NULL) OR state IN ('done', 'failed', 'dismissed'))
 ) STRICT;
 
 CREATE INDEX scene_image_follow_ups_request_idx
     ON scene_image_follow_ups(request_id) WHERE request_id IS NOT NULL;
 CREATE INDEX scene_image_follow_ups_state_idx
-    ON scene_image_follow_ups(state, created_at, message_id);
+    ON scene_image_follow_ups(state, created_at, target_kind, target_id);
 
 CREATE TRIGGER scene_image_follow_ups_signal_insert
 AFTER INSERT ON scene_image_follow_ups
@@ -233,3 +241,25 @@ BEGIN
     INSERT INTO message_signals (kind, conversation_id, message_id)
     VALUES ('scene_image_changed', OLD.conversation_id, OLD.message_id);
 END;
+
+CREATE TABLE job_details (
+    job_id TEXT PRIMARY KEY REFERENCES jobs(id) ON DELETE CASCADE,
+    detail_json TEXT NOT NULL CHECK (json_valid(detail_json) AND json_type(detail_json) = 'object'),
+    result_json TEXT CHECK (result_json IS NULL OR (json_valid(result_json) AND json_type(result_json) = 'object')),
+    failure_json TEXT CHECK (failure_json IS NULL OR (json_valid(failure_json) AND json_type(failure_json) = 'object'))
+) STRICT;
+
+CREATE TABLE job_operations (
+    operation_key TEXT PRIMARY KEY CHECK (length(trim(operation_key)) > 0),
+    request_digest TEXT NOT NULL CHECK (length(request_digest) > 0),
+    job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE
+) STRICT;
+CREATE INDEX job_operations_job_idx ON job_operations(job_id);
+
+CREATE TRIGGER scene_image_follow_ups_starter_target
+BEFORE INSERT ON scene_image_follow_ups
+WHEN NEW.target_kind = 'starter_revision' AND NOT EXISTS (
+    SELECT 1 FROM conversation_initial_message_origins
+    WHERE conversation_id = NEW.conversation_id AND message_id = NEW.message_id AND source_kind = 'starter'
+)
+BEGIN SELECT RAISE(ABORT, 'scene revision target must be a starter'); END;

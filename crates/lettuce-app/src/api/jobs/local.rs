@@ -75,17 +75,6 @@ pub(crate) enum LocalModelJobDetail {
         to: String,
         move_existing: bool,
     },
-    HelpMeReply {
-        request_id: String,
-        conversation_id: String,
-        draft: Option<String>,
-        swap_places: bool,
-    },
-    ScenePrompt {
-        request_id: String,
-        conversation_id: String,
-        message_id: String,
-    },
 }
 
 /// What a local model job produced.
@@ -103,9 +92,6 @@ pub(crate) enum LocalModelJobResult {
         path: String,
         moved_entries: u32,
         rewired_models: u32,
-    },
-    GeneratedText {
-        text: String,
     },
 }
 
@@ -231,18 +217,8 @@ pub(crate) fn local_job_view(context: &ApiContext, job: &JobSnapshot) -> LocalJo
                 moved_entries,
                 rewired_models,
             },
-            LocalModelJobResult::GeneratedText { text } => {
-                dto::JobResultDto::GeneratedText { text }
-            }
         });
     let detail = match detail {
-        LocalModelJobDetail::HelpMeReply { .. } | LocalModelJobDetail::ScenePrompt { .. } => {
-            return LocalJobView {
-                detail: None,
-                result,
-                failure: None,
-            };
-        }
         LocalModelJobDetail::ModelDownload {
             repo,
             file,
@@ -273,12 +249,15 @@ pub(crate) fn local_job_view(context: &ApiContext, job: &JobSnapshot) -> LocalJo
     }
 }
 
-pub(super) fn digest<T: Serialize>(request: &T) -> Result<String, ApiError> {
+pub(in crate::api) fn digest<T: Serialize>(request: &T) -> Result<String, ApiError> {
     let encoded = serde_json::to_vec(request).map_err(internal)?;
     Ok(blake3::hash(&encoded).to_hex().to_string())
 }
 
-pub(super) fn operation_key(command: &str, client_operation_id: &str) -> Result<String, ApiError> {
+pub(in crate::api) fn operation_key(
+    command: &str,
+    client_operation_id: &str,
+) -> Result<String, ApiError> {
     let id = client_operation_id.trim();
     if id.is_empty() {
         return Err(invalid_field(
@@ -821,7 +800,7 @@ pub(crate) async fn admit_gguf_download(
     })
 }
 
-pub(super) fn stable_uuid(parts: &[&str]) -> Uuid {
+pub(in crate::api) fn stable_uuid(parts: &[&str]) -> Uuid {
     Uuid::new_v5(&Uuid::NAMESPACE_OID, parts.join("\0").as_bytes())
 }
 

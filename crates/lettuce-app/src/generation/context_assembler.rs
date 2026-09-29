@@ -313,61 +313,6 @@ where
         runtime_values.key_memories = key_lines.clone();
         resolve_substituted_values(&mut runtime_values, group);
         let mut sections = Vec::new();
-        push_section(
-            &mut sections,
-            ContextSectionKind::Character,
-            Some(runtime_values.character_name.clone()),
-            &runtime_values.character_description,
-        );
-        push_section(
-            &mut sections,
-            ContextSectionKind::Persona,
-            Some(runtime_values.persona_name.clone()),
-            &runtime_values.persona_description,
-        );
-        push_section(
-            &mut sections,
-            ContextSectionKind::Scene,
-            None,
-            &format!(
-                "{}\n{}",
-                runtime_values.scene, runtime_values.scene_direction
-            ),
-        );
-        for entry in &lore_entries {
-            push_section(
-                &mut sections,
-                ContextSectionKind::Lorebook,
-                Some(entry.entry.title.clone()),
-                &entry.entry.content,
-            );
-        }
-        push_section(
-            &mut sections,
-            ContextSectionKind::Memories,
-            None,
-            &format!("{memory_summary}\n{key_lines}"),
-        );
-        push_section(
-            &mut sections,
-            ContextSectionKind::AuthorNote,
-            None,
-            &runtime_values.author_note,
-        );
-        for (kind, variable) in [
-            (
-                ContextSectionKind::CompanionState,
-                PromptVariable::CompanionState,
-            ),
-            (
-                ContextSectionKind::ScheduledNotes,
-                PromptVariable::ScheduledNotes,
-            ),
-        ] {
-            if let Some(text) = runtime_values.purpose_values.get(&variable) {
-                push_section(&mut sections, kind, None, text);
-            }
-        }
         let names = PromptRenderValues {
             character_name: runtime_values.character_name.clone(),
             persona_name: runtime_values.persona_name.clone(),
@@ -441,7 +386,6 @@ where
             } else {
                 let list = group_characters(&snapshot.group_members, speaker_character, &runtime)?;
                 let list = values.resolve_names(&list);
-                push_section(&mut sections, ContextSectionKind::GroupCast, None, &list);
                 values
                     .purpose_values
                     .insert(PromptVariable::GroupCharacters, list);
@@ -483,19 +427,7 @@ where
             .iter()
             .chain(&rendered_prompt.in_chat)
         {
-            push_section(
-                &mut sections,
-                ContextSectionKind::PromptEntry,
-                prompt
-                    .and_then(|document| {
-                        document
-                            .entries
-                            .iter()
-                            .find(|entry| entry.id == message.entry_id)
-                    })
-                    .map(|entry| entry.name.clone()),
-                &message.content,
-            );
+            sections.extend(rendered_sources(message, &names));
         }
         let (mut messages, in_chat) = prompt_messages(&rendered_prompt)?;
         let mut placement = Placement {
@@ -520,6 +452,7 @@ where
                 .collect(),
             in_chat,
             relative: Vec::new(),
+            sources: Vec::new(),
         };
         let mut place = |section: Option<RuntimeSection>| placement.place(section);
         let summary_placeholder = template_has_placeholder(prompt, "{{context_summary}}");
@@ -593,7 +526,9 @@ where
             relative: mut runtime_relative,
             mut in_chat,
             turn_context,
+            sources: runtime_sources,
         } = placement;
+        sections.extend(runtime_sources);
         if let Some((relative_end, in_chat_end)) = condense_point {
             let mut relative = std::mem::take(&mut messages);
             relative.extend(runtime_relative.drain(..relative_end));
@@ -623,6 +558,7 @@ where
             && !key_lines.is_empty()
         {
             if let Some(section) = runtime.section("runtime_relevant_memories") {
+                sections.extend(section.sources);
                 in_chat.insert(0, (section.depth.unwrap_or_default(), section.message));
             }
         }
@@ -648,6 +584,18 @@ where
                 transcript.push(message);
             }
         }
+        let history_text_bytes = transcript
+            .iter()
+            .flat_map(|message| &message.parts)
+            .filter_map(|part| match part {
+                ProviderContextPart::Text { text } => Some(if direct {
+                    names.resolve_names(text).len()
+                } else {
+                    text.len()
+                }),
+                _ => None,
+            })
+            .sum::<usize>();
         insert_in_chat_messages(&mut transcript, in_chat);
         messages.append(&mut transcript);
         if direct {
@@ -658,6 +606,13 @@ where
             }
         }
 
+        let budget = budget_report(&messages, omitted_messages)?;
+        let sections = placed_sections(
+            &messages,
+            sections,
+            budget.input_bytes as usize,
+            history_text_bytes,
+        )?;
         let attributions = ContextAttributions {
             prompt: prompt.map(|document| PromptAttribution {
                 document_id: document.id,
@@ -680,7 +635,6 @@ where
                 .flatten(),
             sections: Some(sections),
         };
-        let budget = budget_report(&messages, omitted_messages)?;
         let context = ProviderNeutralContext {
             messages,
             attributions,
@@ -1116,6 +1070,7 @@ fn ensure_source_in_timeline(request: &ContextRequest) -> Result<(), ContextAsse
 }
 
 struct RuntimeSection {
+    sources: Vec<SectionSource>,
     text: String,
     message: ProviderNeutralMessage,
     depth: Option<u32>,
@@ -1125,6 +1080,7 @@ struct RuntimeSection {
 /// which of its sections a turn injects; their text, role and placement come
 /// from the catalog document, so a user edit or disabled entry is honored.
 struct RuntimeSections {
+    names: PromptRenderValues,
     text: crate::generation::runtime_text::RuntimeText,
     rendered: RenderedPrompt,
 }
@@ -1143,7 +1099,11 @@ impl RuntimeSections {
             tracing::warn!(?error, "chat runtime prompt rendering failed");
             ContextAssemblyError::PromptRender
         })?;
-        Ok(Self { text, rendered })
+        Ok(Self {
+            names: context.values.clone(),
+            text,
+            rendered,
+        })
     }
 
     /// A rendered fragment, or `None` when its entry was removed or disabled.
@@ -1182,6 +1142,7 @@ impl RuntimeSections {
         })?;
         let provider_message = rendered_message(message).ok()?;
         Some(RuntimeSection {
+            sources: rendered_sources(message, &self.names),
             text: message.content.trim().to_owned(),
             message: provider_message,
             depth,
@@ -2604,6 +2565,7 @@ fn selected_character<'a>(
 /// turn-context message: every one except a conditional or interval template
 /// entry.
 struct Placement {
+    sources: Vec<SectionSource>,
     relative: Vec<ProviderNeutralMessage>,
     in_chat: Vec<(u32, ProviderNeutralMessage)>,
     turn_context: Vec<bool>,
@@ -2614,6 +2576,7 @@ impl Placement {
         let Some(section) = section else {
             return;
         };
+        self.sources.extend(section.sources);
         match section.depth {
             None => self.relative.push(section.message),
             Some(depth) => {
@@ -2919,21 +2882,153 @@ fn speaker_character(
         })
 }
 
-fn push_section(
-    sections: &mut Vec<ContextSection>,
+#[derive(Debug)]
+struct SectionSource {
     kind: ContextSectionKind,
     label: Option<String>,
-    text: &str,
-) {
-    let text = text.trim();
-    if text.is_empty() {
-        return;
+    bytes: usize,
+}
+
+fn rendered_sources(
+    message: &lettuce_context::RenderedPromptMessage,
+    names: &PromptRenderValues,
+) -> Vec<SectionSource> {
+    let mut sources = Vec::new();
+    let mut substituted = 0;
+    for value in &message.substitutions {
+        let trim_start = message.content.len() - message.content.trim_start().len();
+        let trim_end = message.content.trim_end().len();
+        let start = value.start.max(trim_start);
+        let end = value.end.min(trim_end);
+        if start >= end {
+            continue;
+        }
+        let text = names.resolve_names(&message.content[start..end]);
+        substituted += text.len();
+        let kind = match value.placeholder.as_str() {
+            "{{char.desc}}" | "{{ai_description}}" => ContextSectionKind::Character,
+            "{{persona.desc}}"
+            | "{{persona_description}}"
+            | "{{user.desc}}"
+            | "{{user_description}}" => ContextSectionKind::Persona,
+            "{{scene}}" | "{{scene_direction}}" => ContextSectionKind::Scene,
+            "{{lorebook}}" => ContextSectionKind::Lorebook,
+            "{{context_summary}}"
+            | "{{memory_summary}}"
+            | "{{key_memories}}"
+            | "{{selected_memories}}" => ContextSectionKind::Memories,
+            "{{author_note}}" => ContextSectionKind::AuthorNote,
+            "{{companion_state}}" => ContextSectionKind::CompanionState,
+            "{{scheduled_notes}}" => ContextSectionKind::ScheduledNotes,
+            "{{group_characters}}" => ContextSectionKind::GroupCast,
+            _ => ContextSectionKind::PromptEntry,
+        };
+        let label = match kind {
+            ContextSectionKind::Character if !names.character_name.is_empty() => {
+                Some(names.character_name.clone())
+            }
+            ContextSectionKind::Persona if !names.persona_name.is_empty() => {
+                Some(names.persona_name.clone())
+            }
+            _ => None,
+        };
+        sources.push(SectionSource {
+            kind,
+            label,
+            bytes: text.len(),
+        });
     }
-    sections.push(ContextSection {
-        kind,
-        label,
-        estimated_tokens: u32::try_from(text.len().div_ceil(4)).unwrap_or(u32::MAX),
-    });
+    let bytes = names
+        .resolve_names(message.content.trim())
+        .len()
+        .saturating_sub(substituted);
+    if bytes > 0 {
+        sources.push(SectionSource {
+            kind: ContextSectionKind::PromptEntry,
+            label: None,
+            bytes,
+        });
+    }
+    sources
+}
+
+fn part_input_bytes(part: &ProviderContextPart) -> usize {
+    match part {
+        ProviderContextPart::Text { text } => text.len(),
+        ProviderContextPart::MediaAsset { .. } => 16,
+        ProviderContextPart::ToolCall(call) => {
+            call.name.len()
+                + call.provider_call_id.as_ref().map_or(0, String::len)
+                + serde_json::to_vec(&call.arguments).map_or(0, |value| value.len())
+        }
+        ProviderContextPart::ToolResult(result) => {
+            result.name.len()
+                + result.provider_call_id.as_ref().map_or(0, String::len)
+                + serde_json::to_vec(&result.output.value).map_or(0, |value| value.len())
+        }
+    }
+}
+
+fn placed_sections(
+    messages: &[ProviderNeutralMessage],
+    sources: Vec<SectionSource>,
+    input_bytes: usize,
+    history_text_bytes: usize,
+) -> Result<Vec<ContextSection>, ContextAssemblyError> {
+    let mut total = 0_usize;
+    let mut sections = Vec::new();
+    for source in sources {
+        let prior = total.div_ceil(4);
+        total += source.bytes;
+        sections.push(ContextSection {
+            kind: source.kind,
+            label: source.label,
+            estimated_tokens: (total.div_ceil(4) - prior) as u32,
+        });
+    }
+    let media = messages
+        .iter()
+        .flat_map(|message| &message.parts)
+        .filter(|part| matches!(part, ProviderContextPart::MediaAsset { .. }))
+        .map(part_input_bytes)
+        .sum::<usize>();
+    let tools = messages
+        .iter()
+        .flat_map(|message| &message.parts)
+        .filter(|part| {
+            matches!(
+                part,
+                ProviderContextPart::ToolCall(_) | ProviderContextPart::ToolResult(_)
+            )
+        })
+        .map(part_input_bytes)
+        .sum::<usize>();
+    for (kind, bytes) in [
+        (ContextSectionKind::Media, media),
+        (ContextSectionKind::Tools, tools),
+        (ContextSectionKind::History, history_text_bytes),
+    ] {
+        if bytes > 0 {
+            let prior = total.div_ceil(4);
+            total += bytes;
+            sections.push(ContextSection {
+                kind,
+                label: None,
+                estimated_tokens: (total.div_ceil(4) - prior) as u32,
+            });
+        }
+    }
+    let remainder = input_bytes
+        .checked_sub(total)
+        .ok_or(ContextAssemblyError::PromptRender)?;
+    if remainder > 0 {
+        sections.push(ContextSection {
+            kind: ContextSectionKind::PromptEntry,
+            label: None,
+            estimated_tokens: ((total + remainder).div_ceil(4) - total.div_ceil(4)) as u32,
+        });
+    }
+    Ok(sections)
 }
 
 fn budget_report(
@@ -2942,21 +3037,8 @@ fn budget_report(
 ) -> Result<ContextBudgetReport, ContextAssemblyError> {
     let input_bytes = messages
         .iter()
-        .flat_map(|message| message.parts.iter())
-        .map(|part| match part {
-            ProviderContextPart::Text { text } => text.len(),
-            ProviderContextPart::MediaAsset { .. } => 16,
-            ProviderContextPart::ToolCall(call) => {
-                call.name.len()
-                    + call.provider_call_id.as_ref().map_or(0, String::len)
-                    + serde_json::to_vec(&call.arguments).map_or(0, |value| value.len())
-            }
-            ProviderContextPart::ToolResult(result) => {
-                result.name.len()
-                    + result.provider_call_id.as_ref().map_or(0, String::len)
-                    + serde_json::to_vec(&result.output.value).map_or(0, |value| value.len())
-            }
-        })
+        .flat_map(|message| &message.parts)
+        .map(part_input_bytes)
         .sum::<usize>();
     if input_bytes > 16 * 1024 * 1024 || input_bytes > u32::MAX as usize {
         return Err(ContextAssemblyError::SizeLimit);
@@ -2983,6 +3065,39 @@ mod tests {
     use super::*;
     use lettuce_context::{PromptEntryImageSlot, PromptEntryPayload, RenderedPrompt};
     use lettuce_types::{CharacterId, LorebookEntryId, LorebookId, PromptEntryId, SceneId};
+
+    #[test]
+    fn identical_values_only_attribute_the_placeholder_that_was_placed() {
+        let entry = lettuce_context::RenderedPromptMessage {
+            entry_id: PromptEntryId::new(),
+            role: PromptEntryRole::System,
+            content: "same".into(),
+            depth: 0,
+            payload: None,
+            substitutions: vec![lettuce_context::PromptSubstitution {
+                placeholder: "{{persona_description}}".into(),
+                text: "same".into(),
+                start: 0,
+                end: 4,
+            }],
+        };
+        let values = PromptRenderValues {
+            character_description: "same".into(),
+            persona_description: "same".into(),
+            ..PromptRenderValues::default()
+        };
+        let sources = rendered_sources(&entry, &values);
+        assert_eq!(sources.len(), 1);
+        assert_eq!(sources[0].kind, ContextSectionKind::Persona);
+        assert_eq!(sources[0].bytes, 4);
+        let literal = lettuce_context::RenderedPromptMessage {
+            substitutions: Vec::new(),
+            ..entry
+        };
+        let sources = rendered_sources(&literal, &values);
+        assert_eq!(sources.len(), 1);
+        assert_eq!(sources[0].kind, ContextSectionKind::PromptEntry);
+    }
 
     #[test]
     fn provider_history_omits_reasoning_without_dropping_visible_text() {
@@ -3061,6 +3176,7 @@ mod tests {
     fn prompt_payloads_are_rejected_in_provider_neutral_context() {
         let rendered = RenderedPrompt {
             relative: vec![lettuce_context::RenderedPromptMessage {
+                substitutions: Vec::new(),
                 entry_id: PromptEntryId::new(),
                 role: PromptEntryRole::System,
                 content: String::new(),

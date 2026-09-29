@@ -288,7 +288,7 @@ impl ApiContext {
         for (turn_id, _) in &report.turns {
             self.forget_stream(*turn_id);
         }
-        super::scenes::recover(self);
+        super::scenes::recover(self)?;
         Ok(())
     }
 

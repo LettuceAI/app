@@ -99,7 +99,7 @@ impl JobFeed {
                 .await?;
             self.position = position;
             for job in changed {
-                let mut view = job_view(context, &job);
+                let mut view = job_view(context, &job)?;
                 view.progress.bytes_per_second = self.speed(&job);
                 context.emit(ApiEvent::JobUpdated {
                     job: Box::new(view.clone()),

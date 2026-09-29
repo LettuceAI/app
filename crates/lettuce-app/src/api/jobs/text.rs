@@ -16,14 +16,82 @@ use lettuce_jobs::{
 use lettuce_settings::GlobalSettingsStore;
 use lettuce_types::{ConversationId, JobId, MessageId, RequestId};
 
-use super::local::{
-    LocalModelJobDetail, LocalModelJobResult, digest, encode, internal, operation_key,
-    record_operation, replay, stable_uuid,
-};
+use super::local::{digest, encode, internal, operation_key, stable_uuid};
 use super::runner::{ClaimedJob, JobHandler, JobLane, JobProgressSink};
 use crate::api::ApiContext;
-use crate::api::error::{IntoApiError, api_error, invalid_field, parse_id};
+use crate::api::error::{IntoApiError, api_error, parse_id};
 use crate::{ReplyHelperRequest, ResultRecorder, ScenePromptRequest, ScenePromptWriter};
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(crate) enum TextFeatureDetail {
+    HelpMeReply {
+        request_id: String,
+        conversation_id: String,
+        draft: Option<String>,
+        swap_places: bool,
+    },
+    ScenePrompt {
+        request_id: String,
+        conversation_id: String,
+        message_id: String,
+        target: lettuce_conversations::SceneFollowUpTarget,
+        recent_context: String,
+    },
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub(crate) struct TextFeatureResult {
+    pub text: String,
+}
+
+fn replay(context: &ApiContext, key: &str, digest: &str) -> Result<Option<JobId>, ApiError> {
+    match context
+        .backend()
+        .database()
+        .job_operation(key)
+        .map_err(internal)?
+    {
+        Some(prior) if prior.request_digest == digest => Ok(Some(prior.job_id)),
+        Some(_) => Err(api_error(
+            ApiErrorCode::Conflict,
+            "the operation key names another request",
+        )),
+        None => Ok(None),
+    }
+}
+
+fn admission_error(error: lettuce_jobs::StoreError) -> ApiError {
+    if error == lettuce_jobs::StoreError::IdempotencyConflict {
+        api_error(
+            ApiErrorCode::Conflict,
+            "the operation key names another request",
+        )
+    } else {
+        internal(error)
+    }
+}
+
+pub(super) fn feature_view(
+    context: &ApiContext,
+    job: &JobSnapshot,
+) -> Result<Option<dto::JobResultDto>, ApiError> {
+    if !is_text_feature(job) {
+        return Ok(None);
+    }
+    let record = context
+        .backend()
+        .database()
+        .job_detail(job.id)
+        .map_err(internal)?
+        .ok_or_else(|| internal("the text job detail is missing"))?;
+    serde_json::from_value::<TextFeatureDetail>(record.detail).map_err(internal)?;
+    record
+        .result
+        .map(|result| serde_json::from_value::<TextFeatureResult>(result).map_err(internal))
+        .transpose()
+        .map(|result| result.map(|result| dto::JobResultDto::GeneratedText { text: result.text }))
+}
 
 const TEXT_LEASE: Duration = Duration::from_secs(60 * 60);
 const REPLY_HELPER_PREFIX: &str = "reply-helper-";
@@ -39,6 +107,7 @@ pub async fn conversation_help_me_reply(
 ) -> Result<dto::JobAccepted, ApiError> {
     let conversation_id: ConversationId = parse_id(&request.conversation_id, "conversation_id")?;
     let key = operation_key("help_me_reply", &request.client_operation_id)?;
+    let mode = request.mode;
     let draft = match request.mode {
         dto::HelpMeReplyMode::New => None,
         dto::HelpMeReplyMode::Enrich => request
@@ -46,7 +115,7 @@ pub async fn conversation_help_me_reply(
             .filter(|draft| !draft.trim().is_empty()),
     };
     let swap_places = request.swap_places;
-    let request_digest = digest(&(conversation_id.to_string(), &draft, swap_places))?;
+    let request_digest = digest(&(conversation_id.to_string(), mode, &draft, swap_places))?;
     let job_id = context
         .blocking(move |context| {
             if let Some(job_id) = replay(context, &key, &request_digest)? {
@@ -65,29 +134,27 @@ pub async fn conversation_help_me_reply(
                 ));
             }
             let request_id = RequestId::from_uuid(stable_uuid(&["help-me-reply", &key]));
-            let request = ReplyHelperRequest {
-                conversation_id,
-                request_id,
-                current_draft: draft.clone(),
-                swap_places,
-            };
-            let job = context
-                .backend()
-                .reply_helper(context.inference())
-                .admit(&request)
-                .map_err(internal)?;
-            database
-                .record_local_model_job(
-                    job.id,
-                    &encode(&LocalModelJobDetail::HelpMeReply {
+            let job = database
+                .admit_job_with_detail(
+                    crate::jobs::one_shot_job::one_shot_spec(
+                        crate::jobs::one_shot_job::OneShotJob {
+                            name: "reply-helper",
+                            stage: "help-me-reply",
+                            subject_kind: lettuce_jobs::SubjectKind::Conversation,
+                            subject: &conversation_id.to_string(),
+                            request_id,
+                        },
+                    ),
+                    &key,
+                    &request_digest,
+                    &encode(&TextFeatureDetail::HelpMeReply {
                         request_id: request_id.to_string(),
                         conversation_id: conversation_id.to_string(),
                         draft,
                         swap_places,
                     })?,
                 )
-                .map_err(internal)?;
-            record_operation(context, &key, &request_digest, job.id)?;
+                .map_err(admission_error)?;
             Ok(job.id)
         })
         .await?;
@@ -129,26 +196,33 @@ pub(crate) async fn admit_scene_prompt(
                     "the media store is unavailable",
                 ));
             };
-            let request_id = RequestId::from_uuid(stable_uuid(&["scene-prompt", &key]));
-            let request = ScenePromptRequest {
-                conversation_id,
-                message_id,
-                request_id,
-            };
-            let job = ScenePromptWriter::new(database, media, context.inference())
-                .admit(&request)
+            let (_, target) = crate::api::scenes::scene_target(context, message_id)?;
+            let recent_context = ScenePromptWriter::new(database, media, context.inference())
+                .capture_recent(conversation_id, message_id)
                 .map_err(internal)?;
-            database
-                .record_local_model_job(
-                    job.id,
-                    &encode(&LocalModelJobDetail::ScenePrompt {
+            let request_id = RequestId::from_uuid(stable_uuid(&["scene-prompt", &key]));
+            let job = database
+                .admit_job_with_detail(
+                    crate::jobs::one_shot_job::one_shot_spec(
+                        crate::jobs::one_shot_job::OneShotJob {
+                            name: "scene-prompt",
+                            stage: "scene-prompt",
+                            subject_kind: lettuce_jobs::SubjectKind::Conversation,
+                            subject: &conversation_id.to_string(),
+                            request_id,
+                        },
+                    ),
+                    &key,
+                    &request_digest,
+                    &encode(&TextFeatureDetail::ScenePrompt {
                         request_id: request_id.to_string(),
                         conversation_id: conversation_id.to_string(),
                         message_id: message_id.to_string(),
+                        target,
+                        recent_context,
                     })?,
                 )
-                .map_err(internal)?;
-            record_operation(context, &key, &request_digest, job.id)?;
+                .map_err(admission_error)?;
             Ok(job.id)
         })
         .await?;
@@ -177,25 +251,15 @@ impl JobHandler for TextFeatureHandler {
         &[JobKind::CreationRun]
     }
 
-    fn lane(&self, context: &ApiContext, job: &JobSnapshot) -> Option<JobLane> {
-        if !is_text_feature(job) {
-            return None;
-        }
-        match context.backend().database().local_model_job(job.id) {
-            Ok(Some(_)) => Some(JobLane(format!("text-feature:{}", job.id))),
-            Ok(None) => None,
-            Err(error) => {
-                tracing::warn!(job_id = %job.id, %error, "a text feature job's detail could not be read");
-                None
-            }
-        }
+    fn lane(&self, _context: &ApiContext, job: &JobSnapshot) -> Option<JobLane> {
+        is_text_feature(job).then(|| JobLane(format!("text-feature:{}", job.id)))
     }
 
     async fn claim(
         &self,
         context: &ApiContext,
         job: &JobSnapshot,
-        _worker_id: WorkerId,
+        worker_id: WorkerId,
     ) -> Result<Option<Box<dyn ClaimedJob>>, ApiError> {
         let job_id = job.id;
         let record = context
@@ -203,24 +267,58 @@ impl JobHandler for TextFeatureHandler {
                 context
                     .backend()
                     .database()
-                    .local_model_job(job_id)
+                    .job_detail(job_id)
                     .map_err(internal)
             })
             .await?;
-        let Some(record) = record else {
+        let detail = record
+            .ok_or_else(|| internal("the text job detail is missing"))
+            .and_then(|record| {
+                serde_json::from_value::<TextFeatureDetail>(record.detail).map_err(internal)
+            });
+        let detail = match detail {
+            Ok(detail) => detail,
+            Err(error) => {
+                fail_unclaimed(context, job_id).await?;
+                return Err(error);
+            }
+        };
+        let claim = context
+            .blocking(move |context| {
+                use lettuce_jobs::JobStore;
+                context
+                    .backend()
+                    .database()
+                    .claim(
+                        job_id,
+                        worker_id,
+                        context.now(),
+                        TEXT_LEASE,
+                        &ResourceAvailability::all(),
+                    )
+                    .map_err(internal)
+            })
+            .await?;
+        let Some(claim) = claim else {
             return Ok(None);
         };
-        let Ok(detail) = serde_json::from_value::<LocalModelJobDetail>(record.detail) else {
-            return Ok(None);
-        };
-        if !matches!(
-            detail,
-            LocalModelJobDetail::HelpMeReply { .. } | LocalModelJobDetail::ScenePrompt { .. }
-        ) {
-            return Ok(None);
-        }
+        let owned = claim.claim.clone();
+        context
+            .blocking(move |context| {
+                use lettuce_jobs::{JobMutation, JobStore};
+                context
+                    .backend()
+                    .database()
+                    .append_and_transition(JobMutation::Start {
+                        claim: owned,
+                        at: context.now(),
+                    })
+                    .map_err(internal)?;
+                Ok(())
+            })
+            .await?;
         Ok(Some(Box::new(ClaimedText {
-            job_id,
+            claim: claim.claim,
             detail,
             cancellation: CancellationToken::new(),
         })))
@@ -228,8 +326,8 @@ impl JobHandler for TextFeatureHandler {
 }
 
 struct ClaimedText {
-    job_id: JobId,
-    detail: LocalModelJobDetail,
+    claim: lettuce_jobs::ClaimRef,
+    detail: TextFeatureDetail,
     cancellation: CancellationToken,
 }
 
@@ -238,7 +336,7 @@ struct TextRecorder(ApiContext);
 
 impl ResultRecorder for TextRecorder {
     fn record(&self, job_id: JobId, text: &str) -> bool {
-        let Ok(result) = encode(&LocalModelJobResult::GeneratedText {
+        let Ok(result) = encode(&TextFeatureResult {
             text: text.to_owned(),
         }) else {
             return false;
@@ -246,7 +344,7 @@ impl ResultRecorder for TextRecorder {
         self.0
             .backend()
             .database()
-            .record_local_model_job_result(job_id, &result)
+            .record_job_detail_result(job_id, &result)
             .unwrap_or(false)
     }
 }
@@ -278,13 +376,27 @@ impl ClaimedJob for ClaimedText {
         context: ApiContext,
         progress: Arc<dyn JobProgressSink>,
     ) -> Result<(), ApiError> {
+        let result = self.execute(&context, progress).await;
+        if result.is_err() {
+            fail_owned(&context, self.claim.clone()).await?;
+        }
+        result
+    }
+}
+
+impl ClaimedText {
+    async fn execute(
+        &self,
+        context: &ApiContext,
+        progress: Arc<dyn JobProgressSink>,
+    ) -> Result<(), ApiError> {
         let backend = context.backend();
         let runtime = backend.inference_runtime();
         let recorder = TextRecorder(context.clone());
         let cancellation = self.cancellation.clone();
         let allowed = ResourceAvailability::all();
-        match self.detail {
-            LocalModelJobDetail::HelpMeReply {
+        match self.detail.clone() {
+            TextFeatureDetail::HelpMeReply {
                 request_id,
                 conversation_id,
                 draft,
@@ -297,10 +409,11 @@ impl ClaimedJob for ClaimedText {
                     swap_places,
                 };
                 let sink_id = request.request_id;
-                let receiver = runtime.register_stream(sink_id).ok();
-                let forwarder = receiver.map(|receiver| tokio::spawn(forward(receiver, progress)));
+                let receiver = runtime.register_stream(sink_id).map_err(internal)?;
+                let forwarder = tokio::spawn(forward(receiver, progress));
                 let outcome = backend
                     .reply_helper(context.inference())
+                    .with_claim(&self.claim)
                     .with_cancellation(&cancellation)
                     .with_result_recorder(&recorder)
                     .generate(
@@ -314,31 +427,42 @@ impl ClaimedJob for ClaimedText {
                 if let Err(error) = runtime.unregister_stream(sink_id) {
                     tracing::warn!(%error, "help me reply stream could not be unregistered");
                 }
-                if let Some(forwarder) = forwarder
-                    && let Err(error) = forwarder.await
-                {
+                if let Err(error) = forwarder.await {
                     tracing::warn!(%error, "help me reply stream forwarder stopped");
                 }
-                if let Err(error) = outcome {
-                    tracing::info!(job_id = %self.job_id, %error, "help me reply did not produce a reply");
+                if let Err(error) = &outcome {
+                    fail_owned_with_error(
+                        context,
+                        self.claim.clone(),
+                        crate::jobs::one_shot_job::OneShotFailure::job_error(error),
+                    )
+                    .await?;
                 }
+                outcome.map_err(internal)?;
             }
-            LocalModelJobDetail::ScenePrompt {
+            TextFeatureDetail::ScenePrompt {
                 request_id,
                 conversation_id,
                 message_id,
+                target: _,
+                recent_context,
             } => {
                 let request = ScenePromptRequest {
                     conversation_id: parse_id(&conversation_id, "conversation_id")?,
                     message_id: parse_id(&message_id, "message_id")?,
+                    recent_context: Some(recent_context.clone()),
                     request_id: parse_id(&request_id, "request_id")?,
                 };
                 let Some(media) = context.media() else {
-                    return Err(invalid_field("job", "the media store is unavailable"));
+                    return Err(api_error(
+                        ApiErrorCode::Unavailable,
+                        "the media store is unavailable",
+                    ));
                 };
                 let outcome =
                     ScenePromptWriter::new(backend.database(), media, context.inference())
                         .with_inference_runtime(runtime)
+                        .with_claim(&self.claim)
                         .with_cancellation(&cancellation)
                         .with_result_recorder(&recorder)
                         .generate(
@@ -349,14 +473,113 @@ impl ClaimedJob for ClaimedText {
                             &allowed,
                         )
                         .await;
-                if let Err(error) = outcome {
-                    tracing::info!(job_id = %self.job_id, %error, "the scene prompt writer did not produce a prompt");
+                if let Err(error) = &outcome {
+                    fail_owned_with_error(
+                        context,
+                        self.claim.clone(),
+                        crate::jobs::one_shot_job::OneShotFailure::job_error(error),
+                    )
+                    .await?;
                 }
+                outcome.map_err(internal)?;
             }
-            LocalModelJobDetail::ModelDownload { .. }
-            | LocalModelJobDetail::ModelPull { .. }
-            | LocalModelJobDetail::ModelsFolderMove { .. } => {}
         }
         Ok(())
     }
+}
+
+async fn fail_unclaimed(context: &ApiContext, job_id: JobId) -> Result<(), ApiError> {
+    context
+        .blocking(move |context| {
+            use lettuce_jobs::{JobError, JobErrorCode, JobMutation, JobStore};
+            let database = context.backend().database();
+            let Some(job) = JobStore::get(database, job_id).map_err(internal)? else {
+                return Err(internal("the text job is missing"));
+            };
+            if job.state != lettuce_jobs::JobState::Queued {
+                return Ok(());
+            }
+            if let Some(claim) = database
+                .claim(
+                    job_id,
+                    WorkerId::new(),
+                    context.now(),
+                    TEXT_LEASE,
+                    &ResourceAvailability::all(),
+                )
+                .map_err(internal)?
+            {
+                database
+                    .append_and_transition(JobMutation::Start {
+                        claim: claim.claim.clone(),
+                        at: context.now(),
+                    })
+                    .map_err(internal)?;
+                database
+                    .append_and_transition(JobMutation::Fail {
+                        claim: claim.claim,
+                        error: JobError::new(
+                            JobErrorCode::StorageFailure,
+                            false,
+                            crate::jobs::failure_labels::RESULT_STORAGE_FAILED,
+                        )
+                        .expect("constant job error"),
+                        at: context.now(),
+                    })
+                    .map_err(internal)?;
+            }
+            Ok(())
+        })
+        .await
+}
+
+async fn fail_owned(context: &ApiContext, claim: lettuce_jobs::ClaimRef) -> Result<(), ApiError> {
+    let error = lettuce_jobs::JobError::new(
+        lettuce_jobs::JobErrorCode::StorageFailure,
+        false,
+        crate::jobs::failure_labels::RESULT_STORAGE_FAILED,
+    )
+    .expect("constant job error");
+    fail_owned_with_error(context, claim, error).await
+}
+
+async fn fail_owned_with_error(
+    context: &ApiContext,
+    claim: lettuce_jobs::ClaimRef,
+    error: lettuce_jobs::JobError,
+) -> Result<(), ApiError> {
+    context
+        .blocking(move |context| {
+            use lettuce_jobs::{JobMutation, JobStore};
+            let database = context.backend().database();
+            let job = JobStore::get(database, claim.job_id)
+                .map_err(internal)?
+                .ok_or_else(|| internal("the text job is missing"))?;
+            if job.state.is_terminal() || job.claim.as_ref() != Some(&claim) {
+                return Ok(());
+            }
+            if job.state == lettuce_jobs::JobState::CancellationRequested {
+                let at = context.now().max(job.updated_at);
+                database
+                    .append_and_transition(JobMutation::RequestCleanup {
+                        claim: claim.clone(),
+                        at,
+                    })
+                    .map_err(internal)?;
+                database
+                    .append_and_transition(JobMutation::FinishCancellation { claim, at })
+                    .map_err(internal)?;
+                return Ok(());
+            }
+
+            database
+                .append_and_transition(JobMutation::Fail {
+                    claim,
+                    error,
+                    at: context.now().max(job.updated_at),
+                })
+                .map_err(internal)?;
+            Ok(())
+        })
+        .await
 }

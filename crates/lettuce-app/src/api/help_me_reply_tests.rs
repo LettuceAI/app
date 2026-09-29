@@ -10,11 +10,12 @@ use super::turns_tests::{group_cast, replied_chat, run_generation};
 use super::*;
 
 #[derive(Default)]
-struct RecordingJob(Mutex<Vec<dto::JobEvent>>);
+struct RecordingJob(Mutex<Vec<dto::JobEvent>>, tokio::sync::Notify);
 
 impl JobEventSink for RecordingJob {
     fn emit(&self, event: dto::JobEvent) -> bool {
         self.0.lock().expect("job events").push(event);
+        self.1.notify_one();
         true
     }
 }
@@ -144,6 +145,13 @@ async fn help_me_reply_streams_deltas_and_ends_with_the_cleaned_text() {
         .await
         .expect("replayed");
     assert_eq!(replay, accepted);
+    let mut changed_mode = request(&chat, "help-1");
+    changed_mode.mode = dto::HelpMeReplyMode::Enrich;
+    changed_mode.current_draft = None;
+    let conflict = conversation_help_me_reply(&harness.context, changed_mode)
+        .await
+        .expect_err("changing New to Enrich is another request even without a draft");
+    assert_eq!(conflict.code, ApiErrorCode::Conflict);
     let mut other = request(&chat, "help-1");
     other.swap_places = true;
     let conflict = conversation_help_me_reply(&harness.context, other)
@@ -165,9 +173,25 @@ async fn a_watch_that_attaches_late_gets_the_text_streamed_so_far() {
     let accepted = conversation_help_me_reply(&harness.context, request(&chat, "late-1"))
         .await
         .expect("accepted");
+    let initial = watch(&harness, &accepted).await;
     let runner = JobRunner::new(harness.context.clone(), JobHandlers::standard());
     assert!(runner.run_once().await.expect("started"));
     harness.provider.entered.notified().await;
+    loop {
+        let delivered = initial.1.notified();
+        let text = initial
+            .events()
+            .into_iter()
+            .filter_map(|event| match event {
+                dto::JobEvent::TextDelta { text, .. } => text,
+                _ => None,
+            })
+            .collect::<String>();
+        if text == "Hello." {
+            break;
+        }
+        delivered.await;
+    }
     let sink = watch(&harness, &accepted).await;
     let events = sink.events();
     assert!(
@@ -407,4 +431,73 @@ async fn cancelling_help_me_reply_ends_the_job_cancelled_with_no_text() {
     };
     assert_eq!(job.state, dto::JobStateDto::Cancelled);
     assert_eq!(job.result, None);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_feature_disabled_after_admission_fails_the_owned_job() {
+    let harness = harness(Reply::Text("Hello."));
+    let (chat, _) = replied_chat(&harness, "disabled-after-admission").await;
+    let accepted = conversation_help_me_reply(
+        &harness.context,
+        request(&chat, "disabled-after-admission-key"),
+    )
+    .await
+    .expect("admitted");
+    set_help_me_reply(&harness, |settings| settings.help_me_reply.enabled = false);
+    run_jobs(&harness).await;
+    let job = job_get(
+        &harness.context,
+        dto::JobGetRequest {
+            job_id: accepted.job_id,
+        },
+    )
+    .await
+    .expect("job");
+    assert!(matches!(job.state, dto::JobStateDto::Failed));
+    assert_eq!(
+        job.failure.expect("typed failure").reason,
+        Some(dto::JobFailureReason::HelpMeReplyDisabled)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn two_text_handlers_cannot_own_the_same_stream_or_provider_call() {
+    use lettuce_jobs::{JobStore, WorkerId};
+    let harness = harness(Reply::Text("One reply"));
+    let (chat, _) = replied_chat(&harness, "two-text-owners").await;
+    let accepted =
+        conversation_help_me_reply(&harness.context, request(&chat, "two-text-owners-key"))
+            .await
+            .expect("admission");
+    let job_id = accepted.job_id.parse().expect("job id");
+    let job = JobStore::get(harness.context.backend().database(), job_id)
+        .expect("job")
+        .expect("exists");
+    let first = TextFeatureHandler
+        .claim(&harness.context, &job, WorkerId::new())
+        .await
+        .expect("first claim")
+        .expect("owned");
+    let second = TextFeatureHandler
+        .claim(&harness.context, &job, WorkerId::new())
+        .await
+        .expect("second claim");
+    assert!(second.is_none());
+    let before = harness.provider.requests.lock().expect("requests").len();
+    struct Progress;
+    impl JobProgressSink for Progress {
+        fn text_delta(&self, _: Option<String>, _: Option<String>) {}
+    }
+    first
+        .run(harness.context.clone(), Arc::new(Progress))
+        .await
+        .expect("owned run");
+    assert_eq!(
+        harness.provider.requests.lock().expect("requests").len(),
+        before + 1
+    );
+    let ended = JobStore::get(harness.context.backend().database(), job_id)
+        .expect("job")
+        .expect("exists");
+    assert_eq!(ended.state, lettuce_jobs::JobState::Succeeded);
 }

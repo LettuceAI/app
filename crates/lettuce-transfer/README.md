@@ -139,3 +139,5 @@ For a version 1 backup, the plan itself serves as the source: `LegacyBackupConfi
 - `model_transfer`: model profiles as the legacy model JSON or a USC 1.0 `model_profile` card, with `legacy_advanced_model_settings` as the inverse of `legacy_model_parameters` for every value legacy could hold.
 
 The ASR learning document (version 3) is the interchange format for vocabulary, corrections, ignored suggestions and voice examples. It has no row limit and carries each voice example's audio as an asset description (kind, origin, redacted provenance, hash, size, MIME type, duration) instead of a path; the application validates and remaps the whole graph before an atomic import. The legacy version 2 ASR JSON is a separate camelCase compatibility document.
+
+Full backups include generic job details and canonical operation receipts alongside jobs, and checked scene follow-up targets alongside conversation history. Validation checks each follow-up target against its owning candidate or native starter revision before restore; device sync does not transport these local workflow records.

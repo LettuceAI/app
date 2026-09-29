@@ -1274,6 +1274,20 @@ pub(crate) fn finalize_turn_effect_in(
     Ok(())
 }
 
+pub(crate) fn retry_turn_effect_draft_in(
+    tx: &Transaction<'_>,
+    conversation_id: ConversationId,
+    source_turn_id: GenerationTurnId,
+    retry_turn_id: GenerationTurnId,
+    now: TimestampMillis,
+) -> Result<(), lettuce_conversations::ConversationRepositoryError> {
+    let storage = |_| lettuce_conversations::ConversationRepositoryError::Storage;
+    tx.execute("INSERT INTO companion_turn_effect_drafts (conversation_id, turn_id, effect_id, user_message_id, closeness_delta, trust_delta, affection_delta, tension_delta, stability_delta, created_at) SELECT conversation_id, ?3, ?4, user_message_id, closeness_delta, trust_delta, affection_delta, tension_delta, stability_delta, ?5 FROM companion_turn_effect_drafts WHERE conversation_id = ?1 AND turn_id = ?2", params![conversation_id.to_string(), source_turn_id.to_string(), retry_turn_id.to_string(), CompanionEffectId::new().to_string(), now.get()]).map_err(storage)?;
+    tx.execute("INSERT INTO companion_turn_effect_emotion_deltas (conversation_id, turn_id, kind, warmth, trust, calm, vulnerability, longing, hurt, tension, irritation, affection_intensity, reassurance_need) SELECT conversation_id, ?3, kind, warmth, trust, calm, vulnerability, longing, hurt, tension, irritation, affection_intensity, reassurance_need FROM companion_turn_effect_emotion_deltas WHERE conversation_id = ?1 AND turn_id = ?2", params![conversation_id.to_string(), source_turn_id.to_string(), retry_turn_id.to_string()]).map_err(storage)?;
+    tx.execute("INSERT INTO companion_turn_effect_signal_changes (conversation_id, turn_id, change_kind, ordinal, value) SELECT conversation_id, ?3, change_kind, ordinal, value FROM companion_turn_effect_signal_changes WHERE conversation_id = ?1 AND turn_id = ?2", params![conversation_id.to_string(), source_turn_id.to_string(), retry_turn_id.to_string()]).map_err(storage)?;
+    Ok(())
+}
+
 pub(crate) fn discard_turn_effect_draft_in(
     tx: &Transaction<'_>,
     conversation_id: ConversationId,

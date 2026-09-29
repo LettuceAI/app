@@ -147,6 +147,15 @@ fn begin_revision(
     conversation_id: ConversationId,
     client: Revision,
 ) -> Result<Revision, ApiError> {
+    begin_revision_with(context, conversation_id, client, || {})
+}
+
+fn begin_revision_with(
+    context: &ApiContext,
+    conversation_id: ConversationId,
+    client: Revision,
+    checked: impl FnOnce(),
+) -> Result<Revision, ApiError> {
     let database = context.backend().database();
     let seen = writable(context, conversation_id)?.revision;
     if seen != client {
@@ -155,9 +164,15 @@ fn begin_revision(
             "the conversation changed since it was read",
         ));
     }
-    crate::conversation::ensure_group_members(database, conversation_id, context.now())
-        .map_err(super::conversation_settings::edit_error)?;
-    Ok(writable(context, conversation_id)?.revision)
+    checked();
+    let written = crate::conversation::ensure_group_members_at(
+        database,
+        conversation_id,
+        client,
+        context.now(),
+    )
+    .map_err(super::conversation_settings::edit_error)?;
+    Ok(written.unwrap_or(client))
 }
 
 fn text_field(value: Option<String>) -> Option<String> {
@@ -698,4 +713,44 @@ pub async fn conversation_add_user_message(
             changed(context, appended.value, revision)
         })
         .await
+}
+
+#[cfg(test)]
+mod revision_race_tests {
+    use super::*;
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_writer_after_the_client_check_is_not_adopted() {
+        let harness = crate::api::tests::harness(crate::api::tests::Reply::Text("Hello."));
+        let (chat, _) = crate::api::turns_tests::replied_chat(&harness, "revision-race").await;
+        let conversation_id: ConversationId = chat.parse().expect("conversation id");
+        harness
+            .context
+            .blocking(move |context| {
+                let database = context.backend().database();
+                let before = writable(context, conversation_id).expect("conversation");
+                let error = begin_revision_with(context, conversation_id, before.revision, || {
+                    database
+                        .rename(
+                            &lettuce_conversations::RenameConversation {
+                                conversation_id,
+                                expected_revision: before.revision,
+                                operation: crate::conversation::edit_operation(
+                                    "concurrent-rename".into(),
+                                    &[b"rename"],
+                                )
+                                .expect("token"),
+                                title: "Concurrent writer".into(),
+                            },
+                            context.now(),
+                        )
+                        .expect("concurrent writer");
+                })
+                .expect_err("the stale client revision must conflict");
+                assert_eq!(error.code, ApiErrorCode::Conflict);
+                Ok(())
+            })
+            .await
+            .expect("race assertion");
+    }
 }

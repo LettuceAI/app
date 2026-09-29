@@ -115,6 +115,29 @@ impl<
     where
         M: ModelProfileRepository + ProviderAccountRepository + ?Sized,
     {
+        let (request, spec) = self.plan_admission(request, models)?;
+        let admitted = self.jobs.create_or_get(spec)?;
+        let record = self.generations.admit(ImageGenerationRecord {
+            job_id: admitted.job.id,
+            request,
+            state: ImageGenerationState::Pending,
+        })?;
+        validate_job_record(&admitted.job, &record)?;
+        let record = self.reconcile(&admitted.job, record)?;
+        Ok(ImageGenerationAdmission {
+            record,
+            job: admitted.job,
+            created: admitted.created,
+        })
+    }
+
+    pub fn plan_admission<M>(
+        &self,
+        request: ImageGenerationRequest,
+        models: &M,
+    ) -> Result<(ImageGenerationRequest, lettuce_jobs::NewJob), ImageGenerationError>
+    where M: ModelProfileRepository + ProviderAccountRepository + ?Sized,
+    {
         request.validate()?;
         let profile = resolve(models, &request)?;
         let mut request = request;
@@ -138,8 +161,7 @@ impl<
         } else {
             vec![ResourceClass::Network, ResourceClass::DiskWrite]
         };
-        let admitted = self.jobs.create_or_get(
-            JobSpec::new(
+        let spec = JobSpec::new(
                 JobKind::ImageGenerate,
                 subject,
                 OutcomeRef::Request(request.id),
@@ -150,20 +172,8 @@ impl<
             .with_policies(
                 RecoveryPolicy::MarkInterrupted,
                 CancellationPolicy::Cooperative,
-            ),
-        )?;
-        let record = self.generations.admit(ImageGenerationRecord {
-            job_id: admitted.job.id,
-            request,
-            state: ImageGenerationState::Pending,
-        })?;
-        validate_job_record(&admitted.job, &record)?;
-        let record = self.reconcile(&admitted.job, record)?;
-        Ok(ImageGenerationAdmission {
-            record,
-            job: admitted.job,
-            created: admitted.created,
-        })
+            );
+        Ok((request, spec))
     }
 
     pub fn claim(

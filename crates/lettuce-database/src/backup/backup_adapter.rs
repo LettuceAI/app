@@ -1586,6 +1586,8 @@ fn read_job_backup(
             .map_err(|_| ProviderBackupSourceError::InvalidData)?,
         image_generations: crate::media::image_generation_adapter::list_in(transaction)
             .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+        job_details: crate::job_details_adapter::jobs_in(transaction).map_err(|_| ProviderBackupSourceError::InvalidData)?,
+        job_operations: crate::job_details_adapter::operations_in(transaction).map_err(|_| ProviderBackupSourceError::InvalidData)?,
         local_model_jobs: crate::models::local_model_jobs_adapter::jobs_in(transaction)
             .map_err(|_| ProviderBackupSourceError::InvalidData)?,
         local_model_operations: crate::models::local_model_jobs_adapter::operations_in(transaction)
@@ -1805,6 +1807,7 @@ fn read_conversation_history(
         })
         .collect::<Result<Vec<_>, _>>()?;
     Ok(ConversationHistoryBackup {
+        scene_follow_ups: crate::conversation::scene_follow_up_adapter::all_in(transaction).map_err(|_| ProviderBackupSourceError::InvalidData)?,
         version: CONVERSATION_HISTORY_BACKUP_VERSION,
         conversations,
     })

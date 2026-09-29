@@ -96,6 +96,10 @@ impl ClaimedJob for ClaimedImage {
     ) -> Result<(), ApiError> {
         let work = self.work;
         let database = context.backend().database();
+        let request_id = work.record.request.id;
+        let source = work.record.request.source;
+        let claim = work.claim.claim.clone();
+        let job_id = work.job.id;
         let Some(media) = context.media() else {
             let at = context.now().max(work.job.updated_at);
             database
@@ -106,6 +110,20 @@ impl ClaimedJob for ClaimedImage {
                     at,
                 })
                 .map_err(internal)?;
+            lettuce_image_generation::ImageGenerationRepository::settle(
+                database,
+                job_id,
+                lettuce_image_generation::ImageGenerationState::Failed {
+                    message: MEDIA_UNAVAILABLE.to_owned(),
+                    completed_at: at,
+                },
+            )
+            .map_err(internal)?;
+            fail_follow_up(
+                &context,
+                request_id,
+                crate::jobs::failure_labels::SCENE_IMAGE_MEDIA_UNAVAILABLE,
+            )?;
             return Ok(());
         };
         let shutting_down = context.shutdown_token().is_cancelled();
@@ -117,8 +135,45 @@ impl ClaimedJob for ClaimedImage {
         let now = context.now();
         let result = ImageGenerationCoordinator::new(database, database)
             .run(work, database, media, context.image_provider(), reason, now)
-            .await
-            .map_err(internal)?;
+            .await;
+        let result = match result {
+            Ok(result) => result,
+            Err(error) => {
+                fail_follow_up(
+                    &context,
+                    request_id,
+                    crate::jobs::failure_labels::SCENE_IMAGE_FAILED,
+                )?;
+                if let Some(job) = database.get(job_id).map_err(internal)?
+                    && !job.is_terminal()
+                {
+                    database
+                        .append_and_transition(JobMutation::Fail {
+                            claim,
+                            error: JobError::new(
+                                JobErrorCode::StorageFailure,
+                                false,
+                                crate::jobs::failure_labels::SCENE_IMAGE_FAILED,
+                            )
+                            .expect("constant label"),
+                            at: context.now().max(job.updated_at),
+                        })
+                        .map_err(internal)?;
+                }
+                if source == ImageGenerationSource::Scene {
+                    lettuce_image_generation::ImageGenerationRepository::settle(
+                        database,
+                        job_id,
+                        lettuce_image_generation::ImageGenerationState::Failed {
+                            message: crate::jobs::failure_labels::SCENE_IMAGE_FAILED.to_owned(),
+                            completed_at: context.now(),
+                        },
+                    )
+                    .map_err(internal)?;
+                }
+                return Err(internal(error));
+            }
+        };
         let (ImageGenerationRunResult::Succeeded { record, .. }
         | ImageGenerationRunResult::Failed { record, .. }
         | ImageGenerationRunResult::Cancelled { record, .. }) = result;
@@ -144,7 +199,7 @@ fn mark_running<R: SceneFollowUpRepository + ?Sized>(
     if let Some(follow_up) = repository.follow_up_of_request(request_id)? {
         repository.change_follow_up(
             follow_up.conversation_id,
-            follow_up.message_id,
+            follow_up.target,
             &[SceneFollowUpState::Approved],
             &SceneFollowUpChange {
                 state: Some(SceneFollowUpState::Running),
@@ -152,6 +207,21 @@ fn mark_running<R: SceneFollowUpRepository + ?Sized>(
             },
             now,
         )?;
+    }
+    Ok(())
+}
+
+fn fail_follow_up(
+    context: &ApiContext,
+    request_id: lettuce_types::RequestId,
+    label: &str,
+) -> Result<(), ApiError> {
+    let database = context.backend().database();
+    if let Some(follow_up) = database
+        .follow_up_of_request(request_id)
+        .map_err(internal)?
+    {
+        crate::api::scenes::fail_follow_up(database, &follow_up, label, context.now())?;
     }
     Ok(())
 }

@@ -9,10 +9,10 @@ use lettuce_types::{
 use serde::{Deserialize, Serialize};
 
 use crate::commands::{
-    ArchiveConversation, AttachAttemptJob, ChooseCandidate, ContinueConversation, EditMessage,
-    ForkBranch, PrepareGeneration, RegenerateCandidate, RenameConversation, RestoreConversation,
-    RetryGeneration, SelectBranch, SendConversation, SettleCancellation, TombstoneMessage,
-    UpdateMessageFlags,
+    ArchiveConversation, AttachAttemptJob, AttachSceneMedia, ChooseCandidate, ContinueConversation,
+    EditMessage, ForkBranch, PrepareGeneration, RegenerateCandidate, RenameConversation,
+    RestoreConversation, RetryGeneration, SelectBranch, SendConversation, SettleCancellation,
+    TombstoneMessage, UpdateMessageFlags,
 };
 use crate::content::{
     MediaAssetRole, Message, MessageCandidate, MessagePart, MessageRevision, MessageRole,
@@ -1360,6 +1360,14 @@ pub trait ConversationRepository: ConversationCreator {
         command: &EditMessage,
         now: TimestampMillis,
     ) -> Result<EditMessageResult, ConversationRepositoryError>;
+    /// Appends a media asset to one variant of a reply; see
+    /// [`AttachSceneMedia`]. A tombstoned message answers
+    /// [`ConversationRepositoryError::Conflict`].
+    fn attach_scene_media(
+        &self,
+        command: &AttachSceneMedia,
+        now: TimestampMillis,
+    ) -> Result<EditMessageResult, ConversationRepositoryError>;
     /// Commits the scene setting and the scene message's new revision in one
     /// transaction, recorded as an edit of that message.
     fn select_scene(
@@ -1975,6 +1983,9 @@ pub enum ContextSectionKind {
     ScheduledNotes,
     GroupCast,
     PromptEntry,
+    History,
+    Media,
+    Tools,
 }
 
 /// One source's share of a prompt: the character, the persona, one

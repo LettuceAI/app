@@ -5,7 +5,7 @@
 mod feed;
 mod image;
 mod install;
-mod local;
+pub(super) mod local;
 mod runner;
 mod state;
 mod text;
@@ -94,7 +94,7 @@ pub async fn jobs_list(
                     .items
                     .iter()
                     .map(|job| job_view(context, job))
-                    .collect(),
+                    .collect::<Result<_, _>>()?,
                 next_cursor: page.next_cursor,
             })
         })
@@ -109,7 +109,7 @@ pub async fn job_get(
     context
         .blocking(move |context| {
             let job = load(context, job_id)?;
-            Ok(job_view(context, &job))
+            job_view(context, &job)
         })
         .await
 }
@@ -175,7 +175,7 @@ pub async fn job_watch(
         .blocking(move |context| {
             context.jobs().watch(job_id, sink, || {
                 let job = load(context, job_id)?;
-                let view = job_view(context, &job);
+                let view = job_view(context, &job)?;
                 let (event, terminal) = job_event(&job, view.clone());
                 Ok((view, event, terminal))
             })
@@ -206,9 +206,10 @@ pub(crate) fn job_event(job: &JobSnapshot, view: dto::JobView) -> (dto::JobEvent
     }
 }
 
-pub(crate) fn job_view(context: &ApiContext, job: &JobSnapshot) -> dto::JobView {
+pub(crate) fn job_view(context: &ApiContext, job: &JobSnapshot) -> Result<dto::JobView, ApiError> {
     let local = local::local_job_view(context, job);
-    dto::JobView {
+    let feature = text::feature_view(context, job)?;
+    Ok(dto::JobView {
         id: job.id.to_string(),
         kind: job_kind_dto(job.kind),
         subject: dto::JobSubjectDto {
@@ -245,14 +246,14 @@ pub(crate) fn job_view(context: &ApiContext, job: &JobSnapshot) -> dto::JobView 
                 .then(|| local::ollama_failure(error.message.as_str(), local.failure.as_ref()))
                 .flatten(),
         }),
-        result: local.result.or_else(|| {
+        result: feature.or(local.result).or_else(|| {
             job.outcome.as_ref().and_then(|outcome| {
                 let (JobOutcome::Success { result_ref } | JobOutcome::Partial { result_ref, .. }) =
                     outcome;
                 job_result(context, result_ref)
             })
         }),
-    }
+    })
 }
 
 /// A download whose bytes have all arrived is verifying them before its

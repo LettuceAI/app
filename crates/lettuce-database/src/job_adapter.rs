@@ -23,7 +23,115 @@ const EVENT_COLUMNS: &str = "job_id, seq, at, correlation_id, event_json";
 
 type JobRecords = BTreeMap<JobId, StoredJobRecord>;
 
+#[derive(Debug)]
+pub struct ManualSceneImageAdmission<'a> {
+    pub spec: NewJob,
+    pub request: lettuce_image_generation::ImageGenerationRequest,
+    pub operation_key: &'a str,
+    pub request_digest: &'a str,
+    pub conversation_id: lettuce_types::ConversationId,
+    pub message_id: lettuce_types::MessageId,
+    pub target: lettuce_conversations::SceneFollowUpTarget,
+    pub prompt: &'a str,
+}
+
 impl Database {
+    pub fn admit_job_with_detail(
+        &self,
+        spec: NewJob,
+        operation_key: &str,
+        request_digest: &str,
+        detail: &serde_json::Value,
+    ) -> Result<JobSnapshot, StoreError> {
+        let mut connection = self.connection.lock().map_err(|_| StoreError::Storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| StoreError::Storage)?;
+        let (job, _) =
+            admit_job_detail_in(&transaction, spec, operation_key, request_digest, detail)?;
+        transaction.commit().map_err(|_| StoreError::Storage)?;
+        Ok(job)
+    }
+
+    pub fn admit_manual_scene_image(
+        &self,
+        admission: ManualSceneImageAdmission<'_>,
+    ) -> Result<JobSnapshot, StoreError> {
+        let ManualSceneImageAdmission {
+            spec,
+            request,
+            operation_key,
+            request_digest,
+            conversation_id,
+            message_id,
+            target,
+            prompt,
+        } = admission;
+        let mut connection = self.connection.lock().map_err(|_| StoreError::Storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| StoreError::Storage)?;
+        let detail = serde_json::json!({"kind": "scene_image", "conversation_id": conversation_id, "message_id": message_id, "target": target});
+        let (job, replayed) =
+            admit_job_detail_in(&transaction, spec, operation_key, request_digest, &detail)?;
+        if !replayed {
+            use lettuce_conversations::{SceneFollowUp, SceneFollowUpMode, SceneFollowUpState};
+            let current = crate::conversation::scene_follow_up_adapter::one(
+                &transaction,
+                conversation_id,
+                target,
+            )
+            .map_err(|_| StoreError::Storage)?;
+            if current
+                .as_ref()
+                .is_some_and(|current| current.state.generating())
+            {
+                return Err(StoreError::ResourceUnavailable);
+            }
+            let now = request.created_at;
+            let follow_up = SceneFollowUp {
+                conversation_id,
+                message_id,
+                target,
+                prompt: prompt.to_owned(),
+                mode: SceneFollowUpMode::Manual,
+                state: SceneFollowUpState::Approved,
+                generation: match &current {
+                    Some(current) => current
+                        .generation
+                        .checked_add(1)
+                        .ok_or(StoreError::InvalidData)?,
+                    None => 1,
+                },
+                attempt: 1,
+                request_id: Some(request.id),
+                failure: None,
+                created_at: current.as_ref().map_or(now, |current| current.created_at),
+                updated_at: current
+                    .as_ref()
+                    .map_or(now, |current| now.max(current.updated_at)),
+            };
+            if current.is_some() {
+                transaction.execute("UPDATE scene_image_follow_ups SET prompt = ?4, mode = 'manual', state = 'approved', generation = ?5, attempt = 1, request_id = ?6, failure = NULL, updated_at = ?7 WHERE conversation_id = ?1 AND target_kind = ?2 AND target_id = ?3", params![conversation_id.to_string(), target.kind(), target.id(), follow_up.prompt, follow_up.generation, request.id.to_string(), follow_up.updated_at.get()]).map_err(|_| StoreError::Storage)?;
+            } else {
+                crate::conversation::scene_follow_up_adapter::insert_restored_in(
+                    &transaction,
+                    &follow_up,
+                )
+                .map_err(|_| StoreError::Storage)?;
+            }
+            let record = lettuce_image_generation::ImageGenerationRecord {
+                job_id: job.id,
+                request,
+                state: lettuce_image_generation::ImageGenerationState::Pending,
+            };
+            crate::media::image_generation_adapter::insert_pending_row(&transaction, &record)
+                .map_err(|_| StoreError::Storage)?;
+        }
+        transaction.commit().map_err(|_| StoreError::Storage)?;
+        Ok(job)
+    }
+
     fn read_job_rows<R>(
         &self,
         operation: impl FnOnce(&Transaction<'_>) -> Result<R, StoreError>,
@@ -53,6 +161,61 @@ impl Database {
         transaction.commit().map_err(|_| StoreError::Storage)?;
         Ok(result)
     }
+}
+
+fn admit_job_detail_in(
+    transaction: &Transaction<'_>,
+    spec: NewJob,
+    operation_key: &str,
+    request_digest: &str,
+    detail: &serde_json::Value,
+) -> Result<(JobSnapshot, bool), StoreError> {
+    spec.validate()?;
+    if operation_key.trim().is_empty() || request_digest.is_empty() || !detail.is_object() {
+        return Err(StoreError::InvalidData);
+    }
+    use rusqlite::OptionalExtension;
+    let prior: Option<(String, String)> = transaction
+        .query_row(
+            "SELECT request_digest, job_id FROM job_operations WHERE operation_key = ?1",
+            [operation_key],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(|_| StoreError::Storage)?;
+    if let Some((digest, job_id)) = prior {
+        if digest != request_digest {
+            return Err(StoreError::IdempotencyConflict);
+        }
+        let id = job_id.parse().map_err(|_| StoreError::InvalidData)?;
+        return Ok((
+            select_ids(transaction, [id])?
+                .remove(&id)
+                .ok_or(StoreError::InvalidData)?
+                .snapshot,
+            true,
+        ));
+    }
+    let before = creation_set(transaction, &spec)?;
+    let admitted = apply_to_job_set(transaction, before, |store| store.create_or_get(spec))?;
+    let stored: Option<String> = transaction
+        .query_row(
+            "SELECT detail_json FROM job_details WHERE job_id = ?1",
+            [admitted.job.id.to_string()],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|_| StoreError::Storage)?;
+    if let Some(stored) = stored {
+        let value: serde_json::Value =
+            serde_json::from_str(&stored).map_err(|_| StoreError::InvalidData)?;
+        if value != *detail {
+            return Err(StoreError::IdempotencyConflict);
+        }
+    }
+    transaction.execute("INSERT INTO job_details (job_id, detail_json) VALUES (?1, ?2) ON CONFLICT(job_id) DO NOTHING", params![admitted.job.id.to_string(), detail.to_string()]).map_err(|_| StoreError::Storage)?;
+    transaction.execute("INSERT INTO job_operations (operation_key, request_digest, job_id) VALUES (?1, ?2, ?3)", params![operation_key, request_digest, admitted.job.id.to_string()]).map_err(|_| StoreError::Storage)?;
+    Ok((admitted.job, false))
 }
 
 fn apply_to_job_set<R>(
@@ -894,6 +1057,101 @@ mod tests {
                 .checked_add(millis)
                 .expect("test time"),
         )
+    }
+
+    #[test]
+    fn generic_admission_rolls_back_and_replays_across_reopen() {
+        let path = std::env::temp_dir().join(format!("lettuce-detail-{}.sqlite", Uuid::new_v4()));
+        let database = Database::open(&path).expect("database");
+        database.connection().expect("connection").execute_batch("CREATE TRIGGER reject_detail BEFORE INSERT ON job_details BEGIN SELECT RAISE(ABORT, 'injected detail failure'); END;").expect("trigger");
+        let detail = serde_json::json!({"kind":"test","text":"first"});
+        assert_eq!(
+            database.admit_job_with_detail(spec("detail-key"), "operation", "digest", &detail),
+            Err(StoreError::Storage)
+        );
+        let count: i64 = database
+            .connection()
+            .expect("connection")
+            .query_row("SELECT count(*) FROM jobs", [], |row| row.get(0))
+            .expect("count");
+        assert_eq!(count, 0);
+        assert!(
+            database
+                .job_operation("operation")
+                .expect("operation")
+                .is_none()
+        );
+        database
+            .connection()
+            .expect("connection")
+            .execute_batch("DROP TRIGGER reject_detail")
+            .expect("remove trigger");
+        let admitted = database
+            .admit_job_with_detail(spec("detail-key"), "operation", "digest", &detail)
+            .expect("admit");
+        drop(database);
+        let database = Database::open(&path).expect("reopen");
+        assert_eq!(
+            database
+                .admit_job_with_detail(spec("detail-key"), "operation", "digest", &detail)
+                .expect("replay")
+                .id,
+            admitted.id
+        );
+        assert_eq!(
+            database.admit_job_with_detail(spec("detail-key"), "operation", "different", &detail),
+            Err(StoreError::IdempotencyConflict)
+        );
+        assert_eq!(
+            database
+                .job_detail(admitted.id)
+                .expect("detail")
+                .expect("stored")
+                .detail,
+            detail
+        );
+    }
+
+    #[test]
+    fn concurrent_generic_admission_has_one_receipt_and_detail() {
+        let path =
+            std::env::temp_dir().join(format!("lettuce-detail-race-{}.sqlite", Uuid::new_v4()));
+        let first = Database::open(&path).expect("first");
+        let second = Database::open(&path).expect("second");
+        let barrier = std::sync::Barrier::new(2);
+        let detail = serde_json::json!({"kind":"test"});
+        let (a, b) = thread::scope(|scope| {
+            let run = |database: &Database| {
+                barrier.wait();
+                database
+                    .admit_job_with_detail(
+                        spec("same-detail"),
+                        "same-operation",
+                        "same-digest",
+                        &detail,
+                    )
+                    .expect("admit")
+            };
+            let first = &first;
+            let second = &second;
+            let a = scope.spawn(move || run(first));
+            let b = scope.spawn(move || run(second));
+            (
+                a.join().expect("first worker"),
+                b.join().expect("second worker"),
+            )
+        });
+        assert_eq!(a.id, b.id);
+        for table in ["jobs", "job_details", "job_operations"] {
+            let count: i64 = first
+                .connection()
+                .expect("connection")
+                .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .expect("count");
+            assert_eq!(count, 1, "{table}");
+        }
     }
 
     #[test]

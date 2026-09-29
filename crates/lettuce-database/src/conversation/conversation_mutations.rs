@@ -1624,6 +1624,170 @@ fn write_edit(
     })
 }
 
+/// Appends the asset to `command.candidate_id`'s latest rendering. The
+/// message's shown render is edited when it is that variant and no
+/// generation is live; otherwise the new revision waits, historical, for the
+/// variant to be selected.
+fn write_candidate_media(
+    transaction: &Transaction<'_>,
+    context: &kernel::MutationCtx,
+    command: &lettuce_conversations::AttachSceneMedia,
+) -> Result<(WrittenEdit, bool), ConversationRepositoryError> {
+    let state = message_state(transaction, context.conversation_id, command.message_id)?;
+    if state.visibility == "tombstoned" {
+        return Err(ConversationRepositoryError::Conflict);
+    }
+    let (base, edit, candidate_id, shown) = match command.target {
+        lettuce_conversations::SceneFollowUpTarget::Candidate(candidate_id) => {
+            let candidate_parts: String = transaction.query_row("SELECT parts_json FROM conversation_message_candidates WHERE conversation_id = ?1 AND id = ?2 AND message_id = ?3", params![context.conversation_id.to_string(), candidate_id.to_string(), command.message_id.to_string()], |row| row.get(0)).optional().map_err(slice::db)?.ok_or(ConversationRepositoryError::NotFound)?;
+            let edit = latest_edit_of(
+                transaction,
+                context.conversation_id,
+                command.message_id,
+                candidate_id,
+            )?;
+            let base = match edit {
+                Some(id) => transaction.query_row("SELECT parts_json FROM conversation_message_revisions WHERE conversation_id = ?1 AND id = ?2", params![context.conversation_id.to_string(), id.to_string()], |row| row.get(0)).map_err(slice::db)?,
+                None => candidate_parts,
+            };
+            let selected_edit = match state.active_revision_id {
+                Some(id) => transaction.query_row(
+                    "SELECT supersedes_candidate_id FROM conversation_message_revisions WHERE conversation_id = ?1 AND id = ?2",
+                    params![context.conversation_id.to_string(), id.to_string()],
+                    |row| row.get::<_, Option<String>>(0),
+                ).map_err(slice::db)? == Some(candidate_id.to_string()),
+                None => false,
+            };
+            let shown = state.active_candidate_id == Some(candidate_id) || selected_edit;
+            let base = if command.complete_deferred && selected_edit {
+                transaction.query_row(
+                    "SELECT parts_json FROM conversation_message_revisions WHERE conversation_id = ?1 AND id = ?2",
+                    params![context.conversation_id.to_string(), state.active_revision_id.map(|id| id.to_string())],
+                    |row| row.get(0),
+                ).map_err(slice::db)?
+            } else {
+                base
+            };
+            (base, edit, Some(candidate_id), shown)
+        }
+        lettuce_conversations::SceneFollowUpTarget::StarterRevision(revision_id) => {
+            let base: String = transaction.query_row("SELECT revision.parts_json FROM conversation_message_revisions revision JOIN conversation_initial_message_origins origin ON origin.conversation_id = revision.conversation_id AND origin.message_id = revision.message_id WHERE revision.conversation_id = ?1 AND revision.message_id = ?2 AND revision.id = ?3 AND origin.source_kind = 'starter'", params![context.conversation_id.to_string(), command.message_id.to_string(), revision_id.to_string()], |row| row.get(0)).optional().map_err(slice::db)?.ok_or(ConversationRepositoryError::NotFound)?;
+            (
+                base,
+                Some(revision_id),
+                None,
+                state.active_revision_id == Some(revision_id),
+            )
+        }
+    };
+    if command.complete_deferred && !shown {
+        return Ok((
+            WrittenEdit {
+                revision_id: edit.ok_or(ConversationRepositoryError::NotFound)?,
+                branch_id: state.branch_id,
+                owned_deltas: Vec::new(),
+            },
+            false,
+        ));
+    }
+    let mut parts: Vec<MessagePart> = slice::decode(&base)?;
+    if !parts.iter().any(|part| matches!(part, MessagePart::MediaAsset { asset_id, .. } if *asset_id == command.asset_id)) {
+        parts.push(MessagePart::MediaAsset { asset_id: command.asset_id, role: command.role });
+    }
+    let live = match require_no_live_turn_for_message(
+        transaction,
+        context.conversation_id,
+        command.message_id,
+    ) {
+        Ok(()) => false,
+        Err(ConversationRepositoryError::Conflict) => true,
+        Err(error) => return Err(error),
+    };
+    if command.complete_deferred && live {
+        return Err(ConversationRepositoryError::Conflict);
+    }
+    if shown && !live {
+        let (pinned, scene_edited): (bool, bool) = transaction
+            .query_row(
+                "SELECT pinned, scene_edited FROM conversation_messages WHERE conversation_id = ?1 AND id = ?2",
+                params![context.conversation_id.to_string(), command.message_id.to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(slice::db)?;
+        return write_edit(
+            transaction,
+            context,
+            &EditMessage {
+                conversation_id: command.conversation_id,
+                message_id: command.message_id,
+                expected_revision: Revision::INITIAL,
+                operation: command.operation.clone(),
+                draft: lettuce_conversations::MessageEditDraft {
+                    parts,
+                    visibility: conversation_query::message_visibility(&state.visibility)?,
+                    pinned,
+                    scene_edited,
+                },
+            },
+        )
+        .map(|written| (written, false));
+    }
+    let sequence: i64 = transaction
+        .query_row(
+            "SELECT COALESCE(max(sequence) + 1, 1) FROM conversation_message_revisions WHERE conversation_id = ?1 AND message_id = ?2",
+            params![context.conversation_id.to_string(), command.message_id.to_string()],
+            |row| row.get(0),
+        )
+        .map_err(slice::db)?;
+    let revision_id = MessageRevisionId::new();
+    transaction
+        .execute(
+            "INSERT INTO conversation_message_revisions (conversation_id, id, message_id, branch_id, sequence, parts_json, authored_at, source_turn_id, provider_replay_artifact_id, provider_replay_retention, supersedes_candidate_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, NULL, NULL, ?8)",
+            params![
+                context.conversation_id.to_string(),
+                revision_id.to_string(),
+                command.message_id.to_string(),
+                state.branch_id.to_string(),
+                sequence,
+                slice::encode(&parts)?,
+                context.now.get(),
+                candidate_id.map(|id| id.to_string()),
+            ],
+        )
+        .map_err(kernel::map_constraint)?;
+    for (part_ordinal, part) in parts.iter().enumerate() {
+        let MessagePart::MediaAsset { asset_id, role } = part else {
+            continue;
+        };
+        transaction
+            .execute(
+                "INSERT INTO revision_media_refs (conversation_id, message_revision_id, part_ordinal, asset_id, media_role, state, created_at) VALUES (?1, ?2, ?3, ?4, ?5, 'historical', ?6)",
+                params![
+                    context.conversation_id.to_string(),
+                    revision_id.to_string(),
+                    i64::try_from(part_ordinal).map_err(|_| ConversationRepositoryError::Storage)?,
+                    asset_id.to_string(),
+                    conversation_creator::media_role_name(*role),
+                    context.now.get(),
+                ],
+            )
+            .map_err(kernel::map_constraint)?;
+    }
+    let created = MediaOwner::Revision(revision_id);
+    let assets = owner_assets(transaction, context.conversation_id, created)?;
+    Ok((
+        WrittenEdit {
+            revision_id,
+            branch_id: state.branch_id,
+            owned_deltas: vec![(
+                created,
+                owner_deltas(&assets, created, AssetReferenceState::Historical),
+            )],
+        },
+        shown && live,
+    ))
+}
+
 fn edit_events(
     context: &kernel::MutationCtx,
     revision: Revision,
@@ -2498,33 +2662,31 @@ fn restored_events(
     }
 }
 
-/// Stores the scene image a finalized reply asks for, restarting the
-/// message's follow-up unless an image is being generated for it; a reply
-/// that asks for none removes the follow-up that is not generating.
+/// Stores the scene image a finalized reply variant asks for; a variant that
+/// asks for none leaves every other variant's follow-up as it is.
 fn save_scene_follow_up(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
     message_id: MessageId,
+    candidate_id: MessageCandidateId,
     draft: Option<&lettuce_conversations::SceneFollowUpDraft>,
     now: TimestampMillis,
 ) -> Result<(), ConversationRepositoryError> {
-    match draft {
-        Some(draft) => transaction.execute(
-            "INSERT INTO scene_image_follow_ups (conversation_id, message_id, prompt, mode, state, generation, attempt, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, 'pending', 0, 0, ?5, ?5) ON CONFLICT (conversation_id, message_id) DO UPDATE SET prompt = excluded.prompt, mode = excluded.mode, state = 'pending', generation = generation + 1, attempt = 0, request_id = NULL, failure = NULL, updated_at = max(updated_at, excluded.updated_at) WHERE state NOT IN ('approved', 'running')",
-            params![
-                conversation_id.to_string(),
-                message_id.to_string(),
-                draft.prompt,
-                if draft.ask_first { "ask_first" } else { "auto" },
-                now.get(),
-            ],
-        ),
-        None => transaction.execute(
-            "DELETE FROM scene_image_follow_ups WHERE conversation_id = ?1 AND message_id = ?2 AND state NOT IN ('approved', 'running')",
-            params![conversation_id.to_string(), message_id.to_string()],
-        ),
+    if let Some(draft) = draft {
+        transaction
+            .execute(
+                "INSERT INTO scene_image_follow_ups (conversation_id, target_kind, target_id, candidate_id, message_id, prompt, mode, state, generation, attempt, created_at, updated_at) VALUES (?1, 'candidate', ?2, ?2, ?3, ?4, ?5, 'pending', 0, 0, ?6, ?6)",
+                params![
+                    conversation_id.to_string(),
+                    candidate_id.to_string(),
+                    message_id.to_string(),
+                    draft.prompt,
+                    if draft.ask_first { "ask_first" } else { "auto" },
+                    now.get(),
+                ],
+            )
+            .map_err(kernel::map_constraint)?;
     }
-    .map_err(kernel::map_constraint)?;
     Ok(())
 }
 
@@ -3534,6 +3696,13 @@ impl ConversationRepository for Database {
                         ],
                     )
                     .map_err(kernel::map_constraint)?;
+                crate::conversation::state_adapter::retry_turn_effect_draft_in(
+                    transaction,
+                    context.conversation_id,
+                    command.turn_id,
+                    turn_id,
+                    context.now,
+                )?;
                 insert_first_attempt(transaction, context.conversation_id, turn_id)?;
                 let revision =
                     kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
@@ -4082,6 +4251,7 @@ impl ConversationRepository for Database {
                     transaction,
                     context.conversation_id,
                     message_id,
+                    candidate_id,
                     draft.scene_follow_up.as_ref(),
                     context.now,
                 )?;
@@ -4353,11 +4523,6 @@ impl ConversationRepository for Database {
                     turn_id,
                     failure,
                     context.now,
-                )?;
-                crate::conversation::state_adapter::discard_turn_effect_draft_in(
-                    transaction,
-                    context.conversation_id,
-                    turn_id,
                 )?;
                 let revision =
                     kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
@@ -5239,6 +5404,82 @@ impl ConversationRepository for Database {
                 })
             },
             |transaction, operation| replayed_edit(transaction, command, operation),
+        )
+    }
+
+    fn attach_scene_media(
+        &self,
+        command: &lettuce_conversations::AttachSceneMedia,
+        now: TimestampMillis,
+    ) -> Result<EditMessageResult, ConversationRepositoryError> {
+        kernel::run_mutation(
+            self,
+            command.conversation_id,
+            OperationKind::Edit,
+            &command.operation,
+            now,
+            |transaction, context| {
+                let current: i64 = transaction
+                    .query_row(
+                        "SELECT revision FROM conversations WHERE id = ?1",
+                        [context.conversation_id.to_string()],
+                        |row| row.get(0),
+                    )
+                    .map_err(slice::db)?;
+                let conversation = kernel::cas_conversation(
+                    transaction,
+                    context.conversation_id,
+                    Revision::new(
+                        u64::try_from(current).map_err(|_| ConversationRepositoryError::Storage)?,
+                    ),
+                )?;
+                kernel::require_writable(&conversation)?;
+                let (written, awaiting_turn) =
+                    write_candidate_media(transaction, context, command)?;
+                transaction.execute("UPDATE scene_image_follow_ups SET state = ?4, failure = NULL, updated_at = max(updated_at, ?5) WHERE conversation_id = ?1 AND target_kind = ?2 AND target_id = ?3 AND state IN ('approved', 'running', 'awaiting_turn')", params![context.conversation_id.to_string(), command.target.kind(), command.target.id(), if awaiting_turn { "awaiting_turn" } else { "done" }, context.now.get()]).map_err(slice::db)?;
+                let revision =
+                    kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
+                let events = edit_events(context, revision, command.message_id, &written);
+                Ok(kernel::Staged {
+                    value: edit_result(
+                        transaction,
+                        context.conversation_id,
+                        command.message_id,
+                        written.revision_id,
+                        written
+                            .owned_deltas
+                            .into_iter()
+                            .flat_map(|(_, changes)| changes)
+                            .collect(),
+                    )?,
+                    result: OperationResultRef::Message(command.message_id),
+                    events,
+                })
+            },
+            |transaction, operation| {
+                replayed_message(operation, command.message_id)?;
+                let mut recorded = None;
+                for event in recorded_events(transaction, command.conversation_id, operation)? {
+                    if let ConversationOutboxEvent::MessageRevised {
+                        message_id,
+                        revision_id,
+                        ..
+                    } = event
+                        && message_id == command.message_id
+                    {
+                        recorded = Some(revision_id);
+                    }
+                }
+                let revision_id = recorded.ok_or(ConversationRepositoryError::Conflict)?;
+                let deltas = recorded_deltas(transaction, command.conversation_id, operation)?;
+                edit_result(
+                    transaction,
+                    command.conversation_id,
+                    command.message_id,
+                    revision_id,
+                    deltas,
+                )
+            },
         )
     }
 
@@ -7030,6 +7271,26 @@ mod tests {
                 TimestampMillis::new(20),
             )
             .expect("send");
+        {
+            let mut connection = fixture.database.connection().expect("connection");
+            let tx = connection.transaction().expect("transaction");
+            let mut seed = lettuce_companions::CompanionTurnEffectSeed::default();
+            seed.relationship_delta.closeness = 0.4;
+            seed.signal_changes.added.push("retry signal".into());
+            crate::conversation::state_adapter::insert_effect_draft_in(
+                &tx,
+                fixture.conversation_id,
+                send.value.turn.id,
+                match send.value.turn.input {
+                    GenerationInput::UserMessage { message_id } => Some(message_id),
+                    _ => None,
+                },
+                &seed,
+                TimestampMillis::new(20),
+            )
+            .expect("effect seed");
+            tx.commit().expect("commit");
+        }
         settle_failed(&fixture, &send.value.turn, 21);
         fixture.revision = conversation_revision(&fixture);
         let command = RetryGeneration {
@@ -7044,6 +7305,13 @@ mod tests {
             .database
             .begin_retry(&command, TimestampMillis::new(22))
             .expect("retry");
+        {
+            let connection = fixture.database.connection().expect("connection");
+            let closeness: f64 = connection.query_row("SELECT closeness_delta FROM companion_turn_effect_drafts WHERE conversation_id = ?1 AND turn_id = ?2", params![fixture.conversation_id.to_string(), result.value.turn.id.to_string()], |row| row.get(0)).expect("retry retains effect");
+            assert_eq!(closeness, 0.4);
+            let signal: String = connection.query_row("SELECT value FROM companion_turn_effect_signal_changes WHERE conversation_id = ?1 AND turn_id = ?2", params![fixture.conversation_id.to_string(), result.value.turn.id.to_string()], |row| row.get(0)).expect("retry retains signals");
+            assert_eq!(signal, "retry signal");
+        }
         assert_eq!(result.value.turn.retry_of_turn_id, Some(send.value.turn.id));
         assert_eq!(result.value.turn.status, GenerationTurnStatus::Created);
         assert_eq!(result.value.turn.attempts.len(), 1);
@@ -12021,6 +12289,333 @@ mod tests {
             &candidate_id.to_string(),
         );
         value.parse().expect("turn id")
+    }
+
+    #[test]
+    fn candidate_scene_follow_ups_survive_backup_with_their_independent_prompts() {
+        use lettuce_conversations::SceneFollowUpRepository;
+        let mut fixture = direct_fixture();
+        let (message_id, first, second) = two_candidates(&mut fixture, "backup-scenes");
+        for (candidate, prompt) in [(first, "First harbor"), (second, "Second harbor")] {
+            fixture
+                .database
+                .ensure_follow_up(
+                    fixture.conversation_id,
+                    message_id,
+                    lettuce_conversations::SceneFollowUpTarget::Candidate(candidate),
+                    prompt,
+                    lettuce_conversations::SceneFollowUpMode::AskFirst,
+                    TimestampMillis::new(100),
+                )
+                .expect("follow-up");
+        }
+        store_fixture_model_snapshots(&fixture.database);
+        let graph =
+            crate::backup::restore_writer::tests::assert_backup_round_trip(&fixture.database);
+        assert_eq!(graph.conversation_history.scene_follow_ups.len(), 2);
+        assert!(
+            graph
+                .conversation_history
+                .scene_follow_ups
+                .iter()
+                .any(|follow_up| follow_up.prompt == "First harbor")
+        );
+        assert!(
+            graph
+                .conversation_history
+                .scene_follow_ups
+                .iter()
+                .any(|follow_up| follow_up.prompt == "Second harbor")
+        );
+    }
+
+    #[test]
+    fn a_scene_image_completed_during_empty_cancelled_regeneration_remains_visible() {
+        let mut fixture = direct_fixture();
+        let (message_id, _, candidate_id) = two_candidates(&mut fixture, "empty-cancel-scene");
+        let source_turn = chosen_turn(&fixture, candidate_id);
+        let regenerated = fixture
+            .database
+            .begin_regenerate(
+                &RegenerateCandidate {
+                    conversation_id: fixture.conversation_id,
+                    branch_id: fixture.branch_id,
+                    message_id,
+                    turn_id: source_turn,
+                    expected_revision: fixture.revision,
+                    expected_turn_revision: turn_revision(&fixture, source_turn),
+                    operation: token("empty-cancel-scene-regen-second", "cd"),
+                    active_candidate_id: candidate_id,
+                    guidance: None,
+                    model_override: None,
+                    forced_speaker: None,
+                    swap_roles: false,
+                },
+                TimestampMillis::new(101),
+            )
+            .expect("regenerate");
+        let asset_id = stage_media_asset(&fixture.database, "33");
+        fixture
+            .database
+            .attach_scene_media(
+                &lettuce_conversations::AttachSceneMedia {
+                    complete_deferred: false,
+                    conversation_id: fixture.conversation_id,
+                    message_id,
+                    target: lettuce_conversations::SceneFollowUpTarget::Candidate(candidate_id),
+                    operation: token("empty-cancel-scene-attach", "cd"),
+                    asset_id,
+                    role: lettuce_conversations::MediaAssetRole::Attachment,
+                },
+                TimestampMillis::new(102),
+            )
+            .expect("image finishes while regeneration owns the render");
+        let mut active_turn = regenerated.value.turn;
+        active_turn
+            .attempts
+            .retain(|attempt| attempt.id == regenerated.value.attempt.id);
+        settle_cancelled(&fixture, &active_turn, 103);
+        fixture
+            .database
+            .attach_scene_media(
+                &lettuce_conversations::AttachSceneMedia {
+                    complete_deferred: true,
+                    conversation_id: fixture.conversation_id,
+                    message_id,
+                    target: lettuce_conversations::SceneFollowUpTarget::Candidate(candidate_id),
+                    operation: token("empty-cancel-scene-complete", "cd"),
+                    asset_id,
+                    role: lettuce_conversations::MediaAssetRole::Attachment,
+                },
+                TimestampMillis::new(200),
+            )
+            .expect("complete after cancellation settlement");
+        let active_revision: Option<String> = scalar(
+            &fixture.database,
+            "SELECT active_revision_id FROM conversation_messages WHERE id = ?1",
+            &message_id.to_string(),
+        );
+        assert!(
+            active_revision.is_some(),
+            "empty stopped regeneration retains the original candidate, including its completed image"
+        );
+    }
+
+    #[test]
+    fn a_scene_image_completed_during_continue_remains_visible_after_settlement() {
+        let mut fixture = direct_fixture();
+        let (message_id, _, candidate_id) = two_candidates(&mut fixture, "live-scene");
+        let continued = fixture
+            .database
+            .begin_continue(
+                &ContinueConversation {
+                    conversation_id: fixture.conversation_id,
+                    branch_id: fixture.branch_id,
+                    expected_revision: fixture.revision,
+                    forced_speaker: None,
+                    swap_roles: false,
+                    operation: token("scene-live-continue", "cd"),
+                },
+                TimestampMillis::new(101),
+            )
+            .expect("continue");
+        let asset_id = stage_media_asset(&fixture.database, "33");
+        fixture
+            .database
+            .attach_scene_media(
+                &lettuce_conversations::AttachSceneMedia {
+                    complete_deferred: false,
+                    conversation_id: fixture.conversation_id,
+                    message_id,
+                    target: lettuce_conversations::SceneFollowUpTarget::Candidate(candidate_id),
+                    operation: token("scene-live-attach", "cd"),
+                    asset_id,
+                    role: lettuce_conversations::MediaAssetRole::Attachment,
+                },
+                TimestampMillis::new(102),
+            )
+            .expect("image finishes while continuation is live");
+        settle_succeeded(&fixture, &continued.value.turn, 103);
+        fixture
+            .database
+            .attach_scene_media(
+                &lettuce_conversations::AttachSceneMedia {
+                    complete_deferred: true,
+                    conversation_id: fixture.conversation_id,
+                    message_id,
+                    target: lettuce_conversations::SceneFollowUpTarget::Candidate(candidate_id),
+                    operation: token("scene-live-complete", "cd"),
+                    asset_id,
+                    role: lettuce_conversations::MediaAssetRole::Attachment,
+                },
+                TimestampMillis::new(200),
+            )
+            .expect("complete after committed turn settlement");
+        let active_revision: Option<String> = scalar(
+            &fixture.database,
+            "SELECT active_revision_id FROM conversation_messages WHERE id = ?1",
+            &message_id.to_string(),
+        );
+        assert!(
+            active_revision.is_some(),
+            "the completed image on the selected original candidate must be visible without reselecting it"
+        );
+    }
+
+    #[test]
+    fn deferred_scene_completion_preserves_candidate_edits_and_does_not_replay_removed_media() {
+        let mut fixture = direct_fixture();
+        let (message_id, _, candidate_id) = two_candidates(&mut fixture, "deferred-edit");
+        let edit = |key: &str, text: &str, at: i64| {
+            fixture
+                .database
+                .edit_message(
+                    &EditMessage {
+                        conversation_id: fixture.conversation_id,
+                        message_id,
+                        expected_revision: conversation_revision(&fixture),
+                        operation: token(key, "cd"),
+                        draft: lettuce_conversations::MessageEditDraft {
+                            parts: vec![MessagePart::Text { text: text.into() }],
+                            visibility: MessageVisibility::Visible,
+                            pinned: true,
+                            scene_edited: false,
+                        },
+                    },
+                    TimestampMillis::new(at),
+                )
+                .expect("edit candidate")
+        };
+        edit("deferred-original-edit", "Edited before Continue", 100);
+        let continued = fixture
+            .database
+            .begin_continue(
+                &ContinueConversation {
+                    conversation_id: fixture.conversation_id,
+                    branch_id: fixture.branch_id,
+                    expected_revision: conversation_revision(&fixture),
+                    forced_speaker: None,
+                    swap_roles: false,
+                    operation: token("deferred-edit-continue", "cd"),
+                },
+                TimestampMillis::new(101),
+            )
+            .expect("continue");
+        let asset_id = stage_media_asset(&fixture.database, "33");
+        let command = lettuce_conversations::AttachSceneMedia {
+            complete_deferred: false,
+            conversation_id: fixture.conversation_id,
+            message_id,
+            target: lettuce_conversations::SceneFollowUpTarget::Candidate(candidate_id),
+            operation: token("deferred-edit-image", "cd"),
+            asset_id,
+            role: lettuce_conversations::MediaAssetRole::Attachment,
+        };
+        fixture
+            .database
+            .attach_scene_media(&command, TimestampMillis::new(102))
+            .expect("historical attachment");
+        settle_succeeded(&fixture, &continued.value.turn, 103);
+        let completion = lettuce_conversations::AttachSceneMedia {
+            complete_deferred: true,
+            operation: token("deferred-edit-complete", "cd"),
+            ..command
+        };
+        let attached = fixture
+            .database
+            .attach_scene_media(&completion, TimestampMillis::new(104))
+            .expect("complete selected edit");
+        let shown: String = scalar(
+            &fixture.database,
+            "SELECT active_revision_id FROM conversation_messages WHERE id = ?1",
+            &message_id.to_string(),
+        );
+        assert_eq!(shown, attached.value.revision.id.to_string());
+        assert_eq!(
+            attached.value.revision.parts,
+            vec![
+                MessagePart::Text {
+                    text: "Edited before Continue".into()
+                },
+                MessagePart::MediaAsset {
+                    asset_id,
+                    role: lettuce_conversations::MediaAssetRole::Attachment
+                }
+            ]
+        );
+        let removed = edit("deferred-remove-image", "Edited after completion", 105);
+        fixture
+            .database
+            .attach_scene_media(&completion, TimestampMillis::new(106))
+            .expect("replay completion");
+        let shown: String = scalar(
+            &fixture.database,
+            "SELECT active_revision_id FROM conversation_messages WHERE id = ?1",
+            &message_id.to_string(),
+        );
+        assert_eq!(shown, removed.value.revision.id.to_string());
+    }
+
+    #[test]
+    fn a_late_scene_image_stays_with_its_candidate_and_replays_once() {
+        let mut fixture = direct_fixture();
+        let (message_id, first, second) = two_candidates(&mut fixture, "late-scene");
+        let asset_id = stage_media_asset(&fixture.database, "33");
+        let command = lettuce_conversations::AttachSceneMedia {
+            complete_deferred: false,
+            conversation_id: fixture.conversation_id,
+            message_id,
+            target: lettuce_conversations::SceneFollowUpTarget::Candidate(first),
+            operation: token("late-scene-attach", "cd"),
+            asset_id,
+            role: lettuce_conversations::MediaAssetRole::Scene,
+        };
+        let attached = fixture
+            .database
+            .attach_scene_media(&command, TimestampMillis::new(101))
+            .expect("attach to hidden candidate");
+        let replayed = fixture
+            .database
+            .attach_scene_media(&command, TimestampMillis::new(102))
+            .expect("attachment replay");
+        assert_eq!(attached.value.revision.id, replayed.value.revision.id);
+        let shown: String = scalar(
+            &fixture.database,
+            "SELECT active_candidate_id FROM conversation_messages WHERE id = ?1",
+            &message_id.to_string(),
+        );
+        assert_eq!(shown, second.to_string());
+        let reference: String = scalar(
+            &fixture.database,
+            "SELECT state FROM revision_media_refs WHERE message_revision_id = ?1",
+            &attached.value.revision.id.to_string(),
+        );
+        assert_eq!(reference, "historical");
+        fixture
+            .database
+            .choose_candidate(
+                &ChooseCandidate {
+                    conversation_id: fixture.conversation_id,
+                    message_id,
+                    candidate_id: first,
+                    expected_revision: conversation_revision(&fixture),
+                    operation: token("show-late-scene", "cd"),
+                },
+                TimestampMillis::new(103),
+            )
+            .expect("show original candidate");
+        let shown: String = scalar(
+            &fixture.database,
+            "SELECT active_revision_id FROM conversation_messages WHERE id = ?1",
+            &message_id.to_string(),
+        );
+        assert_eq!(shown, attached.value.revision.id.to_string());
+        let count: i64 = scalar(
+            &fixture.database,
+            "SELECT count(*) FROM revision_media_refs WHERE message_revision_id = ?1",
+            &attached.value.revision.id.to_string(),
+        );
+        assert_eq!(count, 1);
     }
 
     #[test]

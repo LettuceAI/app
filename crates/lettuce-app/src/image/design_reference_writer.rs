@@ -238,6 +238,7 @@ where
                 request_id: request.request_id,
             },
             crate::jobs::one_shot_job::OneShotLease {
+                claim: None,
                 worker_id,
                 now,
                 lease_for,

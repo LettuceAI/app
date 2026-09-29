@@ -15,3 +15,5 @@ pub(crate) const SCENE_IMAGE_MESSAGE_UNAVAILABLE: &str = "scene-image-message-un
 pub(crate) const SCENE_IMAGE_INTERRUPTED: &str = "scene-image-interrupted";
 pub(crate) const SCENE_IMAGE_FAILED: &str = "scene-image-failed";
 pub(crate) const RESULT_STORAGE_FAILED: &str = "feature-result-storage-failed";
+
+pub(crate) const SCENE_IMAGE_MEDIA_UNAVAILABLE: &str = "scene-image-media-unavailable";

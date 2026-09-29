@@ -218,7 +218,13 @@ Facts about how `lettuce-app` relates to the legacy app (2.2.x): what follows le
 - No placeholder attachment is written before an image exists; the message shows the follow-up's state instead, so a crash leaves no empty attachment (legacy persisted `data:""` before generating and a crash kept it, `useChatEnhancementsController.ts:370-402`). A failed image is a typed `failed` state, not a removed placeholder and a toast (`useChatEnhancementsController.ts:560-585`).
 - A scene image is an `ImageGenerate` job claimed by the job runner; `job_cancel` stops it and dismisses the follow-up. Legacy ran it inside the command with its own claim (`old-code/src-tauri/src/chat_manager/scene/mod.rs:1658-1806`). The three attempts on a missing image are kept, one job each.
 - Restarting cancels the queued and running image jobs (see startup recovery), so a scene image the app stopped during fails as `Interrupted` and the user asks again; legacy lost the request with the process and left the placeholder.
-- Scene image follow-ups are not part of a backup or a sync, like the jobs they start.
+- Scene image follow-ups and generic feature job details/operation receipts are included in full backups. Follow-ups remain device-local for sync.
+
+- Scene image targets are captured before queuing and retain generated-candidate ownership or native starter revision ownership. A queued prompt keeps its original recent-message text, matching the synchronous legacy target-context read before its first provider await (`old-code/src-tauri/src/chat_manager/scene/mod.rs:1823-1846,1935`). Scene attachments use the first provider image as legacy did (`scene/mod.rs:1762-1771`); the generation record retains the provider's complete output.
+- Manual scene commands reuse `client_operation_id` and existing job identities with an atomic canonical-request receipt. This fixes duplicate admissions/replays and key reuse with a different prompt; no additional user action identity is introduced.
+- Prompt inspection attributes only substitutions and runtime sections actually placed in the dispatched request, with literal prompt text, history, tool payload and media estimates counted once. Current unused character/persona values cannot appear in a stored breakdown.
+- Failed companion turns keep their pending effect seed for retry. The retry copies that seed atomically, and successful finalization applies one effect and publishes one settlement event even when the retry request is replayed.
+- Successful scene attachments blocked by a live turn persist as `awaiting_turn` and complete from committed conversation changes or startup, using the existing image result and a distinct completion receipt. Completion preserves the selected candidate, current edits and later removal of media on replay.
 
 ## Decisions
 
@@ -246,7 +252,6 @@ Facts about how `lettuce-app` relates to the legacy app (2.2.x): what follows le
 - Creation helper drafts do not show the avatar, background, model, prompt, gradient and image-gallery lines (the fields do not exist yet) or the non-native fallback-protocol entry (the legacy UI never enabled it).
 - The creation helper's avatar prompt path (template text, untrimmed, no conditions) is not ported.
 - The per-model DynamicMemory sampler profile and order, min_p, typical_p and DRY resets of legacy have no destination before the llama.cpp runtime slice.
-- A reply that shows an imported revision and has no generated variant (a legacy message without variants) cannot be regenerated: `conversation_regenerate` answers `Unsupported`. Legacy created a variant from the current content first (`old-code/src-tauri/src/chat_manager/flows/regenerate.rs:417-423`). A turn's target and input name a prior candidate whose model, attempt and turn a candidate row requires (`lettuce-database/migrations/0008_conversations.sql:319-320,457-492`), and an import without variants has none to name, so regenerating from a revision needs a turn shape for it.
 
 ## History
 

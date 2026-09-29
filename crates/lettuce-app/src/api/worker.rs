@@ -160,13 +160,22 @@ impl ConversationGenerationWorker {
             }
         };
         if let Some(event) = settled_event(database, next.turn_id)? {
-            if let dto::GenerationEvent::Completed { message_id, .. } = &event
-                && let Ok(message_id) = message_id.parse()
-            {
+            if matches!(&event, dto::GenerationEvent::Completed { .. }) {
                 let conversation_id = next.conversation_id;
+                let turn_id = next.turn_id;
                 context
                     .blocking(move |context| {
-                        super::scenes::start_auto(context, conversation_id, message_id)
+                        let turn =
+                            ConversationReader::get_turn(context.backend().database(), turn_id)
+                                .map_err(IntoApiError::into_api_error)?;
+                        for candidate_id in turn.candidate_ids {
+                            super::scenes::start_auto(
+                                context,
+                                conversation_id,
+                                lettuce_conversations::SceneFollowUpTarget::Candidate(candidate_id),
+                            )?;
+                        }
+                        Ok(())
                     })
                     .await?;
             }

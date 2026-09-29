@@ -96,7 +96,7 @@ fn load_in(
     Ok(Some(record))
 }
 
-fn insert_pending_row(
+pub(crate) fn insert_pending_row(
     transaction: &Transaction<'_>,
     record: &ImageGenerationRecord,
 ) -> Result<usize, ImageGenerationRepositoryError> {

@@ -113,3 +113,5 @@ The message text keywords are matched against is not bounded. Condition trees ar
 ## Token counts
 
 `count_tokens_batch` counts each text with the o200k encoding from `tiktoken-rs`, reading special tokens as plain text. The lorebook editor uses it for the trigger preview.
+
+The renderer records transient substitution spans on each rendered entry, identifying the placeholder actually substituted and its byte range. Inspection uses these spans after placement rather than matching runtime strings against the final prompt.

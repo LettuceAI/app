@@ -12,6 +12,7 @@ use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
 use lettuce_conversations::{
     ConversationKind, ConversationReader, MessageRole, MessageVisibility, SceneFollowUp,
     SceneFollowUpChange, SceneFollowUpMode, SceneFollowUpRepository, SceneFollowUpState,
+    SceneFollowUpTarget,
 };
 use lettuce_types::{ConversationId, JobId, MessageId};
 
@@ -45,6 +46,7 @@ const fn follow_up_state(state: SceneFollowUpState) -> dto::SceneImageState {
         SceneFollowUpState::Pending => dto::SceneImageState::Pending,
         SceneFollowUpState::Approved => dto::SceneImageState::Approved,
         SceneFollowUpState::Running => dto::SceneImageState::Running,
+        SceneFollowUpState::AwaitingTurn => dto::SceneImageState::AwaitingTurn,
         SceneFollowUpState::Done => dto::SceneImageState::Done,
         SceneFollowUpState::Failed => dto::SceneImageState::Failed,
         SceneFollowUpState::Dismissed => dto::SceneImageState::Dismissed,
@@ -53,6 +55,7 @@ const fn follow_up_state(state: SceneFollowUpState) -> dto::SceneImageState {
 
 fn failure_of(label: &str) -> dto::SceneImageFailure {
     match label {
+        labels::SCENE_IMAGE_MEDIA_UNAVAILABLE => dto::SceneImageFailure::MediaUnavailable,
         labels::SCENE_IMAGE_DISABLED => dto::SceneImageFailure::Disabled,
         labels::SCENE_IMAGE_NO_MODEL => dto::SceneImageFailure::NoModel,
         labels::SCENE_IMAGE_NO_IMAGE => dto::SceneImageFailure::NoImage,
@@ -64,20 +67,26 @@ fn failure_of(label: &str) -> dto::SceneImageFailure {
 
 /// The follow-up as the message shows it: not once its image is on the
 /// message or the user dismissed it.
-fn view(context: &ApiContext, follow_up: &SceneFollowUp) -> Option<dto::SceneImageView> {
+fn view(
+    context: &ApiContext,
+    follow_up: &SceneFollowUp,
+) -> Result<Option<dto::SceneImageView>, ApiError> {
     if matches!(
         follow_up.state,
         SceneFollowUpState::Done | SceneFollowUpState::Dismissed
     ) {
-        return None;
+        return Ok(None);
     }
-    let job_id = follow_up.request_id.and_then(|request_id| {
-        crate::job_of_scene_image_request(context.backend().database(), request_id)
-            .ok()
-            .flatten()
-            .map(|job| job.id.to_string())
-    });
-    Some(dto::SceneImageView {
+    let job_id = follow_up
+        .request_id
+        .map(|request_id| {
+            crate::job_of_scene_image_request(context.backend().database(), request_id)
+                .map_err(|_| storage())
+                .map(|job| job.map(|job| job.id.to_string()))
+        })
+        .transpose()?
+        .flatten();
+    Ok(Some(dto::SceneImageView {
         state: follow_up_state(follow_up.state),
         mode: match follow_up.mode {
             SceneFollowUpMode::Auto => dto::SceneImageMode::Auto,
@@ -87,24 +96,45 @@ fn view(context: &ApiContext, follow_up: &SceneFollowUp) -> Option<dto::SceneIma
         prompt: follow_up.prompt.clone(),
         job_id,
         failure: follow_up.failure.as_deref().map(failure_of),
-    })
+    }))
+}
+
+fn target_of(item: &lettuce_conversations::TimelineItem) -> Option<SceneFollowUpTarget> {
+    item.active_candidate
+        .as_ref()
+        .map(|candidate| SceneFollowUpTarget::Candidate(candidate.id))
+        .or_else(|| {
+            item.active_revision.as_ref().map(|revision| {
+                revision
+                    .supersedes_candidate_id
+                    .map(SceneFollowUpTarget::Candidate)
+                    .unwrap_or(SceneFollowUpTarget::StarterRevision(revision.id))
+            })
+        })
 }
 
 /// The scene images of `message_ids` that are still to show.
 pub(super) fn views(
     context: &ApiContext,
     conversation_id: ConversationId,
-    message_ids: &[MessageId],
+    items: &[&lettuce_conversations::TimelineItem],
 ) -> Result<HashMap<MessageId, dto::SceneImageView>, ApiError> {
-    Ok(SceneFollowUpRepository::follow_ups_of(
+    let follow_ups = SceneFollowUpRepository::follow_ups_of(
         context.backend().database(),
         conversation_id,
-        message_ids,
+        &items
+            .iter()
+            .filter_map(|item| target_of(item))
+            .collect::<Vec<_>>(),
     )
-    .map_err(|_| storage())?
-    .into_iter()
-    .filter_map(|follow_up| view(context, &follow_up).map(|view| (follow_up.message_id, view)))
-    .collect())
+    .map_err(|_| storage())?;
+    let mut views = HashMap::new();
+    for follow_up in follow_ups {
+        if let Some(view) = view(context, &follow_up)? {
+            views.insert(follow_up.message_id, view);
+        }
+    }
+    Ok(views)
 }
 
 fn image_error(error: SceneImageFollowUpError) -> ApiError {
@@ -115,7 +145,9 @@ fn image_error(error: SceneImageFollowUpError) -> ApiError {
         ),
         SceneImageFollowUpError::WrongState(state) => api_error(
             match state {
-                SceneFollowUpState::Approved | SceneFollowUpState::Running => ApiErrorCode::Busy,
+                SceneFollowUpState::Approved
+                | SceneFollowUpState::Running
+                | SceneFollowUpState::AwaitingTurn => ApiErrorCode::Busy,
                 _ => ApiErrorCode::Conflict,
             },
             format!("the scene image is already {state:?}"),
@@ -146,7 +178,10 @@ fn image_error(error: SceneImageFollowUpError) -> ApiError {
 
 /// A reply of a one-to-one chat's selected branch that a scene image can
 /// be made for.
-fn scene_target(context: &ApiContext, message_id: MessageId) -> Result<ConversationId, ApiError> {
+pub(super) fn scene_target(
+    context: &ApiContext,
+    message_id: MessageId,
+) -> Result<(ConversationId, SceneFollowUpTarget), ApiError> {
     let database = context.backend().database();
     let conversation_id = conversation_of(context, message_id)?;
     let conversation = ConversationReader::get(database, conversation_id)
@@ -170,7 +205,9 @@ fn scene_target(context: &ApiContext, message_id: MessageId) -> Result<Conversat
     {
         return Err(invalid_field("message_id", "the message is not a reply"));
     }
-    Ok(conversation_id)
+    let target = target_of(&item)
+        .ok_or_else(|| invalid_field("message_id", "the reply has no scene target"))?;
+    Ok((conversation_id, target))
 }
 
 fn media_missing() -> ApiError {
@@ -189,36 +226,64 @@ pub async fn message_scene_image_generate(
     if prompt.is_empty() {
         return Err(invalid_field("prompt", "the scene prompt is blank"));
     }
+    let key = super::jobs::local::operation_key("scene_image", &request.client_operation_id)?;
+    let digest = super::jobs::local::digest(&(message_id.to_string(), &prompt))?;
     let job_id = context
         .blocking(move |context| {
-            let conversation_id = scene_target(context, message_id)?;
-            let media = context.media().ok_or_else(media_missing)?;
             let database = context.backend().database();
+            if let Some(prior) = database.job_operation(&key).map_err(|_| storage())? {
+                if prior.request_digest != digest {
+                    return Err(api_error(
+                        ApiErrorCode::Conflict,
+                        "the operation key names another request",
+                    ));
+                }
+                return Ok(prior.job_id);
+            }
+            let (conversation_id, target) = scene_target(context, message_id)?;
+            let media = context.media().ok_or_else(media_missing)?;
+            let request_id =
+                lettuce_types::RequestId::from_uuid(super::jobs::local::stable_uuid(&[
+                    "scene-image",
+                    &key,
+                ]));
+            let request = crate::scene_generation_request(
+                database,
+                media,
+                &crate::SceneImageRequest {
+                    conversation_id,
+                    message_id,
+                    scene_prompt: prompt.clone(),
+                    request_id,
+                },
+                context.now(),
+            )
+            .map_err(|error| image_error(SceneImageFollowUpError::Image(error)))?;
+            let (request, spec) = crate::ImageGenerationCoordinator::new(database, database)
+                .plan_admission(request, database)
+                .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?;
             database
-                .ensure_follow_up(
+                .admit_manual_scene_image(lettuce_database::ManualSceneImageAdmission {
+                    spec,
+                    request,
+                    operation_key: &key,
+                    request_digest: &digest,
                     conversation_id,
                     message_id,
-                    &prompt,
-                    SceneFollowUpMode::Manual,
-                    context.now(),
-                )
-                .map_err(|_| storage())?;
-            let (_, job) = SceneFollowUps::new(database, media)
-                .start(
-                    conversation_id,
-                    message_id,
-                    &[
-                        SceneFollowUpState::Pending,
-                        SceneFollowUpState::Done,
-                        SceneFollowUpState::Failed,
-                        SceneFollowUpState::Dismissed,
-                    ],
-                    Some(&prompt),
-                    Some(SceneFollowUpMode::Manual),
-                    context.now(),
-                )
-                .map_err(image_error)?;
-            Ok(job.id)
+                    target,
+                    prompt: &prompt,
+                })
+                .map(|job| job.id)
+                .map_err(|error| match error {
+                    lettuce_jobs::StoreError::IdempotencyConflict => api_error(
+                        ApiErrorCode::Conflict,
+                        "the operation key names another request",
+                    ),
+                    lettuce_jobs::StoreError::ResourceUnavailable => {
+                        api_error(ApiErrorCode::Busy, "the scene image is being generated")
+                    }
+                    _ => storage(),
+                })
         })
         .await?;
     context.jobs().wake();
@@ -245,13 +310,13 @@ pub async fn message_scene_image_approve(
     }
     let job_id = context
         .blocking(move |context| {
-            let conversation_id = scene_target(context, message_id)?;
+            let (conversation_id, target) = scene_target(context, message_id)?;
             let media = context.media().ok_or_else(media_missing)?;
             let database = context.backend().database();
             let follow_ups = SceneFollowUps::new(database, media);
             match follow_ups.start(
                 conversation_id,
-                message_id,
+                target,
                 &[SceneFollowUpState::Pending],
                 prompt.as_deref(),
                 None,
@@ -262,7 +327,7 @@ pub async fn message_scene_image_approve(
                     SceneFollowUpState::Approved | SceneFollowUpState::Running,
                 )) => {
                     let follow_up = database
-                        .get_follow_up(conversation_id, message_id)
+                        .get_follow_up(conversation_id, target)
                         .map_err(|_| storage())?
                         .and_then(|follow_up| follow_up.request_id);
                     let job = follow_up
@@ -292,17 +357,19 @@ pub async fn message_scene_image_dismiss(
     let message_id: MessageId = parse_id(&request.message_id, "message_id")?;
     context
         .blocking(move |context| {
-            let conversation_id = conversation_of(context, message_id)?;
+            let (conversation_id, target) = scene_target(context, message_id)?;
             let database = context.backend().database();
             let Some(follow_up) = database
-                .get_follow_up(conversation_id, message_id)
+                .get_follow_up(conversation_id, target)
                 .map_err(|_| storage())?
             else {
                 return Ok(());
             };
             match follow_up.state {
                 SceneFollowUpState::Dismissed | SceneFollowUpState::Done => Ok(()),
-                SceneFollowUpState::Approved | SceneFollowUpState::Running => Err(api_error(
+                SceneFollowUpState::Approved
+                | SceneFollowUpState::Running
+                | SceneFollowUpState::AwaitingTurn => Err(api_error(
                     ApiErrorCode::Conflict,
                     "the scene image is being generated; cancel its job instead",
                 )),
@@ -310,7 +377,7 @@ pub async fn message_scene_image_dismiss(
                     database
                         .change_follow_up(
                             conversation_id,
-                            message_id,
+                            target,
                             &[SceneFollowUpState::Pending, SceneFollowUpState::Failed],
                             &SceneFollowUpChange {
                                 state: Some(SceneFollowUpState::Dismissed),
@@ -331,17 +398,17 @@ pub async fn message_scene_image_dismiss(
 /// `Unsupported`.
 pub async fn message_scene_prompt_generate(
     context: &ApiContext,
-    request: dto::MessageSceneRequest,
+    request: dto::MessageScenePromptGenerateRequest,
 ) -> Result<dto::JobAccepted, ApiError> {
     let message_id: MessageId = parse_id(&request.message_id, "message_id")?;
-    let conversation_id = context
+    let (conversation_id, _) = context
         .blocking(move |context| scene_target(context, message_id))
         .await?;
     super::jobs::admit_scene_prompt(
         context,
         conversation_id,
         message_id,
-        uuid::Uuid::new_v4().to_string(),
+        request.client_operation_id,
     )
     .await
 }
@@ -352,11 +419,20 @@ pub async fn message_scene_prompt_generate(
 pub(super) fn start_auto(
     context: &ApiContext,
     conversation_id: ConversationId,
-    message_id: MessageId,
+    target: SceneFollowUpTarget,
 ) -> Result<(), ApiError> {
     let database = context.backend().database();
+    if !matches!(
+        ConversationReader::get(database, conversation_id)
+            .map_err(IntoApiError::into_api_error)?
+            .conversation
+            .kind,
+        ConversationKind::Direct(_)
+    ) {
+        return Ok(());
+    }
     let Some(follow_up) = database
-        .get_follow_up(conversation_id, message_id)
+        .get_follow_up(conversation_id, target)
         .map_err(|_| storage())?
     else {
         return Ok(());
@@ -365,11 +441,17 @@ pub(super) fn start_auto(
         return Ok(());
     }
     let Some(media) = context.media() else {
+        fail_follow_up(
+            database,
+            &follow_up,
+            labels::SCENE_IMAGE_MEDIA_UNAVAILABLE,
+            context.now(),
+        )?;
         return Ok(());
     };
     match SceneFollowUps::new(database, media).start(
         conversation_id,
-        message_id,
+        target,
         &[SceneFollowUpState::Pending],
         None,
         None,
@@ -380,23 +462,85 @@ pub(super) fn start_auto(
             Ok(())
         }
         Err(error) => {
-            tracing::warn!(%error, %message_id, "an automatic scene image could not start");
+            let label = match &error {
+                SceneImageFollowUpError::Image(error) => {
+                    crate::image::scene_follow_up::failure_label(error)
+                }
+                _ => labels::SCENE_IMAGE_FAILED,
+            };
+            fail_follow_up(database, &follow_up, label, context.now())?;
             Ok(())
         }
     }
 }
 
+pub(super) fn fail_follow_up(
+    repository: &impl SceneFollowUpRepository,
+    follow_up: &SceneFollowUp,
+    label: &str,
+    now: lettuce_types::TimestampMillis,
+) -> Result<(), ApiError> {
+    repository
+        .change_follow_up(
+            follow_up.conversation_id,
+            follow_up.target,
+            &[
+                SceneFollowUpState::Pending,
+                SceneFollowUpState::Approved,
+                SceneFollowUpState::Running,
+            ],
+            &SceneFollowUpChange {
+                state: Some(SceneFollowUpState::Failed),
+                failure: Some(Some(label.to_owned())),
+                ..SceneFollowUpChange::default()
+            },
+            now,
+        )
+        .map_err(|_| storage())?;
+    Ok(())
+}
+
 /// Settles the scene image follow-ups the previous process left unfinished.
-pub(super) fn recover(context: &ApiContext) {
+pub(super) fn recover(context: &ApiContext) -> Result<(), ApiError> {
+    let completion = crate::image::scene_follow_up::complete_awaiting(
+        context.backend().database(),
+        context.now(),
+    )
+    .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()));
     let Some(media) = context.media() else {
-        return;
-    };
-    match SceneFollowUps::new(context.backend().database(), media).recover(context.now()) {
-        Ok(0) => {}
-        Ok(changed) => {
-            tracing::info!(changed, "settled scene images the previous process left");
-            context.jobs().wake();
+        let database = context.backend().database();
+        let follow_ups = database
+            .follow_ups_in(&[
+                SceneFollowUpState::Approved,
+                SceneFollowUpState::Running,
+                SceneFollowUpState::Pending,
+            ])
+            .map_err(|_| storage())?;
+        let mut failure = None;
+        for follow_up in follow_ups {
+            if follow_up.state == SceneFollowUpState::Pending
+                && follow_up.mode != SceneFollowUpMode::Auto
+            {
+                continue;
+            }
+            if let Err(error) = fail_follow_up(
+                database,
+                &follow_up,
+                labels::SCENE_IMAGE_MEDIA_UNAVAILABLE,
+                context.now(),
+            ) {
+                failure.get_or_insert(error);
+            }
         }
-        Err(error) => tracing::warn!(%error, "scene images could not be recovered"),
+        return completion
+            .map(|_| ())
+            .and_then(|_| failure.map_or(Ok(()), Err));
+    };
+    let recovery = SceneFollowUps::new(context.backend().database(), media)
+        .recover(context.now())
+        .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()));
+    if recovery.as_ref().is_ok_and(|changed| *changed > 0) {
+        context.jobs().wake();
     }
+    completion.and(recovery.map(|_| ()))
 }

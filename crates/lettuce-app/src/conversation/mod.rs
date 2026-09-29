@@ -60,3 +60,5 @@ pub fn edit_operation(
             .map_err(|_| ConversationEditError::Snapshot)?,
     })
 }
+
+pub(crate) use participants::ensure_group_members_at;

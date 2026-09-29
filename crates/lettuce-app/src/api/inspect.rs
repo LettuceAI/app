@@ -47,6 +47,9 @@ const fn section_kind(kind: ContextSectionKind) -> dto::PromptSectionKind {
         ContextSectionKind::ScheduledNotes => dto::PromptSectionKind::ScheduledNotes,
         ContextSectionKind::GroupCast => dto::PromptSectionKind::GroupCast,
         ContextSectionKind::PromptEntry => dto::PromptSectionKind::PromptEntry,
+        ContextSectionKind::History => dto::PromptSectionKind::History,
+        ContextSectionKind::Media => dto::PromptSectionKind::Media,
+        ContextSectionKind::Tools => dto::PromptSectionKind::Tools,
     }
 }
 

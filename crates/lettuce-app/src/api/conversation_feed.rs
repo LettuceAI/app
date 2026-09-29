@@ -130,6 +130,21 @@ impl ConversationFeed {
 
     /// Publishes every change since the last call.
     pub(crate) async fn publish(&mut self, context: &ApiContext) -> Result<(), ApiError> {
+        let completion = context
+            .blocking(|context| {
+                crate::image::scene_follow_up::complete_awaiting(
+                    context.backend().database(),
+                    context.now(),
+                )
+                .map_err(|error| {
+                    super::error::api_error(
+                        lettuce_contracts::ApiErrorCode::Internal,
+                        error.to_string(),
+                    )
+                })
+                .map(|_| ())
+            })
+            .await;
         loop {
             let after = self.position;
             self.reads.fetch_add(1, Ordering::Relaxed);
@@ -168,7 +183,7 @@ impl ConversationFeed {
                 self.signals = signal.position;
             }
             if !full || self.signals == after {
-                return Ok(());
+                return completion;
             }
         }
     }

@@ -192,7 +192,9 @@ impl<'c> Purge<'c> {
                 "SELECT EXISTS(SELECT 1 FROM conversation_turns WHERE conversation_id = ?1 AND status NOT IN {TERMINAL_TURN})
                  OR EXISTS(SELECT 1 FROM dynamic_memory_run_attempts attempt
                            JOIN dynamic_memory_runs run ON run.id = attempt.run_id
-                           WHERE run.conversation_id = ?1 AND attempt.status IN ('created', 'processing'))"
+                           WHERE run.conversation_id = ?1 AND attempt.status IN ('created', 'processing'))
+                 OR EXISTS(SELECT 1 FROM jobs job JOIN job_details detail ON detail.job_id = job.id WHERE job.kind = 'creation_run' AND job.subject_kind = 'conversation' AND job.subject_id = ?1 AND job.state NOT IN ('succeeded', 'failed', 'cancelled', 'interrupted'))
+                 OR EXISTS(SELECT 1 FROM image_generations generation JOIN jobs job ON job.id = generation.job_id WHERE json_extract(generation.request_json, '$.value.attribution.conversation_id') = ?1 AND job.state NOT IN ('succeeded', 'failed', 'cancelled', 'interrupted'))"
             ),
             &[Value::Text(id.to_owned())],
         )
@@ -258,6 +260,9 @@ impl<'c> Purge<'c> {
             )
             .map_err(storage)?;
         self.delete("companion_continuity_episodes", "conversation_id = ?1", one)?;
+        let feature_jobs = "job_id IN (SELECT id FROM jobs WHERE kind = 'creation_run' AND subject_kind = 'conversation' AND subject_id = ?1) OR job_id IN (SELECT job_id FROM image_generations WHERE source = 'scene' AND json_extract(request_json, '$.value.attribution.conversation_id') = ?1)";
+        self.delete("job_operations", feature_jobs, one)?;
+        self.delete("job_details", feature_jobs, one)?;
         self.delete("scene_image_follow_ups", "conversation_id = ?1", one)?;
         self.delete(
             "local_model_jobs",

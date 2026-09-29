@@ -9,7 +9,8 @@ use lettuce_conversations::{
 use lettuce_database::Database;
 use lettuce_models::{ModelKind, ModelProfileRepository, ProviderAccountRepository};
 use lettuce_types::{
-    CharacterId, ConversationId, ConversationParticipantId, ModelProfileId, TimestampMillis,
+    CharacterId, ConversationId, ConversationParticipantId, ModelProfileId, Revision,
+    TimestampMillis,
 };
 
 use super::{Change, ConversationEditError, edit_operation, snapshot_artifact_id};
@@ -79,6 +80,26 @@ pub fn add_group_member(
     override_members: bool,
     now: TimestampMillis,
 ) -> Result<Conversation, ConversationEditError> {
+    add_group_member_at(
+        database,
+        conversation_id,
+        character_id,
+        operation,
+        override_members,
+        None,
+        now,
+    )
+}
+
+fn add_group_member_at(
+    database: &Database,
+    conversation_id: ConversationId,
+    character_id: CharacterId,
+    operation: OperationToken,
+    override_members: bool,
+    expected_revision: Option<Revision>,
+    now: TimestampMillis,
+) -> Result<Conversation, ConversationEditError> {
     let mut attempt = 0;
     loop {
         attempt += 1;
@@ -87,6 +108,9 @@ pub fn add_group_member(
             return Err(ConversationEditError::InvalidInput {
                 field: "conversation_id",
             });
+        }
+        if expected_revision.is_some_and(|expected| expected != conversation.revision) {
+            return Err(ConversationRepositoryError::Conflict.into());
         }
         let profile = group_profile(database, &conversation)?;
         let existing = conversation
@@ -167,7 +191,7 @@ pub fn add_group_member(
         match ConversationRepository::add_participant(database, prepared, now) {
             Ok(added) => return Ok(added.value),
             Err(ConversationRepositoryError::StaleRevision { .. })
-                if attempt < REVISION_RETRIES => {}
+                if expected_revision.is_none() && attempt < REVISION_RETRIES => {}
             Err(error) => return Err(error.into()),
         }
     }
@@ -180,26 +204,43 @@ pub fn ensure_group_members(
     database: &Database,
     conversation_id: ConversationId,
     now: TimestampMillis,
-) -> Result<(), ConversationEditError> {
+) -> Result<Option<Revision>, ConversationEditError> {
+    let revision = ConversationReader::get(database, conversation_id)?
+        .conversation
+        .revision;
+    ensure_group_members_at(database, conversation_id, revision, now)
+}
+
+pub(crate) fn ensure_group_members_at(
+    database: &Database,
+    conversation_id: ConversationId,
+    expected_revision: Revision,
+    now: TimestampMillis,
+) -> Result<Option<Revision>, ConversationEditError> {
     let conversation = ConversationReader::get(database, conversation_id)?.conversation;
+    if conversation.revision != expected_revision {
+        return Err(ConversationRepositoryError::Conflict.into());
+    }
     let profile = group_profile(database, &conversation)?;
+    let mut written = None;
     for character_id in live_sources::missing_group_members(&conversation, profile.as_ref()) {
-        match add_group_member(
+        match add_group_member_at(
             database,
             conversation_id,
             character_id,
             member_operation(conversation_id, character_id)?,
             false,
+            Some(written.unwrap_or(expected_revision)),
             now,
         ) {
-            Ok(_)
-            | Err(ConversationEditError::InvalidInput {
+            Ok(added) => written = Some(added.revision),
+            Err(ConversationEditError::InvalidInput {
                 field: "character_id",
             }) => {}
             Err(error) => return Err(error),
         }
     }
-    Ok(())
+    Ok(written)
 }
 
 /// Changes one participant of a group conversation. Each aspect it touches

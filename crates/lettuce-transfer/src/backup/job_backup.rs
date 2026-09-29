@@ -23,6 +23,10 @@ pub struct JobBackup {
     #[serde(default)]
     pub local_model_operations: Vec<BackupLocalModelOperation>,
     #[serde(default)]
+    pub job_details: Vec<BackupJobDetail>,
+    #[serde(default)]
+    pub job_operations: Vec<BackupJobOperation>,
+    #[serde(default)]
     pub hugging_face_refusals: Vec<BackupHuggingFaceRefusal>,
 }
 
@@ -41,6 +45,23 @@ pub struct BackupLocalModelJob {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BackupLocalModelOperation {
+    pub operation_key: String,
+    pub request_digest: String,
+    pub job_id: JobId,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackupJobDetail {
+    pub job_id: JobId,
+    pub detail: serde_json::Value,
+    pub result: Option<serde_json::Value>,
+    pub failure: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackupJobOperation {
     pub operation_key: String,
     pub request_digest: String,
     pub job_id: JobId,
@@ -143,6 +164,30 @@ impl JobBackup {
                 return Err(JobBackupError::InvalidData);
             }
         }
+        self.job_details.sort_by_key(|job| job.job_id);
+        self.job_operations
+            .sort_by(|a, b| a.operation_key.cmp(&b.operation_key));
+        let mut described = BTreeSet::new();
+        for job in &self.job_details {
+            if !job_ids.contains(&job.job_id)
+                || !described.insert(job.job_id)
+                || !job.detail.is_object()
+                || !object(job.result.as_ref())
+                || !object(job.failure.as_ref())
+            {
+                return Err(JobBackupError::InvalidData);
+            }
+        }
+        let mut keys = BTreeSet::new();
+        for operation in &self.job_operations {
+            if !described.contains(&operation.job_id)
+                || operation.operation_key.trim().is_empty()
+                || operation.request_digest.is_empty()
+                || !keys.insert(operation.operation_key.as_str())
+            {
+                return Err(JobBackupError::InvalidData);
+            }
+        }
         let mut refused = BTreeSet::new();
         for refusal in &self.hugging_face_refusals {
             if !job_ids.contains(&refusal.job_id)
@@ -203,6 +248,8 @@ mod tests {
             speech_transcriptions: Vec::new(),
             speech_syntheses: Vec::new(),
             image_generations: Vec::new(),
+            job_details: Vec::new(),
+            job_operations: Vec::new(),
             local_model_jobs: Vec::new(),
             local_model_operations: Vec::new(),
             hugging_face_refusals: Vec::new(),

@@ -181,6 +181,7 @@ pub struct ReplyHelperCoordinator<'a, R: ?Sized, I: ?Sized> {
     inference: &'a I,
     cancellations: Option<&'a lettuce_inference::InferenceRuntime>,
     cancellation: Option<&'a lettuce_jobs::handle::CancellationToken>,
+    claim: Option<&'a lettuce_jobs::ClaimRef>,
     recorder: Option<&'a dyn ResultRecorder>,
 }
 
@@ -200,7 +201,13 @@ impl<'a, R: ?Sized, I: ?Sized> ReplyHelperCoordinator<'a, R, I> {
             cancellations: None,
             cancellation: None,
             recorder: None,
+            claim: None,
         }
+    }
+
+    pub(crate) fn with_claim(mut self, claim: &'a lettuce_jobs::ClaimRef) -> Self {
+        self.claim = Some(claim);
+        self
     }
 
     /// Stops the run with `token` when its runner cancels the job.
@@ -314,6 +321,7 @@ where
                 request_id: request.request_id,
             },
             crate::jobs::one_shot_job::OneShotLease {
+                claim: self.claim,
                 worker_id,
                 now,
                 lease_for,

@@ -1750,6 +1750,7 @@ mod tests {
                 audio_assets: Vec::new(),
             },
             conversation_history: crate::ConversationHistoryBackup {
+                scene_follow_ups: Vec::new(),
                 version: crate::CONVERSATION_HISTORY_BACKUP_VERSION,
                 conversations: Vec::new(),
             },
@@ -1764,6 +1765,8 @@ mod tests {
                 speech_transcriptions: Vec::new(),
                 speech_syntheses: Vec::new(),
                 image_generations: Vec::new(),
+                job_details: Vec::new(),
+                job_operations: Vec::new(),
                 local_model_jobs: Vec::new(),
                 local_model_operations: Vec::new(),
                 hugging_face_refusals: Vec::new(),

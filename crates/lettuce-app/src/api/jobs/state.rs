@@ -143,13 +143,24 @@ impl JobHostState {
         text: Option<String>,
         reasoning: Option<String>,
     ) {
+        self.text_delta_inner(job_id, text, reasoning, || {});
+    }
+
+    fn text_delta_inner(
+        &self,
+        job_id: JobId,
+        text: Option<String>,
+        reasoning: Option<String>,
+        appended: impl FnOnce(),
+    ) {
+        let mut watches = lock(&self.watches);
         {
             let mut streamed = lock(&self.streamed);
             let so_far = streamed.entry(job_id).or_default();
             so_far.0.push_str(text.as_deref().unwrap_or_default());
             so_far.1.push_str(reasoning.as_deref().unwrap_or_default());
         }
-        let mut watches = lock(&self.watches);
+        appended();
         if let Some(list) = watches.get_mut(&job_id) {
             list.retain(|watch| {
                 watch.send(JobEvent::TextDelta {
@@ -205,5 +216,73 @@ impl JobHostState {
 
     pub(crate) fn forget_install(&self, job_id: JobId) {
         lock(&self.installs).remove(&job_id);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Default)]
+    struct Sink(Mutex<Vec<JobEvent>>);
+
+    impl JobEventSink for Sink {
+        fn emit(&self, event: JobEvent) -> bool {
+            lock(&self.0).push(event);
+            true
+        }
+    }
+
+    #[test]
+    fn text_append_keeps_the_watch_registry_locked_until_delivery() {
+        let state = JobHostState::default();
+        let job = JobId::new();
+        state.text_delta_inner(job, Some("one".into()), None, || {
+            assert!(
+                matches!(
+                    state.watches.try_lock(),
+                    Err(std::sync::TryLockError::WouldBlock)
+                ),
+                "watch admission cannot observe appended text before live delivery"
+            );
+            assert_eq!(lock(&state.streamed).get(&job).expect("appended").0, "one");
+        });
+    }
+
+    #[test]
+    fn concurrent_watch_catch_up_delivers_each_delta_once() {
+        for _ in 0..256 {
+            let state = JobHostState::default();
+            let job = JobId::new();
+            let sink = Arc::new(Sink::default());
+            let barrier = std::sync::Barrier::new(2);
+            std::thread::scope(|scope| {
+                scope.spawn(|| {
+                    barrier.wait();
+                    state.text_delta(job, Some("one".into()), None);
+                });
+                barrier.wait();
+                state
+                    .watch(job, sink.clone(), || {
+                        Ok::<_, ()>((
+                            (),
+                            JobEvent::TextDelta {
+                                text: None,
+                                reasoning: None,
+                            },
+                            false,
+                        ))
+                    })
+                    .expect("watch");
+            });
+            let delivered = lock(&sink.0)
+                .iter()
+                .filter_map(|event| match event {
+                    JobEvent::TextDelta { text, .. } => text.clone(),
+                    _ => None,
+                })
+                .collect::<String>();
+            assert_eq!(delivered, "one");
+        }
     }
 }

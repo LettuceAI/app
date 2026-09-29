@@ -387,7 +387,7 @@ fn message_page(
             .map_err(IntoApiError::into_api_error)?
             .into_iter()
             .collect::<HashMap<_, _>>();
-    let scene_images = super::scenes::views(context, conversation_id, &with_candidates)?;
+    let scene_images = super::scenes::views(context, conversation_id, &visible)?;
     Ok(dto::MessagePage {
         items: visible
             .iter()

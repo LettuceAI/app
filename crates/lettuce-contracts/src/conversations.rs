@@ -526,12 +526,10 @@ pub enum SceneImageMode {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "snake_case")]
 pub enum SceneImageState {
-    /// Waits for the user's approval, or is about to start.
     Pending,
-    /// The image job is queued.
     Approved,
     Running,
-    /// The image is on the message.
+    AwaitingTurn,
     Done,
     Failed,
     Dismissed,
@@ -542,11 +540,11 @@ pub enum SceneImageState {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "snake_case")]
 pub enum SceneImageFailure {
+    MediaUnavailable,
     Disabled,
     NoModel,
     NoImage,
     MessageUnavailable,
-    /// The app stopped while it was generated.
     Interrupted,
     Failed,
 }
@@ -572,6 +570,14 @@ pub struct MessageSceneRequest {
     pub message_id: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MessageScenePromptGenerateRequest {
+    pub message_id: String,
+    pub client_operation_id: String,
+}
+
 /// Approves the scene image a reply asked for, with the prompt as the user
 /// edited it. `prompt` is trimmed and a blank one is refused; without it the
 /// reply's own prompt is used.
@@ -590,6 +596,7 @@ pub struct MessageSceneImageApproveRequest {
 pub struct MessageSceneImageGenerateRequest {
     pub message_id: String,
     pub prompt: String,
+    pub client_operation_id: String,
 }
 
 /// One page of visible messages in conversation order, oldest first;

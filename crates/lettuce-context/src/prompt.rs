@@ -1566,6 +1566,13 @@ impl PromptRenderValues {
     }
 
     fn render(&self, source: &str) -> Result<String, PromptRenderError> {
+        self.render_with_substitutions(source).map(|(text, _)| text)
+    }
+
+    fn render_with_substitutions(
+        &self,
+        source: &str,
+    ) -> Result<(String, Vec<PromptSubstitution>), PromptRenderError> {
         let names = |value: &str| self.resolve_names(value);
         let character_description = names(&self.character_description);
         let persona_description = names(&self.persona_description);
@@ -1611,6 +1618,7 @@ impl PromptRenderValues {
             value(&format!("{{{{{name}}}}}")).map(|value| !value.is_empty())
         });
         let mut rendered = String::with_capacity(conditioned.len());
+        let mut substitutions = Vec::new();
         let mut rest = conditioned.as_str();
         while let Some(start) = rest.find("{{") {
             rendered.push_str(&rest[..start]);
@@ -1620,6 +1628,12 @@ impl PromptRenderValues {
                 .and_then(|end| value(&candidate[..end + 2]).map(|value| (end + 2, value)));
             match replacement {
                 Some((consumed, value)) => {
+                    substitutions.push(PromptSubstitution {
+                        placeholder: candidate[..consumed].to_owned(),
+                        text: value.to_owned(),
+                        start: rendered.len(),
+                        end: rendered.len() + value.len(),
+                    });
                     rendered.push_str(value);
                     rest = &candidate[consumed..];
                 }
@@ -1630,7 +1644,7 @@ impl PromptRenderValues {
             }
         }
         rendered.push_str(rest);
-        Ok(rendered)
+        Ok((rendered, substitutions))
     }
 }
 
@@ -1728,12 +1742,21 @@ pub struct PromptRenderContext {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PromptSubstitution {
+    pub placeholder: String,
+    pub text: String,
+    pub start: usize,
+    pub end: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RenderedPromptMessage {
     pub entry_id: PromptEntryId,
     pub role: PromptEntryRole,
     pub content: String,
     pub depth: u32,
     pub payload: Option<PromptEntryPayload>,
+    pub substitutions: Vec<PromptSubstitution>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -1913,10 +1936,12 @@ fn render_entry(
     entry: &PromptEntry,
     values: &PromptRenderValues,
 ) -> Result<RenderedPromptMessage, PromptRenderError> {
+    let (content, substitutions) = values.render_with_substitutions(&entry.content)?;
     Ok(RenderedPromptMessage {
+        substitutions,
         entry_id: entry.id,
         role: entry.role,
-        content: values.render(&entry.content)?,
+        content,
         depth: entry.depth,
         payload: entry.payload.clone(),
     })
@@ -2751,6 +2776,25 @@ mod tests {
             rendered.in_chat[0].content,
             "Mira trusts Sam.|Dates look like {{date}}.|Keep {{content_rules}} literal."
         );
+    }
+
+    #[test]
+    fn substitutions_record_only_the_placeholder_actually_rendered() {
+        let values = PromptRenderValues {
+            character_description: "same".into(),
+            persona_description: "same".into(),
+            ..PromptRenderValues::default()
+        };
+        let (text, sources) = values
+            .render_with_substitutions("literal a {{persona_description}}")
+            .expect("render");
+        assert_eq!(text, "literal a same");
+        assert_eq!(sources.len(), 1);
+        assert_eq!(sources[0].placeholder, "{{persona_description}}");
+        assert_eq!(&text[sources[0].start..sources[0].end], "same");
+        let (literal, sources) = values.render_with_substitutions("same").expect("literal");
+        assert_eq!(literal, "same");
+        assert!(sources.is_empty());
     }
 
     #[test]

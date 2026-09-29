@@ -9,8 +9,7 @@ use lettuce_characters::{
 use lettuce_context::PromptVariable;
 use lettuce_conversations::{
     ConversationBackground, ConversationKind, ConversationReader, ConversationRepository,
-    EditMessage, EditMessageResult, MediaAssetRole, MessageEditDraft, MessagePart,
-    MessageRenderSource, OperationToken, TimelineItem,
+    EditMessageResult, MediaAssetRole, OperationToken, TimelineItem,
 };
 use lettuce_image_generation::sd_runtime::lora_library::LoraLibraryRepository;
 use lettuce_image_generation::{
@@ -582,66 +581,83 @@ pub(crate) fn find_message<R: ConversationReader + ?Sized>(
     }
 }
 
-/// Appends the image to what the message shows now, read again after the
-/// generation so an edit or candidate switch made meanwhile is kept.
-/// `seed` names the edit, so repeating the call adds the image once.
+/// Appends the image to the reply variant it was asked for, wherever the
+/// message stands now: the shown render when it is that variant, otherwise
+/// the variant's own latest edit. `seed` names the edit, so repeating the
+/// call adds the image once.
 pub fn attach_scene_image<R: ConversationRepository + ?Sized>(
     repository: &R,
     conversation_id: ConversationId,
     message_id: MessageId,
+    target: lettuce_conversations::SceneFollowUpTarget,
     seed: RequestId,
     asset: AssetId,
     now: TimestampMillis,
 ) -> Result<EditMessageResult, SceneImageError> {
-    let conversation = ConversationReader::get(repository, conversation_id)
-        .map_err(|_| SceneImageError::ConversationNotFound)?
-        .conversation;
-    let item = find_message(repository, &conversation, message_id)?;
-    let parts = match item.message.active_render_source {
-        MessageRenderSource::Candidate(_) => item
-            .active_candidate
-            .as_ref()
-            .map(|candidate| candidate.parts.clone()),
-        MessageRenderSource::Revision(_) => item
-            .active_revision
-            .as_ref()
-            .map(|revision| revision.parts.clone()),
-    }
-    .ok_or(SceneImageError::MessageNotFound)?;
-    let key = derived_id(seed, "attach");
+    attach_scene_image_phase(
+        repository,
+        conversation_id,
+        message_id,
+        target,
+        SceneAttachmentPhase::Initial(seed),
+        asset,
+        now,
+    )
+}
+
+pub(crate) enum SceneAttachmentPhase {
+    Initial(RequestId),
+    Deferred(RequestId),
+}
+
+pub(crate) fn attach_scene_image_phase<R: ConversationRepository + ?Sized>(
+    repository: &R,
+    conversation_id: ConversationId,
+    message_id: MessageId,
+    target: lettuce_conversations::SceneFollowUpTarget,
+    phase: SceneAttachmentPhase,
+    asset: AssetId,
+    now: TimestampMillis,
+) -> Result<EditMessageResult, SceneImageError> {
+    let (seed, complete_deferred) = match phase {
+        SceneAttachmentPhase::Initial(seed) => (seed, false),
+        SceneAttachmentPhase::Deferred(seed) => (seed, true),
+    };
+    let key = derived_id(
+        seed,
+        if complete_deferred {
+            "complete-attachment"
+        } else {
+            "attach"
+        },
+    );
     repository
-        .edit_message(
-            &EditMessage {
+        .attach_scene_media(
+            &lettuce_conversations::AttachSceneMedia {
+                complete_deferred,
                 conversation_id,
                 message_id,
-                expected_revision: conversation.revision,
+                target,
                 operation: OperationToken {
                     key: lettuce_jobs::IdempotencyKey::new(format!("scene-image-{key}"))
                         .map_err(|_| SceneImageError::Storage)?,
                     request_digest: ContentHash::parse(
-                        blake3::hash(format!("{message_id}:{asset}").as_bytes())
-                            .to_hex()
-                            .to_string(),
+                        blake3::hash(
+                            format!("{}:{}:{asset}", target.kind(), target.id()).as_bytes(),
+                        )
+                        .to_hex()
+                        .to_string(),
                     )
                     .map_err(|_| SceneImageError::Storage)?,
                 },
-                draft: MessageEditDraft {
-                    parts: parts
-                        .into_iter()
-                        .chain([MessagePart::MediaAsset {
-                            asset_id: asset,
-                            role: MediaAssetRole::Attachment,
-                        }])
-                        .collect(),
-                    visibility: item.message.visibility,
-                    pinned: item.message.pinned,
-                    scene_edited: item.message.scene_edited,
-                },
+                asset_id: asset,
+                role: MediaAssetRole::Attachment,
             },
             now,
         )
         .map_err(|error| match error {
-            lettuce_conversations::ConversationRepositoryError::Conflict => {
+            lettuce_conversations::ConversationRepositoryError::Conflict
+            | lettuce_conversations::ConversationRepositoryError::NotFound => {
                 SceneImageError::MessageUnavailable
             }
             _ => SceneImageError::Storage,

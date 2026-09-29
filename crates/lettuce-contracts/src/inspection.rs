@@ -90,6 +90,9 @@ pub enum PromptSectionKind {
     ScheduledNotes,
     GroupCast,
     PromptEntry,
+    History,
+    Media,
+    Tools,
 }
 
 /// What one source contributed to the prompt, with its estimated tokens. A

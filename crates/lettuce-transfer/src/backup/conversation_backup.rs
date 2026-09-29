@@ -16,6 +16,8 @@ pub const CONVERSATION_HISTORY_BACKUP_VERSION: u32 = 1;
 pub struct ConversationHistoryBackup {
     pub version: u32,
     pub conversations: Vec<BackupConversation>,
+    #[serde(default)]
+    pub scene_follow_ups: Vec<lettuce_conversations::SceneFollowUp>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -70,6 +72,51 @@ impl ConversationHistoryBackup {
                 &mut revision_ids,
                 &mut candidate_ids,
             )?;
+        }
+        self.scene_follow_ups.sort_by_key(|follow_up| {
+            (
+                follow_up.conversation_id,
+                follow_up.target.kind(),
+                follow_up.target.id(),
+            )
+        });
+        let mut targets = BTreeSet::new();
+        for follow_up in &self.scene_follow_ups {
+            let message = self
+                .conversations
+                .iter()
+                .find(|conversation| {
+                    conversation.aggregate.conversation.id == follow_up.conversation_id
+                })
+                .and_then(|conversation| {
+                    conversation
+                        .messages
+                        .iter()
+                        .find(|message| message.message.id == follow_up.message_id)
+                })
+                .ok_or(ConversationHistoryBackupError::InvalidData)?;
+            let valid = match follow_up.target {
+                lettuce_conversations::SceneFollowUpTarget::Candidate(id) => message
+                    .candidates
+                    .iter()
+                    .any(|candidate| candidate.id == id),
+                lettuce_conversations::SceneFollowUpTarget::StarterRevision(id) => {
+                    message.initial_origin.as_ref().is_some_and(|origin| {
+                        matches!(origin, InitialMessageOrigin::StarterMessage { .. })
+                    }) && message.revisions.iter().any(|revision| revision.id == id)
+                }
+            };
+            if !valid
+                || follow_up.prompt.trim().is_empty()
+                || follow_up.created_at > follow_up.updated_at
+                || !targets.insert((
+                    follow_up.conversation_id,
+                    follow_up.target.kind(),
+                    follow_up.target.id(),
+                ))
+            {
+                return Err(ConversationHistoryBackupError::InvalidData);
+            }
         }
         Ok(())
     }

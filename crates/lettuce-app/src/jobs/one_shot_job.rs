@@ -40,6 +40,7 @@ pub(crate) struct OneShotJob<'a> {
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct OneShotLease<'a> {
+    pub(crate) claim: Option<&'a ClaimRef>,
     pub(crate) worker_id: WorkerId,
     pub(crate) now: TimestampMillis,
     pub(crate) lease_for: Duration,
@@ -71,7 +72,11 @@ pub(crate) fn admit_one_shot<R>(
 where
     R: JobStore + ?Sized,
 {
-    let spec = JobSpec::new(
+    Ok(repository.create_or_get(one_shot_spec(job))?.job)
+}
+
+pub(crate) fn one_shot_spec(job: OneShotJob<'_>) -> lettuce_jobs::NewJob {
+    JobSpec::new(
         JobKind::CreationRun,
         JobSubject::new(job.subject_kind, job.subject.to_owned())
             .expect("entity ids are safe job subjects"),
@@ -83,8 +88,7 @@ where
     )
     .with_resources(vec![ResourceClass::Network])
     .with_priority(JobPriority::Interactive)
-    .with_policies(RecoveryPolicy::Restart, CancellationPolicy::Cooperative);
-    Ok(repository.create_or_get(spec)?.job)
+    .with_policies(RecoveryPolicy::Restart, CancellationPolicy::Cooperative)
 }
 
 pub(crate) async fn run_one_shot_job<R, T, E, F, Fut>(
@@ -106,13 +110,78 @@ where
         Some(token) => JobHandle::with_cancellation(admitted.id, token.clone()),
         None => JobHandle::new(admitted.id),
     };
+    let claim = match lease.claim {
+        Some(claim)
+            if admitted.claim.as_ref() == Some(claim)
+                && matches!(
+                    admitted.state,
+                    JobState::Claimed | JobState::Running | JobState::CancellationRequested
+                ) =>
+        {
+            claim.clone()
+        }
+        Some(_) => return Err(OneShotJobError::NotClaimed.into()),
+        None => {
+            let Some(claim) = repository
+                .claim(
+                    admitted.id,
+                    lease.worker_id,
+                    at,
+                    lease.lease_for,
+                    lease.allowed,
+                )
+                .map_err(jobs)?
+            else {
+                if admitted.is_terminal() {
+                    return Err(OneShotJobError::AlreadySettled.into());
+                }
+                if admitted.state == JobState::Queued {
+                    repository
+                        .append_and_transition(JobMutation::RequestCancellation {
+                            id: admitted.id,
+                            reason: CancellationReason::User,
+                            at,
+                        })
+                        .map_err(jobs)?;
+                    repository
+                        .append_and_transition(JobMutation::FinishQueuedCancellation {
+                            id: admitted.id,
+                            at,
+                        })
+                        .map_err(jobs)?;
+                }
+                return Err(OneShotJobError::NotClaimed.into());
+            };
+            claim.claim
+        }
+    };
+    if admitted.state == JobState::CancellationRequested {
+        handle.cancellation_token().cancel();
+    }
+    if !matches!(
+        admitted.state,
+        JobState::Running | JobState::CancellationRequested
+    ) {
+        repository
+            .append_and_transition(JobMutation::Start {
+                claim: claim.clone(),
+                at,
+            })
+            .map_err(jobs)?;
+    }
     let _registration = match lease.cancellations {
         Some(runtime) => {
             if runtime
                 .register_cancellation(admitted.id, handle.cancellation_token())
                 .is_err()
             {
-                return Err(OneShotJobError::NotClaimed.into());
+                return settle(
+                    repository,
+                    claim,
+                    job.request_id,
+                    Err(OneShotJobError::Jobs(StoreError::Storage).into()),
+                    at,
+                );
             }
             Some(CancellationRegistration {
                 runtime,
@@ -121,51 +190,15 @@ where
         }
         None => None,
     };
-    let Some(claim) = repository
-        .claim(
-            admitted.id,
-            lease.worker_id,
-            at,
-            lease.lease_for,
-            lease.allowed,
-        )
-        .map_err(jobs)?
-    else {
-        if admitted.is_terminal() {
-            return Err(OneShotJobError::AlreadySettled.into());
-        }
-        if admitted.state == JobState::Queued {
-            repository
-                .append_and_transition(JobMutation::RequestCancellation {
-                    id: admitted.id,
-                    reason: CancellationReason::User,
-                    at,
-                })
-                .map_err(jobs)?;
-            repository
-                .append_and_transition(JobMutation::FinishQueuedCancellation {
-                    id: admitted.id,
-                    at,
-                })
-                .map_err(jobs)?;
-        }
-        return Err(OneShotJobError::NotClaimed.into());
-    };
-    repository
-        .append_and_transition(JobMutation::Start {
-            claim: claim.claim.clone(),
-            at,
-        })
-        .map_err(jobs)?;
     repository
         .append_and_transition(JobMutation::StageChanged {
-            claim: claim.claim.clone(),
+            claim: claim.clone(),
             stage: StageSnapshot::new(job.stage, false).expect("constant job stage is valid"),
             at,
         })
         .map_err(jobs)?;
     let result = run(handle).await;
-    settle(repository, claim.claim, job.request_id, result, at)
+    settle(repository, claim, job.request_id, result, at)
 }
 
 fn settle<R, T, E>(
@@ -290,6 +323,7 @@ mod tests {
                 request_id: RequestId::new(),
             },
             OneShotLease {
+                claim: None,
                 worker_id: WorkerId::new(),
                 now: TimestampMillis::now().expect("now"),
                 lease_for: Duration::from_secs(30),

@@ -12,7 +12,7 @@ use lettuce_media::LocalMediaBlobStore;
 use lettuce_models::{CapabilityStatus, ModelProfileRepository, ProviderProtocol};
 use lettuce_platform::{DirectorySnapshot, FilesystemAuthority, ManagedRoot};
 use lettuce_settings::{GlobalSettingsStore, SceneGenerationMode};
-use lettuce_types::{ConversationId, MessageId, TimestampMillis};
+use lettuce_types::{ConversationId, TimestampMillis};
 
 use super::jobs::JobFeed;
 use super::tests::{Harness, RecordingStream, Reply, api_events, harness_over, launch, send};
@@ -233,13 +233,35 @@ async fn run_jobs(context: &ApiContext) {
 }
 
 fn follow_up_state(context: &ApiContext, chat: &str, reply: &str) -> Option<SceneFollowUpState> {
-    context
-        .backend()
-        .database()
-        .get_follow_up(
-            chat.parse::<ConversationId>().expect("chat"),
-            reply.parse::<MessageId>().expect("message"),
-        )
+    let database = context.backend().database();
+    let conversation_id = chat.parse::<ConversationId>().expect("chat");
+    let conversation = lettuce_conversations::ConversationReader::get(database, conversation_id)
+        .expect("conversation")
+        .conversation;
+    let item = lettuce_conversations::ConversationReader::timeline_page(
+        database,
+        conversation_id,
+        conversation.active_branch_id,
+        &lettuce_types::PageRequest::default(),
+    )
+    .expect("timeline")
+    .items
+    .into_iter()
+    .find(|item| item.message.id.to_string() == reply)
+    .expect("message");
+    let target = if let Some(candidate) = item.active_candidate {
+        lettuce_conversations::SceneFollowUpTarget::Candidate(candidate.id)
+    } else {
+        let revision = item.active_revision.expect("revision");
+        revision
+            .supersedes_candidate_id
+            .map(lettuce_conversations::SceneFollowUpTarget::Candidate)
+            .unwrap_or(lettuce_conversations::SceneFollowUpTarget::StarterRevision(
+                revision.id,
+            ))
+    };
+    database
+        .get_follow_up(conversation_id, target)
         .expect("follow-up")
         .map(|follow_up| follow_up.state)
 }
@@ -424,12 +446,32 @@ async fn a_manual_image_takes_a_written_or_typed_prompt_and_a_second_one_adds_an
     let mut feed = JobFeed::start(context).await.expect("feed");
     let written = message_scene_prompt_generate(
         context,
-        dto::MessageSceneRequest {
+        dto::MessageScenePromptGenerateRequest {
+            client_operation_id: uuid::Uuid::new_v4().to_string(),
             message_id: reply.clone(),
         },
     )
     .await
     .expect("prompt job");
+    let prompt_replay = message_scene_prompt_generate(
+        context,
+        dto::MessageScenePromptGenerateRequest {
+            client_operation_id: "manual-prompt-replay".into(),
+            message_id: reply.clone(),
+        },
+    )
+    .await
+    .expect("second prompt key");
+    let prompt_replayed = message_scene_prompt_generate(
+        context,
+        dto::MessageScenePromptGenerateRequest {
+            client_operation_id: "manual-prompt-replay".into(),
+            message_id: reply.clone(),
+        },
+    )
+    .await
+    .expect("same prompt replay");
+    assert_eq!(prompt_replay.job_id, prompt_replayed.job_id);
     let sink = Arc::new(RecordingJob::default());
     job_watch(
         context,
@@ -457,6 +499,7 @@ async fn a_manual_image_takes_a_written_or_typed_prompt_and_a_second_one_adds_an
     let blank = message_scene_image_generate(
         context,
         dto::MessageSceneImageGenerateRequest {
+            client_operation_id: uuid::Uuid::new_v4().to_string(),
             message_id: reply.clone(),
             prompt: "   ".into(),
         },
@@ -465,18 +508,32 @@ async fn a_manual_image_takes_a_written_or_typed_prompt_and_a_second_one_adds_an
     .expect_err("blank");
     assert_eq!(blank.code, ApiErrorCode::InvalidInput);
     for prompt in ["  manual harbor ", "second harbor"] {
-        message_scene_image_generate(
+        let request = dto::MessageSceneImageGenerateRequest {
+            client_operation_id: uuid::Uuid::new_v4().to_string(),
+            message_id: reply.clone(),
+            prompt: prompt.into(),
+        };
+        let image_job = message_scene_image_generate(context, request.clone())
+            .await
+            .expect("image job");
+        let replayed = message_scene_image_generate(context, request.clone())
+            .await
+            .expect("pending replay");
+        assert_eq!(image_job.job_id, replayed.job_id);
+        let conflict = message_scene_image_generate(
             context,
             dto::MessageSceneImageGenerateRequest {
-                message_id: reply.clone(),
-                prompt: prompt.into(),
+                prompt: "different".into(),
+                ..request.clone()
             },
         )
         .await
-        .expect("image job");
+        .expect_err("changed request cannot replay");
+        assert_eq!(conflict.code, ApiErrorCode::Conflict);
         let busy = message_scene_image_generate(
             context,
             dto::MessageSceneImageGenerateRequest {
+                client_operation_id: uuid::Uuid::new_v4().to_string(),
                 message_id: reply.clone(),
                 prompt: "again".into(),
             },
@@ -485,6 +542,10 @@ async fn a_manual_image_takes_a_written_or_typed_prompt_and_a_second_one_adds_an
         .expect_err("one image job at a time");
         assert_eq!(busy.code, ApiErrorCode::Busy);
         run_jobs(context).await;
+        let replayed = message_scene_image_generate(context, request)
+            .await
+            .expect("settled replay");
+        assert_eq!(image_job.job_id, replayed.job_id);
     }
     assert_eq!(media_count(&reply_of(context, &chat, &reply).await), 2);
     let prompts = scene.images.prompts.lock().expect("prompts").clone();
@@ -623,6 +684,7 @@ async fn a_group_reply_asks_for_no_scene_image() {
     let refused = message_scene_image_generate(
         &scene.harness.context,
         dto::MessageSceneImageGenerateRequest {
+            client_operation_id: uuid::Uuid::new_v4().to_string(),
             message_id: view.messages.items.last().expect("reply").id.clone(),
             prompt: "a harbor".into(),
         },
@@ -664,7 +726,7 @@ async fn deleting_a_chat_removes_what_its_feature_jobs_stored() {
     run_jobs(context).await;
     let helper: lettuce_types::JobId = helper.job_id.parse().expect("job id");
     let database = context.backend().database();
-    assert!(database.local_model_job(helper).expect("detail").is_some());
+    assert!(database.job_detail(helper).expect("detail").is_some());
     assert!(lettuce_image_generation::ImageGenerationRepository::get(database, image_job).is_ok());
     conversation_delete(
         context,
@@ -674,6 +736,151 @@ async fn deleting_a_chat_removes_what_its_feature_jobs_stored() {
     )
     .await
     .expect("delete");
-    assert!(database.local_model_job(helper).expect("detail").is_none());
+    assert!(database.job_detail(helper).expect("detail").is_none());
     assert!(lettuce_image_generation::ImageGenerationRepository::get(database, image_job).is_err());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_scene_deferred_by_continue_completes_from_the_commit_feed_once() {
+    let scene = scene_harness(
+        Reply::Text(TAGGED),
+        vec![Outcome::Image],
+        SceneGenerationMode::Auto,
+    );
+    let context = &scene.harness.context;
+    let (chat, reply) = reply_with_scene(&scene.harness, "deferred-feed").await;
+    let mut feed = super::conversation_feed::ConversationFeed::start(context)
+        .await
+        .expect("feed");
+    conversation_continue(
+        context,
+        super::turns_tests::continue_request(&scene.harness, &chat, "deferred-continue"),
+        Arc::new(RecordingStream::default()),
+    )
+    .await
+    .expect("continue");
+    run_jobs(context).await;
+    assert_eq!(
+        follow_up_state(context, &chat, &reply),
+        Some(SceneFollowUpState::AwaitingTurn)
+    );
+    assert_eq!(media_count(&reply_of(context, &chat, &reply).await), 0);
+    feed.publish(context)
+        .await
+        .expect("publish while turn is live");
+    assert_eq!(
+        follow_up_state(context, &chat, &reply),
+        Some(SceneFollowUpState::AwaitingTurn)
+    );
+    ConversationGenerationWorker::new(context.clone())
+        .run_once()
+        .await
+        .expect("settle continue");
+    feed.publish(context)
+        .await
+        .expect("complete after committed turn");
+    assert_eq!(
+        follow_up_state(context, &chat, &reply),
+        Some(SceneFollowUpState::Done)
+    );
+    assert_eq!(media_count(&reply_of(context, &chat, &reply).await), 1);
+    assert_eq!(scene.images.calls(), 1);
+    feed.publish(context).await.expect("replay feed");
+    assert_eq!(media_count(&reply_of(context, &chat, &reply).await), 1);
+    assert_eq!(scene.images.calls(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_deferred_scene_completes_after_restart_without_another_provider_call() {
+    let scene = scene_harness(
+        Reply::Text(TAGGED),
+        vec![Outcome::Image],
+        SceneGenerationMode::Auto,
+    );
+    let context = &scene.harness.context;
+    let (chat, reply) = reply_with_scene(&scene.harness, "deferred-restart").await;
+    conversation_continue(
+        context,
+        super::turns_tests::continue_request(&scene.harness, &chat, "deferred-restart-continue"),
+        Arc::new(RecordingStream::default()),
+    )
+    .await
+    .expect("continue");
+    run_jobs(context).await;
+    assert_eq!(
+        follow_up_state(context, &chat, &reply),
+        Some(SceneFollowUpState::AwaitingTurn)
+    );
+    let restarted = context.restarted();
+    restarted
+        .recover_after_restart()
+        .expect("recover pending turn and image completion");
+    assert_eq!(
+        follow_up_state(&restarted, &chat, &reply),
+        Some(SceneFollowUpState::Done)
+    );
+    assert_eq!(media_count(&reply_of(&restarted, &chat, &reply).await), 1);
+    restarted.recover_after_restart().expect("repeat recovery");
+    assert_eq!(media_count(&reply_of(&restarted, &chat, &reply).await), 1);
+    assert_eq!(scene.images.calls(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_broken_deferred_scene_does_not_block_other_completions_or_events() {
+    let scene = scene_harness(
+        Reply::Text(TAGGED),
+        vec![Outcome::Image],
+        SceneGenerationMode::AskFirst,
+    );
+    let context = &scene.harness.context;
+    let (broken_chat, broken_reply) = reply_with_scene(&scene.harness, "broken-deferred").await;
+    let (_, target) = super::scenes::scene_target(context, broken_reply.parse().expect("message"))
+        .expect("target");
+    context
+        .backend()
+        .database()
+        .change_follow_up(
+            broken_chat.parse().expect("chat"),
+            target,
+            &[SceneFollowUpState::Pending],
+            &lettuce_conversations::SceneFollowUpChange {
+                state: Some(SceneFollowUpState::AwaitingTurn),
+                request_id: Some(Some(lettuce_types::RequestId::new())),
+                ..Default::default()
+            },
+            context.now(),
+        )
+        .expect("interrupted deferred record");
+    let (chat, reply) = reply_with_scene(&scene.harness, "healthy-deferred").await;
+    message_scene_image_approve(context, approve(&reply, None))
+        .await
+        .expect("approve");
+    conversation_continue(
+        context,
+        super::turns_tests::continue_request(&scene.harness, &chat, "healthy-deferred-continue"),
+        Arc::new(RecordingStream::default()),
+    )
+    .await
+    .expect("continue");
+    run_jobs(context).await;
+    let mut feed = super::conversation_feed::ConversationFeed::start(context)
+        .await
+        .expect("feed");
+    ConversationGenerationWorker::new(context.clone())
+        .run_once()
+        .await
+        .expect("settle continue");
+    feed.publish(context)
+        .await
+        .expect("publish all rows and changes");
+    assert_eq!(
+        follow_up_state(context, &broken_chat, &broken_reply),
+        Some(SceneFollowUpState::Failed)
+    );
+    assert_eq!(
+        follow_up_state(context, &chat, &reply),
+        Some(SceneFollowUpState::Done)
+    );
+    assert_eq!(media_count(&reply_of(context, &chat, &reply).await), 1);
+    assert!(api_events(&scene.harness).iter().any(|event| matches!(event, ApiEvent::ConversationChanged { conversation_id } if conversation_id == &chat)));
 }

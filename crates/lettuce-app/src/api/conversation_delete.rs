@@ -200,7 +200,8 @@ fn cancel_work(
             }
         }
     }
-    cancel_memory_work(context, conversation_id).map(|_| ())
+    cancel_memory_work(context, conversation_id)?;
+    cancel_feature_work(context, conversation_id)
 }
 
 /// Requests cancellation of the conversation's unfinished memory jobs: a
@@ -278,4 +279,104 @@ pub(crate) fn cancel_memory_work(
         .settle_memory_attempts_of_ended_jobs(conversation_id)
         .map_err(IntoApiError::into_api_error)?;
     Ok(unfinished)
+}
+
+fn cancel_feature_work(
+    context: &ApiContext,
+    conversation_id: ConversationId,
+) -> Result<(), ApiError> {
+    use lettuce_conversations::{SceneFollowUpRepository, SceneFollowUpState};
+    let database = context.backend().database();
+    let mut ids = std::collections::BTreeSet::new();
+    let mut cursor = None;
+    loop {
+        let page = JobStore::list(
+            database,
+            JobQuery {
+                state: None,
+                kind: None,
+                subject: Some(SubjectId::new(conversation_id.to_string()).map_err(|_| {
+                    api_error(ApiErrorCode::Internal, "invalid conversation job subject")
+                })?),
+                page: PageRequest {
+                    cursor,
+                    limit: PageLimit::new(200),
+                },
+            },
+        )
+        .map_err(IntoApiError::into_api_error)?;
+        ids.extend(
+            page.items
+                .into_iter()
+                .filter(|job| {
+                    !job.state.is_terminal()
+                        && job.idempotency_key.as_ref().is_some_and(|key| {
+                            key.as_str().starts_with("reply-helper-")
+                                || key.as_str().starts_with("scene-prompt-")
+                        })
+                })
+                .map(|job| job.id),
+        );
+        let Some(next) = page.next_cursor else {
+            break;
+        };
+        cursor = Some(next);
+    }
+    for follow_up in database
+        .follow_ups_in(&[SceneFollowUpState::Approved, SceneFollowUpState::Running])
+        .map_err(|_| api_error(ApiErrorCode::Internal, "scene follow-ups could not be read"))?
+    {
+        if follow_up.conversation_id != conversation_id {
+            continue;
+        }
+        if let Some(request_id) = follow_up.request_id
+            && let Some(job) =
+                crate::job_of_scene_image_request(database, request_id).map_err(|_| {
+                    api_error(
+                        ApiErrorCode::Internal,
+                        "the scene image job could not be read",
+                    )
+                })?
+            && !job.state.is_terminal()
+        {
+            ids.insert(job.id);
+        }
+    }
+    for id in ids {
+        let job = JobStore::get(database, id)
+            .map_err(IntoApiError::into_api_error)?
+            .ok_or_else(|| api_error(ApiErrorCode::Internal, "the feature job is missing"))?;
+        let at = context.now().max(job.updated_at);
+        let requested = if job.state == JobState::CancellationRequested {
+            job
+        } else {
+            database
+                .append_and_transition(JobMutation::RequestCancellation {
+                    id,
+                    reason: CancellationReason::User,
+                    at,
+                })
+                .map_err(IntoApiError::into_api_error)?
+        };
+        let signalled = context
+            .backend()
+            .inference_runtime()
+            .request_cancel(id)
+            .map_err(|_| {
+                api_error(
+                    ApiErrorCode::Internal,
+                    "the feature job cancellation could not be signalled",
+                )
+            })?;
+        if !context.jobs().cancel_running(id) && !signalled && requested.claim.is_none() {
+            database
+                .append_and_transition(JobMutation::FinishQueuedCancellation {
+                    id,
+                    at: at.max(requested.updated_at),
+                })
+                .map_err(IntoApiError::into_api_error)?;
+        }
+    }
+    context.jobs().wake();
+    Ok(())
 }

@@ -64,6 +64,7 @@ pub struct ScenePromptRequest {
     pub conversation_id: ConversationId,
     pub message_id: MessageId,
     pub request_id: RequestId,
+    pub recent_context: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -248,6 +249,7 @@ pub struct ScenePromptWriter<'a, R: ?Sized, D: ?Sized, I: ?Sized> {
     inference: &'a I,
     cancellations: Option<&'a lettuce_inference::InferenceRuntime>,
     cancellation: Option<&'a lettuce_jobs::handle::CancellationToken>,
+    claim: Option<&'a lettuce_jobs::ClaimRef>,
     recorder: Option<&'a dyn crate::ResultRecorder>,
 }
 
@@ -261,7 +263,13 @@ impl<'a, R: ?Sized, D: ?Sized, I: ?Sized> ScenePromptWriter<'a, R, D, I> {
             cancellations: None,
             cancellation: None,
             recorder: None,
+            claim: None,
         }
+    }
+
+    pub(crate) fn with_claim(mut self, claim: &'a lettuce_jobs::ClaimRef) -> Self {
+        self.claim = Some(claim);
+        self
     }
 
     /// Stops the run with `token` when its runner cancels the job.
@@ -299,6 +307,19 @@ where
     D: ImageMedia + ?Sized,
     I: InferencePort + ?Sized,
 {
+    pub(crate) fn capture_recent(
+        &self,
+        conversation_id: ConversationId,
+        message_id: MessageId,
+    ) -> Result<String, ScenePromptError> {
+        let aggregate = ConversationReader::get(self.repository, conversation_id)
+            .map_err(|_| ScenePromptError::Storage)?;
+        let window = self.session_window(&aggregate.conversation)?;
+        let text = RuntimeText::load(self.repository, BuiltInPromptId::ChatRuntime)
+            .map_err(|_| ScenePromptError::MissingPrompt)?;
+        recent_messages(&text, &window, message_id)
+    }
+
     /// Queues the request as a job, or returns the one an earlier admission
     /// of it created.
     pub fn admit(
@@ -343,6 +364,7 @@ where
                 request_id: request.request_id,
             },
             crate::jobs::one_shot_job::OneShotLease {
+                claim: self.claim,
                 worker_id,
                 now,
                 lease_for,
@@ -435,7 +457,10 @@ where
         let writer = crate::scene_writer_model(self.repository, settings, !local)?;
         let text = RuntimeText::load(self.repository, BuiltInPromptId::ChatRuntime)
             .map_err(|_| ScenePromptError::MissingPrompt)?;
-        let recent = recent_messages(&text, &window, request.message_id)?;
+        let recent = match &request.recent_context {
+            Some(recent) => recent.clone(),
+            None => recent_messages(&text, &window, request.message_id)?,
+        };
         let stored = StoredSceneReferences::new(conversation, &character, persona.as_ref());
         let references = if local {
             stored.resolve::<D>(None)

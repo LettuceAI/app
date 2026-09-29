@@ -7,7 +7,7 @@
 use lettuce_characters::{CharacterRepository, PersonaRepository};
 use lettuce_conversations::{
     ConversationRepository, SceneFollowUp, SceneFollowUpChange, SceneFollowUpMode,
-    SceneFollowUpRepository, SceneFollowUpState,
+    SceneFollowUpRepository, SceneFollowUpState, SceneFollowUpTarget,
 };
 use lettuce_image_generation::sd_runtime::lora_library::LoraLibraryRepository;
 use lettuce_image_generation::{
@@ -15,9 +15,7 @@ use lettuce_image_generation::{
 };
 use lettuce_jobs::{JobKind, JobQuery, JobSnapshot, JobStore, SubjectId};
 use lettuce_models::{ModelCatalog, ModelProfileRepository, ProviderAccountRepository};
-use lettuce_types::{
-    ConversationId, MessageId, PageLimit, PageRequest, RequestId, TimestampMillis,
-};
+use lettuce_types::{ConversationId, PageLimit, PageRequest, RequestId, TimestampMillis};
 use lettuce_usage::JobUsageLedger;
 
 use crate::image::scene_image::{
@@ -36,6 +34,7 @@ const NO_IMAGE_TEXT: &str = "no image";
 /// database is one.
 pub trait SceneFollowUpSources:
     ConversationRepository
+    + lettuce_conversations::ConversationOverviewReader
     + SceneFollowUpRepository
     + CharacterRepository
     + PersonaRepository
@@ -53,6 +52,7 @@ pub trait SceneFollowUpSources:
 
 impl<T> SceneFollowUpSources for T where
     T: ConversationRepository
+        + lettuce_conversations::ConversationOverviewReader
         + SceneFollowUpRepository
         + CharacterRepository
         + PersonaRepository
@@ -108,10 +108,13 @@ pub fn failure_label(error: &SceneImageError) -> &'static str {
 
 /// The root the request ids of one image ask derive from.
 #[must_use]
-pub fn root_request(message_id: MessageId, generation: u32) -> RequestId {
+pub fn root_request(target: SceneFollowUpTarget, generation: u32) -> RequestId {
     RequestId::from_uuid(derived_id(
-        RequestId::from_uuid(message_id.as_uuid()),
-        &format!("scene-image-{generation}"),
+        RequestId::from_uuid(match target {
+            SceneFollowUpTarget::Candidate(id) => id.as_uuid(),
+            SceneFollowUpTarget::StarterRevision(id) => id.as_uuid(),
+        }),
+        &format!("scene-image-{}-{generation}", target.kind()),
     ))
 }
 
@@ -146,7 +149,7 @@ where
     pub fn start(
         &self,
         conversation_id: ConversationId,
-        message_id: MessageId,
+        target: SceneFollowUpTarget,
         from: &[SceneFollowUpState],
         prompt: Option<&str>,
         mode: Option<SceneFollowUpMode>,
@@ -154,35 +157,32 @@ where
     ) -> Result<(SceneFollowUp, JobSnapshot), SceneFollowUpError> {
         let current = self
             .repository
-            .get_follow_up(conversation_id, message_id)?
+            .get_follow_up(conversation_id, target)?
             .ok_or(SceneFollowUpError::NotFound)?;
-        let request_id = attempt_request(root_request(message_id, current.generation + 1), 1);
-        let started = self
-            .repository
-            .change_follow_up(
-                conversation_id,
-                message_id,
-                from,
-                &SceneFollowUpChange {
-                    state: Some(SceneFollowUpState::Approved),
-                    prompt: prompt.map(str::to_owned),
-                    mode,
-                    request_id: Some(Some(request_id)),
-                    attempt: Some(1),
-                    next_generation: true,
-                    failure: Some(None),
-                },
-                now,
-            )?
-            .ok_or_else(|| {
-                SceneFollowUpError::WrongState(
-                    self.repository
-                        .get_follow_up(conversation_id, message_id)
-                        .ok()
-                        .flatten()
-                        .map_or(current.state, |follow_up| follow_up.state),
-                )
-            })?;
+        let request_id = attempt_request(root_request(target, current.generation + 1), 1);
+        let started = self.repository.change_follow_up(
+            conversation_id,
+            target,
+            from,
+            &SceneFollowUpChange {
+                state: Some(SceneFollowUpState::Approved),
+                prompt: prompt.map(str::to_owned),
+                mode,
+                request_id: Some(Some(request_id)),
+                attempt: Some(1),
+                next_generation: true,
+                failure: Some(None),
+            },
+            now,
+        )?;
+        let Some(started) = started else {
+            let state = self
+                .repository
+                .get_follow_up(conversation_id, target)?
+                .ok_or(SceneFollowUpError::NotFound)?
+                .state;
+            return Err(SceneFollowUpError::WrongState(state));
+        };
         let job = self.admit_job(&started, now)?;
         Ok((started, job))
     }
@@ -239,10 +239,11 @@ where
     ) -> Result<Option<SceneFollowUp>, SceneFollowUpError> {
         Ok(self.repository.change_follow_up(
             follow_up.conversation_id,
-            follow_up.message_id,
+            follow_up.target,
             &[
                 SceneFollowUpState::Approved,
                 SceneFollowUpState::Running,
+                SceneFollowUpState::AwaitingTurn,
                 SceneFollowUpState::Pending,
             ],
             &SceneFollowUpChange {
@@ -272,7 +273,13 @@ where
         if !follow_up.state.generating() {
             return Ok(None);
         }
-        let root = root_request(follow_up.message_id, follow_up.generation);
+        if follow_up.state == SceneFollowUpState::AwaitingTurn {
+            complete_one(self.repository, &follow_up, now)?;
+            return Ok(self
+                .repository
+                .get_follow_up(follow_up.conversation_id, follow_up.target)?);
+        }
+        let root = root_request(follow_up.target, follow_up.generation);
         match &record.state {
             ImageGenerationState::Succeeded { result } => match result.images.first() {
                 Some(image) => {
@@ -280,11 +287,14 @@ where
                         self.repository,
                         follow_up.conversation_id,
                         follow_up.message_id,
+                        follow_up.target,
                         root,
                         image.asset_id,
                         now,
                     ) {
-                        Ok(_) => self.done(&follow_up, now),
+                        Ok(_) => Ok(self
+                            .repository
+                            .get_follow_up(follow_up.conversation_id, follow_up.target)?),
                         Err(error) => self.fail(&follow_up, failure_label(&error), now),
                     }
                 }
@@ -303,7 +313,7 @@ where
             }
             ImageGenerationState::Cancelled { .. } => Ok(self.repository.change_follow_up(
                 follow_up.conversation_id,
-                follow_up.message_id,
+                follow_up.target,
                 &[SceneFollowUpState::Approved, SceneFollowUpState::Running],
                 &SceneFollowUpChange {
                     state: Some(SceneFollowUpState::Dismissed),
@@ -317,24 +327,6 @@ where
         }
     }
 
-    fn done(
-        &self,
-        follow_up: &SceneFollowUp,
-        now: TimestampMillis,
-    ) -> Result<Option<SceneFollowUp>, SceneFollowUpError> {
-        Ok(self.repository.change_follow_up(
-            follow_up.conversation_id,
-            follow_up.message_id,
-            &[SceneFollowUpState::Approved, SceneFollowUpState::Running],
-            &SceneFollowUpChange {
-                state: Some(SceneFollowUpState::Done),
-                failure: Some(None),
-                ..SceneFollowUpChange::default()
-            },
-            now,
-        )?)
-    }
-
     fn retry_or_fail(
         &self,
         follow_up: &SceneFollowUp,
@@ -345,12 +337,12 @@ where
         }
         let attempt = follow_up.attempt + 1;
         let request_id = attempt_request(
-            root_request(follow_up.message_id, follow_up.generation),
+            root_request(follow_up.target, follow_up.generation),
             attempt,
         );
         let Some(next) = self.repository.change_follow_up(
             follow_up.conversation_id,
-            follow_up.message_id,
+            follow_up.target,
             &[SceneFollowUpState::Approved, SceneFollowUpState::Running],
             &SceneFollowUpChange {
                 state: Some(SceneFollowUpState::Approved),
@@ -374,54 +366,73 @@ where
     /// never started starts now. Returns how many follow-ups changed.
     pub fn recover(&self, now: TimestampMillis) -> Result<usize, SceneFollowUpError> {
         let mut changed = 0;
-        for follow_up in self
-            .repository
-            .follow_ups_in(&[SceneFollowUpState::Approved, SceneFollowUpState::Running])?
-        {
-            let Some(request_id) = follow_up.request_id else {
-                self.fail(&follow_up, labels::SCENE_IMAGE_INTERRUPTED, now)?;
-                changed += 1;
-                continue;
-            };
-            match self.job_of_request(request_id)? {
-                None if follow_up.state == SceneFollowUpState::Approved => {
-                    if self.admit_job(&follow_up, now).is_ok() {
-                        changed += 1;
+        let mut failure = None;
+        for follow_up in self.repository.follow_ups_in(&[
+            SceneFollowUpState::Approved,
+            SceneFollowUpState::Running,
+            SceneFollowUpState::AwaitingTurn,
+            SceneFollowUpState::Pending,
+        ])? {
+            let recovered = (|| {
+                if follow_up.state == SceneFollowUpState::AwaitingTurn {
+                    return complete_one(self.repository, &follow_up, now);
+                }
+                if follow_up.state == SceneFollowUpState::Pending {
+                    if follow_up.mode != SceneFollowUpMode::Auto {
+                        return Ok(false);
                     }
-                }
-                None => {
-                    self.fail(&follow_up, labels::SCENE_IMAGE_INTERRUPTED, now)?;
-                    changed += 1;
-                }
-                Some(job) if job.state.is_terminal() => {
-                    let record = ImageGenerationRepository::get(self.repository, job.id)
-                        .map_err(|_| SceneFollowUpError::Storage)?;
-                    self.settle(&record, true, now)?;
-                    changed += 1;
-                }
-                Some(_) => {}
-            }
-        }
-        for follow_up in self
-            .repository
-            .follow_ups_in(&[SceneFollowUpState::Pending])?
-        {
-            if follow_up.mode == SceneFollowUpMode::Auto
-                && self
-                    .start(
+                    self.start(
                         follow_up.conversation_id,
-                        follow_up.message_id,
+                        follow_up.target,
                         &[SceneFollowUpState::Pending],
                         None,
                         None,
                         now,
-                    )
-                    .is_ok()
-            {
-                changed += 1;
+                    )?;
+                    return Ok(true);
+                }
+                let Some(request_id) = follow_up.request_id else {
+                    self.fail(&follow_up, labels::SCENE_IMAGE_INTERRUPTED, now)?;
+                    return Ok(true);
+                };
+                match self.job_of_request(request_id)? {
+                    None if follow_up.state == SceneFollowUpState::Approved => {
+                        self.admit_job(&follow_up, now)?;
+                        Ok(true)
+                    }
+                    None => {
+                        self.fail(&follow_up, labels::SCENE_IMAGE_INTERRUPTED, now)?;
+                        Ok(true)
+                    }
+                    Some(job) if job.state.is_terminal() => {
+                        let record = ImageGenerationRepository::get(self.repository, job.id)
+                            .map_err(|_| SceneFollowUpError::Storage)?;
+                        self.settle(&record, true, now)?;
+                        Ok(true)
+                    }
+                    Some(_) => Ok(false),
+                }
+            })();
+            match recovered {
+                Ok(true) => changed += 1,
+                Ok(false) => {}
+                Err(error) => {
+                    let label = match &error {
+                        SceneFollowUpError::Image(error) => failure_label(error),
+                        _ => labels::SCENE_IMAGE_FAILED,
+                    };
+                    if let Err(storage) = self.fail(&follow_up, label, now) {
+                        failure.get_or_insert(storage);
+                    }
+                    failure.get_or_insert(error);
+                }
             }
         }
-        Ok(changed)
+        if let Some(error) = failure {
+            Err(error)
+        } else {
+            Ok(changed)
+        }
     }
 
     /// The image job of request `request_id`.
@@ -456,4 +467,95 @@ pub fn job_of_scene_image_request<R: JobStore + ?Sized>(
     .items
     .into_iter()
     .next())
+}
+
+pub(crate) fn complete_awaiting<R: SceneFollowUpSources + ?Sized>(
+    repository: &R,
+    now: TimestampMillis,
+) -> Result<usize, SceneFollowUpError> {
+    let mut changed = 0;
+    let mut failure = None;
+    for follow_up in repository.follow_ups_in(&[SceneFollowUpState::AwaitingTurn])? {
+        match complete_one(repository, &follow_up, now) {
+            Ok(true) => changed += 1,
+            Ok(false) => {}
+            Err(error) => {
+                if failure.is_none() {
+                    failure = Some(error);
+                }
+            }
+        }
+    }
+    match failure {
+        Some(error) => Err(error),
+        None => Ok(changed),
+    }
+}
+
+fn complete_one<R: SceneFollowUpSources + ?Sized>(
+    repository: &R,
+    follow_up: &SceneFollowUp,
+    now: TimestampMillis,
+) -> Result<bool, SceneFollowUpError> {
+    let failed = |label: &str| -> Result<bool, SceneFollowUpError> {
+        repository.change_follow_up(
+            follow_up.conversation_id,
+            follow_up.target,
+            &[SceneFollowUpState::AwaitingTurn],
+            &SceneFollowUpChange {
+                state: Some(SceneFollowUpState::Failed),
+                failure: Some(Some(label.to_owned())),
+                ..SceneFollowUpChange::default()
+            },
+            now,
+        )?;
+        Ok(true)
+    };
+    let Some(request_id) = follow_up.request_id else {
+        return failed(labels::SCENE_IMAGE_INTERRUPTED);
+    };
+    let Some(job) = crate::job_of_scene_image_request(repository, request_id)? else {
+        return failed(labels::SCENE_IMAGE_INTERRUPTED);
+    };
+    let record = match ImageGenerationRepository::get(repository, job.id) {
+        Ok(record) => record,
+        Err(lettuce_image_generation::ImageGenerationRepositoryError::Storage) => {
+            return Err(SceneFollowUpError::Storage);
+        }
+        Err(_) => return failed(labels::SCENE_IMAGE_INTERRUPTED),
+    };
+    let ImageGenerationState::Succeeded { result } = record.state else {
+        return failed(labels::SCENE_IMAGE_INTERRUPTED);
+    };
+    let Some(image) = result.images.first() else {
+        return failed(labels::SCENE_IMAGE_NO_IMAGE);
+    };
+    match crate::image::scene_image::attach_scene_image_phase(
+        repository,
+        follow_up.conversation_id,
+        follow_up.message_id,
+        follow_up.target,
+        crate::image::scene_image::SceneAttachmentPhase::Deferred(root_request(
+            follow_up.target,
+            follow_up.generation,
+        )),
+        image.asset_id,
+        now,
+    ) {
+        Ok(_) => Ok(true),
+        Err(SceneImageError::MessageUnavailable) => {
+            if lettuce_conversations::ConversationOverviewReader::live_turn(
+                repository,
+                follow_up.conversation_id,
+            )
+            .map_err(|_| SceneFollowUpError::Storage)?
+            .is_some()
+            {
+                Ok(false)
+            } else {
+                failed(labels::SCENE_IMAGE_MESSAGE_UNAVAILABLE)
+            }
+        }
+        Err(error) => Err(error.into()),
+    }
 }

@@ -704,6 +704,24 @@ pub struct EditMessage {
     pub draft: MessageEditDraft,
 }
 
+/// Appends one media asset to a variant of a reply, whichever variant the
+/// message shows. When the message shows that variant the asset becomes part
+/// of what it shows; otherwise it waits in the variant's own latest edit, which
+/// selecting the variant renders. Carries no conversation revision: the asset
+/// belongs to the variant, not to what the conversation looked like when the
+/// image was asked for.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AttachSceneMedia {
+    pub complete_deferred: bool,
+    pub conversation_id: ConversationId,
+    pub message_id: MessageId,
+    pub target: crate::SceneFollowUpTarget,
+    pub operation: OperationToken,
+    pub asset_id: lettuce_types::AssetId,
+    pub role: crate::content::MediaAssetRole,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MessageEditDraft {
