@@ -176,7 +176,7 @@ pub async fn lora_keywords_discover(
                     path: request.path,
                     profile_id: request.profile_id,
                 },
-                || Ok(()),
+                || crate::api::jobs::folder_move_active(context),
             )
         })
         .await
@@ -369,6 +369,7 @@ pub async fn hf_image_bundle_install(
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         let _admitting = context.image_state().bundle_admission().lock().await;
+        super::refuse_during_move(context).await?;
         let paths = engine.paths();
         let root = bundle_root(&paths.image_root);
         let mut wanted = Vec::with_capacity(request.assets.len());
@@ -435,6 +436,7 @@ pub async fn hf_image_bundle_retry(
     let engine = engine(context)?;
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
+        super::refuse_during_move(context).await?;
         let paths = engine.paths();
         let plan = browser(context)?
             .bundle_retry_downloads(
@@ -705,6 +707,7 @@ pub async fn civitai_lora_download(
     let engine = engine(context)?;
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
+        super::refuse_during_move(context).await?;
         let pure = pure_mode(context)?;
         let secrets = context.secret_store().as_ref();
         let detail = context

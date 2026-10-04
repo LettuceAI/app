@@ -1718,3 +1718,169 @@ async fn the_models_folder_does_not_move_while_a_lora_discovery_is_queued() {
         })
     );
 }
+
+async fn queue_move(context: &ApiContext, root: &Path, operation: &str) -> dto::JobAccepted {
+    local_models_dir_set(
+        context,
+        dto::LocalModelsDirSetRequest {
+            path: root.join("elsewhere").display().to_string(),
+            move_existing: false,
+            client_operation_id: operation.to_owned(),
+        },
+    )
+    .await
+    .expect("move queued")
+}
+
+fn is_folder_move(error: &dto::ApiError, accepted: &dto::JobAccepted) -> bool {
+    error.code == ApiErrorCode::Busy
+        && error.details
+            == Some(ApiErrorDetails::LocalModelsBusy {
+                reason: dto::LocalModelsBusyReason::FolderMoveActive {
+                    job_id: accepted.job_id.clone(),
+                },
+            })
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn local_image_work_is_refused_while_the_models_folder_moves_but_remote_work_is_not() {
+    let images = HeldImages::new();
+    let desktop = desktop(images.clone(), true);
+    let context = &desktop.harness.context;
+    let local = local_model(context);
+    let remote = remote_model(context);
+    let moving = queue_move(context, &desktop.root, "move-admission").await;
+
+    let generation = image_generate(context, generate_request(local, "first"))
+        .await
+        .expect_err("a local generation");
+    assert!(is_folder_move(&generation, &moving), "{generation:?}");
+    let upscale = image_upscale(
+        context,
+        dto::ImageUpscaleRequest {
+            asset_id: AssetId::new().to_string(),
+            origin: None,
+            client_operation_id: "upscale-move".to_owned(),
+        },
+    )
+    .await
+    .expect_err("an upscale");
+    assert!(is_folder_move(&upscale, &moving), "{upscale:?}");
+    let probe = sd_bundle_runnability(
+        context,
+        dto::SdBundleRunnabilityRequest {
+            profile_id: "z-image-turbo".to_owned(),
+            runtime_release: RELEASE.to_owned(),
+            runtime_asset: CPU_BUILD.to_owned(),
+            diffusion_bytes: 4,
+            text_encoder_bytes: 2,
+            vae_bytes: 1,
+            vision_encoder_bytes: 0,
+            client_operation_id: "estimate-move".to_owned(),
+        },
+    )
+    .await
+    .expect_err("a probe");
+    assert!(is_folder_move(&probe, &moving), "{probe:?}");
+    let discovery = lora_keywords_discover(
+        context,
+        dto::LoraKeywordsDiscoverRequest {
+            path: "style.safetensors".to_owned(),
+            profile_id: None,
+            client_operation_id: "discover-admission".to_owned(),
+        },
+    )
+    .await
+    .expect_err("a discovery");
+    assert!(is_folder_move(&discovery, &moving), "{discovery:?}");
+
+    image_generate(context, generate_request(remote, "first"))
+        .await
+        .expect("a remote generation is not blocked");
+    assert_eq!(images.calls(), 0);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn image_installs_are_refused_while_the_models_folder_moves_and_write_nothing() {
+    let desktop = desktop(HeldImages::new(), true);
+    let context = &desktop.harness.context;
+    let moving = queue_move(context, &desktop.root, "move-installs").await;
+    let a = "a".repeat(64);
+
+    let bundle = hf_image_bundle_install(context, bundle_request(&[("model.gguf", &a)]))
+        .await
+        .expect_err("a bundle install");
+    assert!(is_folder_move(&bundle, &moving), "{bundle:?}");
+    let retry = hf_image_bundle_retry(
+        context,
+        dto::HfImageBundleRetryRequest {
+            bundle_id: "any".to_owned(),
+        },
+    )
+    .await
+    .expect_err("a bundle retry");
+    assert!(is_folder_move(&retry, &moving), "{retry:?}");
+    let model = sd_model_install(
+        context,
+        dto::SdModelInstallRequest {
+            profile_id: "z-image-turbo".to_owned(),
+            variant_id: "any".to_owned(),
+            release: RELEASE.to_owned(),
+            asset: CPU_BUILD.to_owned(),
+        },
+    )
+    .await
+    .expect_err("a model install");
+    assert!(is_folder_move(&model, &moving), "{model:?}");
+    let runtime = sd_runtime_install(
+        context,
+        dto::SdRuntimeInstallRequest {
+            release: RELEASE.to_owned(),
+            asset: CPU_BUILD.to_owned(),
+            then_register: None,
+        },
+    )
+    .await
+    .expect_err("a runtime install");
+    assert!(is_folder_move(&runtime, &moving), "{runtime:?}");
+    let upscalers = sd_upscalers_install(context)
+        .await
+        .expect_err("an upscaler install");
+    assert!(is_folder_move(&upscalers, &moving), "{upscalers:?}");
+    assert!(nothing_written(context));
+    assert!(context.jobs().installs().is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_local_job_claimed_after_a_move_was_admitted_is_cancelled_without_an_engine_call() {
+    let images = HeldImages::new();
+    let desktop = desktop(images.clone(), true);
+    let context = &desktop.harness.context;
+    let local = local_model(context);
+    let generation = job_id(
+        &image_generate(context, generate_request(local, "first"))
+            .await
+            .expect("accepted"),
+    );
+    let discovery = job_id(
+        &lora_keywords_discover(
+            context,
+            dto::LoraKeywordsDiscoverRequest {
+                path: "style.safetensors".to_owned(),
+                profile_id: None,
+                client_operation_id: "discover-race".to_owned(),
+            },
+        )
+        .await
+        .expect("accepted"),
+    );
+    queue_move(context, &desktop.root, "move-race").await;
+    let runner = JobRunner::new(context.clone(), JobHandlers::standard());
+    for _ in 0..2 {
+        runner.run_once().await.expect("claim");
+    }
+    runner.wait_idle().await;
+    assert_eq!(state(context, generation), JobState::Cancelled);
+    assert_eq!(state(context, discovery), JobState::Cancelled);
+    assert_eq!(images.calls(), 0);
+}

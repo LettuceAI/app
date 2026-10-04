@@ -303,6 +303,10 @@ fn claim_tool(
     let Some(job) = database.get(job_id).map_err(IntoApiError::into_api_error)? else {
         return Ok(None);
     };
+    if super::local::folder_move_active(context).is_err() {
+        super::image::cancel_queued_for_move(context, &job, false)?;
+        return Ok(None);
+    }
     let detail = database
         .job_detail(job_id)
         .map_err(internal)?

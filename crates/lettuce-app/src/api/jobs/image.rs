@@ -93,9 +93,15 @@ impl JobHandler for ImageGenerateHandler {
         worker_id: WorkerId,
     ) -> Result<Option<Box<dyn ClaimedJob>>, ApiError> {
         let job_id = job.id;
+        let local = job.resources.contains(&ResourceClass::Process);
+        let snapshot = job.clone();
         let claimed = context
             .blocking(move |context| {
                 let database = context.backend().database();
+                if local && super::local::folder_move_active(context).is_err() {
+                    cancel_queued_for_move(context, &snapshot, true)?;
+                    return Ok(None);
+                }
                 let Some(work) = ImageGenerationCoordinator::new(database, database)
                     .claim(
                         job_id,
@@ -117,6 +123,36 @@ impl JobHandler for ImageGenerateHandler {
             .await?;
         Ok(claimed.map(|work| Box::new(ClaimedImage { work }) as Box<dyn ClaimedJob>))
     }
+}
+
+/// Cancels a queued local image job because the models folder is moving; no
+/// engine call is made for it.
+pub(super) fn cancel_queued_for_move(
+    context: &ApiContext,
+    job: &JobSnapshot,
+    settle_generation: bool,
+) -> Result<(), ApiError> {
+    let database = context.backend().database();
+    let at = context.now().max(job.updated_at);
+    let requested = database
+        .append_and_transition(JobMutation::RequestCancellation {
+            id: job.id,
+            reason: CancellationReason::Recovery,
+            at,
+        })
+        .map_err(internal)?;
+    database
+        .append_and_transition(JobMutation::FinishQueuedCancellation {
+            id: job.id,
+            at: at.max(requested.updated_at),
+        })
+        .map_err(internal)?;
+    if settle_generation {
+        ImageGenerationCoordinator::new(database, database)
+            .reconcile_after_restart(job.id)
+            .map_err(internal)?;
+    }
+    Ok(())
 }
 
 struct ClaimedImage {

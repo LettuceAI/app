@@ -65,6 +65,20 @@ fn admission_error(error: ImageGenerationError) -> ApiError {
     }
 }
 
+fn serves_local_engine(database: &lettuce_database::Database, model: ModelProfileId) -> bool {
+    let Ok(Some(profile)) = ModelProfileRepository::get(database, model) else {
+        return false;
+    };
+    let Ok(Some(account)) = ProviderAccountRepository::get(database, profile.provider_account_id)
+    else {
+        return false;
+    };
+    account.protocol == lettuce_models::ProviderProtocol::StableDiffusion
+        && account
+            .provider_kind
+            .eq_ignore_ascii_case(lettuce_image_generation::LOCAL_DIFFUSION_PROVIDER_KIND)
+}
+
 /// Queues an image generation and returns its job. The request's id is its
 /// idempotency key: repeating the request returns the same job, another
 /// request under the same id is `Conflict`. A playground request replaces
@@ -135,6 +149,9 @@ pub async fn image_generate(
     let job_id = context
         .blocking(move |context| {
             let database = context.backend().database();
+            if serves_local_engine(database, model_profile_id) {
+                crate::api::jobs::folder_move_active(context)?;
+            }
             ImageGenerationCoordinator::new(database, database)
                 .admit(generation, database)
                 .map(|admission| admission.job.id)
@@ -480,6 +497,7 @@ pub async fn image_upscale(
                     entry_id: entry_id.clone(),
                 },
                 || {
+                    crate::api::jobs::folder_move_active(context)?;
                     engine.check_upscale_ready().map_err(image_error)?;
                     if let Some(entry_id) = &entry_id
                         && !upscale_entry_exists(context, entry_id)?

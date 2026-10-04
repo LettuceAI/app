@@ -239,6 +239,9 @@ pub(crate) async fn admit_install_with_detail(
 ) -> Result<dto::JobAccepted, ApiError> {
     let job_id = context
         .blocking(move |context| {
+            if is_image_install(&work) {
+                super::local::folder_move_active(context)?;
+            }
             let (job, work) = admit(context, work)?;
             if let Some(detail) = &detail {
                 context
@@ -257,6 +260,22 @@ pub(crate) async fn admit_install_with_detail(
     Ok(dto::JobAccepted {
         job_id: job_id.to_string(),
     })
+}
+
+/// Whether the install writes image models, engine builds or LoRAs.
+fn is_image_install(work: &InstallWork) -> bool {
+    let InstallWork::Artifact { finish, .. } = work else {
+        return false;
+    };
+    match finish.as_ref() {
+        InstallFinish::Files
+        | InstallFinish::HuggingFaceBundle { .. }
+        | InstallFinish::CivitaiLora { .. } => true,
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        InstallFinish::StableDiffusionRuntime { .. }
+        | InstallFinish::StableDiffusionVariant { .. } => true,
+        _ => false,
+    }
 }
 
 fn admit(context: &ApiContext, work: InstallWork) -> Result<(JobSnapshot, InstallWork), ApiError> {

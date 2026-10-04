@@ -302,6 +302,7 @@ pub async fn sd_runtime_install(
     let engine = engine(context)?;
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
+        super::refuse_during_move(context).await?;
         let paths = engine.paths();
         if runtime_is_installed(&paths, &request.release, &request.asset) {
             return Err(api_error(
@@ -435,6 +436,7 @@ pub async fn sd_model_install(
     let engine = engine(context)?;
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
+        super::refuse_during_move(context).await?;
         let (profile, _) = variant_of(&request.profile_id, &request.variant_id)?;
         let paths = engine.paths();
         if !runtime_is_installed(&paths, &request.release, &request.asset) {
@@ -649,7 +651,7 @@ pub async fn sd_runnability(
                 "sd_runnability",
                 &operation,
                 ImageToolDetail::Runnability { request: stored },
-                || Ok(()),
+                || crate::api::jobs::folder_move_active(context),
             )
         })
         .await
@@ -674,7 +676,7 @@ pub async fn sd_bundle_runnability(
                 "sd_bundle_runnability",
                 &operation,
                 ImageToolDetail::BundleRunnability { request: stored },
-                || Ok(()),
+                || crate::api::jobs::folder_move_active(context),
             )
         })
         .await
@@ -800,6 +802,7 @@ pub async fn sd_upscalers_install(context: &ApiContext) -> Result<dto::JobAccept
     let engine = engine(context)?;
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
+        super::refuse_during_move(context).await?;
         if engine.upscaler_inventory().recommended_installed {
             return Err(api_error(
                 ApiErrorCode::Conflict,
