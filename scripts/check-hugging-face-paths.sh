@@ -5,7 +5,7 @@ set -euo pipefail
 crate_root="$1"
 app_root="$2"
 
-# Hugging Face requests are built and parsed in lettuce-model-hub only: no
+# Hugging Face requests are built and parsed in hugging_face.rs only: no
 # other production Rust source may spell its host or an API path in a string
 # (format! pieces included), and the frontend never names its host. Only
 # `mod` blocks under #[cfg(test)] and test files are skipped.
@@ -14,7 +14,7 @@ hf_violations=""
 while IFS= read -r source; do
   [[ -z "$source" ]] && continue
   case "$source" in
-    "$crate_root/lettuce-model-hub/"*|*/tests.rs|*_tests.rs|*/tests/*) continue ;;
+    "$crate_root/lettuce-model-hub/src/hugging_face.rs"|*/tests.rs|*_tests.rs|*/tests/*) continue ;;
   esac
   found="$(HF_TERMS="$hf_terms" awk '
     function strip_raw(text,    start, rest, ending) {
@@ -82,6 +82,6 @@ if [[ -d "$ui_source" ]]; then
 fi
 if [[ -n "$hf_violations" ]]; then
   printf '%s' "$hf_violations" >&2
-  echo "Hugging Face hosts and API paths belong to crates/lettuce-model-hub" >&2
+  echo "Hugging Face hosts and API paths belong to crates/lettuce-model-hub/src/hugging_face.rs" >&2
   exit 1
 fi
