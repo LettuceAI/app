@@ -304,7 +304,6 @@ fn claim_tool(
         return Ok(None);
     };
     if super::local::folder_move_active(context).is_err() {
-        super::image::cancel_queued_for_move(context, &job, false)?;
         return Ok(None);
     }
     let detail = database

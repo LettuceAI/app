@@ -127,7 +127,7 @@ fn scene_harness(reply: Reply, outcomes: Vec<Outcome>, mode: SceneGenerationMode
         reply,
         Arc::new(SystemClock),
         Some(media),
-        None,
+        Some(root.clone()),
         Arc::new(NoModels),
         images.clone(),
     );
@@ -1082,4 +1082,70 @@ async fn a_deferred_scene_completes_after_empty_regeneration_cancellation() {
         .expect("recover without replay");
     assert_eq!(media_count(&reply_of(context, &chat, &reply).await), 1);
     assert_eq!(scene.images.calls(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_scene_image_admitted_during_a_models_folder_move_waits_and_completes_after_it() {
+    let scene = scene_harness(
+        Reply::Text(TAGGED),
+        vec![Outcome::Image],
+        SceneGenerationMode::Auto,
+    );
+    let context = &scene.harness.context;
+    let database = context.backend().database();
+    let local =
+        crate::launch::tests::seed_model(database, ProviderProtocol::StableDiffusion, "sdcpp");
+    let mut model = ModelProfileRepository::get(database, local)
+        .expect("model")
+        .expect("exists");
+    let revision = model.revision;
+    model.config.capabilities.output_modalities.image = CapabilityStatus::Supported;
+    ModelProfileRepository::upsert(database, model, Some(revision)).expect("image output");
+    let stored = GlobalSettingsStore::load(database).expect("settings");
+    let mut settings = stored.settings;
+    settings.image_generation.scene_model_profile_id = Some(local);
+    GlobalSettingsStore::save(
+        database,
+        settings,
+        stored.default_model_profile_id,
+        stored.revision,
+    )
+    .expect("local scene model");
+    let target = scene._root.join("elsewhere");
+    local_models_dir_set(
+        context,
+        dto::LocalModelsDirSetRequest {
+            path: target.display().to_string(),
+            move_existing: false,
+            client_operation_id: "scene-move".to_owned(),
+        },
+    )
+    .await
+    .expect("move queued");
+
+    let (chat, reply) = reply_with_scene(&scene.harness, "waits").await;
+    let runner = JobRunner::new(
+        context.clone(),
+        JobHandlers::new(vec![Arc::new(ImageGenerateHandler)]),
+    );
+    assert!(!runner.run_once().await.expect("claim attempt"));
+    let shown = reply_of(context, &chat, &reply).await;
+    assert_eq!(
+        shown.scene_image.expect("still pending").state,
+        dto::SceneImageState::Approved
+    );
+    assert_eq!(scene.images.calls(), 0);
+    assert_eq!(
+        follow_up_state(context, &chat, &reply),
+        Some(SceneFollowUpState::Approved)
+    );
+
+    run_jobs(context).await;
+    let shown = reply_of(context, &chat, &reply).await;
+    assert_eq!(shown.scene_image, None);
+    assert_eq!(media_count(&shown), 1);
+    assert_eq!(
+        follow_up_state(context, &chat, &reply),
+        Some(SceneFollowUpState::Done)
+    );
 }

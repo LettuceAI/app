@@ -1871,17 +1871,22 @@ async fn image_installs_are_refused_while_the_models_folder_moves_and_write_noth
     assert!(context.jobs().installs().is_empty());
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn a_local_job_claimed_after_a_move_was_admitted_is_cancelled_without_an_engine_call() {
-    let images = HeldImages::new();
-    let desktop = desktop(images.clone(), true);
+fn image_only_runner(context: &ApiContext) -> JobRunner {
+    JobRunner::new(
+        context.clone(),
+        JobHandlers::new(vec![
+            Arc::new(ImageGenerateHandler),
+            Arc::new(ImageToolHandler),
+        ]),
+    )
+}
+
+async fn deferred_jobs(desktop: &Desktop, images: &Arc<HeldImages>) -> (JobId, JobId, JobId) {
+    let _ = images;
     let context = &desktop.harness.context;
-    let local = local_model(context);
-    let generation = job_id(
-        &image_generate(context, generate_request(local, "first"))
-            .await
-            .expect("accepted"),
-    );
+    let mut request = generate_request(local_model(context), "first");
+    request.source = dto::ImageRequestSource::Playground;
+    let generation = job_id(&image_generate(context, request).await.expect("accepted"));
     let discovery = job_id(
         &lora_keywords_discover(
             context,
@@ -1894,14 +1899,113 @@ async fn a_local_job_claimed_after_a_move_was_admitted_is_cancelled_without_an_e
         .await
         .expect("accepted"),
     );
-    queue_move(context, &desktop.root, "move-race").await;
-    let runner = JobRunner::new(context.clone(), JobHandlers::standard());
-    for _ in 0..2 {
-        runner.run_once().await.expect("claim");
-    }
+    let moving = job_id(&queue_move(context, &desktop.root, "move-race").await);
+    (generation, discovery, moving)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn local_jobs_found_behind_a_move_stay_queued_and_run_after_it_without_polling() {
+    let images = HeldImages::new();
+    let desktop = desktop(images.clone(), true);
+    let context = &desktop.harness.context;
+    let (generation, discovery, _moving) = deferred_jobs(&desktop, &images).await;
+    let before = view(context, generation).await;
+
+    let runner = image_only_runner(context);
+    assert!(!runner.run_once().await.expect("claim attempt"));
     runner.wait_idle().await;
-    assert_eq!(state(context, generation), JobState::Cancelled);
-    assert_eq!(state(context, discovery), JobState::Cancelled);
+    assert_eq!(state(context, generation), JobState::Queued);
+    assert_eq!(state(context, discovery), JobState::Queued);
+    assert_eq!(view(context, generation).await, before);
+    assert_eq!(images.calls(), 0);
+    let record =
+        ImageGenerationRepository::get(context.backend().database(), generation).expect("record");
+    assert!(!matches!(
+        record.state,
+        ImageGenerationState::Cancelled { .. }
+    ));
+
+    let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+    let driver = {
+        let runner = JobRunner::new(context.clone(), JobHandlers::standard());
+        tokio::spawn(async move {
+            runner
+                .run(async {
+                    let _ = stopped.await;
+                })
+                .await;
+        })
+    };
+    images.entered.notified().await;
+    images.proceed();
+    until(|| state(context, generation) == JobState::Succeeded).await;
+    until(|| state(context, discovery) != JobState::Queued).await;
+    let _ = stop.send(());
+    driver.await.expect("runner");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn cancelling_a_deferred_job_settles_it_cancelled_by_the_user() {
+    let images = HeldImages::new();
+    let desktop = desktop(images.clone(), true);
+    let context = &desktop.harness.context;
+    let (generation, _discovery, _moving) = deferred_jobs(&desktop, &images).await;
+    let runner = image_only_runner(context);
+    assert!(!runner.run_once().await.expect("claim attempt"));
+    job_cancel(
+        context,
+        dto::JobCancelRequest {
+            job_id: generation.to_string(),
+        },
+    )
+    .await
+    .expect("cancel");
+    let cancelled = JobStore::get(context.backend().database(), generation)
+        .expect("job")
+        .expect("exists");
+    assert_eq!(cancelled.state, JobState::Cancelled);
+    assert_eq!(
+        cancelled.cancellation.reason,
+        Some(lettuce_jobs::CancellationReason::User)
+    );
+    assert_eq!(images.calls(), 0);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_cancelled_move_releases_the_deferred_jobs() {
+    let images = HeldImages::new();
+    let desktop = desktop(images.clone(), true);
+    let context = &desktop.harness.context;
+    let (generation, _discovery, moving) = deferred_jobs(&desktop, &images).await;
+    let runner = image_only_runner(context);
+    assert!(!runner.run_once().await.expect("claim attempt"));
+    job_cancel(
+        context,
+        dto::JobCancelRequest {
+            job_id: moving.to_string(),
+        },
+    )
+    .await
+    .expect("cancel the move");
+    assert!(runner.run_once().await.expect("released"));
+    images.entered.notified().await;
+    images.proceed();
+    runner.wait_idle().await;
+    assert_eq!(state(context, generation), JobState::Succeeded);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_restart_during_a_move_cancels_the_deferred_jobs() {
+    let images = HeldImages::new();
+    let desktop = desktop(images.clone(), true);
+    let context = &desktop.harness.context;
+    let (generation, discovery, _moving) = deferred_jobs(&desktop, &images).await;
+    let runner = image_only_runner(context);
+    assert!(!runner.run_once().await.expect("claim attempt"));
+    let restarted = context.restarted();
+    restarted.recover_after_restart().expect("recovery");
+    assert_eq!(state(&restarted, generation), JobState::Cancelled);
+    assert_eq!(state(&restarted, discovery), JobState::Cancelled);
     assert_eq!(images.calls(), 0);
 }
 
