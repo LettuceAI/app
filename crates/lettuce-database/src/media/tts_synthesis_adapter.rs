@@ -181,6 +181,26 @@ pub(crate) fn insert_restored_in(
     Ok(())
 }
 
+/// Whether a request is the one already stored: the time it was admitted,
+/// the asset its audio goes to and a preview's expiry belong to the first
+/// admission, so a replay is still the same request.
+fn same_request(
+    stored: &lettuce_speech::SynthesisRequest,
+    replayed: &lettuce_speech::SynthesisRequest,
+) -> bool {
+    let mut replayed = replayed.clone();
+    replayed.created_at = stored.created_at;
+    replayed.output_asset_id = stored.output_asset_id;
+    replayed.output_policy = match (stored.output_policy, replayed.output_policy) {
+        (
+            lettuce_speech::TtsOutputPolicy::Preview { expires_at },
+            lettuce_speech::TtsOutputPolicy::Preview { .. },
+        ) => lettuce_speech::TtsOutputPolicy::Preview { expires_at },
+        (_, policy) => policy,
+    };
+    *stored == replayed
+}
+
 impl SynthesisRepository for Database {
     fn admit(&self, record: SynthesisRecord) -> Result<SynthesisRecord, SynthesisRepositoryError> {
         record.validate().map_err(corrupt)?;
@@ -194,7 +214,7 @@ impl SynthesisRepository for Database {
         let inserted = insert_pending_row(&transaction, &record)?;
         let stored =
             load_in(&transaction, record.job_id)?.ok_or(SynthesisRepositoryError::Storage)?;
-        if inserted == 0 && stored != record {
+        if inserted == 0 && !same_request(&stored.request, &record.request) {
             return Err(SynthesisRepositoryError::Conflict);
         }
         transaction.commit().map_err(storage)?;

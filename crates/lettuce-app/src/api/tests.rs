@@ -291,6 +291,7 @@ pub(super) fn harness_over_files(
         inference: provider.clone(),
         image_provider: images,
         models,
+        speech: Arc::new(super::NoSpeech),
         media,
         events: events.clone(),
         clock,

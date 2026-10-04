@@ -80,6 +80,7 @@ pub enum ApiErrorDetails {
     Ollama { failure: OllamaFailure },
     LocalModelsBusy { reason: LocalModelsBusyReason },
     Image { failure: crate::ImageFailureKind },
+    Speech { failure: crate::SpeechFailure },
     PendingMemoryRewind { conversation_id: String },
 }
 
@@ -129,6 +130,12 @@ pub enum ApiEvent {
     MessageSceneImageChanged {
         conversation_id: String,
         message_id: String,
+    },
+    /// The input level of a running dictation in thousandths, from 0 to
+    /// 1000. Sent only while it captures, at most about every 50 ms.
+    DictationLevel {
+        capture_id: String,
+        level: u16,
     },
 }
 

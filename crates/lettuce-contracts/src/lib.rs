@@ -11,7 +11,11 @@ mod image;
 mod inspection;
 mod jobs;
 mod local_models;
+mod memory_models;
 mod ollama;
+mod speech;
+mod speech_asr;
+mod speech_tts;
 
 pub use api::*;
 pub use app::*;
@@ -22,7 +26,11 @@ pub use image::*;
 pub use inspection::*;
 pub use jobs::*;
 pub use local_models::*;
+pub use memory_models::*;
 pub use ollama::*;
+pub use speech::*;
+pub use speech_asr::*;
+pub use speech_tts::*;
 
 use lettuce_types::ProviderAccountId;
 use serde::{Deserialize, Serialize};

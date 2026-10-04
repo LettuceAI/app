@@ -9,3 +9,5 @@ pub mod image;
 pub mod jobs;
 pub mod local_models;
 pub mod ollama;
+pub mod speech;
+pub mod memory_models;

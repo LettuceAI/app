@@ -9,6 +9,7 @@ mod bindings;
 mod commands;
 mod events;
 mod files;
+mod microphone;
 
 use std::sync::{Arc, Mutex};
 
@@ -96,6 +97,7 @@ fn start<R: Runtime>(app: &mut App<R>) -> Result<(), Box<dyn std::error::Error>>
         Arc::new(events::TauriEventSink(app.handle().clone())),
         Arc::new(files::DesktopFileAccess),
         asset_protocol::ASSET_URL_BASE.to_owned(),
+        microphone::capture(),
     )
     .map_err(|error| error.message)?;
     let workers = tauri::async_runtime::block_on(lettuce_app::api::startup(&context))

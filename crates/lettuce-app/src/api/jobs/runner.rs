@@ -109,6 +109,8 @@ impl JobHandlers {
             Arc::new(super::text::TextFeatureHandler),
             Arc::new(super::image::ImageGenerateHandler),
             Arc::new(super::image_tools::ImageToolHandler),
+            Arc::new(super::speech::SpeechTranscribeHandler),
+            Arc::new(super::speech::SpeechSynthesizeHandler),
         ])
     }
 

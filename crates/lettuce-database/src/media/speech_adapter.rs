@@ -167,6 +167,18 @@ pub(crate) fn insert_restored_in(
     Ok(())
 }
 
+/// Whether a request is the one already stored; the time it was admitted is
+/// the first admission's, so a replay stamped later is still the same
+/// request.
+fn same_request(
+    stored: &lettuce_speech::TranscriptionRequest,
+    replayed: &lettuce_speech::TranscriptionRequest,
+) -> bool {
+    let mut replayed = replayed.clone();
+    replayed.created_at = stored.created_at;
+    *stored == replayed
+}
+
 impl TranscriptionRepository for Database {
     fn admit(
         &self,
@@ -183,7 +195,9 @@ impl TranscriptionRepository for Database {
         let inserted = insert_pending_row(&transaction, &record)?;
         let stored =
             load_in(&transaction, record.job_id)?.ok_or(TranscriptionRepositoryError::Storage)?;
-        if inserted == 0 && (stored.job_id != record.job_id || stored.request != record.request) {
+        if inserted == 0
+            && (stored.job_id != record.job_id || !same_request(&stored.request, &record.request))
+        {
             return Err(TranscriptionRepositoryError::Conflict);
         }
         transaction.commit().map_err(storage)?;

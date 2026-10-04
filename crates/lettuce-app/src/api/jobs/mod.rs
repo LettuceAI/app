@@ -5,9 +5,10 @@
 mod feed;
 mod image;
 mod image_tools;
-mod install;
+pub(super) mod install;
 pub(super) mod local;
 mod runner;
+mod speech;
 mod state;
 mod text;
 
@@ -49,6 +50,7 @@ pub(crate) use local::{
     admit_gguf_download, admit_model_pull, admit_models_folder_move, recover_local_model_jobs,
 };
 pub use runner::{ClaimedJob, JobHandler, JobHandlers, JobLane, JobProgressSink, JobRunner};
+pub use speech::{SpeechSynthesizeHandler, SpeechTranscribeHandler};
 pub(crate) use state::JobHostState;
 pub use text::{TextFeatureHandler, conversation_help_me_reply};
 pub(crate) use text::{admit_design_reference, admit_scene_prompt};
@@ -218,6 +220,7 @@ pub(crate) fn job_view(context: &ApiContext, job: &JobSnapshot) -> Result<dto::J
     let local = local::local_job_view(context, job);
     let feature = text::feature_view(context, job)?;
     let (image_result, image_failure) = image_view(context, job)?;
+    let (speech_result, speech_failure) = speech::speech_view(context, job)?;
     Ok(dto::JobView {
         id: job.id.to_string(),
         kind: job_kind_dto(job.kind),
@@ -255,8 +258,9 @@ pub(crate) fn job_view(context: &ApiContext, job: &JobSnapshot) -> Result<dto::J
                 .then(|| local::ollama_failure(error.message.as_str(), local.failure.as_ref()))
                 .flatten(),
             image: image_failure,
+            speech: speech_failure,
         }),
-        result: feature.or(local.result).or(image_result).or_else(|| {
+        result: feature.or(local.result).or(image_result).or(speech_result).or_else(|| {
             job.outcome.as_ref().and_then(|outcome| {
                 let (JobOutcome::Success { result_ref } | JobOutcome::Partial { result_ref, .. }) =
                     outcome;

@@ -51,6 +51,8 @@ pub struct ApiContextParts {
     pub image_provider: Arc<dyn ImageProviderPort>,
     /// Loads the optional embedding and emotion models on first use.
     pub models: Arc<dyn ModelLoader>,
+    /// The synthesis runtime and the microphone.
+    pub speech: Arc<dyn super::speech::SpeechHost>,
     pub media: Option<Arc<ApiMediaStore>>,
     pub events: Arc<dyn ApiEventSink>,
     pub clock: Arc<dyn Clock>,
@@ -93,6 +95,7 @@ struct ApiContextInner {
     legacy_database_detected: AtomicBool,
     local_models: LocalModelsState,
     image: super::image::ImageApiState,
+    speech: super::speech::SpeechApiState,
 }
 
 impl std::fmt::Debug for ApiContext {
@@ -144,6 +147,7 @@ impl ApiContext {
                 legacy_database_detected: AtomicBool::new(false),
                 local_models: LocalModelsState::default(),
                 image: super::image::ImageApiState::default(),
+                speech: super::speech::SpeechApiState::default(),
             }),
         }
     }
@@ -159,6 +163,7 @@ impl ApiContext {
         events: Arc<dyn ApiEventSink>,
         files: Arc<dyn FileAccess>,
         asset_url_base: String,
+        microphone: Option<Arc<dyn crate::MicrophoneCapture>>,
     ) -> Result<Self, ApiError> {
         let clock: Arc<dyn Clock> = Arc::new(SystemClock);
         let snapshot = DirectorySnapshot::with_private_persistent(
@@ -240,6 +245,7 @@ impl ApiContext {
             inference,
             image_provider,
             models: Arc::new(InstalledModels),
+            speech: Arc::new(super::speech::InstalledSpeech::new(microphone)),
             media: Some(Arc::new(media)),
             events,
             clock,
@@ -266,6 +272,30 @@ impl ApiContext {
             inference: Arc::clone(&parts.inference),
             image_provider: Arc::clone(&parts.image_provider),
             models: Arc::clone(&parts.models),
+            speech: Arc::clone(&parts.speech),
+            media: parts.media.clone(),
+            events: Arc::clone(&parts.events),
+            clock: Arc::clone(&parts.clock),
+            files: Arc::clone(&parts.files),
+            app_folder: parts.app_folder.clone(),
+            resource_dir: parts.resource_dir.clone(),
+            database_files: None,
+            asset_url_base: parts.asset_url_base.clone(),
+        })
+    }
+
+    /// A new context over the same backend and host services with another
+    /// speech host.
+    #[cfg(test)]
+    pub(crate) fn with_speech(&self, speech: Arc<dyn super::speech::SpeechHost>) -> Self {
+        let parts = &self.inner.parts;
+        Self::new(ApiContextParts {
+            backend: Arc::clone(&parts.backend),
+            secret_store: Arc::clone(&parts.secret_store),
+            inference: Arc::clone(&parts.inference),
+            image_provider: Arc::clone(&parts.image_provider),
+            models: Arc::clone(&parts.models),
+            speech,
             media: parts.media.clone(),
             events: Arc::clone(&parts.events),
             clock: Arc::clone(&parts.clock),
@@ -309,6 +339,7 @@ impl ApiContext {
             self.forget_stream(*turn_id);
         }
         super::scenes::recover(self)?;
+        super::speech::sweep_scratch(self);
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         if let Some(engine) = self.backend().local_diffusion() {
             engine.clear_upscale_scratch();
@@ -397,6 +428,14 @@ impl ApiContext {
 
     pub(crate) fn image_state(&self) -> &super::image::ImageApiState {
         &self.inner.image
+    }
+
+    pub(crate) fn speech(&self) -> &dyn super::speech::SpeechHost {
+        self.inner.parts.speech.as_ref()
+    }
+
+    pub(crate) fn speech_state(&self) -> &super::speech::SpeechApiState {
+        &self.inner.speech
     }
 
     /// Resolves after a committed conversation change, including one made

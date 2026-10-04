@@ -22,7 +22,7 @@ pub enum EmbeddingModelFamily {
 }
 
 /// What a file of an embedding repository is used for.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EmbeddingArtifactRole {
     Model,
     Tokenizer,
@@ -270,13 +270,13 @@ pub enum ModelArtifactError {
 
 /// How a pinned repository file is checked once downloaded: LFS files by
 /// the SHA-256 Hugging Face lists, plain git files by their git blob id.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EmbeddingFileDigest {
     Sha256(String),
     GitBlobSha1(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EmbeddingPinnedFile {
     pub role: EmbeddingArtifactRole,
     pub remote_path: String,
@@ -297,7 +297,7 @@ impl EmbeddingPinnedFile {
 
 /// A family's files at the repository revision Hugging Face reported when
 /// the install was planned.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EmbeddingPin {
     pub family: EmbeddingModelFamily,
     pub revision: String,

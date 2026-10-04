@@ -184,6 +184,8 @@ pub struct JobFailureDto {
     pub ollama: Option<crate::OllamaFailure>,
     /// Why an image job failed.
     pub image: Option<crate::ImageFailure>,
+    /// Why a speech job failed.
+    pub speech: Option<crate::SpeechFailure>,
 }
 
 /// What a finished job produced, where the job kind has a typed result.
@@ -196,6 +198,9 @@ pub enum JobResultDto {
     ArtifactInstalled,
     Asset {
         asset: AssetRef,
+    },
+    Transcription {
+        transcription: crate::TranscriptionView,
     },
     GenerationTurn {
         turn_id: String,

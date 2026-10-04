@@ -78,6 +78,7 @@ pub enum InstallFinish {
     Embedding {
         root: PathBuf,
         pin: EmbeddingPin,
+        enable_dynamic_memory: bool,
     },
     CompanionEmotion {
         root: PathBuf,
@@ -240,7 +241,7 @@ pub(crate) async fn admit_install_with_detail(
 ) -> Result<dto::JobAccepted, ApiError> {
     let job_id = context
         .blocking(move |context| {
-            if is_image_install(&work) {
+            if is_image_install(&work) || work.root().starts_with(crate::api::local_models::models_root(context)?) {
                 super::local::folder_move_active(context)?;
             }
             let (job, work) = admit(context, work)?;
@@ -411,6 +412,12 @@ pub(crate) fn recover_queued_installs(context: &ApiContext) -> Result<Vec<JobId>
             continue;
         }
         if job.state == JobState::Queued {
+            if let Some(record) = context.backend().database().local_model_job(job.id).map_err(internal)?
+                && let Ok(super::local::LocalModelJobDetail::EmbeddingInstall { root, pin, enable_dynamic_memory }) = serde_json::from_value(record.detail) {
+                let plan = crate::embedding_install_plan(&root, &pin);
+                context.jobs().put_install(job.id, InstallWork::Artifact { plan, finish: Box::new(InstallFinish::Embedding { root, pin, enable_dynamic_memory }) });
+                continue;
+            }
             match super::local::resume_gguf_install(context, &job) {
                 Ok(true) => continue,
                 Ok(false) => {}
@@ -876,8 +883,8 @@ async fn run_claimed(
                         source.as_ref(),
                         reason,
                         now,
-                        move |paths, _| async move {
-                            finish_artifact(&finisher, job_id, &plan, finish, paths)
+                        move |paths, cancellation| async move {
+                            finish_artifact(&finisher, job_id, &plan, finish, paths, cancellation)
                                 .await
                                 .map_err(ArtifactInstallError::Finish)
                         },
@@ -958,6 +965,7 @@ async fn finish_artifact(
     plan: &ArtifactInstallPlan,
     finish: InstallFinish,
     paths: Vec<PathBuf>,
+    cancellation: CancellationToken,
 ) -> Result<(), String> {
     let database = context.backend().database();
     let now = context.now();
@@ -1052,10 +1060,26 @@ async fn finish_artifact(
             lora_root,
             download,
         } => crate::record_civitai_lora(database, &lora_root, &download, now),
-        InstallFinish::Embedding { root, pin } => EmbeddingModelCoordinator::new(&root, database)
-            .complete_install(&pin)
-            .map(|_| ())
-            .map_err(|error| error.to_string()),
+        InstallFinish::Embedding { root, pin, enable_dynamic_memory } => {
+            EmbeddingModelCoordinator::new(&root, database).complete_install(&pin).map_err(|error| error.to_string())?;
+            context.models_changed();
+            context.models().prepare_embedding(context).await.map_err(|error| error.message)?;
+            let engine = match context.models().resolve_embedding(context) {
+                crate::api::ModelLoad::Loaded(engine) => engine,
+                _ => return Err("the installed embedding model could not be loaded".into()),
+            };
+            crate::api::embedding_health::run(engine.as_ref(), &cancellation)?;
+            if enable_dynamic_memory {
+                use lettuce_settings::GlobalSettingsStore;
+                let mut stored = GlobalSettingsStore::load(database).map_err(|error| error.to_string())?;
+                stored.settings.dynamic_memory = lettuce_settings::DynamicMemorySettings {
+                    enabled: true, min_similarity_basis_points: Some(3200), ..Default::default()
+                };
+                GlobalSettingsStore::save(database, stored.settings, stored.default_model_profile_id, stored.revision)
+                    .map_err(|error| error.to_string())?;
+            }
+            Ok(())
+        },
     }
 }
 

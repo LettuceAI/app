@@ -241,6 +241,21 @@ impl ModelSlots {
         }
     }
 
+    pub(crate) fn unload_embedding(&self) {
+        *lock(&self.embedding) = Slot::Unknown;
+    }
+
+    pub(crate) async fn prepare_embedding(&self, context: &ApiContext) -> Result<(), ApiError> {
+        let loader = Arc::clone(&self.loader);
+        if !context.blocking(move |context| Ok(loader.installed(context, RequiredModel::Embedding))).await? {
+            return Err(model_error(ApiErrorCode::ModelRequired, RequiredModel::Embedding));
+        }
+        if !self.loader.prepare(context).await {
+            return Err(model_error(ApiErrorCode::ModelUnavailable, RequiredModel::Embedding));
+        }
+        Ok(())
+    }
+
     pub(crate) fn forget(&self) {
         *lock(&self.embedding) = Slot::Unknown;
         *lock(&self.emotion) = Slot::Unknown;
@@ -317,7 +332,7 @@ impl ModelSlots {
         }
     }
 
-    fn resolve_embedding(&self, context: &ApiContext) -> ModelLoad<Arc<dyn MemoryEmbeddingEngine>> {
+    pub(crate) fn resolve_embedding(&self, context: &ApiContext) -> ModelLoad<Arc<dyn MemoryEmbeddingEngine>> {
         let mut slot = lock(&self.embedding);
         let keep_loaded = match context.backend().database().load_device_settings() {
             Ok(device) => device.embedding.keep_model_loaded,

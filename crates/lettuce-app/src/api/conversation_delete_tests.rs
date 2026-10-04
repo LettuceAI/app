@@ -24,6 +24,7 @@ pub(crate) fn context_over(
         inference,
         image_provider: Arc::new(super::tests::NoImages),
         models: Arc::new(NoModels),
+        speech: Arc::new(super::NoSpeech),
         media: None,
         events: Arc::new(RecordingEvents::default()),
         clock: Arc::new(lettuce_jobs::SystemClock),

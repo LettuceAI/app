@@ -138,6 +138,34 @@ export const commands = {
 	hfAuthStatus: () => typedError<HfTokenStatus, ApiError>(__TAURI_INVOKE("hf_auth_status")),
 	hfAuthSave: (request: HfAuthSaveRequest) => typedError<HfTokenStatus, ApiError>(__TAURI_INVOKE("hf_auth_save", { request })),
 	hfAuthClear: () => typedError<null, ApiError>(__TAURI_INVOKE("hf_auth_clear")),
+	embeddingInstall: (request: EmbeddingInstallRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("embedding_install", { request })),
+	companionEmotionInstall: () => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("companion_emotion_install")),
+	embeddingStatus: () => typedError<EmbeddingModelView[], ApiError>(__TAURI_INVOKE("embedding_status")),
+	embeddingChoose: (request: EmbeddingModelRequest) => typedError<null, ApiError>(__TAURI_INVOKE("embedding_choose", { request })),
+	embeddingRemove: (request: EmbeddingModelRequest) => typedError<boolean, ApiError>(__TAURI_INVOKE("embedding_remove", { request })),
+	embeddingCompare: (request: EmbeddingCompareRequest) => typedError<EmbeddingComparison, ApiError>(__TAURI_INVOKE("embedding_compare", { request })),
+	embeddingUnload: () => typedError<null, ApiError>(__TAURI_INVOKE("embedding_unload")),
+	companionEmotionStatus: () => typedError<ThymosStatus, ApiError>(__TAURI_INVOKE("companion_emotion_status")),
+	companionEmotionRemove: () => typedError<boolean, ApiError>(__TAURI_INVOKE("companion_emotion_remove")),
+	audioProviderVerify: (request: AudioProviderVerifyRequest) => typedError<boolean, ApiError>(__TAURI_INVOKE("audio_provider_verify", { request })),
+	audioProviderVoices: (request: AudioProviderRequest) => typedError<AudioVoiceView[], ApiError>(__TAURI_INVOKE("audio_provider_voices", { request })),
+	audioProviderVoicesRefresh: (request: AudioProviderRequest) => typedError<AudioVoiceView[], ApiError>(__TAURI_INVOKE("audio_provider_voices_refresh", { request })),
+	ttsModels: (request: TtsModelsRequest) => typedError<TtsModelView[], ApiError>(__TAURI_INVOKE("tts_models", { request })),
+	ttsVoiceDesignModels: (request: TtsModelsRequest) => typedError<TtsModelView[], ApiError>(__TAURI_INVOKE("tts_voice_design_models", { request })),
+	ttsCacheStats: () => typedError<TtsCacheStats, ApiError>(__TAURI_INVOKE("tts_cache_stats")),
+	ttsCacheClear: () => typedError<null, ApiError>(__TAURI_INVOKE("tts_cache_clear")),
+	ttsSynthesize: (request: TtsSynthesizeRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("tts_synthesize", { request })),
+	whisperCatalog: () => typedError<WhisperCatalog, ApiError>(__TAURI_INVOKE("whisper_catalog")),
+	whisperModelsList: () => typedError<WhisperInstalledModels, ApiError>(__TAURI_INVOKE("whisper_models_list")),
+	whisperDownload: (request: WhisperModelRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("whisper_download", { request })),
+	whisperDelete: (request: WhisperModelRequest) => typedError<null, ApiError>(__TAURI_INVOKE("whisper_delete", { request })),
+	whisperPreload: (request: WhisperPreloadRequest) => typedError<null, ApiError>(__TAURI_INVOKE("whisper_preload", { request })),
+	whisperClearCache: () => typedError<WhisperCacheCleared, ApiError>(__TAURI_INVOKE("whisper_clear_cache")),
+	whisperDictationModelSet: (request: DictationModelSetRequest) => typedError<null, ApiError>(__TAURI_INVOKE("whisper_dictation_model_set", { request })),
+	transcribeFile: (request: TranscribeFileRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("transcribe_file", { request })),
+	dictationStart: (request: DictationStartRequest) => typedError<DictationStarted, ApiError>(__TAURI_INVOKE("dictation_start", { request })),
+	dictationStop: (request: DictationStopRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("dictation_stop", { request })),
+	dictationCancel: (request: DictationCancelRequest) => typedError<null, ApiError>(__TAURI_INVOKE("dictation_cancel", { request })),
 	ollamaModelsList: (request: OllamaModelsRequest) => typedError<OllamaModelList, ApiError>(__TAURI_INVOKE("ollama_models_list", { request })),
 	ollamaModelDelete: (request: OllamaModelDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("ollama_model_delete", { request })),
 	ollamaPull: (request: OllamaPullRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("ollama_pull", { request })),
@@ -167,7 +195,7 @@ export type ApiError = {
  */
 export type ApiErrorCode = "not_found" | "conflict" | "invalid_input" | "unsupported" | "unavailable" | "cancelled" | "busy" | "internal" | "model_required" | "model_unavailable";
 
-export type ApiErrorDetails = { type: "invalid_field"; field: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "image"; failure: ImageFailureKind } | { type: "pending_memory_rewind"; conversation_id: string };
+export type ApiErrorDetails = { type: "invalid_field"; field: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "image"; failure: ImageFailureKind } | { type: "speech"; failure: SpeechFailure } | { type: "pending_memory_rewind"; conversation_id: string };
 
 /**
  *  Application-wide events the host broadcasts to every window.
@@ -185,7 +213,12 @@ export type ApiEvent = { type: "generation_settled"; conversation_id: string; tu
  */
 { type: "message_effect_settled"; conversation_id: string; message_id: string } | 
 /**  A reply's scene image follow-up changed state. */
-{ type: "message_scene_image_changed"; conversation_id: string; message_id: string };
+{ type: "message_scene_image_changed"; conversation_id: string; message_id: string } | 
+/**
+ *  The input level of a running dictation in thousandths, from 0 to
+ *  1000. Sent only while it captures, at most about every 50 ms.
+ */
+{ type: "dictation_level"; capture_id: string; level: number };
 
 /**  The application-wide event every window receives. */
 export type AppEvent = ApiEvent;
@@ -212,6 +245,13 @@ export type AppUiStateView = {
 	state: { [key in string]: unknown },
 };
 
+export type AppliedCorrectionView = {
+	correction_id: string,
+	wrong: string,
+	correct: string,
+	matched_text: string,
+};
+
 /**  What a picked image or audio file is for. */
 export type AssetIngestRole = "avatar" | "background" | "attachment" | "voice_example" | "reference_image";
 
@@ -227,6 +267,28 @@ export type AssetRef = {
 export type AssetsIngestRequest = {
 	source: FileSource,
 	role: AssetIngestRole,
+};
+
+export type AudioProviderConfiguration = { type: "gemini"; project_id: string | null; location: string } | { type: "elevenlabs" } | { type: "fish_tts" } | { type: "fish_speech"; base_url: string | null; request_path: string | null } | { type: "open_ai_compatible"; base_url: string | null; request_path: string | null } | { type: "kokoro"; variant: string | null };
+
+export type AudioProviderDraft = {
+	configuration: AudioProviderConfiguration,
+	api_key: string | null,
+};
+
+export type AudioProviderRequest = {
+	provider_id: string,
+};
+
+export type AudioProviderType = "gemini" | "elevenlabs" | "fish_tts" | "fish_speech" | "open_ai_compatible" | "kokoro";
+
+export type AudioProviderVerifyRequest = { type: "saved"; provider_id: string } | { type: "draft"; draft: AudioProviderDraft };
+
+export type AudioVoiceView = {
+	voice_id: string,
+	name: string,
+	preview_url: string | null,
+	labels: { [key in string]: string },
 };
 
 export type AvatarGradient = {
@@ -688,6 +750,33 @@ export type ConversationsListRequest = {
 	limit: number | null,
 };
 
+export type DictationCancelRequest = {
+	capture_id: string,
+};
+
+/**  The model dictation uses; `None` returns to the first installed one. */
+export type DictationModelSetRequest = {
+	model_id: string | null,
+};
+
+export type DictationStartRequest = {
+	conversation_id: string | null,
+};
+
+export type DictationStarted = {
+	capture_id: string,
+};
+
+/**
+ *  Ends a capture and transcribes it. `model_id` defaults to the dictation
+ *  model.
+ */
+export type DictationStopRequest = {
+	capture_id: string,
+	model_id: string | null,
+	options?: TranscribeOptions,
+};
+
 /**  An image model file on disk below the image models folders. */
 export type DownloadedImageModel = {
 	model_id: string,
@@ -702,6 +791,35 @@ export type DownloadedImageModel = {
 
 export type DownloadedImageModels = {
 	models: DownloadedImageModel[],
+};
+
+export type EmbeddingCompareRequest = {
+	left: string,
+	right: string,
+};
+
+export type EmbeddingComparison = {
+	cosine_similarity: number | null,
+	dimensions: number,
+	source_revision: string,
+};
+
+export type EmbeddingFamily = "lettuce_emb_v4" | "lettuce_eidos_v5";
+
+export type EmbeddingInstallRequest = {
+	family: EmbeddingFamily,
+	enable_dynamic_memory?: boolean,
+};
+
+export type EmbeddingModelRequest = {
+	family: EmbeddingFamily,
+};
+
+export type EmbeddingModelView = {
+	family: EmbeddingFamily,
+	revision: string,
+	native_dimensions: number,
+	active: boolean,
 };
 
 export type EmotionChange = {
@@ -1486,6 +1604,8 @@ export type JobFailureDto = {
 	ollama: OllamaFailure | null,
 	/**  Why an image job failed. */
 	image: ImageFailure | null,
+	/**  Why a speech job failed. */
+	speech: SpeechFailure | null,
 };
 
 /**  Why a chat feature job failed, where the user can act on it. */
@@ -1526,7 +1646,7 @@ export type JobProgressUnit = "bytes" | "items" | "permille";
  *  `ModelInstalled` names a downloaded model's path and, when the download
  *  asked for one, the llama.cpp model it became.
  */
-export type JobResultDto = { type: "artifact_installed" } | { type: "asset"; asset: AssetRef } | { type: "generation_turn"; turn_id: string } | { type: "conversation"; conversation_id: string } | { type: "group"; group_id: string } | { type: "character"; character_id: string } | { type: "model_profile"; model_profile_id: string } | { type: "model_installed"; model_path: string; model_profile_id: string | null } | { type: "model_pulled"; model: string } | { type: "models_folder_moved"; path: string; moved_entries: number; rewired_models: number } | 
+export type JobResultDto = { type: "artifact_installed" } | { type: "asset"; asset: AssetRef } | { type: "transcription"; transcription: TranscriptionView } | { type: "generation_turn"; turn_id: string } | { type: "conversation"; conversation_id: string } | { type: "group"; group_id: string } | { type: "character"; character_id: string } | { type: "model_profile"; model_profile_id: string } | { type: "model_installed"; model_path: string; model_profile_id: string | null } | { type: "model_pulled"; model: string } | { type: "models_folder_moved"; path: string; moved_entries: number; rewired_models: number } | 
 /**  The text a help-me-reply or scene prompt job wrote, cleaned. */
 { type: "generated_text"; text: string } | 
 /**  The images an image generation job stored. */
@@ -2820,6 +2940,20 @@ export type SpeakerSelectionPreviewRequest = {
 	user_message: string | null,
 };
 
+/**
+ *  Why a speech call or job failed, where the user can act on it. Every
+ *  variant but `RetriesExhausted` is terminal at once: retrying cannot fix it.
+ */
+export type SpeechFailure = { type: "model_required"; model: SpeechModelKind } | { type: "secret_missing" } | { type: "voice_missing" } | { type: "runtime_missing"; runtime: SpeechRuntimeKind } | { type: "retries_exhausted" } | { type: "microphone_permission_denied" } | { type: "no_microphone" } | { type: "no_audio_captured" };
+
+/**  The local speech model a job or call needs installed. */
+export type SpeechModelKind = "whisper" | "kokoro";
+
+/**  A runtime a local speech engine needs on the device. */
+export type SpeechRuntimeKind = "espeak" | "onnx_runtime";
+
+export type ThymosStatus = { type: "not_installed" } | { type: "installed"; source_revision: string } | { type: "damaged" };
+
 export type TimelineMessage = {
 	id: string,
 	role: MessageRole,
@@ -2836,6 +2970,134 @@ export type TimelineMessage = {
 	 *  its image is on the message or the user dismissed it.
 	 */
 	scene_image: SceneImageView | null,
+};
+
+/**
+ *  Transcribes a picked audio file. `request_id` is the idempotency key:
+ *  repeating the request returns its job, another request under the same id
+ *  is `Conflict`. `model_id` defaults to the dictation model.
+ */
+export type TranscribeFileRequest = {
+	request_id: string,
+	source: FileSource,
+	model_id: string | null,
+	options?: TranscribeOptions,
+};
+
+/**
+ *  What a transcription asks of Whisper beyond the audio. A chat dictation
+ *  uses the defaults: the conversation and global vocabularies, GPU and a
+ *  model that stays loaded.
+ */
+export type TranscribeOptions = {
+	language?: string | null,
+	scopes?: string[],
+	initial_prompt?: string | null,
+	translate?: boolean,
+	detect_language?: boolean,
+	threads?: number | null,
+	run?: WhisperRunOptions,
+	keep_model_loaded?: boolean,
+};
+
+export type TranscriptSegment = {
+	start_ms: number,
+	end_ms: number,
+	text: string,
+};
+
+/**
+ *  What a finished transcription job produced: the raw text, the text after
+ *  the user's corrections, and the audio it came from.
+ */
+export type TranscriptionView = {
+	request_id: string,
+	audio: AssetRef,
+	model_id: string,
+	raw_text: string,
+	text: string,
+	detected_language: string | null,
+	segments: TranscriptSegment[],
+	applied_corrections: AppliedCorrectionView[],
+};
+
+export type TtsCacheStats = {
+	count: number,
+	size_bytes: number,
+};
+
+export type TtsModelView = {
+	id: string,
+	name: string,
+};
+
+export type TtsModelsRequest = {
+	provider_type: AudioProviderType,
+};
+
+export type TtsSynthesizeRequest = {
+	request_id: string,
+	provider_id: string,
+	model_id: string,
+	voice_id: string,
+	prompt: string | null,
+	text: string,
+	retained?: boolean,
+};
+
+export type WhisperCacheCleared = {
+	cleared: number,
+};
+
+export type WhisperCatalog = {
+	models: WhisperCatalogModel[],
+};
+
+/**  A Whisper model the catalog offers. */
+export type WhisperCatalogModel = {
+	id: string,
+	filename: string,
+	size_bytes: number,
+	english_only: boolean,
+	quantized: boolean,
+	recommended: boolean,
+	recommended_for_mobile: boolean,
+	recommended_for_desktop: boolean,
+	installed: boolean,
+};
+
+/**  An installed Whisper model. `dictation` marks the one dictation uses. */
+export type WhisperInstalledModel = {
+	id: string,
+	filename: string,
+	size_bytes: number,
+	english_only: boolean,
+	quantized: boolean,
+	dictation: boolean,
+};
+
+export type WhisperInstalledModels = {
+	models: WhisperInstalledModel[],
+};
+
+export type WhisperModelRequest = {
+	model_id: string,
+};
+
+export type WhisperPreloadRequest = {
+	model_id: string | null,
+	run?: WhisperRunOptions,
+};
+
+/**
+ *  How a Whisper model runs: on the GPU or the CPU, with flash attention
+ *  and on which device.
+ */
+export type WhisperRunOptions = {
+	use_gpu: boolean,
+	force_cpu: boolean,
+	flash_attention: boolean,
+	gpu_device: number,
 };
 
 /* Tauri Specta runtime */

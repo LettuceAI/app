@@ -23,8 +23,11 @@ mod local_models;
 mod mapping;
 mod messages;
 mod models;
+mod memory_models;
+mod embedding_health;
 mod ollama;
 mod scenes;
+mod speech;
 mod startup;
 mod turns;
 mod worker;
@@ -105,6 +108,7 @@ pub use jobs::{
     ArtifactInstallHandler, ClaimedJob, ImageGenerateHandler, ImageToolHandler, InstallFinish,
     InstallSources, InstallWork, JobHandler, JobHandlers, JobLane, JobProgressSink, JobRunner,
     ModelPullHandler, ModelsFolderMoveHandler, NetworkInstallSources, TextFeatureHandler,
+    SpeechTranscribeHandler, SpeechSynthesizeHandler,
     admit_install, conversation_help_me_reply, job_cancel, job_get, job_watch, jobs_list,
 };
 pub use local_models::{
@@ -118,11 +122,19 @@ pub use messages::{
     message_delete, message_edit, message_pin, message_revisions, message_scene_select,
     messages_delete_after,
 };
+pub use memory_models::{embedding_install, companion_emotion_install, embedding_status, embedding_choose, embedding_remove, embedding_compare, embedding_unload, companion_emotion_status, companion_emotion_remove};
 pub use models::{InstalledModels, ModelLoad, ModelLoader, NoModels};
 pub use ollama::{ollama_model_delete, ollama_models_list, ollama_pull};
 pub use scenes::{
     message_scene_image_approve, message_scene_image_dismiss, message_scene_image_generate,
     message_scene_prompt_generate,
+};
+pub use speech::{
+    tts_synthesize,
+    audio_provider_verify, audio_provider_voices, audio_provider_voices_refresh, tts_models, tts_voice_design_models, tts_cache_stats, tts_cache_clear,
+    InstalledSpeech, NoSpeech, SpeechHost, dictation_cancel, dictation_start, dictation_stop,
+    transcribe_file, whisper_catalog, whisper_clear_cache, whisper_delete,
+    whisper_dictation_model_set, whisper_download, whisper_models_list, whisper_preload,
 };
 pub use startup::{ApiWorkers, StartupStep, startup};
 pub use turns::{

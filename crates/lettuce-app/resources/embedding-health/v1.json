@@ -1,0 +1,501 @@
+{
+  "identity_probe": "The quick brown fox jumps over the lazy dog and lands beside the riverbank.",
+  "corpus": [
+    {
+      "id": "tea-tin-key",
+      "text": "Mirelle hid the brass key inside the tea tin with a false bottom in the pantry."
+    },
+    {
+      "id": "pier-nine",
+      "text": "Dockworkers moved the contraband crate to Pier Nine just before the storm reached the harbor."
+    },
+    {
+      "id": "glasshouse",
+      "text": "A rain-stained letter says the secret meeting will happen in the glasshouse behind the manor gardens."
+    },
+    {
+      "id": "engine-resin",
+      "text": "Pressure valves in the engine room were jammed shut with hardened resin, forcing the airship to descend."
+    },
+    {
+      "id": "signet-pears",
+      "text": "The cook insists the missing signet ring was last seen beside a bowl of pears in the kitchen."
+    },
+    {
+      "id": "watch-shift",
+      "text": "The watch captain changed shifts at the clocktower exactly three minutes before midnight."
+    },
+    {
+      "id": "crystal-cave",
+      "text": "Beyond the waterfall, a crystal cave glows with pale blue light and echoes every footstep."
+    },
+    {
+      "id": "burnt-map",
+      "text": "Half the map was burned in the fire, but you could still make out the trail to the old chapel."
+    },
+    {
+      "id": "locket-portrait",
+      "text": "Inside the silver locket was a tiny portrait of a woman with a crescent-moon birthmark."
+    },
+    {
+      "id": "library-cipher",
+      "text": "A handwritten cipher tucked between two old astronomy books decoded into a single street name."
+    },
+    {
+      "id": "attic-trunk",
+      "text": "An old leather trunk in the attic held love letters tied together with a faded green ribbon."
+    },
+    {
+      "id": "garden-coin",
+      "text": "A foreign coin with a swan on it was buried beneath the third rose bush in the kitchen garden."
+    },
+    {
+      "id": "forge-blueprint",
+      "text": "Folded inside the blacksmith's apron pocket was a blueprint for a one-handed crossbow."
+    },
+    {
+      "id": "lyra-promise",
+      "text": "Lyra promised to come back to the lighthouse by autumn, no matter what happened in the capital."
+    },
+    {
+      "id": "kael-revenge",
+      "text": "Kael swore on his father's grave that he would find every man who burned the village."
+    },
+    {
+      "id": "isolde-marriage",
+      "text": "Isolde refused the prince's proposal and said she would rather work in a bakery for the rest of her life."
+    },
+    {
+      "id": "merrick-debt",
+      "text": "Merrick promised to repay the gambling debt before the festival, even if it meant selling his horse."
+    },
+    {
+      "id": "rhys-letter",
+      "text": "Rhys said he would write a letter every Sunday, even from the front lines."
+    },
+    {
+      "id": "aelin-secret",
+      "text": "Aelin asked you to keep the truth about her brother hidden until winter solstice."
+    },
+    {
+      "id": "captain-mutiny",
+      "text": "The captain warned the first mate that one more incident would mean stripping his rank in port."
+    },
+    {
+      "id": "northern-keep",
+      "text": "The Northern Keep is built into the side of a cliff, accessible only by a narrow switchback path."
+    },
+    {
+      "id": "rust-quarter",
+      "text": "The Rust Quarter is the oldest part of the city, where every building leans slightly to the east."
+    },
+    {
+      "id": "twin-moons-inn",
+      "text": "The Twin Moons Inn sits at the crossroads where three trade routes meet."
+    },
+    {
+      "id": "salt-flats",
+      "text": "The salt flats stretch for miles past the abandoned mining town, white and shimmering at noon."
+    },
+    {
+      "id": "blackwater-pond",
+      "text": "Blackwater Pond is rumored to swallow anything dropped into it without making a single ripple."
+    },
+    {
+      "id": "orchard-shrine",
+      "text": "Behind the apple orchard is a small stone shrine no one visits except on the autumn equinox."
+    },
+    {
+      "id": "sunken-cathedral",
+      "text": "Half the cathedral has sunk into the river over the past century, and now the bell tower is underwater."
+    },
+    {
+      "id": "courier-ambush",
+      "text": "The courier was ambushed two days before reaching the city, and the diplomatic seal was stolen."
+    },
+    {
+      "id": "council-vote",
+      "text": "The council voted six to four in favor of opening the trade route, but the decision was not announced."
+    },
+    {
+      "id": "plague-arrival",
+      "text": "The first signs of the plague appeared in the riverside districts the morning after the festival."
+    },
+    {
+      "id": "astronomer-discovery",
+      "text": "The court astronomer discovered a new comet but was forbidden from publishing the finding."
+    },
+    {
+      "id": "treaty-signed",
+      "text": "The treaty was signed at the marble pavilion at dawn, witnessed only by the two spymasters."
+    },
+    {
+      "id": "prince-disappeared",
+      "text": "The young prince vanished from his rooms during the masquerade and has not been seen since."
+    },
+    {
+      "id": "forge-explosion",
+      "text": "The royal forge exploded the night before the gala, killing two apprentices and a senior smith."
+    },
+    {
+      "id": "wolf-pact",
+      "text": "The northern clan signed a quiet pact with the wolves of the Greywood after the second winter."
+    },
+    {
+      "id": "frost-festival",
+      "text": "Every twelve years the city throws a Frost Festival to commemorate surviving the long winter of legend."
+    },
+    {
+      "id": "guild-rule",
+      "text": "By guild law, no apprentice may forge a named blade until they have served seven full years."
+    },
+    {
+      "id": "desert-rite",
+      "text": "The desert tribes consider it sacred to share salt and water with anyone who arrives at their fire."
+    },
+    {
+      "id": "old-tongue",
+      "text": "The Old Tongue is no longer spoken outside of academic ceremonies and a single mountain village."
+    },
+    {
+      "id": "twin-stars",
+      "text": "Twin stars appear in the southern sky once every hundred years and are said to mark the birth of a true heir."
+    },
+    {
+      "id": "ironwood-treaty",
+      "text": "The ironwood forests are jointly held by three kingdoms under a treaty older than any living memory."
+    },
+    {
+      "id": "eira-rival",
+      "text": "Eira and the captain of the second regiment have been rivals since their academy days."
+    },
+    {
+      "id": "tomen-mentor",
+      "text": "Tomen took the orphaned scribe under his wing after finding the boy reading by candlelight in a stable."
+    },
+    {
+      "id": "dancer-spy",
+      "text": "The dancer at the silk pavilion is actually a spy for the eastern duchy."
+    },
+    {
+      "id": "blacksmith-deaf",
+      "text": "The old blacksmith has been completely deaf since the forge explosion and reads lips."
+    },
+    {
+      "id": "priest-doubts",
+      "text": "The high priest privately doubts the new prophecy but performs the rites anyway."
+    },
+    {
+      "id": "twin-brothers",
+      "text": "The twin brothers were separated at birth and only reunited last spring at a horse fair."
+    },
+    {
+      "id": "widow-archer",
+      "text": "The widow at the edge of the village was the most decorated archer of the previous war."
+    },
+    {
+      "id": "rain-funeral",
+      "text": "It rained the entire day of the funeral, and only six people stood at the graveside."
+    },
+    {
+      "id": "market-fire",
+      "text": "The morning market burned down on the day of the eclipse, taking half the eastern stalls with it."
+    }
+  ],
+  "cases": [
+    {
+      "name": "Brass key",
+      "query": "Where did Mirelle hide the brass key?",
+      "expected_id": "tea-tin-key"
+    },
+    {
+      "name": "Crate pier",
+      "query": "Which pier did the contraband crate end up at before the storm?",
+      "expected_id": "pier-nine"
+    },
+    {
+      "name": "Meeting place",
+      "query": "Where is the secret meeting going to happen?",
+      "expected_id": "glasshouse"
+    },
+    {
+      "name": "Airship descent",
+      "query": "Why did the airship have to come down?",
+      "expected_id": "engine-resin"
+    },
+    {
+      "name": "Signet ring",
+      "query": "Where was the missing signet ring last seen?",
+      "expected_id": "signet-pears"
+    },
+    {
+      "name": "Watch shifts",
+      "query": "When does the watch captain switch shifts at the clocktower?",
+      "expected_id": "watch-shift"
+    },
+    {
+      "name": "Behind waterfall",
+      "query": "What is hidden behind the waterfall?",
+      "expected_id": "crystal-cave"
+    },
+    {
+      "name": "Burned map",
+      "query": "What did the burned map still show?",
+      "expected_id": "burnt-map"
+    },
+    {
+      "name": "Locket contents",
+      "query": "What was inside the silver locket?",
+      "expected_id": "locket-portrait"
+    },
+    {
+      "name": "Astronomy books",
+      "query": "What was tucked between the old astronomy books?",
+      "expected_id": "library-cipher"
+    },
+    {
+      "name": "Attic trunk",
+      "query": "What was inside the leather trunk in the attic?",
+      "expected_id": "attic-trunk"
+    },
+    {
+      "name": "Buried coin",
+      "query": "What was buried beneath the third rose bush?",
+      "expected_id": "garden-coin"
+    },
+    {
+      "name": "Apron blueprint",
+      "query": "What was folded in the blacksmith's apron?",
+      "expected_id": "forge-blueprint"
+    },
+    {
+      "name": "Lyra return",
+      "query": "When did Lyra say she would come back to the lighthouse?",
+      "expected_id": "lyra-promise"
+    },
+    {
+      "name": "Kael oath",
+      "query": "What did Kael swear on his father's grave?",
+      "expected_id": "kael-revenge"
+    },
+    {
+      "name": "Isolde refusal",
+      "query": "What did Isolde say when she refused the prince?",
+      "expected_id": "isolde-marriage"
+    },
+    {
+      "name": "Merrick debt",
+      "query": "How is Merrick going to pay back his gambling debt?",
+      "expected_id": "merrick-debt"
+    },
+    {
+      "name": "Rhys letters",
+      "query": "How often did Rhys promise to write?",
+      "expected_id": "rhys-letter"
+    },
+    {
+      "name": "Aelin secret",
+      "query": "Until when did Aelin ask you to keep her brother's truth hidden?",
+      "expected_id": "aelin-secret"
+    },
+    {
+      "name": "Captain warning",
+      "query": "What did the captain warn the first mate would happen?",
+      "expected_id": "captain-mutiny"
+    },
+    {
+      "name": "Northern Keep access",
+      "query": "How do you actually reach the Northern Keep?",
+      "expected_id": "northern-keep"
+    },
+    {
+      "name": "Rust Quarter detail",
+      "query": "What is unusual about the buildings in the Rust Quarter?",
+      "expected_id": "rust-quarter"
+    },
+    {
+      "name": "Twin Moons Inn",
+      "query": "Where is the Twin Moons Inn located?",
+      "expected_id": "twin-moons-inn"
+    },
+    {
+      "name": "Mining town",
+      "query": "What is past the abandoned mining town?",
+      "expected_id": "salt-flats"
+    },
+    {
+      "name": "Blackwater rumor",
+      "query": "What is the rumor about Blackwater Pond?",
+      "expected_id": "blackwater-pond"
+    },
+    {
+      "name": "Orchard shrine",
+      "query": "When do people visit the small shrine behind the apple orchard?",
+      "expected_id": "orchard-shrine"
+    },
+    {
+      "name": "Cathedral fate",
+      "query": "What happened to the old cathedral?",
+      "expected_id": "sunken-cathedral"
+    },
+    {
+      "name": "Courier ambush",
+      "query": "What happened to the courier on the way to the city?",
+      "expected_id": "courier-ambush"
+    },
+    {
+      "name": "Trade route vote",
+      "query": "How did the council vote on opening the trade route?",
+      "expected_id": "council-vote"
+    },
+    {
+      "name": "Plague onset",
+      "query": "When did the plague first appear in the city?",
+      "expected_id": "plague-arrival"
+    },
+    {
+      "name": "Astronomer find",
+      "query": "What did the court astronomer discover?",
+      "expected_id": "astronomer-discovery"
+    },
+    {
+      "name": "Treaty signing",
+      "query": "Where was the treaty signed and by whom?",
+      "expected_id": "treaty-signed"
+    },
+    {
+      "name": "Prince vanishing",
+      "query": "When did the young prince disappear?",
+      "expected_id": "prince-disappeared"
+    },
+    {
+      "name": "Forge incident",
+      "query": "What happened at the royal forge before the gala?",
+      "expected_id": "forge-explosion"
+    },
+    {
+      "name": "Wolf pact",
+      "query": "Who did the northern clan make a pact with?",
+      "expected_id": "wolf-pact"
+    },
+    {
+      "name": "Frost Festival",
+      "query": "How often is the Frost Festival held?",
+      "expected_id": "frost-festival"
+    },
+    {
+      "name": "Named blades rule",
+      "query": "What is the guild rule about forging named blades?",
+      "expected_id": "guild-rule"
+    },
+    {
+      "name": "Desert hospitality",
+      "query": "What do the desert tribes consider sacred?",
+      "expected_id": "desert-rite"
+    },
+    {
+      "name": "Old Tongue",
+      "query": "Where is the Old Tongue still spoken today?",
+      "expected_id": "old-tongue"
+    },
+    {
+      "name": "Twin stars meaning",
+      "query": "What do the twin stars in the southern sky signify?",
+      "expected_id": "twin-stars"
+    },
+    {
+      "name": "Ironwood ownership",
+      "query": "Who controls the ironwood forests?",
+      "expected_id": "ironwood-treaty"
+    },
+    {
+      "name": "Eira rivalry",
+      "query": "Who is Eira's long-standing rival?",
+      "expected_id": "eira-rival"
+    },
+    {
+      "name": "Tomen apprentice",
+      "query": "How did Tomen find the orphaned scribe?",
+      "expected_id": "tomen-mentor"
+    },
+    {
+      "name": "Silk pavilion dancer",
+      "query": "Who is the dancer at the silk pavilion really working for?",
+      "expected_id": "dancer-spy"
+    },
+    {
+      "name": "Blacksmith hearing",
+      "query": "Why is the old blacksmith deaf?",
+      "expected_id": "blacksmith-deaf"
+    },
+    {
+      "name": "Priest doubt",
+      "query": "What does the high priest privately doubt?",
+      "expected_id": "priest-doubts"
+    },
+    {
+      "name": "Twin reunion",
+      "query": "When did the twin brothers find each other again?",
+      "expected_id": "twin-brothers"
+    },
+    {
+      "name": "Famed archer",
+      "query": "Who was the most decorated archer of the previous war?",
+      "expected_id": "widow-archer"
+    },
+    {
+      "name": "Funeral attendance",
+      "query": "How many people came to the funeral?",
+      "expected_id": "rain-funeral"
+    },
+    {
+      "name": "Eclipse market",
+      "query": "What burned down on the day of the eclipse?",
+      "expected_id": "market-fire"
+    }
+  ],
+  "related": [
+    {
+      "name": "Emotional state",
+      "a": "She felt a wave of sadness wash over her.",
+      "b": "Her heart ached with sorrow and grief."
+    },
+    {
+      "name": "Action description",
+      "a": "He drew his sword and charged at the enemy.",
+      "b": "The warrior unsheathed his blade and rushed forward to attack."
+    },
+    {
+      "name": "Tavern setting",
+      "a": "The tavern was dimly lit with flickering candles.",
+      "b": "Candlelight cast shadows across the dark inn."
+    },
+    {
+      "name": "Memory clue",
+      "a": "The brass key was hidden in the tea tin beneath the false bottom.",
+      "b": "Mirelle concealed the brass key inside a tea tin with a false base."
+    }
+  ],
+  "unrelated": [
+    {
+      "name": "Fox vs physics",
+      "a": "The quick brown fox jumps over the lazy dog.",
+      "b": "Quantum mechanics describes subatomic particle behavior."
+    },
+    {
+      "name": "Pizza vs computer",
+      "a": "I love eating pizza with extra cheese.",
+      "b": "The computer crashed and lost all my files."
+    },
+    {
+      "name": "Harbor vs kitchen",
+      "a": "Dockworkers moved the contraband crate to Pier Nine before the storm.",
+      "b": "The missing ring was last seen beside a bowl of pears in the kitchen."
+    },
+    {
+      "name": "Lighthouse vs wolves",
+      "a": "Lyra promised to come back to the lighthouse by autumn.",
+      "b": "The northern clan signed a quiet pact with the wolves of the Greywood."
+    }
+  ]
+}

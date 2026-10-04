@@ -46,5 +46,8 @@ tauri-specta.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 
+[target.'cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))'.dependencies]
+cpal = "0.16.0"
+
 [build-dependencies]
 tauri-build.workspace = true
