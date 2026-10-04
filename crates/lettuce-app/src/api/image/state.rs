@@ -11,6 +11,7 @@ use crate::{AvatarGradients, CivitaiBrowser};
 pub(crate) struct ImageApiState {
     gradients: AvatarGradients,
     civitai_endpoint: Mutex<String>,
+    bundle_admission: tokio::sync::Mutex<()>,
 }
 
 impl Default for ImageApiState {
@@ -18,6 +19,7 @@ impl Default for ImageApiState {
         Self {
             gradients: AvatarGradients::default(),
             civitai_endpoint: Mutex::new(lettuce_image_generation::CIVITAI_API_ENDPOINT.to_owned()),
+            bundle_admission: tokio::sync::Mutex::new(()),
         }
     }
 }
@@ -29,6 +31,12 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 impl ImageApiState {
+    /// Held from the running-install check of an image bundle install through
+    /// its job's admission, so a second install sees the first one's job.
+    pub(crate) const fn bundle_admission(&self) -> &tokio::sync::Mutex<()> {
+        &self.bundle_admission
+    }
+
     pub(crate) const fn gradients(&self) -> &AvatarGradients {
         &self.gradients
     }

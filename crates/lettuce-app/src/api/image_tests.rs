@@ -864,13 +864,8 @@ async fn the_engine_is_built_from_the_models_folder_and_follows_a_move() {
     );
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn a_bundle_that_a_running_install_already_fetches_joins_its_job() {
-    let desktop = desktop(HeldImages::new(), true);
-    let context = &desktop.harness.context;
-    let engine = context.backend().local_diffusion().expect("engine").clone();
-    let paths = engine.paths();
-    let asset = |path: &str, sha: &str| lettuce_image_generation::BundleAsset {
+fn bundle_asset(path: &str, sha: &str) -> lettuce_image_generation::BundleAsset {
+    lettuce_image_generation::BundleAsset {
         selection_id: "selection".to_owned(),
         profile_id: "z-image-turbo".to_owned(),
         role: lettuce_image_generation::DiffusionComponentRole::DiffusionModel,
@@ -883,14 +878,62 @@ async fn a_bundle_that_a_running_install_already_fetches_joins_its_job() {
         sha256: sha.to_owned(),
         architecture: None,
         gated: false,
-    };
-    let running = asset("model.gguf", &"a".repeat(64));
+    }
+}
+
+fn bundle_request(files: &[(&str, &str)]) -> dto::HfImageBundleInstallRequest {
+    dto::HfImageBundleInstallRequest {
+        profile_id: "z-image-turbo".to_owned(),
+        display_name: "Bundle".to_owned(),
+        runtime_release: RELEASE.to_owned(),
+        runtime_asset: CPU_BUILD.to_owned(),
+        assets: files
+            .iter()
+            .map(|(path, sha)| {
+                let asset = bundle_asset(path, sha);
+                dto::ImageBundleAsset {
+                    selection_id: asset.selection_id,
+                    profile_id: asset.profile_id,
+                    role: dto::ImageComponentRole::DiffusionModel,
+                    model_id: asset.model_id,
+                    revision: asset.revision,
+                    relative_path: asset.relative_path,
+                    format: asset.format,
+                    quantization: None,
+                    size: asset.size,
+                    sha256: asset.sha256,
+                    architecture: None,
+                    gated: false,
+                }
+            })
+            .collect(),
+    }
+}
+
+/// Puts a running bundle install of `files` into the runner's memory.
+fn running_bundle_install(context: &ApiContext, files: &[(&str, &str)]) -> JobId {
+    let paths = context.backend().local_diffusion().expect("engine").paths();
     let root = lettuce_image_generation::bundle_root(&paths.image_root);
-    let source = crate::ArtifactSource::HuggingFace {
-        repository: running.model_id.clone(),
-        revision: running.revision.clone(),
-        path: running.relative_path.clone(),
-    };
+    let artifacts = files
+        .iter()
+        .map(|(path, sha)| {
+            let asset = bundle_asset(path, sha);
+            let source = crate::ArtifactSource::HuggingFace {
+                repository: asset.model_id.clone(),
+                revision: asset.revision.clone(),
+                path: asset.relative_path.clone(),
+            };
+            crate::PlannedArtifact {
+                artifact: lettuce_model_hub::PinnedArtifact {
+                    source_identity: source.identity(),
+                    local_segments: asset.local_segments().expect("segments"),
+                    byte_size: 4,
+                    sha256: Some((*sha).to_owned()),
+                },
+                source,
+            }
+        })
+        .collect();
     let existing = JobId::new();
     context.jobs().put_install(
         existing,
@@ -898,15 +941,7 @@ async fn a_bundle_that_a_running_install_already_fetches_joins_its_job() {
             plan: crate::ArtifactInstallPlan {
                 install_id: "hf-bundle:running".to_owned(),
                 root,
-                artifacts: vec![crate::PlannedArtifact {
-                    artifact: lettuce_model_hub::PinnedArtifact {
-                        source_identity: source.identity(),
-                        local_segments: running.local_segments().expect("segments"),
-                        byte_size: 4,
-                        sha256: Some("a".repeat(64)),
-                    },
-                    source,
-                }],
+                artifacts,
             },
             finish: Box::new(crate::api::InstallFinish::HuggingFaceBundle {
                 paths: (*paths).clone(),
@@ -914,45 +949,92 @@ async fn a_bundle_that_a_running_install_already_fetches_joins_its_job() {
             }),
         },
     );
-    let dto_asset = |asset: &lettuce_image_generation::BundleAsset| dto::ImageBundleAsset {
-        selection_id: asset.selection_id.clone(),
-        profile_id: asset.profile_id.clone(),
-        role: dto::ImageComponentRole::DiffusionModel,
-        model_id: asset.model_id.clone(),
-        revision: asset.revision.clone(),
-        relative_path: asset.relative_path.clone(),
-        format: asset.format.clone(),
-        quantization: None,
-        size: asset.size,
-        sha256: asset.sha256.clone(),
-        architecture: None,
-        gated: false,
-    };
-    let install = |assets: Vec<dto::ImageBundleAsset>| dto::HfImageBundleInstallRequest {
-        profile_id: "z-image-turbo".to_owned(),
-        display_name: "Bundle".to_owned(),
-        runtime_release: RELEASE.to_owned(),
-        runtime_asset: CPU_BUILD.to_owned(),
-        assets,
-    };
-    let joined = hf_image_bundle_install(context, install(vec![dto_asset(&running)]))
-        .await
-        .expect("joins the running install");
-    assert_eq!(joined.job_id, existing.to_string());
-    assert_eq!(joined.bundle_id, "running");
+    existing
+}
 
-    let other = asset("other.gguf", &"b".repeat(64));
-    let partial = hf_image_bundle_install(
+fn nothing_written(context: &ApiContext) -> bool {
+    let paths = context.backend().local_diffusion().expect("engine").paths();
+    !lettuce_image_generation::bundle_root(&paths.image_root).exists()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_bundle_with_exactly_the_files_of_a_running_install_joins_its_job() {
+    let desktop = desktop(HeldImages::new(), true);
+    let context = &desktop.harness.context;
+    let (a, b) = ("a".repeat(64), "b".repeat(64));
+    let existing = running_bundle_install(context, &[("model.gguf", &a), ("other.gguf", &b)]);
+    let joined = hf_image_bundle_install(
         context,
-        install(vec![dto_asset(&running), dto_asset(&other)]),
+        bundle_request(&[("other.gguf", &b), ("model.gguf", &a)]),
     )
     .await
-    .expect_err("only some of the files are being fetched");
-    assert_eq!(partial.code, ApiErrorCode::Busy);
-    assert!(
-        !lettuce_image_generation::bundle_root(&paths.image_root).exists(),
-        "nothing was written for the refused bundle"
-    );
+    .expect("joins the running install");
+    assert_eq!(joined.job_id, existing.to_string());
+    assert_eq!(joined.bundle_id, "running");
+    assert!(nothing_written(context));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_bundle_sharing_only_some_files_with_a_running_install_is_busy() {
+    let desktop = desktop(HeldImages::new(), true);
+    let context = &desktop.harness.context;
+    let (a, b, c) = ("a".repeat(64), "b".repeat(64), "c".repeat(64));
+    running_bundle_install(context, &[("model.gguf", &a), ("other.gguf", &b)]);
+    let subset = hf_image_bundle_install(context, bundle_request(&[("model.gguf", &a)]))
+        .await
+        .expect_err("a subset is not the running bundle");
+    assert_eq!(subset.code, ApiErrorCode::Busy);
+    let superset = hf_image_bundle_install(
+        context,
+        bundle_request(&[("model.gguf", &a), ("other.gguf", &b), ("third.gguf", &c)]),
+    )
+    .await
+    .expect_err("a superset is not the running bundle");
+    assert_eq!(superset.code, ApiErrorCode::Busy);
+    let overlap = hf_image_bundle_install(
+        context,
+        bundle_request(&[("model.gguf", &a), ("third.gguf", &c)]),
+    )
+    .await
+    .expect_err("an overlap is not the running bundle");
+    assert_eq!(overlap.code, ApiErrorCode::Busy);
+    assert!(nothing_written(context), "no manifest was written");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_bundle_install_waits_for_the_admission_in_progress_and_then_sees_its_job() {
+    let desktop = desktop(HeldImages::new(), true);
+    let context = desktop.harness.context.clone();
+    let (a, b) = ("a".repeat(64), "b".repeat(64));
+    let admitting = context.image_state().bundle_admission().lock().await;
+    let identical = {
+        let (context, a) = (context.clone(), a.clone());
+        tokio::spawn(async move {
+            hf_image_bundle_install(&context, bundle_request(&[("model.gguf", &a)])).await
+        })
+    };
+    let overlapping = {
+        let (context, a, b) = (context.clone(), a.clone(), b.clone());
+        tokio::spawn(async move {
+            hf_image_bundle_install(
+                &context,
+                bundle_request(&[("model.gguf", &a), ("x.gguf", &b)]),
+            )
+            .await
+        })
+    };
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert!(!identical.is_finished() && !overlapping.is_finished());
+    let existing = running_bundle_install(&context, &[("model.gguf", &a)]);
+    drop(admitting);
+    let joined = identical.await.expect("task").expect("joins the first");
+    assert_eq!(joined.job_id, existing.to_string());
+    let busy = overlapping
+        .await
+        .expect("task")
+        .expect_err("overlaps the first");
+    assert_eq!(busy.code, ApiErrorCode::Busy);
+    assert!(nothing_written(&context));
 }
 
 #[tokio::test(flavor = "multi_thread")]

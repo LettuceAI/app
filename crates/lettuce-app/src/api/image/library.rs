@@ -309,8 +309,8 @@ fn busy_download(path: &std::path::Path) -> ApiError {
     )
 }
 
-/// The running bundle install that already fetches every wanted file, or
-/// `Busy` when some of them are being fetched by other work.
+/// The running bundle install whose files are exactly the wanted ones, or
+/// `Busy` when any other running download shares a path or a hash with them.
 fn running_bundle(
     context: &ApiContext,
     wanted: &[(PathBuf, String)],
@@ -334,10 +334,11 @@ fn running_bundle(
                 )
             })
             .collect::<Vec<_>>();
-        let covered = wanted
-            .iter()
-            .all(|(path, _)| running.iter().any(|(running, _)| running == path));
-        if covered
+        let same_files = running.len() == wanted.len()
+            && wanted
+                .iter()
+                .all(|(path, _)| running.iter().any(|(running, _)| running == path));
+        if same_files
             && let crate::api::InstallFinish::HuggingFaceBundle { bundle_id, .. } = finish.as_ref()
         {
             return Ok(Some((job_id, bundle_id.clone())));
@@ -357,8 +358,9 @@ fn running_bundle(
 }
 
 /// Downloads a bundle of files and registers the model once they are in. A
-/// bundle that a running install already fetches returns that job; one that
-/// shares only some of its files with a running download is `Busy`.
+/// bundle with exactly the files a running install fetches returns that job;
+/// one that shares any file with a running download is `Busy`. One admission
+/// at a time, so the second of two overlapping installs sees the first's job.
 pub async fn hf_image_bundle_install(
     context: &ApiContext,
     request: dto::HfImageBundleInstallRequest,
@@ -366,6 +368,7 @@ pub async fn hf_image_bundle_install(
     let engine = engine(context)?;
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
+        let _admitting = context.image_state().bundle_admission().lock().await;
         let paths = engine.paths();
         let root = bundle_root(&paths.image_root);
         let mut wanted = Vec::with_capacity(request.assets.len());
