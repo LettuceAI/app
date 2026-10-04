@@ -13,6 +13,10 @@ use lettuce_speech::{
 };
 use lettuce_types::{JobId, TimestampMillis};
 
+use super::speech_failure::{
+    RETRIES_EXHAUSTED, SPEECH_MODEL_REQUIRED_WHISPER, SpeechJobError, speech_retry_allowed,
+};
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct SpeechTranscriptionAdmission {
     pub record: TranscriptionRecord,
@@ -86,6 +90,34 @@ impl<'a, R: ?Sized, J: ?Sized> SpeechTranscriptionCoordinator<'a, R, J> {
     }
 }
 
+pub(crate) fn transcription_job_spec(
+    request: &TranscriptionRequest,
+) -> Result<lettuce_jobs::NewJob, SpeechTranscriptionError> {
+    request.validate()?;
+    let subject = JobSubject::new(SubjectKind::SpeechRequest, request.id.to_string())
+        .map_err(|_| SpeechTranscriptionError::InvalidWork)?;
+    let key = IdempotencyKey::new(format!("speech-transcribe-{}", request.id))
+        .map_err(|_| SpeechTranscriptionError::InvalidWork)?;
+    let mut resources = vec![
+        ResourceClass::DiskRead,
+        ResourceClass::ModelLoad,
+        ResourceClass::Cpu,
+        ResourceClass::DiskWrite,
+    ];
+    if request.options.use_gpu {
+        resources.push(ResourceClass::Gpu);
+    }
+    Ok(lettuce_jobs::JobSpec::new(
+        JobKind::SpeechTranscribe,
+        subject,
+        OutcomeRef::Request(request.id),
+    )
+    .with_idempotency_key(key)
+    .with_priority(JobPriority::Interactive)
+    .with_resources(resources)
+    .with_policies(RecoveryPolicy::Restart, CancellationPolicy::Cooperative))
+}
+
 impl<R: TranscriptionRepository + ?Sized, J: JobStore + ?Sized>
     SpeechTranscriptionCoordinator<'_, R, J>
 {
@@ -94,30 +126,7 @@ impl<R: TranscriptionRepository + ?Sized, J: JobStore + ?Sized>
         request: TranscriptionRequest,
     ) -> Result<SpeechTranscriptionAdmission, SpeechTranscriptionError> {
         request.validate()?;
-        let subject = JobSubject::new(SubjectKind::SpeechRequest, request.id.to_string())
-            .map_err(|_| SpeechTranscriptionError::InvalidWork)?;
-        let key = IdempotencyKey::new(format!("speech-transcribe-{}", request.id))
-            .map_err(|_| SpeechTranscriptionError::InvalidWork)?;
-        let mut resources = vec![
-            ResourceClass::DiskRead,
-            ResourceClass::ModelLoad,
-            ResourceClass::Cpu,
-            ResourceClass::DiskWrite,
-        ];
-        if request.options.use_gpu {
-            resources.push(ResourceClass::Gpu);
-        }
-        let admitted = self.jobs.create_or_get(
-            lettuce_jobs::JobSpec::new(
-                JobKind::SpeechTranscribe,
-                subject,
-                OutcomeRef::Request(request.id),
-            )
-            .with_idempotency_key(key)
-            .with_priority(JobPriority::Interactive)
-            .with_resources(resources)
-            .with_policies(RecoveryPolicy::Restart, CancellationPolicy::Cooperative),
-        )?;
+        let admitted = self.jobs.create_or_get(transcription_job_spec(&request)?)?;
         let record = self.transcriptions.admit(TranscriptionRecord {
             job_id: admitted.job.id,
             request,
@@ -349,6 +358,12 @@ impl<R: TranscriptionRepository + ?Sized, J: JobStore + ?Sized>
     ) -> Result<SpeechTranscriptionRunResult, SpeechTranscriptionError> {
         let at = now.max(work.job.updated_at);
         let (code, retryable, message) = classify_error(&error);
+        let (code, retryable, message) =
+            if retryable && !speech_retry_allowed(work.claim.claim.attempt.get()) {
+                RETRIES_EXHAUSTED
+            } else {
+                (code, retryable, message)
+            };
         if retryable {
             let job = self
                 .jobs
@@ -402,11 +417,12 @@ fn check_cancelled(
     }
 }
 
-fn classify_error(error: &SpeechTranscriptionError) -> (JobErrorCode, bool, &'static str) {
+fn classify_error(error: &SpeechTranscriptionError) -> SpeechJobError {
     match error {
         SpeechTranscriptionError::Invalid(_)
         | SpeechTranscriptionError::Audio(
-            AsrAudioError::InvalidAudio
+            AsrAudioError::Unavailable
+            | AsrAudioError::InvalidAudio
             | AsrAudioError::UnsupportedFormat
             | AsrAudioError::TooLarge,
         )
@@ -419,8 +435,8 @@ fn classify_error(error: &SpeechTranscriptionError) -> (JobErrorCode, bool, &'st
         ),
         SpeechTranscriptionError::Runtime(AsrRuntimeError::ModelUnavailable) => (
             JobErrorCode::CapabilityUnavailable,
-            true,
-            "speech model is unavailable",
+            false,
+            SPEECH_MODEL_REQUIRED_WHISPER,
         ),
         SpeechTranscriptionError::Runtime(AsrRuntimeError::Cancelled) => (
             JobErrorCode::Cancelled,

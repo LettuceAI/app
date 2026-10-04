@@ -14,6 +14,11 @@ use lettuce_speech::{
 };
 use lettuce_types::{JobId, TimestampMillis};
 
+use super::speech_failure::{
+    RETRIES_EXHAUSTED, SPEECH_ESPEAK_MISSING, SPEECH_MODEL_REQUIRED_KOKORO, SPEECH_SECRET_MISSING,
+    SPEECH_VOICE_MISSING, SpeechJobError, speech_retry_allowed,
+};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TtsSynthesisAdmission {
     pub record: SynthesisRecord,
@@ -342,6 +347,12 @@ impl<R: SynthesisRepository + ?Sized, J: JobStore + ?Sized> TtsSynthesisCoordina
     ) -> Result<TtsSynthesisRunResult, TtsSynthesisError> {
         let at = now.max(work.job.updated_at);
         let (code, retryable, message) = classify_error(&error);
+        let (code, retryable, message) =
+            if retryable && !speech_retry_allowed(work.claim.claim.attempt.get()) {
+                RETRIES_EXHAUSTED
+            } else {
+                (code, retryable, message)
+            };
         if retryable {
             let job = self
                 .jobs
@@ -392,7 +403,7 @@ fn check_cancelled(handle: &JobHandle) -> Result<(), TtsSynthesisError> {
     }
 }
 
-fn classify_error(error: &TtsSynthesisError) -> (JobErrorCode, bool, &'static str) {
+fn classify_error(error: &TtsSynthesisError) -> SpeechJobError {
     use lettuce_media::MediaStoreError;
 
     match error {
@@ -425,8 +436,28 @@ fn classify_error(error: &TtsSynthesisError) -> (JobErrorCode, bool, &'static st
             true,
             "TTS provider is unavailable",
         ),
-        TtsSynthesisError::Runtime(TtsRuntimeError::Failed)
-        | TtsSynthesisError::Audio(_)
+        TtsSynthesisError::Runtime(TtsRuntimeError::ModelMissing) => (
+            JobErrorCode::CapabilityUnavailable,
+            false,
+            SPEECH_MODEL_REQUIRED_KOKORO,
+        ),
+        TtsSynthesisError::Runtime(TtsRuntimeError::VoiceMissing) => (
+            JobErrorCode::CapabilityUnavailable,
+            false,
+            SPEECH_VOICE_MISSING,
+        ),
+        TtsSynthesisError::Runtime(TtsRuntimeError::EspeakMissing) => (
+            JobErrorCode::CapabilityUnavailable,
+            false,
+            SPEECH_ESPEAK_MISSING,
+        ),
+        TtsSynthesisError::Secret(SecretStoreError::Missing) => {
+            (JobErrorCode::Authentication, false, SPEECH_SECRET_MISSING)
+        }
+        TtsSynthesisError::Runtime(TtsRuntimeError::Failed) => {
+            (JobErrorCode::WorkerFailed, false, "TTS synthesis failed")
+        }
+        TtsSynthesisError::Audio(_)
         | TtsSynthesisError::Secret(_)
         | TtsSynthesisError::Repository(_)
         | TtsSynthesisError::Jobs(_) => (

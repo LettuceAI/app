@@ -482,6 +482,12 @@ pub enum TtsRuntimeError {
     Rejected,
     #[error("TTS runtime failed")]
     Failed,
+    #[error("the local speech model is not installed")]
+    ModelMissing,
+    #[error("the local speech voice is not installed")]
+    VoiceMissing,
+    #[error("the eSpeak NG runtime is not installed")]
+    EspeakMissing,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]

@@ -304,26 +304,7 @@ pub fn remove_companion_emotion<J: JobStore + ?Sized>(
     Ok(lock.remove()?)
 }
 
-/// The classifier of the recorded install. `None` when Thymos is not
-/// installed or cannot be used (a damaged install, a failed verification or
-/// no ONNX Runtime), which is logged; companion turns then take the neutral
-/// update.
-#[must_use]
-pub fn load_companion_emotion(
-    root: &Path,
-    runtime_link: &OnnxRuntimeLink,
-) -> Option<CompanionEmotionService> {
-    match try_load_companion_emotion(root, runtime_link) {
-        Ok(service) => service,
-        Err(error) => {
-            tracing::warn!(%error, "companion emotion classifier unavailable; using neutral updates");
-            None
-        }
-    }
-}
-
-/// [`load_companion_emotion`] with the reason a recorded install cannot be
-/// used, for status reporting.
+/// Loads the recorded classifier or reports why it cannot be used.
 pub fn try_load_companion_emotion(
     root: &Path,
     runtime_link: &OnnxRuntimeLink,
@@ -596,7 +577,6 @@ mod tests {
             CompanionEmotionInstallStatus::NotInstalled
         );
         assert!(!verified.model_path.exists());
-        assert!(load_companion_emotion(&root, &OnnxRuntimeLink::Linked).is_none());
         std::fs::remove_dir_all(root).ok();
     }
 
@@ -655,10 +635,8 @@ mod tests {
             try_load_companion_emotion(&root, &OnnxRuntimeLink::Linked),
             Err(CompanionEmotionServiceError::Artifacts(_))
         ));
-        assert!(load_companion_emotion(&root, &OnnxRuntimeLink::Linked).is_none());
         std::fs::write(root.join("installed.json"), b"{broken").expect("corrupt");
         assert!(try_load_companion_emotion(&root, &OnnxRuntimeLink::Linked).is_err());
-        assert!(load_companion_emotion(&root, &OnnxRuntimeLink::Linked).is_none());
         std::fs::remove_dir_all(root).ok();
     }
 

@@ -223,10 +223,12 @@ fn map_voice_error(error: KokoroVoiceBlendCoordinatorError) -> TtsRuntimeError {
         | KokoroVoiceBlendCoordinatorError::Voice(
             KokoroVoiceError::InvalidBlend | KokoroVoiceError::InvalidVoiceData,
         ) => TtsRuntimeError::Rejected,
-        KokoroVoiceBlendCoordinatorError::Install(KokoroInstallError::Platform(_))
-        | KokoroVoiceBlendCoordinatorError::Voice(KokoroVoiceError::MissingVoice)
+        KokoroVoiceBlendCoordinatorError::Voice(KokoroVoiceError::MissingVoice)
         | KokoroVoiceBlendCoordinatorError::MissingDescriptor
-        | KokoroVoiceBlendCoordinatorError::MissingAssets => TtsRuntimeError::Unavailable,
+        | KokoroVoiceBlendCoordinatorError::MissingAssets => TtsRuntimeError::VoiceMissing,
+        KokoroVoiceBlendCoordinatorError::Install(KokoroInstallError::Platform(_)) => {
+            TtsRuntimeError::Unavailable
+        }
     }
 }
 
@@ -248,11 +250,13 @@ fn map_phonemization_error(error: KokoroPhonemizationCoordinatorError) -> TtsRun
             | KokoroPhonemizationError::LimitExceeded
             | KokoroPhonemizationError::InvalidLexicon,
         ) => TtsRuntimeError::Rejected,
-        KokoroPhonemizationCoordinatorError::MissingAssets
-        | KokoroPhonemizationCoordinatorError::Install(KokoroInstallError::Platform(_))
-        | KokoroPhonemizationCoordinatorError::Phonemization(KokoroPhonemizationError::Process(
+        KokoroPhonemizationCoordinatorError::MissingAssets => TtsRuntimeError::ModelMissing,
+        KokoroPhonemizationCoordinatorError::Phonemization(KokoroPhonemizationError::Process(
             EspeakNgError::Unavailable,
-        )) => TtsRuntimeError::Unavailable,
+        )) => TtsRuntimeError::EspeakMissing,
+        KokoroPhonemizationCoordinatorError::Install(KokoroInstallError::Platform(_)) => {
+            TtsRuntimeError::Unavailable
+        }
         KokoroPhonemizationCoordinatorError::Install(_)
         | KokoroPhonemizationCoordinatorError::Phonemization(_) => TtsRuntimeError::Failed,
     }
@@ -266,8 +270,8 @@ fn map_native_error(error: KokoroNativeSynthesisError) -> TtsRuntimeError {
         KokoroNativeSynthesisError::Runtime(KokoroRuntimeError::InvalidInput) => {
             TtsRuntimeError::Rejected
         }
-        KokoroNativeSynthesisError::MissingAssets
-        | KokoroNativeSynthesisError::Install(KokoroInstallError::Platform(_))
+        KokoroNativeSynthesisError::MissingAssets => TtsRuntimeError::ModelMissing,
+        KokoroNativeSynthesisError::Install(KokoroInstallError::Platform(_))
         | KokoroNativeSynthesisError::Runtime(KokoroRuntimeError::Unavailable) => {
             TtsRuntimeError::Unavailable
         }
@@ -413,7 +417,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn missing_voice_retries_before_phonemization() {
+    async fn a_missing_voice_is_typed_before_phonemization() {
         let root = std::env::temp_dir().join(format!(
             "kokoro-tts-runtime-{}",
             lettuce_types::OperationId::new()
@@ -430,7 +434,7 @@ mod tests {
             runtime
                 .synthesize(&request(), None, &CancellationToken::new())
                 .await,
-            Err(TtsRuntimeError::Unavailable)
+            Err(TtsRuntimeError::VoiceMissing)
         ));
         assert_eq!(phonemizer.0.load(Ordering::Relaxed), 0);
         std::fs::remove_dir_all(root).expect("cleanup");
