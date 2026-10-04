@@ -227,9 +227,26 @@ pub async fn admit_install(
     context: &ApiContext,
     work: InstallWork,
 ) -> Result<dto::JobAccepted, ApiError> {
+    admit_install_with_detail(context, work, None).await
+}
+
+/// Admits an install and stores `detail` with its job before the runner can
+/// reach it, for the download center to show what it is.
+pub(crate) async fn admit_install_with_detail(
+    context: &ApiContext,
+    work: InstallWork,
+    detail: Option<serde_json::Value>,
+) -> Result<dto::JobAccepted, ApiError> {
     let job_id = context
         .blocking(move |context| {
             let (job, work) = admit(context, work)?;
+            if let Some(detail) = &detail {
+                context
+                    .backend()
+                    .database()
+                    .record_local_model_job(job.id, detail)
+                    .map_err(internal)?;
+            }
             if !job.state.is_terminal() {
                 context.jobs().put_install(job.id, work);
             }
@@ -985,9 +1002,32 @@ async fn finish_artifact(
         InstallFinish::HuggingFaceBundle {
             paths: layout,
             bundle_id,
-        } => crate::finish_hf_bundle(database, &layout, &bundle_id, plan, now)
-            .await
-            .map(|_| ()),
+        } => {
+            let manifest =
+                crate::finish_hf_bundle(database, &layout, &bundle_id, plan, now).await?;
+            let state = match manifest.registration_state {
+                lettuce_image_generation::BundleRegistrationState::Downloading => {
+                    dto::ImageBundleState::Downloading
+                }
+                lettuce_image_generation::BundleRegistrationState::Registered => {
+                    dto::ImageBundleState::Registered
+                }
+                lettuce_image_generation::BundleRegistrationState::SetupFailed => {
+                    dto::ImageBundleState::SetupFailed
+                }
+            };
+            super::local::record_result(
+                context,
+                job_id,
+                &super::local::LocalModelJobResult::ImageBundle {
+                    bundle_id,
+                    state,
+                    model_id: manifest.model_id,
+                    setup_error: manifest.setup_error,
+                },
+            )
+            .map_err(|error| error.message)
+        }
         InstallFinish::CivitaiLora {
             lora_root,
             download,

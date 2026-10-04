@@ -75,6 +75,10 @@ pub(crate) enum LocalModelJobDetail {
         to: String,
         move_existing: bool,
     },
+    ImageBundle {
+        bundle_id: String,
+        display_name: String,
+    },
 }
 
 /// What a local model job produced.
@@ -93,6 +97,23 @@ pub(crate) enum LocalModelJobResult {
         moved_entries: u32,
         rewired_models: u32,
     },
+    ImageBundle {
+        bundle_id: String,
+        state: dto::ImageBundleState,
+        model_id: Option<String>,
+        setup_error: Option<String>,
+    },
+}
+
+/// The detail a Hugging Face image bundle install is stored with.
+pub(crate) fn image_bundle_detail(
+    bundle_id: &str,
+    display_name: &str,
+) -> Result<serde_json::Value, ApiError> {
+    encode(&LocalModelJobDetail::ImageBundle {
+        bundle_id: bundle_id.to_owned(),
+        display_name: display_name.to_owned(),
+    })
 }
 
 pub(super) fn internal(error: impl std::fmt::Display) -> ApiError {
@@ -217,6 +238,17 @@ pub(crate) fn local_job_view(context: &ApiContext, job: &JobSnapshot) -> LocalJo
                 moved_entries,
                 rewired_models,
             },
+            LocalModelJobResult::ImageBundle {
+                bundle_id,
+                state,
+                model_id,
+                setup_error,
+            } => dto::JobResultDto::ImageBundle {
+                bundle_id,
+                state,
+                model_id,
+                setup_error,
+            },
         });
     let detail = match detail {
         LocalModelJobDetail::ModelDownload {
@@ -239,6 +271,13 @@ pub(crate) fn local_job_view(context: &ApiContext, job: &JobSnapshot) -> LocalJo
         LocalModelJobDetail::ModelsFolderMove { from, to, .. } => {
             dto::JobSubjectDetail::ModelsFolderMove { from, to }
         }
+        LocalModelJobDetail::ImageBundle {
+            bundle_id,
+            display_name,
+        } => dto::JobSubjectDetail::ImageBundle {
+            bundle_id,
+            display_name,
+        },
     };
     LocalJobView {
         detail: Some(detail),
@@ -1481,11 +1520,16 @@ async fn move_folder(context: &ApiContext, started: &Arc<StartedJob>) -> Settlem
                 &move_id,
                 &|| cancellation.is_cancelled(),
             ) {
-                Ok(change) => Settlement::Succeeded(Some(LocalModelJobResult::ModelsFolderMoved {
-                    path: change.path.to_string_lossy().into_owned(),
-                    moved_entries: change.moved_entries,
-                    rewired_models: change.rewired_models,
-                })),
+                Ok(change) => {
+                    if let Err(error) = context.backend().rebind_local_diffusion(&app_folder) {
+                        tracing::error!(%error, "the image engine could not follow the moved models folder");
+                    }
+                    Settlement::Succeeded(Some(LocalModelJobResult::ModelsFolderMoved {
+                        path: change.path.to_string_lossy().into_owned(),
+                        moved_entries: change.moved_entries,
+                        rewired_models: change.rewired_models,
+                    }))
+                }
                 Err(error) => folder_move_failure(&error),
             },
         )

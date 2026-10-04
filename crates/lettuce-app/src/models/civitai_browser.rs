@@ -17,7 +17,8 @@ use lettuce_network::{
     JsonStaticHeader,
 };
 use lettuce_settings::{
-    SecretPurpose, SecretRecord, SecretRef, SecretState, SecretStore, SecretStoreError, SecretValue,
+    PureMode, SecretPurpose, SecretRecord, SecretRef, SecretState, SecretStore, SecretStoreError,
+    SecretValue,
 };
 use lettuce_types::TimestampMillis;
 
@@ -67,6 +68,16 @@ enum TokenCheck {
 pub struct CivitaiSearchPage {
     pub items: Vec<CivitaiLoraSummary>,
     pub next_cursor: Option<String>,
+}
+
+/// What a model lookup says when CivitAI has no such model.
+pub const CIVITAI_MODEL_NOT_FOUND: &str = "This CivitAI model no longer exists.";
+
+/// Whether CivitAI results hide NSFW at a Pure mode level: every level
+/// except off does.
+#[must_use]
+pub const fn civitai_hides_nsfw(level: PureMode) -> bool {
+    !matches!(level, PureMode::Off)
 }
 
 #[derive(Debug, Clone)]
@@ -180,8 +191,9 @@ impl CivitaiBrowser {
         &self,
         secrets: &S,
         search: &CivitaiSearch,
-        pure_active: bool,
+        pure: PureMode,
     ) -> Result<CivitaiSearchPage, String> {
+        let pure_active = civitai_hides_nsfw(pure);
         let token = Self::saved_token(secrets).await?;
         let target = search.target();
         let mut cursor = search.first_cursor();
@@ -215,14 +227,15 @@ impl CivitaiBrowser {
         &self,
         secrets: &S,
         model_id: u64,
-        pure_active: bool,
+        pure: PureMode,
     ) -> Result<CivitaiModelDetail, String> {
+        let pure_active = civitai_hides_nsfw(pure);
         let token = Self::saved_token(secrets).await?;
         let response = self
             .get(&format!("/api/v1/models/{model_id}"), &[], token.as_ref())
             .await?;
         if response.status == 404 {
-            return Err("This CivitAI model no longer exists.".to_owned());
+            return Err(CIVITAI_MODEL_NOT_FOUND.to_owned());
         }
         if !(200..300).contains(&response.status) {
             return Err(Self::failure(&response, token.is_some()));
@@ -484,7 +497,7 @@ mod tests {
                     limit: Some(5),
                     ..CivitaiSearch::default()
                 },
-                true,
+                PureMode::Standard,
             )
             .await
             .expect("search");
@@ -494,7 +507,7 @@ mod tests {
         );
         assert_eq!(found.next_cursor, None);
         assert_eq!(
-            browser.model(&secrets, 9, false).await,
+            browser.model(&secrets, 9, PureMode::Off).await,
             Err("This CivitAI model no longer exists.".to_owned())
         );
         assert_eq!(
@@ -523,6 +536,35 @@ mod tests {
             CivitaiBrowser::saved_token(&secrets).await,
             Ok(None)
         ));
+    }
+
+    #[tokio::test]
+    async fn every_pure_level_except_off_hides_nsfw() {
+        let levels = [
+            (PureMode::Off, "nsfw=true"),
+            (PureMode::Low, "nsfw=false"),
+            (PureMode::Standard, "nsfw=false"),
+            (PureMode::Strict, "nsfw=false"),
+        ];
+        let (endpoint, requests) =
+            server(levels.iter().map(|_| (200, page(1, None))).collect()).await;
+        let browser =
+            CivitaiBrowser::with_endpoint(BulkHttpClient::new().expect("client"), endpoint);
+        let secrets = InMemorySecretStore::default();
+        for (level, _) in levels {
+            browser
+                .search(&secrets, &CivitaiSearch::default(), level)
+                .await
+                .expect("search");
+        }
+        let requests = requests.await.expect("requests");
+        for ((level, expected), request) in levels.iter().zip(&requests) {
+            assert!(
+                request.contains(expected),
+                "{level:?} sent {}",
+                request.lines().next().unwrap_or_default()
+            );
+        }
     }
 
     #[test]

@@ -4,11 +4,12 @@ use lettuce_image_generation::sd_runtime::lora_library::{
     LoraLibraryRepository, LoraLibraryRepositoryError, hydrate_lora_keywords,
 };
 use lettuce_image_generation::{
-    ImageGenerationRecord, ImageGenerationRepository, ImageGenerationRepositoryError,
-    ImageGenerationRequest, ImageGenerationResult, ImageGenerationState, ImageInput, ImageMedia,
-    ImageMediaError, ImageProfileError, ImageProviderError, ImageProviderPort,
-    ImageRequestValidationError, ProviderImageRequest, ResolvedImageProfile, compose_image_prompt,
-    lora_keywords, merge_loras, resolve_image_profile,
+    ImageError, ImageFailureKind, ImageGenerationRecord, ImageGenerationRepository,
+    ImageGenerationRepositoryError, ImageGenerationRequest, ImageGenerationResult,
+    ImageGenerationState, ImageInput, ImageMedia, ImageMediaError, ImageProfileError,
+    ImageProviderError, ImageProviderPort, ImageRequestValidationError, ProgressHandle,
+    ProviderImageRequest, ResolvedImageProfile, compose_image_prompt, lora_keywords, merge_loras,
+    resolve_image_profile,
 };
 use lettuce_jobs::{
     CancellationPolicy, CancellationReason, Claim, IdempotencyKey, JobError, JobErrorCode, JobKind,
@@ -93,6 +94,29 @@ impl<'a, R: ?Sized, J: ?Sized> ImageGenerationCoordinator<'a, R, J> {
 }
 
 const INTERRUPTED_MESSAGE: &str = "Image generation was interrupted.";
+
+impl ImageGenerationError {
+    /// The category a failed job carries.
+    #[must_use]
+    pub fn failure_kind(&self) -> ImageFailureKind {
+        match self {
+            Self::Invalid(_) => ImageFailureKind::InvalidRequest,
+            Self::ModelMissing | Self::Models(_) => ImageFailureKind::ModelMissing,
+            Self::Profile(_) => ImageFailureKind::InvalidRequest,
+            Self::Media(ImageMediaError::Output(_)) => ImageFailureKind::OutputRejected,
+            Self::Media(_) => ImageFailureKind::InvalidRequest,
+            Self::Provider(ImageProviderError::Engine(error)) => error.kind,
+            Self::Provider(ImageProviderError::Failed(_)) => ImageFailureKind::ProviderFailed,
+            Self::Provider(ImageProviderError::Unsupported(_)) => ImageFailureKind::LocalUnsupported,
+            Self::Provider(ImageProviderError::Cancelled) => ImageFailureKind::Cancelled,
+            Self::Usage
+            | Self::LoraLibrary(_)
+            | Self::Repository(_)
+            | Self::Jobs(_) => ImageFailureKind::StorageFailed,
+            Self::InvalidWork => ImageFailureKind::Other,
+        }
+    }
+}
 
 /// The old playground's seed for local runs without one (0 to 2^31 - 1), drawn
 /// from the request id so a replayed admission asks for the same seed.
@@ -224,6 +248,7 @@ impl<
         models: &M,
         media: &D,
         provider: &P,
+        progress: Option<ProgressHandle>,
         cancellation_reason: CancellationReason,
         now: TimestampMillis,
     ) -> Result<ImageGenerationRunResult, ImageGenerationError>
@@ -240,9 +265,13 @@ impl<
             return Err(ImageGenerationError::InvalidWork);
         }
         if work.record.state != ImageGenerationState::Pending {
-            return self.finish(work, cancellation_reason, now);
+            return self.finish(work, cancellation_reason, now, None);
         }
-        let state = match self.execute(&work, models, media, provider, now).await {
+        let mut failure = None;
+        let state = match self
+            .execute(&work, models, media, provider, progress, now)
+            .await
+        {
             Ok(result) => ImageGenerationState::Succeeded { result },
             Err(error)
                 if matches!(
@@ -260,6 +289,7 @@ impl<
                     error = %error,
                     "image generation failed"
                 );
+                failure = Some(error.failure_kind());
                 ImageGenerationState::Failed {
                     message: error.to_string(),
                     completed_at: now.max(work.record.request.created_at),
@@ -286,6 +316,7 @@ impl<
             ImageGenerationClaimedWork { record, ..work },
             cancellation_reason,
             now,
+            failure,
         )
     }
 
@@ -295,6 +326,7 @@ impl<
         models: &M,
         media: &D,
         provider: &P,
+        progress: Option<ProgressHandle>,
         now: TimestampMillis,
     ) -> Result<ImageGenerationResult, ImageGenerationError>
     where
@@ -357,6 +389,7 @@ impl<
                     count: request.count,
                     text_output: profile.text_output,
                     cancellation,
+                    progress,
                 })
                 .await
                 .map_err(ImageGenerationError::Provider),
@@ -404,9 +437,11 @@ impl<
         if images.is_empty() {
             return Err(match last_rejection {
                 Some(error) => error.into(),
-                None => {
-                    ImageProviderError::Failed("No image URL or data in response.".into()).into()
-                }
+                None => ImageProviderError::Engine(ImageError::new(
+                    ImageFailureKind::NoImageReturned,
+                    "No image URL or data in response.",
+                ))
+                .into(),
             });
         }
         Ok(ImageGenerationResult {
@@ -474,6 +509,7 @@ impl<
         work: ImageGenerationClaimedWork,
         reason: CancellationReason,
         now: TimestampMillis,
+        failure: Option<ImageFailureKind>,
     ) -> Result<ImageGenerationRunResult, ImageGenerationError> {
         let current = self
             .jobs
@@ -502,9 +538,9 @@ impl<
                     error: JobError::new(
                         JobErrorCode::WorkerFailed,
                         false,
-                        "image generation failed",
+                        failure.unwrap_or(ImageFailureKind::Other).label(),
                     )
-                    .expect("constant image error label is valid"),
+                    .expect("image failure labels are valid"),
                     at,
                 })?;
                 Ok(ImageGenerationRunResult::Failed {
@@ -843,6 +879,7 @@ mod tests {
                 &fixture.database,
                 &fixture.media,
                 provider,
+                None,
                 CancellationReason::User,
                 TimestampMillis::new(2_000),
             )

@@ -91,6 +91,8 @@ pub enum DesignReferenceError {
     Cancelled,
     #[error("design reference replay cleanup failed")]
     ReplayCleanup,
+    #[error("design reference result could not be stored")]
+    ResultStorage,
 }
 
 impl From<crate::jobs::one_shot_job::OneShotJobError> for DesignReferenceError {
@@ -133,15 +135,33 @@ impl crate::jobs::one_shot_job::OneShotFailure for DesignReferenceError {
                 false,
                 "design-reference-inference-failed",
             ),
+            Self::ResultStorage => (
+                JobErrorCode::StorageFailure,
+                true,
+                crate::jobs::failure_labels::RESULT_STORAGE_FAILED,
+            ),
             Self::Jobs(_) | Self::Storage | Self::Model(ImageFeatureModelError::Storage) => (
                 JobErrorCode::StorageFailure,
                 true,
                 "design-reference-storage-failed",
             ),
+            Self::Model(
+                ImageFeatureModelError::SceneWriter(_)
+                | ImageFeatureModelError::NoModel
+                | ImageFeatureModelError::ModelNotFound,
+            )
+            | Self::InvalidModel(_) => (
+                JobErrorCode::InvalidInput,
+                false,
+                crate::jobs::failure_labels::DESIGN_REFERENCE_NO_MODEL,
+            ),
+            Self::NoImages => (
+                JobErrorCode::InvalidInput,
+                false,
+                crate::jobs::failure_labels::DESIGN_REFERENCE_NO_IMAGES,
+            ),
             Self::Model(_)
-            | Self::NoImages
             | Self::NoContent
-            | Self::InvalidModel(_)
             | Self::MissingPrompt
             | Self::InvalidPrompt
             | Self::Cancelled => (
@@ -183,6 +203,9 @@ pub struct DesignReferenceWriter<'a, R: ?Sized, I: ?Sized> {
     repository: &'a R,
     inference: &'a I,
     cancellations: Option<&'a lettuce_inference::InferenceRuntime>,
+    cancellation: Option<&'a lettuce_jobs::handle::CancellationToken>,
+    claim: Option<&'a lettuce_jobs::ClaimRef>,
+    recorder: Option<&'a dyn crate::ResultRecorder>,
 }
 
 impl<'a, R: ?Sized, I: ?Sized> DesignReferenceWriter<'a, R, I> {
@@ -192,7 +215,32 @@ impl<'a, R: ?Sized, I: ?Sized> DesignReferenceWriter<'a, R, I> {
             repository,
             inference,
             cancellations: None,
+            cancellation: None,
+            claim: None,
+            recorder: None,
         }
+    }
+
+    pub(crate) fn with_claim(mut self, claim: &'a lettuce_jobs::ClaimRef) -> Self {
+        self.claim = Some(claim);
+        self
+    }
+
+    /// Stops the run with `token` when its runner cancels the job.
+    #[must_use]
+    pub const fn with_cancellation(
+        mut self,
+        token: &'a lettuce_jobs::handle::CancellationToken,
+    ) -> Self {
+        self.cancellation = Some(token);
+        self
+    }
+
+    /// Hands each finished run's text to `recorder` before the job settles.
+    #[must_use]
+    pub const fn with_result_recorder(mut self, recorder: &'a dyn crate::ResultRecorder) -> Self {
+        self.recorder = Some(recorder);
+        self
     }
 
     /// Registers each run's cancellation token in `runtime`, so a stop
@@ -238,15 +286,23 @@ where
                 request_id: request.request_id,
             },
             crate::jobs::one_shot_job::OneShotLease {
-                claim: None,
+                claim: self.claim,
                 worker_id,
                 now,
                 lease_for,
                 allowed,
                 cancellations: self.cancellations,
-                cancellation: None,
+                cancellation: self.cancellation,
             },
-            |handle| async move { self.run(settings, writer, request, &handle, now).await },
+            |handle| async move {
+                let text = self.run(settings, writer, request, &handle, now).await?;
+                if let Some(recorder) = self.recorder
+                    && !recorder.record(handle.id(), &text)
+                {
+                    return Err(DesignReferenceError::ResultStorage);
+                }
+                Ok(text)
+            },
         )
         .await?;
         Ok(DesignReferenceReply { text, job })

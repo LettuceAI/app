@@ -81,6 +81,52 @@ export const commands = {
 	localModelsDirGet: () => typedError<LocalModelsDir, ApiError>(__TAURI_INVOKE("local_models_dir_get")),
 	localModelsDirSet: (request: LocalModelsDirSetRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("local_models_dir_set", { request })),
 	localFileRunnability: (request: LocalFileRunnabilityRequest) => typedError<LocalFileRunnability, ApiError>(__TAURI_INVOKE("local_file_runnability", { request })),
+	imageGenerate: (request: ImageGenerateRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("image_generate", { request })),
+	imageUpscale: (request: ImageUpscaleRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("image_upscale", { request })),
+	imageCapabilities: (request: ImageCapabilitiesRequest) => typedError<ImageCapabilities, ApiError>(__TAURI_INVOKE("image_capabilities", { request })),
+	playgroundHistoryList: (request: PlaygroundHistoryListRequest) => typedError<PlaygroundHistoryPage, ApiError>(__TAURI_INVOKE("playground_history_list", { request })),
+	playgroundHistoryDelete: (request: PlaygroundHistoryDeleteRequest) => typedError<PlaygroundHistoryDeleted, ApiError>(__TAURI_INVOKE("playground_history_delete", { request })),
+	sdCatalog: () => typedError<SdCatalog, ApiError>(__TAURI_INVOKE("sd_catalog")),
+	sdRuntimeReleases: () => typedError<SdRuntimeReleases, ApiError>(__TAURI_INVOKE("sd_runtime_releases")),
+	sdRuntimeInstall: (request: SdRuntimeInstallRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("sd_runtime_install", { request })),
+	sdRuntimeInventory: () => typedError<SdRuntimeInventory, ApiError>(__TAURI_INVOKE("sd_runtime_inventory")),
+	sdRuntimeSwitch: (request: SdRuntimeRef) => typedError<null, ApiError>(__TAURI_INVOKE("sd_runtime_switch", { request })),
+	sdRuntimeDelete: (request: SdRuntimeRef) => typedError<null, ApiError>(__TAURI_INVOKE("sd_runtime_delete", { request })),
+	sdModelInstall: (request: SdModelInstallRequest) => typedError<SdModelInstallStarted, ApiError>(__TAURI_INVOKE("sd_model_install", { request })),
+	sdModelsInstalled: () => typedError<SdInstalledModels, ApiError>(__TAURI_INVOKE("sd_models_installed")),
+	sdModelUninstall: (request: SdModelUninstallRequest) => typedError<SdUninstallOutcome, ApiError>(__TAURI_INVOKE("sd_model_uninstall", { request })),
+	sdModelRepair: (request: SdModelRepairRequest) => typedError<SdModelRepaired, ApiError>(__TAURI_INVOKE("sd_model_repair", { request })),
+	sdRunnability: (request: SdRunnabilityRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("sd_runnability", { request })),
+	sdBundleRunnability: (request: SdBundleRunnabilityRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("sd_bundle_runnability", { request })),
+	sdComputePolicyGet: (request: SdRuntimeRef) => typedError<SdComputePolicyInfo, ApiError>(__TAURI_INVOKE("sd_compute_policy_get", { request })),
+	sdComputePolicySave: (request: SdComputePolicySaveRequest) => typedError<SdComputePolicyInfo, ApiError>(__TAURI_INVOKE("sd_compute_policy_save", { request })),
+	sdDetectModelFile: (request: SdDetectModelFileRequest) => typedError<SdDetectedModelFile, ApiError>(__TAURI_INVOKE("sd_detect_model_file", { request })),
+	sdDiskUsage: () => typedError<SdDiskUsage, ApiError>(__TAURI_INVOKE("sd_disk_usage")),
+	sdComponentLibrary: () => typedError<SdComponentLibrary, ApiError>(__TAURI_INVOKE("sd_component_library")),
+	sdUpscalersList: () => typedError<SdUpscalerInventory, ApiError>(__TAURI_INVOKE("sd_upscalers_list")),
+	sdUpscalersInstall: () => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("sd_upscalers_install")),
+	sdUpscalersRemove: (request: SdUpscalerRemoveRequest) => typedError<SdUpscalerInventory, ApiError>(__TAURI_INVOKE("sd_upscalers_remove", { request })),
+	lorasList: (request: LorasListRequest) => typedError<LoraList, ApiError>(__TAURI_INVOKE("loras_list", { request })),
+	lorasImport: (request: LorasImportRequest) => typedError<InstalledLora, ApiError>(__TAURI_INVOKE("loras_import", { request })),
+	lorasDelete: (request: LorasDeleteRequest) => typedError<LoraDeleted, ApiError>(__TAURI_INVOKE("loras_delete", { request })),
+	lorasUpdateKeywords: (request: LorasUpdateKeywordsRequest) => typedError<LoraKeywordDiscovery, ApiError>(__TAURI_INVOKE("loras_update_keywords", { request })),
+	loraKeywordsDiscover: (request: LoraKeywordsDiscoverRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("lora_keywords_discover", { request })),
+	hfImageBundleProfiles: () => typedError<ImageBundleProfiles, ApiError>(__TAURI_INVOKE("hf_image_bundle_profiles")),
+	hfImageBundleSearch: (request: HfImageBundleSearchRequest) => typedError<HfImageBundleSearchResults, ApiError>(__TAURI_INVOKE("hf_image_bundle_search", { request })),
+	hfImageBundleFiles: (request: HfImageBundleFilesRequest) => typedError<HfImageBundleFiles, ApiError>(__TAURI_INVOKE("hf_image_bundle_files", { request })),
+	hfImageBundleInstall: (request: HfImageBundleInstallRequest) => typedError<ImageBundleAccepted, ApiError>(__TAURI_INVOKE("hf_image_bundle_install", { request })),
+	hfImageBundleRetry: (request: HfImageBundleRetryRequest) => typedError<ImageBundleRetried, ApiError>(__TAURI_INVOKE("hf_image_bundle_retry", { request })),
+	hfImageBundleRetryRegistration: (request: HfImageBundleRetryRequest) => typedError<ImageBundleRegistered, ApiError>(__TAURI_INVOKE("hf_image_bundle_retry_registration", { request })),
+	imageModelsDownloaded: () => typedError<DownloadedImageModels, ApiError>(__TAURI_INVOKE("image_models_downloaded")),
+	civitaiSearch: (request: CivitaiSearchRequest) => typedError<CivitaiSearchPage, ApiError>(__TAURI_INVOKE("civitai_search", { request })),
+	civitaiModel: (request: CivitaiModelRequest) => typedError<CivitaiModelDetail, ApiError>(__TAURI_INVOKE("civitai_model", { request })),
+	civitaiAuthStatus: () => typedError<CivitaiAuthStatus, ApiError>(__TAURI_INVOKE("civitai_auth_status")),
+	civitaiAuthSave: (request: CivitaiAuthSaveRequest) => typedError<CivitaiAuthStatus, ApiError>(__TAURI_INVOKE("civitai_auth_save", { request })),
+	civitaiAuthClear: () => typedError<null, ApiError>(__TAURI_INVOKE("civitai_auth_clear")),
+	civitaiLoraDownload: (request: CivitaiLoraDownloadRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("civitai_lora_download", { request })),
+	avatarPrompt: (request: AvatarPromptRequest) => typedError<AvatarPrompt, ApiError>(__TAURI_INVOKE("avatar_prompt", { request })),
+	avatarGradient: (request: AvatarGradientRequest) => typedError<AvatarGradient, ApiError>(__TAURI_INVOKE("avatar_gradient", { request })),
+	imageDesignReference: (request: ImageDesignReferenceRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("image_design_reference", { request })),
 	hfSearch: (request: HfSearchRequest) => typedError<HfSearchResults, ApiError>(__TAURI_INVOKE("hf_search", { request })),
 	hfModelFiles: (request: HfModelRequest) => typedError<HfModelInfo, ApiError>(__TAURI_INVOKE("hf_model_files", { request })),
 	hfReadme: (request: HfReadmeRequest) => typedError<HfReadme, ApiError>(__TAURI_INVOKE("hf_readme", { request })),
@@ -121,7 +167,7 @@ export type ApiError = {
  */
 export type ApiErrorCode = "not_found" | "conflict" | "invalid_input" | "unsupported" | "unavailable" | "cancelled" | "busy" | "internal" | "model_required" | "model_unavailable";
 
-export type ApiErrorDetails = { type: "invalid_field"; field: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "pending_memory_rewind"; conversation_id: string };
+export type ApiErrorDetails = { type: "invalid_field"; field: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "image"; failure: ImageFailureKind } | { type: "pending_memory_rewind"; conversation_id: string };
 
 /**
  *  Application-wide events the host broadcasts to every window.
@@ -183,6 +229,32 @@ export type AssetsIngestRequest = {
 	role: AssetIngestRole,
 };
 
+export type AvatarGradient = {
+	colors: GradientColor[],
+	gradient_css: string,
+	dominant_hue: number | null,
+	text_color: string,
+	text_secondary: string,
+};
+
+export type AvatarGradientRequest = {
+	asset_id: string,
+	force: boolean,
+};
+
+export type AvatarPrompt = {
+	prompt: string,
+};
+
+/**  What an avatar image prompt is for. */
+export type AvatarPromptKind = { type: "generation"; subject_name: string; subject_description: string; avatar_request: string } | { type: "edit"; subject_name: string; subject_description: string; current_avatar_prompt: string; edit_request: string };
+
+/**  The prompt an avatar generation or edit sends to `model_id`'s provider. */
+export type AvatarPromptRequest = {
+	model_id: string,
+	kind: AvatarPromptKind,
+};
+
 export type BackgroundChange = { type: "image"; asset_id: string } | { type: "hidden" } | { type: "reset" };
 
 /**  The selected branch and the message it currently ends at. */
@@ -217,7 +289,107 @@ export type ChatModeChange = { type: "set"; mode: GroupChatMode } | { type: "res
  */
 export type ChoiceChange = { type: "set"; id: string } | { type: "none" } | { type: "reset" };
 
+export type CivitaiAuthErrorKind = "missing_token" | 
+/**  CivitAI answered, but not in a way that proves the token works. */
+"unverified" | "invalid_or_expired";
+
+export type CivitaiAuthSaveRequest = {
+	token: string,
+};
+
+export type CivitaiAuthStatus = {
+	saved: boolean,
+	valid: boolean,
+	error_kind: CivitaiAuthErrorKind | null,
+};
+
+export type CivitaiFile = {
+	id: number,
+	name: string,
+	size_kb: number | null,
+	primary: boolean,
+	format: string | null,
+	fp: string | null,
+	sha256: string | null,
+};
+
+export type CivitaiImage = {
+	url: string,
+	nsfw_level: number,
+	width: number,
+	height: number,
+};
+
+/**
+ *  A LoRA file of a CivitAI model version to put into the library; its
+ *  trained words and base model are read from CivitAI again.
+ */
+export type CivitaiLoraDownloadRequest = {
+	model_id: number,
+	version_id: number,
+	file_id: number,
+};
+
+export type CivitaiLoraSummary = {
+	id: number,
+	name: string,
+	nsfw: boolean,
+	nsfw_level: number,
+	creator_username: string | null,
+	download_count: number,
+	thumbs_up_count: number,
+	preview_image: CivitaiImage | null,
+	base_models: string[],
+	latest_version_id: number | null,
+};
+
+export type CivitaiModelDetail = {
+	id: number,
+	name: string,
+	description: string | null,
+	nsfw: boolean,
+	nsfw_level: number,
+	creator_username: string | null,
+	download_count: number,
+	thumbs_up_count: number,
+	tags: string[],
+	versions: CivitaiVersion[],
+};
+
+export type CivitaiModelRequest = {
+	model_id: number,
+};
+
+export type CivitaiSearchPage = {
+	items: CivitaiLoraSummary[],
+	next_cursor: string | null,
+};
+
+export type CivitaiSearchRequest = {
+	query: string | null,
+	/**  `Highest Rated`, `Most Downloaded` or `Newest`. */
+	sort: string | null,
+	/**  `AllTime`, `Year`, `Month`, `Week` or `Day`. */
+	period: string | null,
+	base_models: string[],
+	cursor: string | null,
+	limit: number | null,
+};
+
+export type CivitaiVersion = {
+	id: number,
+	name: string,
+	base_model: string | null,
+	architecture: string | null,
+	published_at: string | null,
+	trained_words: string[],
+	images: CivitaiImage[],
+	files: CivitaiFile[],
+};
+
 export type CompanionEffectStatus = "processing" | "ready" | "failed" | "invalidated";
+
+export type ComponentSource = "image_components" | "llm_library" | "image_downloads";
 
 /**
  *  Adds a user message without a reply, for a director who then continues
@@ -516,6 +688,22 @@ export type ConversationsListRequest = {
 	limit: number | null,
 };
 
+/**  An image model file on disk below the image models folders. */
+export type DownloadedImageModel = {
+	model_id: string,
+	filename: string,
+	path: string,
+	size: number,
+	quantization: string,
+	is_mmproj: boolean,
+	architecture: string | null,
+	role: ImageComponentRole,
+};
+
+export type DownloadedImageModels = {
+	models: DownloadedImageModel[],
+};
+
 export type EmotionChange = {
 	warmth: number | null,
 	trust: number | null,
@@ -551,6 +739,15 @@ export type FilesInspectRequest = {
 
 export type FlagChange = { type: "set"; value: boolean } | { type: "reset" };
 
+export type GeneratedImage = {
+	asset: AssetRef,
+	mime_type: string,
+	width: number | null,
+	height: number | null,
+	/**  Text the provider returned with the image. */
+	text: string | null,
+};
+
 /**  A queued turn; its stream is the channel the request passed in. */
 export type GenerationAccepted = {
 	turn_id: string,
@@ -570,6 +767,13 @@ export type GenerationFailureCode = "invalid_conversation" | "missing_model" | "
 
 /**  Where a model and its KV cache would live. */
 export type GpuModeDto = "full" | "near_full" | "kv_spill" | "kv_heavy_spill" | "ram_model_vram_ctx" | "ram_model_ram_ctx" | "most_layers" | "half_layers" | "few_layers" | "cpu";
+
+export type GradientColor = {
+	r: number,
+	g: number,
+	b: number,
+	hex: string,
+};
 
 export type GroupChatMode = "conversation" | "roleplay";
 
@@ -709,6 +913,44 @@ export type HfFileRecommendation = {
 
 /**  How much memory the planner's choice leaves. */
 export type HfHeadroomStatus = "comfortable" | "ok" | "tight" | "risky";
+
+/**  The files of a repository that can fill the role, smallest first. */
+export type HfImageBundleFiles = {
+	assets: ImageBundleAsset[],
+};
+
+export type HfImageBundleFilesRequest = {
+	profile_id: string,
+	model_id: string,
+	role: ImageComponentRole,
+};
+
+export type HfImageBundleInstallRequest = {
+	profile_id: string,
+	display_name: string,
+	runtime_release: string,
+	runtime_asset: string,
+	assets: ImageBundleAsset[],
+};
+
+export type HfImageBundleRetryRequest = {
+	bundle_id: string,
+};
+
+/**  A search for repositories that can fill one role of an architecture. */
+export type HfImageBundleSearchRequest = {
+	profile_id: string,
+	role: ImageComponentRole,
+	query: string,
+	sort: HfSort | null,
+	author: string | null,
+	/**  `safetensors`, else GGUF. */
+	format: string | null,
+};
+
+export type HfImageBundleSearchResults = {
+	models: HfModelSummary[],
+};
 
 export type HfKvContextLimit = {
 	kv_type: string,
@@ -966,6 +1208,252 @@ export type HfTokenStatus = { type: "missing" } | { type: "valid"; username: str
 
 export type IdChange = { type: "set"; id: string } | { type: "reset" };
 
+/**  Where the image belongs for usage reporting. */
+export type ImageAttribution = {
+	conversation_id: string | null,
+	character_id: string | null,
+};
+
+export type ImageBundleAccepted = {
+	job_id: string,
+	bundle_id: string,
+};
+
+/**
+ *  A repository file checked against a role of an image architecture and
+ *  pinned to a revision.
+ */
+export type ImageBundleAsset = {
+	selection_id: string,
+	profile_id: string,
+	role: ImageComponentRole,
+	model_id: string,
+	revision: string,
+	relative_path: string,
+	format: string,
+	quantization: string | null,
+	size: number,
+	sha256: string,
+	architecture: string | null,
+	gated: boolean,
+};
+
+/**
+ *  The architecture a catalog profile describes for assembling a model from
+ *  separate files.
+ */
+export type ImageBundleProfile = {
+	id: string,
+	display_name: string,
+	family: string,
+	description: string,
+	minimum_runtime_build: number | null,
+	required_roles: ImageComponentRole[],
+	diffusion_markers: string[],
+	encoder_markers: string[],
+	encoder_parameter_billions: number | null,
+	recommended_repositories: RecommendedRepository[],
+	supports_text_to_image: boolean,
+	supports_image_edit: boolean,
+	max_reference_images: number | null,
+	requires_reference_image: boolean,
+	recommended_for_scenes: boolean,
+	default_width: number,
+	default_height: number,
+	default_steps: number,
+	default_cfg: number | null,
+};
+
+export type ImageBundleProfiles = {
+	profiles: ImageBundleProfile[],
+};
+
+export type ImageBundleRegistered = {
+	model_id: string,
+};
+
+/**  The job that fetches what is missing; `None` when every file is in. */
+export type ImageBundleRetried = {
+	job_id: string | null,
+};
+
+export type ImageBundleState = "downloading" | "registered" | "setup_failed";
+
+export type ImageCacheMode = "disabled" | "easycache" | "ucache" | "dbcache" | "taylorseer" | "cache_dit" | "spectrum";
+
+/**  What the playground form offers for a model or provider. */
+export type ImageCapabilities = {
+	provider_kind: string,
+	local: boolean,
+	sizes: string[],
+	default_size: string | null,
+	samplers: string[],
+	schedulers: string[],
+	negative_prompt: boolean,
+	quality: string[],
+	styles: string[],
+	max_count: number,
+};
+
+export type ImageCapabilitiesRequest = {
+	target: ImageCapabilityTarget,
+};
+
+export type ImageCapabilityTarget = { type: "model"; model_id: string } | { type: "provider"; provider_kind: string; model: string | null };
+
+/**  A file of an image model, by the part it plays. */
+export type ImageComponentRole = "diffusion_model" | "text_encoder" | "vae" | "vision_encoder";
+
+/**
+ *  Design notes written from a subject's avatar and reference images; the
+ *  job's `GeneratedText` result carries the text.
+ */
+export type ImageDesignReferenceRequest = {
+	subject_name: string | null,
+	subject_description: string | null,
+	current_description: string | null,
+	avatar: string | null,
+	references: string[],
+	client_operation_id: string,
+};
+
+export type ImageFailure = {
+	kind: ImageFailureKind,
+	message: string,
+};
+
+/**
+ *  Why an image operation failed, for the UI to act on. The engine's own
+ *  words travel next to it as a diagnostic.
+ */
+export type ImageFailureKind = "cancelled" | "local_unsupported" | "outdated_registration" | "model_file_missing" | "model_not_configured" | "runtime_not_installed" | "runtime_incompatible" | "upscaler_missing" | "invalid_request" | "server_start_failed" | "server_not_ready" | "engine_rejected" | "engine_failed" | "engine_timed_out" | "out_of_memory" | "lora_conflict" | "lora_in_use" | "lora_invalid" | "storage_failed" | "provider_failed" | "no_image_returned" | "output_rejected" | "model_missing" | "interrupted" | "other";
+
+/**
+ *  One image generation. `request_id` is the idempotency key: repeating the
+ *  request returns its job, another request under the same id is `Conflict`.
+ */
+export type ImageGenerateRequest = {
+	request_id: string,
+	model_id: string,
+	prompt: string,
+	settings?: ImageSettings,
+	input_images?: string[],
+	mask_image?: string | null,
+	loras?: ImageLora[],
+	size?: string | null,
+	quality?: string | null,
+	style?: string | null,
+	count?: number | null,
+	source: ImageRequestSource,
+	attribution?: ImageAttribution,
+	output: ImageOutput,
+};
+
+export type ImageLora = {
+	path: string,
+	multiplier: number | null,
+	is_high_noise?: boolean,
+	keywords?: string[],
+};
+
+export type ImageOffloadMode = "auto" | "gpu" | "mixed";
+
+/**  Whether the images stay or are previews that expire. */
+export type ImageOutput = { kind: "retained" } | { kind: "preview"; expires_at: number };
+
+export type ImagePhase = "starting" | "loading" | "sampling" | "queued" | "generating" | "retrying" | "cancelled";
+
+/**  What a running local generation reports, streamed with `job_watch`. */
+export type ImageProgress = {
+	phase: ImagePhase,
+	step: number | null,
+	total_steps: number | null,
+	queue_position: number | null,
+	preview_asset: AssetRef | null,
+};
+
+/**
+ *  Which part of the app asks for the image; chat scene images go through
+ *  the message scene commands.
+ */
+export type ImageRequestSource = "direct" | "playground" | "creation_helper";
+
+/**
+ *  The sampling settings a request lays over its model's own; a field left
+ *  out keeps the model's value. `base_loras` replaces the model's base LoRAs
+ *  (an empty list drops them).
+ */
+export type ImageSettings = {
+	steps?: number | null,
+	cfg_scale?: number | null,
+	sampler?: string | null,
+	scheduler?: string | null,
+	seed?: number | null,
+	negative_prompt?: string | null,
+	denoising_strength?: number | null,
+	image_cfg_scale?: number | null,
+	distilled_guidance?: number | null,
+	eta?: number | null,
+	flow_shift?: number | null,
+	size?: string | null,
+	vae_tiling_enabled?: boolean | null,
+	vae_tile_size_x?: number | null,
+	vae_tile_size_y?: number | null,
+	vae_tile_overlap?: number | null,
+	auto_resize_reference_images?: boolean | null,
+	increase_reference_index?: boolean | null,
+	hires_enabled?: boolean | null,
+	hires_upscaler?: string | null,
+	hires_scale?: number | null,
+	hires_width?: number | null,
+	hires_height?: number | null,
+	hires_steps?: number | null,
+	hires_denoising_strength?: number | null,
+	slg_scale?: number | null,
+	slg_layers?: string | null,
+	slg_layer_start?: number | null,
+	slg_layer_end?: number | null,
+	cache_mode?: ImageCacheMode | null,
+	cache_option?: string | null,
+	offload_mode?: ImageOffloadMode | null,
+	extra_prompt?: string | null,
+	prompt_writer_instructions?: string | null,
+	base_loras?: ImageLora[] | null,
+};
+
+/**
+ *  Where an upscale was asked from: an upscale of a playground entry's
+ *  image is recorded as a new entry that copies the model, prompt and seed
+ *  of `entry_id`.
+ */
+export type ImageUpscaleOrigin = { type: "playground"; entry_id: string };
+
+export type ImageUpscaleRequest = {
+	asset_id: string,
+	origin: ImageUpscaleOrigin | null,
+	client_operation_id: string,
+};
+
+/**  The upscaled image and the playground entry that records it. */
+export type ImageUpscaled = {
+	asset: AssetRef,
+	mime_type: string,
+	width: number | null,
+	height: number | null,
+	history_id: string | null,
+};
+
+export type InstalledLora = {
+	filename: string,
+	path: string,
+	bytes_on_disk: number,
+	keywords: string[],
+	keyword_source: LoraKeywordSource,
+	architecture: string | null,
+	architecture_source: LoraArchitectureSource,
+	compatibility: LoraCompatibility,
+};
+
 /**  Returned by every command that starts background work. */
 export type JobAccepted = {
 	job_id: string,
@@ -979,7 +1467,9 @@ export type JobCancelRequest = {
  *  The stream `job_watch` attaches. It starts with the job's current state;
  *  `Completed`, `Failed` and `Cancelled` are the last event.
  */
-export type JobEvent = { type: "progress"; job: JobView } | { type: "text_delta"; text: string | null; reasoning: string | null } | { type: "completed"; job: JobView } | { type: "failed"; job: JobView } | { type: "cancelled"; job: JobView };
+export type JobEvent = { type: "progress"; job: JobView } | { type: "text_delta"; text: string | null; reasoning: string | null } | 
+/**  A running local image generation's progress. */
+{ type: "image_progress"; progress: ImageProgress } | { type: "completed"; job: JobView } | { type: "failed"; job: JobView } | { type: "cancelled"; job: JobView };
 
 export type JobFailureCode = "cancelled" | "invalid_input" | "authentication" | "capability_unavailable" | "integrity_failure" | "resource_unavailable" | "lease_lost" | "worker_failed" | "storage_failure" | "safety_refusal" | "timed_out" | "unknown";
 
@@ -994,10 +1484,12 @@ export type JobFailureDto = {
 	hugging_face: HfFailure | null,
 	/**  Why an Ollama pull failed. */
 	ollama: OllamaFailure | null,
+	/**  Why an image job failed. */
+	image: ImageFailure | null,
 };
 
 /**  Why a chat feature job failed, where the user can act on it. */
-export type JobFailureReason = "help_me_reply_disabled" | "help_me_reply_no_history" | "help_me_reply_no_model" | "help_me_reply_no_reply" | "scene_prompt_disabled" | "scene_prompt_no_model" | "scene_prompt_no_reply" | "scene_image_disabled" | "scene_image_no_model" | "scene_image_no_image";
+export type JobFailureReason = "help_me_reply_disabled" | "help_me_reply_no_history" | "help_me_reply_no_model" | "help_me_reply_no_reply" | "scene_prompt_disabled" | "scene_prompt_no_model" | "scene_prompt_no_reply" | "scene_image_disabled" | "scene_image_no_model" | "scene_image_no_image" | "design_reference_no_model" | "design_reference_no_images";
 
 export type JobGetRequest = {
 	job_id: string,
@@ -1036,7 +1528,11 @@ export type JobProgressUnit = "bytes" | "items" | "permille";
  */
 export type JobResultDto = { type: "artifact_installed" } | { type: "asset"; asset: AssetRef } | { type: "generation_turn"; turn_id: string } | { type: "conversation"; conversation_id: string } | { type: "group"; group_id: string } | { type: "character"; character_id: string } | { type: "model_profile"; model_profile_id: string } | { type: "model_installed"; model_path: string; model_profile_id: string | null } | { type: "model_pulled"; model: string } | { type: "models_folder_moved"; path: string; moved_entries: number; rewired_models: number } | 
 /**  The text a help-me-reply or scene prompt job wrote, cleaned. */
-{ type: "generated_text"; text: string };
+{ type: "generated_text"; text: string } | 
+/**  The images an image generation job stored. */
+{ type: "image_generation"; images: GeneratedImage[]; rejected_outputs: number } | { type: "image_upscaled"; upscaled: ImageUpscaled } | { type: "lora_discovered"; discovered: LoraDiscovered } | { type: "runnability"; verdict: SdRunnability } | 
+/**  What an image bundle install ended in. */
+{ type: "image_bundle"; bundle_id: string; state: ImageBundleState; model_id: string | null; setup_error: string | null };
 
 export type JobStateDto = "queued" | "claimed" | "running" | "cancellation_requested" | "cleaning_up" | "succeeded" | "failed" | "cancelled" | "interrupted";
 
@@ -1045,7 +1541,7 @@ export type JobStateDto = "queued" | "claimed" | "running" | "cancellation_reque
  *  download installs, the model an Ollama server pulls, the folders a move
  *  goes between.
  */
-export type JobSubjectDetail = { type: "model_download"; repo: string; file: string; display_name: string } | { type: "model_pull"; provider_account_id: string; model: string } | { type: "models_folder_move"; from: string; to: string };
+export type JobSubjectDetail = { type: "model_download"; repo: string; file: string; display_name: string } | { type: "model_pull"; provider_account_id: string; model: string } | { type: "models_folder_move"; from: string; to: string } | { type: "image_bundle"; bundle_id: string; display_name: string };
 
 /**  What a job works on. */
 export type JobSubjectDto = {
@@ -1360,6 +1856,63 @@ export type LocalSidecarsDraft = {
 	dflash_model: FileSource | null,
 };
 
+export type LoraArchitectureSource = "none" | "metadata" | "civitai";
+
+export type LoraCompatibility = "compatible" | "incompatible" | "unknown";
+
+/**
+ *  The LoRA is removed even when a cache file cannot be; `left_behind` lists
+ *  those files.
+ */
+export type LoraDeleted = {
+	left_behind: string[],
+};
+
+/**  What a finished LoRA discovery job found. */
+export type LoraDiscovered = {
+	discovery: LoraKeywordDiscovery,
+};
+
+export type LoraKeywordDiscovery = {
+	keywords: string[],
+	source: LoraKeywordSource,
+	sha256: string | null,
+	architecture: string | null,
+	architecture_source: LoraArchitectureSource,
+	compatibility: LoraCompatibility,
+};
+
+export type LoraKeywordSource = "none" | "metadata" | "civitai" | "manual";
+
+export type LoraKeywordsDiscoverRequest = {
+	path: string,
+	profile_id: string | null,
+	client_operation_id: string,
+};
+
+export type LoraList = {
+	loras: InstalledLora[],
+};
+
+export type LorasDeleteRequest = {
+	path: string,
+};
+
+export type LorasImportRequest = {
+	source: FileSource,
+};
+
+/**  Every LoRA in the library, with its compatibility with `profile_id`. */
+export type LorasListRequest = {
+	profile_id: string | null,
+};
+
+export type LorasUpdateKeywordsRequest = {
+	path: string,
+	keywords: string[],
+	profile_id: string | null,
+};
+
 /**  An empty list turns the chat's lorebooks off. */
 export type LorebooksChange = { type: "set"; ids: string[] } | { type: "reset" };
 
@@ -1660,6 +2213,61 @@ export type ParticipationStats = {
 	total_messages: number,
 };
 
+export type PlaygroundEntry = {
+	id: string,
+	origin: PlaygroundOrigin,
+	job_id: string | null,
+	created_at: number,
+	provider_kind: string,
+	model_id: string | null,
+	model_name: string,
+	prompt: string,
+	negative_prompt: string | null,
+	seed: number | null,
+	/**  The generation parameters as JSON text. */
+	params_json: string,
+	status: PlaygroundStatus,
+	failure: ImageFailure | null,
+	/**  The entry whose image this one upscaled, when it is an upscale. */
+	upscale_of: string | null,
+	images: PlaygroundImage[],
+};
+
+export type PlaygroundHistoryDeleteRequest = {
+	id: string,
+	delete_images: boolean,
+};
+
+export type PlaygroundHistoryDeleted = {
+	/**  The images removed with the entry. */
+	deleted_images: number,
+};
+
+export type PlaygroundHistoryListRequest = {
+	limit: number | null,
+	/**  Lists entries created strictly before this time (unix ms). */
+	before: number | null,
+};
+
+export type PlaygroundHistoryPage = {
+	entries: PlaygroundEntry[],
+};
+
+export type PlaygroundImage = {
+	/**
+	 *  The stored image; `None` for an imported image whose file was not
+	 *  carried over.
+	 */
+	asset: AssetRef | null,
+	mime_type: string | null,
+	width: number | null,
+	height: number | null,
+};
+
+export type PlaygroundOrigin = "generated" | "imported";
+
+export type PlaygroundStatus = "pending" | "complete" | "failed" | "cancelled";
+
 /**
  *  How much of the chat the request carried and what it is estimated to
  *  cost.
@@ -1761,6 +2369,11 @@ export type PurgeNoticeView = {
 	recorded_at: number,
 };
 
+export type RecommendedRepository = {
+	role: ImageComponentRole,
+	repository: string,
+};
+
 export type RelationshipChange = {
 	closeness: number | null,
 	trust: number | null,
@@ -1776,6 +2389,8 @@ export type RelationshipChange = {
 export type RequiredModel = "embedding" | "emotion";
 
 export type RunnabilityLabel = "excellent" | "good" | "marginal" | "poor" | "unrunnable";
+
+export type RunnabilityStatus = "incompatible_runtime" | "not_installed" | "estimated_runnable" | "cpu_fallback" | "inconclusive" | "passed" | "failed";
 
 /**  Why a scene image failed, where the user can act on it. */
 export type SceneImageFailure = "media_unavailable" | "disabled" | "no_model" | "no_image" | "message_unavailable" | "interrupted" | "failed";
@@ -1794,6 +2409,329 @@ export type SceneImageView = {
 	prompt: string,
 	job_id: string | null,
 	failure: SceneImageFailure | null,
+};
+
+export type SdBundleRunnabilityRequest = {
+	profile_id: string,
+	runtime_release: string,
+	runtime_asset: string,
+	diffusion_bytes: number,
+	text_encoder_bytes: number,
+	vae_bytes: number,
+	vision_encoder_bytes: number,
+	client_operation_id: string,
+};
+
+/**  The model catalog with its install state and the engine builds on offer. */
+export type SdCatalog = {
+	runtime_supported: boolean,
+	unsupported_reason: string | null,
+	runtime_releases: SdRuntimeRelease[],
+	profiles: SdCatalogProfile[],
+};
+
+export type SdCatalogProfile = {
+	id: string,
+	display_name: string,
+	family: string,
+	description: string,
+	license: string,
+	source_url: string,
+	supports_text_to_image: boolean,
+	supports_image_edit: boolean,
+	supports_lora: boolean,
+	max_reference_images: number | null,
+	requires_reference_image: boolean,
+	recommended_for_scenes: boolean,
+	default_width: number,
+	default_height: number,
+	default_steps: number,
+	default_cfg: number | null,
+	minimum_runtime_build: number | null,
+	variants: SdCatalogVariant[],
+};
+
+export type SdCatalogVariant = {
+	id: string,
+	label: string,
+	description: string,
+	download_bytes: number,
+	installed: boolean,
+	recommended: boolean,
+	smaller: boolean,
+};
+
+export type SdComponentFile = {
+	path: string,
+	filename: string,
+	bytes: number,
+	role: ImageComponentRole | null,
+	source: ComponentSource,
+};
+
+export type SdComponentLibrary = {
+	files: SdComponentFile[],
+};
+
+export type SdComputePolicy = {
+	multi_gpu_enabled: boolean,
+	gpu_device_ids: number[],
+	single_gpu_device_id: number | null,
+	device_budgets_gib: SdDeviceBudget[],
+	/**  `layer` or `row`. */
+	split_mode: string,
+};
+
+export type SdComputePolicyInfo = {
+	runtime_release: string,
+	runtime_asset: string,
+	backend: string,
+	supports_row_split: boolean,
+	policy: SdComputePolicy,
+	devices: SdFitDevice[],
+};
+
+export type SdComputePolicySaveRequest = {
+	release: string,
+	asset: string,
+	policy: SdComputePolicy,
+};
+
+export type SdDetectModelFileRequest = {
+	source: FileSource,
+};
+
+export type SdDetectedModelFile = {
+	exists: boolean,
+	profile: ImageBundleProfile | null,
+};
+
+export type SdDeviceBudget = {
+	device_id: number,
+	gib: number | null,
+};
+
+export type SdDiskUsage = {
+	components_bytes: number,
+	runtimes_bytes: number,
+	loras_bytes: number,
+	total_bytes: number,
+	has_engine: boolean,
+	engine_release: string | null,
+	engine_backend: string | null,
+};
+
+export type SdFitComponent = "dit" | "vae" | "conditioner";
+
+export type SdFitDevice = {
+	id: number,
+	name: string,
+	description: string,
+	total_bytes: number,
+	free_bytes: number,
+	budget_bytes: number,
+};
+
+export type SdFitEstimate = {
+	model_bytes: number,
+	available_ram_bytes: number | null,
+	plan_mode: SdPlanMode,
+	devices: SdFitDevice[],
+	placements: SdFitPlacement[],
+};
+
+export type SdFitPlacement = {
+	component: SdFitComponent,
+	params_bytes: number,
+	compute_reserve_bytes: number,
+	targets: string[],
+	cpu: boolean,
+	split: boolean,
+};
+
+export type SdInstalledComponent = {
+	role: ImageComponentRole,
+	filename: string,
+	path: string,
+	bytes_on_disk: number,
+};
+
+export type SdInstalledModel = {
+	profile_id: string,
+	variant_id: string,
+	display_name: string,
+	runtime_release: string | null,
+	runtime_asset: string | null,
+	runtime_backend: string | null,
+	component_bytes_on_disk: number,
+	model_id: string | null,
+	supports_text_to_image: boolean,
+	supports_image_edit: boolean,
+	recommended_for_scenes: boolean,
+	requires_reference_image: boolean,
+	default_width: number,
+	default_height: number,
+	default_steps: number,
+	default_cfg: number | null,
+	model_path: string,
+	components: SdInstalledComponent[],
+};
+
+export type SdInstalledModels = {
+	models: SdInstalledModel[],
+};
+
+export type SdInstalledRuntime = {
+	release: string,
+	asset: string,
+	backend: string,
+	size_bytes: number,
+	active: boolean,
+};
+
+export type SdModelInstallRequest = {
+	profile_id: string,
+	variant_id: string,
+	release: string,
+	asset: string,
+};
+
+/**
+ *  The job that downloads the model's files, or `model_id` when every file
+ *  was already on disk and the model was registered at once.
+ */
+export type SdModelInstallStarted = {
+	job_id: string | null,
+	model_id: string | null,
+};
+
+export type SdModelRepairRequest = {
+	profile_id: string,
+	variant_id: string,
+};
+
+export type SdModelRepaired = {
+	model_id: string,
+};
+
+export type SdModelUninstallRequest = {
+	profile_id: string,
+	variant_id: string,
+	also_remove_engine_if_unused: boolean,
+};
+
+export type SdPlanMode = "default_backend" | "concurrent" | "time_share";
+
+/**
+ *  A runnability verdict: how it was reached, how exact it is and why.
+ *  `method`, `scope` and `placement_policy` are codes for the UI to localize.
+ */
+export type SdRunnability = {
+	status: RunnabilityStatus,
+	method: string,
+	exact: boolean,
+	scope: string,
+	placement_policy: string,
+	elapsed_ms: number | null,
+	reason: string,
+	estimate: SdFitEstimate | null,
+};
+
+/**
+ *  A catalog fit test on an engine build; unset fields take the profile's
+ *  defaults. Installed variants are tested by running the engine.
+ */
+export type SdRunnabilityRequest = {
+	profile_id: string,
+	variant_id: string,
+	runtime_release: string,
+	runtime_asset: string,
+	width: number | null,
+	height: number | null,
+	reference_image_count: number | null,
+	loras: ImageLora[],
+	prompt: string | null,
+	negative_prompt: string | null,
+	sample_steps: number | null,
+	cfg_scale: number | null,
+	seed: number | null,
+	sample_method: string | null,
+	batch_count: number | null,
+	/**  Runs every sample step instead of a one-step probe. */
+	full_execution: boolean,
+	client_operation_id: string,
+};
+
+export type SdRuntimeAsset = {
+	name: string,
+	backend: string,
+	bytes: number,
+	sha256: string | null,
+	download_url: string,
+	dependencies: SdRuntimeDependency[],
+};
+
+export type SdRuntimeDependency = {
+	name: string,
+	bytes: number,
+	sha256: string | null,
+	download_url: string,
+};
+
+export type SdRuntimeInstallRequest = {
+	release: string,
+	asset: string,
+	/**  A catalog variant to register once the build and its files are in. */
+	then_register: SdVariantRef | null,
+};
+
+export type SdRuntimeInventory = {
+	installed: SdInstalledRuntime[],
+	active: SdRuntimeRef | null,
+};
+
+export type SdRuntimeRef = {
+	release: string,
+	asset: string,
+};
+
+export type SdRuntimeRelease = {
+	tag: string,
+	name: string,
+	published_at: string | null,
+	prerelease: boolean,
+	assets: SdRuntimeAsset[],
+};
+
+export type SdRuntimeReleases = {
+	releases: SdRuntimeRelease[],
+};
+
+/**
+ *  The model is removed even when a file cannot be; `left_behind` lists
+ *  those files.
+ */
+export type SdUninstallOutcome = {
+	left_behind: string[],
+};
+
+export type SdUpscalerInventory = {
+	models: string[],
+	/**  File stems, the names the hires fix accepts. */
+	hires_upscaler_names: string[],
+	recommended_filename: string,
+	recommended_bytes: number,
+	recommended_installed: boolean,
+};
+
+export type SdUpscalerRemoveRequest = {
+	filename: string,
+};
+
+/**  The variant to register once an engine build install has finished. */
+export type SdVariantRef = {
+	profile_id: string,
+	variant_id: string,
 };
 
 /**  A message whose shown text contains the query, ignoring case. */

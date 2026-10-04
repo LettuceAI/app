@@ -789,8 +789,6 @@ mod tests {
         std::fs::remove_dir_all(root).ok();
     }
 
-    struct NoProgress;
-
     struct EngineDevices(Vec<HardwareGpu>);
 
     #[async_trait::async_trait]
@@ -806,10 +804,6 @@ mod tests {
         async fn unload_local_llm(&self) -> Result<(), String> {
             Ok(())
         }
-    }
-
-    impl lettuce_image_generation::sd_runtime::output::GenerationProgressSink for NoProgress {
-        fn progress(&self, _: lettuce_image_generation::sd_runtime::output::GenerationProgress) {}
     }
 
     #[tokio::test]
@@ -876,7 +870,6 @@ mod tests {
             paths.clone(),
             lettuce_network::BulkHttpClient::new().expect("client"),
             Arc::new(EngineDevices(Vec::new())),
-            Arc::new(NoProgress),
         );
         let hardware = probe
             .runtime_devices(&release, &asset_name)
@@ -896,7 +889,6 @@ mod tests {
             paths.clone(),
             lettuce_network::BulkHttpClient::new().expect("client"),
             Arc::new(EngineDevices(hardware)),
-            Arc::new(NoProgress),
         ));
         let providers = crate::AppImageProviders {
             local: Some(Arc::clone(&engine)),
@@ -967,6 +959,7 @@ mod tests {
                 backend.database(),
                 &media,
                 &providers,
+                None,
                 CancellationReason::User,
                 TimestampMillis::new(5),
             )
@@ -1071,7 +1064,6 @@ mod tests {
             paths.clone(),
             lettuce_network::BulkHttpClient::new().expect("client"),
             Arc::new(EngineDevices(Vec::new())),
-            Arc::new(NoProgress),
         );
         let inventory = engine.upscaler_inventory();
         assert!(inventory.recommended_installed);
@@ -1084,7 +1076,10 @@ mod tests {
             .write_to(&mut png, image::ImageFormat::Png)
             .expect("png");
         let png = png.into_inner();
-        let upscaled = engine.upscale(&png).await.expect("upscale");
+        let upscaled = engine
+            .upscale(&png, &lettuce_jobs::handle::CancellationToken::new())
+            .await
+            .expect("upscale");
         assert_eq!(&upscaled[..8], b"\x89PNG\r\n\x1a\n");
         assert_eq!(
             u32::from_be_bytes(upscaled[16..20].try_into().expect("width")),

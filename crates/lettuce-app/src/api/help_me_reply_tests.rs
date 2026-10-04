@@ -487,6 +487,8 @@ async fn two_text_handlers_cannot_own_the_same_stream_or_provider_call() {
     struct Progress;
     impl JobProgressSink for Progress {
         fn text_delta(&self, _: Option<String>, _: Option<String>) {}
+
+        fn image_progress(&self, _: lettuce_contracts::ImageProgress) {}
     }
     first
         .run(harness.context.clone(), Arc::new(Progress))

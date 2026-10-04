@@ -7,9 +7,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use lettuce_contracts::ApiError;
+use lettuce_contracts::{self as dto, ApiError};
 use lettuce_conversations::{SceneFollowUpChange, SceneFollowUpRepository, SceneFollowUpState};
-use lettuce_image_generation::ImageGenerationSource;
+use lettuce_image_generation::sd_runtime::output::{GenerationProgress, GenerationProgressSink};
+use lettuce_image_generation::{ImageGenerationSource, ProgressHandle};
 use lettuce_jobs::{
     CancellationReason, JobError, JobErrorCode, JobKind, JobMutation, JobSnapshot, JobStore,
     ResourceAvailability, ResourceClass, WorkerId, handle::CancellationToken,
@@ -26,6 +27,45 @@ use crate::{
 const IMAGE_LEASE: Duration = Duration::from_secs(60 * 60);
 const LOCAL_LANE: &str = "image:local";
 const MEDIA_UNAVAILABLE: &str = "image-media-unavailable";
+
+/// The sink a local engine call reports its progress to for a job.
+pub(super) fn progress_handle(progress: Arc<dyn JobProgressSink>) -> ProgressHandle {
+    ProgressHandle(Arc::new(ProgressRelay(progress)))
+}
+
+/// Turns the local engine's progress into the job's typed image progress.
+struct ProgressRelay(Arc<dyn JobProgressSink>);
+
+impl GenerationProgressSink for ProgressRelay {
+    fn progress(&self, progress: GenerationProgress) {
+        self.0.image_progress(image_progress(progress));
+    }
+}
+
+fn image_progress(progress: GenerationProgress) -> dto::ImageProgress {
+    let (phase, step, total_steps, queue_position) = match progress {
+        GenerationProgress::Starting => (dto::ImagePhase::Starting, None, None, None),
+        GenerationProgress::Loading { step, steps } => {
+            (dto::ImagePhase::Loading, Some(step), Some(steps), None)
+        }
+        GenerationProgress::Sampling { step, steps } => {
+            (dto::ImagePhase::Sampling, Some(step), Some(steps), None)
+        }
+        GenerationProgress::Queued { queue_position } => {
+            (dto::ImagePhase::Queued, None, None, queue_position)
+        }
+        GenerationProgress::Generating => (dto::ImagePhase::Generating, None, None, None),
+        GenerationProgress::Retrying => (dto::ImagePhase::Retrying, None, None, None),
+        GenerationProgress::Cancelled => (dto::ImagePhase::Cancelled, None, None, None),
+    };
+    dto::ImageProgress {
+        phase,
+        step,
+        total_steps,
+        queue_position,
+        preview_asset: None,
+    }
+}
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ImageGenerateHandler;
@@ -92,13 +132,14 @@ impl ClaimedJob for ClaimedImage {
     async fn run(
         self: Box<Self>,
         context: ApiContext,
-        _progress: Arc<dyn JobProgressSink>,
+        progress: Arc<dyn JobProgressSink>,
     ) -> Result<(), ApiError> {
         let work = self.work;
         let database = context.backend().database();
         let request_id = work.record.request.id;
         let source = work.record.request.source;
         let claim = work.claim.claim.clone();
+        let lease_claim = claim.clone();
         let job_id = work.job.id;
         let Some(media) = context.media() else {
             let at = context.now().max(work.job.updated_at);
@@ -133,9 +174,21 @@ impl ClaimedJob for ClaimedImage {
             CancellationReason::User
         };
         let now = context.now();
-        let result = ImageGenerationCoordinator::new(database, database)
-            .run(work, database, media, context.image_provider(), reason, now)
-            .await;
+        let result = super::image_tools::renewing(
+            &context,
+            &lease_claim,
+            IMAGE_LEASE,
+            ImageGenerationCoordinator::new(database, database).run(
+                work,
+                database,
+                media,
+                context.image_provider(),
+                Some(progress_handle(progress)),
+                reason,
+                now,
+            ),
+        )
+        .await;
         let result = match result {
             Ok(result) => result,
             Err(error) => {

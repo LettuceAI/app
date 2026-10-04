@@ -4,6 +4,7 @@
 
 mod feed;
 mod image;
+mod image_tools;
 mod install;
 pub(super) mod local;
 mod runner;
@@ -29,21 +30,25 @@ use super::mapping;
 
 pub(crate) use feed::JobFeed;
 pub use image::ImageGenerateHandler;
+pub use image_tools::ImageToolHandler;
+pub(crate) use image_tools::{ImageToolDetail, admit_tool, tool_view};
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub use install::CatalogVariant;
 pub use install::admit_install;
+pub(crate) use install::admit_install_with_detail;
 pub(crate) use install::recover_queued_installs;
 pub use install::{
     ArtifactInstallHandler, InstallFinish, InstallSources, InstallWork, NetworkInstallSources,
 };
 pub use local::{ModelPullHandler, ModelsFolderMoveHandler};
 pub(crate) use local::{
-    admit_gguf_download, admit_model_pull, admit_models_folder_move, recover_local_model_jobs,
+    admit_gguf_download, admit_model_pull, admit_models_folder_move, image_bundle_detail,
+    recover_local_model_jobs,
 };
 pub use runner::{ClaimedJob, JobHandler, JobHandlers, JobLane, JobProgressSink, JobRunner};
 pub(crate) use state::JobHostState;
-pub(crate) use text::admit_scene_prompt;
 pub use text::{TextFeatureHandler, conversation_help_me_reply};
+pub(crate) use text::{admit_design_reference, admit_scene_prompt};
 
 pub async fn jobs_list(
     context: &ApiContext,
@@ -209,6 +214,7 @@ pub(crate) fn job_event(job: &JobSnapshot, view: dto::JobView) -> (dto::JobEvent
 pub(crate) fn job_view(context: &ApiContext, job: &JobSnapshot) -> Result<dto::JobView, ApiError> {
     let local = local::local_job_view(context, job);
     let feature = text::feature_view(context, job)?;
+    let (image_result, image_failure) = image_view(context, job)?;
     Ok(dto::JobView {
         id: job.id.to_string(),
         kind: job_kind_dto(job.kind),
@@ -245,8 +251,9 @@ pub(crate) fn job_view(context: &ApiContext, job: &JobSnapshot) -> Result<dto::J
             ollama: (job.kind == JobKind::ModelPull)
                 .then(|| local::ollama_failure(error.message.as_str(), local.failure.as_ref()))
                 .flatten(),
+            image: image_failure,
         }),
-        result: feature.or(local.result).or_else(|| {
+        result: feature.or(local.result).or(image_result).or_else(|| {
             job.outcome.as_ref().and_then(|outcome| {
                 let (JobOutcome::Success { result_ref } | JobOutcome::Partial { result_ref, .. }) =
                     outcome;
@@ -254,6 +261,19 @@ pub(crate) fn job_view(context: &ApiContext, job: &JobSnapshot) -> Result<dto::J
             })
         }),
     })
+}
+
+/// What the job view shows of an image job: its result and why it failed.
+fn image_view(
+    context: &ApiContext,
+    job: &JobSnapshot,
+) -> Result<(Option<dto::JobResultDto>, Option<dto::ImageFailure>), ApiError> {
+    if job.kind == JobKind::ImageGenerate {
+        let view = super::image::generation_view(context, job)?;
+        return Ok((view.result, view.failure));
+    }
+    let (result, failure) = tool_view(context, job)?;
+    Ok((result, failure.filter(|_| job.error.is_some())))
 }
 
 /// A download whose bytes have all arrived is verifying them before its
@@ -344,6 +364,8 @@ fn failure_reason(label: &str) -> Option<dto::JobFailureReason> {
         labels::SCENE_IMAGE_DISABLED => dto::JobFailureReason::SceneImageDisabled,
         labels::SCENE_IMAGE_NO_MODEL => dto::JobFailureReason::SceneImageNoModel,
         labels::SCENE_IMAGE_NO_IMAGE => dto::JobFailureReason::SceneImageNoImage,
+        labels::DESIGN_REFERENCE_NO_MODEL => dto::JobFailureReason::DesignReferenceNoModel,
+        labels::DESIGN_REFERENCE_NO_IMAGES => dto::JobFailureReason::DesignReferenceNoImages,
         _ => return None,
     })
 }

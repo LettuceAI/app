@@ -14697,6 +14697,7 @@ async fn run_scene_job<M, P>(
             database,
             media,
             provider,
+            None,
             lettuce_jobs::CancellationReason::User,
             at,
         )

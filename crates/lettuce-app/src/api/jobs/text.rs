@@ -1,5 +1,5 @@
-//! The jobs that write one text for a chat: help me reply and the scene
-//! prompt writer. Admitting one records what it works on next to the job; the
+//! The jobs that write one text for a chat or an editor: help me reply, the
+//! scene prompt writer and the design reference writer. Admitting one records what it works on next to the job; the
 //! runner claims it, streams the model's text to the job's watches and
 //! stores the cleaned text before the job settles, so the job's result
 //! carries it.
@@ -20,7 +20,10 @@ use super::local::{digest, encode, internal, operation_key, stable_uuid};
 use super::runner::{ClaimedJob, JobHandler, JobLane, JobProgressSink};
 use crate::api::ApiContext;
 use crate::api::error::{IntoApiError, api_error, parse_id};
-use crate::{ReplyHelperRequest, ResultRecorder, ScenePromptRequest, ScenePromptWriter};
+use crate::{
+    DesignReferenceRequest, DesignReferenceWriter, ReplyHelperRequest, ResultRecorder,
+    ScenePromptRequest, ScenePromptWriter,
+};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -37,6 +40,14 @@ pub(crate) enum TextFeatureDetail {
         message_id: String,
         target: lettuce_conversations::SceneFollowUpTarget,
         recent_context: String,
+    },
+    DesignReference {
+        request_id: String,
+        subject_name: Option<String>,
+        subject_description: Option<String>,
+        current_description: Option<String>,
+        avatar: Option<String>,
+        references: Vec<String>,
     },
 }
 
@@ -96,6 +107,83 @@ pub(super) fn feature_view(
 const TEXT_LEASE: Duration = Duration::from_secs(60 * 60);
 const REPLY_HELPER_PREFIX: &str = "reply-helper-";
 const SCENE_PROMPT_PREFIX: &str = "scene-prompt-";
+const DESIGN_REFERENCE_PREFIX: &str = "design-reference-";
+
+/// Queues the design reference writer for a subject's avatar and reference
+/// images and returns its job; the key names it, so repeating the request
+/// returns the same job. A request with no image is `InvalidInput`.
+pub(crate) async fn admit_design_reference(
+    context: &ApiContext,
+    request: dto::ImageDesignReferenceRequest,
+) -> Result<dto::JobAccepted, ApiError> {
+    use lettuce_types::AssetId;
+    let avatar = request
+        .avatar
+        .as_deref()
+        .map(|asset| parse_id::<AssetId>(asset, "avatar"))
+        .transpose()?;
+    let references = request
+        .references
+        .iter()
+        .map(|asset| parse_id::<AssetId>(asset, "references"))
+        .collect::<Result<Vec<_>, _>>()?;
+    if avatar.is_none() && references.is_empty() {
+        return Err(crate::api::error::invalid_field(
+            "references",
+            "At least one avatar or reference image is required",
+        ));
+    }
+    let key = operation_key("image_design_reference", &request.client_operation_id)?;
+    let request_digest = digest(&(
+        &request.subject_name,
+        &request.subject_description,
+        &request.current_description,
+        avatar.map(|asset| asset.to_string()),
+        references
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>(),
+    ))?;
+    let job_id = context
+        .blocking(move |context| {
+            if let Some(job_id) = replay(context, &key, &request_digest)? {
+                return Ok(job_id);
+            }
+            let request_id = RequestId::from_uuid(stable_uuid(&["design-reference", &key]));
+            let subject = request_id.to_string();
+            let job = context
+                .backend()
+                .database()
+                .admit_job_with_detail(
+                    crate::jobs::one_shot_job::one_shot_spec(
+                        crate::jobs::one_shot_job::OneShotJob {
+                            name: "design-reference",
+                            stage: "design-reference",
+                            subject_kind: lettuce_jobs::SubjectKind::ModelProfile,
+                            subject: &subject,
+                            request_id,
+                        },
+                    ),
+                    &key,
+                    &request_digest,
+                    &encode(&TextFeatureDetail::DesignReference {
+                        request_id: request_id.to_string(),
+                        subject_name: request.subject_name,
+                        subject_description: request.subject_description,
+                        current_description: request.current_description,
+                        avatar: avatar.map(|asset| asset.to_string()),
+                        references: references.iter().map(ToString::to_string).collect(),
+                    })?,
+                )
+                .map_err(admission_error)?;
+            Ok(job.id)
+        })
+        .await?;
+    context.jobs().wake();
+    Ok(dto::JobAccepted {
+        job_id: job_id.to_string(),
+    })
+}
 
 /// Queues help me reply for the conversation and returns its job; the
 /// request's key names it, so repeating the request returns the same job and
@@ -242,6 +330,7 @@ fn is_text_feature(job: &JobSnapshot) -> bool {
     job.idempotency_key.as_ref().is_some_and(|key| {
         key.as_str().starts_with(REPLY_HELPER_PREFIX)
             || key.as_str().starts_with(SCENE_PROMPT_PREFIX)
+            || key.as_str().starts_with(DESIGN_REFERENCE_PREFIX)
     })
 }
 
@@ -473,6 +562,61 @@ impl ClaimedText {
                             &allowed,
                         )
                         .await;
+                if let Err(error) = &outcome {
+                    fail_owned_with_error(
+                        context,
+                        self.claim.clone(),
+                        crate::jobs::one_shot_job::OneShotFailure::job_error(error),
+                    )
+                    .await?;
+                }
+                outcome.map_err(internal)?;
+            }
+            TextFeatureDetail::DesignReference {
+                request_id,
+                subject_name,
+                subject_description,
+                current_description,
+                avatar,
+                references,
+            } => {
+                let request = DesignReferenceRequest {
+                    request_id: parse_id(&request_id, "request_id")?,
+                    subject_name,
+                    subject_description,
+                    current_description,
+                    avatar: avatar
+                        .as_deref()
+                        .map(|asset| parse_id(asset, "avatar"))
+                        .transpose()?,
+                    references: references
+                        .iter()
+                        .map(|asset| parse_id(asset, "references"))
+                        .collect::<Result<_, _>>()?,
+                    stream: true,
+                };
+                let sink_id = request.request_id;
+                let receiver = runtime.register_stream(sink_id).map_err(internal)?;
+                let forwarder = tokio::spawn(forward(receiver, progress));
+                let outcome = DesignReferenceWriter::new(backend.database(), context.inference())
+                    .with_inference_runtime(runtime)
+                    .with_claim(&self.claim)
+                    .with_cancellation(&cancellation)
+                    .with_result_recorder(&recorder)
+                    .generate(
+                        &request,
+                        WorkerId::new(),
+                        context.now(),
+                        TEXT_LEASE,
+                        &allowed,
+                    )
+                    .await;
+                if let Err(error) = runtime.unregister_stream(sink_id) {
+                    tracing::warn!(%error, "design reference stream could not be unregistered");
+                }
+                if let Err(error) = forwarder.await {
+                    tracing::warn!(%error, "design reference stream forwarder stopped");
+                }
                 if let Err(error) = &outcome {
                     fail_owned_with_error(
                         context,

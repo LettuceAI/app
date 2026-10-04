@@ -333,28 +333,32 @@ impl HuggingFaceBrowser {
             .collect::<Vec<_>>();
         let token = Self::saved_token(secrets).await.ok().flatten();
         let architectures = if role == DiffusionComponentRole::TextEncoder {
-            futures_util::stream::iter(prevalidated.iter().map(|(path, format, _, _)| {
-                let token = token.as_ref();
-                let (model_id, revision) = (model_id.as_str(), revision.as_str());
-                async move {
-                    if *format != "gguf" {
-                        return None;
+            let hints = prevalidated
+                .iter()
+                .map(|(path, format, _, _)| {
+                    let token = token.as_ref();
+                    let (model_id, revision) = (model_id.as_str(), revision.as_str());
+                    async move {
+                        if *format != "gguf" {
+                            return None;
+                        }
+                        let bytes = headers
+                            .read_prefix(
+                                model_id,
+                                revision,
+                                path,
+                                lettuce_image_generation::ENCODER_HINT_BYTES,
+                                token,
+                            )
+                            .await?;
+                        lettuce_image_generation::gguf_architecture_hint(&bytes)
                     }
-                    let bytes = headers
-                        .read_prefix(
-                            model_id,
-                            revision,
-                            path,
-                            lettuce_image_generation::ENCODER_HINT_BYTES,
-                            token,
-                        )
-                        .await?;
-                    lettuce_image_generation::gguf_architecture_hint(&bytes)
-                }
-            }))
-            .buffered(HINT_CONCURRENCY)
-            .collect::<Vec<_>>()
-            .await
+                })
+                .collect::<Vec<_>>();
+            futures_util::stream::iter(hints)
+                .buffered(HINT_CONCURRENCY)
+                .collect::<Vec<_>>()
+                .await
         } else {
             vec![None; prevalidated.len()]
         };
@@ -480,7 +484,7 @@ impl HuggingFaceBrowser {
                 vision_encoder_bytes: size_for(DiffusionComponentRole::VisionEncoder),
             })
             .await
-            .map_err(message)?;
+            .map_err(|error| message(error.message))?;
         if matches!(
             estimate.status,
             RunnabilityStatus::NotInstalled | RunnabilityStatus::IncompatibleRuntime

@@ -16,6 +16,7 @@ mod events;
 mod file_kind;
 mod files;
 mod hugging_face;
+mod image;
 mod inspect;
 mod jobs;
 mod local_models;
@@ -78,6 +79,20 @@ pub use hugging_face::{
     hf_auth_clear, hf_auth_save, hf_auth_status, hf_author, hf_avatars, hf_download,
     hf_model_files, hf_readme, hf_recommendation, hf_runnability, hf_search,
 };
+pub use image::{
+    avatar_gradient, avatar_prompt, civitai_auth_clear, civitai_auth_save, civitai_auth_status,
+    civitai_lora_download, civitai_model, civitai_search, hf_image_bundle_files,
+    hf_image_bundle_install, hf_image_bundle_profiles, hf_image_bundle_retry,
+    hf_image_bundle_retry_registration, hf_image_bundle_search, image_capabilities,
+    image_design_reference, image_generate, image_models_downloaded, image_upscale,
+    lora_keywords_discover, loras_delete, loras_import, loras_list, loras_update_keywords,
+    playground_history_delete, playground_history_list, sd_bundle_runnability, sd_catalog,
+    sd_component_library, sd_compute_policy_get, sd_compute_policy_save, sd_detect_model_file,
+    sd_disk_usage, sd_model_install, sd_model_repair, sd_model_uninstall, sd_models_installed,
+    sd_runnability, sd_runtime_delete, sd_runtime_install, sd_runtime_inventory,
+    sd_runtime_releases, sd_runtime_switch, sd_upscalers_install, sd_upscalers_list,
+    sd_upscalers_remove,
+};
 pub use inspect::{
     conversation_participation_stats, conversation_speaker_selection_preview,
     message_companion_effect, message_prompt_snapshot,
@@ -85,10 +100,10 @@ pub use inspect::{
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub use jobs::CatalogVariant;
 pub use jobs::{
-    ArtifactInstallHandler, ClaimedJob, ImageGenerateHandler, InstallFinish, InstallSources,
-    InstallWork, JobHandler, JobHandlers, JobLane, JobProgressSink, JobRunner, ModelPullHandler,
-    ModelsFolderMoveHandler, NetworkInstallSources, TextFeatureHandler, admit_install,
-    conversation_help_me_reply, job_cancel, job_get, job_watch, jobs_list,
+    ArtifactInstallHandler, ClaimedJob, ImageGenerateHandler, ImageToolHandler, InstallFinish,
+    InstallSources, InstallWork, JobHandler, JobHandlers, JobLane, JobProgressSink, JobRunner,
+    ModelPullHandler, ModelsFolderMoveHandler, NetworkInstallSources, TextFeatureHandler,
+    admit_install, conversation_help_me_reply, job_cancel, job_get, job_watch, jobs_list,
 };
 pub use local_models::{
     llama_chat_template, llama_context_info, llama_devices, llama_unload, local_file_runnability,

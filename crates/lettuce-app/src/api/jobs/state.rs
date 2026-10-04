@@ -6,7 +6,7 @@ use std::{
     },
 };
 
-use lettuce_contracts::JobEvent;
+use lettuce_contracts::{ImageProgress, JobEvent};
 use lettuce_jobs::handle::CancellationToken;
 use lettuce_types::JobId;
 
@@ -41,6 +41,7 @@ pub(crate) struct JobHostState {
     running: Mutex<HashMap<JobId, CancellationToken>>,
     installs: Mutex<HashMap<JobId, InstallWork>>,
     streamed: Mutex<HashMap<JobId, (String, String)>>,
+    image: Mutex<HashMap<JobId, ImageProgress>>,
     wake: tokio::sync::Notify,
     changed: Arc<tokio::sync::Notify>,
 }
@@ -52,6 +53,7 @@ impl Default for JobHostState {
             running: Mutex::new(HashMap::new()),
             installs: Mutex::new(HashMap::new()),
             streamed: Mutex::new(HashMap::new()),
+            image: Mutex::new(HashMap::new()),
             wake: tokio::sync::Notify::new(),
             changed: Arc::new(tokio::sync::Notify::new()),
         }
@@ -108,6 +110,11 @@ impl JobHostState {
                 }),
                 None => true,
             };
+            let open = open
+                && match lock(&self.image).get(&job_id).cloned() {
+                    Some(progress) => watch.send(JobEvent::ImageProgress { progress }),
+                    None => true,
+                };
             if open {
                 watches.entry(job_id).or_default().push(watch);
             }
@@ -174,6 +181,23 @@ impl JobHostState {
         }
     }
 
+    /// Sends a running image generation's progress to the job's watches and
+    /// keeps it for a watch that attaches later.
+    pub(crate) fn image_progress(&self, job_id: JobId, progress: ImageProgress) {
+        let mut watches = lock(&self.watches);
+        lock(&self.image).insert(job_id, progress.clone());
+        if let Some(list) = watches.get_mut(&job_id) {
+            list.retain(|watch| {
+                watch.send(JobEvent::ImageProgress {
+                    progress: progress.clone(),
+                })
+            });
+            if list.is_empty() {
+                watches.remove(&job_id);
+            }
+        }
+    }
+
     pub(crate) fn start_running(&self, job_id: JobId, cancellation: CancellationToken) {
         lock(&self.running).insert(job_id, cancellation);
     }
@@ -181,6 +205,7 @@ impl JobHostState {
     pub(crate) fn finish_running(&self, job_id: JobId) {
         lock(&self.running).remove(&job_id);
         lock(&self.streamed).remove(&job_id);
+        lock(&self.image).remove(&job_id);
     }
 
     /// Signals the job if this process runs it; returns whether it does.
@@ -207,6 +232,14 @@ impl JobHostState {
         lock(&self.installs)
             .iter()
             .map(|(job_id, work)| (*job_id, work.root().to_path_buf()))
+            .collect()
+    }
+
+    /// Every install this process holds for the runner.
+    pub(crate) fn installs(&self) -> Vec<(JobId, InstallWork)> {
+        lock(&self.installs)
+            .iter()
+            .map(|(job_id, work)| (*job_id, work.clone()))
             .collect()
     }
 

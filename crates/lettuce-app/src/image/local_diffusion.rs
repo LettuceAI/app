@@ -7,7 +7,6 @@ use std::sync::{Arc, OnceLock};
 use async_trait::async_trait;
 use lettuce_image_generation::LOCAL_DIFFUSION_PROVIDER_KIND;
 use lettuce_image_generation::sd_runtime::layout::DiffusionPaths;
-use lettuce_image_generation::sd_runtime::output::GenerationProgressSink;
 use lettuce_image_generation::sd_runtime::policy::HardwareGpu;
 use lettuce_image_generation::sd_runtime::server::{EngineHost, LocalDiffusionEngine};
 use lettuce_providers::{LocalLlama, LocalRuntimeExclusion};
@@ -98,18 +97,42 @@ impl LocalRuntimeExclusion for DiffusionExclusion {
 
 pub(crate) fn start_engine(
     paths: DiffusionPaths,
-    progress: Arc<dyn GenerationProgressSink>,
     local_llama: SharedLocalLlama,
 ) -> Result<Arc<LocalDiffusionEngine>, lettuce_network::JsonClientError> {
     Ok(Arc::new(LocalDiffusionEngine::new(
         paths,
         lettuce_network::BulkHttpClient::new()?,
         Arc::new(AppEngineHost { local_llama }),
-        progress,
     )))
 }
 
+/// The engine's folders for the device's models folder: the image models
+/// below it (the app's own folder when none is chosen) and everything else
+/// below the app folder.
+pub(crate) fn diffusion_paths(
+    device: &lettuce_settings::DeviceSettings,
+    app_folder: &std::path::Path,
+) -> DiffusionPaths {
+    DiffusionPaths::legacy_layout(app_folder, crate::image_models_root(device, app_folder))
+}
+
 impl crate::AppBackend {
+    /// Points the engine at the image folder of the models folder in use, as
+    /// the device settings now name it; call after the models folder
+    /// changed.
+    pub fn rebind_local_diffusion(&self, app_folder: &std::path::Path) -> Result<(), String> {
+        use lettuce_settings::DeviceSettingsStore;
+        let Some(engine) = &self.local_diffusion else {
+            return Ok(());
+        };
+        let device = self
+            .database()
+            .load_device_settings()
+            .map_err(|error| error.to_string())?;
+        engine.rebind(diffusion_paths(&device, app_folder));
+        Ok(())
+    }
+
     /// The embedded stable-diffusion.cpp engine, when the host configured
     /// its folders.
     #[must_use]
@@ -310,13 +333,14 @@ impl crate::AppBackend {
 
     /// Removes a catalog variant: the files no other installed variant uses,
     /// its model, and optionally an engine build no remaining model names
-    /// (checked against each model's stored build).
+    /// (checked against each model's stored build). The model is removed
+    /// even when a file cannot be; those files are returned.
     pub async fn uninstall_local_image_model(
         &self,
         profile_id: &str,
         variant_id: &str,
         also_remove_engine_if_unused: bool,
-    ) -> Result<(), String> {
+    ) -> Result<Vec<String>, String> {
         use lettuce_models::ModelProfileRepository;
 
         let engine = self.engine()?;
@@ -325,6 +349,7 @@ impl crate::AppBackend {
             .find_variant(profile_id, variant_id)
             .map_err(|error| error.to_string())?;
         let paths = engine.paths();
+        let mut left_behind = Vec::new();
         let survivors = catalog
             .profiles
             .iter()
@@ -347,9 +372,17 @@ impl crate::AppBackend {
                 continue;
             }
             let path = paths.component_path(component);
-            std::fs::remove_file(&path).ok();
-            if let Some(parent) = path.parent() {
-                std::fs::remove_dir(parent).ok();
+            match std::fs::remove_file(&path) {
+                Ok(()) => {
+                    if let Some(parent) = path.parent() {
+                        std::fs::remove_dir(parent).ok();
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => {
+                    tracing::warn!(component = "sdcpp", %error, path = %path.display(), "an uninstalled model file could not be removed");
+                    left_behind.push(path.display().to_string());
+                }
             }
         }
         let diffusion = paths
@@ -391,10 +424,18 @@ impl crate::AppBackend {
             });
             if !still_used {
                 engine.stop().await;
-                std::fs::remove_dir_all(paths.runtime_root(&release, &asset)).ok();
+                let root = paths.runtime_root(&release, &asset);
+                match std::fs::remove_dir_all(&root) {
+                    Ok(()) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => {
+                        tracing::warn!(component = "sdcpp", %error, path = %root.display(), "an uninstalled engine build could not be removed");
+                        left_behind.push(root.display().to_string());
+                    }
+                }
             }
         }
-        Ok(())
+        Ok(left_behind)
     }
 
     /// Registers an installed variant again with the first complete engine
@@ -423,7 +464,7 @@ impl crate::AppBackend {
             })?;
         crate::register_catalog_model(
             self.database(),
-            engine.paths(),
+            &engine.paths(),
             profile_id,
             variant_id,
             &runtime.release,
@@ -452,18 +493,23 @@ impl crate::AppBackend {
         )
     }
 
-    /// Upscales a stored image into a new asset.
+    /// Upscales a stored image into a new asset; cancelling stops the tool.
     pub async fn upscale_image<D: lettuce_image_generation::ImageMedia + ?Sized>(
         &self,
         media: &D,
         asset_id: lettuce_types::AssetId,
-    ) -> Result<lettuce_image_generation::GeneratedImage, String> {
-        let engine = self.engine()?;
+        cancellation: &lettuce_jobs::handle::CancellationToken,
+    ) -> Result<lettuce_image_generation::GeneratedImage, lettuce_image_generation::ImageError>
+    {
+        use lettuce_image_generation::{ImageError, ImageFailureKind};
+        let engine = self
+            .engine()
+            .map_err(|message| ImageError::new(ImageFailureKind::LocalUnsupported, message))?;
         engine.check_upscale_ready()?;
-        let input = media
-            .load_input(asset_id)
-            .map_err(|error| error.to_string())?;
-        let upscaled = engine.upscale(&input.bytes).await?;
+        let input = media.load_input(asset_id).map_err(|error| {
+            ImageError::new(ImageFailureKind::InvalidRequest, error.to_string())
+        })?;
+        let upscaled = engine.upscale(&input.bytes, cancellation).await?;
         media
             .ingest_derived(
                 "upscale",
@@ -473,7 +519,7 @@ impl crate::AppBackend {
                     text: None,
                 },
             )
-            .map_err(|error| error.to_string())
+            .map_err(|error| ImageError::new(ImageFailureKind::OutputRejected, error.to_string()))
     }
 }
 
@@ -481,22 +527,15 @@ impl crate::AppBackend {
 mod tests {
     use lettuce_image_generation::sd_runtime::layout::server_executable_name;
     use lettuce_image_generation::sd_runtime::lora_library::LoraKeywordSource;
-    use lettuce_image_generation::sd_runtime::output::GenerationProgress;
     use lettuce_types::{OperationId, TimestampMillis};
 
     use super::*;
-
-    struct Silent;
-
-    impl GenerationProgressSink for Silent {
-        fn progress(&self, _: GenerationProgress) {}
-    }
 
     fn backend(root: &std::path::Path) -> crate::AppBackend {
         let paths = DiffusionPaths::legacy_layout(root, root.join("models").join("image"));
         crate::AppBackend::open(root.join("app.sqlite3"), TimestampMillis::new(1))
             .expect("backend")
-            .with_local_diffusion(paths, Arc::new(Silent))
+            .with_local_diffusion(paths)
             .expect("engine")
     }
 
@@ -690,7 +729,9 @@ mod tests {
             library
                 .import(source.to_str().expect("path"))
                 .await
-                .is_err_and(|error| error.starts_with("A different LoRA named style.safetensors"))
+                .is_err_and(|error| error
+                    .message
+                    .starts_with("A different LoRA named style.safetensors"))
         );
         library.delete("style.safetensors").expect("delete");
         assert!(

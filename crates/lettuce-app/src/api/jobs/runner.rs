@@ -20,9 +20,12 @@ use crate::api::worker::{WorkerStep, drive, link_to_shutdown};
 const QUEUE_PAGE: u16 = 200;
 
 /// What a running job streams besides its stored progress: text deltas of
-/// LLM features, sent to the job's watch streams.
+/// LLM features and the progress of a local image generation, sent to the
+/// job's watch streams.
 pub trait JobProgressSink: Send + Sync {
     fn text_delta(&self, text: Option<String>, reasoning: Option<String>);
+
+    fn image_progress(&self, progress: lettuce_contracts::ImageProgress);
 }
 
 /// Jobs in one lane run one at a time; jobs in different lanes run
@@ -105,6 +108,7 @@ impl JobHandlers {
             Arc::new(super::local::ModelsFolderMoveHandler),
             Arc::new(super::text::TextFeatureHandler),
             Arc::new(super::image::ImageGenerateHandler),
+            Arc::new(super::image_tools::ImageToolHandler),
         ])
     }
 
@@ -159,6 +163,10 @@ struct WatchSink {
 impl JobProgressSink for WatchSink {
     fn text_delta(&self, text: Option<String>, reasoning: Option<String>) {
         self.context.jobs().text_delta(self.job_id, text, reasoning);
+    }
+
+    fn image_progress(&self, progress: lettuce_contracts::ImageProgress) {
+        self.context.jobs().image_progress(self.job_id, progress);
     }
 }
 

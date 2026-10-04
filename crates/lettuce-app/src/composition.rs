@@ -110,11 +110,9 @@ impl AppBackend {
     pub fn with_local_diffusion(
         mut self,
         paths: lettuce_image_generation::sd_runtime::layout::DiffusionPaths,
-        progress: Arc<dyn lettuce_image_generation::sd_runtime::output::GenerationProgressSink>,
     ) -> Result<Self, lettuce_network::JsonClientError> {
         self.local_diffusion = Some(crate::image::local_diffusion::start_engine(
             paths,
-            progress,
             Arc::clone(&self.local_llama),
         )?);
         Ok(self)

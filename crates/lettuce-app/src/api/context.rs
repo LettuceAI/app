@@ -92,6 +92,7 @@ struct ApiContextInner {
     app_usage: AppActiveUsageTracker,
     legacy_database_detected: AtomicBool,
     local_models: LocalModelsState,
+    image: super::image::ImageApiState,
 }
 
 impl std::fmt::Debug for ApiContext {
@@ -142,6 +143,7 @@ impl ApiContext {
                 app_usage: AppActiveUsageTracker::new(now),
                 legacy_database_detected: AtomicBool::new(false),
                 local_models: LocalModelsState::default(),
+                image: super::image::ImageApiState::default(),
             }),
         }
     }
@@ -176,10 +178,28 @@ impl ApiContext {
             std::fs::create_dir_all(parent)
                 .map_err(|error| storage_error("database directory", error))?;
         }
-        let backend = Arc::new(
-            AppBackend::open(&path, clock.now())
-                .map_err(|error| storage_error("application database", error))?,
-        );
+        let backend = AppBackend::open(&path, clock.now())
+            .map_err(|error| storage_error("application database", error))?;
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        let backend = {
+            use lettuce_settings::DeviceSettingsStore;
+            let device = backend
+                .database()
+                .load_device_settings()
+                .map_err(|error| storage_error("device settings", error))?;
+            backend
+                .with_local_diffusion(crate::image::local_diffusion::diffusion_paths(
+                    &device,
+                    app_data_dir,
+                ))
+                .map_err(|error| {
+                    api_error(
+                        ApiErrorCode::Unavailable,
+                        format!("the image engine could not start: {error}"),
+                    )
+                })?
+        };
+        let backend = Arc::new(backend);
         let media = LocalMediaBlobStore::new(
             authority.managed_files(),
             authority
@@ -369,6 +389,10 @@ impl ApiContext {
 
     pub(crate) fn local_models(&self) -> &LocalModelsState {
         &self.inner.local_models
+    }
+
+    pub(crate) fn image_state(&self) -> &super::image::ImageApiState {
+        &self.inner.image
     }
 
     /// Resolves after a committed conversation change, including one made
