@@ -160,7 +160,7 @@ pub(crate) fn lora_library(
 /// installs write below the folder that moves.
 pub(crate) async fn refuse_during_move(context: &ApiContext) -> Result<(), ApiError> {
     context
-        .blocking(|context| crate::api::jobs::folder_move_active(context))
+        .blocking(crate::api::jobs::folder_move_active)
         .await
 }
 
