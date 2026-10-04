@@ -309,8 +309,10 @@ fn busy_download(path: &std::path::Path) -> ApiError {
     )
 }
 
-/// The running bundle install whose files are exactly the wanted ones, or
-/// `Busy` when any other running download shares a path or a hash with them.
+/// The running bundle install whose files are exactly the wanted
+/// (path, hash) set, a wanted hash that is not empty having to equal the
+/// running one, or `Busy` when any other running download shares a path or a
+/// hash with them.
 fn running_bundle(
     context: &ApiContext,
     wanted: &[(PathBuf, String)],
@@ -335,9 +337,11 @@ fn running_bundle(
             })
             .collect::<Vec<_>>();
         let same_files = running.len() == wanted.len()
-            && wanted
-                .iter()
-                .all(|(path, _)| running.iter().any(|(running, _)| running == path));
+            && wanted.iter().all(|(path, sha)| {
+                running.iter().any(|(running, running_sha)| {
+                    running == path && (sha.is_empty() || running_sha == sha)
+                })
+            });
         if same_files
             && let crate::api::InstallFinish::HuggingFaceBundle { bundle_id, .. } = finish.as_ref()
         {
@@ -372,17 +376,21 @@ pub async fn hf_image_bundle_install(
         super::refuse_during_move(context).await?;
         let paths = engine.paths();
         let root = bundle_root(&paths.image_root);
-        let mut wanted = Vec::with_capacity(request.assets.len());
+        let mut wanted: Vec<(PathBuf, String)> = Vec::with_capacity(request.assets.len());
         for asset in &request.assets {
             let segments = asset_of(asset.clone())
                 .local_segments()
                 .map_err(|message| invalid_field("assets", message))?;
-            wanted.push((
-                segments
-                    .iter()
-                    .fold(root.clone(), |path, segment| path.join(segment)),
-                asset.sha256.to_ascii_lowercase(),
-            ));
+            let path = segments
+                .iter()
+                .fold(root.clone(), |path, segment| path.join(segment));
+            if wanted.iter().any(|(existing, _)| *existing == path) {
+                return Err(invalid_field(
+                    "assets",
+                    format!("{} is listed more than once", path.display()),
+                ));
+            }
+            wanted.push((path, asset.sha256.to_ascii_lowercase()));
         }
         if let Some((job_id, bundle_id)) = running_bundle(context, &wanted)? {
             return Ok(dto::ImageBundleAccepted {
@@ -436,8 +444,36 @@ pub async fn hf_image_bundle_retry(
     let engine = engine(context)?;
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
+        let _admitting = context.image_state().bundle_admission().lock().await;
         super::refuse_during_move(context).await?;
         let paths = engine.paths();
+        let manifest =
+            lettuce_image_generation::read_bundle_manifest(&paths.image_root, &request.bundle_id)
+                .map_err(|message| api_error(ApiErrorCode::NotFound, message))?;
+        let root = bundle_root(&paths.image_root);
+        let mut wanted = Vec::new();
+        for asset in &manifest.assets {
+            if asset.verified && std::path::Path::new(&asset.local_path).is_file() {
+                continue;
+            }
+            let segments = asset
+                .asset
+                .local_segments()
+                .map_err(|message| invalid_field("assets", message))?;
+            wanted.push((
+                segments
+                    .iter()
+                    .fold(root.clone(), |path, segment| path.join(segment)),
+                asset.asset.sha256.to_ascii_lowercase(),
+            ));
+        }
+        if !wanted.is_empty()
+            && let Some((job_id, _)) = running_bundle(context, &wanted)?
+        {
+            return Ok(dto::ImageBundleRetried {
+                job_id: Some(job_id.to_string()),
+            });
+        }
         let plan = browser(context)?
             .bundle_retry_downloads(
                 context.secret_store().as_ref(),
@@ -449,9 +485,6 @@ pub async fn hf_image_bundle_retry(
         let Some(plan) = plan else {
             return Ok(dto::ImageBundleRetried { job_id: None });
         };
-        let manifest =
-            lettuce_image_generation::read_bundle_manifest(&paths.image_root, &request.bundle_id)
-                .map_err(|message| api_error(ApiErrorCode::NotFound, message))?;
         let detail =
             crate::api::jobs::image_bundle_detail(&request.bundle_id, &manifest.display_name)?;
         let accepted = admit_install_with_detail(

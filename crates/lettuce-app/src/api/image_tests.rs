@@ -1884,3 +1884,120 @@ async fn a_local_job_claimed_after_a_move_was_admitted_is_cancelled_without_an_e
     assert_eq!(state(context, discovery), JobState::Cancelled);
     assert_eq!(images.calls(), 0);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn duplicate_assets_in_one_bundle_request_are_rejected() {
+    let desktop = desktop(HeldImages::new(), true);
+    let context = &desktop.harness.context;
+    let (a, b) = ("a".repeat(64), "b".repeat(64));
+    running_bundle_install(context, &[("model.gguf", &a), ("other.gguf", &b)]);
+    let error = hf_image_bundle_install(
+        context,
+        bundle_request(&[("model.gguf", &a), ("model.gguf", &a)]),
+    )
+    .await
+    .expect_err("[A, A] is not [A, B]");
+    assert_eq!(error.code, ApiErrorCode::InvalidInput);
+    assert!(nothing_written(context));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_same_paths_under_another_hash_are_not_the_running_bundle() {
+    let desktop = desktop(HeldImages::new(), true);
+    let context = &desktop.harness.context;
+    let (a, b, c) = ("a".repeat(64), "b".repeat(64), "c".repeat(64));
+    running_bundle_install(context, &[("model.gguf", &a), ("other.gguf", &b)]);
+    let error = hf_image_bundle_install(
+        context,
+        bundle_request(&[("model.gguf", &a), ("other.gguf", &c)]),
+    )
+    .await
+    .expect_err("another hash is another file");
+    assert_eq!(error.code, ApiErrorCode::Busy);
+    assert!(nothing_written(context));
+}
+
+fn unverified_bundle(context: &ApiContext, bundle_id: &str, files: &[(&str, &str)]) {
+    let paths = context.backend().local_diffusion().expect("engine").paths();
+    let manifest = lettuce_image_generation::BundleManifest {
+        bundle_id: bundle_id.to_owned(),
+        profile_id: "z-image-turbo".to_owned(),
+        display_name: "Bundle".to_owned(),
+        runtime_release: RELEASE.to_owned(),
+        runtime_asset: CPU_BUILD.to_owned(),
+        runnability: None,
+        assets: files
+            .iter()
+            .map(|(path, sha)| lettuce_image_generation::ManifestAsset {
+                asset: bundle_asset(path, sha),
+                local_path: String::new(),
+                verified: false,
+            })
+            .collect(),
+        registration_state: lettuce_image_generation::BundleRegistrationState::SetupFailed,
+        model_id: None,
+        setup_error: Some("interrupted".to_owned()),
+    };
+    lettuce_image_generation::write_bundle_manifest(&paths.image_root, &manifest)
+        .expect("manifest");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_bundle_retry_follows_the_running_install_rule() {
+    let desktop = desktop(HeldImages::new(), true);
+    let context = &desktop.harness.context;
+    let (a, b) = ("a".repeat(64), "b".repeat(64));
+    unverified_bundle(context, "retry-me", &[("model.gguf", &a)]);
+    let retry = || {
+        hf_image_bundle_retry(
+            context,
+            dto::HfImageBundleRetryRequest {
+                bundle_id: "retry-me".to_owned(),
+            },
+        )
+    };
+    running_bundle_install(context, &[("model.gguf", &a), ("other.gguf", &b)]);
+    let overlapping = retry().await.expect_err("an overlapping install runs");
+    assert_eq!(overlapping.code, ApiErrorCode::Busy);
+
+    let desktop = self::desktop(HeldImages::new(), true);
+    let context = &desktop.harness.context;
+    unverified_bundle(context, "retry-me", &[("model.gguf", &a)]);
+    let existing = running_bundle_install(context, &[("model.gguf", &a)]);
+    let joined = hf_image_bundle_retry(
+        context,
+        dto::HfImageBundleRetryRequest {
+            bundle_id: "retry-me".to_owned(),
+        },
+    )
+    .await
+    .expect("the identical install is joined");
+    assert_eq!(joined.job_id, Some(existing.to_string()));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_bundle_retry_waits_for_the_admission_in_progress() {
+    let desktop = desktop(HeldImages::new(), true);
+    let context = desktop.harness.context.clone();
+    let a = "a".repeat(64);
+    unverified_bundle(&context, "retry-me", &[("model.gguf", &a)]);
+    let admitting = context.image_state().bundle_admission().lock().await;
+    let retry = {
+        let context = context.clone();
+        tokio::spawn(async move {
+            hf_image_bundle_retry(
+                &context,
+                dto::HfImageBundleRetryRequest {
+                    bundle_id: "retry-me".to_owned(),
+                },
+            )
+            .await
+        })
+    };
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert!(!retry.is_finished());
+    let existing = running_bundle_install(&context, &[("model.gguf", &a)]);
+    drop(admitting);
+    let joined = retry.await.expect("task").expect("joins the install");
+    assert_eq!(joined.job_id, Some(existing.to_string()));
+}
