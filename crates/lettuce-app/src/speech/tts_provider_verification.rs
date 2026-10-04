@@ -26,6 +26,29 @@ where
     R: TtsConfigurationRepository + ?Sized,
     S: SecretStore + ?Sized,
 {
+    pub async fn verify_draft<V: AudioProviderVerifier + ?Sized>(
+        config: AudioProviderConfig,
+        credential: Option<&lettuce_settings::SecretValue>,
+        verifier: &V,
+    ) -> Result<bool, TtsProviderVerificationError> {
+        let provider = lettuce_speech::AudioProvider {
+            id: AudioProviderId::new(),
+            secret_owner_id: lettuce_settings::SecretOwnerId::new(),
+            label: "Draft".to_owned(),
+            api_key_ref: None,
+            config,
+            revision: lettuce_types::Revision::INITIAL,
+            created_at: lettuce_types::TimestampMillis::new(0),
+            updated_at: lettuce_types::TimestampMillis::new(0),
+        };
+        provider.validate().map_err(|_| TtsProviderVerificationError::InvalidInput)?;
+        if matches!(provider.config, AudioProviderConfig::Kokoro { .. }) {
+            return Ok(true);
+        }
+        verifier.verify_audio_provider(&provider, credential).await
+            .map_err(TtsProviderVerificationError::Verification)
+    }
+
     pub async fn verify<V: AudioProviderVerifier + ?Sized>(
         &self,
         provider_id: AudioProviderId,
@@ -210,4 +233,15 @@ mod tests {
                 .expect("OpenAI-compatible verification")
         );
     }
+    #[tokio::test]
+    async fn verification_of_a_draft_does_not_save_configuration_or_secret() {
+        let database = Database::open_in_memory().expect("database");
+        let key = SecretValue::new("verification-secret-canary").expect("secret");
+        assert!(TtsProviderVerificationCoordinator::<Database, InMemorySecretStore>::verify_draft(
+            AudioProviderConfig::Elevenlabs, Some(&key), &Verifier,
+        ).await.expect("draft verified"));
+        assert!(lettuce_speech::TtsConfigurationRepository::list_audio_providers(&database)
+            .expect("providers").is_empty());
+    }
+
 }

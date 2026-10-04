@@ -95,7 +95,17 @@ where
             &provider.config,
             AudioProviderConfig::Elevenlabs | AudioProviderConfig::FishTts
         ) {
-            return Err(TtsVoiceRefreshError::InvalidInput);
+            let drafts = lettuce_speech::tts_catalog_voices(provider.config.provider_kind())
+                .into_iter()
+                .map(|voice| lettuce_speech::DiscoveredVoiceDraft {
+                    voice_id: voice.id.to_owned(),
+                    name: voice.name.to_owned(),
+                    preview_url: None,
+                    labels: voice.labels.into_iter()
+                        .map(|(key, value)| (key.to_owned(), value.to_owned())).collect(),
+                }).collect();
+            return materialize_discovered_voices(provider.id, drafts, now)
+                .map_err(TtsVoiceRefreshError::Discovery);
         }
         let reference = provider
             .api_key_ref
@@ -243,4 +253,29 @@ mod tests {
             "fish-voice"
         );
     }
+    #[tokio::test]
+    async fn providers_without_remote_listing_return_catalog_or_empty_voices() {
+        let database = Database::open_in_memory().expect("database");
+        let secrets = InMemorySecretStore::new();
+        for (config, count) in [
+            (AudioProviderConfig::Gemini { project_id: None, location: "global".into() }, 10),
+            (AudioProviderConfig::OpenAiCompatible { base_url: None, request_path: None }, 0),
+            (AudioProviderConfig::FishSpeech { base_url: None, request_path: None }, 0),
+            (AudioProviderConfig::Kokoro { variant: None }, 0),
+        ] {
+            let key = if matches!(config, AudioProviderConfig::Kokoro { .. }) {
+                None
+            } else {
+                Some(SecretValue::new("unused-secret").expect("secret"))
+            };
+            let provider = TtsConfigurationCoordinator::new(&database, &secrets)
+                .create_audio_provider("Speech".into(), config, key, TimestampMillis::new(1))
+                .await.expect("provider");
+            let voices = TtsVoiceRefreshCoordinator::new(&database, &secrets)
+                .refresh(provider.id, &Discovery { outcome: Err(VoiceDiscoveryError::Unavailable) }, TimestampMillis::new(2))
+                .await.expect("local listing needs no network");
+            assert_eq!(voices.len(), count);
+        }
+    }
+
 }

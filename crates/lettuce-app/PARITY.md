@@ -345,3 +345,8 @@ New features to design with the user; legacy never had them.
 
 - Group companions and group growth scheduling.
 - Scene images in group chats: legacy generated scene images for direct chats only, and the backend rejects groups (`NotDirect`).
+
+- The unused companion-emotion neutral-fallback loader is removed. The API requires the installed Thymos classifier and reports typed model failures instead of a neutral fallback (old-code/src-tauri/src/chat_manager/companion/mod.rs:1407-1435).
+
+- Device `embeddingKeepModelLoaded` defaults off and releases each embedding runtime after its call, matching old-code/src-tauri/src/embedding/settings.rs:26-40 and inference.rs:451-520,551-620. Embedding and Thymos downloads share a lane, matching the shared admission state at old-code/src-tauri/src/embedding/download.rs:339-352.
+- Unsaved audio-provider drafts verify without a configuration or secret write. Non-discovery voice refresh returns Gemini catalog voices or an empty list for OpenAI-compatible, Fish Speech and Kokoro, matching old-code/src-tauri/src/tts_manager/commands.rs:580-587 (Kokoro installed voices remain a separate inventory).

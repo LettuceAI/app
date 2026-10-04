@@ -137,12 +137,13 @@ impl InstallWork {
 
     /// GGUF, stable-diffusion.cpp, CivitAI, Hugging Face bundle, Whisper
     /// and Kokoro downloads share one sequential queue, as legacy's download
-    /// queue did; the embedding and emotion models each have their own.
+    /// queue did; the embedding and emotion models share a separate lane.
     pub(super) fn lane(&self) -> JobLane {
         let name = match self {
             Self::Artifact { finish, .. } => match finish.as_ref() {
-                InstallFinish::Embedding { .. } => "install:embedding",
-                InstallFinish::CompanionEmotion { .. } => "install:companion-emotion",
+                InstallFinish::Embedding { .. } | InstallFinish::CompanionEmotion { .. } => {
+                    "install:memory-models"
+                }
                 _ => DOWNLOAD_LANE,
             },
             Self::Whisper { .. } | Self::KokoroModel { .. } | Self::KokoroVoices { .. } => {

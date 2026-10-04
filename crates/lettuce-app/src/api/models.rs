@@ -16,7 +16,7 @@ use lettuce_embeddings::{
     EmbeddingDimensions, EmbeddingRequest, EmbeddingVector, SimilarityCalibration,
 };
 use lettuce_jobs::handle::CancellationToken;
-use lettuce_settings::GlobalSettingsStore;
+use lettuce_settings::{DeviceSettingsStore, GlobalSettingsStore};
 use lettuce_types::ConversationId;
 
 use super::ApiContext;
@@ -319,6 +319,17 @@ impl ModelSlots {
 
     fn resolve_embedding(&self, context: &ApiContext) -> ModelLoad<Arc<dyn MemoryEmbeddingEngine>> {
         let mut slot = lock(&self.embedding);
+        let keep_loaded = match context.backend().database().load_device_settings() {
+            Ok(device) => device.embedding.keep_model_loaded,
+            Err(error) => {
+                tracing::warn!(%error, "embedding settings could not be read");
+                return ModelLoad::Unavailable;
+            }
+        };
+        if !keep_loaded {
+            *slot = Slot::Unknown;
+            return self.loader.embedding(context);
+        }
         match &*slot {
             Slot::Loaded(engine) => return ModelLoad::Loaded(Arc::clone(engine)),
             Slot::Absent => return ModelLoad::NotInstalled,
@@ -517,42 +528,57 @@ pub(crate) async fn require_conversation_models(
 /// first call if it is not yet. A memory cycle fails when it is unavailable.
 pub(crate) struct ApiEmbedding {
     context: ApiContext,
-    resolved: OnceLock<Arc<dyn MemoryEmbeddingEngine>>,
+    metadata: OnceLock<(String, EmbeddingDimensions, SimilarityCalibration)>,
 }
 
 impl ApiEmbedding {
     pub(crate) fn new(context: ApiContext) -> Self {
         Self {
             context,
-            resolved: OnceLock::new(),
+            metadata: OnceLock::new(),
         }
     }
 
-    fn engine(&self) -> &Arc<dyn MemoryEmbeddingEngine> {
-        self.resolved.get_or_init(
-            || match self.context.models().resolve_embedding(&self.context) {
-                ModelLoad::Loaded(engine) => engine,
-                ModelLoad::NotInstalled | ModelLoad::Unavailable => Arc::new(UnavailableEmbedding),
-            },
-        )
+    fn engine(&self) -> Arc<dyn MemoryEmbeddingEngine> {
+        match self.context.models().resolve_embedding(&self.context) {
+            ModelLoad::Loaded(engine) => engine,
+            ModelLoad::NotInstalled | ModelLoad::Unavailable => Arc::new(UnavailableEmbedding),
+        }
+    }
+
+    fn consistent_engine(&self) -> Result<Arc<dyn MemoryEmbeddingEngine>, EmbeddingGenerationError> {
+        let engine = self.engine();
+        if let Some((revision, dimensions, _)) = self.metadata.get()
+            && (revision != engine.source_revision() || *dimensions != engine.dimensions())
+        {
+            return Err(EmbeddingGenerationError::Unavailable);
+        }
+        Ok(engine)
+    }
+
+    fn metadata(&self) -> &(String, EmbeddingDimensions, SimilarityCalibration) {
+        self.metadata.get_or_init(|| {
+            let engine = self.engine();
+            (engine.source_revision().to_owned(), engine.dimensions(), engine.calibration())
+        })
     }
 }
 
 impl MemoryEmbeddingEngine for ApiEmbedding {
     fn source_revision(&self) -> &str {
-        self.engine().source_revision()
+        &self.metadata().0
     }
 
     fn dimensions(&self) -> EmbeddingDimensions {
-        self.engine().dimensions()
+        self.metadata().1
     }
 
     fn calibration(&self) -> SimilarityCalibration {
-        self.engine().calibration()
+        self.metadata().2.clone()
     }
 
     fn count_tokens(&self, text: &str) -> Result<u32, EmbeddingGenerationError> {
-        self.engine().count_tokens(text)
+        self.consistent_engine()?.count_tokens(text)
     }
 
     fn embed_memory(
@@ -560,7 +586,7 @@ impl MemoryEmbeddingEngine for ApiEmbedding {
         request: &EmbeddingRequest,
         cancellation: &CancellationToken,
     ) -> Result<EmbeddingVector, EmbeddingGenerationError> {
-        self.engine().embed_memory(request, cancellation)
+        self.consistent_engine()?.embed_memory(request, cancellation)
     }
 
     fn requires_model(&self) -> bool {

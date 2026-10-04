@@ -316,6 +316,11 @@ async fn a_manual_memory_roleplay_chat_needs_no_model() {
 async fn installed_models_load_once_until_they_change() {
     let models = CountingModels::new(true, true);
     let harness = harness_with_models(Arc::clone(&models));
+    use lettuce_settings::DeviceSettingsStore;
+    let database = harness.context.backend().database();
+    let mut device = database.load_device_settings().expect("device settings");
+    device.embedding.keep_model_loaded = true;
+    database.save_device_settings(device).expect("save setting");
     enable_dynamic_memory(&harness);
     let defaults = CharacterDefaults {
         memory_policy: lettuce_characters::MemoryPolicy::Dynamic,
@@ -798,4 +803,22 @@ async fn a_companion_send_without_an_emotion_engine_is_model_required() {
         })
     );
     assert_untouched(&harness, &chat).await;
+}
+
+#[test]
+fn keep_loaded_off_releases_the_embedding_between_uses() {
+    use lettuce_settings::DeviceSettingsStore;
+    let models = CountingModels::new(true, true);
+    let harness = harness_with_models(Arc::clone(&models));
+    let engine = harness.context.embedding();
+    assert_eq!(engine.count_tokens("First use."), Ok(1));
+    assert_eq!(engine.count_tokens("Second use."), Ok(1));
+    assert_eq!(models.loads.load(Ordering::SeqCst), 2);
+    let database = harness.context.backend().database();
+    let mut device = database.load_device_settings().expect("device settings");
+    device.embedding.keep_model_loaded = true;
+    database.save_device_settings(device).expect("save setting");
+    assert_eq!(engine.count_tokens("Third use."), Ok(1));
+    assert_eq!(engine.count_tokens("Fourth use."), Ok(1));
+    assert_eq!(models.loads.load(Ordering::SeqCst), 3);
 }
