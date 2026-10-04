@@ -457,11 +457,9 @@ impl LocalDiffusionEngine {
         if let Some(profile_id) = model.binding.profile_id.as_deref()
             && let Ok(profile) = diffusion_catalog().profile(profile_id)
         {
-            profile
-                .check_runtime(&runtime.release)
-                .map_err(|error| {
-                    ImageError::new(ImageFailureKind::RuntimeIncompatible, error.to_string())
-                })?;
+            profile.check_runtime(&runtime.release).map_err(|error| {
+                ImageError::new(ImageFailureKind::RuntimeIncompatible, error.to_string())
+            })?;
         }
         let paths = self.paths();
         let compute_policy = load_compute_policy(&paths, &runtime.release, &runtime.asset);
@@ -584,7 +582,9 @@ impl LocalDiffusionEngine {
                 .local_addr()
                 .map(|address| address.port())
                 .map_err(|error| {
-                    start_failed(format!("Failed to read the local image server port: {error}"))
+                    start_failed(format!(
+                        "Failed to read the local image server port: {error}"
+                    ))
                 })?
         };
         std::fs::create_dir_all(&paths.loras).map_err(|error| {
@@ -801,7 +801,10 @@ impl LocalDiffusionEngine {
         let Some(_call) = self
             .begin_call(
                 cancellation,
-                request.progress.as_ref().map(|handle| Arc::clone(&handle.0)),
+                request
+                    .progress
+                    .as_ref()
+                    .map(|handle| Arc::clone(&handle.0)),
             )
             .await
         else {
@@ -1088,10 +1091,7 @@ impl LocalDiffusionEngine {
                 .await
                 .is_ok_and(|response| (200..300).contains(&response.status));
             if cancelled {
-                tracing::info!(
-                    component = "sdcpp",
-                    "cancelled local image job {job_id}"
-                );
+                tracing::info!(component = "sdcpp", "cancelled local image job {job_id}");
                 self.route.emit(GenerationProgress::Cancelled);
                 return true;
             }

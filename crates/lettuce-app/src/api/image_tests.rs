@@ -1295,3 +1295,93 @@ async fn a_lora_discovery_job_reads_the_files_metadata() {
     .expect("delete");
     assert!(deleted.left_behind.is_empty());
 }
+
+type Route = Arc<dyn Fn(&str) -> (u16, String) + Send + Sync>;
+
+/// A local HTTP server answering each request with `route(request line)`;
+/// returns its address and the request lines it saw.
+async fn serve(route: Route) -> (String, Arc<Mutex<Vec<String>>>) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("listener");
+    let address = listener.local_addr().expect("address");
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let captured = Arc::clone(&seen);
+    tokio::spawn(async move {
+        loop {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                return;
+            };
+            let (route, captured) = (Arc::clone(&route), Arc::clone(&captured));
+            tokio::spawn(async move {
+                let mut bytes = Vec::new();
+                let mut buffer = [0_u8; 4096];
+                while !bytes.windows(4).any(|window| window == b"\r\n\r\n") {
+                    match stream.read(&mut buffer).await {
+                        Ok(0) | Err(_) => return,
+                        Ok(read) => bytes.extend_from_slice(&buffer[..read]),
+                    }
+                }
+                let head = String::from_utf8_lossy(&bytes).into_owned();
+                let line = head.lines().next().unwrap_or_default().to_owned();
+                captured.lock().expect("seen").push(line.clone());
+                let (status, body) = route(&line);
+                let response = format!(
+                    "HTTP/1.1 {status} X\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(response.as_bytes()).await;
+            });
+        }
+    });
+    (format!("http://{address}"), seen)
+}
+
+fn set_pure_mode(context: &ApiContext, mode: lettuce_settings::PureMode) {
+    use lettuce_settings::GlobalSettingsStore;
+    let database = context.backend().database();
+    let stored = GlobalSettingsStore::load(database).expect("settings");
+    let mut settings = stored.settings;
+    settings.pure_mode = mode;
+    GlobalSettingsStore::save(
+        database,
+        settings,
+        stored.default_model_profile_id,
+        stored.revision,
+    )
+    .expect("saved settings");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn civitai_follows_the_pure_mode_level_and_reports_a_missing_model_as_not_found() {
+    let desktop = desktop(HeldImages::new(), false);
+    let context = &desktop.harness.context;
+    let (endpoint, seen) = serve(Arc::new(|line: &str| {
+        if line.starts_with("GET /api/v1/models?") {
+            (
+                200,
+                r#"{"items": [{"id": 7, "name": "Style", "type": "LORA", "modelVersions": [{"id": 70, "baseModel": "ZImageTurbo"}]}], "metadata": {}}"#.to_owned(),
+            )
+        } else {
+            (404, "{}".to_owned())
+        }
+    }))
+    .await;
+    context.image_state().use_civitai_endpoint(endpoint);
+    let search = || dto::CivitaiSearchRequest::default();
+    let standard = civitai_search(context, search()).await.expect("standard");
+    assert_eq!(standard.items.len(), 1);
+    set_pure_mode(context, lettuce_settings::PureMode::Off);
+    civitai_search(context, search()).await.expect("off");
+    let requests = seen.lock().expect("seen").clone();
+    assert!(requests[0].contains("nsfw=false"), "{}", requests[0]);
+    assert!(requests[1].contains("nsfw=true"), "{}", requests[1]);
+    let missing = civitai_model(context, dto::CivitaiModelRequest { model_id: 9 })
+        .await
+        .expect_err("no such model");
+    assert_eq!(missing.code, ApiErrorCode::NotFound);
+    let status = civitai_auth_status(context).await.expect("status");
+    assert!(!status.saved);
+    assert_eq!(status.error_kind, Some(dto::CivitaiAuthErrorKind::MissingToken));
+}

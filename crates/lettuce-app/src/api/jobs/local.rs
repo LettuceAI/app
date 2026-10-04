@@ -1521,6 +1521,7 @@ async fn move_folder(context: &ApiContext, started: &Arc<StartedJob>) -> Settlem
                 &|| cancellation.is_cancelled(),
             ) {
                 Ok(change) => {
+                    #[cfg(not(any(target_os = "android", target_os = "ios")))]
                     if let Err(error) = context.backend().rebind_local_diffusion(&app_folder) {
                         tracing::error!(%error, "the image engine could not follow the moved models folder");
                     }

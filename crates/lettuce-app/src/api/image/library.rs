@@ -8,16 +8,24 @@ use lettuce_image_generation::sd_runtime::lora_library::{
     InstalledLora, LoraArchitectureSource, LoraCompatibility, LoraKeywordDiscovery,
     LoraKeywordSource,
 };
-use lettuce_image_generation::{BundleAsset, CivitaiLoraDownload, CivitaiSearch, bundle_root};
+use lettuce_image_generation::{BundleAsset, CivitaiSearch};
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use lettuce_image_generation::{CivitaiLoraDownload, bundle_root};
 use lettuce_settings::GlobalSettingsStore;
 
 use super::engine::{role_dto, role_of};
 use super::generate::lora;
-use super::{ApiContext, engine, image_error, unsupported};
+#[cfg(any(target_os = "android", target_os = "ios"))]
+use super::unsupported;
+use super::{ApiContext, engine, image_error, lora_library};
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use crate::HfBundleInstallRequest;
 use crate::api::error::{api_error, hf_error, invalid_field};
-use crate::api::jobs::{ImageToolDetail, admit_install_with_detail, admit_tool};
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use crate::api::jobs::admit_install_with_detail;
+use crate::api::jobs::{ImageToolDetail, admit_tool};
 use crate::api::local_models::local_path;
-use crate::{HfBundleInstallRequest, HfBundleRoleSearch, HuggingFaceBrowser};
+use crate::{HfBundleRoleSearch, HuggingFaceBrowser};
 
 pub(crate) fn to_engine_lora(value: &dto::ImageLora) -> lettuce_models::StableDiffusionLora {
     lora(value)
@@ -72,11 +80,6 @@ fn installed_lora(lora: InstalledLora) -> dto::InstalledLora {
     }
 }
 
-fn library_error(message: String) -> ApiError {
-    let _ = message;
-    unsupported()
-}
-
 /// The LoRAs in the library, with their compatibility with `profile_id`.
 pub async fn loras_list(
     context: &ApiContext,
@@ -85,7 +88,7 @@ pub async fn loras_list(
     engine(context)?;
     context
         .blocking(move |context| {
-            let library = context.backend().lora_library().map_err(library_error)?;
+            let library = lora_library(context)?;
             let listed = library
                 .list(request.profile_id.as_deref(), context.now())
                 .map_err(image_error)?;
@@ -104,7 +107,7 @@ pub async fn loras_import(
 ) -> Result<dto::InstalledLora, ApiError> {
     engine(context)?;
     let path = local_path(&request.source, "source")?;
-    let library = context.backend().lora_library().map_err(library_error)?;
+    let library = lora_library(context)?;
     library
         .import(&path)
         .await
@@ -120,7 +123,7 @@ pub async fn loras_delete(
     engine(context)?;
     context
         .blocking(move |context| {
-            let library = context.backend().lora_library().map_err(library_error)?;
+            let library = lora_library(context)?;
             let outcome = library.delete(&request.path).map_err(image_error)?;
             Ok(dto::LoraDeleted {
                 left_behind: outcome
@@ -142,7 +145,7 @@ pub async fn loras_update_keywords(
     engine(context)?;
     context
         .blocking(move |context| {
-            let library = context.backend().lora_library().map_err(library_error)?;
+            let library = lora_library(context)?;
             library
                 .update_keywords(
                     &request.path,

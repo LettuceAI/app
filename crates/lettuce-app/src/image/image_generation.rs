@@ -116,12 +116,13 @@ impl ImageGenerationError {
             Self::Media(_) => ImageFailureKind::InvalidRequest,
             Self::Provider(ImageProviderError::Engine(error)) => error.kind,
             Self::Provider(ImageProviderError::Failed(_)) => ImageFailureKind::ProviderFailed,
-            Self::Provider(ImageProviderError::Unsupported(_)) => ImageFailureKind::LocalUnsupported,
+            Self::Provider(ImageProviderError::Unsupported(_)) => {
+                ImageFailureKind::LocalUnsupported
+            }
             Self::Provider(ImageProviderError::Cancelled) => ImageFailureKind::Cancelled,
-            Self::Usage
-            | Self::LoraLibrary(_)
-            | Self::Repository(_)
-            | Self::Jobs(_) => ImageFailureKind::StorageFailed,
+            Self::Usage | Self::LoraLibrary(_) | Self::Repository(_) | Self::Jobs(_) => {
+                ImageFailureKind::StorageFailed
+            }
             Self::InvalidWork => ImageFailureKind::Other,
         }
     }

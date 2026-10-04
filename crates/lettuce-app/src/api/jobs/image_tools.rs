@@ -29,7 +29,7 @@ use super::local::{digest, operation_key, stable_uuid};
 use super::runner::{ClaimedJob, JobHandler, JobLane, JobProgressSink};
 use crate::api::ApiContext;
 use crate::api::error::{IntoApiError, api_error, parse_id};
-use crate::api::image::{engine, failure_kind, internal};
+use crate::api::image::{engine, failure_kind, internal, lora_library};
 
 const TOOL_LEASE: Duration = Duration::from_secs(30 * 60);
 pub(super) const LOCAL_LANE: &str = "image:local";
@@ -473,19 +473,7 @@ impl ClaimedTool {
         let Some(media) = context.media() else {
             return Err(ImageError::storage("the media store is unavailable"));
         };
-        #[cfg(not(any(target_os = "android", target_os = "ios")))]
-        let image = context
-            .backend()
-            .upscale_image(media, asset, &self.cancellation)
-            .await?;
-        #[cfg(any(target_os = "android", target_os = "ios"))]
-        let image: lettuce_image_generation::GeneratedImage = {
-            let _ = (media, asset);
-            return Err(ImageError::new(
-                ImageFailureKind::LocalUnsupported,
-                "Local stable-diffusion.cpp image generation is desktop-only.",
-            ));
-        };
+        let image = self.upscaled(context, media, asset).await?;
         let history_id = match entry_id {
             Some(entry_id) => {
                 let (context, job_id, recorded) = (context.clone(), self.job_id, image.clone());
@@ -509,6 +497,32 @@ impl ClaimedTool {
                 history_id,
             },
         })
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    async fn upscaled(
+        &self,
+        context: &ApiContext,
+        media: &crate::api::ApiMediaStore,
+        asset: AssetId,
+    ) -> Result<lettuce_image_generation::GeneratedImage, ImageError> {
+        context
+            .backend()
+            .upscale_image(media, asset, &self.cancellation)
+            .await
+    }
+
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    async fn upscaled(
+        &self,
+        _context: &ApiContext,
+        _media: &crate::api::ApiMediaStore,
+        _asset: AssetId,
+    ) -> Result<lettuce_image_generation::GeneratedImage, ImageError> {
+        Err(ImageError::new(
+            ImageFailureKind::LocalUnsupported,
+            "Local stable-diffusion.cpp image generation is desktop-only.",
+        ))
     }
 
     async fn probe(
@@ -573,10 +587,9 @@ impl ClaimedTool {
         let (context, path, token) = (context.clone(), path.to_owned(), self.cancellation.clone());
         let library_context = context.clone();
         let discovery = async {
-            let library = library_context
-                .backend()
-                .lora_library()
-                .map_err(|message| ImageError::new(ImageFailureKind::LocalUnsupported, message))?;
+            let library = lora_library(&library_context).map_err(|error| {
+                ImageError::new(ImageFailureKind::LocalUnsupported, error.message)
+            })?;
             library
                 .discover(&path, profile_id.as_deref(), &client, context.now(), &token)
                 .await

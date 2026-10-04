@@ -2,22 +2,33 @@
 //! builds, installed models, compute policy, upscalers and the runnability
 //! of a model on this machine.
 
-use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use lettuce_contracts::ApiErrorCode;
+use lettuce_contracts::{self as dto, ApiError};
 use lettuce_image_generation::sd_runtime::fit::{
     FitComponent, FitDevice, FitEstimate, FitPlacement, PlanMode,
 };
 use lettuce_image_generation::sd_runtime::inventory::{BundleProfileView, ComputePolicyInfo};
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 use lettuce_image_generation::sd_runtime::layout::runtime_is_installed;
 use lettuce_image_generation::sd_runtime::policy::ComputePolicy;
-use lettuce_image_generation::sd_runtime::releases::{RuntimeAsset, RuntimeRelease};
-use lettuce_image_generation::{
-    DiffusionComponentRole, ImageError, ImageFailureKind, diffusion_catalog,
-};
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use lettuce_image_generation::sd_runtime::releases::RuntimeAsset;
+use lettuce_image_generation::sd_runtime::releases::RuntimeRelease;
+use lettuce_image_generation::{DiffusionComponentRole, diffusion_catalog};
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use lettuce_image_generation::{ImageError, ImageFailureKind};
 
 use super::{ApiContext, engine, image_error, internal};
-use crate::api::error::{api_error, invalid_field};
-use crate::api::jobs::{ImageToolDetail, admit_install, admit_tool};
-use crate::api::local_models::{local_path, models_root};
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use crate::api::error::api_error;
+use crate::api::error::invalid_field;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use crate::api::jobs::admit_install;
+use crate::api::jobs::{ImageToolDetail, admit_tool};
+use crate::api::local_models::local_path;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use crate::api::local_models::models_root;
 
 pub(super) const fn role_dto(role: DiffusionComponentRole) -> dto::ImageComponentRole {
     match role {

@@ -35,15 +35,17 @@ pub(crate) use image_tools::{ImageToolDetail, admit_tool, tool_view};
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub use install::CatalogVariant;
 pub use install::admit_install;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub(crate) use install::admit_install_with_detail;
 pub(crate) use install::recover_queued_installs;
 pub use install::{
     ArtifactInstallHandler, InstallFinish, InstallSources, InstallWork, NetworkInstallSources,
 };
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub(crate) use local::image_bundle_detail;
 pub use local::{ModelPullHandler, ModelsFolderMoveHandler};
 pub(crate) use local::{
-    admit_gguf_download, admit_model_pull, admit_models_folder_move, image_bundle_detail,
-    recover_local_model_jobs,
+    admit_gguf_download, admit_model_pull, admit_models_folder_move, recover_local_model_jobs,
 };
 pub use runner::{ClaimedJob, JobHandler, JobHandlers, JobLane, JobProgressSink, JobRunner};
 pub(crate) use state::JobHostState;

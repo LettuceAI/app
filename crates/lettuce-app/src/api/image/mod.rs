@@ -137,6 +137,25 @@ pub(crate) fn engine(context: &ApiContext) -> Result<Arc<LocalDiffusionEngine>, 
     }
 }
 
+/// The LoRA library below the engine's LoRA folder; `Unsupported` where the
+/// host has no engine.
+pub(crate) fn lora_library(
+    context: &ApiContext,
+) -> Result<
+    lettuce_image_generation::sd_runtime::lora_library::LoraLibrary<'_, lettuce_database::Database>,
+    ApiError,
+> {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        context.backend().lora_library().map_err(|_| unsupported())
+    }
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        let _ = context;
+        Err(unsupported())
+    }
+}
+
 pub(crate) fn internal(error: impl std::fmt::Display) -> ApiError {
     api_error(ApiErrorCode::Internal, error.to_string())
 }
