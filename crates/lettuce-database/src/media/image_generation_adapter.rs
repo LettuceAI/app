@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use lettuce_image_generation::{
     ImageGenerationRecord, ImageGenerationRepository, ImageGenerationRepositoryError,
-    ImageGenerationSource, ImageGenerationState,
+    ImageGenerationRequest, ImageGenerationSource, ImageGenerationState,
 };
 use lettuce_types::{JobId, ModelProfileId, RequestId, TimestampMillis};
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
@@ -211,6 +211,15 @@ pub(crate) fn insert_restored_in(
     Ok(())
 }
 
+/// Whether a request is the one already stored; the time it was admitted is
+/// the first admission's, so a replay stamped later is still the same
+/// request.
+fn same_request(stored: &ImageGenerationRequest, replayed: &ImageGenerationRequest) -> bool {
+    let mut replayed = replayed.clone();
+    replayed.created_at = stored.created_at;
+    *stored == replayed
+}
+
 impl ImageGenerationRepository for Database {
     fn admit(
         &self,
@@ -231,7 +240,7 @@ impl ImageGenerationRepository for Database {
         }
         let stored =
             load_in(&transaction, record.job_id)?.ok_or(ImageGenerationRepositoryError::Storage)?;
-        if inserted == 0 && stored.request != record.request {
+        if inserted == 0 && !same_request(&stored.request, &record.request) {
             return Err(ImageGenerationRepositoryError::Conflict);
         }
         transaction.commit().map_err(storage)?;

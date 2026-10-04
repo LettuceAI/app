@@ -959,9 +959,11 @@ mod tests {
                 backend.database(),
                 &media,
                 &providers,
-                None,
-                CancellationReason::User,
-                TimestampMillis::new(5),
+                crate::ImageRun {
+                    progress: None,
+                    cancellation_reason: CancellationReason::User,
+                    now: TimestampMillis::new(5),
+                },
             )
             .await
             .expect("run");

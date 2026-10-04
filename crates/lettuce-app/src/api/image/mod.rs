@@ -25,6 +25,8 @@ pub use engine::{
     sd_runtime_inventory, sd_runtime_releases, sd_runtime_switch, sd_upscalers_install,
     sd_upscalers_list, sd_upscalers_remove,
 };
+#[cfg(test)]
+pub(crate) use generate::settings as settings_for_test;
 pub(crate) use generate::{generation_view, record_upscale};
 pub use generate::{
     image_capabilities, image_generate, image_upscale, playground_history_delete,

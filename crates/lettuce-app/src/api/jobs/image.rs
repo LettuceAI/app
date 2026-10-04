@@ -183,9 +183,11 @@ impl ClaimedJob for ClaimedImage {
                 database,
                 media,
                 context.image_provider(),
-                Some(progress_handle(progress)),
-                reason,
-                now,
+                crate::ImageRun {
+                    progress: Some(progress_handle(progress)),
+                    cancellation_reason: reason,
+                    now,
+                },
             ),
         )
         .await;

@@ -17,13 +17,15 @@ impl crate::AppBackend {
     }
 
     /// The old app's `playground_history_delete`: removes the entry and,
-    /// with `delete_images`, its image assets unless the library keeps them
-    /// or something else uses them.
+    /// with `delete_images`, queues its image assets for media collection
+    /// unless the library keeps them.
     pub fn delete_playground_history(
         &self,
         id: &str,
         delete_images: bool,
+        now: TimestampMillis,
     ) -> Result<Vec<lettuce_types::AssetId>, PlaygroundHistoryError> {
-        self.database().delete_playground_history(id, delete_images)
+        self.database()
+            .delete_playground_history(id, delete_images, now)
     }
 }

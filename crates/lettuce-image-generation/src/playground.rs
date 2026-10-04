@@ -98,12 +98,14 @@ pub trait PlaygroundHistoryRepository: Send + Sync {
     ) -> Result<Vec<PlaygroundHistoryEntry>, PlaygroundHistoryError>;
 
     /// Removes the entry (a missing one is already gone). With
-    /// `delete_images` its image assets are deleted too, like the old app
-    /// deleted the files, unless the library keeps them or something else
-    /// still uses them; returns the assets deleted.
+    /// `delete_images` its image assets are queued for media collection, like
+    /// the old app deleted the files, unless the library keeps them; the
+    /// collection keeps what something else still uses. Returns the assets
+    /// queued.
     fn delete_playground_history(
         &self,
         id: &str,
         delete_images: bool,
+        now: TimestampMillis,
     ) -> Result<Vec<AssetId>, PlaygroundHistoryError>;
 }

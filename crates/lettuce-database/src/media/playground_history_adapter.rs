@@ -363,6 +363,7 @@ impl PlaygroundHistoryRepository for Database {
         &self,
         id: &str,
         delete_images: bool,
+        now: TimestampMillis,
     ) -> Result<Vec<AssetId>, PlaygroundHistoryError> {
         let mut connection = self
             .connection()
@@ -390,7 +391,7 @@ impl PlaygroundHistoryRepository for Database {
         transaction
             .execute("DELETE FROM playground_history WHERE id = ?1", [id])
             .map_err(storage)?;
-        let mut deleted = Vec::new();
+        let mut released = Vec::new();
         if delete_images {
             if let Some(job_id) = job_id {
                 transaction
@@ -401,27 +402,19 @@ impl PlaygroundHistoryRepository for Database {
                     .map_err(storage)?;
             }
             for asset_id in assets {
-                transaction
-                    .execute_batch("SAVEPOINT release_image")
+                let queued = transaction
+                    .execute(
+                        "INSERT OR IGNORE INTO media_gc_candidates (asset_id, queued_at)
+                         SELECT id, ?2 FROM media_assets WHERE id = ?1 AND retention <> 'library'",
+                        params![asset_id.to_string(), now.get()],
+                    )
                     .map_err(storage)?;
-                let removed = transaction.execute(
-                    "DELETE FROM media_assets WHERE id = ?1 AND retention != 'library'",
-                    [asset_id.to_string()],
-                );
-                match removed {
-                    Ok(1) => {
-                        transaction
-                            .execute_batch("RELEASE release_image")
-                            .map_err(storage)?;
-                        deleted.push(asset_id);
-                    }
-                    _ => transaction
-                        .execute_batch("ROLLBACK TO release_image; RELEASE release_image")
-                        .map_err(storage)?,
+                if queued == 1 {
+                    released.push(asset_id);
                 }
             }
         }
         transaction.commit().map_err(storage)?;
-        Ok(deleted)
+        Ok(released)
     }
 }

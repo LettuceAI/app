@@ -14697,9 +14697,11 @@ async fn run_scene_job<M, P>(
             database,
             media,
             provider,
-            None,
-            lettuce_jobs::CancellationReason::User,
-            at,
+            crate::ImageRun {
+                progress: None,
+                cancellation_reason: lettuce_jobs::CancellationReason::User,
+                now: at,
+            },
         )
         .await
         .expect("run");

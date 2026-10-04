@@ -190,10 +190,7 @@ fn policy_info(info: ComputePolicyInfo) -> dto::SdComputePolicyInfo {
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 async fn fetch_releases(context: &ApiContext) -> Result<Vec<RuntimeRelease>, ApiError> {
-    let tls = context
-        .backend()
-        .tls_policy()
-        .map_err(|error| internal(error))?;
+    let tls = context.backend().tls_policy().map_err(internal)?;
     let client = lettuce_network::JsonClient::with_tls(&tls)
         .map_err(|error| api_error(ApiErrorCode::Unavailable, error.to_string()))?;
     crate::fetch_runtime_releases(&client)
@@ -469,7 +466,7 @@ pub async fn sd_model_install(
                         now,
                     )
                     .map(|model| model.id.to_string())
-                    .map_err(|error| internal(error))
+                    .map_err(internal)
                 })
                 .await?;
             return Ok(dto::SdModelInstallStarted {
@@ -510,7 +507,7 @@ pub async fn sd_models_installed(context: &ApiContext) -> Result<dto::SdInstalle
                 context
                     .backend()
                     .installed_local_image_models()
-                    .map_err(|message| internal(message))
+                    .map_err(internal)
             })
             .await?;
         Ok(dto::SdInstalledModels {
@@ -570,7 +567,7 @@ pub async fn sd_model_uninstall(
                 request.also_remove_engine_if_unused,
             )
             .await
-            .map_err(|message| internal(message))?;
+            .map_err(internal)?;
         Ok(dto::SdUninstallOutcome { left_behind })
     }
     #[cfg(any(target_os = "android", target_os = "ios"))]
@@ -610,7 +607,7 @@ pub async fn sd_model_repair(
                 &request.variant_id,
                 context.now(),
             )
-            .map_err(|message| internal(message))?;
+            .map_err(internal)?;
         Ok(dto::SdModelRepaired {
             model_id: model_id.to_string(),
         })
@@ -737,8 +734,8 @@ pub async fn sd_component_library(
         context
             .blocking(move |context| {
                 let llm_root = models_root(context)?;
-                let entries = crate::component_library(&engine.paths(), &llm_root)
-                    .map_err(|message| internal(message))?;
+                let entries =
+                    crate::component_library(&engine.paths(), &llm_root).map_err(internal)?;
                 Ok(dto::SdComponentLibrary {
                     files: entries
                         .into_iter()

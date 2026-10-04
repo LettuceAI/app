@@ -95,6 +95,15 @@ impl<'a, R: ?Sized, J: ?Sized> ImageGenerationCoordinator<'a, R, J> {
 
 const INTERRUPTED_MESSAGE: &str = "Image generation was interrupted.";
 
+/// How one claimed image generation runs: where its local progress goes,
+/// why a cancellation counts as it does, and the time of the run.
+#[derive(Debug, Clone)]
+pub struct ImageRun {
+    pub progress: Option<ProgressHandle>,
+    pub cancellation_reason: CancellationReason,
+    pub now: TimestampMillis,
+}
+
 impl ImageGenerationError {
     /// The category a failed job carries.
     #[must_use]
@@ -248,15 +257,18 @@ impl<
         models: &M,
         media: &D,
         provider: &P,
-        progress: Option<ProgressHandle>,
-        cancellation_reason: CancellationReason,
-        now: TimestampMillis,
+        run: ImageRun,
     ) -> Result<ImageGenerationRunResult, ImageGenerationError>
     where
         M: ModelProfileRepository + ProviderAccountRepository + ?Sized,
         D: ImageMedia + ?Sized,
         P: ImageProviderPort + ?Sized,
     {
+        let ImageRun {
+            progress,
+            cancellation_reason,
+            now,
+        } = run;
         validate_job_record(&work.job, &work.record)?;
         if work.job.state != JobState::Running
             || work.claim.claim.job_id != work.job.id
@@ -879,9 +891,11 @@ mod tests {
                 &fixture.database,
                 &fixture.media,
                 provider,
-                None,
-                CancellationReason::User,
-                TimestampMillis::new(2_000),
+                ImageRun {
+                    progress: None,
+                    cancellation_reason: CancellationReason::User,
+                    now: TimestampMillis::new(2_000),
+                },
             )
             .await
             .expect("run")
@@ -991,9 +1005,15 @@ mod tests {
                 &fixture.database,
                 &history[0].id,
                 true,
+                TimestampMillis::new(3_000),
             ),
             Ok(vec![result.images[0].asset_id])
         );
+        let released = fixture
+            .database
+            .collect_media_garbage(TimestampMillis::new(3_001))
+            .expect("collection");
+        assert_eq!(released.len(), 1, "the image's file is released");
         assert_eq!(
             MediaAssetRepository::get(&fixture.database, result.images[0].asset_id),
             Ok(None)
@@ -1003,6 +1023,7 @@ mod tests {
                 &fixture.database,
                 &history[0].id,
                 true,
+                TimestampMillis::new(3_002),
             ),
             Ok(Vec::new())
         );

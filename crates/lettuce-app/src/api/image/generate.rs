@@ -10,6 +10,7 @@ use lettuce_image_generation::{
     image_capability_catalog, playground_page_size,
 };
 use lettuce_jobs::{JobSnapshot, JobStore, StoreError};
+use lettuce_media::MediaAssetRepository;
 use lettuce_models::{
     ModelProfileRepository, ProviderAccountRepository, StableDiffusionLora, StableDiffusionSettings,
 };
@@ -23,7 +24,7 @@ use crate::api::error::{IntoApiError, api_error, invalid_field, parse_id};
 use crate::api::jobs::{ImageToolDetail, admit_tool};
 use crate::{ImageGenerationCoordinator, ImageGenerationError};
 
-pub(super) fn settings(value: &dto::ImageSettings) -> Result<StableDiffusionSettings, ApiError> {
+pub(crate) fn settings(value: &dto::ImageSettings) -> Result<StableDiffusionSettings, ApiError> {
     let json = serde_json::to_value(value).map_err(internal)?;
     serde_json::from_value(json).map_err(|error| invalid_field("settings", error.to_string()))
 }
@@ -163,13 +164,13 @@ pub async fn image_capabilities(
                     let database = context.backend().database();
                     let model_id: ModelProfileId = parse_id(&model_id, "model_id")?;
                     let profile = ModelProfileRepository::get(database, model_id)
-                        .map_err(|error| internal(error))?
+                        .map_err(internal)?
                         .ok_or_else(|| {
                             api_error(ApiErrorCode::NotFound, "the image model was not found")
                         })?;
                     let account =
                         ProviderAccountRepository::get(database, profile.provider_account_id)
-                            .map_err(|error| internal(error))?
+                            .map_err(internal)?
                             .ok_or_else(|| {
                                 api_error(ApiErrorCode::NotFound, "the image model was not found")
                             })?;
@@ -336,15 +337,24 @@ pub async fn playground_history_delete(
     }
     context
         .blocking(move |context| {
-            let deleted = context
+            let queued = context
                 .backend()
-                .delete_playground_history(&id, request.delete_images)
+                .delete_playground_history(&id, request.delete_images, context.now())
                 .map_err(history_error)?;
-            if !deleted.is_empty() {
-                crate::api::image::generate::collect_garbage(context)?;
+            if !queued.is_empty() {
+                collect_garbage(context)?;
+            }
+            let mut deleted = 0_u32;
+            for asset_id in queued {
+                if MediaAssetRepository::get(context.backend().database(), asset_id)
+                    .map_err(internal)?
+                    .is_none()
+                {
+                    deleted += 1;
+                }
             }
             Ok(dto::PlaygroundHistoryDeleted {
-                deleted_images: u32::try_from(deleted.len()).unwrap_or(u32::MAX),
+                deleted_images: deleted,
             })
         })
         .await

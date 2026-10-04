@@ -249,6 +249,24 @@ pub(super) fn harness_over(
     models: Arc<dyn ModelLoader>,
     images: Arc<dyn lettuce_image_generation::ImageProviderPort>,
 ) -> Harness {
+    harness_over_files(
+        backend, reply, clock, media, app_folder, models, images, None,
+    )
+}
+
+/// A harness over `backend` whose context knows the database files media
+/// collection reads.
+#[expect(clippy::too_many_arguments, reason = "one parameter per context part")]
+pub(super) fn harness_over_files(
+    backend: Arc<AppBackend>,
+    reply: Reply,
+    clock: Arc<dyn lettuce_jobs::Clock>,
+    media: Option<Arc<ApiMediaStore>>,
+    app_folder: Option<std::path::PathBuf>,
+    models: Arc<dyn ModelLoader>,
+    images: Arc<dyn lettuce_image_generation::ImageProviderPort>,
+    database_files: Option<ApiDatabaseFiles>,
+) -> Harness {
     let database = backend.database();
     let model_id = crate::launch::tests::seed_model(database, ProviderProtocol::Ollama, "ollama");
     let mut model = ModelProfileRepository::get(database, model_id)
@@ -279,7 +297,7 @@ pub(super) fn harness_over(
         files: Arc::new(StdFiles),
         app_folder,
         resource_dir: None,
-        database_files: None,
+        database_files,
         asset_url_base: "test-asset://host".into(),
     });
     Harness {
