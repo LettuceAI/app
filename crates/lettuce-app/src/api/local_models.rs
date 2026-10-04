@@ -713,8 +713,8 @@ pub(crate) fn busy(reason: dto::LocalModelsBusyReason) -> ApiError {
     }
 }
 
-/// The local image job (generation, upscale or probe) that has not ended, or
-/// `Some(None)` when only the engine's server is up.
+/// The local image job (generation, upscale, probe or LoRA discovery) that
+/// has not ended, or `Some(None)` when a local call runs without a job.
 fn image_work_active(context: &ApiContext) -> Option<Option<String>> {
     use lettuce_jobs::{JobCatalog, JobKind, JobListFilter, JobState, ResourceClass};
     use lettuce_types::{PageLimit, PageRequest};
@@ -730,6 +730,7 @@ fn image_work_active(context: &ApiContext) -> Option<Option<String>> {
         JobKind::ImageGenerate,
         JobKind::MediaTransform,
         JobKind::RuntimePrepare,
+        JobKind::Maintenance,
     ] {
         let mut cursor = None;
         loop {
@@ -745,11 +746,13 @@ fn image_work_active(context: &ApiContext) -> Option<Option<String>> {
             let Ok(page) = page else {
                 return Some(None);
             };
-            if let Some(job) = page
-                .items
-                .iter()
-                .find(|job| job.resources.contains(&ResourceClass::Process))
-            {
+            if let Some(job) = page.items.iter().find(|job| {
+                if kind == JobKind::Maintenance {
+                    super::jobs::is_lora_discovery(job)
+                } else {
+                    job.resources.contains(&ResourceClass::Process)
+                }
+            }) {
                 return Some(Some(job.id.to_string()));
             }
             match page.next_cursor {
@@ -762,7 +765,7 @@ fn image_work_active(context: &ApiContext) -> Option<Option<String>> {
     if context
         .backend()
         .local_diffusion()
-        .is_some_and(|engine| engine.server_active())
+        .is_some_and(|engine| engine.call_active())
     {
         return Some(None);
     }

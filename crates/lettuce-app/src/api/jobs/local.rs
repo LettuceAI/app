@@ -418,7 +418,7 @@ fn earlier_jobs(
     }
 }
 
-fn folder_move_active(context: &ApiContext) -> Result<(), ApiError> {
+pub(crate) fn folder_move_active(context: &ApiContext) -> Result<(), ApiError> {
     match active_jobs(context, JobKind::ModelsFolderMove, None)?.first() {
         Some(job) => Err(busy(dto::LocalModelsBusyReason::FolderMoveActive {
             job_id: job.id.to_string(),
@@ -1493,6 +1493,10 @@ async fn move_folder(context: &ApiContext, started: &Arc<StartedJob>) -> Settlem
                 true,
                 "models-folder-busy",
             )));
+        }
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        if move_existing && let Some(engine) = context.backend().local_diffusion() {
+            tokio::runtime::Handle::current().block_on(engine.stop());
         }
         let block = if move_existing {
             match context.backend().block_llama_folder(Path::new(&from)) {

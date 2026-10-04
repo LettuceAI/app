@@ -190,6 +190,13 @@ pub(crate) fn admit_tool(
     })
 }
 
+/// Whether `job` is a LoRA keyword discovery.
+pub(crate) fn is_lora_discovery(job: &JobSnapshot) -> bool {
+    job.idempotency_key
+        .as_ref()
+        .is_some_and(|key| key.as_str().starts_with(LORA_PREFIX))
+}
+
 fn is_tool(job: &JobSnapshot) -> bool {
     job.idempotency_key.as_ref().is_some_and(|key| {
         [

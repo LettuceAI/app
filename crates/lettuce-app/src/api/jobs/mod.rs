@@ -31,7 +31,7 @@ use super::mapping;
 pub(crate) use feed::JobFeed;
 pub use image::ImageGenerateHandler;
 pub use image_tools::ImageToolHandler;
-pub(crate) use image_tools::{ImageToolDetail, admit_tool, tool_view};
+pub(crate) use image_tools::{ImageToolDetail, admit_tool, is_lora_discovery, tool_view};
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub use install::CatalogVariant;
 pub use install::admit_install;
@@ -41,6 +41,7 @@ pub(crate) use install::recover_queued_installs;
 pub use install::{
     ArtifactInstallHandler, InstallFinish, InstallSources, InstallWork, NetworkInstallSources,
 };
+pub(crate) use local::folder_move_active;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub(crate) use local::image_bundle_detail;
 pub use local::{ModelPullHandler, ModelsFolderMoveHandler};

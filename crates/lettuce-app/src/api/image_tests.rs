@@ -1529,3 +1529,192 @@ async fn the_models_folder_does_not_move_while_local_image_work_runs() {
         dto::JobStateDto::Succeeded
     );
 }
+
+const FAKE_SERVER: &str = r#"
+import sys, json
+from http.server import BaseHTTPRequestHandler, HTTPServer
+port = int(sys.argv[sys.argv.index('--listen-port') + 1])
+class H(BaseHTTPRequestHandler):
+    def reply(self, body):
+        data = json.dumps(body).encode()
+        self.send_response(200)
+        self.send_header('content-length', str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+    def do_GET(self):
+        if self.path.endswith('/p'):
+            self.reply({"status": "completed", "result": {"images": [{"b64_json": "AAAA"}]}})
+        else:
+            self.reply({})
+    def do_POST(self):
+        self.rfile.read(int(self.headers.get('content-length', 0)))
+        self.reply({"id": "j", "poll_url": "/p"})
+    def log_message(self, *args):
+        pass
+HTTPServer(('127.0.0.1', port), H).serve_forever()
+"#;
+
+fn engine_request(root: &Path) -> lettuce_image_generation::ProviderImageRequest {
+    use lettuce_models::{ProviderAccount, ProviderConfig, StableDiffusionSettings};
+    let file = |name: &str| {
+        let path = root.join(name);
+        std::fs::write(&path, b"weights").expect("component");
+        path.display().to_string()
+    };
+    let binding = lettuce_models::StableDiffusionCppBinding {
+        text_encoder_path: Some(file("encoder.gguf")),
+        vae_path: Some(file("vae.safetensors")),
+        runtime_release: Some(RELEASE.to_owned()),
+        runtime_asset: Some(CPU_BUILD.to_owned()),
+        ..Default::default()
+    };
+    lettuce_image_generation::ProviderImageRequest {
+        job_id: JobId::new(),
+        model_profile_id: ModelProfileId::new(),
+        account: ProviderAccount {
+            id: lettuce_types::ProviderAccountId::new(),
+            secret_owner_id: lettuce_settings::SecretOwnerId::new(),
+            provider_kind: "sdcpp".to_owned(),
+            protocol: ProviderProtocol::StableDiffusion,
+            label: "stable-diffusion.cpp".to_owned(),
+            endpoint: None,
+            enabled: true,
+            streaming_enabled: false,
+            allow_invalid_tls: false,
+            api_key_ref: None,
+            secret_headers: Vec::new(),
+            config: ProviderConfig::Standard,
+            revision: lettuce_types::Revision::INITIAL,
+            created_at: TimestampMillis::new(1),
+            updated_at: TimestampMillis::new(1),
+        },
+        external_model_id: file("diffusion.gguf"),
+        model_display_name: "Local model".to_owned(),
+        prompt: "a lighthouse".to_owned(),
+        settings: StableDiffusionSettings {
+            cpp: binding,
+            ..StableDiffusionSettings::default()
+        },
+        loras: Vec::new(),
+        input_images: Vec::new(),
+        mask_image: None,
+        size: Some("512x512".to_owned()),
+        quality: None,
+        style: None,
+        count: 1,
+        text_output: false,
+        cancellation: lettuce_jobs::handle::CancellationToken::new(),
+        progress: None,
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn an_idle_cached_server_does_not_block_the_move_and_is_stopped_before_it() {
+    use lettuce_image_generation::ImageProviderPort;
+    if std::process::Command::new("python3")
+        .arg("--version")
+        .output()
+        .is_err()
+    {
+        return;
+    }
+    let desktop = desktop(HeldImages::new(), true);
+    let context = &desktop.harness.context;
+    let engine = context.backend().local_diffusion().expect("engine").clone();
+    let build = engine.paths().runtime_root(RELEASE, CPU_BUILD);
+    std::fs::create_dir_all(&build).expect("build");
+    let fake = desktop.root.join("fake_server.py");
+    std::fs::write(&fake, FAKE_SERVER).expect("fake server");
+    let pid_file = desktop.root.join("server.pid");
+    script(
+        &build.join(server_executable_name()),
+        &format!(
+            "echo $$ > '{}'\nexec python3 '{}' \"$@\"",
+            pid_file.display(),
+            fake.display()
+        ),
+    );
+    script(&build.join(cli_executable_name()), "exit 1");
+    engine
+        .generate(engine_request(&desktop.root))
+        .await
+        .expect("the first generation");
+    assert!(engine.server_running().await, "the server stays cached");
+    assert!(!engine.call_active());
+    let pid = std::fs::read_to_string(&pid_file)
+        .expect("pid")
+        .trim()
+        .to_owned();
+
+    let target = desktop.root.join("elsewhere");
+    let accepted = local_models_dir_set(
+        context,
+        dto::LocalModelsDirSetRequest {
+            path: target.display().to_string(),
+            move_existing: true,
+            client_operation_id: "move-idle".to_owned(),
+        },
+    )
+    .await
+    .expect("an idle server does not block the move");
+    let runner = JobRunner::new(context.clone(), JobHandlers::standard());
+    assert!(runner.run_once().await.expect("move starts"));
+    runner.wait_idle().await;
+    assert_eq!(
+        view(context, job_id(&accepted)).await.state,
+        dto::JobStateDto::Succeeded
+    );
+    assert!(!engine.server_running().await, "stopped before the move");
+    until(|| {
+        !std::process::Command::new("kill")
+            .args(["-0", &pid])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success())
+    })
+    .await;
+    assert_eq!(engine.paths().image_root, target.join("image"));
+    engine
+        .generate(engine_request(&desktop.root))
+        .await
+        .expect("a generation after the move");
+    assert!(engine.server_running().await, "a new server starts");
+    engine.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_models_folder_does_not_move_while_a_lora_discovery_is_queued() {
+    let desktop = desktop(HeldImages::new(), true);
+    let context = &desktop.harness.context;
+    let discovery = job_id(
+        &lora_keywords_discover(
+            context,
+            dto::LoraKeywordsDiscoverRequest {
+                path: "style.safetensors".to_owned(),
+                profile_id: None,
+                client_operation_id: "discover-move".to_owned(),
+            },
+        )
+        .await
+        .expect("accepted"),
+    );
+    let refused = local_models_dir_set(
+        context,
+        dto::LocalModelsDirSetRequest {
+            path: desktop.root.join("elsewhere").display().to_string(),
+            move_existing: true,
+            client_operation_id: "move-discovery".to_owned(),
+        },
+    )
+    .await
+    .expect_err("a queued discovery counts");
+    assert_eq!(
+        refused.details,
+        Some(ApiErrorDetails::LocalModelsBusy {
+            reason: dto::LocalModelsBusyReason::ImageWorkActive {
+                job_id: Some(discovery.to_string())
+            }
+        })
+    );
+}

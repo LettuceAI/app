@@ -1105,11 +1105,15 @@ impl LocalDiffusionEngine {
         false
     }
 
-    /// Whether the managed server is running or being started or stopped.
-    pub fn server_active(&self) -> bool {
-        self.server
-            .try_lock()
-            .map_or(true, |server| server.is_some())
+    /// Whether a local call (a generation, a probe or an upscale) holds the
+    /// engine's turn right now; a cached idle server does not count.
+    pub fn call_active(&self) -> bool {
+        self.gate.try_lock().is_err()
+    }
+
+    /// Whether a managed server is cached, idle or not.
+    pub async fn server_running(&self) -> bool {
+        self.server.lock().await.is_some()
     }
 
     /// Stops the managed server (engine switch, delete, compute policy
