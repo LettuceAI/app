@@ -997,7 +997,12 @@ async fn a_restart_cancels_queued_tool_jobs_and_clears_upscale_scratch() {
     let restarted = context.restarted();
     restarted.recover_after_restart().expect("recovery");
     assert_eq!(state(&restarted, queued), JobState::Cancelled);
-    assert!(std::fs::read_dir(&scratch).expect("scratch").next().is_none());
+    assert!(
+        std::fs::read_dir(&scratch)
+            .expect("scratch")
+            .next()
+            .is_none()
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1018,7 +1023,10 @@ async fn the_avatar_prompt_follows_the_models_provider() {
     )
     .await
     .expect("local");
-    assert_eq!(local.prompt, "in a workshop", "a local model gets the request as typed");
+    assert_eq!(
+        local.prompt, "in a workshop",
+        "a local model gets the request as typed"
+    );
     let remote = avatar_prompt(
         context,
         dto::AvatarPromptRequest {
@@ -1218,7 +1226,10 @@ async fn cancelling_a_runnability_probe_stops_the_engine_it_started() {
         view(context, job_id(&accepted)).await.state,
         dto::JobStateDto::Cancelled
     );
-    let pid = std::fs::read_to_string(&pid_file).expect("pid").trim().to_owned();
+    let pid = std::fs::read_to_string(&pid_file)
+        .expect("pid")
+        .trim()
+        .to_owned();
     until(|| {
         !std::process::Command::new("kill")
             .args(["-0", &pid])
@@ -1383,5 +1394,8 @@ async fn civitai_follows_the_pure_mode_level_and_reports_a_missing_model_as_not_
     assert_eq!(missing.code, ApiErrorCode::NotFound);
     let status = civitai_auth_status(context).await.expect("status");
     assert!(!status.saved);
-    assert_eq!(status.error_kind, Some(dto::CivitaiAuthErrorKind::MissingToken));
+    assert_eq!(
+        status.error_kind,
+        Some(dto::CivitaiAuthErrorKind::MissingToken)
+    );
 }
