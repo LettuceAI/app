@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use lettuce_image_generation::{
     ImageGenerationRecord, ImageGenerationState, PlaygroundHistoryEntry, PlaygroundHistoryError,
-    PlaygroundHistoryImage, PlaygroundHistoryRepository, PlaygroundOrigin,
+    PlaygroundHistoryImage, PlaygroundHistoryRepository, PlaygroundOrigin, PlaygroundUpscale,
 };
 use lettuce_transfer::PlaygroundHistoryBackup;
 use lettuce_types::{AssetId, JobId, TimestampMillis};
@@ -190,6 +190,103 @@ fn images_in(
 }
 
 impl PlaygroundHistoryRepository for Database {
+    fn playground_entry_exists(&self, id: &str) -> Result<bool, PlaygroundHistoryError> {
+        let connection = self
+            .connection()
+            .map_err(|_| PlaygroundHistoryError::Storage)?;
+        connection
+            .query_row(
+                "SELECT 1 FROM playground_history WHERE id = ?1",
+                [id],
+                |_| Ok(()),
+            )
+            .optional()
+            .map(|found| found.is_some())
+            .map_err(storage)
+    }
+
+    fn record_playground_upscale(
+        &self,
+        upscale: PlaygroundUpscale,
+    ) -> Result<String, PlaygroundHistoryError> {
+        let mut connection = self
+            .connection()
+            .map_err(|_| PlaygroundHistoryError::Storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(storage)?;
+        let id = upscale.job_id.to_string();
+        let recorded = transaction
+            .query_row(
+                "SELECT 1 FROM playground_history WHERE id = ?1",
+                [&id],
+                |_| Ok(()),
+            )
+            .optional()
+            .map_err(storage)?;
+        if recorded.is_some() {
+            transaction.commit().map_err(storage)?;
+            return Ok(id);
+        }
+        let source = transaction
+            .query_row(
+                "SELECT model_profile_id, model_name, prompt, negative_prompt, seed
+                   FROM playground_history WHERE id = ?1",
+                [&upscale.source_entry_id],
+                |row| {
+                    Ok((
+                        row.get::<_, Option<String>>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, Option<String>>(3)?,
+                        row.get::<_, Option<i64>>(4)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(storage)?
+            .ok_or(PlaygroundHistoryError::NotFound)?;
+        let params_json = serde_json::json!({
+            "format": "upscale-v1",
+            "upscale_of": upscale.source_entry_id,
+        })
+        .to_string();
+        transaction
+            .execute(
+                "INSERT INTO playground_history (
+                    id, origin, job_id, created_at, provider_kind, model_profile_id, model_name,
+                    prompt, negative_prompt, seed, params_json, status
+                 ) VALUES (?1, 'generated', ?1, ?2, 'sdcpp', ?3, ?4, ?5, ?6, ?7, ?8, 'complete')",
+                params![
+                    id,
+                    upscale.created_at.get(),
+                    source.0,
+                    source.1,
+                    source.2,
+                    source.3,
+                    source.4,
+                    params_json,
+                ],
+            )
+            .map_err(storage)?;
+        transaction
+            .execute(
+                "INSERT INTO playground_history_images (
+                    history_id, ordinal, asset_id, mime_type, width, height
+                 ) VALUES (?1, 0, ?2, ?3, ?4, ?5)",
+                params![
+                    id,
+                    upscale.image.asset_id.to_string(),
+                    upscale.image.mime_type,
+                    upscale.image.width,
+                    upscale.image.height,
+                ],
+            )
+            .map_err(storage)?;
+        transaction.commit().map_err(storage)?;
+        Ok(id)
+    }
+
     fn list_playground_history(
         &self,
         limit: u32,

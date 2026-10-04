@@ -13,3 +13,6 @@ pub mod releases;
 pub mod runnability;
 pub mod server;
 pub mod upscale;
+
+#[cfg(test)]
+mod local_work_tests;

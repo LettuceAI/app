@@ -3,9 +3,11 @@
 //! probe once it is.
 
 use std::io::Cursor;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use base64::Engine as _;
+use lettuce_jobs::handle::CancellationToken;
 use lettuce_models::{StableDiffusionCppBinding, StableDiffusionLora};
 use lettuce_network::JsonAuth;
 use serde::Serialize;
@@ -17,8 +19,13 @@ use super::fit::{
 };
 use super::layout::{ActiveRuntime, load_compute_policy, runtime_is_installed};
 use super::loras::normalize_loras;
-use super::server::{DESKTOP_ONLY_MESSAGE, EngineModel, LocalDiffusionEngine, split_endpoint};
-use crate::{DiffusionComponentRole, DiffusionProfile, diffusion_catalog};
+use super::output::GenerationProgressSink;
+use super::server::{
+    DESKTOP_ONLY_MESSAGE, EngineModel, LocalDiffusionEngine, split_endpoint, unless_cancelled,
+};
+use crate::{
+    DiffusionComponentRole, DiffusionProfile, ImageError, ImageFailureKind, diffusion_catalog,
+};
 
 const PROBE_POLL_ATTEMPTS: u32 = 1_200;
 const PROBE_POLL_INTERVAL: Duration = Duration::from_millis(500);
@@ -87,6 +94,7 @@ pub struct RemoteBundleRunnabilityRequest {
 }
 
 enum ProbeJobError {
+    Cancelled,
     Execution(String),
     Infrastructure(String),
 }
@@ -114,7 +122,7 @@ fn engine_unavailable(
             estimate: None,
         });
     }
-    if !runtime_is_installed(engine.paths(), release, asset) {
+    if !runtime_is_installed(&engine.paths(), release, asset) {
         return Some(Runnability {
             status: RunnabilityStatus::NotInstalled,
             method: "stableDiffusionCppAutoFitEstimate",
@@ -199,14 +207,19 @@ impl LocalDiffusionEngine {
         release: &str,
         asset: &str,
     ) -> bool {
-        runtime_is_installed(self.paths(), release, asset)
+        runtime_is_installed(&self.paths(), release, asset)
             && profile.components(variant).iter().all(|component| {
                 std::fs::metadata(self.paths().component_path(component))
                     .is_ok_and(|metadata| metadata.len() == component.bytes)
             })
     }
 
-    async fn run_probe_job(&self, base_url: &str, payload: &Value) -> Result<(), ProbeJobError> {
+    async fn run_probe_job(
+        &self,
+        base_url: &str,
+        payload: &Value,
+        cancellation: &CancellationToken,
+    ) -> Result<(), ProbeJobError> {
         let response = self
             .http
             .post_json(
@@ -252,7 +265,13 @@ impl LocalDiffusionEngine {
             ProbeJobError::Infrastructure("Fit-test response did not include a poll URL".to_owned())
         })?;
         for _ in 0..PROBE_POLL_ATTEMPTS {
-            tokio::time::sleep(PROBE_POLL_INTERVAL).await;
+            if unless_cancelled(cancellation, tokio::time::sleep(PROBE_POLL_INTERVAL))
+                .await
+                .is_none()
+            {
+                self.stop().await;
+                return Err(ProbeJobError::Cancelled);
+            }
             let response = self
                 .http
                 .get(
@@ -308,13 +327,19 @@ impl LocalDiffusionEngine {
     pub async fn catalog_runnability(
         &self,
         request: CatalogRunnabilityRequest,
-    ) -> Result<Runnability, String> {
+        cancellation: &CancellationToken,
+        progress: Option<Arc<dyn GenerationProgressSink>>,
+    ) -> Result<Runnability, ImageError> {
         if cfg!(any(target_os = "android", target_os = "ios")) {
-            return Err(DESKTOP_ONLY_MESSAGE.to_owned());
+            return Err(ImageError::new(
+                ImageFailureKind::LocalUnsupported,
+                DESKTOP_ONLY_MESSAGE,
+            ));
         }
+        let invalid = |message: String| ImageError::new(ImageFailureKind::InvalidRequest, message);
         let (profile, variant) = diffusion_catalog()
             .find_variant(&request.profile_id, &request.variant_id)
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| invalid(error.to_string()))?;
         let (release, asset) = (&request.runtime_release, &request.runtime_asset);
         if let Some(unavailable) = engine_unavailable(
             profile,
@@ -325,7 +350,7 @@ impl LocalDiffusionEngine {
         ) {
             return Ok(unavailable);
         }
-        let policy = load_compute_policy(self.paths(), release, asset);
+        let policy = load_compute_policy(&self.paths(), release, asset);
         let installed = self.variant_installed_for(profile, variant, release, asset);
         let refs = if request.reference_images.is_empty() {
             usize::from(request.reference_image_count.unwrap_or(0))
@@ -335,10 +360,10 @@ impl LocalDiffusionEngine {
                     .reference_image_count
                     .is_some_and(|count| usize::from(count) != request.reference_images.len())
             {
-                return Err(
+                return Err(invalid(
                     "referenceImageCount must match the number of supplied referenceImages."
                         .to_owned(),
-                );
+                ));
             }
             request.reference_images.len()
         };
@@ -346,31 +371,37 @@ impl LocalDiffusionEngine {
             && let Some(maximum) = profile.max_reference_images
             && refs > usize::from(maximum)
         {
-            return Err(format!(
+            return Err(invalid(format!(
                 "{} accepts at most {maximum} reference images.",
                 profile.display_name
-            ));
+            )));
         }
         if installed && profile.requires_reference_image && refs == 0 {
-            return Err(format!(
+            return Err(invalid(format!(
                 "{} requires at least one reference image.",
                 profile.display_name
-            ));
+            )));
         }
         let width = request.width.unwrap_or(profile.default_width);
         let height = request.height.unwrap_or(profile.default_height);
         if installed && (width == 0 || height == 0) {
-            return Err("Fit-test width and height must be greater than zero.".to_owned());
+            return Err(invalid(
+                "Fit-test width and height must be greater than zero.".to_owned(),
+            ));
         }
         let requested_steps = request
             .sample_steps
             .unwrap_or(u32::from(profile.default_steps));
         if installed && requested_steps == 0 {
-            return Err("Fit-test sampleSteps must be greater than zero.".to_owned());
+            return Err(invalid(
+                "Fit-test sampleSteps must be greater than zero.".to_owned(),
+            ));
         }
         let batch_count = request.batch_count.unwrap_or(1);
         if installed && batch_count == 0 {
-            return Err("Fit-test batchCount must be greater than zero.".to_owned());
+            return Err(invalid(
+                "Fit-test batchCount must be greater than zero.".to_owned(),
+            ));
         }
         if !installed {
             let started = Instant::now();
@@ -421,9 +452,12 @@ impl LocalDiffusionEngine {
                 .map(|component| self.paths().component_path(component).display().to_string())
         };
         let diffusion = path_of(DiffusionComponentRole::DiffusionModel).ok_or_else(|| {
-            format!(
-                "{} does not define a diffusion_model component",
-                profile.display_name
+            ImageError::new(
+                ImageFailureKind::Other,
+                format!(
+                    "{} does not define a diffusion_model component",
+                    profile.display_name
+                ),
             )
         })?;
         let model = EngineModel {
@@ -453,9 +487,17 @@ impl LocalDiffusionEngine {
             release: release.clone(),
             asset: asset.clone(),
         };
-        let base_url = match self.ensure_server(&model, &runtime, false).await {
+        let Some(_call) = self.begin_call(cancellation, progress).await else {
+            return Err(ImageError::cancelled());
+        };
+        let base_url = match self
+            .ensure_server(&model, &runtime, false, cancellation)
+            .await
+        {
             Ok(base_url) => base_url,
+            Err(error) if error.is_cancelled() => return Err(error),
             Err(error) => {
+                let error = error.message;
                 return Ok(Runnability {
                     status: RunnabilityStatus::Inconclusive,
                     method: "stableDiffusionCppExecutionProbe",
@@ -474,12 +516,12 @@ impl LocalDiffusionEngine {
         let references = if supplied_references {
             request.reference_images
         } else if refs > 0 {
-            vec![blank_reference_data_url(width, height)?; refs]
+            vec![blank_reference_data_url(width, height).map_err(invalid)?; refs]
         } else {
             Vec::new()
         };
         let loras = normalize_loras(&self.paths().loras, &request.loras, Some(&profile.id))
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| ImageError::new(ImageFailureKind::LoraInvalid, error.to_string()))?;
         let supplied_prompt = request.prompt.is_some();
         let mut sample_params = json!({
             "sample_steps": if request.full_execution { requested_steps } else { 1 },
@@ -505,7 +547,10 @@ impl LocalDiffusionEngine {
             "output_format": "png",
             "output_compression": 100
         });
-        let result = self.run_probe_job(&base_url, &payload).await;
+        let result = self.run_probe_job(&base_url, &payload, cancellation).await;
+        if matches!(result, Err(ProbeJobError::Cancelled)) {
+            return Err(ImageError::cancelled());
+        }
         let request_matched =
             request.full_execution && supplied_prompt && (refs == 0 || supplied_references);
         let scope = if request_matched {
@@ -535,6 +580,7 @@ impl LocalDiffusionEngine {
                 .to_owned(),
                 estimate: None,
             },
+            Err(ProbeJobError::Cancelled) => return Err(ImageError::cancelled()),
             Err(ProbeJobError::Execution(error)) => Runnability {
                 status: RunnabilityStatus::Failed,
                 method: "stableDiffusionCppExecutionProbe",
@@ -562,13 +608,21 @@ impl LocalDiffusionEngine {
     pub async fn remote_bundle_runnability(
         &self,
         request: &RemoteBundleRunnabilityRequest,
-    ) -> Result<Runnability, String> {
+    ) -> Result<Runnability, ImageError> {
         if cfg!(any(target_os = "android", target_os = "ios")) {
-            return Err(DESKTOP_ONLY_MESSAGE.to_owned());
+            return Err(ImageError::new(
+                ImageFailureKind::LocalUnsupported,
+                DESKTOP_ONLY_MESSAGE,
+            ));
         }
         let profile = diffusion_catalog()
             .profile(&request.profile_id)
-            .map_err(|_| format!("Unknown local image architecture: {}", request.profile_id))?;
+            .map_err(|_| {
+                ImageError::new(
+                    ImageFailureKind::InvalidRequest,
+                    format!("Unknown local image architecture: {}", request.profile_id),
+                )
+            })?;
         let (release, asset) = (&request.runtime_release, &request.runtime_asset);
         if let Some(unavailable) = engine_unavailable(
             profile,
@@ -580,7 +634,7 @@ impl LocalDiffusionEngine {
             return Ok(unavailable);
         }
         let started = Instant::now();
-        let policy = load_compute_policy(self.paths(), release, asset);
+        let policy = load_compute_policy(&self.paths(), release, asset);
         let resolved = match self.resolve_compute_policy(release, asset, &policy).await {
             Ok(resolved) => resolved,
             Err(error) => {
@@ -632,7 +686,6 @@ mod tests {
     use lettuce_types::OperationId;
 
     use super::super::layout::{DiffusionPaths, server_executable_name};
-    use super::super::output::{GenerationProgress, GenerationProgressSink};
     use super::super::policy::HardwareGpu;
     use super::super::server::EngineHost;
     use super::*;
@@ -654,12 +707,6 @@ mod tests {
         }
     }
 
-    struct Silent;
-
-    impl GenerationProgressSink for Silent {
-        fn progress(&self, _: GenerationProgress) {}
-    }
-
     const CPU_BUILD: &str = "sd-master-bin-Linux-Ubuntu-24.04-x86_64.zip";
 
     fn engine() -> (std::path::PathBuf, LocalDiffusionEngine) {
@@ -669,7 +716,6 @@ mod tests {
             paths,
             BulkHttpClient::new().expect("client"),
             Arc::new(Host),
-            Arc::new(Silent),
         );
         (root, engine)
     }
@@ -709,7 +755,10 @@ mod tests {
                     ..bundle
                 })
                 .await,
-            Err("Unknown local image architecture: nope".to_owned())
+            Err(ImageError::new(
+                ImageFailureKind::InvalidRequest,
+                "Unknown local image architecture: nope"
+            ))
         );
         let _ = std::fs::remove_dir_all(root);
     }
@@ -721,13 +770,17 @@ mod tests {
         std::fs::create_dir_all(&build).expect("build");
         std::fs::write(build.join(server_executable_name()), b"server").expect("server");
         let verdict = engine
-            .catalog_runnability(CatalogRunnabilityRequest {
-                profile_id: "z-image-turbo".to_owned(),
-                variant_id: "q4-k".to_owned(),
-                runtime_release: "master-778-b".to_owned(),
-                runtime_asset: CPU_BUILD.to_owned(),
-                ..CatalogRunnabilityRequest::default()
-            })
+            .catalog_runnability(
+                CatalogRunnabilityRequest {
+                    profile_id: "z-image-turbo".to_owned(),
+                    variant_id: "q4-k".to_owned(),
+                    runtime_release: "master-778-b".to_owned(),
+                    runtime_asset: CPU_BUILD.to_owned(),
+                    ..CatalogRunnabilityRequest::default()
+                },
+                &CancellationToken::new(),
+                None,
+            )
             .await
             .expect("verdict");
         assert_eq!(verdict.scope, "preInstallEstimate");

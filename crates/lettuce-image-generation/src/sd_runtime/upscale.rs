@@ -8,9 +8,11 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 
+use lettuce_jobs::handle::CancellationToken;
+
 use super::layout::{UPSCALER_EXTENSIONS, cli_executable_name};
-use super::server::LocalDiffusionEngine;
-use crate::diffusion_catalog;
+use super::server::{LocalDiffusionEngine, no_runtime_installed};
+use crate::{ImageError, ImageFailureKind, diffusion_catalog};
 
 const UPSCALE_TIMEOUT: Duration = Duration::from_secs(600);
 
@@ -88,33 +90,36 @@ impl LocalDiffusionEngine {
     }
 
     /// Whether an upscale can run, checked before the image is read.
-    pub fn check_upscale_ready(&self) -> Result<(), String> {
+    pub fn check_upscale_ready(&self) -> Result<(), ImageError> {
         self.upscale_target().map(|_| ())
     }
 
     fn upscale_target(
         &self,
-    ) -> Result<(std::path::PathBuf, std::path::PathBuf, std::path::PathBuf), String> {
+    ) -> Result<(std::path::PathBuf, std::path::PathBuf, std::path::PathBuf), ImageError> {
+        let paths = self.paths();
         let inventory = self.upscaler_inventory();
         let model = if inventory.recommended_installed {
             inventory.recommended_filename.clone()
         } else {
             inventory.models.first().cloned().ok_or_else(|| {
-                "No upscaler model is installed. Install one in the Local Image Generation settings first."
-                    .to_owned()
+                ImageError::new(
+                    ImageFailureKind::UpscalerMissing,
+                    "No upscaler model is installed. Install one in the Local Image Generation settings first.",
+                )
             })?
         };
-        let model_path = self.paths().upscalers.join(&model);
-        let active = self.effective_runtime().ok_or_else(|| {
-            "No stable-diffusion.cpp engine build is installed. Install an engine in the Local Image Generation settings first."
-                .to_owned()
-        })?;
-        let runtime_dir = self.paths().runtime_root(&active.release, &active.asset);
+        let model_path = paths.upscalers.join(&model);
+        let active = self.effective_runtime().ok_or_else(no_runtime_installed)?;
+        let runtime_dir = paths.runtime_root(&active.release, &active.asset);
         let executable = runtime_dir.join(cli_executable_name());
         if !executable.is_file() {
-            return Err(format!(
-                "The stable-diffusion.cpp command-line tool is missing: {}",
-                executable.display()
+            return Err(ImageError::new(
+                ImageFailureKind::RuntimeNotInstalled,
+                format!(
+                    "The stable-diffusion.cpp command-line tool is missing: {}",
+                    executable.display()
+                ),
             ));
         }
         Ok((model_path, runtime_dir, executable))
@@ -122,20 +127,33 @@ impl LocalDiffusionEngine {
 
     /// Upscales one image with the recommended upscaler when installed, else
     /// the first one, using the active engine build's command-line tool.
-    pub async fn upscale(&self, image: &[u8]) -> Result<Vec<u8>, String> {
+    /// Cancelling stops the tool and leaves no scratch file behind.
+    pub async fn upscale(
+        &self,
+        image: &[u8],
+        cancellation: &CancellationToken,
+    ) -> Result<Vec<u8>, ImageError> {
         let (model_path, runtime_dir, executable) = self.upscale_target()?;
-        let work_dir = &self.paths().upscale_scratch;
-        std::fs::create_dir_all(work_dir)
-            .map_err(|error| format!("Failed to prepare the upscale work directory: {error}"))?;
-        let job_id = lettuce_types::OperationId::new();
-        let input_path = work_dir.join(format!("{job_id}-in.png"));
-        let output_path = work_dir.join(format!("{job_id}-out.png"));
-        std::fs::write(&input_path, image)
-            .map_err(|error| format!("Failed to stage the image to upscale: {error}"))?;
-        let cleanup = || {
-            std::fs::remove_file(&input_path).ok();
-            std::fs::remove_file(&output_path).ok();
+        let Some(_call) = self.begin_call(cancellation, None).await else {
+            return Err(ImageError::cancelled());
         };
+        if self.stopping(cancellation) {
+            return Err(ImageError::cancelled());
+        }
+        let work_dir = self.paths().upscale_scratch.clone();
+        std::fs::create_dir_all(&work_dir).map_err(|error| {
+            ImageError::storage(format!(
+                "Failed to prepare the upscale work directory: {error}"
+            ))
+        })?;
+        let job_id = lettuce_types::OperationId::new();
+        let scratch = Scratch {
+            input: work_dir.join(format!("{job_id}-in.png")),
+            output: work_dir.join(format!("{job_id}-out.png")),
+        };
+        std::fs::write(&scratch.input, image).map_err(|error| {
+            ImageError::storage(format!("Failed to stage the image to upscale: {error}"))
+        })?;
         let mut command = Command::new(&executable);
         command
             .current_dir(&runtime_dir)
@@ -144,52 +162,102 @@ impl LocalDiffusionEngine {
             .arg("--upscale-model")
             .arg(&model_path)
             .arg("-i")
-            .arg(&input_path)
+            .arg(&scratch.input)
             .arg("-o")
-            .arg(&output_path)
+            .arg(&scratch.output)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
-        if let Err(error) = super::server::library_path_env(
+        super::server::library_path_env(
             &mut command,
             &runtime_dir,
             "Failed to configure stable-diffusion.cpp libraries",
-        ) {
-            cleanup();
-            return Err(error);
+        )
+        .map_err(|message| ImageError::new(ImageFailureKind::EngineFailed, message))?;
+        let mut child = command.spawn().map_err(|error| {
+            ImageError::new(
+                ImageFailureKind::EngineFailed,
+                format!("Failed to start the upscaler: {error}"),
+            )
+        })?;
+        let stdout = drain(child.stdout.take());
+        let stderr = drain(child.stderr.take());
+        enum Ended {
+            Exited(std::io::Result<std::process::ExitStatus>),
+            Cancelled,
+            TimedOut,
         }
-        let child = match command.spawn() {
-            Ok(child) => child,
-            Err(error) => {
-                cleanup();
-                return Err(format!("Failed to start the upscaler: {error}"));
+        let ended = tokio::select! {
+            biased;
+            () = cancellation.cancelled() => Ended::Cancelled,
+            status = child.wait() => Ended::Exited(status),
+            () = tokio::time::sleep(UPSCALE_TIMEOUT) => Ended::TimedOut,
+        };
+        let status = match ended {
+            Ended::Exited(status) => status.map_err(|error| {
+                ImageError::new(
+                    ImageFailureKind::EngineFailed,
+                    format!("The upscaler failed to run: {error}"),
+                )
+            })?,
+            Ended::Cancelled => {
+                child.kill().await.ok();
+                child.wait().await.ok();
+                return Err(ImageError::cancelled());
+            }
+            Ended::TimedOut => {
+                child.kill().await.ok();
+                child.wait().await.ok();
+                return Err(ImageError::new(
+                    ImageFailureKind::EngineTimedOut,
+                    "Upscaling timed out after ten minutes.",
+                ));
             }
         };
-        let output = match tokio::time::timeout(UPSCALE_TIMEOUT, child.wait_with_output()).await {
-            Ok(Ok(output)) => output,
-            Ok(Err(error)) => {
-                cleanup();
-                return Err(format!("The upscaler failed to run: {error}"));
-            }
-            Err(_) => {
-                cleanup();
-                return Err("Upscaling timed out after ten minutes.".to_owned());
-            }
-        };
-        if !output.status.success() || !output_path.is_file() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let detail = stderr
+        let _ = stdout.await;
+        let stderr = stderr.await.unwrap_or_default();
+        if !status.success() || !scratch.output.is_file() {
+            let detail = String::from_utf8_lossy(&stderr)
                 .lines()
                 .rev()
                 .find(|line| !line.trim().is_empty())
                 .unwrap_or("no error output")
                 .to_owned();
-            cleanup();
-            return Err(format!("Upscaling failed: {detail}"));
+            return Err(ImageError::new(
+                ImageFailureKind::EngineFailed,
+                format!("Upscaling failed: {detail}"),
+            ));
         }
-        let upscaled = std::fs::read(&output_path)
-            .map_err(|error| format!("Failed to read the upscaled image: {error}"));
-        cleanup();
-        upscaled
+        std::fs::read(&scratch.output).map_err(|error| {
+            ImageError::storage(format!("Failed to read the upscaled image: {error}"))
+        })
     }
+}
+
+/// The files one upscale stages, removed when it ends however it ends.
+struct Scratch {
+    input: std::path::PathBuf,
+    output: std::path::PathBuf,
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        std::fs::remove_file(&self.input).ok();
+        std::fs::remove_file(&self.output).ok();
+    }
+}
+
+fn drain<R>(stream: Option<R>) -> tokio::task::JoinHandle<Vec<u8>>
+where
+    R: tokio::io::AsyncRead + Unpin + Send + 'static,
+{
+    tokio::spawn(async move {
+        let mut bytes = Vec::new();
+        if let Some(mut stream) = stream {
+            tokio::io::AsyncReadExt::read_to_end(&mut stream, &mut bytes)
+                .await
+                .ok();
+        }
+        bytes
+    })
 }

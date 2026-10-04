@@ -1,8 +1,23 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use lettuce_conversations::InferenceUsage;
 use lettuce_jobs::handle::CancellationToken;
 use lettuce_models::{ProviderAccount, StableDiffusionLora, StableDiffusionSettings};
 use lettuce_types::{JobId, ModelProfileId};
+
+use crate::failure::ImageError;
+use crate::sd_runtime::output::GenerationProgressSink;
+
+/// Where a local generation reports its progress while it runs.
+#[derive(Clone)]
+pub struct ProgressHandle(pub Arc<dyn GenerationProgressSink>);
+
+impl std::fmt::Debug for ProgressHandle {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("ProgressHandle")
+    }
+}
 
 /// An image the provider receives, already read from the media store.
 #[derive(Clone, PartialEq, Eq)]
@@ -41,6 +56,7 @@ pub struct ProviderImageRequest {
     pub count: u32,
     pub text_output: bool,
     pub cancellation: CancellationToken,
+    pub progress: Option<ProgressHandle>,
 }
 
 /// One image a provider returned. Remote URLs are fetched by the adapter so
@@ -78,6 +94,8 @@ pub enum ImageProviderError {
     Unsupported(String),
     #[error("Local image generation was cancelled.")]
     Cancelled,
+    #[error(transparent)]
+    Engine(#[from] ImageError),
 }
 
 #[async_trait]

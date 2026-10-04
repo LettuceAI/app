@@ -159,6 +159,7 @@ fn request(account: ProviderAccount) -> ProviderImageRequest {
         count: 1,
         text_output: false,
         cancellation: CancellationToken::new(),
+        progress: None,
     }
 }
 

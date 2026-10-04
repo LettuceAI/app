@@ -97,6 +97,10 @@ pub enum JobSubjectDetail {
         from: String,
         to: String,
     },
+    ImageBundle {
+        bundle_id: String,
+        display_name: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -160,6 +164,8 @@ pub enum JobFailureReason {
     SceneImageDisabled,
     SceneImageNoModel,
     SceneImageNoImage,
+    DesignReferenceNoModel,
+    DesignReferenceNoImages,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -176,6 +182,8 @@ pub struct JobFailureDto {
     pub hugging_face: Option<crate::HfFailure>,
     /// Why an Ollama pull failed.
     pub ollama: Option<crate::OllamaFailure>,
+    /// Why an image job failed.
+    pub image: Option<crate::ImageFailure>,
 }
 
 /// What a finished job produced, where the job kind has a typed result.
@@ -219,6 +227,27 @@ pub enum JobResultDto {
     /// The text a help-me-reply or scene prompt job wrote, cleaned.
     GeneratedText {
         text: String,
+    },
+    /// The images an image generation job stored.
+    ImageGeneration {
+        images: Vec<crate::GeneratedImage>,
+        rejected_outputs: u32,
+    },
+    ImageUpscaled {
+        upscaled: crate::ImageUpscaled,
+    },
+    LoraDiscovered {
+        discovered: crate::LoraDiscovered,
+    },
+    Runnability {
+        verdict: Box<crate::SdRunnability>,
+    },
+    /// What an image bundle install ended in.
+    ImageBundle {
+        bundle_id: String,
+        state: crate::ImageBundleState,
+        model_id: Option<String>,
+        setup_error: Option<String>,
     },
 }
 
@@ -302,6 +331,10 @@ pub enum JobEvent {
     TextDelta {
         text: Option<String>,
         reasoning: Option<String>,
+    },
+    /// A running local image generation's progress.
+    ImageProgress {
+        progress: crate::ImageProgress,
     },
     Completed {
         job: JobView,

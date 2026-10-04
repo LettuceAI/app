@@ -14,7 +14,10 @@ use super::layout::{
 use super::policy::ComputePolicy;
 use super::releases::{RuntimeRelease, runtime_backend};
 use super::server::LocalDiffusionEngine;
-use crate::{DiffusionComponentRole, DiffusionProfile, DiffusionVariant, diffusion_catalog};
+use crate::{
+    DiffusionComponentRole, DiffusionProfile, DiffusionVariant, ImageError, ImageFailureKind,
+    diffusion_catalog,
+};
 
 const NOT_INSTALLED_MESSAGE: &str =
     "The selected stable-diffusion.cpp engine build is not installed.";
@@ -237,9 +240,10 @@ impl LocalDiffusionEngine {
     }
 
     /// Installed builds and the active one; an implicit choice is saved.
-    pub fn runtime_inventory(&self) -> Result<RuntimeInventory, String> {
+    pub fn runtime_inventory(&self) -> Result<RuntimeInventory, ImageError> {
+        let paths = self.paths();
         let mut installed = self.installed_runtimes();
-        let saved = saved_active_runtime(self.paths());
+        let saved = saved_active_runtime(&paths);
         let active = saved.clone().or_else(|| {
             installed.first().map(|runtime| ActiveRuntime {
                 release: runtime.release.clone(),
@@ -249,8 +253,11 @@ impl LocalDiffusionEngine {
         if saved.is_none()
             && let Some(selected) = &active
         {
-            save_active_runtime(self.paths(), selected)
-                .map_err(|error| format!("Failed to save the active engine selection: {error}"))?;
+            save_active_runtime(&paths, selected).map_err(|error| {
+                ImageError::storage(format!(
+                    "Failed to save the active engine selection: {error}"
+                ))
+            })?;
         }
         if let Some(selected) = &active {
             for runtime in &mut installed {
@@ -261,34 +268,46 @@ impl LocalDiffusionEngine {
         Ok(RuntimeInventory { installed, active })
     }
 
-    pub async fn switch_runtime(&self, release: &str, asset: &str) -> Result<(), String> {
-        if !runtime_is_installed(self.paths(), release, asset) {
-            return Err(NOT_INSTALLED_MESSAGE.to_owned());
+    fn not_installed() -> ImageError {
+        ImageError::new(ImageFailureKind::RuntimeNotInstalled, NOT_INSTALLED_MESSAGE)
+    }
+
+    pub async fn switch_runtime(&self, release: &str, asset: &str) -> Result<(), ImageError> {
+        let paths = self.paths();
+        if !runtime_is_installed(&paths, release, asset) {
+            return Err(Self::not_installed());
         }
         save_active_runtime(
-            self.paths(),
+            &paths,
             &ActiveRuntime {
                 release: release.to_owned(),
                 asset: asset.to_owned(),
             },
         )
-        .map_err(|error| format!("Failed to save the active engine selection: {error}"))?;
+        .map_err(|error| {
+            ImageError::storage(format!(
+                "Failed to save the active engine selection: {error}"
+            ))
+        })?;
         self.stop().await;
         Ok(())
     }
 
     /// Deletes a build; deleting the active build selects the next one.
-    pub async fn delete_runtime(&self, release: &str, asset: &str) -> Result<(), String> {
-        if !runtime_is_installed(self.paths(), release, asset) {
-            return Err(NOT_INSTALLED_MESSAGE.to_owned());
+    pub async fn delete_runtime(&self, release: &str, asset: &str) -> Result<(), ImageError> {
+        let paths = self.paths();
+        if !runtime_is_installed(&paths, release, asset) {
+            return Err(Self::not_installed());
         }
         self.stop().await;
         let removed_active = self
             .effective_runtime()
             .is_some_and(|active| active.release == release && active.asset == asset);
-        let root = self.paths().runtime_root(release, asset);
+        let root = paths.runtime_root(release, asset);
         std::fs::remove_dir_all(&root).map_err(|error| {
-            format!("Failed to delete the stable-diffusion.cpp engine build: {error}")
+            ImageError::storage(format!(
+                "Failed to delete the stable-diffusion.cpp engine build: {error}"
+            ))
         })?;
         if let Some(parent) = root.parent() {
             std::fs::remove_dir(parent).ok();
@@ -296,15 +315,21 @@ impl LocalDiffusionEngine {
         if removed_active {
             match self.installed_runtimes().first() {
                 Some(next) => save_active_runtime(
-                    self.paths(),
+                    &paths,
                     &ActiveRuntime {
                         release: next.release.clone(),
                         asset: next.asset.clone(),
                     },
                 )
-                .map_err(|error| format!("Failed to save the active engine selection: {error}"))?,
-                None => clear_active_runtime(self.paths()).map_err(|error| {
-                    format!("Failed to clear the active engine selection: {error}")
+                .map_err(|error| {
+                    ImageError::storage(format!(
+                        "Failed to save the active engine selection: {error}"
+                    ))
+                })?,
+                None => clear_active_runtime(&paths).map_err(|error| {
+                    ImageError::storage(format!(
+                        "Failed to clear the active engine selection: {error}"
+                    ))
                 })?,
             }
         }
@@ -316,11 +341,14 @@ impl LocalDiffusionEngine {
         release: &str,
         asset: &str,
         policy: ComputePolicy,
-    ) -> Result<ComputePolicyInfo, String> {
-        if !runtime_is_installed(self.paths(), release, asset) {
-            return Err(NOT_INSTALLED_MESSAGE.to_owned());
+    ) -> Result<ComputePolicyInfo, ImageError> {
+        if !runtime_is_installed(&self.paths(), release, asset) {
+            return Err(Self::not_installed());
         }
-        let resolved = self.resolve_compute_policy(release, asset, &policy).await?;
+        let resolved = self
+            .resolve_compute_policy(release, asset, &policy)
+            .await
+            .map_err(|message| ImageError::new(ImageFailureKind::InvalidRequest, message))?;
         Ok(ComputePolicyInfo {
             runtime_release: release.to_owned(),
             runtime_asset: asset.to_owned(),
@@ -335,8 +363,8 @@ impl LocalDiffusionEngine {
         &self,
         release: &str,
         asset: &str,
-    ) -> Result<ComputePolicyInfo, String> {
-        let policy = load_compute_policy(self.paths(), release, asset);
+    ) -> Result<ComputePolicyInfo, ImageError> {
+        let policy = load_compute_policy(&self.paths(), release, asset);
         self.compute_policy_info(release, asset, policy).await
     }
 
@@ -347,10 +375,11 @@ impl LocalDiffusionEngine {
         release: &str,
         asset: &str,
         policy: ComputePolicy,
-    ) -> Result<ComputePolicyInfo, String> {
+    ) -> Result<ComputePolicyInfo, ImageError> {
         let info = self.compute_policy_info(release, asset, policy).await?;
-        save_compute_policy(self.paths(), release, asset, &info.policy)
-            .map_err(|error| format!("Failed to write the compute policy: {error}"))?;
+        save_compute_policy(&self.paths(), release, asset, &info.policy).map_err(|error| {
+            ImageError::storage(format!("Failed to write the compute policy: {error}"))
+        })?;
         self.stop().await;
         Ok(info)
     }
@@ -377,9 +406,13 @@ impl LocalDiffusionEngine {
 
     #[must_use]
     pub fn disk_usage(&self) -> DiskUsage {
-        let components_bytes = directory_size(&self.paths().image_root.join("components"));
-        let runtimes_bytes = directory_size(&self.paths().runtimes);
-        let loras_bytes = directory_size(&self.paths().loras);
+        let paths = self.paths();
+        let components_bytes = std::iter::once(&paths.image_root)
+            .chain(paths.default_image_root.iter())
+            .map(|root| directory_size(&root.join("components")))
+            .sum::<u64>();
+        let runtimes_bytes = directory_size(&paths.runtimes);
+        let loras_bytes = directory_size(&paths.loras);
         let engine = self.installed_runtimes().into_iter().next();
         DiskUsage {
             components_bytes,
@@ -405,7 +438,6 @@ mod tests {
     use lettuce_types::OperationId;
 
     use super::super::layout::{DiffusionPaths, server_executable_name};
-    use super::super::output::{GenerationProgress, GenerationProgressSink};
     use super::super::policy::HardwareGpu;
     use super::super::server::EngineHost;
     use super::*;
@@ -427,12 +459,6 @@ mod tests {
         }
     }
 
-    struct Silent;
-
-    impl GenerationProgressSink for Silent {
-        fn progress(&self, _: GenerationProgress) {}
-    }
-
     fn engine() -> (std::path::PathBuf, LocalDiffusionEngine) {
         let root = std::env::temp_dir().join(format!("sd-inventory-{}", OperationId::new()));
         let paths = DiffusionPaths::legacy_layout(&root, root.join("models").join("image"));
@@ -440,7 +466,6 @@ mod tests {
             paths,
             BulkHttpClient::new().expect("client"),
             Arc::new(Host),
-            Arc::new(Silent),
         );
         (root, engine)
     }
@@ -475,7 +500,7 @@ mod tests {
         );
         assert!(inventory.installed[0].active);
         assert!(
-            saved_active_runtime(engine.paths()).is_some(),
+            saved_active_runtime(&engine.paths()).is_some(),
             "the implicit choice is saved"
         );
         engine
@@ -488,21 +513,24 @@ mod tests {
         );
         assert_eq!(
             engine.switch_runtime("master-1-x", cpu).await,
-            Err("The selected stable-diffusion.cpp engine build is not installed.".to_owned())
+            Err(ImageError::new(
+                ImageFailureKind::RuntimeNotInstalled,
+                "The selected stable-diffusion.cpp engine build is not installed."
+            ))
         );
         engine
             .delete_runtime("master-700-a", cpu)
             .await
             .expect("delete");
         assert_eq!(
-            saved_active_runtime(engine.paths()).map(|active| active.release),
+            saved_active_runtime(&engine.paths()).map(|active| active.release),
             Some("master-778-b".to_owned())
         );
         engine
             .delete_runtime("master-778-b", vulkan)
             .await
             .expect("delete last");
-        assert_eq!(saved_active_runtime(engine.paths()), None);
+        assert_eq!(saved_active_runtime(&engine.paths()), None);
         assert!(!engine.paths().runtimes.join("master-778-b").exists());
         let usage = engine.disk_usage();
         assert!(!usage.has_engine);

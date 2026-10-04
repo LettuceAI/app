@@ -1,0 +1,35 @@
+{
+  "format_version": 1,
+  "max_count": 8,
+  "negative_prompt_providers": ["sdcpp", "comfyui", "automatic1111", "diffusers"],
+  "default_sizes": ["1024x1024"],
+  "sizes": [
+    {
+      "providers": ["openai"],
+      "models": [
+        { "match": "exact", "id": "dall-e-3", "sizes": ["1024x1024", "1024x1792", "1792x1024"] },
+        { "match": "exact", "id": "dall-e-2", "sizes": ["256x256", "512x512", "1024x1024"] },
+        { "match": "prefix", "id": "gpt-image-1", "sizes": ["1024x1024", "1024x1536", "1536x1024", "auto"] }
+      ]
+    },
+    {
+      "providers": ["automatic1111", "comfyui", "diffusers", "sdcpp", "stability"],
+      "sizes": ["512x512", "768x768", "1024x1024", "1152x896", "896x1152"]
+    }
+  ],
+  "options": [
+    { "providers": ["openai"], "quality": ["standard", "hd"], "styles": ["vivid", "natural"] }
+  ],
+  "sdcpp": {
+    "samplers": [
+      "euler", "euler_a", "heun", "dpm2", "dpm++2s_a", "dpm++2m", "dpm++2mv2",
+      "dpm++2m_sde", "dpm++2m_sde_bt", "ipndm", "ipndm_v", "lcm", "ddim_trailing", "tcd",
+      "res_multistep", "res_2s", "er_sde", "euler_cfg_pp", "euler_a_cfg_pp"
+    ],
+    "schedulers": [
+      "discrete", "karras", "exponential", "ays", "gits", "smoothstep", "sgm_uniform",
+      "simple", "kl_optimal", "lcm", "bong_tangent", "ltx2", "logit_normal", "flux2", "flux",
+      "beta"
+    ]
+  }
+}

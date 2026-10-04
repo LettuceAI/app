@@ -6,6 +6,7 @@ use std::collections::HashSet;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+use lettuce_jobs::handle::CancellationToken;
 use lettuce_models::StableDiffusionLora;
 use lettuce_network::{BulkHttpClient, JsonAuth, JsonStaticHeader};
 use lettuce_types::TimestampMillis;
@@ -14,7 +15,8 @@ use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
 use super::loras::{LORA_COMPAT_CACHE_DIR, lora_file_fingerprint};
-use crate::diffusion_catalog;
+use super::server::unless_cancelled;
+use crate::{ImageError, ImageFailureKind, diffusion_catalog};
 
 const MAX_KEYWORD_BYTES: usize = 160;
 const MAX_KEYWORDS: usize = 32;
@@ -329,11 +331,18 @@ fn read_local_lora_metadata(path: &Path) -> Result<LocalLoraMetadata, String> {
 }
 
 fn sha256_file(path: &Path) -> Result<String, String> {
+    sha256_file_until(path, &CancellationToken::new())
+}
+
+fn sha256_file_until(path: &Path, cancellation: &CancellationToken) -> Result<String, String> {
     let mut file = std::fs::File::open(path)
         .map_err(|error| format!("Failed to open the LoRA for hashing: {error}"))?;
     let mut hasher = Sha256::new();
     let mut buffer = vec![0_u8; 1024 * 1024];
     loop {
+        if cancellation.is_cancelled() {
+            return Err(crate::sd_runtime::server::GENERATION_CANCELLED_MESSAGE.to_owned());
+        }
         let read = file
             .read(&mut buffer)
             .map_err(|error| format!("Failed to hash the LoRA: {error}"))?;
@@ -430,7 +439,7 @@ pub fn hydrate_lora_keywords<R: LoraLibraryRepository + ?Sized>(
 
 /// The LoRA folder and the records kept about its files.
 pub struct LoraLibrary<'a, R: ?Sized> {
-    root: &'a Path,
+    root: PathBuf,
     repository: &'a R,
 }
 
@@ -443,21 +452,37 @@ impl<R: ?Sized> std::fmt::Debug for LoraLibrary<'_, R> {
     }
 }
 
-fn storage_error(error: LoraLibraryRepositoryError) -> String {
-    error.to_string()
+fn storage_error(error: LoraLibraryRepositoryError) -> ImageError {
+    ImageError::storage(error.to_string())
 }
+
+fn invalid(message: impl Into<String>) -> ImageError {
+    ImageError::new(ImageFailureKind::LoraInvalid, message)
+}
+
+/// What a LoRA's removal left on disk.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct LoraDeleteOutcome {
+    pub left_behind: Vec<PathBuf>,
+}
+
+/// The suffix of the file an import copies into before it takes the LoRA's
+/// name.
+const IMPORT_PARTIAL_SUFFIX: &str = ".partial";
 
 impl<'a, R: LoraLibraryRepository + ?Sized> LoraLibrary<'a, R> {
     #[must_use]
-    pub const fn new(root: &'a Path, repository: &'a R) -> Self {
-        Self { root, repository }
+    pub fn new(root: &Path, repository: &'a R) -> Self {
+        Self {
+            root: root.to_path_buf(),
+            repository,
+        }
     }
 
-    fn resolve(&self, requested: &str) -> Result<(PathBuf, PathBuf, String), String> {
-        let root = self
-            .root
-            .canonicalize()
-            .map_err(|error| format!("Failed to access the local LoRA library: {error}"))?;
+    fn resolve(&self, requested: &str) -> Result<(PathBuf, PathBuf, String), ImageError> {
+        let root = self.root.as_path().canonicalize().map_err(|error| {
+            ImageError::storage(format!("Failed to access the local LoRA library: {error}"))
+        })?;
         let requested_path = PathBuf::from(requested);
         let candidate = if requested_path.is_absolute() {
             requested_path
@@ -466,13 +491,15 @@ impl<'a, R: LoraLibraryRepository + ?Sized> LoraLibrary<'a, R> {
         };
         let candidate = candidate
             .canonicalize()
-            .map_err(|error| format!("LoRA file does not exist: {error}"))?;
+            .map_err(|error| invalid(format!("LoRA file does not exist: {error}")))?;
         if !candidate.starts_with(&root) || !candidate.is_file() {
-            return Err("The selected LoRA is outside the local LoRA library.".to_owned());
+            return Err(invalid(
+                "The selected LoRA is outside the local LoRA library.",
+            ));
         }
         let relative = candidate
             .strip_prefix(&root)
-            .map_err(|_| "Failed to resolve the LoRA library path.".to_owned())?
+            .map_err(|_| invalid("Failed to resolve the LoRA library path."))?
             .to_string_lossy()
             .replace('\\', "/");
         Ok((root, candidate, relative))
@@ -483,8 +510,9 @@ impl<'a, R: LoraLibraryRepository + ?Sized> LoraLibrary<'a, R> {
         relative: &str,
         file_path: &Path,
         now: TimestampMillis,
-    ) -> Result<LoraRecord, String> {
-        let (bytes_on_disk, modified_at) = lora_file_fingerprint(file_path)?;
+    ) -> Result<LoraRecord, ImageError> {
+        let (bytes_on_disk, modified_at) =
+            lora_file_fingerprint(file_path).map_err(ImageError::storage)?;
         let filename = file_path
             .file_name()
             .and_then(|value| value.to_str())
@@ -514,7 +542,7 @@ impl<'a, R: LoraLibraryRepository + ?Sized> LoraLibrary<'a, R> {
                 .is_some_and(|extension| {
                     LORA_EXTENSIONS.contains(&extension.to_ascii_lowercase().as_str())
                 });
-            let Ok(relative) = path.strip_prefix(self.root) else {
+            let Ok(relative) = path.strip_prefix(self.root.as_path()) else {
                 continue;
             };
             if !supported {
@@ -537,11 +565,12 @@ impl<'a, R: LoraLibraryRepository + ?Sized> LoraLibrary<'a, R> {
         &self,
         profile_id: Option<&str>,
         now: TimestampMillis,
-    ) -> Result<Vec<InstalledLora>, String> {
-        std::fs::create_dir_all(self.root)
-            .map_err(|error| format!("Failed to create the local LoRA library: {error}"))?;
+    ) -> Result<Vec<InstalledLora>, ImageError> {
+        std::fs::create_dir_all(self.root.as_path()).map_err(|error| {
+            ImageError::storage(format!("Failed to create the local LoRA library: {error}"))
+        })?;
         let mut files = Vec::new();
-        self.collect(self.root, &mut files);
+        self.collect(self.root.as_path(), &mut files);
         let mut installed = Vec::with_capacity(files.len());
         for (filename, relative, path) in files {
             let Ok((bytes_on_disk, modified_at)) = lora_file_fingerprint(&path) else {
@@ -604,7 +633,8 @@ impl<'a, R: LoraLibraryRepository + ?Sized> LoraLibrary<'a, R> {
         profile_id: Option<&str>,
         civitai: &BulkHttpClient,
         now: TimestampMillis,
-    ) -> Result<LoraKeywordDiscovery, String> {
+        cancellation: &CancellationToken,
+    ) -> Result<LoraKeywordDiscovery, ImageError> {
         let (_, file_path, relative) = self.resolve(path)?;
         let stored = self.record(&relative, &file_path, now)?;
         if stored.sha256.is_some() {
@@ -613,11 +643,20 @@ impl<'a, R: LoraLibraryRepository + ?Sized> LoraLibrary<'a, R> {
         let local_path = file_path.clone();
         let local = tokio::task::spawn_blocking(move || read_local_lora_metadata(&local_path))
             .await
-            .map_err(|error| format!("LoRA metadata task failed: {error}"))??;
+            .map_err(|error| ImageError::storage(format!("LoRA metadata task failed: {error}")))?
+            .map_err(invalid)?;
         let hash_path = file_path.clone();
-        let sha256 = tokio::task::spawn_blocking(move || sha256_file(&hash_path))
+        let hashing = cancellation.clone();
+        let sha256 = tokio::task::spawn_blocking(move || sha256_file_until(&hash_path, &hashing))
             .await
-            .map_err(|error| format!("LoRA hashing task failed: {error}"))??;
+            .map_err(|error| ImageError::storage(format!("LoRA hashing task failed: {error}")))?
+            .map_err(|message| {
+                if cancellation.is_cancelled() {
+                    ImageError::cancelled()
+                } else {
+                    ImageError::storage(message)
+                }
+            })?;
         let manual = stored.keyword_source == LoraKeywordSource::Manual;
         let keep_keywords = manual || !stored.keywords.is_empty();
         let mut record = LoraRecord {
@@ -659,8 +698,9 @@ impl<'a, R: LoraLibraryRepository + ?Sized> LoraLibrary<'a, R> {
             }
         }
         if (!manual && record.keywords.is_empty()) || record.architecture.is_none() {
-            match civitai
-                .get(
+            let lookup = unless_cancelled(
+                cancellation,
+                civitai.get(
                     "https://civitai.com",
                     &format!("/api/v1/model-versions/by-hash/{sha256}"),
                     &[],
@@ -671,9 +711,11 @@ impl<'a, R: LoraLibraryRepository + ?Sized> LoraLibrary<'a, R> {
                     JsonAuth::None,
                     Vec::new(),
                     false,
-                )
-                .await
-            {
+                ),
+            )
+            .await
+            .ok_or_else(ImageError::cancelled)?;
+            match lookup {
                 Ok(response) if (200..300).contains(&response.status) => {
                     if let Ok(version) =
                         serde_json::from_slice::<CivitaiModelVersion>(&response.body)
@@ -695,13 +737,20 @@ impl<'a, R: LoraLibraryRepository + ?Sized> LoraLibrary<'a, R> {
                     }
                 }
                 Ok(response) if response.status == 404 => {}
-                Ok(response) => tracing::warn!(
-                    component = "sdcpp",
-                    "LoRA metadata lookup failed with status {}",
-                    lettuce_network::status_text(response.status)
-                ),
+                Ok(response) => {
+                    return Err(ImageError::new(
+                        ImageFailureKind::ProviderFailed,
+                        format!(
+                            "LoRA metadata lookup failed with status {}",
+                            lettuce_network::status_text(response.status)
+                        ),
+                    ));
+                }
                 Err(error) => {
-                    tracing::warn!(component = "sdcpp", "LoRA metadata lookup failed: {error}");
+                    return Err(ImageError::new(
+                        ImageFailureKind::ProviderFailed,
+                        format!("LoRA metadata lookup failed: {error}"),
+                    ));
                 }
             }
         }
@@ -718,7 +767,7 @@ impl<'a, R: LoraLibraryRepository + ?Sized> LoraLibrary<'a, R> {
         keywords: Vec<String>,
         profile_id: Option<&str>,
         now: TimestampMillis,
-    ) -> Result<LoraKeywordDiscovery, String> {
+    ) -> Result<LoraKeywordDiscovery, ImageError> {
         let keywords = normalize_lora_keywords(keywords);
         let (_, file_path, relative) = self.resolve(path)?;
         let mut record = self.record(&relative, &file_path, now)?;
@@ -731,11 +780,24 @@ impl<'a, R: LoraLibraryRepository + ?Sized> LoraLibrary<'a, R> {
     }
 
     /// Copies a LoRA into the library root; a different file with the same
-    /// name is refused.
-    pub async fn import(&self, source_path: &str) -> Result<InstalledLora, String> {
+    /// name is refused. The copy is made under a temporary name and renamed
+    /// into place, so the LoRA's name never holds a partial file.
+    pub async fn import(&self, source_path: &str) -> Result<InstalledLora, ImageError> {
+        self.import_with(source_path, |from, to| std::fs::copy(from, to).map(|_| ()))
+            .await
+    }
+
+    async fn import_with(
+        &self,
+        source_path: &str,
+        copy: impl FnOnce(&Path, &Path) -> std::io::Result<()> + Send + 'static,
+    ) -> Result<InstalledLora, ImageError> {
         let source = PathBuf::from(source_path);
         if !source.is_file() {
-            return Err(format!("LoRA file does not exist: {}", source.display()));
+            return Err(invalid(format!(
+                "LoRA file does not exist: {}",
+                source.display()
+            )));
         }
         let extension = source
             .extension()
@@ -743,17 +805,18 @@ impl<'a, R: LoraLibraryRepository + ?Sized> LoraLibrary<'a, R> {
             .unwrap_or_default()
             .to_ascii_lowercase();
         if !LORA_EXTENSIONS.contains(&extension.as_str()) {
-            return Err("Choose a .safetensors, .ckpt, or .pt LoRA file.".to_owned());
+            return Err(invalid("Choose a .safetensors, .ckpt, or .pt LoRA file."));
         }
         let filename = source
             .file_name()
             .and_then(|name| name.to_str())
             .filter(|name| !name.is_empty())
-            .ok_or_else(|| "The selected LoRA has an invalid filename.".to_owned())?
+            .ok_or_else(|| invalid("The selected LoRA has an invalid filename."))?
             .to_owned();
-        std::fs::create_dir_all(self.root)
-            .map_err(|error| format!("Failed to create the local LoRA library: {error}"))?;
-        let destination = self.root.join(&filename);
+        std::fs::create_dir_all(self.root.as_path()).map_err(|error| {
+            ImageError::storage(format!("Failed to create the local LoRA library: {error}"))
+        })?;
+        let destination = self.root.as_path().join(&filename);
         if destination.exists() {
             if source.canonicalize().ok() != destination.canonicalize().ok() {
                 let source_size = std::fs::metadata(&source).map(|value| value.len()).ok();
@@ -769,19 +832,42 @@ impl<'a, R: LoraLibraryRepository + ?Sized> LoraLibrary<'a, R> {
                         )
                     })
                     .await
-                    .map_err(|error| format!("LoRA comparison task failed: {error}"))??
+                    .map_err(|error| {
+                        ImageError::storage(format!("LoRA comparison task failed: {error}"))
+                    })?
+                    .map_err(ImageError::storage)?
                 } else {
                     false
                 };
                 if !identical {
-                    return Err(format!(
-                        "A different LoRA named {filename} is already in the library. Remove or rename it before importing this file."
+                    return Err(ImageError::new(
+                        ImageFailureKind::LoraConflict,
+                        format!(
+                            "A different LoRA named {filename} is already in the library. Remove or rename it before importing this file."
+                        ),
                     ));
                 }
             }
         } else {
-            std::fs::copy(&source, &destination)
-                .map_err(|error| format!("Failed to import {filename}: {error}"))?;
+            self.remove_stale_partials(&filename);
+            let partial = self.root.as_path().join(format!(
+                "{filename}.{}{IMPORT_PARTIAL_SUFFIX}",
+                lettuce_types::OperationId::new()
+            ));
+            let (from, to) = (source.clone(), partial.clone());
+            let copied = tokio::task::spawn_blocking(move || {
+                copy(&from, &to)?;
+                std::fs::File::open(&to)?.sync_all()
+            })
+            .await
+            .map_err(|error| ImageError::storage(format!("LoRA import task failed: {error}")))?;
+            let placed = copied.and_then(|()| std::fs::rename(&partial, &destination));
+            if let Err(error) = placed {
+                std::fs::remove_file(&partial).ok();
+                return Err(ImageError::storage(format!(
+                    "Failed to import {filename}: {error}"
+                )));
+            }
         }
         Ok(InstalledLora {
             bytes_on_disk: std::fs::metadata(&destination).map_or(0, |metadata| metadata.len()),
@@ -795,26 +881,56 @@ impl<'a, R: LoraLibraryRepository + ?Sized> LoraLibrary<'a, R> {
         })
     }
 
+    /// Removes the temporary copies an earlier import of `filename` left
+    /// when it was cut short.
+    fn remove_stale_partials(&self, filename: &str) {
+        let Ok(entries) = std::fs::read_dir(self.root.as_path()) else {
+            return;
+        };
+        let prefix = format!("{filename}.");
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else {
+                continue;
+            };
+            if name.starts_with(&prefix) && name.ends_with(IMPORT_PARTIAL_SUFFIX) {
+                std::fs::remove_file(entry.path()).ok();
+            }
+        }
+    }
+
     /// Deletes a LoRA no local image model uses, with its record and the
-    /// compatibility cache.
-    pub fn delete(&self, path: &str) -> Result<(), String> {
+    /// compatibility cache; the cache files that could not be removed are
+    /// returned.
+    pub fn delete(&self, path: &str) -> Result<LoraDeleteOutcome, ImageError> {
         let (root, file_path, relative) = self.resolve(path)?;
         let references = self
             .repository
             .lora_model_references(&relative)
             .map_err(storage_error)?;
         if references > 0 {
-            return Err(format!(
-                "This LoRA is used by {references} local image model configuration(s). Remove it from those models first."
+            return Err(ImageError::new(
+                ImageFailureKind::LoraInUse,
+                format!(
+                    "This LoRA is used by {references} local image model configuration(s). Remove it from those models first."
+                ),
             ));
         }
-        std::fs::remove_file(&file_path)
-            .map_err(|error| format!("Failed to delete the LoRA file: {error}"))?;
+        std::fs::remove_file(&file_path).map_err(|error| {
+            ImageError::storage(format!("Failed to delete the LoRA file: {error}"))
+        })?;
         self.repository
             .delete_lora(&relative)
             .map_err(storage_error)?;
-        std::fs::remove_dir_all(root.join(LORA_COMPAT_CACHE_DIR)).ok();
-        Ok(())
+        let cache = root.join(LORA_COMPAT_CACHE_DIR);
+        let mut outcome = LoraDeleteOutcome::default();
+        if let Err(error) = std::fs::remove_dir_all(&cache)
+            && error.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!(component = "sdcpp", %error, "the LoRA compatibility cache could not be removed");
+            outcome.left_behind.push(cache);
+        }
+        Ok(outcome)
     }
 }
 
@@ -953,5 +1069,108 @@ mod tests {
         };
         apply_stored_lora_keywords(&mut kept, &unresolved);
         assert_eq!(kept.keywords, vec!["request trigger"]);
+    }
+
+    struct NoRecords;
+
+    impl LoraLibraryRepository for NoRecords {
+        fn lora(&self, _: &str) -> Result<Option<LoraRecord>, LoraLibraryRepositoryError> {
+            Ok(None)
+        }
+
+        fn lora_by_hash(&self, _: &str) -> Result<Option<LoraRecord>, LoraLibraryRepositoryError> {
+            Ok(None)
+        }
+
+        fn record_lora_file(
+            &self,
+            _: &str,
+            _: &str,
+            _: u64,
+            _: u64,
+            _: TimestampMillis,
+        ) -> Result<LoraRecord, LoraLibraryRepositoryError> {
+            Err(LoraLibraryRepositoryError::Storage)
+        }
+
+        fn save_lora(
+            &self,
+            _: &LoraRecord,
+            _: TimestampMillis,
+        ) -> Result<(), LoraLibraryRepositoryError> {
+            Ok(())
+        }
+
+        fn delete_lora(&self, _: &str) -> Result<(), LoraLibraryRepositoryError> {
+            Ok(())
+        }
+
+        fn lora_model_references(&self, _: &str) -> Result<u64, LoraLibraryRepositoryError> {
+            Ok(0)
+        }
+    }
+
+    fn scratch(label: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "lora-library-{label}-{}",
+            lettuce_types::OperationId::new()
+        ));
+        std::fs::create_dir_all(&root).expect("root");
+        root
+    }
+
+    #[tokio::test]
+    async fn an_import_cut_short_leaves_neither_a_partial_file_nor_the_lora() {
+        let root = scratch("cut");
+        let source = root.join("style.safetensors");
+        std::fs::write(&source, b"complete lora bytes").expect("source");
+        let library_root = root.join("library");
+        let library = LoraLibrary::new(&library_root, &NoRecords);
+        let failed = library
+            .import_with(source.to_str().expect("path"), |_, to| {
+                std::fs::write(to, b"comp")?;
+                Err(std::io::Error::other("the copy was cut short"))
+            })
+            .await
+            .expect_err("the copy fails");
+        assert_eq!(failed.kind, ImageFailureKind::StorageFailed);
+        assert_eq!(
+            std::fs::read_dir(&library_root).expect("library").count(),
+            0,
+            "no file is left, so a retry is not blocked"
+        );
+        let imported = library
+            .import(source.to_str().expect("path"))
+            .await
+            .expect("the retry imports");
+        assert_eq!(imported.bytes_on_disk, 19);
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[tokio::test]
+    async fn a_copy_an_earlier_crash_left_behind_never_counts_as_the_lora() {
+        let root = scratch("crash");
+        let source = root.join("style.safetensors");
+        std::fs::write(&source, b"complete lora bytes").expect("source");
+        let library_root = root.join("library");
+        std::fs::create_dir_all(&library_root).expect("library");
+        std::fs::write(
+            library_root.join("style.safetensors.crashed.partial"),
+            b"trunc",
+        )
+        .expect("leftover");
+        let library = LoraLibrary::new(&library_root, &NoRecords);
+        let imported = library
+            .import(source.to_str().expect("path"))
+            .await
+            .expect("import");
+        assert_eq!(imported.bytes_on_disk, 19);
+        let names = std::fs::read_dir(&library_root)
+            .expect("library")
+            .flatten()
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(names, ["style.safetensors"], "the leftover is removed");
+        std::fs::remove_dir_all(root).ok();
     }
 }

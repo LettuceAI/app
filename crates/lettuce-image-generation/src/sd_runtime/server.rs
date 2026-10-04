@@ -1,16 +1,19 @@
 //! The managed sd-server process and local generation: one server reused
 //! while its model, engine build and compute policy stay the same, a native
-//! job API polled every 500 ms, and one retry with CPU-offloaded weights
-//! after an out-of-memory failure.
+//! job API polled every 500 ms while a generation runs, and one retry with
+//! CPU-offloaded weights after an out-of-memory failure. Local work (a
+//! generation, a probe, an upscale) runs one at a time; each call carries its
+//! own cancellation and progress, so nothing one call does reaches another.
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use base64::Engine as _;
+use lettuce_jobs::handle::CancellationToken;
 use lettuce_models::{ProviderProtocol, StableDiffusionCppBinding};
 use lettuce_network::{BulkHttpClient, JsonAuth};
 use serde_json::Value;
@@ -37,13 +40,15 @@ use super::policy::{
 };
 use super::releases::{RuntimePlatform, runtime_backend};
 use crate::{
-    ImageInput, ImageProviderError, ImageProviderPort, LOCAL_DIFFUSION_PROVIDER_KIND,
-    ProviderImage, ProviderImageOutput, ProviderImageRequest, diffusion_catalog,
+    ImageError, ImageFailureKind, ImageInput, ImageProviderError, ImageProviderPort,
+    LOCAL_DIFFUSION_PROVIDER_KIND, ProviderImage, ProviderImageOutput, ProviderImageRequest,
+    diffusion_catalog,
 };
 
 pub const GENERATION_CANCELLED_MESSAGE: &str = "Local image generation was cancelled.";
 pub(super) const DESKTOP_ONLY_MESSAGE: &str = "Local stable-diffusion.cpp image generation is desktop-only.";
 const READINESS_ATTEMPTS: u32 = 300;
+const READINESS_INTERVAL: Duration = Duration::from_secs(1);
 const POLL_ATTEMPTS: u32 = 1_200;
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
 const DEVICE_QUERY_TIMEOUT: Duration = Duration::from_secs(10);
@@ -82,28 +87,68 @@ struct ManagedServer {
     output: Arc<RuntimeOutput>,
 }
 
-#[derive(Clone)]
-struct ActiveGeneration {
-    base_url: String,
-    job_id: Option<String>,
-    cancel: Arc<AtomicBool>,
-}
-
-enum GenerationJobError {
+pub(super) enum GenerationJobError {
     Cancelled,
     Rejected(String),
     Failed(String),
-    Infrastructure(String),
+    Infrastructure(ImageFailureKind, String),
+}
+
+/// Where the running server's console progress goes: the sink of the call
+/// that holds the engine's gate, and nothing between calls.
+#[derive(Default)]
+pub(super) struct ProgressRoute {
+    sink: Mutex<Option<Arc<dyn GenerationProgressSink>>>,
+}
+
+impl ProgressRoute {
+    fn emit(&self, progress: GenerationProgress) {
+        let sink = self
+            .sink
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        if let Some(sink) = sink {
+            sink.progress(progress);
+        }
+    }
+
+    fn attach(self: &Arc<Self>, sink: Option<Arc<dyn GenerationProgressSink>>) -> RouteGuard {
+        *self
+            .sink
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = sink;
+        RouteGuard(Arc::clone(self))
+    }
+}
+
+pub(super) struct RouteGuard(Arc<ProgressRoute>);
+
+impl Drop for RouteGuard {
+    fn drop(&mut self) {
+        *self
+            .0
+            .sink
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    }
+}
+
+/// What one local call holds while it runs: the engine's gate and its
+/// progress route.
+pub(super) struct LocalCall<'a> {
+    _gate: tokio::sync::MutexGuard<'a, ()>,
+    _route: RouteGuard,
 }
 
 pub struct LocalDiffusionEngine {
-    paths: DiffusionPaths,
+    paths: RwLock<Arc<DiffusionPaths>>,
     platform: RuntimePlatform,
     pub(super) http: BulkHttpClient,
     pub(super) host: Arc<dyn EngineHost>,
-    progress: Arc<dyn GenerationProgressSink>,
+    route: Arc<ProgressRoute>,
+    gate: tokio::sync::Mutex<()>,
     server: tokio::sync::Mutex<Option<ManagedServer>>,
-    active: Mutex<Option<ActiveGeneration>>,
     shutting_down: AtomicBool,
 }
 
@@ -111,8 +156,20 @@ impl std::fmt::Debug for LocalDiffusionEngine {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("LocalDiffusionEngine")
-            .field("paths", &self.paths)
+            .field("paths", &self.paths())
             .finish_non_exhaustive()
+    }
+}
+
+/// Runs `future` unless `cancellation` fires first, which is `None`.
+pub(super) async fn unless_cancelled<T>(
+    cancellation: &CancellationToken,
+    future: impl std::future::Future<Output = T>,
+) -> Option<T> {
+    tokio::select! {
+        biased;
+        () = cancellation.cancelled() => None,
+        value = future => Some(value),
     }
 }
 
@@ -145,11 +202,8 @@ pub(super) fn split_endpoint(url: &str) -> Option<(&str, &str)> {
     Some((&url[..path_start], &url[path_start..]))
 }
 
-fn forward_output<R>(
-    stream: R,
-    output: Arc<RuntimeOutput>,
-    progress: Arc<dyn GenerationProgressSink>,
-) where
+fn forward_output<R>(stream: R, output: Arc<RuntimeOutput>, route: Arc<ProgressRoute>)
+where
     R: AsyncRead + Unpin + Send + 'static,
 {
     tokio::spawn(async move {
@@ -177,7 +231,7 @@ fn forward_output<R>(
                     tracing::info!(component = "sdcpp_runtime", "{line}");
                 }
                 if emit {
-                    progress.progress(event);
+                    route.emit(event);
                 }
             }
             (OutputSegment::Blank, _) => {}
@@ -199,27 +253,57 @@ fn forward_output<R>(
 
 impl LocalDiffusionEngine {
     #[must_use]
-    pub fn new(
-        paths: DiffusionPaths,
-        http: BulkHttpClient,
-        host: Arc<dyn EngineHost>,
-        progress: Arc<dyn GenerationProgressSink>,
-    ) -> Self {
+    pub fn new(paths: DiffusionPaths, http: BulkHttpClient, host: Arc<dyn EngineHost>) -> Self {
         Self {
-            paths,
+            paths: RwLock::new(Arc::new(paths)),
             platform: RuntimePlatform::current(),
             http,
             host,
-            progress,
+            route: Arc::new(ProgressRoute::default()),
+            gate: tokio::sync::Mutex::new(()),
             server: tokio::sync::Mutex::new(None),
-            active: Mutex::new(None),
             shutting_down: AtomicBool::new(false),
         }
     }
 
+    /// The folders in use now.
     #[must_use]
-    pub const fn paths(&self) -> &DiffusionPaths {
-        &self.paths
+    pub fn paths(&self) -> Arc<DiffusionPaths> {
+        Arc::clone(
+            &self
+                .paths
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
+    }
+
+    /// Points the engine at other folders (the image models folder moved);
+    /// work already running keeps the folders it started with.
+    pub fn rebind(&self, paths: DiffusionPaths) {
+        *self
+            .paths
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Arc::new(paths);
+    }
+
+    #[cfg(test)]
+    pub(super) fn report(&self, progress: GenerationProgress) {
+        self.route.emit(progress);
+    }
+
+    /// Waits for the engine's turn, then holds it with `progress` as the
+    /// sink of the server's console progress; `None` when `cancellation`
+    /// fires first.
+    pub(super) async fn begin_call(
+        &self,
+        cancellation: &CancellationToken,
+        progress: Option<Arc<dyn GenerationProgressSink>>,
+    ) -> Option<LocalCall<'_>> {
+        let gate = unless_cancelled(cancellation, self.gate.lock()).await?;
+        Some(LocalCall {
+            _gate: gate,
+            _route: self.route.attach(progress),
+        })
     }
 
     #[must_use]
@@ -229,14 +313,14 @@ impl LocalDiffusionEngine {
 
     #[must_use]
     pub fn installed_runtimes(&self) -> Vec<InstalledRuntime> {
-        installed_runtimes(&self.paths, self.platform)
+        installed_runtimes(&self.paths(), self.platform)
     }
 
     /// The engine build generation uses: the saved selection, else the first
     /// installed one.
     #[must_use]
     pub fn effective_runtime(&self) -> Option<ActiveRuntime> {
-        effective_active_runtime(&self.paths, &self.installed_runtimes())
+        effective_active_runtime(&self.paths(), &self.installed_runtimes())
     }
 
     /// The GPUs an engine build reports through `--list-devices`.
@@ -245,7 +329,7 @@ impl LocalDiffusionEngine {
         release: &str,
         asset: &str,
     ) -> Result<Vec<RuntimeDevice>, String> {
-        let runtime_dir = self.paths.runtime_root(release, asset);
+        let runtime_dir = self.paths().runtime_root(release, asset);
         let mut command = Command::new(runtime_dir.join(server_executable_name()));
         command
             .current_dir(&runtime_dir)
@@ -344,7 +428,10 @@ impl LocalDiffusionEngine {
         )
     }
 
-    fn runtime_for(&self, binding: &StableDiffusionCppBinding) -> Result<ActiveRuntime, String> {
+    fn runtime_for(
+        &self,
+        binding: &StableDiffusionCppBinding,
+    ) -> Result<ActiveRuntime, ImageError> {
         match self.effective_runtime() {
             Some(active) => Ok(active),
             None => match (&binding.runtime_release, &binding.runtime_asset) {
@@ -352,10 +439,7 @@ impl LocalDiffusionEngine {
                     release: release.clone(),
                     asset: asset.clone(),
                 }),
-                _ => Err(
-                    "No stable-diffusion.cpp engine build is installed. Install an engine in the Local Image Generation settings first."
-                        .to_owned(),
-                ),
+                _ => Err(no_runtime_installed()),
             },
         }
     }
@@ -365,20 +449,28 @@ impl LocalDiffusionEngine {
         model: &EngineModel,
         runtime: &ActiveRuntime,
         conservative: bool,
-    ) -> Result<String, String> {
-        if self.shutting_down.load(Ordering::SeqCst) {
-            return Err("Lettuce is shutting down.".to_owned());
+        cancellation: &CancellationToken,
+    ) -> Result<String, ImageError> {
+        if self.stopping(cancellation) {
+            return Err(ImageError::cancelled());
         }
         if let Some(profile_id) = model.binding.profile_id.as_deref()
             && let Ok(profile) = diffusion_catalog().profile(profile_id)
         {
             profile
                 .check_runtime(&runtime.release)
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| {
+                    ImageError::new(ImageFailureKind::RuntimeIncompatible, error.to_string())
+                })?;
         }
-        let compute_policy = load_compute_policy(&self.paths, &runtime.release, &runtime.asset);
-        let policy_key = serde_json::to_string(&compute_policy)
-            .map_err(|error| format!("Failed to fingerprint the compute policy: {error}"))?;
+        let paths = self.paths();
+        let compute_policy = load_compute_policy(&paths, &runtime.release, &runtime.asset);
+        let policy_key = serde_json::to_string(&compute_policy).map_err(|error| {
+            ImageError::new(
+                ImageFailureKind::Other,
+                format!("Failed to fingerprint the compute policy: {error}"),
+            )
+        })?;
         let binding = &model.binding;
         let key = [
             model.diffusion_model_path.as_str(),
@@ -391,7 +483,9 @@ impl LocalDiffusionEngine {
             if conservative { "conservative" } else { "" },
         ]
         .join("|");
-        let mut managed = self.server.lock().await;
+        let mut managed = unless_cancelled(cancellation, self.server.lock())
+            .await
+            .ok_or_else(ImageError::cancelled)?;
         if let Some(server) = managed.as_mut() {
             if server.key == key && server.child.try_wait().ok().flatten().is_none() {
                 return Ok(server.base_url.clone());
@@ -401,19 +495,29 @@ impl LocalDiffusionEngine {
             *managed = None;
         }
 
-        self.host.unload_local_llm().await?;
+        unless_cancelled(cancellation, self.host.unload_local_llm())
+            .await
+            .ok_or_else(ImageError::cancelled)?
+            .map_err(|message| ImageError::new(ImageFailureKind::ServerStartFailed, message))?;
 
-        let runtime_dir = self.paths.runtime_root(&runtime.release, &runtime.asset);
+        let runtime_dir = paths.runtime_root(&runtime.release, &runtime.asset);
         let executable = runtime_dir.join(server_executable_name());
-        if !runtime_is_installed(&self.paths, &runtime.release, &runtime.asset) {
-            return Err(format!(
-                "The selected stable-diffusion.cpp runtime is not fully installed: {}",
-                executable.display()
+        if !runtime_is_installed(&paths, &runtime.release, &runtime.asset) {
+            return Err(ImageError::new(
+                ImageFailureKind::RuntimeNotInstalled,
+                format!(
+                    "The selected stable-diffusion.cpp runtime is not fully installed: {}",
+                    executable.display()
+                ),
             ));
         }
-        let resolved = self
-            .resolve_compute_policy(&runtime.release, &runtime.asset, &compute_policy)
-            .await?;
+        let resolved = unless_cancelled(
+            cancellation,
+            self.resolve_compute_policy(&runtime.release, &runtime.asset, &compute_policy),
+        )
+        .await
+        .ok_or_else(ImageError::cancelled)?
+        .map_err(|message| ImageError::new(ImageFailureKind::ServerStartFailed, message))?;
         let diffusion = PathBuf::from(model.diffusion_model_path.trim());
         let configured = |path: Option<&str>| {
             path.map(str::trim)
@@ -421,22 +525,28 @@ impl LocalDiffusionEngine {
                 .map(PathBuf::from)
         };
         let text_encoder = configured(binding.text_encoder_path.as_deref()).ok_or_else(|| {
-            format!(
-                "{} is not fully configured: set the text encoder file in the model editor first.",
-                model.display_name
+            ImageError::new(
+                ImageFailureKind::ModelNotConfigured,
+                format!(
+                    "{} is not fully configured: set the text encoder file in the model editor first.",
+                    model.display_name
+                ),
             )
         })?;
         let vae = configured(binding.vae_path.as_deref()).ok_or_else(|| {
-            format!(
-                "{} is not fully configured: set the VAE file in the model editor first.",
-                model.display_name
+            ImageError::new(
+                ImageFailureKind::ModelNotConfigured,
+                format!(
+                    "{} is not fully configured: set the VAE file in the model editor first.",
+                    model.display_name
+                ),
             )
         })?;
         let vision_encoder = configured(binding.vision_encoder_path.as_deref());
         if !diffusion.is_file() {
-            return Err(format!(
-                "Local image model file not found: {}",
-                diffusion.display()
+            return Err(ImageError::new(
+                ImageFailureKind::ModelFileMissing,
+                format!("Local image model file not found: {}", diffusion.display()),
             ));
         }
         for path in [Some(&text_encoder), Some(&vae), vision_encoder.as_ref()]
@@ -444,9 +554,9 @@ impl LocalDiffusionEngine {
             .flatten()
         {
             if !path.is_file() {
-                return Err(format!(
-                    "Local image component is missing: {}",
-                    path.display()
+                return Err(ImageError::new(
+                    ImageFailureKind::ModelFileMissing,
+                    format!("Local image component is missing: {}", path.display()),
                 ));
             }
         }
@@ -460,28 +570,40 @@ impl LocalDiffusionEngine {
             )
         });
 
+        let start_failed =
+            |message: String| ImageError::new(ImageFailureKind::ServerStartFailed, message);
         let port = {
             let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
                 .await
-                .map_err(|error| format!("Failed to reserve a local image server port: {error}"))?;
+                .map_err(|error| {
+                    start_failed(format!(
+                        "Failed to reserve a local image server port: {error}"
+                    ))
+                })?;
             listener
                 .local_addr()
                 .map(|address| address.port())
-                .map_err(|error| format!("Failed to read the local image server port: {error}"))?
+                .map_err(|error| {
+                    start_failed(format!("Failed to read the local image server port: {error}"))
+                })?
         };
-        std::fs::create_dir_all(&self.paths.loras)
-            .map_err(|error| format!("Failed to create the local LoRA library: {error}"))?;
-        std::fs::create_dir_all(&self.paths.upscalers)
-            .map_err(|error| format!("Failed to create the local upscaler library: {error}"))?;
+        std::fs::create_dir_all(&paths.loras).map_err(|error| {
+            ImageError::storage(format!("Failed to create the local LoRA library: {error}"))
+        })?;
+        std::fs::create_dir_all(&paths.upscalers).map_err(|error| {
+            ImageError::storage(format!(
+                "Failed to create the local upscaler library: {error}"
+            ))
+        })?;
         let mut command = Command::new(&executable);
         command
             .current_dir(&runtime_dir)
             .arg("--diffusion-model")
             .arg(&diffusion)
             .arg("--lora-model-dir")
-            .arg(&self.paths.loras)
+            .arg(&paths.loras)
             .arg("--hires-upscalers-dir")
-            .arg(&self.paths.upscalers)
+            .arg(&paths.upscalers)
             .arg("--listen-ip")
             .arg("127.0.0.1")
             .arg("--listen-port")
@@ -514,36 +636,42 @@ impl LocalDiffusionEngine {
             &mut command,
             &runtime_dir,
             "Failed to configure stable-diffusion.cpp libraries",
-        )?;
-        let mut child = command
-            .spawn()
-            .map_err(|error| format!("Failed to start stable-diffusion.cpp: {error}"))?;
+        )
+        .map_err(start_failed)?;
+        let mut child = command.spawn().map_err(|error| {
+            start_failed(format!("Failed to start stable-diffusion.cpp: {error}"))
+        })?;
         let output = Arc::new(RuntimeOutput::default());
         if let Some(stdout) = child.stdout.take() {
-            forward_output(stdout, Arc::clone(&output), Arc::clone(&self.progress));
+            forward_output(stdout, Arc::clone(&output), Arc::clone(&self.route));
         }
         if let Some(stderr) = child.stderr.take() {
-            forward_output(stderr, Arc::clone(&output), Arc::clone(&self.progress));
+            forward_output(stderr, Arc::clone(&output), Arc::clone(&self.route));
         }
         let base_url = format!("http://127.0.0.1:{port}");
         let mut ready = false;
         for _ in 0..READINESS_ATTEMPTS {
-            if self.shutting_down.load(Ordering::SeqCst) {
-                child.kill().await.ok();
-                child.wait().await.ok();
-                return Err("Lettuce is shutting down.".to_owned());
+            if self.stopping(cancellation) {
+                discard(&mut child).await;
+                return Err(ImageError::cancelled());
             }
-            if let Some(status) = child
-                .try_wait()
-                .map_err(|error| format!("Failed to inspect stable-diffusion.cpp: {error}"))?
-            {
-                return Err(format!(
-                    "stable-diffusion.cpp exited while loading the model ({status})"
-                ));
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    return Err(start_failed(format!(
+                        "stable-diffusion.cpp exited while loading the model ({status})"
+                    )));
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    discard(&mut child).await;
+                    return Err(start_failed(format!(
+                        "Failed to inspect stable-diffusion.cpp: {error}"
+                    )));
+                }
             }
-            if self
-                .http
-                .get(
+            let Some(probe) = unless_cancelled(
+                cancellation,
+                self.http.get(
                     &base_url,
                     "/sdcpp/v1/capabilities",
                     &[],
@@ -551,19 +679,31 @@ impl LocalDiffusionEngine {
                     JsonAuth::None,
                     Vec::new(),
                     false,
-                )
-                .await
-                .is_ok_and(|response| (200..300).contains(&response.status))
-            {
+                ),
+            )
+            .await
+            else {
+                discard(&mut child).await;
+                return Err(ImageError::cancelled());
+            };
+            if probe.is_ok_and(|response| (200..300).contains(&response.status)) {
                 ready = true;
                 break;
             }
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            if unless_cancelled(cancellation, tokio::time::sleep(READINESS_INTERVAL))
+                .await
+                .is_none()
+            {
+                discard(&mut child).await;
+                return Err(ImageError::cancelled());
+            }
         }
         if !ready {
-            child.kill().await.ok();
-            child.wait().await.ok();
-            return Err("stable-diffusion.cpp did not become ready within five minutes".to_owned());
+            discard(&mut child).await;
+            return Err(ImageError::new(
+                ImageFailureKind::ServerNotReady,
+                "stable-diffusion.cpp did not become ready within five minutes",
+            ));
         }
         *managed = Some(ManagedServer {
             key,
@@ -574,10 +714,10 @@ impl LocalDiffusionEngine {
         Ok(base_url)
     }
 
-    fn set_active(&self, entry: Option<ActiveGeneration>) {
-        if let Ok(mut active) = self.active.lock() {
-            *active = entry;
-        }
+    /// Whether the work running now should end: its own cancellation or the
+    /// app shutting down.
+    pub(super) fn stopping(&self, cancellation: &CancellationToken) -> bool {
+        cancellation.is_cancelled() || self.shutting_down.load(Ordering::SeqCst)
     }
 
     /// Runs one local generation; `model` comes from the request's model.
@@ -585,11 +725,14 @@ impl LocalDiffusionEngine {
         &self,
         model: &EngineModel,
         request: &ProviderImageRequest,
-    ) -> Result<Vec<Vec<u8>>, String> {
+    ) -> Result<Vec<Vec<u8>>, ImageError> {
         if model.diffusion_model_path.starts_with("sdcpp:") {
-            return Err(format!(
-                "This local image model uses an outdated registration. Open the Local Image Generation settings page to refresh it: {}",
-                model.diffusion_model_path
+            return Err(ImageError::new(
+                ImageFailureKind::OutdatedRegistration,
+                format!(
+                    "This local image model uses an outdated registration. Open the Local Image Generation settings page to refresh it: {}",
+                    model.diffusion_model_path
+                ),
             ));
         }
         let runtime = self.runtime_for(&model.binding)?;
@@ -604,12 +747,13 @@ impl LocalDiffusionEngine {
             .map(data_url)
             .collect::<Vec<_>>();
         let mask = request.mask_image.as_ref().map(data_url);
+        let paths = self.paths();
         let loras = normalize_loras(
-            &self.paths.loras,
+            &paths.loras,
             &request.loras,
             profile.map(|profile| profile.id.as_str()),
         )
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| ImageError::new(ImageFailureKind::LoraInvalid, error.to_string()))?;
         let payload = build_generation_payload(
             &EngineGenerationInput {
                 prompt: &request.prompt,
@@ -628,7 +772,7 @@ impl LocalDiffusionEngine {
             },
             profile,
         )
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| ImageError::new(ImageFailureKind::InvalidRequest, error.to_string()))?;
         tracing::info!(
             component = "sdcpp",
             model = %model.diffusion_model_path,
@@ -645,47 +789,49 @@ impl LocalDiffusionEngine {
                 .join(", "),
             "submitting generation"
         );
-        let payload = serde_json::to_vec(&payload)
-            .map_err(|error| format!("Failed to submit local image generation: {error}"))?;
+        let payload = serde_json::to_vec(&payload).map_err(|error| {
+            ImageError::new(
+                ImageFailureKind::InvalidRequest,
+                format!("Failed to submit local image generation: {error}"),
+            )
+        })?;
         let automatic_policy =
-            load_compute_policy(&self.paths, &runtime.release, &runtime.asset).is_automatic();
-        let cancel = Arc::new(AtomicBool::new(false));
-        self.set_active(Some(ActiveGeneration {
-            base_url: String::new(),
-            job_id: None,
-            cancel: Arc::clone(&cancel),
-        }));
-        self.progress.progress(GenerationProgress::Starting);
+            load_compute_policy(&paths, &runtime.release, &runtime.asset).is_automatic();
+        let cancellation = &request.cancellation;
+        let Some(_call) = self
+            .begin_call(
+                cancellation,
+                request.progress.as_ref().map(|handle| Arc::clone(&handle.0)),
+            )
+            .await
+        else {
+            return Err(ImageError::cancelled());
+        };
+        self.route.emit(GenerationProgress::Starting);
         let mut conservative = false;
         let outcome = loop {
-            let base_url = match self.ensure_server(model, &runtime, conservative).await {
-                Ok(base_url) => base_url,
-                Err(error) => {
-                    break Err(if cancel.load(Ordering::SeqCst) {
-                        GENERATION_CANCELLED_MESSAGE.to_owned()
-                    } else {
-                        error
-                    });
-                }
-            };
-            if let Ok(mut active) = self.active.lock()
-                && let Some(active) = active.as_mut()
+            let base_url = match self
+                .ensure_server(model, &runtime, conservative, cancellation)
+                .await
             {
-                active.base_url.clone_from(&base_url);
-                active.job_id = None;
-            }
-            match self.run_generation_job(&base_url, &payload, &cancel).await {
+                Ok(base_url) => base_url,
+                Err(error) => break Err(error),
+            };
+            match self
+                .run_generation_job(&base_url, &payload, cancellation)
+                .await
+            {
                 Ok(images) => break Ok(images),
-                Err(GenerationJobError::Cancelled) => {
-                    break Err(GENERATION_CANCELLED_MESSAGE.to_owned());
+                Err(GenerationJobError::Cancelled) => break Err(ImageError::cancelled()),
+                Err(GenerationJobError::Rejected(message)) => {
+                    break Err(ImageError::new(ImageFailureKind::EngineRejected, message));
                 }
-                Err(
-                    GenerationJobError::Rejected(message)
-                    | GenerationJobError::Infrastructure(message),
-                ) => break Err(message),
+                Err(GenerationJobError::Infrastructure(kind, message)) => {
+                    break Err(ImageError::new(kind, message));
+                }
                 Err(GenerationJobError::Failed(message)) => {
-                    if cancel.load(Ordering::SeqCst) {
-                        break Err(GENERATION_CANCELLED_MESSAGE.to_owned());
+                    if self.stopping(cancellation) {
+                        break Err(ImageError::cancelled());
                     }
                     let tail = self
                         .server
@@ -701,16 +847,22 @@ impl LocalDiffusionEngine {
                             component = "sdcpp",
                             "generation ran out of memory; retrying once with CPU-offloaded weights: {message}"
                         );
-                        self.progress.progress(GenerationProgress::Retrying);
+                        self.route.emit(GenerationProgress::Retrying);
                         self.stop().await;
                         conservative = true;
                         continue;
                     }
-                    break Err(message);
+                    break Err(ImageError::new(
+                        if oom_detected {
+                            ImageFailureKind::OutOfMemory
+                        } else {
+                            ImageFailureKind::EngineFailed
+                        },
+                        message,
+                    ));
                 }
             }
         };
-        self.set_active(None);
         let images = outcome?;
         images
             .iter()
@@ -718,21 +870,31 @@ impl LocalDiffusionEngine {
                 let encoded = image
                     .get("b64_json")
                     .and_then(Value::as_str)
-                    .ok_or_else(|| "Local image result is missing image data".to_owned())?;
+                    .ok_or_else(|| {
+                        ImageError::new(
+                            ImageFailureKind::EngineFailed,
+                            "Local image result is missing image data",
+                        )
+                    })?;
                 base64::engine::general_purpose::STANDARD
                     .decode(encoded.trim())
-                    .map_err(|error| format!("Failed to decode base64 image: {error}"))
+                    .map_err(|error| {
+                        ImageError::new(
+                            ImageFailureKind::EngineFailed,
+                            format!("Failed to decode base64 image: {error}"),
+                        )
+                    })
             })
             .collect()
     }
 
-    async fn run_generation_job(
+    pub(super) async fn run_generation_job(
         &self,
         base_url: &str,
         payload: &[u8],
-        cancel: &AtomicBool,
+        cancellation: &CancellationToken,
     ) -> Result<Vec<Value>, GenerationJobError> {
-        if cancel.load(Ordering::SeqCst) {
+        if self.stopping(cancellation) {
             return Err(GenerationJobError::Cancelled);
         }
         let response = self
@@ -749,9 +911,10 @@ impl LocalDiffusionEngine {
             )
             .await
             .map_err(|error| {
-                GenerationJobError::Infrastructure(format!(
-                    "Failed to submit local image generation: {error}"
-                ))
+                GenerationJobError::Infrastructure(
+                    ImageFailureKind::EngineFailed,
+                    format!("Failed to submit local image generation: {error}"),
+                )
             })?;
         if !(200..300).contains(&response.status) {
             return Err(GenerationJobError::Rejected(format!(
@@ -761,41 +924,51 @@ impl LocalDiffusionEngine {
             )));
         }
         let accepted = serde_json::from_slice::<Value>(&response.body).map_err(|error| {
-            GenerationJobError::Infrastructure(format!(
-                "Failed to parse stable-diffusion.cpp job response: {error}"
-            ))
+            GenerationJobError::Infrastructure(
+                ImageFailureKind::EngineFailed,
+                format!("Failed to parse stable-diffusion.cpp job response: {error}"),
+            )
         })?;
-        let job_id = accepted
+        let engine_job_id = accepted
             .get("id")
             .and_then(Value::as_str)
             .map(str::to_owned);
-        if let Ok(mut active) = self.active.lock()
-            && let Some(active) = active.as_mut()
-        {
-            active.job_id.clone_from(&job_id);
-        }
+        let no_poll_url = || {
+            GenerationJobError::Infrastructure(
+                ImageFailureKind::EngineFailed,
+                "stable-diffusion.cpp response did not include a poll URL".to_owned(),
+            )
+        };
         let poll_url = accepted
             .get("poll_url")
             .and_then(Value::as_str)
-            .ok_or_else(|| {
-                GenerationJobError::Infrastructure(
-                    "stable-diffusion.cpp response did not include a poll URL".to_owned(),
-                )
-            })?;
+            .ok_or_else(no_poll_url)?;
         let poll_url = if poll_url.starts_with("http://") || poll_url.starts_with("https://") {
             poll_url.to_owned()
         } else {
             format!("{base_url}{poll_url}")
         };
-        let (poll_endpoint, poll_path) = split_endpoint(&poll_url).ok_or_else(|| {
-            GenerationJobError::Infrastructure(
-                "stable-diffusion.cpp response did not include a poll URL".to_owned(),
-            )
-        })?;
+        let (poll_endpoint, poll_path) = split_endpoint(&poll_url).ok_or_else(no_poll_url)?;
 
         let mut announced_generating = false;
+        let mut cancel_requested = false;
         for _ in 0..POLL_ATTEMPTS {
-            tokio::time::sleep(POLL_INTERVAL).await;
+            if cancel_requested {
+                tokio::time::sleep(POLL_INTERVAL).await;
+            } else if unless_cancelled(cancellation, tokio::time::sleep(POLL_INTERVAL))
+                .await
+                .is_none()
+                || self.shutting_down.load(Ordering::SeqCst)
+            {
+                cancel_requested = true;
+                if !self
+                    .cancel_engine_job(base_url, engine_job_id.as_deref())
+                    .await
+                {
+                    return Err(GenerationJobError::Cancelled);
+                }
+                continue;
+            }
             let response = match self
                 .http
                 .get(
@@ -811,7 +984,7 @@ impl LocalDiffusionEngine {
             {
                 Ok(response) => response,
                 Err(error) => {
-                    if cancel.load(Ordering::SeqCst) {
+                    if self.stopping(cancellation) {
                         return Err(GenerationJobError::Cancelled);
                     }
                     return Err(GenerationJobError::Failed(format!(
@@ -826,23 +999,27 @@ impl LocalDiffusionEngine {
                 )));
             }
             let job = serde_json::from_slice::<Value>(&response.body).map_err(|error| {
-                GenerationJobError::Infrastructure(format!(
-                    "Failed to parse local image job: {error}"
-                ))
+                GenerationJobError::Infrastructure(
+                    ImageFailureKind::EngineFailed,
+                    format!("Failed to parse local image job: {error}"),
+                )
             })?;
             match job.get("status").and_then(Value::as_str) {
                 Some("queued") => {
-                    self.progress.progress(GenerationProgress::Queued {
+                    self.route.emit(GenerationProgress::Queued {
                         queue_position: job.get("queue_position").and_then(Value::as_u64),
                     });
                 }
                 Some("generating" | "running") => {
                     if !announced_generating {
                         announced_generating = true;
-                        self.progress.progress(GenerationProgress::Generating);
+                        self.route.emit(GenerationProgress::Generating);
                     }
                 }
                 Some("completed") => {
+                    if cancel_requested {
+                        return Err(GenerationJobError::Cancelled);
+                    }
                     return job
                         .pointer("/result/images")
                         .and_then(Value::as_array)
@@ -854,7 +1031,7 @@ impl LocalDiffusionEngine {
                         });
                 }
                 Some("cancelled") => {
-                    if cancel.load(Ordering::SeqCst) {
+                    if self.stopping(cancellation) {
                         return Err(GenerationJobError::Cancelled);
                     }
                     let message = job
@@ -864,6 +1041,9 @@ impl LocalDiffusionEngine {
                     return Err(GenerationJobError::Failed(message.to_owned()));
                 }
                 Some("failed") => {
+                    if cancel_requested {
+                        return Err(GenerationJobError::Cancelled);
+                    }
                     let message = job
                         .pointer("/error/message")
                         .and_then(Value::as_str)
@@ -871,34 +1051,32 @@ impl LocalDiffusionEngine {
                     return Err(GenerationJobError::Failed(message.to_owned()));
                 }
                 other => {
-                    return Err(GenerationJobError::Infrastructure(format!(
-                        "Unknown stable-diffusion.cpp job status: {other:?}"
-                    )));
+                    return Err(GenerationJobError::Infrastructure(
+                        ImageFailureKind::EngineFailed,
+                        format!("Unknown stable-diffusion.cpp job status: {other:?}"),
+                    ));
                 }
             }
         }
         Err(GenerationJobError::Infrastructure(
+            ImageFailureKind::EngineTimedOut,
             "Local image generation timed out after ten minutes".to_owned(),
         ))
     }
 
-    /// Cancels the running generation: the queued engine job when possible,
-    /// otherwise by stopping the server. `false` when nothing was running.
-    pub async fn cancel_generation(&self) -> bool {
-        let active = self.active.lock().ok().and_then(|active| active.clone());
-        let Some(active) = active else {
-            return false;
-        };
-        active.cancel.store(true, Ordering::SeqCst);
-        if let Some(job_id) = active
-            .job_id
-            .as_deref()
-            .filter(|_| !active.base_url.is_empty())
-        {
+    /// Cancels the engine's own job: `true` when the engine accepted it (its
+    /// poll then reports the end), otherwise the server is stopped to abort
+    /// the work and `false` is returned.
+    pub(super) async fn cancel_engine_job(
+        &self,
+        base_url: &str,
+        engine_job_id: Option<&str>,
+    ) -> bool {
+        if let Some(job_id) = engine_job_id {
             let cancelled = self
                 .http
                 .post_json(
-                    &active.base_url,
+                    base_url,
                     &format!("/sdcpp/v1/jobs/{job_id}/cancel"),
                     &[],
                     Vec::new(),
@@ -912,9 +1090,9 @@ impl LocalDiffusionEngine {
             if cancelled {
                 tracing::info!(
                     component = "sdcpp",
-                    "cancelled queued local image job {job_id}"
+                    "cancelled local image job {job_id}"
                 );
-                self.progress.progress(GenerationProgress::Cancelled);
+                self.route.emit(GenerationProgress::Cancelled);
                 return true;
             }
         }
@@ -923,8 +1101,8 @@ impl LocalDiffusionEngine {
             "stopping stable-diffusion.cpp to abort the running generation"
         );
         self.stop().await;
-        self.progress.progress(GenerationProgress::Cancelled);
-        true
+        self.route.emit(GenerationProgress::Cancelled);
+        false
     }
 
     /// Stops the managed server (engine switch, delete, compute policy
@@ -953,19 +1131,26 @@ impl LocalDiffusionEngine {
         Ok(())
     }
 
-    /// Refuses new servers and cancels the running generation.
+    /// Refuses new servers and ends the work running now at its next step.
     pub fn begin_shutdown(&self) {
         self.shutting_down.store(true, Ordering::SeqCst);
-        if let Ok(mut active) = self.active.lock()
-            && let Some(active) = active.take()
-        {
-            active.cancel.store(true, Ordering::SeqCst);
-        }
     }
 
     pub async fn shutdown(&self) {
         self.stop().await;
     }
+}
+
+async fn discard(child: &mut Child) {
+    child.kill().await.ok();
+    child.wait().await.ok();
+}
+
+pub(super) fn no_runtime_installed() -> ImageError {
+    ImageError::new(
+        ImageFailureKind::RuntimeNotInstalled,
+        "No stable-diffusion.cpp engine build is installed. Install an engine in the Local Image Generation settings first.",
+    )
 }
 
 #[async_trait]
@@ -985,7 +1170,10 @@ impl ImageProviderPort for LocalDiffusionEngine {
             ));
         }
         if cfg!(any(target_os = "android", target_os = "ios")) {
-            return Err(ImageProviderError::Failed(DESKTOP_ONLY_MESSAGE.to_owned()));
+            return Err(ImageProviderError::Engine(ImageError::new(
+                ImageFailureKind::LocalUnsupported,
+                DESKTOP_ONLY_MESSAGE,
+            )));
         }
         if request.cancellation.is_cancelled() {
             return Err(ImageProviderError::Cancelled);
@@ -995,19 +1183,7 @@ impl ImageProviderPort for LocalDiffusionEngine {
             diffusion_model_path: request.external_model_id.clone(),
             binding: request.settings.cpp.clone(),
         };
-        let generation = self.generate_images(&model, &request);
-        let cancellation = async {
-            request.cancellation.cancelled().await;
-            self.cancel_generation().await;
-        };
-        tokio::pin!(generation);
-        tokio::pin!(cancellation);
-        let result = tokio::select! {
-            biased;
-            result = &mut generation => result,
-            () = &mut cancellation => generation.await,
-        };
-        match result {
+        match self.generate_images(&model, &request).await {
             Ok(images) => Ok(ProviderImageOutput {
                 images: images
                     .into_iter()
@@ -1019,10 +1195,8 @@ impl ImageProviderPort for LocalDiffusionEngine {
                     .collect(),
                 usage: None,
             }),
-            Err(message) if message == GENERATION_CANCELLED_MESSAGE => {
-                Err(ImageProviderError::Cancelled)
-            }
-            Err(message) => Err(ImageProviderError::Failed(message)),
+            Err(error) if error.is_cancelled() => Err(ImageProviderError::Cancelled),
+            Err(error) => Err(ImageProviderError::Engine(error)),
         }
     }
 }
@@ -1141,7 +1315,6 @@ mod tests {
             paths.clone(),
             BulkHttpClient::new().expect("client"),
             Arc::clone(&host) as Arc<dyn EngineHost>,
-            Arc::clone(&progress) as Arc<dyn GenerationProgressSink>,
         );
         let devices = engine
             .runtime_devices(&release, &asset)
@@ -1221,6 +1394,9 @@ mod tests {
             count: 1,
             text_output: false,
             cancellation: CancellationToken::new(),
+            progress: Some(crate::ProgressHandle(
+                Arc::clone(&progress) as Arc<dyn GenerationProgressSink>
+            )),
         };
         let output = engine.generate(request).await.expect("generation");
         assert_eq!(output.images.len(), 1);

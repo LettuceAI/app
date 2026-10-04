@@ -67,7 +67,29 @@ pub fn playground_page_size(limit: Option<u32>) -> u32 {
         .clamp(1, PLAYGROUND_MAX_PAGE)
 }
 
+/// An upscaled image entering the history as an entry of its own.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlaygroundUpscale {
+    /// The upscale job; its id is the new entry's id, so a retry finds it.
+    pub job_id: JobId,
+    /// The entry whose image was upscaled; the new entry copies its model,
+    /// prompt and seed.
+    pub source_entry_id: String,
+    pub image: crate::GeneratedImage,
+    pub created_at: TimestampMillis,
+}
+
 pub trait PlaygroundHistoryRepository: Send + Sync {
+    /// Whether an entry exists.
+    fn playground_entry_exists(&self, id: &str) -> Result<bool, PlaygroundHistoryError>;
+
+    /// Records an upscale as a completed entry and returns its id; one
+    /// already recorded for the job is returned as it is.
+    fn record_playground_upscale(
+        &self,
+        upscale: PlaygroundUpscale,
+    ) -> Result<String, PlaygroundHistoryError>;
+
     /// Newest first; `before` keeps entries created strictly earlier.
     fn list_playground_history(
         &self,

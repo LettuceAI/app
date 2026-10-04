@@ -78,6 +78,7 @@ pub enum ApiErrorDetails {
     HuggingFace { failure: HfFailure },
     Ollama { failure: OllamaFailure },
     LocalModelsBusy { reason: LocalModelsBusyReason },
+    Image { failure: crate::ImageFailureKind },
     PendingMemoryRewind { conversation_id: String },
 }
 
