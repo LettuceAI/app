@@ -1793,6 +1793,26 @@ async fn local_image_work_is_refused_while_the_models_folder_moves_but_remote_wo
     .await
     .expect_err("a discovery");
     assert!(is_folder_move(&discovery, &moving), "{discovery:?}");
+    let import = loras_import(
+        context,
+        dto::LorasImportRequest {
+            source: dto::FileSource {
+                uri: desktop.root.join("style.safetensors").display().to_string(),
+            },
+        },
+    )
+    .await
+    .expect_err("a LoRA import");
+    assert!(is_folder_move(&import, &moving), "{import:?}");
+    let delete = loras_delete(
+        context,
+        dto::LorasDeleteRequest {
+            path: "style.safetensors".to_owned(),
+        },
+    )
+    .await
+    .expect_err("a LoRA delete");
+    assert!(is_folder_move(&delete, &moving), "{delete:?}");
 
     image_generate(context, generate_request(remote, "first"))
         .await

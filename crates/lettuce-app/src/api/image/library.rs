@@ -106,6 +106,7 @@ pub async fn loras_import(
     request: dto::LorasImportRequest,
 ) -> Result<dto::InstalledLora, ApiError> {
     engine(context)?;
+    super::refuse_during_move(context).await?;
     let path = local_path(&request.source, "source")?;
     let library = lora_library(context)?;
     library
@@ -123,6 +124,7 @@ pub async fn loras_delete(
     engine(context)?;
     context
         .blocking(move |context| {
+            crate::api::jobs::folder_move_active(context)?;
             let library = lora_library(context)?;
             let outcome = library.delete(&request.path).map_err(image_error)?;
             Ok(dto::LoraDeleted {
