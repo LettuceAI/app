@@ -55,6 +55,7 @@ impl ProviderBackupRestoreWriter for Database {
             trusted_certificates: graph.device.trusted_certificates.clone(),
             embedding: graph.device.embedding,
             llm_models_dir: None,
+            speech: graph.device.speech.clone(),
         };
         if device != lettuce_settings::DeviceSettings::default() {
             crate::write_device_settings(&transaction, &device).map_err(invalid)?;
@@ -878,6 +879,9 @@ pub(crate) mod tests {
                 keep_model_loaded: true,
             },
             llm_models_dir: Some("/data/models".into()),
+            speech: lettuce_settings::DeviceSpeechSettings {
+                dictation_model_id: Some("base.en".into()),
+            },
         };
         source
             .save_device_settings(settings.clone())
@@ -904,6 +908,7 @@ pub(crate) mod tests {
                 .llm_models_dir,
             None
         );
+        assert_eq!(restored.load_device_settings().expect("restored dictation choice").speech, settings.speech);
         source
             .add_app_usage("2026-09-20", 500, lettuce_types::TimestampMillis::new(2))
             .expect("usage after the backup");

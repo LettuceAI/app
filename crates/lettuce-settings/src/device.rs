@@ -1,5 +1,5 @@
 //! Settings that describe this device rather than the user: they never sync.
-//! A backup carries the trusted certificates and the embedding choice; the
+//! A backup carries certificates and the embedding and dictation choices; the
 //! models folder is a path on this device, so a restore keeps the previous
 //! file's.
 
@@ -21,6 +21,14 @@ pub struct DeviceSettings {
     /// Where GGUF downloads go (image models in its `image` folder); unset
     /// means the app's own models folder.
     pub llm_models_dir: Option<String>,
+    pub speech: DeviceSpeechSettings,
+}
+
+/// The Whisper model dictation uses (unset means the first installed one).
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct DeviceSpeechSettings {
+    pub dictation_model_id: Option<String>,
 }
 
 /// A root certificate every provider request trusts; an entry the TLS stack
@@ -82,7 +90,12 @@ impl DeviceSettings {
             .llm_models_dir
             .as_deref()
             .is_none_or(|folder| text(folder, MAX_PATH_BYTES));
-        if certificates && folder && self.embedding.max_tokens != Some(0) {
+        let dictation = self
+            .speech
+            .dictation_model_id
+            .as_deref()
+            .is_none_or(|model| text(model, 128));
+        if certificates && folder && dictation && self.embedding.max_tokens != Some(0) {
             Ok(())
         } else {
             Err(GlobalSettingsStoreError::InvalidData)

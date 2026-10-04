@@ -19,7 +19,7 @@ mod passphrase_vault;
 mod secrets;
 
 pub use device::{
-    DeviceEmbeddingSettings, DeviceSettings, DeviceSettingsStore, EmbeddingModelVersion,
+    DeviceEmbeddingSettings, DeviceSettings, DeviceSettingsStore, DeviceSpeechSettings, EmbeddingModelVersion,
     MAX_CERTIFICATE_NAME_BYTES, TrustedCertificate,
 };
 pub use global::{

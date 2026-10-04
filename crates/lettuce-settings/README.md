@@ -71,7 +71,9 @@ These store the choices only. The jobs take a resolved model profile per request
 - `embedding`: which embedding model loads (`V3`, `V4` or `V5`, Eidos; unset prefers Eidos), its token window (unset means 4096) and whether the model stays loaded.
 - `llm_models_dir`: where GGUF downloads go, image models in its `image` folder; unset means the app's own models folder.
 
-These are per device because they describe one machine: a path, network trust, installed files. A backup carries the certificates and the embedding choice and a restore writes them; the models folder is a local path, so a restore keeps the previous file's unless the restored file names one.
+These are per device because they describe one machine: a path, network trust, installed files. A backup carries the certificates and the embedding and dictation choices and a restore writes them; the models folder is a local path, so a restore keeps the previous file's unless the restored file names one.
+
+The device speech settings store the selected dictation Whisper model id. An unset choice uses the first installed filename. Backups carry this choice alongside embedding settings; older backups default it to unset.
 
 `DeviceUiStateStore` keeps the shell's state about this install (onboarding progress, dismissed hints, the last version seen, active-usage counters) as a JSON object of at most 256 KiB in the device-local `device_ui_state` row. It never syncs and never enters a backup; a restore keeps the previous database's state.
 
@@ -105,3 +107,4 @@ The file is reached through the `VaultFile` port. Its `write` must replace the f
 The Hugging Face and CivitAI tokens are one per install and have no owner. `SecretPurpose::app_secret_ref` gives each a fixed reference (a UUIDv5 in the crate's namespace), so every part of the app finds the same entry without storing the reference anywhere. The Hugging Face and CivitAI browsers in `lettuce-app` read them, and backup and legacy import write them.
 
 `InMemorySecretStore` is a deterministic test adapter with no encryption, persistence or platform protection.
+

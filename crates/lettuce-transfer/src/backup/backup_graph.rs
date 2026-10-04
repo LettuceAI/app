@@ -55,13 +55,14 @@ pub struct BackupGlobalSettings {
 }
 
 /// The device settings and history a backup carries to another device: the
-/// trusted root certificates, the embedding model choice and each day of app
+/// trusted root certificates, embedding and dictation choices and each day of app
 /// usage. The models folder is a path on this device and stays behind.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct BackupDeviceState {
     pub trusted_certificates: Vec<lettuce_settings::TrustedCertificate>,
     pub embedding: lettuce_settings::DeviceEmbeddingSettings,
+    pub speech: lettuce_settings::DeviceSpeechSettings,
     pub app_usage_days: Vec<BackupAppUsageDay>,
 }
 
@@ -1617,6 +1618,7 @@ fn validate_device_state(device: &mut BackupDeviceState) -> Result<(), ProviderB
         trusted_certificates: device.trusted_certificates.clone(),
         embedding: device.embedding,
         llm_models_dir: None,
+        speech: device.speech.clone(),
     }
     .validate()
     .map_err(|_| ProviderBackupGraphError::InvalidGraph)?;
