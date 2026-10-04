@@ -1481,3 +1481,51 @@ async fn civitai_follows_the_pure_mode_level_and_reports_a_missing_model_as_not_
         Some(dto::CivitaiAuthErrorKind::MissingToken)
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_models_folder_does_not_move_while_local_image_work_runs() {
+    let images = HeldImages::new();
+    let desktop = desktop(images.clone(), true);
+    let context = &desktop.harness.context;
+    let model = local_model(context);
+    let job = job_id(
+        &image_generate(context, generate_request(model, "first"))
+            .await
+            .expect("accepted"),
+    );
+    let target = desktop.root.join("elsewhere");
+    let request = |operation: &str| dto::LocalModelsDirSetRequest {
+        path: target.display().to_string(),
+        move_existing: true,
+        client_operation_id: operation.to_owned(),
+    };
+    let queued = local_models_dir_set(context, request("move-queued"))
+        .await
+        .expect_err("a queued local job counts");
+    assert_eq!(
+        queued.details,
+        Some(ApiErrorDetails::LocalModelsBusy {
+            reason: dto::LocalModelsBusyReason::ImageWorkActive {
+                job_id: Some(job.to_string())
+            }
+        })
+    );
+    let runner = JobRunner::new(context.clone(), JobHandlers::standard());
+    assert!(runner.run_once().await.expect("started"));
+    images.entered.notified().await;
+    let running = local_models_dir_set(context, request("move-running"))
+        .await
+        .expect_err("a running local job counts");
+    assert_eq!(running.code, ApiErrorCode::Busy);
+    images.proceed();
+    runner.wait_idle().await;
+    let accepted = local_models_dir_set(context, request("move-after"))
+        .await
+        .expect("allowed once the work settled");
+    assert!(runner.run_once().await.expect("move starts"));
+    runner.wait_idle().await;
+    assert_eq!(
+        view(context, job_id(&accepted)).await.state,
+        dto::JobStateDto::Succeeded
+    );
+}

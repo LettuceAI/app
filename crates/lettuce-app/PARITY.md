@@ -239,7 +239,7 @@ Facts about how `lettuce-app` relates to the legacy app (2.2.x): what follows le
 - Uninstalling a model, deleting a LoRA and the other cleanups report the files they could not remove; the record is removed anyway. Legacy ignored them (`sdcpp.rs:4240`).
 - Disk usage sums the components of the default image folder next to the configured one, as legacy did (`sdcpp.rs:2931-2940`).
 - Deleting a playground entry with its images queues the images for media collection and runs it at once, so the files go with the entry; legacy deleted the files directly (`old-code/src-tauri/src/storage_manager/playground.rs:167`).
-- A bundle install that a running install already fetches returns that job; one that shares only some files, or a hash, with a running download is `Busy`. Legacy refused both (`old-code/src-tauri/src/hf_browser/image_bundle.rs:891-895`); the bundle's registration result reaches the UI in the job's result, replacing the 800 ms status poll.
+- A bundle install whose files are exactly those of a running install returns that job; one that shares any file or hash with a running download (a subset, a superset or an overlap) is `Busy`, and installs are admitted one at a time so the second sees the first's job. Legacy refused both (`old-code/src-tauri/src/hf_browser/image_bundle.rs:891-895`); the bundle's registration result reaches the UI in the job's result, replacing the 800 ms status poll.
 - CivitAI search and model pages hide NSFW at every Pure mode level except off, the level read from the settings on each call (`old-code/src-tauri/src/civitai/mod.rs:348`).
 - The playground form's sizes, samplers, schedulers, negative-prompt providers, quality and style options and batch limit come from `image_capabilities`, backed by `resources/image-capabilities.json` in `lettuce-image-generation` (the old frontend's constants, verbatim). The engine's own `/sdcpp/v1/capabilities` answer is not read: its schema is not documented locally.
 - `sd_model_install` registers the model at once, without a job, when every file is already on disk; `JobAccepted` would need a job with nothing to download.
@@ -335,6 +335,7 @@ Everything the Tauri phase (phase (c)) still has to connect:
 - The ten-minute poll cap and the five-minute readiness cap stay until the user decides; the engine's poll loop and readiness loop are the two places to change (`sd_runtime/server.rs`, `run_generation_job` and `ensure_server`).
 - A playground entry interrupted by a restart shows as failed with the interrupted message; a typed interrupted state needs a CHECK change in `0022_image_generation.sql`.
 - A runtime switch or delete, a compute-policy save and a llama.cpp request still stop a running local generation, which then fails; settling it as cancelled with a reason is open.
+- The models folder move is refused (`ImageWorkActive`) while a local image job is queued or running or the engine's server is up, since the image models live below the folder.
 - The runtime install writes the build manifest before the install job is admitted, so a refused install leaves a manifest-only folder that does not count as installed.
 - Runtime, model, upscaler and CivitAI installs have no stored detail for the download center beyond the install id; bundle installs do.
 

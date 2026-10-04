@@ -1105,6 +1105,13 @@ impl LocalDiffusionEngine {
         false
     }
 
+    /// Whether the managed server is running or being started or stopped.
+    pub fn server_active(&self) -> bool {
+        self.server
+            .try_lock()
+            .map_or(true, |server| server.is_some())
+    }
+
     /// Stops the managed server (engine switch, delete, compute policy
     /// changes, cancellation and the out-of-memory retry).
     pub async fn stop(&self) {

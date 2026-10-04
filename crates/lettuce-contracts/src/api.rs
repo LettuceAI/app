@@ -67,6 +67,7 @@ pub enum LocalModelsBusyReason {
     InstallActive { job_id: String },
     FolderMoveActive { job_id: String },
     ModelLoaded { path: String },
+    ImageWorkActive { job_id: Option<String> },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

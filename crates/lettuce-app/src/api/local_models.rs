@@ -713,9 +713,69 @@ pub(crate) fn busy(reason: dto::LocalModelsBusyReason) -> ApiError {
     }
 }
 
+/// The local image job (generation, upscale or probe) that has not ended, or
+/// `Some(None)` when only the engine's server is up.
+fn image_work_active(context: &ApiContext) -> Option<Option<String>> {
+    use lettuce_jobs::{JobCatalog, JobKind, JobListFilter, JobState, ResourceClass};
+    use lettuce_types::{PageLimit, PageRequest};
+    const ACTIVE: [JobState; 5] = [
+        JobState::Queued,
+        JobState::Claimed,
+        JobState::Running,
+        JobState::CancellationRequested,
+        JobState::CleaningUp,
+    ];
+    let database = context.backend().database();
+    for kind in [
+        JobKind::ImageGenerate,
+        JobKind::MediaTransform,
+        JobKind::RuntimePrepare,
+    ] {
+        let mut cursor = None;
+        loop {
+            let page = database.list_jobs(&JobListFilter {
+                kinds: vec![kind],
+                states: ACTIVE.to_vec(),
+                subject: None,
+                page: PageRequest {
+                    cursor: cursor.take(),
+                    limit: PageLimit::new(200),
+                },
+            });
+            let Ok(page) = page else {
+                return Some(None);
+            };
+            if let Some(job) = page
+                .items
+                .iter()
+                .find(|job| job.resources.contains(&ResourceClass::Process))
+            {
+                return Some(Some(job.id.to_string()));
+            }
+            match page.next_cursor {
+                Some(next) => cursor = Some(next),
+                None => break,
+            }
+        }
+    }
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    if context
+        .backend()
+        .local_diffusion()
+        .is_some_and(|engine| engine.server_active())
+    {
+        return Some(None);
+    }
+    None
+}
+
 /// Why moving the folder at `root` would break work in progress: an install
-/// writing below it, or a model llama.cpp holds open from it.
+/// writing below it, a model llama.cpp holds open from it, or local image
+/// work that reads the image models below it.
 pub(crate) fn folder_busy(context: &ApiContext, root: &Path) -> Option<dto::LocalModelsBusyReason> {
+    if let Some(job_id) = image_work_active(context) {
+        return Some(dto::LocalModelsBusyReason::ImageWorkActive { job_id });
+    }
     if let Some((job_id, _)) = context
         .jobs()
         .install_roots()

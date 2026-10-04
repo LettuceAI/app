@@ -1825,7 +1825,7 @@ export type LocalModelReference = {
  *  What keeps the local models folder busy: an install into it, a move of
  *  it, or a model llama.cpp holds open from it (the UI offers to unload).
  */
-export type LocalModelsBusyReason = { type: "install_active"; job_id: string } | { type: "folder_move_active"; job_id: string } | { type: "model_loaded"; path: string };
+export type LocalModelsBusyReason = { type: "install_active"; job_id: string } | { type: "folder_move_active"; job_id: string } | { type: "model_loaded"; path: string } | { type: "image_work_active"; job_id: string | null };
 
 export type LocalModelsDir = {
 	path: string,
