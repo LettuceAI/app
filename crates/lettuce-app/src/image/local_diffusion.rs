@@ -682,6 +682,66 @@ mod tests {
         std::fs::remove_dir_all(root).ok();
     }
 
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn uninstalling_reports_a_file_it_cannot_remove_and_still_removes_the_model() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = std::env::temp_dir().join(format!("sd-undeletable-{}", OperationId::new()));
+        std::fs::create_dir_all(&root).expect("root");
+        let backend = backend(&root);
+        let engine = backend.local_diffusion().expect("engine");
+        let paths = engine.paths().clone();
+        let build = paths.runtime_root("master-778-a", "a.zip");
+        std::fs::create_dir_all(&build).expect("build");
+        std::fs::write(build.join(server_executable_name()), b"server").expect("server");
+        let (profile, variant) = lettuce_image_generation::diffusion_catalog()
+            .find_variant("z-image-turbo", "q4-k")
+            .expect("variant");
+        for component in profile.components(variant) {
+            let path = paths.component_path(component);
+            std::fs::create_dir_all(path.parent().expect("parent")).expect("folder");
+            std::fs::File::create(&path)
+                .and_then(|file| file.set_len(component.bytes))
+                .expect("sparse component");
+        }
+        let model = crate::register_catalog_model(
+            backend.database(),
+            &paths,
+            "z-image-turbo",
+            "q4-k",
+            "master-778-a",
+            "a.zip",
+            TimestampMillis::new(2),
+        )
+        .expect("register");
+        let stuck = paths.component_path(&variant.diffusion);
+        let folder = stuck.parent().expect("parent").to_path_buf();
+        std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o555))
+            .expect("read-only folder");
+        let removable = std::fs::File::create(folder.join("probe")).is_ok();
+        std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o755)).ok();
+        if removable {
+            std::fs::remove_dir_all(root).ok();
+            return;
+        }
+        std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o555))
+            .expect("read-only folder");
+        let left_behind = backend
+            .uninstall_local_image_model("z-image-turbo", "q4-k", false)
+            .await
+            .expect("uninstall");
+        std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o755)).ok();
+        assert_eq!(left_behind, [stuck.display().to_string()]);
+        assert!(
+            lettuce_models::ModelProfileRepository::get(backend.database(), model.id)
+                .expect("model")
+                .is_none(),
+            "the model is removed although a file stayed"
+        );
+        std::fs::remove_dir_all(root).ok();
+    }
+
     #[tokio::test]
     async fn the_lora_library_imports_lists_edits_and_deletes() {
         let root = std::env::temp_dir().join(format!("sd-lora-{}", OperationId::new()));

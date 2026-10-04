@@ -309,6 +309,10 @@ impl ApiContext {
             self.forget_stream(*turn_id);
         }
         super::scenes::recover(self)?;
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        if let Some(engine) = self.backend().local_diffusion() {
+            engine.clear_upscale_scratch();
+        }
         Ok(())
     }
 

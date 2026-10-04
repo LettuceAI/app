@@ -151,7 +151,8 @@ impl crate::AppBackend {
     /// lorebook planner or writer without a saved attempt fails through its
     /// own settlement so the project can be retried (one with a saved attempt
     /// stays queued to finish from it), other creation, speech and image jobs
-    /// are cancelled, and ended image generations settle their records.
+    /// (including upscales, runnability probes and LoRA discovery) are
+    /// cancelled, and ended image generations settle their records.
     fn settle_requested_work_after_restart(
         &self,
         now: Timestamp,
@@ -163,6 +164,9 @@ impl crate::AppBackend {
             JobKind::SpeechTranscribe,
             JobKind::SpeechSynthesize,
             JobKind::ImageGenerate,
+            JobKind::MediaTransform,
+            JobKind::RuntimePrepare,
+            JobKind::Maintenance,
         ] {
             for job in self.pending_jobs(kind) {
                 let settled = if kind == JobKind::CreationRun {

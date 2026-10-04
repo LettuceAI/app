@@ -22,6 +22,7 @@ Facts about how `lettuce-model-hub` relates to the legacy app (2.2.x). The crate
 - Legacy's GPU-candidate pass paired files with the wrong file's context limits whenever an earlier file had no size. Corrected.
 - A second concurrent install of the same pinned file fails with `Busy` instead of appending to the same partial.
 - Legacy's errors were strings the UI matched (`HfTokenMenu.tsx` 15-17); refusals, missing repositories, rate limits and unreachable hosts are now typed `HfFailure`s, with legacy's texts kept as the message.
+- Image bundle installs are not deduplicated here: `lettuce-app` returns the job of a running install that already fetches every wanted file and refuses (`Busy`) a bundle that shares only some of them or a hash, as legacy refused any duplicate (`old-code/src-tauri/src/hf_browser/image_bundle.rs:891-895`); this crate's `PinnedArtifactStore` stays per-file.
 - Legacy reported every failed token check, including an unreachable Hugging Face, as an invalid token (`image_bundle.rs` 116-121); only a 401 is invalid now, anything else is unknown.
 - Legacy sized every file 0 when the file tree request failed (`hf_browser/mod.rs` 2371-2375), which made every file unrunnable in the UI; `model_info` now needs the tree and the browse call fails instead.
 

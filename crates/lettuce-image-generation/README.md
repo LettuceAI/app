@@ -48,7 +48,9 @@ Base LoRAs and the pre-prompt come from the effective settings for every caller,
 - Policy (`policy.rs`). Per-build GPU selection, stored next to each installed build, with engine device matching.
 - Fit (`fit.rs`). The auto-fit placement estimate and `--backend` specs, mirroring upstream `src/core/backend_fit.cpp`; catalog file sizes stand in for tensor byte counts that are unknown before download. The estimate is frozen like the llama.cpp formulas.
 - Payload (`payload.rs`). The native `img_gen` request built from fixed defaults and reference-image rules.
-- Output (`output.rs`). Console handling: a 240-line tail kept for out-of-memory signatures, and step lines turned into throttled progress events per stream.
+- Output (`output.rs`). Console handling: a 240-line tail kept for out-of-memory signatures, and step lines turned into throttled progress events per stream, delivered to the sink of the call that holds the engine's turn.
+- Failures (`failure.rs`). `ImageFailureKind` names why an image operation failed (a model file missing, no engine build, the engine rejecting or failing the request, running out of memory, a LoRA conflict, and so on) and `ImageError` carries it with the engine's words; the job label of a failed generation is the kind's label.
+- Capabilities (`capabilities.rs`). What the playground form offers per provider and model (sizes, samplers, schedulers, negative prompt, quality, style, batch limit), read once from `resources/image-capabilities.json`.
 - Inventory (`inventory.rs`). What the local image settings page shows: catalog entries with install state, engine builds, the active build, compute policies, model file detection and disk usage.
 
 ### The engine
@@ -57,9 +59,11 @@ Base LoRAs and the pre-prompt come from the effective settings for every caller,
 
 1. Resolve the engine build and compute policy for the model.
 2. Start `sd-server` with its fixed argument list, or reuse the running one while the model, build and policy key is unchanged. Readiness may take up to five minutes.
-3. Submit the job through the native job API and poll it every 500 ms for up to ten minutes.
+3. Submit the job through the native job API and poll it every 500 ms, only while a generation runs, for up to ten minutes.
 4. Under the automatic policy, retry once with `--offload-to-cpu` after an out-of-memory failure.
-5. Cancel through the engine job or by stopping the server; the job's cancellation token cancels the engine job.
+5. Cancel through the engine job (the engine then ends it and the poll sees that) or, when it refuses, by stopping the server; a cancel during the server's load stops the load without waiting for it.
+
+Local work (a generation, a runnability probe, an upscale) takes the engine's gate and runs one call at a time. Each call carries its own cancellation token and progress sink: the console progress of the running server goes to the sink of the call that holds the gate and to nobody between calls, and cancelling one call never touches another. `rebind` points the engine at other folders when the models folder moves; work already running keeps the folders it started with.
 
 The local engine and llama.cpp never run at once: `AppBackend::with_local_diffusion` wires it so starting the image server unloads llama.cpp, and every llama.cpp request first stops the image server (`stop_for_llama`); if that stop fails, the llama.cpp request fails.
 
@@ -71,7 +75,7 @@ The local engine and llama.cpp never run at once: `AppBackend::with_local_diffus
 
 `runnability.rs` answers whether a model runs here. `LocalDiffusionEngine::catalog_runnability` gives a catalog variant a compute-policy placement estimate before it is installed and a real generation probe (one step, or the full request) once it is. `remote_bundle_runnability` estimates a Hugging Face bundle from its file sizes before download. Transport errors carry the shared HTTP client's texts and limits.
 
-`upscale.rs` holds the upscaler library and upscales a stored image once through `sd-cli`, leaving the server as it is.
+`upscale.rs` holds the upscaler library and upscales a stored image once through `sd-cli`, leaving the server as it is; cancelling the call kills the tool, and the scratch files are removed however the call ends (a crash's leftovers are cleared at startup).
 
 ## Hugging Face bundles
 
@@ -83,4 +87,4 @@ The local engine and llama.cpp never run at once: `AppBackend::with_local_diffus
 
 ## Playground
 
-`playground.rs` has the playground history types: generated and imported entries with their images, listed 30 at a time by default (1 to 200).
+`playground.rs` has the playground history types: generated and imported entries with their images, listed 30 at a time by default (1 to 200), the upscale entry an upscaled playground image becomes, and deleting an entry, which queues its images for media collection.

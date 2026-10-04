@@ -89,6 +89,19 @@ impl LocalDiffusionEngine {
         Ok(self.upscaler_inventory())
     }
 
+    /// Removes the scratch files an upscale a crash cut short left behind;
+    /// call while no upscale runs.
+    pub fn clear_upscale_scratch(&self) {
+        let Ok(entries) = std::fs::read_dir(&self.paths().upscale_scratch) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            if entry.path().is_file() {
+                std::fs::remove_file(entry.path()).ok();
+            }
+        }
+    }
+
     /// Whether an upscale can run, checked before the image is read.
     pub fn check_upscale_ready(&self) -> Result<(), ImageError> {
         self.upscale_target().map(|_| ())

@@ -954,3 +954,344 @@ async fn a_bundle_that_a_running_install_already_fetches_joins_its_job() {
         "nothing was written for the refused bundle"
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_restart_cancels_queued_tool_jobs_and_clears_upscale_scratch() {
+    let desktop = desktop(HeldImages::new(), true);
+    let context = &desktop.harness.context;
+    let queued = job_id(
+        &lora_keywords_discover(
+            context,
+            dto::LoraKeywordsDiscoverRequest {
+                path: "style.safetensors".to_owned(),
+                profile_id: None,
+                client_operation_id: "discover-1".to_owned(),
+            },
+        )
+        .await
+        .expect("accepted"),
+    );
+    let replayed = job_id(
+        &lora_keywords_discover(
+            context,
+            dto::LoraKeywordsDiscoverRequest {
+                path: "style.safetensors".to_owned(),
+                profile_id: None,
+                client_operation_id: "discover-1".to_owned(),
+            },
+        )
+        .await
+        .expect("replayed"),
+    );
+    assert_eq!(queued, replayed);
+    let scratch = context
+        .backend()
+        .local_diffusion()
+        .expect("engine")
+        .paths()
+        .upscale_scratch
+        .clone();
+    std::fs::create_dir_all(&scratch).expect("scratch");
+    std::fs::write(scratch.join("left-in.png"), b"cut short").expect("leftover");
+
+    let restarted = context.restarted();
+    restarted.recover_after_restart().expect("recovery");
+    assert_eq!(state(&restarted, queued), JobState::Cancelled);
+    assert!(std::fs::read_dir(&scratch).expect("scratch").next().is_none());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_avatar_prompt_follows_the_models_provider() {
+    let desktop = desktop(HeldImages::new(), false);
+    let context = &desktop.harness.context;
+    let kind = || dto::AvatarPromptKind::Generation {
+        subject_name: "Ada".to_owned(),
+        subject_description: "A meticulous engineer".to_owned(),
+        avatar_request: "  in a workshop  ".to_owned(),
+    };
+    let local = avatar_prompt(
+        context,
+        dto::AvatarPromptRequest {
+            model_id: local_model(context).to_string(),
+            kind: kind(),
+        },
+    )
+    .await
+    .expect("local");
+    assert_eq!(local.prompt, "in a workshop", "a local model gets the request as typed");
+    let remote = avatar_prompt(
+        context,
+        dto::AvatarPromptRequest {
+            model_id: remote_model(context).to_string(),
+            kind: kind(),
+        },
+    )
+    .await
+    .expect("remote");
+    assert!(remote.prompt.contains("Ada") && remote.prompt.contains("in a workshop"));
+    let missing = avatar_prompt(
+        context,
+        dto::AvatarPromptRequest {
+            model_id: ModelProfileId::new().to_string(),
+            kind: kind(),
+        },
+    )
+    .await
+    .expect_err("unknown model");
+    assert_eq!(missing.code, ApiErrorCode::NotFound);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_gradient_of_a_missing_or_undecodable_avatar_fails_typed() {
+    let desktop = desktop(HeldImages::new(), false);
+    let context = &desktop.harness.context;
+    let missing = avatar_gradient(
+        context,
+        dto::AvatarGradientRequest {
+            asset_id: AssetId::new().to_string(),
+            force: false,
+        },
+    )
+    .await
+    .expect_err("no such asset");
+    assert_eq!(missing.code, ApiErrorCode::NotFound);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_design_reference_needs_an_image_and_a_repeated_request_returns_its_job() {
+    let desktop = desktop(HeldImages::new(), false);
+    let context = &desktop.harness.context;
+    let request = |avatar: Option<String>| dto::ImageDesignReferenceRequest {
+        subject_name: Some("Ada".to_owned()),
+        subject_description: None,
+        current_description: None,
+        avatar,
+        references: Vec::new(),
+        client_operation_id: "design-1".to_owned(),
+    };
+    let none = image_design_reference(context, request(None))
+        .await
+        .expect_err("no image");
+    assert_eq!(none.code, ApiErrorCode::InvalidInput);
+    let avatar = AssetId::new().to_string();
+    let first = image_design_reference(context, request(Some(avatar.clone())))
+        .await
+        .expect("accepted");
+    let again = image_design_reference(context, request(Some(avatar)))
+        .await
+        .expect("replayed");
+    assert_eq!(first, again);
+    let other = image_design_reference(context, request(Some(AssetId::new().to_string())))
+        .await
+        .expect_err("another request under the key");
+    assert_eq!(other.code, ApiErrorCode::Conflict);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn engine_settings_fail_typed_when_nothing_is_installed() {
+    let desktop = desktop(HeldImages::new(), true);
+    let context = &desktop.harness.context;
+    let switched = sd_runtime_switch(
+        context,
+        dto::SdRuntimeRef {
+            release: RELEASE.to_owned(),
+            asset: CPU_BUILD.to_owned(),
+        },
+    )
+    .await
+    .expect_err("no such build");
+    assert_eq!(
+        switched.details,
+        Some(ApiErrorDetails::Image {
+            failure: dto::ImageFailureKind::RuntimeNotInstalled
+        })
+    );
+    let inventory = sd_runtime_inventory(context).await.expect("inventory");
+    assert!(inventory.installed.is_empty() && inventory.active.is_none());
+    assert!(!sd_disk_usage(context).await.expect("usage").has_engine);
+    let repaired = sd_model_repair(
+        context,
+        dto::SdModelRepairRequest {
+            profile_id: "z-image-turbo".to_owned(),
+            variant_id: "q4-k".to_owned(),
+        },
+    )
+    .await
+    .expect_err("no engine build");
+    assert_eq!(repaired.code, ApiErrorCode::Unavailable);
+    let unknown = sd_model_uninstall(
+        context,
+        dto::SdModelUninstallRequest {
+            profile_id: "nope".to_owned(),
+            variant_id: "nope".to_owned(),
+            also_remove_engine_if_unused: false,
+        },
+    )
+    .await
+    .expect_err("unknown variant");
+    assert_eq!(unknown.code, ApiErrorCode::InvalidInput);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_bundle_estimate_runs_as_a_job_and_ends_with_its_verdict() {
+    let desktop = desktop(HeldImages::new(), true);
+    let context = &desktop.harness.context;
+    let accepted = sd_bundle_runnability(
+        context,
+        dto::SdBundleRunnabilityRequest {
+            profile_id: "z-image-turbo".to_owned(),
+            runtime_release: RELEASE.to_owned(),
+            runtime_asset: CPU_BUILD.to_owned(),
+            diffusion_bytes: 4,
+            text_encoder_bytes: 2,
+            vae_bytes: 1,
+            vision_encoder_bytes: 0,
+            client_operation_id: "estimate-1".to_owned(),
+        },
+    )
+    .await
+    .expect("accepted");
+    let runner = JobRunner::new(context.clone(), JobHandlers::standard());
+    assert!(runner.run_once().await.expect("started"));
+    runner.wait_idle().await;
+    let done = view(context, job_id(&accepted)).await;
+    assert_eq!(done.state, dto::JobStateDto::Succeeded);
+    let Some(dto::JobResultDto::Runnability { verdict }) = done.result else {
+        panic!("expected a verdict: {done:?}");
+    };
+    assert_eq!(verdict.status, dto::RunnabilityStatus::NotInstalled);
+}
+
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn cancelling_a_runnability_probe_stops_the_engine_it_started() {
+    let desktop = desktop(HeldImages::new(), true);
+    let context = &desktop.harness.context;
+    let engine = context.backend().local_diffusion().expect("engine").clone();
+    let paths = engine.paths();
+    let pid_file = desktop.root.join("probe.pid");
+    let build = paths.runtime_root(RELEASE, CPU_BUILD);
+    std::fs::create_dir_all(&build).expect("build");
+    script(
+        &build.join(server_executable_name()),
+        &format!("echo $$ > '{}'\nexec sleep 60", pid_file.display()),
+    );
+    let catalog = lettuce_image_generation::diffusion_catalog();
+    let (profile, variant) = catalog
+        .find_variant("z-image-turbo", "q4-k")
+        .expect("variant");
+    for component in profile.components(variant) {
+        let path = paths.component_path(component);
+        std::fs::create_dir_all(path.parent().expect("parent")).expect("folder");
+        std::fs::File::create(&path)
+            .and_then(|file| file.set_len(component.bytes))
+            .expect("sparse component");
+    }
+    let accepted = sd_runnability(
+        context,
+        dto::SdRunnabilityRequest {
+            profile_id: "z-image-turbo".to_owned(),
+            variant_id: "q4-k".to_owned(),
+            runtime_release: RELEASE.to_owned(),
+            runtime_asset: CPU_BUILD.to_owned(),
+            client_operation_id: "probe-1".to_owned(),
+            ..dto::SdRunnabilityRequest::default()
+        },
+    )
+    .await
+    .expect("accepted");
+    let runner = JobRunner::new(context.clone(), JobHandlers::standard());
+    assert!(runner.run_once().await.expect("started"));
+    until(|| std::fs::read_to_string(&pid_file).is_ok_and(|text| !text.trim().is_empty())).await;
+    job_cancel(
+        context,
+        dto::JobCancelRequest {
+            job_id: accepted.job_id.clone(),
+        },
+    )
+    .await
+    .expect("cancel");
+    tokio::time::timeout(Duration::from_secs(10), runner.wait_idle())
+        .await
+        .expect("the probe ends promptly");
+    assert_eq!(
+        view(context, job_id(&accepted)).await.state,
+        dto::JobStateDto::Cancelled
+    );
+    let pid = std::fs::read_to_string(&pid_file).expect("pid").trim().to_owned();
+    until(|| {
+        !std::process::Command::new("kill")
+            .args(["-0", &pid])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success())
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_lora_discovery_job_reads_the_files_metadata() {
+    let desktop = desktop(HeldImages::new(), true);
+    let context = &desktop.harness.context;
+    let loras = context
+        .backend()
+        .local_diffusion()
+        .expect("engine")
+        .paths()
+        .loras
+        .clone();
+    std::fs::create_dir_all(&loras).expect("library");
+    let header = serde_json::to_vec(&serde_json::json!({
+        "__metadata__": {
+            "ss_activation_tags": "ArsMovieStill",
+            "ss_base_model_version": "z_image_turbo",
+        }
+    }))
+    .expect("header");
+    let padded = header.len().div_ceil(8) * 8;
+    let mut file = (padded as u64).to_le_bytes().to_vec();
+    file.extend_from_slice(&header);
+    file.resize(8 + padded, b' ');
+    file.extend_from_slice(&[0; 16]);
+    std::fs::write(loras.join("style.safetensors"), &file).expect("lora");
+    let accepted = lora_keywords_discover(
+        context,
+        dto::LoraKeywordsDiscoverRequest {
+            path: "style.safetensors".to_owned(),
+            profile_id: Some("z-image-turbo".to_owned()),
+            client_operation_id: "discover-1".to_owned(),
+        },
+    )
+    .await
+    .expect("accepted");
+    let runner = JobRunner::new(context.clone(), JobHandlers::standard());
+    assert!(runner.run_once().await.expect("started"));
+    runner.wait_idle().await;
+    let done = view(context, job_id(&accepted)).await;
+    let Some(dto::JobResultDto::LoraDiscovered { discovered }) = done.result else {
+        panic!("expected the discovery: {done:?}");
+    };
+    assert_eq!(discovered.discovery.keywords, ["ArsMovieStill"]);
+    assert_eq!(
+        discovered.discovery.compatibility,
+        dto::LoraCompatibility::Compatible
+    );
+    let listed = loras_list(
+        context,
+        dto::LorasListRequest {
+            profile_id: Some("z-image-turbo".to_owned()),
+        },
+    )
+    .await
+    .expect("list");
+    assert_eq!(listed.loras[0].keywords, ["ArsMovieStill"]);
+    let deleted = loras_delete(
+        context,
+        dto::LorasDeleteRequest {
+            path: "style.safetensors".to_owned(),
+        },
+    )
+    .await
+    .expect("delete");
+    assert!(deleted.left_behind.is_empty());
+}

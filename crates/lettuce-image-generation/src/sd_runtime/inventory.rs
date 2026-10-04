@@ -565,4 +565,29 @@ mod tests {
         assert_eq!(LocalDiffusionEngine::bundle_profiles().len(), 8);
         std::fs::remove_dir_all(root).ok();
     }
+
+    #[test]
+    fn disk_usage_counts_the_components_of_both_image_folders() {
+        let root = std::env::temp_dir().join(format!("sd-usage-{}", OperationId::new()));
+        let paths = DiffusionPaths::legacy_layout(&root, root.join("elsewhere"));
+        assert_eq!(
+            paths.default_image_root,
+            Some(root.join("models").join("image"))
+        );
+        for (folder, name, bytes) in [
+            (root.join("elsewhere"), "a", 10),
+            (root.join("models").join("image"), "b", 20),
+        ] {
+            let component = folder.join("components").join(name);
+            std::fs::create_dir_all(&component).expect("component folder");
+            std::fs::write(component.join("file.gguf"), vec![0_u8; bytes]).expect("component");
+        }
+        let engine = LocalDiffusionEngine::new(
+            paths,
+            BulkHttpClient::new().expect("client"),
+            Arc::new(Host),
+        );
+        assert_eq!(engine.disk_usage().components_bytes, 30);
+        std::fs::remove_dir_all(root).ok();
+    }
 }

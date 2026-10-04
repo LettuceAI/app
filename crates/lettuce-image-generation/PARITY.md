@@ -31,6 +31,16 @@ Facts about how `lettuce-image-generation` relates to the legacy app (2.2.x). Th
 - Uninstalling a catalog variant checks each model's stored engine build instead of legacy's active one before removing an unused build.
 - Runnability transport errors carry the shared HTTP client's texts and limits (64 MiB requests, a poll URL must be a plain path).
 
+- Local work runs one call at a time. Legacy kept one global active slot and one progress sink, so a cancel hit the last registered generation and the first finisher cleared the slot (`old-code/src-tauri/src/image_generator/sdcpp.rs:47`, `:5165`, `:5245`). Each call now carries its own cancellation and progress sink.
+- A cancel while the server loads returns at once; legacy's cancel waited on the server lock through the readiness wait (`sdcpp.rs:4750`, `:4918-4947`, `:2750`). The ten-minute poll cap (`:5403`) and the five-minute readiness cap (`:4947`) are kept for now.
+- A failed local operation carries an `ImageFailureKind` next to the engine's text, where legacy returned the text only and its UI matched substrings.
+- An upscale can be cancelled: it kills `sd-cli` and removes its scratch files (legacy: not cancellable, `sdcpp.rs:6043-6148`).
+- A LoRA import copies under a temporary name and renames (legacy copied in place, `sdcpp.rs:4124`), and a leftover temporary copy is removed by the next import of that name.
+- A CivitAI lookup failure during LoRA discovery fails the discovery without saving the hash; legacy logged it and saved the hash, so later discoveries never asked CivitAI again (`sdcpp.rs:3804`).
+- Deleting a LoRA reports a compatibility cache it could not remove, and disk usage sums the components of the default image folder as legacy did (`sdcpp.rs:2931-2940`).
+- The playground form's values (sizes per provider and model, samplers, schedulers, negative-prompt providers, quality and style, batch limit) are the old frontend's constants (`old-code/src/core/image-generation/index.ts:429-457`, `sdcpp-options.ts:1-40`, `PlaygroundPage.tsx:27`) in a bundled resource. The engine's `/sdcpp/v1/capabilities` answer is not read.
+- Playground base LoRAs a draft removed are not run (legacy ran the stored model's base LoRAs anyway, `usePlaygroundSettings.ts:160`, `sdcpp.rs:3949`); a playground request without a seed gets one derived from its request id.
+
 ## History
 
 - The previous README listed as not yet ported: the runnability probe, Hugging Face image bundles and the component library, and importing legacy `image_loras` and `playground_generations` rows; and as next steps the scene, playground and creation-helper callers. Runnability, bundles and the CivitAI rules are in the crate now, the legacy import reads `image_loras` and playground rows, and the scene and playground callers exist in `lettuce-app`. Check the code before treating the component library or the creation-helper caller as open.

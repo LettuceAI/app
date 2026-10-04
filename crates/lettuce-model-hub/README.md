@@ -22,7 +22,7 @@ Files land below a per-revision directory, so installing a newer revision never 
 
 ## Pinned artifact store
 
-`PinnedArtifactStore` (`pinned_artifact.rs`) installs any file whose size, and usually SHA-256, is known up front. It is the general download path used by the GGUF, image bundle, CivitAI, ONNX Runtime, local diffusion and embedding installers in `lettuce-app`, and by Thymos here.
+`PinnedArtifactStore` (`pinned_artifact.rs`) installs any file whose size, and usually SHA-256, is known up front. It is the general download path used by the GGUF, image bundle, CivitAI, ONNX Runtime, local diffusion and embedding installers in `lettuce-app`, and by Thymos here; the app joins an image bundle install that a running one already covers before any file is requested.
 
 1. `prepare(artifact)` returns either the installed file (after re-verifying it) or a `PinnedDownload` positioned after the bytes a previous attempt left. The partial file's name binds the source identity, destination, digest and size, so a partial resumes only for exactly the same artifact.
 2. The caller appends chunks; the store refuses bytes past the declared size.
