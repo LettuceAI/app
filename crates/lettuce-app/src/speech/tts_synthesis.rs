@@ -89,35 +89,40 @@ impl<'a, R: ?Sized, J: ?Sized> TtsSynthesisCoordinator<'a, R, J> {
     }
 }
 
+pub(crate) fn synthesis_job_spec(
+    request: &SynthesisRequest,
+) -> Result<lettuce_jobs::NewJob, TtsSynthesisError> {
+    request.validate()?;
+    let subject = JobSubject::new(SubjectKind::SpeechRequest, request.id.to_string())
+        .map_err(|_| TtsSynthesisError::InvalidWork)?;
+    let key = IdempotencyKey::new(format!("speech-synthesize-{}", request.id))
+        .map_err(|_| TtsSynthesisError::InvalidWork)?;
+    let resources = match request.provider.config.provider_kind() {
+        AudioProviderKind::Kokoro => vec![
+            ResourceClass::ModelLoad,
+            ResourceClass::Cpu,
+            ResourceClass::DiskWrite,
+        ],
+        _ => vec![ResourceClass::Network, ResourceClass::DiskWrite],
+    };
+    Ok(lettuce_jobs::JobSpec::new(
+        JobKind::SpeechSynthesize,
+        subject,
+        OutcomeRef::Request(request.id),
+    )
+    .with_idempotency_key(key)
+    .with_priority(JobPriority::Interactive)
+    .with_resources(resources)
+    .with_policies(RecoveryPolicy::Restart, CancellationPolicy::Cooperative))
+}
+
 impl<R: SynthesisRepository + ?Sized, J: JobStore + ?Sized> TtsSynthesisCoordinator<'_, R, J> {
     pub fn admit(
         &self,
         request: SynthesisRequest,
     ) -> Result<TtsSynthesisAdmission, TtsSynthesisError> {
         request.validate()?;
-        let subject = JobSubject::new(SubjectKind::SpeechRequest, request.id.to_string())
-            .map_err(|_| TtsSynthesisError::InvalidWork)?;
-        let key = IdempotencyKey::new(format!("speech-synthesize-{}", request.id))
-            .map_err(|_| TtsSynthesisError::InvalidWork)?;
-        let resources = match request.provider.config.provider_kind() {
-            AudioProviderKind::Kokoro => vec![
-                ResourceClass::ModelLoad,
-                ResourceClass::Cpu,
-                ResourceClass::DiskWrite,
-            ],
-            _ => vec![ResourceClass::Network, ResourceClass::DiskWrite],
-        };
-        let admitted = self.jobs.create_or_get(
-            lettuce_jobs::JobSpec::new(
-                JobKind::SpeechSynthesize,
-                subject,
-                OutcomeRef::Request(request.id),
-            )
-            .with_idempotency_key(key)
-            .with_priority(JobPriority::Interactive)
-            .with_resources(resources)
-            .with_policies(RecoveryPolicy::Restart, CancellationPolicy::Cooperative),
-        )?;
+        let admitted = self.jobs.create_or_get(synthesis_job_spec(&request)?)?;
         let record = self.syntheses.admit(SynthesisRecord {
             job_id: admitted.job.id,
             request,
@@ -261,6 +266,9 @@ impl<R: SynthesisRepository + ?Sized, J: JobStore + ?Sized> TtsSynthesisCoordina
                     )
                     .await?,
             ),
+            None if !matches!(work.record.request.provider.config.provider_kind(), AudioProviderKind::Kokoro | AudioProviderKind::FishSpeech) => {
+                return Err(SecretStoreError::Missing.into());
+            }
             None => None,
         };
         check_cancelled(&work.handle)?;
@@ -347,6 +355,7 @@ impl<R: SynthesisRepository + ?Sized, J: JobStore + ?Sized> TtsSynthesisCoordina
     ) -> Result<TtsSynthesisRunResult, TtsSynthesisError> {
         let at = now.max(work.job.updated_at);
         let (code, retryable, message) = classify_error(&error);
+        let retryable = retryable && work.record.request.provider.config.provider_kind() != AudioProviderKind::Kokoro;
         let (code, retryable, message) =
             if retryable && !speech_retry_allowed(work.claim.claim.attempt.get()) {
                 RETRIES_EXHAUSTED
@@ -446,6 +455,11 @@ fn classify_error(error: &TtsSynthesisError) -> SpeechJobError {
             false,
             SPEECH_VOICE_MISSING,
         ),
+        TtsSynthesisError::Runtime(TtsRuntimeError::OnnxMissing) => (
+            JobErrorCode::CapabilityUnavailable,
+            false,
+            crate::SPEECH_ONNX_MISSING,
+        ),
         TtsSynthesisError::Runtime(TtsRuntimeError::EspeakMissing) => (
             JobErrorCode::CapabilityUnavailable,
             false,
@@ -462,7 +476,7 @@ fn classify_error(error: &TtsSynthesisError) -> SpeechJobError {
         | TtsSynthesisError::Repository(_)
         | TtsSynthesisError::Jobs(_) => (
             JobErrorCode::ResourceUnavailable,
-            true,
+            false,
             "TTS synthesis resource is unavailable",
         ),
     }

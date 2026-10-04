@@ -53,6 +53,62 @@ impl Database {
         Ok(job)
     }
 
+    pub fn admit_speech_synthesis(
+        &self,
+        spec: NewJob,
+        operation_key: &str,
+        request_digest: &str,
+        request: lettuce_speech::SynthesisRequest,
+    ) -> Result<JobSnapshot, StoreError> {
+        request.validate().map_err(|_| StoreError::InvalidData)?;
+        let mut connection = self.connection.lock().map_err(|_| StoreError::Storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| StoreError::Storage)?;
+        let detail = serde_json::json!({"kind": "speech_synthesize"});
+        let (job, replayed) =
+            admit_job_detail_in(&transaction, spec, operation_key, request_digest, &detail)?;
+        if !replayed {
+            let record = lettuce_speech::SynthesisRecord {
+                job_id: job.id,
+                request,
+                state: lettuce_speech::SynthesisState::Pending,
+            };
+            crate::media::tts_synthesis_adapter::insert_restored_in(&transaction, &record)
+                .map_err(|_| StoreError::Storage)?;
+        }
+        transaction.commit().map_err(|_| StoreError::Storage)?;
+        Ok(job)
+    }
+
+    pub fn admit_speech_transcription(
+        &self,
+        spec: NewJob,
+        operation_key: &str,
+        request_digest: &str,
+        detail: &serde_json::Value,
+        request: lettuce_speech::TranscriptionRequest,
+    ) -> Result<JobSnapshot, StoreError> {
+        request.validate().map_err(|_| StoreError::InvalidData)?;
+        let mut connection = self.connection.lock().map_err(|_| StoreError::Storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| StoreError::Storage)?;
+        let (job, replayed) =
+            admit_job_detail_in(&transaction, spec, operation_key, request_digest, detail)?;
+        if !replayed {
+            let record = lettuce_speech::TranscriptionRecord {
+                job_id: job.id,
+                request,
+                state: lettuce_speech::TranscriptionState::Pending,
+            };
+            crate::media::speech_adapter::insert_restored_in(&transaction, &record)
+                .map_err(|_| StoreError::Storage)?;
+        }
+        transaction.commit().map_err(|_| StoreError::Storage)?;
+        Ok(job)
+    }
+
     pub fn admit_manual_scene_image(
         &self,
         admission: ManualSceneImageAdmission<'_>,
@@ -1057,6 +1113,80 @@ mod tests {
                 .checked_add(millis)
                 .expect("test time"),
         )
+    }
+
+    fn synthesis_fixture() -> (JobSpec, lettuce_speech::SynthesisRequest) {
+        use lettuce_speech::{AudioProvider, AudioProviderConfig, SynthesisRequest, TtsOutputPolicy};
+        let id = lettuce_types::RequestId::new();
+        let request = SynthesisRequest {
+            id,
+            provider: AudioProvider {
+                id: lettuce_types::AudioProviderId::new(),
+                secret_owner_id: lettuce_settings::SecretOwnerId::new(),
+                label: "Local speech".into(),
+                api_key_ref: None,
+                config: AudioProviderConfig::Kokoro { variant: None },
+                revision: lettuce_types::Revision::INITIAL,
+                created_at: Timestamp::new(1), updated_at: Timestamp::new(1),
+            },
+            model_id: "int8".into(), voice_id: "af_heart".into(), prompt: None,
+            text: "Hello".into(), output_asset_id: AssetId::new(),
+            output_policy: TtsOutputPolicy::Retained, created_at: Timestamp::new(1),
+        };
+        let job = JobSpec::new(
+            JobKind::SpeechSynthesize,
+            JobSubject::new(SubjectKind::SpeechRequest, id.to_string()).expect("subject"),
+            OutcomeRef::Request(id),
+        ).with_idempotency_key(IdempotencyKey::new(id.to_string()).expect("key"))
+            .with_resources(vec![ResourceClass::ModelLoad, ResourceClass::Cpu, ResourceClass::DiskWrite]);
+        (job, request)
+    }
+
+    #[test]
+    fn synthesis_admission_rolls_back_then_replays_across_reopen() {
+        use lettuce_speech::SynthesisRepository;
+        let path = std::env::temp_dir().join(format!("lettuce-speech-admission-{}.sqlite", Uuid::new_v4()));
+        let database = Database::open(&path).expect("database");
+        let (job, request) = synthesis_fixture();
+        database.connection().expect("connection").execute_batch(
+            "CREATE TRIGGER reject_synthesis BEFORE INSERT ON speech_syntheses BEGIN SELECT RAISE(ABORT, 'injected speech failure'); END;"
+        ).expect("fault injection");
+        assert_eq!(database.admit_speech_synthesis(job.clone(), "speech-operation", "digest", request.clone()), Err(StoreError::Storage));
+        assert!(database.job_operation("speech-operation").expect("receipt").is_none());
+        let count: i64 = database.connection().expect("connection").query_row("SELECT count(*) FROM jobs", [], |row| row.get(0)).expect("jobs");
+        assert_eq!(count, 0);
+        database.connection().expect("connection").execute_batch("DROP TRIGGER reject_synthesis").expect("remove fault");
+        let admitted = database.admit_speech_synthesis(job.clone(), "speech-operation", "digest", request.clone()).expect("admit");
+        drop(database);
+        let database = Database::open(&path).expect("reopen");
+        assert_eq!(database.admit_speech_synthesis(job.clone(), "speech-operation", "digest", request.clone()).expect("replay").id, admitted.id);
+        assert_eq!(SynthesisRepository::get(&database, admitted.id).expect("record").request, request);
+        assert_eq!(database.admit_speech_synthesis(job, "speech-operation", "changed", request), Err(StoreError::IdempotencyConflict));
+    }
+
+    #[test]
+    fn concurrent_synthesis_admission_has_one_record_and_receipt() {
+        let path = std::env::temp_dir().join(format!("lettuce-speech-race-{}.sqlite", Uuid::new_v4()));
+        let first = Database::open(&path).expect("first");
+        let second = Database::open(&path).expect("second");
+        let (job, request) = synthesis_fixture();
+        let barrier = std::sync::Barrier::new(2);
+        let (a, b) = thread::scope(|scope| {
+            let run = |database: &Database| {
+                barrier.wait();
+                database.admit_speech_synthesis(job.clone(), "speech-operation", "digest", request.clone()).expect("admit")
+            };
+            let first_ref = &first;
+            let second_ref = &second;
+            let a = scope.spawn(move || run(first_ref));
+            let b = scope.spawn(move || run(second_ref));
+            (a.join().expect("first thread"), b.join().expect("second thread"))
+        });
+        assert_eq!(a.id, b.id);
+        for table in ["jobs", "job_operations", "job_details", "speech_syntheses"] {
+            let count: i64 = first.connection().expect("connection").query_row(&format!("SELECT count(*) FROM {table}"), [], |row| row.get(0)).expect("count");
+            assert_eq!(count, 1, "{table}");
+        }
     }
 
     #[test]

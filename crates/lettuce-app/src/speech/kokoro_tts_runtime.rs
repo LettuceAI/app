@@ -124,7 +124,9 @@ impl TtsRuntime for KokoroTtsRuntime {
         let models = self.models.clone();
         let voices = self.voices.clone();
         let phonemizer = Arc::clone(&self.phonemizer);
-        let runtime = self.onnx_runtime.committed(cancellation).await?;
+        let runtime = self.onnx_runtime.committed(cancellation).await.map_err(|error| {
+            if error == TtsRuntimeError::Cancelled { error } else { TtsRuntimeError::OnnxMissing }
+        })?;
         let cancellation = cancellation.clone();
         tokio::task::spawn_blocking(move || {
             let model = pinned_kokoro_model(variant);
@@ -409,7 +411,7 @@ mod tests {
             runtime
                 .synthesize(&request(), None, &CancellationToken::new())
                 .await,
-            Err(TtsRuntimeError::Unavailable)
+            Err(TtsRuntimeError::OnnxMissing)
         ));
         assert_eq!(onnx_runtime.0.load(Ordering::Relaxed), 1);
         assert_eq!(phonemizer.0.load(Ordering::Relaxed), 0);

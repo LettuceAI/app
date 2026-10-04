@@ -12,6 +12,7 @@ pub const SPEECH_MODEL_REQUIRED_WHISPER: &str = "speech-model-required-whisper";
 pub const SPEECH_MODEL_REQUIRED_KOKORO: &str = "speech-model-required-kokoro";
 pub const SPEECH_SECRET_MISSING: &str = "speech-secret-missing";
 pub const SPEECH_VOICE_MISSING: &str = "speech-voice-missing";
+pub const SPEECH_ONNX_MISSING: &str = "speech-runtime-missing-onnx";
 pub const SPEECH_ESPEAK_MISSING: &str = "speech-runtime-missing-espeak";
 pub const SPEECH_RETRIES_EXHAUSTED: &str = "speech-retries-exhausted";
 

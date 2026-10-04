@@ -574,7 +574,7 @@ impl MemoryEmbeddingEngine for ApiEmbedding {
     }
 
     fn calibration(&self) -> SimilarityCalibration {
-        self.metadata().2.clone()
+        self.metadata().2
     }
 
     fn count_tokens(&self, text: &str) -> Result<u32, EmbeddingGenerationError> {

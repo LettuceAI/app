@@ -488,6 +488,8 @@ pub enum TtsRuntimeError {
     VoiceMissing,
     #[error("the eSpeak NG runtime is not installed")]
     EspeakMissing,
+    #[error("the ONNX Runtime is unavailable")]
+    OnnxMissing,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]

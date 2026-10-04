@@ -449,7 +449,7 @@ fn classify_error(error: &SpeechTranscriptionError) -> SpeechJobError {
         | SpeechTranscriptionError::Repository(_)
         | SpeechTranscriptionError::Jobs(_) => (
             JobErrorCode::ResourceUnavailable,
-            true,
+            false,
             "speech transcription resource is unavailable",
         ),
     }
@@ -680,7 +680,7 @@ mod tests {
     }
 
     #[test]
-    fn cancellation_and_transient_runtime_failure_settle_jobs() {
+    fn cancellation_and_local_runtime_failure_settle_jobs() {
         let database = Database::open_in_memory().expect("database");
         let audio_asset_id = insert_audio(&database);
         let coordinator = SpeechTranscriptionCoordinator::new(&database, &database);
@@ -756,7 +756,7 @@ mod tests {
             )
             .expect("retry run");
         assert!(
-            matches!(outcome, SpeechTranscriptionRunResult::RetryScheduled { job, .. } if job.state == JobState::Queued)
+            matches!(outcome, SpeechTranscriptionRunResult::Failed { job, .. } if job.state == JobState::Failed)
         );
     }
 }

@@ -43,7 +43,7 @@ where
         };
         provider.validate().map_err(|_| TtsProviderVerificationError::InvalidInput)?;
         if matches!(provider.config, AudioProviderConfig::Kokoro { .. }) {
-            return Ok(true);
+            return if credential.is_none() { Ok(true) } else { Err(TtsProviderVerificationError::InvalidInput) };
         }
         verifier.verify_audio_provider(&provider, credential).await
             .map_err(TtsProviderVerificationError::Verification)
@@ -61,6 +61,9 @@ where
             .ok_or(TtsProviderVerificationError::Configuration(
                 TtsConfigurationRepositoryError::NotFound,
             ))?;
+        if matches!(provider.config, AudioProviderConfig::Kokoro { .. }) {
+            return Ok(true);
+        }
         if !matches!(
             &provider.config,
             AudioProviderConfig::Elevenlabs
