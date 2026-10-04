@@ -2,7 +2,7 @@
 
 Everything about getting model files onto the device and trusting them afterwards: the Hugging Face client (request shapes, response parsing, pinning a repository revision), resumable verified downloads into confined install roots, the installed-artifact manifests for each bundled model family (embeddings, Thymos, Whisper, Kokoro), GGUF header parsing and runnability scoring, and the Sprout hardware report.
 
-The crate does not load or run models, and it does no network I/O. It builds requests and parses responses; `lettuce-app` sends them through `lettuce-network`'s clients, streams the bytes into the stores here, and hands the verified paths to the runtimes. A finished download produces verified artifact facts and never calls a runtime directly. File access goes through `lettuce-platform`'s `ConfinedInstallStore`, so no store takes a native path as an operational argument and partial paths never leave the crate.
+The crate does not load or run models. Hugging Face catalog requests are sent only by `hugging_face.rs`, through `lettuce-network`'s JSON client; it resolves immutable commits and verifies plain Git metadata before deriving install pins. `lettuce-app` streams artifact downloads into these stores and hands verified paths to the runtimes. A finished download produces verified artifact facts and never calls a runtime directly. File access goes through `lettuce-platform`'s `ConfinedInstallStore`, so no store takes a native path as an operational argument and partial paths never leave the crate.
 
 ## Identity and verification
 

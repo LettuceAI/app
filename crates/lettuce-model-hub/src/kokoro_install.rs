@@ -14,7 +14,7 @@ pub const KOKORO_REPOSITORY: &str = "onnx-community/Kokoro-82M-v1.0-ONNX";
 pub const KOKORO_SOURCE_REVISION: &str = "1939ad2a8e416c0acfeecc08a694d14ef25f2231";
 const MAX_KOKORO_LEXICON_BYTES: u64 = 1024 * 1024;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum KokoroArtifactRole {
     Config,
     Tokenizer,
@@ -22,19 +22,19 @@ pub enum KokoroArtifactRole {
     Model,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct RemoteKokoroArtifact {
     pub role: KokoroArtifactRole,
-    pub remote_path: &'static str,
-    pub local_segments: &'static [&'static str],
+    pub remote_path: String,
+    pub local_segments: Vec<String>,
     pub byte_size: u64,
-    pub sha256: &'static str,
+    pub sha256: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct RemoteKokoroModel {
     pub variant: KokoroModelVariant,
-    pub source_revision: &'static str,
+    pub source_revision: String,
     pub artifacts: Vec<RemoteKokoroArtifact>,
 }
 
@@ -74,7 +74,8 @@ impl RemoteKokoroModel {
                 .any(|(actual, expected)| {
                     actual.role != expected.role
                         || actual.remote_path != expected.remote_path
-                        || actual.local_segments != expected.local_segments
+                        || (actual.local_segments != expected.local_segments
+                            && actual.local_segments != [vec!["revisions".to_owned(), self.source_revision.clone()], expected.local_segments].concat())
                         || validate_artifact(actual).is_err()
                 })
         {
@@ -97,50 +98,50 @@ pub fn pinned_kokoro_model(variant: KokoroModelVariant) -> RemoteKokoroModel {
     let model = match variant {
         KokoroModelVariant::Fp32 => RemoteKokoroArtifact {
             role: KokoroArtifactRole::Model,
-            remote_path: "onnx/model.onnx",
-            local_segments: &["onnx", "model.onnx"],
+            remote_path: "onnx/model.onnx".into(),
+            local_segments: vec!["onnx".into(), "model.onnx".into()],
             byte_size: 325_532_232,
-            sha256: "8fbea51ea711f2af382e88c833d9e288c6dc82ce5e98421ea61c058ce21a34cb",
+            sha256: "8fbea51ea711f2af382e88c833d9e288c6dc82ce5e98421ea61c058ce21a34cb".into(),
         },
         KokoroModelVariant::Fp16 => RemoteKokoroArtifact {
             role: KokoroArtifactRole::Model,
-            remote_path: "onnx/model_fp16.onnx",
-            local_segments: &["onnx", "model_fp16.onnx"],
+            remote_path: "onnx/model_fp16.onnx".into(),
+            local_segments: vec!["onnx".into(), "model_fp16.onnx".into()],
             byte_size: 163_234_740,
-            sha256: "ba4527a874b42b21e35f468c10d326fdff3c7fc8cac1f85e9eb6c0dfc35c334a",
+            sha256: "ba4527a874b42b21e35f468c10d326fdff3c7fc8cac1f85e9eb6c0dfc35c334a".into(),
         },
         KokoroModelVariant::Int8 => RemoteKokoroArtifact {
             role: KokoroArtifactRole::Model,
-            remote_path: "onnx/model_quantized.onnx",
-            local_segments: &["onnx", "model_quantized.onnx"],
+            remote_path: "onnx/model_quantized.onnx".into(),
+            local_segments: vec!["onnx".into(), "model_quantized.onnx".into()],
             byte_size: 92_361_116,
-            sha256: "fbae9257e1e05ffc727e951ef9b9c98418e6d79f1c9b6b13bd59f5c9028a1478",
+            sha256: "fbae9257e1e05ffc727e951ef9b9c98418e6d79f1c9b6b13bd59f5c9028a1478".into(),
         },
     };
     RemoteKokoroModel {
         variant,
-        source_revision: KOKORO_SOURCE_REVISION,
+        source_revision: KOKORO_SOURCE_REVISION.into(),
         artifacts: vec![
             RemoteKokoroArtifact {
                 role: KokoroArtifactRole::Config,
-                remote_path: "config.json",
-                local_segments: &["config.json"],
+                remote_path: "config.json".into(),
+                local_segments: vec!["config.json".into()],
                 byte_size: 44,
-                sha256: "df34b4f930b23447cd4dc410fabfb42eb3f24e803e6c3f97d618fb359380a36f",
+                sha256: "df34b4f930b23447cd4dc410fabfb42eb3f24e803e6c3f97d618fb359380a36f".into(),
             },
             RemoteKokoroArtifact {
                 role: KokoroArtifactRole::Tokenizer,
-                remote_path: "tokenizer.json",
-                local_segments: &["tokenizer.json"],
+                remote_path: "tokenizer.json".into(),
+                local_segments: vec!["tokenizer.json".into()],
                 byte_size: 3_497,
-                sha256: "77a02c8e164413299b4b4c403b14f8e0e1c1b727db4d46a09d6327b861060a34",
+                sha256: "77a02c8e164413299b4b4c403b14f8e0e1c1b727db4d46a09d6327b861060a34".into(),
             },
             RemoteKokoroArtifact {
                 role: KokoroArtifactRole::TokenizerConfig,
-                remote_path: "tokenizer_config.json",
-                local_segments: &["tokenizer_config.json"],
+                remote_path: "tokenizer_config.json".into(),
+                local_segments: vec!["tokenizer_config.json".into()],
                 byte_size: 113,
-                sha256: "be1cb066d6ef6b074b3f15e6a6dd21ac88ff3cdaedf325f0aaed686c70f75d20",
+                sha256: "be1cb066d6ef6b074b3f15e6a6dd21ac88ff3cdaedf325f0aaed686c70f75d20".into(),
             },
             model,
         ],
@@ -193,6 +194,37 @@ impl KokoroInstallStore {
         })
     }
 
+    pub fn recorded_model(&self, variant: KokoroModelVariant) -> Result<RemoteKokoroModel, KokoroInstallError> {
+        let name = format!("installed-{}.json", variant.id());
+        let Some(mut file) = self.inner.inspect(&ObjectKey::single(&name).map_err(KokoroInstallError::Platform)?).map_err(KokoroInstallError::Platform)? else {
+            return Ok(pinned_kokoro_model(variant));
+        };
+        if file.len() > 64 * 1024 { return Err(KokoroInstallError::InvalidManifest); }
+        let mut bytes = Vec::new(); file.read_to_end(&mut bytes).map_err(|_| KokoroInstallError::Unreadable)?;
+        let model: RemoteKokoroModel = serde_json::from_slice(&bytes).map_err(|_| KokoroInstallError::InvalidManifest)?;
+        model.validate()?;
+        if model.variant != variant { return Err(KokoroInstallError::InvalidManifest); }
+        Ok(model)
+    }
+
+    pub fn record_model(&self, model: &RemoteKokoroModel) -> Result<(), KokoroInstallError> {
+        if self.installed(model)?.is_none() { return Err(KokoroInstallError::InvalidArtifact); }
+        let bytes = serde_json::to_vec(model).map_err(|_| KokoroInstallError::InvalidManifest)?;
+        if bytes.len() > 64 * 1024 { return Err(KokoroInstallError::InvalidManifest); }
+        let name = format!("installed-{}.json", model.variant.id());
+        let partial = ObjectKey::from_segments(["downloads".to_owned(), format!("{name}.part")]).map_err(KokoroInstallError::Platform)?;
+        let staged = ObjectKey::single(format!("{name}.next")).map_err(KokoroInstallError::Platform)?;
+        self.inner.discard(&partial).map_err(KokoroInstallError::Platform)?;
+        self.inner.discard(&staged).map_err(KokoroInstallError::Platform)?;
+        let InstallPreparation::Resume(mut install) = self.inner.prepare(partial, staged, 64 * 1024).map_err(KokoroInstallError::Platform)? else {
+            return Err(KokoroInstallError::InvalidManifest);
+        };
+        install.append(&bytes).map_err(KokoroInstallError::Platform)?; install.sync().map_err(KokoroInstallError::Platform)?;
+        let path = install.commit().map_err(KokoroInstallError::Platform)?;
+        std::fs::rename(&path, path.with_file_name(name)).map_err(|_| KokoroInstallError::Unreadable)?;
+        Ok(())
+    }
+
     pub fn prepare(
         &self,
         source_revision: &str,
@@ -212,11 +244,11 @@ impl KokoroInstallStore {
         .map_err(KokoroInstallError::Platform)?;
         if let Err(error) = self
             .inner
-            .discard_partials_like(&partial, &partial_prefix(remote.remote_path))
+            .discard_partials_like(&partial, &partial_prefix(&remote.remote_path))
         {
             tracing::warn!(%error, "failed to remove stale Kokoro partial downloads");
         }
-        let target = ObjectKey::from_segments(remote.local_segments)
+        let target = ObjectKey::from_segments(&remote.local_segments)
             .map_err(KokoroInstallError::Platform)?;
         match self
             .inner
@@ -245,7 +277,7 @@ impl KokoroInstallStore {
         model.validate()?;
         let mut artifacts = Vec::with_capacity(model.artifacts.len());
         for remote in &model.artifacts {
-            let target = ObjectKey::from_segments(remote.local_segments)
+            let target = ObjectKey::from_segments(&remote.local_segments)
                 .map_err(KokoroInstallError::Platform)?;
             let Some(mut file) = self
                 .inner
@@ -278,7 +310,7 @@ impl KokoroInstallStore {
         model.validate()?;
         let mut files = Vec::with_capacity(model.artifacts.len());
         for remote in &model.artifacts {
-            let target = ObjectKey::from_segments(remote.local_segments)
+            let target = ObjectKey::from_segments(&remote.local_segments)
                 .map_err(KokoroInstallError::Platform)?;
             let Some(file) = self
                 .inner
@@ -342,7 +374,7 @@ impl KokoroInstallStore {
             .iter()
             .find(|artifact| artifact.role == KokoroArtifactRole::Model)
             .ok_or(KokoroInstallError::InvalidManifest)?;
-        let target = ObjectKey::from_segments(remote.local_segments)
+        let target = ObjectKey::from_segments(&remote.local_segments)
             .map_err(KokoroInstallError::Platform)?;
         let Some(mut file) = self
             .inner
@@ -418,7 +450,7 @@ fn partial_name(source_revision: &str, remote: &RemoteKokoroArtifact) -> String 
     hash.update(&remote.byte_size.to_le_bytes());
     format!(
         "{}{}.part",
-        partial_prefix(remote.remote_path),
+        partial_prefix(&remote.remote_path),
         hash.finalize().to_hex()
     )
 }

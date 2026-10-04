@@ -14,7 +14,7 @@ use lettuce_model_hub::{
     inspect_legacy_embedding_install, parse_embedding_pin, select_embedding_family,
     verify_git_blob,
 };
-use lettuce_network::{JsonAuth, JsonClient, JsonClientError, JsonQueryParameter, RequestPolicy};
+use lettuce_network::{JsonAuth, JsonClient, JsonClientError, RequestPolicy};
 use lettuce_settings::{DeviceSettingsStore, EmbeddingModelVersion, GlobalSettingsStoreError};
 
 use crate::{
@@ -89,27 +89,8 @@ impl EmbeddingModelCatalog {
         family: EmbeddingModelFamily,
     ) -> Result<EmbeddingPin, EmbeddingModelError> {
         let request = lettuce_model_hub::model_pin_request(family.repository());
-        let query = request
-            .query
-            .iter()
-            .map(|(name, value)| JsonQueryParameter {
-                name: name.as_str(),
-                value: value.as_str(),
-            })
-            .collect::<Vec<_>>();
-        let response = self
-            .client
-            .get_json_with_query(
-                &self.endpoint,
-                &request.path,
-                &query,
-                &[],
-                JsonAuth::None,
-                Vec::new(),
-                RequestPolicy::PROBE,
-            )
-            .await
-            .map_err(EmbeddingModelError::Network)?;
+        let response = lettuce_model_hub::send_hugging_face_request(&self.client, &self.endpoint, &request, JsonAuth::None, RequestPolicy::PROBE)
+            .await.map_err(EmbeddingModelError::Network)?;
         if response.status != 200 {
             return Err(EmbeddingModelError::Response(response.status));
         }

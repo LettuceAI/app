@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use lettuce_jobs::handle::CancellationToken;
 use lettuce_model_hub::{
     KokoroInstallError, KokoroInstallStore, KokoroModelVariant, KokoroVoiceInstallStore,
-    kokoro_platform_allows_variant, pinned_kokoro_model,
+    kokoro_platform_allows_variant,
 };
 use lettuce_platform::{EspeakNgError, EspeakPhonemizer};
 use lettuce_settings::SecretValue;
@@ -129,7 +129,7 @@ impl TtsRuntime for KokoroTtsRuntime {
         })?;
         let cancellation = cancellation.clone();
         tokio::task::spawn_blocking(move || {
-            let model = pinned_kokoro_model(variant);
+            let model = models.recorded_model(variant).map_err(map_lexicon_store_error)?;
             let voice = KokoroVoiceBlendCoordinator::new(voices)
                 .blend_installed(&specs)
                 .map_err(map_voice_error)?;

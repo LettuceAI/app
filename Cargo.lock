@@ -2849,6 +2849,7 @@ name = "lettuce-model-hub"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "lettuce-network",
  "lettuce-platform",
  "lettuce-types",
  "serde",
@@ -2856,6 +2857,7 @@ dependencies = [
  "sha1_smol",
  "sha2",
  "thiserror 2.0.20",
+ "tokio",
  "tracing",
 ]
 

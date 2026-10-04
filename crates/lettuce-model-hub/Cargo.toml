@@ -16,6 +16,7 @@ workspace = true
 [dependencies]
 blake3.workspace = true
 lettuce-platform.workspace = true
+lettuce-network.workspace = true
 lettuce-types.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -23,3 +24,6 @@ sha1_smol.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["net", "io-util"] }

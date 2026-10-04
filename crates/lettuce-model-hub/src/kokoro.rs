@@ -8,7 +8,7 @@ use crate::InstalledModelArtifact;
 const MAX_KOKORO_ARTIFACT_BYTES: u64 = 1024 * 1024 * 1024;
 const MAX_KOKORO_VOICES: usize = 512;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum KokoroModelVariant {
     Fp32,
     Fp16,

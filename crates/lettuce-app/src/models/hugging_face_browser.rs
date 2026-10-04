@@ -9,7 +9,7 @@ use lettuce_model_hub::{
     HfModelInfo, HfRequest, HfResource, HfSearch, HfSearchResult,
 };
 use lettuce_network::{
-    JsonAuth, JsonClient, JsonClientError, JsonQueryParameter, JsonResponse, RequestPolicy,
+    JsonAuth, JsonClient, JsonClientError, JsonResponse, RequestPolicy,
 };
 use lettuce_settings::{
     SecretPurpose, SecretRecord, SecretRef, SecretState, SecretStore, SecretStoreError, SecretValue,
@@ -122,30 +122,12 @@ impl HuggingFaceBrowser {
         request: &HfRequest,
         token: Option<&SecretValue>,
     ) -> Result<JsonResponse, JsonClientError> {
-        let query = request
-            .query
-            .iter()
-            .map(|(name, value)| JsonQueryParameter { name, value })
-            .collect::<Vec<_>>();
         let auth = token.map_or(JsonAuth::None, |token| {
             token
                 .with(|token| SecretValue::new(token))
                 .map_or(JsonAuth::None, JsonAuth::Bearer)
         });
-        self.client
-            .get_json_with_query(
-                &self.endpoint,
-                &request.path,
-                &query,
-                &[lettuce_network::JsonStaticHeader {
-                    name: "user-agent",
-                    value: "LettuceAI/1.0",
-                }],
-                auth,
-                Vec::new(),
-                RequestPolicy::BROWSE,
-            )
-            .await
+        lettuce_model_hub::send_hugging_face_request(&self.client, &self.endpoint, request, auth, RequestPolicy::BROWSE).await
     }
 
     async fn whoami_response(&self, token: &SecretValue) -> Result<JsonResponse, HfBrowseError> {

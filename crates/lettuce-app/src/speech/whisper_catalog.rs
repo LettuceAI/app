@@ -1,7 +1,7 @@
 use lettuce_model_hub::{
     HUGGING_FACE_ENDPOINT, HfPinListing, RemoteWhisperModel, WhisperModelError,
 };
-use lettuce_network::{JsonAuth, JsonClient, JsonClientError, JsonQueryParameter, RequestPolicy};
+use lettuce_network::{JsonAuth, JsonClient, JsonClientError, RequestPolicy};
 
 const WHISPER_CATALOG_REPOSITORY: &str = "ggerganov/whisper.cpp";
 const MAX_REMOTE_MODELS: usize = 256;
@@ -31,24 +31,8 @@ impl WhisperRemoteCatalog {
 
     pub async fn list(&self) -> Result<Vec<RemoteWhisperModel>, WhisperCatalogError> {
         let request = lettuce_model_hub::model_pin_request(WHISPER_CATALOG_REPOSITORY);
-        let query = request
-            .query
-            .iter()
-            .map(|(name, value)| JsonQueryParameter { name, value })
-            .collect::<Vec<_>>();
-        let detail = self
-            .client
-            .get_json_with_query(
-                HUGGING_FACE_ENDPOINT,
-                &request.path,
-                &query,
-                &[],
-                JsonAuth::None,
-                Vec::new(),
-                RequestPolicy::PROBE,
-            )
-            .await
-            .map_err(WhisperCatalogError::Network)?;
+        let detail = lettuce_model_hub::send_hugging_face_request(&self.client, HUGGING_FACE_ENDPOINT, &request, JsonAuth::None, RequestPolicy::PROBE)
+            .await.map_err(WhisperCatalogError::Network)?;
         if detail.status != 200 {
             return Err(WhisperCatalogError::Response);
         }

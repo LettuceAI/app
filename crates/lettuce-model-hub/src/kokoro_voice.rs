@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::{
-    InstalledKokoroVoice, InstalledModelArtifact, KOKORO_SOURCE_REVISION, KokoroInstallError,
+    InstalledKokoroVoice, InstalledModelArtifact, KokoroInstallError,
     ModelArtifactError,
 };
 
@@ -98,7 +98,9 @@ impl RemoteKokoroVoice {
     pub fn validate(&self) -> Result<(), KokoroInstallError> {
         if !is_valid_kokoro_voice_id(&self.id)
             || self.remote_path != format!("voices/{}.bin", self.id)
-            || self.source_revision != KOKORO_SOURCE_REVISION
+            || self.source_revision.len() != 40
+            || !self.source_revision.bytes().all(|byte| byte.is_ascii_hexdigit())
+            || self.source_revision != self.source_revision.to_ascii_lowercase()
             || self.byte_size == 0
             || self.byte_size > MAX_KOKORO_VOICE_BYTES
             || self.sha256.len() != 64
@@ -134,9 +136,7 @@ impl KokoroVoiceInstallStore {
         if let Err(error) = self.inner.discard_partials_like(&partial, &prefix) {
             tracing::warn!(%error, "failed to remove stale Kokoro voice partial downloads");
         }
-        let filename = format!("{}.bin", remote.id);
-        let target = ObjectKey::from_segments(["voices", filename.as_str()])
-            .map_err(KokoroInstallError::Platform)?;
+        let target = voice_target(&remote)?;
         match self
             .inner
             .prepare(partial, target, remote.byte_size)
@@ -169,9 +169,7 @@ impl KokoroVoiceInstallStore {
         let mut installed = Vec::with_capacity(remotes.len());
         for remote in remotes {
             remote.validate()?;
-            let filename = format!("{}.bin", remote.id);
-            let target = ObjectKey::from_segments(["voices", filename.as_str()])
-                .map_err(KokoroInstallError::Platform)?;
+            let target = voice_target(remote)?;
             let Some(mut file) = self
                 .inner
                 .inspect(&target)
@@ -197,9 +195,7 @@ impl KokoroVoiceInstallStore {
         let mut materialized = Vec::with_capacity(remotes.len());
         for remote in remotes {
             remote.validate()?;
-            let filename = format!("{}.bin", remote.id);
-            let target = ObjectKey::from_segments(["voices", filename.as_str()])
-                .map_err(KokoroInstallError::Platform)?;
+            let target = voice_target(remote)?;
             let Some(mut file) = self
                 .inner
                 .inspect(&target)
@@ -244,7 +240,7 @@ impl KokoroVoiceInstallStore {
             let Some(remote) = read_manifest(&self.inner, id)? else {
                 continue;
             };
-            let target = voice_target(&remote.id)?;
+            let target = voice_target(&remote)?;
             let Some(file) = self
                 .inner
                 .inspect(&target)
@@ -262,7 +258,7 @@ impl KokoroVoiceInstallStore {
 
     pub fn remove_managed(&self, remote: &RemoteKokoroVoice) -> Result<bool, KokoroInstallError> {
         remote.validate()?;
-        let target = voice_target(&remote.id)?;
+        let target = voice_target(remote)?;
         let installed = self
             .inner
             .inspect(&target)
@@ -356,9 +352,14 @@ fn voice_identity(remote: &RemoteKokoroVoice) -> blake3::Hash {
     hash.finalize()
 }
 
-fn voice_target(id: &str) -> Result<ObjectKey, KokoroInstallError> {
-    let filename = format!("{id}.bin");
-    ObjectKey::from_segments(["voices", filename.as_str()]).map_err(KokoroInstallError::Platform)
+fn voice_target(remote: &RemoteKokoroVoice) -> Result<ObjectKey, KokoroInstallError> {
+    let filename = format!("{}.bin", remote.id);
+    let segments = if remote.source_revision == crate::KOKORO_SOURCE_REVISION {
+        vec!["voices", filename.as_str()]
+    } else {
+        vec!["revisions", remote.source_revision.as_str(), "voices", filename.as_str()]
+    };
+    ObjectKey::from_segments(segments).map_err(KokoroInstallError::Platform)
 }
 
 fn manifest_target(id: &str) -> Result<ObjectKey, KokoroInstallError> {
@@ -384,12 +385,17 @@ fn write_manifest(
     let partial_name = format!("{}.manifest.part", voice_identity(remote).to_hex());
     let partial = ObjectKey::from_segments(["downloads", partial_name.as_str()])
         .map_err(KokoroInstallError::Platform)?;
-    let target = manifest_target(&remote.id)?;
-    match store
+    let next_name = format!("{}.manifest.{}.next", remote.id, voice_identity(remote).to_hex());
+    let target = ObjectKey::from_segments(["voices", next_name.as_str()])
+        .map_err(KokoroInstallError::Platform)?;
+    let path = match store
         .prepare(partial, target, MAX_KOKORO_VOICE_MANIFEST_BYTES)
         .map_err(KokoroInstallError::Platform)?
     {
-        InstallPreparation::Installed(mut file) => verify_manifest_bytes(&mut file, &bytes),
+        InstallPreparation::Installed(mut file) => {
+            verify_manifest_bytes(&mut file, &bytes)?;
+            file.native_path().to_path_buf()
+        },
         InstallPreparation::Resume(mut install) => {
             install.restart().map_err(KokoroInstallError::Platform)?;
             install
@@ -398,10 +404,12 @@ fn write_manifest(
             install.sync().map_err(KokoroInstallError::Platform)?;
             install.rewind().map_err(KokoroInstallError::Platform)?;
             verify_manifest_bytes(&mut install, &bytes)?;
-            install.commit().map_err(KokoroInstallError::Platform)?;
-            Ok(())
+            install.commit().map_err(KokoroInstallError::Platform)?
         }
-    }
+    };
+    std::fs::rename(&path, path.with_file_name(format!("{}.manifest.json", remote.id)))
+        .map_err(|_| KokoroInstallError::Unreadable)?;
+    Ok(())
 }
 
 fn read_manifest(
@@ -499,6 +507,7 @@ fn map_artifact_error(error: ModelArtifactError) -> KokoroInstallError {
 
 #[cfg(test)]
 mod tests {
+    use crate::KOKORO_SOURCE_REVISION;
     use super::*;
 
     #[test]
@@ -522,6 +531,24 @@ mod tests {
             .is_err()
         );
         assert!(RemoteKokoroVoice::pinned("af_heart", "main", 522_240, "d5".repeat(32),).is_err());
+    }
+
+    #[test]
+    fn changed_revision_keeps_old_voice_bytes_and_switches_descriptor_after_verification() {
+        let root = std::env::temp_dir().join(format!("kokoro-voice-revision-{}", lettuce_types::OperationId::new()));
+        let store = KokoroVoiceInstallStore::open(&root).expect("store");
+        let mut previous = None;
+        for (revision, bytes) in [("ab".repeat(20), b"old voice".as_slice()), ("cd".repeat(20), b"new voice".as_slice())] {
+            let remote = RemoteKokoroVoice::pinned("af_heart", revision, u64::try_from(bytes.len()).expect("size"), format!("{:x}", Sha256::digest(bytes))).expect("pin");
+            let KokoroVoicePreparation::Download(mut session) = store.prepare(remote.clone()).expect("prepare") else { panic!("download"); };
+            session.append(bytes).expect("append");
+            let installed = session.finish().expect("finish");
+            assert_eq!(std::fs::read(&installed.artifact.path).expect("bytes"), bytes);
+            if let Some((path, old_bytes)) = previous.as_ref() { assert_eq!(std::fs::read(path).expect("previous bytes"), *old_bytes); }
+            assert_eq!(store.installed_descriptors().expect("descriptors"), vec![remote]);
+            previous = Some((installed.artifact.path, bytes.to_vec()));
+        }
+        std::fs::remove_dir_all(root).expect("cleanup");
     }
 
     #[test]

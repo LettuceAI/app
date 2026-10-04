@@ -65,8 +65,8 @@ impl KokoroDownloadSource for HuggingFaceKokoroDownloadSource {
     ) -> Result<Box<dyn KokoroDownloadBody>, KokoroDownloadSourceError> {
         let url = lettuce_model_hub::pinned_resolve_url(
             KOKORO_REPOSITORY,
-            model.source_revision,
-            artifact.remote_path,
+            &model.source_revision,
+            &artifact.remote_path,
         )
         .map_err(|_| map_source_error(ArtifactDownloadError::InvalidRequest))?;
         self.client
@@ -309,6 +309,7 @@ impl<J: JobStore + ?Sized> KokoroDownloadCoordinator<'_, J> {
     ) -> Result<(InstalledKokoroModel, bool), KokoroDownloadError> {
         check_cancelled(&work.handle)?;
         if let Some(installed) = self.installs.installed(&work.model)? {
+            self.installs.record_model(&work.model)?;
             return Ok((installed, true));
         }
         let mut completed = 0_u64;
@@ -319,7 +320,7 @@ impl<J: JobStore + ?Sized> KokoroDownloadCoordinator<'_, J> {
             }
             match self
                 .installs
-                .prepare(work.model.source_revision, artifact.clone())?
+                .prepare(&work.model.source_revision, artifact.clone())?
             {
                 KokoroArtifactPreparation::Installed(_) => {
                     completed += artifact.byte_size;
@@ -365,6 +366,7 @@ impl<J: JobStore + ?Sized> KokoroDownloadCoordinator<'_, J> {
             .installs
             .installed(&work.model)?
             .ok_or(KokoroDownloadError::InvalidWork)?;
+        self.installs.record_model(&work.model)?;
         Ok((installed, false))
     }
 
@@ -642,7 +644,7 @@ mod tests {
                 .lock()
                 .expect("offsets")
                 .push((artifact.remote_path.to_owned(), offset));
-            let bytes = bytes_for(artifact.remote_path);
+            let bytes = bytes_for(&artifact.remote_path);
             let remaining = bytes[offset as usize..].to_vec();
             let chunks = if *self.fail_once.lock().expect("failure flag") {
                 *self.fail_once.lock().expect("failure flag") = false;
@@ -675,7 +677,7 @@ mod tests {
     fn model() -> RemoteKokoroModel {
         RemoteKokoroModel {
             variant: KokoroModelVariant::Int8,
-            source_revision: REVISION,
+            source_revision: REVISION.into(),
             artifacts: vec![
                 artifact(
                     KokoroArtifactRole::Config,
@@ -718,10 +720,10 @@ mod tests {
     ) -> RemoteKokoroArtifact {
         RemoteKokoroArtifact {
             role,
-            remote_path,
-            local_segments,
+            remote_path: remote_path.into(),
+            local_segments: local_segments.iter().map(|segment| (*segment).into()).collect(),
             byte_size,
-            sha256,
+            sha256: sha256.into(),
         }
     }
 
@@ -779,7 +781,7 @@ mod tests {
         }
         let database = Database::open(&database_path).expect("reopen database");
         let installs = KokoroInstallStore::open(&install_root).expect("install store");
-        let coordinator = KokoroDownloadCoordinator::new(&database, installs);
+        let coordinator = KokoroDownloadCoordinator::new(&database, installs.clone());
         let work = coordinator
             .claim(
                 model.clone(),
@@ -805,6 +807,7 @@ mod tests {
         };
         assert_eq!(success.model.artifacts.len(), 4);
         assert!(!success.replayed);
+        assert_eq!(installs.recorded_model(model.variant).expect("recorded runtime pin"), model);
         assert!(
             coordinator
                 .replay(&model, job_id)

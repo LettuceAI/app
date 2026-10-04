@@ -5,6 +5,70 @@ use serde::Deserialize;
 
 pub const HUGGING_FACE_ENDPOINT: &str = "https://huggingface.co";
 
+/// Sends an authored Hugging Face request through the shared HTTP transport.
+/// Catalogs and pins use this boundary; consumers never construct an HF HTTP call.
+pub async fn send_hugging_face_request(
+    client: &lettuce_network::JsonClient,
+    endpoint: &str,
+    request: &HfRequest,
+    auth: lettuce_network::JsonAuth,
+    policy: lettuce_network::RequestPolicy,
+) -> Result<lettuce_network::JsonResponse, lettuce_network::JsonClientError> {
+    let query = request.query.iter().map(|(name, value)| lettuce_network::JsonQueryParameter { name, value }).collect::<Vec<_>>();
+    client.get_json_with_query(endpoint, &request.path, &query,
+        &[lettuce_network::JsonStaticHeader { name: "user-agent", value: "LettuceAI/1.0" }],
+        auth, Vec::new(), policy).await
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum KokoroPinError {
+    #[error("Kokoro model lookup failed: {0}")]
+    Network(lettuce_network::JsonClientError),
+    #[error("Kokoro model lookup returned status {0}")]
+    Response(u16),
+    #[error("the Kokoro repository pin is invalid")]
+    InvalidData,
+}
+
+/// Resolves Kokoro's current commit and integrity facts at request time.
+/// Plain git metadata is fetched at that commit and checked against its blob
+/// identity before a SHA-256 download descriptor is derived from its bytes.
+pub async fn pin_kokoro_model(
+    client: &lettuce_network::JsonClient,
+    endpoint: &str,
+    variant: crate::KokoroModelVariant,
+) -> Result<crate::RemoteKokoroModel, KokoroPinError> {
+    use lettuce_network::{JsonAuth, RequestPolicy};
+    use sha2::{Digest, Sha256};
+    let response = send_hugging_face_request(client, endpoint, &model_pin_request(crate::KOKORO_REPOSITORY), JsonAuth::None, RequestPolicy::PROBE)
+        .await.map_err(KokoroPinError::Network)?;
+    if response.status != 200 { return Err(KokoroPinError::Response(response.status)); }
+    let mut model = crate::pinned_kokoro_model(variant);
+    let paths = model.artifacts.iter().map(|file| file.remote_path.as_str()).collect::<Vec<_>>();
+    let pin = pinned_files(crate::KOKORO_REPOSITORY, &response.body, &paths).map_err(|_| KokoroPinError::InvalidData)?;
+    model.source_revision = pin.revision;
+    for artifact in &mut model.artifacts {
+        let file = pin.files.iter().find(|file| file.path == artifact.remote_path).ok_or(KokoroPinError::InvalidData)?;
+        artifact.local_segments = [vec!["revisions".to_owned(), model.source_revision.clone()], artifact.local_segments.clone()].concat();
+        artifact.byte_size = file.size;
+        artifact.sha256 = if let Some(hash) = &file.sha256 { hash.clone() } else {
+            if artifact.role == crate::KokoroArtifactRole::Model || file.size > 1024 * 1024 { return Err(KokoroPinError::InvalidData); }
+            let request = HfRequest::new(format!("/{}/resolve/{}/{}", crate::KOKORO_REPOSITORY, model.source_revision, file.path));
+            let response = send_hugging_face_request(client, endpoint, &request, JsonAuth::None, RequestPolicy::PROBE)
+                .await.map_err(KokoroPinError::Network)?;
+            if response.status != 200 { return Err(KokoroPinError::Response(response.status)); }
+            let mut blob = sha1_smol::Sha1::new();
+            blob.update(format!("blob {}\0", response.body.len()).as_bytes()); blob.update(&response.body);
+            if u64::try_from(response.body.len()).ok() != Some(file.size) || file.git_blob_id.as_deref() != Some(blob.digest().to_string().as_str()) {
+                return Err(KokoroPinError::InvalidData);
+            }
+            format!("{:x}", Sha256::digest(&response.body))
+        };
+    }
+    model.validate().map_err(|_| KokoroPinError::InvalidData)?;
+    Ok(model)
+}
+
 /// One GET against the Hugging Face API.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HfRequest {
@@ -1584,5 +1648,60 @@ mod tests {
             )
             .is_err()
         );
+    }
+}
+
+#[cfg(test)]
+mod kokoro_pin_tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    fn blob(bytes: &[u8]) -> String {
+        let mut hash = sha1_smol::Sha1::new(); hash.update(format!("blob {}\0", bytes.len()).as_bytes()); hash.update(bytes); hash.digest().to_string()
+    }
+    async fn fixture(tampered: bool) -> (String, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("listener");
+        let address = listener.local_addr().expect("address");
+        let metadata = b"{}";
+        let listing = serde_json::to_vec(&serde_json::json!({ "sha": "ef".repeat(20), "siblings": [
+            { "rfilename": "config.json", "size": metadata.len(), "blobId": blob(metadata) },
+            { "rfilename": "tokenizer.json", "size": metadata.len(), "blobId": blob(metadata) },
+            { "rfilename": "tokenizer_config.json", "size": metadata.len(), "blobId": blob(metadata) },
+            { "rfilename": "onnx/model_quantized.onnx", "size": 1, "lfs": { "size": 1, "sha256": "ab".repeat(32) } },
+        ] })).expect("listing");
+        let task = tokio::spawn(async move {
+            let mut responses = vec![(format!("/api/models/{}", crate::KOKORO_REPOSITORY), listing)];
+            for name in ["config.json", "tokenizer.json", "tokenizer_config.json"] {
+                responses.push((format!("/{}/resolve/{}/{}", crate::KOKORO_REPOSITORY, "ef".repeat(20), name), if tampered { b"[]".to_vec() } else { metadata.to_vec() }));
+                if tampered { break; }
+            }
+            for (path, body) in responses {
+                let (mut socket, _) = listener.accept().await.expect("accept");
+                let mut request = Vec::new();
+                while !request.windows(4).any(|part| part == b"\r\n\r\n") {
+                    let mut buffer = [0; 2048]; let count = socket.read(&mut buffer).await.expect("read");
+                    assert!(count > 0); request.extend_from_slice(&buffer[..count]);
+                }
+                assert!(String::from_utf8_lossy(&request).starts_with(&format!("GET {path}")));
+                let header = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
+                socket.write_all(header.as_bytes()).await.expect("header"); socket.write_all(&body).await.expect("body");
+            }
+        });
+        (format!("http://{address}"), task)
+    }
+    #[tokio::test]
+    async fn kokoro_pins_current_revision_and_verifies_plain_git_metadata() {
+        let (endpoint, server) = fixture(false).await;
+        let model = pin_kokoro_model(&lettuce_network::JsonClient::new().expect("client"), &endpoint, crate::KokoroModelVariant::Int8).await.expect("pin");
+        assert_eq!(model.source_revision, "ef".repeat(20));
+        assert_eq!(model.artifacts[0].byte_size, 2);
+        assert_eq!(model.artifacts[0].local_segments, vec!["revisions".to_owned(), "ef".repeat(20), "config.json".to_owned()]);
+        assert_eq!(model.artifacts[3].sha256, "ab".repeat(32));
+        model.validate().expect("valid"); server.await.expect("server");
+    }
+    #[tokio::test]
+    async fn kokoro_refuses_plain_metadata_that_does_not_match_the_pinned_git_blob() {
+        let (endpoint, server) = fixture(true).await;
+        assert_eq!(pin_kokoro_model(&lettuce_network::JsonClient::new().expect("client"), &endpoint, crate::KokoroModelVariant::Int8).await.expect_err("mismatch"), KokoroPinError::InvalidData);
+        server.await.expect("server");
     }
 }
