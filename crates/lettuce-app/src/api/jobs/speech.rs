@@ -60,6 +60,7 @@ pub(crate) fn speech_view(
     context: &ApiContext,
     job: &JobSnapshot,
 ) -> Result<(Option<dto::JobResultDto>, Option<SpeechFailure>), ApiError> {
+    if job.kind == JobKind::SpeechVoiceCreate { return super::voice_creation::view(context, job); }
     let failure = job
         .error
         .as_ref()

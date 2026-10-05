@@ -25,6 +25,8 @@ pub enum SpeechRuntimeKind {
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SpeechFailure {
     ModelRequired { model: SpeechModelKind },
+    VoiceCreationOutcomeUnknown,
+    VoiceCreationProviderRejected { status: u16 },
     SecretMissing,
     SecretStoreUnavailable,
     VoiceMissing,

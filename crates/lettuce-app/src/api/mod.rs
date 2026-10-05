@@ -108,7 +108,7 @@ pub use jobs::{
     ArtifactInstallHandler, ClaimedJob, ImageGenerateHandler, ImageToolHandler, InstallFinish,
     InstallSources, InstallWork, JobHandler, JobHandlers, JobLane, JobProgressSink, JobRunner,
     ModelPullHandler, ModelsFolderMoveHandler, NetworkInstallSources, TextFeatureHandler,
-    SpeechTranscribeHandler, SpeechSynthesizeHandler,
+    SpeechTranscribeHandler, SpeechSynthesizeHandler, VoiceCreationHandler, voice_design_create,
     admit_install, conversation_help_me_reply, job_cancel, job_get, job_watch, jobs_list,
 };
 pub use local_models::{

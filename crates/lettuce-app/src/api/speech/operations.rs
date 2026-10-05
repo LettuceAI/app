@@ -17,14 +17,14 @@ impl From<ApiOperationError> for OperationFailure {
     }
 }
 
-pub(super) fn validate_key(key: &str) -> Result<(), ApiError> {
+pub(crate) fn validate_key(key: &str) -> Result<(), ApiError> {
     if key.trim().is_empty() || key.trim() != key || key.len() > 1_024 {
         return Err(invalid_field("client_operation_id", "the operation key is invalid"));
     }
     Ok(())
 }
 
-pub(super) fn digest(value: &impl Serialize) -> Result<String, ApiError> {
+pub(crate) fn digest(value: &impl Serialize) -> Result<String, ApiError> {
     let bytes = zeroize::Zeroizing::new(serde_json::to_vec(value)
         .map_err(|_| api_error(ApiErrorCode::Internal, "the operation request could not be encoded"))?);
     Ok(blake3::hash(&bytes).to_hex().to_string())

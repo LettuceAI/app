@@ -61,7 +61,7 @@ Correction drafts use the authored pair, language and retained evidence to choos
 
 The speech worker reads its live clock after native/runtime work and when ingesting completed audio. This preserves completion and cancellation after lease renewals; the timestamp captured at work admission could regress behind a heartbeat and incorrectly fail a long run.
 
-- ElevenLabs billable voice creation uses the network generation budget with no automatic retries, including server errors, dropped responses and redirects. This deliberately corrects the shared generation transport's retry behavior; durable public outcome-unknown replay remains blocked on the separate pre-send marker schema decision.
+- ElevenLabs billable voice creation uses the network generation budget with no automatic retries, including server errors, dropped responses and redirects. This deliberately corrects the shared generation transport's retry behavior; the application admits an honest MarkInterrupted job and replays its job identity. Returned HTTP errors remain known typed failures; transport loss or an unreadable successful response is typed outcome unknown, with no re-send.
 
 Whisper installation identity and content hashes remain immutable. Only the model path and the matching path inside its manifest may rebind during a models-folder relocation; moving the same verified model does not create a different installation.
 

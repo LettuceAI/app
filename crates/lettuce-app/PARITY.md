@@ -383,3 +383,5 @@ Audio provider and user voice creates, vocabulary/correction saves, suggestion a
 Models-folder move guards explicitly do not apply on a headless host without an app folder. Missing optional models still report ModelRequired; device-settings failures propagate as Internal, and operations that genuinely need a model directory retain their typed root failure.
 
 A synced character waits for a deferred provider voice account like its default model profile. When the provider is gone rather than deferred, the applied character clears that voice preference; it never applies a dangling provider FK.
+
+Voice creation from an ElevenLabs design preview now admits a `speech_voice_create` job instead of legacy's inline call (`old-code/src-tauri/src/tts_manager/commands.rs:1098-1135`). Its operation key replays the same job, and no provider call is retried. Startup cancels never-sent queued work; an interrupted or cancelled running call reports typed outcome unknown so the UI can refresh provider voices. A returned HTTP error is a known failure, and a successful voice id commits with terminal settlement. Saving that id to the user's voice library remains a separate command.

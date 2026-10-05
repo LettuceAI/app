@@ -188,6 +188,7 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::speech::audio_provider_voices,
             commands::speech::audio_provider_voices_search,
             commands::speech::voice_design_preview,
+            commands::speech::voice_design_create,
             commands::speech::audio_provider_voices_refresh,
             commands::speech::tts_models,
             commands::speech::tts_voice_design_models,

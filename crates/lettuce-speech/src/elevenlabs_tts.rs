@@ -405,26 +405,24 @@ impl VoiceDesignRuntime for ElevenLabsTtsRuntime {
                 auth,
                 Vec::new(),
                 RequestPolicy::GENERATION_ONCE,
-            ) => response.map_err(map_voice_design_network)?,
+            ) => response.map_err(|error| match error {
+                JsonClientError::Transport | JsonClientError::ResponseTooLarge => VoiceDesignRuntimeError::OutcomeUnknown,
+                JsonClientError::ClientConfiguration => VoiceDesignRuntimeError::Unavailable,
+                _ => VoiceDesignRuntimeError::Rejected,
+            })?,
             () = cancellation.cancelled() => return Err(VoiceDesignRuntimeError::Cancelled),
         };
         if !(200..300).contains(&response.status) {
-            return Err(match response.status {
-                408 | 429 | 500..=599 => VoiceDesignRuntimeError::Unavailable,
-                _ => VoiceDesignRuntimeError::Rejected,
-            });
-        }
-        if cancellation.is_cancelled() {
-            return Err(VoiceDesignRuntimeError::Cancelled);
+            return Err(VoiceDesignRuntimeError::ProviderRejected { status: response.status });
         }
         let response: ElevenLabsVoiceCreationResponse = serde_json::from_slice(&response.body)
-            .map_err(|_| VoiceDesignRuntimeError::Rejected)?;
+            .map_err(|_| VoiceDesignRuntimeError::OutcomeUnknown)?;
         let created = CreatedVoice {
             voice_id: response.voice_id,
         };
         created
             .validate()
-            .map_err(|_| VoiceDesignRuntimeError::Rejected)?;
+            .map_err(|_| VoiceDesignRuntimeError::OutcomeUnknown)?;
         Ok(created)
     }
 }
@@ -721,11 +719,12 @@ mod tests {
                 &CancellationToken::new(),
             ).await;
             server.abort();
-            if scenario == "redirect" {
-                assert!(matches!(outcome, Err(VoiceDesignRuntimeError::Rejected)));
-            } else {
-                assert!(matches!(outcome, Err(VoiceDesignRuntimeError::Unavailable)));
-            }
+            let expected = match scenario {
+                "server_error" => "ProviderRejected { status: 503 }",
+                "redirect" => "ProviderRejected { status: 307 }",
+                _ => "OutcomeUnknown",
+            };
+            assert_eq!(format!("{:?}", outcome.expect_err("failure")), expected);
             assert_eq!(requests.load(Ordering::SeqCst), 1, "billable create must send once, scenario={scenario}");
         }
     }

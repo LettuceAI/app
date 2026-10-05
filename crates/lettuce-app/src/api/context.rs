@@ -359,6 +359,7 @@ impl ApiContext {
         for (turn_id, _) in &report.turns {
             self.forget_stream(*turn_id);
         }
+        super::jobs::voice_creation::recover_queued(self)?;
         super::scenes::recover(self)?;
         super::speech::sweep_scratch(self);
         #[cfg(not(any(target_os = "android", target_os = "ios")))]

@@ -36,6 +36,22 @@ pub struct ManualSceneImageAdmission<'a> {
 }
 
 impl Database {
+    /// Publishes a terminal job and its result together. A crash cannot leave
+    /// a known external result attached to a still-running job.
+    pub fn settle_job_with_detail(&self, mutation: JobMutation, result: Option<&serde_json::Value>, failure: Option<&serde_json::Value>) -> Result<JobSnapshot, StoreError> {
+        if result.is_some_and(|value| !value.is_object()) || failure.is_some_and(|value| !value.is_object()) { return Err(StoreError::InvalidData); }
+        let id = mutation.job_id();
+        let mut connection = self.connection.lock().map_err(|_| StoreError::Storage)?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(|_| StoreError::Storage)?;
+        let before = load_with_children(&transaction, [id])?;
+        let job = apply_to_job_set(&transaction, before, |store| store.append_and_transition(mutation))?;
+        if !job.state.is_terminal() { return Err(StoreError::InvalidData); }
+        let changed = transaction.execute("UPDATE job_details SET result_json=?2, failure_json=?3 WHERE job_id=?1", params![id.to_string(), result.map(ToString::to_string), failure.map(ToString::to_string)]).map_err(|_| StoreError::Storage)?;
+        if changed != 1 { return Err(StoreError::InvalidData); }
+        transaction.commit().map_err(|_| StoreError::Storage)?;
+        Ok(job)
+    }
+
     pub fn create_or_get_with_local_model_detail(&self, spec: NewJob, detail: &serde_json::Value) -> Result<CreateJobResult, StoreError> {
         use rusqlite::OptionalExtension;
         spec.validate()?;
@@ -1156,6 +1172,23 @@ mod tests {
 
     fn availability() -> ResourceAvailability {
         ResourceAvailability::all()
+    }
+
+    #[test]
+    fn job_settlement_and_external_result_roll_back_together() {
+        let database = Database::open_in_memory().expect("database");
+        let job = database.admit_job_with_detail(spec("external-result"), "external-key", "digest", &serde_json::json!({"type":"external"})).expect("admit");
+        let at = job.updated_at;
+        let claim = database.claim(job.id, WorkerId::new(), at, Duration::from_secs(60), &availability()).expect("claim").expect("claimed");
+        database.append_and_transition(JobMutation::Start { claim: claim.claim.clone(), at }).expect("start");
+        database.connection().expect("connection").execute_batch("CREATE TRIGGER reject_external_result BEFORE UPDATE ON job_details BEGIN SELECT RAISE(ABORT,'injected'); END;").expect("inject");
+        let mutation = JobMutation::Succeed { claim: claim.claim, outcome: JobOutcome::Success { result_ref: OutcomeRef::ArtifactInstallation(AssetId::new()) }, at };
+        assert_eq!(database.settle_job_with_detail(mutation.clone(), Some(&serde_json::json!({"voice_id":"created"})), None), Err(StoreError::Storage));
+        assert_eq!(database.get(job.id).expect("get").expect("job").state, JobState::Running);
+        assert!(database.job_detail(job.id).expect("detail").expect("stored").result.is_none());
+        database.connection().expect("connection").execute_batch("DROP TRIGGER reject_external_result;").expect("remove injection");
+        assert_eq!(database.settle_job_with_detail(mutation, Some(&serde_json::json!({"voice_id":"created"})), None).expect("settle").state, JobState::Succeeded);
+        assert_eq!(database.job_detail(job.id).expect("detail").expect("stored").result, Some(serde_json::json!({"voice_id":"created"})));
     }
 
     #[test]

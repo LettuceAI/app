@@ -60,6 +60,7 @@ impl From<JobKind> for JobKindKey {
             JobKind::ConversationGeneration => 22,
             JobKind::ModelPull => 23,
             JobKind::ModelsFolderMove => 24,
+            JobKind::SpeechVoiceCreate => 25,
         })
     }
 }
@@ -93,7 +94,7 @@ impl JobRegistry {
 mod tests {
     use super::{JobKind, JobKindKey};
 
-    const ALL_KINDS: [JobKind; 25] = [
+    const ALL_KINDS: [JobKind; 26] = [
         JobKind::ArtifactInstall,
         JobKind::ArtifactVerify,
         JobKind::RuntimePrepare,
@@ -115,6 +116,7 @@ mod tests {
         JobKind::SyncSession,
         JobKind::SpeechTranscribe,
         JobKind::SpeechSynthesize,
+        JobKind::SpeechVoiceCreate,
         JobKind::EmbeddingBenchmark,
         JobKind::Maintenance,
         JobKind::ModelPull,
@@ -150,6 +152,7 @@ mod tests {
                 | JobKind::SyncSession
                 | JobKind::SpeechTranscribe
                 | JobKind::SpeechSynthesize
+                | JobKind::SpeechVoiceCreate
                 | JobKind::EmbeddingBenchmark
                 | JobKind::Maintenance
                 | JobKind::ModelPull

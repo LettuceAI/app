@@ -38,3 +38,5 @@ pub use kokoro::{kokoro_inventory, kokoro_variants, kokoro_voices_installed, kok
 pub use learning::{asr_vocabulary_save, asr_correction_save, asr_suggestion_approve, asr_suggestion_ignore, asr_voice_example_save, asr_learning_import, asr_voice_example_suggest, asr_learning_export, asr_vocabulary_list, asr_corrections_list, asr_ignored_suggestions_list, asr_voice_examples_list, asr_vocabulary_delete, asr_correction_delete, asr_voice_example_delete, asr_suggestions};
 
 pub use message::message_speak;
+
+pub(crate) use operations::{validate_key as validate_operation_key, digest as operation_digest};

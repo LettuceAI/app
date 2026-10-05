@@ -17,6 +17,12 @@ use crate::{MicrophoneCapture, OnnxRuntimePaths};
 /// device's Kokoro files and ONNX Runtime, and the microphone.
 /// `InstalledSpeech` is the production host; tests supply their own.
 pub trait SpeechHost: Send + Sync {
+    fn voice_creation_runtime(&self, context: &ApiContext) -> Result<Arc<dyn lettuce_speech::VoiceDesignRuntime>, ApiError> {
+        let tls = context.backend().tls_policy().map_err(|error| api_error(ApiErrorCode::Unavailable, error.to_string()))?;
+        let client = lettuce_network::JsonClient::with_tls(&tls).map_err(|error| api_error(ApiErrorCode::Unavailable, error.to_string()))?;
+        Ok(Arc::new(lettuce_speech::ElevenLabsTtsRuntime::new(Arc::new(client))))
+    }
+
     fn tts_runtime(&self, context: &ApiContext) -> Result<Arc<dyn TtsRuntime>, ApiError>;
 
     fn microphone(&self) -> Option<Arc<dyn MicrophoneCapture>>;

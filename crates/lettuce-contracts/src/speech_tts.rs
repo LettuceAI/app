@@ -271,3 +271,16 @@ pub struct UserVoiceCreateRequest {
     pub voice_id: String,
     pub prompt: Option<String>,
 }
+
+/// Creates a provider voice from a selected design preview. Saving it to
+/// the user's voice library is a separate operation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct VoiceDesignCreateRequest {
+    pub client_operation_id: String,
+    pub provider_id: String,
+    pub generated_voice_id: String,
+    pub name: String,
+    pub description: String,
+}

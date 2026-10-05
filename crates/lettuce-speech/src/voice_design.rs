@@ -256,6 +256,10 @@ pub enum VoiceDesignValidationError {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum VoiceDesignRuntimeError {
+    #[error("voice creation outcome is unknown")]
+    OutcomeUnknown,
+    #[error("voice creation provider returned HTTP {status}")]
+    ProviderRejected { status: u16 },
     #[error("voice design was cancelled")]
     Cancelled,
     #[error("voice design runtime is unavailable")]

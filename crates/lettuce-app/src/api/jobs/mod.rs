@@ -11,6 +11,7 @@ mod runner;
 pub(crate) mod speech;
 mod state;
 mod text;
+pub(crate) mod voice_creation;
 
 #[cfg(test)]
 mod tests;
@@ -50,6 +51,7 @@ pub(crate) use local::{
     admit_gguf_download, admit_model_pull, admit_models_folder_move, recover_local_model_jobs,
 };
 pub use runner::{ClaimedJob, JobHandler, JobHandlers, JobLane, JobProgressSink, JobRunner};
+pub use voice_creation::{VoiceCreationHandler, voice_design_create};
 pub use speech::{SpeechSynthesizeHandler, SpeechTranscribeHandler};
 pub(crate) use state::JobHostState;
 pub use text::{TextFeatureHandler, conversation_help_me_reply};
@@ -259,7 +261,11 @@ pub(crate) fn job_view(context: &ApiContext, job: &JobSnapshot) -> Result<dto::J
                 .flatten(),
             image: image_failure,
             speech: speech_failure,
-        }),
+        }).or_else(|| speech_failure.map(|failure| dto::JobFailureDto {
+            code: dto::JobFailureCode::WorkerFailed, retryable: false,
+            reason: None, model: None, hugging_face: None, ollama: None, image: None,
+            speech: Some(failure),
+        })),
         result: feature.or(local.result).or(image_result).or(speech_result).or_else(|| {
             job.outcome.as_ref().and_then(|outcome| {
                 let (JobOutcome::Success { result_ref } | JobOutcome::Partial { result_ref, .. }) =
@@ -437,6 +443,7 @@ mirror!(
         SyncSession,
         SpeechTranscribe,
         SpeechSynthesize,
+        SpeechVoiceCreate,
         EmbeddingBenchmark,
         Maintenance,
         ModelPull,

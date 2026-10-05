@@ -405,3 +405,9 @@ pub async fn asr_learning_import(context: State<'_, ApiContext>, request: dto::A
 pub async fn audio_provider_create(context: State<'_, ApiContext>, request: dto::AudioProviderCreateRequest) -> Result<dto::AudioProviderView, ApiError> {
     lettuce_app::api::audio_provider_create(&context, request).await
 }
+
+#[tauri::command]
+#[specta::specta]
+pub async fn voice_design_create(context: State<'_, ApiContext>, request: dto::VoiceDesignCreateRequest) -> Result<dto::JobAccepted, ApiError> {
+    lettuce_app::api::voice_design_create(&context, request).await
+}

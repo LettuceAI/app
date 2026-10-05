@@ -1535,3 +1535,105 @@ async fn provider_receipts_replay_current_metadata_and_keep_only_identity_in_bac
     old_graph.job_backup.api_operation_receipts[0].result_format_version = 1;
     assert!(lettuce_transfer::canonicalize_and_validate(&mut old_graph).is_err(), "old full-content receipt format is rejected");
 }
+
+struct CreationRuntime { calls: AtomicUsize, mode: u8 }
+#[async_trait]
+impl lettuce_speech::VoiceDesignRuntime for CreationRuntime {
+    async fn design_voice(&self, _: &lettuce_speech::VoiceDesignRequest, _: &SecretValue, _: &CancellationToken) -> Result<Vec<lettuce_speech::RuntimeVoiceDesignPreview>, lettuce_speech::VoiceDesignRuntimeError> { unreachable!("create does not preview") }
+    async fn create_voice(&self, _: &lettuce_speech::VoiceCreationRequest, _: &SecretValue, cancellation: &CancellationToken) -> Result<lettuce_speech::CreatedVoice, lettuce_speech::VoiceDesignRuntimeError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        match self.mode {
+            1 => Err(lettuce_speech::VoiceDesignRuntimeError::ProviderRejected { status: 503 }),
+            2 => { cancellation.cancelled().await; Err(lettuce_speech::VoiceDesignRuntimeError::Cancelled) }
+            _ => Ok(lettuce_speech::CreatedVoice { voice_id: "created-provider-voice".into() }),
+        }
+    }
+}
+struct CreationHost(Arc<CreationRuntime>);
+impl SpeechHost for CreationHost {
+    fn tts_runtime(&self, _: &ApiContext) -> Result<Arc<dyn TtsRuntime>, dto::ApiError> { unreachable!("create is independent of synthesis") }
+    fn microphone(&self) -> Option<Arc<dyn MicrophoneCapture>> { None }
+    fn voice_creation_runtime(&self, _: &ApiContext) -> Result<Arc<dyn lettuce_speech::VoiceDesignRuntime>, dto::ApiError> { Ok(self.0.clone()) }
+}
+#[tokio::test(flavor = "multi_thread")]
+async fn voice_creation_jobs_replay_settle_and_never_resend_after_restart() {
+    use crate::api::{voice_design_create, VoiceCreationHandler, JobHandler};
+    use lettuce_jobs::{JobKind, RecoveryPolicy};
+    use lettuce_speech::TtsConfigurationRepository;
+    for mode in 0..3 {
+        let env = env(TtsMode::Speak, AsrMode::Text("unused"), None);
+        let runtime = Arc::new(CreationRuntime { mode, calls: AtomicUsize::new(0) });
+        let context = env.context.with_speech(Arc::new(CreationHost(runtime.clone())));
+        let provider = super::audio_provider_create(&context, provider_create_request("creation-provider")).await.expect("provider");
+        let request = dto::VoiceDesignCreateRequest { client_operation_id: "create-preview".into(), provider_id: provider.id, generated_voice_id: "selected-preview".into(), name: "Narrator".into(), description: "A warm and expressive narrator".into() };
+        let accepted = voice_design_create(&context, request.clone()).await.expect("admit");
+        assert_eq!(voice_design_create(&context, request.clone()).await.expect("replay"), accepted);
+        let mut changed = request.clone(); changed.description.push('!');
+        assert_eq!(voice_design_create(&context, changed).await.expect_err("conflict").code, ApiErrorCode::Conflict);
+        let id = accepted.job_id.parse().expect("job id");
+        let snapshot = context.backend().database().get(id).expect("get").expect("job");
+        assert_eq!(snapshot.kind, JobKind::SpeechVoiceCreate);
+        assert_eq!(snapshot.recovery_policy, RecoveryPolicy::MarkInterrupted);
+        if mode == 2 {
+            let work = VoiceCreationHandler.claim(&context, &snapshot, WorkerId::new()).await.expect("claim").expect("work");
+            // The provider has received the request, but the process dies before a response.
+            struct NoProgress;
+            impl crate::api::JobProgressSink for NoProgress {
+                fn text_delta(&self, _: Option<String>, _: Option<String>) {}
+                fn image_progress(&self, _: dto::ImageProgress) {}
+            }
+            let running_context = context.clone();
+            let task = tokio::spawn(async move { work.run(running_context, Arc::new(NoProgress)).await });
+            while runtime.calls.load(Ordering::SeqCst) == 0 { tokio::task::yield_now().await; }
+            task.abort();
+            let _ = task.await;
+            context.recover_after_restart().expect("restart recovery");
+            let recovered = job(&context, id).await;
+            assert_eq!(recovered.state, dto::JobStateDto::Interrupted);
+            assert_eq!(recovered.failure.and_then(|failure| failure.speech), Some(SpeechFailure::VoiceCreationOutcomeUnknown));
+            assert!(!run_to_idle(&runner(&context)).await);
+            assert_eq!(runtime.calls.load(Ordering::SeqCst), 1);
+        } else {
+            assert!(run_to_idle(&runner(&context)).await);
+            let settled = job(&context, id).await;
+            if mode == 0 { assert_eq!(settled.result, Some(dto::JobResultDto::VoiceCreated { voice_id: "created-provider-voice".into() })); }
+            else { assert_eq!(settled.failure.and_then(|failure| failure.speech), Some(SpeechFailure::VoiceCreationProviderRejected { status: 503 })); assert_eq!(settled.state, dto::JobStateDto::Failed); }
+            assert_eq!(runtime.calls.load(Ordering::SeqCst), 1);
+            assert!(!run_to_idle(&runner(&context)).await);
+        }
+        let mut queued = request; queued.client_operation_id = "queued-before-restart".into();
+        let queued = voice_design_create(&context, queued).await.expect("queued");
+        let queued_id = queued.job_id.parse().expect("id");
+        context.recover_after_restart().expect("restart");
+        assert_eq!(job(&context, queued_id).await.state, dto::JobStateDto::Cancelled);
+        assert!(!run_to_idle(&runner(&context)).await);
+        assert_eq!(runtime.calls.load(Ordering::SeqCst), 1);
+        let mut cancel_request = dto::VoiceDesignCreateRequest { client_operation_id: "cancel-queued".into(), provider_id: context.backend().database().list_audio_providers().expect("providers")[0].id.to_string(), generated_voice_id: "preview".into(), name: "Narrator".into(), description: "A warm and expressive narrator".into() };
+        let cancelled = voice_design_create(&context, cancel_request.clone()).await.expect("cancel admission");
+        job_cancel(&context, dto::JobCancelRequest { job_id: cancelled.job_id.clone() }).await.expect("cancel queued");
+        assert_eq!(job(&context, cancelled.job_id.parse().expect("id")).await.state, dto::JobStateDto::Cancelled);
+        assert!(!run_to_idle(&runner(&context)).await);
+        cancel_request.client_operation_id = "cancel-running".into();
+        if mode == 2 {
+            let admitted = voice_design_create(&context, cancel_request).await.expect("running admission");
+            let runner = runner(&context);
+            assert!(runner.run_once().await.expect("start"));
+            while runtime.calls.load(Ordering::SeqCst) < 2 { tokio::task::yield_now().await; }
+            job_cancel(&context, dto::JobCancelRequest { job_id: admitted.job_id.clone() }).await.expect("cancel running");
+            runner.wait_idle().await;
+            assert_eq!(job(&context, admitted.job_id.parse().expect("id")).await.failure.and_then(|failure| failure.speech), Some(SpeechFailure::VoiceCreationOutcomeUnknown));
+            assert_eq!(runtime.calls.load(Ordering::SeqCst), 2);
+            let crash_request = dto::VoiceDesignCreateRequest { client_operation_id: "cancel-then-crash".into(), provider_id: context.backend().database().list_audio_providers().expect("providers")[0].id.to_string(), generated_voice_id: "preview".into(), name: "Narrator".into(), description: "A warm and expressive narrator".into() };
+            let crash = voice_design_create(&context, crash_request).await.expect("admit");
+            let crash_id = crash.job_id.parse().expect("id");
+            let snapshot = context.backend().database().get(crash_id).expect("get").expect("job");
+            let work = VoiceCreationHandler.claim(&context, &snapshot, WorkerId::new()).await.expect("claim").expect("work");
+            drop(work);
+            job_cancel(&context, dto::JobCancelRequest { job_id: crash.job_id }).await.expect("requested");
+            context.recover_after_restart().expect("restart while cancel pending");
+            assert_eq!(job(&context, crash_id).await.failure.and_then(|failure| failure.speech), Some(SpeechFailure::VoiceCreationOutcomeUnknown));
+            assert!(!run_to_idle(&runner).await);
+            assert_eq!(runtime.calls.load(Ordering::SeqCst), 2);
+        }
+    }
+}

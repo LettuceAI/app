@@ -349,6 +349,7 @@ pub enum JobKind {
     SyncSession,
     SpeechTranscribe,
     SpeechSynthesize,
+    SpeechVoiceCreate,
     EmbeddingBenchmark,
     Maintenance,
     ModelPull,
