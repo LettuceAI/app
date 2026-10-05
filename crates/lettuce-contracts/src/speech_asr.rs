@@ -131,7 +131,8 @@ impl Default for TranscribeOptions {
     }
 }
 
-/// Transcribes a picked audio file. `request_id` is the idempotency key:
+/// Transcribes a picked audio file or a managed asset URL (such as a saved
+/// dictation returned after admission failure). `request_id` is the idempotency key:
 /// repeating the request returns its job, another request under the same id
 /// is `Conflict`. `model_id` defaults to the dictation model.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

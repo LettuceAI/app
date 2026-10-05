@@ -381,6 +381,10 @@ impl ApiContext {
         &self.inner.shutdown
     }
 
+    pub(crate) fn asset_id_from_url(&self, uri: &str) -> Result<Option<lettuce_types::AssetId>, ApiError> {
+        uri.strip_prefix(&self.inner.parts.asset_url_base).map(|id| super::error::parse_id(id, "source")).transpose()
+    }
+
     pub(crate) fn asset_ref(
         &self,
         asset_id: lettuce_types::AssetId,

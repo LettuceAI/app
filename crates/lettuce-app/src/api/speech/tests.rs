@@ -1637,3 +1637,35 @@ async fn voice_creation_jobs_replay_settle_and_never_resend_after_restart() {
         }
     }
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn dictation_late_admission_failure_keeps_an_asset_for_file_retry() {
+    let env = env(TtsMode::Speak, AsrMode::Text("recovered audio"), Some(Arc::new(FakeMic { outcome: Ok(vec![0.25; 8_000]) })));
+    install_whisper_file(&env.root);
+    let capture = super::dictation_start(&env.context, dto::DictationStartRequest { conversation_id: None }).await.expect("start");
+    let options = dto::TranscribeOptions { scopes: vec![String::new()], ..dto::TranscribeOptions::default() };
+    let error = super::dictation_stop(&env.context, dto::DictationStopRequest { capture_id: capture.capture_id, model_id: None, options }).await.expect_err("invalid admission options");
+    let details = serde_json::to_value(error.details).expect("details");
+    assert_eq!(details["type"], "captured_audio");
+    let asset: dto::AssetRef = serde_json::from_value(details["audio"].clone()).expect("saved audio asset");
+    let accepted = super::transcribe_file(&env.context, dto::TranscribeFileRequest { request_id: RequestId::new().to_string(), source: dto::FileSource { uri: asset.url }, model_id: None, options: dto::TranscribeOptions::default() }).await.expect("retry saved asset");
+    assert!(run_to_idle(&runner(&env.context)).await);
+    assert_eq!(job(&env.context, accepted.job_id.parse().expect("id")).await.state, dto::JobStateDto::Succeeded);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn dictation_ingest_failure_can_retry_the_same_stopped_recording() {
+    let env = env(TtsMode::Speak, AsrMode::Text("recovered scratch"), Some(Arc::new(FakeMic { outcome: Ok(vec![0.25; 8_000]) })));
+    install_whisper_file(&env.root);
+    let capture = super::dictation_start(&env.context, dto::DictationStartRequest { conversation_id: None }).await.expect("start");
+    let path = crate::dictation_scratch_root(&env.root).join(format!("{}.wav", capture.capture_id));
+    let moved = path.with_extension("temporarily-unavailable");
+    std::fs::rename(&path, &moved).expect("make ingest source unavailable");
+    let stop = dto::DictationStopRequest { capture_id: capture.capture_id, model_id: None, options: dto::TranscribeOptions::default() };
+    assert_eq!(super::dictation_stop(&env.context, stop.clone()).await.expect_err("ingest unavailable").code, ApiErrorCode::Unavailable);
+    std::fs::rename(&moved, &path).expect("restore source");
+    let accepted = super::dictation_stop(&env.context, stop).await.expect("retry the sealed recording");
+    assert!(!path.exists());
+    assert!(run_to_idle(&runner(&env.context)).await);
+    assert_eq!(job(&env.context, accepted.job_id.parse().expect("id")).await.state, dto::JobStateDto::Succeeded);
+}

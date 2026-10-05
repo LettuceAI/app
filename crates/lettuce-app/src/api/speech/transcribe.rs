@@ -19,6 +19,11 @@ pub(super) fn ingest_picked_audio(context: &ApiContext, uri: &str) -> Result<Ass
     let media = context
         .media()
         .ok_or_else(|| api_error(ApiErrorCode::Unavailable, "no media store is open"))?;
+    if let Some(id) = context.asset_id_from_url(uri)? {
+        // Retry the existing managed asset, without importing a duplicate.
+        media.open_ready(id).map_err(IntoApiError::into_api_error)?;
+        return Ok(id);
+    }
     let reader = context
         .files()
         .open(uri)

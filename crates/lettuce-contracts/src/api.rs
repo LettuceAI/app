@@ -76,6 +76,7 @@ pub enum LocalModelsBusyReason {
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ApiErrorDetails {
     InvalidField { field: String },
+    CapturedAudio { audio: crate::AssetRef },
     AudioProviderInUse { characters: Vec<CharacterReferenceView> },
     OperationAppliedRecordDeleted { command: String, record_id: String },
     Model { model: RequiredModel },

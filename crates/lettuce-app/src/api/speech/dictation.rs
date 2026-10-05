@@ -43,12 +43,14 @@ struct Active {
     recorder: Arc<Recorder>,
     session: Option<Box<dyn CaptureSession>>,
     level_task: Option<tokio::task::JoinHandle<()>>,
+    sealed_bytes: Option<u64>,
 }
 
 #[derive(Default)]
 struct Inner {
     active: Option<Active>,
     starting: bool,
+    stopping: bool,
     ended: VecDeque<(String, Ended)>,
 }
 
@@ -237,7 +239,7 @@ pub async fn dictation_start(
     let capture_id = RequestId::new().to_string();
     {
         let mut inner = lock(context.speech_state().dictation());
-        if inner.active.is_some() || inner.starting {
+        if inner.active.is_some() || inner.starting || inner.stopping {
             return Err(api_error(
                 ApiErrorCode::Conflict,
                 "a dictation is already recording",
@@ -284,6 +286,7 @@ pub async fn dictation_start(
         recorder,
         session: Some(session),
         level_task: Some(level_task),
+        sealed_bytes: None,
     });
     let _ = ready_tx.send(());
     Ok(dto::DictationStarted { capture_id })
@@ -328,6 +331,7 @@ fn take_active(context: &ApiContext, capture_id: &str, how: Ended) -> Result<Act
     match inner.active.take() {
         Some(active) if active.id == capture_id => {
             remember_ended(&mut inner, active.id.clone(), how);
+            inner.stopping = how == Ended::Stopped;
             Ok(active)
         }
         other => {
@@ -359,34 +363,47 @@ pub async fn dictation_stop(
         task.abort();
         let _ = task.await;
     }
-    let session = active.session.take();
-    let recorder = Arc::clone(&active.recorder);
     context
         .blocking(move |context| {
-            let path = scratch_path(context, &capture_id)?;
-            let stopped = session
-                .map_or(Ok(()), |session| session.stop())
-                .map_err(microphone_error);
-            let written = recorder.finish();
-            let result = stopped.and(written).and_then(|bytes| {
-                if bytes == 0 {
-                    return Err(speech_error(
-                        ApiErrorCode::InvalidInput,
-                        SpeechFailure::NoAudioCaptured,
-                        "nothing was recorded",
-                    ));
+            let path = match scratch_path(context, &capture_id) {
+                Ok(path) => path,
+                Err(error) => {
+                    let mut inner = lock(context.speech_state().dictation());
+                    inner.ended.retain(|(id, _)| id != &capture_id);
+                    inner.active = Some(active);
+                    inner.stopping = false;
+                    return Err(error);
                 }
-                ingest_recording(context, &path)
-            });
+            };
+            if active.sealed_bytes.is_none() {
+                let stopped = active.session.take().map_or(Ok(()), |session| session.stop()).map_err(microphone_error);
+                let written = active.recorder.finish();
+                match stopped.and(written) {
+                    Ok(bytes) if bytes > 0 => active.sealed_bytes = Some(bytes),
+                    result => {
+                        lock(context.speech_state().dictation()).stopping = false;
+                        std::fs::remove_file(&path).ok();
+                        return Err(result.err().unwrap_or_else(|| speech_error(ApiErrorCode::InvalidInput, SpeechFailure::NoAudioCaptured, "nothing was recorded")));
+                    }
+                }
+            }
+            let audio = match ingest_recording(context, &path) {
+                Ok(audio) => audio,
+                Err(error) => {
+                    // Keep a sealed capture for stop retry; do not call finish again.
+                    let mut inner = lock(context.speech_state().dictation());
+                    inner.ended.retain(|(id, _)| id != &capture_id);
+                    inner.active = Some(active);
+                    inner.stopping = false;
+                    return Err(error);
+                }
+            };
             std::fs::remove_file(&path).ok();
-            let audio = result?;
-            admit_transcription(
-                context,
-                RequestId::new(),
-                audio,
-                model,
-                engine_options(&request.options),
-            )
+            lock(context.speech_state().dictation()).stopping = false;
+            admit_transcription(context, RequestId::new(), audio, model, engine_options(&request.options)).map_err(|mut error| {
+                error.details = Some(dto::ApiErrorDetails::CapturedAudio { audio: context.asset_ref(audio) });
+                error
+            })
         })
         .await
 }
