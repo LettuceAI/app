@@ -184,6 +184,8 @@ export const commands = {
 	asrVoiceExampleDelete: (request: AsrLearningItemRequest) => typedError<null, ApiError>(__TAURI_INVOKE("asr_voice_example_delete", { request })),
 	asrSuggestions: (request: AsrSuggestionsRequest) => typedError<AsrSuggestionView[], ApiError>(__TAURI_INVOKE("asr_suggestions", { request })),
 	audioProviderVerify: (request: AudioProviderVerifyRequest) => typedError<boolean, ApiError>(__TAURI_INVOKE("audio_provider_verify", { request })),
+	audioProviderCredentialStatus: (request: AudioProviderRequest) => typedError<AudioProviderCredentialStatus, ApiError>(__TAURI_INVOKE("audio_provider_credential_status", { request })),
+	audioProviderApiKeyRotate: (request: AudioProviderApiKeyRotateRequest) => typedError<AudioProviderCredentialStatus, ApiError>(__TAURI_INVOKE("audio_provider_api_key_rotate", { request })),
 	audioProviderVoices: (request: AudioProviderRequest) => typedError<AudioVoiceView[], ApiError>(__TAURI_INVOKE("audio_provider_voices", { request })),
 	audioProviderVoicesSearch: (request: AudioProviderVoiceSearchRequest) => typedError<AudioVoiceView[], ApiError>(__TAURI_INVOKE("audio_provider_voices_search", { request })),
 	voiceDesignPreview: (request: VoiceDesignPreviewRequest) => typedError<VoiceDesignPreviewView[], ApiError>(__TAURI_INVOKE("voice_design_preview", { request })),
@@ -394,7 +396,18 @@ export type AssetsIngestRequest = {
 	role: AssetIngestRole,
 };
 
+export type AudioProviderApiKeyRotateRequest = {
+	provider_id: string,
+	api_key: string,
+	expected_generation: number,
+};
+
 export type AudioProviderConfiguration = { type: "gemini"; project_id: string | null; location: string } | { type: "elevenlabs" } | { type: "fish_tts" } | { type: "fish_speech"; base_url: string | null; request_path: string | null } | { type: "open_ai_compatible"; base_url: string | null; request_path: string | null } | { type: "kokoro"; variant: string | null };
+
+export type AudioProviderCredentialStatus = {
+	generation: number,
+	available: boolean,
+};
 
 export type AudioProviderDeleteRequest = {
 	provider_id: string,

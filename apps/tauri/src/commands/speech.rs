@@ -345,3 +345,15 @@ pub async fn asr_voice_example_suggest(context: State<'_, ApiContext>, request: 
 pub async fn kokoro_tokenize_preview(context: State<'_, ApiContext>, request: dto::KokoroTokenizePreviewRequest) -> Result<dto::KokoroPhonemizationView, ApiError> {
     lettuce_app::api::kokoro_tokenize_preview(&context, request).await
 }
+
+#[tauri::command]
+#[specta::specta]
+pub async fn audio_provider_credential_status(context: State<'_, ApiContext>, request: dto::AudioProviderRequest) -> Result<dto::AudioProviderCredentialStatus, ApiError> {
+    lettuce_app::api::audio_provider_credential_status(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn audio_provider_api_key_rotate(context: State<'_, ApiContext>, request: dto::AudioProviderApiKeyRotateRequest) -> Result<dto::AudioProviderCredentialStatus, ApiError> {
+    lettuce_app::api::audio_provider_api_key_rotate(&context, request).await
+}

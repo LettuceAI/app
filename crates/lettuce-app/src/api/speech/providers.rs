@@ -214,6 +214,7 @@ impl IntoApiError for crate::TtsConfigurationCoordinatorError {
         match self {
             Self::Repository(error) => error.into_api_error(),
             Self::InvalidInput => invalid_field("request", self.to_string()),
+            Self::SecretStore(lettuce_settings::SecretStoreError::StaleGeneration) => api_error(ApiErrorCode::Conflict, "the audio credential generation changed"),
             Self::SecretStore(_) => super::errors::secret_missing(),
             Self::CleanupPending { .. } | Self::CompensationFailed { .. } =>
                 api_error(ApiErrorCode::Unavailable, self.to_string()),
@@ -339,5 +340,29 @@ pub async fn voice_design_preview(context: &ApiContext, request: dto::VoiceDesig
             generated_voice_id: preview.generated_voice_id, audio: context.asset_ref(preview.audio_asset_id),
             duration_secs: preview.duration_secs,
         }).collect()).map_err(IntoApiError::into_api_error)
+    }).await
+}
+
+pub async fn audio_provider_credential_status(context: &ApiContext, request: dto::AudioProviderRequest) -> Result<dto::AudioProviderCredentialStatus, ApiError> {
+    let id = parse_id(&request.provider_id, "provider_id")?;
+    context.blocking(move |context| {
+        let provider = context.backend().database().get_audio_provider(id).map_err(IntoApiError::into_api_error)?
+            .ok_or_else(|| api_error(ApiErrorCode::NotFound, "the audio provider was not found"))?;
+        let Some(reference) = provider.api_key_ref else { return Ok(dto::AudioProviderCredentialStatus { generation: 0, available: false }); };
+        let status = tokio::runtime::Handle::current().block_on(context.secret_store().status(&reference,
+            &lettuce_settings::SecretPurpose::AudioApiKey { owner: provider.secret_owner_id }))
+            .map_err(|_| super::errors::secret_missing())?;
+        Ok(dto::AudioProviderCredentialStatus { generation: status.generation, available: matches!(status.state, lettuce_settings::SecretState::Present) })
+    }).await
+}
+
+pub async fn audio_provider_api_key_rotate(context: &ApiContext, request: dto::AudioProviderApiKeyRotateRequest) -> Result<dto::AudioProviderCredentialStatus, ApiError> {
+    let id = parse_id(&request.provider_id, "provider_id")?;
+    if request.expected_generation == 0 { return Err(invalid_field("expected_generation", "the credential generation must be positive")); }
+    let value = SecretValue::new(request.api_key).map_err(|_| invalid_field("api_key", "the API key is empty"))?;
+    context.blocking(move |context| {
+        let generation = tokio::runtime::Handle::current().block_on(context.backend().tts_configuration(context.secret_store().as_ref())
+            .rotate_audio_api_key(id, value, request.expected_generation)).map_err(IntoApiError::into_api_error)?;
+        Ok(dto::AudioProviderCredentialStatus { generation, available: true })
     }).await
 }

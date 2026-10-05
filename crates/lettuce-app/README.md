@@ -537,6 +537,8 @@ Retained Whisper, Kokoro, embedding and Thymos locations are device-local settin
 
 The speech library API lists, updates and removes audio provider and user voice metadata without exposing credentials. ASR vocabulary, corrections, ignored suggestions and voice examples can be listed or removed, correction suggestions are read-only, and filtered learning exports use a host FileTarget. Voice examples carry asset references.
 
+Audio credential status exposes availability and generation. Existing credentials rotate with a generation check; a stale writer gets Conflict. Credential values remain in the device secret store.
+
 Voice search delegates ElevenLabs queries to the existing provider control adapter without caching the results. Voice-design previews execute inline with shutdown cancellation and a temporary media asset for each result; the API returns the generated voice identifier, duration and asset URL.
 
 Message playback resolves the selected visible message and the character's current voice, removes hidden thoughts and scene instructions, and substitutes the current display names. Admission freezes that narration and voice. Retained synthesis reuses completed audio with matching provider, model, voice, prompt and text; a new request receipt refers to the original completed job. ASR voice examples also support read-only correction suggestions.

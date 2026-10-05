@@ -35,6 +35,32 @@ pub struct AudioProviderRequest {
     pub provider_id: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct AudioProviderCredentialStatus {
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub generation: u64,
+    pub available: bool,
+}
+
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct AudioProviderApiKeyRotateRequest {
+    pub provider_id: String,
+    pub api_key: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub expected_generation: u64,
+}
+
+impl std::fmt::Debug for AudioProviderApiKeyRotateRequest {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.debug_struct("AudioProviderApiKeyRotateRequest").field("provider_id", &self.provider_id)
+            .field("api_key", &"[redacted]").field("expected_generation", &self.expected_generation).finish()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "snake_case")]

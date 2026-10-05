@@ -1206,3 +1206,26 @@ async fn message_playback_resolves_live_provider_voice_and_reuses_frozen_audio()
     crate::api::conversation_delete(&env.context, dto::ConversationRequest { conversation_id: chat }).await.expect("delete chat");
     assert_eq!(super::message_speak(&env.context, original_request).await.expect("replay after deletion"), first);
 }
+
+#[tokio::test]
+async fn audio_credential_rotation_uses_generation_cas_and_returns_no_secret() {
+    use lettuce_settings::SecretPurpose;
+    let env = env(TtsMode::Speak, AsrMode::Text("unused"), None);
+    let secrets = env.context.secret_store();
+    let provider = env.context.backend().tts_configuration(secrets.as_ref()).create_audio_provider(
+        "Narrator".into(), AudioProviderConfig::Elevenlabs, Some(SecretValue::new("old-secret-canary").expect("key")), START,
+    ).await.expect("seed provider");
+    let status_request = || dto::AudioProviderRequest { provider_id: provider.id.to_string() };
+    let status = super::audio_provider_credential_status(&env.context, status_request()).await.expect("status");
+    assert_eq!(status.generation, 1); assert!(status.available);
+    let request = || dto::AudioProviderApiKeyRotateRequest { provider_id: provider.id.to_string(), api_key: "new-secret-canary".into(), expected_generation: 1 };
+    assert!(!format!("{:?}", request()).contains("new-secret-canary"));
+    let changed = super::audio_provider_api_key_rotate(&env.context, request()).await.expect("rotate");
+    assert_eq!(changed.generation, 2); assert!(changed.available);
+    assert_eq!(super::audio_provider_api_key_rotate(&env.context, request()).await.expect_err("stale generation").code, ApiErrorCode::Conflict);
+    assert_eq!(super::audio_provider_credential_status(&env.context, status_request()).await.expect("current"), changed);
+    let loaded = secrets.load(&provider.api_key_ref.expect("reference"), &SecretPurpose::AudioApiKey { owner: provider.secret_owner_id }).await.expect("stored key");
+    loaded.with(|value| assert_eq!(value, "new-secret-canary"));
+    let listed = serde_json::to_string(&super::audio_providers_list(&env.context).await.expect("metadata")).expect("json");
+    assert!(!listed.contains("secret-canary"));
+}

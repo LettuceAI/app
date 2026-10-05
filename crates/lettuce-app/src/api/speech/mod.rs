@@ -28,7 +28,7 @@ pub use whisper::{
     whisper_download, whisper_models_list, whisper_preload,
 };
 
-pub use providers::{voice_design_preview, audio_provider_voices_search, audio_providers_list, audio_provider_update, audio_provider_delete, user_voices_list, user_voice_update, user_voice_delete, audio_provider_verify, audio_provider_voices, audio_provider_voices_refresh, tts_models, tts_voice_design_models, tts_cache_stats, tts_cache_clear};
+pub use providers::{voice_design_preview, audio_provider_voices_search, audio_providers_list, audio_provider_update, audio_provider_delete, user_voices_list, user_voice_update, user_voice_delete, audio_provider_verify, audio_provider_credential_status, audio_provider_api_key_rotate, audio_provider_voices, audio_provider_voices_refresh, tts_models, tts_voice_design_models, tts_cache_stats, tts_cache_clear};
 
 pub use synthesize::tts_synthesize;
 
