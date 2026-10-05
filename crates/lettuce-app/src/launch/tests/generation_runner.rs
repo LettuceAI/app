@@ -172,10 +172,17 @@ fn direct_scenario_with(
     )
     .expect("resolve profile");
     let space_id = dynamic_memory.then(|| {
-        MemoryRepository::get_for_conversation(database, conversation.id)
-            .expect("memory space")
-            .expect("conversation memory")
-            .id
+        MemoryRepository::get_for_branch(
+            database,
+            conversation.id,
+            lettuce_conversations::ConversationReader::get(database, conversation.id)
+                .expect("conversation branch")
+                .conversation
+                .active_branch_id,
+        )
+        .expect("memory space")
+        .expect("conversation memory")
+        .id
     });
     Scenario {
         conversation_id: conversation.id,
@@ -1472,10 +1479,19 @@ async fn app_backend_builds_manual_inputs_for_send_continue_and_regenerate() {
     let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
     let scenario =
         scenario_with_resolvable_profile(backend.database(), false, "prepared-input", true);
-    let manual_space =
-        MemoryRepository::get_for_conversation(backend.database(), scenario.conversation_id)
-            .expect("manual memory space")
-            .expect("manual memory exists");
+    let manual_space = MemoryRepository::get_for_branch(
+        backend.database(),
+        scenario.conversation_id,
+        lettuce_conversations::ConversationReader::get(
+            backend.database(),
+            scenario.conversation_id,
+        )
+        .expect("conversation branch")
+        .conversation
+        .active_branch_id,
+    )
+    .expect("manual memory space")
+    .expect("manual memory exists");
     let manual_item = MemoryItem {
         id: MemoryId::new(),
         short_id: lettuce_memory::MemoryShortId::new(900001).expect("short id"),
@@ -2824,10 +2840,19 @@ async fn app_backend_runs_resolved_group_speakers_and_rejects_unresolved_turns()
         12,
         3,
     )]);
-    let manual_space =
-        MemoryRepository::get_for_conversation(backend.database(), scenario.conversation_id)
-            .expect("group memory space")
-            .expect("manual group memory space exists");
+    let manual_space = MemoryRepository::get_for_branch(
+        backend.database(),
+        scenario.conversation_id,
+        lettuce_conversations::ConversationReader::get(
+            backend.database(),
+            scenario.conversation_id,
+        )
+        .expect("conversation branch")
+        .conversation
+        .active_branch_id,
+    )
+    .expect("group memory space")
+    .expect("manual group memory space exists");
     let lettuce_conversations::GenerationInput::UserMessage {
         message_id: user_message_id,
     } = turn.input
@@ -3635,10 +3660,19 @@ async fn dynamic_group_chats_keep_retrieved_key_memories_without_observation_not
         "Remember tea.",
         |group| group.memory_policy = MemoryPolicy::Dynamic,
     );
-    let space =
-        MemoryRepository::get_for_conversation(backend.database(), scenario.conversation_id)
-            .expect("group memory space")
-            .expect("group memory exists");
+    let space = MemoryRepository::get_for_branch(
+        backend.database(),
+        scenario.conversation_id,
+        lettuce_conversations::ConversationReader::get(
+            backend.database(),
+            scenario.conversation_id,
+        )
+        .expect("conversation branch")
+        .conversation
+        .active_branch_id,
+    )
+    .expect("group memory space")
+    .expect("group memory exists");
     seed_retrieved_and_hot_memories(backend.database(), space.id);
     let work = admit_and_claim(backend.database(), &scenario, 1_015);
     let inference = scripted(vec![text_outcome(
@@ -4268,10 +4302,19 @@ async fn chat_runtime_sections_follow_catalog_edits() {
     let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
     let scenario =
         scenario_with_resolvable_profile(backend.database(), false, "runtime-edit", true);
-    let space =
-        MemoryRepository::get_for_conversation(backend.database(), scenario.conversation_id)
-            .expect("manual memory space")
-            .expect("manual memory exists");
+    let space = MemoryRepository::get_for_branch(
+        backend.database(),
+        scenario.conversation_id,
+        lettuce_conversations::ConversationReader::get(
+            backend.database(),
+            scenario.conversation_id,
+        )
+        .expect("conversation branch")
+        .conversation
+        .active_branch_id,
+    )
+    .expect("manual memory space")
+    .expect("manual memory exists");
     MemoryRepository::compare_and_apply(
         backend.database(),
         MemoryChangeSet {
@@ -7291,9 +7334,16 @@ async fn memory_spaces_sync_their_items_and_summary_under_their_owner() {
     .run(&work, input(&scenario), TimestampMillis::new(1_020))
     .await
     .expect("run");
-    let space = MemoryRepository::get_for_conversation(&a, scenario.conversation_id)
-        .expect("space")
-        .expect("space exists");
+    let space = MemoryRepository::get_for_branch(
+        &a,
+        scenario.conversation_id,
+        lettuce_conversations::ConversationReader::get(&a, scenario.conversation_id)
+            .expect("conversation branch")
+            .conversation
+            .active_branch_id,
+    )
+    .expect("space")
+    .expect("space exists");
     let item = MemoryItem {
         id: MemoryId::new(),
         short_id: lettuce_memory::MemoryShortId::new(4242).expect("short id"),
@@ -7360,9 +7410,16 @@ async fn memory_spaces_sync_their_items_and_summary_under_their_owner() {
 
     sync_prompts(&a, &b, 2_000);
 
-    let on_b = MemoryRepository::get_for_conversation(&b, scenario.conversation_id)
-        .expect("b space")
-        .expect("b space exists");
+    let on_b = MemoryRepository::get_for_branch(
+        &b,
+        scenario.conversation_id,
+        lettuce_conversations::ConversationReader::get(&b, scenario.conversation_id)
+            .expect("conversation branch")
+            .conversation
+            .active_branch_id,
+    )
+    .expect("b space")
+    .expect("b space exists");
     assert_ne!(on_b.id, space.id);
     assert_eq!(
         on_b.items

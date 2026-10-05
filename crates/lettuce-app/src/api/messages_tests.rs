@@ -388,9 +388,16 @@ async fn memory_chat_with(harness: &Harness, key: &str, with_lead: bool) -> Memo
         &format!("{key}-second"),
         text("And I keep bees."),
     );
-    let memory = MemoryRepository::get_for_conversation(database, conversation_id)
-        .expect("memory")
-        .expect("dynamic memory space");
+    let memory = MemoryRepository::get_for_branch(
+        database,
+        conversation_id,
+        lettuce_conversations::ConversationReader::get(database, conversation_id)
+            .expect("conversation branch")
+            .conversation
+            .active_branch_id,
+    )
+    .expect("memory")
+    .expect("dynamic memory space");
     let job = JobStore::create_or_get(
         database,
         JobSpec::new(
@@ -808,7 +815,18 @@ async fn delete_after_stops_a_running_memory_cycle_then_tombstones_and_rewinds()
                 .expect("job exists");
             if job.state == JobState::CancellationRequested {
                 assert!(
-                    MemoryRepository::get_for_conversation(database, chat.conversation_id).is_ok(),
+                    MemoryRepository::get_for_branch(
+                        database,
+                        chat.conversation_id,
+                        lettuce_conversations::ConversationReader::get(
+                            database,
+                            chat.conversation_id
+                        )
+                        .expect("conversation branch")
+                        .conversation
+                        .active_branch_id
+                    )
+                    .is_ok(),
                 );
                 assert_eq!(
                     open(&harness, chat.conversation_id)
@@ -2132,10 +2150,20 @@ async fn message_delete_of_an_exclusive_message_still_tombstones() {
 }
 
 fn memory_revision(harness: &Harness, conversation_id: ConversationId) -> Revision {
-    MemoryRepository::get_for_conversation(harness.context.backend().database(), conversation_id)
-        .expect("memory")
-        .expect("memory space")
-        .revision
+    MemoryRepository::get_for_branch(
+        harness.context.backend().database(),
+        conversation_id,
+        lettuce_conversations::ConversationReader::get(
+            harness.context.backend().database(),
+            conversation_id,
+        )
+        .expect("conversation branch")
+        .conversation
+        .active_branch_id,
+    )
+    .expect("memory")
+    .expect("memory space")
+    .revision
 }
 
 fn pending_of(harness: &Harness, conversation_id: ConversationId) -> Vec<PendingSuffixRewind> {
@@ -2426,9 +2454,16 @@ fn extra_memory_run(
     key: &str,
 ) -> DynamicMemoryRunId {
     let database = harness.context.backend().database();
-    let memory = MemoryRepository::get_for_conversation(database, chat.conversation_id)
-        .expect("memory")
-        .expect("space");
+    let memory = MemoryRepository::get_for_branch(
+        database,
+        chat.conversation_id,
+        lettuce_conversations::ConversationReader::get(database, chat.conversation_id)
+            .expect("conversation branch")
+            .conversation
+            .active_branch_id,
+    )
+    .expect("memory")
+    .expect("space");
     let job = JobStore::create_or_get(
         database,
         JobSpec::new(

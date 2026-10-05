@@ -1,6 +1,7 @@
 use lettuce_types::{
-    CompanionEffectId, ConversationId, DynamicMemoryRunId, GenerationAttemptId, GenerationTurnId,
-    MemoryId, MemorySpaceId, MessageId, OperationId, Revision, TimestampMillis,
+    CompanionEffectId, ConversationBranchId, ConversationId, DynamicMemoryRunId,
+    GenerationAttemptId, GenerationTurnId, MemoryId, MemorySpaceId, MessageId, OperationId,
+    Revision, TimestampMillis,
 };
 use serde::{Deserialize, Serialize};
 
@@ -70,9 +71,10 @@ pub trait MemoryRepository: Send + Sync {
 
     fn get(&self, id: MemorySpaceId) -> Result<Option<MemorySpaceSnapshot>, MemoryRepositoryError>;
 
-    fn get_for_conversation(
+    fn get_for_branch(
         &self,
         conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
     ) -> Result<Option<MemorySpaceSnapshot>, MemoryRepositoryError>;
 
     /// Atomically verifies `expected_revision`, replaces the complete item set,

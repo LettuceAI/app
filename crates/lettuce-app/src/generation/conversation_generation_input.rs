@@ -1402,7 +1402,13 @@ where
                 )
                 .await?
             }
-            MemoryModeSnapshot::Manual => self.manual_memory_input(work.conversation_id, group)?,
+            MemoryModeSnapshot::Manual => self.manual_memory_input(
+                work.conversation_id,
+                ConversationReader::get_turn(self.repository, work.turn_id)
+                    .map_err(ConversationGenerationInputError::Repository)?
+                    .branch_id,
+                group,
+            )?,
             MemoryModeSnapshot::Disabled => None,
         };
         let conversation_message_count =
@@ -1627,7 +1633,13 @@ where
         .map_err(ConversationGenerationInputError::Memory)?;
         let memory = match &prior_access {
             Some(receipt) => MemoryRepository::get(self.repository, receipt.access.space_id),
-            None => MemoryRepository::get_for_conversation(self.repository, work.conversation_id),
+            None => MemoryRepository::get_for_branch(
+                self.repository,
+                work.conversation_id,
+                ConversationReader::get_turn(self.repository, work.turn_id)
+                    .map_err(ConversationGenerationInputError::Repository)?
+                    .branch_id,
+            ),
         }
         .map_err(ConversationGenerationInputError::Memory)?
         .ok_or(ConversationGenerationInputError::MemoryInputUnavailable)?;
@@ -1700,9 +1712,10 @@ where
     fn manual_memory_input(
         &self,
         conversation_id: lettuce_types::ConversationId,
+        branch_id: lettuce_types::ConversationBranchId,
         group: bool,
     ) -> Result<Option<MemoryContribution>, ConversationGenerationInputError> {
-        let memory = MemoryRepository::get_for_conversation(self.repository, conversation_id)
+        let memory = MemoryRepository::get_for_branch(self.repository, conversation_id, branch_id)
             .map_err(ConversationGenerationInputError::Memory)?
             .ok_or(ConversationGenerationInputError::MemoryInputUnavailable)?;
         let summary = if group {

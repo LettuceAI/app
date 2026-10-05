@@ -24,6 +24,8 @@ Facts about how `lettuce-companions` relates to the legacy app (2.2.x). The crat
 
 ## Deliberate differences from legacy
 
+- Processing effect batches identify each source turn's branch, so sibling branches in one conversation do not share a batch. Legacy queued effects by session id (`old-code/src-tauri/src/chat_manager/memory/flow.rs:1722-1732`), because each branch was a separate session.
+
 - A growth or consolidation change set is atomic at one expected revision.
 - The emotion classifier thresholds come from the classifier (Thymos's calibrated per-class thresholds) instead of legacy's SamLowe thresholds (`neutral` 0.55; love, caring, gratitude, remorse, anger, sadness and fear 0.18; others 0.22). This was a user-approved change.
 - `companion_remove_soul_growth` removes an entry by its stable id instead of its list position.

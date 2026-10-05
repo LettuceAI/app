@@ -1316,10 +1316,19 @@ mod tests {
             TimestampMillis::new(26),
         )
         .expect("settle companion effect");
-        let memory_space =
-            MemoryRepository::get_for_conversation(backend.database(), direct_conversation.id)
-                .expect("read conversation memory")
-                .expect("dynamic memory space");
+        let memory_space = MemoryRepository::get_for_branch(
+            backend.database(),
+            direct_conversation.id,
+            lettuce_conversations::ConversationReader::get(
+                backend.database(),
+                direct_conversation.id,
+            )
+            .expect("conversation branch")
+            .conversation
+            .active_branch_id,
+        )
+        .expect("read conversation memory")
+        .expect("dynamic memory space");
         let rewind = DynamicMemorySuffixRewindRepository::rewind_dynamic_memory_suffix(
             backend.database(),
             DynamicMemorySuffixRewind {

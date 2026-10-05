@@ -91,7 +91,7 @@ impl<
         let conversation_id = admission.batch.conversation_id;
         let snapshot = self
             .repository
-            .get_for_conversation(conversation_id)
+            .get_for_branch(conversation_id, admission.batch.branch_id)
             .map_err(CompanionPostTurnMemoryRunError::Memory)?
             .ok_or(CompanionPostTurnMemoryRunError::InvalidAdmission)?;
         let expected_messages = expected_effect_messages(admission)?;
@@ -100,6 +100,7 @@ impl<
         match self.repository.load_dynamic_memory_run(run_id) {
             Ok(run) => {
                 if run.conversation_id != conversation_id
+                    || run.branch_id != admission.batch.branch_id
                     || run
                         .source_messages
                         .iter()
@@ -171,6 +172,7 @@ impl<
                 let source_messages = resolve_source_messages(
                     self.conversations,
                     conversation_id,
+                    admission.batch.branch_id,
                     expected_messages,
                 )?;
                 let group = self
@@ -221,12 +223,7 @@ impl<
                         run_id,
                         attempt_id,
                         conversation_id,
-                        branch_id: self
-                            .conversations
-                            .get(conversation_id)
-                            .map_err(CompanionPostTurnMemoryRunError::Conversation)?
-                            .conversation
-                            .active_branch_id,
+                        branch_id: admission.batch.branch_id,
                         space_id: starting_memory.id,
                         starting_memory,
                         cycle_start_change,
@@ -387,12 +384,9 @@ pub(crate) fn memory_tool_request<
 fn resolve_source_messages<C: ConversationReader + ?Sized>(
     conversations: &C,
     conversation_id: lettuce_types::ConversationId,
+    branch_id: lettuce_types::ConversationBranchId,
     expected: Vec<(MessageId, MessageRole)>,
 ) -> Result<Vec<DynamicMemorySourceMessage>, CompanionPostTurnMemoryRunError> {
-    let aggregate = conversations
-        .get(conversation_id)
-        .map_err(CompanionPostTurnMemoryRunError::Conversation)?;
-
     let expected_ids = expected.iter().map(|(id, _)| *id).collect::<HashSet<_>>();
     let mut found = HashMap::<
         MessageId,
@@ -409,7 +403,7 @@ fn resolve_source_messages<C: ConversationReader + ?Sized>(
         let page = conversations
             .timeline_page(
                 conversation_id,
-                aggregate.conversation.active_branch_id,
+                branch_id,
                 &PageRequest {
                     cursor: cursor.clone(),
                     limit: PageLimit::new(200),
@@ -520,6 +514,7 @@ pub(crate) mod tests {
     struct Reader {
         conversation_id: ConversationId,
         branch_id: ConversationBranchId,
+        active_branch_id: ConversationBranchId,
         items: Vec<TimelineItem>,
     }
 
@@ -563,7 +558,7 @@ pub(crate) mod tests {
                         memory: SnapshotSelection::Disabled,
                         voice: SnapshotSelection::Disabled,
                     }),
-                    active_branch_id: self.branch_id,
+                    active_branch_id: self.active_branch_id,
                     participants: Vec::new(),
                     current_settings: None,
                     revision: Revision::INITIAL,
@@ -680,9 +675,10 @@ pub(crate) mod tests {
         ) -> Result<Option<MemorySpaceSnapshot>, MemoryRepositoryError> {
             unimplemented!()
         }
-        fn get_for_conversation(
+        fn get_for_branch(
             &self,
             id: ConversationId,
+            _branch_id: ConversationBranchId,
         ) -> Result<Option<MemorySpaceSnapshot>, MemoryRepositoryError> {
             Ok((id == self.conversation_id).then(|| self.snapshot.clone()))
         }
@@ -1005,6 +1001,7 @@ pub(crate) mod tests {
     fn admission(
         store: &InMemoryJobStore,
         conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
         effects: Vec<CompanionTurnEffect>,
     ) -> CompanionPostTurnMemoryAdmission {
         let unsummarized_message_count = effects
@@ -1032,6 +1029,7 @@ pub(crate) mod tests {
         CompanionPostTurnMemoryAdmission {
             batch: crate::CompanionPostTurnMemoryBatch {
                 conversation_id,
+                branch_id,
                 idempotency_key: key,
                 summary_message_interval: 20,
                 window_selection: crate::CompanionMemoryWindowSelection::Automatic,
@@ -1117,7 +1115,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn bridge_freezes_ordered_render_sources_and_recovers_the_same_run() {
+    fn queued_batch_keeps_parent_sources_after_branch_switch_and_recovers_the_same_run() {
         let conversation_id = ConversationId::new();
         let branch_id = ConversationBranchId::new();
         let user_one = MessageId::new();
@@ -1133,6 +1131,7 @@ pub(crate) mod tests {
         let reader = Reader {
             conversation_id,
             branch_id,
+            active_branch_id: ConversationBranchId::new(),
             items: vec![
                 timeline_item(
                     conversation_id,
@@ -1207,7 +1206,7 @@ pub(crate) mod tests {
         };
         let coordinator = CompanionPostTurnMemoryRunCoordinator::new(&repository, &reader);
         let first_store = InMemoryJobStore::new();
-        let first_admission = admission(&first_store, conversation_id, effects.clone());
+        let first_admission = admission(&first_store, conversation_id, branch_id, effects.clone());
         let first_handle = JobHandle::new(first_admission.job.id);
         let resolved_profile = profile();
         let first = coordinator
@@ -1362,7 +1361,8 @@ pub(crate) mod tests {
 
         let mut mismatched_effects = effects.clone();
         mismatched_effects[1].assistant_message_id = MessageId::new();
-        let mismatched_admission = admission(&first_store, conversation_id, mismatched_effects);
+        let mismatched_admission =
+            admission(&first_store, conversation_id, branch_id, mismatched_effects);
         assert_eq!(
             coordinator.admit_or_recover(
                 &mismatched_admission,
@@ -1378,7 +1378,7 @@ pub(crate) mod tests {
         );
 
         let restarted_store = InMemoryJobStore::new();
-        let restarted_admission = admission(&restarted_store, conversation_id, effects);
+        let restarted_admission = admission(&restarted_store, conversation_id, branch_id, effects);
         let restarted_handle = JobHandle::new(restarted_admission.job.id);
         let recovered = coordinator
             .admit_or_recover(

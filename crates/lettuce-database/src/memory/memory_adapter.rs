@@ -235,13 +235,20 @@ fn insert_pool_binding_in(
     Ok(())
 }
 
-/// The memory space a conversation uses now, read on every use: its
-/// companion pool while the character shares memory across chats, else its
-/// own space.
-pub(crate) fn active_space_id_in(
+/// Resolves a branch's own space or its conversation's shared pool.
+pub(crate) fn branch_space_id_in(
     connection: &rusqlite::Connection,
     conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
 ) -> rusqlite::Result<Option<MemorySpaceId>> {
+    let branch_exists: bool = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM conversation_branches WHERE conversation_id = ?1 AND id = ?2)",
+        params![conversation_id.to_string(), branch_id.to_string()],
+        |row| row.get(0),
+    )?;
+    if !branch_exists {
+        return Ok(None);
+    }
     let pool = connection
         .query_row(
             "SELECT pool.character_id, pool.space_id FROM conversation_memory_spaces binding
@@ -266,8 +273,8 @@ pub(crate) fn active_space_id_in(
     connection
         .query_row(
             "SELECT space_id FROM conversation_memory_spaces
-              WHERE conversation_id = ?1 AND pooled = 0",
-            [conversation_id.to_string()],
+              WHERE conversation_id = ?1 AND branch_id = ?2 AND pooled = 0",
+            params![conversation_id.to_string(), branch_id.to_string()],
             |row| row.get::<_, String>(0),
         )
         .optional()?
@@ -936,15 +943,17 @@ impl MemoryRepository for Database {
         Ok(snapshot)
     }
 
-    fn get_for_conversation(
+    fn get_for_branch(
         &self,
         conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
     ) -> Result<Option<MemorySpaceSnapshot>, MemoryRepositoryError> {
         let mut connection = self.connection().map_err(storage)?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Deferred)
             .map_err(storage)?;
-        let space_id = active_space_id_in(&transaction, conversation_id).map_err(storage)?;
+        let space_id =
+            branch_space_id_in(&transaction, conversation_id, branch_id).map_err(storage)?;
         let snapshot = space_id
             .map(|space_id| get_in(&transaction, space_id))
             .transpose()?

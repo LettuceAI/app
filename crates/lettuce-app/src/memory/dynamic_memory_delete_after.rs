@@ -331,7 +331,7 @@ where
         let operation_id = OperationId::from_uuid(tombstone.operation.id.as_uuid());
         let active_space = self
             .repository
-            .get_for_conversation(command.conversation_id)?
+            .get_for_branch(command.conversation_id, tombstone.value.message.branch_id)?
             .map(|memory| memory.id);
         let runs = self
             .repository
@@ -386,7 +386,7 @@ where
         } else if invalid_run_index.is_some() || !invalidated_effect_ids.is_empty() {
             let memory = self
                 .repository
-                .get_for_conversation(command.conversation_id)?
+                .get_for_branch(command.conversation_id, tombstone.value.message.branch_id)?
                 .ok_or(DynamicMemoryDeleteAfterError::InvalidResult)?;
             Some(
                 self.repository

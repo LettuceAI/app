@@ -289,6 +289,8 @@ Soul-writer preview admission freezes the primary and optional fallback profiles
 
 ## Memory (`memory/`, `companion/companion_memory_*`)
 
+Memory reads name the branch they act on. Generation uses its turn's branch, lorebook preparation uses the selected branch, and a queued memory batch freezes its branch at admission. The branch participates in the batch's idempotency digest, so two branches sharing a message prefix still have separate runs. Companion effect batches use the branch of each source turn and never combine sibling branches; the effect repository resolves that ownership from durable turns. Dispatch and recovery use the frozen branch and memory space after the user selects another branch.
+
 Dynamic memory writes happen in a background cycle after turns, never inside the reply: the reply carries no memory tools. The cycle code is in `companion/` because it also settles companion turn effects; plain direct and group chats run the same pipeline with a message-window source instead of effects.
 
 ### Admission

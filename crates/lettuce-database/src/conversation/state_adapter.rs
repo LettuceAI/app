@@ -1542,6 +1542,40 @@ pub(crate) fn load_effect(
 }
 
 impl CompanionTurnEffectRepository for Database {
+    fn active_branch_for_conversation(
+        &self,
+        conversation_id: ConversationId,
+    ) -> Result<lettuce_types::ConversationBranchId, CompanionTurnEffectRepositoryError> {
+        let connection = self.connection().map_err(effect_failure)?;
+        let branch: Option<String> = connection
+            .query_row(
+                "SELECT active_branch_id FROM conversations WHERE id = ?1",
+                [conversation_id.to_string()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(effect_failure)?;
+        branch
+            .ok_or(CompanionTurnEffectRepositoryError::NotFound)?
+            .parse()
+            .map_err(effect_corrupt)
+    }
+
+    fn branch_for_effect(
+        &self,
+        effect_id: CompanionEffectId,
+    ) -> Result<lettuce_types::ConversationBranchId, CompanionTurnEffectRepositoryError> {
+        let connection = self.connection().map_err(effect_failure)?;
+        let branch: Option<String> = connection.query_row(
+            "SELECT turn.branch_id FROM companion_turn_effects effect JOIN conversation_turns turn ON turn.id = effect.turn_id AND turn.conversation_id = effect.conversation_id WHERE effect.id = ?1",
+            [effect_id.to_string()], |row| row.get(0),
+        ).optional().map_err(effect_failure)?;
+        branch
+            .ok_or(CompanionTurnEffectRepositoryError::NotFound)?
+            .parse()
+            .map_err(effect_corrupt)
+    }
+
     fn failed_memory_cycles(
         &self,
         effect: &CompanionTurnEffect,

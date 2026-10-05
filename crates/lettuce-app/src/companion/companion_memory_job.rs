@@ -16,7 +16,8 @@ use lettuce_memory::{
     DynamicMemoryApprovalRepository, DynamicMemoryRunMode, MemoryRepositoryError,
 };
 use lettuce_types::{
-    ConversationId, MessageId, ModelProfileId, OperationId, PageLimit, PageRequest, TimestampMillis,
+    ConversationBranchId, ConversationId, MessageId, ModelProfileId, OperationId, PageLimit,
+    PageRequest, TimestampMillis,
 };
 
 use crate::CompanionPostTurnEffect;
@@ -42,6 +43,7 @@ pub enum PostTurnMemorySource {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompanionPostTurnMemoryBatch {
     pub conversation_id: ConversationId,
+    pub branch_id: ConversationBranchId,
     pub idempotency_key: IdempotencyKey,
     pub summary_message_interval: u32,
     pub window_selection: CompanionMemoryWindowSelection,
@@ -167,7 +169,8 @@ impl<
             .effects
             .list_processing(limit)
             .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?;
-        let mut by_conversation = BTreeMap::<ConversationId, Vec<CompanionTurnEffect>>::new();
+        let mut by_conversation =
+            BTreeMap::<(ConversationId, ConversationBranchId), Vec<CompanionTurnEffect>>::new();
         for effect in effects {
             if effect.status != CompanionTurnEffectStatus::Processing
                 || effect.source_window.is_some()
@@ -175,14 +178,18 @@ impl<
             {
                 return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
             }
+            let branch_id = self
+                .effects
+                .branch_for_effect(effect.id)
+                .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?;
             by_conversation
-                .entry(effect.conversation_id)
+                .entry((effect.conversation_id, branch_id))
                 .or_default()
                 .push(effect);
         }
 
         let mut admissions = Vec::with_capacity(by_conversation.len());
-        for (conversation_id, effects) in by_conversation {
+        for ((conversation_id, _branch_id), effects) in by_conversation {
             if let Some(admission) = self.admit_processing_effects(
                 conversation_id,
                 effects,
@@ -225,9 +232,24 @@ impl<
         }) {
             return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
         }
+        let branch_id = self
+            .effects
+            .branch_for_effect(effects[0].id)
+            .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?;
+        let mut selected = Vec::new();
+        for effect in effects {
+            if self
+                .effects
+                .branch_for_effect(effect.id)
+                .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?
+                == branch_id
+            {
+                selected.push(effect);
+            }
+        }
         self.admit_processing_effects(
             conversation_id,
-            effects,
+            selected,
             summary_message_interval,
             run_mode,
             now,
@@ -265,8 +287,23 @@ impl<
         let Some(effects) = ready_effect_prefix(effects, summary_message_interval) else {
             return Ok(None);
         };
+        let branch_id = self
+            .effects
+            .branch_for_effect(effects[0].id)
+            .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?;
+        for effect in &effects {
+            if self
+                .effects
+                .branch_for_effect(effect.id)
+                .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?
+                != branch_id
+            {
+                return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
+            }
+        }
         let admission = self.admit_selected(
             conversation_id,
+            branch_id,
             summary_message_interval,
             CompanionMemoryWindowSelection::Automatic,
             unsummarized_message_count,
@@ -380,6 +417,22 @@ impl<
         }) {
             return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
         }
+        let active_branch = self
+            .effects
+            .active_branch_for_conversation(conversation_id)
+            .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?;
+        let mut selected = Vec::new();
+        for effect in effects {
+            if self
+                .effects
+                .branch_for_effect(effect.id)
+                .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?
+                == active_branch
+            {
+                selected.push(effect);
+            }
+        }
+        effects = selected;
         effects.sort_by_key(|effect| (effect.created_at, effect.id));
         if effects.is_empty() {
             self.effects
@@ -400,8 +453,23 @@ impl<
                 (effects, source_effect_offset)
             }
         };
+        let branch_id = self
+            .effects
+            .branch_for_effect(effects[0].id)
+            .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?;
+        for effect in &effects {
+            if self
+                .effects
+                .branch_for_effect(effect.id)
+                .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?
+                != branch_id
+            {
+                return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
+            }
+        }
         let admitted = self.admit_selected(
             conversation_id,
+            branch_id,
             summary_message_interval,
             window_selection,
             unsummarized_message_count,
@@ -521,7 +589,11 @@ impl<
             .ok()
             .filter(|interval| *interval >= 1)
             .ok_or(CompanionPostTurnMemoryAdmissionError::InvalidBatch)?;
-        let messages = visible_dialogue(self.effects, conversation_id)?;
+        let branch_id = ConversationReader::get(self.effects, conversation_id)
+            .map_err(CompanionPostTurnMemoryAdmissionError::Conversation)?
+            .conversation
+            .active_branch_id;
+        let messages = visible_dialogue(self.effects, conversation_id, branch_id)?;
         if let Some(&(last_assistant, _)) = messages
             .iter()
             .rev()
@@ -537,10 +609,13 @@ impl<
                 return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
             }
         }
-        let space =
-            lettuce_memory::MemoryRepository::get_for_conversation(self.effects, conversation_id)
-                .map_err(CompanionPostTurnMemoryAdmissionError::Memory)?
-                .ok_or(CompanionPostTurnMemoryAdmissionError::InvalidBatch)?;
+        let space = lettuce_memory::MemoryRepository::get_for_branch(
+            self.effects,
+            conversation_id,
+            branch_id,
+        )
+        .map_err(CompanionPostTurnMemoryAdmissionError::Memory)?
+        .ok_or(CompanionPostTurnMemoryAdmissionError::InvalidBatch)?;
         let cursor = lettuce_memory::MemorySummaryRepository::summary_cursor(
             self.effects,
             space.id,
@@ -561,6 +636,7 @@ impl<
         let source_count = interval.min(messages.len());
         let admitted = self.admit_selected(
             conversation_id,
+            branch_id,
             summary_message_interval,
             CompanionMemoryWindowSelection::Recent,
             unsummarized_message_count,
@@ -596,7 +672,11 @@ impl<
         if run_mode == DynamicMemoryRunMode::Manual {
             return Ok(None);
         }
-        let messages = visible_dialogue(self.effects, conversation_id)?;
+        let branch_id = ConversationReader::get(self.effects, conversation_id)
+            .map_err(CompanionPostTurnMemoryAdmissionError::Conversation)?
+            .conversation
+            .active_branch_id;
+        let messages = visible_dialogue(self.effects, conversation_id, branch_id)?;
         let Some(&(last_assistant, _)) = messages
             .iter()
             .rev()
@@ -612,10 +692,13 @@ impl<
         {
             return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
         }
-        let space =
-            lettuce_memory::MemoryRepository::get_for_conversation(self.effects, conversation_id)
-                .map_err(CompanionPostTurnMemoryAdmissionError::Memory)?
-                .ok_or(CompanionPostTurnMemoryAdmissionError::InvalidBatch)?;
+        let space = lettuce_memory::MemoryRepository::get_for_branch(
+            self.effects,
+            conversation_id,
+            branch_id,
+        )
+        .map_err(CompanionPostTurnMemoryAdmissionError::Memory)?
+        .ok_or(CompanionPostTurnMemoryAdmissionError::InvalidBatch)?;
         let cursor = lettuce_memory::MemorySummaryRepository::summary_cursor(
             self.effects,
             space.id,
@@ -643,6 +726,7 @@ impl<
         }
         let admitted = self.admit_selected(
             conversation_id,
+            branch_id,
             summary_message_interval,
             CompanionMemoryWindowSelection::Automatic,
             unsummarized_message_count,
@@ -679,8 +763,23 @@ impl<
         }
         effects.sort_by_key(|effect| (effect.created_at, effect.id));
         let unsummarized_message_count = effect_message_count(&effects);
+        let branch_id = self
+            .effects
+            .branch_for_effect(effects[0].id)
+            .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?;
+        for effect in &effects {
+            if self
+                .effects
+                .branch_for_effect(effect.id)
+                .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?
+                != branch_id
+            {
+                return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
+            }
+        }
         self.admit_selected(
             conversation_id,
+            branch_id,
             summary_message_interval,
             CompanionMemoryWindowSelection::Automatic,
             unsummarized_message_count,
@@ -699,6 +798,7 @@ impl<
     fn admit_selected(
         &self,
         conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
         summary_message_interval: u32,
         window_selection: CompanionMemoryWindowSelection,
         unsummarized_message_count: u64,
@@ -724,6 +824,7 @@ impl<
         }
         let idempotency_key = batch_idempotency_key(
             conversation_id,
+            branch_id,
             summary_message_interval,
             window_selection,
             rewind_operation_id,
@@ -783,6 +884,7 @@ impl<
         Ok(Some(CompanionPostTurnMemoryAdmission {
             batch: CompanionPostTurnMemoryBatch {
                 conversation_id,
+                branch_id,
                 idempotency_key,
                 summary_message_interval,
                 window_selection,
@@ -800,17 +902,15 @@ impl<
 fn visible_dialogue<R: ConversationReader + ?Sized>(
     conversations: &R,
     conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
 ) -> Result<Vec<(MessageId, MessageRole)>, CompanionPostTurnMemoryAdmissionError> {
-    let aggregate = conversations
-        .get(conversation_id)
-        .map_err(CompanionPostTurnMemoryAdmissionError::Conversation)?;
     let mut messages = Vec::new();
     let mut cursor = None;
     loop {
         let page = conversations
             .timeline_page(
                 conversation_id,
-                aggregate.conversation.active_branch_id,
+                branch_id,
                 &PageRequest {
                     cursor,
                     limit: PageLimit::new(200),
@@ -851,8 +951,10 @@ fn effect_message_count(effects: &[CompanionTurnEffect]) -> u64 {
 }
 
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 fn batch_idempotency_key(
     conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
     summary_message_interval: u32,
     window_selection: CompanionMemoryWindowSelection,
     rewind_operation_id: Option<OperationId>,
@@ -874,6 +976,7 @@ fn batch_idempotency_key(
     }
     let mut digest = blake3::Hasher::new();
     digest.update(conversation_id.to_string().as_bytes());
+    digest.update(branch_id.to_string().as_bytes());
     digest.update(&summary_message_interval.to_le_bytes());
     digest.update(match window_selection {
         CompanionMemoryWindowSelection::Automatic => b"automatic",
@@ -1051,6 +1154,31 @@ mod tests {
     }
 
     impl CompanionTurnEffectRepository for Effects {
+        fn active_branch_for_conversation(
+            &self,
+            conversation_id: ConversationId,
+        ) -> Result<ConversationBranchId, CompanionTurnEffectRepositoryError> {
+            Ok(ConversationBranchId::from_uuid(uuid::Uuid::new_v5(
+                &conversation_id.as_uuid(),
+                b"branch",
+            )))
+        }
+
+        fn branch_for_effect(
+            &self,
+            effect_id: lettuce_types::CompanionEffectId,
+        ) -> Result<ConversationBranchId, CompanionTurnEffectRepositoryError> {
+            let effects = self.0.lock().expect("effects");
+            let effect = effects
+                .iter()
+                .find(|effect| effect.id == effect_id)
+                .ok_or(CompanionTurnEffectRepositoryError::NotFound)?;
+            Ok(ConversationBranchId::from_uuid(uuid::Uuid::new_v5(
+                &effect.conversation_id.as_uuid(),
+                b"branch",
+            )))
+        }
+
         fn get_for_message(
             &self,
             conversation_id: ConversationId,
@@ -1246,6 +1374,7 @@ mod tests {
         let recent = effect(conversation_id, 20);
         let batch = CompanionPostTurnMemoryBatch {
             conversation_id,
+            branch_id: ConversationBranchId::new(),
             idempotency_key: IdempotencyKey::new("recent-window").expect("key"),
             summary_message_interval: 2,
             window_selection: CompanionMemoryWindowSelection::Recent,
@@ -1678,6 +1807,7 @@ mod tests {
         let conversation_id = ConversationId::new();
         let mut retained = effect(conversation_id, 10);
         retained.status = CompanionTurnEffectStatus::Ready;
+        effects.replace(vec![retained.clone()]);
         let first_jobs = InMemoryJobStore::new();
         let rewind_operation_id = OperationId::new();
         let first = CompanionPostTurnMemoryAdmissionCoordinator::new(&effects, &first_jobs)

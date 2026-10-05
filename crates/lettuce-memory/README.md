@@ -11,7 +11,7 @@ The crate is pure. It validates state and computes change sets; it never touches
 
 ## Memory spaces
 
-A `MemorySpaceSnapshot` is the authoritative state: a space id, a revision and the ordered `MemoryItem`s. Every direct or group conversation launched with manual or dynamic memory gets one space in the same transaction that creates the conversation, and repositories resolve it by `ConversationId`. A companion character's memory pool is one space shared by several conversations.
+A `MemorySpaceSnapshot` is the authoritative state: a space id, a revision and the ordered `MemoryItem`s. Every direct or group conversation launched with manual or dynamic memory gets a root-branch space in the same transaction that creates the conversation. Each fork gets its own seeded space, and `MemoryRepository::get_for_branch` resolves a specific conversation and branch. A companion character's memory pool is one space shared by several conversations.
 
 Each revision has a stable identity, `memory_revision_id(space_id, revision)`, a UUIDv5 of the two. Conversation preparation records which revision a prompt was built from without a separate revision table.
 

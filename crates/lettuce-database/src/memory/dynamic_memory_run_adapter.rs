@@ -2005,6 +2005,53 @@ mod tests {
     }
 
     #[test]
+    fn explicit_branch_memory_reads_do_not_follow_the_active_selection() {
+        let database = Database::open_in_memory().expect("database");
+        let (conversation_id, parent_space, messages) = conversation_fixture(&database);
+        let parent_branch = fixture_branch(&database, conversation_id);
+        let child_branch = ConversationBranchId::new();
+        let mut connection = database.connection().expect("connection");
+        let transaction = connection.transaction().expect("transaction");
+        transaction.execute("INSERT INTO conversation_branches (conversation_id,id,parent_branch_id,fork_message_id,status,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,'active',1,2,2)", params![conversation_id.to_string(),child_branch.to_string(),parent_branch.to_string(),messages[0].message_id.to_string()]).expect("branch");
+        let child_space = super::memory_adapter::create_conversation_space_in(
+            &transaction,
+            conversation_id,
+            child_branch,
+        )
+        .expect("child space");
+        transaction
+            .execute(
+                "UPDATE conversations SET active_branch_id = ?2 WHERE id = ?1",
+                params![conversation_id.to_string(), child_branch.to_string()],
+            )
+            .expect("select child");
+        transaction.commit().expect("commit");
+        drop(connection);
+        assert_eq!(
+            database
+                .get_for_branch(conversation_id, parent_branch)
+                .expect("parent")
+                .expect("space")
+                .id,
+            parent_space
+        );
+        assert_eq!(
+            database
+                .get_for_branch(conversation_id, child_branch)
+                .expect("child")
+                .expect("space")
+                .id,
+            child_space
+        );
+        assert!(
+            database
+                .get_for_branch(conversation_id, ConversationBranchId::new())
+                .expect("missing branch")
+                .is_none()
+        );
+    }
+
+    #[test]
     fn branch_memory_binding_rejects_a_branch_from_another_conversation() {
         let database = Database::open_in_memory().expect("database");
         let (conversation_id, _, _) = conversation_fixture(&database);
@@ -2064,11 +2111,24 @@ mod tests {
         MemorySpaceId,
         Vec<DynamicMemorySourceMessage>,
     ) {
+        conversation_fixture_with_message_count(database, 2)
+    }
+
+    fn conversation_fixture_with_message_count(
+        database: &Database,
+        count: usize,
+    ) -> (
+        ConversationId,
+        MemorySpaceId,
+        Vec<DynamicMemorySourceMessage>,
+    ) {
         let conversation_id = ConversationId::new();
         let branch_id = ConversationBranchId::new();
         let space_id = MemorySpaceId::new();
-        let messages = vec![MessageId::new(), MessageId::new()];
-        let revisions = vec![MessageRevisionId::new(), MessageRevisionId::new()];
+        let messages = (0..count).map(|_| MessageId::new()).collect::<Vec<_>>();
+        let revisions = (0..count)
+            .map(|_| MessageRevisionId::new())
+            .collect::<Vec<_>>();
         let mut connection = database.connection().expect("connection");
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -2137,8 +2197,8 @@ mod tests {
                         offset
                             .checked_sub(1)
                             .map(|index| messages[index].to_string()),
-                        participants[offset].to_string(),
-                        if offset == 0 { "user" } else { "assistant" },
+                        participants[offset % 2].to_string(),
+                        if offset % 2 == 0 { "user" } else { "assistant" },
                         i64::try_from(offset + 1).expect("ordinal"),
                         revision_id.to_string(),
                     ],
@@ -2160,6 +2220,26 @@ mod tests {
                     ],
                 )
                 .expect("revision");
+        }
+        if count > 2 {
+            transaction
+                .execute(
+                    "UPDATE conversation_branches SET head_message_id = ?2 WHERE id = ?1",
+                    params![
+                        branch_id.to_string(),
+                        messages.last().expect("head").to_string()
+                    ],
+                )
+                .expect("head");
+            transaction
+                .execute(
+                    "UPDATE conversations SET next_timeline_ordinal = ?2 WHERE id = ?1",
+                    params![
+                        conversation_id.to_string(),
+                        i64::try_from(count + 1).expect("next ordinal")
+                    ],
+                )
+                .expect("next ordinal");
         }
         transaction
             .execute(
@@ -2184,7 +2264,7 @@ mod tests {
                 .map(
                     |(ordinal, (message_id, revision_id))| DynamicMemorySourceMessage {
                         message_id,
-                        role: if ordinal == 0 {
+                        role: if ordinal % 2 == 0 {
                             lettuce_conversations::MessageRole::User
                         } else {
                             lettuce_conversations::MessageRole::Assistant
@@ -2322,6 +2402,102 @@ mod tests {
                         .collect::<Vec<_>>()
                 );
             }
+        }
+    }
+
+    #[test]
+    fn fork_inside_second_of_three_cycles_uses_its_start_and_prior_checkpoint() {
+        let database = Database::open_in_memory().expect("database");
+        let (conversation_id, parent_space, messages) =
+            conversation_fixture_with_message_count(&database, 6);
+        let parent_branch = fixture_branch(&database, conversation_id);
+        for cycle in 0..3 {
+            let attempt = checkpointed_window(
+                &database,
+                conversation_id,
+                parent_space,
+                &messages[cycle * 2..cycle * 2 + 2],
+                &format!("Summary {}", cycle + 1),
+                10 + i64::try_from(cycle).expect("cycle") * 10,
+                u64::try_from(cycle * 2).expect("start"),
+            );
+            let current = database.get(parent_space).expect("memory").expect("space");
+            database
+                .compare_and_apply(lettuce_memory::MemoryChangeSet {
+                    space_id: parent_space,
+                    expected_revision: current.revision,
+                    items: vec![memory_item(
+                        MemoryId::new(),
+                        &format!("After cycle {}", cycle + 1),
+                        1,
+                    )],
+                })
+                .expect("cycle state");
+            finish(
+                &database,
+                &attempt,
+                true,
+                12 + i64::try_from(cycle).expect("cycle") * 10,
+            );
+        }
+        for (point, expected_text, expected_cursor) in
+            [(2, "After cycle 1", 2), (5, "After cycle 3", 6)]
+        {
+            let child_branch = ConversationBranchId::new();
+            let mut connection = database.connection().expect("connection");
+            let transaction = connection.transaction().expect("transaction");
+            transaction.execute("INSERT INTO conversation_branches (conversation_id,id,parent_branch_id,fork_message_id,status,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,'active',1,50,50)", params![conversation_id.to_string(),child_branch.to_string(),parent_branch.to_string(),messages[point].message_id.to_string()]).expect("child branch");
+            super::super::memory_branch_adapter::seed_branch_space_in(
+                &transaction,
+                conversation_id,
+                parent_branch,
+                child_branch,
+                messages[point].message_id,
+                false,
+            )
+            .expect("seed");
+            let space: String = transaction.query_row("SELECT space_id FROM conversation_memory_spaces WHERE conversation_id = ?1 AND branch_id = ?2 AND pooled = 0",params![conversation_id.to_string(),child_branch.to_string()], |row| row.get(0)).expect("space");
+            let child_space = space.parse().expect("space id");
+            transaction.commit().expect("commit");
+            drop(connection);
+            let child = database
+                .get(child_space)
+                .expect("child memory")
+                .expect("space");
+            assert_eq!(child.items[0].text, expected_text);
+            let summary = database
+                .get_summary(child_space)
+                .expect("summary")
+                .expect("checkpoint summary");
+            assert_eq!(summary.window_end, expected_cursor);
+            assert_eq!(
+                summary.source_message_ids,
+                messages[usize::try_from(expected_cursor - 2).expect("start")
+                    ..usize::try_from(expected_cursor).expect("end")]
+                    .iter()
+                    .map(|source| source.message_id)
+                    .collect::<Vec<_>>()
+            );
+            database
+                .compare_and_apply(lettuce_memory::MemoryChangeSet {
+                    space_id: child_space,
+                    expected_revision: child.revision,
+                    items: vec![memory_item(
+                        MemoryId::new(),
+                        "Child changed independently",
+                        60,
+                    )],
+                })
+                .expect("child change");
+            assert_eq!(
+                database
+                    .get(parent_space)
+                    .expect("parent")
+                    .expect("space")
+                    .items[0]
+                    .text,
+                "After cycle 3"
+            );
         }
     }
 
@@ -2586,6 +2762,19 @@ mod tests {
         text: &str,
         at: i64,
     ) -> lettuce_memory::DynamicMemoryAttempt {
+        checkpointed_window(database, conversation_id, space_id, messages, text, at, 0)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn checkpointed_window(
+        database: &Database,
+        conversation_id: ConversationId,
+        space_id: MemorySpaceId,
+        messages: &[DynamicMemorySourceMessage],
+        text: &str,
+        at: i64,
+        start: u64,
+    ) -> lettuce_memory::DynamicMemoryAttempt {
         let run_id = DynamicMemoryRunId::new();
         let attempt_id = DynamicMemoryAttemptId::new();
         let admitted = database
@@ -2604,8 +2793,8 @@ mod tests {
                 structured_fallback_format: DynamicMemoryStructuredFallbackFormat::Xml,
                 summary_window: lettuce_memory::DynamicMemorySummaryWindow {
                     message_interval: 2,
-                    start: 0,
-                    end: 2,
+                    start,
+                    end: start + u64::try_from(messages.len()).expect("source count"),
                 },
                 tool_request: lettuce_memory::dynamic_memory_tool_request_for_run(
                     lettuce_memory::DynamicMemoryToolOptions {

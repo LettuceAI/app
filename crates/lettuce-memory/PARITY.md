@@ -27,6 +27,8 @@ Facts about how `lettuce-memory` relates to the legacy app (2.2.x). The crate RE
 
 ## Deliberate differences from legacy
 
+- Memory reads identify the conversation branch. Legacy branches were separate sessions with copied memory (`old-code/src/core/storage/repo.ts:1655-1709`); in-conversation branches keep separate own spaces while companion pools remain shared.
+
 - Legacy's cycle-start pass also restored pinned-but-cold items to hot. The snapshot invariant already rejects that state, so `restored_pinned` stays zero for stored spaces.
 - Interleaved thinking tags of different kinds are stripped pair by pair instead of by earliest opening tag. This differs from legacy only for malformed output.
 - Legacy used the raw argument string as the memory text when `text` was missing. That is not reproduced: the raw arguments of such a create are the JSON of the other fields, not a memory, so the call is skipped for missing text.

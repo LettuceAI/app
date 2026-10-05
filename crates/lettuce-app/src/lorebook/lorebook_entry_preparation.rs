@@ -167,8 +167,11 @@ where
         };
 
         let (selected_memories, memory_summary) = if memory_enabled {
-            let memory =
-                MemoryRepository::get_for_conversation(self.sources, request.conversation_id)?;
+            let memory = MemoryRepository::get_for_branch(
+                self.sources,
+                request.conversation_id,
+                conversation.active_branch_id,
+            )?;
             match memory {
                 Some(memory) => {
                     let selected = format_selected_memories(

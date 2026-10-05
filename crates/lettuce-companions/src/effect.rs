@@ -1,5 +1,6 @@
 use lettuce_types::{
-    CompanionEffectId, ConversationId, GenerationTurnId, MemoryId, MessageId, TimestampMillis,
+    CompanionEffectId, ConversationBranchId, ConversationId, GenerationTurnId, MemoryId, MessageId,
+    TimestampMillis,
 };
 
 use crate::{CompanionTurnTransition, EmotionVector, RelationshipDelta};
@@ -226,6 +227,20 @@ pub enum CompanionTurnEffectRepositoryError {
 }
 
 pub trait CompanionTurnEffectRepository: Send + Sync {
+    fn active_branch_for_conversation(
+        &self,
+        _conversation_id: ConversationId,
+    ) -> Result<ConversationBranchId, CompanionTurnEffectRepositoryError> {
+        Err(CompanionTurnEffectRepositoryError::Invalid)
+    }
+
+    fn branch_for_effect(
+        &self,
+        _effect_id: CompanionEffectId,
+    ) -> Result<ConversationBranchId, CompanionTurnEffectRepositoryError> {
+        Err(CompanionTurnEffectRepositoryError::Invalid)
+    }
+
     fn get_for_message(
         &self,
         conversation_id: ConversationId,

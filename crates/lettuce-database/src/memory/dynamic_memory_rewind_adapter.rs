@@ -460,9 +460,18 @@ impl DynamicMemorySuffixRewindRepository for Database {
             transaction.commit().map_err(storage)?;
             return Ok(receipt);
         }
-        let space_id = memory_adapter::active_space_id_in(&transaction, rewind.conversation_id)
-            .map_err(storage)?
-            .ok_or(DynamicMemorySuffixRewindError::NotFound)?;
+        let branch: String = transaction
+            .query_row(
+                "SELECT active_branch_id FROM conversations WHERE id = ?1",
+                [rewind.conversation_id.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(storage)?;
+        let branch_id = branch.parse().map_err(storage)?;
+        let space_id =
+            memory_adapter::branch_space_id_in(&transaction, rewind.conversation_id, branch_id)
+                .map_err(storage)?
+                .ok_or(DynamicMemorySuffixRewindError::NotFound)?;
         let current = memory_adapter::get_in(&transaction, space_id)
             .map_err(memory_error)?
             .ok_or(DynamicMemorySuffixRewindError::NotFound)?;

@@ -896,7 +896,13 @@ fn the_share_memory_toggle_picks_the_pool_or_each_conversations_own_memory() {
     let (first, second) = (launch("shared-first"), launch("shared-second"));
     let space = |conversation| {
         database
-            .get_for_conversation(conversation)
+            .get_for_branch(
+                conversation,
+                lettuce_conversations::ConversationReader::get(&database, conversation)
+                    .expect("conversation branch")
+                    .conversation
+                    .active_branch_id,
+            )
             .expect("memory space")
             .expect("bound space")
             .id
@@ -1379,10 +1385,16 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     let launched = ConversationLaunchPlanner::new(&database)
         .launch_direct(&request(character_id, "companion-effect-launch"), NOW)
         .expect("launch companion");
-    let memory_space =
-        MemoryRepository::get_for_conversation(&database, launched.value.conversation.id)
-            .expect("conversation memory space")
-            .expect("dynamic memory space");
+    let memory_space = MemoryRepository::get_for_branch(
+        &database,
+        launched.value.conversation.id,
+        lettuce_conversations::ConversationReader::get(&database, launched.value.conversation.id)
+            .expect("conversation branch")
+            .conversation
+            .active_branch_id,
+    )
+    .expect("conversation memory space")
+    .expect("dynamic memory space");
     assert_eq!(memory_space.revision, Revision::INITIAL);
     assert!(memory_space.items.is_empty());
     let emotion = ScenarioEmotionEngine::new(Ok(None));
@@ -3369,7 +3381,14 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     let failure_run_id = DynamicMemoryRunId::new();
     let failure_attempt_id = DynamicMemoryAttemptId::new();
     let failure_job_id = JobId::new();
-    let failure_memory = MemoryRepository::get_for_conversation(&database, current.id)
+    let failure_memory = MemoryRepository::get_for_branch(
+        &database,
+        current.id,
+        lettuce_conversations::ConversationReader::get(&database, current.id)
+            .expect("conversation branch")
+            .conversation
+            .active_branch_id,
+    )
         .expect("memory")
         .expect("memory space");
     let admitted_failure = database
@@ -3420,6 +3439,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
     let failed_model_id = ModelProfileId::new();
     let failure_batch = crate::CompanionPostTurnMemoryBatch {
         conversation_id: current.id,
+        branch_id: current.active_branch_id,
         idempotency_key: lettuce_jobs::IdempotencyKey::new("terminal-failure-batch")
             .expect("batch key"),
         summary_message_interval: 1,
@@ -3483,7 +3503,14 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         let run_id = DynamicMemoryRunId::new();
         let attempt_id = DynamicMemoryAttemptId::new();
         let job_id = JobId::new();
-        let memory = MemoryRepository::get_for_conversation(&database, current.id)
+        let memory = MemoryRepository::get_for_branch(
+            &database,
+            current.id,
+            lettuce_conversations::ConversationReader::get(&database, current.id)
+                .expect("conversation branch")
+                .conversation
+                .active_branch_id,
+        )
             .expect("memory")
             .expect("memory space");
         let admitted = database
@@ -10510,7 +10537,14 @@ async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_promp
         GenerationInput::UserMessage { message_id } => message_id,
         ref other => panic!("expected user-message input, got {other:?}"),
     };
-    let first_space = MemoryRepository::get_for_conversation(&database, first.id)
+    let first_space = MemoryRepository::get_for_branch(
+        &database,
+        first.id,
+        lettuce_conversations::ConversationReader::get(&database, first.id)
+            .expect("conversation branch")
+            .conversation
+            .active_branch_id,
+    )
         .expect("first memory space")
         .expect("first memory space exists");
     let selected_memory_id = MemoryId::new();
@@ -10562,7 +10596,14 @@ async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_promp
         },
     )
     .expect("store memory summary");
-    let second_space = MemoryRepository::get_for_conversation(&database, second.id)
+    let second_space = MemoryRepository::get_for_branch(
+        &database,
+        second.id,
+        lettuce_conversations::ConversationReader::get(&database, second.id)
+            .expect("conversation branch")
+            .conversation
+            .active_branch_id,
+    )
         .expect("second memory space")
         .expect("second memory space exists");
     let foreign_memory_id = MemoryId::new();
@@ -11520,7 +11561,14 @@ async fn companion_memory_loop_replays_two_round_checkpoint_without_duplicate_wo
         safety_policy: SafetyContext::Standard,
         correlation_id: None,
     };
-    let space_id = MemoryRepository::get_for_conversation(&database, conversation_id)
+    let space_id = MemoryRepository::get_for_branch(
+        &database,
+        conversation_id,
+        lettuce_conversations::ConversationReader::get(&database, conversation_id)
+            .expect("conversation branch")
+            .conversation
+            .active_branch_id,
+    )
         .expect("memory space")
         .expect("conversation memory")
         .id;
