@@ -22,6 +22,17 @@ pub struct DeviceSettings {
     /// means the app's own models folder.
     pub llm_models_dir: Option<String>,
     pub speech: DeviceSpeechSettings,
+    pub retained_model_roots: RetainedModelRoots,
+}
+
+/// Device-local roots for retained speech and optional memory models.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct RetainedModelRoots {
+    pub whisper: Option<String>,
+    pub kokoro: Option<String>,
+    pub embedding: Option<String>,
+    pub thymos: Option<String>,
 }
 
 /// The Whisper model dictation uses (unset means the first installed one).
@@ -95,7 +106,10 @@ impl DeviceSettings {
             .dictation_model_id
             .as_deref()
             .is_none_or(|model| text(model, 128));
-        if certificates && folder && dictation && self.embedding.max_tokens != Some(0) {
+        let retained = [&self.retained_model_roots.whisper, &self.retained_model_roots.kokoro,
+            &self.retained_model_roots.embedding, &self.retained_model_roots.thymos]
+            .into_iter().all(|path| path.as_deref().is_none_or(|path| text(path, MAX_PATH_BYTES)));
+        if certificates && folder && dictation && retained && self.embedding.max_tokens != Some(0) {
             Ok(())
         } else {
             Err(GlobalSettingsStoreError::InvalidData)

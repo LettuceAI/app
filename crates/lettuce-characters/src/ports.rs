@@ -376,6 +376,8 @@ pub struct RetainedExternalReferences {
     pub lorebook_ids: Vec<LorebookId>,
     pub model_profile_ids: Vec<ModelProfileId>,
     pub voice_profile_ids: Vec<VoiceProfileId>,
+    #[serde(default)]
+    pub audio_provider_ids: Vec<lettuce_types::AudioProviderId>,
     pub model_artifact_ids: Vec<ModelArtifactId>,
     pub unresolved_legacy_references: Vec<UnresolvedLegacyReference>,
 }
@@ -390,6 +392,7 @@ impl RetainedExternalReferences {
             || !sorted_unique(&self.lorebook_ids)
             || !sorted_unique(&self.model_profile_ids)
             || !sorted_unique(&self.voice_profile_ids)
+            || !sorted_unique(&self.audio_provider_ids)
             || !sorted_unique(&self.model_artifact_ids)
         {
             return Err(ValidationError::Invariant {

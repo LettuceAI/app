@@ -108,3 +108,5 @@ The Hugging Face and CivitAI tokens are one per install and have no owner. `Secr
 
 `InMemorySecretStore` is a deterministic test adapter with no encryption, persistence or platform protection.
 
+
+Whisper, Kokoro, embedding and Thymos locations are device-local roots. A custom models folder move can relocate roots contained in that folder; backup restore preserves the receiving device's roots.

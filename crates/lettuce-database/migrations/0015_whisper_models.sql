@@ -24,6 +24,16 @@ CREATE TABLE installed_whisper_models (
 
 CREATE TRIGGER installed_whisper_models_immutable
 BEFORE UPDATE ON installed_whisper_models
+WHEN NEW.model_id IS NOT OLD.model_id
+    OR NEW.source_revision IS NOT OLD.source_revision
+    OR NEW.byte_size IS NOT OLD.byte_size
+    OR NEW.blake3 IS NOT OLD.blake3
+    OR NEW.english_only IS NOT OLD.english_only
+    OR NEW.quantized IS NOT OLD.quantized
+    OR NEW.admitted_at IS NOT OLD.admitted_at
+    OR json_remove(NEW.manifest_json, '$.value.model.path') IS NOT
+       json_remove(OLD.manifest_json, '$.value.model.path')
+    OR json_extract(NEW.manifest_json, '$.value.model.path') IS NOT NEW.model_path
 BEGIN
     SELECT RAISE(ABORT, 'installed Whisper manifest is immutable');
 END;

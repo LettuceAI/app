@@ -217,13 +217,19 @@ impl TtsConfigurationRepository for Database {
         provider.validate().map_err(corrupt)?;
         let config_json = encode_versioned(&provider.config, AUDIO_PROVIDER_CONFIG_FORMAT_VERSION)
             .map_err(corrupt)?;
-        let connection = self.connection().map_err(storage)?;
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(storage)?;
+        let previous_kind = transaction.query_row(
+            "SELECT provider_kind FROM audio_providers WHERE id=?1",
+            [provider.id.to_string()], |row| row.get::<_, String>(0),
+        ).optional().map_err(storage)?;
         let changed = if let Some(expected) = expected_revision {
             if provider.revision != expected {
                 return Err(TtsConfigurationRepositoryError::InvalidData);
             }
             let next = expected.next().map_err(storage)?;
-            connection
+            transaction
                 .execute(
                     "UPDATE audio_providers SET provider_kind=?2, label=?3,
                         api_key_secret_ref=?4, config_json=?5, revision=?6, updated_at=?7
@@ -243,12 +249,17 @@ impl TtsConfigurationRepository for Database {
                 )
                 .map_err(storage)?
         } else {
-            insert_audio_provider(&connection, &provider)?;
+            insert_audio_provider(&transaction, &provider)?;
             1
         };
         if changed == 0 {
             return Err(TtsConfigurationRepositoryError::StaleRevision);
         }
+        if previous_kind.as_deref().is_some_and(|kind| kind != kind_name(provider.config.provider_kind())) {
+            transaction.execute("DELETE FROM discovered_tts_voices WHERE provider_id=?1", [provider.id.to_string()])
+                .map_err(storage)?;
+        }
+        transaction.commit().map_err(storage)?;
         drop(connection);
         self.get_audio_provider(provider.id)?
             .ok_or(TtsConfigurationRepositoryError::NotFound)
@@ -304,6 +315,11 @@ impl TtsConfigurationRepository for Database {
         if provider.revision != expected_revision {
             return Err(TtsConfigurationRepositoryError::StaleRevision);
         }
+        let referenced: bool = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM characters WHERE voice_audio_provider_id=?1)",
+            [id.to_string()], |row| row.get(0),
+        ).map_err(storage)?;
+        if referenced { return Err(TtsConfigurationRepositoryError::InUse); }
         transaction
             .execute(
                 "DELETE FROM audio_providers WHERE id=?1 AND revision=?2",

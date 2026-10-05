@@ -180,6 +180,7 @@ pub fn character_package(source: &CharacterExportSource, exported_at: i64) -> Ch
                 VoicePreference::VoiceProfile(id) => {
                     json!({"source": "user", "userVoiceId": id.to_string()})
                 }
+                VoicePreference::Provider { provider_id, voice_id, model_id, voice_name } => json!({"source": "provider", "providerId": provider_id.to_string(), "voiceId": voice_id, "modelId": model_id, "voiceName": voice_name}),
                 VoicePreference::UnresolvedLegacy(locator) => {
                     serde_json::from_str(&locator.locator)
                         .unwrap_or_else(|_| Value::String(locator.locator.clone()))

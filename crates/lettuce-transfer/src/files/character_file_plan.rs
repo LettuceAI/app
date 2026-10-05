@@ -43,6 +43,7 @@ pub struct CharacterFileReferences {
     pub prompt_purposes: BTreeMap<String, PromptPurpose>,
     pub lorebook_ids: BTreeSet<LorebookId>,
     pub voice_ids: BTreeSet<VoiceProfileId>,
+    pub audio_provider_ids: BTreeSet<lettuce_types::AudioProviderId>,
     pub persona_ids: BTreeSet<PersonaId>,
 }
 
@@ -348,7 +349,7 @@ pub fn plan_character_file(
         .copied()
         .chain(lorebooks.iter().map(|lorebook| lorebook.id))
         .collect::<BTreeSet<_>>();
-    let json_context = LegacyJsonContext::for_file(references.voice_ids.clone());
+    let json_context = LegacyJsonContext::for_file(references.voice_ids.clone(), references.audio_provider_ids.clone());
     let row_references = CharacterRowReferences {
         model_ids: references.model_ids.clone(),
         chat_model_ids: references.chat_model_ids.clone(),

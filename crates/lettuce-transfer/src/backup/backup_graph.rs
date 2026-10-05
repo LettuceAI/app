@@ -1212,6 +1212,7 @@ fn validate_authored(
                 character.defaults.voice,
                 Some(VoicePreference::VoiceProfile(id)) if !voice_ids.contains_key(&id)
             )
+            || matches!(character.defaults.voice, Some(VoicePreference::Provider { provider_id, .. }) if !graph.audio_providers.iter().any(|provider| provider.id == provider_id))
         {
             return Err(ProviderBackupGraphError::InvalidGraph);
         }
@@ -1619,6 +1620,7 @@ fn validate_device_state(device: &mut BackupDeviceState) -> Result<(), ProviderB
         embedding: device.embedding,
         llm_models_dir: None,
         speech: device.speech.clone(),
+        retained_model_roots: Default::default(),
     }
     .validate()
     .map_err(|_| ProviderBackupGraphError::InvalidGraph)?;

@@ -415,7 +415,7 @@ fn character_row(
 ) -> Result<Option<Character>, rusqlite::Error> {
     connection
         .query_row(
-            "SELECT status,name,nickname,normalized_name,normalized_nickname,profile_json,provenance_json,defaults_json,interaction_mode,memory_policy,model_profile_id,default_scene_id,default_starter_id,direct_prompt_id,group_conversation_prompt_id,group_roleplay_prompt_id,voice_profile_id,voice_legacy_locator,voice_autoplay,presentation_json,image_recommendation_json,revision,created_at,updated_at FROM characters WHERE id=?1",
+            "SELECT status,name,nickname,normalized_name,normalized_nickname,profile_json,provenance_json,defaults_json,interaction_mode,memory_policy,model_profile_id,default_scene_id,default_starter_id,direct_prompt_id,group_conversation_prompt_id,group_roleplay_prompt_id,voice_profile_id,voice_legacy_locator,voice_autoplay,presentation_json,image_recommendation_json,revision,created_at,updated_at,voice_audio_provider_id,voice_provider_voice_id FROM characters WHERE id=?1",
             [id.to_string()],
             |row| parse_character_row(row, id),
         )
@@ -479,7 +479,15 @@ fn parse_character_row(row: &Row<'_>, id: CharacterId) -> rusqlite::Result<Chara
         .map(parse_id)
         .transpose()?;
     let stored_voice_legacy = row.get::<_, Option<String>>(17)?;
-    let expected_voice = match (&stored_voice_profile, stored_voice_legacy) {
+    let provider_id = row.get::<_, Option<String>>(24)?.map(parse_id).transpose()?;
+    let provider_voice_id = row.get::<_, Option<String>>(25)?;
+    let expected_voice = if let (Some(provider_id), Some(voice_id)) = (provider_id, provider_voice_id) {
+        match &defaults.voice {
+            Some(lettuce_characters::VoicePreference::Provider { model_id, voice_name, .. }) if stored_voice_profile.is_none() && stored_voice_legacy.is_none() =>
+                Some(lettuce_characters::VoicePreference::Provider { provider_id, voice_id, model_id: model_id.clone(), voice_name: voice_name.clone() }),
+            _ => return Err(invalid()),
+        }
+    } else { match (&stored_voice_profile, stored_voice_legacy) {
         (Some(profile_id), None) => Some(lettuce_characters::VoicePreference::VoiceProfile(
             *profile_id,
         )),
@@ -490,6 +498,7 @@ fn parse_character_row(row: &Row<'_>, id: CharacterId) -> rusqlite::Result<Chara
         )),
         (None, None) => None,
         _ => return Err(invalid()),
+    }
     };
     if defaults.voice != expected_voice {
         return Err(invalid());
@@ -833,6 +842,7 @@ fn duplicate_external_references(
             lettuce_characters::VoicePreference::VoiceProfile(id) => {
                 retained.voice_profile_ids.push(*id);
             }
+            lettuce_characters::VoicePreference::Provider { provider_id, .. } => retained.audio_provider_ids.push(*provider_id),
             lettuce_characters::VoicePreference::UnresolvedLegacy(_) => {
                 retained
                     .unresolved_legacy_references
@@ -887,6 +897,13 @@ fn validate_plan_assets(
     image_assets(connection, collect_asset_ids(&details))
 }
 
+fn provider_voice_columns(defaults: &lettuce_characters::CharacterDefaults) -> (Option<String>, Option<String>) {
+    match &defaults.voice {
+        Some(lettuce_characters::VoicePreference::Provider { provider_id, voice_id, .. }) => (Some(provider_id.to_string()), Some(voice_id.clone())),
+        _ => (None, None),
+    }
+}
+
 fn insert_character(tx: &Transaction<'_>, character: &Character) -> Result<(), RepositoryError> {
     let profile = encode(&character.profile, PROFILE_VERSION)?;
     let provenance = encode(&character.provenance, PROVENANCE_VERSION)?;
@@ -899,13 +916,15 @@ fn insert_character(tx: &Transaction<'_>, character: &Character) -> Result<(), R
         .transpose()?;
     let (voice_profile_id, voice_legacy_locator) = match &character.defaults.voice {
         Some(lettuce_characters::VoicePreference::VoiceProfile(id)) => (Some(id.to_string()), None),
+        Some(lettuce_characters::VoicePreference::Provider { .. }) => (None, None),
         Some(lettuce_characters::VoicePreference::UnresolvedLegacy(locator)) => {
             (None, Some(locator.locator.clone()))
         }
         None => (None, None),
     };
+    let (voice_provider, voice_id) = provider_voice_columns(&character.defaults);
     tx.execute(
-        "INSERT INTO characters (id,status,name,nickname,normalized_name,normalized_nickname,profile_json,provenance_json,defaults_json,interaction_mode,memory_policy,model_profile_id,default_scene_id,default_starter_id,direct_prompt_id,group_conversation_prompt_id,group_roleplay_prompt_id,voice_profile_id,voice_legacy_locator,voice_autoplay,presentation_json,image_recommendation_json,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25)",
+        "INSERT INTO characters (id,status,name,nickname,normalized_name,normalized_nickname,profile_json,provenance_json,defaults_json,interaction_mode,memory_policy,model_profile_id,default_scene_id,default_starter_id,direct_prompt_id,group_conversation_prompt_id,group_roleplay_prompt_id,voice_profile_id,voice_legacy_locator,voice_autoplay,presentation_json,image_recommendation_json,revision,created_at,updated_at,voice_audio_provider_id,voice_provider_voice_id) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27)",
         params![
             character.id.to_string(), status_name(character.status), character.profile.name,
             character.profile.nickname, canonical_name(&character.profile.name),
@@ -915,7 +934,7 @@ fn insert_character(tx: &Transaction<'_>, character: &Character) -> Result<(), R
             id_text(character.defaults.default_starter_id), id_text(character.defaults.direct_prompt_id),
             id_text(character.defaults.group_conversation_prompt_id), id_text(character.defaults.group_roleplay_prompt_id),
             voice_profile_id, voice_legacy_locator, character.defaults.voice_autoplay,
-            presentation, recommendation, sql_u64(character.revision.get())?, character.created_at.get(), character.updated_at.get()
+            presentation, recommendation, sql_u64(character.revision.get())?, character.created_at.get(), character.updated_at.get(), voice_provider, voice_id
         ],
     ).map_err(db_error)?;
     Ok(())
@@ -936,14 +955,16 @@ fn update_character_root(
         .transpose()?;
     let (voice_profile_id, voice_legacy_locator) = match &character.defaults.voice {
         Some(lettuce_characters::VoicePreference::VoiceProfile(id)) => (Some(id.to_string()), None),
+        Some(lettuce_characters::VoicePreference::Provider { .. }) => (None, None),
         Some(lettuce_characters::VoicePreference::UnresolvedLegacy(locator)) => {
             (None, Some(locator.locator.clone()))
         }
         None => (None, None),
     };
     let was_shared = companion_soul_sharing_in(tx, character.id).map_err(db_error)?;
+    let (voice_provider, voice_id) = provider_voice_columns(&character.defaults);
     tx.execute(
-        "UPDATE characters SET status=?2,name=?3,nickname=?4,normalized_name=?5,normalized_nickname=?6,profile_json=?7,provenance_json=?8,defaults_json=?9,interaction_mode=?10,memory_policy=?11,model_profile_id=?12,default_scene_id=?13,default_starter_id=?14,direct_prompt_id=?15,group_conversation_prompt_id=?16,group_roleplay_prompt_id=?17,voice_profile_id=?18,voice_legacy_locator=?19,voice_autoplay=?20,presentation_json=?21,image_recommendation_json=?22,revision=?23,created_at=?24,updated_at=?25 WHERE id=?1",
+        "UPDATE characters SET status=?2,name=?3,nickname=?4,normalized_name=?5,normalized_nickname=?6,profile_json=?7,provenance_json=?8,defaults_json=?9,interaction_mode=?10,memory_policy=?11,model_profile_id=?12,default_scene_id=?13,default_starter_id=?14,direct_prompt_id=?15,group_conversation_prompt_id=?16,group_roleplay_prompt_id=?17,voice_profile_id=?18,voice_legacy_locator=?19,voice_autoplay=?20,presentation_json=?21,image_recommendation_json=?22,revision=?23,created_at=?24,updated_at=?25,voice_audio_provider_id=?26,voice_provider_voice_id=?27 WHERE id=?1",
         params![
             character.id.to_string(), status_name(character.status), character.profile.name,
             character.profile.nickname, canonical_name(&character.profile.name),
@@ -953,7 +974,7 @@ fn update_character_root(
             id_text(character.defaults.default_starter_id), id_text(character.defaults.direct_prompt_id),
             id_text(character.defaults.group_conversation_prompt_id), id_text(character.defaults.group_roleplay_prompt_id),
             voice_profile_id, voice_legacy_locator, character.defaults.voice_autoplay,
-            presentation, recommendation, sql_u64(character.revision.get())?, character.created_at.get(), character.updated_at.get()
+            presentation, recommendation, sql_u64(character.revision.get())?, character.created_at.get(), character.updated_at.get(), voice_provider, voice_id
         ],
     ).map_err(db_error)?;
     follow_soul_sharing(
@@ -1622,13 +1643,15 @@ impl CharacterRepository for Database {
             Some(lettuce_characters::VoicePreference::VoiceProfile(value)) => {
                 (Some(value.to_string()), None)
             }
+            Some(lettuce_characters::VoicePreference::Provider { .. }) => (None, None),
             Some(lettuce_characters::VoicePreference::UnresolvedLegacy(value)) => {
                 (None, Some(value.locator.clone()))
             }
             None => (None, None),
         };
+        let (voice_provider, voice_id) = provider_voice_columns(&defaults);
         let was_shared = companion_soul_sharing_in(&tx, id).map_err(db_error)?;
-        tx.execute("UPDATE characters SET defaults_json=?2,interaction_mode=?3,memory_policy=?4,model_profile_id=?5,default_scene_id=?6,default_starter_id=?7,direct_prompt_id=?8,group_conversation_prompt_id=?9,group_roleplay_prompt_id=?10,voice_profile_id=?11,voice_legacy_locator=?12,voice_autoplay=?13 WHERE id=?1", params![id.to_string(), encode(&defaults, DEFAULTS_VERSION)?, interaction_name(defaults.interaction_mode), memory_name(defaults.memory_policy), id_text(defaults.model_profile_id), id_text(defaults.default_scene_id), id_text(defaults.default_starter_id), id_text(defaults.direct_prompt_id), id_text(defaults.group_conversation_prompt_id), id_text(defaults.group_roleplay_prompt_id), voice_profile_id, voice_legacy_locator, defaults.voice_autoplay]).map_err(db_error)?;
+        tx.execute("UPDATE characters SET defaults_json=?2,interaction_mode=?3,memory_policy=?4,model_profile_id=?5,default_scene_id=?6,default_starter_id=?7,direct_prompt_id=?8,group_conversation_prompt_id=?9,group_roleplay_prompt_id=?10,voice_profile_id=?11,voice_legacy_locator=?12,voice_autoplay=?13,voice_audio_provider_id=?14,voice_provider_voice_id=?15 WHERE id=?1", params![id.to_string(), encode(&defaults, DEFAULTS_VERSION)?, interaction_name(defaults.interaction_mode), memory_name(defaults.memory_policy), id_text(defaults.model_profile_id), id_text(defaults.default_scene_id), id_text(defaults.default_starter_id), id_text(defaults.direct_prompt_id), id_text(defaults.group_conversation_prompt_id), id_text(defaults.group_roleplay_prompt_id), voice_profile_id, voice_legacy_locator, defaults.voice_autoplay, voice_provider, voice_id]).map_err(db_error)?;
         follow_soul_sharing(&tx, id, was_shared, &defaults, false, now)?;
         bump_root(&tx, id, expected_revision, now)?;
         let character = load_character(&tx, id)?;
@@ -3995,6 +4018,50 @@ mod smoke_tests {
         a.journal_current_state(TimestampMillis::new(20))
             .expect("scan when ready");
         assert_eq!(character_changes(&a), 1);
+    }
+
+    #[test]
+    fn provider_voice_preference_round_trips_and_enforces_exclusive_references() {
+        use lettuce_speech::{AudioProvider, AudioProviderConfig, TtsConfigurationRepository};
+        let database = Database::open_in_memory().expect("database");
+        let provider = AudioProvider {
+            id: lettuce_types::AudioProviderId::new(),
+            secret_owner_id: lettuce_settings::SecretOwnerId::new(),
+            label: "Local narrator".into(), api_key_ref: None,
+            config: AudioProviderConfig::Kokoro { variant: None },
+            revision: Revision::INITIAL,
+            created_at: TimestampMillis::new(1), updated_at: TimestampMillis::new(1),
+        };
+        database.upsert_audio_provider(provider.clone(), None).expect("provider");
+        let mut plan = companion_plan(CharacterId::new());
+        let preference = lettuce_characters::VoicePreference::Provider {
+            provider_id: provider.id, voice_id: "af_heart".into(),
+            model_id: Some("kokoro".into()), voice_name: Some("Heart".into()),
+        };
+        plan.character.defaults.voice = Some(preference.clone());
+        let id = plan.character.id;
+        CharacterRepository::create(&database, plan).expect("create");
+        let loaded = CharacterRepository::get(&database, id).expect("reload").expect("character");
+        assert_eq!(loaded.character.defaults.voice, Some(preference));
+        let connection = database.connection().expect("connection");
+        for sql in [
+            "UPDATE characters SET voice_provider_voice_id=NULL",
+            "UPDATE characters SET voice_provider_voice_id=' '",
+            "UPDATE characters SET voice_legacy_locator='legacy'",
+            "UPDATE characters SET voice_audio_provider_id='missing-provider'",
+            "DELETE FROM audio_providers",
+        ] {
+            assert!(connection.execute(sql, []).is_err(), "allowed {sql}");
+        }
+        drop(connection);
+        assert_eq!(database.delete_audio_provider(provider.id, provider.revision),
+            Err(lettuce_speech::TtsConfigurationRepositoryError::InUse));
+        use lettuce_transfer::{ProviderBackupSource, ProviderBackupRestoreWriter};
+        let graph = database.read_provider_backup_graph().expect("backup graph");
+        let restored = Database::open_in_memory().expect("restore database");
+        restored.restore_provider_backup_graph(&graph, &[]).expect("restore");
+        assert_eq!(CharacterRepository::get(&restored, id).expect("restored character").expect("character").character.defaults.voice,
+            loaded.character.defaults.voice);
     }
 
     #[test]

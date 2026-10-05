@@ -65,6 +65,9 @@ pub(crate) fn character_body(character: &Character) -> CharacterSnapshotBodyV1 {
             VoicePreference::VoiceProfile(id) => {
                 lettuce_conversations::VoicePreferenceV1::VoiceProfile(*id)
             }
+            VoicePreference::Provider { provider_id, voice_id, model_id, voice_name } => lettuce_conversations::VoicePreferenceV1::Provider {
+                provider_id: *provider_id, voice_id: voice_id.clone(), model_id: model_id.clone(), voice_name: voice_name.clone(),
+            },
             VoicePreference::UnresolvedLegacy(locator) => {
                 lettuce_conversations::VoicePreferenceV1::UnresolvedLegacy {
                     locator: locator.locator.clone(),

@@ -154,11 +154,12 @@ where
             .ok_or(TtsConfigurationCoordinatorError::Repository(
                 TtsConfigurationRepositoryError::NotFound,
             ))?;
-        if provider.revision != expected_revision
-            || provider.config.provider_kind() != config.provider_kind()
-        {
-            return Err(TtsConfigurationCoordinatorError::InvalidInput);
+        if provider.revision != expected_revision {
+            return Err(TtsConfigurationCoordinatorError::Repository(
+                TtsConfigurationRepositoryError::StaleRevision,
+            ));
         }
+        validate_secret_choice(&config, provider.api_key_ref.is_some())?;
         provider.label = label;
         provider.config = config;
         provider.updated_at = now.max(provider.updated_at);
@@ -297,7 +298,9 @@ where
                 TtsConfigurationRepositoryError::NotFound,
             ))?;
         if voice.revision != request.expected_revision {
-            return Err(TtsConfigurationCoordinatorError::InvalidInput);
+            return Err(TtsConfigurationCoordinatorError::Repository(
+                TtsConfigurationRepositoryError::StaleRevision,
+            ));
         }
         voice.name = request.name;
         voice.model_id = request.model_id;
@@ -431,6 +434,28 @@ mod tests {
             base_url: Some("https://audio.example".into()),
             request_path: Some("/v1/audio/speech".into()),
         }
+    }
+
+    #[tokio::test]
+    async fn editing_provider_kind_retains_credential_and_invalidates_discovered_voices() {
+        use lettuce_speech::{DiscoveredVoiceDraft, DiscoveredVoiceRepository, materialize_discovered_voices};
+        let database = Database::open_in_memory().expect("database");
+        let secrets = InMemorySecretStore::new();
+        let coordinator = TtsConfigurationCoordinator::new(&database, &secrets);
+        let provider = coordinator.create_audio_provider("Narrator".into(), remote_config(),
+            Some(SecretValue::new("key").expect("key")), TimestampMillis::new(1)).await.expect("create");
+        let drafts = vec![DiscoveredVoiceDraft { voice_id: "old-provider-voice".into(), name: "Old voice".into(), preview_url: None, labels: Default::default() }];
+        database.replace_discovered_voices(provider.id,
+            materialize_discovered_voices(provider.id, drafts, TimestampMillis::new(2)).expect("voices")).expect("cache");
+        let updated = coordinator.update_audio_provider(provider.id, provider.revision,
+            "ElevenLabs".into(), AudioProviderConfig::Elevenlabs, TimestampMillis::new(3)).expect("edit type");
+        assert_eq!(updated.config, AudioProviderConfig::Elevenlabs);
+        assert_eq!(updated.api_key_ref, provider.api_key_ref);
+        assert_eq!(updated.secret_owner_id, provider.secret_owner_id);
+        assert!(database.list_discovered_voices(provider.id).expect("cache invalidated").is_empty());
+        assert!(matches!(coordinator.update_audio_provider(provider.id, provider.revision,
+            "stale".into(), remote_config(), TimestampMillis::new(4)),
+            Err(TtsConfigurationCoordinatorError::Repository(TtsConfigurationRepositoryError::StaleRevision))));
     }
 
     #[tokio::test]

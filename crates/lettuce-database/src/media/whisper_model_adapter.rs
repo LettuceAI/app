@@ -82,6 +82,31 @@ fn load_all_in(
         .collect()
 }
 
+/// Rebinds retained paths inside the same transaction as the device root/profile update.
+/// Identity and bytes remain unchanged; files must already have moved successfully.
+pub(crate) fn relocate_whisper_models_in(
+    transaction: &Transaction<'_>,
+    relocate: &dyn Fn(&str) -> Option<String>,
+) -> Result<u32, WhisperModelRepositoryError> {
+    let mut changed = 0;
+    for mut manifest in load_all_in(transaction, None)? {
+        let old_path = manifest.model.path.to_str()
+            .ok_or(WhisperModelRepositoryError::InvalidData)?;
+        let Some(new_path) = relocate(old_path) else { continue; };
+        if new_path == old_path { continue; }
+        manifest.model.path = new_path.into();
+        manifest.verify_contents().map_err(corrupt)?;
+        let payload = encode_versioned(&manifest, WHISPER_MANIFEST_FORMAT_VERSION)
+            .map_err(storage)?;
+        transaction.execute(
+            "UPDATE installed_whisper_models SET model_path=?2, manifest_json=?3 WHERE model_id=?1",
+            params![manifest.model_id, manifest.model.path.to_str(), payload],
+        ).map_err(storage)?;
+        changed += 1;
+    }
+    Ok(changed)
+}
+
 impl WhisperModelRepository for Database {
     fn admit_whisper_model(
         &self,
@@ -190,5 +215,66 @@ impl WhisperModelRepository for Database {
         }
         transaction.commit().map_err(storage)?;
         Ok(true)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lettuce_models::ModelPathRelocation;
+
+    #[test]
+    fn relocation_preserves_identity_and_trigger_rejects_content_changes() {
+        let root = std::env::temp_dir().join(format!("whisper-rebind-{}", lettuce_types::JobId::new()));
+        let before = root.join("before");
+        let after = root.join("after");
+        std::fs::create_dir_all(&before).expect("before");
+        std::fs::write(before.join("ggml-tiny.en.bin"), b"retained whisper model").expect("file");
+        let original = InstalledWhisperManifest::inspect_legacy(
+            &root, &before.join("ggml-tiny.en.bin"), TimestampMillis::new(10),
+        ).expect("manifest");
+        let database = Database::open_in_memory().expect("database");
+        database.admit_whisper_model(original.clone()).expect("admit");
+        std::fs::rename(&before, &after).expect("move");
+        let relocate = |path: &str| Path::new(path).strip_prefix(&before).ok()
+            .map(|relative| after.join(relative).to_string_lossy().into_owned());
+        assert_eq!(database.relocate_model_paths(&relocate, TimestampMillis::new(20)).expect("rebind"), 1);
+        let rebound = database.get_whisper_model(&original.model_id).expect("get").expect("model");
+        let mut expected = original.clone();
+        expected.model.path = after.join("ggml-tiny.en.bin");
+        assert_eq!(rebound, expected);
+        rebound.verify_contents().expect("unchanged contents");
+        assert_eq!(database.relocate_model_paths(&relocate, TimestampMillis::new(21)).expect("replay"), 0);
+        let connection = database.connection().expect("connection");
+        for sql in [
+            "UPDATE installed_whisper_models SET source_revision='changed'",
+            "UPDATE installed_whisper_models SET byte_size=byte_size+1",
+            "UPDATE installed_whisper_models SET admitted_at=admitted_at+1",
+            "UPDATE installed_whisper_models SET model_path='/unpaired'",
+            "UPDATE installed_whisper_models SET manifest_json=json_set(manifest_json, '$.value.english_only', 0)",
+        ] {
+            assert!(connection.execute(sql, []).is_err(), "allowed {sql}");
+        }
+        drop(connection);
+        assert_eq!(database.get_whisper_model(&original.model_id).expect("unchanged"), Some(expected));
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn failed_content_verification_does_not_rebind_any_manifest() {
+        let root = std::env::temp_dir().join(format!("whisper-rebind-{}", lettuce_types::JobId::new()));
+        std::fs::create_dir_all(&root).expect("root");
+        let folder = root.join("tiny.en");
+        std::fs::create_dir_all(&folder).expect("folder");
+        let path = folder.join("ggml-tiny.en.bin");
+        std::fs::write(&path, b"original").expect("file");
+        let manifest = InstalledWhisperManifest::inspect_legacy(&root, &path, TimestampMillis::new(10)).expect("manifest");
+        let database = Database::open_in_memory().expect("database");
+        database.admit_whisper_model(manifest.clone()).expect("admit");
+        let target = root.join("changed.bin");
+        std::fs::write(&target, b"tampered").expect("tamper");
+        assert!(database.relocate_model_paths(&|_| Some(target.to_string_lossy().into_owned()), TimestampMillis::new(20)).is_err());
+        assert_eq!(database.get_whisper_model(&manifest.model_id).expect("unchanged"), Some(manifest));
+        std::fs::remove_dir_all(root).expect("cleanup");
     }
 }

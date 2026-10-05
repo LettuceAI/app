@@ -56,6 +56,7 @@ impl ProviderBackupRestoreWriter for Database {
             embedding: graph.device.embedding,
             llm_models_dir: None,
             speech: graph.device.speech.clone(),
+            retained_model_roots: Default::default(),
         };
         if device != lettuce_settings::DeviceSettings::default() {
             crate::write_device_settings(&transaction, &device).map_err(invalid)?;
@@ -879,6 +880,7 @@ pub(crate) mod tests {
                 keep_model_loaded: true,
             },
             llm_models_dir: Some("/data/models".into()),
+            retained_model_roots: Default::default(),
             speech: lettuce_settings::DeviceSpeechSettings {
                 dictation_model_id: Some("base.en".into()),
             },

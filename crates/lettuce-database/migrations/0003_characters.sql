@@ -18,6 +18,8 @@ CREATE TABLE characters (
     group_roleplay_prompt_id TEXT,
     voice_profile_id TEXT,
     voice_legacy_locator TEXT,
+    voice_audio_provider_id TEXT REFERENCES audio_providers(id) ON DELETE RESTRICT,
+    voice_provider_voice_id TEXT CHECK (voice_provider_voice_id IS NULL OR (length(trim(voice_provider_voice_id)) BETWEEN 1 AND 4096)),
     voice_autoplay INTEGER NOT NULL CHECK (voice_autoplay IN (0, 1)),
     presentation_json TEXT NOT NULL CHECK (length(trim(presentation_json)) > 0),
     image_recommendation_json TEXT,
@@ -25,7 +27,8 @@ CREATE TABLE characters (
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     CHECK (created_at <= updated_at),
-    CHECK ((voice_profile_id IS NULL) OR (voice_legacy_locator IS NULL)),
+    CHECK ((voice_audio_provider_id IS NULL) = (voice_provider_voice_id IS NULL)),
+    CHECK ((voice_profile_id IS NOT NULL) + (voice_legacy_locator IS NOT NULL) + (voice_audio_provider_id IS NOT NULL) <= 1),
     FOREIGN KEY (id, default_scene_id)
         REFERENCES scenes(character_id, id) DEFERRABLE INITIALLY DEFERRED,
     FOREIGN KEY (id, default_starter_id)

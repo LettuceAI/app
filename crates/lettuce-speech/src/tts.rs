@@ -187,6 +187,8 @@ pub enum TtsConfigurationRepositoryError {
     ProviderMissing,
     #[error("TTS configuration is invalid")]
     InvalidData,
+    #[error("TTS provider is referenced by a character voice preference")]
+    InUse,
     #[error("TTS configuration storage failed")]
     Storage,
 }

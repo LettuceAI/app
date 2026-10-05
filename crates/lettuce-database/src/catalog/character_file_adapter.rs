@@ -345,6 +345,10 @@ fn load_references(connection: &Connection) -> rusqlite::Result<CharacterFileRef
             references.voice_ids.insert(id);
         }
     }
+    let mut providers = connection.prepare("SELECT id FROM audio_providers")?;
+    for id in providers.query_map([], |row| row.get::<_, String>(0))? {
+        if let Ok(id) = lettuce_types::AudioProviderId::from_str(&id?) { references.audio_provider_ids.insert(id); }
+    }
     Ok(references)
 }
 

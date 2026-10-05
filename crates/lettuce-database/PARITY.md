@@ -84,3 +84,5 @@ Facts about how `lettuce-database` relates to the legacy app (2.2.x). The crate 
 
 - Outbox consumer leases and acknowledgements: migration 8 stores no lease table, so backups do not invent delivery state.
 - The single in-flight turn rule is enforced in the adapter; its supporting index is deferred.
+
+Character provider voices retain the audio account, voice id, model and display name rather than an unresolved legacy locator (`old-code/src/core/storage/schemas.ts:3480-3487`). Exclusive character voice references and provider foreign keys are enforced in the unreleased character migration. Referenced audio accounts cannot be deleted. Whisper folder relocation changes only the paired artifact path and manifest path, verifies copied content, and preserves every other immutable manifest field.
