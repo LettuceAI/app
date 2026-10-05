@@ -123,57 +123,81 @@ impl WavSpool {
     }
 }
 
-/// Receives a capture's samples on the audio thread.
+const SAMPLE_BLOCK_SIZE: usize = 4_096;
+const QUEUED_SAMPLE_BLOCKS: usize = 8;
+
+trait SpoolWriter: Send {
+    fn append(&mut self, samples: &[f32]) -> std::io::Result<()>;
+    fn finish(self: Box<Self>) -> std::io::Result<u64>;
+}
+impl SpoolWriter for WavSpool {
+    fn append(&mut self, samples: &[f32]) -> std::io::Result<()> { WavSpool::append(self, samples) }
+    fn finish(self: Box<Self>) -> std::io::Result<u64> { WavSpool::finish(*self) }
+}
+enum WriteBlock { Samples(Vec<f32>), Finish }
+
+/// Receives samples without waiting for disk I/O. Queue overload refuses
+/// the recording explicitly rather than reporting silently truncated audio.
 struct Recorder {
-    spool: Mutex<Option<WavSpool>>,
+    sender: std::sync::mpsc::SyncSender<WriteBlock>,
+    writer: Mutex<Option<std::thread::JoinHandle<std::io::Result<u64>>>>,
+    stopped: AtomicBool,
     level: AtomicU32,
     changed: tokio::sync::Notify,
-    failed: AtomicBool,
+    failed: Arc<AtomicBool>,
 }
 
 impl CaptureSink for Recorder {
     fn push(&self, samples: &[f32]) {
-        let peak = samples
-            .iter()
-            .fold(0.0_f32, |peak, sample| peak.max(sample.abs()))
-            .min(1.0);
-        let mut spool = self
-            .spool
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(spool) = spool.as_mut()
-            && spool.append(samples).is_err()
-        {
-            self.failed.store(true, Ordering::Release);
+        if self.stopped.load(Ordering::Acquire) || self.failed.load(Ordering::Acquire) { return; }
+        let peak = samples.iter().fold(0.0_f32, |peak, sample| peak.max(sample.abs())).min(1.0);
+        for samples in samples.chunks(SAMPLE_BLOCK_SIZE) {
+            if self.sender.try_send(WriteBlock::Samples(samples.to_vec())).is_err() {
+                self.failed.store(true, Ordering::Release);
+                break;
+            }
         }
-        drop(spool);
         self.level.store(peak.to_bits(), Ordering::Release);
         self.changed.notify_one();
     }
 }
 
 impl Recorder {
+    fn new(mut spool: Box<dyn SpoolWriter>) -> Result<Self, ApiError> {
+        let (sender, receiver) = std::sync::mpsc::sync_channel(QUEUED_SAMPLE_BLOCKS);
+        let failed = Arc::new(AtomicBool::new(false));
+        let writer_failed = failed.clone();
+        let writer = std::thread::Builder::new().name("dictation-wav-writer".into()).spawn(move || {
+            while let Ok(block) = receiver.recv() {
+                match block {
+                    WriteBlock::Samples(samples) => {
+                        if let Err(error) = spool.append(&samples) {
+                            writer_failed.store(true, Ordering::Release);
+                            return Err(error);
+                        }
+                    }
+                    WriteBlock::Finish => break,
+                }
+            }
+            spool.finish()
+        }).map_err(unavailable)?;
+        Ok(Self { sender, writer: Mutex::new(Some(writer)), stopped: AtomicBool::new(false), level: AtomicU32::new(0), changed: tokio::sync::Notify::new(), failed })
+    }
+
     fn level_permille(&self) -> u16 {
         let level = f32::from_bits(self.level.load(Ordering::Acquire));
         (level.clamp(0.0, 1.0) * 1000.0).round() as u16
     }
 
     fn finish(&self) -> Result<u64, ApiError> {
-        let spool = self
-            .spool
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take();
-        let Some(spool) = spool else {
-            return Err(api_error(ApiErrorCode::Internal, "the recording was closed"));
-        };
-        let bytes = spool.finish().map_err(unavailable)?;
-        if self.failed.load(Ordering::Acquire) {
-            return Err(api_error(
-                ApiErrorCode::Unavailable,
-                "the recording could not be written",
-            ));
-        }
+        self.stopped.store(true, Ordering::Release);
+        let writer = self.writer.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take()
+            .ok_or_else(|| api_error(ApiErrorCode::Internal, "the recording was closed"))?;
+        // Called on the stop worker after the native session stops, never
+        // from the audio callback. Drain queued samples before patching WAV.
+        let _ = self.sender.send(WriteBlock::Finish);
+        let bytes = writer.join().map_err(|_| unavailable("the recording writer stopped unexpectedly"))?.map_err(unavailable)?;
+        if self.failed.load(Ordering::Acquire) { return Err(unavailable("the recording writer fell behind or failed")); }
         Ok(bytes)
     }
 }
@@ -309,15 +333,11 @@ async fn start_capture(
             let prepared = microphone.prepare().map_err(microphone_error)?;
             let path = scratch_path(context, &capture_id)?;
             let spool = WavSpool::create(&path, prepared.format()).map_err(unavailable)?;
-            let recorder = Arc::new(Recorder {
-                spool: Mutex::new(Some(spool)),
-                level: AtomicU32::new(0),
-                changed: tokio::sync::Notify::new(),
-                failed: AtomicBool::new(false),
-            });
+            let recorder = Arc::new(Recorder::new(Box::new(spool))?);
             match prepared.start(Arc::clone(&recorder) as Arc<dyn CaptureSink>) {
                 Ok(session) => Ok((recorder, session)),
                 Err(error) => {
+                    let _ = recorder.finish();
                     std::fs::remove_file(&path).ok();
                     Err(microphone_error(error))
                 }
@@ -447,10 +467,7 @@ fn discard_capture(context: &ApiContext, mut active: Active) -> Result<(), ApiEr
     {
         tracing::debug!(%error, "the cancelled capture did not stop cleanly");
     }
-    drop(
-        active.recorder.spool.lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner).take(),
-    );
+    if active.sealed_bytes.is_none() { let _ = active.recorder.finish(); }
     std::fs::remove_file(scratch_path(context, &active.id)?).ok();
     Ok(())
 }
@@ -470,5 +487,44 @@ pub(crate) fn sweep_scratch(context: &ApiContext) {
         {
             tracing::warn!(%error, "a leftover dictation recording could not be removed");
         }
+    }
+}
+
+#[cfg(test)]
+mod recorder_tests {
+    use super::*;
+    struct SlowWriter {
+        entered: std::sync::mpsc::Sender<std::thread::ThreadId>,
+        release: std::sync::mpsc::Receiver<()>,
+        first: bool,
+        bytes: u64,
+    }
+    impl SpoolWriter for SlowWriter {
+        fn append(&mut self, samples: &[f32]) -> std::io::Result<()> {
+            if self.first {
+                self.first = false;
+                self.entered.send(std::thread::current().id()).expect("entered");
+                self.release.recv().expect("release slow writer");
+            }
+            self.bytes += samples.len() as u64 * 2;
+            Ok(())
+        }
+        fn finish(self: Box<Self>) -> std::io::Result<u64> { Ok(self.bytes) }
+    }
+    #[test]
+    fn slow_writer_never_blocks_the_callback_and_overload_is_a_failure() {
+        let (entered, entered_rx) = std::sync::mpsc::channel();
+        let (release, release_rx) = std::sync::mpsc::channel();
+        let recorder = Recorder::new(Box::new(SlowWriter { entered, release: release_rx, first: true, bytes: 0 })).expect("writer");
+        recorder.push(&[0.25]);
+        let writer_thread = entered_rx.recv_timeout(Duration::from_secs(1)).expect("writer started");
+        assert_ne!(writer_thread, std::thread::current().id());
+        // The writer cannot advance until release; push must still return.
+        for _ in 0..QUEUED_SAMPLE_BLOCKS { recorder.push(&[0.25; SAMPLE_BLOCK_SIZE]); }
+        assert!(!recorder.failed.load(Ordering::Acquire));
+        recorder.push(&[0.25]);
+        assert!(recorder.failed.load(Ordering::Acquire));
+        release.send(()).expect("release");
+        assert_eq!(recorder.finish().expect_err("no silently truncated success").code, ApiErrorCode::Unavailable);
     }
 }

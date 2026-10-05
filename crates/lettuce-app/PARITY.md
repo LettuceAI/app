@@ -391,3 +391,5 @@ Dictation stop preserves a sealed scratch WAV and a stopped capture when ingest 
 A queued transcription holds its input through the existing `speech_transcriptions.audio_asset_id` restricted foreign key. Media collection probes that reference before releasing even an expired temporary recording, so a job delayed beyond 24 hours retains its input. This uses the approved reference-protection option rather than changing the expiry to a settlement timestamp.
 
 Exhausted speech retries retain the last transient cause: transport unavailability, a returned provider HTTP status, or runtime unavailability. The terminal exhausted marker no longer erases the actionable cause; no provider response body or credential is stored in that detail.
+
+The microphone callback computes level and queues bounded sample blocks; a dedicated writer thread owns WAV writes and final header/flush work. Queue overload or writer failure refuses the recording rather than returning silently truncated speech. This deliberately removes file I/O from the realtime callback; stop drains the writer on a blocking worker.
