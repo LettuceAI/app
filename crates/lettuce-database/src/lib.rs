@@ -5000,6 +5000,24 @@ mod tests {
     }
 
     #[test]
+    fn transcription_reference_protects_expired_audio_from_gc_candidates() {
+        use lettuce_jobs::{JobKind, JobSpec, JobSubject, OutcomeRef, ResourceClass, SubjectKind};
+        use lettuce_speech::{AsrModelDescriptor, AsrModelId, TranscriptionOptions, TranscriptionRequest};
+        let database = Database::open_in_memory().expect("database");
+        let blob = ready_blob(&database, 'a', MediaKind::Audio);
+        let mut asset = media_asset(AssetId::new(), blob.id, AssetKind::OtherAudio);
+        asset.retention = RetentionClass::Temporary { expires_at: TimestampMillis::new(100) };
+        let asset = MediaAssetRepository::create(&database, asset).expect("asset");
+        let id = lettuce_types::RequestId::new();
+        let request = TranscriptionRequest { id, audio_asset_id: asset.id, model: AsrModelDescriptor { id: AsrModelId::new("base").expect("model"), artifact_hash: ContentHash::parse("0".repeat(64)).expect("hash"), english_only: false }, options: TranscriptionOptions::default(), created_at: TimestampMillis::new(20) };
+        let spec = JobSpec::new(JobKind::SpeechTranscribe, JobSubject::new(SubjectKind::SpeechRequest, id.to_string()).expect("subject"), OutcomeRef::Request(id)).with_resources(vec![ResourceClass::Cpu]);
+        database.admit_speech_transcription(spec, "queued-recording", "digest", &serde_json::json!({"kind":"speech_transcribe"}), request).expect("admit");
+        database.connection().expect("connection").execute("INSERT INTO media_gc_candidates(asset_id,queued_at) VALUES (?1,100)", [asset.id.to_string()]).expect("queue collection");
+        assert!(database.collect_media_garbage(TimestampMillis::new(25 * 60 * 60 * 1000)).expect("gc").is_empty());
+        assert_eq!(MediaAssetRepository::get(&database, asset.id).expect("asset"), Some(asset));
+    }
+
+    #[test]
     fn media_asset_retention_cas_and_expiry_representation_are_atomic() {
         let database = Database::open_in_memory().expect("open database");
         let blob = ready_blob(&database, '2', MediaKind::Image);

@@ -1669,3 +1669,19 @@ async fn dictation_ingest_failure_can_retry_the_same_stopped_recording() {
     assert!(run_to_idle(&runner(&env.context)).await);
     assert_eq!(job(&env.context, accepted.job_id.parse().expect("id")).await.state, dto::JobStateDto::Succeeded);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn queued_dictation_input_survives_collection_after_twenty_four_hours() {
+    use lettuce_speech::TranscriptionRepository;
+    let env = env(TtsMode::Speak, AsrMode::Text("still available"), Some(Arc::new(FakeMic { outcome: Ok(vec![0.25; 8_000]) })));
+    install_whisper_file(&env.root);
+    let capture = super::dictation_start(&env.context, dto::DictationStartRequest { conversation_id: None }).await.expect("start");
+    let admitted = super::dictation_stop(&env.context, dto::DictationStopRequest { capture_id: capture.capture_id, model_id: None, options: dto::TranscribeOptions::default() }).await.expect("stop");
+    let id = admitted.job_id.parse().expect("job id");
+    let audio = TranscriptionRepository::get(env.context.backend().database(), id).expect("input reference").request.audio_asset_id;
+    env.clock.advance(Duration::from_secs(25 * 60 * 60));
+    assert!(env.context.backend().database().collect_media_garbage(env.context.now()).expect("collector").is_empty());
+    env.context.media().expect("media").open_ready(audio).expect("expired input still present");
+    assert!(run_to_idle(&runner(&env.context)).await);
+    assert_eq!(job(&env.context, id).await.state, dto::JobStateDto::Succeeded);
+}
