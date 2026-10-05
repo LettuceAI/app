@@ -21,6 +21,7 @@ mod tests;
 pub use dictation::{dictation_cancel, dictation_start, dictation_stop};
 pub use host::{InstalledSpeech, NoSpeech, SpeechHost};
 pub(crate) use dictation::sweep_scratch;
+pub(crate) use providers::sweep_orphan_audio_secrets;
 pub(crate) use state::SpeechApiState;
 pub(crate) use transcribe::transcription_view;
 pub use transcribe::transcribe_file;
@@ -29,7 +30,7 @@ pub use whisper::{
     whisper_download, whisper_models_list, whisper_preload,
 };
 
-pub use providers::{voice_design_preview, audio_provider_voices_search, audio_providers_list, audio_provider_update, audio_provider_delete, user_voices_list, user_voice_update, user_voice_delete, audio_provider_verify, audio_provider_credential_status, audio_provider_api_key_rotate, audio_provider_voices, audio_provider_voices_refresh, tts_models, tts_voice_design_models, tts_cache_stats, tts_cache_clear};
+pub use providers::{audio_provider_create, user_voice_create, voice_design_preview, audio_provider_voices_search, audio_providers_list, audio_provider_update, audio_provider_delete, user_voices_list, user_voice_update, user_voice_delete, audio_provider_verify, audio_provider_credential_status, audio_provider_api_key_rotate, audio_provider_voices, audio_provider_voices_refresh, tts_models, tts_voice_design_models, tts_cache_stats, tts_cache_clear};
 
 pub use synthesize::tts_synthesize;
 

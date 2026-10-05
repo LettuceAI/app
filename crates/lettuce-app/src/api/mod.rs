@@ -129,7 +129,7 @@ pub use scenes::{
     message_scene_image_approve, message_scene_image_dismiss, message_scene_image_generate,
     message_scene_prompt_generate,
 };
-pub use speech::{asr_vocabulary_save, asr_correction_save, asr_suggestion_approve, asr_suggestion_ignore, asr_voice_example_save, asr_learning_import,
+pub use speech::{audio_provider_create, user_voice_create, asr_vocabulary_save, asr_correction_save, asr_suggestion_approve, asr_suggestion_ignore, asr_voice_example_save, asr_learning_import,
     message_speak,
     asr_voice_example_suggest, asr_learning_export, asr_vocabulary_list, asr_corrections_list, asr_ignored_suggestions_list, asr_voice_examples_list, asr_vocabulary_delete, asr_correction_delete, asr_voice_example_delete, asr_suggestions,
     kokoro_inventory, kokoro_variants, kokoro_voices_installed, kokoro_voices_available, kokoro_install_model, kokoro_install_voices, kokoro_uninstall_model, kokoro_uninstall_voice, kokoro_blend, kokoro_phonemize, kokoro_tokenize_preview,

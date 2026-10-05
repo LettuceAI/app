@@ -315,6 +315,10 @@ impl fmt::Display for SecretStatus {
 /// applications can inject Android, desktop, or test implementations later.
 #[async_trait]
 pub trait SecretStore: Send + Sync {
+    async fn audio_api_keys(&self) -> Result<Vec<SecretStatus>, SecretStoreError> {
+        Err(SecretStoreError::Unavailable(SecretAvailability::BackendUnavailable))
+    }
+
     async fn put(
         &self,
         record: SecretRecord,
@@ -452,6 +456,11 @@ impl InMemorySecretStore {
 
 #[async_trait]
 impl SecretStore for InMemorySecretStore {
+    async fn audio_api_keys(&self) -> Result<Vec<SecretStatus>, SecretStoreError> {
+        let entries = self.entries.lock().map_err(|_| SecretStoreError::Backend(SecretBackendError::Corrupt))?;
+        Ok(entries.values().filter(|entry| matches!(entry.record.purpose, SecretPurpose::AudioApiKey { .. })).map(Self::status_of).collect())
+    }
+
     async fn put(
         &self,
         record: SecretRecord,

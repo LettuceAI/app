@@ -346,7 +346,7 @@ fn audio_purpose(owner: SecretOwnerId) -> SecretPurpose {
     SecretPurpose::AudioApiKey { owner }
 }
 
-fn validate_secret_choice(
+pub(crate) fn validate_secret_choice(
     config: &AudioProviderConfig,
     has_api_key: bool,
 ) -> Result<(), TtsConfigurationCoordinatorError> {

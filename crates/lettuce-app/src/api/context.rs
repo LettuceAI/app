@@ -284,6 +284,13 @@ impl ApiContext {
         })
     }
 
+    #[cfg(test)]
+    pub(crate) fn with_secret_store(&self, store: Arc<dyn SecretStore>) -> Self {
+        let mut context = self.restarted();
+        Arc::get_mut(&mut context.inner).expect("new context is not shared").parts.secret_store = store;
+        context
+    }
+
     /// A new context over the same backend and host services with another
     /// speech host.
     #[cfg(test)]

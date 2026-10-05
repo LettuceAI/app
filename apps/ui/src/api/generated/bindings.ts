@@ -165,6 +165,14 @@ export const commands = {
 	userVoiceUpdate: (request: UserVoiceUpdateRequest) => typedError<UserVoiceView, ApiError>(__TAURI_INVOKE("user_voice_update", { request })),
 	userVoiceDelete: (request: UserVoiceRequest) => typedError<null, ApiError>(__TAURI_INVOKE("user_voice_delete", { request })),
 	asrLearningExport: (request: AsrLearningExportRequest) => typedError<null, ApiError>(__TAURI_INVOKE("asr_learning_export", { request })),
+	audioProviderCreate: (request: AudioProviderCreateRequest) => typedError<AudioProviderView, ApiError>(__TAURI_INVOKE("audio_provider_create", { request })),
+	userVoiceCreate: (request: UserVoiceCreateRequest) => typedError<UserVoiceView, ApiError>(__TAURI_INVOKE("user_voice_create", { request })),
+	asrVocabularySave: (request: AsrVocabularySaveRequest) => typedError<AsrVocabularyView, ApiError>(__TAURI_INVOKE("asr_vocabulary_save", { request })),
+	asrCorrectionSave: (request: AsrCorrectionSaveRequest) => typedError<AsrCorrectionView, ApiError>(__TAURI_INVOKE("asr_correction_save", { request })),
+	asrSuggestionApprove: (request: AsrSuggestionWriteRequest) => typedError<AsrCorrectionView, ApiError>(__TAURI_INVOKE("asr_suggestion_approve", { request })),
+	asrSuggestionIgnore: (request: AsrSuggestionWriteRequest) => typedError<AsrIgnoredSuggestionView, ApiError>(__TAURI_INVOKE("asr_suggestion_ignore", { request })),
+	asrVoiceExampleSave: (request: AsrVoiceExampleSaveRequest) => typedError<AsrVoiceExampleView, ApiError>(__TAURI_INVOKE("asr_voice_example_save", { request })),
+	asrLearningImport: (request: AsrLearningImportRequest) => typedError<AsrLearningImportView, ApiError>(__TAURI_INVOKE("asr_learning_import", { request })),
 	asrVocabularyList: (request: AsrLearningFilter) => typedError<AsrVocabularyView[], ApiError>(__TAURI_INVOKE("asr_vocabulary_list", { request })),
 	asrCorrectionsList: (request: AsrLearningFilter) => typedError<AsrCorrectionView[], ApiError>(__TAURI_INVOKE("asr_corrections_list", { request })),
 	asrIgnoredSuggestionsList: (request: AsrLearningFilter) => typedError<AsrIgnoredSuggestionView[], ApiError>(__TAURI_INVOKE("asr_ignored_suggestions_list", { request })),
@@ -293,6 +301,22 @@ export type AppliedCorrectionView = {
 	matched_text: string,
 };
 
+export type AsrCorrectionSaveRequest = {
+	client_operation_id: string,
+	id: string | null,
+	wrong: string,
+	correct: string,
+	language: string | null,
+	scope: string | null,
+	confidence: number | null,
+	use_count: number | null,
+	accepted_count: number | null,
+	rejected_count: number | null,
+	seen_count: number | null,
+	last_seen_at: number | null,
+	user_approved: boolean | null,
+};
+
 export type AsrCorrectionView = {
 	id: string,
 	wrong: string,
@@ -332,6 +356,18 @@ export type AsrLearningFilter = {
 	scopes?: string[],
 };
 
+export type AsrLearningImportRequest = {
+	client_operation_id: string,
+	source: FileSource,
+};
+
+export type AsrLearningImportView = {
+	vocabulary_count: number,
+	correction_count: number,
+	ignored_suggestion_count: number,
+	voice_example_count: number,
+};
+
 export type AsrLearningItemRequest = {
 	id: string,
 };
@@ -347,11 +383,27 @@ export type AsrSuggestionView = {
 	seen_count: number,
 };
 
+export type AsrSuggestionWriteRequest = {
+	client_operation_id: string,
+	suggestion: AsrSuggestionView,
+};
+
 export type AsrSuggestionsRequest = {
 	before: string,
 	after: string,
 	language: string | null,
 	scope: string | null,
+};
+
+export type AsrVocabularySaveRequest = {
+	client_operation_id: string,
+	id: string | null,
+	term: string,
+	language: string | null,
+	category: string | null,
+	scope: string | null,
+	priority: number | null,
+	use_count: number | null,
 };
 
 export type AsrVocabularyView = {
@@ -364,6 +416,18 @@ export type AsrVocabularyView = {
 	use_count: number,
 	created_at: number,
 	updated_at: number,
+};
+
+export type AsrVoiceExampleSaveRequest = {
+	client_operation_id: string,
+	id: string | null,
+	audio_asset_id: string,
+	expected_text: string,
+	whisper_output: string | null,
+	language: string | null,
+	scope: string | null,
+	vocabulary_term_id: string | null,
+	correction_id: string | null,
 };
 
 export type AsrVoiceExampleView = {
@@ -403,6 +467,12 @@ export type AudioProviderApiKeyRotateRequest = {
 };
 
 export type AudioProviderConfiguration = { type: "gemini"; project_id: string | null; location: string } | { type: "elevenlabs" } | { type: "fish_tts" } | { type: "fish_speech"; base_url: string | null; request_path: string | null } | { type: "open_ai_compatible"; base_url: string | null; request_path: string | null } | { type: "kokoro"; variant: string | null };
+
+export type AudioProviderCreateRequest = {
+	client_operation_id: string,
+	label: string,
+	draft: AudioProviderDraft,
+};
 
 export type AudioProviderCredentialStatus = {
 	generation: number,
@@ -3224,7 +3294,7 @@ export type SpeakerSelectionPreviewRequest = {
  *  Why a speech call or job failed, where the user can act on it. Every
  *  variant but `RetriesExhausted` is terminal at once: retrying cannot fix it.
  */
-export type SpeechFailure = { type: "model_required"; model: SpeechModelKind } | { type: "secret_missing" } | { type: "voice_missing" } | { type: "runtime_missing"; runtime: SpeechRuntimeKind } | { type: "retries_exhausted" } | { type: "microphone_permission_denied" } | { type: "no_microphone" } | { type: "no_audio_captured" };
+export type SpeechFailure = { type: "model_required"; model: SpeechModelKind } | { type: "secret_missing" } | { type: "secret_store_unavailable" } | { type: "voice_missing" } | { type: "runtime_missing"; runtime: SpeechRuntimeKind } | { type: "retries_exhausted" } | { type: "microphone_permission_denied" } | { type: "no_microphone" } | { type: "no_audio_captured" };
 
 /**  The local speech model a job or call needs installed. */
 export type SpeechModelKind = "whisper" | "kokoro";
@@ -3323,6 +3393,15 @@ export type TtsSynthesizeRequest = {
 	prompt: string | null,
 	text: string,
 	retained?: boolean,
+};
+
+export type UserVoiceCreateRequest = {
+	client_operation_id: string,
+	provider_id: string,
+	name: string,
+	model_id: string,
+	voice_id: string,
+	prompt: string | null,
 };
 
 export type UserVoiceRequest = {

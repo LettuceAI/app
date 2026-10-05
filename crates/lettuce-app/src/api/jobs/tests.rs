@@ -730,6 +730,7 @@ async fn startup_recovers_before_it_starts_the_workers() {
     assert_eq!(
         workers.steps(),
         vec![
+            crate::api::StartupStep::SweepOrphanAudioSecrets,
             crate::api::StartupStep::RecoverAfterRestart,
             crate::api::StartupStep::CompletePendingRewinds,
             crate::api::StartupStep::DetectLegacyDatabase,

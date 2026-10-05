@@ -13,6 +13,7 @@ use crate::{
     SecretRecord, SecretRef, SecretState, SecretStatus, SecretStore, SecretStoreError, SecretValue,
 };
 
+const AUDIO_INDEX_KEY: &str = "audio-api-key-index-v1";
 const SERVICE_NAME: &str = "com.lettuceai.app.secrets.v1";
 const ENVELOPE_VERSION: u32 = 1;
 const MAX_ENVELOPE_BYTES: usize = 128 * 1024;
@@ -80,6 +81,38 @@ impl NativeSecretStore {
         }
     }
 
+    fn audio_index(&self) -> Result<Vec<SecretRecord>, SecretStoreError> {
+        let Some(bytes) = self.backend.load(AUDIO_INDEX_KEY).map_err(backend_error)? else { return Ok(Vec::new()); };
+        if bytes.len() > MAX_ENVELOPE_BYTES { return Err(SecretStoreError::Backend(SecretBackendError::Corrupt)); }
+        let records: Vec<SecretRecord> = serde_json::from_slice(&bytes).map_err(|_| SecretStoreError::Backend(SecretBackendError::Corrupt))?;
+        let mut seen = std::collections::BTreeSet::new();
+        if records.iter().any(|record| !matches!(record.purpose, SecretPurpose::AudioApiKey { .. }) || !seen.insert(record.reference)) {
+            return Err(SecretStoreError::Backend(SecretBackendError::Corrupt));
+        }
+        Ok(records)
+    }
+
+    fn index_audio_key(&self, record: &SecretRecord) -> Result<(), SecretStoreError> {
+        if !matches!(record.purpose, SecretPurpose::AudioApiKey { .. }) { return Ok(()); }
+        let mut records = self.audio_index()?;
+        if let Some(existing) = records.iter().find(|existing| existing.reference == record.reference) {
+            if existing != record { return Err(SecretStoreError::PurposeMismatch); }
+            return Ok(());
+        }
+        records.push(record.clone());
+        let bytes = serde_json::to_vec(&records).map_err(|_| SecretStoreError::Backend(SecretBackendError::Corrupt))?;
+        if bytes.len() > MAX_ENVELOPE_BYTES { return Err(SecretStoreError::Backend(SecretBackendError::Corrupt)); }
+        self.backend.store(AUDIO_INDEX_KEY, &bytes).map_err(backend_error)
+    }
+
+    fn remove_audio_index(&self, reference: &SecretRef, purpose: &SecretPurpose) -> Result<(), SecretStoreError> {
+        if !matches!(purpose, SecretPurpose::AudioApiKey { .. }) { return Ok(()); }
+        let mut records = self.audio_index()?;
+        records.retain(|record| &record.reference != reference);
+        let bytes = serde_json::to_vec(&records).map_err(|_| SecretStoreError::Backend(SecretBackendError::Corrupt))?;
+        self.backend.store(AUDIO_INDEX_KEY, &bytes).map_err(backend_error)
+    }
+
     fn load_envelope(
         &self,
         reference: &SecretRef,
@@ -134,6 +167,16 @@ impl NativeSecretStore {
 
 #[async_trait]
 impl SecretStore for NativeSecretStore {
+    async fn audio_api_keys(&self) -> Result<Vec<SecretStatus>, SecretStoreError> {
+        let _guard = self.mutation_lock.lock().map_err(|_| SecretStoreError::Backend(SecretBackendError::Corrupt))?;
+        self.audio_index()?.into_iter().filter_map(|record| match self.load_envelope(&record.reference) {
+            Ok(Some(envelope)) if envelope.purpose == record.purpose => Some(Ok(Self::status_of(record.reference, record.purpose, envelope.generation, SecretState::Present, envelope.set_at))),
+            Ok(Some(_)) => Some(Err(SecretStoreError::PurposeMismatch)),
+            Ok(None) => None,
+            Err(error) => Some(Err(error)),
+        }).collect()
+    }
+
     async fn put(
         &self,
         record: SecretRecord,
@@ -180,6 +223,7 @@ impl SecretStore for NativeSecretStore {
         if encoded.len() > MAX_ENVELOPE_BYTES {
             return Err(SecretStoreError::Backend(SecretBackendError::Corrupt));
         }
+        self.index_audio_key(&record)?;
         self.backend
             .store(&record.reference.to_string(), &encoded)
             .map_err(backend_error)?;
@@ -213,6 +257,7 @@ impl SecretStore for NativeSecretStore {
         purpose: &SecretPurpose,
     ) -> Result<SecretStatus, SecretStoreError> {
         let Some(envelope) = self.load_envelope(reference)? else {
+            self.remove_audio_index(reference, purpose)?;
             return Ok(Self::missing_status(*reference, purpose.clone()));
         };
         if &envelope.purpose != purpose {
@@ -238,6 +283,7 @@ impl SecretStore for NativeSecretStore {
             .lock()
             .map_err(|_| SecretStoreError::Backend(SecretBackendError::Corrupt))?;
         let Some(envelope) = self.load_envelope(reference)? else {
+            self.remove_audio_index(reference, purpose)?;
             return Ok(Self::missing_status(*reference, purpose.clone()));
         };
         if &envelope.purpose != purpose {
@@ -249,6 +295,7 @@ impl SecretStore for NativeSecretStore {
         self.backend
             .delete(&reference.to_string())
             .map_err(backend_error)?;
+        self.remove_audio_index(reference, purpose)?;
         Ok(Self::status_of(
             *reference,
             envelope.purpose.clone(),
@@ -455,6 +502,24 @@ mod tests {
 
     use super::*;
     use crate::{SecretOwnerId, SecretValue};
+
+    #[tokio::test]
+    async fn audio_key_inventory_survives_a_store_restart_and_prunes_deleted_keys() {
+        let backend = Arc::new(TestBackend::default());
+        let store = NativeSecretStore::with_backend(backend.clone());
+        let reference = SecretRef::new();
+        let purpose = SecretPurpose::AudioApiKey { owner: SecretOwnerId::new() };
+        store.put(SecretRecord::new(reference, purpose.clone()), SecretValue::new("audio-canary").expect("secret"), None).await.expect("put");
+        let reopened = NativeSecretStore::with_backend(backend.clone());
+        let inventory = reopened.audio_api_keys().await.expect("inventory");
+        assert_eq!(inventory.len(), 1);
+        assert_eq!(inventory[0].reference, reference);
+        assert!(!serde_json::to_string(&inventory).expect("metadata").contains("audio-canary"));
+        reopened.delete(&reference, &purpose, Some(1)).await.expect("delete");
+        assert!(reopened.audio_api_keys().await.expect("empty inventory").is_empty());
+        let index = backend.entries.lock().expect("index").get(AUDIO_INDEX_KEY).expect("index exists").clone();
+        assert_eq!(index, b"[]");
+    }
 
     #[derive(Default)]
     struct TestBackend {

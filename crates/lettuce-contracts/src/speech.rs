@@ -26,6 +26,7 @@ pub enum SpeechRuntimeKind {
 pub enum SpeechFailure {
     ModelRequired { model: SpeechModelKind },
     SecretMissing,
+    SecretStoreUnavailable,
     VoiceMissing,
     RuntimeMissing { runtime: SpeechRuntimeKind },
     RetriesExhausted,

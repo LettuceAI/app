@@ -358,7 +358,11 @@ pub async fn audio_provider_api_key_rotate(context: State<'_, ApiContext>, reque
     lettuce_app::api::audio_provider_api_key_rotate(&context, request).await
 }
 
-
+#[tauri::command]
+#[specta::specta]
+pub async fn user_voice_create(context: State<'_, ApiContext>, request: dto::UserVoiceCreateRequest) -> Result<dto::UserVoiceView, ApiError> {
+    lettuce_app::api::user_voice_create(&context, request).await
+}
 
 #[tauri::command]
 #[specta::specta]
@@ -394,4 +398,10 @@ pub async fn asr_voice_example_save(context: State<'_, ApiContext>, request: dto
 #[specta::specta]
 pub async fn asr_learning_import(context: State<'_, ApiContext>, request: dto::AsrLearningImportRequest) -> Result<dto::AsrLearningImportView, ApiError> {
     lettuce_app::api::asr_learning_import(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn audio_provider_create(context: State<'_, ApiContext>, request: dto::AudioProviderCreateRequest) -> Result<dto::AudioProviderView, ApiError> {
+    lettuce_app::api::audio_provider_create(&context, request).await
 }

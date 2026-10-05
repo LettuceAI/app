@@ -1313,3 +1313,155 @@ async fn library_receipts_preserve_counts_and_original_results_after_edits_and_d
     super::asr_correction_delete(context, dto::AsrLearningItemRequest { id: first.id.clone() }).await.expect("delete");
     assert_eq!(super::asr_correction_save(context, correction).await.expect("original correction after delete"), first);
 }
+
+fn provider_create_request(key: &str) -> dto::AudioProviderCreateRequest {
+    dto::AudioProviderCreateRequest { client_operation_id: key.into(), label: "Hosted voices".into(),
+        draft: dto::AudioProviderDraft { configuration: dto::AudioProviderConfiguration::Elevenlabs, api_key: Some("private-canary".into()) } }
+}
+
+#[tokio::test]
+async fn provider_create_reuses_the_crash_secret_and_replays_after_deletion() {
+    use lettuce_settings::{SecretPurpose, SecretRecord};
+    let env = env(TtsMode::Speak, AsrMode::Text("Hello."), None);
+    let context = &env.context;
+    let request = provider_create_request("provider-create");
+    let (id, owner, reference) = super::providers::provider_create_ids(&request.client_operation_id);
+    context.secret_store().put(SecretRecord::new(reference, SecretPurpose::AudioApiKey { owner }),
+        SecretValue::new("crashed-before-database").expect("secret"), None).await.expect("crash point after put");
+    let restarted = context.restarted();
+    let first = super::audio_provider_create(&restarted, request.clone()).await.expect("retry completes create after restart");
+    assert_eq!(first.id, id.to_string());
+    assert_eq!(super::audio_provider_create(context, request.clone()).await.expect("replay"), first);
+    let keys = context.secret_store().audio_api_keys().await.expect("keys");
+    assert_eq!(keys.len(), 1);
+    assert_eq!(keys[0].generation, 2, "successful replay does not overwrite the secret");
+    let mut changed = request.clone(); changed.label = "Different".into();
+    assert_eq!(super::audio_provider_create(context, changed).await.expect_err("conflict").code, ApiErrorCode::Conflict);
+    assert_eq!(context.secret_store().audio_api_keys().await.expect("keys")[0].generation, 2);
+    super::audio_provider_delete(context, dto::AudioProviderDeleteRequest { provider_id: first.id.clone(), expected_revision: first.revision }).await.expect("delete");
+    assert_eq!(super::audio_provider_create(context, request).await.expect("original result after deletion"), first);
+    assert!(super::audio_providers_list(context).await.expect("providers").iter().all(|provider| provider.id != first.id));
+    assert!(context.secret_store().audio_api_keys().await.expect("deleted key").is_empty());
+}
+
+#[tokio::test]
+async fn startup_sweeps_orphan_audio_secrets_and_preserves_committed_owners() {
+    use lettuce_settings::{SecretPurpose, SecretRecord};
+    let env = env(TtsMode::Speak, AsrMode::Text("Hello."), None);
+    let context = &env.context;
+    let retained = super::audio_provider_create(context, provider_create_request("retained-create")).await.expect("provider");
+    let (_, owner, reference) = super::providers::provider_create_ids("orphan-create");
+    context.secret_store().put(SecretRecord::new(reference, SecretPurpose::AudioApiKey { owner }),
+        SecretValue::new("orphan-canary").expect("secret"), None).await.expect("orphan");
+    assert_eq!(context.secret_store().audio_api_keys().await.expect("keys").len(), 2);
+    let workers = crate::api::startup(context).await.expect("startup sweep");
+    assert!(workers.steps().contains(&crate::api::StartupStep::SweepOrphanAudioSecrets));
+    assert_eq!(context.secret_store().audio_api_keys().await.expect("keys").len(), 1);
+    assert!(super::audio_providers_list(context).await.expect("providers").iter().any(|provider| provider.id == retained.id));
+    workers.stop().await;
+}
+
+#[tokio::test]
+async fn voice_create_examples_and_library_import_have_receipts() {
+    let env = env(TtsMode::Speak, AsrMode::Text("Hello."), None);
+    let context = &env.context;
+    let provider = super::audio_provider_create(context, provider_create_request("voice-account")).await.expect("provider");
+    let voice = dto::UserVoiceCreateRequest { client_operation_id: "voice-create".into(), provider_id: provider.id,
+        name: "Narrator".into(), model_id: "eleven_multilingual_v2".into(), voice_id: "remote-voice".into(), prompt: None };
+    let original = super::user_voice_create(context, voice.clone()).await.expect("voice");
+    super::user_voice_delete(context, dto::UserVoiceRequest { voice_id: original.id.clone() }).await.expect("delete voice");
+    assert_eq!(super::user_voice_create(context, voice).await.expect("deleted voice replay"), original);
+    let asset = ingest_wav(context, tone());
+    let example = dto::AsrVoiceExampleSaveRequest { client_operation_id: "example-save".into(), id: None, audio_asset_id: asset.to_string(), expected_text: "Lettuce".into(), whisper_output: Some("let us".into()), language: Some("en".into()), scope: None, vocabulary_term_id: None, correction_id: None };
+    let saved = super::asr_voice_example_save(context, example.clone()).await.expect("example");
+    assert_eq!(super::asr_voice_example_save(context, example.clone()).await.expect("example replay"), saved);
+    let exported = env.root.join("library.json");
+    super::asr_learning_export(context, dto::AsrLearningExportRequest { target: dto::FileTarget { uri: exported.to_string_lossy().into_owned() }, filter: dto::AsrLearningFilter { language: None, scopes: vec!["global".into()] } }).await.expect("export");
+    let import = dto::AsrLearningImportRequest { client_operation_id: "library-import".into(), source: dto::FileSource { uri: exported.to_string_lossy().into_owned() } };
+    let imported = super::asr_learning_import(context, import.clone()).await.expect("import");
+    assert_eq!(imported.voice_example_count, 1);
+    assert_eq!(super::asr_learning_import(context, import).await.expect("import replay"), imported);
+    let examples = super::asr_voice_examples_list(context, dto::AsrLearningFilter { language: None, scopes: vec!["global".into()] }).await.expect("examples");
+    assert_eq!(examples.len(), 2);
+    super::asr_voice_example_delete(context, dto::AsrLearningItemRequest { id: saved.id }).await.expect("delete example");
+    assert_eq!(super::asr_voice_example_save(context, example).await.expect("example replay after deletion").audio.asset_id, asset.to_string());
+}
+
+struct RefusingAudioSecretStore {
+    store: Arc<dyn lettuce_settings::SecretStore>,
+    refuse_inventory: bool,
+}
+
+#[async_trait]
+impl lettuce_settings::SecretStore for RefusingAudioSecretStore {
+    async fn audio_api_keys(&self) -> Result<Vec<lettuce_settings::SecretStatus>, lettuce_settings::SecretStoreError> {
+        if self.refuse_inventory { return Err(lettuce_settings::SecretStoreError::Unavailable(lettuce_settings::SecretAvailability::BackendUnavailable)); }
+        self.store.audio_api_keys().await
+    }
+    async fn put(&self, record: lettuce_settings::SecretRecord, value: SecretValue, expected: Option<u64>) -> Result<lettuce_settings::SecretStatus, lettuce_settings::SecretStoreError> {
+        self.store.put(record, value, expected).await
+    }
+    async fn load(&self, reference: &lettuce_settings::SecretRef, purpose: &lettuce_settings::SecretPurpose) -> Result<SecretValue, lettuce_settings::SecretStoreError> {
+        self.store.load(reference, purpose).await
+    }
+    async fn status(&self, reference: &lettuce_settings::SecretRef, purpose: &lettuce_settings::SecretPurpose) -> Result<lettuce_settings::SecretStatus, lettuce_settings::SecretStoreError> {
+        self.store.status(reference, purpose).await
+    }
+    async fn delete(&self, _: &lettuce_settings::SecretRef, _: &lettuce_settings::SecretPurpose, _: Option<u64>) -> Result<lettuce_settings::SecretStatus, lettuce_settings::SecretStoreError> {
+        Err(lettuce_settings::SecretStoreError::Unavailable(lettuce_settings::SecretAvailability::BackendUnavailable))
+    }
+}
+
+#[tokio::test]
+async fn startup_refuses_typed_audio_secret_inventory_or_delete_failures() {
+    use lettuce_settings::{SecretPurpose, SecretRecord};
+    for refuse_inventory in [true, false] {
+        let env = env(TtsMode::Speak, AsrMode::Text("Hello."), None);
+        let (_, owner, reference) = super::providers::provider_create_ids("startup-orphan");
+        env.context.secret_store().put(SecretRecord::new(reference, SecretPurpose::AudioApiKey { owner }),
+            SecretValue::new("orphan-canary").expect("secret"), None).await.expect("orphan");
+        let context = env.context.with_secret_store(Arc::new(RefusingAudioSecretStore {
+            store: env.context.secret_store().clone(), refuse_inventory,
+        }));
+        let error = crate::api::startup(&context).await.expect_err("startup cannot silently keep the orphan");
+        assert_eq!(error.code, ApiErrorCode::Unavailable);
+        assert_eq!(error.details, Some(ApiErrorDetails::Speech { failure: SpeechFailure::SecretStoreUnavailable }));
+        assert_eq!(env.context.secret_store().audio_api_keys().await.expect("original inventory").len(), 1);
+    }
+}
+
+#[tokio::test]
+async fn legacy_learning_file_import_ingests_audio_once_and_replays_its_counted_result() {
+    let env = env(TtsMode::Speak, AsrMode::Text("Hello."), None);
+    let audio = env.root.join("legacy-voice.wav");
+    std::fs::write(&audio, tone()).expect("legacy audio");
+    let source = env.root.join("legacy-library.json");
+    let document = serde_json::json!({
+        "version": 2,
+        "vocabulary": [{"id": 1, "term": "Lettuce AI", "normalizedTerm": "lettuce ai", "language": "en", "category": "product", "scope": "global", "priority": 80, "useCount": 7, "createdAt": "2026-01-01 00:00:00", "updatedAt": "2026-01-02 00:00:00"}],
+        "voiceExamples": [{"id": 2, "audioPath": "legacy-voice.wav", "expectedText": "Lettuce AI", "normalizedExpectedText": "lettuce ai", "whisperOutput": "lettuce a eye", "normalizedWhisperOutput": "lettuce a eye", "language": "en", "scope": "global", "termId": 1, "correctionId": null, "createdAt": "2026-01-04 00:00:00"}],
+    });
+    std::fs::write(&source, serde_json::to_vec(&document).expect("document")).expect("library");
+    let request = dto::AsrLearningImportRequest { client_operation_id: "legacy-import".into(), source: dto::FileSource { uri: source.to_string_lossy().into_owned() } };
+    let first = super::asr_learning_import(&env.context, request.clone()).await.expect("legacy import");
+    assert_eq!((first.vocabulary_count, first.voice_example_count), (1, 1));
+    assert_eq!(super::asr_learning_import(&env.context, request.clone()).await.expect("replay"), first);
+    let filter = dto::AsrLearningFilter { language: None, scopes: vec!["global".into()] };
+    let examples = super::asr_voice_examples_list(&env.context, filter.clone()).await.expect("examples");
+    assert_eq!(examples.len(), 1, "replay does not ingest another asset/example");
+    assert!(examples[0].audio.url.starts_with("test-asset://"));
+    let vocabulary = super::asr_vocabulary_list(&env.context, filter).await.expect("vocabulary");
+    assert_eq!(vocabulary[0].use_count, 7);
+    std::fs::write(&source, b"{\"version\":2}").expect("changed request");
+    assert_eq!(super::asr_learning_import(&env.context, request).await.expect_err("changed content conflicts").code, ApiErrorCode::Conflict);
+}
+
+#[tokio::test]
+async fn an_audio_secret_with_only_a_creation_receipt_is_retained_at_startup() {
+    use lettuce_speech::TtsConfigurationRepository;
+    let env = env(TtsMode::Speak, AsrMode::Text("Hello."), None);
+    let created = super::audio_provider_create(&env.context, provider_create_request("receipt-only-owner")).await.expect("create");
+    env.context.backend().database().delete_audio_provider(created.id.parse().expect("id"), lettuce_types::Revision::new(created.revision)).expect("metadata deletion without credential deletion");
+    super::sweep_orphan_audio_secrets(&env.context).await.expect("sweep");
+    assert_eq!(env.context.secret_store().audio_api_keys().await.expect("retained key").len(), 1);
+}

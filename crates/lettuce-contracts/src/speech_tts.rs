@@ -243,3 +243,31 @@ pub struct MessageSpeakRequest {
     #[serde(default)]
     pub swap_places: bool,
 }
+
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct AudioProviderCreateRequest {
+    pub client_operation_id: String,
+    pub label: String,
+    pub draft: AudioProviderDraft,
+}
+
+impl std::fmt::Debug for AudioProviderCreateRequest {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.debug_struct("AudioProviderCreateRequest").field("client_operation_id", &self.client_operation_id)
+            .field("label", &self.label).field("draft", &self.draft).finish()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct UserVoiceCreateRequest {
+    pub client_operation_id: String,
+    pub provider_id: String,
+    pub name: String,
+    pub model_id: String,
+    pub voice_id: String,
+    pub prompt: Option<String>,
+}

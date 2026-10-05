@@ -56,3 +56,5 @@ Facts about how `lettuce-settings` relates to the legacy app (2.2.x). The crate 
 - The previous README said nothing reads the app-wide tokens yet. The Hugging Face and CivitAI browsers in `lettuce-app` now read them.
 - The previous README said `GlobalSettings` held only safety, telemetry and update preferences and deliberately excluded frontend appearance. The document has since grown the feature sections and `ui_preferences`, which carries the shell's appearance settings.
 - The crate docs refer to a crate `PLAN.md`; there is none in the crate directory.
+
+Audio API keys have a metadata-only native inventory so startup can remove a secret left by an interrupted account creation. The keyring/passphrase-vault index is written before the credential value, survives reopening the store, and is pruned after deletion. Inventory and cleanup failures remain typed; the application refuses startup rather than silently retaining an orphan. The index does not contain credential values and is rebuilt by ordinary secret puts during restore.

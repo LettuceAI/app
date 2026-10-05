@@ -165,6 +165,8 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::speech::user_voice_update,
             commands::speech::user_voice_delete,
             commands::speech::asr_learning_export,
+            commands::speech::audio_provider_create,
+            commands::speech::user_voice_create,
             commands::speech::asr_vocabulary_save,
             commands::speech::asr_correction_save,
             commands::speech::asr_suggestion_approve,
