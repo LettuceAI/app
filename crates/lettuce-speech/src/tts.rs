@@ -194,7 +194,9 @@ pub enum TtsConfigurationRepositoryError {
     #[error("TTS configuration is invalid")]
     InvalidData,
     #[error("TTS provider is referenced by a character voice preference")]
-    InUse { characters: Vec<AudioProviderCharacterReference> },
+    InUse {
+        characters: Vec<AudioProviderCharacterReference>,
+    },
     #[error("TTS configuration storage failed")]
     Storage,
 }

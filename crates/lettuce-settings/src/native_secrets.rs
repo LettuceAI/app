@@ -463,8 +463,17 @@ mod tests {
         let mut keys = Vec::new();
         for _ in 0..64 {
             let reference = SecretRef::new();
-            let purpose = SecretPurpose::AudioApiKey { owner: SecretOwnerId::new() };
-            store.put(SecretRecord::new(reference, purpose.clone()), SecretValue::new("audio-canary").expect("secret"), None).await.expect("put");
+            let purpose = SecretPurpose::AudioApiKey {
+                owner: SecretOwnerId::new(),
+            };
+            store
+                .put(
+                    SecretRecord::new(reference, purpose.clone()),
+                    SecretValue::new("audio-canary").expect("secret"),
+                    None,
+                )
+                .await
+                .expect("put");
             keys.push((reference, purpose));
         }
         let reopened = NativeSecretStore::with_backend(backend.clone());
@@ -473,7 +482,10 @@ mod tests {
         }
         let entries = backend.entries.lock().expect("entries");
         assert_eq!(entries.len(), 64);
-        assert!(entries.values().all(|value| value.len() < 2560), "Windows credential blob maximum");
+        assert!(
+            entries.values().all(|value| value.len() < 2560),
+            "Windows credential blob maximum"
+        );
         assert!(!entries.contains_key("audio-api-key-index-v1"));
     }
 

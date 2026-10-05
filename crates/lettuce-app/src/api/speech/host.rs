@@ -1,9 +1,9 @@
 use std::sync::{Arc, Mutex};
 
 use lettuce_contracts::{ApiError, ApiErrorCode};
+use lettuce_jobs::handle::CancellationToken;
 use lettuce_model_hub::{KokoroInstallStore, KokoroVoiceInstallStore};
 use lettuce_platform::EspeakNgProcess;
-use lettuce_jobs::handle::CancellationToken;
 use lettuce_speech::{
     AsrModelDescriptor, AsrRuntime, AsrRuntimeError, RuntimeTranscription, TranscriptionOptions,
     TtsRuntime,
@@ -17,10 +17,19 @@ use crate::{MicrophoneCapture, OnnxRuntimePaths};
 /// device's Kokoro files and ONNX Runtime, and the microphone.
 /// `InstalledSpeech` is the production host; tests supply their own.
 pub trait SpeechHost: Send + Sync {
-    fn voice_creation_runtime(&self, context: &ApiContext) -> Result<Arc<dyn lettuce_speech::VoiceDesignRuntime>, ApiError> {
-        let tls = context.backend().tls_policy().map_err(|error| api_error(ApiErrorCode::Unavailable, error.to_string()))?;
-        let client = lettuce_network::JsonClient::with_tls(&tls).map_err(|error| api_error(ApiErrorCode::Unavailable, error.to_string()))?;
-        Ok(Arc::new(lettuce_speech::ElevenLabsTtsRuntime::new(Arc::new(client))))
+    fn voice_creation_runtime(
+        &self,
+        context: &ApiContext,
+    ) -> Result<Arc<dyn lettuce_speech::VoiceDesignRuntime>, ApiError> {
+        let tls = context
+            .backend()
+            .tls_policy()
+            .map_err(|error| api_error(ApiErrorCode::Unavailable, error.to_string()))?;
+        let client = lettuce_network::JsonClient::with_tls(&tls)
+            .map_err(|error| api_error(ApiErrorCode::Unavailable, error.to_string()))?;
+        Ok(Arc::new(lettuce_speech::ElevenLabsTtsRuntime::new(
+            Arc::new(client),
+        )))
     }
 
     fn tts_runtime(&self, context: &ApiContext) -> Result<Arc<dyn TtsRuntime>, ApiError>;
@@ -46,10 +55,13 @@ impl AsrRuntime for BackendWhisper {
         options: &TranscriptionOptions,
         cancellation: &CancellationToken,
     ) -> Result<RuntimeTranscription, AsrRuntimeError> {
-        self.0
-            .backend()
-            .whisper_runtime()
-            .transcribe(model, mono_16khz, prompt, options, cancellation)
+        self.0.backend().whisper_runtime().transcribe(
+            model,
+            mono_16khz,
+            prompt,
+            options,
+            cancellation,
+        )
     }
 }
 
@@ -89,7 +101,9 @@ impl InstalledSpeech {
 
 impl std::fmt::Debug for InstalledSpeech {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.debug_struct("InstalledSpeech").finish_non_exhaustive()
+        formatter
+            .debug_struct("InstalledSpeech")
+            .finish_non_exhaustive()
     }
 }
 
@@ -99,15 +113,21 @@ impl SpeechHost for InstalledSpeech {
             .runtime
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let folder = context.app_folder().ok_or_else(|| {
-            api_error(ApiErrorCode::Unavailable, "no app data folder is open")
-        })?;
+        let folder = context
+            .app_folder()
+            .ok_or_else(|| api_error(ApiErrorCode::Unavailable, "no app data folder is open"))?;
         let unavailable =
             |error: &dyn std::fmt::Display| api_error(ApiErrorCode::Unavailable, error.to_string());
-        let root = context.retained_model_roots()?.kokoro.map(std::path::PathBuf::from)
-            .ok_or_else(|| api_error(ApiErrorCode::Unavailable, "the Kokoro root is unavailable"))?;
+        let root = context
+            .retained_model_roots()?
+            .kokoro
+            .map(std::path::PathBuf::from)
+            .ok_or_else(|| {
+                api_error(ApiErrorCode::Unavailable, "the Kokoro root is unavailable")
+            })?;
         if let Some((installed_root, cached)) = runtime.as_ref()
-            && installed_root == &root {
+            && installed_root == &root
+        {
             return Ok(Arc::clone(cached));
         }
         std::fs::create_dir_all(&root).map_err(|error| unavailable(&error))?;

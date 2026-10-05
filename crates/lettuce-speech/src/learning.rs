@@ -103,10 +103,18 @@ impl AsrCorrectionRule {
         let wrong = wrong.into();
         let correct = correct.into();
         let accepted_count = u64::from(user_approved);
-        let confidence = score_suggestion(&wrong, &correct, SuggestionScoreEvidence {
-            before_words: wrong.split_whitespace().count(), after_words: correct.split_whitespace().count(),
-            vocabulary_signal: false, accepted_count, rejected_count: 0, seen_count: accepted_count,
-        });
+        let confidence = score_suggestion(
+            &wrong,
+            &correct,
+            SuggestionScoreEvidence {
+                before_words: wrong.split_whitespace().count(),
+                after_words: correct.split_whitespace().count(),
+                vocabulary_signal: false,
+                accepted_count,
+                rejected_count: 0,
+                seen_count: accepted_count,
+            },
+        );
         let value = Self {
             id: AsrCorrectionId::new(),
             normalized_wrong: normalize_lookup_text(&wrong),
@@ -168,27 +176,79 @@ pub struct AsrCorrectionDraft {
 }
 
 impl AsrCorrectionDraft {
-    pub fn materialize(&self, existing: Option<&AsrCorrectionRule>, vocabulary_signal: bool, now: TimestampMillis) -> Result<AsrCorrectionRule, AsrLearningError> {
+    pub fn materialize(
+        &self,
+        existing: Option<&AsrCorrectionRule>,
+        vocabulary_signal: bool,
+        now: TimestampMillis,
+    ) -> Result<AsrCorrectionRule, AsrLearningError> {
         let approved_now = u64::from(self.user_approved.unwrap_or(false));
-        let count = |explicit: Option<u64>, previous: u64, increment: u64| explicit
-            .map(Ok).unwrap_or_else(|| previous.checked_add(increment).ok_or(AsrLearningError::InvalidData));
-        let accepted = count(self.accepted_count, existing.map_or(0, |rule| rule.accepted_count), approved_now)?;
-        let seen = count(self.seen_count, existing.map_or(0, |rule| rule.seen_count), approved_now)?;
-        let rejected = self.rejected_count.unwrap_or(existing.map_or(0, |rule| rule.rejected_count));
-        let scope = preferred_scope(existing.map(|rule| rule.scope.as_str()), &normalize_scope(self.scope.as_deref()), accepted);
-        let confidence = self.confidence.unwrap_or_else(|| score_suggestion(&self.wrong, &self.correct, SuggestionScoreEvidence {
-            before_words: self.wrong.split_whitespace().count(), after_words: self.correct.split_whitespace().count(),
-            vocabulary_signal, accepted_count: accepted, rejected_count: rejected, seen_count: seen,
-        }));
+        let count = |explicit: Option<u64>, previous: u64, increment: u64| {
+            explicit.map(Ok).unwrap_or_else(|| {
+                previous
+                    .checked_add(increment)
+                    .ok_or(AsrLearningError::InvalidData)
+            })
+        };
+        let accepted = count(
+            self.accepted_count,
+            existing.map_or(0, |rule| rule.accepted_count),
+            approved_now,
+        )?;
+        let seen = count(
+            self.seen_count,
+            existing.map_or(0, |rule| rule.seen_count),
+            approved_now,
+        )?;
+        let rejected = self
+            .rejected_count
+            .unwrap_or(existing.map_or(0, |rule| rule.rejected_count));
+        let scope = preferred_scope(
+            existing.map(|rule| rule.scope.as_str()),
+            &normalize_scope(self.scope.as_deref()),
+            accepted,
+        );
+        let confidence = self.confidence.unwrap_or_else(|| {
+            score_suggestion(
+                &self.wrong,
+                &self.correct,
+                SuggestionScoreEvidence {
+                    before_words: self.wrong.split_whitespace().count(),
+                    after_words: self.correct.split_whitespace().count(),
+                    vocabulary_signal,
+                    accepted_count: accepted,
+                    rejected_count: rejected,
+                    seen_count: seen,
+                },
+            )
+        });
         let value = AsrCorrectionRule {
             id: self.id.or(existing.map(|rule| rule.id)).unwrap_or_default(),
-            wrong: self.wrong.clone(), normalized_wrong: normalize_lookup_text(&self.wrong),
-            correct: self.correct.clone(), normalized_correct: normalize_lookup_text(&self.correct),
-            language: normalize_language(self.language.as_deref()), scope, confidence,
-            use_count: self.use_count.unwrap_or(existing.map_or(1, |rule| rule.use_count)).max(1),
-            accepted_count: accepted, rejected_count: rejected, seen_count: seen,
-            last_seen_at: self.last_seen_at.or_else(|| if seen > 0 { Some(now) } else { existing.and_then(|rule| rule.last_seen_at) }),
-            user_approved: self.user_approved.unwrap_or(existing.is_some_and(|rule| rule.user_approved)) || accepted > 0,
+            wrong: self.wrong.clone(),
+            normalized_wrong: normalize_lookup_text(&self.wrong),
+            correct: self.correct.clone(),
+            normalized_correct: normalize_lookup_text(&self.correct),
+            language: normalize_language(self.language.as_deref()),
+            scope,
+            confidence,
+            use_count: self
+                .use_count
+                .unwrap_or(existing.map_or(1, |rule| rule.use_count))
+                .max(1),
+            accepted_count: accepted,
+            rejected_count: rejected,
+            seen_count: seen,
+            last_seen_at: self.last_seen_at.or_else(|| {
+                if seen > 0 {
+                    Some(now)
+                } else {
+                    existing.and_then(|rule| rule.last_seen_at)
+                }
+            }),
+            user_approved: self
+                .user_approved
+                .unwrap_or(existing.is_some_and(|rule| rule.user_approved))
+                || accepted > 0,
             created_at: existing.map_or(now, |rule| rule.created_at),
             updated_at: existing.map_or(now, |rule| now.max(rule.updated_at)),
         };
@@ -415,7 +475,10 @@ pub trait AsrLearningRepository: Send + Sync {
         &self,
         suggestion: AsrIgnoredSuggestion,
     ) -> Result<AsrIgnoredSuggestion, AsrLearningRepositoryError>;
-    fn get_ignored_suggestion(&self, id: AsrIgnoredSuggestionId) -> Result<Option<AsrIgnoredSuggestion>, AsrLearningRepositoryError>;
+    fn get_ignored_suggestion(
+        &self,
+        id: AsrIgnoredSuggestionId,
+    ) -> Result<Option<AsrIgnoredSuggestion>, AsrLearningRepositoryError>;
     fn list_ignored_suggestions(
         &self,
         language: Option<&str>,
@@ -426,7 +489,10 @@ pub trait AsrLearningRepository: Send + Sync {
         language: Option<&str>,
         scopes: &[String],
     ) -> Result<Vec<AsrVoiceExample>, AsrLearningRepositoryError>;
-    fn get_voice_example(&self, id: AsrVoiceExampleId) -> Result<Option<AsrVoiceExample>, AsrLearningRepositoryError>;
+    fn get_voice_example(
+        &self,
+        id: AsrVoiceExampleId,
+    ) -> Result<Option<AsrVoiceExample>, AsrLearningRepositoryError>;
     fn save_voice_example(
         &self,
         example: AsrVoiceExample,
@@ -493,8 +559,14 @@ impl<R: AsrLearningRepository + ?Sized> AsrLearningLibrary<'_, R> {
             .map_err(Into::into)
     }
 
-    pub fn save_correction_draft(&self, draft: AsrCorrectionDraft, now: TimestampMillis) -> Result<AsrCorrectionRule, AsrLearningError> {
-        self.repository.save_correction_draft(draft, now).map_err(Into::into)
+    pub fn save_correction_draft(
+        &self,
+        draft: AsrCorrectionDraft,
+        now: TimestampMillis,
+    ) -> Result<AsrCorrectionRule, AsrLearningError> {
+        self.repository
+            .save_correction_draft(draft, now)
+            .map_err(Into::into)
     }
 
     pub fn save_correction(
@@ -631,11 +703,20 @@ impl<R: AsrLearningRepository + ?Sized> AsrLearningLibrary<'_, R> {
         now: TimestampMillis,
     ) -> Result<AsrCorrectionRule, AsrLearningError> {
         suggestion.validate()?;
-        self.repository.save_correction_draft(AsrCorrectionDraft {
-            wrong: suggestion.wrong, correct: suggestion.correct, language: suggestion.language,
-            scope: Some(suggestion.scope), confidence: Some(suggestion.confidence), user_approved: Some(true),
-            ..Default::default()
-        }, now).map_err(Into::into)
+        self.repository
+            .save_correction_draft(
+                AsrCorrectionDraft {
+                    wrong: suggestion.wrong,
+                    correct: suggestion.correct,
+                    language: suggestion.language,
+                    scope: Some(suggestion.scope),
+                    confidence: Some(suggestion.confidence),
+                    user_approved: Some(true),
+                    ..Default::default()
+                },
+                now,
+            )
+            .map_err(Into::into)
     }
 
     pub fn ignore_suggestion(
@@ -685,7 +766,10 @@ impl<R: AsrLearningRepository + ?Sized> AsrLearningLibrary<'_, R> {
             .map_err(Into::into)
     }
 
-    pub fn get_voice_example(&self, id: AsrVoiceExampleId) -> Result<Option<AsrVoiceExample>, AsrLearningError> {
+    pub fn get_voice_example(
+        &self,
+        id: AsrVoiceExampleId,
+    ) -> Result<Option<AsrVoiceExample>, AsrLearningError> {
         self.repository.get_voice_example(id).map_err(Into::into)
     }
 
@@ -699,8 +783,13 @@ impl<R: AsrLearningRepository + ?Sized> AsrLearningLibrary<'_, R> {
             .map_err(Into::into)
     }
 
-    pub fn get_ignored_suggestion(&self, id: AsrIgnoredSuggestionId) -> Result<Option<AsrIgnoredSuggestion>, AsrLearningError> {
-        self.repository.get_ignored_suggestion(id).map_err(Into::into)
+    pub fn get_ignored_suggestion(
+        &self,
+        id: AsrIgnoredSuggestionId,
+    ) -> Result<Option<AsrIgnoredSuggestion>, AsrLearningError> {
+        self.repository
+            .get_ignored_suggestion(id)
+            .map_err(Into::into)
     }
 
     pub fn list_ignored_suggestions(
@@ -1274,10 +1363,11 @@ mod tests {
     #[test]
     fn new_correction_uses_the_suggestion_confidence_without_vocabulary_evidence() {
         let now = TimestampMillis::new(100);
-        let plain = AsrCorrectionRule::new("orange", "purple", None, None, false, now).expect("rule");
+        let plain =
+            AsrCorrectionRule::new("orange", "purple", None, None, false, now).expect("rule");
         assert!((plain.confidence - 0.55).abs() < f64::EPSILON);
-        let approved = AsrCorrectionRule::new("orange", "purple", None, None, true, now).expect("rule");
+        let approved =
+            AsrCorrectionRule::new("orange", "purple", None, None, true, now).expect("rule");
         assert!((approved.confidence - 0.65).abs() < f64::EPSILON);
     }
-
 }

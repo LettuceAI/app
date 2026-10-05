@@ -62,18 +62,28 @@ where
         legacy: LegacyAsrLearningDocument,
         imported_at: TimestampMillis,
     ) -> Result<AsrLearningImportReceipt, LegacyAsrLearningTransferError> {
-        crate::AsrLearningTransferCoordinator::new(self.repository).import(self.prepare_document(document_directory, legacy, imported_at)?)
+        crate::AsrLearningTransferCoordinator::new(self.repository)
+            .import(self.prepare_document(document_directory, legacy, imported_at)?)
             .map_err(LegacyAsrLearningTransferError::Learning)
     }
 
-    pub fn prepare_import(&self, document_directory: impl AsRef<Path>, legacy: LegacyAsrLearningDocument, imported_at: TimestampMillis)
-        -> Result<lettuce_speech::AsrLearningBatch, LegacyAsrLearningTransferError> {
-        crate::AsrLearningTransferCoordinator::new(self.repository).prepare_import(self.prepare_document(document_directory, legacy, imported_at)?)
+    pub fn prepare_import(
+        &self,
+        document_directory: impl AsRef<Path>,
+        legacy: LegacyAsrLearningDocument,
+        imported_at: TimestampMillis,
+    ) -> Result<lettuce_speech::AsrLearningBatch, LegacyAsrLearningTransferError> {
+        crate::AsrLearningTransferCoordinator::new(self.repository)
+            .prepare_import(self.prepare_document(document_directory, legacy, imported_at)?)
             .map_err(LegacyAsrLearningTransferError::Learning)
     }
 
-    fn prepare_document(&self, document_directory: impl AsRef<Path>, legacy: LegacyAsrLearningDocument, imported_at: TimestampMillis)
-        -> Result<AsrLearningDocument, LegacyAsrLearningTransferError> {
+    fn prepare_document(
+        &self,
+        document_directory: impl AsRef<Path>,
+        legacy: LegacyAsrLearningDocument,
+        imported_at: TimestampMillis,
+    ) -> Result<AsrLearningDocument, LegacyAsrLearningTransferError> {
         if !legacy.within_bounds() {
             return Err(LegacyAsrLearningTransferError::InvalidDocument);
         }
@@ -155,13 +165,13 @@ where
             })
             .collect();
         Ok(AsrLearningDocument {
-                version: ASR_LEARNING_DOCUMENT_VERSION,
-                vocabulary: vocabulary.into_iter().map(|(_, value)| value).collect(),
-                corrections: corrections.into_iter().map(|(_, value)| value).collect(),
-                ignored_suggestions,
-                voice_examples,
-                audio_assets,
-            })
+            version: ASR_LEARNING_DOCUMENT_VERSION,
+            vocabulary: vocabulary.into_iter().map(|(_, value)| value).collect(),
+            corrections: corrections.into_iter().map(|(_, value)| value).collect(),
+            ignored_suggestions,
+            voice_examples,
+            audio_assets,
+        })
     }
 }
 

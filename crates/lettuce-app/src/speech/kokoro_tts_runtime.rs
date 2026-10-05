@@ -124,12 +124,22 @@ impl TtsRuntime for KokoroTtsRuntime {
         let models = self.models.clone();
         let voices = self.voices.clone();
         let phonemizer = Arc::clone(&self.phonemizer);
-        let runtime = self.onnx_runtime.committed(cancellation).await.map_err(|error| {
-            if error == TtsRuntimeError::Cancelled { error } else { TtsRuntimeError::OnnxMissing }
-        })?;
+        let runtime = self
+            .onnx_runtime
+            .committed(cancellation)
+            .await
+            .map_err(|error| {
+                if error == TtsRuntimeError::Cancelled {
+                    error
+                } else {
+                    TtsRuntimeError::OnnxMissing
+                }
+            })?;
         let cancellation = cancellation.clone();
         tokio::task::spawn_blocking(move || {
-            let model = models.recorded_model(variant).map_err(map_lexicon_store_error)?;
+            let model = models
+                .recorded_model(variant)
+                .map_err(map_lexicon_store_error)?;
             let voice = KokoroVoiceBlendCoordinator::new(voices)
                 .blend_installed(&specs)
                 .map_err(map_voice_error)?;

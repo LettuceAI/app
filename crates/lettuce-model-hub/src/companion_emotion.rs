@@ -495,14 +495,23 @@ impl CompanionEmotionInstallStore {
     /// Rebinds a copied install from its former root, verifying unchanged content.
     pub fn rebind_from(&self, old_root: &Path) -> Result<(), CompanionEmotionInstallError> {
         let source = Self::open(old_root)?;
-        let Some(mut manifest) = source.installed()? else { return Ok(()); };
-        for artifact in [&mut manifest.model, &mut manifest.tokenizer, &mut manifest.labels] {
-            let relative = artifact.path.strip_prefix(old_root)
+        let Some(mut manifest) = source.installed()? else {
+            return Ok(());
+        };
+        for artifact in [
+            &mut manifest.model,
+            &mut manifest.tokenizer,
+            &mut manifest.labels,
+        ] {
+            let relative = artifact
+                .path
+                .strip_prefix(old_root)
                 .map_err(|_| ModelArtifactError::InvalidManifest)?;
             artifact.path = self.root.join(relative);
         }
         manifest.verify()?;
-        let bytes = serde_json::to_vec(&manifest).map_err(|_| ModelArtifactError::InvalidManifest)?;
+        let bytes =
+            serde_json::to_vec(&manifest).map_err(|_| ModelArtifactError::InvalidManifest)?;
         self.write_record(INSTALLED_MANIFEST_FILE, &bytes)?;
         self.installed()?.ok_or(ModelArtifactError::Missing)?;
         Ok(())

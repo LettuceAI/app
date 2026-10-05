@@ -281,7 +281,9 @@ impl TtsRuntime for ElevenLabsTtsRuntime {
         };
         if !(200..300).contains(&response.status) {
             return Err(match response.status {
-                408 | 429 | 500..=599 => TtsRuntimeError::ProviderUnavailable { status: response.status },
+                408 | 429 | 500..=599 => TtsRuntimeError::ProviderUnavailable {
+                    status: response.status,
+                },
                 _ => TtsRuntimeError::Rejected,
             });
         }
@@ -413,7 +415,9 @@ impl VoiceDesignRuntime for ElevenLabsTtsRuntime {
             () = cancellation.cancelled() => return Err(VoiceDesignRuntimeError::Cancelled),
         };
         if !(200..300).contains(&response.status) {
-            return Err(VoiceDesignRuntimeError::ProviderRejected { status: response.status });
+            return Err(VoiceDesignRuntimeError::ProviderRejected {
+                status: response.status,
+            });
         }
         let response: ElevenLabsVoiceCreationResponse = serde_json::from_slice(&response.body)
             .map_err(|_| VoiceDesignRuntimeError::OutcomeUnknown)?;
@@ -441,7 +445,7 @@ fn map_network(error: JsonClientError) -> TtsRuntimeError {
         | JsonClientError::RequestTooLarge
         | JsonClientError::ResponseTooLarge => TtsRuntimeError::Rejected,
         JsonClientError::Transport => TtsRuntimeError::NetworkUnavailable,
-        JsonClientError::ClientConfiguration => TtsRuntimeError::Unavailable
+        JsonClientError::ClientConfiguration => TtsRuntimeError::Unavailable,
     }
 }
 
@@ -699,7 +703,10 @@ mod tests {
                     let (mut stream, _) = listener.accept().await.expect("accept");
                     let mut buffer = [0_u8; 4096];
                     let read = stream.read(&mut buffer).await.expect("read request");
-                    assert!(read > 0, "received request bytes before dropping or responding");
+                    assert!(
+                        read > 0,
+                        "received request bytes before dropping or responding"
+                    );
                     received.fetch_add(1, Ordering::SeqCst);
                     let response: &[u8] = match scenario {
                         "server_error" => b"HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\n\r\n",
@@ -710,13 +717,16 @@ mod tests {
                 }
             });
             let runtime = ElevenLabsTtsRuntime::with_endpoint(
-                Arc::new(JsonClient::new().expect("network client")), endpoint,
+                Arc::new(JsonClient::new().expect("network client")),
+                endpoint,
             );
-            let outcome = runtime.create_voice(
-                &creation_request(),
-                &SecretValue::new("create-no-retry").expect("secret"),
-                &CancellationToken::new(),
-            ).await;
+            let outcome = runtime
+                .create_voice(
+                    &creation_request(),
+                    &SecretValue::new("create-no-retry").expect("secret"),
+                    &CancellationToken::new(),
+                )
+                .await;
             server.abort();
             let expected = match scenario {
                 "server_error" => "ProviderRejected { status: 503 }",
@@ -724,7 +734,11 @@ mod tests {
                 _ => "OutcomeUnknown",
             };
             assert_eq!(format!("{:?}", outcome.expect_err("failure")), expected);
-            assert_eq!(requests.load(Ordering::SeqCst), 1, "billable create must send once, scenario={scenario}");
+            assert_eq!(
+                requests.load(Ordering::SeqCst),
+                1,
+                "billable create must send once, scenario={scenario}"
+            );
         }
     }
 

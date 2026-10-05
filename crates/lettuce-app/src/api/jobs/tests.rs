@@ -435,22 +435,61 @@ fn parse(accepted: &dto::JobAccepted) -> JobId {
 #[tokio::test(flavor = "multi_thread")]
 async fn embedding_install_admission_preserves_detail_and_conflicts_with_changed_setup() {
     let root = temp_root("embedding-admission");
-    let harness = harness_in(Reply::Text("Hello."), Arc::new(SystemClock), None, Some(root.clone()), Arc::new(crate::api::NoModels));
+    let harness = harness_in(
+        Reply::Text("Hello."),
+        Arc::new(SystemClock),
+        None,
+        Some(root.clone()),
+        Arc::new(crate::api::NoModels),
+    );
     let pin = lettuce_model_hub::EmbeddingPin {
         family: lettuce_model_hub::EmbeddingModelFamily::LettuceEmbV4,
-        revision: "a".repeat(40), files: Vec::new(),
+        revision: "a".repeat(40),
+        files: Vec::new(),
     };
     let work = |enabled| InstallWork::Artifact {
         plan: plan(&root, "embedding", b"pinned bytes"),
-        finish: Box::new(InstallFinish::Embedding { root: root.clone(), pin: pin.clone(), enable_dynamic_memory: enabled }),
+        finish: Box::new(InstallFinish::Embedding {
+            root: root.clone(),
+            pin: pin.clone(),
+            enable_dynamic_memory: enabled,
+        }),
     };
-    let detail = |enabled| serde_json::to_value(super::local::LocalModelJobDetail::EmbeddingInstall {
-        root: root.clone(), pin: pin.clone(), enable_dynamic_memory: enabled,
-    }).expect("detail");
-    let accepted = admit_install_with_detail(&harness.context, work(true), Some(detail(true))).await.expect("admission");
-    assert_eq!(harness.context.backend().database().local_model_job(parse(&accepted)).expect("read").expect("detail").detail, detail(true));
-    assert_eq!(admit_install_with_detail(&harness.context, work(true), Some(detail(true))).await.expect("replay"), accepted);
-    assert_eq!(admit_install_with_detail(&harness.context, work(false), Some(detail(false))).await.expect_err("changed setup").code, ApiErrorCode::Conflict);
+    let detail = |enabled| {
+        serde_json::to_value(super::local::LocalModelJobDetail::EmbeddingInstall {
+            root: root.clone(),
+            pin: pin.clone(),
+            enable_dynamic_memory: enabled,
+        })
+        .expect("detail")
+    };
+    let accepted = admit_install_with_detail(&harness.context, work(true), Some(detail(true)))
+        .await
+        .expect("admission");
+    assert_eq!(
+        harness
+            .context
+            .backend()
+            .database()
+            .local_model_job(parse(&accepted))
+            .expect("read")
+            .expect("detail")
+            .detail,
+        detail(true)
+    );
+    assert_eq!(
+        admit_install_with_detail(&harness.context, work(true), Some(detail(true)))
+            .await
+            .expect("replay"),
+        accepted
+    );
+    assert_eq!(
+        admit_install_with_detail(&harness.context, work(false), Some(detail(false)))
+            .await
+            .expect_err("changed setup")
+            .code,
+        ApiErrorCode::Conflict
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1005,47 +1044,138 @@ async fn a_transient_claim_failure_leaves_the_job_queued_for_a_retry() {
     assert_eq!(state(context, job_id), JobState::Queued);
 }
 
-struct HealthModels { constant: bool }
+struct HealthModels {
+    constant: bool,
+}
 
 #[async_trait]
 impl crate::api::ModelLoader for HealthModels {
-    fn installed(&self, _context: &ApiContext, model: dto::RequiredModel) -> bool { model == dto::RequiredModel::Embedding }
-    async fn prepare(&self, _context: &ApiContext) -> bool { true }
-    fn embedding(&self, _context: &ApiContext) -> crate::api::ModelLoad<Arc<dyn crate::MemoryEmbeddingEngine>> {
+    fn installed(&self, _context: &ApiContext, model: dto::RequiredModel) -> bool {
+        model == dto::RequiredModel::Embedding
+    }
+    async fn prepare(&self, _context: &ApiContext) -> bool {
+        true
+    }
+    fn embedding(
+        &self,
+        _context: &ApiContext,
+    ) -> crate::api::ModelLoad<Arc<dyn crate::MemoryEmbeddingEngine>> {
         crate::api::ModelLoad::Loaded(crate::api::embedding_health::tests::engine(self.constant))
     }
-    fn emotion(&self, _context: &ApiContext) -> crate::api::ModelLoad<Arc<dyn crate::CompanionEmotionEngine>> { crate::api::ModelLoad::NotInstalled }
+    fn emotion(
+        &self,
+        _context: &ApiContext,
+    ) -> crate::api::ModelLoad<Arc<dyn crate::CompanionEmotionEngine>> {
+        crate::api::ModelLoad::NotInstalled
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn embedding_install_worker_checks_health_before_activating_dynamic_memory() {
-    use lettuce_model_hub::{EmbeddingArtifactRole, EmbeddingFileDigest, EmbeddingModelFamily, EmbeddingPin, EmbeddingPinnedFile};
+    use lettuce_model_hub::{
+        EmbeddingArtifactRole, EmbeddingFileDigest, EmbeddingModelFamily, EmbeddingPin,
+        EmbeddingPinnedFile,
+    };
     use lettuce_settings::GlobalSettingsStore;
     let bytes = b"downloaded fixture bytes";
     for (bad_health, enable) in [(true, true), (false, true), (false, false)] {
         let folder = temp_root("embedding-health-install");
         let root = crate::embedding_models_root(&folder);
-        let harness = harness_in(Reply::Text("Hello."), Arc::new(SystemClock), None, Some(folder), Arc::new(HealthModels { constant: bad_health }));
-        let pin = EmbeddingPin { family: EmbeddingModelFamily::LettuceEmbV4, revision: "a".repeat(40),
-            files: [(EmbeddingArtifactRole::Model, "model.onnx"), (EmbeddingArtifactRole::Tokenizer, "tokenizer.json")].into_iter().map(|(role, name)|
-                EmbeddingPinnedFile { role, remote_path: name.into(), byte_size: bytes.len() as u64,
-                    digest: EmbeddingFileDigest::Sha256(format!("{:x}", Sha256::digest(bytes))) }).collect() };
-        let plan = ArtifactInstallPlan { install_id: "embedding-health".into(), root: root.clone(), artifacts: pin.files.iter().map(|file| {
-            let source = ArtifactSource::HuggingFace { repository: "test/embedding".into(), revision: pin.revision.clone(), path: file.remote_path.clone() };
-            PlannedArtifact { artifact: PinnedArtifact { source_identity: source.identity(), local_segments: pin.local_segments(file), byte_size: file.byte_size,
-                sha256: Some(format!("{:x}", Sha256::digest(bytes))) }, source }
-        }).collect() };
+        let harness = harness_in(
+            Reply::Text("Hello."),
+            Arc::new(SystemClock),
+            None,
+            Some(folder),
+            Arc::new(HealthModels {
+                constant: bad_health,
+            }),
+        );
+        let pin = EmbeddingPin {
+            family: EmbeddingModelFamily::LettuceEmbV4,
+            revision: "a".repeat(40),
+            files: [
+                (EmbeddingArtifactRole::Model, "model.onnx"),
+                (EmbeddingArtifactRole::Tokenizer, "tokenizer.json"),
+            ]
+            .into_iter()
+            .map(|(role, name)| EmbeddingPinnedFile {
+                role,
+                remote_path: name.into(),
+                byte_size: bytes.len() as u64,
+                digest: EmbeddingFileDigest::Sha256(format!("{:x}", Sha256::digest(bytes))),
+            })
+            .collect(),
+        };
+        let plan = ArtifactInstallPlan {
+            install_id: "embedding-health".into(),
+            root: root.clone(),
+            artifacts: pin
+                .files
+                .iter()
+                .map(|file| {
+                    let source = ArtifactSource::HuggingFace {
+                        repository: "test/embedding".into(),
+                        revision: pin.revision.clone(),
+                        path: file.remote_path.clone(),
+                    };
+                    PlannedArtifact {
+                        artifact: PinnedArtifact {
+                            source_identity: source.identity(),
+                            local_segments: pin.local_segments(file),
+                            byte_size: file.byte_size,
+                            sha256: Some(format!("{:x}", Sha256::digest(bytes))),
+                        },
+                        source,
+                    }
+                })
+                .collect(),
+        };
         let detail = serde_json::to_value(super::local::LocalModelJobDetail::EmbeddingInstall {
-            root: root.clone(), pin: pin.clone(), enable_dynamic_memory: enable,
-        }).expect("detail");
-        let accepted = admit_install_with_detail(&harness.context, InstallWork::Artifact { plan,
-            finish: Box::new(InstallFinish::Embedding { root: root.clone(), pin, enable_dynamic_memory: enable }) }, Some(detail)).await.expect("admit");
+            root: root.clone(),
+            pin: pin.clone(),
+            enable_dynamic_memory: enable,
+        })
+        .expect("detail");
+        let accepted = admit_install_with_detail(
+            &harness.context,
+            InstallWork::Artifact {
+                plan,
+                finish: Box::new(InstallFinish::Embedding {
+                    root: root.clone(),
+                    pin,
+                    enable_dynamic_memory: enable,
+                }),
+            },
+            Some(detail),
+        )
+        .await
+        .expect("admit");
         let (runner, _) = runner(&harness.context, bytes, None);
-        assert!(runner.run_once().await.expect("claim")); runner.wait_idle().await;
-        assert_eq!(state(&harness.context, parse(&accepted)), if bad_health { JobState::Failed } else { JobState::Succeeded });
-        let settings = GlobalSettingsStore::load(harness.context.backend().database()).expect("settings").settings;
+        assert!(runner.run_once().await.expect("claim"));
+        runner.wait_idle().await;
+        assert_eq!(
+            state(&harness.context, parse(&accepted)),
+            if bad_health {
+                JobState::Failed
+            } else {
+                JobState::Succeeded
+            }
+        );
+        let settings = GlobalSettingsStore::load(harness.context.backend().database())
+            .expect("settings")
+            .settings;
         assert_eq!(settings.dynamic_memory.enabled, !bad_health && enable);
-        if !bad_health && enable { assert_eq!(settings.dynamic_memory.min_similarity_basis_points, Some(3200)); }
-        assert!(crate::EmbeddingModelCoordinator::new(&root, harness.context.backend().database()).active().expect("installed").is_some());
+        if !bad_health && enable {
+            assert_eq!(
+                settings.dynamic_memory.min_similarity_basis_points,
+                Some(3200)
+            );
+        }
+        assert!(
+            crate::EmbeddingModelCoordinator::new(&root, harness.context.backend().database())
+                .active()
+                .expect("installed")
+                .is_some()
+        );
     }
 }

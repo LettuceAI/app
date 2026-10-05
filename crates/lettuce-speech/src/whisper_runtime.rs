@@ -56,7 +56,10 @@ impl<R: ?Sized> WhisperCppRuntime<R> {
     }
 
     pub fn resident_files(&self) -> Result<Vec<std::path::PathBuf>, AsrRuntimeError> {
-        let contexts = self.contexts.lock().map_err(|_| AsrRuntimeError::Unavailable)?;
+        let contexts = self
+            .contexts
+            .lock()
+            .map_err(|_| AsrRuntimeError::Unavailable)?;
         Ok(contexts.keys().map(|key| key.model_path.clone()).collect())
     }
 

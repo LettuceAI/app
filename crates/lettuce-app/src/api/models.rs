@@ -112,8 +112,12 @@ fn runtime_link(
 #[async_trait]
 impl ModelLoader for InstalledModels {
     fn installed(&self, context: &ApiContext, model: RequiredModel) -> bool {
-        if context.app_folder().is_none() { return false; }
-        let Ok(roots) = context.retained_model_roots() else { return false; };
+        if context.app_folder().is_none() {
+            return false;
+        }
+        let Ok(roots) = context.retained_model_roots() else {
+            return false;
+        };
         match model {
             RequiredModel::Embedding => EmbeddingModelCoordinator::new(
                 Path::new(roots.embedding.as_deref().expect("resolved root")),
@@ -163,7 +167,9 @@ impl ModelLoader for InstalledModels {
             return ModelLoad::NotInstalled;
         };
         let database = context.backend().database();
-        let Ok(roots) = context.retained_model_roots() else { return ModelLoad::Unavailable; };
+        let Ok(roots) = context.retained_model_roots() else {
+            return ModelLoad::Unavailable;
+        };
         let root = PathBuf::from(roots.embedding.expect("resolved root"));
         let models = EmbeddingModelCoordinator::new(&root, database);
         match models.active() {
@@ -201,8 +207,13 @@ impl ModelLoader for InstalledModels {
         let Some(link) = runtime_link(context, &folder) else {
             return ModelLoad::Unavailable;
         };
-        let Ok(roots) = context.retained_model_roots() else { return ModelLoad::Unavailable; };
-        match crate::try_load_companion_emotion(Path::new(roots.thymos.as_deref().expect("resolved root")), &link) {
+        let Ok(roots) = context.retained_model_roots() else {
+            return ModelLoad::Unavailable;
+        };
+        match crate::try_load_companion_emotion(
+            Path::new(roots.thymos.as_deref().expect("resolved root")),
+            &link,
+        ) {
             Ok(Some(service)) => ModelLoad::Loaded(Arc::new(service)),
             Ok(None) => ModelLoad::NotInstalled,
             Err(error) => {
@@ -250,17 +261,29 @@ impl ModelSlots {
 
     pub(crate) async fn prepare_embedding(&self, context: &ApiContext) -> Result<(), ApiError> {
         let loader = Arc::clone(&self.loader);
-        if !context.blocking(move |context| {
-            if let Some(root) = context.retained_model_roots_for_guard()?.and_then(|roots| roots.embedding)
-                && Path::new(&root).starts_with(super::local_models::models_root(context)?) {
-                super::jobs::local::folder_move_active(context)?;
-            }
-            Ok(loader.installed(context, RequiredModel::Embedding))
-        }).await? {
-            return Err(model_error(ApiErrorCode::ModelRequired, RequiredModel::Embedding));
+        if !context
+            .blocking(move |context| {
+                if let Some(root) = context
+                    .retained_model_roots_for_guard()?
+                    .and_then(|roots| roots.embedding)
+                    && Path::new(&root).starts_with(super::local_models::models_root(context)?)
+                {
+                    super::jobs::local::folder_move_active(context)?;
+                }
+                Ok(loader.installed(context, RequiredModel::Embedding))
+            })
+            .await?
+        {
+            return Err(model_error(
+                ApiErrorCode::ModelRequired,
+                RequiredModel::Embedding,
+            ));
         }
         if !self.loader.prepare(context).await {
-            return Err(model_error(ApiErrorCode::ModelUnavailable, RequiredModel::Embedding));
+            return Err(model_error(
+                ApiErrorCode::ModelUnavailable,
+                RequiredModel::Embedding,
+            ));
         }
         Ok(())
     }
@@ -278,8 +301,12 @@ impl ModelSlots {
 
     pub(crate) fn is_loaded(&self, model: RequiredModel) -> bool {
         match model {
-            RequiredModel::Embedding => matches!(&*lock(&self.embedding), Slot::Loaded(_))
-                || lock(&self.active_embeddings).iter().any(|engine| engine.strong_count() > 0),
+            RequiredModel::Embedding => {
+                matches!(&*lock(&self.embedding), Slot::Loaded(_))
+                    || lock(&self.active_embeddings)
+                        .iter()
+                        .any(|engine| engine.strong_count() > 0)
+            }
             RequiredModel::Emotion => matches!(&*lock(&self.emotion), Slot::Loaded(_)),
         }
     }
@@ -308,15 +335,28 @@ impl ModelSlots {
 
     /// Loads `model` unless it already is: `ModelRequired` when it is not
     /// installed, `ModelUnavailable` when it cannot load.
-    pub(super) async fn require(&self, context: &ApiContext, model: RequiredModel) -> Result<(), ApiError> {
-        context.blocking(move |context| {
-            let root = context.retained_model_roots_for_guard()?.and_then(|roots| match model { RequiredModel::Embedding => roots.embedding, RequiredModel::Emotion => roots.thymos });
-            if let Some(root) = root
-                && Path::new(&root).starts_with(super::local_models::models_root(context)?) {
-                super::jobs::local::folder_move_active(context)?;
-            }
-            Ok(())
-        }).await?;
+    pub(super) async fn require(
+        &self,
+        context: &ApiContext,
+        model: RequiredModel,
+    ) -> Result<(), ApiError> {
+        context
+            .blocking(move |context| {
+                let root =
+                    context
+                        .retained_model_roots_for_guard()?
+                        .and_then(|roots| match model {
+                            RequiredModel::Embedding => roots.embedding,
+                            RequiredModel::Emotion => roots.thymos,
+                        });
+                if let Some(root) = root
+                    && Path::new(&root).starts_with(super::local_models::models_root(context)?)
+                {
+                    super::jobs::local::folder_move_active(context)?;
+                }
+                Ok(())
+            })
+            .await?;
         match self.known(model) {
             Some(true) => return Ok(()),
             Some(false) => return Err(model_error(ApiErrorCode::ModelRequired, model)),
@@ -336,8 +376,16 @@ impl ModelSlots {
         let loaded = context
             .blocking(move |context| {
                 let _folder_access = context.local_models().folder_access();
-                let root = context.retained_model_roots_for_guard()?.and_then(|roots| match model { RequiredModel::Embedding => roots.embedding, RequiredModel::Emotion => roots.thymos });
-                if let Some(root) = root && Path::new(&root).starts_with(super::local_models::models_root(context)?) {
+                let root =
+                    context
+                        .retained_model_roots_for_guard()?
+                        .and_then(|roots| match model {
+                            RequiredModel::Embedding => roots.embedding,
+                            RequiredModel::Emotion => roots.thymos,
+                        });
+                if let Some(root) = root
+                    && Path::new(&root).starts_with(super::local_models::models_root(context)?)
+                {
                     super::jobs::local::folder_move_active(context)?;
                 }
                 let slots = context.models();
@@ -362,7 +410,10 @@ impl ModelSlots {
         }
     }
 
-    pub(crate) fn resolve_embedding(&self, context: &ApiContext) -> ModelLoad<Arc<dyn MemoryEmbeddingEngine>> {
+    pub(crate) fn resolve_embedding(
+        &self,
+        context: &ApiContext,
+    ) -> ModelLoad<Arc<dyn MemoryEmbeddingEngine>> {
         let mut slot = lock(&self.embedding);
         let keep_loaded = match context.backend().database().load_device_settings() {
             Ok(device) => device.embedding.keep_model_loaded,
@@ -597,7 +648,9 @@ impl ApiEmbedding {
         }
     }
 
-    fn consistent_engine(&self) -> Result<Arc<dyn MemoryEmbeddingEngine>, EmbeddingGenerationError> {
+    fn consistent_engine(
+        &self,
+    ) -> Result<Arc<dyn MemoryEmbeddingEngine>, EmbeddingGenerationError> {
         let engine = self.engine();
         if let Some((revision, dimensions, _)) = self.metadata.get()
             && (revision != engine.source_revision() || *dimensions != engine.dimensions())
@@ -610,7 +663,11 @@ impl ApiEmbedding {
     fn metadata(&self) -> &(String, EmbeddingDimensions, SimilarityCalibration) {
         self.metadata.get_or_init(|| {
             let engine = self.engine();
-            (engine.source_revision().to_owned(), engine.dimensions(), engine.calibration())
+            (
+                engine.source_revision().to_owned(),
+                engine.dimensions(),
+                engine.calibration(),
+            )
         })
     }
 }
@@ -637,7 +694,8 @@ impl MemoryEmbeddingEngine for ApiEmbedding {
         request: &EmbeddingRequest,
         cancellation: &CancellationToken,
     ) -> Result<EmbeddingVector, EmbeddingGenerationError> {
-        self.consistent_engine()?.embed_memory(request, cancellation)
+        self.consistent_engine()?
+            .embed_memory(request, cancellation)
     }
 
     fn requires_model(&self) -> bool {

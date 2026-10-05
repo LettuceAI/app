@@ -4,12 +4,23 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum AudioProviderConfiguration {
-    Gemini { project_id: Option<String>, location: String },
+    Gemini {
+        project_id: Option<String>,
+        location: String,
+    },
     Elevenlabs,
     FishTts,
-    FishSpeech { base_url: Option<String>, request_path: Option<String> },
-    OpenAiCompatible { base_url: Option<String>, request_path: Option<String> },
-    Kokoro { variant: Option<String> },
+    FishSpeech {
+        base_url: Option<String>,
+        request_path: Option<String>,
+    },
+    OpenAiCompatible {
+        base_url: Option<String>,
+        request_path: Option<String>,
+    },
+    Kokoro {
+        variant: Option<String>,
+    },
 }
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -56,8 +67,12 @@ pub struct AudioProviderApiKeyRotateRequest {
 
 impl std::fmt::Debug for AudioProviderApiKeyRotateRequest {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.debug_struct("AudioProviderApiKeyRotateRequest").field("provider_id", &self.provider_id)
-            .field("api_key", &"[redacted]").field("expected_generation", &self.expected_generation).finish()
+        formatter
+            .debug_struct("AudioProviderApiKeyRotateRequest")
+            .field("provider_id", &self.provider_id)
+            .field("api_key", &"[redacted]")
+            .field("expected_generation", &self.expected_generation)
+            .finish()
     }
 }
 
@@ -110,7 +125,8 @@ pub struct TtsCacheStats {
 
 impl std::fmt::Debug for AudioProviderDraft {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.debug_struct("AudioProviderDraft")
+        formatter
+            .debug_struct("AudioProviderDraft")
             .field("configuration", &self.configuration)
             .field("api_key", &self.api_key.as_ref().map(|_| "[redacted]"))
             .finish()
@@ -181,7 +197,9 @@ pub struct UserVoiceView {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
-pub struct UserVoiceRequest { pub voice_id: String }
+pub struct UserVoiceRequest {
+    pub voice_id: String,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
@@ -229,8 +247,15 @@ pub struct VoiceDesignPreviewView {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MessageVoiceOverride {
-    UserVoice { voice_id: String },
-    Provider { provider_id: String, voice_id: String, model_id: Option<String>, prompt: Option<String> },
+    UserVoice {
+        voice_id: String,
+    },
+    Provider {
+        provider_id: String,
+        voice_id: String,
+        model_id: Option<String>,
+        prompt: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -255,8 +280,12 @@ pub struct AudioProviderCreateRequest {
 
 impl std::fmt::Debug for AudioProviderCreateRequest {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.debug_struct("AudioProviderCreateRequest").field("client_operation_id", &self.client_operation_id)
-            .field("label", &self.label).field("draft", &self.draft).finish()
+        formatter
+            .debug_struct("AudioProviderCreateRequest")
+            .field("client_operation_id", &self.client_operation_id)
+            .field("label", &self.label)
+            .field("draft", &self.draft)
+            .finish()
     }
 }
 

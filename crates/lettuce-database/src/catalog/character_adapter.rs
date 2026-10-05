@@ -479,26 +479,42 @@ fn parse_character_row(row: &Row<'_>, id: CharacterId) -> rusqlite::Result<Chara
         .map(parse_id)
         .transpose()?;
     let stored_voice_legacy = row.get::<_, Option<String>>(17)?;
-    let provider_id = row.get::<_, Option<String>>(24)?.map(parse_id).transpose()?;
+    let provider_id = row
+        .get::<_, Option<String>>(24)?
+        .map(parse_id)
+        .transpose()?;
     let provider_voice_id = row.get::<_, Option<String>>(25)?;
-    let expected_voice = if let (Some(provider_id), Some(voice_id)) = (provider_id, provider_voice_id) {
+    let expected_voice = if let (Some(provider_id), Some(voice_id)) =
+        (provider_id, provider_voice_id)
+    {
         match &defaults.voice {
-            Some(lettuce_characters::VoicePreference::Provider { model_id, voice_name, .. }) if stored_voice_profile.is_none() && stored_voice_legacy.is_none() =>
-                Some(lettuce_characters::VoicePreference::Provider { provider_id, voice_id, model_id: model_id.clone(), voice_name: voice_name.clone() }),
+            Some(lettuce_characters::VoicePreference::Provider {
+                model_id,
+                voice_name,
+                ..
+            }) if stored_voice_profile.is_none() && stored_voice_legacy.is_none() => {
+                Some(lettuce_characters::VoicePreference::Provider {
+                    provider_id,
+                    voice_id,
+                    model_id: model_id.clone(),
+                    voice_name: voice_name.clone(),
+                })
+            }
             _ => return Err(invalid()),
         }
-    } else { match (&stored_voice_profile, stored_voice_legacy) {
-        (Some(profile_id), None) => Some(lettuce_characters::VoicePreference::VoiceProfile(
-            *profile_id,
-        )),
-        (None, Some(locator)) => Some(lettuce_characters::VoicePreference::UnresolvedLegacy(
-            lettuce_characters::LegacyVoiceLocatorV1 {
-                locator: locator.clone(),
-            },
-        )),
-        (None, None) => None,
-        _ => return Err(invalid()),
-    }
+    } else {
+        match (&stored_voice_profile, stored_voice_legacy) {
+            (Some(profile_id), None) => Some(lettuce_characters::VoicePreference::VoiceProfile(
+                *profile_id,
+            )),
+            (None, Some(locator)) => Some(lettuce_characters::VoicePreference::UnresolvedLegacy(
+                lettuce_characters::LegacyVoiceLocatorV1 {
+                    locator: locator.clone(),
+                },
+            )),
+            (None, None) => None,
+            _ => return Err(invalid()),
+        }
     };
     if defaults.voice != expected_voice {
         return Err(invalid());
@@ -842,7 +858,9 @@ fn duplicate_external_references(
             lettuce_characters::VoicePreference::VoiceProfile(id) => {
                 retained.voice_profile_ids.push(*id);
             }
-            lettuce_characters::VoicePreference::Provider { provider_id, .. } => retained.audio_provider_ids.push(*provider_id),
+            lettuce_characters::VoicePreference::Provider { provider_id, .. } => {
+                retained.audio_provider_ids.push(*provider_id)
+            }
             lettuce_characters::VoicePreference::UnresolvedLegacy(_) => {
                 retained
                     .unresolved_legacy_references
@@ -897,9 +915,15 @@ fn validate_plan_assets(
     image_assets(connection, collect_asset_ids(&details))
 }
 
-fn provider_voice_columns(defaults: &lettuce_characters::CharacterDefaults) -> (Option<String>, Option<String>) {
+fn provider_voice_columns(
+    defaults: &lettuce_characters::CharacterDefaults,
+) -> (Option<String>, Option<String>) {
     match &defaults.voice {
-        Some(lettuce_characters::VoicePreference::Provider { provider_id, voice_id, .. }) => (Some(provider_id.to_string()), Some(voice_id.clone())),
+        Some(lettuce_characters::VoicePreference::Provider {
+            provider_id,
+            voice_id,
+            ..
+        }) => (Some(provider_id.to_string()), Some(voice_id.clone())),
         _ => (None, None),
     }
 }
@@ -1175,11 +1199,24 @@ pub(crate) fn sync_replace_character(
             details.character.defaults.model_profile_id = None;
         }
     }
-    if let Some(lettuce_characters::VoicePreference::Provider { provider_id, .. }) = &details.character.defaults.voice {
-        let present: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM audio_providers WHERE id=?1)",
-            [provider_id.to_string()], |row| row.get(0)).map_err(db_error)?;
+    if let Some(lettuce_characters::VoicePreference::Provider { provider_id, .. }) =
+        &details.character.defaults.voice
+    {
+        let present: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM audio_providers WHERE id=?1)",
+                [provider_id.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(db_error)?;
         if !present {
-            if crate::sync::sync_adapter::entity_deferred(tx, "audio_provider", &provider_id.to_string()).map_err(db_error)? {
+            if crate::sync::sync_adapter::entity_deferred(
+                tx,
+                "audio_provider",
+                &provider_id.to_string(),
+            )
+            .map_err(db_error)?
+            {
                 return Err(RepositoryError::NotFound);
             }
             details.character.defaults.voice = None;
@@ -3547,46 +3584,108 @@ mod smoke_tests {
     #[test]
     fn character_provider_voice_waits_for_deferred_provider_and_clears_a_deleted_one() {
         use lettuce_speech::{AudioProvider, AudioProviderConfig, TtsConfigurationRepository};
-        use lettuce_sync::{CanonicalPayload, ChangeOperation, LocalChangeJournal, NewCanonicalChange, SyncEntity};
+        use lettuce_sync::{
+            CanonicalPayload, ChangeOperation, LocalChangeJournal, NewCanonicalChange, SyncEntity,
+        };
         let database = Database::open_in_memory().expect("database");
         let provider = AudioProvider {
-            id: lettuce_types::AudioProviderId::new(), secret_owner_id: lettuce_settings::SecretOwnerId::new(),
-            label: "Voice provider".into(), api_key_ref: None,
-            config: AudioProviderConfig::OpenAiCompatible { base_url: None, request_path: None },
-            revision: Revision::INITIAL, created_at: TimestampMillis::new(1), updated_at: TimestampMillis::new(1),
+            id: lettuce_types::AudioProviderId::new(),
+            secret_owner_id: lettuce_settings::SecretOwnerId::new(),
+            label: "Voice provider".into(),
+            api_key_ref: None,
+            config: AudioProviderConfig::OpenAiCompatible {
+                base_url: None,
+                request_path: None,
+            },
+            revision: Revision::INITIAL,
+            created_at: TimestampMillis::new(1),
+            updated_at: TimestampMillis::new(1),
         };
         let mut plan = companion_plan(CharacterId::new());
-        plan.character.defaults.voice = Some(lettuce_characters::VoicePreference::Provider { provider_id: provider.id, voice_id: "narrator".into(), model_id: None, voice_name: None });
-        let details = lettuce_characters::CharacterDetails { character: plan.character, scenes: plan.scenes, variants: plan.variants, starters: plan.starters };
-        let change = database.record_local_change(lettuce_types::OperationId::new(), NewCanonicalChange::new(
-            SyncEntity::new(lettuce_sync::AUDIO_PROVIDER_SYNC_KIND, provider.id.to_string()).expect("entity"),
-            ChangeOperation::Insert, None, Some(CanonicalPayload::new(lettuce_sync::AUDIO_PROVIDER_SYNC_SCHEMA,
-                lettuce_sync::AUDIO_PROVIDER_SYNC_VERSION, serde_json::to_vec(&provider).expect("payload")).expect("canonical")),
-        ).expect("change"), TimestampMillis::new(1)).expect("journal");
+        plan.character.defaults.voice = Some(lettuce_characters::VoicePreference::Provider {
+            provider_id: provider.id,
+            voice_id: "narrator".into(),
+            model_id: None,
+            voice_name: None,
+        });
+        let details = lettuce_characters::CharacterDetails {
+            character: plan.character,
+            scenes: plan.scenes,
+            variants: plan.variants,
+            starters: plan.starters,
+        };
+        let change = database
+            .record_local_change(
+                lettuce_types::OperationId::new(),
+                NewCanonicalChange::new(
+                    SyncEntity::new(
+                        lettuce_sync::AUDIO_PROVIDER_SYNC_KIND,
+                        provider.id.to_string(),
+                    )
+                    .expect("entity"),
+                    ChangeOperation::Insert,
+                    None,
+                    Some(
+                        CanonicalPayload::new(
+                            lettuce_sync::AUDIO_PROVIDER_SYNC_SCHEMA,
+                            lettuce_sync::AUDIO_PROVIDER_SYNC_VERSION,
+                            serde_json::to_vec(&provider).expect("payload"),
+                        )
+                        .expect("canonical"),
+                    ),
+                )
+                .expect("change"),
+                TimestampMillis::new(1),
+            )
+            .expect("journal");
         {
             let mut connection = database.connection().expect("connection");
             connection.execute("INSERT INTO sync_deferred_changes(change_id,entity_kind,entity_id,deferred_at) VALUES (?1,'audio_provider',?2,1)",
                 params![change.change.id().as_uuid().to_string(), provider.id.to_string()]).expect("provider is deferred");
             let transaction = connection.transaction().expect("transaction");
-            assert_eq!(sync_replace_character(&transaction, &details), Err(RepositoryError::NotFound));
+            assert_eq!(
+                sync_replace_character(&transaction, &details),
+                Err(RepositoryError::NotFound)
+            );
         }
-        database.upsert_audio_provider(provider.clone(), None).expect("provider arrives");
+        database
+            .upsert_audio_provider(provider.clone(), None)
+            .expect("provider arrives");
         {
             let mut connection = database.connection().expect("connection");
-            connection.execute("DELETE FROM sync_deferred_changes", []).expect("delivered");
+            connection
+                .execute("DELETE FROM sync_deferred_changes", [])
+                .expect("delivered");
             let transaction = connection.transaction().expect("transaction");
             sync_replace_character(&transaction, &details).expect("character applies");
             transaction.commit().expect("commit");
         }
-        assert_eq!(CharacterRepository::get(&database, details.character.id).expect("character").expect("present").character.defaults.voice, details.character.defaults.voice);
+        assert_eq!(
+            CharacterRepository::get(&database, details.character.id)
+                .expect("character")
+                .expect("present")
+                .character
+                .defaults
+                .voice,
+            details.character.defaults.voice
+        );
         let without_provider = Database::open_in_memory().expect("deleted provider target");
         {
             let mut connection = without_provider.connection().expect("connection");
             let transaction = connection.transaction().expect("transaction");
-            sync_replace_character(&transaction, &details).expect("missing provider no longer deferred");
+            sync_replace_character(&transaction, &details)
+                .expect("missing provider no longer deferred");
             transaction.commit().expect("commit");
         }
-        assert_eq!(CharacterRepository::get(&without_provider, details.character.id).expect("character").expect("present").character.defaults.voice, None);
+        assert_eq!(
+            CharacterRepository::get(&without_provider, details.character.id)
+                .expect("character")
+                .expect("present")
+                .character
+                .defaults
+                .voice,
+            None
+        );
     }
 
     #[test]
@@ -4082,21 +4181,29 @@ mod smoke_tests {
         let provider = AudioProvider {
             id: lettuce_types::AudioProviderId::new(),
             secret_owner_id: lettuce_settings::SecretOwnerId::new(),
-            label: "Local narrator".into(), api_key_ref: None,
+            label: "Local narrator".into(),
+            api_key_ref: None,
             config: AudioProviderConfig::Kokoro { variant: None },
             revision: Revision::INITIAL,
-            created_at: TimestampMillis::new(1), updated_at: TimestampMillis::new(1),
+            created_at: TimestampMillis::new(1),
+            updated_at: TimestampMillis::new(1),
         };
-        database.upsert_audio_provider(provider.clone(), None).expect("provider");
+        database
+            .upsert_audio_provider(provider.clone(), None)
+            .expect("provider");
         let mut plan = companion_plan(CharacterId::new());
         let preference = lettuce_characters::VoicePreference::Provider {
-            provider_id: provider.id, voice_id: "af_heart".into(),
-            model_id: Some("kokoro".into()), voice_name: Some("Heart".into()),
+            provider_id: provider.id,
+            voice_id: "af_heart".into(),
+            model_id: Some("kokoro".into()),
+            voice_name: Some("Heart".into()),
         };
         plan.character.defaults.voice = Some(preference.clone());
         let id = plan.character.id;
         CharacterRepository::create(&database, plan).expect("create");
-        let loaded = CharacterRepository::get(&database, id).expect("reload").expect("character");
+        let loaded = CharacterRepository::get(&database, id)
+            .expect("reload")
+            .expect("character");
         assert_eq!(loaded.character.defaults.voice, Some(preference));
         let connection = database.connection().expect("connection");
         for sql in [
@@ -4109,14 +4216,30 @@ mod smoke_tests {
             assert!(connection.execute(sql, []).is_err(), "allowed {sql}");
         }
         drop(connection);
-        assert_eq!(database.delete_audio_provider(provider.id, provider.revision),
-            Err(lettuce_speech::TtsConfigurationRepositoryError::InUse { characters: vec![lettuce_speech::AudioProviderCharacterReference { id, name: "Companion Ada".into() }] }));
-        use lettuce_transfer::{ProviderBackupSource, ProviderBackupRestoreWriter};
+        assert_eq!(
+            database.delete_audio_provider(provider.id, provider.revision),
+            Err(lettuce_speech::TtsConfigurationRepositoryError::InUse {
+                characters: vec![lettuce_speech::AudioProviderCharacterReference {
+                    id,
+                    name: "Companion Ada".into()
+                }]
+            })
+        );
+        use lettuce_transfer::{ProviderBackupRestoreWriter, ProviderBackupSource};
         let graph = database.read_provider_backup_graph().expect("backup graph");
         let restored = Database::open_in_memory().expect("restore database");
-        restored.restore_provider_backup_graph(&graph, &[]).expect("restore");
-        assert_eq!(CharacterRepository::get(&restored, id).expect("restored character").expect("character").character.defaults.voice,
-            loaded.character.defaults.voice);
+        restored
+            .restore_provider_backup_graph(&graph, &[])
+            .expect("restore");
+        assert_eq!(
+            CharacterRepository::get(&restored, id)
+                .expect("restored character")
+                .expect("character")
+                .character
+                .defaults
+                .voice,
+            loaded.character.defaults.voice
+        );
     }
 
     #[test]

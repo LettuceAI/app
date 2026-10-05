@@ -37,7 +37,10 @@ pub trait CharacterPlanResolver {
     fn starter(&self, planned: ConversationStarterId) -> ConversationStarterId;
     fn starter_message(&self, planned: StarterMessageId) -> StarterMessageId;
     fn voice_profile(&self, planned: VoiceProfileId) -> VoiceProfileId;
-    fn audio_provider(&self, planned: lettuce_types::AudioProviderId) -> lettuce_types::AudioProviderId;
+    fn audio_provider(
+        &self,
+        planned: lettuce_types::AudioProviderId,
+    ) -> lettuce_types::AudioProviderId;
     fn model(&self, planned: ModelProfileId) -> Result<ModelProfileId, CharacterPlanError>;
     fn prompt(&self, source_id: &str) -> Option<PromptDocumentId>;
     fn lorebook(&self, planned: LorebookId) -> Result<LorebookId, CharacterPlanError>;
@@ -127,8 +130,17 @@ pub fn character_plan_from_candidate<R: CharacterPlanResolver + ?Sized>(
                 lettuce_characters::VoicePreference::VoiceProfile(id) => {
                     lettuce_characters::VoicePreference::VoiceProfile(resolver.voice_profile(id))
                 }
-                lettuce_characters::VoicePreference::Provider { provider_id, voice_id, model_id, voice_name } =>
-                    lettuce_characters::VoicePreference::Provider { provider_id: resolver.audio_provider(provider_id), voice_id, model_id, voice_name },
+                lettuce_characters::VoicePreference::Provider {
+                    provider_id,
+                    voice_id,
+                    model_id,
+                    voice_name,
+                } => lettuce_characters::VoicePreference::Provider {
+                    provider_id: resolver.audio_provider(provider_id),
+                    voice_id,
+                    model_id,
+                    voice_name,
+                },
                 unresolved => unresolved,
             }),
             voice_autoplay: candidate.defaults.voice_autoplay,

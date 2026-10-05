@@ -94,10 +94,13 @@ fn relocate_in(
             .map_err(model_error)?;
         changed += 1;
     }
-    changed += crate::media::whisper_model_adapter::relocate_whisper_models_in(transaction, relocate)
-        .map_err(|error| match error {
-            lettuce_model_hub::WhisperModelRepositoryError::InvalidData => ModelRepositoryError::InvalidData,
-            _ => ModelRepositoryError::Storage,
-        })?;
+    changed +=
+        crate::media::whisper_model_adapter::relocate_whisper_models_in(transaction, relocate)
+            .map_err(|error| match error {
+                lettuce_model_hub::WhisperModelRepositoryError::InvalidData => {
+                    ModelRepositoryError::InvalidData
+                }
+                _ => ModelRepositoryError::Storage,
+            })?;
     Ok(changed)
 }

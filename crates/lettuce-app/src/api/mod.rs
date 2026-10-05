@@ -11,6 +11,7 @@ mod conversation_delete;
 mod conversation_feed;
 mod conversation_settings;
 mod conversations;
+mod embedding_health;
 mod error;
 mod events;
 mod file_kind;
@@ -21,10 +22,9 @@ mod inspect;
 mod jobs;
 mod local_models;
 mod mapping;
+mod memory_models;
 mod messages;
 mod models;
-mod memory_models;
-mod embedding_health;
 mod ollama;
 mod scenes;
 mod speech;
@@ -107,14 +107,19 @@ pub use jobs::CatalogVariant;
 pub use jobs::{
     ArtifactInstallHandler, ClaimedJob, ImageGenerateHandler, ImageToolHandler, InstallFinish,
     InstallSources, InstallWork, JobHandler, JobHandlers, JobLane, JobProgressSink, JobRunner,
-    ModelPullHandler, ModelsFolderMoveHandler, NetworkInstallSources, TextFeatureHandler,
-    SpeechTranscribeHandler, SpeechSynthesizeHandler, VoiceCreationHandler, voice_design_create,
-    admit_install, conversation_help_me_reply, job_cancel, job_get, job_watch, jobs_list,
+    ModelPullHandler, ModelsFolderMoveHandler, NetworkInstallSources, SpeechSynthesizeHandler,
+    SpeechTranscribeHandler, TextFeatureHandler, VoiceCreationHandler, admit_install,
+    conversation_help_me_reply, job_cancel, job_get, job_watch, jobs_list, voice_design_create,
 };
 pub use local_models::{
     llama_chat_template, llama_context_info, llama_devices, llama_unload, local_file_runnability,
     local_model_adopt, local_model_delete, local_models_dir_get, local_models_dir_set,
     local_models_list,
+};
+pub use memory_models::{
+    companion_emotion_install, companion_emotion_remove, companion_emotion_status,
+    embedding_choose, embedding_compare, embedding_install, embedding_remove, embedding_status,
+    embedding_unload,
 };
 pub use messages::{
     conversation_message_count, conversation_messages_around, conversation_pinned_messages,
@@ -122,22 +127,29 @@ pub use messages::{
     message_delete, message_edit, message_pin, message_revisions, message_scene_select,
     messages_delete_after,
 };
-pub use memory_models::{embedding_install, companion_emotion_install, embedding_status, embedding_choose, embedding_remove, embedding_compare, embedding_unload, companion_emotion_status, companion_emotion_remove};
 pub use models::{InstalledModels, ModelLoad, ModelLoader, NoModels};
 pub use ollama::{ollama_model_delete, ollama_models_list, ollama_pull};
 pub use scenes::{
     message_scene_image_approve, message_scene_image_dismiss, message_scene_image_generate,
     message_scene_prompt_generate,
 };
-pub use speech::{audio_provider_create, user_voice_create, asr_vocabulary_save, asr_correction_save, asr_suggestion_approve, asr_suggestion_ignore, asr_voice_example_save, asr_learning_import,
-    message_speak,
-    asr_voice_example_suggest, asr_learning_export, asr_vocabulary_list, asr_corrections_list, asr_ignored_suggestions_list, asr_voice_examples_list, asr_vocabulary_delete, asr_correction_delete, asr_voice_example_delete, asr_suggestions,
-    kokoro_inventory, kokoro_variants, kokoro_voices_installed, kokoro_voices_available, kokoro_install_model, kokoro_install_voices, kokoro_uninstall_model, kokoro_uninstall_voice, kokoro_blend, kokoro_phonemize, kokoro_tokenize_preview,
-    tts_synthesize,
-    voice_design_preview, audio_provider_voices_search, audio_providers_list, audio_provider_update, audio_provider_delete, user_voices_list, user_voice_update, user_voice_delete, audio_provider_verify, audio_provider_credential_status, audio_provider_api_key_rotate, audio_provider_voices, audio_provider_voices_refresh, tts_models, tts_voice_design_models, tts_cache_stats, tts_cache_clear,
-    InstalledSpeech, NoSpeech, SpeechHost, dictation_cancel, dictation_start, dictation_stop,
-    transcribe_file, whisper_catalog, whisper_clear_cache, whisper_delete,
-    whisper_dictation_model_set, whisper_download, whisper_models_list, whisper_preload,
+pub use speech::{
+    InstalledSpeech, NoSpeech, SpeechHost, asr_correction_delete, asr_correction_save,
+    asr_corrections_list, asr_ignored_suggestions_list, asr_learning_export, asr_learning_import,
+    asr_suggestion_approve, asr_suggestion_ignore, asr_suggestions, asr_vocabulary_delete,
+    asr_vocabulary_list, asr_vocabulary_save, asr_voice_example_delete, asr_voice_example_save,
+    asr_voice_example_suggest, asr_voice_examples_list, audio_provider_api_key_rotate,
+    audio_provider_create, audio_provider_credential_status, audio_provider_delete,
+    audio_provider_update, audio_provider_verify, audio_provider_voices,
+    audio_provider_voices_refresh, audio_provider_voices_search, audio_providers_list,
+    dictation_cancel, dictation_start, dictation_stop, kokoro_blend, kokoro_install_model,
+    kokoro_install_voices, kokoro_inventory, kokoro_phonemize, kokoro_tokenize_preview,
+    kokoro_uninstall_model, kokoro_uninstall_voice, kokoro_variants, kokoro_voices_available,
+    kokoro_voices_installed, message_speak, transcribe_file, tts_cache_clear, tts_cache_stats,
+    tts_models, tts_synthesize, tts_voice_design_models, user_voice_create, user_voice_delete,
+    user_voice_update, user_voices_list, voice_design_preview, whisper_catalog,
+    whisper_clear_cache, whisper_delete, whisper_dictation_model_set, whisper_download,
+    whisper_models_list, whisper_preload,
 };
 pub use startup::{ApiWorkers, StartupStep, startup};
 pub use turns::{

@@ -41,11 +41,19 @@ where
             created_at: lettuce_types::TimestampMillis::new(0),
             updated_at: lettuce_types::TimestampMillis::new(0),
         };
-        provider.validate().map_err(|_| TtsProviderVerificationError::InvalidInput)?;
+        provider
+            .validate()
+            .map_err(|_| TtsProviderVerificationError::InvalidInput)?;
         if matches!(provider.config, AudioProviderConfig::Kokoro { .. }) {
-            return if credential.is_none() { Ok(true) } else { Err(TtsProviderVerificationError::InvalidInput) };
+            return if credential.is_none() {
+                Ok(true)
+            } else {
+                Err(TtsProviderVerificationError::InvalidInput)
+            };
         }
-        verifier.verify_audio_provider(&provider, credential).await
+        verifier
+            .verify_audio_provider(&provider, credential)
+            .await
             .map_err(TtsProviderVerificationError::Verification)
     }
 
@@ -240,11 +248,19 @@ mod tests {
     async fn verification_of_a_draft_does_not_save_configuration_or_secret() {
         let database = Database::open_in_memory().expect("database");
         let key = SecretValue::new("verification-secret-canary").expect("secret");
-        assert!(TtsProviderVerificationCoordinator::<Database, InMemorySecretStore>::verify_draft(
-            AudioProviderConfig::Elevenlabs, Some(&key), &Verifier,
-        ).await.expect("draft verified"));
-        assert!(lettuce_speech::TtsConfigurationRepository::list_audio_providers(&database)
-            .expect("providers").is_empty());
+        assert!(
+            TtsProviderVerificationCoordinator::<Database, InMemorySecretStore>::verify_draft(
+                AudioProviderConfig::Elevenlabs,
+                Some(&key),
+                &Verifier,
+            )
+            .await
+            .expect("draft verified")
+        );
+        assert!(
+            lettuce_speech::TtsConfigurationRepository::list_audio_providers(&database)
+                .expect("providers")
+                .is_empty()
+        );
     }
-
 }

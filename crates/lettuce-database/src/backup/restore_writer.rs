@@ -913,7 +913,13 @@ pub(crate) mod tests {
                 .llm_models_dir,
             None
         );
-        assert_eq!(restored.load_device_settings().expect("restored dictation choice").speech, settings.speech);
+        assert_eq!(
+            restored
+                .load_device_settings()
+                .expect("restored dictation choice")
+                .speech,
+            settings.speech
+        );
         source
             .add_app_usage("2026-09-20", 500, lettuce_types::TimestampMillis::new(2))
             .expect("usage after the backup");

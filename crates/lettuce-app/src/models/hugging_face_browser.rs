@@ -8,9 +8,7 @@ use lettuce_model_hub::{
     HUGGING_FACE_ENDPOINT, HfAuthStatus, HfAuthorOverview, HfBrowseError, HfBrowseMode,
     HfModelInfo, HfRequest, HfResource, HfSearch, HfSearchResult,
 };
-use lettuce_network::{
-    JsonAuth, JsonClient, JsonClientError, JsonResponse, RequestPolicy,
-};
+use lettuce_network::{JsonAuth, JsonClient, JsonClientError, JsonResponse, RequestPolicy};
 use lettuce_settings::{
     SecretPurpose, SecretRecord, SecretRef, SecretState, SecretStore, SecretStoreError, SecretValue,
 };
@@ -127,7 +125,14 @@ impl HuggingFaceBrowser {
                 .with(|token| SecretValue::new(token))
                 .map_or(JsonAuth::None, JsonAuth::Bearer)
         });
-        lettuce_model_hub::send_hugging_face_request(&self.client, &self.endpoint, request, auth, RequestPolicy::BROWSE).await
+        lettuce_model_hub::send_hugging_face_request(
+            &self.client,
+            &self.endpoint,
+            request,
+            auth,
+            RequestPolicy::BROWSE,
+        )
+        .await
     }
 
     async fn whoami_response(&self, token: &SecretValue) -> Result<JsonResponse, HfBrowseError> {

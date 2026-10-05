@@ -1111,7 +1111,10 @@ async fn a_scene_image_admitted_during_a_models_folder_move_waits_and_completes_
         stored.revision,
     )
     .expect("local scene model");
-    let target = scene._root.with_file_name(format!("{}-elsewhere", scene._root.file_name().expect("name").to_string_lossy()));
+    let target = scene._root.with_file_name(format!(
+        "{}-elsewhere",
+        scene._root.file_name().expect("name").to_string_lossy()
+    ));
     local_models_dir_set(
         context,
         dto::LocalModelsDirSetRequest {

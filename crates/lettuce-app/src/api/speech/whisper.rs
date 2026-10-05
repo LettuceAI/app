@@ -18,7 +18,10 @@ fn unavailable(error: impl std::fmt::Display) -> ApiError {
 }
 
 pub(crate) fn whisper_root(context: &ApiContext) -> Result<PathBuf, ApiError> {
-    context.retained_model_roots()?.whisper.map(PathBuf::from)
+    context
+        .retained_model_roots()?
+        .whisper
+        .map(PathBuf::from)
         .ok_or_else(|| api_error(ApiErrorCode::Unavailable, "the Whisper root is unavailable"))
 }
 
@@ -58,7 +61,9 @@ pub(super) fn ensure_legacy_admitted(context: &ApiContext) -> Result<(), ApiErro
                 .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?;
         }
     }
-    state.legacy_whisper_admitted().store(true, Ordering::Release);
+    state
+        .legacy_whisper_admitted()
+        .store(true, Ordering::Release);
     Ok(())
 }
 
@@ -303,7 +308,9 @@ pub async fn whisper_preload(
 }
 
 /// Drops every loaded Whisper context and says how many there were.
-pub async fn whisper_clear_cache(context: &ApiContext) -> Result<dto::WhisperCacheCleared, ApiError> {
+pub async fn whisper_clear_cache(
+    context: &ApiContext,
+) -> Result<dto::WhisperCacheCleared, ApiError> {
     context
         .blocking(|context| {
             let cleared = context

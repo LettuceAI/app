@@ -26,11 +26,15 @@ impl Default for SpeechApiState {
 
 impl SpeechApiState {
     pub(super) fn learning_import(&self) -> MutexGuard<'_, ()> {
-        self.learning_import.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+        self.learning_import
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     pub(super) fn provider_creation(&self) -> MutexGuard<'_, ()> {
-        self.provider_creation.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+        self.provider_creation
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     pub(super) const fn dictation(&self) -> &DictationState {

@@ -721,7 +721,10 @@ mod tests {
         RemoteKokoroArtifact {
             role,
             remote_path: remote_path.into(),
-            local_segments: local_segments.iter().map(|segment| (*segment).into()).collect(),
+            local_segments: local_segments
+                .iter()
+                .map(|segment| (*segment).into())
+                .collect(),
             byte_size,
             sha256: sha256.into(),
         }
@@ -807,7 +810,12 @@ mod tests {
         };
         assert_eq!(success.model.artifacts.len(), 4);
         assert!(!success.replayed);
-        assert_eq!(installs.recorded_model(model.variant).expect("recorded runtime pin"), model);
+        assert_eq!(
+            installs
+                .recorded_model(model.variant)
+                .expect("recorded runtime pin"),
+            model
+        );
         assert!(
             coordinator
                 .replay(&model, job_id)

@@ -15,52 +15,110 @@ pub async fn tts_synthesize(
     let provider_id: AudioProviderId = parse_id(&request.provider_id, "provider_id")?;
     let digest = serde_json::to_string(&request)
         .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?;
-    context.blocking(move |context| {
-        let database = context.backend().database();
-        let key = format!("tts_synthesize:{id}");
-        if let Some(prior) = database.job_operation(&key)
-            .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?
-        {
-            if prior.request_digest != digest {
-                return Err(api_error(ApiErrorCode::Conflict, "another synthesis uses this request id"));
+    context
+        .blocking(move |context| {
+            let database = context.backend().database();
+            let key = format!("tts_synthesize:{id}");
+            if let Some(prior) = database
+                .job_operation(&key)
+                .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?
+            {
+                if prior.request_digest != digest {
+                    return Err(api_error(
+                        ApiErrorCode::Conflict,
+                        "another synthesis uses this request id",
+                    ));
+                }
+                return Ok(dto::JobAccepted {
+                    job_id: prior.job_id.to_string(),
+                });
             }
-            return Ok(dto::JobAccepted { job_id: prior.job_id.to_string() });
-        }
-        let provider = database.get_audio_provider(provider_id)
-            .map_err(IntoApiError::into_api_error)?
-            .ok_or_else(|| api_error(ApiErrorCode::NotFound, "the audio provider was not found"))?;
-        let now = context.now();
-        let synthesis = SynthesisRequest {
-            id, provider, model_id: request.model_id, voice_id: request.voice_id,
-            prompt: request.prompt, text: request.text, output_asset_id: AssetId::new(),
-            output_policy: if request.retained { TtsOutputPolicy::Retained } else {
-                TtsOutputPolicy::Preview { expires_at: TimestampMillis::new(now.get().saturating_add(PREVIEW_LIFETIME_MS)) }
-            },
-            created_at: now,
-        };
-        admit_request(context, &key, &digest, synthesis)
-    }).await
+            let provider = database
+                .get_audio_provider(provider_id)
+                .map_err(IntoApiError::into_api_error)?
+                .ok_or_else(|| {
+                    api_error(ApiErrorCode::NotFound, "the audio provider was not found")
+                })?;
+            let now = context.now();
+            let synthesis = SynthesisRequest {
+                id,
+                provider,
+                model_id: request.model_id,
+                voice_id: request.voice_id,
+                prompt: request.prompt,
+                text: request.text,
+                output_asset_id: AssetId::new(),
+                output_policy: if request.retained {
+                    TtsOutputPolicy::Retained
+                } else {
+                    TtsOutputPolicy::Preview {
+                        expires_at: TimestampMillis::new(
+                            now.get().saturating_add(PREVIEW_LIFETIME_MS),
+                        ),
+                    }
+                },
+                created_at: now,
+            };
+            admit_request(context, &key, &digest, synthesis)
+        })
+        .await
 }
 
-pub(super) fn replay(context: &ApiContext, key: &str, digest: &str) -> Result<Option<dto::JobAccepted>, ApiError> {
-    if let Some(prior) = context.backend().database().job_operation(key)
-        .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))? {
-        if prior.request_digest != digest { return Err(api_error(ApiErrorCode::Conflict, "another synthesis uses this request id")); }
-        return Ok(Some(dto::JobAccepted { job_id: prior.job_id.to_string() }));
+pub(super) fn replay(
+    context: &ApiContext,
+    key: &str,
+    digest: &str,
+) -> Result<Option<dto::JobAccepted>, ApiError> {
+    if let Some(prior) = context
+        .backend()
+        .database()
+        .job_operation(key)
+        .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?
+    {
+        if prior.request_digest != digest {
+            return Err(api_error(
+                ApiErrorCode::Conflict,
+                "another synthesis uses this request id",
+            ));
+        }
+        return Ok(Some(dto::JobAccepted {
+            job_id: prior.job_id.to_string(),
+        }));
     }
     Ok(None)
 }
 
-pub(super) fn admit_request(context: &ApiContext, key: &str, digest: &str, synthesis: SynthesisRequest) -> Result<dto::JobAccepted, ApiError> {
+pub(super) fn admit_request(
+    context: &ApiContext,
+    key: &str,
+    digest: &str,
+    synthesis: SynthesisRequest,
+) -> Result<dto::JobAccepted, ApiError> {
     let database = context.backend().database();
-    synthesis.validate().map_err(|error| crate::api::error::invalid_field("request", error.to_string()))?;
+    synthesis
+        .validate()
+        .map_err(|error| crate::api::error::invalid_field("request", error.to_string()))?;
     if matches!(synthesis.output_policy, TtsOutputPolicy::Retained)
-        && let Some(job) = database.reuse_speech_synthesis(key, digest, &lettuce_speech::SynthesisReuseKey::of(&synthesis), context.now())
-            .map_err(IntoApiError::into_api_error)? {
-        return Ok(dto::JobAccepted { job_id: job.id.to_string() });
+        && let Some(job) = database
+            .reuse_speech_synthesis(
+                key,
+                digest,
+                &lettuce_speech::SynthesisReuseKey::of(&synthesis),
+                context.now(),
+            )
+            .map_err(IntoApiError::into_api_error)?
+    {
+        return Ok(dto::JobAccepted {
+            job_id: job.id.to_string(),
+        });
     }
-    let spec = crate::speech::tts_synthesis::synthesis_job_spec(&synthesis).map_err(IntoApiError::into_api_error)?;
-    let job = database.admit_speech_synthesis(spec, key, digest, synthesis).map_err(IntoApiError::into_api_error)?;
+    let spec = crate::speech::tts_synthesis::synthesis_job_spec(&synthesis)
+        .map_err(IntoApiError::into_api_error)?;
+    let job = database
+        .admit_speech_synthesis(spec, key, digest, synthesis)
+        .map_err(IntoApiError::into_api_error)?;
     context.jobs().wake();
-    Ok(dto::JobAccepted { job_id: job.id.to_string() })
+    Ok(dto::JobAccepted {
+        job_id: job.id.to_string(),
+    })
 }

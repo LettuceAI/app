@@ -6,10 +6,10 @@
 use std::collections::HashSet;
 
 use lettuce_types::{
-    AssetId, AudioProviderId, CharacterId, ConversationStarterId, GroupId, LorebookEntryId, LorebookId,
-    ModelArtifactId, ModelProfileId, PersonaId, PromptDocumentId, PromptEntryId, ProviderAccountId,
-    Revision, SceneAssetLinkId, SceneId, SceneVariantId, SnapshotArtifactId, StarterMessageId,
-    VoiceProfileId,
+    AssetId, AudioProviderId, CharacterId, ConversationStarterId, GroupId, LorebookEntryId,
+    LorebookId, ModelArtifactId, ModelProfileId, PersonaId, PromptDocumentId, PromptEntryId,
+    ProviderAccountId, Revision, SceneAssetLinkId, SceneId, SceneVariantId, SnapshotArtifactId,
+    StarterMessageId, VoiceProfileId,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -168,8 +168,15 @@ pub enum SpeakerSelectionV1 {
 )]
 pub enum VoicePreferenceV1 {
     VoiceProfile(VoiceProfileId),
-    Provider { provider_id: AudioProviderId, voice_id: String, model_id: Option<String>, voice_name: Option<String> },
-    UnresolvedLegacy { locator: String },
+    Provider {
+        provider_id: AudioProviderId,
+        voice_id: String,
+        model_id: Option<String>,
+        voice_name: Option<String>,
+    },
+    UnresolvedLegacy {
+        locator: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -260,10 +267,35 @@ impl SnapshotDocumentBody for CharacterSnapshotBodyV1 {
                 true,
             )?;
         }
-        if let Some(VoicePreferenceV1::Provider { voice_id, model_id, voice_name, .. }) = &self.voice {
-            validate_text("character_document.voice.voice_id", voice_id, MAX_NAME_BYTES, false)?;
-            if let Some(model) = model_id { validate_text("character_document.voice.model_id", model, MAX_NAME_BYTES, false)?; }
-            if let Some(name) = voice_name { validate_text("character_document.voice.voice_name", name, MAX_NAME_BYTES, true)?; }
+        if let Some(VoicePreferenceV1::Provider {
+            voice_id,
+            model_id,
+            voice_name,
+            ..
+        }) = &self.voice
+        {
+            validate_text(
+                "character_document.voice.voice_id",
+                voice_id,
+                MAX_NAME_BYTES,
+                false,
+            )?;
+            if let Some(model) = model_id {
+                validate_text(
+                    "character_document.voice.model_id",
+                    model,
+                    MAX_NAME_BYTES,
+                    false,
+                )?;
+            }
+            if let Some(name) = voice_name {
+                validate_text(
+                    "character_document.voice.voice_name",
+                    name,
+                    MAX_NAME_BYTES,
+                    true,
+                )?;
+            }
         }
         if let Some(VoicePreferenceV1::UnresolvedLegacy { locator }) = &self.voice {
             validate_text(

@@ -75,17 +75,40 @@ pub enum LocalModelsBusyReason {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ApiErrorDetails {
-    InvalidField { field: String },
-    CapturedAudio { audio: crate::AssetRef },
-    AudioProviderInUse { characters: Vec<CharacterReferenceView> },
-    OperationAppliedRecordDeleted { command: String, record_id: String },
-    Model { model: RequiredModel },
-    HuggingFace { failure: HfFailure },
-    Ollama { failure: OllamaFailure },
-    LocalModelsBusy { reason: LocalModelsBusyReason },
-    Image { failure: crate::ImageFailureKind },
-    Speech { failure: crate::SpeechFailure },
-    PendingMemoryRewind { conversation_id: String },
+    InvalidField {
+        field: String,
+    },
+    CapturedAudio {
+        audio: crate::AssetRef,
+    },
+    AudioProviderInUse {
+        characters: Vec<CharacterReferenceView>,
+    },
+    OperationAppliedRecordDeleted {
+        command: String,
+        record_id: String,
+    },
+    Model {
+        model: RequiredModel,
+    },
+    HuggingFace {
+        failure: HfFailure,
+    },
+    Ollama {
+        failure: OllamaFailure,
+    },
+    LocalModelsBusy {
+        reason: LocalModelsBusyReason,
+    },
+    Image {
+        failure: crate::ImageFailureKind,
+    },
+    Speech {
+        failure: crate::SpeechFailure,
+    },
+    PendingMemoryRewind {
+        conversation_id: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

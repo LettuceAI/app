@@ -15,8 +15,8 @@ use lettuce_speech::{
 use lettuce_types::{JobId, TimestampMillis};
 
 use super::speech_failure::{
-    SPEECH_RETRIES_EXHAUSTED, SPEECH_ESPEAK_MISSING, SPEECH_MODEL_REQUIRED_KOKORO, SPEECH_SECRET_MISSING,
-    SPEECH_VOICE_MISSING, SpeechJobError, speech_retry_allowed,
+    SPEECH_ESPEAK_MISSING, SPEECH_MODEL_REQUIRED_KOKORO, SPEECH_RETRIES_EXHAUSTED,
+    SPEECH_SECRET_MISSING, SPEECH_VOICE_MISSING, SpeechJobError, speech_retry_allowed,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -211,7 +211,8 @@ impl<R: SynthesisRepository + ?Sized, J: JobStore + ?Sized> TtsSynthesisCoordina
         E: TtsRuntime + ?Sized,
         A: TtsAudioSink + ?Sized,
     {
-        self.run_timed(work, secrets, runtime, audio, cancellation_reason, &|| now).await
+        self.run_timed(work, secrets, runtime, audio, cancellation_reason, &|| now)
+            .await
     }
 
     pub async fn run_with_clock<S, E, A>(
@@ -228,7 +229,10 @@ impl<R: SynthesisRepository + ?Sized, J: JobStore + ?Sized> TtsSynthesisCoordina
         E: TtsRuntime + ?Sized,
         A: TtsAudioSink + ?Sized,
     {
-        self.run_timed(work, secrets, runtime, audio, cancellation_reason, &|| clock.now()).await
+        self.run_timed(work, secrets, runtime, audio, cancellation_reason, &|| {
+            clock.now()
+        })
+        .await
     }
 
     async fn run_timed<S, E, A>(
@@ -301,7 +305,11 @@ impl<R: SynthesisRepository + ?Sized, J: JobStore + ?Sized> TtsSynthesisCoordina
                     )
                     .await?,
             ),
-            None if !matches!(work.record.request.provider.config.provider_kind(), AudioProviderKind::Kokoro | AudioProviderKind::FishSpeech) => {
+            None if !matches!(
+                work.record.request.provider.config.provider_kind(),
+                AudioProviderKind::Kokoro | AudioProviderKind::FishSpeech
+            ) =>
+            {
                 return Err(SecretStoreError::Missing.into());
             }
             None => None,
@@ -390,15 +398,22 @@ impl<R: SynthesisRepository + ?Sized, J: JobStore + ?Sized> TtsSynthesisCoordina
     ) -> Result<TtsSynthesisRunResult, TtsSynthesisError> {
         let at = now.max(work.job.updated_at);
         let (code, retryable, message) = classify_error(&error);
-        let retryable = retryable && work.record.request.provider.config.provider_kind() != AudioProviderKind::Kokoro;
+        let retryable = retryable
+            && work.record.request.provider.config.provider_kind() != AudioProviderKind::Kokoro;
         let exhausted = retryable && !speech_retry_allowed(work.claim.claim.attempt.get());
         let message = if exhausted {
             match &error {
-                TtsSynthesisError::Runtime(TtsRuntimeError::NetworkUnavailable) => format!("{SPEECH_RETRIES_EXHAUSTED}-network"),
-                TtsSynthesisError::Runtime(TtsRuntimeError::ProviderUnavailable { status }) => format!("{SPEECH_RETRIES_EXHAUSTED}-provider-{status}"),
+                TtsSynthesisError::Runtime(TtsRuntimeError::NetworkUnavailable) => {
+                    format!("{SPEECH_RETRIES_EXHAUSTED}-network")
+                }
+                TtsSynthesisError::Runtime(TtsRuntimeError::ProviderUnavailable { status }) => {
+                    format!("{SPEECH_RETRIES_EXHAUSTED}-provider-{status}")
+                }
                 _ => SPEECH_RETRIES_EXHAUSTED.to_owned(),
             }
-        } else { message.to_owned() };
+        } else {
+            message.to_owned()
+        };
         let retryable = retryable && !exhausted;
         if retryable {
             let job = self
@@ -478,7 +493,11 @@ fn classify_error(error: &TtsSynthesisError) -> SpeechJobError {
             false,
             "TTS synthesis was cancelled",
         ),
-        TtsSynthesisError::Runtime(TtsRuntimeError::Unavailable | TtsRuntimeError::NetworkUnavailable | TtsRuntimeError::ProviderUnavailable { .. }) => (
+        TtsSynthesisError::Runtime(
+            TtsRuntimeError::Unavailable
+            | TtsRuntimeError::NetworkUnavailable
+            | TtsRuntimeError::ProviderUnavailable { .. },
+        ) => (
             JobErrorCode::CapabilityUnavailable,
             true,
             "TTS provider is unavailable",
@@ -1017,8 +1036,11 @@ mod tests {
         let media = media_store(&path, &root.join("media"));
         let base = request(SecretRef::new(), TtsOutputPolicy::Retained);
         lettuce_speech::TtsConfigurationRepository::upsert_audio_provider(
-            &database, base.provider.clone(), None,
-        ).expect("persist live provider for cache reuse");
+            &database,
+            base.provider.clone(),
+            None,
+        )
+        .expect("persist live provider for cache reuse");
         let key = SynthesisReuseKey::of(&base);
         let at = TimestampMillis::new(2_000);
         assert_eq!(

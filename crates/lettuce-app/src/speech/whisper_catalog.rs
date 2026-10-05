@@ -31,8 +31,15 @@ impl WhisperRemoteCatalog {
 
     pub async fn list(&self) -> Result<Vec<RemoteWhisperModel>, WhisperCatalogError> {
         let request = lettuce_model_hub::model_pin_request(WHISPER_CATALOG_REPOSITORY);
-        let detail = lettuce_model_hub::send_hugging_face_request(&self.client, HUGGING_FACE_ENDPOINT, &request, JsonAuth::None, RequestPolicy::PROBE)
-            .await.map_err(WhisperCatalogError::Network)?;
+        let detail = lettuce_model_hub::send_hugging_face_request(
+            &self.client,
+            HUGGING_FACE_ENDPOINT,
+            &request,
+            JsonAuth::None,
+            RequestPolicy::PROBE,
+        )
+        .await
+        .map_err(WhisperCatalogError::Network)?;
         if detail.status != 200 {
             return Err(WhisperCatalogError::Response);
         }

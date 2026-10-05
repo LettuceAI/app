@@ -51,11 +51,11 @@ pub(crate) use local::{
     admit_gguf_download, admit_model_pull, admit_models_folder_move, recover_local_model_jobs,
 };
 pub use runner::{ClaimedJob, JobHandler, JobHandlers, JobLane, JobProgressSink, JobRunner};
-pub use voice_creation::{VoiceCreationHandler, voice_design_create};
 pub use speech::{SpeechSynthesizeHandler, SpeechTranscribeHandler};
 pub(crate) use state::JobHostState;
 pub use text::{TextFeatureHandler, conversation_help_me_reply};
 pub(crate) use text::{admit_design_reference, admit_scene_prompt};
+pub use voice_creation::{VoiceCreationHandler, voice_design_create};
 
 pub async fn jobs_list(
     context: &ApiContext,
@@ -235,44 +235,59 @@ pub(crate) fn job_view(context: &ApiContext, job: &JobSnapshot) -> Result<dto::J
         progress: progress(job),
         created_at: job.created_at.get(),
         updated_at: job.updated_at.get(),
-        failure: job.error.as_ref().map(|error| dto::JobFailureDto {
-            code: failure_code(error.code),
-            retryable: error.retryable,
-            reason: failure_reason(error.message.as_str()),
-            model: (error.code == JobErrorCode::CapabilityUnavailable
-                && error.message.as_str() == crate::EMBEDDING_UNAVAILABLE_JOB_ERROR)
-                .then_some(dto::RequiredModel::Embedding),
-            hugging_face: (job.kind == JobKind::ArtifactInstall
-                && crate::is_hf_job_error(error.message.as_str()))
-            .then(|| {
-                let repository = context
-                    .backend()
-                    .database()
-                    .hugging_face_refusal(job.id)
-                    .ok()
-                    .flatten()
-                    .unwrap_or_default();
-                crate::hf_failure_of_job_error(error.message.as_str(), &repository)
+        failure: job
+            .error
+            .as_ref()
+            .map(|error| dto::JobFailureDto {
+                code: failure_code(error.code),
+                retryable: error.retryable,
+                reason: failure_reason(error.message.as_str()),
+                model: (error.code == JobErrorCode::CapabilityUnavailable
+                    && error.message.as_str() == crate::EMBEDDING_UNAVAILABLE_JOB_ERROR)
+                    .then_some(dto::RequiredModel::Embedding),
+                hugging_face: (job.kind == JobKind::ArtifactInstall
+                    && crate::is_hf_job_error(error.message.as_str()))
+                .then(|| {
+                    let repository = context
+                        .backend()
+                        .database()
+                        .hugging_face_refusal(job.id)
+                        .ok()
+                        .flatten()
+                        .unwrap_or_default();
+                    crate::hf_failure_of_job_error(error.message.as_str(), &repository)
+                })
+                .flatten()
+                .map(|failure| super::error::hf_failure(&failure)),
+                ollama: (job.kind == JobKind::ModelPull)
+                    .then(|| local::ollama_failure(error.message.as_str(), local.failure.as_ref()))
+                    .flatten(),
+                image: image_failure,
+                speech: speech_failure,
             })
-            .flatten()
-            .map(|failure| super::error::hf_failure(&failure)),
-            ollama: (job.kind == JobKind::ModelPull)
-                .then(|| local::ollama_failure(error.message.as_str(), local.failure.as_ref()))
-                .flatten(),
-            image: image_failure,
-            speech: speech_failure,
-        }).or_else(|| speech_failure.map(|failure| dto::JobFailureDto {
-            code: dto::JobFailureCode::WorkerFailed, retryable: false,
-            reason: None, model: None, hugging_face: None, ollama: None, image: None,
-            speech: Some(failure),
-        })),
-        result: feature.or(local.result).or(image_result).or(speech_result).or_else(|| {
-            job.outcome.as_ref().and_then(|outcome| {
-                let (JobOutcome::Success { result_ref } | JobOutcome::Partial { result_ref, .. }) =
-                    outcome;
-                job_result(context, result_ref)
-            })
-        }),
+            .or_else(|| {
+                speech_failure.map(|failure| dto::JobFailureDto {
+                    code: dto::JobFailureCode::WorkerFailed,
+                    retryable: false,
+                    reason: None,
+                    model: None,
+                    hugging_face: None,
+                    ollama: None,
+                    image: None,
+                    speech: Some(failure),
+                })
+            }),
+        result: feature
+            .or(local.result)
+            .or(image_result)
+            .or(speech_result)
+            .or_else(|| {
+                job.outcome.as_ref().and_then(|outcome| {
+                    let (JobOutcome::Success { result_ref }
+                    | JobOutcome::Partial { result_ref, .. }) = outcome;
+                    job_result(context, result_ref)
+                })
+            }),
     })
 }
 

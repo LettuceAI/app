@@ -7,9 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use lettuce_contracts::{
-    self as dto, ApiError, SpeechFailure, SpeechModelKind, SpeechRuntimeKind,
-};
+use lettuce_contracts::{self as dto, ApiError, SpeechFailure, SpeechModelKind, SpeechRuntimeKind};
 use lettuce_jobs::{
     CancellationReason, JobError, JobErrorCode, JobKind, JobMutation, JobSnapshot, JobState,
     JobStore, ResourceAvailability, ResourceClass, WorkerId, handle::CancellationToken,
@@ -36,10 +34,19 @@ const WORK_INVALID: &str = "speech-work-invalid";
 
 /// What a speech job's error label tells the user.
 pub(crate) fn speech_failure(label: &str) -> Option<SpeechFailure> {
-    if label == SPEECH_RETRIES_EXHAUSTED || label.starts_with(&format!("{SPEECH_RETRIES_EXHAUSTED}-")) {
-        let cause = if label.ends_with("-network") { dto::SpeechTransientFailure::NetworkUnavailable }
-            else if let Some(status) = label.strip_prefix("speech-retries-exhausted-provider-").and_then(|status| status.parse::<u16>().ok()) { dto::SpeechTransientFailure::ProviderUnavailable { status } }
-            else { dto::SpeechTransientFailure::Unavailable };
+    if label == SPEECH_RETRIES_EXHAUSTED
+        || label.starts_with(&format!("{SPEECH_RETRIES_EXHAUSTED}-"))
+    {
+        let cause = if label.ends_with("-network") {
+            dto::SpeechTransientFailure::NetworkUnavailable
+        } else if let Some(status) = label
+            .strip_prefix("speech-retries-exhausted-provider-")
+            .and_then(|status| status.parse::<u16>().ok())
+        {
+            dto::SpeechTransientFailure::ProviderUnavailable { status }
+        } else {
+            dto::SpeechTransientFailure::Unavailable
+        };
         return Some(SpeechFailure::RetriesExhausted { cause });
     }
     Some(match label {
@@ -54,7 +61,9 @@ pub(crate) fn speech_failure(label: &str) -> Option<SpeechFailure> {
         SPEECH_ESPEAK_MISSING => SpeechFailure::RuntimeMissing {
             runtime: SpeechRuntimeKind::Espeak,
         },
-        crate::SPEECH_ONNX_MISSING => SpeechFailure::RuntimeMissing { runtime: SpeechRuntimeKind::OnnxRuntime },
+        crate::SPEECH_ONNX_MISSING => SpeechFailure::RuntimeMissing {
+            runtime: SpeechRuntimeKind::OnnxRuntime,
+        },
         _ => return None,
     })
 }
@@ -65,7 +74,9 @@ pub(crate) fn speech_view(
     context: &ApiContext,
     job: &JobSnapshot,
 ) -> Result<(Option<dto::JobResultDto>, Option<SpeechFailure>), ApiError> {
-    if job.kind == JobKind::SpeechVoiceCreate { return super::voice_creation::view(context, job); }
+    if job.kind == JobKind::SpeechVoiceCreate {
+        return super::voice_creation::view(context, job);
+    }
     let failure = job
         .error
         .as_ref()
@@ -80,12 +91,18 @@ pub(crate) fn speech_view(
                 Ok(SynthesisState::Succeeded { result }) => Some(dto::JobResultDto::Asset {
                     asset: context.asset_ref(result.audio_asset_id),
                 }),
-                Ok(_) => return Err(crate::api::error::api_error(
-                    dto::ApiErrorCode::Internal, "the completed synthesis has no audio result",
-                )),
-                Err(error) => return Err(crate::api::error::api_error(
-                    dto::ApiErrorCode::Internal, error.to_string(),
-                )),
+                Ok(_) => {
+                    return Err(crate::api::error::api_error(
+                        dto::ApiErrorCode::Internal,
+                        "the completed synthesis has no audio result",
+                    ));
+                }
+                Err(error) => {
+                    return Err(crate::api::error::api_error(
+                        dto::ApiErrorCode::Internal,
+                        error.to_string(),
+                    ));
+                }
             }
         }
         _ => None,
@@ -204,7 +221,10 @@ impl JobHandler for SpeechTranscribeHandler {
                 let _folder_access = context.local_models().folder_access();
                 let root = crate::api::speech::whisper::whisper_root(context)?;
                 if root.starts_with(crate::api::local_models::models_root(context)?)
-                    && folder_moving(context)? { return Ok(None); }
+                    && folder_moving(context)?
+                {
+                    return Ok(None);
+                }
                 let claimed = context.backend().speech_transcriptions().claim(
                     job_id,
                     worker_id,
@@ -306,11 +326,13 @@ impl JobHandler for SpeechSynthesizeHandler {
     }
 
     fn lane(&self, _context: &ApiContext, job: &JobSnapshot) -> Option<JobLane> {
-        Some(JobLane(if job.resources.contains(&ResourceClass::ModelLoad) {
-            KOKORO_LANE.to_owned()
-        } else {
-            format!("speech:remote:{}", job.id)
-        }))
+        Some(JobLane(
+            if job.resources.contains(&ResourceClass::ModelLoad) {
+                KOKORO_LANE.to_owned()
+            } else {
+                format!("speech:remote:{}", job.id)
+            },
+        ))
     }
 
     fn not_before(
@@ -331,11 +353,19 @@ impl JobHandler for SpeechSynthesizeHandler {
         let claimed = context
             .blocking(move |context| {
                 let _folder_access = context.local_models().folder_access();
-                if let Ok(record) = lettuce_speech::SynthesisRepository::get(context.backend().database(), job_id)
-                    && record.request.provider.config.provider_kind() == lettuce_speech::AudioProviderKind::Kokoro
-                    && let Some(root) = context.retained_model_roots_for_guard()?.and_then(|roots| roots.kokoro)
-                    && std::path::Path::new(&root).starts_with(crate::api::local_models::models_root(context)?)
-                    && folder_moving(context)? { return Ok(None); }
+                if let Ok(record) =
+                    lettuce_speech::SynthesisRepository::get(context.backend().database(), job_id)
+                    && record.request.provider.config.provider_kind()
+                        == lettuce_speech::AudioProviderKind::Kokoro
+                    && let Some(root) = context
+                        .retained_model_roots_for_guard()?
+                        .and_then(|roots| roots.kokoro)
+                    && std::path::Path::new(&root)
+                        .starts_with(crate::api::local_models::models_root(context)?)
+                    && folder_moving(context)?
+                {
+                    return Ok(None);
+                }
                 let claimed = context.backend().tts_syntheses().claim(
                     job_id,
                     worker_id,
@@ -345,9 +375,7 @@ impl JobHandler for SpeechSynthesizeHandler {
                 );
                 match claimed {
                     Ok(work) => Ok(work),
-                    Err(TtsSynthesisError::Jobs(error)) => {
-                        Err(IntoApiError::into_api_error(error))
-                    }
+                    Err(TtsSynthesisError::Jobs(error)) => Err(IntoApiError::into_api_error(error)),
                     Err(error) => {
                         tracing::warn!(%job_id, %error, "a queued synthesis cannot run");
                         fail_unrunnable(context, job_id, WORK_INVALID)?;
@@ -390,30 +418,50 @@ impl ClaimedJob for ClaimedSynthesis {
             SPEECH_LEASE,
             context.blocking(move |context| {
                 let Some(media) = context.media() else {
-                    fail_running(context, work.claim.claim.clone(), JobErrorCode::StorageFailure, MEDIA_UNAVAILABLE)?;
+                    fail_running(
+                        context,
+                        work.claim.claim.clone(),
+                        JobErrorCode::StorageFailure,
+                        MEDIA_UNAVAILABLE,
+                    )?;
                     return Ok(());
                 };
                 let runtime = match context.speech().tts_runtime(context) {
                     Ok(runtime) => runtime,
                     Err(error) => {
-                        fail_running(context, work.claim.claim.clone(), JobErrorCode::CapabilityUnavailable, WORK_INVALID)?;
+                        fail_running(
+                            context,
+                            work.claim.claim.clone(),
+                            JobErrorCode::CapabilityUnavailable,
+                            WORK_INVALID,
+                        )?;
                         return Err(error);
                     }
                 };
-                tokio::runtime::Handle::current().block_on(context.backend().tts_syntheses().run_with_clock(
-                    work,
-                    context.secret_store().as_ref(),
-                    runtime.as_ref(),
-                    media,
-                    reason,
-                    context.clock(),
-                )).map(|_| ()).map_err(IntoApiError::into_api_error)
+                tokio::runtime::Handle::current()
+                    .block_on(context.backend().tts_syntheses().run_with_clock(
+                        work,
+                        context.secret_store().as_ref(),
+                        runtime.as_ref(),
+                        media,
+                        reason,
+                        context.clock(),
+                    ))
+                    .map(|_| ())
+                    .map_err(IntoApiError::into_api_error)
             }),
-        ).await;
+        )
+        .await;
         match result {
             Ok(_) => Ok(()),
             Err(error) => {
-                failure(context.clone(), claim, JobErrorCode::WorkerFailed, WORK_INVALID).await?;
+                failure(
+                    context.clone(),
+                    claim,
+                    JobErrorCode::WorkerFailed,
+                    WORK_INVALID,
+                )
+                .await?;
                 Err(error)
             }
         }
@@ -428,39 +476,76 @@ fn folder_moving(context: &ApiContext) -> Result<bool, ApiError> {
     }
 }
 
-pub(crate) fn active_local_files(context: &ApiContext, root: &std::path::Path) -> Result<Option<(JobId, String)>, ApiError> {
+pub(crate) fn active_local_files(
+    context: &ApiContext,
+    root: &std::path::Path,
+) -> Result<Option<(JobId, String)>, ApiError> {
     use lettuce_jobs::JobQuery;
-    use lettuce_speech::{SynthesisRepository, TranscriptionRepository};
     use lettuce_model_hub::WhisperModelRepository;
+    use lettuce_speech::{SynthesisRepository, TranscriptionRepository};
     use lettuce_types::{PageLimit, PageRequest};
     let database = context.backend().database();
     let mut cursor = None;
     loop {
-        let page = database.list(JobQuery { page: PageRequest { cursor, limit: PageLimit::new(200) }, ..JobQuery::default() })
+        let page = database
+            .list(JobQuery {
+                page: PageRequest {
+                    cursor,
+                    limit: PageLimit::new(200),
+                },
+                ..JobQuery::default()
+            })
             .map_err(IntoApiError::into_api_error)?;
-        for job in page.items.into_iter().filter(|job| job.claim.is_some() && !job.is_terminal()) {
+        for job in page
+            .items
+            .into_iter()
+            .filter(|job| job.claim.is_some() && !job.is_terminal())
+        {
             match job.kind {
                 JobKind::SpeechTranscribe => {
-                    let record = TranscriptionRepository::get(database, job.id)
-                        .map_err(|error| crate::api::error::api_error(dto::ApiErrorCode::Internal, error.to_string()))?;
-                    if let Some(model) = database.get_whisper_model(record.request.model.id.as_str())
-                            .map_err(|error| crate::api::error::api_error(dto::ApiErrorCode::Internal, error.to_string()))?
-                        && model.model.path.starts_with(root) {
-                        return Ok(Some((job.id, model.model.path.to_string_lossy().into_owned())));
+                    let record =
+                        TranscriptionRepository::get(database, job.id).map_err(|error| {
+                            crate::api::error::api_error(
+                                dto::ApiErrorCode::Internal,
+                                error.to_string(),
+                            )
+                        })?;
+                    if let Some(model) = database
+                        .get_whisper_model(record.request.model.id.as_str())
+                        .map_err(|error| {
+                            crate::api::error::api_error(
+                                dto::ApiErrorCode::Internal,
+                                error.to_string(),
+                            )
+                        })?
+                        && model.model.path.starts_with(root)
+                    {
+                        return Ok(Some((
+                            job.id,
+                            model.model.path.to_string_lossy().into_owned(),
+                        )));
                     }
                 }
                 JobKind::SpeechSynthesize => {
-                    let record = SynthesisRepository::get(database, job.id)
-                        .map_err(|error| crate::api::error::api_error(dto::ApiErrorCode::Internal, error.to_string()))?;
-                    if record.request.provider.config.provider_kind() == lettuce_speech::AudioProviderKind::Kokoro
-                        && let Some(path) = context.retained_model_roots_for_guard()?.and_then(|roots| roots.kokoro)
-                        && std::path::Path::new(&path).starts_with(root) {
+                    let record = SynthesisRepository::get(database, job.id).map_err(|error| {
+                        crate::api::error::api_error(dto::ApiErrorCode::Internal, error.to_string())
+                    })?;
+                    if record.request.provider.config.provider_kind()
+                        == lettuce_speech::AudioProviderKind::Kokoro
+                        && let Some(path) = context
+                            .retained_model_roots_for_guard()?
+                            .and_then(|roots| roots.kokoro)
+                        && std::path::Path::new(&path).starts_with(root)
+                    {
                         return Ok(Some((job.id, path)));
                     }
                 }
                 _ => {}
             }
         }
-        match page.next_cursor { Some(next) => cursor = Some(next), None => return Ok(None) }
+        match page.next_cursor {
+            Some(next) => cursor = Some(next),
+            None => return Ok(None),
+        }
     }
 }

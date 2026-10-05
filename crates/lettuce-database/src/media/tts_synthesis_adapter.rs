@@ -315,8 +315,12 @@ fn cached_blob_filter(transaction: &Transaction<'_>) -> Result<String, Synthesis
     ))
 }
 
-pub(crate) fn find_reusable_in(transaction: &Transaction<'_>, key: &SynthesisReuseKey, now: TimestampMillis) -> Result<Option<SynthesisRecord>, SynthesisRepositoryError> {
-        let job_id = transaction
+pub(crate) fn find_reusable_in(
+    transaction: &Transaction<'_>,
+    key: &SynthesisReuseKey,
+    now: TimestampMillis,
+) -> Result<Option<SynthesisRecord>, SynthesisRepositoryError> {
+    let job_id = transaction
             .query_row(
                 "SELECT s.job_id
                    FROM speech_syntheses AS s
@@ -347,17 +351,23 @@ pub(crate) fn find_reusable_in(transaction: &Transaction<'_>, key: &SynthesisReu
             )
             .optional()
             .map_err(storage)?;
-        let record = match job_id {
-            Some(job_id) => load_in(transaction, JobId::from_str(&job_id).map_err(corrupt)?)?,
-            None => None,
-        };
-        Ok(record)
+    let record = match job_id {
+        Some(job_id) => load_in(transaction, JobId::from_str(&job_id).map_err(corrupt)?)?,
+        None => None,
+    };
+    Ok(record)
 }
 
 impl SpeechCacheRepository for Database {
-    fn find_reusable(&self, key: &SynthesisReuseKey, now: TimestampMillis) -> Result<Option<SynthesisRecord>, SynthesisRepositoryError> {
+    fn find_reusable(
+        &self,
+        key: &SynthesisReuseKey,
+        now: TimestampMillis,
+    ) -> Result<Option<SynthesisRecord>, SynthesisRepositoryError> {
         let mut connection = self.connection().map_err(storage)?;
-        let transaction = connection.transaction_with_behavior(TransactionBehavior::Deferred).map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Deferred)
+            .map_err(storage)?;
         let record = find_reusable_in(&transaction, key, now)?;
         transaction.commit().map_err(storage)?;
         Ok(record)

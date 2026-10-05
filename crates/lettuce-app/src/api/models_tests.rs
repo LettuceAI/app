@@ -823,95 +823,253 @@ fn keep_loaded_off_releases_the_embedding_between_uses() {
     assert_eq!(models.loads.load(Ordering::SeqCst), 3);
 }
 
-struct ComparisonModels { loads: AtomicUsize, invalid: bool }
-struct ComparisonEngine { invalid: bool }
+struct ComparisonModels {
+    loads: AtomicUsize,
+    invalid: bool,
+}
+struct ComparisonEngine {
+    invalid: bool,
+}
 impl MemoryEmbeddingEngine for ComparisonEngine {
-    fn source_revision(&self) -> &str { "comparison-test" }
-    fn dimensions(&self) -> EmbeddingDimensions { EmbeddingDimensions::D64 }
-    fn count_tokens(&self, _text: &str) -> Result<u32, EmbeddingGenerationError> { Ok(1) }
-    fn embed_memory(&self, request: &EmbeddingRequest, _cancel: &CancellationToken) -> Result<EmbeddingVector, EmbeddingGenerationError> {
+    fn source_revision(&self) -> &str {
+        "comparison-test"
+    }
+    fn dimensions(&self) -> EmbeddingDimensions {
+        EmbeddingDimensions::D64
+    }
+    fn count_tokens(&self, _text: &str) -> Result<u32, EmbeddingGenerationError> {
+        Ok(1)
+    }
+    fn embed_memory(
+        &self,
+        request: &EmbeddingRequest,
+        _cancel: &CancellationToken,
+    ) -> Result<EmbeddingVector, EmbeddingGenerationError> {
         let mut values = vec![0.0; 64];
-        values[0] = if request.text == "opposite" { -1.0 } else { 1.0 };
-        if self.invalid { values[1] = f32::NAN; }
-        Ok(EmbeddingVector { source_revision: "comparison-test".into(), values })
+        values[0] = if request.text == "opposite" {
+            -1.0
+        } else {
+            1.0
+        };
+        if self.invalid {
+            values[1] = f32::NAN;
+        }
+        Ok(EmbeddingVector {
+            source_revision: "comparison-test".into(),
+            values,
+        })
     }
 }
 #[async_trait]
 impl ModelLoader for ComparisonModels {
-    fn installed(&self, _context: &ApiContext, model: RequiredModel) -> bool { model == RequiredModel::Embedding }
-    async fn prepare(&self, _context: &ApiContext) -> bool { true }
+    fn installed(&self, _context: &ApiContext, model: RequiredModel) -> bool {
+        model == RequiredModel::Embedding
+    }
+    async fn prepare(&self, _context: &ApiContext) -> bool {
+        true
+    }
     fn embedding(&self, _context: &ApiContext) -> ModelLoad<Arc<dyn MemoryEmbeddingEngine>> {
         self.loads.fetch_add(1, Ordering::SeqCst);
-        ModelLoad::Loaded(Arc::new(ComparisonEngine { invalid: self.invalid }))
+        ModelLoad::Loaded(Arc::new(ComparisonEngine {
+            invalid: self.invalid,
+        }))
     }
-    fn emotion(&self, _context: &ApiContext) -> ModelLoad<Arc<dyn CompanionEmotionEngine>> { ModelLoad::NotInstalled }
+    fn emotion(&self, _context: &ApiContext) -> ModelLoad<Arc<dyn CompanionEmotionEngine>> {
+        ModelLoad::NotInstalled
+    }
 }
 #[tokio::test(flavor = "multi_thread")]
 async fn embedding_comparison_uses_one_engine_per_call_and_preserves_raw_cosine() {
-    let models = Arc::new(ComparisonModels { loads: AtomicUsize::new(0), invalid: false });
-    let harness = harness_in(Reply::Text("Hello."), Arc::new(SystemClock), None, None, models.clone());
-    let request = || dto::EmbeddingCompareRequest { left: "same".into(), right: "opposite".into() };
-    let result = super::embedding_compare(&harness.context, request()).await.expect("compare");
+    let models = Arc::new(ComparisonModels {
+        loads: AtomicUsize::new(0),
+        invalid: false,
+    });
+    let harness = harness_in(
+        Reply::Text("Hello."),
+        Arc::new(SystemClock),
+        None,
+        None,
+        models.clone(),
+    );
+    let request = || dto::EmbeddingCompareRequest {
+        left: "same".into(),
+        right: "opposite".into(),
+    };
+    let result = super::embedding_compare(&harness.context, request())
+        .await
+        .expect("compare");
     assert_eq!(result.cosine_similarity, -1.0);
     assert_eq!(result.dimensions, 64);
     assert_eq!(models.loads.load(Ordering::SeqCst), 1);
-    super::embedding_compare(&harness.context, request()).await.expect("compare again");
-    assert_eq!(models.loads.load(Ordering::SeqCst), 2, "keep_model_loaded=false releases each call's engine");
+    super::embedding_compare(&harness.context, request())
+        .await
+        .expect("compare again");
+    assert_eq!(
+        models.loads.load(Ordering::SeqCst),
+        2,
+        "keep_model_loaded=false releases each call's engine"
+    );
     use lettuce_settings::DeviceSettingsStore;
     let database = harness.context.backend().database();
     let mut settings = database.load_device_settings().expect("settings");
     settings.embedding.keep_model_loaded = true;
-    database.save_device_settings(settings).expect("keep loaded");
-    super::embedding_compare(&harness.context, request()).await.expect("cache engine");
-    super::embedding_compare(&harness.context, request()).await.expect("reuse engine");
+    database
+        .save_device_settings(settings)
+        .expect("keep loaded");
+    super::embedding_compare(&harness.context, request())
+        .await
+        .expect("cache engine");
+    super::embedding_compare(&harness.context, request())
+        .await
+        .expect("reuse engine");
     assert_eq!(models.loads.load(Ordering::SeqCst), 3);
-    super::embedding_unload(&harness.context).await.expect("unload");
-    super::embedding_compare(&harness.context, request()).await.expect("load after unload");
+    super::embedding_unload(&harness.context)
+        .await
+        .expect("unload");
+    super::embedding_compare(&harness.context, request())
+        .await
+        .expect("load after unload");
     assert_eq!(models.loads.load(Ordering::SeqCst), 4);
 }
 #[tokio::test(flavor = "multi_thread")]
 async fn embedding_comparison_rejects_invalid_vectors_and_missing_models() {
-    let models = Arc::new(ComparisonModels { loads: AtomicUsize::new(0), invalid: true });
-    let harness = harness_in(Reply::Text("Hello."), Arc::new(SystemClock), None, None, models);
-    let request = || dto::EmbeddingCompareRequest { left: "same".into(), right: "same".into() };
-    assert_eq!(super::embedding_compare(&harness.context, request()).await.expect_err("NaN rejected").code, ApiErrorCode::ModelUnavailable);
+    let models = Arc::new(ComparisonModels {
+        loads: AtomicUsize::new(0),
+        invalid: true,
+    });
+    let harness = harness_in(
+        Reply::Text("Hello."),
+        Arc::new(SystemClock),
+        None,
+        None,
+        models,
+    );
+    let request = || dto::EmbeddingCompareRequest {
+        left: "same".into(),
+        right: "same".into(),
+    };
+    assert_eq!(
+        super::embedding_compare(&harness.context, request())
+            .await
+            .expect_err("NaN rejected")
+            .code,
+        ApiErrorCode::ModelUnavailable
+    );
     let absent = harness_with_models(CountingModels::new(false, false));
-    let error = super::embedding_compare(&absent.context, request()).await.expect_err("missing model");
+    let error = super::embedding_compare(&absent.context, request())
+        .await
+        .expect_err("missing model");
     assert_eq!(error.code, ApiErrorCode::ModelRequired);
     assert_eq!(model_of(&error), Some(RequiredModel::Embedding));
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn embedding_inventory_choose_remove_and_busy_install_use_the_api() {
-    let folder = std::env::temp_dir().join(format!("embedding-api-{}", lettuce_types::OperationId::new()));
+    let folder = std::env::temp_dir().join(format!(
+        "embedding-api-{}",
+        lettuce_types::OperationId::new()
+    ));
     let root = crate::embedding_models_root(&folder);
     std::fs::create_dir_all(&root).expect("root");
     std::fs::write(root.join("v4-model.int8.onnx"), b"legacy model").expect("model");
     std::fs::write(root.join("v4-tokenizer.json"), b"legacy tokenizer").expect("tokenizer");
-    let harness = harness_in(Reply::Text("Hello."), Arc::new(SystemClock), None, Some(folder.clone()), Arc::new(super::NoModels));
+    let harness = harness_in(
+        Reply::Text("Hello."),
+        Arc::new(SystemClock),
+        None,
+        Some(folder.clone()),
+        Arc::new(super::NoModels),
+    );
     let database = harness.context.backend().database();
-    crate::EmbeddingModelCoordinator::new(&root, database).adopt_legacy_install(&root).expect("adopt");
-    let inventory = super::embedding_status(&harness.context).await.expect("status");
+    crate::EmbeddingModelCoordinator::new(&root, database)
+        .adopt_legacy_install(&root)
+        .expect("adopt");
+    let inventory = super::embedding_status(&harness.context)
+        .await
+        .expect("status");
     assert_eq!(inventory.len(), 1);
     assert_eq!(inventory[0].family, dto::EmbeddingFamily::LettuceEmbV4);
     assert!(inventory[0].active);
-    let v4 = || dto::EmbeddingModelRequest { family: dto::EmbeddingFamily::LettuceEmbV4 };
-    super::embedding_choose(&harness.context, v4()).await.expect("choose installed");
-    assert_eq!(super::embedding_choose(&harness.context, dto::EmbeddingModelRequest { family: dto::EmbeddingFamily::LettuceEidosV5 }).await.expect_err("missing family").code, ApiErrorCode::ModelRequired);
-    let source = crate::ArtifactSource::HuggingFace { repository: "test/model".into(), revision: "ab".repeat(20), path: "model.onnx".into() };
-    let plan = crate::ArtifactInstallPlan { install_id: "embedding-busy-test".into(), root: root.clone(), artifacts: vec![crate::PlannedArtifact {
-        artifact: lettuce_model_hub::PinnedArtifact { source_identity: source.identity(), local_segments: vec!["download-test.onnx".into()], byte_size: 1, sha256: Some("ab".repeat(32)) }, source,
-    }] };
-    let admitted = crate::ArtifactInstallCoordinator::new(database).admit(&plan).expect("admit");
-    harness.context.jobs().put_install(admitted.job.id, super::jobs::InstallWork::Artifact { plan, finish: Box::new(super::jobs::InstallFinish::Files) });
-    let error = super::embedding_remove(&harness.context, v4()).await.expect_err("install busy");
+    let v4 = || dto::EmbeddingModelRequest {
+        family: dto::EmbeddingFamily::LettuceEmbV4,
+    };
+    super::embedding_choose(&harness.context, v4())
+        .await
+        .expect("choose installed");
+    assert_eq!(
+        super::embedding_choose(
+            &harness.context,
+            dto::EmbeddingModelRequest {
+                family: dto::EmbeddingFamily::LettuceEidosV5
+            }
+        )
+        .await
+        .expect_err("missing family")
+        .code,
+        ApiErrorCode::ModelRequired
+    );
+    let source = crate::ArtifactSource::HuggingFace {
+        repository: "test/model".into(),
+        revision: "ab".repeat(20),
+        path: "model.onnx".into(),
+    };
+    let plan = crate::ArtifactInstallPlan {
+        install_id: "embedding-busy-test".into(),
+        root: root.clone(),
+        artifacts: vec![crate::PlannedArtifact {
+            artifact: lettuce_model_hub::PinnedArtifact {
+                source_identity: source.identity(),
+                local_segments: vec!["download-test.onnx".into()],
+                byte_size: 1,
+                sha256: Some("ab".repeat(32)),
+            },
+            source,
+        }],
+    };
+    let admitted = crate::ArtifactInstallCoordinator::new(database)
+        .admit(&plan)
+        .expect("admit");
+    harness.context.jobs().put_install(
+        admitted.job.id,
+        super::jobs::InstallWork::Artifact {
+            plan,
+            finish: Box::new(super::jobs::InstallFinish::Files),
+        },
+    );
+    let error = super::embedding_remove(&harness.context, v4())
+        .await
+        .expect_err("install busy");
     assert_eq!(error.code, ApiErrorCode::Busy);
-    assert!(matches!(error.details, Some(ApiErrorDetails::LocalModelsBusy { reason: dto::LocalModelsBusyReason::InstallActive { .. } })));
-    assert_eq!(super::embedding_status(&harness.context).await.expect("kept").len(), 1);
+    assert!(matches!(
+        error.details,
+        Some(ApiErrorDetails::LocalModelsBusy {
+            reason: dto::LocalModelsBusyReason::InstallActive { .. }
+        })
+    ));
+    assert_eq!(
+        super::embedding_status(&harness.context)
+            .await
+            .expect("kept")
+            .len(),
+        1
+    );
     harness.context.jobs().forget_install(admitted.job.id);
-    assert!(super::embedding_remove(&harness.context, v4()).await.expect("remove"));
-    assert!(super::embedding_status(&harness.context).await.expect("empty").is_empty());
-    assert!(!super::embedding_remove(&harness.context, v4()).await.expect("repeat removal"));
+    assert!(
+        super::embedding_remove(&harness.context, v4())
+            .await
+            .expect("remove")
+    );
+    assert!(
+        super::embedding_status(&harness.context)
+            .await
+            .expect("empty")
+            .is_empty()
+    );
+    assert!(
+        !super::embedding_remove(&harness.context, v4())
+            .await
+            .expect("repeat removal")
+    );
     std::fs::remove_dir_all(folder).expect("cleanup");
 }
 
@@ -920,17 +1078,35 @@ async fn headless_model_guards_reach_missing_model_errors_and_install_recovery()
     let harness = harness_with_models(CountingModels::new(false, false));
     let context = &harness.context;
     assert!(context.app_folder().is_none());
-    assert!(context.retained_model_roots_for_guard().expect("guard").is_none());
-    let prepare = context.models().prepare_embedding(context).await.expect_err("missing embedding");
+    assert!(
+        context
+            .retained_model_roots_for_guard()
+            .expect("guard")
+            .is_none()
+    );
+    let prepare = context
+        .models()
+        .prepare_embedding(context)
+        .await
+        .expect_err("missing embedding");
     assert_eq!(prepare.code, ApiErrorCode::ModelRequired);
     for model in [RequiredModel::Embedding, RequiredModel::Emotion] {
-        let error = context.models().require(context, model).await.expect_err("missing model");
+        let error = context
+            .models()
+            .require(context, model)
+            .await
+            .expect_err("missing model");
         assert_eq!(error.code, ApiErrorCode::ModelRequired);
         assert_eq!(error.details, Some(ApiErrorDetails::Model { model }));
     }
-    let status = super::companion_emotion_status(context).await.expect_err("missing emotion root");
+    let status = super::companion_emotion_status(context)
+        .await
+        .expect_err("missing emotion root");
     assert_eq!(status.code, ApiErrorCode::ModelRequired);
-    let status = super::embedding_status(context).await.expect_err("missing embedding root");
+    let status = super::embedding_status(context)
+        .await
+        .expect_err("missing embedding root");
     assert_eq!(status.code, ApiErrorCode::ModelRequired);
-    super::jobs::install::recover_queued_installs(context).expect("no roots do not abort install recovery");
+    super::jobs::install::recover_queued_installs(context)
+        .expect("no roots do not abort install recovery");
 }

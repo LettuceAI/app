@@ -75,7 +75,12 @@ impl RemoteKokoroModel {
                     actual.role != expected.role
                         || actual.remote_path != expected.remote_path
                         || (actual.local_segments != expected.local_segments
-                            && actual.local_segments != [vec!["revisions".to_owned(), self.source_revision.clone()], expected.local_segments].concat())
+                            && actual.local_segments
+                                != [
+                                    vec!["revisions".to_owned(), self.source_revision.clone()],
+                                    expected.local_segments,
+                                ]
+                                .concat())
                         || validate_artifact(actual).is_err()
                 })
         {
@@ -194,34 +199,66 @@ impl KokoroInstallStore {
         })
     }
 
-    pub fn recorded_model(&self, variant: KokoroModelVariant) -> Result<RemoteKokoroModel, KokoroInstallError> {
+    pub fn recorded_model(
+        &self,
+        variant: KokoroModelVariant,
+    ) -> Result<RemoteKokoroModel, KokoroInstallError> {
         let name = format!("installed-{}.json", variant.id());
-        let Some(mut file) = self.inner.inspect(&ObjectKey::single(&name).map_err(KokoroInstallError::Platform)?).map_err(KokoroInstallError::Platform)? else {
+        let Some(mut file) = self
+            .inner
+            .inspect(&ObjectKey::single(&name).map_err(KokoroInstallError::Platform)?)
+            .map_err(KokoroInstallError::Platform)?
+        else {
             return Ok(pinned_kokoro_model(variant));
         };
-        if file.len() > 64 * 1024 { return Err(KokoroInstallError::InvalidManifest); }
-        let mut bytes = Vec::new(); file.read_to_end(&mut bytes).map_err(|_| KokoroInstallError::Unreadable)?;
-        let model: RemoteKokoroModel = serde_json::from_slice(&bytes).map_err(|_| KokoroInstallError::InvalidManifest)?;
+        if file.len() > 64 * 1024 {
+            return Err(KokoroInstallError::InvalidManifest);
+        }
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes)
+            .map_err(|_| KokoroInstallError::Unreadable)?;
+        let model: RemoteKokoroModel =
+            serde_json::from_slice(&bytes).map_err(|_| KokoroInstallError::InvalidManifest)?;
         model.validate()?;
-        if model.variant != variant { return Err(KokoroInstallError::InvalidManifest); }
+        if model.variant != variant {
+            return Err(KokoroInstallError::InvalidManifest);
+        }
         Ok(model)
     }
 
     pub fn record_model(&self, model: &RemoteKokoroModel) -> Result<(), KokoroInstallError> {
-        if self.installed(model)?.is_none() { return Err(KokoroInstallError::InvalidArtifact); }
+        if self.installed(model)?.is_none() {
+            return Err(KokoroInstallError::InvalidArtifact);
+        }
         let bytes = serde_json::to_vec(model).map_err(|_| KokoroInstallError::InvalidManifest)?;
-        if bytes.len() > 64 * 1024 { return Err(KokoroInstallError::InvalidManifest); }
+        if bytes.len() > 64 * 1024 {
+            return Err(KokoroInstallError::InvalidManifest);
+        }
         let name = format!("installed-{}.json", model.variant.id());
-        let partial = ObjectKey::from_segments(["downloads".to_owned(), format!("{name}.part")]).map_err(KokoroInstallError::Platform)?;
-        let staged = ObjectKey::single(format!("{name}.next")).map_err(KokoroInstallError::Platform)?;
-        self.inner.discard(&partial).map_err(KokoroInstallError::Platform)?;
-        self.inner.discard(&staged).map_err(KokoroInstallError::Platform)?;
-        let InstallPreparation::Resume(mut install) = self.inner.prepare(partial, staged, 64 * 1024).map_err(KokoroInstallError::Platform)? else {
+        let partial = ObjectKey::from_segments(["downloads".to_owned(), format!("{name}.part")])
+            .map_err(KokoroInstallError::Platform)?;
+        let staged =
+            ObjectKey::single(format!("{name}.next")).map_err(KokoroInstallError::Platform)?;
+        self.inner
+            .discard(&partial)
+            .map_err(KokoroInstallError::Platform)?;
+        self.inner
+            .discard(&staged)
+            .map_err(KokoroInstallError::Platform)?;
+        let InstallPreparation::Resume(mut install) = self
+            .inner
+            .prepare(partial, staged, 64 * 1024)
+            .map_err(KokoroInstallError::Platform)?
+        else {
             return Err(KokoroInstallError::InvalidManifest);
         };
-        install.append(&bytes).map_err(KokoroInstallError::Platform)?; install.sync().map_err(KokoroInstallError::Platform)?;
+        install
+            .append(&bytes)
+            .map_err(KokoroInstallError::Platform)?;
+        install.sync().map_err(KokoroInstallError::Platform)?;
         let path = install.commit().map_err(KokoroInstallError::Platform)?;
-        std::fs::rename(&path, path.with_file_name(name)).map_err(|_| KokoroInstallError::Unreadable)?;
+        std::fs::rename(&path, path.with_file_name(name))
+            .map_err(|_| KokoroInstallError::Unreadable)?;
         Ok(())
     }
 

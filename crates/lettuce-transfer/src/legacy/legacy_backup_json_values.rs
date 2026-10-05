@@ -61,7 +61,10 @@ pub(crate) struct LegacyJsonContext {
 impl LegacyJsonContext {
     /// The context of a single imported file: default chat appearance and
     /// the voices the app already has.
-    pub(crate) fn for_file(user_voice_ids: BTreeSet<VoiceProfileId>, audio_provider_ids: BTreeSet<AudioProviderId>) -> Self {
+    pub(crate) fn for_file(
+        user_voice_ids: BTreeSet<VoiceProfileId>,
+        audio_provider_ids: BTreeSet<AudioProviderId>,
+    ) -> Self {
         Self {
             base_chat_appearance: default_appearance(),
             user_voice_ids,
@@ -98,7 +101,11 @@ impl LegacyJsonContext {
         }
         Self {
             base_chat_appearance,
-            audio_provider_ids: configuration.audio_providers.iter().map(|provider| provider.id).collect(),
+            audio_provider_ids: configuration
+                .audio_providers
+                .iter()
+                .map(|provider| provider.id)
+                .collect(),
             user_voice_ids: configuration
                 .user_voices
                 .iter()
@@ -612,20 +619,47 @@ pub(crate) fn legacy_voice(
             None
         }
         Some("provider") => {
-            let Some(provider) = value.get("providerId").and_then(Value::as_str).filter(|id| !id.trim().is_empty()) else {
-                skipped.push(malformed(FIELD, character_key)); return None;
+            let Some(provider) = value
+                .get("providerId")
+                .and_then(Value::as_str)
+                .filter(|id| !id.trim().is_empty())
+            else {
+                skipped.push(malformed(FIELD, character_key));
+                return None;
             };
-            let Some(voice_id) = value.get("voiceId").and_then(Value::as_str).filter(|id| !id.trim().is_empty()) else {
-                skipped.push(malformed(FIELD, character_key)); return None;
+            let Some(voice_id) = value
+                .get("voiceId")
+                .and_then(Value::as_str)
+                .filter(|id| !id.trim().is_empty())
+            else {
+                skipped.push(malformed(FIELD, character_key));
+                return None;
             };
-            let provider_id = AudioProviderId::from_str(provider).unwrap_or_else(|_| AudioProviderId::from_uuid(Uuid::new_v5(&LEGACY_ID_NAMESPACE, format!("audio:{provider}").as_bytes())));
+            let provider_id = AudioProviderId::from_str(provider).unwrap_or_else(|_| {
+                AudioProviderId::from_uuid(Uuid::new_v5(
+                    &LEGACY_ID_NAMESPACE,
+                    format!("audio:{provider}").as_bytes(),
+                ))
+            });
             if !context.audio_provider_ids.contains(&provider_id) {
-                return Some(VoicePreference::UnresolvedLegacy(LegacyVoiceLocatorV1 { locator: raw }));
+                return Some(VoicePreference::UnresolvedLegacy(LegacyVoiceLocatorV1 {
+                    locator: raw,
+                }));
             }
-            Some(VoicePreference::Provider { provider_id, voice_id: voice_id.to_owned(),
-                model_id: value.get("modelId").and_then(Value::as_str).filter(|id| !id.trim().is_empty()).map(str::to_owned),
-                voice_name: value.get("voiceName").and_then(Value::as_str).map(str::to_owned) })
-        },
+            Some(VoicePreference::Provider {
+                provider_id,
+                voice_id: voice_id.to_owned(),
+                model_id: value
+                    .get("modelId")
+                    .and_then(Value::as_str)
+                    .filter(|id| !id.trim().is_empty())
+                    .map(str::to_owned),
+                voice_name: value
+                    .get("voiceName")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+            })
+        }
         _ => {
             skipped.push(unknown(FIELD, character_key));
             None
@@ -1096,7 +1130,10 @@ mod tests {
     #[test]
     fn legacy_provider_voice_resolves_account_and_keeps_model_and_name() {
         let (mut context, _) = context(None);
-        let provider_id = AudioProviderId::from_uuid(Uuid::new_v5(&LEGACY_ID_NAMESPACE, b"audio:legacy-provider"));
+        let provider_id = AudioProviderId::from_uuid(Uuid::new_v5(
+            &LEGACY_ID_NAMESPACE,
+            b"audio:legacy-provider",
+        ));
         context.audio_provider_ids.insert(provider_id);
         let mut skipped = Vec::new();
         assert_eq!(legacy_voice(Some(r#"{"source":"provider","providerId":"legacy-provider","voiceId":"narrator","modelId":"tts-v1","voiceName":"Narrator"}"#.into()), "character", &context, &mut skipped),

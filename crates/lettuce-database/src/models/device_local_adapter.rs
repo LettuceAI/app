@@ -83,7 +83,9 @@ impl Database {
                     ON old.command=held.command AND old.client_operation_id=held.client_operation_id
                     WHERE old.request_digest<>held.request_digest OR old.result_json<>held.result_json)", [], |row| row.get(0),
             )?;
-            if conflicting_receipt { return Err(rusqlite::Error::InvalidQuery); }
+            if conflicting_receipt {
+                return Err(rusqlite::Error::InvalidQuery);
+            }
             transaction.execute("INSERT OR IGNORE INTO main.api_operation_receipts SELECT * FROM previous.api_operation_receipts", [])?;
             transaction.execute(
                 "INSERT OR IGNORE INTO main.device_ui_state SELECT * FROM previous.device_ui_state",
@@ -262,7 +264,10 @@ mod tests {
         use lettuce_settings::DeviceSettingsStore;
         let mut device = lettuce_settings::DeviceSettings {
             llm_models_dir: Some("/models".into()),
-            retained_model_roots: lettuce_settings::RetainedModelRoots { whisper: Some("/moved/whisper".into()), ..Default::default() },
+            retained_model_roots: lettuce_settings::RetainedModelRoots {
+                whisper: Some("/moved/whisper".into()),
+                ..Default::default()
+            },
             ..Default::default()
         };
         previous
@@ -274,7 +279,15 @@ mod tests {
         restored
             .carry_device_local_state_from(&previous_path)
             .expect("carry");
-        assert_eq!(restored.load_device_settings().expect("retained roots").retained_model_roots.whisper.as_deref(), Some("/moved/whisper"));
+        assert_eq!(
+            restored
+                .load_device_settings()
+                .expect("retained roots")
+                .retained_model_roots
+                .whisper
+                .as_deref(),
+            Some("/moved/whisper")
+        );
         assert_eq!(
             restored
                 .load_device_settings()

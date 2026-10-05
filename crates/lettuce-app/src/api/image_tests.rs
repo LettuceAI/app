@@ -828,7 +828,10 @@ async fn the_engine_is_built_from_the_models_folder_and_follows_a_move() {
     let engine = context.backend().local_diffusion().expect("engine").clone();
     let default_root = desktop.root.join("models").join("image");
     assert_eq!(engine.paths().image_root, default_root);
-    let target = desktop.root.with_file_name(format!("{}-elsewhere", desktop.root.file_name().expect("name").to_string_lossy()));
+    let target = desktop.root.with_file_name(format!(
+        "{}-elsewhere",
+        desktop.root.file_name().expect("name").to_string_lossy()
+    ));
     let accepted = local_models_dir_set(
         context,
         dto::LocalModelsDirSetRequest {
@@ -1493,7 +1496,10 @@ async fn the_models_folder_does_not_move_while_local_image_work_runs() {
             .await
             .expect("accepted"),
     );
-    let target = desktop.root.with_file_name(format!("{}-elsewhere", desktop.root.file_name().expect("name").to_string_lossy()));
+    let target = desktop.root.with_file_name(format!(
+        "{}-elsewhere",
+        desktop.root.file_name().expect("name").to_string_lossy()
+    ));
     let request = |operation: &str| dto::LocalModelsDirSetRequest {
         path: target.display().to_string(),
         move_existing: true,
@@ -1647,7 +1653,10 @@ async fn an_idle_cached_server_does_not_block_the_move_and_is_stopped_before_it(
         .trim()
         .to_owned();
 
-    let target = desktop.root.with_file_name(format!("{}-elsewhere", desktop.root.file_name().expect("name").to_string_lossy()));
+    let target = desktop.root.with_file_name(format!(
+        "{}-elsewhere",
+        desktop.root.file_name().expect("name").to_string_lossy()
+    ));
     let accepted = local_models_dir_set(
         context,
         dto::LocalModelsDirSetRequest {
@@ -1702,7 +1711,14 @@ async fn the_models_folder_does_not_move_while_a_lora_discovery_is_queued() {
     let refused = local_models_dir_set(
         context,
         dto::LocalModelsDirSetRequest {
-            path: desktop.root.with_file_name(format!("{}-elsewhere", desktop.root.file_name().expect("name").to_string_lossy())).display().to_string(),
+            path: desktop
+                .root
+                .with_file_name(format!(
+                    "{}-elsewhere",
+                    desktop.root.file_name().expect("name").to_string_lossy()
+                ))
+                .display()
+                .to_string(),
             move_existing: true,
             client_operation_id: "move-discovery".to_owned(),
         },
@@ -1723,7 +1739,13 @@ async fn queue_move(context: &ApiContext, root: &Path, operation: &str) -> dto::
     local_models_dir_set(
         context,
         dto::LocalModelsDirSetRequest {
-            path: root.with_file_name(format!("{}-elsewhere", root.file_name().expect("name").to_string_lossy())).display().to_string(),
+            path: root
+                .with_file_name(format!(
+                    "{}-elsewhere",
+                    root.file_name().expect("name").to_string_lossy()
+                ))
+                .display()
+                .to_string(),
             move_existing: false,
             client_operation_id: operation.to_owned(),
         },

@@ -217,7 +217,11 @@ impl<R: TranscriptionRepository + ?Sized, J: JobStore + ?Sized>
         self.run_timed(work, audio, library, runtime, cancellation_reason, &|| now)
     }
 
-    pub fn run_with_clock<A: AsrAudioSource + ?Sized, L: AsrPromptLibrary + ?Sized, E: AsrRuntime + ?Sized>(
+    pub fn run_with_clock<
+        A: AsrAudioSource + ?Sized,
+        L: AsrPromptLibrary + ?Sized,
+        E: AsrRuntime + ?Sized,
+    >(
         &self,
         work: SpeechTranscriptionClaimedWork,
         audio: &A,
@@ -226,10 +230,16 @@ impl<R: TranscriptionRepository + ?Sized, J: JobStore + ?Sized>
         cancellation_reason: CancellationReason,
         clock: &dyn lettuce_jobs::Clock,
     ) -> Result<SpeechTranscriptionRunResult, SpeechTranscriptionError> {
-        self.run_timed(work, audio, library, runtime, cancellation_reason, &|| clock.now())
+        self.run_timed(work, audio, library, runtime, cancellation_reason, &|| {
+            clock.now()
+        })
     }
 
-    fn run_timed<A: AsrAudioSource + ?Sized, L: AsrPromptLibrary + ?Sized, E: AsrRuntime + ?Sized>(
+    fn run_timed<
+        A: AsrAudioSource + ?Sized,
+        L: AsrPromptLibrary + ?Sized,
+        E: AsrRuntime + ?Sized,
+    >(
         &self,
         work: SpeechTranscriptionClaimedWork,
         audio: &A,

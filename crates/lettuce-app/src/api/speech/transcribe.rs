@@ -28,7 +28,8 @@ pub(super) fn ingest_picked_audio(context: &ApiContext, uri: &str) -> Result<Ass
         .files()
         .open(uri)
         .map_err(IntoApiError::into_api_error)?;
-    let expires_at = TimestampMillis::new(context.now().get().saturating_add(RECORDING_LIFETIME_MS));
+    let expires_at =
+        TimestampMillis::new(context.now().get().saturating_add(RECORDING_LIFETIME_MS));
     media
         .ingest(
             reader,
@@ -84,10 +85,17 @@ fn atomic_transcription(
     let spec = crate::speech::speech_transcription::transcription_job_spec(&request)
         .map_err(IntoApiError::into_api_error)?;
     let key = format!("transcribe_file:{}", request.id);
-    context.backend().database().admit_speech_transcription(
-        spec, &key, digest,
-        &serde_json::json!({"kind": "speech_transcribe"}), request,
-    ).map_err(IntoApiError::into_api_error)
+    context
+        .backend()
+        .database()
+        .admit_speech_transcription(
+            spec,
+            &key,
+            digest,
+            &serde_json::json!({"kind": "speech_transcribe"}),
+            request,
+        )
+        .map_err(IntoApiError::into_api_error)
 }
 
 /// Transcribes a picked audio file as a job. The file is read once per
@@ -106,25 +114,39 @@ pub async fn transcribe_file(
     context
         .blocking(move |context| {
             let key = format!("transcribe_file:{request_id}");
-            if let Some(prior) = context.backend().database().job_operation(&key)
+            if let Some(prior) = context
+                .backend()
+                .database()
+                .job_operation(&key)
                 .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?
             {
                 if prior.request_digest != digest {
-                    return Err(api_error(ApiErrorCode::Conflict, "another transcription uses this request id"));
+                    return Err(api_error(
+                        ApiErrorCode::Conflict,
+                        "another transcription uses this request id",
+                    ));
                 }
-                return Ok(dto::JobAccepted { job_id: prior.job_id.to_string() });
+                return Ok(dto::JobAccepted {
+                    job_id: prior.job_id.to_string(),
+                });
             }
             let model = resolve_model(context, request.model_id.as_deref())?;
             let audio = ingest_picked_audio(context, &uri)?;
-            let job = atomic_transcription(context, TranscriptionRequest {
-                id: request_id,
-                audio_asset_id: audio,
-                model,
-                options: engine_options(&request.options),
-                created_at: context.now(),
-            }, &digest)?;
+            let job = atomic_transcription(
+                context,
+                TranscriptionRequest {
+                    id: request_id,
+                    audio_asset_id: audio,
+                    model,
+                    options: engine_options(&request.options),
+                    created_at: context.now(),
+                },
+                &digest,
+            )?;
             context.jobs().wake();
-            Ok(dto::JobAccepted { job_id: job.id.to_string() })
+            Ok(dto::JobAccepted {
+                job_id: job.id.to_string(),
+            })
         })
         .await
 }

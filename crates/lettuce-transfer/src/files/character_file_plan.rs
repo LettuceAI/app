@@ -349,7 +349,10 @@ pub fn plan_character_file(
         .copied()
         .chain(lorebooks.iter().map(|lorebook| lorebook.id))
         .collect::<BTreeSet<_>>();
-    let json_context = LegacyJsonContext::for_file(references.voice_ids.clone(), references.audio_provider_ids.clone());
+    let json_context = LegacyJsonContext::for_file(
+        references.voice_ids.clone(),
+        references.audio_provider_ids.clone(),
+    );
     let row_references = CharacterRowReferences {
         model_ids: references.model_ids.clone(),
         chat_model_ids: references.chat_model_ids.clone(),
@@ -776,7 +779,12 @@ impl CharacterPlanResolver for FileResolver<'_> {
     fn voice_profile(&self, planned: VoiceProfileId) -> VoiceProfileId {
         planned
     }
-    fn audio_provider(&self, planned: lettuce_types::AudioProviderId) -> lettuce_types::AudioProviderId { planned }
+    fn audio_provider(
+        &self,
+        planned: lettuce_types::AudioProviderId,
+    ) -> lettuce_types::AudioProviderId {
+        planned
+    }
 
     fn model(&self, planned: ModelProfileId) -> Result<ModelProfileId, CharacterPlanError> {
         Ok(planned)

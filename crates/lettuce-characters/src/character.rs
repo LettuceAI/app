@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, HashSet};
 
 use lettuce_companions::{CompanionSoulConfig, initial_soul_state};
 use lettuce_types::{
-    AssetId, AudioProviderId, CharacterId, ConversationStarterId, ModelArtifactId, ModelProfileId, PromptDocumentId,
-    Revision, SceneId, TimestampMillis, VoiceProfileId,
+    AssetId, AudioProviderId, CharacterId, ConversationStarterId, ModelArtifactId, ModelProfileId,
+    PromptDocumentId, Revision, SceneId, TimestampMillis, VoiceProfileId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -97,7 +97,12 @@ impl CharacterProvenance {
 )]
 pub enum VoicePreference {
     VoiceProfile(VoiceProfileId),
-    Provider { provider_id: AudioProviderId, voice_id: String, model_id: Option<String>, voice_name: Option<String> },
+    Provider {
+        provider_id: AudioProviderId,
+        voice_id: String,
+        model_id: Option<String>,
+        voice_name: Option<String>,
+    },
     UnresolvedLegacy(LegacyVoiceLocatorV1),
 }
 
@@ -177,10 +182,20 @@ impl Default for CharacterDefaults {
 
 impl CharacterDefaults {
     pub fn validate(&self) -> Result<(), ValidationError> {
-        if let Some(VoicePreference::Provider { voice_id, model_id, voice_name, .. }) = &self.voice {
+        if let Some(VoicePreference::Provider {
+            voice_id,
+            model_id,
+            voice_name,
+            ..
+        }) = &self.voice
+        {
             validate_non_blank("voice.voice_id", voice_id)?;
-            if let Some(model) = model_id { validate_non_blank("voice.model_id", model)?; }
-            if let Some(name) = voice_name { validate_text("voice.voice_name", name)?; }
+            if let Some(model) = model_id {
+                validate_non_blank("voice.model_id", model)?;
+            }
+            if let Some(name) = voice_name {
+                validate_text("voice.voice_name", name)?;
+            }
         }
         if let Some(VoicePreference::UnresolvedLegacy(locator)) = &self.voice {
             locator.validate()?;

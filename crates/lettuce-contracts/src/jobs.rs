@@ -196,7 +196,9 @@ pub struct JobFailureDto {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum JobResultDto {
-    VoiceCreated { voice_id: String },
+    VoiceCreated {
+        voice_id: String,
+    },
     ArtifactInstalled,
     Asset {
         asset: AssetRef,

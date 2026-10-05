@@ -286,7 +286,11 @@ fn admit(context: &ApiContext, work: InstallWork) -> Result<(JobSnapshot, Instal
     admit_with_detail(context, work, None)
 }
 
-fn admit_with_detail(context: &ApiContext, work: InstallWork, detail: Option<&serde_json::Value>) -> Result<(JobSnapshot, InstallWork), ApiError> {
+fn admit_with_detail(
+    context: &ApiContext,
+    work: InstallWork,
+    detail: Option<&serde_json::Value>,
+) -> Result<(JobSnapshot, InstallWork), ApiError> {
     let backend = context.backend();
     let database = backend.database();
     Ok(match work {
@@ -313,13 +317,23 @@ fn admit_with_detail(context: &ApiContext, work: InstallWork, detail: Option<&se
             finish => {
                 let coordinator = ArtifactInstallCoordinator::new(database);
                 let admitted = match detail {
-                    Some(detail) => coordinator.admit_using(&plan, None, |spec| database.create_or_get_with_local_model_detail(spec, detail)),
+                    Some(detail) => coordinator.admit_using(&plan, None, |spec| {
+                        database.create_or_get_with_local_model_detail(spec, detail)
+                    }),
                     None => coordinator.admit(&plan),
-                }.map_err(internal)?;
+                }
+                .map_err(internal)?;
                 if let Some(detail) = detail {
-                    let stored = database.local_model_job(admitted.job.id).map_err(internal)?
+                    let stored = database
+                        .local_model_job(admitted.job.id)
+                        .map_err(internal)?
                         .ok_or_else(|| internal("the install is missing its recovery detail"))?;
-                    if &stored.detail != detail { return Err(api_error(ApiErrorCode::Conflict, "the active install has different setup choices")); }
+                    if &stored.detail != detail {
+                        return Err(api_error(
+                            ApiErrorCode::Conflict,
+                            "the active install has different setup choices",
+                        ));
+                    }
                 }
                 (
                     admitted.job,
@@ -412,7 +426,10 @@ pub(crate) fn recover_queued_installs(context: &ApiContext) -> Result<Vec<JobId>
             }
         }
     }
-    if let Some(root) = context.retained_model_roots_for_guard()?.and_then(|roots| roots.thymos) {
+    if let Some(root) = context
+        .retained_model_roots_for_guard()?
+        .and_then(|roots| roots.thymos)
+    {
         resume_companion_emotion(context, std::path::Path::new(&root), &waiting);
     }
     let mut cancelled = Vec::new();
@@ -421,10 +438,29 @@ pub(crate) fn recover_queued_installs(context: &ApiContext) -> Result<Vec<JobId>
             continue;
         }
         if job.state == JobState::Queued {
-            if let Some(record) = context.backend().database().local_model_job(job.id).map_err(internal)?
-                && let Ok(super::local::LocalModelJobDetail::EmbeddingInstall { root, pin, enable_dynamic_memory }) = serde_json::from_value(record.detail) {
+            if let Some(record) = context
+                .backend()
+                .database()
+                .local_model_job(job.id)
+                .map_err(internal)?
+                && let Ok(super::local::LocalModelJobDetail::EmbeddingInstall {
+                    root,
+                    pin,
+                    enable_dynamic_memory,
+                }) = serde_json::from_value(record.detail)
+            {
                 let plan = crate::embedding_install_plan(&root, &pin);
-                context.jobs().put_install(job.id, InstallWork::Artifact { plan, finish: Box::new(InstallFinish::Embedding { root, pin, enable_dynamic_memory }) });
+                context.jobs().put_install(
+                    job.id,
+                    InstallWork::Artifact {
+                        plan,
+                        finish: Box::new(InstallFinish::Embedding {
+                            root,
+                            pin,
+                            enable_dynamic_memory,
+                        }),
+                    },
+                );
                 continue;
             }
             match super::local::resume_gguf_install(context, &job) {
@@ -1069,36 +1105,66 @@ async fn finish_artifact(
             lora_root,
             download,
         } => crate::record_civitai_lora(database, &lora_root, &download, now),
-        InstallFinish::Embedding { root, pin, enable_dynamic_memory } => {
-            context.blocking(move |context| {
-                EmbeddingModelCoordinator::new(&root, context.backend().database()).complete_install(&pin).map_err(internal)?;
-                Ok(())
-            }).await.map_err(|error| error.message)?;
+        InstallFinish::Embedding {
+            root,
+            pin,
+            enable_dynamic_memory,
+        } => {
+            context
+                .blocking(move |context| {
+                    EmbeddingModelCoordinator::new(&root, context.backend().database())
+                        .complete_install(&pin)
+                        .map_err(internal)?;
+                    Ok(())
+                })
+                .await
+                .map_err(|error| error.message)?;
             context.models_changed();
-            context.models().prepare_embedding(context).await.map_err(|error| error.message)?;
+            context
+                .models()
+                .prepare_embedding(context)
+                .await
+                .map_err(|error| error.message)?;
             let engine = match context.models().resolve_embedding(context) {
                 crate::api::ModelLoad::Loaded(engine) => engine,
                 _ => return Err("the installed embedding model could not be loaded".into()),
             };
             let health_cancel = cancellation.clone();
-            context.blocking(move |_| {
-                crate::api::embedding_health::run(engine.as_ref(), &health_cancel).map_err(internal)
-            }).await.map_err(|error| error.message)?;
+            context
+                .blocking(move |_| {
+                    crate::api::embedding_health::run(engine.as_ref(), &health_cancel)
+                        .map_err(internal)
+                })
+                .await
+                .map_err(|error| error.message)?;
             if enable_dynamic_memory {
-                context.blocking(move |context| {
-                    if cancellation.is_cancelled() { return Err(internal("embedding health check cancelled")); }
-                    use lettuce_settings::GlobalSettingsStore;
-                    let database = context.backend().database();
-                    let mut stored = GlobalSettingsStore::load(database).map_err(internal)?;
-                    stored.settings.dynamic_memory = lettuce_settings::DynamicMemorySettings {
-                        enabled: true, min_similarity_basis_points: Some(3200), ..Default::default()
-                    };
-                    GlobalSettingsStore::save(database, stored.settings, stored.default_model_profile_id, stored.revision).map_err(internal)?;
-                    Ok(())
-                }).await.map_err(|error| error.message)?;
+                context
+                    .blocking(move |context| {
+                        if cancellation.is_cancelled() {
+                            return Err(internal("embedding health check cancelled"));
+                        }
+                        use lettuce_settings::GlobalSettingsStore;
+                        let database = context.backend().database();
+                        let mut stored = GlobalSettingsStore::load(database).map_err(internal)?;
+                        stored.settings.dynamic_memory = lettuce_settings::DynamicMemorySettings {
+                            enabled: true,
+                            min_similarity_basis_points: Some(3200),
+                            ..Default::default()
+                        };
+                        GlobalSettingsStore::save(
+                            database,
+                            stored.settings,
+                            stored.default_model_profile_id,
+                            stored.revision,
+                        )
+                        .map_err(internal)?;
+                        Ok(())
+                    })
+                    .await
+                    .map_err(|error| error.message)?;
             }
             Ok(())
-        },
+        }
     }
 }
 

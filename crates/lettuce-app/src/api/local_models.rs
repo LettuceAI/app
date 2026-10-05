@@ -781,7 +781,10 @@ fn image_work_active(context: &ApiContext) -> Option<Option<String>> {
 /// Why moving the folder at `root` would break work in progress: an install
 /// writing below it, a model llama.cpp holds open from it, or local image
 /// work that reads the image models below it.
-pub(crate) fn folder_busy(context: &ApiContext, root: &Path) -> Result<Option<dto::LocalModelsBusyReason>, ApiError> {
+pub(crate) fn folder_busy(
+    context: &ApiContext,
+    root: &Path,
+) -> Result<Option<dto::LocalModelsBusyReason>, ApiError> {
     if let Some(job_id) = image_work_active(context) {
         return Ok(Some(dto::LocalModelsBusyReason::ImageWorkActive { job_id }));
     }
@@ -795,24 +798,39 @@ pub(crate) fn folder_busy(context: &ApiContext, root: &Path) -> Result<Option<dt
             job_id: job_id.to_string(),
         }));
     }
-    if let Some(path) = context.backend().whisper_runtime().resident_files()
+    if let Some(path) = context
+        .backend()
+        .whisper_runtime()
+        .resident_files()
         .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?
-        .into_iter().find(|path| path.starts_with(root)) {
-        return Ok(Some(dto::LocalModelsBusyReason::ModelLoaded { path: path.to_string_lossy().into_owned() }));
+        .into_iter()
+        .find(|path| path.starts_with(root))
+    {
+        return Ok(Some(dto::LocalModelsBusyReason::ModelLoaded {
+            path: path.to_string_lossy().into_owned(),
+        }));
     }
     {
-        let roots = context.retained_model_roots_for_guard()?.unwrap_or_default();
-        for (kind, path) in [(dto::RequiredModel::Embedding, roots.embedding), (dto::RequiredModel::Emotion, roots.thymos)] {
+        let roots = context
+            .retained_model_roots_for_guard()?
+            .unwrap_or_default();
+        for (kind, path) in [
+            (dto::RequiredModel::Embedding, roots.embedding),
+            (dto::RequiredModel::Emotion, roots.thymos),
+        ] {
             if context.models().is_loaded(kind)
                 && let Some(path) = path
-                && Path::new(&path).starts_with(root) {
+                && Path::new(&path).starts_with(root)
+            {
                 return Ok(Some(dto::LocalModelsBusyReason::ModelLoaded { path }));
             }
         }
     }
     if let Some((job_id, path)) = super::jobs::speech::active_local_files(context, root)? {
         if Path::new(&path).starts_with(root) {
-            return Ok(Some(dto::LocalModelsBusyReason::SpeechWorkActive { job_id: job_id.to_string() }));
+            return Ok(Some(dto::LocalModelsBusyReason::SpeechWorkActive {
+                job_id: job_id.to_string(),
+            }));
         }
     }
     Ok(context

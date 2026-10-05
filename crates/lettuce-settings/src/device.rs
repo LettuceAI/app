@@ -106,9 +106,17 @@ impl DeviceSettings {
             .dictation_model_id
             .as_deref()
             .is_none_or(|model| text(model, 128));
-        let retained = [&self.retained_model_roots.whisper, &self.retained_model_roots.kokoro,
-            &self.retained_model_roots.embedding, &self.retained_model_roots.thymos]
-            .into_iter().all(|path| path.as_deref().is_none_or(|path| text(path, MAX_PATH_BYTES)));
+        let retained = [
+            &self.retained_model_roots.whisper,
+            &self.retained_model_roots.kokoro,
+            &self.retained_model_roots.embedding,
+            &self.retained_model_roots.thymos,
+        ]
+        .into_iter()
+        .all(|path| {
+            path.as_deref()
+                .is_none_or(|path| text(path, MAX_PATH_BYTES))
+        });
         if certificates && folder && dictation && retained && self.embedding.max_tokens != Some(0) {
             Ok(())
         } else {

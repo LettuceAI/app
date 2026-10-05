@@ -218,12 +218,17 @@ impl TtsConfigurationRepository for Database {
         let config_json = encode_versioned(&provider.config, AUDIO_PROVIDER_CONFIG_FORMAT_VERSION)
             .map_err(corrupt)?;
         let mut connection = self.connection().map_err(storage)?;
-        let transaction = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        let transaction = connection
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
             .map_err(storage)?;
-        let previous_kind = transaction.query_row(
-            "SELECT provider_kind FROM audio_providers WHERE id=?1",
-            [provider.id.to_string()], |row| row.get::<_, String>(0),
-        ).optional().map_err(storage)?;
+        let previous_kind = transaction
+            .query_row(
+                "SELECT provider_kind FROM audio_providers WHERE id=?1",
+                [provider.id.to_string()],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(storage)?;
         let changed = if let Some(expected) = expected_revision {
             if provider.revision != expected {
                 return Err(TtsConfigurationRepositoryError::InvalidData);
@@ -255,8 +260,15 @@ impl TtsConfigurationRepository for Database {
         if changed == 0 {
             return Err(TtsConfigurationRepositoryError::StaleRevision);
         }
-        if previous_kind.as_deref().is_some_and(|kind| kind != kind_name(provider.config.provider_kind())) {
-            transaction.execute("DELETE FROM discovered_tts_voices WHERE provider_id=?1", [provider.id.to_string()])
+        if previous_kind
+            .as_deref()
+            .is_some_and(|kind| kind != kind_name(provider.config.provider_kind()))
+        {
+            transaction
+                .execute(
+                    "DELETE FROM discovered_tts_voices WHERE provider_id=?1",
+                    [provider.id.to_string()],
+                )
                 .map_err(storage)?;
         }
         transaction.commit().map_err(storage)?;
@@ -315,13 +327,26 @@ impl TtsConfigurationRepository for Database {
         if provider.revision != expected_revision {
             return Err(TtsConfigurationRepositoryError::StaleRevision);
         }
-        let characters = transaction.prepare("SELECT id,name FROM characters WHERE voice_audio_provider_id=?1 ORDER BY name,id")
-            .map_err(storage)?.query_map([id.to_string()], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
-            .map_err(storage)?.map(|row| {
+        let characters = transaction
+            .prepare(
+                "SELECT id,name FROM characters WHERE voice_audio_provider_id=?1 ORDER BY name,id",
+            )
+            .map_err(storage)?
+            .query_map([id.to_string()], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(storage)?
+            .map(|row| {
                 let (id, name) = row.map_err(storage)?;
-                Ok(lettuce_speech::AudioProviderCharacterReference { id: id.parse().map_err(corrupt)?, name })
-            }).collect::<Result<Vec<_>, TtsConfigurationRepositoryError>>()?;
-        if !characters.is_empty() { return Err(TtsConfigurationRepositoryError::InUse { characters }); }
+                Ok(lettuce_speech::AudioProviderCharacterReference {
+                    id: id.parse().map_err(corrupt)?,
+                    name,
+                })
+            })
+            .collect::<Result<Vec<_>, TtsConfigurationRepositoryError>>()?;
+        if !characters.is_empty() {
+            return Err(TtsConfigurationRepositoryError::InUse { characters });
+        }
 
         transaction
             .execute(

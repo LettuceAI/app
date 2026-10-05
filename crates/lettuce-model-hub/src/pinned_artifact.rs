@@ -316,7 +316,10 @@ pub fn verify_git_blob(path: &Path, expected: &str) -> Result<(), PinnedArtifact
     Ok(())
 }
 
-pub fn verify_pinned_artifact_file(path: &Path, artifact: &PinnedArtifact) -> Result<(), PinnedArtifactError> {
+pub fn verify_pinned_artifact_file(
+    path: &Path,
+    artifact: &PinnedArtifact,
+) -> Result<(), PinnedArtifactError> {
     artifact.validate()?;
     let mut file = std::fs::File::open(path).map_err(|_| PinnedArtifactError::Unreadable)?;
     verify(&mut file, artifact)

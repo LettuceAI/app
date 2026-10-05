@@ -1,6 +1,5 @@
 use lettuce_model_hub::{
-    HUGGING_FACE_ENDPOINT, HfPinListing, KOKORO_REPOSITORY,
-    KokoroInstallError, RemoteKokoroVoice,
+    HUGGING_FACE_ENDPOINT, HfPinListing, KOKORO_REPOSITORY, KokoroInstallError, RemoteKokoroVoice,
 };
 use lettuce_network::{JsonAuth, JsonClient, JsonClientError, RequestPolicy};
 
@@ -66,8 +65,15 @@ impl KokoroRemoteVoiceCatalog {
             .installed_voices()
             .map_err(KokoroCatalogError::Inventory)?;
         let request = lettuce_model_hub::model_pin_request(KOKORO_REPOSITORY);
-        let response = lettuce_model_hub::send_hugging_face_request(&self.client, HUGGING_FACE_ENDPOINT, &request, JsonAuth::None, RequestPolicy::PROBE)
-            .await.map_err(KokoroCatalogError::Network)?;
+        let response = lettuce_model_hub::send_hugging_face_request(
+            &self.client,
+            HUGGING_FACE_ENDPOINT,
+            &request,
+            JsonAuth::None,
+            RequestPolicy::PROBE,
+        )
+        .await
+        .map_err(KokoroCatalogError::Network)?;
         if response.status != 200 {
             return Err(KokoroCatalogError::Response);
         }
@@ -81,7 +87,13 @@ fn parse_listing(
     listing: HfPinListing,
     installed: &[KokoroInstalledVoiceSummary],
 ) -> Result<Vec<KokoroAvailableVoice>, KokoroCatalogError> {
-    if listing.revision.len() != 40 || !listing.revision.bytes().all(|byte| byte.is_ascii_hexdigit()) || listing.revision != listing.revision.to_ascii_lowercase() {
+    if listing.revision.len() != 40
+        || !listing
+            .revision
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit())
+        || listing.revision != listing.revision.to_ascii_lowercase()
+    {
         return Err(KokoroCatalogError::InvalidData);
     }
     let siblings = listing
@@ -197,10 +209,15 @@ mod tests {
 
     #[test]
     fn catalog_accepts_a_new_immutable_revision_and_keeps_its_integrity_facts() {
-        let detail = listing(serde_json::json!({ "sha": "ef".repeat(20), "siblings": [{ "rfilename": "voices/af_heart.bin", "size": 42, "lfs": { "size": 42, "sha256": "cd".repeat(32) } }] }));
+        let detail = listing(
+            serde_json::json!({ "sha": "ef".repeat(20), "siblings": [{ "rfilename": "voices/af_heart.bin", "size": 42, "lfs": { "size": 42, "sha256": "cd".repeat(32) } }] }),
+        );
         let catalog = parse_listing(detail, &[]).expect("new upstream revision");
         assert_eq!(catalog[0].source_revision, "ef".repeat(20));
-        assert_eq!(catalog[0].remote().expect("voice pin").source_revision, "ef".repeat(20));
+        assert_eq!(
+            catalog[0].remote().expect("voice pin").source_revision,
+            "ef".repeat(20)
+        );
     }
 
     #[test]

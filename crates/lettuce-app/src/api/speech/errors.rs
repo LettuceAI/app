@@ -1,16 +1,12 @@
-use lettuce_contracts::{
-    ApiError, ApiErrorCode, ApiErrorDetails, SpeechFailure, SpeechModelKind,
-};
+use lettuce_contracts::{ApiError, ApiErrorCode, ApiErrorDetails, SpeechFailure, SpeechModelKind};
 use lettuce_speech::{
-    TtsConfigurationError, AsrAudioError, AsrLearningError, AsrLearningRepositoryError, AsrRuntimeError,
+    AsrAudioError, AsrLearningError, AsrLearningRepositoryError, AsrRuntimeError,
     AsrValidationError, SynthesisRepositoryError, TranscriptionRepositoryError,
-    TtsConfigurationRepositoryError,
+    TtsConfigurationError, TtsConfigurationRepositoryError,
 };
 
 use crate::api::error::{IntoApiError, api_error, invalid_field};
-use crate::{
-    SpeechTranscriptionError, TtsSynthesisError, WhisperModelCoordinatorError,
-};
+use crate::{SpeechTranscriptionError, TtsSynthesisError, WhisperModelCoordinatorError};
 
 pub(crate) fn speech_error(
     code: ApiErrorCode,
@@ -135,14 +131,24 @@ impl IntoApiError for TtsConfigurationRepositoryError {
     fn into_api_error(self) -> ApiError {
         if let Self::InUse { characters } = self {
             return ApiError {
-                code: ApiErrorCode::Conflict, message: "the audio provider is used by character voices".into(),
-                details: Some(ApiErrorDetails::AudioProviderInUse { characters: characters.into_iter()
-                    .map(|character| lettuce_contracts::CharacterReferenceView { id: character.id.to_string(), name: character.name }).collect() }),
+                code: ApiErrorCode::Conflict,
+                message: "the audio provider is used by character voices".into(),
+                details: Some(ApiErrorDetails::AudioProviderInUse {
+                    characters: characters
+                        .into_iter()
+                        .map(|character| lettuce_contracts::CharacterReferenceView {
+                            id: character.id.to_string(),
+                            name: character.name,
+                        })
+                        .collect(),
+                }),
             };
         }
         let code = match self {
             Self::NotFound | Self::ProviderMissing => ApiErrorCode::NotFound,
-            Self::StaleRevision | Self::AlreadyExists | Self::InUse { .. } => ApiErrorCode::Conflict,
+            Self::StaleRevision | Self::AlreadyExists | Self::InUse { .. } => {
+                ApiErrorCode::Conflict
+            }
             Self::InvalidData => ApiErrorCode::InvalidInput,
             Self::Storage => ApiErrorCode::Internal,
         };

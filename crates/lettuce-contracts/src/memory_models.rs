@@ -4,12 +4,17 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "snake_case")]
-pub enum EmbeddingFamily { LettuceEmbV4, LettuceEidosV5 }
+pub enum EmbeddingFamily {
+    LettuceEmbV4,
+    LettuceEidosV5,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
-pub struct EmbeddingModelRequest { pub family: EmbeddingFamily }
+pub struct EmbeddingModelRequest {
+    pub family: EmbeddingFamily,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
@@ -24,7 +29,10 @@ pub struct EmbeddingModelView {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
-pub struct EmbeddingCompareRequest { pub left: String, pub right: String }
+pub struct EmbeddingCompareRequest {
+    pub left: String,
+    pub right: String,
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
@@ -38,7 +46,11 @@ pub struct EmbeddingComparison {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
-pub enum ThymosStatus { NotInstalled, Installed { source_revision: String }, Damaged }
+pub enum ThymosStatus {
+    NotInstalled,
+    Installed { source_revision: String },
+    Damaged,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]

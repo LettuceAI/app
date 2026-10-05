@@ -100,12 +100,17 @@ impl JobBackup {
         if self.version != JOB_BACKUP_VERSION {
             return Err(JobBackupError::InvalidData);
         }
-        self.api_operation_receipts.sort_by(|a, b| (&a.command, &a.client_operation_id).cmp(&(&b.command, &b.client_operation_id)));
+        self.api_operation_receipts.sort_by(|a, b| {
+            (&a.command, &a.client_operation_id).cmp(&(&b.command, &b.client_operation_id))
+        });
         let mut receipt_keys = BTreeSet::new();
         for receipt in &self.api_operation_receipts {
-            if receipt.result_format_version != 2 || receipt.command.trim().is_empty() || receipt.client_operation_id.trim().is_empty()
+            if receipt.result_format_version != 2
+                || receipt.command.trim().is_empty()
+                || receipt.client_operation_id.trim().is_empty()
                 || receipt.request_digest.trim().is_empty()
-                || !receipt_keys.insert((&receipt.command, &receipt.client_operation_id)) {
+                || !receipt_keys.insert((&receipt.command, &receipt.client_operation_id))
+            {
                 return Err(JobBackupError::InvalidData);
             }
         }

@@ -4,10 +4,7 @@ use lettuce_platform::{ConfinedInstallStore, InstallPreparation, ObjectKey, Resu
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::{
-    InstalledKokoroVoice, InstalledModelArtifact, KokoroInstallError,
-    ModelArtifactError,
-};
+use crate::{InstalledKokoroVoice, InstalledModelArtifact, KokoroInstallError, ModelArtifactError};
 
 pub const MAX_KOKORO_VOICE_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_KOKORO_VOICE_MANIFEST_BYTES: u64 = 4 * 1024;
@@ -99,7 +96,10 @@ impl RemoteKokoroVoice {
         if !is_valid_kokoro_voice_id(&self.id)
             || self.remote_path != format!("voices/{}.bin", self.id)
             || self.source_revision.len() != 40
-            || !self.source_revision.bytes().all(|byte| byte.is_ascii_hexdigit())
+            || !self
+                .source_revision
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit())
             || self.source_revision != self.source_revision.to_ascii_lowercase()
             || self.byte_size == 0
             || self.byte_size > MAX_KOKORO_VOICE_BYTES
@@ -357,7 +357,12 @@ fn voice_target(remote: &RemoteKokoroVoice) -> Result<ObjectKey, KokoroInstallEr
     let segments = if remote.source_revision == crate::KOKORO_SOURCE_REVISION {
         vec!["voices", filename.as_str()]
     } else {
-        vec!["revisions", remote.source_revision.as_str(), "voices", filename.as_str()]
+        vec![
+            "revisions",
+            remote.source_revision.as_str(),
+            "voices",
+            filename.as_str(),
+        ]
     };
     ObjectKey::from_segments(segments).map_err(KokoroInstallError::Platform)
 }
@@ -385,7 +390,11 @@ fn write_manifest(
     let partial_name = format!("{}.manifest.part", voice_identity(remote).to_hex());
     let partial = ObjectKey::from_segments(["downloads", partial_name.as_str()])
         .map_err(KokoroInstallError::Platform)?;
-    let next_name = format!("{}.manifest.{}.next", remote.id, voice_identity(remote).to_hex());
+    let next_name = format!(
+        "{}.manifest.{}.next",
+        remote.id,
+        voice_identity(remote).to_hex()
+    );
     let target = ObjectKey::from_segments(["voices", next_name.as_str()])
         .map_err(KokoroInstallError::Platform)?;
     let path = match store
@@ -395,7 +404,7 @@ fn write_manifest(
         InstallPreparation::Installed(mut file) => {
             verify_manifest_bytes(&mut file, &bytes)?;
             file.native_path().to_path_buf()
-        },
+        }
         InstallPreparation::Resume(mut install) => {
             install.restart().map_err(KokoroInstallError::Platform)?;
             install
@@ -407,8 +416,11 @@ fn write_manifest(
             install.commit().map_err(KokoroInstallError::Platform)?
         }
     };
-    std::fs::rename(&path, path.with_file_name(format!("{}.manifest.json", remote.id)))
-        .map_err(|_| KokoroInstallError::Unreadable)?;
+    std::fs::rename(
+        &path,
+        path.with_file_name(format!("{}.manifest.json", remote.id)),
+    )
+    .map_err(|_| KokoroInstallError::Unreadable)?;
     Ok(())
 }
 
@@ -507,8 +519,8 @@ fn map_artifact_error(error: ModelArtifactError) -> KokoroInstallError {
 
 #[cfg(test)]
 mod tests {
-    use crate::KOKORO_SOURCE_REVISION;
     use super::*;
+    use crate::KOKORO_SOURCE_REVISION;
 
     #[test]
     fn pinned_voice_derives_the_only_managed_remote_path() {
@@ -535,17 +547,41 @@ mod tests {
 
     #[test]
     fn changed_revision_keeps_old_voice_bytes_and_switches_descriptor_after_verification() {
-        let root = std::env::temp_dir().join(format!("kokoro-voice-revision-{}", lettuce_types::OperationId::new()));
+        let root = std::env::temp_dir().join(format!(
+            "kokoro-voice-revision-{}",
+            lettuce_types::OperationId::new()
+        ));
         let store = KokoroVoiceInstallStore::open(&root).expect("store");
         let mut previous = None;
-        for (revision, bytes) in [("ab".repeat(20), b"old voice".as_slice()), ("cd".repeat(20), b"new voice".as_slice())] {
-            let remote = RemoteKokoroVoice::pinned("af_heart", revision, u64::try_from(bytes.len()).expect("size"), format!("{:x}", Sha256::digest(bytes))).expect("pin");
-            let KokoroVoicePreparation::Download(mut session) = store.prepare(remote.clone()).expect("prepare") else { panic!("download"); };
+        for (revision, bytes) in [
+            ("ab".repeat(20), b"old voice".as_slice()),
+            ("cd".repeat(20), b"new voice".as_slice()),
+        ] {
+            let remote = RemoteKokoroVoice::pinned(
+                "af_heart",
+                revision,
+                u64::try_from(bytes.len()).expect("size"),
+                format!("{:x}", Sha256::digest(bytes)),
+            )
+            .expect("pin");
+            let KokoroVoicePreparation::Download(mut session) =
+                store.prepare(remote.clone()).expect("prepare")
+            else {
+                panic!("download");
+            };
             session.append(bytes).expect("append");
             let installed = session.finish().expect("finish");
-            assert_eq!(std::fs::read(&installed.artifact.path).expect("bytes"), bytes);
-            if let Some((path, old_bytes)) = previous.as_ref() { assert_eq!(std::fs::read(path).expect("previous bytes"), *old_bytes); }
-            assert_eq!(store.installed_descriptors().expect("descriptors"), vec![remote]);
+            assert_eq!(
+                std::fs::read(&installed.artifact.path).expect("bytes"),
+                bytes
+            );
+            if let Some((path, old_bytes)) = previous.as_ref() {
+                assert_eq!(std::fs::read(path).expect("previous bytes"), *old_bytes);
+            }
+            assert_eq!(
+                store.installed_descriptors().expect("descriptors"),
+                vec![remote]
+            );
             previous = Some((installed.artifact.path, bytes.to_vec()));
         }
         std::fs::remove_dir_all(root).expect("cleanup");
