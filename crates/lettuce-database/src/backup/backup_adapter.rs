@@ -1588,6 +1588,7 @@ fn read_job_backup(
         image_generations: crate::media::image_generation_adapter::list_in(transaction)
             .map_err(|_| ProviderBackupSourceError::InvalidData)?,
         job_details: crate::job_details_adapter::jobs_in(transaction).map_err(|_| ProviderBackupSourceError::InvalidData)?,
+        api_operation_receipts: crate::api_operation_adapter::receipts_in(transaction).map_err(|_| ProviderBackupSourceError::InvalidData)?,
         job_operations: crate::job_details_adapter::operations_in(transaction).map_err(|_| ProviderBackupSourceError::InvalidData)?,
         local_model_jobs: crate::models::local_model_jobs_adapter::jobs_in(transaction)
             .map_err(|_| ProviderBackupSourceError::InvalidData)?,

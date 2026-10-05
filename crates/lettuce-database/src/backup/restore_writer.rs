@@ -40,7 +40,7 @@ impl ProviderBackupRestoreWriter for Database {
             .map_err(storage)?;
         let populated = transaction
             .query_row(
-                "SELECT EXISTS(SELECT 1 FROM playground_history) OR EXISTS(SELECT 1 FROM image_loras) OR EXISTS(SELECT 1 FROM provider_accounts) OR EXISTS(SELECT 1 FROM prompt_documents) OR EXISTS(SELECT 1 FROM personas) OR EXISTS(SELECT 1 FROM lorebooks) OR EXISTS(SELECT 1 FROM characters) OR EXISTS(SELECT 1 FROM groups) OR EXISTS(SELECT 1 FROM media_blobs) OR EXISTS(SELECT 1 FROM media_assets) OR EXISTS(SELECT 1 FROM model_profiles) OR EXISTS(SELECT 1 FROM audio_providers) OR EXISTS(SELECT 1 FROM user_voices) OR EXISTS(SELECT 1 FROM asr_vocabulary_terms) OR EXISTS(SELECT 1 FROM asr_corrections) OR EXISTS(SELECT 1 FROM asr_voice_examples) OR EXISTS(SELECT 1 FROM legacy_import_runs) OR EXISTS(SELECT 1 FROM legacy_usage_records) OR EXISTS(SELECT 1 FROM backup_restore_admissions) OR EXISTS(SELECT 1 FROM jobs) OR EXISTS(SELECT 1 FROM conversations)",
+                "SELECT EXISTS(SELECT 1 FROM playground_history) OR EXISTS(SELECT 1 FROM image_loras) OR EXISTS(SELECT 1 FROM provider_accounts) OR EXISTS(SELECT 1 FROM prompt_documents) OR EXISTS(SELECT 1 FROM personas) OR EXISTS(SELECT 1 FROM lorebooks) OR EXISTS(SELECT 1 FROM characters) OR EXISTS(SELECT 1 FROM groups) OR EXISTS(SELECT 1 FROM media_blobs) OR EXISTS(SELECT 1 FROM media_assets) OR EXISTS(SELECT 1 FROM model_profiles) OR EXISTS(SELECT 1 FROM audio_providers) OR EXISTS(SELECT 1 FROM user_voices) OR EXISTS(SELECT 1 FROM asr_vocabulary_terms) OR EXISTS(SELECT 1 FROM asr_corrections) OR EXISTS(SELECT 1 FROM asr_voice_examples) OR EXISTS(SELECT 1 FROM legacy_import_runs) OR EXISTS(SELECT 1 FROM legacy_usage_records) OR EXISTS(SELECT 1 FROM backup_restore_admissions) OR EXISTS(SELECT 1 FROM jobs) OR EXISTS(SELECT 1 FROM api_operation_receipts) OR EXISTS(SELECT 1 FROM conversations)",
                 [],
                 |row| row.get::<_, bool>(0),
             )
@@ -271,6 +271,9 @@ impl ProviderBackupRestoreWriter for Database {
         for record in &graph.job_backup.image_generations {
             crate::media::image_generation_adapter::insert_restored_in(&transaction, record)
                 .map_err(invalid)?;
+        }
+        for receipt in &graph.job_backup.api_operation_receipts {
+            crate::api_operation_adapter::insert_in(&transaction, receipt).map_err(invalid)?;
         }
         crate::job_details_adapter::insert_restored_in(&transaction, &graph.job_backup)
             .map_err(invalid)?;

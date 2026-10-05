@@ -18,6 +18,8 @@ mod models;
 mod sync;
 mod backup;
 mod legacy;
+mod api_operation_adapter;
+pub use api_operation_adapter::{ApiOperationError, ApiOperationTransaction};
 mod purge;
 
 pub use models::*;
@@ -5716,6 +5718,23 @@ mod tests {
     }
 
     #[test]
+    fn generic_api_receipts_have_versioned_immutable_results_and_unrestricted_commands() {
+        let database = Database::open_in_memory().expect("database");
+        let connection = database.connection().expect("connection");
+        connection.execute("INSERT INTO api_operation_receipts(command,client_operation_id,request_digest,result_json,committed_at) VALUES ('future_character_create','key','digest','{\"format_version\":1,\"value\":{\"id\":\"created\"}}',1)", []).expect("future commands are accepted");
+        assert!(connection.execute("UPDATE api_operation_receipts SET result_json='{\"format_version\":1,\"value\":null}'", []).is_err());
+        for (command, key, digest, result) in [
+            (" ", "key", "digest", "{\"format_version\":1,\"value\":null}"),
+            ("new", " ", "digest", "{\"format_version\":1,\"value\":null}"),
+            ("new", "key", " ", "{\"format_version\":1,\"value\":null}"),
+            ("new", "key", "digest", "{\"format_version\":2,\"value\":null}"),
+            ("new", "key", "digest", "not json"),
+        ] {
+            assert!(connection.execute("INSERT INTO api_operation_receipts VALUES (?1,?2,?3,?4,1)", rusqlite::params![command,key,digest,result]).is_err());
+        }
+    }
+
+    #[test]
     fn database_enables_foreign_keys_and_has_expected_tables() {
         let database = Database::open_in_memory().expect("open database");
         let connection = database.connection().expect("database lock");
@@ -5734,6 +5753,7 @@ mod tests {
         assert_eq!(
             tables,
             vec![
+                "api_operation_receipts",
                 "app_settings",
                 "app_usage_days",
                 "asr_corrections",

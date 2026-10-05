@@ -78,6 +78,13 @@ impl Database {
                  )",
                 [],
             )?;
+            let conflicting_receipt: bool = transaction.query_row(
+                "SELECT EXISTS(SELECT 1 FROM previous.api_operation_receipts old JOIN main.api_operation_receipts held
+                    ON old.command=held.command AND old.client_operation_id=held.client_operation_id
+                    WHERE old.request_digest<>held.request_digest OR old.result_json<>held.result_json)", [], |row| row.get(0),
+            )?;
+            if conflicting_receipt { return Err(rusqlite::Error::InvalidQuery); }
+            transaction.execute("INSERT OR IGNORE INTO main.api_operation_receipts SELECT * FROM previous.api_operation_receipts", [])?;
             transaction.execute(
                 "INSERT OR IGNORE INTO main.device_ui_state SELECT * FROM previous.device_ui_state",
                 [],

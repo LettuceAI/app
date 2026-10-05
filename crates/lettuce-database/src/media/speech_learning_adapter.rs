@@ -40,7 +40,7 @@ fn query_values<'a>(scopes: &'a [String], language: &'a Option<String>) -> Vec<&
     values
 }
 
-fn load_vocabulary(
+pub(crate) fn load_vocabulary(
     transaction: &Transaction<'_>,
     id: Option<AsrVocabularyTermId>,
     language: Option<&str>,
@@ -467,51 +467,11 @@ impl AsrLearningRepository for Database {
         &self,
         term: AsrVocabularyTerm,
     ) -> Result<AsrVocabularyTerm, AsrLearningRepositoryError> {
-        term.validate().map_err(corrupt)?;
-        let use_count = to_i64(term.use_count)?;
         let mut connection = self.connection().map_err(storage)?;
-        let transaction = connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(storage)?;
-        let changed = transaction
-            .execute(
-                "INSERT INTO asr_vocabulary_terms (
-                    id, term, normalized_term, language, category, scope, priority,
-                    use_count, created_at, updated_at
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
-                 ON CONFLICT(id) DO UPDATE SET
-                    term = excluded.term,
-                    normalized_term = excluded.normalized_term,
-                    language = excluded.language,
-                    category = excluded.category,
-                    scope = excluded.scope,
-                    priority = excluded.priority,
-                    use_count = excluded.use_count,
-                    updated_at = excluded.updated_at
-                 WHERE asr_vocabulary_terms.created_at = excluded.created_at",
-                params![
-                    term.id.to_string(),
-                    term.term,
-                    term.normalized_term,
-                    term.language,
-                    term.category,
-                    term.scope,
-                    term.priority,
-                    use_count,
-                    term.created_at.get(),
-                    term.updated_at.get(),
-                ],
-            )
-            .map_err(storage)?;
-        if changed != 1 {
-            return Err(AsrLearningRepositoryError::Conflict);
-        }
-        let stored = load_vocabulary(&transaction, Some(term.id), None, &[])?
-            .into_iter()
-            .next()
-            .ok_or(AsrLearningRepositoryError::Storage)?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(storage)?;
+        let value = save_vocabulary_in(&transaction, term)?;
         transaction.commit().map_err(storage)?;
-        Ok(stored)
+        Ok(value)
     }
 
     fn get_vocabulary(
@@ -563,33 +523,11 @@ impl AsrLearningRepository for Database {
     }
 
     fn save_correction_draft(&self, draft: AsrCorrectionDraft, now: TimestampMillis) -> Result<AsrCorrectionRule, AsrLearningRepositoryError> {
-        let normalized = draft.materialize(None, false, now).map_err(corrupt)?;
         let mut connection = self.connection().map_err(storage)?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(storage)?;
-        let id = if let Some(id) = draft.id { Some(id) } else {
-            use rusqlite::OptionalExtension;
-            transaction.query_row(
-                "SELECT id FROM asr_corrections WHERE normalized_wrong=?1 AND normalized_correct=?2
-                 AND ((language IS NULL AND ?3 IS NULL) OR language=?3)
-                 ORDER BY user_approved DESC,accepted_count DESC,confidence DESC,use_count DESC,id DESC LIMIT 1",
-                params![normalized.normalized_wrong, normalized.normalized_correct, normalized.language],
-                |row| row.get::<_, String>(0),
-            ).optional().map_err(storage)?.map(|id| AsrCorrectionId::from_str(&id).map_err(corrupt)).transpose()?
-        };
-        let existing = id.map(|id| load_corrections(&transaction, Some(id), None, &[])).transpose()?
-            .and_then(|rules| rules.into_iter().next());
-        if draft.id.is_some() && existing.is_none() { return Err(AsrLearningRepositoryError::NotFound); }
-        let candidate = draft.materialize(existing.as_ref(), false, now).map_err(corrupt)?;
-        let vocabulary_signal = transaction.query_row(
-            "SELECT EXISTS(SELECT 1 FROM asr_vocabulary_terms WHERE normalized_term=?1
-             AND ((language IS NULL AND ?2 IS NULL) OR language=?2 OR language IS NULL)
-             AND (scope=?3 OR scope='global'))",
-            params![candidate.normalized_correct, candidate.language, candidate.scope], |row| row.get::<_, bool>(0),
-        ).map_err(storage)?;
-        let correction = draft.materialize(existing.as_ref(), vocabulary_signal, now).map_err(corrupt)?;
-        let stored = save_correction_in(&transaction, correction)?;
+        let value = save_correction_draft_in(&transaction, draft, now)?;
         transaction.commit().map_err(storage)?;
-        Ok(stored)
+        Ok(value)
     }
 
     fn get_correction(
@@ -706,87 +644,18 @@ impl AsrLearningRepository for Database {
         include_global: bool,
     ) -> Result<Option<AsrIgnoredSuggestion>, AsrLearningRepositoryError> {
         let connection = self.connection().map_err(storage)?;
-        let scope_filter = if include_global {
-            "(scope = ?4 OR scope = 'global')"
-        } else {
-            "scope = ?4"
-        };
-        let mut statement = connection
-            .prepare(&format!(
-                "SELECT id, wrong, normalized_wrong, correct, normalized_correct, language,
-                        scope, ignored_count, last_ignored_at, created_at, updated_at
-                   FROM asr_ignored_suggestions
-                  WHERE normalized_wrong = ?1
-                    AND normalized_correct = ?2
-                    AND ((language IS NULL AND ?3 IS NULL) OR language = ?3)
-                    AND {scope_filter}
-                  ORDER BY ignored_count DESC, id DESC
-                  LIMIT 1"
-            ))
-            .map_err(storage)?;
-        let mut rows = statement
-            .query(params![
-                normalized_wrong,
-                normalized_correct,
-                language,
-                scope
-            ])
-            .map_err(storage)?;
-        let ignored = rows
-            .next()
-            .map_err(storage)?
-            .map(map_ignored_row)
-            .transpose()
-            .map_err(corrupt)?;
-        if let Some(value) = &ignored {
-            value.validate().map_err(corrupt)?;
-        }
-        Ok(ignored)
+        find_ignored_suggestion_in(&connection, normalized_wrong, normalized_correct, language, scope, include_global)
     }
 
     fn save_ignored_suggestion(
         &self,
         suggestion: AsrIgnoredSuggestion,
     ) -> Result<AsrIgnoredSuggestion, AsrLearningRepositoryError> {
-        suggestion.validate().map_err(corrupt)?;
-        let ignored_count = to_i64(suggestion.ignored_count)?;
-        let connection = self.connection().map_err(storage)?;
-        let changed = connection
-            .execute(
-                "INSERT INTO asr_ignored_suggestions (
-                    id, wrong, normalized_wrong, correct, normalized_correct, language, scope,
-                    ignored_count, last_ignored_at, created_at, updated_at
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
-                 ON CONFLICT(id) DO UPDATE SET
-                    wrong = excluded.wrong,
-                    normalized_wrong = excluded.normalized_wrong,
-                    correct = excluded.correct,
-                    normalized_correct = excluded.normalized_correct,
-                    language = excluded.language,
-                    scope = excluded.scope,
-                    ignored_count = excluded.ignored_count,
-                    last_ignored_at = excluded.last_ignored_at,
-                    updated_at = excluded.updated_at
-                 WHERE asr_ignored_suggestions.created_at = excluded.created_at",
-                params![
-                    suggestion.id.to_string(),
-                    suggestion.wrong,
-                    suggestion.normalized_wrong,
-                    suggestion.correct,
-                    suggestion.normalized_correct,
-                    suggestion.language,
-                    suggestion.scope,
-                    ignored_count,
-                    suggestion.last_ignored_at.get(),
-                    suggestion.created_at.get(),
-                    suggestion.updated_at.get(),
-                ],
-            )
-            .map_err(storage)?;
-        if changed != 1 {
-            return Err(AsrLearningRepositoryError::Conflict);
-        }
-        Ok(suggestion)
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(storage)?;
+        let value = save_ignored_suggestion_in(&transaction, suggestion)?;
+        transaction.commit().map_err(storage)?;
+        Ok(value)
     }
 
     fn list_ignored_suggestions(
@@ -852,64 +721,18 @@ impl AsrLearningRepository for Database {
 
     fn get_voice_example(&self, id: AsrVoiceExampleId) -> Result<Option<AsrVoiceExample>, AsrLearningRepositoryError> {
         let connection = self.connection().map_err(storage)?;
-        let mut statement = connection.prepare(
-            "SELECT id,audio_asset_id,expected_text,normalized_expected_text,whisper_output,normalized_whisper_output,
-                    language,scope,vocabulary_term_id,correction_id,created_at,updated_at
-             FROM asr_voice_examples WHERE id=?1",
-        ).map_err(storage)?;
-        let mut rows = statement.query([id.to_string()]).map_err(storage)?;
-        rows.next().map_err(storage)?.map(map_voice_example_row).transpose()
+        get_voice_example_in(&connection, id)
     }
 
     fn save_voice_example(
         &self,
         example: AsrVoiceExample,
     ) -> Result<AsrVoiceExample, AsrLearningRepositoryError> {
-        example.validate().map_err(corrupt)?;
         let mut connection = self.connection().map_err(storage)?;
-        let transaction = connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(storage)?;
-        let changed = transaction
-            .execute(
-                "INSERT INTO asr_voice_examples (
-                    id, audio_asset_id, expected_text, normalized_expected_text, whisper_output,
-                    normalized_whisper_output, language, scope, vocabulary_term_id, correction_id,
-                    created_at, updated_at
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
-                 ON CONFLICT(id) DO UPDATE SET
-                    audio_asset_id = excluded.audio_asset_id,
-                    expected_text = excluded.expected_text,
-                    normalized_expected_text = excluded.normalized_expected_text,
-                    whisper_output = excluded.whisper_output,
-                    normalized_whisper_output = excluded.normalized_whisper_output,
-                    language = excluded.language,
-                    scope = excluded.scope,
-                    vocabulary_term_id = excluded.vocabulary_term_id,
-                    correction_id = excluded.correction_id,
-                    updated_at = excluded.updated_at
-                 WHERE asr_voice_examples.created_at = excluded.created_at",
-                params![
-                    example.id.to_string(),
-                    example.audio_asset_id.to_string(),
-                    example.expected_text,
-                    example.normalized_expected_text,
-                    example.whisper_output,
-                    example.normalized_whisper_output,
-                    example.language,
-                    example.scope,
-                    example.vocabulary_term_id.map(|id| id.to_string()),
-                    example.correction_id.map(|id| id.to_string()),
-                    example.created_at.get(),
-                    example.updated_at.get(),
-                ],
-            )
-            .map_err(storage)?;
-        if changed != 1 {
-            return Err(AsrLearningRepositoryError::Conflict);
-        }
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(storage)?;
+        let value = save_voice_example_in(&transaction, example)?;
         transaction.commit().map_err(storage)?;
-        Ok(example)
+        Ok(value)
     }
 
     fn delete_voice_example(
@@ -930,23 +753,11 @@ impl AsrLearningRepository for Database {
         &self,
         batch: AsrLearningBatch,
     ) -> Result<AsrLearningImportReceipt, AsrLearningRepositoryError> {
-        let vocabulary_count = u64::try_from(batch.vocabulary.len()).map_err(corrupt)?;
-        let correction_count = u64::try_from(batch.corrections.len()).map_err(corrupt)?;
-        let ignored_suggestion_count =
-            u64::try_from(batch.ignored_suggestions.len()).map_err(corrupt)?;
-        let voice_example_count = u64::try_from(batch.voice_examples.len()).map_err(corrupt)?;
         let mut connection = self.connection().map_err(storage)?;
-        let transaction = connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(storage)?;
-        insert_learning_batch_in(&transaction, batch)?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(storage)?;
+        let value = import_learning_batch_in(&transaction, batch)?;
         transaction.commit().map_err(storage)?;
-        Ok(AsrLearningImportReceipt {
-            vocabulary_count,
-            correction_count,
-            ignored_suggestion_count,
-            voice_example_count,
-        })
+        Ok(value)
     }
 }
 
@@ -992,6 +803,231 @@ pub(crate) fn insert_learning_batch_in(
     }
     Ok(())
 }
+
+
+pub(crate) fn save_vocabulary_in(transaction: &Transaction<'_>, term: AsrVocabularyTerm) -> Result<AsrVocabularyTerm, AsrLearningRepositoryError> {
+        term.validate().map_err(corrupt)?;
+        let use_count = to_i64(term.use_count)?;
+        let changed = transaction
+            .execute(
+                "INSERT INTO asr_vocabulary_terms (
+                    id, term, normalized_term, language, category, scope, priority,
+                    use_count, created_at, updated_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                 ON CONFLICT(id) DO UPDATE SET
+                    term = excluded.term,
+                    normalized_term = excluded.normalized_term,
+                    language = excluded.language,
+                    category = excluded.category,
+                    scope = excluded.scope,
+                    priority = excluded.priority,
+                    use_count = excluded.use_count,
+                    updated_at = excluded.updated_at
+                 WHERE asr_vocabulary_terms.created_at = excluded.created_at",
+                params![
+                    term.id.to_string(),
+                    term.term,
+                    term.normalized_term,
+                    term.language,
+                    term.category,
+                    term.scope,
+                    term.priority,
+                    use_count,
+                    term.created_at.get(),
+                    term.updated_at.get(),
+                ],
+            )
+            .map_err(storage)?;
+        if changed != 1 {
+            return Err(AsrLearningRepositoryError::Conflict);
+        }
+        let stored = load_vocabulary(transaction, Some(term.id), None, &[])?
+            .into_iter()
+            .next()
+            .ok_or(AsrLearningRepositoryError::Storage)?;
+        Ok(stored)
+    }
+
+pub(crate) fn save_correction_draft_in(transaction: &Transaction<'_>, draft: AsrCorrectionDraft, now: TimestampMillis) -> Result<AsrCorrectionRule, AsrLearningRepositoryError> {
+        let normalized = draft.materialize(None, false, now).map_err(corrupt)?;
+        let id = if let Some(id) = draft.id { Some(id) } else {
+            use rusqlite::OptionalExtension;
+            transaction.query_row(
+                "SELECT id FROM asr_corrections WHERE normalized_wrong=?1 AND normalized_correct=?2
+                 AND ((language IS NULL AND ?3 IS NULL) OR language=?3)
+                 ORDER BY user_approved DESC,accepted_count DESC,confidence DESC,use_count DESC,id DESC LIMIT 1",
+                params![normalized.normalized_wrong, normalized.normalized_correct, normalized.language],
+                |row| row.get::<_, String>(0),
+            ).optional().map_err(storage)?.map(|id| AsrCorrectionId::from_str(&id).map_err(corrupt)).transpose()?
+        };
+        let existing = id.map(|id| load_corrections(transaction, Some(id), None, &[])).transpose()?
+            .and_then(|rules| rules.into_iter().next());
+        if draft.id.is_some() && existing.is_none() { return Err(AsrLearningRepositoryError::NotFound); }
+        let candidate = draft.materialize(existing.as_ref(), false, now).map_err(corrupt)?;
+        let vocabulary_signal = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM asr_vocabulary_terms WHERE normalized_term=?1
+             AND ((language IS NULL AND ?2 IS NULL) OR language=?2 OR language IS NULL)
+             AND (scope=?3 OR scope='global'))",
+            params![candidate.normalized_correct, candidate.language, candidate.scope], |row| row.get::<_, bool>(0),
+        ).map_err(storage)?;
+        let correction = draft.materialize(existing.as_ref(), vocabulary_signal, now).map_err(corrupt)?;
+        let stored = save_correction_in(transaction, correction)?;
+        Ok(stored)
+    }
+
+pub(crate) fn save_ignored_suggestion_in(transaction: &Transaction<'_>, suggestion: AsrIgnoredSuggestion) -> Result<AsrIgnoredSuggestion, AsrLearningRepositoryError> {
+        suggestion.validate().map_err(corrupt)?;
+        let ignored_count = to_i64(suggestion.ignored_count)?;
+        let changed = transaction
+            .execute(
+                "INSERT INTO asr_ignored_suggestions (
+                    id, wrong, normalized_wrong, correct, normalized_correct, language, scope,
+                    ignored_count, last_ignored_at, created_at, updated_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                 ON CONFLICT(id) DO UPDATE SET
+                    wrong = excluded.wrong,
+                    normalized_wrong = excluded.normalized_wrong,
+                    correct = excluded.correct,
+                    normalized_correct = excluded.normalized_correct,
+                    language = excluded.language,
+                    scope = excluded.scope,
+                    ignored_count = excluded.ignored_count,
+                    last_ignored_at = excluded.last_ignored_at,
+                    updated_at = excluded.updated_at
+                 WHERE asr_ignored_suggestions.created_at = excluded.created_at",
+                params![
+                    suggestion.id.to_string(),
+                    suggestion.wrong,
+                    suggestion.normalized_wrong,
+                    suggestion.correct,
+                    suggestion.normalized_correct,
+                    suggestion.language,
+                    suggestion.scope,
+                    ignored_count,
+                    suggestion.last_ignored_at.get(),
+                    suggestion.created_at.get(),
+                    suggestion.updated_at.get(),
+                ],
+            )
+            .map_err(storage)?;
+        if changed != 1 {
+            return Err(AsrLearningRepositoryError::Conflict);
+        }
+        Ok(suggestion)
+    }
+
+pub(crate) fn save_voice_example_in(transaction: &Transaction<'_>, example: AsrVoiceExample) -> Result<AsrVoiceExample, AsrLearningRepositoryError> {
+        let audio_ready = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM media_assets a JOIN media_blobs b ON b.id=a.blob_id
+                WHERE a.id=?1 AND b.kind='audio' AND b.state='ready' AND a.kind IN ('message_audio','other_audio'))",
+            [example.audio_asset_id.to_string()], |row| row.get::<_, bool>(0),
+        ).map_err(storage)?;
+        if !audio_ready { return Err(AsrLearningRepositoryError::InvalidData); }
+        example.validate().map_err(corrupt)?;
+        let changed = transaction
+            .execute(
+                "INSERT INTO asr_voice_examples (
+                    id, audio_asset_id, expected_text, normalized_expected_text, whisper_output,
+                    normalized_whisper_output, language, scope, vocabulary_term_id, correction_id,
+                    created_at, updated_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+                 ON CONFLICT(id) DO UPDATE SET
+                    audio_asset_id = excluded.audio_asset_id,
+                    expected_text = excluded.expected_text,
+                    normalized_expected_text = excluded.normalized_expected_text,
+                    whisper_output = excluded.whisper_output,
+                    normalized_whisper_output = excluded.normalized_whisper_output,
+                    language = excluded.language,
+                    scope = excluded.scope,
+                    vocabulary_term_id = excluded.vocabulary_term_id,
+                    correction_id = excluded.correction_id,
+                    updated_at = excluded.updated_at
+                 WHERE asr_voice_examples.created_at = excluded.created_at",
+                params![
+                    example.id.to_string(),
+                    example.audio_asset_id.to_string(),
+                    example.expected_text,
+                    example.normalized_expected_text,
+                    example.whisper_output,
+                    example.normalized_whisper_output,
+                    example.language,
+                    example.scope,
+                    example.vocabulary_term_id.map(|id| id.to_string()),
+                    example.correction_id.map(|id| id.to_string()),
+                    example.created_at.get(),
+                    example.updated_at.get(),
+                ],
+            )
+            .map_err(storage)?;
+        if changed != 1 {
+            return Err(AsrLearningRepositoryError::Conflict);
+        }
+        Ok(example)
+    }
+
+pub(crate) fn import_learning_batch_in(transaction: &Transaction<'_>, batch: AsrLearningBatch) -> Result<AsrLearningImportReceipt, AsrLearningRepositoryError> {
+        let vocabulary_count = u64::try_from(batch.vocabulary.len()).map_err(corrupt)?;
+        let correction_count = u64::try_from(batch.corrections.len()).map_err(corrupt)?;
+        let ignored_suggestion_count =
+            u64::try_from(batch.ignored_suggestions.len()).map_err(corrupt)?;
+        let voice_example_count = u64::try_from(batch.voice_examples.len()).map_err(corrupt)?;
+        insert_learning_batch_in(transaction, batch)?;
+        Ok(AsrLearningImportReceipt {
+            vocabulary_count,
+            correction_count,
+            ignored_suggestion_count,
+            voice_example_count,
+        })
+    }
+
+pub(crate) fn find_ignored_suggestion_in(connection: &rusqlite::Connection, normalized_wrong: &str, normalized_correct: &str, language: Option<&str>, scope: &str, include_global: bool) -> Result<Option<AsrIgnoredSuggestion>, AsrLearningRepositoryError> {
+        let scope_filter = if include_global {
+            "(scope = ?4 OR scope = 'global')"
+        } else {
+            "scope = ?4"
+        };
+        let mut statement = connection
+            .prepare(&format!(
+                "SELECT id, wrong, normalized_wrong, correct, normalized_correct, language,
+                        scope, ignored_count, last_ignored_at, created_at, updated_at
+                   FROM asr_ignored_suggestions
+                  WHERE normalized_wrong = ?1
+                    AND normalized_correct = ?2
+                    AND ((language IS NULL AND ?3 IS NULL) OR language = ?3)
+                    AND {scope_filter}
+                  ORDER BY ignored_count DESC, id DESC
+                  LIMIT 1"
+            ))
+            .map_err(storage)?;
+        let mut rows = statement
+            .query(params![
+                normalized_wrong,
+                normalized_correct,
+                language,
+                scope
+            ])
+            .map_err(storage)?;
+        let ignored = rows
+            .next()
+            .map_err(storage)?
+            .map(map_ignored_row)
+            .transpose()
+            .map_err(corrupt)?;
+        if let Some(value) = &ignored {
+            value.validate().map_err(corrupt)?;
+        }
+        Ok(ignored)
+    }
+
+pub(crate) fn get_voice_example_in(connection: &rusqlite::Connection, id: AsrVoiceExampleId) -> Result<Option<AsrVoiceExample>, AsrLearningRepositoryError> {
+        let mut statement = connection.prepare(
+            "SELECT id,audio_asset_id,expected_text,normalized_expected_text,whisper_output,normalized_whisper_output,
+                    language,scope,vocabulary_term_id,correction_id,created_at,updated_at
+             FROM asr_voice_examples WHERE id=?1",
+        ).map_err(storage)?;
+        let mut rows = statement.query([id.to_string()]).map_err(storage)?;
+        rows.next().map_err(storage)?.map(map_voice_example_row).transpose()
+    }
 
 #[cfg(test)]
 mod tests {

@@ -27,7 +27,19 @@ pub struct JobBackup {
     #[serde(default)]
     pub job_operations: Vec<BackupJobOperation>,
     #[serde(default)]
+    pub api_operation_receipts: Vec<BackupApiOperationReceipt>,
+    #[serde(default)]
     pub hugging_face_refusals: Vec<BackupHuggingFaceRefusal>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackupApiOperationReceipt {
+    pub command: String,
+    pub client_operation_id: String,
+    pub request_digest: String,
+    pub result: serde_json::Value,
+    pub committed_at: lettuce_types::TimestampMillis,
 }
 
 /// What a local model job (a download, a pull, a folder move) works on,
@@ -86,6 +98,15 @@ impl JobBackup {
     pub fn canonicalize_and_validate(&mut self) -> Result<(), JobBackupError> {
         if self.version != JOB_BACKUP_VERSION {
             return Err(JobBackupError::InvalidData);
+        }
+        self.api_operation_receipts.sort_by(|a, b| (&a.command, &a.client_operation_id).cmp(&(&b.command, &b.client_operation_id)));
+        let mut receipt_keys = BTreeSet::new();
+        for receipt in &self.api_operation_receipts {
+            if receipt.command.trim().is_empty() || receipt.client_operation_id.trim().is_empty()
+                || receipt.request_digest.trim().is_empty()
+                || !receipt_keys.insert((&receipt.command, &receipt.client_operation_id)) {
+                return Err(JobBackupError::InvalidData);
+            }
         }
         self.jobs
             .sort_by_key(|job| (job.snapshot.created_at, job.snapshot.id));
@@ -250,6 +271,7 @@ mod tests {
             image_generations: Vec::new(),
             job_details: Vec::new(),
             job_operations: Vec::new(),
+            api_operation_receipts: Vec::new(),
             local_model_jobs: Vec::new(),
             local_model_operations: Vec::new(),
             hugging_face_refusals: Vec::new(),

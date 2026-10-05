@@ -1771,6 +1771,7 @@ mod tests {
                 image_generations: Vec::new(),
                 job_details: Vec::new(),
                 job_operations: Vec::new(),
+                api_operation_receipts: Vec::new(),
                 local_model_jobs: Vec::new(),
                 local_model_operations: Vec::new(),
                 hugging_face_refusals: Vec::new(),

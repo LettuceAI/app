@@ -1,3 +1,22 @@
+CREATE TABLE api_operation_receipts (
+    command TEXT NOT NULL CHECK (length(trim(command)) > 0),
+    client_operation_id TEXT NOT NULL CHECK (length(trim(client_operation_id)) > 0),
+    request_digest TEXT NOT NULL CHECK (length(trim(request_digest)) > 0),
+    result_json TEXT NOT NULL CHECK (
+        json_valid(result_json)
+        AND json_extract(result_json, '$.format_version') IS 1
+        AND json_type(result_json, '$.value') IS NOT NULL
+    ),
+    committed_at INTEGER NOT NULL,
+    PRIMARY KEY(command, client_operation_id)
+) STRICT;
+
+CREATE TRIGGER api_operation_receipts_immutable
+BEFORE UPDATE ON api_operation_receipts
+BEGIN
+    SELECT RAISE(ABORT, 'API operation receipts are immutable');
+END;
+
 CREATE TABLE audio_providers (
     id TEXT PRIMARY KEY CHECK (length(id) = 36),
     secret_owner_id TEXT NOT NULL UNIQUE CHECK (length(secret_owner_id) = 36),

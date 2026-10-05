@@ -15,7 +15,7 @@ use crate::Database;
 /// evidence, job logs and provider replay caches. Sync changes still waiting
 /// to apply, conflict evidence (a user may choose its side) and unfinished
 /// jobs are probed separately.
-const UNSCANNED_TABLES: [&str; 9] = [
+const UNSCANNED_TABLES: [&str; 10] = [
     "media_assets",
     "media_blobs",
     "media_gc_candidates",
@@ -25,6 +25,7 @@ const UNSCANNED_TABLES: [&str; 9] = [
     "conversation_replay_artifacts",
     "jobs",
     "job_events",
+    "api_operation_receipts",
 ];
 const UNSCANNED_PREFIXES: [&str; 2] = ["sync_", "legacy_import_"];
 
