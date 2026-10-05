@@ -674,61 +674,18 @@ where
         for conversation_id in conversations {
             self.run_pass(conversation_id, worker_id, lease_for, clock, follow_ups)
                 .await;
-            let Some(active) = self.active_cycle(conversation_id)? else {
-                continue;
-            };
-            if active.companion {
-                continue;
-            }
-            let aggregate = ConversationReader::get(self.repository, conversation_id)
-                .map_err(CompanionMemoryHostError::Conversation)?;
-            for branch in aggregate.branches {
-                if branch.id == aggregate.conversation.active_branch_id
-                    || branch.status != lettuce_conversations::BranchStatus::Active
-                {
-                    continue;
-                }
-                let mut remains = false;
-                for job in queued
-                    .iter()
-                    .filter(|job| job.subject.id.as_str() == conversation_id.to_string())
-                {
-                    remains |= JobStore::get(self.repository, job.id)
-                        .map_err(|error| CompanionMemoryHostError::Dispatch(error.into()))?
-                        .is_some_and(|current| current.state == lettuce_jobs::JobState::Queued);
-                }
-                if !remains {
-                    break;
-                }
-                let admission = crate::CompanionPostTurnMemoryAdmissionCoordinator::new(
-                    self.repository,
-                    self.repository,
-                )
-                .admit_plain_for_branch(
+            if let Err(error) = self
+                .resume_inactive_branches(
                     conversation_id,
-                    branch.id,
-                    active.settings.summary_message_interval,
-                    run_mode(active.settings.run_mode),
-                    clock.now(),
+                    &queued,
+                    worker_id,
+                    lease_for,
+                    clock,
+                    follow_ups,
                 )
-                .map_err(|error| CompanionMemoryHostError::Dispatch(error.into()))?;
-                let works =
-                    CompanionMemoryDispatchCoordinator::new(self.repository, self.repository)
-                        .claim_admissions(
-                            admission.into_iter().collect(),
-                            worker_id,
-                            clock.now(),
-                            lease_for,
-                            &ResourceAvailability::all(),
-                        )?;
-                for work in works {
-                    let settled = self
-                        .run_claimed(work, CancellationReason::Recovery, clock.now())
-                        .await?;
-                    follow_ups
-                        .after_memory(&settled, worker_id, lease_for, clock)
-                        .await;
-                }
+                .await
+            {
+                tracing::warn!(%conversation_id, %error, "queued memory work of another branch could not resume");
             }
         }
         let mut cancelled = Vec::new();
@@ -760,6 +717,75 @@ where
             }
         }
         Ok(cancelled)
+    }
+
+    /// Runs the queued windows of the conversation's other active branches
+    /// while queued memory jobs of it remain.
+    async fn resume_inactive_branches(
+        &self,
+        conversation_id: ConversationId,
+        queued: &[lettuce_jobs::JobSnapshot],
+        worker_id: WorkerId,
+        lease_for: Duration,
+        clock: &dyn lettuce_jobs::Clock,
+        follow_ups: &dyn crate::CompanionFollowUps,
+    ) -> Result<(), CompanionMemoryHostError> {
+        let Some(active) = self.active_cycle(conversation_id)? else {
+            return Ok(());
+        };
+        if active.companion {
+            return Ok(());
+        }
+        let aggregate = ConversationReader::get(self.repository, conversation_id)
+            .map_err(CompanionMemoryHostError::Conversation)?;
+        for branch in aggregate.branches {
+            if branch.id == aggregate.conversation.active_branch_id
+                || branch.status != lettuce_conversations::BranchStatus::Active
+            {
+                continue;
+            }
+            let mut remains = false;
+            for job in queued
+                .iter()
+                .filter(|job| job.subject.id.as_str() == conversation_id.to_string())
+            {
+                remains |= JobStore::get(self.repository, job.id)
+                    .map_err(|error| CompanionMemoryHostError::Dispatch(error.into()))?
+                    .is_some_and(|current| current.state == lettuce_jobs::JobState::Queued);
+            }
+            if !remains {
+                break;
+            }
+            let admission = crate::CompanionPostTurnMemoryAdmissionCoordinator::new(
+                self.repository,
+                self.repository,
+            )
+            .admit_plain_for_branch(
+                conversation_id,
+                branch.id,
+                active.settings.summary_message_interval,
+                run_mode(active.settings.run_mode),
+                clock.now(),
+            )
+            .map_err(|error| CompanionMemoryHostError::Dispatch(error.into()))?;
+            let works = CompanionMemoryDispatchCoordinator::new(self.repository, self.repository)
+                .claim_admissions(
+                admission.into_iter().collect(),
+                worker_id,
+                clock.now(),
+                lease_for,
+                &ResourceAvailability::all(),
+            )?;
+            for work in works {
+                let settled = self
+                    .run_claimed(work, CancellationReason::Recovery, clock.now())
+                    .await?;
+                follow_ups
+                    .after_memory(&settled, worker_id, lease_for, clock)
+                    .await;
+            }
+        }
+        Ok(())
     }
 
     async fn run_pass(
