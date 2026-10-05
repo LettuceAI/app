@@ -444,7 +444,7 @@ async fn the_folder_move_waits_for_installs_and_loaded_models() {
     let context = &harness.context;
     hugging_face(context).await;
     let root = crate::llm_models_root(&lettuce_settings::DeviceSettings::default(), &folder);
-    let target = folder.join("elsewhere");
+    let target = folder.with_file_name(format!("{}-elsewhere", folder.file_name().expect("name").to_string_lossy()));
     let move_request = |operation: &str| dto::LocalModelsDirSetRequest {
         path: target.to_string_lossy().into_owned(),
         move_existing: true,
@@ -1019,7 +1019,7 @@ async fn a_queued_or_interrupted_folder_move_is_cancelled_and_cleaned_at_restart
     let root = crate::llm_models_root(&lettuce_settings::DeviceSettings::default(), &folder);
     std::fs::create_dir_all(root.join("org--m")).expect("folder");
     std::fs::write(root.join("org--m").join("m.gguf"), MODEL_BYTES).expect("model");
-    let target = folder.join("elsewhere");
+    let target = folder.with_file_name(format!("{}-elsewhere", folder.file_name().expect("name").to_string_lossy()));
     let accepted = local_models_dir_set(
         context,
         dto::LocalModelsDirSetRequest {
@@ -1126,7 +1126,7 @@ async fn a_committed_moves_leftover_manifest_is_never_applied_again() {
     let root = crate::llm_models_root(&lettuce_settings::DeviceSettings::default(), &folder);
     std::fs::create_dir_all(root.join("org--m")).expect("folder");
     std::fs::write(root.join("org--m").join("m.gguf"), MODEL_BYTES).expect("model");
-    let target = folder.join("elsewhere");
+    let target = folder.with_file_name(format!("{}-elsewhere", folder.file_name().expect("name").to_string_lossy()));
     let manifest = serde_json::json!({
         "from": root.to_string_lossy(),
         "entries": [original_entry(&root, "org--m")],
@@ -1208,4 +1208,42 @@ async fn a_download_without_an_offload_choice_reads_it_from_its_layer_count() {
     .expect("model");
     assert_eq!(profile.config.llama_cpp.gpu_layers, Some(0));
     std::fs::remove_dir_all(folder).ok();
+}
+
+#[tokio::test]
+async fn models_folder_refuses_app_data_overlap_and_allows_the_default() {
+    let (harness, folder) = local_harness("data-overlap");
+    for (index, path) in [folder.clone(), folder.parent().expect("parent").to_path_buf(), folder.join("other")].into_iter().enumerate() {
+        let error = local_models_dir_set(&harness.context, dto::LocalModelsDirSetRequest {
+            path: path.to_string_lossy().into_owned(), move_existing: false,
+            client_operation_id: format!("overlap-{index}"),
+        }).await.expect_err("app data must remain private");
+        assert_eq!(error.code, ApiErrorCode::InvalidInput);
+        assert!(matches!(error.details, Some(ApiErrorDetails::InvalidField { field, .. }) if field == "path"));
+    }
+    local_models_dir_set(&harness.context, dto::LocalModelsDirSetRequest {
+        path: folder.join("models").join("gguf").to_string_lossy().into_owned(),
+        move_existing: false, client_operation_id: "default-layout".into(),
+    }).await.expect("default layout remains allowed");
+}
+
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn models_folder_worker_refuses_a_destination_symlink_changed_after_admission() {
+    let (harness, folder) = local_harness("data-overlap-race");
+    let context = &harness.context;
+    let target = folder.with_file_name(format!("{}-race", folder.file_name().expect("name").to_string_lossy()));
+    let accepted = local_models_dir_set(context, dto::LocalModelsDirSetRequest {
+        path: target.to_string_lossy().into_owned(), move_existing: true,
+        client_operation_id: "overlap-race".into(),
+    }).await.expect("safe destination at admission");
+    std::os::unix::fs::symlink(&folder, &target).expect("destination becomes app data");
+    let marker = folder.join("live-db-marker");
+    std::fs::write(&marker, b"private data").expect("marker");
+    run(&runner(context, None)).await;
+    let result = view(context, job_id(&accepted)).await;
+    assert_eq!(result.state, dto::JobStateDto::Failed);
+    assert_eq!(std::fs::read(&marker).expect("untouched"), b"private data");
+    assert_eq!(context.backend().database().load_device_settings().expect("settings").llm_models_dir, None);
+    std::fs::remove_file(target).expect("remove symlink");
 }

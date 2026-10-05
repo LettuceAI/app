@@ -955,6 +955,13 @@ pub(crate) async fn admit_models_folder_move(
             folder_move_active(context)?;
             let from = models_root(context)?;
             let to = PathBuf::from(&path);
+            let app = crate::api::local_models::app_folder(context)?;
+            crate::models::gguf_library::check_models_data_overlap(app, &to)
+                .map_err(|error| invalid_field("path", error.to_string()))?;
+            if move_existing {
+                crate::models::gguf_library::check_models_data_overlap(app, &from)
+                    .map_err(|error| invalid_field("path", error.to_string()))?;
+            }
             if move_existing && !crate::models::gguf_library::paths_equal(&from, &to) {
                 if let Some(reason) = folder_busy(context, &from)? {
                     return Err(busy(reason));
@@ -1387,6 +1394,11 @@ fn folder_move_failure(error: &crate::FolderMoveError) -> Settlement {
     use crate::FolderMoveError;
     let (code, retryable, label) = match error {
         FolderMoveError::Cancelled => return Settlement::Cancelled,
+        FolderMoveError::AppDataOverlap => (
+            JobErrorCode::InvalidInput,
+            false,
+            "models-folder-app-data-overlap",
+        ),
         FolderMoveError::EmptyPath => (
             JobErrorCode::InvalidInput,
             false,

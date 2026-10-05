@@ -596,6 +596,8 @@ pub fn discard_models_folder_manifest(to: &Path, move_id: &str) -> Result<bool, 
 /// Why a models folder move stopped; a move that stops removes its copies.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum FolderMoveError {
+    #[error("the models folder overlaps the private app data folder")]
+    AppDataOverlap,
     #[error("New models folder path is empty")]
     EmptyPath,
     #[error("The new models folder is inside the current one")]
@@ -608,6 +610,34 @@ pub enum FolderMoveError {
     Copy(String),
     #[error("The model paths could not be saved: {0}")]
     Storage(String),
+}
+
+pub(crate) fn check_models_data_overlap(app_folder: &Path, path: &Path) -> Result<(), FolderMoveError> {
+    fn resolve(path: &Path) -> Result<PathBuf, FolderMoveError> {
+        let absolute = std::path::absolute(path).map_err(copy_error)?;
+        let mut resolved = PathBuf::new();
+        for component in absolute.components() {
+            match component {
+                std::path::Component::CurDir => {}
+                std::path::Component::ParentDir => { resolved.pop(); }
+                component => resolved.push(component.as_os_str()),
+            }
+            if let Ok(canonical) = std::fs::canonicalize(&resolved) {
+                resolved = canonical;
+            }
+        }
+        Ok(resolved)
+    }
+    let app = resolve(app_folder)?;
+    let chosen = resolve(path)?;
+    let defaults = [resolve(&app_folder.join("models"))?, resolve(&default_root(app_folder))?];
+    if defaults.contains(&chosen) {
+        return Ok(());
+    }
+    if chosen.starts_with(&app) || app.starts_with(&chosen) {
+        return Err(FolderMoveError::AppDataOverlap);
+    }
+    Ok(())
 }
 
 fn copy_error(error: std::io::Error) -> FolderMoveError {
@@ -822,6 +852,8 @@ where
         .load_device_settings()
         .map_err(|error| storage(&error))?;
     let old_path = llm_models_root(&device, app_folder);
+    check_models_data_overlap(app_folder, &new_path)?;
+    if move_existing { check_models_data_overlap(app_folder, &old_path)?; }
     std::fs::create_dir_all(&new_path).map_err(copy_error)?;
     let chosen = (!paths_equal(&new_path, &default_root(app_folder)))
         .then(|| new_path.to_string_lossy().into_owned());
@@ -1058,21 +1090,50 @@ mod tests {
     }
 
     #[test]
+    fn refusing_an_app_data_move_preserves_the_live_file_backed_database() {
+        let app = scratch("live-database-overlap");
+        let path = app.join("lettuce.sqlite3");
+        let backend = crate::AppBackend::open(&path, TimestampMillis::new(1)).expect("real database");
+        let database = backend.database();
+        let before = std::fs::read(&path).expect("database bytes");
+        let root = llm_models_root(&DeviceSettings::default(), &app);
+        std::fs::create_dir_all(&root).expect("models");
+        std::fs::write(root.join("model.gguf"), b"model").expect("model");
+        for destination in [&app, app.parent().expect("parent"), &app.join("private-models")] {
+            assert_eq!(set_llm_models_dir(database, &app, destination.to_str().expect("path"), true,
+                TimestampMillis::new(2), "forbidden-move", &|| false), Err(FolderMoveError::AppDataOverlap));
+            assert_eq!(std::fs::read(&path).expect("live database remains"), before);
+            database.load_device_settings().expect("live connection is usable");
+            assert_eq!(std::fs::read(root.join("model.gguf")).expect("model remains"), b"model");
+        }
+        let mut device = database.load_device_settings().expect("settings");
+        device.llm_models_dir = Some(app.to_string_lossy().into_owned());
+        database.save_device_settings(device).expect("legacy hazardous source");
+        let destination = app.with_file_name("safe-external-models");
+        assert_eq!(set_llm_models_dir(database, &app, destination.to_str().expect("path"), true,
+            TimestampMillis::new(3), "forbidden-source", &|| false), Err(FolderMoveError::AppDataOverlap));
+        assert!(!destination.exists(), "worker refuses before creating or copying entries");
+        assert_eq!(std::fs::read(&path).expect("database stays"), before);
+        std::fs::remove_dir_all(app).expect("cleanup");
+    }
+
+    #[test]
     fn custom_root_overlap_rebinds_speech_and_embedding_manifests_and_device_roots() {
         use lettuce_model_hub::{EmbeddingInstallStore, EmbeddingModelFamily, InstalledEmbeddingManifest,
             InstalledModelArtifact, InstalledWhisperManifest, WhisperModelRepository};
         let scratch = scratch("retained-overlap");
         let app = scratch.join("app");
         let target = scratch.join("destination");
+        let source = scratch.join("source");
         let backend = crate::AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
         let database = backend.database();
-        let whisper = crate::whisper_models_root(&app);
+        let whisper = source.join("models/whisper");
         let whisper_file = whisper.join("tiny.en").join("ggml-tiny.en.bin");
         std::fs::create_dir_all(whisper_file.parent().expect("parent")).expect("folder");
         std::fs::write(&whisper_file, b"retained whisper").expect("whisper");
         let admitted = InstalledWhisperManifest::inspect_legacy(&whisper, &whisper_file, TimestampMillis::new(2)).expect("manifest");
         database.admit_whisper_model(admitted.clone()).expect("admit");
-        let embedding_root = crate::embedding_models_root(&app);
+        let embedding_root = source.join("models/embedding");
         let files = embedding_root.join(EmbeddingModelFamily::LettuceEmbV4.install_dir());
         std::fs::create_dir_all(&files).expect("embedding folder");
         std::fs::write(files.join("model.onnx"), b"model").expect("model");
@@ -1085,7 +1146,13 @@ mod tests {
         };
         EmbeddingInstallStore::new(&embedding_root).record(&manifest).expect("record");
         let mut device = database.load_device_settings().expect("device");
-        device.llm_models_dir = Some(app.to_string_lossy().into_owned());
+        device.llm_models_dir = Some(source.to_string_lossy().into_owned());
+        device.retained_model_roots = lettuce_settings::RetainedModelRoots {
+            whisper: Some(whisper.to_string_lossy().into_owned()),
+            embedding: Some(embedding_root.to_string_lossy().into_owned()),
+            kokoro: Some(source.join("kokoro").to_string_lossy().into_owned()),
+            thymos: Some(source.join("models/thymos").to_string_lossy().into_owned()),
+        };
         database.save_device_settings(device).expect("custom root");
         set_llm_models_dir(database, &app, target.to_str().expect("target"), true,
             TimestampMillis::new(3), "retained-overlap", &|| false).expect("move");
@@ -1102,7 +1169,7 @@ mod tests {
             .manifest(EmbeddingModelFamily::LettuceEmbV4).expect("embedding manifest").expect("model");
         moved.verify().expect("verified embedding");
         assert_eq!(moved.model.blake3, manifest.model.blake3);
-        assert!(!app.join("models").exists(), "verified originals should be removed after rebinding");
+        assert!(!source.join("models").exists(), "verified originals should be removed after rebinding");
         std::fs::remove_dir_all(scratch).expect("cleanup");
     }
 
@@ -1137,7 +1204,7 @@ mod tests {
         let info = llm_models_dir_info(&DeviceSettings::default(), &app).expect("info");
         assert!(!info.is_custom);
         assert_eq!(info.model_count, 2);
-        let target = app.join("elsewhere");
+        let target = app.with_file_name(format!("{}-elsewhere", app.file_name().expect("name").to_string_lossy()));
         let change = set_llm_models_dir(
             database,
             &app,
@@ -1239,7 +1306,7 @@ mod tests {
     fn a_cancelled_move_removes_its_copies_and_keeps_everything_else() {
         let (app, root, backend) = library_with_model("cancel");
         let database = backend.database();
-        let target = app.join("elsewhere");
+        let target = app.with_file_name(format!("{}-elsewhere", app.file_name().expect("name").to_string_lossy()));
         let checks = std::sync::atomic::AtomicU32::new(0);
         let cancel_on_third = || checks.fetch_add(1, std::sync::atomic::Ordering::SeqCst) >= 2;
         assert_eq!(
@@ -1276,8 +1343,8 @@ mod tests {
                 "move-2",
                 &|| false,
             ),
-            Err(FolderMoveError::DestinationInsideSource),
-            "legacy copied the folder into itself"
+            Err(FolderMoveError::AppDataOverlap),
+            "an app-data descendant cannot become a models folder"
         );
         std::fs::create_dir_all(target.join("notes.txt")).expect("clash");
         assert_eq!(
@@ -1307,7 +1374,7 @@ mod tests {
     fn an_interrupted_move_is_undone_or_finished_at_the_next_start() {
         let (app, root, backend) = library_with_model("crash");
         let database = backend.database();
-        let target = app.join("elsewhere");
+        let target = app.with_file_name(format!("{}-elsewhere", app.file_name().expect("name").to_string_lossy()));
         let manifest = manifest_of(&root, &["org--m", "notes.txt"]);
         std::fs::create_dir_all(target.join("org--m")).expect("partial copy");
         std::fs::write(target.join("org--m").join("m.gguf"), [7_u8; 4]).expect("partial");
@@ -1359,7 +1426,7 @@ mod tests {
     fn recovery_preserves_changed_contents_on_both_sides() {
         for committed in [false, true] {
             let (app, root, backend) = library_with_model("changed-recovery");
-            let target = app.join("elsewhere");
+            let target = app.with_file_name(format!("{}-elsewhere", app.file_name().expect("name").to_string_lossy()));
             let manifest = manifest_of(&root, &["notes.txt"]);
             std::fs::create_dir_all(&target).expect("target");
             std::fs::write(target.join("notes.txt"), b"x").expect("copy");
@@ -1385,7 +1452,7 @@ mod tests {
     fn undoing_a_move_keeps_an_entry_whose_original_is_gone() {
         let (app, root, backend) = library_with_model("hand-moved");
         let database = backend.database();
-        let target = app.join("elsewhere");
+        let target = app.with_file_name(format!("{}-elsewhere", app.file_name().expect("name").to_string_lossy()));
         let manifest = manifest_of(&root, &["org--m", "notes.txt"]);
         std::fs::create_dir_all(&target).expect("target");
         std::fs::write(target.join(MODELS_MOVE_MANIFEST), &manifest).expect("manifest");
