@@ -316,6 +316,12 @@ pub fn verify_git_blob(path: &Path, expected: &str) -> Result<(), PinnedArtifact
     Ok(())
 }
 
+pub fn verify_pinned_artifact_file(path: &Path, artifact: &PinnedArtifact) -> Result<(), PinnedArtifactError> {
+    artifact.validate()?;
+    let mut file = std::fs::File::open(path).map_err(|_| PinnedArtifactError::Unreadable)?;
+    verify(&mut file, artifact)
+}
+
 fn verify(file: &mut impl Read, artifact: &PinnedArtifact) -> Result<(), PinnedArtifactError> {
     let mut hasher = Sha256::new();
     let mut total = 0_u64;

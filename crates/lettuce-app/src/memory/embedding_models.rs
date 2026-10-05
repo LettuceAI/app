@@ -154,9 +154,14 @@ pub fn finish_embedding_install(
             .local_segments(file)
             .iter()
             .fold(root.to_path_buf(), |path, segment| path.join(segment));
-        if let EmbeddingFileDigest::GitBlobSha1(blob) = &file.digest
-            && let Err(error) = verify_git_blob(&path, blob)
-        {
+        let verification = match &file.digest {
+            EmbeddingFileDigest::GitBlobSha1(blob) => verify_git_blob(&path, blob),
+            EmbeddingFileDigest::Sha256(digest) => lettuce_model_hub::verify_pinned_artifact_file(&path, &PinnedArtifact {
+                source_identity: format!("hf:{}@{}/{}", pin.family.repository(), pin.revision, file.remote_path),
+                local_segments: pin.local_segments(file), byte_size: file.byte_size, sha256: Some(digest.clone()),
+            }),
+        };
+        if let Err(error) = verification {
             discard(&path);
             return Err(EmbeddingInstallError::Artifact(match error {
                 PinnedArtifactError::Unreadable => ModelArtifactError::Unreadable,
@@ -542,6 +547,21 @@ mod tests {
         );
         assert_eq!(coordinator.active(), Ok(None));
         std::fs::remove_dir_all(root).ok();
+    }
+
+    #[tokio::test]
+    async fn recording_an_install_rejects_same_sized_lfs_tampering_after_download() {
+        let root = std::env::temp_dir().join(format!("embedding-pin-recheck-{}", OperationId::new()));
+        let files = files(CALIBRATION.as_bytes());
+        let pin = parse_embedding_pin(EmbeddingModelFamily::LettuceEidosV5, &detail(&files, CALIBRATION.as_bytes())).expect("pin");
+        assert_eq!(install(&root, &pin, files).await, JobState::Succeeded);
+        let model = pin.files.iter().find(|file| file.role == EmbeddingArtifactRole::Model).expect("model");
+        let path = pin.local_segments(model).iter().fold(root.clone(), |path, segment| path.join(segment));
+        let mut bytes = std::fs::read(&path).expect("bytes"); bytes[0] ^= 1;
+        std::fs::write(&path, bytes).expect("tamper");
+        assert!(matches!(finish_embedding_install(&root, &pin), Err(EmbeddingModelError::Install(EmbeddingInstallError::Artifact(_)))));
+        assert!(!path.exists());
+        assert!(EmbeddingInstallStore::new(&root).manifest(pin.family).expect("manifest").is_none());
     }
 
     #[tokio::test]

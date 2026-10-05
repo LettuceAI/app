@@ -1070,7 +1070,10 @@ async fn finish_artifact(
             download,
         } => crate::record_civitai_lora(database, &lora_root, &download, now),
         InstallFinish::Embedding { root, pin, enable_dynamic_memory } => {
-            EmbeddingModelCoordinator::new(&root, database).complete_install(&pin).map_err(|error| error.to_string())?;
+            context.blocking(move |context| {
+                EmbeddingModelCoordinator::new(&root, context.backend().database()).complete_install(&pin).map_err(internal)?;
+                Ok(())
+            }).await.map_err(|error| error.message)?;
             context.models_changed();
             context.models().prepare_embedding(context).await.map_err(|error| error.message)?;
             let engine = match context.models().resolve_embedding(context) {
@@ -1082,14 +1085,17 @@ async fn finish_artifact(
                 crate::api::embedding_health::run(engine.as_ref(), &health_cancel).map_err(internal)
             }).await.map_err(|error| error.message)?;
             if enable_dynamic_memory {
-                if cancellation.is_cancelled() { return Err("embedding health check cancelled".into()); }
-                use lettuce_settings::GlobalSettingsStore;
-                let mut stored = GlobalSettingsStore::load(database).map_err(|error| error.to_string())?;
-                stored.settings.dynamic_memory = lettuce_settings::DynamicMemorySettings {
-                    enabled: true, min_similarity_basis_points: Some(3200), ..Default::default()
-                };
-                GlobalSettingsStore::save(database, stored.settings, stored.default_model_profile_id, stored.revision)
-                    .map_err(|error| error.to_string())?;
+                context.blocking(move |context| {
+                    if cancellation.is_cancelled() { return Err(internal("embedding health check cancelled")); }
+                    use lettuce_settings::GlobalSettingsStore;
+                    let database = context.backend().database();
+                    let mut stored = GlobalSettingsStore::load(database).map_err(internal)?;
+                    stored.settings.dynamic_memory = lettuce_settings::DynamicMemorySettings {
+                        enabled: true, min_similarity_basis_points: Some(3200), ..Default::default()
+                    };
+                    GlobalSettingsStore::save(database, stored.settings, stored.default_model_profile_id, stored.revision).map_err(internal)?;
+                    Ok(())
+                }).await.map_err(|error| error.message)?;
             }
             Ok(())
         },
