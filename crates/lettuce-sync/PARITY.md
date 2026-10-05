@@ -66,3 +66,5 @@ The sync design was built in stages. The stage names are still used in commit me
 - Applying a remote model delete clears app defaults pointing at it locally; the previous README said this side effect must be reconciled "when settings sync lands". Settings sync (S7) exists now and clears missing defaults itself; check whether anything is left to reconcile.
 - Persona is the only kind with a conflict resolution surface; other kinds keep their evidence without one.
 - Follow-up: launch snapshot artifacts travel inside their snapshot entity as base64. Moving them to the blob phase (chunked, content-addressed like media) would remove the largest payloads and the memory cost of the 256 MiB limit.
+
+Character snapshot schema version 2 includes provider-account voice preferences. The session fingerprint changes with that version, so a peer with the old character payload cannot silently pair under the same schema contract.

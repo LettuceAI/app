@@ -518,9 +518,10 @@ mod tests {
 
     #[test]
     fn current_schema_fingerprint_is_stable_and_complete() {
+        assert_eq!(crate::CHARACTER_SYNC_VERSION, 2, "provider voices extend the character payload");
         assert_eq!(
             current_sync_schema_fingerprint().as_str(),
-            "e3f220d8089a6b0cc4fdd6165344f36d3a4acf9816d086780a6185ff3dcf26c3"
+            "a5f4702d685f9ac7d543ead81ec0f0fec4766ff1fb86120423f3f341415f45d8"
         );
     }
 
