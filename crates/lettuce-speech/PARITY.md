@@ -54,3 +54,5 @@ Facts about how `lettuce-speech` relates to the legacy app (2.2.x). The crate RE
 ## History
 
 - The previous README said provider HTTP adapters, voice discovery, synthesis, preview caches and Kokoro execution were later TTS slices, and that Kokoro was rejected until its native runtime existed. All of these exist now; `RemoteTtsRuntime` still rejects Kokoro by design, and `lettuce-app` routes Kokoro requests to `OnnxKokoroRuntime` (`speech/kokoro_native_synthesis.rs`).
+
+Correction drafts use the authored pair, language and retained evidence to choose an existing rule and calculate omitted confidence (`old-code/src-tauri/src/asr_manager/mod.rs:556-633,1184-1220`). Database saving finds the pair and updates counts in one transaction; concurrent saves preserve one pair identity and both approvals. The pure rule constructor uses the same score without vocabulary evidence instead of a fixed 0.75.

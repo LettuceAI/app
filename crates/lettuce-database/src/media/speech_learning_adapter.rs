@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use lettuce_speech::{
-    AsrCorrectionRule, AsrIgnoredSuggestion, AsrLearningBatch, AsrLearningImportReceipt,
+    AsrCorrectionDraft, AsrCorrectionRule, AsrIgnoredSuggestion, AsrLearningBatch, AsrLearningImportReceipt,
     AsrLearningRepository, AsrLearningRepositoryError, AsrVocabularyTerm, AsrVoiceExample,
 };
 use lettuce_types::{
@@ -376,6 +376,78 @@ pub(crate) fn read_all_learning(
     })
 }
 
+fn save_correction_in(transaction: &Transaction<'_>, correction: AsrCorrectionRule) -> Result<AsrCorrectionRule, AsrLearningRepositoryError> {
+        correction.validate().map_err(corrupt)?;
+        let use_count = to_i64(correction.use_count)?;
+        let accepted_count = to_i64(correction.accepted_count)?;
+        let rejected_count = to_i64(correction.rejected_count)?;
+        let seen_count = to_i64(correction.seen_count)?;
+        let changed = transaction
+            .execute(
+                "INSERT INTO asr_corrections (
+                    id, wrong, normalized_wrong, correct, normalized_correct, language, scope,
+                    confidence, use_count, accepted_count, rejected_count, seen_count,
+                    last_seen_at, user_approved, created_at, updated_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+                 ON CONFLICT(id) DO UPDATE SET
+                    wrong = excluded.wrong,
+                    normalized_wrong = excluded.normalized_wrong,
+                    correct = excluded.correct,
+                    normalized_correct = excluded.normalized_correct,
+                    language = excluded.language,
+                    scope = excluded.scope,
+                    confidence = excluded.confidence,
+                    use_count = excluded.use_count,
+                    accepted_count = excluded.accepted_count,
+                    rejected_count = excluded.rejected_count,
+                    seen_count = excluded.seen_count,
+                    last_seen_at = excluded.last_seen_at,
+                    user_approved = excluded.user_approved,
+                    updated_at = excluded.updated_at
+                 WHERE asr_corrections.created_at = excluded.created_at",
+                params![
+                    correction.id.to_string(),
+                    correction.wrong,
+                    correction.normalized_wrong,
+                    correction.correct,
+                    correction.normalized_correct,
+                    correction.language,
+                    correction.scope,
+                    correction.confidence,
+                    use_count,
+                    accepted_count,
+                    rejected_count,
+                    seen_count,
+                    correction.last_seen_at.map(TimestampMillis::get),
+                    correction.user_approved,
+                    correction.created_at.get(),
+                    correction.updated_at.get(),
+                ],
+            )
+            .map_err(storage)?;
+        if changed != 1 {
+            return Err(AsrLearningRepositoryError::Conflict);
+        }
+        let stored = load_corrections(transaction, Some(correction.id), None, &[])?
+            .into_iter()
+            .next()
+            .ok_or(AsrLearningRepositoryError::Storage)?;
+        transaction
+            .execute(
+                "DELETE FROM asr_ignored_suggestions
+                  WHERE normalized_wrong = ?1
+                    AND normalized_correct = ?2
+                    AND ((language IS NULL AND ?3 IS NULL) OR language = ?3)",
+                params![
+                    stored.normalized_wrong,
+                    stored.normalized_correct,
+                    stored.language,
+                ],
+            )
+            .map_err(storage)?;
+        Ok(stored)
+}
+
 impl AsrLearningRepository for Database {
     fn list_vocabulary(
         &self,
@@ -482,82 +554,40 @@ impl AsrLearningRepository for Database {
         Ok(corrections)
     }
 
-    fn save_correction(
-        &self,
-        correction: AsrCorrectionRule,
-    ) -> Result<AsrCorrectionRule, AsrLearningRepositoryError> {
-        correction.validate().map_err(corrupt)?;
-        let use_count = to_i64(correction.use_count)?;
-        let accepted_count = to_i64(correction.accepted_count)?;
-        let rejected_count = to_i64(correction.rejected_count)?;
-        let seen_count = to_i64(correction.seen_count)?;
+    fn save_correction(&self, correction: AsrCorrectionRule) -> Result<AsrCorrectionRule, AsrLearningRepositoryError> {
         let mut connection = self.connection().map_err(storage)?;
-        let transaction = connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(storage)?;
-        let changed = transaction
-            .execute(
-                "INSERT INTO asr_corrections (
-                    id, wrong, normalized_wrong, correct, normalized_correct, language, scope,
-                    confidence, use_count, accepted_count, rejected_count, seen_count,
-                    last_seen_at, user_approved, created_at, updated_at
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
-                 ON CONFLICT(id) DO UPDATE SET
-                    wrong = excluded.wrong,
-                    normalized_wrong = excluded.normalized_wrong,
-                    correct = excluded.correct,
-                    normalized_correct = excluded.normalized_correct,
-                    language = excluded.language,
-                    scope = excluded.scope,
-                    confidence = excluded.confidence,
-                    use_count = excluded.use_count,
-                    accepted_count = excluded.accepted_count,
-                    rejected_count = excluded.rejected_count,
-                    seen_count = excluded.seen_count,
-                    last_seen_at = excluded.last_seen_at,
-                    user_approved = excluded.user_approved,
-                    updated_at = excluded.updated_at
-                 WHERE asr_corrections.created_at = excluded.created_at",
-                params![
-                    correction.id.to_string(),
-                    correction.wrong,
-                    correction.normalized_wrong,
-                    correction.correct,
-                    correction.normalized_correct,
-                    correction.language,
-                    correction.scope,
-                    correction.confidence,
-                    use_count,
-                    accepted_count,
-                    rejected_count,
-                    seen_count,
-                    correction.last_seen_at.map(TimestampMillis::get),
-                    correction.user_approved,
-                    correction.created_at.get(),
-                    correction.updated_at.get(),
-                ],
-            )
-            .map_err(storage)?;
-        if changed != 1 {
-            return Err(AsrLearningRepositoryError::Conflict);
-        }
-        let stored = load_corrections(&transaction, Some(correction.id), None, &[])?
-            .into_iter()
-            .next()
-            .ok_or(AsrLearningRepositoryError::Storage)?;
-        transaction
-            .execute(
-                "DELETE FROM asr_ignored_suggestions
-                  WHERE normalized_wrong = ?1
-                    AND normalized_correct = ?2
-                    AND ((language IS NULL AND ?3 IS NULL) OR language = ?3)",
-                params![
-                    stored.normalized_wrong,
-                    stored.normalized_correct,
-                    stored.language,
-                ],
-            )
-            .map_err(storage)?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(storage)?;
+        let stored = save_correction_in(&transaction, correction)?;
+        transaction.commit().map_err(storage)?;
+        Ok(stored)
+    }
+
+    fn save_correction_draft(&self, draft: AsrCorrectionDraft, now: TimestampMillis) -> Result<AsrCorrectionRule, AsrLearningRepositoryError> {
+        let normalized = draft.materialize(None, false, now).map_err(corrupt)?;
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(storage)?;
+        let id = if let Some(id) = draft.id { Some(id) } else {
+            use rusqlite::OptionalExtension;
+            transaction.query_row(
+                "SELECT id FROM asr_corrections WHERE normalized_wrong=?1 AND normalized_correct=?2
+                 AND ((language IS NULL AND ?3 IS NULL) OR language=?3)
+                 ORDER BY user_approved DESC,accepted_count DESC,confidence DESC,use_count DESC,id DESC LIMIT 1",
+                params![normalized.normalized_wrong, normalized.normalized_correct, normalized.language],
+                |row| row.get::<_, String>(0),
+            ).optional().map_err(storage)?.map(|id| AsrCorrectionId::from_str(&id).map_err(corrupt)).transpose()?
+        };
+        let existing = id.map(|id| load_corrections(&transaction, Some(id), None, &[])).transpose()?
+            .and_then(|rules| rules.into_iter().next());
+        if draft.id.is_some() && existing.is_none() { return Err(AsrLearningRepositoryError::NotFound); }
+        let candidate = draft.materialize(existing.as_ref(), false, now).map_err(corrupt)?;
+        let vocabulary_signal = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM asr_vocabulary_terms WHERE normalized_term=?1
+             AND ((language IS NULL AND ?2 IS NULL) OR language=?2 OR language IS NULL)
+             AND (scope=?3 OR scope='global'))",
+            params![candidate.normalized_correct, candidate.language, candidate.scope], |row| row.get::<_, bool>(0),
+        ).map_err(storage)?;
+        let correction = draft.materialize(existing.as_ref(), vocabulary_signal, now).map_err(corrupt)?;
+        let stored = save_correction_in(&transaction, correction)?;
         transaction.commit().map_err(storage)?;
         Ok(stored)
     }
@@ -1351,4 +1381,47 @@ mod tests {
         drop(database);
         std::fs::remove_file(path).expect("cleanup");
     }
+    #[test]
+    fn correction_drafts_upsert_pairs_and_derive_confidence_from_retained_evidence() {
+        let database = Database::open_in_memory().expect("database");
+        let now = TimestampMillis::new(100);
+        let draft = AsrCorrectionDraft { wrong: "orange".into(), correct: "purple".into(), ..Default::default() };
+        let first = database.save_correction_draft(draft.clone(), now).expect("first");
+        assert!((first.confidence - 0.55).abs() < f64::EPSILON);
+        let repeated = database.save_correction_draft(draft.clone(), TimestampMillis::new(101)).expect("upsert");
+        assert_eq!(repeated.id, first.id);
+        assert_eq!(repeated.accepted_count, 0);
+        database.save_vocabulary(AsrVocabularyTerm::new("purple", None, None, None, 0, now).expect("term")).expect("vocabulary");
+        let approved = database.save_correction_draft(AsrCorrectionDraft { user_approved: Some(true), ..draft }, TimestampMillis::new(102)).expect("approved");
+        assert_eq!(approved.id, first.id);
+        assert_eq!(approved.accepted_count, 1);
+        assert!((approved.confidence - 0.79).abs() < f64::EPSILON);
+        let invalid = AsrCorrectionDraft { id: Some(first.id), wrong: "orange".into(), correct: "purple".into(), confidence: Some(f64::NAN), ..Default::default() };
+        assert!(database.save_correction_draft(invalid, TimestampMillis::new(103)).is_err());
+        assert_eq!(database.get_correction(first.id).expect("read"), Some(approved));
+    }
+
+    #[test]
+    fn separate_handles_serialize_correction_pair_creation_and_counted_evidence() {
+        let path = std::env::temp_dir().join(format!("asr-pair-race-{}.sqlite3", OperationId::new()));
+        let database = Database::open(&path).expect("database");
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let threads = (0..2).map(|_| {
+            let database = Database::open(&path).expect("second handle");
+            let barrier = barrier.clone();
+            std::thread::spawn(move || {
+                barrier.wait();
+                database.save_correction_draft(AsrCorrectionDraft { wrong: "orange".into(), correct: "purple".into(), user_approved: Some(true), ..Default::default() }, TimestampMillis::new(100)).expect("atomic save")
+            })
+        }).collect::<Vec<_>>();
+        let results = threads.into_iter().map(|thread| thread.join().expect("thread")).collect::<Vec<_>>();
+        assert_eq!(results[0].id, results[1].id);
+        let stored = database.get_correction(results[0].id).expect("read").expect("rule");
+        assert_eq!(stored.accepted_count, 2);
+        assert_eq!(stored.seen_count, 2);
+        assert_eq!(database.list_corrections(None, &["global".into()]).expect("list").len(), 1);
+        drop(database);
+        std::fs::remove_file(path).expect("cleanup");
+    }
+
 }
