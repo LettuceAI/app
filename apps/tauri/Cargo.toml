@@ -51,3 +51,8 @@ cpal = "0.16.0"
 
 [build-dependencies]
 tauri-build.workspace = true
+
+[target.'cfg(target_os = "android")'.dependencies]
+cpal = "0.16.0"
+jni = "0.21.1"
+ndk-context = "0.1.1"

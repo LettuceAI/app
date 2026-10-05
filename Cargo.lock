@@ -2999,10 +2999,12 @@ name = "lettuce-tauri"
 version = "0.1.0"
 dependencies = [
  "cpal",
+ "jni",
  "lettuce-app",
  "lettuce-contracts",
  "lettuce-observability",
  "lettuce-settings",
+ "ndk-context",
  "serde",
  "specta",
  "specta-typescript",

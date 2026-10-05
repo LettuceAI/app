@@ -3,17 +3,17 @@ use std::sync::Arc;
 use lettuce_app::MicrophoneCapture;
 
 pub(crate) fn capture() -> Option<Arc<dyn MicrophoneCapture>> {
-    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos", target_os = "android"))]
     {
         Some(Arc::new(desktop::NativeMicrophone))
     }
-    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos", target_os = "android")))]
     {
         None
     }
 }
 
-#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos", target_os = "android"))]
 mod desktop {
     use std::sync::{Arc, mpsc};
     use std::thread::JoinHandle;
@@ -35,6 +35,8 @@ mod desktop {
 
     impl MicrophoneCapture for NativeMicrophone {
         fn prepare(&self) -> Result<Box<dyn PreparedCapture>, MicrophoneError> {
+            #[cfg(target_os = "android")]
+            super::android_record_audio_permission()?;
             let device = cpal::default_host()
                 .default_input_device()
                 .ok_or(MicrophoneError::NoInputDevice)?;
@@ -174,4 +176,18 @@ mod desktop {
             MicrophoneError::Failed
         })
     }
+}
+
+#[cfg(target_os = "android")]
+fn android_record_audio_permission() -> Result<(), lettuce_app::MicrophoneError> {
+    use jni::objects::{JObject, JValue};
+    use lettuce_app::MicrophoneError;
+    let context = ndk_context::android_context();
+    let vm = unsafe { jni::JavaVM::from_raw(context.vm().cast()) }.map_err(|_| MicrophoneError::Failed)?;
+    let mut env = vm.attach_current_thread().map_err(|_| MicrophoneError::Failed)?;
+    let activity = unsafe { JObject::from_raw(context.context().cast()) };
+    let permission = env.new_string("android.permission.RECORD_AUDIO").map_err(|_| MicrophoneError::Failed)?;
+    let granted = env.call_method(&activity, "checkSelfPermission", "(Ljava/lang/String;)I",
+        &[JValue::Object(permission.as_ref())]).and_then(|value| value.i()).map_err(|_| MicrophoneError::Failed)?;
+    if granted == 0 { Ok(()) } else { Err(MicrophoneError::PermissionDenied) }
 }
