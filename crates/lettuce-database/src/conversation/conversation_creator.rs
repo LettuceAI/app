@@ -551,16 +551,19 @@ where
                 crate::memory::memory_adapter::create_conversation_space_in(
                     &transaction,
                     plan.conversation_id,
+                    root_branch_id,
                 )?;
             }
             MemoryBinding::CompanionPool(character_id) => {
                 crate::memory::memory_adapter::create_conversation_space_in(
                     &transaction,
                     plan.conversation_id,
+                    root_branch_id,
                 )?;
                 crate::memory::memory_adapter::join_companion_pool_in(
                     &transaction,
                     plan.conversation_id,
+                    root_branch_id,
                     character_id,
                 )?;
             }

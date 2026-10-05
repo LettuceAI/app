@@ -7,7 +7,8 @@ use lettuce_memory::{
     MemorySummary, MemorySummaryChange, MemorySummaryCommit, MemorySummaryRepository, Score,
 };
 use lettuce_types::{
-    ConversationId, MemoryId, MemorySpaceId, MessageId, Revision, TimestampMillis,
+    ConversationBranchId, ConversationId, MemoryId, MemorySpaceId, MessageId, Revision,
+    TimestampMillis,
 };
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
 
@@ -139,6 +140,7 @@ pub(crate) fn insert_item_at(
 pub(crate) fn insert_pool_space_in(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
     character_id: lettuce_types::CharacterId,
     space: &lettuce_memory::MemorySpaceSnapshot,
 ) -> Result<bool, lettuce_conversations::ConversationRepositoryError> {
@@ -150,7 +152,7 @@ pub(crate) fn insert_pool_space_in(
         )
         .map_err(space_storage_error)?;
     if exists {
-        join_companion_pool_in(transaction, conversation_id, character_id)?;
+        join_companion_pool_in(transaction, conversation_id, branch_id, character_id)?;
         return Ok(false);
     }
     space.validate().map_err(space_storage_error)?;
@@ -169,7 +171,7 @@ pub(crate) fn insert_pool_space_in(
             params![character_id.to_string(), space.id.to_string()],
         )
         .map_err(space_storage_error)?;
-    insert_pool_binding_in(transaction, conversation_id, space.id)?;
+    insert_pool_binding_in(transaction, conversation_id, branch_id, space.id)?;
     insert_items(transaction, space.id, &space.items).map_err(space_storage_error)?;
     Ok(true)
 }
@@ -179,6 +181,7 @@ pub(crate) fn insert_pool_space_in(
 pub(crate) fn join_companion_pool_in(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
     character_id: lettuce_types::CharacterId,
 ) -> Result<MemorySpaceId, lettuce_conversations::ConversationRepositoryError> {
     let existing = transaction
@@ -208,20 +211,25 @@ pub(crate) fn join_companion_pool_in(
             space_id
         }
     };
-    insert_pool_binding_in(transaction, conversation_id, space_id)?;
+    insert_pool_binding_in(transaction, conversation_id, branch_id, space_id)?;
     Ok(space_id)
 }
 
 fn insert_pool_binding_in(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
     space_id: MemorySpaceId,
 ) -> Result<(), lettuce_conversations::ConversationRepositoryError> {
     transaction
         .execute(
-            "INSERT INTO conversation_memory_spaces (conversation_id, space_id, pooled)
-             VALUES (?1, ?2, 1)",
-            params![conversation_id.to_string(), space_id.to_string()],
+            "INSERT INTO conversation_memory_spaces (conversation_id, branch_id, space_id, pooled)
+             VALUES (?1, ?3, ?2, 1)",
+            params![
+                conversation_id.to_string(),
+                space_id.to_string(),
+                branch_id.to_string()
+            ],
         )
         .map_err(space_storage_error)?;
     Ok(())
@@ -291,6 +299,7 @@ fn space_storage_error<E>(_: E) -> lettuce_conversations::ConversationRepository
 pub(crate) fn insert_space_in(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
     space: &lettuce_memory::MemorySpaceSnapshot,
 ) -> Result<(), lettuce_conversations::ConversationRepositoryError> {
     space.validate().map_err(space_storage_error)?;
@@ -305,9 +314,13 @@ pub(crate) fn insert_space_in(
         .map_err(space_storage_error)?;
     transaction
         .execute(
-            "INSERT INTO conversation_memory_spaces (conversation_id, space_id)
-             VALUES (?1, ?2)",
-            params![conversation_id.to_string(), space.id.to_string()],
+            "INSERT INTO conversation_memory_spaces (conversation_id, branch_id, space_id)
+             VALUES (?1, ?3, ?2)",
+            params![
+                conversation_id.to_string(),
+                space.id.to_string(),
+                branch_id.to_string()
+            ],
         )
         .map_err(space_storage_error)?;
     insert_items(transaction, space.id, &space.items).map_err(space_storage_error)
@@ -316,6 +329,7 @@ pub(crate) fn insert_space_in(
 pub(crate) fn create_conversation_space_in(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
 ) -> Result<MemorySpaceId, lettuce_conversations::ConversationRepositoryError> {
     let space_id = MemorySpaceId::new();
     transaction
@@ -326,9 +340,13 @@ pub(crate) fn create_conversation_space_in(
         .map_err(|_| lettuce_conversations::ConversationRepositoryError::Storage)?;
     transaction
         .execute(
-            "INSERT INTO conversation_memory_spaces (conversation_id, space_id)
-             VALUES (?1, ?2)",
-            params![conversation_id.to_string(), space_id.to_string()],
+            "INSERT INTO conversation_memory_spaces (conversation_id, branch_id, space_id)
+             VALUES (?1, ?3, ?2)",
+            params![
+                conversation_id.to_string(),
+                space_id.to_string(),
+                branch_id.to_string()
+            ],
         )
         .map_err(|_| lettuce_conversations::ConversationRepositoryError::Storage)?;
     Ok(space_id)
@@ -1288,7 +1306,9 @@ mod tests {
         MemoryCategory, MemoryChangeSet, MemoryItem, MemoryRepository, MemoryRepositoryError,
         MemorySpaceSnapshot, MemorySummary, MemorySummaryChange, MemorySummaryRepository, Score,
     };
-    use lettuce_types::{MemoryId, MemorySpaceId, MessageId, Revision, TimestampMillis};
+    use lettuce_types::{
+        ConversationBranchId, MemoryId, MemorySpaceId, MessageId, Revision, TimestampMillis,
+    };
 
     use super::Database;
 
@@ -1581,7 +1601,7 @@ mod tests {
             .connection()
             .expect("connection")
             .execute(
-                "INSERT INTO conversation_memory_spaces (conversation_id, space_id) VALUES (?1, ?2)",
+                "INSERT INTO conversation_memory_spaces (conversation_id, branch_id, space_id) VALUES (?1, 'test-branch', ?2)",
                 rusqlite::params!["conversation", space_id.to_string()],
             )
             .expect("binding");
@@ -1628,7 +1648,7 @@ mod tests {
             .connection()
             .expect("connection")
             .execute(
-                "INSERT INTO conversation_memory_spaces (conversation_id, space_id) VALUES (?1, ?2)",
+                "INSERT INTO conversation_memory_spaces (conversation_id, branch_id, space_id) VALUES (?1, 'test-branch', ?2)",
                 rusqlite::params!["conversation", space_id.to_string()],
             )
             .expect("binding");
@@ -1665,7 +1685,7 @@ mod tests {
             .connection()
             .expect("connection")
             .execute(
-                "INSERT INTO conversation_memory_spaces (conversation_id, space_id) VALUES (?1, ?2)",
+                "INSERT INTO conversation_memory_spaces (conversation_id, branch_id, space_id) VALUES (?1, 'test-branch', ?2)",
                 rusqlite::params!["conversation", space_id.to_string()],
             )
             .expect("binding");
@@ -1715,12 +1735,14 @@ mod tests {
             let first_space = crate::memory::memory_adapter::join_companion_pool_in(
                 &transaction,
                 first,
+                ConversationBranchId::new(),
                 character_id,
             )
             .expect("first binding");
             let second_space = crate::memory::memory_adapter::join_companion_pool_in(
                 &transaction,
                 second,
+                ConversationBranchId::new(),
                 character_id,
             )
             .expect("second binding");
@@ -1777,14 +1799,14 @@ mod tests {
             .expect("space");
         connection
             .execute(
-                "INSERT INTO conversation_memory_spaces (conversation_id, space_id) VALUES (?1, ?2)",
+                "INSERT INTO conversation_memory_spaces (conversation_id, branch_id, space_id) VALUES (?1, 'test-branch', ?2)",
                 rusqlite::params![lettuce_types::ConversationId::new().to_string(), private_space.to_string()],
             )
             .expect("private binding");
         assert!(
             connection
                 .execute(
-                    "INSERT INTO conversation_memory_spaces (conversation_id, space_id) VALUES (?1, ?2)",
+                    "INSERT INTO conversation_memory_spaces (conversation_id, branch_id, space_id) VALUES (?1, 'test-branch', ?2)",
                     rusqlite::params![lettuce_types::ConversationId::new().to_string(), private_space.to_string()],
                 )
                 .is_err()
@@ -1792,7 +1814,7 @@ mod tests {
         assert!(
             connection
                 .execute(
-                    "INSERT INTO conversation_memory_spaces (conversation_id, space_id) VALUES (?1, ?2)",
+                    "INSERT INTO conversation_memory_spaces (conversation_id, branch_id, space_id) VALUES (?1, 'test-branch', ?2)",
                     rusqlite::params![lettuce_types::ConversationId::new().to_string(), first_space.to_string()],
                 )
                 .is_err(),

@@ -102,6 +102,12 @@ pub(crate) fn insert_historical_conversation(
         .map_err(ConversationRepositoryError::ArtifactReference)?;
     }
     slice::save_conversation(transaction, conversation)?;
+    let root_branch_id = aggregate
+        .branches
+        .iter()
+        .find(|branch| branch.parent_branch_id.is_none())
+        .ok_or_else(|| invalid("history.root_branch"))?
+        .id;
     let uses_memory = conversation_creator::conversation_uses_memory(&conversation.kind);
     let own_created = match input.memory {
         Some(space)
@@ -111,6 +117,7 @@ pub(crate) fn insert_historical_conversation(
             crate::memory::memory_adapter::insert_space_in(
                 transaction,
                 conversation_id,
+                root_branch_id,
                 &space.snapshot,
             )?;
             true
@@ -120,6 +127,7 @@ pub(crate) fn insert_historical_conversation(
             crate::memory::memory_adapter::create_conversation_space_in(
                 transaction,
                 conversation_id,
+                root_branch_id,
             )?;
             false
         }
@@ -141,6 +149,7 @@ pub(crate) fn insert_historical_conversation(
             crate::memory::memory_adapter::insert_pool_space_in(
                 transaction,
                 conversation_id,
+                root_branch_id,
                 character_id,
                 &space.snapshot,
             )?
@@ -150,6 +159,7 @@ pub(crate) fn insert_historical_conversation(
             crate::memory::memory_adapter::join_companion_pool_in(
                 transaction,
                 conversation_id,
+                root_branch_id,
                 character_id,
             )?;
             false

@@ -7,12 +7,18 @@ CREATE TABLE memory_spaces (
 -- companion conversation, its character's pool (pooled = 1).
 CREATE TABLE conversation_memory_spaces (
     conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    branch_id TEXT NOT NULL,
     space_id TEXT NOT NULL REFERENCES memory_spaces(id) ON DELETE RESTRICT,
     pooled INTEGER NOT NULL DEFAULT 0 CHECK (pooled IN (0, 1)),
-    PRIMARY KEY (conversation_id, pooled),
-    UNIQUE (conversation_id, space_id)
+    PRIMARY KEY (conversation_id, branch_id, pooled),
+    UNIQUE (conversation_id, space_id),
+    FOREIGN KEY (conversation_id, branch_id)
+        REFERENCES conversation_branches(conversation_id, id) ON DELETE RESTRICT
+        DEFERRABLE INITIALLY DEFERRED
 ) STRICT;
 CREATE INDEX conversation_memory_spaces_space_idx ON conversation_memory_spaces(space_id);
+CREATE UNIQUE INDEX conversation_memory_spaces_pool_idx
+    ON conversation_memory_spaces(conversation_id) WHERE pooled = 1;
 
 CREATE TABLE dynamic_memory_pending_approvals (
     conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,

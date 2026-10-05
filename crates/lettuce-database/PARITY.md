@@ -69,6 +69,8 @@ Facts about how `lettuce-database` relates to the legacy app (2.2.x). The crate 
 
 ## History
 
+- Root memory bindings carry an explicit branch identity on launch, historical import and sync root creation. Legacy branches were separate sessions with their own stored memory (`old-code/src/core/storage/repo.ts:1664-1698`); branch ownership in the normalized binding permits separate spaces inside one conversation.
+
 - Restore used to give an unfinished attempt a usage id without an event, so a restored database with such work could not be backed up again.
 - Job pruning used to delete terminal jobs a speech transcription or synthesis still bound; one such job made every later prune fail.
 - Retained synthesis cache lookup and the new request's receipt commit together. Cache hits reference the existing succeeded speech job rather than creating a second job or duplicating synthesis evidence.

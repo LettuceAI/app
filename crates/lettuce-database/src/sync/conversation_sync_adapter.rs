@@ -298,16 +298,19 @@ pub(crate) fn sync_replace_conversation_root(
             crate::memory::memory_adapter::create_conversation_space_in(
                 transaction,
                 conversation.id,
+                root.root_branch.id,
             )?;
         }
         SyncMemoryBinding::CompanionPool(character) => {
             crate::memory::memory_adapter::create_conversation_space_in(
                 transaction,
                 conversation.id,
+                root.root_branch.id,
             )?;
             crate::memory::memory_adapter::join_companion_pool_in(
                 transaction,
                 conversation.id,
+                root.root_branch.id,
                 *character,
             )?;
         }

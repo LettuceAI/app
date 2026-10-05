@@ -447,7 +447,7 @@ mod tests {
                 .expect("fixture mode");
             connection
                 .execute(
-                    "INSERT INTO conversation_memory_spaces (conversation_id, space_id) VALUES (?1, ?2)",
+                    "INSERT INTO conversation_memory_spaces (conversation_id, branch_id, space_id) VALUES (?1, 'test-branch', ?2)",
                     rusqlite::params![conversation_id.to_string(), space_id.to_string()],
                 )
                 .expect("binding");

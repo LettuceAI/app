@@ -1940,6 +1940,103 @@ mod tests {
         }
     }
 
+    #[test]
+    fn branch_memory_bindings_keep_sibling_spaces_independent() {
+        let database = Database::open_in_memory().expect("database");
+        let (conversation_id, root_space_id, sources) = conversation_fixture(&database);
+        let root_branch_id: String = database
+            .connection()
+            .expect("connection")
+            .query_row(
+                "SELECT active_branch_id FROM conversations WHERE id = ?1",
+                [conversation_id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("root branch");
+        let child_branch_id = ConversationBranchId::new();
+        let child_space_id = MemorySpaceId::new();
+        let mut connection = database.connection().expect("connection");
+        let transaction = connection.transaction().expect("transaction");
+        transaction
+            .execute(
+                "INSERT INTO conversation_branches (conversation_id,id,parent_branch_id,fork_message_id,status,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,'active',1,2,2)",
+                params![conversation_id.to_string(), child_branch_id.to_string(), root_branch_id, sources[0].message_id.to_string()],
+            )
+            .expect("child branch");
+        transaction
+            .execute(
+                "INSERT INTO memory_spaces (id,revision) VALUES (?1,1)",
+                [child_space_id.to_string()],
+            )
+            .expect("child space");
+        assert!(transaction
+            .execute(
+                "INSERT INTO conversation_memory_spaces (conversation_id,space_id) VALUES (?1,?2)",
+                params![conversation_id.to_string(), child_space_id.to_string()],
+            )
+            .is_err());
+        transaction
+            .execute(
+                "INSERT INTO conversation_memory_spaces (conversation_id,branch_id,space_id) VALUES (?1,?2,?3)",
+                params![conversation_id.to_string(), child_branch_id.to_string(), child_space_id.to_string()],
+            )
+            .expect("child binding");
+        assert_eq!(
+            transaction
+                .query_row(
+                    "SELECT space_id FROM conversation_memory_spaces WHERE conversation_id = ?1 AND branch_id = ?2 AND pooled = 0",
+                    params![conversation_id.to_string(), root_branch_id],
+                    |row| row.get::<_, String>(0),
+                )
+                .expect("root binding"),
+            root_space_id.to_string()
+        );
+        assert!(transaction
+            .execute(
+                "INSERT INTO conversation_memory_spaces (conversation_id,branch_id,space_id) VALUES (?1,?2,?3)",
+                params![conversation_id.to_string(), child_branch_id.to_string(), root_space_id.to_string()],
+            )
+            .is_err());
+        transaction.commit().expect("commit bindings");
+    }
+
+    #[test]
+    fn branch_memory_binding_rejects_a_branch_from_another_conversation() {
+        let database = Database::open_in_memory().expect("database");
+        let (conversation_id, _, _) = conversation_fixture(&database);
+        let (other_conversation_id, _, _) = conversation_fixture(&database);
+        let mut connection = database.connection().expect("connection");
+        let transaction = connection.transaction().expect("transaction");
+        let foreign_branch: String = transaction
+            .query_row(
+                "SELECT active_branch_id FROM conversations WHERE id = ?1",
+                [other_conversation_id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("foreign branch");
+        let space_id = MemorySpaceId::new();
+        transaction
+            .execute(
+                "INSERT INTO memory_spaces (id,revision) VALUES (?1,1)",
+                [space_id.to_string()],
+            )
+            .expect("space");
+        transaction
+            .execute(
+                "INSERT INTO conversation_memory_spaces (conversation_id,branch_id,space_id) VALUES (?1,?2,?3)",
+                params![conversation_id.to_string(), foreign_branch, space_id.to_string()],
+            )
+            .expect("deferred binding");
+        assert!(transaction.commit().is_err());
+        drop(connection);
+        assert!(
+            database
+                .get(space_id)
+                .expect("read rolled-back space")
+                .is_none()
+        );
+    }
+
     fn conversation_fixture(
         database: &Database,
     ) -> (
@@ -2052,8 +2149,8 @@ mod tests {
             .expect("space");
         transaction
             .execute(
-                "INSERT INTO conversation_memory_spaces (conversation_id,space_id) VALUES (?1,?2)",
-                params![conversation_id.to_string(), space_id.to_string()],
+                "INSERT INTO conversation_memory_spaces (conversation_id,branch_id,space_id) VALUES (?1,?3,?2)",
+                params![conversation_id.to_string(), space_id.to_string(), branch_id.to_string()],
             )
             .expect("binding");
         transaction.commit().expect("commit");
