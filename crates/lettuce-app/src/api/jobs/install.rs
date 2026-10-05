@@ -412,7 +412,7 @@ pub(crate) fn recover_queued_installs(context: &ApiContext) -> Result<Vec<JobId>
             }
         }
     }
-    if let Some(root) = context.retained_model_roots()?.thymos {
+    if let Some(root) = context.retained_model_roots_for_guard()?.and_then(|roots| roots.thymos) {
         resume_companion_emotion(context, std::path::Path::new(&root), &waiting);
     }
     let mut cancelled = Vec::new();

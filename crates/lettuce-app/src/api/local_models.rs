@@ -801,7 +801,7 @@ pub(crate) fn folder_busy(context: &ApiContext, root: &Path) -> Result<Option<dt
         return Ok(Some(dto::LocalModelsBusyReason::ModelLoaded { path: path.to_string_lossy().into_owned() }));
     }
     {
-        let roots = context.retained_model_roots()?;
+        let roots = context.retained_model_roots_for_guard()?.unwrap_or_default();
         for (kind, path) in [(dto::RequiredModel::Embedding, roots.embedding), (dto::RequiredModel::Emotion, roots.thymos)] {
             if context.models().is_loaded(kind)
                 && let Some(path) = path

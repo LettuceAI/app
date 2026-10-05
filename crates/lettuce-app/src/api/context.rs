@@ -324,13 +324,18 @@ impl ApiContext {
         &self.inner.parts.backend
     }
 
-    pub(crate) fn retained_model_roots(&self) -> Result<lettuce_settings::RetainedModelRoots, lettuce_contracts::ApiError> {
+    /// No app folder means there can be no models-folder move to guard.
+    /// Device-settings failures remain errors, including on a headless host.
+    pub(crate) fn retained_model_roots_for_guard(&self) -> Result<Option<lettuce_settings::RetainedModelRoots>, lettuce_contracts::ApiError> {
         use lettuce_settings::DeviceSettingsStore;
-        let folder = self.app_folder().ok_or_else(|| super::error::api_error(
-            lettuce_contracts::ApiErrorCode::Unavailable, "the app folder is unavailable"))?;
         let device = self.backend().database().load_device_settings().map_err(|error|
             super::error::api_error(lettuce_contracts::ApiErrorCode::Internal, error.to_string()))?;
-        Ok(crate::speech::speech_roots::retained_model_roots(&device, folder))
+        Ok(self.app_folder().map(|folder| crate::speech::speech_roots::retained_model_roots(&device, folder)))
+    }
+
+    pub(crate) fn retained_model_roots(&self) -> Result<lettuce_settings::RetainedModelRoots, lettuce_contracts::ApiError> {
+        self.retained_model_roots_for_guard()?.ok_or_else(|| super::error::api_error(
+            lettuce_contracts::ApiErrorCode::Unavailable, "the app folder is unavailable"))
     }
 
     #[must_use]

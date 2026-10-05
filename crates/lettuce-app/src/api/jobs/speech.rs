@@ -327,7 +327,7 @@ impl JobHandler for SpeechSynthesizeHandler {
                 let _folder_access = context.local_models().folder_access();
                 if let Ok(record) = lettuce_speech::SynthesisRepository::get(context.backend().database(), job_id)
                     && record.request.provider.config.provider_kind() == lettuce_speech::AudioProviderKind::Kokoro
-                    && let Some(root) = context.retained_model_roots()?.kokoro
+                    && let Some(root) = context.retained_model_roots_for_guard()?.and_then(|roots| roots.kokoro)
                     && std::path::Path::new(&root).starts_with(crate::api::local_models::models_root(context)?)
                     && folder_moving(context)? { return Ok(None); }
                 let claimed = context.backend().tts_syntheses().claim(
@@ -447,7 +447,7 @@ pub(crate) fn active_local_files(context: &ApiContext, root: &std::path::Path) -
                     let record = SynthesisRepository::get(database, job.id)
                         .map_err(|error| crate::api::error::api_error(dto::ApiErrorCode::Internal, error.to_string()))?;
                     if record.request.provider.config.provider_kind() == lettuce_speech::AudioProviderKind::Kokoro
-                        && let Some(path) = context.retained_model_roots()?.kokoro
+                        && let Some(path) = context.retained_model_roots_for_guard()?.and_then(|roots| roots.kokoro)
                         && std::path::Path::new(&path).starts_with(root) {
                         return Ok(Some((job.id, path)));
                     }

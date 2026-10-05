@@ -18,8 +18,8 @@ fn family_view(value: EmbeddingModelFamily) -> dto::EmbeddingFamily {
     }
 }
 fn root(context: &ApiContext) -> Result<std::path::PathBuf, ApiError> {
-    context.retained_model_roots()?.embedding.map(std::path::PathBuf::from)
-        .ok_or_else(|| api_error(ApiErrorCode::Unavailable, "the embedding root is unavailable"))
+    context.retained_model_roots_for_guard()?.and_then(|roots| roots.embedding).map(std::path::PathBuf::from)
+        .ok_or_else(|| model_error(ApiErrorCode::ModelRequired, RequiredModel::Embedding))
 }
 fn embedding_error(error: crate::EmbeddingModelError) -> ApiError {
     match error {
@@ -80,8 +80,8 @@ pub async fn embedding_compare(context: &ApiContext, request: dto::EmbeddingComp
     context.models().prepare_embedding(context).await?;
     context.blocking(move |context| {
         let _folder_access = context.local_models().folder_access();
-        let root = root(context)?;
-        if root.starts_with(super::local_models::models_root(context)?) {
+        if let Some(root) = context.retained_model_roots_for_guard()?.and_then(|roots| roots.embedding)
+            && std::path::Path::new(&root).starts_with(super::local_models::models_root(context)?) {
             super::jobs::local::folder_move_active(context)?;
         }
         let engine = match context.models().resolve_embedding(context) {
@@ -108,8 +108,8 @@ pub async fn embedding_compare(context: &ApiContext, request: dto::EmbeddingComp
 
 pub async fn companion_emotion_status(context: &ApiContext) -> Result<dto::ThymosStatus, ApiError> {
     context.blocking(|context| {
-        let root = context.retained_model_roots()?.thymos.map(std::path::PathBuf::from)
-            .ok_or_else(|| api_error(ApiErrorCode::Unavailable, "the app folder is unavailable"))?;
+        let root = context.retained_model_roots_for_guard()?.and_then(|roots| roots.thymos).map(std::path::PathBuf::from)
+            .ok_or_else(|| model_error(ApiErrorCode::ModelRequired, RequiredModel::Emotion))?;
         crate::companion_emotion_status(context.backend().database(), &root)
             .map(|status| match status {
                 CompanionEmotionInstallStatus::NotInstalled => dto::ThymosStatus::NotInstalled,
@@ -121,8 +121,8 @@ pub async fn companion_emotion_status(context: &ApiContext) -> Result<dto::Thymo
 
 pub async fn companion_emotion_remove(context: &ApiContext) -> Result<bool, ApiError> {
     context.blocking(|context| {
-        let root = context.retained_model_roots()?.thymos.map(std::path::PathBuf::from)
-            .ok_or_else(|| api_error(ApiErrorCode::Unavailable, "the app folder is unavailable"))?;
+        let root = context.retained_model_roots_for_guard()?.and_then(|roots| roots.thymos).map(std::path::PathBuf::from)
+            .ok_or_else(|| model_error(ApiErrorCode::ModelRequired, RequiredModel::Emotion))?;
         let removed = crate::remove_companion_emotion(context.backend().database(), &root)
             .map_err(|error| match error {
                 crate::CompanionEmotionDownloadError::Install(lettuce_model_hub::CompanionEmotionInstallError::Busy) => api_error(ApiErrorCode::Busy, "a Thymos install is active"),
@@ -156,8 +156,8 @@ pub async fn embedding_install(context: &ApiContext, request: dto::EmbeddingInst
 
 pub async fn companion_emotion_install(context: &ApiContext) -> Result<dto::JobAccepted, ApiError> {
     let (root, remote) = context.blocking(|context| {
-        let root = context.retained_model_roots()?.thymos.map(std::path::PathBuf::from)
-            .ok_or_else(|| api_error(ApiErrorCode::Unavailable, "the app folder is unavailable"))?;
+        let root = context.retained_model_roots_for_guard()?.and_then(|roots| roots.thymos).map(std::path::PathBuf::from)
+            .ok_or_else(|| model_error(ApiErrorCode::ModelRequired, RequiredModel::Emotion))?;
         if root.starts_with(super::local_models::models_root(context)?) {
             super::jobs::local::folder_move_active(context)?;
         }

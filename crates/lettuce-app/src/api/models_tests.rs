@@ -914,3 +914,23 @@ async fn embedding_inventory_choose_remove_and_busy_install_use_the_api() {
     assert!(!super::embedding_remove(&harness.context, v4()).await.expect("repeat removal"));
     std::fs::remove_dir_all(folder).expect("cleanup");
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn headless_model_guards_reach_missing_model_errors_and_install_recovery() {
+    let harness = harness_with_models(CountingModels::new(false, false));
+    let context = &harness.context;
+    assert!(context.app_folder().is_none());
+    assert!(context.retained_model_roots_for_guard().expect("guard").is_none());
+    let prepare = context.models().prepare_embedding(context).await.expect_err("missing embedding");
+    assert_eq!(prepare.code, ApiErrorCode::ModelRequired);
+    for model in [RequiredModel::Embedding, RequiredModel::Emotion] {
+        let error = context.models().require(context, model).await.expect_err("missing model");
+        assert_eq!(error.code, ApiErrorCode::ModelRequired);
+        assert_eq!(error.details, Some(ApiErrorDetails::Model { model }));
+    }
+    let status = super::companion_emotion_status(context).await.expect_err("missing emotion root");
+    assert_eq!(status.code, ApiErrorCode::ModelRequired);
+    let status = super::embedding_status(context).await.expect_err("missing embedding root");
+    assert_eq!(status.code, ApiErrorCode::ModelRequired);
+    super::jobs::install::recover_queued_installs(context).expect("no roots do not abort install recovery");
+}

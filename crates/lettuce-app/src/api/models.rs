@@ -251,7 +251,7 @@ impl ModelSlots {
     pub(crate) async fn prepare_embedding(&self, context: &ApiContext) -> Result<(), ApiError> {
         let loader = Arc::clone(&self.loader);
         if !context.blocking(move |context| {
-            if let Some(root) = context.retained_model_roots()?.embedding
+            if let Some(root) = context.retained_model_roots_for_guard()?.and_then(|roots| roots.embedding)
                 && Path::new(&root).starts_with(super::local_models::models_root(context)?) {
                 super::jobs::local::folder_move_active(context)?;
             }
@@ -308,10 +308,9 @@ impl ModelSlots {
 
     /// Loads `model` unless it already is: `ModelRequired` when it is not
     /// installed, `ModelUnavailable` when it cannot load.
-    async fn require(&self, context: &ApiContext, model: RequiredModel) -> Result<(), ApiError> {
+    pub(super) async fn require(&self, context: &ApiContext, model: RequiredModel) -> Result<(), ApiError> {
         context.blocking(move |context| {
-            let roots = context.retained_model_roots()?;
-            let root = match model { RequiredModel::Embedding => roots.embedding, RequiredModel::Emotion => roots.thymos };
+            let root = context.retained_model_roots_for_guard()?.and_then(|roots| match model { RequiredModel::Embedding => roots.embedding, RequiredModel::Emotion => roots.thymos });
             if let Some(root) = root
                 && Path::new(&root).starts_with(super::local_models::models_root(context)?) {
                 super::jobs::local::folder_move_active(context)?;
@@ -337,8 +336,7 @@ impl ModelSlots {
         let loaded = context
             .blocking(move |context| {
                 let _folder_access = context.local_models().folder_access();
-                let roots = context.retained_model_roots()?;
-                let root = match model { RequiredModel::Embedding => roots.embedding, RequiredModel::Emotion => roots.thymos };
+                let root = context.retained_model_roots_for_guard()?.and_then(|roots| match model { RequiredModel::Embedding => roots.embedding, RequiredModel::Emotion => roots.thymos });
                 if let Some(root) = root && Path::new(&root).starts_with(super::local_models::models_root(context)?) {
                     super::jobs::local::folder_move_active(context)?;
                 }
