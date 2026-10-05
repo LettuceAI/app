@@ -133,9 +133,16 @@ impl IntoApiError for TtsConfigurationError {
 
 impl IntoApiError for TtsConfigurationRepositoryError {
     fn into_api_error(self) -> ApiError {
+        if let Self::InUse { characters } = self {
+            return ApiError {
+                code: ApiErrorCode::Conflict, message: "the audio provider is used by character voices".into(),
+                details: Some(ApiErrorDetails::AudioProviderInUse { characters: characters.into_iter()
+                    .map(|character| lettuce_contracts::CharacterReferenceView { id: character.id.to_string(), name: character.name }).collect() }),
+            };
+        }
         let code = match self {
             Self::NotFound | Self::ProviderMissing => ApiErrorCode::NotFound,
-            Self::StaleRevision | Self::AlreadyExists | Self::InUse => ApiErrorCode::Conflict,
+            Self::StaleRevision | Self::AlreadyExists | Self::InUse { .. } => ApiErrorCode::Conflict,
             Self::InvalidData => ApiErrorCode::InvalidInput,
             Self::Storage => ApiErrorCode::Internal,
         };

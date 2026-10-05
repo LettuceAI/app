@@ -175,7 +175,13 @@ pub trait TtsConfigurationRepository: Send + Sync {
     fn delete_user_voice(&self, id: VoiceProfileId) -> Result<(), TtsConfigurationRepositoryError>;
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AudioProviderCharacterReference {
+    pub id: lettuce_types::CharacterId,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TtsConfigurationRepositoryError {
     #[error("TTS configuration was not found")]
     NotFound,
@@ -188,7 +194,7 @@ pub enum TtsConfigurationRepositoryError {
     #[error("TTS configuration is invalid")]
     InvalidData,
     #[error("TTS provider is referenced by a character voice preference")]
-    InUse,
+    InUse { characters: Vec<AudioProviderCharacterReference> },
     #[error("TTS configuration storage failed")]
     Storage,
 }

@@ -76,6 +76,7 @@ pub enum LocalModelsBusyReason {
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ApiErrorDetails {
     InvalidField { field: String },
+    AudioProviderInUse { characters: Vec<CharacterReferenceView> },
     Model { model: RequiredModel },
     HuggingFace { failure: HfFailure },
     Ollama { failure: OllamaFailure },
@@ -83,6 +84,14 @@ pub enum ApiErrorDetails {
     Image { failure: crate::ImageFailureKind },
     Speech { failure: crate::SpeechFailure },
     PendingMemoryRewind { conversation_id: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct CharacterReferenceView {
+    pub id: String,
+    pub name: String,
 }
 
 /// The error every API call returns. `message` is English diagnostic text

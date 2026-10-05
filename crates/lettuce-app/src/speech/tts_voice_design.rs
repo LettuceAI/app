@@ -196,7 +196,7 @@ where
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TtsVoiceDesignError {
     #[error("voice design input is invalid")]
     InvalidInput,

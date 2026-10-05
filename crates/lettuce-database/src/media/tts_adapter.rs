@@ -315,11 +315,14 @@ impl TtsConfigurationRepository for Database {
         if provider.revision != expected_revision {
             return Err(TtsConfigurationRepositoryError::StaleRevision);
         }
-        let referenced: bool = transaction.query_row(
-            "SELECT EXISTS(SELECT 1 FROM characters WHERE voice_audio_provider_id=?1)",
-            [id.to_string()], |row| row.get(0),
-        ).map_err(storage)?;
-        if referenced { return Err(TtsConfigurationRepositoryError::InUse); }
+        let characters = transaction.prepare("SELECT id,name FROM characters WHERE voice_audio_provider_id=?1 ORDER BY name,id")
+            .map_err(storage)?.query_map([id.to_string()], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+            .map_err(storage)?.map(|row| {
+                let (id, name) = row.map_err(storage)?;
+                Ok(lettuce_speech::AudioProviderCharacterReference { id: id.parse().map_err(corrupt)?, name })
+            }).collect::<Result<Vec<_>, TtsConfigurationRepositoryError>>()?;
+        if !characters.is_empty() { return Err(TtsConfigurationRepositoryError::InUse { characters }); }
+
         transaction
             .execute(
                 "DELETE FROM audio_providers WHERE id=?1 AND revision=?2",

@@ -132,7 +132,7 @@ where
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TtsVoiceRefreshError {
     #[error("voice refresh input is invalid")]
     InvalidInput,

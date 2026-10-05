@@ -1527,3 +1527,24 @@ async fn correction_listing_honors_the_legacy_approved_only_filter() {
         if only == Some(true) { assert!(listed.iter().all(|rule| rule.user_approved)); }
     }
 }
+
+#[tokio::test]
+async fn provider_delete_reports_the_referencing_characters() {
+    use lettuce_characters::{CharacterRepository, VoicePreference};
+    use lettuce_speech::TtsConfigurationRepository;
+    let env = env(TtsMode::Speak, AsrMode::Text("unused"), None);
+    let database = env.context.backend().database();
+    let provider = synthesis_request("provider delete").provider;
+    database.upsert_audio_provider(provider.clone(), None).expect("provider");
+    let character = CharacterRepository::get(database, env.harness.character_id).expect("get").expect("character").character;
+    let mut defaults = character.defaults.clone();
+    defaults.voice = Some(VoicePreference::Provider { provider_id: provider.id, voice_id: "narrator".into(), model_id: None, voice_name: None });
+    CharacterRepository::update_defaults(database, character.id, character.revision, defaults, env.context.now()).expect("voice");
+    let error = super::audio_provider_delete(&env.context, dto::AudioProviderDeleteRequest { provider_id: provider.id.to_string(), expected_revision: provider.revision.get() }).await.expect_err("referenced");
+    assert_eq!(error.code, ApiErrorCode::Conflict);
+    let details = serde_json::to_value(error.details).expect("details");
+    assert_eq!(details["type"], "audio_provider_in_use");
+    assert_eq!(details["characters"][0]["id"], character.id.to_string());
+    assert_eq!(details["characters"][0]["name"], character.profile.name);
+    assert!(database.get_audio_provider(provider.id).expect("get").is_some());
+}

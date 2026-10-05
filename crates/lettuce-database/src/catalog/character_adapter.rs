@@ -4110,7 +4110,7 @@ mod smoke_tests {
         }
         drop(connection);
         assert_eq!(database.delete_audio_provider(provider.id, provider.revision),
-            Err(lettuce_speech::TtsConfigurationRepositoryError::InUse));
+            Err(lettuce_speech::TtsConfigurationRepositoryError::InUse { characters: vec![lettuce_speech::AudioProviderCharacterReference { id, name: "Companion Ada".into() }] }));
         use lettuce_transfer::{ProviderBackupSource, ProviderBackupRestoreWriter};
         let graph = database.read_provider_backup_graph().expect("backup graph");
         let restored = Database::open_in_memory().expect("restore database");

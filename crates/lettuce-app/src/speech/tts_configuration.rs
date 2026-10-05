@@ -33,7 +33,7 @@ pub struct UpdateUserVoiceRequest {
     pub now: TimestampMillis,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TtsConfigurationCoordinatorError {
     #[error("TTS configuration is invalid")]
     InvalidInput,
