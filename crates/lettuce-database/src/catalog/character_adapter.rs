@@ -1175,6 +1175,16 @@ pub(crate) fn sync_replace_character(
             details.character.defaults.model_profile_id = None;
         }
     }
+    if let Some(lettuce_characters::VoicePreference::Provider { provider_id, .. }) = &details.character.defaults.voice {
+        let present: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM audio_providers WHERE id=?1)",
+            [provider_id.to_string()], |row| row.get(0)).map_err(db_error)?;
+        if !present {
+            if crate::sync::sync_adapter::entity_deferred(tx, "audio_provider", &provider_id.to_string()).map_err(db_error)? {
+                return Err(RepositoryError::NotFound);
+            }
+            details.character.defaults.voice = None;
+        }
+    }
     let plan = CreateCharacterPlan {
         character: details.character.clone(),
         scenes: details.scenes.clone(),
@@ -3532,6 +3542,51 @@ mod smoke_tests {
             variants: Vec::new(),
             starters: Vec::new(),
         }
+    }
+
+    #[test]
+    fn character_provider_voice_waits_for_deferred_provider_and_clears_a_deleted_one() {
+        use lettuce_speech::{AudioProvider, AudioProviderConfig, TtsConfigurationRepository};
+        use lettuce_sync::{CanonicalPayload, ChangeOperation, LocalChangeJournal, NewCanonicalChange, SyncEntity};
+        let database = Database::open_in_memory().expect("database");
+        let provider = AudioProvider {
+            id: lettuce_types::AudioProviderId::new(), secret_owner_id: lettuce_settings::SecretOwnerId::new(),
+            label: "Voice provider".into(), api_key_ref: None,
+            config: AudioProviderConfig::OpenAiCompatible { base_url: None, request_path: None },
+            revision: Revision::INITIAL, created_at: TimestampMillis::new(1), updated_at: TimestampMillis::new(1),
+        };
+        let mut plan = companion_plan(CharacterId::new());
+        plan.character.defaults.voice = Some(lettuce_characters::VoicePreference::Provider { provider_id: provider.id, voice_id: "narrator".into(), model_id: None, voice_name: None });
+        let details = lettuce_characters::CharacterDetails { character: plan.character, scenes: plan.scenes, variants: plan.variants, starters: plan.starters };
+        let change = database.record_local_change(lettuce_types::OperationId::new(), NewCanonicalChange::new(
+            SyncEntity::new(lettuce_sync::AUDIO_PROVIDER_SYNC_KIND, provider.id.to_string()).expect("entity"),
+            ChangeOperation::Insert, None, Some(CanonicalPayload::new(lettuce_sync::AUDIO_PROVIDER_SYNC_SCHEMA,
+                lettuce_sync::AUDIO_PROVIDER_SYNC_VERSION, serde_json::to_vec(&provider).expect("payload")).expect("canonical")),
+        ).expect("change"), TimestampMillis::new(1)).expect("journal");
+        {
+            let mut connection = database.connection().expect("connection");
+            connection.execute("INSERT INTO sync_deferred_changes(change_id,entity_kind,entity_id,deferred_at) VALUES (?1,'audio_provider',?2,1)",
+                params![change.change.id().as_uuid().to_string(), provider.id.to_string()]).expect("provider is deferred");
+            let transaction = connection.transaction().expect("transaction");
+            assert_eq!(sync_replace_character(&transaction, &details), Err(RepositoryError::NotFound));
+        }
+        database.upsert_audio_provider(provider.clone(), None).expect("provider arrives");
+        {
+            let mut connection = database.connection().expect("connection");
+            connection.execute("DELETE FROM sync_deferred_changes", []).expect("delivered");
+            let transaction = connection.transaction().expect("transaction");
+            sync_replace_character(&transaction, &details).expect("character applies");
+            transaction.commit().expect("commit");
+        }
+        assert_eq!(CharacterRepository::get(&database, details.character.id).expect("character").expect("present").character.defaults.voice, details.character.defaults.voice);
+        let without_provider = Database::open_in_memory().expect("deleted provider target");
+        {
+            let mut connection = without_provider.connection().expect("connection");
+            let transaction = connection.transaction().expect("transaction");
+            sync_replace_character(&transaction, &details).expect("missing provider no longer deferred");
+            transaction.commit().expect("commit");
+        }
+        assert_eq!(CharacterRepository::get(&without_provider, details.character.id).expect("character").expect("present").character.defaults.voice, None);
     }
 
     #[test]
