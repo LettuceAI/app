@@ -2559,35 +2559,96 @@ mod tests {
     }
 
     #[test]
+    fn branch_approval_schema_keeps_sibling_baselines_separate() {
+        let database = Database::open_in_memory().expect("database");
+        let (conversation_id, _, messages) = conversation_fixture(&database);
+        let root = fixture_branch(&database, conversation_id);
+        let child = ConversationBranchId::new();
+        let connection = database.connection().expect("connection");
+        connection.execute("INSERT INTO conversation_branches (conversation_id,id,parent_branch_id,fork_message_id,status,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,'active',1,20,20)", params![conversation_id.to_string(),child.to_string(),root.to_string(),messages[0].message_id.to_string()]).expect("child branch");
+        for (branch, baseline) in [(root, 4), (child, 2)] {
+            connection.execute("INSERT INTO dynamic_memory_pending_approvals (conversation_id,branch_id,prompted_message_count,pending,skipped,updated_at) VALUES (?1,?2,?3,1,0,20)",params![conversation_id.to_string(),branch.to_string(),baseline]).expect("branch approval");
+        }
+        let approvals: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM dynamic_memory_pending_approvals WHERE conversation_id = ?1",
+                [conversation_id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("approval count");
+        assert_eq!(approvals, 2);
+    }
+
+    #[test]
     fn ask_first_prompt_baseline_survives_restart() {
         let path = std::env::temp_dir().join(format!(
             "lettuce-memory-approval-{}.sqlite3",
             DynamicMemoryRunId::new()
         ));
         let database = Database::open(&path).expect("database");
-        let (conversation_id, _, _) = conversation_fixture(&database);
+        let (conversation_id, _, messages) = conversation_fixture(&database);
+        let branch_id = fixture_branch(&database, conversation_id);
         let first = database
-            .prompt_dynamic_memory_if_due(conversation_id, 4, 3, TimestampMillis::new(10))
+            .prompt_dynamic_memory_if_due(
+                conversation_id,
+                branch_id,
+                4,
+                3,
+                TimestampMillis::new(10),
+            )
             .expect("first prompt")
             .expect("approval");
         assert_eq!(first.prompted_message_count, 4);
         assert!(
             database
-                .prompt_dynamic_memory_if_due(conversation_id, 4, 3, TimestampMillis::new(99),)
+                .prompt_dynamic_memory_if_due(
+                    conversation_id,
+                    branch_id,
+                    4,
+                    3,
+                    TimestampMillis::new(99),
+                )
                 .expect("exact replay")
                 .is_none()
         );
+        let child_branch = ConversationBranchId::new();
+        database.connection().expect("connection").execute(
+            "INSERT INTO conversation_branches (conversation_id,id,parent_branch_id,fork_message_id,status,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,'active',1,20,20)",
+            params![conversation_id.to_string(), child_branch.to_string(), branch_id.to_string(), messages[0].message_id.to_string()],
+        ).expect("child branch");
+        let child_approval = database
+            .prompt_dynamic_memory_if_due(
+                conversation_id,
+                child_branch,
+                2,
+                1,
+                TimestampMillis::new(12),
+            )
+            .expect("child prompt")
+            .expect("child approval");
+        database
+            .connection()
+            .expect("connection")
+            .execute(
+                "UPDATE conversations SET active_branch_id = ?2 WHERE id = ?1",
+                params![conversation_id.to_string(), child_branch.to_string()],
+            )
+            .expect("select child");
         drop(database);
 
         let reopened = Database::open(&path).expect("reopen");
         assert_eq!(
             reopened
-                .get_dynamic_memory_pending_approval(conversation_id)
+                .get_dynamic_memory_pending_approval(conversation_id, branch_id)
                 .expect("stored approval"),
             Some(first.clone())
         );
         let skipped = reopened
-            .skip_dynamic_memory_pending_approval(conversation_id, TimestampMillis::new(20))
+            .skip_dynamic_memory_pending_approval(
+                conversation_id,
+                branch_id,
+                TimestampMillis::new(20),
+            )
             .expect("skip")
             .expect("skipped approval");
         assert!(!skipped.pending);
@@ -2595,25 +2656,43 @@ mod tests {
         assert_eq!(skipped.prompted_message_count, first.prompted_message_count);
         assert!(
             reopened
-                .prompt_dynamic_memory_if_due(conversation_id, 6, 3, TimestampMillis::new(100),)
+                .prompt_dynamic_memory_if_due(
+                    conversation_id,
+                    branch_id,
+                    6,
+                    3,
+                    TimestampMillis::new(100),
+                )
                 .expect("below next interval")
                 .is_none()
         );
         let next = reopened
-            .prompt_dynamic_memory_if_due(conversation_id, 7, 3, TimestampMillis::new(101))
+            .prompt_dynamic_memory_if_due(
+                conversation_id,
+                branch_id,
+                7,
+                3,
+                TimestampMillis::new(101),
+            )
             .expect("next prompt")
             .expect("next approval");
         assert_eq!(next.prompted_message_count, 7);
         assert!(next.pending);
         assert!(next.skipped);
         reopened
-            .clear_dynamic_memory_pending_approval(conversation_id)
+            .clear_dynamic_memory_pending_approval(conversation_id, branch_id)
             .expect("clear");
         assert_eq!(
             reopened
-                .get_dynamic_memory_pending_approval(conversation_id)
+                .get_dynamic_memory_pending_approval(conversation_id, branch_id)
                 .expect("cleared"),
             None
+        );
+        assert_eq!(
+            reopened
+                .get_dynamic_memory_pending_approval(conversation_id, child_branch)
+                .expect("child approval after parent clear"),
+            Some(child_approval)
         );
         drop(reopened);
         let _ = std::fs::remove_file(path);

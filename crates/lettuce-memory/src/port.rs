@@ -22,11 +22,13 @@ pub trait DynamicMemoryApprovalRepository: Send + Sync {
     fn get_dynamic_memory_pending_approval(
         &self,
         conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
     ) -> Result<Option<DynamicMemoryPendingApproval>, MemoryRepositoryError>;
 
     fn prompt_dynamic_memory_if_due(
         &self,
         conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
         unsummarized_message_count: u64,
         message_interval: u32,
         at: TimestampMillis,
@@ -35,11 +37,13 @@ pub trait DynamicMemoryApprovalRepository: Send + Sync {
     fn clear_dynamic_memory_pending_approval(
         &self,
         conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
     ) -> Result<(), MemoryRepositoryError>;
 
     fn skip_dynamic_memory_pending_approval(
         &self,
         conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
         at: TimestampMillis,
     ) -> Result<Option<DynamicMemoryPendingApproval>, MemoryRepositoryError>;
 }

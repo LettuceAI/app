@@ -1203,15 +1203,17 @@ impl MemorySummaryRepository for Database {
 fn get_pending_approval_in(
     connection: &rusqlite::Connection,
     conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
 ) -> Result<Option<DynamicMemoryPendingApproval>, MemoryRepositoryError> {
     connection
         .query_row(
             "SELECT prompted_message_count,pending,skipped,updated_at
-               FROM dynamic_memory_pending_approvals WHERE conversation_id=?1",
-            [conversation_id.to_string()],
+               FROM dynamic_memory_pending_approvals WHERE conversation_id=?1 AND branch_id=?2",
+            params![conversation_id.to_string(), branch_id.to_string()],
             |row| {
                 Ok(DynamicMemoryPendingApproval {
                     conversation_id,
+                    branch_id,
                     prompted_message_count: u64::try_from(row.get::<_, i64>(0)?)
                         .map_err(|_| rusqlite::Error::InvalidQuery)?,
                     pending: row.get(1)?,
@@ -1228,14 +1230,16 @@ impl DynamicMemoryApprovalRepository for Database {
     fn get_dynamic_memory_pending_approval(
         &self,
         conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
     ) -> Result<Option<DynamicMemoryPendingApproval>, MemoryRepositoryError> {
         let connection = self.connection().map_err(storage)?;
-        get_pending_approval_in(&connection, conversation_id)
+        get_pending_approval_in(&connection, conversation_id, branch_id)
     }
 
     fn prompt_dynamic_memory_if_due(
         &self,
         conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
         unsummarized_message_count: u64,
         message_interval: u32,
         at: TimestampMillis,
@@ -1247,7 +1251,7 @@ impl DynamicMemoryApprovalRepository for Database {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;
-        let existing = get_pending_approval_in(&transaction, conversation_id)?;
+        let existing = get_pending_approval_in(&transaction, conversation_id, branch_id)?;
         let baseline = existing
             .as_ref()
             .map_or(0, |approval| approval.prompted_message_count);
@@ -1258,9 +1262,9 @@ impl DynamicMemoryApprovalRepository for Database {
         transaction
             .execute(
                 "INSERT INTO dynamic_memory_pending_approvals
-                    (conversation_id,prompted_message_count,pending,skipped,updated_at)
-                 VALUES (?1,?2,1,0,?3)
-                 ON CONFLICT(conversation_id) DO UPDATE SET
+                    (conversation_id,branch_id,prompted_message_count,pending,skipped,updated_at)
+                 VALUES (?1,?4,?2,1,0,?3)
+                 ON CONFLICT(conversation_id,branch_id) DO UPDATE SET
                     prompted_message_count=excluded.prompted_message_count,
                     pending=1,
                     updated_at=excluded.updated_at",
@@ -1268,10 +1272,11 @@ impl DynamicMemoryApprovalRepository for Database {
                     conversation_id.to_string(),
                     i64::try_from(unsummarized_message_count).map_err(storage)?,
                     at.get(),
+                    branch_id.to_string(),
                 ],
             )
             .map_err(storage)?;
-        let approval = get_pending_approval_in(&transaction, conversation_id)?
+        let approval = get_pending_approval_in(&transaction, conversation_id, branch_id)?
             .ok_or_else(|| storage("missing dynamic memory approval"))?;
         transaction.commit().map_err(storage)?;
         Ok(Some(approval))
@@ -1280,12 +1285,13 @@ impl DynamicMemoryApprovalRepository for Database {
     fn clear_dynamic_memory_pending_approval(
         &self,
         conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
     ) -> Result<(), MemoryRepositoryError> {
         self.connection()
             .map_err(storage)?
             .execute(
-                "DELETE FROM dynamic_memory_pending_approvals WHERE conversation_id=?1",
-                [conversation_id.to_string()],
+                "DELETE FROM dynamic_memory_pending_approvals WHERE conversation_id=?1 AND branch_id=?2",
+                params![conversation_id.to_string(), branch_id.to_string()],
             )
             .map_err(storage)?;
         Ok(())
@@ -1294,6 +1300,7 @@ impl DynamicMemoryApprovalRepository for Database {
     fn skip_dynamic_memory_pending_approval(
         &self,
         conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
         at: TimestampMillis,
     ) -> Result<Option<DynamicMemoryPendingApproval>, MemoryRepositoryError> {
         let connection = self.connection().map_err(storage)?;
@@ -1301,11 +1308,11 @@ impl DynamicMemoryApprovalRepository for Database {
             .execute(
                 "UPDATE dynamic_memory_pending_approvals
                     SET pending=0,skipped=1,updated_at=?2
-                  WHERE conversation_id=?1 AND pending=1",
-                params![conversation_id.to_string(), at.get()],
+                  WHERE conversation_id=?1 AND branch_id=?3 AND pending=1",
+                params![conversation_id.to_string(), at.get(), branch_id.to_string()],
             )
             .map_err(storage)?;
-        get_pending_approval_in(&connection, conversation_id)
+        get_pending_approval_in(&connection, conversation_id, branch_id)
     }
 }
 

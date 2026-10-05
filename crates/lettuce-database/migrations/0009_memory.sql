@@ -21,11 +21,14 @@ CREATE UNIQUE INDEX conversation_memory_spaces_pool_idx
     ON conversation_memory_spaces(conversation_id) WHERE pooled = 1;
 
 CREATE TABLE dynamic_memory_pending_approvals (
-    conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
+    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    branch_id TEXT NOT NULL,
     prompted_message_count INTEGER NOT NULL CHECK (prompted_message_count >= 1),
     pending INTEGER NOT NULL CHECK (pending IN (0, 1)),
     skipped INTEGER NOT NULL CHECK (skipped IN (0, 1)),
-    updated_at INTEGER NOT NULL
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (conversation_id, branch_id),
+    FOREIGN KEY (conversation_id, branch_id) REFERENCES conversation_branches(conversation_id, id) ON DELETE CASCADE
 ) STRICT;
 
 -- A pool conversation's dynamic-memory cursor received from another device;

@@ -266,6 +266,10 @@ impl<
     ) -> Result<Option<CompanionPostTurnMemoryAdmission>, CompanionPostTurnMemoryAdmissionError>
     {
         effects.sort_by_key(|effect| (effect.created_at, effect.id));
+        let branch_id = self
+            .effects
+            .branch_for_effect(effects[0].id)
+            .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?;
         let unsummarized_message_count = effect_message_count(&effects);
         match run_mode {
             DynamicMemoryRunMode::Manual => return Ok(None),
@@ -274,6 +278,7 @@ impl<
                     self.effects
                         .prompt_dynamic_memory_if_due(
                             conversation_id,
+                            branch_id,
                             unsummarized_message_count,
                             summary_message_interval,
                             now,
@@ -287,10 +292,6 @@ impl<
         let Some(effects) = ready_effect_prefix(effects, summary_message_interval) else {
             return Ok(None);
         };
-        let branch_id = self
-            .effects
-            .branch_for_effect(effects[0].id)
-            .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?;
         for effect in &effects {
             if self
                 .effects
@@ -318,7 +319,7 @@ impl<
         )?;
         if admission.is_some() {
             self.effects
-                .clear_dynamic_memory_pending_approval(conversation_id)
+                .clear_dynamic_memory_pending_approval(conversation_id, branch_id)
                 .map_err(CompanionPostTurnMemoryAdmissionError::Approval)?;
         }
         Ok(admission)
@@ -332,8 +333,12 @@ impl<
         Option<lettuce_memory::DynamicMemoryPendingApproval>,
         CompanionPostTurnMemoryAdmissionError,
     > {
+        let branch_id = self
+            .effects
+            .active_branch_for_conversation(conversation_id)
+            .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?;
         self.effects
-            .skip_dynamic_memory_pending_approval(conversation_id, now)
+            .skip_dynamic_memory_pending_approval(conversation_id, branch_id, now)
             .map_err(CompanionPostTurnMemoryAdmissionError::Approval)
     }
 
@@ -341,9 +346,13 @@ impl<
         &self,
         conversation_id: ConversationId,
     ) -> Result<Option<u64>, CompanionPostTurnMemoryAdmissionError> {
+        let branch_id = self
+            .effects
+            .active_branch_for_conversation(conversation_id)
+            .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?;
         Ok(self
             .effects
-            .get_dynamic_memory_pending_approval(conversation_id)
+            .get_dynamic_memory_pending_approval(conversation_id, branch_id)
             .map_err(CompanionPostTurnMemoryAdmissionError::Approval)?
             .filter(|approval| approval.pending)
             .map(|approval| approval.prompted_message_count))
@@ -356,12 +365,16 @@ impl<
         summary_message_interval: u32,
     ) -> Result<Option<CompanionPostTurnMemoryAdmission>, CompanionPostTurnMemoryAdmissionError>
     {
+        let branch_id = self
+            .effects
+            .active_branch_for_conversation(conversation_id)
+            .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?;
         if limit == 0 || limit > MAX_COMPANION_POST_TURN_EFFECTS || summary_message_interval == 0 {
             return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
         }
         let pending = self
             .effects
-            .get_dynamic_memory_pending_approval(conversation_id)
+            .get_dynamic_memory_pending_approval(conversation_id, branch_id)
             .map_err(CompanionPostTurnMemoryAdmissionError::Approval)?;
         if !pending.is_some_and(|approval| approval.pending) {
             return Ok(None);
@@ -417,7 +430,7 @@ impl<
         }) {
             return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
         }
-        let active_branch = self
+        let branch_id = self
             .effects
             .active_branch_for_conversation(conversation_id)
             .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?;
@@ -427,7 +440,7 @@ impl<
                 .effects
                 .branch_for_effect(effect.id)
                 .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?
-                == active_branch
+                == branch_id
             {
                 selected.push(effect);
             }
@@ -436,7 +449,7 @@ impl<
         effects.sort_by_key(|effect| (effect.created_at, effect.id));
         if effects.is_empty() {
             self.effects
-                .clear_dynamic_memory_pending_approval(conversation_id)
+                .clear_dynamic_memory_pending_approval(conversation_id, branch_id)
                 .map_err(CompanionPostTurnMemoryAdmissionError::Approval)?;
             return Ok(None);
         }
@@ -483,7 +496,7 @@ impl<
             update_dynamic_memory_model_on_success,
         )?;
         self.effects
-            .clear_dynamic_memory_pending_approval(conversation_id)
+            .clear_dynamic_memory_pending_approval(conversation_id, branch_id)
             .map_err(CompanionPostTurnMemoryAdmissionError::Approval)?;
         admitted
             .map(Some)
@@ -626,7 +639,7 @@ impl<
             .map_err(|_| CompanionPostTurnMemoryAdmissionError::InvalidBatch)?;
         if messages.is_empty() {
             self.effects
-                .clear_dynamic_memory_pending_approval(conversation_id)
+                .clear_dynamic_memory_pending_approval(conversation_id, branch_id)
                 .map_err(CompanionPostTurnMemoryAdmissionError::Approval)?;
             return Ok(None);
         }
@@ -646,7 +659,7 @@ impl<
             update_dynamic_memory_model_on_success,
         )?;
         self.effects
-            .clear_dynamic_memory_pending_approval(conversation_id)
+            .clear_dynamic_memory_pending_approval(conversation_id, branch_id)
             .map_err(CompanionPostTurnMemoryAdmissionError::Approval)?;
         admitted
             .map(Some)
@@ -717,6 +730,7 @@ impl<
             self.effects
                 .prompt_dynamic_memory_if_due(
                     conversation_id,
+                    branch_id,
                     unsummarized_message_count,
                     summary_message_interval,
                     now,
@@ -737,7 +751,7 @@ impl<
         )?;
         if admitted.is_some() {
             self.effects
-                .clear_dynamic_memory_pending_approval(conversation_id)
+                .clear_dynamic_memory_pending_approval(conversation_id, branch_id)
                 .map_err(CompanionPostTurnMemoryAdmissionError::Approval)?;
         }
         Ok(admitted)
@@ -1144,7 +1158,12 @@ mod tests {
     #[derive(Debug, Default)]
     struct Effects(
         Mutex<Vec<CompanionTurnEffect>>,
-        Mutex<BTreeMap<ConversationId, lettuce_memory::DynamicMemoryPendingApproval>>,
+        Mutex<
+            BTreeMap<
+                (ConversationId, ConversationBranchId),
+                lettuce_memory::DynamicMemoryPendingApproval,
+            >,
+        >,
     );
 
     impl Effects {
@@ -1284,19 +1303,21 @@ mod tests {
         fn get_dynamic_memory_pending_approval(
             &self,
             conversation_id: ConversationId,
+            branch_id: ConversationBranchId,
         ) -> Result<Option<lettuce_memory::DynamicMemoryPendingApproval>, MemoryRepositoryError>
         {
             Ok(self
                 .1
                 .lock()
                 .expect("approvals")
-                .get(&conversation_id)
+                .get(&(conversation_id, branch_id))
                 .cloned())
         }
 
         fn prompt_dynamic_memory_if_due(
             &self,
             conversation_id: ConversationId,
+            branch_id: ConversationBranchId,
             unsummarized_message_count: u64,
             message_interval: u32,
             at: TimestampMillis,
@@ -1304,41 +1325,47 @@ mod tests {
         {
             let mut approvals = self.1.lock().expect("approvals");
             let baseline = approvals
-                .get(&conversation_id)
+                .get(&(conversation_id, branch_id))
                 .map_or(0, |approval| approval.prompted_message_count);
             if unsummarized_message_count.saturating_sub(baseline) < u64::from(message_interval) {
                 return Ok(None);
             }
             let skipped = approvals
-                .get(&conversation_id)
+                .get(&(conversation_id, branch_id))
                 .is_some_and(|approval| approval.skipped);
             let approval = lettuce_memory::DynamicMemoryPendingApproval {
                 conversation_id,
+                branch_id,
                 prompted_message_count: unsummarized_message_count,
                 pending: true,
                 skipped,
                 updated_at: at,
             };
-            approvals.insert(conversation_id, approval.clone());
+            approvals.insert((conversation_id, branch_id), approval.clone());
             Ok(Some(approval))
         }
 
         fn clear_dynamic_memory_pending_approval(
             &self,
             conversation_id: ConversationId,
+            branch_id: ConversationBranchId,
         ) -> Result<(), MemoryRepositoryError> {
-            self.1.lock().expect("approvals").remove(&conversation_id);
+            self.1
+                .lock()
+                .expect("approvals")
+                .remove(&(conversation_id, branch_id));
             Ok(())
         }
 
         fn skip_dynamic_memory_pending_approval(
             &self,
             conversation_id: ConversationId,
+            branch_id: ConversationBranchId,
             at: TimestampMillis,
         ) -> Result<Option<lettuce_memory::DynamicMemoryPendingApproval>, MemoryRepositoryError>
         {
             let mut approvals = self.1.lock().expect("approvals");
-            if let Some(approval) = approvals.get_mut(&conversation_id) {
+            if let Some(approval) = approvals.get_mut(&(conversation_id, branch_id)) {
                 if approval.pending {
                     approval.pending = false;
                     approval.skipped = true;
@@ -1674,7 +1701,16 @@ mod tests {
             .expect("discover")
             .expect("automatic cycle admitted");
         effects
-            .prompt_dynamic_memory_if_due(conversation, 4, 1, TimestampMillis::new(31))
+            .prompt_dynamic_memory_if_due(
+                conversation,
+                ConversationBranchId::from_uuid(uuid::Uuid::new_v5(
+                    &conversation.as_uuid(),
+                    b"branch",
+                )),
+                4,
+                1,
+                TimestampMillis::new(31),
+            )
             .expect("prompt")
             .expect("pending approval");
         assert!(matches!(
@@ -1688,7 +1724,13 @@ mod tests {
         ));
         assert!(
             effects
-                .get_dynamic_memory_pending_approval(conversation)
+                .get_dynamic_memory_pending_approval(
+                    conversation,
+                    ConversationBranchId::from_uuid(uuid::Uuid::new_v5(
+                        &conversation.as_uuid(),
+                        b"branch"
+                    ))
+                )
                 .expect("approval")
                 .is_none()
         );
@@ -1878,7 +1920,13 @@ mod tests {
         );
         assert_eq!(
             effects
-                .get_dynamic_memory_pending_approval(conversation_id)
+                .get_dynamic_memory_pending_approval(
+                    conversation_id,
+                    ConversationBranchId::from_uuid(uuid::Uuid::new_v5(
+                        &conversation_id.as_uuid(),
+                        b"branch"
+                    ))
+                )
                 .expect("manual approval"),
             None
         );
@@ -1894,7 +1942,13 @@ mod tests {
                 .is_empty()
         );
         let approval = effects
-            .get_dynamic_memory_pending_approval(conversation_id)
+            .get_dynamic_memory_pending_approval(
+                conversation_id,
+                ConversationBranchId::from_uuid(uuid::Uuid::new_v5(
+                    &conversation_id.as_uuid(),
+                    b"branch",
+                )),
+            )
             .expect("approval")
             .expect("pending approval");
         assert_eq!(approval.prompted_message_count, 4);
@@ -1909,7 +1963,13 @@ mod tests {
             .expect("ask first replay");
         assert_eq!(
             effects
-                .get_dynamic_memory_pending_approval(conversation_id)
+                .get_dynamic_memory_pending_approval(
+                    conversation_id,
+                    ConversationBranchId::from_uuid(uuid::Uuid::new_v5(
+                        &conversation_id.as_uuid(),
+                        b"branch"
+                    ))
+                )
                 .expect("replayed approval")
                 .expect("pending approval"),
             approval
@@ -1932,7 +1992,13 @@ mod tests {
             .expect("skip baseline replay");
         assert_eq!(
             effects
-                .get_dynamic_memory_pending_approval(conversation_id)
+                .get_dynamic_memory_pending_approval(
+                    conversation_id,
+                    ConversationBranchId::from_uuid(uuid::Uuid::new_v5(
+                        &conversation_id.as_uuid(),
+                        b"branch"
+                    ))
+                )
                 .expect("skipped state")
                 .expect("approval"),
             skipped
@@ -1954,7 +2020,13 @@ mod tests {
             )
             .expect("next interval prompt");
         let prompted_again = effects
-            .get_dynamic_memory_pending_approval(conversation_id)
+            .get_dynamic_memory_pending_approval(
+                conversation_id,
+                ConversationBranchId::from_uuid(uuid::Uuid::new_v5(
+                    &conversation_id.as_uuid(),
+                    b"branch",
+                )),
+            )
             .expect("next approval")
             .expect("pending approval");
         assert!(prompted_again.pending);
@@ -1990,7 +2062,13 @@ mod tests {
         );
         assert_eq!(
             effects
-                .get_dynamic_memory_pending_approval(conversation_id)
+                .get_dynamic_memory_pending_approval(
+                    conversation_id,
+                    ConversationBranchId::from_uuid(uuid::Uuid::new_v5(
+                        &conversation_id.as_uuid(),
+                        b"branch"
+                    ))
+                )
                 .expect("cleared approval"),
             None
         );

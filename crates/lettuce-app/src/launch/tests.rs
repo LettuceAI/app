@@ -2421,6 +2421,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         lettuce_memory::DynamicMemoryApprovalRepository::get_dynamic_memory_pending_approval(
             &database,
             conversation.id,
+            conversation.active_branch_id,
         )
         .expect("pending approval")
         .expect("approval")
@@ -2465,6 +2466,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         lettuce_memory::DynamicMemoryApprovalRepository::get_dynamic_memory_pending_approval(
             &database,
             conversation.id,
+            conversation.active_branch_id,
         )
         .expect("cleared approval")
         .is_none()

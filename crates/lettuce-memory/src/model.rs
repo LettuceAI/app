@@ -32,6 +32,7 @@ pub enum DynamicMemoryRunMode {
 #[serde(deny_unknown_fields)]
 pub struct DynamicMemoryPendingApproval {
     pub conversation_id: lettuce_types::ConversationId,
+    pub branch_id: lettuce_types::ConversationBranchId,
     pub prompted_message_count: u64,
     pub pending: bool,
     pub skipped: bool,

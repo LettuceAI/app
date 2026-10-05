@@ -54,6 +54,8 @@ Facts about how `lettuce-database` relates to the legacy app (2.2.x). The crate 
 
 ## Deliberate differences from legacy
 
+- Pending dynamic-memory approvals and prompt baselines are durable per conversation and branch. Legacy kept approvals and skips in a session-keyed in-memory manager (`old-code/src-tauri/src/chat_manager/memory/flow.rs:1653-1661,1696-1705`); changing the selected branch now leaves the other branch's prompt and skip state intact, including after restart.
+
 - Forks copy durable run snapshots and checkpoint summaries instead of replaying the legacy capped event log (`old-code/src/core/storage/repo.ts:558-586`; the 50-event cap was `old-code/src-tauri/src/conversation_manager/memory.rs:6`). Imported conversations without runs keep their current items, matching `old-code/src/core/storage/repo.ts:547-556`. Forks never wait for memory work: dispatched unfinished runs supply their starting state and queued jobs have not changed the parent. Each pooled fork retains its seeded own space; legacy computed branch state and then discarded it when the new shared session attached to the pool (`old-code/src/core/storage/repo.ts:1670-1706`, `old-code/src-tauri/src/storage_manager/sessions.rs:361-373`).
 
 - Wrong-shaped provider or model JSON is recorded as a skip and the record kept. Legacy's frontend salvage dropped the whole provider (with every model on it) or model, and wrong headers or advanced settings also failed its typed Rust settings read.

@@ -418,7 +418,7 @@ fn read_dynamic_memory(
     transaction: &rusqlite::Transaction<'_>,
 ) -> Result<DynamicMemoryBackup, ProviderBackupSourceError> {
     let pending_rows = transaction
-        .prepare("SELECT conversation_id,prompted_message_count,pending,skipped,updated_at FROM dynamic_memory_pending_approvals ORDER BY conversation_id")
+        .prepare("SELECT conversation_id,prompted_message_count,pending,skipped,updated_at,branch_id FROM dynamic_memory_pending_approvals ORDER BY conversation_id,branch_id")
         .and_then(|mut statement| {
             statement
                 .query_map([], |row| {
@@ -428,6 +428,7 @@ fn read_dynamic_memory(
                         row.get::<_, bool>(2)?,
                         row.get::<_, bool>(3)?,
                         row.get::<_, i64>(4)?,
+                        row.get::<_, String>(5)?,
                     ))
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()
@@ -439,6 +440,10 @@ fn read_dynamic_memory(
             Ok(lettuce_memory::DynamicMemoryPendingApproval {
                 conversation_id: row
                     .0
+                    .parse()
+                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                branch_id: row
+                    .5
                     .parse()
                     .map_err(|_| ProviderBackupSourceError::InvalidData)?,
                 prompted_message_count: u64::try_from(row.1)

@@ -1633,6 +1633,7 @@ mod tests {
         DynamicMemoryApprovalRepository::prompt_dynamic_memory_if_due(
             backend.database(),
             direct_conversation.id,
+            direct_conversation.active_branch_id,
             1,
             1,
             TimestampMillis::new(38),

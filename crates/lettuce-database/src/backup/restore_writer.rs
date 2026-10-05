@@ -638,13 +638,14 @@ impl ProviderBackupRestoreWriter for Database {
         for approval in &graph.dynamic_memory.pending_approvals {
             transaction
                 .execute(
-                    "INSERT INTO dynamic_memory_pending_approvals (conversation_id, prompted_message_count, pending, skipped, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    "INSERT INTO dynamic_memory_pending_approvals (conversation_id, branch_id, prompted_message_count, pending, skipped, updated_at) VALUES (?1, ?6, ?2, ?3, ?4, ?5)",
                     params![
                         approval.conversation_id.to_string(),
                         i64::try_from(approval.prompted_message_count).map_err(invalid)?,
                         approval.pending,
                         approval.skipped,
-                        approval.updated_at.get()
+                        approval.updated_at.get(),
+                        approval.branch_id.to_string()
                     ],
                 )
                 .map_err(invalid)?;

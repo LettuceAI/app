@@ -61,7 +61,7 @@ impl DynamicMemoryBackup {
             return Err(DynamicMemoryBackupError::InvalidData);
         }
         self.pending_approvals
-            .sort_by_key(|approval| approval.conversation_id);
+            .sort_by_key(|approval| (approval.conversation_id, approval.branch_id));
         self.runs.sort_by_key(|entry| entry.run.id);
         self.pending_suffix_rewinds.sort_by(|left, right| {
             (
@@ -136,7 +136,15 @@ impl DynamicMemoryBackup {
         let mut approval_ids = BTreeSet::new();
         for approval in &self.pending_approvals {
             if !conversations.contains(&approval.conversation_id)
-                || !approval_ids.insert(approval.conversation_id)
+                || !history.conversations.iter().any(|conversation| {
+                    conversation.aggregate.conversation.id == approval.conversation_id
+                        && conversation
+                            .aggregate
+                            .branches
+                            .iter()
+                            .any(|branch| branch.id == approval.branch_id)
+                })
+                || !approval_ids.insert((approval.conversation_id, approval.branch_id))
                 || approval.prompted_message_count == 0
                 || approval.pending == approval.skipped
             {
