@@ -330,6 +330,15 @@ impl<J: JobStore + ?Sized> ArtifactInstallCoordinator<'_, J> {
         plan: &ArtifactInstallPlan,
         display: Option<&str>,
     ) -> Result<ArtifactInstallAdmission, ArtifactInstallError> {
+        self.admit_using(plan, display, |spec| self.jobs.create_or_get(spec))
+    }
+
+    pub(crate) fn admit_using(
+        &self,
+        plan: &ArtifactInstallPlan,
+        display: Option<&str>,
+        create: impl FnOnce(lettuce_jobs::NewJob) -> Result<lettuce_jobs::CreateJobResult, StoreError>,
+    ) -> Result<ArtifactInstallAdmission, ArtifactInstallError> {
         if plan.artifacts.is_empty() {
             return Err(ArtifactInstallError::InvalidWork);
         }
@@ -367,7 +376,7 @@ impl<J: JobStore + ?Sized> ArtifactInstallCoordinator<'_, J> {
                 None => break,
             }
         }
-        let admitted = self.jobs.create_or_get(
+        let admitted = create(
             JobSpec::new(
                 JobKind::ArtifactInstall,
                 subject,

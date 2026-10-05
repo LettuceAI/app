@@ -433,6 +433,27 @@ fn parse(accepted: &dto::JobAccepted) -> JobId {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn embedding_install_admission_preserves_detail_and_conflicts_with_changed_setup() {
+    let root = temp_root("embedding-admission");
+    let harness = harness_in(Reply::Text("Hello."), Arc::new(SystemClock), None, Some(root.clone()), Arc::new(crate::api::NoModels));
+    let pin = lettuce_model_hub::EmbeddingPin {
+        family: lettuce_model_hub::EmbeddingModelFamily::LettuceEmbV4,
+        revision: "a".repeat(40), files: Vec::new(),
+    };
+    let work = |enabled| InstallWork::Artifact {
+        plan: plan(&root, "embedding", b"pinned bytes"),
+        finish: Box::new(InstallFinish::Embedding { root: root.clone(), pin: pin.clone(), enable_dynamic_memory: enabled }),
+    };
+    let detail = |enabled| serde_json::to_value(super::local::LocalModelJobDetail::EmbeddingInstall {
+        root: root.clone(), pin: pin.clone(), enable_dynamic_memory: enabled,
+    }).expect("detail");
+    let accepted = admit_install_with_detail(&harness.context, work(true), Some(detail(true))).await.expect("admission");
+    assert_eq!(harness.context.backend().database().local_model_job(parse(&accepted)).expect("read").expect("detail").detail, detail(true));
+    assert_eq!(admit_install_with_detail(&harness.context, work(true), Some(detail(true))).await.expect("replay"), accepted);
+    assert_eq!(admit_install_with_detail(&harness.context, work(false), Some(detail(false))).await.expect_err("changed setup").code, ApiErrorCode::Conflict);
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn an_artifact_install_runs_to_success_and_its_watch_sees_the_end() {
     let harness = harness(Reply::Text("Hello."));
     let context = &harness.context;

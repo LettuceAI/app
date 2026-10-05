@@ -36,6 +36,29 @@ pub struct ManualSceneImageAdmission<'a> {
 }
 
 impl Database {
+    pub fn create_or_get_with_local_model_detail(&self, spec: NewJob, detail: &serde_json::Value) -> Result<CreateJobResult, StoreError> {
+        use rusqlite::OptionalExtension;
+        spec.validate()?;
+        if !detail.is_object() { return Err(StoreError::InvalidData); }
+        let mut connection = self.connection.lock().map_err(|_| StoreError::Storage)?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(|_| StoreError::Storage)?;
+        let before = creation_set(&transaction, &spec)?;
+        let created = apply_to_job_set(&transaction, before, |store| store.create_or_get(spec))?;
+        let stored: Option<String> = transaction.query_row("SELECT detail_json FROM local_model_jobs WHERE job_id=?1",
+            [created.job.id.to_string()], |row| row.get(0)).optional().map_err(|_| StoreError::Storage)?;
+        if let Some(stored) = stored {
+            let stored: serde_json::Value = serde_json::from_str(&stored).map_err(|_| StoreError::InvalidData)?;
+            if &stored != detail { return Err(StoreError::IdempotencyConflict); }
+        } else {
+            if !created.created { return Err(StoreError::InvalidData); }
+            let text = serde_json::to_string(detail).map_err(|_| StoreError::InvalidData)?;
+            transaction.execute("INSERT INTO local_model_jobs(job_id,detail_json) VALUES (?1,?2)",
+                params![created.job.id.to_string(), text]).map_err(|_| StoreError::Storage)?;
+        }
+        transaction.commit().map_err(|_| StoreError::Storage)?;
+        Ok(created)
+    }
+
     pub fn admit_job_with_detail(
         &self,
         spec: NewJob,
@@ -1133,6 +1156,23 @@ mod tests {
 
     fn availability() -> ResourceAvailability {
         ResourceAvailability::all()
+    }
+
+    #[test]
+    fn local_model_detail_admission_rolls_back_the_job_when_detail_storage_fails() {
+        let database = Database::open_in_memory().expect("database");
+        database.connection().expect("connection").execute_batch(
+            "CREATE TRIGGER reject_test_detail BEFORE INSERT ON local_model_jobs BEGIN SELECT RAISE(ABORT,'injected'); END;"
+        ).expect("fault injection");
+        let detail = serde_json::json!({"root": "/models/embedding", "enable_dynamic_memory": true});
+        assert_eq!(database.create_or_get_with_local_model_detail(spec("atomic-install"), &detail), Err(StoreError::Storage));
+        assert!(database.list(JobQuery::default()).expect("jobs").items.is_empty());
+        assert_eq!(database.job_change_position().expect("position"), 0);
+        database.connection().expect("connection").execute_batch("DROP TRIGGER reject_test_detail").expect("clear fault");
+        let admitted = database.create_or_get_with_local_model_detail(spec("atomic-install"), &detail).expect("retry");
+        assert_eq!(database.local_model_job(admitted.job.id).expect("detail").expect("stored").detail, detail);
+        assert!(!database.create_or_get_with_local_model_detail(spec("atomic-install"), &detail).expect("replay").created);
+        assert_eq!(database.create_or_get_with_local_model_detail(spec("atomic-install"), &serde_json::json!({"enable_dynamic_memory": false})), Err(StoreError::IdempotencyConflict));
     }
 
     fn after(snapshot: &JobSnapshot, millis: i64) -> Timestamp {

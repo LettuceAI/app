@@ -245,8 +245,9 @@ pub(crate) async fn admit_install_with_detail(
             if is_image_install(&work) || work.root().starts_with(crate::api::local_models::models_root(context)?) {
                 super::local::folder_move_active(context)?;
             }
-            let (job, work) = admit(context, work)?;
-            if let Some(detail) = &detail {
+            let atomic_detail = detail.is_some() && matches!(&work, InstallWork::Artifact { finish, .. } if matches!(finish.as_ref(), InstallFinish::Embedding { .. }));
+            let (job, work) = admit_with_detail(context, work, if atomic_detail { detail.as_ref() } else { None })?;
+            if let Some(detail) = detail.as_ref().filter(|_| !atomic_detail) {
                 context
                     .backend()
                     .database()
@@ -282,6 +283,10 @@ fn is_image_install(work: &InstallWork) -> bool {
 }
 
 fn admit(context: &ApiContext, work: InstallWork) -> Result<(JobSnapshot, InstallWork), ApiError> {
+    admit_with_detail(context, work, None)
+}
+
+fn admit_with_detail(context: &ApiContext, work: InstallWork, detail: Option<&serde_json::Value>) -> Result<(JobSnapshot, InstallWork), ApiError> {
     let backend = context.backend();
     let database = backend.database();
     Ok(match work {
@@ -306,9 +311,16 @@ fn admit(context: &ApiContext, work: InstallWork) -> Result<(JobSnapshot, Instal
                 )
             }
             finish => {
-                let admitted = ArtifactInstallCoordinator::new(database)
-                    .admit(&plan)
-                    .map_err(internal)?;
+                let coordinator = ArtifactInstallCoordinator::new(database);
+                let admitted = match detail {
+                    Some(detail) => coordinator.admit_using(&plan, None, |spec| database.create_or_get_with_local_model_detail(spec, detail)),
+                    None => coordinator.admit(&plan),
+                }.map_err(internal)?;
+                if let Some(detail) = detail {
+                    let stored = database.local_model_job(admitted.job.id).map_err(internal)?
+                        .ok_or_else(|| internal("the install is missing its recovery detail"))?;
+                    if &stored.detail != detail { return Err(api_error(ApiErrorCode::Conflict, "the active install has different setup choices")); }
+                }
                 (
                     admitted.job,
                     InstallWork::Artifact {
