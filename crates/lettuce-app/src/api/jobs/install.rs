@@ -1077,8 +1077,12 @@ async fn finish_artifact(
                 crate::api::ModelLoad::Loaded(engine) => engine,
                 _ => return Err("the installed embedding model could not be loaded".into()),
             };
-            crate::api::embedding_health::run(engine.as_ref(), &cancellation)?;
+            let health_cancel = cancellation.clone();
+            context.blocking(move |_| {
+                crate::api::embedding_health::run(engine.as_ref(), &health_cancel).map_err(internal)
+            }).await.map_err(|error| error.message)?;
             if enable_dynamic_memory {
+                if cancellation.is_cancelled() { return Err("embedding health check cancelled".into()); }
                 use lettuce_settings::GlobalSettingsStore;
                 let mut stored = GlobalSettingsStore::load(database).map_err(|error| error.to_string())?;
                 stored.settings.dynamic_memory = lettuce_settings::DynamicMemorySettings {

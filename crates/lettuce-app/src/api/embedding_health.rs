@@ -61,7 +61,7 @@ pub(crate) fn run(engine: &dyn MemoryEmbeddingEngine, cancel: &CancellationToken
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     struct ProbeEngine { values: std::collections::HashMap<String, usize>, constant: bool }
     impl MemoryEmbeddingEngine for ProbeEngine {
@@ -75,8 +75,7 @@ mod tests {
             Ok(EmbeddingVector { source_revision: self.source_revision().into(), values })
         }
     }
-    #[test]
-    fn health_checks_retrieval_and_separation_and_honors_cancellation() {
+    pub(crate) fn engine(constant: bool) -> std::sync::Arc<dyn MemoryEmbeddingEngine> {
         let probes: Probes = serde_json::from_str(include_str!("../../resources/embedding-health/v1.json")).expect("probes");
         let mut values = std::collections::HashMap::new();
         values.insert(probes.identity_probe.clone(), 100);
@@ -91,12 +90,16 @@ mod tests {
             let entry = probes.corpus.iter().find(|entry| entry.id == case.expected_id).expect("expected");
             values.insert(case.query.clone(), *values.get(&entry.text).expect("corpus value"));
         }
-        let engine = ProbeEngine { values, constant: false };
-        run(&engine, &CancellationToken::new()).expect("all three checks pass");
-        let bad = ProbeEngine { values: engine.values, constant: true };
-        assert!(run(&bad, &CancellationToken::new()).expect_err("identity alone is insufficient").contains("failed the legacy health check"));
+        std::sync::Arc::new(ProbeEngine { values, constant })
+    }
+    #[test]
+    fn health_checks_retrieval_and_separation_and_honors_cancellation() {
+        let engine = engine(false);
+        run(engine.as_ref(), &CancellationToken::new()).expect("all three checks pass");
+        let bad = self::engine(true);
+        assert!(run(bad.as_ref(), &CancellationToken::new()).expect_err("identity alone is insufficient").contains("failed the legacy health check"));
         let cancel = CancellationToken::new(); cancel.cancel();
-        assert!(run(&bad, &cancel).expect_err("cancelled").contains("cancelled"));
+        assert!(run(bad.as_ref(), &cancel).expect_err("cancelled").contains("cancelled"));
     }
     #[test]
     fn legacy_health_dataset_is_complete() {
