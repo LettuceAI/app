@@ -2965,6 +2965,14 @@ fn tombstone_staged(
                     ],
                 )
                 .map_err(kernel::map_constraint)?;
+            crate::memory::memory_branch_adapter::seed_branch_space_in(
+                transaction,
+                context.conversation_id,
+                parent.branch_id,
+                branch_id,
+                parent_message_id,
+                false,
+            )?;
             select_active_branch(transaction, context.conversation_id, branch_id)?;
             Some(load_branch(
                 transaction,
@@ -3173,6 +3181,14 @@ fn branch_around_message(
             ],
         )
         .map_err(kernel::map_constraint)?;
+    crate::memory::memory_branch_adapter::seed_branch_space_in(
+        transaction,
+        context.conversation_id,
+        parent.branch_id,
+        branch_id,
+        parent_id,
+        false,
+    )?;
     let mut events = Vec::with_capacity(later.len() + 1);
     let mut previous = parent_id;
     let mut copies = Vec::with_capacity(later.len());
@@ -5261,6 +5277,14 @@ impl ConversationRepository for Database {
                         ],
                     )
                     .map_err(kernel::map_constraint)?;
+                crate::memory::memory_branch_adapter::seed_branch_space_in(
+                    transaction,
+                    context.conversation_id,
+                    command.source_branch_id,
+                    branch_id,
+                    fork_message_id,
+                    false,
+                )?;
                 select_active_branch(transaction, context.conversation_id, branch_id)?;
                 let revision =
                     kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
@@ -13511,6 +13535,111 @@ mod tests {
             ),
             Err(ConversationRepositoryError::Conflict),
             "the fork point must live on the source branch"
+        );
+    }
+
+    #[test]
+    fn user_fork_creates_its_own_memory_binding_and_replays_once() {
+        let mut fixture = direct_fixture();
+        let messages = conversation_with_two_exchanges(&mut fixture, "memory-fork");
+        let space_id = lettuce_types::MemorySpaceId::new();
+        {
+            let mut connection = fixture.database.connection().expect("connection");
+            let transaction = connection.transaction().expect("transaction");
+            crate::memory::memory_adapter::insert_space_in(
+                &transaction,
+                fixture.conversation_id,
+                fixture.branch_id,
+                &lettuce_memory::MemorySpaceSnapshot {
+                    id: space_id,
+                    revision: Revision::INITIAL,
+                    items: Vec::new(),
+                },
+            )
+            .expect("own memory");
+            transaction.commit().expect("commit");
+        }
+        let command = ForkBranch {
+            conversation_id: fixture.conversation_id,
+            source_branch_id: fixture.branch_id,
+            at_message_id: Some(messages[1]),
+            expected_revision: fixture.revision,
+            operation: token("memory-fork", "cd"),
+        };
+        let forked = fixture
+            .database
+            .fork_branch(&command, TimestampMillis::new(200))
+            .expect("fork");
+        let replay = fixture
+            .database
+            .fork_branch(&command, TimestampMillis::new(200))
+            .expect("replay");
+        assert_eq!(forked.value.branch.id, replay.value.branch.id);
+        let connection = fixture.database.connection().expect("connection");
+        let spaces: Vec<String> = connection.prepare("SELECT space_id FROM conversation_memory_spaces WHERE conversation_id = ?1 AND pooled = 0 ORDER BY branch_id").expect("query")
+            .query_map([fixture.conversation_id.to_string()], |row| row.get(0)).expect("rows").collect::<Result<_, _>>().expect("spaces");
+        assert_eq!(spaces.len(), 2);
+        assert!(spaces.contains(&space_id.to_string()));
+        assert_ne!(spaces[0], spaces[1]);
+    }
+
+    #[test]
+    fn memory_seed_failure_rolls_back_branch_selection_and_operation() {
+        let mut fixture = direct_fixture();
+        let messages = conversation_with_two_exchanges(&mut fixture, "memory-rollback");
+        {
+            let mut connection = fixture.database.connection().expect("connection");
+            let transaction = connection.transaction().expect("transaction");
+            crate::memory::memory_adapter::create_conversation_space_in(
+                &transaction,
+                fixture.conversation_id,
+                fixture.branch_id,
+            )
+            .expect("parent memory");
+            transaction.commit().expect("commit");
+            connection.execute_batch("CREATE TEMP TRIGGER fail_memory_seed BEFORE INSERT ON memory_spaces BEGIN SELECT RAISE(ABORT, 'injected seed failure'); END;").expect("inject failure");
+        }
+        let command = ForkBranch {
+            conversation_id: fixture.conversation_id,
+            source_branch_id: fixture.branch_id,
+            at_message_id: Some(messages[1]),
+            expected_revision: fixture.revision,
+            operation: token("memory-rollback", "cd"),
+        };
+        assert!(
+            fixture
+                .database
+                .fork_branch(&command, TimestampMillis::new(200))
+                .is_err()
+        );
+        let connection = fixture.database.connection().expect("connection");
+        let branches: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM conversation_branches WHERE conversation_id = ?1",
+                [fixture.conversation_id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("branches");
+        assert_eq!(branches, 1);
+        let selected: String = connection
+            .query_row(
+                "SELECT active_branch_id FROM conversations WHERE id = ?1",
+                [fixture.conversation_id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("selected branch");
+        assert_eq!(selected, fixture.branch_id.to_string());
+        connection
+            .execute_batch("DROP TRIGGER fail_memory_seed;")
+            .expect("remove injection");
+        drop(connection);
+        let forked = fixture
+            .database
+            .fork_branch(&command, TimestampMillis::new(200))
+            .expect("retry");
+        assert_eq!(
+            forked.value.branch.parent_branch_id,
+            Some(fixture.branch_id)
         );
     }
 

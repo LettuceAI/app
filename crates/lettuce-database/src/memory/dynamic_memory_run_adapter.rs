@@ -2243,6 +2243,146 @@ mod tests {
     }
 
     #[test]
+    fn branch_seed_uses_unsettled_snapshot_and_settled_current_state() {
+        for succeeded in [false, true] {
+            let database = Database::open_in_memory().expect("database");
+            let (conversation_id, space_id, messages) = conversation_fixture(&database);
+            let parent_branch = fixture_branch(&database, conversation_id);
+            let original_id = MemoryId::new();
+            database
+                .compare_and_apply(lettuce_memory::MemoryChangeSet {
+                    space_id,
+                    expected_revision: Revision::INITIAL,
+                    items: vec![memory_item(original_id, "Starting state", 1)],
+                })
+                .expect("initial memory");
+            let attempt = checkpointed_run(
+                &database,
+                conversation_id,
+                space_id,
+                &messages,
+                "Summary",
+                10,
+            );
+            let current = database.get(space_id).expect("memory").expect("space");
+            database
+                .compare_and_apply(lettuce_memory::MemoryChangeSet {
+                    space_id,
+                    expected_revision: current.revision,
+                    items: vec![memory_item(MemoryId::new(), "Changed during rounds", 12)],
+                })
+                .expect("round changes");
+            if succeeded {
+                finish(&database, &attempt, true, 14);
+            }
+            let child_branch = ConversationBranchId::new();
+            let mut connection = database.connection().expect("connection");
+            let transaction = connection.transaction().expect("transaction");
+            transaction.execute(
+                "INSERT INTO conversation_branches (conversation_id,id,parent_branch_id,fork_message_id,status,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,'active',1,20,20)",
+                params![conversation_id.to_string(), child_branch.to_string(), parent_branch.to_string(), messages[1].message_id.to_string()],
+            ).expect("branch");
+            super::super::memory_branch_adapter::seed_branch_space_in(
+                &transaction,
+                conversation_id,
+                parent_branch,
+                child_branch,
+                messages[1].message_id,
+                false,
+            )
+            .expect("seed");
+            let child_space: String = transaction.query_row(
+                "SELECT space_id FROM conversation_memory_spaces WHERE conversation_id = ?1 AND branch_id = ?2 AND pooled = 0",
+                params![conversation_id.to_string(),child_branch.to_string()], |row| row.get(0),
+            ).expect("child space");
+            let child_space = child_space.parse().expect("space id");
+            let child = super::memory_adapter::get_in(&transaction, child_space)
+                .expect("child memory")
+                .expect("space");
+            assert_eq!(
+                child.items[0].text,
+                if succeeded {
+                    "Changed during rounds"
+                } else {
+                    "Starting state"
+                }
+            );
+            assert_ne!(child.items[0].id, original_id);
+            transaction.commit().expect("commit");
+            drop(connection);
+            let summary = database.get_summary(child_space).expect("summary");
+            assert_eq!(summary.is_some(), succeeded);
+            if let Some(summary) = summary {
+                assert_eq!(summary.window_end, 2);
+                assert_eq!(
+                    summary.source_message_ids,
+                    messages
+                        .iter()
+                        .map(|source| source.message_id)
+                        .collect::<Vec<_>>()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn branch_seed_copies_imported_items_and_matching_projections_with_new_ids() {
+        let database = Database::open_in_memory().expect("database");
+        let (conversation_id, space_id, messages) = conversation_fixture(&database);
+        let parent_branch = fixture_branch(&database, conversation_id);
+        let original_id = MemoryId::new();
+        let mut item = memory_item(original_id, "Imported memory", 1);
+        item.source_message_id = Some(messages[0].message_id);
+        database
+            .compare_and_apply(lettuce_memory::MemoryChangeSet {
+                space_id,
+                expected_revision: Revision::INITIAL,
+                items: vec![item],
+            })
+            .expect("imported memory");
+        let child_branch = ConversationBranchId::new();
+        let mut connection = database.connection().expect("connection");
+        let transaction = connection.transaction().expect("transaction");
+        transaction.execute(
+            "INSERT INTO memory_embedding_projections (space_id,memory_id,source_revision,dimensions,source_text,status,vector,updated_at) VALUES (?1,?2,'model',64,'Imported memory','ready',?3,1)",
+            params![space_id.to_string(),original_id.to_string(),vec![0_u8;256]],
+        ).expect("projection");
+        transaction.execute(
+            "INSERT INTO conversation_branches (conversation_id,id,parent_branch_id,fork_message_id,status,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,'active',1,20,20)",
+            params![conversation_id.to_string(),child_branch.to_string(),parent_branch.to_string(),messages[0].message_id.to_string()],
+        ).expect("branch");
+        super::super::memory_branch_adapter::seed_branch_space_in(
+            &transaction,
+            conversation_id,
+            parent_branch,
+            child_branch,
+            messages[0].message_id,
+            true,
+        )
+        .expect("seed");
+        let child_id = MemoryId::from_uuid(uuid::Uuid::new_v5(
+            &child_branch.as_uuid(),
+            original_id.as_uuid().as_bytes(),
+        ));
+        let projection: (String, Vec<u8>) = transaction
+            .query_row(
+                "SELECT source_text,vector FROM memory_embedding_projections WHERE memory_id = ?1",
+                [child_id.to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("copied projection");
+        assert_eq!(projection, ("Imported memory".to_owned(), vec![0_u8; 256]));
+        let source: String = transaction
+            .query_row(
+                "SELECT source_message_id FROM memory_items WHERE id = ?1",
+                [child_id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("source");
+        assert_eq!(source, messages[0].message_id.to_string());
+    }
+
+    #[test]
     fn ask_first_prompt_baseline_survives_restart() {
         let path = std::env::temp_dir().join(format!(
             "lettuce-memory-approval-{}.sqlite3",

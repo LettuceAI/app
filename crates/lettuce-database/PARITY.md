@@ -54,6 +54,8 @@ Facts about how `lettuce-database` relates to the legacy app (2.2.x). The crate 
 
 ## Deliberate differences from legacy
 
+- Forks copy durable run snapshots and checkpoint summaries instead of replaying the legacy capped event log (`old-code/src/core/storage/repo.ts:558-586`; the 50-event cap was `old-code/src-tauri/src/conversation_manager/memory.rs:6`). Imported conversations without runs keep their current items, matching `old-code/src/core/storage/repo.ts:547-556`. Forks never wait for memory work: dispatched unfinished runs supply their starting state and queued jobs have not changed the parent. Each pooled fork retains its seeded own space; legacy computed branch state and then discarded it when the new shared session attached to the pool (`old-code/src/core/storage/repo.ts:1670-1706`, `old-code/src-tauri/src/storage_manager/sessions.rs:361-373`).
+
 - Wrong-shaped provider or model JSON is recorded as a skip and the record kept. Legacy's frontend salvage dropped the whole provider (with every model on it) or model, and wrong headers or advanced settings also failed its typed Rust settings read.
 - A deleted character is removed from its groups instead of leaving a dangling id.
 - Legacy `companion_turn_effects` and `sync_v2_conflicts` rows are preserved verbatim in the run's provenance instead of being lost.

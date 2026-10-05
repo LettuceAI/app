@@ -948,6 +948,12 @@ pub(crate) fn sync_insert_branch(
         return Err(ConversationRepositoryError::NotFound);
     }
     history::insert_branch(transaction, &normalized_branch(branch))?;
+    crate::memory::memory_branch_adapter::create_empty_branch_space_in(
+        transaction,
+        branch.conversation_id,
+        parent,
+        branch.id,
+    )?;
     transaction
         .execute(
             "UPDATE conversations SET revision = revision + 1 WHERE id = ?1",
@@ -1326,6 +1332,14 @@ pub(crate) fn fork_losing_message_version(
             updated_at: source.message.created_at,
         },
     )?;
+    crate::memory::memory_branch_adapter::seed_branch_space_in(
+        transaction,
+        conversation_id,
+        branch_id,
+        fork,
+        parent,
+        true,
+    )?;
     let next: i64 = transaction
         .query_row(
             "SELECT next_timeline_ordinal FROM conversations WHERE id = ?1",
@@ -1421,6 +1435,14 @@ fn copy_chain(
         params![conversation_id.to_string(), fork.to_string()],
     )? {
         history::insert_branch(transaction, &branch)?;
+        crate::memory::memory_branch_adapter::seed_branch_space_in(
+            transaction,
+            conversation_id,
+            fork_point_branch,
+            fork,
+            fork_point,
+            true,
+        )?;
     }
     if let Some(holds_local) = notice {
         transaction
