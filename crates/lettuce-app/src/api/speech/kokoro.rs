@@ -132,14 +132,24 @@ pub async fn kokoro_blend(context: &ApiContext, request: dto::KokoroBlendRequest
 }
 
 pub async fn kokoro_phonemize(context: &ApiContext, request: dto::KokoroPhonemizeRequest) -> Result<dto::KokoroPhonemizationView, ApiError> {
-    if !["af_", "am_", "bf_", "bm_"].iter().any(|prefix| request.voice_id.starts_with(prefix)) { return Err(invalid_field("voice_id", "an English Kokoro voice is required")); }
+    kokoro_tokenize_preview(context, dto::KokoroTokenizePreviewRequest { variant: request.variant,
+        voice_blend: vec![dto::KokoroVoiceBlendInput { voice_id: request.voice_id, weight: 1.0 }], text: request.text }).await
+}
+
+pub async fn kokoro_tokenize_preview(context: &ApiContext, request: dto::KokoroTokenizePreviewRequest) -> Result<dto::KokoroPhonemizationView, ApiError> {
+    let voice_id = request.voice_blend.first().ok_or_else(|| invalid_field("voice_blend", "select a Kokoro voice"))?.voice_id.clone();
+    if request.voice_blend.iter().any(|voice| !["af_", "am_", "bf_", "bm_"].iter().any(|prefix| voice.voice_id.starts_with(prefix))) { return Err(invalid_field("voice_blend", "English Kokoro voices are required")); }
+    let specs = request.voice_blend.iter().map(|voice| lettuce_speech::KokoroVoiceBlendSpec { voice_id: voice.voice_id.clone(), weight: voice.weight }).collect::<Vec<_>>();
+    lettuce_speech::normalize_kokoro_voice_blend(&specs).map_err(|error| invalid_field("voice_blend", error.to_string()))?;
     context.blocking(move |context| {
-        let store = KokoroInstallStore::open(root(context)?).map_err(failed)?;
+        let root = root(context)?;
+        let store = KokoroInstallStore::open(&root).map_err(failed)?;
         let model = store.recorded_model(variant(&request.variant)?).map_err(failed)?;
-        let lexicon = store.materialize_lexicon().map_err(failed)?.map(|material| lettuce_speech::parse_kokoro_lexicon(material.bytes(), lettuce_speech::kokoro_voice_language(&request.voice_id)))
+        let lexicon = store.materialize_lexicon().map_err(failed)?.map(|material| lettuce_speech::parse_kokoro_lexicon(material.bytes(), lettuce_speech::kokoro_voice_language(&voice_id)))
             .transpose().map_err(|error| invalid_field("lexicon", error.to_string()))?.unwrap_or_default();
+        let lexicon_entry_count = u32::try_from(lexicon.len()).map_err(failed)?;
         let phonemes = crate::KokoroPhonemizationCoordinator::new(store).phonemize(&model, &lettuce_platform::EspeakNgProcess::from_path(),
-            &lettuce_speech::KokoroPhonemizationInput { voice_id: request.voice_id, text: request.text, lexicon })
+            &lettuce_speech::KokoroPhonemizationInput { voice_id: voice_id.clone(), text: request.text, lexicon })
             .map_err(|error| match error {
                 crate::KokoroPhonemizationCoordinatorError::Phonemization(lettuce_speech::KokoroPhonemizationError::Process(lettuce_platform::EspeakNgError::Unavailable)) =>
                     super::errors::speech_error(ApiErrorCode::Unavailable, dto::SpeechFailure::RuntimeMissing { runtime: dto::SpeechRuntimeKind::Espeak }, error.to_string()),
@@ -147,8 +157,32 @@ pub async fn kokoro_phonemize(context: &ApiContext, request: dto::KokoroPhonemiz
                 error => invalid_field("text", error.to_string()),
             })?;
         let tokens = |tokens: Vec<i64>| tokens.into_iter().map(|token| i32::try_from(token).map_err(failed)).collect::<Result<Vec<_>, _>>();
+        let chunk_lengths = lettuce_speech::kokoro_chunk_lengths(&phonemes.token_ids).into_iter().map(|length| u32::try_from(length).map_err(failed)).collect::<Result<Vec<_>, _>>()?;
+        let token_count = u32::try_from(phonemes.token_ids.len()).map_err(failed)?;
+        let warnings = token_preview_warnings(token_count, chunk_lengths.len());
         Ok(dto::KokoroPhonemizationView { normalized_text: phonemes.normalized_text, effective_text: phonemes.effective_text, language: phonemes.language,
+            primary_voice_id: voice_id, voice_blend: request.voice_blend, lexicon_path: root.join("lexicon.json").to_string_lossy().into_owned(), lexicon_entry_count,
+            token_count, chunk_lengths, warnings,
             used_lexicon_entries: phonemes.used_lexicon_entries, token_ids: tokens(phonemes.token_ids)?,
             segments: phonemes.segments.into_iter().map(|segment| Ok(dto::KokoroPhonemizationSegmentView { kind: segment.kind, source_text: segment.source_text, ipa: segment.ipa, token_ids: tokens(segment.token_ids)? })).collect::<Result<Vec<_>, ApiError>>()? })
     }).await
+}
+
+fn token_preview_warnings(tokens: u32, chunks: usize) -> Vec<String> {
+    let mut warnings = Vec::new();
+    if tokens > 400 { warnings.push("Long utterance: official Kokoro voices often degrade past roughly 400 tokens.".into()); }
+    if tokens > 510 { warnings.push("Sequence exceeds the single-pass 510-token limit and will be chunked.".into()); }
+    if chunks > 1 { warnings.push(format!("Preview will synthesize across {chunks} chunks with crossfading.")); }
+    warnings
+}
+
+#[cfg(test)]
+mod preview_tests {
+    #[test]
+    fn preview_warnings_match_legacy_token_boundaries() {
+        assert!(super::token_preview_warnings(400, 1).is_empty());
+        assert_eq!(super::token_preview_warnings(401, 1).len(), 1);
+        assert_eq!(super::token_preview_warnings(510, 1).len(), 1);
+        assert_eq!(super::token_preview_warnings(511, 2).len(), 3);
+    }
 }

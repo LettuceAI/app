@@ -157,6 +157,7 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::speech::kokoro_uninstall_voice,
             commands::speech::kokoro_blend,
             commands::speech::kokoro_phonemize,
+            commands::speech::kokoro_tokenize_preview,
             commands::speech::audio_providers_list,
             commands::speech::audio_provider_update,
             commands::speech::audio_provider_delete,

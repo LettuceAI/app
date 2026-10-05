@@ -32,7 +32,7 @@ pub use providers::{voice_design_preview, audio_provider_voices_search, audio_pr
 
 pub use synthesize::tts_synthesize;
 
-pub use kokoro::{kokoro_inventory, kokoro_variants, kokoro_voices_installed, kokoro_voices_available, kokoro_install_model, kokoro_install_voices, kokoro_uninstall_model, kokoro_uninstall_voice, kokoro_blend, kokoro_phonemize};
+pub use kokoro::{kokoro_inventory, kokoro_variants, kokoro_voices_installed, kokoro_voices_available, kokoro_install_model, kokoro_install_voices, kokoro_uninstall_model, kokoro_uninstall_voice, kokoro_blend, kokoro_phonemize, kokoro_tokenize_preview};
 
 pub use learning::{asr_voice_example_suggest, asr_learning_export, asr_vocabulary_list, asr_corrections_list, asr_ignored_suggestions_list, asr_voice_examples_list, asr_vocabulary_delete, asr_correction_delete, asr_voice_example_delete, asr_suggestions};
 

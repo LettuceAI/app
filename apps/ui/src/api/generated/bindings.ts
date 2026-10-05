@@ -157,6 +157,7 @@ export const commands = {
 	kokoroUninstallVoice: (request: KokoroVoiceRequest) => typedError<boolean, ApiError>(__TAURI_INVOKE("kokoro_uninstall_voice", { request })),
 	kokoroBlend: (request: KokoroBlendRequest) => typedError<KokoroBlendView, ApiError>(__TAURI_INVOKE("kokoro_blend", { request })),
 	kokoroPhonemize: (request: KokoroPhonemizeRequest) => typedError<KokoroPhonemizationView, ApiError>(__TAURI_INVOKE("kokoro_phonemize", { request })),
+	kokoroTokenizePreview: (request: KokoroTokenizePreviewRequest) => typedError<KokoroPhonemizationView, ApiError>(__TAURI_INVOKE("kokoro_tokenize_preview", { request })),
 	audioProvidersList: () => typedError<AudioProviderView[], ApiError>(__TAURI_INVOKE("audio_providers_list")),
 	audioProviderUpdate: (request: AudioProviderUpdateRequest) => typedError<AudioProviderView, ApiError>(__TAURI_INVOKE("audio_provider_update", { request })),
 	audioProviderDelete: (request: AudioProviderDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("audio_provider_delete", { request })),
@@ -1911,11 +1912,24 @@ export type KokoroPhonemizationView = {
 	used_lexicon_entries: string[],
 	segments: KokoroPhonemizationSegmentView[],
 	token_ids: number[],
+	primary_voice_id: string,
+	voice_blend: KokoroVoiceBlendInput[],
+	lexicon_path: string,
+	lexicon_entry_count: number,
+	token_count: number,
+	chunk_lengths: number[],
+	warnings: string[],
 };
 
 export type KokoroPhonemizeRequest = {
 	variant: string,
 	voice_id: string,
+	text: string,
+};
+
+export type KokoroTokenizePreviewRequest = {
+	variant: string,
+	voice_blend: KokoroVoiceBlendInput[],
 	text: string,
 };
 

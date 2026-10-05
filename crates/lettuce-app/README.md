@@ -540,3 +540,5 @@ The speech library API lists, updates and removes audio provider and user voice 
 Voice search delegates ElevenLabs queries to the existing provider control adapter without caching the results. Voice-design previews execute inline with shutdown cancellation and a temporary media asset for each result; the API returns the generated voice identifier, duration and asset URL.
 
 Message playback resolves the selected visible message and the character's current voice, removes hidden thoughts and scene instructions, and substitutes the current display names. Admission freezes that narration and voice. Retained synthesis reuses completed audio with matching provider, model, voice, prompt and text; a new request receipt refers to the original completed job. ASR voice examples also support read-only correction suggestions.
+
+Kokoro tokenization preview returns the legacy diagnostic fields, including the selected blend, effective lexicon, token chunks and long-utterance warnings. It prepares text without loading the synthesis model.

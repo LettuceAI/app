@@ -339,3 +339,9 @@ pub async fn message_speak(context: State<'_, ApiContext>, request: dto::Message
 pub async fn asr_voice_example_suggest(context: State<'_, ApiContext>, request: dto::AsrLearningItemRequest) -> Result<Option<dto::AsrSuggestionView>, ApiError> {
     lettuce_app::api::asr_voice_example_suggest(&context, request).await
 }
+
+#[tauri::command]
+#[specta::specta]
+pub async fn kokoro_tokenize_preview(context: State<'_, ApiContext>, request: dto::KokoroTokenizePreviewRequest) -> Result<dto::KokoroPhonemizationView, ApiError> {
+    lettuce_app::api::kokoro_tokenize_preview(&context, request).await
+}

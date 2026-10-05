@@ -69,7 +69,12 @@ pub struct KokoroPhonemizeRequest { pub variant: String, pub voice_id: String, p
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
-pub struct KokoroPhonemizationView { pub normalized_text: String, pub effective_text: String, pub language: String, pub used_lexicon_entries: Vec<String>, pub segments: Vec<KokoroPhonemizationSegmentView>, pub token_ids: Vec<i32>, }
+pub struct KokoroTokenizePreviewRequest { pub variant: String, pub voice_blend: Vec<KokoroVoiceBlendInput>, pub text: String, }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct KokoroPhonemizationView { pub normalized_text: String, pub effective_text: String, pub language: String, pub used_lexicon_entries: Vec<String>, pub segments: Vec<KokoroPhonemizationSegmentView>, pub token_ids: Vec<i32>, pub primary_voice_id: String, pub voice_blend: Vec<KokoroVoiceBlendInput>, pub lexicon_path: String, pub lexicon_entry_count: u32, pub token_count: u32, pub chunk_lengths: Vec<u32>, pub warnings: Vec<String>, }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
