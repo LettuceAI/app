@@ -337,6 +337,11 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
             .await
             .map_err(stage("provider models"))?;
         backend
+            .legacy_audio_importer(self.secrets)
+            .execute_database_import(&admission, import, at)
+            .await
+            .map_err(stage("audio"))?;
+        backend
             .legacy_character_importer()
             .execute_database_import(&admission, import, at)
             .map_err(stage("characters"))?;
@@ -344,11 +349,6 @@ impl<'a, S: SecretStore + ?Sized> LegacyRestoreCoordinator<'a, S> {
             .legacy_group_importer()
             .execute_database_import(&admission, import, at)
             .map_err(stage("groups"))?;
-        backend
-            .legacy_audio_importer(self.secrets)
-            .execute_database_import(&admission, import, at)
-            .await
-            .map_err(stage("audio"))?;
         crate::legacy::legacy_app_secret_import::store_legacy_app_secrets(
             self.secrets,
             &source.authored_plan().configuration.secrets,

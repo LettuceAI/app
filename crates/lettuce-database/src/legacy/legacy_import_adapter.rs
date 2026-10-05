@@ -2335,6 +2335,10 @@ impl lettuce_transfer::CharacterPlanResolver for LegacyCharacterResolver<'_> {
         lettuce_types::VoiceProfileId::from_uuid(self.scope.uuid(planned.as_uuid()))
     }
 
+    fn audio_provider(&self, planned: lettuce_types::AudioProviderId) -> lettuce_types::AudioProviderId {
+        lettuce_types::AudioProviderId::from_uuid(self.scope.uuid(planned.as_uuid()))
+    }
+
     fn model(
         &self,
         planned: ModelProfileId,

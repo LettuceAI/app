@@ -568,9 +568,7 @@ fn merge_known(
     }
 }
 
-/// Legacy `characters.voice_config`: a user voice resolves to the imported
-/// voice profile, a provider voice has no profile row and is kept verbatim as
-/// an unresolved legacy locator.
+/// Resolves voice references while retaining absent provider locators.
 pub(crate) fn legacy_voice(
     raw: Option<String>,
     character_key: &str,

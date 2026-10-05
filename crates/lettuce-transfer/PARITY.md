@@ -122,6 +122,8 @@ Facts about how `lettuce-transfer` relates to the legacy app (2.2.x): what each 
 
 ## History
 
+- Character provider-voice references receive the same source ID scope as imported audio accounts. Standalone character plans retain the referenced account ID, while missing accounts preserve the authored locator for repair.
+
 - The crate grew in slices: the backup envelope and archive store, the configuration and authored snapshot, media, ASR, conversation history and runtime, jobs, usage, outbox, companion state and effects, memory, projections and dynamic memory, then restore decoding, staging and admission; on the legacy side the preflight contract, per-domain planners, the compatibility seal, staging, secret transfer and materialization stages.
 - The previous README called domain-row and secret export, profile restore and cutover, record mapping, media discovery and import writes "later slices"; they are implemented now (`lettuce-database` restore writer and import adapter, `lettuce-app` coordinators).
 - The previous README said playground history travels in its own version 2 section. In the code it is a field of the provider graph document (`ProviderBackupGraph.playground_history`), like the legacy import audit records (`legacy_imports`) and creation records.

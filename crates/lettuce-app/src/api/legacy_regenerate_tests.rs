@@ -80,6 +80,10 @@ async fn restored_harness() -> (super::tests::Harness, Database) {
         app_version: "legacy".into(),
         source_hash: ContentHash::parse("ef".repeat(32)).expect("hash"),
         documents: vec![
+            document(LegacyBackupDocumentKind::AudioProviders, serde_json::json!([{
+                "id": id(8), "provider_type": "fish_speech", "label": "Local narrator",
+                "base_url": "http://127.0.0.1:8080", "created_at": 1, "updated_at": 1
+            }])),
             document(
                 LegacyBackupDocumentKind::ProviderCredentials,
                 serde_json::json!([{
@@ -112,7 +116,8 @@ async fn restored_harness() -> (super::tests::Harness, Database) {
             document(
                 LegacyBackupDocumentKind::Characters,
                 serde_json::json!([
-                    {"id": ada, "name": "Ada", "created_at": 1, "updated_at": 1},
+                    {"id": ada, "name": "Ada", "created_at": 1, "updated_at": 1,
+                     "voice_config": serde_json::to_string(&serde_json::json!({"source": "provider", "providerId": id(8), "voiceId": "legacy-narrator", "modelId": "server-default", "voiceName": "Narrator"})).expect("voice")},
                     {"id": grace, "name": "Grace", "created_at": 1, "updated_at": 1}
                 ]),
             ),
@@ -370,4 +375,24 @@ async fn imported_candidates_and_the_unknown_speaker_survive_a_backup_round_trip
         .filter(|candidate| candidate.model.is_none())
         .count();
     assert_eq!(imported, 2);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn message_playback_resolves_the_provider_voice_from_a_legacy_restore() {
+    use lettuce_speech::SynthesisRepository;
+    let (harness, database) = restored_harness().await;
+    let graph = database.read_provider_backup_graph().expect("imported graph");
+    let message = graph.conversation_history.conversations.iter().flat_map(|conversation| &conversation.messages)
+        .find(|message| message.candidates.iter().any(|candidate| candidate.parts.iter().any(|part|
+            matches!(part, lettuce_conversations::MessagePart::Text { text } if text == "Imported reply"))))
+        .expect("imported assistant message");
+    let accepted = message_speak(&harness.context, lettuce_contracts::MessageSpeakRequest {
+        request_id: lettuce_types::RequestId::new().to_string(), message_id: message.message.id.to_string(),
+        voice_override: None, swap_places: false,
+    }).await.expect("play imported message");
+    let frozen = SynthesisRepository::get(&database, accepted.job_id.parse().expect("job")).expect("synthesis");
+    assert_eq!(frozen.request.voice_id, "legacy-narrator");
+    assert_eq!(frozen.request.provider.label, "Local narrator");
+    assert_eq!(frozen.request.model_id, "server-default");
+    assert_eq!(frozen.request.text, "Imported reply");
 }

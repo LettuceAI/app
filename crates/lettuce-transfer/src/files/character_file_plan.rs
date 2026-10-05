@@ -776,6 +776,7 @@ impl CharacterPlanResolver for FileResolver<'_> {
     fn voice_profile(&self, planned: VoiceProfileId) -> VoiceProfileId {
         planned
     }
+    fn audio_provider(&self, planned: lettuce_types::AudioProviderId) -> lettuce_types::AudioProviderId { planned }
 
     fn model(&self, planned: ModelProfileId) -> Result<ModelProfileId, CharacterPlanError> {
         Ok(planned)
