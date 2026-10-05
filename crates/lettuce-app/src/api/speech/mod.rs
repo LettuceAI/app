@@ -21,7 +21,6 @@ mod tests;
 pub use dictation::{dictation_cancel, dictation_start, dictation_stop};
 pub use host::{InstalledSpeech, NoSpeech, SpeechHost};
 pub(crate) use dictation::sweep_scratch;
-pub(crate) use providers::sweep_orphan_audio_secrets;
 pub(crate) use state::SpeechApiState;
 pub(crate) use transcribe::transcription_view;
 pub use transcribe::transcribe_file;

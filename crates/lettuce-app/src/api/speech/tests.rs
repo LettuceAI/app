@@ -1336,48 +1336,6 @@ fn provider_create_request(key: &str) -> dto::AudioProviderCreateRequest {
 }
 
 #[tokio::test]
-async fn provider_create_reuses_the_crash_secret_and_replays_after_deletion() {
-    use lettuce_settings::{SecretPurpose, SecretRecord};
-    let env = env(TtsMode::Speak, AsrMode::Text("Hello."), None);
-    let context = &env.context;
-    let request = provider_create_request("provider-create");
-    let (id, owner, reference) = super::providers::provider_create_ids(&request.client_operation_id);
-    context.secret_store().put(SecretRecord::new(reference, SecretPurpose::AudioApiKey { owner }),
-        SecretValue::new("crashed-before-database").expect("secret"), None).await.expect("crash point after put");
-    let restarted = context.restarted();
-    let first = super::audio_provider_create(&restarted, request.clone()).await.expect("retry completes create after restart");
-    assert_eq!(first.id, id.to_string());
-    assert_eq!(super::audio_provider_create(context, request.clone()).await.expect("replay"), first);
-    let keys = context.secret_store().audio_api_keys().await.expect("keys");
-    assert_eq!(keys.len(), 1);
-    assert_eq!(keys[0].generation, 2, "successful replay does not overwrite the secret");
-    let mut changed = request.clone(); changed.label = "Different".into();
-    assert_eq!(super::audio_provider_create(context, changed).await.expect_err("conflict").code, ApiErrorCode::Conflict);
-    assert_eq!(context.secret_store().audio_api_keys().await.expect("keys")[0].generation, 2);
-    super::audio_provider_delete(context, dto::AudioProviderDeleteRequest { provider_id: first.id.clone(), expected_revision: first.revision }).await.expect("delete");
-    assert_eq!(super::audio_provider_create(context, request).await.expect("original result after deletion"), first);
-    assert!(super::audio_providers_list(context).await.expect("providers").iter().all(|provider| provider.id != first.id));
-    assert!(context.secret_store().audio_api_keys().await.expect("deleted key").is_empty());
-}
-
-#[tokio::test]
-async fn startup_sweeps_orphan_audio_secrets_and_preserves_committed_owners() {
-    use lettuce_settings::{SecretPurpose, SecretRecord};
-    let env = env(TtsMode::Speak, AsrMode::Text("Hello."), None);
-    let context = &env.context;
-    let retained = super::audio_provider_create(context, provider_create_request("retained-create")).await.expect("provider");
-    let (_, owner, reference) = super::providers::provider_create_ids("orphan-create");
-    context.secret_store().put(SecretRecord::new(reference, SecretPurpose::AudioApiKey { owner }),
-        SecretValue::new("orphan-canary").expect("secret"), None).await.expect("orphan");
-    assert_eq!(context.secret_store().audio_api_keys().await.expect("keys").len(), 2);
-    let workers = crate::api::startup(context).await.expect("startup sweep");
-    assert!(workers.steps().contains(&crate::api::StartupStep::SweepOrphanAudioSecrets));
-    assert_eq!(context.secret_store().audio_api_keys().await.expect("keys").len(), 1);
-    assert!(super::audio_providers_list(context).await.expect("providers").iter().any(|provider| provider.id == retained.id));
-    workers.stop().await;
-}
-
-#[tokio::test]
 async fn voice_create_examples_and_library_import_have_receipts() {
     let env = env(TtsMode::Speak, AsrMode::Text("Hello."), None);
     let context = &env.context;
@@ -1401,49 +1359,6 @@ async fn voice_create_examples_and_library_import_have_receipts() {
     assert_eq!(examples.len(), 2);
     super::asr_voice_example_delete(context, dto::AsrLearningItemRequest { id: saved.id }).await.expect("delete example");
     assert_eq!(super::asr_voice_example_save(context, example).await.expect("example replay after deletion").audio.asset_id, asset.to_string());
-}
-
-struct RefusingAudioSecretStore {
-    store: Arc<dyn lettuce_settings::SecretStore>,
-    refuse_inventory: bool,
-}
-
-#[async_trait]
-impl lettuce_settings::SecretStore for RefusingAudioSecretStore {
-    async fn audio_api_keys(&self) -> Result<Vec<lettuce_settings::SecretStatus>, lettuce_settings::SecretStoreError> {
-        if self.refuse_inventory { return Err(lettuce_settings::SecretStoreError::Unavailable(lettuce_settings::SecretAvailability::BackendUnavailable)); }
-        self.store.audio_api_keys().await
-    }
-    async fn put(&self, record: lettuce_settings::SecretRecord, value: SecretValue, expected: Option<u64>) -> Result<lettuce_settings::SecretStatus, lettuce_settings::SecretStoreError> {
-        self.store.put(record, value, expected).await
-    }
-    async fn load(&self, reference: &lettuce_settings::SecretRef, purpose: &lettuce_settings::SecretPurpose) -> Result<SecretValue, lettuce_settings::SecretStoreError> {
-        self.store.load(reference, purpose).await
-    }
-    async fn status(&self, reference: &lettuce_settings::SecretRef, purpose: &lettuce_settings::SecretPurpose) -> Result<lettuce_settings::SecretStatus, lettuce_settings::SecretStoreError> {
-        self.store.status(reference, purpose).await
-    }
-    async fn delete(&self, _: &lettuce_settings::SecretRef, _: &lettuce_settings::SecretPurpose, _: Option<u64>) -> Result<lettuce_settings::SecretStatus, lettuce_settings::SecretStoreError> {
-        Err(lettuce_settings::SecretStoreError::Unavailable(lettuce_settings::SecretAvailability::BackendUnavailable))
-    }
-}
-
-#[tokio::test]
-async fn startup_refuses_typed_audio_secret_inventory_or_delete_failures() {
-    use lettuce_settings::{SecretPurpose, SecretRecord};
-    for refuse_inventory in [true, false] {
-        let env = env(TtsMode::Speak, AsrMode::Text("Hello."), None);
-        let (_, owner, reference) = super::providers::provider_create_ids("startup-orphan");
-        env.context.secret_store().put(SecretRecord::new(reference, SecretPurpose::AudioApiKey { owner }),
-            SecretValue::new("orphan-canary").expect("secret"), None).await.expect("orphan");
-        let context = env.context.with_secret_store(Arc::new(RefusingAudioSecretStore {
-            store: env.context.secret_store().clone(), refuse_inventory,
-        }));
-        let error = crate::api::startup(&context).await.expect_err("startup cannot silently keep the orphan");
-        assert_eq!(error.code, ApiErrorCode::Unavailable);
-        assert_eq!(error.details, Some(ApiErrorDetails::Speech { failure: SpeechFailure::SecretStoreUnavailable }));
-        assert_eq!(env.context.secret_store().audio_api_keys().await.expect("original inventory").len(), 1);
-    }
 }
 
 #[tokio::test]
@@ -1470,16 +1385,6 @@ async fn legacy_learning_file_import_ingests_audio_once_and_replays_its_counted_
     assert_eq!(vocabulary[0].use_count, 7);
     std::fs::write(&source, b"{\"version\":2}").expect("changed request");
     assert_eq!(super::asr_learning_import(&env.context, request).await.expect_err("changed content conflicts").code, ApiErrorCode::Conflict);
-}
-
-#[tokio::test]
-async fn an_audio_secret_with_only_a_creation_receipt_is_retained_at_startup() {
-    use lettuce_speech::TtsConfigurationRepository;
-    let env = env(TtsMode::Speak, AsrMode::Text("Hello."), None);
-    let created = super::audio_provider_create(&env.context, provider_create_request("receipt-only-owner")).await.expect("create");
-    env.context.backend().database().delete_audio_provider(created.id.parse().expect("id"), lettuce_types::Revision::new(created.revision)).expect("metadata deletion without credential deletion");
-    super::sweep_orphan_audio_secrets(&env.context).await.expect("sweep");
-    assert_eq!(env.context.secret_store().audio_api_keys().await.expect("retained key").len(), 1);
 }
 
 #[tokio::test(start_paused = true)]
@@ -1547,4 +1452,51 @@ async fn provider_delete_reports_the_referencing_characters() {
     assert_eq!(details["characters"][0]["id"], character.id.to_string());
     assert_eq!(details["characters"][0]["name"], character.profile.name);
     assert!(database.get_audio_provider(provider.id).expect("get").is_some());
+}
+
+struct FailingPutSecretStore {
+    store: Arc<dyn lettuce_settings::SecretStore>,
+    refuse: Arc<AtomicBool>,
+}
+#[async_trait]
+impl lettuce_settings::SecretStore for FailingPutSecretStore {
+    async fn put(&self, record: lettuce_settings::SecretRecord, value: SecretValue, expected: Option<u64>) -> Result<lettuce_settings::SecretStatus, lettuce_settings::SecretStoreError> {
+        if self.refuse.load(Ordering::SeqCst) { return Err(lettuce_settings::SecretStoreError::Unavailable(lettuce_settings::SecretAvailability::BackendUnavailable)); }
+        self.store.put(record, value, expected).await
+    }
+    async fn load(&self, reference: &lettuce_settings::SecretRef, purpose: &lettuce_settings::SecretPurpose) -> Result<SecretValue, lettuce_settings::SecretStoreError> { self.store.load(reference, purpose).await }
+    async fn status(&self, reference: &lettuce_settings::SecretRef, purpose: &lettuce_settings::SecretPurpose) -> Result<lettuce_settings::SecretStatus, lettuce_settings::SecretStoreError> { self.store.status(reference, purpose).await }
+    async fn delete(&self, reference: &lettuce_settings::SecretRef, purpose: &lettuce_settings::SecretPurpose, expected: Option<u64>) -> Result<lettuce_settings::SecretStatus, lettuce_settings::SecretStoreError> { self.store.delete(reference, purpose, expected).await }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn provider_create_commits_before_secret_put_and_replay_recovers_the_missing_key() {
+    let env = env(TtsMode::Speak, AsrMode::Text("text"), None);
+    let refuse = Arc::new(AtomicBool::new(true));
+    let context = env.context.with_secret_store(Arc::new(FailingPutSecretStore { store: env.context.secret_store().clone(), refuse: refuse.clone() }));
+    let request = provider_create_request("commit-before-secret");
+    let error = super::audio_provider_create(&context, request.clone()).await.expect_err("secret put interrupted");
+    assert_eq!(error.details, Some(ApiErrorDetails::Speech { failure: SpeechFailure::SecretStoreUnavailable }));
+    let listed = super::audio_providers_list(&context).await.expect("visible provider");
+    assert_eq!(listed.len(), 1, "metadata and receipt commit before the secret write");
+    assert!(!super::audio_provider_credential_status(&context, dto::AudioProviderRequest { provider_id: listed[0].id.clone() }).await.expect("missing key status").available);
+    let id = listed[0].id.clone();
+    let error = super::audio_provider_verify(&context, dto::AudioProviderVerifyRequest::Saved { provider_id: id.clone() }).await.expect_err("missing key");
+    assert_eq!(error.details, Some(ApiErrorDetails::Speech { failure: SpeechFailure::SecretMissing }));
+    refuse.store(false, Ordering::SeqCst);
+    let replay = super::audio_provider_create(&context.restarted(), request.clone()).await.expect("fills missing key");
+    assert_eq!(replay.id, id);
+    assert!(replay.has_api_key);
+    assert_eq!(super::audio_providers_list(&context).await.expect("one provider").len(), 1);
+    let (_, owner, reference) = super::providers::provider_create_ids(&request.client_operation_id);
+    let purpose = lettuce_settings::SecretPurpose::AudioApiKey { owner };
+    assert_eq!(context.secret_store().status(&reference, &purpose).await.expect("status").generation, 1);
+    super::audio_provider_create(&context, request).await.expect("replay without overwrite");
+    assert_eq!(context.secret_store().status(&reference, &purpose).await.expect("status").generation, 1);
+    let (left, right) = tokio::join!(super::audio_provider_create(&context, provider_create_request("concurrent-left")), super::audio_provider_create(&context, provider_create_request("concurrent-right")));
+    assert_ne!(left.expect("left").id, right.expect("right").id);
+    for key in ["concurrent-left", "concurrent-right"] {
+        let (_, owner, reference) = super::providers::provider_create_ids(key);
+        assert!(context.secret_store().load(&reference, &lettuce_settings::SecretPurpose::AudioApiKey { owner }).await.is_ok());
+    }
 }

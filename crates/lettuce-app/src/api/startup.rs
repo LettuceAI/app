@@ -26,7 +26,6 @@ const LEGACY_FOLDER: &str = "lettuce";
 /// The steps `startup` runs, in order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StartupStep {
-    SweepOrphanAudioSecrets,
     RecoverAfterRestart,
     CompletePendingRewinds,
     DetectLegacyDatabase,
@@ -130,8 +129,6 @@ impl ApiWorkers {
 /// needs them.
 pub async fn startup(context: &ApiContext) -> Result<ApiWorkers, ApiError> {
     let steps: Steps = Arc::new(Mutex::new(Vec::new()));
-    super::speech::sweep_orphan_audio_secrets(context).await?;
-    record(&steps, StartupStep::SweepOrphanAudioSecrets);
     let feed = JobFeed::start(context).await?;
     let conversation_feed = ConversationFeed::start(context).await?;
     context

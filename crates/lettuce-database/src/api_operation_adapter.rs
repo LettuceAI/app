@@ -52,14 +52,6 @@ pub(crate) fn receipts_in(connection: &Connection) -> Result<Vec<BackupApiOperat
 }
 
 impl Database {
-    pub fn audio_secret_owner_retained(&self, owner: lettuce_settings::SecretOwnerId) -> Result<bool, ApiOperationError> {
-        self.connection().map_err(storage)?.query_row(
-            "SELECT EXISTS(SELECT 1 FROM audio_providers WHERE secret_owner_id=?1) OR EXISTS(
-                SELECT 1 FROM api_operation_receipts WHERE command='audio_provider_create' AND json_extract(result_json,'$.value.id')=?1)",
-            [owner.as_uuid().to_string()], |row| row.get(0),
-        ).map_err(storage)
-    }
-
     pub fn lookup_api_operation(&self, command: &str, key: &str) -> Result<Option<BackupApiOperationReceipt>, ApiOperationError> {
         let connection = self.connection().map_err(storage)?;
         lookup_in(&connection, command, key)

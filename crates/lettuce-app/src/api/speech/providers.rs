@@ -397,15 +397,34 @@ fn secret_store_failure(error: lettuce_settings::SecretStoreError) -> ApiError {
     }
 }
 
+fn fill_missing_provider_key(context: &ApiContext, provider: &AudioProvider, credential: Option<SecretValue>) -> Result<(), ApiError> {
+    let (Some(reference), Some(value)) = (provider.api_key_ref, credential) else { return Ok(()); };
+    tokio::runtime::Handle::current().block_on(async {
+        let store = context.secret_store();
+        let purpose = lettuce_settings::SecretPurpose::AudioApiKey { owner: provider.secret_owner_id };
+        let status = store.status(&reference, &purpose).await.map_err(secret_store_failure)?;
+        if status.state == lettuce_settings::SecretState::Missing {
+            store.put(lettuce_settings::SecretRecord::new(reference, purpose), value, None).await.map_err(secret_store_failure)?;
+        }
+        Ok(())
+    })
+}
+
 pub async fn audio_provider_create(context: &ApiContext, request: dto::AudioProviderCreateRequest) -> Result<dto::AudioProviderView, ApiError> {
     super::operations::validate_key(&request.client_operation_id)?;
     let digest = super::operations::digest(&request)?;
     context.blocking(move |context| {
         let _creation = context.speech_state().provider_creation();
-        if let Some(result) = super::operations::replay(context, "audio_provider_create", &request.client_operation_id, &digest)? { return Ok(result); }
-        let config = configuration(request.draft.configuration);
+        let prior = super::operations::replay::<dto::AudioProviderView>(context, "audio_provider_create", &request.client_operation_id, &digest)?;
         let credential = request.draft.api_key.map(SecretValue::new).transpose()
             .map_err(|_| invalid_field("api_key", "the credential is invalid"))?;
+        if let Some(result) = prior {
+            if let Some(provider) = context.backend().database().get_audio_provider(parse_id(&result.id, "id")?).map_err(IntoApiError::into_api_error)? {
+                fill_missing_provider_key(context, &provider, credential)?;
+            }
+            return Ok(result);
+        }
+        let config = configuration(request.draft.configuration);
         crate::speech::tts_configuration::validate_secret_choice(&config, credential.is_some()).map_err(IntoApiError::into_api_error)?;
         let (id, owner, reference) = provider_create_ids(&request.client_operation_id);
         let provider = AudioProvider {
@@ -413,35 +432,11 @@ pub async fn audio_provider_create(context: &ApiContext, request: dto::AudioProv
             revision: lettuce_types::Revision::INITIAL, created_at: context.now(), updated_at: context.now(),
         };
         provider.validate().map_err(|error| invalid_field("draft", error.to_string()))?;
-        if let Some(value) = credential {
-            tokio::runtime::Handle::current().block_on(async {
-                let store = context.secret_store();
-                let purpose = lettuce_settings::SecretPurpose::AudioApiKey { owner };
-                let previous = store.status(&reference, &purpose).await.map_err(secret_store_failure)?;
-                let expected = (previous.state != lettuce_settings::SecretState::Missing).then_some(previous.generation);
-                store.put(lettuce_settings::SecretRecord::new(reference, purpose), value, expected).await.map_err(secret_store_failure)?;
-                Ok::<_, ApiError>(())
-            })?;
-        }
-        super::operations::commit(context, "audio_provider_create", &request.client_operation_id, &digest, |transaction| {
+        let result = super::operations::commit(context, "audio_provider_create", &request.client_operation_id, &digest, |transaction| {
             transaction.create_audio_provider(&provider).map_err(IntoApiError::into_api_error)?;
-            Ok(provider_view(provider))
-        })
-    }).await
-}
-
-pub(crate) async fn sweep_orphan_audio_secrets(context: &ApiContext) -> Result<(), ApiError> {
-    context.blocking(|context| {
-        let _creation = context.speech_state().provider_creation();
-        tokio::runtime::Handle::current().block_on(async {
-            let store = context.secret_store();
-            for status in store.audio_api_keys().await.map_err(secret_store_failure)? {
-                let lettuce_settings::SecretPurpose::AudioApiKey { owner } = status.purpose else { continue; };
-                if context.backend().database().audio_secret_owner_retained(owner)
-                    .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))? { continue; }
-                store.delete(&status.reference, &status.purpose, Some(status.generation)).await.map_err(secret_store_failure)?;
-            }
-            Ok(())
-        })
+            Ok(provider_view(provider.clone()))
+        })?;
+        fill_missing_provider_key(context, &provider, credential)?;
+        Ok(result)
     }).await
 }
