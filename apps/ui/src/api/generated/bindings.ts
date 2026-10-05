@@ -197,6 +197,7 @@ export const commands = {
 	audioProviderVoices: (request: AudioProviderRequest) => typedError<AudioVoiceView[], ApiError>(__TAURI_INVOKE("audio_provider_voices", { request })),
 	audioProviderVoicesSearch: (request: AudioProviderVoiceSearchRequest) => typedError<AudioVoiceView[], ApiError>(__TAURI_INVOKE("audio_provider_voices_search", { request })),
 	voiceDesignPreview: (request: VoiceDesignPreviewRequest) => typedError<VoiceDesignPreviewView[], ApiError>(__TAURI_INVOKE("voice_design_preview", { request })),
+	voiceDesignCreate: (request: VoiceDesignCreateRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("voice_design_create", { request })),
 	audioProviderVoicesRefresh: (request: AudioProviderRequest) => typedError<AudioVoiceView[], ApiError>(__TAURI_INVOKE("audio_provider_voices_refresh", { request })),
 	ttsModels: (request: TtsModelsRequest) => typedError<TtsModelView[], ApiError>(__TAURI_INVOKE("tts_models", { request })),
 	ttsVoiceDesignModels: (request: TtsModelsRequest) => typedError<TtsModelView[], ApiError>(__TAURI_INVOKE("tts_voice_design_models", { request })),
@@ -244,7 +245,7 @@ export type ApiError = {
  */
 export type ApiErrorCode = "not_found" | "conflict" | "invalid_input" | "unsupported" | "unavailable" | "cancelled" | "busy" | "internal" | "model_required" | "model_unavailable";
 
-export type ApiErrorDetails = { type: "invalid_field"; field: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "image"; failure: ImageFailureKind } | { type: "speech"; failure: SpeechFailure } | { type: "pending_memory_rewind"; conversation_id: string };
+export type ApiErrorDetails = { type: "invalid_field"; field: string } | { type: "captured_audio"; audio: AssetRef } | { type: "audio_provider_in_use"; characters: CharacterReferenceView[] } | { type: "operation_applied_record_deleted"; command: string; record_id: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "image"; failure: ImageFailureKind } | { type: "speech"; failure: SpeechFailure } | { type: "pending_memory_rewind"; conversation_id: string };
 
 /**
  *  Application-wide events the host broadcasts to every window.
@@ -354,6 +355,7 @@ export type AsrLearningExportRequest = {
 export type AsrLearningFilter = {
 	language?: string | null,
 	scopes?: string[],
+	user_approved_only?: boolean | null,
 };
 
 export type AsrLearningImportRequest = {
@@ -564,6 +566,11 @@ export type BuildVariant = "normal" | "cuda";
 export type CharacterPage = {
 	items: CharacterSummary[],
 	next_cursor: string | null,
+};
+
+export type CharacterReferenceView = {
+	id: string,
+	name: string,
 };
 
 export type CharacterSummary = {
@@ -1854,7 +1861,7 @@ export type JobGetRequest = {
 	job_id: string,
 };
 
-export type JobKindDto = "artifact_install" | "artifact_verify" | "runtime_prepare" | "model_load" | "memory_extraction" | "memory_consolidation" | "companion_growth" | "companion_consolidation" | "companion_soul_writer" | "conversation_generation" | "vector_index_build" | "creation_run" | "image_generate" | "media_transform" | "transfer_import" | "transfer_export" | "backup_export" | "backup_restore" | "sync_session" | "speech_transcribe" | "speech_synthesize" | "embedding_benchmark" | "maintenance" | "model_pull" | "models_folder_move";
+export type JobKindDto = "artifact_install" | "artifact_verify" | "runtime_prepare" | "model_load" | "memory_extraction" | "memory_consolidation" | "companion_growth" | "companion_consolidation" | "companion_soul_writer" | "conversation_generation" | "vector_index_build" | "creation_run" | "image_generate" | "media_transform" | "transfer_import" | "transfer_export" | "backup_export" | "backup_restore" | "sync_session" | "speech_transcribe" | "speech_synthesize" | "speech_voice_create" | "embedding_benchmark" | "maintenance" | "model_pull" | "models_folder_move";
 
 export type JobPage = {
 	items: JobView[],
@@ -1885,7 +1892,7 @@ export type JobProgressUnit = "bytes" | "items" | "permille";
  *  `ModelInstalled` names a downloaded model's path and, when the download
  *  asked for one, the llama.cpp model it became.
  */
-export type JobResultDto = { type: "artifact_installed" } | { type: "asset"; asset: AssetRef } | { type: "transcription"; transcription: TranscriptionView } | { type: "generation_turn"; turn_id: string } | { type: "conversation"; conversation_id: string } | { type: "group"; group_id: string } | { type: "character"; character_id: string } | { type: "model_profile"; model_profile_id: string } | { type: "model_installed"; model_path: string; model_profile_id: string | null } | { type: "model_pulled"; model: string } | { type: "models_folder_moved"; path: string; moved_entries: number; rewired_models: number } | 
+export type JobResultDto = { type: "voice_created"; voice_id: string } | { type: "artifact_installed" } | { type: "asset"; asset: AssetRef } | { type: "transcription"; transcription: TranscriptionView } | { type: "generation_turn"; turn_id: string } | { type: "conversation"; conversation_id: string } | { type: "group"; group_id: string } | { type: "character"; character_id: string } | { type: "model_profile"; model_profile_id: string } | { type: "model_installed"; model_path: string; model_profile_id: string | null } | { type: "model_pulled"; model: string } | { type: "models_folder_moved"; path: string; moved_entries: number; rewired_models: number } | 
 /**  The text a help-me-reply or scene prompt job wrote, cleaned. */
 { type: "generated_text"; text: string } | 
 /**  The images an image generation job stored. */
@@ -3294,13 +3301,16 @@ export type SpeakerSelectionPreviewRequest = {
  *  Why a speech call or job failed, where the user can act on it. Every
  *  variant but `RetriesExhausted` is terminal at once: retrying cannot fix it.
  */
-export type SpeechFailure = { type: "model_required"; model: SpeechModelKind } | { type: "secret_missing" } | { type: "secret_store_unavailable" } | { type: "voice_missing" } | { type: "runtime_missing"; runtime: SpeechRuntimeKind } | { type: "retries_exhausted" } | { type: "microphone_permission_denied" } | { type: "no_microphone" } | { type: "no_audio_captured" };
+export type SpeechFailure = { type: "model_required"; model: SpeechModelKind } | { type: "voice_creation_outcome_unknown" } | { type: "voice_creation_provider_rejected"; status: number } | { type: "secret_missing" } | { type: "secret_store_unavailable" } | { type: "voice_missing" } | { type: "runtime_missing"; runtime: SpeechRuntimeKind } | { type: "retries_exhausted"; cause: SpeechTransientFailure } | { type: "microphone_permission_denied" } | { type: "no_microphone" } | { type: "no_audio_captured" };
 
 /**  The local speech model a job or call needs installed. */
 export type SpeechModelKind = "whisper" | "kokoro";
 
 /**  A runtime a local speech engine needs on the device. */
 export type SpeechRuntimeKind = "espeak" | "onnx_runtime";
+
+/**  The final failure before the bounded speech retry budget was exhausted. */
+export type SpeechTransientFailure = { type: "unavailable" } | { type: "network_unavailable" } | { type: "provider_unavailable"; status: number };
 
 export type ThymosStatus = { type: "not_installed" } | { type: "installed"; source_revision: string } | { type: "damaged" };
 
@@ -3323,7 +3333,8 @@ export type TimelineMessage = {
 };
 
 /**
- *  Transcribes a picked audio file. `request_id` is the idempotency key:
+ *  Transcribes a picked audio file or a managed asset URL (such as a saved
+ *  dictation returned after admission failure). `request_id` is the idempotency key:
  *  repeating the request returns its job, another request under the same id
  *  is `Conflict`. `model_id` defaults to the dictation model.
  */
@@ -3426,6 +3437,18 @@ export type UserVoiceView = {
 	voice_id: string,
 	prompt: string | null,
 	revision: number,
+};
+
+/**
+ *  Creates a provider voice from a selected design preview. Saving it to
+ *  the user's voice library is a separate operation.
+ */
+export type VoiceDesignCreateRequest = {
+	client_operation_id: string,
+	provider_id: string,
+	generated_voice_id: string,
+	name: string,
+	description: string,
 };
 
 export type VoiceDesignPreviewRequest = {
