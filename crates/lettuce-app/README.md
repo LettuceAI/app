@@ -544,3 +544,5 @@ Voice search delegates ElevenLabs queries to the existing provider control adapt
 Message playback resolves the selected visible message and the character's current voice, removes hidden thoughts and scene instructions, and substitutes the current display names. Admission freezes that narration and voice. Retained synthesis reuses completed audio with matching provider, model, voice, prompt and text; a new request receipt refers to the original completed job. ASR voice examples also support read-only correction suggestions.
 
 Kokoro tokenization preview returns the legacy diagnostic fields, including the selected blend, effective lexicon, token chunks and long-utterance warnings. It prepares text without loading the synthesis model.
+
+Counted ASR writes take a `client_operation_id`. Matching command/key/digest retries return the original result even after edits or deletion; reusing the key for another request returns `Conflict`. Learning library import accepts a picked JSON file, supports current and legacy version-2 documents, ingests legacy audio through managed assets, and commits the counted library batch with its receipt.

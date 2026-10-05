@@ -6,6 +6,7 @@ use super::dictation::DictationState;
 /// and whether the retained legacy Whisper folder was looked at.
 pub(crate) struct SpeechApiState {
     dictation: DictationState,
+    learning_import: Mutex<()>,
     legacy_whisper_admitted: AtomicBool,
     legacy_whisper_admission: Arc<Mutex<()>>,
 }
@@ -14,6 +15,7 @@ impl Default for SpeechApiState {
     fn default() -> Self {
         Self {
             dictation: DictationState::default(),
+            learning_import: Mutex::new(()),
             legacy_whisper_admitted: AtomicBool::new(false),
             legacy_whisper_admission: Arc::new(Mutex::new(())),
         }
@@ -21,6 +23,12 @@ impl Default for SpeechApiState {
 }
 
 impl SpeechApiState {
+    pub(super) fn learning_import(&self) -> MutexGuard<'_, ()> {
+        self.learning_import.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+
+
     pub(super) const fn dictation(&self) -> &DictationState {
         &self.dictation
     }

@@ -89,6 +89,10 @@ impl<R: AsrLearningRepository + MediaAssetRepository + MediaBlobRepository + ?Si
         &self,
         document: AsrLearningDocument,
     ) -> Result<AsrLearningImportReceipt, AsrLearningError> {
+        self.library.import_learning_batch(self.prepare_import(document)?)
+    }
+
+    pub fn prepare_import(&self, document: AsrLearningDocument) -> Result<AsrLearningBatch, AsrLearningError> {
         document.validate()?;
         for expected in &document.audio_assets {
             self.validate_audio_asset(expected)?;
@@ -138,7 +142,7 @@ impl<R: AsrLearningRepository + MediaAssetRepository + MediaBlobRepository + ?Si
                 example
             })
             .collect();
-        self.library.import_learning_batch(AsrLearningBatch {
+        Ok(AsrLearningBatch {
             vocabulary,
             corrections,
             ignored_suggestions,

@@ -348,3 +348,88 @@ pub struct AsrLearningExportRequest {
     #[serde(default)]
     pub filter: AsrLearningFilter,
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct AsrVocabularySaveRequest {
+    pub client_operation_id: String,
+    pub id: Option<String>,
+    pub term: String,
+    pub language: Option<String>,
+    pub category: Option<String>,
+    pub scope: Option<String>,
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
+    pub priority: Option<i64>,
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
+    pub use_count: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct AsrCorrectionSaveRequest {
+    pub client_operation_id: String,
+    pub id: Option<String>,
+    pub wrong: String,
+    pub correct: String,
+    pub language: Option<String>,
+    pub scope: Option<String>,
+    pub confidence: Option<f64>,
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
+    pub use_count: Option<u64>,
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
+    pub accepted_count: Option<u64>,
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
+    pub rejected_count: Option<u64>,
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
+    pub seen_count: Option<u64>,
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
+    pub last_seen_at: Option<i64>,
+    pub user_approved: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct AsrSuggestionWriteRequest {
+    pub client_operation_id: String,
+    pub suggestion: AsrSuggestionView,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct AsrVoiceExampleSaveRequest {
+    pub client_operation_id: String,
+    pub id: Option<String>,
+    pub audio_asset_id: String,
+    pub expected_text: String,
+    pub whisper_output: Option<String>,
+    pub language: Option<String>,
+    pub scope: Option<String>,
+    pub vocabulary_term_id: Option<String>,
+    pub correction_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct AsrLearningImportRequest {
+    pub client_operation_id: String,
+    pub source: crate::FileSource,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct AsrLearningImportView {
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub vocabulary_count: u64,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub correction_count: u64,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub ignored_suggestion_count: u64,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub voice_example_count: u64,
+}

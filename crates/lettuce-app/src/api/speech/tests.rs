@@ -1078,7 +1078,7 @@ async fn queued_local_synthesis_waits_for_folder_move_and_preload_returns_busy()
         voice_id: "af_heart".into(), prompt: None, text: "queued".into(), retained: true,
     }).await.expect("synthesis");
     crate::api::local_models_dir_set(&env.context, dto::LocalModelsDirSetRequest {
-        client_operation_id: "speech-folder-move".into(), path: env.root.join("other").to_string_lossy().into_owned(), move_existing: false,
+        client_operation_id: "speech-folder-move".into(), path: env.root.with_file_name(format!("{}-other", env.root.file_name().expect("name").to_string_lossy())).to_string_lossy().into_owned(), move_existing: false,
     }).await.expect("move admission");
     let id: JobId = accepted.job_id.parse().expect("job id");
     let snapshot = env.context.backend().database().get(id).expect("get").expect("job");
@@ -1275,4 +1275,41 @@ async fn retained_audio_from_a_previous_provider_configuration_is_not_reused() {
     assert!(run_to_idle(&runner).await);
     assert_eq!(env.tts.calls.load(Ordering::SeqCst), 2);
     assert_eq!(super::tts_synthesize(&env.context, original).await.expect("original replay"), first);
+}
+
+#[tokio::test]
+async fn library_receipts_preserve_counts_and_original_results_after_edits_and_deletes() {
+    let env = env(TtsMode::Speak, AsrMode::Text("Hello."), None);
+    let context = &env.context;
+    let vocabulary = dto::AsrVocabularySaveRequest { client_operation_id: "vocabulary-create".into(), id: None, term: "Lettuce".into(), language: Some("en".into()), category: None, scope: None, priority: None, use_count: None };
+    let original = super::asr_vocabulary_save(context, vocabulary.clone()).await.expect("vocabulary");
+    assert_eq!(original.priority, 50);
+    let mut edit = vocabulary.clone(); edit.client_operation_id = "vocabulary-edit".into(); edit.id = Some(original.id.clone()); edit.term = "Lettuce AI".into();
+    let edited = super::asr_vocabulary_save(context, edit).await.expect("edit");
+    assert_eq!(edited.created_at, original.created_at);
+    assert_eq!(super::asr_vocabulary_save(context, vocabulary.clone()).await.expect("original snapshot"), original);
+    super::asr_vocabulary_delete(context, dto::AsrLearningItemRequest { id: original.id.clone() }).await.expect("delete");
+    assert_eq!(super::asr_vocabulary_save(context, vocabulary).await.expect("replay after deletion"), original);
+    let correction = dto::AsrCorrectionSaveRequest { client_operation_id: "correction-create".into(), id: None, wrong: "let us".into(), correct: "Lettuce".into(), language: Some("en".into()), scope: None, confidence: None, use_count: None, accepted_count: None, rejected_count: None, seen_count: None, last_seen_at: None, user_approved: Some(true) };
+    let first = super::asr_correction_save(context, correction.clone()).await.expect("correction");
+    assert_eq!((first.accepted_count, first.seen_count), (1, 1));
+    assert!((0.35..=0.98).contains(&first.confidence));
+    assert_eq!(super::asr_correction_save(context, correction.clone()).await.expect("replay"), first);
+    let mut changed = correction.clone(); changed.correct = "Different".into();
+    assert_eq!(super::asr_correction_save(context, changed).await.expect_err("different digest").code, ApiErrorCode::Conflict);
+    let suggestion = dto::AsrSuggestionWriteRequest { client_operation_id: "approve".into(), suggestion: dto::AsrSuggestionView {
+        wrong: first.wrong.clone(), correct: first.correct.clone(), language: first.language.clone(), scope: first.scope.clone(), confidence: first.confidence,
+        accepted_count: first.accepted_count, rejected_count: first.rejected_count, seen_count: first.seen_count,
+    } };
+    let approved = super::asr_suggestion_approve(context, suggestion.clone()).await.expect("approve");
+    assert_eq!((approved.accepted_count, approved.seen_count), (2, 2));
+    assert_eq!(super::asr_suggestion_approve(context, suggestion.clone()).await.expect("approval replay"), approved);
+    let mut ignored_request = suggestion; ignored_request.client_operation_id = "ignore".into();
+    let ignored = super::asr_suggestion_ignore(context, ignored_request.clone()).await.expect("ignore");
+    assert_eq!(ignored.ignored_count, 1);
+    assert_eq!(super::asr_suggestion_ignore(context, ignored_request.clone()).await.expect("ignore replay"), ignored);
+    ignored_request.client_operation_id = "ignore-again".into();
+    assert_eq!(super::asr_suggestion_ignore(context, ignored_request).await.expect("second distinct ignore").ignored_count, 2);
+    super::asr_correction_delete(context, dto::AsrLearningItemRequest { id: first.id.clone() }).await.expect("delete");
+    assert_eq!(super::asr_correction_save(context, correction).await.expect("original correction after delete"), first);
 }

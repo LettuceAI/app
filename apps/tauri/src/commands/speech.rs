@@ -357,3 +357,41 @@ pub async fn audio_provider_credential_status(context: State<'_, ApiContext>, re
 pub async fn audio_provider_api_key_rotate(context: State<'_, ApiContext>, request: dto::AudioProviderApiKeyRotateRequest) -> Result<dto::AudioProviderCredentialStatus, ApiError> {
     lettuce_app::api::audio_provider_api_key_rotate(&context, request).await
 }
+
+
+
+#[tauri::command]
+#[specta::specta]
+pub async fn asr_vocabulary_save(context: State<'_, ApiContext>, request: dto::AsrVocabularySaveRequest) -> Result<dto::AsrVocabularyView, ApiError> {
+    lettuce_app::api::asr_vocabulary_save(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn asr_correction_save(context: State<'_, ApiContext>, request: dto::AsrCorrectionSaveRequest) -> Result<dto::AsrCorrectionView, ApiError> {
+    lettuce_app::api::asr_correction_save(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn asr_suggestion_approve(context: State<'_, ApiContext>, request: dto::AsrSuggestionWriteRequest) -> Result<dto::AsrCorrectionView, ApiError> {
+    lettuce_app::api::asr_suggestion_approve(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn asr_suggestion_ignore(context: State<'_, ApiContext>, request: dto::AsrSuggestionWriteRequest) -> Result<dto::AsrIgnoredSuggestionView, ApiError> {
+    lettuce_app::api::asr_suggestion_ignore(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn asr_voice_example_save(context: State<'_, ApiContext>, request: dto::AsrVoiceExampleSaveRequest) -> Result<dto::AsrVoiceExampleView, ApiError> {
+    lettuce_app::api::asr_voice_example_save(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn asr_learning_import(context: State<'_, ApiContext>, request: dto::AsrLearningImportRequest) -> Result<dto::AsrLearningImportView, ApiError> {
+    lettuce_app::api::asr_learning_import(&context, request).await
+}
