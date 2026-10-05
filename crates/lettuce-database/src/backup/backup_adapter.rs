@@ -1142,14 +1142,18 @@ impl ProviderBackupSource for Database {
             &transaction,
             "SELECT id FROM media_assets ORDER BY id",
         )?;
-        let media_assets = asset_ids
+        let mut media_assets = asset_ids
             .into_iter()
             .map(|id| {
                 crate::load_asset_with_blob(&transaction, id)?.ok_or(rusqlite::Error::InvalidQuery)
             })
             .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(backup_error)?;
-        let media_blobs = transaction
+        let omitted = Database::unreferenced_temporary_assets(&transaction).map_err(|_| ProviderBackupSourceError::Storage)?;
+        let omitted_blobs = media_assets.iter().filter(|asset| omitted.contains(&asset.id.to_string())).map(|asset| asset.blob_id).collect::<std::collections::BTreeSet<_>>();
+        media_assets.retain(|asset| !omitted.contains(&asset.id.to_string()));
+        let retained_blobs = media_assets.iter().map(|asset| asset.blob_id).collect::<std::collections::BTreeSet<_>>();
+        let mut media_blobs = transaction
             .prepare(&format!(
                 "SELECT {} FROM media_blobs ORDER BY id",
                 crate::MEDIA_BLOB_COLUMNS
@@ -1160,6 +1164,7 @@ impl ProviderBackupSource for Database {
                     .collect::<rusqlite::Result<Vec<_>>>()
             })
             .map_err(backup_error)?;
+        media_blobs.retain(|blob| !omitted_blobs.contains(&blob.id) || retained_blobs.contains(&blob.id));
         let learning =
             crate::media::speech_learning_adapter::read_all_learning(&transaction).map_err(|error| {
                 match error {

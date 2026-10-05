@@ -3355,6 +3355,17 @@ async fn failed_transcription_retains_retry_audio_until_expiry() {
             .is_none()
     );
     assert!(object.exists());
+    let graph = lettuce_transfer::ProviderBackupSource::read_provider_backup_graph(
+        env.context.backend().database(),
+    )
+    .expect("failed input backup");
+    assert!(
+        !graph
+            .authored
+            .media_assets
+            .iter()
+            .any(|asset| asset.id == input)
+    );
     let retry = super::transcribe_file(
         &env.context,
         dto::TranscribeFileRequest {
@@ -3417,6 +3428,18 @@ async fn startup_collects_successful_input_after_crash_before_gc_and_backup_rest
         )
         .expect("settle without GC");
     assert!(object.exists(), "crash gap leaves blob for startup GC");
+    let before_gc = backend
+        .database()
+        .read_provider_backup_graph()
+        .expect("backup before GC");
+    assert!(
+        !before_gc
+            .authored
+            .media_assets
+            .iter()
+            .any(|asset| asset.id == input),
+        "settled backup omits input before GC"
+    );
     let record = TranscriptionRepository::get(backend.database(), id).expect("settled");
     assert!(record.request.audio_asset_id.is_none());
     env.context
@@ -3473,6 +3496,17 @@ async fn completed_transcription_preserves_input_referenced_by_voice_example() {
     env.clock.advance(Duration::from_secs(25 * 60 * 60));
     super::collect_recordings(&env.context).expect("expired GC");
     assert!(object.exists());
+    let graph = lettuce_transfer::ProviderBackupSource::read_provider_backup_graph(
+        env.context.backend().database(),
+    )
+    .expect("example backup");
+    assert!(
+        graph
+            .authored
+            .media_assets
+            .iter()
+            .any(|asset| asset.id == input)
+    );
     env.context
         .media()
         .expect("media")

@@ -69,7 +69,9 @@ fn drop_referenced(
         })
         .map_err(storage)?
         .into_iter()
-        .filter(|(table, _)| table != "legacy_import_media_completions")
+        .filter(|(table, _)| {
+            table != "legacy_import_media_completions" && table != "media_gc_candidates"
+        })
         .map(|(table, column)| {
             format!("SELECT \"{column}\" FROM \"{table}\" WHERE \"{column}\" = c.value")
         })
@@ -253,6 +255,21 @@ fn collect(
 }
 
 impl Database {
+    pub(crate) fn unreferenced_temporary_assets(
+        connection: &Connection,
+    ) -> Result<BTreeSet<String>, PurgeError> {
+        let mut unused = connection
+            .prepare("SELECT id FROM media_assets WHERE retention='temporary' AND NOT EXISTS (SELECT 1 FROM legacy_import_media_completions WHERE destination_asset_id=media_assets.id)")
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], |row| row.get(0))?
+                    .collect::<rusqlite::Result<BTreeSet<String>>>()
+            })
+            .map_err(storage)?;
+        drop_referenced(connection, &mut unused)?;
+        Ok(unused)
+    }
+
     /// Collects the assets purges queued: an asset nothing references any
     /// more (no foreign key, and its id in no stored text outside
     /// bookkeeping tables) is deleted unless it is library media, and a
