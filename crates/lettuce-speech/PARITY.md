@@ -41,6 +41,8 @@ Facts about how `lettuce-speech` relates to the legacy app (2.2.x). The crate RE
 - Legacy's OpenAI-compatible verification always succeeded. It now probes `GET /v1/models` per the [OpenAI models API](https://platform.openai.com/docs/api-reference/models/list), and a server without that route fails verification.
 - The legacy per-file TTS disk cache becomes durable syntheses. Its files were never in backups, and their keys cannot be recomputed after audio provider ids are remapped on import.
 
+- Transcription has no 30-minute audio or execution limit: it finishes, fails or is cancelled. The only decoded sample-count bound is the native i32 range (over 37 hours at 16 kHz), which prevents malformed input from overflowing whisper.cpp. Running claims renew while work continues; cancellation reaches the native runtime.
+
 ## Approved removals
 
 - The legacy `tts_audio` cache files are not imported.

@@ -440,6 +440,30 @@ async fn terminal_synthesis_failures_never_requeue() {
     }
 }
 
+#[tokio::test(start_paused = true)]
+async fn a_transcription_past_thirty_minutes_remains_running_and_cancels() {
+    let env = env(TtsMode::WaitForCancel, AsrMode::WaitForCancel, None);
+    let context = env.context.clone();
+    let transcription = context.backend().speech_transcriptions()
+        .admit(transcription_request(&context, "base")).expect("admitted");
+    let runner = runner(&context);
+    assert!(runner.run_once().await.expect("run"));
+    while env.asr.calls.load(Ordering::SeqCst) == 0 {
+        tokio::task::yield_now().await;
+    }
+    for _ in 0..31 {
+        tokio::time::advance(Duration::from_secs(60)).await;
+        tokio::task::yield_now().await;
+    }
+    assert_eq!(job(&context, transcription.job.id).await.state, dto::JobStateDto::Running);
+    job_cancel(&context, dto::JobCancelRequest {
+        job_id: transcription.job.id.to_string(),
+    }).await.expect("cancel");
+    tokio::time::timeout(Duration::from_secs(1), runner.wait_idle()).await
+        .expect("cancellation is prompt");
+    assert_eq!(job(&context, transcription.job.id).await.state, dto::JobStateDto::Cancelled);
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_running_local_transcription_and_synthesis_stop_when_cancelled() {
     let env = env(TtsMode::WaitForCancel, AsrMode::WaitForCancel, None);

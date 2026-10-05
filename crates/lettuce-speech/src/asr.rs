@@ -5,7 +5,7 @@ use lettuce_media::{AssetKind, LocalMediaBlobStore, MediaAssetRepository, MediaB
 use lettuce_types::{AssetId, ContentHash, JobId, RequestId, TimestampMillis};
 use serde::{Deserialize, Serialize};
 
-pub const MAX_TRANSCRIPTION_AUDIO_SAMPLES: usize = 16_000 * 60 * 30;
+pub const MAX_TRANSCRIPTION_AUDIO_SAMPLES: usize = i32::MAX as usize;
 const MAX_MODEL_ID_SCALARS: usize = 128;
 const MAX_LANGUAGE_SCALARS: usize = 32;
 const MAX_SCOPE_SCALARS: usize = 64;
@@ -528,7 +528,7 @@ pub enum AsrAudioError {
     UnsupportedFormat,
     #[error("audio is invalid")]
     InvalidAudio,
-    #[error("audio exceeds the transcription limit")]
+    #[error("audio exceeds the native sample-count range")]
     TooLarge,
 }
 
@@ -623,6 +623,16 @@ mod tests {
         assert_eq!(mono.len(), 8);
         assert_eq!(mono[0], 0.0);
         assert_eq!(mono[2], 0.5);
+    }
+
+    #[test]
+    fn accepts_audio_longer_than_thirty_minutes() {
+        let audio = DecodedAudio {
+            samples: vec![0.0; 16_000 * 60 * 30 + 1],
+            sample_rate_hz: 16_000,
+            channels: 1,
+        };
+        audio.validate().expect("long audio has no duration cap");
     }
 
     #[test]
