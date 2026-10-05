@@ -36,6 +36,12 @@ const WORK_INVALID: &str = "speech-work-invalid";
 
 /// What a speech job's error label tells the user.
 pub(crate) fn speech_failure(label: &str) -> Option<SpeechFailure> {
+    if label == SPEECH_RETRIES_EXHAUSTED || label.starts_with(&format!("{SPEECH_RETRIES_EXHAUSTED}-")) {
+        let cause = if label.ends_with("-network") { dto::SpeechTransientFailure::NetworkUnavailable }
+            else if let Some(status) = label.strip_prefix("speech-retries-exhausted-provider-").and_then(|status| status.parse::<u16>().ok()) { dto::SpeechTransientFailure::ProviderUnavailable { status } }
+            else { dto::SpeechTransientFailure::Unavailable };
+        return Some(SpeechFailure::RetriesExhausted { cause });
+    }
     Some(match label {
         SPEECH_MODEL_REQUIRED_WHISPER => SpeechFailure::ModelRequired {
             model: SpeechModelKind::Whisper,
@@ -49,7 +55,6 @@ pub(crate) fn speech_failure(label: &str) -> Option<SpeechFailure> {
             runtime: SpeechRuntimeKind::Espeak,
         },
         crate::SPEECH_ONNX_MISSING => SpeechFailure::RuntimeMissing { runtime: SpeechRuntimeKind::OnnxRuntime },
-        SPEECH_RETRIES_EXHAUSTED => SpeechFailure::RetriesExhausted,
         _ => return None,
     })
 }

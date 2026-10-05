@@ -120,7 +120,7 @@ impl TtsRuntime for FishSpeechTtsRuntime {
         };
         if !(200..300).contains(&response.status) {
             return Err(match response.status {
-                408 | 429 | 500..=599 => TtsRuntimeError::Unavailable,
+                408 | 429 | 500..=599 => TtsRuntimeError::ProviderUnavailable { status: response.status },
                 _ => TtsRuntimeError::Rejected,
             });
         }
@@ -146,9 +146,8 @@ fn map_network(error: JsonClientError) -> TtsRuntimeError {
         | JsonClientError::InvalidRequest
         | JsonClientError::RequestTooLarge
         | JsonClientError::ResponseTooLarge => TtsRuntimeError::Rejected,
-        JsonClientError::Transport | JsonClientError::ClientConfiguration => {
-            TtsRuntimeError::Unavailable
-        }
+        JsonClientError::Transport => TtsRuntimeError::NetworkUnavailable,
+        JsonClientError::ClientConfiguration => TtsRuntimeError::Unavailable
     }
 }
 

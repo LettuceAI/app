@@ -15,7 +15,7 @@ use lettuce_speech::{
 use lettuce_types::{JobId, TimestampMillis};
 
 use super::speech_failure::{
-    RETRIES_EXHAUSTED, SPEECH_ESPEAK_MISSING, SPEECH_MODEL_REQUIRED_KOKORO, SPEECH_SECRET_MISSING,
+    SPEECH_RETRIES_EXHAUSTED, SPEECH_ESPEAK_MISSING, SPEECH_MODEL_REQUIRED_KOKORO, SPEECH_SECRET_MISSING,
     SPEECH_VOICE_MISSING, SpeechJobError, speech_retry_allowed,
 };
 
@@ -391,12 +391,15 @@ impl<R: SynthesisRepository + ?Sized, J: JobStore + ?Sized> TtsSynthesisCoordina
         let at = now.max(work.job.updated_at);
         let (code, retryable, message) = classify_error(&error);
         let retryable = retryable && work.record.request.provider.config.provider_kind() != AudioProviderKind::Kokoro;
-        let (code, retryable, message) =
-            if retryable && !speech_retry_allowed(work.claim.claim.attempt.get()) {
-                RETRIES_EXHAUSTED
-            } else {
-                (code, retryable, message)
-            };
+        let exhausted = retryable && !speech_retry_allowed(work.claim.claim.attempt.get());
+        let message = if exhausted {
+            match &error {
+                TtsSynthesisError::Runtime(TtsRuntimeError::NetworkUnavailable) => format!("{SPEECH_RETRIES_EXHAUSTED}-network"),
+                TtsSynthesisError::Runtime(TtsRuntimeError::ProviderUnavailable { status }) => format!("{SPEECH_RETRIES_EXHAUSTED}-provider-{status}"),
+                _ => SPEECH_RETRIES_EXHAUSTED.to_owned(),
+            }
+        } else { message.to_owned() };
+        let retryable = retryable && !exhausted;
         if retryable {
             let job = self
                 .jobs
@@ -475,7 +478,7 @@ fn classify_error(error: &TtsSynthesisError) -> SpeechJobError {
             false,
             "TTS synthesis was cancelled",
         ),
-        TtsSynthesisError::Runtime(TtsRuntimeError::Unavailable) => (
+        TtsSynthesisError::Runtime(TtsRuntimeError::Unavailable | TtsRuntimeError::NetworkUnavailable | TtsRuntimeError::ProviderUnavailable { .. }) => (
             JobErrorCode::CapabilityUnavailable,
             true,
             "TTS provider is unavailable",

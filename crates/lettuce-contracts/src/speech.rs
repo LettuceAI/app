@@ -31,8 +31,18 @@ pub enum SpeechFailure {
     SecretStoreUnavailable,
     VoiceMissing,
     RuntimeMissing { runtime: SpeechRuntimeKind },
-    RetriesExhausted,
+    RetriesExhausted { cause: SpeechTransientFailure },
     MicrophonePermissionDenied,
     NoMicrophone,
     NoAudioCaptured,
+}
+
+/// The final failure before the bounded speech retry budget was exhausted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum SpeechTransientFailure {
+    Unavailable,
+    NetworkUnavailable,
+    ProviderUnavailable { status: u16 },
 }

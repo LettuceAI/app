@@ -388,8 +388,13 @@ async fn a_missing_whisper_model_fails_terminally_with_a_typed_failure() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_transient_provider_failure_retries_with_backoff_and_stops_at_the_cap() {
+    for (runtime_error, cause) in [
+        (TtsRuntimeError::Unavailable, dto::SpeechTransientFailure::Unavailable),
+        (TtsRuntimeError::NetworkUnavailable, dto::SpeechTransientFailure::NetworkUnavailable),
+        (TtsRuntimeError::ProviderUnavailable { status: 503 }, dto::SpeechTransientFailure::ProviderUnavailable { status: 503 }),
+    ] {
     let env = env(
-        TtsMode::Fail(TtsRuntimeError::Unavailable),
+        TtsMode::Fail(runtime_error),
         AsrMode::Text("unused"),
         None,
     );
@@ -417,8 +422,9 @@ async fn a_transient_provider_failure_retries_with_backoff_and_stops_at_the_cap(
     assert_eq!(view.state, dto::JobStateDto::Failed);
     let failure = view.failure.expect("failure");
     assert!(!failure.retryable);
-    assert_eq!(failure.speech, Some(SpeechFailure::RetriesExhausted));
+    assert_eq!(failure.speech, Some(SpeechFailure::RetriesExhausted { cause }));
     assert_eq!(env.tts.calls.load(Ordering::SeqCst), SPEECH_MAX_ATTEMPTS as usize);
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1684,4 +1690,12 @@ async fn queued_dictation_input_survives_collection_after_twenty_four_hours() {
     env.context.media().expect("media").open_ready(audio).expect("expired input still present");
     assert!(run_to_idle(&runner(&env.context)).await);
     assert_eq!(job(&env.context, id).await.state, dto::JobStateDto::Succeeded);
+}
+
+#[test]
+fn exhausted_speech_errors_keep_the_last_transient_cause() {
+    let network = crate::api::jobs::speech::speech_failure("speech-retries-exhausted-network");
+    let provider = crate::api::jobs::speech::speech_failure("speech-retries-exhausted-provider-503");
+    assert_eq!(serde_json::to_value(network).expect("network"), serde_json::json!({"type":"retries_exhausted","cause":{"type":"network_unavailable"}}));
+    assert_eq!(serde_json::to_value(provider).expect("provider"), serde_json::json!({"type":"retries_exhausted","cause":{"type":"provider_unavailable","status":503}}));
 }

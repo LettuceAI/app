@@ -389,3 +389,5 @@ Voice creation from an ElevenLabs design preview now admits a `speech_voice_crea
 Dictation stop preserves a sealed scratch WAV and a stopped capture when ingest fails, allowing stop retry. Once ingest succeeds, an admission failure returns typed `CapturedAudio` with the managed asset URL; `transcribe_file` retries that existing asset without reimporting bytes. This deliberately repairs the legacy in-memory stop boundary: a late failure must not discard the user's speech.
 
 A queued transcription holds its input through the existing `speech_transcriptions.audio_asset_id` restricted foreign key. Media collection probes that reference before releasing even an expired temporary recording, so a job delayed beyond 24 hours retains its input. This uses the approved reference-protection option rather than changing the expiry to a settlement timestamp.
+
+Exhausted speech retries retain the last transient cause: transport unavailability, a returned provider HTTP status, or runtime unavailability. The terminal exhausted marker no longer erases the actionable cause; no provider response body or credential is stored in that detail.

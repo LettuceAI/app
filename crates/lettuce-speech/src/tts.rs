@@ -482,6 +482,10 @@ pub enum TtsSynthesisValidationError {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum TtsRuntimeError {
+    #[error("TTS network is unavailable")]
+    NetworkUnavailable,
+    #[error("TTS provider returned HTTP {status}")]
+    ProviderUnavailable { status: u16 },
     #[error("TTS synthesis was cancelled")]
     Cancelled,
     #[error("TTS runtime is unavailable")]
