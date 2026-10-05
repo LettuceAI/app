@@ -103,3 +103,5 @@ Branch summary cursors use succeeded durable checkpoints and per-branch received
 A pooled fork without a cursor of its own continues where its parent was at the fork message instead of restarting at the first message.
 
 Pooled suffix rewinds undo only the affected branch's run tools and clear only that branch's received cursor. Sibling runs retain their items, checkpoints and admission cursor. Legacy shared-session rewind read the local session event column (`old-code/src-tauri/src/storage_manager/sessions.rs:3995-4010`).
+
+All local and deterministic conflict forks store the legacy unnumbered title suffix (`old-code/src/core/storage/repo.ts:1683`). Labels retain a separate edit timestamp so a later message write cannot override a concurrent label edit; branch topology remains immutable. Legacy branch sessions had independent titles (`old-code/src/ui/pages/chats/ChatTreePage.tsx:213-220`).

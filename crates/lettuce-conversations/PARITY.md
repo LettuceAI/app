@@ -37,3 +37,5 @@ Facts about how `lettuce-conversations` relates to the legacy app (2.2.x). The c
 
 - The single in-flight turn rule is enforced by the adapters; its supporting index is deferred.
 - Several async ports in `ports.rs` (`LaunchResolver`, `SpeakerPolicy`, `ModelResolver`, `MediaPort`, `MemoryPort`, `CompanionPort`, `JobPort`, `Clock`, `ConversationApplication`) have no implementation outside this crate; `lettuce-app` composes the generation flow directly.
+
+A fork stores `"{conversation title} (branch)"` without numbering, matching `old-code/src/core/storage/repo.ts:1683`. Its own label can evolve independently while the root name remains the conversation title; legacy represented each branch as a separately titled session (`old-code/src/ui/pages/chats/ChatTreePage.tsx:213-220`).

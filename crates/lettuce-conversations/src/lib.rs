@@ -1776,6 +1776,8 @@ mod tests {
         head_message_id: Option<MessageId>,
     ) -> ConversationBranch {
         ConversationBranch {
+            label: None,
+            label_updated_at: None,
             id,
             conversation_id,
             parent_branch_id,

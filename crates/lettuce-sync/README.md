@@ -153,7 +153,7 @@ A third device replying inside a chain that later loses can leave devices with d
 | launch snapshot | `conversation.snapshot_artifact` | insert-only |
 | conversation | `conversation.root` | |
 | message | `conversation.message` | |
-| branch | `conversation.branch` | insert-only |
+| branch | `conversation.branch` | label is last writer wins; topology is immutable |
 | memory | `memory.item`, `memory.summary`, `memory.cursor` | |
 | companion | `companion.soul`, `companion.relationship`, `companion.session`, `companion.scheduled_note` | |
 | usage | `usage.cost_basis`, `usage.job_inference`, `usage.job_cost_basis`, `usage.legacy_record` | row codec |
@@ -185,7 +185,7 @@ The conversation root holds what exists from creation on: the conversation with 
 
 A message (entity id `<conversation>:<message>`) carries every revision and candidate, the terminal turns that produced the candidates and those turns' settled usage events. Timeline ordinals, message revisions and update times, provider replay artifacts (device-local provider caches) and the retry link to a failed turn that produced nothing stay on the device that wrote them; runtime records (dispatches, tools, checkpoints) are not exchanged. Revision sequences and candidate ordinals are numbered per device, since concurrent edits or regenerations would otherwise collide, so the exchanged form orders both by creation time and a merge appends new ones after the local maximum. Merging unions revisions, candidates and turns, takes the render pointer, author and flags from the incoming snapshot, never lifts a tombstone, and marks media references active or historical as the snapshot says. A message waits for its conversation, branch, parent, participants, media, prompt documents, lorebooks and the model snapshots its turns record (requested, resolved and speaker-decision models), attaches those snapshots to the conversation when it merges, takes the next local timeline ordinal, and becomes its branch head only when the local head is its parent (or the branch is empty and it follows the fork point). A concurrent message stays off the path and goes through the fork rule above. Initial messages are only created by their root.
 
-Forked branches (`<conversation>:<branch>`) are insert-only, since nothing changes a branch after creation. Head, revision and update time stay local (the head follows the messages that arrive on it), and a branch waits for its fork message. Which branch a conversation shows is device-local.
+Forked branches (`<conversation>:<branch>`) exchange their labels and label edit timestamps under last writer wins. Existing branches retain their parent, fork message and creation time; a payload changing those values is refused. Head and revision stay local, and the exchanged update time is the label edit time, so head changes do not raise label priority. A new branch waits for its fork message. Which branch a conversation shows is device-local.
 
 ### Memory
 

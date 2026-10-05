@@ -1865,6 +1865,8 @@ pub(crate) fn conversation_record(
         updated_at,
     };
     let branch = ConversationBranch {
+        label: None,
+        label_updated_at: None,
         id: branch_id,
         conversation_id,
         parent_branch_id: None,

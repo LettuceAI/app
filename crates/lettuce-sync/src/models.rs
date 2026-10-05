@@ -114,7 +114,7 @@ pub const CONVERSATION_SNAPSHOT_SYNC_VERSION: u32 = 1;
 
 pub const CONVERSATION_SYNC_KIND: &str = "conversation";
 pub const CONVERSATION_SYNC_SCHEMA: &str = "conversation.root";
-pub const CONVERSATION_SYNC_VERSION: u32 = 3;
+pub const CONVERSATION_SYNC_VERSION: u32 = 4;
 
 pub const CONVERSATION_MESSAGE_SYNC_KIND: &str = "conversation_message";
 pub const CONVERSATION_MESSAGE_SYNC_SCHEMA: &str = "conversation.message";
@@ -122,7 +122,7 @@ pub const CONVERSATION_MESSAGE_SYNC_VERSION: u32 = 2;
 
 pub const CONVERSATION_BRANCH_SYNC_KIND: &str = "conversation_branch";
 pub const CONVERSATION_BRANCH_SYNC_SCHEMA: &str = "conversation.branch";
-pub const CONVERSATION_BRANCH_SYNC_VERSION: u32 = 1;
+pub const CONVERSATION_BRANCH_SYNC_VERSION: u32 = 2;
 
 pub const MEMORY_ITEM_SYNC_KIND: &str = "memory_item";
 pub const MEMORY_ITEM_SYNC_SCHEMA: &str = "memory.item";

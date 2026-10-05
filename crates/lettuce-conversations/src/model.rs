@@ -700,6 +700,8 @@ impl Conversation {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ConversationBranch {
+    pub label: Option<String>,
+    pub label_updated_at: Option<TimestampMillis>,
     pub id: ConversationBranchId,
     pub conversation_id: ConversationId,
     pub parent_branch_id: Option<ConversationBranchId>,
@@ -727,6 +729,23 @@ impl ConversationBranch {
             self.created_at,
             self.updated_at,
         )?;
+        if self.label.is_some() != self.label_updated_at.is_some()
+            || self
+                .label_updated_at
+                .is_some_and(|at| at < self.created_at || at > self.updated_at)
+        {
+            return Err(ValidationError::Invariant {
+                field: "branch.label_updated_at",
+            });
+        }
+        if let Some(label) = &self.label {
+            validate_text("branch.label", label, 1_048_576, false)?;
+            if label.trim() != label || self.parent_branch_id.is_none() {
+                return Err(ValidationError::Invariant {
+                    field: "branch.label",
+                });
+            }
+        }
         if self.parent_branch_id == Some(self.id) {
             return Err(ValidationError::Invariant {
                 field: "branch.parent_self",

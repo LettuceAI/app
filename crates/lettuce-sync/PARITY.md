@@ -70,3 +70,5 @@ The sync design was built in stages. The stage names are still used in commit me
 Character snapshot schema version 2 includes provider-account voice preferences. The session fingerprint changes with that version, so a peer with the old character payload cannot silently pair under the same schema contract.
 
 Own memory entities identify both conversation and branch; received user forks start with an empty own space and receive their seeded items and summaries through normal changes. Legacy represented a fork as another session with copied memory (`old-code/src/core/storage/repo.ts:547-586`). Shared pools retain character ownership and exchange a separate cursor for each conversation and branch.
+
+Branch labels use the same last-writer-wins entity policy as titles while parent, fork message and creation time remain immutable. Legacy branches were sessions with their own title (`old-code/src/core/storage/repo.ts:1683`; rename caller `old-code/src/ui/pages/chats/ChatTreePage.tsx:213-220`). The separate label edit timestamp prevents local head changes from promoting an older label.

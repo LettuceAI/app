@@ -274,6 +274,8 @@ impl Database {
             return Err(ConversationRepositoryError::Conflict);
         }
         let root = ConversationBranch {
+            label: None,
+            label_updated_at: None,
             id: ConversationBranchId::new(),
             conversation_id: plan.conversation_id,
             parent_branch_id: None,
@@ -546,7 +548,7 @@ where
     conversation.participants = participants;
     conversation.current_settings = settings;
     let mut branches = Vec::new();
-    let mut statement = transaction.prepare("SELECT id, parent_branch_id, fork_message_id, head_message_id, status, revision, created_at, updated_at FROM conversation_branches WHERE conversation_id = ?1 ORDER BY created_at, id").map_err(db)?;
+    let mut statement = transaction.prepare("SELECT id, parent_branch_id, fork_message_id, head_message_id, status, revision, created_at, updated_at, label, label_updated_at FROM conversation_branches WHERE conversation_id = ?1 ORDER BY created_at, id").map_err(db)?;
     for row in statement
         .query_map([id.to_string()], |row| read_branch(row, id))
         .map_err(db)?
@@ -777,6 +779,8 @@ pub(crate) fn read_branch(
     conversation_id: ConversationId,
 ) -> Result<ConversationBranch, rusqlite::Error> {
     Ok(ConversationBranch {
+        label: row.get(8)?,
+        label_updated_at: row.get::<_, Option<i64>>(9)?.map(TimestampMillis::new),
         id: parse_id(row.get(0)?).map_err(|_| rusqlite::Error::InvalidQuery)?,
         conversation_id,
         parent_branch_id: row

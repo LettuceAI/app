@@ -149,6 +149,8 @@ fn make_aggregate(
         updated_at: now,
     };
     let branch = ConversationBranch {
+        label: None,
+        label_updated_at: None,
         id: root_branch_id,
         conversation_id: plan.conversation_id,
         parent_branch_id: None,

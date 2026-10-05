@@ -1186,7 +1186,7 @@ pub(crate) fn branch_path(
         if !visited.insert(id) {
             return Err(ConversationRepositoryError::Storage);
         }
-        let mut statement = transaction.prepare("SELECT id, parent_branch_id, fork_message_id, head_message_id, status, revision, created_at, updated_at FROM conversation_branches WHERE conversation_id = ?1 AND id = ?2").map_err(slice::db)?;
+        let mut statement = transaction.prepare("SELECT id, parent_branch_id, fork_message_id, head_message_id, status, revision, created_at, updated_at, label, label_updated_at FROM conversation_branches WHERE conversation_id = ?1 AND id = ?2").map_err(slice::db)?;
         let branch = statement
             .query_row(
                 params![conversation_id.to_string(), id.to_string()],

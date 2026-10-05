@@ -65,7 +65,7 @@ fn normalized_branch(branch: &ConversationBranch) -> ConversationBranch {
         head_message_id: None,
         status: BranchStatus::Active,
         revision: Revision::INITIAL,
-        updated_at: branch.created_at,
+        updated_at: branch.label_updated_at.unwrap_or(branch.created_at),
         ..branch.clone()
     }
 }
@@ -923,8 +923,6 @@ pub(crate) fn sync_load_branch(
         .map(normalized_branch))
 }
 
-/// Inserts a synced fork once its parent branch and fork message exist.
-/// Branches never change after creation, so an existing one is kept.
 pub(crate) fn sync_insert_branch(
     transaction: &Transaction<'_>,
     branch: &ConversationBranch,
@@ -935,6 +933,27 @@ pub(crate) fn sync_insert_branch(
         "SELECT EXISTS(SELECT 1 FROM conversation_branches WHERE conversation_id = ?1 AND id = ?2)",
         params![conversation_id, branch.id.to_string()],
     )? {
+        let current = sync_load_branch(transaction, branch.conversation_id, branch.id)?
+            .ok_or(ConversationRepositoryError::Storage)?;
+        if current.parent_branch_id != branch.parent_branch_id
+            || current.fork_message_id != branch.fork_message_id
+            || current.created_at != branch.created_at
+        {
+            return Err(ConversationRepositoryError::Conflict);
+        }
+        branch
+            .validate()
+            .map_err(ConversationRepositoryError::Invalid)?;
+        transaction.execute(
+            "UPDATE conversation_branches SET label = ?3, label_updated_at = ?4, revision = revision + 1, updated_at = max(updated_at, ?4) WHERE conversation_id = ?1 AND id = ?2",
+            params![conversation_id, branch.id.to_string(), branch.label, branch.label_updated_at.map(TimestampMillis::get)],
+        ).map_err(storage)?;
+        transaction
+            .execute(
+                "UPDATE conversations SET revision = revision + 1 WHERE id = ?1",
+                [conversation_id],
+            )
+            .map_err(storage)?;
         return Ok(());
     }
     let (Some(parent), Some(fork)) = (branch.parent_branch_id, branch.fork_message_id) else {
@@ -1223,6 +1242,8 @@ fn copy_root_chain(
             &SyncConversationRoot {
                 conversation,
                 root_branch: ConversationBranch {
+                    label: None,
+                    label_updated_at: None,
                     id: fork_branch,
                     conversation_id: fork_conversation,
                     ..source.root_branch
@@ -1321,6 +1342,11 @@ pub(crate) fn fork_losing_message_version(
     history::insert_branch(
         transaction,
         &ConversationBranch {
+            label: Some(history::default_branch_label_in(
+                transaction,
+                conversation_id,
+            )?),
+            label_updated_at: Some(source.message.created_at),
             id: fork,
             conversation_id,
             parent_branch_id: Some(branch_id),
@@ -1419,6 +1445,11 @@ fn copy_chain(
     let (_, fork_point_branch, _) = message_link(transaction, conversation_id, fork_point)?;
     let (_, _, created_at) = message_link(transaction, conversation_id, first)?;
     let branch = ConversationBranch {
+        label: Some(history::default_branch_label_in(
+            transaction,
+            conversation_id,
+        )?),
+        label_updated_at: Some(created_at),
         id: fork,
         conversation_id,
         parent_branch_id: Some(fork_point_branch),

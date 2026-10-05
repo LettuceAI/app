@@ -144,6 +144,8 @@ CREATE TABLE conversation_branches (
     conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE RESTRICT,
     id TEXT NOT NULL,
     parent_branch_id TEXT,
+    label TEXT CHECK (label IS NULL OR (length(label) <= 1048576 AND length(trim(label)) > 0 AND label = trim(label))),
+    label_updated_at INTEGER,
     fork_message_id TEXT,
     head_message_id TEXT,
     status TEXT NOT NULL CHECK (status IN ('active', 'archived', 'tombstoned')),
@@ -158,6 +160,9 @@ CREATE TABLE conversation_branches (
         REFERENCES conversation_messages(conversation_id, id) ON DELETE RESTRICT,
     FOREIGN KEY (conversation_id, head_message_id)
         REFERENCES conversation_messages(conversation_id, id) ON DELETE RESTRICT,
+    CHECK ((label IS NULL) = (label_updated_at IS NULL)),
+    CHECK (label_updated_at IS NULL OR (created_at <= label_updated_at AND label_updated_at <= updated_at)),
+    CHECK (parent_branch_id IS NOT NULL OR label IS NULL),
     CHECK ((parent_branch_id IS NULL) = (fork_message_id IS NULL)),
     CHECK (parent_branch_id IS NULL OR parent_branch_id <> id),
     CHECK (created_at <= updated_at)

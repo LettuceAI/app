@@ -3472,6 +3472,8 @@ mod tests {
             ],
         };
         let branches = vec![lettuce_conversations::ConversationBranch {
+            label: None,
+            label_updated_at: None,
             id: branch_id,
             conversation_id,
             parent_branch_id: None,
@@ -3546,6 +3548,8 @@ mod tests {
             ],
         };
         let branches = vec![lettuce_conversations::ConversationBranch {
+            label: None,
+            label_updated_at: None,
             id: branch_id,
             conversation_id,
             parent_branch_id: None,
@@ -3624,6 +3628,8 @@ mod tests {
         };
         let branches = vec![
             lettuce_conversations::ConversationBranch {
+                label: None,
+                label_updated_at: None,
                 id: root_branch,
                 conversation_id,
                 parent_branch_id: None,
@@ -3635,6 +3641,8 @@ mod tests {
                 updated_at: lettuce_types::TimestampMillis::UNIX_EPOCH,
             },
             lettuce_conversations::ConversationBranch {
+                label: None,
+                label_updated_at: None,
                 id: child_branch,
                 conversation_id,
                 parent_branch_id: Some(root_branch),

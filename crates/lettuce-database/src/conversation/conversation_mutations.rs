@@ -1309,7 +1309,7 @@ fn load_branch(
 ) -> Result<ConversationBranch, ConversationRepositoryError> {
     transaction
         .query_row(
-            "SELECT id, parent_branch_id, fork_message_id, head_message_id, status, revision, created_at, updated_at FROM conversation_branches WHERE conversation_id = ?1 AND id = ?2",
+            "SELECT id, parent_branch_id, fork_message_id, head_message_id, status, revision, created_at, updated_at, label, label_updated_at FROM conversation_branches WHERE conversation_id = ?1 AND id = ?2",
             params![conversation_id.to_string(), branch_id.to_string()],
             |row| slice::read_branch(row, conversation_id),
         )
@@ -2955,7 +2955,7 @@ fn tombstone_staged(
             let branch_id = ConversationBranchId::new();
             transaction
                 .execute(
-                    "INSERT INTO conversation_branches (conversation_id, id, parent_branch_id, fork_message_id, head_message_id, status, revision, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, NULL, 'active', 1, ?5, ?5)",
+                    "INSERT INTO conversation_branches (conversation_id, id, parent_branch_id, fork_message_id, head_message_id, status, revision, created_at, updated_at, label, label_updated_at) VALUES (?1, ?2, ?3, ?4, NULL, 'active', 1, ?5, ?5, (SELECT title || ' (branch)' FROM conversations WHERE id = ?1), ?5)",
                     params![
                         context.conversation_id.to_string(),
                         branch_id.to_string(),
@@ -3171,7 +3171,7 @@ fn branch_around_message(
     let branch_id = ConversationBranchId::new();
     transaction
         .execute(
-            "INSERT INTO conversation_branches (conversation_id, id, parent_branch_id, fork_message_id, head_message_id, status, revision, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, NULL, 'active', 1, ?5, ?5)",
+            "INSERT INTO conversation_branches (conversation_id, id, parent_branch_id, fork_message_id, head_message_id, status, revision, created_at, updated_at, label, label_updated_at) VALUES (?1, ?2, ?3, ?4, NULL, 'active', 1, ?5, ?5, (SELECT title || ' (branch)' FROM conversations WHERE id = ?1), ?5)",
             params![
                 context.conversation_id.to_string(),
                 branch_id.to_string(),
@@ -5267,7 +5267,7 @@ impl ConversationRepository for Database {
                 let branch_id = ConversationBranchId::new();
                 transaction
                     .execute(
-                        "INSERT INTO conversation_branches (conversation_id, id, parent_branch_id, fork_message_id, head_message_id, status, revision, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, NULL, 'active', 1, ?5, ?5)",
+                        "INSERT INTO conversation_branches (conversation_id, id, parent_branch_id, fork_message_id, head_message_id, status, revision, created_at, updated_at, label, label_updated_at) VALUES (?1, ?2, ?3, ?4, NULL, 'active', 1, ?5, ?5, (SELECT title || ' (branch)' FROM conversations WHERE id = ?1), ?5)",
                         params![
                             context.conversation_id.to_string(),
                             branch_id.to_string(),
@@ -13535,6 +13535,87 @@ mod tests {
             ),
             Err(ConversationRepositoryError::Conflict),
             "the fork point must live on the source branch"
+        );
+    }
+
+    #[test]
+    fn branch_labels_sync_by_edit_time_without_changing_topology() {
+        let mut fixture = direct_fixture();
+        let messages = conversation_with_two_exchanges(&mut fixture, "label-sync");
+        let forked = fixture
+            .database
+            .fork_branch(
+                &ForkBranch {
+                    conversation_id: fixture.conversation_id,
+                    source_branch_id: fixture.branch_id,
+                    at_message_id: Some(messages[1]),
+                    expected_revision: fixture.revision,
+                    operation: token("label-sync-fork", "ed"),
+                },
+                TimestampMillis::new(300),
+            )
+            .expect("fork");
+        let b = Database::open_in_memory().expect("second device");
+        sync_all(fixture.database.as_ref(), &b, 1_000);
+        let branch = forked.value.branch.id;
+        let rename = |database: &Database, label: &str, at: i64| {
+            database.connection().expect("connection").execute(
+                "UPDATE conversation_branches SET label = ?3, label_updated_at = ?4, updated_at = max(updated_at, ?4), revision = revision + 1 WHERE conversation_id = ?1 AND id = ?2",
+                params![fixture.conversation_id.to_string(), branch.to_string(), label, at],
+            ).expect("label edit");
+        };
+        rename(fixture.database.as_ref(), "newer", 400);
+        rename(&b, "older", 350);
+        b.connection().expect("connection").execute(
+            "UPDATE conversation_branches SET updated_at = 500 WHERE conversation_id = ?1 AND id = ?2",
+            params![fixture.conversation_id.to_string(), branch.to_string()],
+        ).expect("later message write");
+        sync_all(&b, fixture.database.as_ref(), 1_100);
+        sync_all(fixture.database.as_ref(), &b, 1_200);
+        for database in [fixture.database.as_ref(), &b] {
+            let aggregate =
+                ConversationReader::get(database, fixture.conversation_id).expect("read");
+            let synced = aggregate
+                .branches
+                .iter()
+                .find(|entry| entry.id == branch)
+                .expect("branch");
+            assert_eq!(synced.label.as_deref(), Some("newer"));
+            assert_eq!(synced.parent_branch_id, Some(fixture.branch_id));
+            assert_eq!(synced.fork_message_id, Some(messages[1]));
+            assert_eq!(synced.created_at, TimestampMillis::new(300));
+        }
+    }
+
+    #[test]
+    fn explicit_fork_stores_the_legacy_default_label() {
+        let mut fixture = direct_fixture();
+        let messages = conversation_with_two_exchanges(&mut fixture, "label-fork");
+        let command = ForkBranch {
+            conversation_id: fixture.conversation_id,
+            source_branch_id: fixture.branch_id,
+            at_message_id: Some(messages[1]),
+            expected_revision: fixture.revision,
+            operation: token("label-fork", "de"),
+        };
+        let forked = fixture
+            .database
+            .fork_branch(&command, TimestampMillis::new(200))
+            .expect("fork");
+        let connection = fixture.database.connection().expect("connection");
+        let label: Option<String> = connection
+            .query_row(
+                "SELECT label FROM conversation_branches WHERE conversation_id = ?1 AND id = ?2",
+                params![
+                    fixture.conversation_id.to_string(),
+                    forked.value.branch.id.to_string()
+                ],
+                |row| row.get(0),
+            )
+            .expect("stored label");
+        assert_eq!(
+            label,
+            Some(format!("{} (branch)", forked.value.conversation.title))
         );
     }
 

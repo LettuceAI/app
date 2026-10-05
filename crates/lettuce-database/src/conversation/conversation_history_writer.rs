@@ -522,13 +522,26 @@ const fn branch_status_name(status: BranchStatus) -> &'static str {
     }
 }
 
+pub(crate) fn default_branch_label_in(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+) -> Result<String, ConversationRepositoryError> {
+    transaction
+        .query_row(
+            "SELECT title || ' (branch)' FROM conversations WHERE id = ?1",
+            [conversation_id.to_string()],
+            |row| row.get(0),
+        )
+        .map_err(kernel::map_constraint)
+}
+
 pub(crate) fn insert_branch(
     transaction: &Transaction<'_>,
     branch: &ConversationBranch,
 ) -> Result<(), ConversationRepositoryError> {
     transaction
         .execute(
-            "INSERT INTO conversation_branches (conversation_id, id, parent_branch_id, fork_message_id, head_message_id, status, revision, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, NULL, ?5, ?6, ?7, ?8)",
+            "INSERT INTO conversation_branches (conversation_id, id, parent_branch_id, fork_message_id, head_message_id, status, revision, created_at, updated_at, label, label_updated_at) VALUES (?1, ?2, ?3, ?4, NULL, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
                 branch.conversation_id.to_string(),
                 branch.id.to_string(),
@@ -538,6 +551,12 @@ pub(crate) fn insert_branch(
                 slice::sql_revision(branch.revision)?,
                 branch.created_at.get(),
                 branch.updated_at.get(),
+                if branch.parent_branch_id.is_some() {
+                    Some(branch.label.clone().unwrap_or(default_branch_label_in(transaction, branch.conversation_id)?))
+                } else {
+                    None
+                },
+                if branch.parent_branch_id.is_some() { Some(branch.label_updated_at.unwrap_or(branch.created_at).get()) } else { None },
             ],
         )
         .map_err(kernel::map_constraint)?;
