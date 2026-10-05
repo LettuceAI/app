@@ -77,7 +77,7 @@ impl IntoApiError for SpeechTranscriptionError {
                 invalid_field("source", "the audio is not a supported WAV file")
             }
             Self::Audio(AsrAudioError::TooLarge) => {
-                invalid_field("source", "the audio is longer than a transcription accepts")
+                invalid_field("source", "the audio exceeds the native sample-count range")
             }
             Self::Runtime(AsrRuntimeError::ModelUnavailable) => whisper_required(),
             Self::Repository(TranscriptionRepositoryError::Conflict) => api_error(

@@ -1,6 +1,6 @@
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -61,6 +61,7 @@ fn tone() -> Vec<u8> {
 }
 
 enum AsrMode {
+    WaitForFinish(Arc<AtomicBool>),
     Text(&'static str),
     WaitForCancel,
 }
@@ -87,6 +88,13 @@ impl AsrRuntime for FakeAsr {
                 detected_language: Some("en".to_owned()),
                 segments: Vec::new(),
             }),
+            AsrMode::WaitForFinish(ref finished) => {
+                while !finished.load(Ordering::SeqCst) {
+                    if cancellation.is_cancelled() { return Err(AsrRuntimeError::Cancelled); }
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                Ok(RuntimeTranscription { raw_text: "Finished.".into(), detected_language: Some("en".into()), segments: Vec::new() })
+            }
             AsrMode::WaitForCancel => loop {
                 if cancellation.is_cancelled() {
                     return Err(AsrRuntimeError::Cancelled);
@@ -98,6 +106,7 @@ impl AsrRuntime for FakeAsr {
 }
 
 enum TtsMode {
+    WaitForFinish(Arc<tokio::sync::Notify>),
     Fail(TtsRuntimeError),
     Speak,
     WaitForCancel,
@@ -123,6 +132,12 @@ impl TtsRuntime for FakeTts {
                 bytes: tone(),
                 declared_mime_type: "audio/wav".to_owned(),
             }),
+            TtsMode::WaitForFinish(finished) => {
+                tokio::select! {
+                    () = cancellation.cancelled() => Err(TtsRuntimeError::Cancelled),
+                    () = finished.notified() => Ok(RuntimeSynthesis { bytes: tone(), declared_mime_type: "audio/wav".into() }),
+                }
+            }
             TtsMode::WaitForCancel => {
                 cancellation.cancelled().await;
                 Err(TtsRuntimeError::Cancelled)
@@ -452,8 +467,9 @@ async fn a_transcription_past_thirty_minutes_remains_running_and_cancels() {
         tokio::task::yield_now().await;
     }
     for _ in 0..31 {
+        env.clock.advance(Duration::from_secs(60));
         tokio::time::advance(Duration::from_secs(60)).await;
-        tokio::task::yield_now().await;
+        assert_eq!(job(&context, transcription.job.id).await.state, dto::JobStateDto::Running);
     }
     assert_eq!(job(&context, transcription.job.id).await.state, dto::JobStateDto::Running);
     job_cancel(&context, dto::JobCancelRequest {
@@ -1464,4 +1480,34 @@ async fn an_audio_secret_with_only_a_creation_receipt_is_retained_at_startup() {
     env.context.backend().database().delete_audio_provider(created.id.parse().expect("id"), lettuce_types::Revision::new(created.revision)).expect("metadata deletion without credential deletion");
     super::sweep_orphan_audio_secrets(&env.context).await.expect("sweep");
     assert_eq!(env.context.secret_store().audio_api_keys().await.expect("retained key").len(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn speech_jobs_complete_with_live_timestamps_after_thirty_minutes_and_lease_renewals() {
+    let asr_finished = Arc::new(AtomicBool::new(false));
+    let tts_finished = Arc::new(tokio::sync::Notify::new());
+    let env = env(TtsMode::WaitForFinish(tts_finished.clone()), AsrMode::WaitForFinish(asr_finished.clone()), None);
+    let context = &env.context;
+    let transcription = context.backend().speech_transcriptions().admit(transcription_request(context, "base")).expect("transcription");
+    let synthesis = context.backend().tts_syntheses().admit(synthesis_request("Long speech.")).expect("synthesis");
+    let runner = runner(context);
+    assert!(runner.run_once().await.expect("run"));
+    while env.asr.calls.load(Ordering::SeqCst) == 0 || env.tts.calls.load(Ordering::SeqCst) == 0 { tokio::task::yield_now().await; }
+    for _ in 0..31 {
+        env.clock.advance(Duration::from_secs(60));
+        tokio::time::advance(Duration::from_secs(60)).await;
+        assert_eq!(job(context, transcription.job.id).await.state, dto::JobStateDto::Running);
+        assert_eq!(job(context, synthesis.job.id).await.state, dto::JobStateDto::Running);
+    }
+    asr_finished.store(true, Ordering::SeqCst);
+    tts_finished.notify_one();
+    tokio::time::timeout(Duration::from_secs(1), runner.wait_idle()).await.expect("completion is prompt");
+    assert_eq!(job(context, transcription.job.id).await.state, dto::JobStateDto::Succeeded);
+    assert_eq!(job(context, synthesis.job.id).await.state, dto::JobStateDto::Succeeded);
+    let transcript = lettuce_speech::TranscriptionRepository::get(context.backend().database(), transcription.job.id).expect("transcription result");
+    let lettuce_speech::TranscriptionState::Succeeded { result } = transcript.state else { panic!("completed transcription"); };
+    assert_eq!(result.completed_at, lettuce_jobs::Clock::now(&env.clock));
+    let synthesis = lettuce_speech::SynthesisRepository::get(context.backend().database(), synthesis.job.id).expect("synthesis result");
+    let lettuce_speech::SynthesisState::Succeeded { result } = synthesis.state else { panic!("completed synthesis"); };
+    assert_eq!(result.completed_at, lettuce_jobs::Clock::now(&env.clock));
 }

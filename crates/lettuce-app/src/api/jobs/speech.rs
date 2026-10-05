@@ -260,13 +260,13 @@ impl ClaimedJob for ClaimedTranscription {
                 let runtime = context.speech().asr_runtime(context);
                 backend
                     .speech_transcriptions()
-                    .run(
+                    .run_with_clock(
                         work,
                         media,
                         &backend.asr_learning(),
                         runtime.as_ref(),
                         cancellation_reason(context),
-                        context.now(),
+                        context.clock(),
                     )
                     .map(Some)
                     .map_err(IntoApiError::into_api_error)
@@ -394,13 +394,13 @@ impl ClaimedJob for ClaimedSynthesis {
                         return Err(error);
                     }
                 };
-                tokio::runtime::Handle::current().block_on(context.backend().tts_syntheses().run(
+                tokio::runtime::Handle::current().block_on(context.backend().tts_syntheses().run_with_clock(
                     work,
                     context.secret_store().as_ref(),
                     runtime.as_ref(),
                     media,
                     reason,
-                    context.now(),
+                    context.clock(),
                 )).map(|_| ()).map_err(IntoApiError::into_api_error)
             }),
         ).await;

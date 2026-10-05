@@ -214,6 +214,30 @@ impl<R: TranscriptionRepository + ?Sized, J: JobStore + ?Sized>
         cancellation_reason: CancellationReason,
         now: TimestampMillis,
     ) -> Result<SpeechTranscriptionRunResult, SpeechTranscriptionError> {
+        self.run_timed(work, audio, library, runtime, cancellation_reason, &|| now)
+    }
+
+    pub fn run_with_clock<A: AsrAudioSource + ?Sized, L: AsrPromptLibrary + ?Sized, E: AsrRuntime + ?Sized>(
+        &self,
+        work: SpeechTranscriptionClaimedWork,
+        audio: &A,
+        library: &L,
+        runtime: &E,
+        cancellation_reason: CancellationReason,
+        clock: &dyn lettuce_jobs::Clock,
+    ) -> Result<SpeechTranscriptionRunResult, SpeechTranscriptionError> {
+        self.run_timed(work, audio, library, runtime, cancellation_reason, &|| clock.now())
+    }
+
+    fn run_timed<A: AsrAudioSource + ?Sized, L: AsrPromptLibrary + ?Sized, E: AsrRuntime + ?Sized>(
+        &self,
+        work: SpeechTranscriptionClaimedWork,
+        audio: &A,
+        library: &L,
+        runtime: &E,
+        cancellation_reason: CancellationReason,
+        time: &(dyn Fn() -> TimestampMillis + Sync),
+    ) -> Result<SpeechTranscriptionRunResult, SpeechTranscriptionError> {
         validate_job_record(&work.job, &work.record)?;
         if work.job.state != JobState::Running
             || work.claim.claim.job_id != work.job.id
@@ -222,9 +246,10 @@ impl<R: TranscriptionRepository + ?Sized, J: JobStore + ?Sized>
             return Err(SpeechTranscriptionError::InvalidWork);
         }
         if let TranscriptionState::Succeeded { .. } = work.record.state {
-            return self.finish_success(work, true, now);
+            return self.finish_success(work, true, time());
         }
-        let result = self.execute(&work, audio, library, runtime, now);
+        let result = self.execute(&work, audio, library, runtime, time);
+        let now = time();
         match result {
             Ok(result) => match self.transcriptions.settle(work.job.id, result) {
                 Ok(record) => self.finish_success(
@@ -270,7 +295,7 @@ impl<R: TranscriptionRepository + ?Sized, J: JobStore + ?Sized>
         audio: &A,
         library: &L,
         runtime: &E,
-        now: TimestampMillis,
+        time: &(dyn Fn() -> TimestampMillis + Sync),
     ) -> Result<TranscriptionResult, SpeechTranscriptionError> {
         let token = work.handle.cancellation_token();
         check_cancelled(&token)?;
@@ -310,7 +335,7 @@ impl<R: TranscriptionRepository + ?Sized, J: JobStore + ?Sized>
             detected_language: runtime_result.detected_language,
             segments: runtime_result.segments,
             applied_corrections,
-            completed_at: now,
+            completed_at: time(),
         };
         result.validate_for(&work.record.request)?;
         Ok(result)

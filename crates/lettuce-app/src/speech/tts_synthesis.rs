@@ -211,6 +211,40 @@ impl<R: SynthesisRepository + ?Sized, J: JobStore + ?Sized> TtsSynthesisCoordina
         E: TtsRuntime + ?Sized,
         A: TtsAudioSink + ?Sized,
     {
+        self.run_timed(work, secrets, runtime, audio, cancellation_reason, &|| now).await
+    }
+
+    pub async fn run_with_clock<S, E, A>(
+        &self,
+        work: TtsSynthesisClaimedWork,
+        secrets: &S,
+        runtime: &E,
+        audio: &A,
+        cancellation_reason: CancellationReason,
+        clock: &dyn lettuce_jobs::Clock,
+    ) -> Result<TtsSynthesisRunResult, TtsSynthesisError>
+    where
+        S: SecretStore + ?Sized,
+        E: TtsRuntime + ?Sized,
+        A: TtsAudioSink + ?Sized,
+    {
+        self.run_timed(work, secrets, runtime, audio, cancellation_reason, &|| clock.now()).await
+    }
+
+    async fn run_timed<S, E, A>(
+        &self,
+        work: TtsSynthesisClaimedWork,
+        secrets: &S,
+        runtime: &E,
+        audio: &A,
+        cancellation_reason: CancellationReason,
+        time: &(dyn Fn() -> TimestampMillis + Sync),
+    ) -> Result<TtsSynthesisRunResult, TtsSynthesisError>
+    where
+        S: SecretStore + ?Sized,
+        E: TtsRuntime + ?Sized,
+        A: TtsAudioSink + ?Sized,
+    {
         validate_job_record(&work.job, &work.record)?;
         if work.job.state != JobState::Running
             || work.claim.claim.job_id != work.job.id
@@ -219,9 +253,10 @@ impl<R: SynthesisRepository + ?Sized, J: JobStore + ?Sized> TtsSynthesisCoordina
             return Err(TtsSynthesisError::InvalidWork);
         }
         if matches!(work.record.state, SynthesisState::Succeeded { .. }) {
-            return self.finish_success(work, true, now);
+            return self.finish_success(work, true, time());
         }
-        let result = self.execute(&work, secrets, runtime, audio, now).await;
+        let result = self.execute(&work, secrets, runtime, audio, time).await;
+        let now = time();
         match result {
             Ok(result) => match self.syntheses.settle(work.job.id, result) {
                 Ok(record) => {
@@ -247,7 +282,7 @@ impl<R: SynthesisRepository + ?Sized, J: JobStore + ?Sized> TtsSynthesisCoordina
         secrets: &S,
         runtime: &E,
         audio: &A,
-        now: TimestampMillis,
+        time: &(dyn Fn() -> TimestampMillis + Sync),
     ) -> Result<lettuce_speech::SynthesisResult, TtsSynthesisError>
     where
         S: SecretStore + ?Sized,
@@ -280,7 +315,7 @@ impl<R: SynthesisRepository + ?Sized, J: JobStore + ?Sized> TtsSynthesisCoordina
             )
             .await?;
         check_cancelled(&work.handle)?;
-        let result = audio.ingest(work.job.id, &work.record.request, output, now)?;
+        let result = audio.ingest(work.job.id, &work.record.request, output, time())?;
         result.validate_for(&work.record.request)?;
         Ok(result)
     }
@@ -978,6 +1013,9 @@ mod tests {
         let database = Database::open(&path).expect("database");
         let media = media_store(&path, &root.join("media"));
         let base = request(SecretRef::new(), TtsOutputPolicy::Retained);
+        lettuce_speech::TtsConfigurationRepository::upsert_audio_provider(
+            &database, base.provider.clone(), None,
+        ).expect("persist live provider for cache reuse");
         let key = SynthesisReuseKey::of(&base);
         let at = TimestampMillis::new(2_000);
         assert_eq!(
