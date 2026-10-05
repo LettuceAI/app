@@ -64,3 +64,5 @@ The speech worker reads its live clock after native/runtime work and when ingest
 - ElevenLabs billable voice creation uses the network generation budget with no automatic retries, including server errors, dropped responses and redirects. This deliberately corrects the shared generation transport's retry behavior; durable public outcome-unknown replay remains blocked on the separate pre-send marker schema decision.
 
 Whisper installation identity and content hashes remain immutable. Only the model path and the matching path inside its manifest may rebind during a models-folder relocation; moving the same verified model does not create a different installation.
+
+Correction listing accepts legacy user_approved_only: true filters to user-approved rules; false or null keeps all matching corrections. Language and scope filtering still apply.

@@ -1112,7 +1112,7 @@ async fn asr_library_api_filters_exports_and_keeps_audio_as_an_asset_reference()
     let term = lettuce_speech::AsrVocabularyTerm::new("Ford", Some("en"), Some("names"), Some("conversation"), 4, START).expect("term");
     let term = library.save_vocabulary(term).expect("save term");
     library.save_vocabulary(lettuce_speech::AsrVocabularyTerm::new("Other", Some("en"), None, Some("other"), 1, START).expect("other")).expect("save other");
-    let filter = || dto::AsrLearningFilter { language: Some("EN".into()), scopes: vec!["conversation".into()] };
+    let filter = || dto::AsrLearningFilter { language: Some("EN".into()), scopes: vec!["conversation".into()], user_approved_only: None };
     let vocabulary = super::asr_vocabulary_list(&env.context, filter()).await.expect("vocabulary");
     assert_eq!(vocabulary.len(), 1); assert_eq!(vocabulary[0].id, term.id.to_string());
     let asset = ingest_wav(&env.context, tone());
@@ -1392,12 +1392,12 @@ async fn voice_create_examples_and_library_import_have_receipts() {
     let saved = super::asr_voice_example_save(context, example.clone()).await.expect("example");
     assert_eq!(super::asr_voice_example_save(context, example.clone()).await.expect("example replay"), saved);
     let exported = env.root.join("library.json");
-    super::asr_learning_export(context, dto::AsrLearningExportRequest { target: dto::FileTarget { uri: exported.to_string_lossy().into_owned() }, filter: dto::AsrLearningFilter { language: None, scopes: vec!["global".into()] } }).await.expect("export");
+    super::asr_learning_export(context, dto::AsrLearningExportRequest { target: dto::FileTarget { uri: exported.to_string_lossy().into_owned() }, filter: dto::AsrLearningFilter { language: None, scopes: vec!["global".into()], user_approved_only: None } }).await.expect("export");
     let import = dto::AsrLearningImportRequest { client_operation_id: "library-import".into(), source: dto::FileSource { uri: exported.to_string_lossy().into_owned() } };
     let imported = super::asr_learning_import(context, import.clone()).await.expect("import");
     assert_eq!(imported.voice_example_count, 1);
     assert_eq!(super::asr_learning_import(context, import).await.expect("import replay"), imported);
-    let examples = super::asr_voice_examples_list(context, dto::AsrLearningFilter { language: None, scopes: vec!["global".into()] }).await.expect("examples");
+    let examples = super::asr_voice_examples_list(context, dto::AsrLearningFilter { language: None, scopes: vec!["global".into()], user_approved_only: None }).await.expect("examples");
     assert_eq!(examples.len(), 2);
     super::asr_voice_example_delete(context, dto::AsrLearningItemRequest { id: saved.id }).await.expect("delete example");
     assert_eq!(super::asr_voice_example_save(context, example).await.expect("example replay after deletion").audio.asset_id, asset.to_string());
@@ -1462,7 +1462,7 @@ async fn legacy_learning_file_import_ingests_audio_once_and_replays_its_counted_
     let first = super::asr_learning_import(&env.context, request.clone()).await.expect("legacy import");
     assert_eq!((first.vocabulary_count, first.voice_example_count), (1, 1));
     assert_eq!(super::asr_learning_import(&env.context, request.clone()).await.expect("replay"), first);
-    let filter = dto::AsrLearningFilter { language: None, scopes: vec!["global".into()] };
+    let filter = dto::AsrLearningFilter { language: None, scopes: vec!["global".into()], user_approved_only: None };
     let examples = super::asr_voice_examples_list(&env.context, filter.clone()).await.expect("examples");
     assert_eq!(examples.len(), 1, "replay does not ingest another asset/example");
     assert!(examples[0].audio.url.starts_with("test-asset://"));
@@ -1510,4 +1510,20 @@ async fn speech_jobs_complete_with_live_timestamps_after_thirty_minutes_and_leas
     let synthesis = lettuce_speech::SynthesisRepository::get(context.backend().database(), synthesis.job.id).expect("synthesis result");
     let lettuce_speech::SynthesisState::Succeeded { result } = synthesis.state else { panic!("completed synthesis"); };
     assert_eq!(result.completed_at, lettuce_jobs::Clock::now(&env.clock));
+}
+
+#[tokio::test]
+async fn correction_listing_honors_the_legacy_approved_only_filter() {
+    let env = env(TtsMode::Speak, AsrMode::Text("text"), None);
+    for (wrong, approved) in [("unapproved", false), ("approved", true)] {
+        env.context.backend().asr_learning().save_correction_draft(lettuce_speech::AsrCorrectionDraft {
+            wrong: wrong.into(), correct: "corrected".into(), user_approved: Some(approved), ..Default::default()
+        }, START).expect("correction");
+    }
+    for (only, expected) in [(Some(true), 1), (Some(false), 2), (None, 2)] {
+        let request = serde_json::from_value(serde_json::json!({"user_approved_only": only})).expect("legacy filter");
+        let listed = super::asr_corrections_list(&env.context, request).await.expect("list");
+        assert_eq!(listed.len(), expected);
+        if only == Some(true) { assert!(listed.iter().all(|rule| rule.user_approved)); }
+    }
 }

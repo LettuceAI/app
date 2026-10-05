@@ -87,7 +87,7 @@ pub async fn asr_vocabulary_list(context: &ApiContext, request: dto::AsrLearning
 pub async fn asr_corrections_list(context: &ApiContext, request: dto::AsrLearningFilter) -> Result<Vec<dto::AsrCorrectionView>, ApiError> {
     context.blocking(move |context| context.backend().asr_learning()
         .list_corrections(request.language.as_deref(), &request.scopes)
-        .map(|values| values.into_iter().map(correction_view).collect()).map_err(IntoApiError::into_api_error)).await
+        .map(|values| values.into_iter().filter(|rule| request.user_approved_only != Some(true) || rule.user_approved).map(correction_view).collect()).map_err(IntoApiError::into_api_error)).await
 }
 
 pub async fn asr_ignored_suggestions_list(context: &ApiContext, request: dto::AsrLearningFilter) -> Result<Vec<dto::AsrIgnoredSuggestionView>, ApiError> {

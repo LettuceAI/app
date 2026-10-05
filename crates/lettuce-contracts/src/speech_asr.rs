@@ -321,6 +321,7 @@ pub struct AsrVoiceExampleView {
 pub struct AsrLearningFilter {
     pub language: Option<String>,
     pub scopes: Vec<String>,
+    pub user_approved_only: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
