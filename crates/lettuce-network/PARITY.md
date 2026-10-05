@@ -17,6 +17,8 @@ Facts about how `lettuce-network` relates to the legacy app (2.2.x). The crate R
 
 ## Deliberate differences from legacy
 
+- `GenerationOnce` retains the generation timeout but sends a non-repeatable external operation once, including server errors, dropped responses and redirects. ElevenLabs billable voice creation selects this policy under the Slice 10 user decision; ordinary generation retry policy is unchanged.
+
 - Redirects are followed only on the host the request went to and never from https down to http, so no credential reaches another host; a cross-host redirect is returned as the response. Legacy's default client followed any redirect.
 - Streams are cancelled by dropping their owner instead of a detached reader task, and keep socket backpressure.
 - Hugging Face browsing and the Sprout `/specs` read use the 30 s, no-retry `Browse` timeout, as legacy's Hugging Face client (`image_bundle.rs` 45-59) and Sprout client (`sprout.rs` 36-94 over `hf_browser/mod.rs` 1988-1994) did; they had used the 10 s probe and the 30-minute generation budget with retries.

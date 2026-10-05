@@ -566,6 +566,8 @@ pub struct TlsPolicy {
 pub enum RequestTimeout {
     /// 30-minute generation budget.
     Generation,
+    /// 30-minute budget for a non-repeatable external operation, sent once.
+    GenerationOnce,
     /// 10-second key-verification probe.
     Probe,
     /// A long streamed transfer such as a model pull: sent once, with no
@@ -590,6 +592,10 @@ impl RequestPolicy {
         timeout: RequestTimeout::Generation,
         allow_invalid_tls: false,
     };
+    pub const GENERATION_ONCE: Self = Self {
+        timeout: RequestTimeout::GenerationOnce,
+        allow_invalid_tls: false,
+    };
     pub const PROBE: Self = Self {
         timeout: RequestTimeout::Probe,
         allow_invalid_tls: false,
@@ -605,6 +611,8 @@ impl RequestPolicy {
 pub struct JsonClient {
     strict: reqwest::Client,
     insecure: reqwest::Client,
+    strict_once: reqwest::Client,
+    insecure_once: reqwest::Client,
     max_response_bytes: usize,
 }
 
@@ -624,6 +632,8 @@ impl JsonClient {
         Ok(Self {
             strict: build_client(&roots, false)?,
             insecure: build_client(&roots, true)?,
+            strict_once: build_client_with_redirects(&roots, false, redirect::Policy::none())?,
+            insecure_once: build_client_with_redirects(&roots, true, redirect::Policy::none())?,
             max_response_bytes: MAX_RESPONSE_BYTES,
         })
     }
@@ -638,6 +648,9 @@ impl JsonClient {
     }
 
     fn client(&self, policy: RequestPolicy) -> &reqwest::Client {
+        if policy.timeout == RequestTimeout::GenerationOnce {
+            return if policy.allow_invalid_tls { &self.insecure_once } else { &self.strict_once };
+        }
         if policy.allow_invalid_tls {
             &self.insecure
         } else {
@@ -1255,6 +1268,14 @@ fn build_client(
     roots: &[reqwest::Certificate],
     accept_invalid: bool,
 ) -> Result<reqwest::Client, JsonClientError> {
+    build_client_with_redirects(roots, accept_invalid, same_host_redirects())
+}
+
+fn build_client_with_redirects(
+    roots: &[reqwest::Certificate],
+    accept_invalid: bool,
+    redirects: redirect::Policy,
+) -> Result<reqwest::Client, JsonClientError> {
     let mut default_headers = header::HeaderMap::with_capacity(2);
     default_headers.insert(
         "http-referer",
@@ -1262,7 +1283,7 @@ fn build_client(
     );
     default_headers.insert("x-title", header::HeaderValue::from_static(TITLE_HEADER));
     let mut builder = reqwest::Client::builder()
-        .redirect(same_host_redirects())
+        .redirect(redirects)
         .referer(false)
         .default_headers(default_headers)
         .connect_timeout(CONNECT_TIMEOUT)
@@ -1296,17 +1317,17 @@ fn same_host_redirects() -> redirect::Policy {
     })
 }
 
-/// Verification probes use a bare client with no retry loop.
+/// Non-repeatable operations, probes and reads never enter the retry loop.
 fn retries_for(policy: RequestPolicy) -> u32 {
     match policy.timeout {
         RequestTimeout::Generation => MAX_RETRIES,
-        RequestTimeout::Probe | RequestTimeout::Transfer | RequestTimeout::Browse => 0,
+        RequestTimeout::GenerationOnce | RequestTimeout::Probe | RequestTimeout::Transfer | RequestTimeout::Browse => 0,
     }
 }
 
 fn timeout_for(policy: RequestPolicy) -> Duration {
     match policy.timeout {
-        RequestTimeout::Generation => GENERATION_TIMEOUT,
+        RequestTimeout::Generation | RequestTimeout::GenerationOnce => GENERATION_TIMEOUT,
         RequestTimeout::Probe => PROBE_TIMEOUT,
         RequestTimeout::Transfer => TRANSFER_TIMEOUT,
         RequestTimeout::Browse => BROWSE_TIMEOUT,
@@ -1316,7 +1337,7 @@ fn timeout_for(policy: RequestPolicy) -> Duration {
 fn idle_timeout_for(policy: RequestPolicy) -> Duration {
     match policy.timeout {
         RequestTimeout::Transfer => GENERATION_TIMEOUT,
-        RequestTimeout::Generation | RequestTimeout::Probe | RequestTimeout::Browse => {
+        RequestTimeout::Generation | RequestTimeout::GenerationOnce | RequestTimeout::Probe | RequestTimeout::Browse => {
             timeout_for(policy)
         }
     }

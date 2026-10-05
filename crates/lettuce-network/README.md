@@ -26,6 +26,7 @@ Provider requests (`JsonClient` and `BulkHttpClient` except `fetch_url`) carry t
 | `RequestTimeout` | Total | Retries |
 | --- | --- | --- |
 | `Generation` | 30 min | 2 |
+| `GenerationOnce` (non-repeatable external operation) | 30 min | 0 |
 | `Probe` (key verification) | 10 s | 0 |
 | `Browse` (a model hub page, a hardware probe) | 30 s | 0 |
 | `Transfer` (e.g. a model pull) | 7 days, idle timeout 30 min | 0 |
@@ -36,7 +37,7 @@ Buffered responses (`get_json`, `post_json`, `delete_json` and their `_with_quer
 
 `post_json_stream` returns a `JsonResponseStream` that the caller pulls one chunk at a time with `next_chunk`. There is no reader task or channel in between, so backpressure reaches the socket, and dropping the stream cancels the request. Each chunk waits at most the idle timeout. The total streamed size is not capped; `read_error_body` buffers a non-success body under the buffered cap.
 
-Redirects are followed up to ten times, but only to the host the request went to and never from https down to http, so a credential never reaches another host. A cross-host redirect comes back as the response.
+`GenerationOnce` returns redirects without following them, so a 307/308 cannot resend the operation. Other redirects are followed up to ten times, but only to the host the request went to and never from https down to http, so a credential never reaches another host. A cross-host redirect comes back as the response.
 
 TLS uses the OS trust store plus the webpki roots and the user's extra roots from `TlsPolicy` (the trusted certificates in device settings). The rustls backend parses roots only while building a client, so each root is first tried alone and skipped with a warning if it fails, instead of one bad certificate breaking every client. `JsonClient` holds a strict and an insecure `reqwest` client; `allow_invalid_tls` in the policy selects the insecure one and must come from an explicit per-account setting, never a provider default.
 

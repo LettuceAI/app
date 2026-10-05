@@ -404,7 +404,7 @@ impl VoiceDesignRuntime for ElevenLabsTtsRuntime {
                 &[],
                 auth,
                 Vec::new(),
-                RequestPolicy::GENERATION,
+                RequestPolicy::GENERATION_ONCE,
             ) => response.map_err(map_voice_design_network)?,
             () = cancellation.cancelled() => return Err(VoiceDesignRuntimeError::Cancelled),
         };
@@ -686,6 +686,48 @@ mod tests {
         assert_eq!(value["model_id"], "eleven_ttv_v3");
         assert_eq!(value["num_previews"], 1);
         assert!(value.get("loudness").is_none());
+    }
+
+    #[tokio::test]
+    async fn billable_voice_creation_sends_once_even_on_errors_drops_and_redirects() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        for scenario in ["server_error", "drop", "redirect"] {
+            let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+            let endpoint = format!("http://{}", listener.local_addr().expect("address"));
+            let requests = Arc::new(AtomicUsize::new(0));
+            let received = requests.clone();
+            let server = tokio::spawn(async move {
+                loop {
+                    let (mut stream, _) = listener.accept().await.expect("accept");
+                    let mut buffer = [0_u8; 4096];
+                    let read = stream.read(&mut buffer).await.expect("read request");
+                    assert!(read > 0, "received request bytes before dropping or responding");
+                    received.fetch_add(1, Ordering::SeqCst);
+                    let response: &[u8] = match scenario {
+                        "server_error" => b"HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\n\r\n",
+                        "redirect" => b"HTTP/1.1 307 Temporary Redirect\r\nLocation: /v1/text-to-voice\r\nConnection: close\r\nContent-Length: 0\r\n\r\n",
+                        _ => continue,
+                    };
+                    stream.write_all(response).await.expect("response");
+                }
+            });
+            let runtime = ElevenLabsTtsRuntime::with_endpoint(
+                Arc::new(JsonClient::new().expect("network client")), endpoint,
+            );
+            let outcome = runtime.create_voice(
+                &creation_request(),
+                &SecretValue::new("create-no-retry").expect("secret"),
+                &CancellationToken::new(),
+            ).await;
+            server.abort();
+            if scenario == "redirect" {
+                assert!(matches!(outcome, Err(VoiceDesignRuntimeError::Rejected)));
+            } else {
+                assert!(matches!(outcome, Err(VoiceDesignRuntimeError::Unavailable)));
+            }
+            assert_eq!(requests.load(Ordering::SeqCst), 1, "billable create must send once, scenario={scenario}");
+        }
     }
 
     #[tokio::test]
