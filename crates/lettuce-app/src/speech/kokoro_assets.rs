@@ -33,12 +33,14 @@ pub struct KokoroAssetInventory {
 #[derive(Debug)]
 pub struct KokoroAssetInventoryCoordinator {
     store: KokoroAssetStore,
+    voices: lettuce_model_hub::KokoroVoiceInstallStore,
 }
 
 impl KokoroAssetInventoryCoordinator {
     pub fn open_managed(root: impl AsRef<Path>) -> Result<Self, KokoroAssetInventoryError> {
         Ok(Self {
-            store: KokoroAssetStore::open(root).map_err(KokoroAssetInventoryError::Assets)?,
+            store: KokoroAssetStore::open(root.as_ref()).map_err(KokoroAssetInventoryError::Assets)?,
+            voices: lettuce_model_hub::KokoroVoiceInstallStore::open(root).map_err(|_| KokoroAssetInventoryError::Assets(KokoroAssetError::UnreadableArtifact))?,
         })
     }
 
@@ -54,28 +56,28 @@ impl KokoroAssetInventoryCoordinator {
     ) -> Result<KokoroAssetInventory, KokoroAssetInventoryError> {
         let variant =
             KokoroModelVariant::parse(variant).map_err(KokoroAssetInventoryError::Assets)?;
-        self.store
-            .inspect(variant, selected_voice_id)
-            .map(inventory)
-            .map_err(KokoroAssetInventoryError::Assets)
+        let mut status = self.store.inspect(variant, selected_voice_id)
+            .map(inventory).map_err(KokoroAssetInventoryError::Assets)?;
+        status.installed_voices = self.installed_voices()?;
+        status.selected_voice_installed = selected_voice_id.map(|id| status.installed_voices.iter().any(|voice| voice.id == id));
+        Ok(status)
     }
 
-    pub fn installed_voices(
-        &self,
-    ) -> Result<Vec<KokoroInstalledVoiceSummary>, KokoroAssetInventoryError> {
-        self.store
-            .installed_voices()
-            .map(|voices| {
-                voices
-                    .into_iter()
-                    .map(|voice| KokoroInstalledVoiceSummary {
-                        id: voice.id,
-                        artifact: artifact_summary(voice.artifact),
-                    })
-                    .collect()
-            })
-            .map_err(KokoroAssetInventoryError::Assets)
+    pub fn installed_voices(&self) -> Result<Vec<KokoroInstalledVoiceSummary>, KokoroAssetInventoryError> {
+        let mut voices = self.store.installed_voices().map_err(KokoroAssetInventoryError::Assets)?
+            .into_iter().map(|voice| (voice.id.clone(), KokoroInstalledVoiceSummary { id: voice.id, artifact: artifact_summary(voice.artifact) }))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let descriptors = self.voices.installed_descriptors()
+            .map_err(|_| KokoroAssetInventoryError::Assets(KokoroAssetError::UnreadableArtifact))?;
+        if let Some(installed) = self.voices.installed(&descriptors)
+            .map_err(|_| KokoroAssetInventoryError::Assets(KokoroAssetError::UnreadableArtifact))? {
+            for voice in installed {
+                voices.insert(voice.id.clone(), KokoroInstalledVoiceSummary { id: voice.id, artifact: artifact_summary(voice.artifact) });
+            }
+        }
+        Ok(voices.into_values().collect())
     }
+
 }
 
 fn inventory(status: KokoroAssetStatus) -> KokoroAssetInventory {

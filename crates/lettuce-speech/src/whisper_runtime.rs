@@ -22,6 +22,7 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct WhisperContextKey {
     artifact_hash: ContentHash,
+    model_path: std::path::PathBuf,
     use_gpu: bool,
     flash_attention: bool,
     gpu_device: i32,
@@ -52,6 +53,11 @@ impl<R: ?Sized> WhisperCppRuntime<R> {
             repository,
             contexts: Mutex::new(HashMap::new()),
         }
+    }
+
+    pub fn resident_files(&self) -> Result<Vec<std::path::PathBuf>, AsrRuntimeError> {
+        let contexts = self.contexts.lock().map_err(|_| AsrRuntimeError::Unavailable)?;
+        Ok(contexts.keys().map(|key| key.model_path.clone()).collect())
     }
 
     pub fn clear_cache(&self) -> Result<usize, AsrRuntimeError> {
@@ -240,6 +246,7 @@ fn context_key(
 ) -> WhisperContextKey {
     WhisperContextKey {
         artifact_hash: artifacts.blake3.clone(),
+        model_path: artifacts.model_path.clone(),
         use_gpu: options.use_gpu && !options.force_cpu,
         flash_attention: options.flash_attention,
         gpu_device: options.gpu_device,

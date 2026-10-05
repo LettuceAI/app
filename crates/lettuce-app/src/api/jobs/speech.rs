@@ -195,6 +195,10 @@ impl JobHandler for SpeechTranscribeHandler {
         let job_id = job.id;
         let claimed = context
             .blocking(move |context| {
+                let _folder_access = context.local_models().folder_access();
+                let root = crate::api::speech::whisper::whisper_root(context)?;
+                if root.starts_with(crate::api::local_models::models_root(context)?)
+                    && folder_moving(context)? { return Ok(None); }
                 let claimed = context.backend().speech_transcriptions().claim(
                     job_id,
                     worker_id,
@@ -320,6 +324,12 @@ impl JobHandler for SpeechSynthesizeHandler {
         let job_id = job.id;
         let claimed = context
             .blocking(move |context| {
+                let _folder_access = context.local_models().folder_access();
+                if let Ok(record) = lettuce_speech::SynthesisRepository::get(context.backend().database(), job_id)
+                    && record.request.provider.config.provider_kind() == lettuce_speech::AudioProviderKind::Kokoro
+                    && let Some(root) = context.retained_model_roots()?.kokoro
+                    && std::path::Path::new(&root).starts_with(crate::api::local_models::models_root(context)?)
+                    && folder_moving(context)? { return Ok(None); }
                 let claimed = context.backend().tts_syntheses().claim(
                     job_id,
                     worker_id,
@@ -401,5 +411,50 @@ impl ClaimedJob for ClaimedSynthesis {
                 Err(error)
             }
         }
+    }
+}
+
+fn folder_moving(context: &ApiContext) -> Result<bool, ApiError> {
+    match super::local::folder_move_active(context) {
+        Ok(()) => Ok(false),
+        Err(error) if error.code == dto::ApiErrorCode::Busy => Ok(true),
+        Err(error) => Err(error),
+    }
+}
+
+pub(crate) fn active_local_files(context: &ApiContext, root: &std::path::Path) -> Result<Option<(JobId, String)>, ApiError> {
+    use lettuce_jobs::JobQuery;
+    use lettuce_speech::{SynthesisRepository, TranscriptionRepository};
+    use lettuce_model_hub::WhisperModelRepository;
+    use lettuce_types::{PageLimit, PageRequest};
+    let database = context.backend().database();
+    let mut cursor = None;
+    loop {
+        let page = database.list(JobQuery { page: PageRequest { cursor, limit: PageLimit::new(200) }, ..JobQuery::default() })
+            .map_err(IntoApiError::into_api_error)?;
+        for job in page.items.into_iter().filter(|job| job.claim.is_some() && !job.is_terminal()) {
+            match job.kind {
+                JobKind::SpeechTranscribe => {
+                    let record = TranscriptionRepository::get(database, job.id)
+                        .map_err(|error| crate::api::error::api_error(dto::ApiErrorCode::Internal, error.to_string()))?;
+                    if let Some(model) = database.get_whisper_model(record.request.model.id.as_str())
+                            .map_err(|error| crate::api::error::api_error(dto::ApiErrorCode::Internal, error.to_string()))?
+                        && model.model.path.starts_with(root) {
+                        return Ok(Some((job.id, model.model.path.to_string_lossy().into_owned())));
+                    }
+                }
+                JobKind::SpeechSynthesize => {
+                    let record = SynthesisRepository::get(database, job.id)
+                        .map_err(|error| crate::api::error::api_error(dto::ApiErrorCode::Internal, error.to_string()))?;
+                    if record.request.provider.config.provider_kind() == lettuce_speech::AudioProviderKind::Kokoro
+                        && let Some(path) = context.retained_model_roots()?.kokoro
+                        && std::path::Path::new(&path).starts_with(root) {
+                        return Ok(Some((job.id, path)));
+                    }
+                }
+                _ => {}
+            }
+        }
+        match page.next_cursor { Some(next) => cursor = Some(next), None => return Ok(None) }
     }
 }

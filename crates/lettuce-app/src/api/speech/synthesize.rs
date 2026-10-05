@@ -5,7 +5,7 @@ use lettuce_types::{AssetId, AudioProviderId, RequestId, TimestampMillis};
 use crate::api::ApiContext;
 use crate::api::error::{IntoApiError, api_error, parse_id};
 
-const PREVIEW_LIFETIME_MS: i64 = 24 * 60 * 60 * 1000;
+pub(super) const PREVIEW_LIFETIME_MS: i64 = 24 * 60 * 60 * 1000;
 
 pub async fn tts_synthesize(
     context: &ApiContext,

@@ -309,7 +309,7 @@ async fn adopt_legacy_embedding(context: &ApiContext) {
     let adopted = context
         .blocking(move |context| {
             EmbeddingModelCoordinator::new(
-                &crate::embedding_models_root(&folder),
+                Path::new(context.retained_model_roots()?.embedding.as_deref().expect("resolved root")),
                 context.backend().database(),
             )
             .adopt_legacy_install(&folder.join(LEGACY_FOLDER).join("models").join("embedding"))

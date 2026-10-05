@@ -4,7 +4,7 @@
 //! loaded model is kept until an install, switch or removal changes it.
 
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex, MutexGuard, OnceLock},
 };
 
@@ -112,12 +112,11 @@ fn runtime_link(
 #[async_trait]
 impl ModelLoader for InstalledModels {
     fn installed(&self, context: &ApiContext, model: RequiredModel) -> bool {
-        let Some(folder) = context.app_folder() else {
-            return false;
-        };
+        if context.app_folder().is_none() { return false; }
+        let Ok(roots) = context.retained_model_roots() else { return false; };
         match model {
             RequiredModel::Embedding => EmbeddingModelCoordinator::new(
-                &crate::embedding_models_root(folder),
+                Path::new(roots.embedding.as_deref().expect("resolved root")),
                 context.backend().database(),
             )
             .active()
@@ -125,7 +124,7 @@ impl ModelLoader for InstalledModels {
             .flatten()
             .is_some(),
             RequiredModel::Emotion => lettuce_model_hub::CompanionEmotionInstallStore::open(
-                crate::companion_emotion_root(folder),
+                Path::new(roots.thymos.as_deref().expect("resolved root")),
             )
             .ok()
             .and_then(|store| store.installed().ok().flatten())
@@ -164,8 +163,9 @@ impl ModelLoader for InstalledModels {
             return ModelLoad::NotInstalled;
         };
         let database = context.backend().database();
-        let models =
-            EmbeddingModelCoordinator::new(&crate::embedding_models_root(&folder), database);
+        let Ok(roots) = context.retained_model_roots() else { return ModelLoad::Unavailable; };
+        let root = PathBuf::from(roots.embedding.expect("resolved root"));
+        let models = EmbeddingModelCoordinator::new(&root, database);
         match models.active() {
             Ok(Some(_)) => {}
             Ok(None) => return ModelLoad::NotInstalled,
@@ -201,7 +201,8 @@ impl ModelLoader for InstalledModels {
         let Some(link) = runtime_link(context, &folder) else {
             return ModelLoad::Unavailable;
         };
-        match crate::try_load_companion_emotion(&crate::companion_emotion_root(&folder), &link) {
+        let Ok(roots) = context.retained_model_roots() else { return ModelLoad::Unavailable; };
+        match crate::try_load_companion_emotion(Path::new(roots.thymos.as_deref().expect("resolved root")), &link) {
             Ok(Some(service)) => ModelLoad::Loaded(Arc::new(service)),
             Ok(None) => ModelLoad::NotInstalled,
             Err(error) => {
@@ -224,6 +225,7 @@ pub(crate) struct ModelSlots {
     loader: Arc<dyn ModelLoader>,
     embedding: Mutex<Slot<Arc<dyn MemoryEmbeddingEngine>>>,
     emotion: Mutex<Slot<Arc<dyn CompanionEmotionEngine>>>,
+    active_embeddings: Mutex<Vec<std::sync::Weak<dyn MemoryEmbeddingEngine>>>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -238,6 +240,7 @@ impl ModelSlots {
             loader,
             embedding: Mutex::new(Slot::Unknown),
             emotion: Mutex::new(Slot::Unknown),
+            active_embeddings: Mutex::new(Vec::new()),
         }
     }
 
@@ -247,7 +250,13 @@ impl ModelSlots {
 
     pub(crate) async fn prepare_embedding(&self, context: &ApiContext) -> Result<(), ApiError> {
         let loader = Arc::clone(&self.loader);
-        if !context.blocking(move |context| Ok(loader.installed(context, RequiredModel::Embedding))).await? {
+        if !context.blocking(move |context| {
+            if let Some(root) = context.retained_model_roots()?.embedding
+                && Path::new(&root).starts_with(super::local_models::models_root(context)?) {
+                super::jobs::local::folder_move_active(context)?;
+            }
+            Ok(loader.installed(context, RequiredModel::Embedding))
+        }).await? {
             return Err(model_error(ApiErrorCode::ModelRequired, RequiredModel::Embedding));
         }
         if !self.loader.prepare(context).await {
@@ -265,6 +274,14 @@ impl ModelSlots {
     /// is installed.
     pub(crate) fn installed(&self, context: &ApiContext, model: RequiredModel) -> bool {
         self.known(model) == Some(true) || self.loader.installed(context, model)
+    }
+
+    pub(crate) fn is_loaded(&self, model: RequiredModel) -> bool {
+        match model {
+            RequiredModel::Embedding => matches!(&*lock(&self.embedding), Slot::Loaded(_))
+                || lock(&self.active_embeddings).iter().any(|engine| engine.strong_count() > 0),
+            RequiredModel::Emotion => matches!(&*lock(&self.emotion), Slot::Loaded(_)),
+        }
     }
 
     fn known(&self, model: RequiredModel) -> Option<bool> {
@@ -292,6 +309,15 @@ impl ModelSlots {
     /// Loads `model` unless it already is: `ModelRequired` when it is not
     /// installed, `ModelUnavailable` when it cannot load.
     async fn require(&self, context: &ApiContext, model: RequiredModel) -> Result<(), ApiError> {
+        context.blocking(move |context| {
+            let roots = context.retained_model_roots()?;
+            let root = match model { RequiredModel::Embedding => roots.embedding, RequiredModel::Emotion => roots.thymos };
+            if let Some(root) = root
+                && Path::new(&root).starts_with(super::local_models::models_root(context)?) {
+                super::jobs::local::folder_move_active(context)?;
+            }
+            Ok(())
+        }).await?;
         match self.known(model) {
             Some(true) => return Ok(()),
             Some(false) => return Err(model_error(ApiErrorCode::ModelRequired, model)),
@@ -310,6 +336,12 @@ impl ModelSlots {
         }
         let loaded = context
             .blocking(move |context| {
+                let _folder_access = context.local_models().folder_access();
+                let roots = context.retained_model_roots()?;
+                let root = match model { RequiredModel::Embedding => roots.embedding, RequiredModel::Emotion => roots.thymos };
+                if let Some(root) = root && Path::new(&root).starts_with(super::local_models::models_root(context)?) {
+                    super::jobs::local::folder_move_active(context)?;
+                }
                 let slots = context.models();
                 Ok(match model {
                     RequiredModel::Embedding => match slots.resolve_embedding(context) {
@@ -343,7 +375,13 @@ impl ModelSlots {
         };
         if !keep_loaded {
             *slot = Slot::Unknown;
-            return self.loader.embedding(context);
+            let loaded = self.loader.embedding(context);
+            if let ModelLoad::Loaded(engine) = &loaded {
+                let mut active = lock(&self.active_embeddings);
+                active.retain(|engine| engine.strong_count() > 0);
+                active.push(Arc::downgrade(engine));
+            }
+            return loaded;
         }
         match &*slot {
             Slot::Loaded(engine) => return ModelLoad::Loaded(Arc::clone(engine)),

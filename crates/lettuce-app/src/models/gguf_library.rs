@@ -364,6 +364,15 @@ struct MoveManifest {
     move_id: String,
     from: String,
     entries: Vec<ManifestEntry>,
+    #[serde(default)]
+    rebound_files: Vec<ReboundManifest>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct ReboundManifest {
+    relative_path: PathBuf,
+    before_hash: String,
+    after_hash: String,
 }
 
 fn measure(path: &Path) -> Option<Measure> {
@@ -401,18 +410,60 @@ pub struct MoveResolution {
     pub kept: Vec<String>,
 }
 
-fn redundant_tree(candidate: &Path, retained: &Path, partial: bool) -> std::io::Result<bool> {
+fn paths_only_rebinding(before: &[u8], after: &[u8], from: &Path, to: &Path) -> bool {
+    fn rewrite(value: &mut serde_json::Value, from: &Path, to: &Path) {
+        match value {
+            serde_json::Value::Object(values) => {
+                for (key, value) in values {
+                    if key == "path" {
+                        if let Some(path) = value.as_str()
+                            && let Ok(relative) = Path::new(path).strip_prefix(from) {
+                            *value = serde_json::Value::String(to.join(relative).to_string_lossy().into_owned());
+                        }
+                    } else { rewrite(value, from, to); }
+                }
+            }
+            serde_json::Value::Array(values) => { for value in values { rewrite(value, from, to); } }
+            _ => {}
+        }
+    }
+    let Ok(mut before) = serde_json::from_slice::<serde_json::Value>(before) else { return false; };
+    let Ok(after) = serde_json::from_slice::<serde_json::Value>(after) else { return false; };
+    rewrite(&mut before, from, to);
+    before == after
+}
+
+fn redundant_tree_with_rebindings(candidate: &Path, retained: &Path, partial: bool, bindings: Option<(&Path, &[ReboundManifest], bool)>) -> std::io::Result<bool> {
     use std::io::Read;
     let candidate_meta = std::fs::symlink_metadata(candidate)?;
     let retained_meta = std::fs::symlink_metadata(retained)?;
     if candidate_meta.is_dir() && retained_meta.is_dir() {
         for entry in std::fs::read_dir(candidate)? {
             let entry = entry?;
-            if !redundant_tree(&entry.path(), &retained.join(entry.file_name()), partial)? {
+            if !redundant_tree_with_rebindings(&entry.path(), &retained.join(entry.file_name()), partial, bindings)? {
                 return Ok(false);
             }
         }
         return Ok(true);
+    }
+    if candidate_meta.is_file() && retained_meta.is_file()
+        && let Some((root, records, reverse)) = bindings
+        && let Ok(relative) = candidate.strip_prefix(root)
+        && let Some(record) = records.iter().find(|record| record.relative_path == relative) {
+        let candidate_bytes = std::fs::read(candidate)?;
+        let retained_bytes = std::fs::read(retained)?;
+        let candidate_hash = blake3::hash(&candidate_bytes).to_hex().to_string();
+        let retained_hash = blake3::hash(&retained_bytes).to_hex().to_string();
+        if reverse && candidate_hash == record.before_hash && retained_hash == record.before_hash { return Ok(true); }
+        let other_root = retained.ancestors().nth(relative.components().count())
+            .ok_or_else(|| std::io::Error::other("invalid rebound manifest path"))?;
+        return Ok(if reverse {
+            candidate_hash == record.after_hash && retained_hash == record.before_hash
+                && paths_only_rebinding(&retained_bytes, &candidate_bytes, other_root, root)
+        } else {
+            candidate_hash == record.before_hash && retained_hash == record.after_hash
+                && paths_only_rebinding(&candidate_bytes, &retained_bytes, root, other_root)
+        });
     }
     if !candidate_meta.is_file() || !retained_meta.is_file()
         || candidate_meta.len() > retained_meta.len()
@@ -437,7 +488,7 @@ fn redundant_tree(candidate: &Path, retained: &Path, partial: bool) -> std::io::
 }
 
 /// Removes the copies in `to` whose original is still in `from` unchanged.
-fn undo_copies(from: &Path, to: &Path, entries: &[ManifestEntry]) -> Vec<String> {
+fn undo_copies(from: &Path, to: &Path, entries: &[ManifestEntry], rebindings: &[ReboundManifest]) -> Vec<String> {
     let mut kept = Vec::new();
     for entry in entries {
         let copy = to.join(&entry.name);
@@ -450,7 +501,7 @@ fn undo_copies(from: &Path, to: &Path, entries: &[ManifestEntry]) -> Vec<String>
             }
         }
         if measure(&from.join(&entry.name)) == Some(entry.measure)
-            && matches!(redundant_tree(&copy, &from.join(&entry.name), true), Ok(true))
+            && matches!(redundant_tree_with_rebindings(&copy, &from.join(&entry.name), true, Some((to, rebindings, true))), Ok(true))
         {
             if let Err(error) = remove_path(&copy) {
                 tracing::warn!(path = %copy.display(), %error, "a models folder copy could not be removed");
@@ -465,7 +516,7 @@ fn undo_copies(from: &Path, to: &Path, entries: &[ManifestEntry]) -> Vec<String>
 }
 
 /// Removes the originals in `from` whose copy in `to` is complete.
-fn remove_originals(from: &Path, to: &Path, entries: &[ManifestEntry]) -> Vec<String> {
+fn remove_originals(from: &Path, to: &Path, entries: &[ManifestEntry], rebindings: &[ReboundManifest]) -> Vec<String> {
     let mut kept = Vec::new();
     for entry in entries {
         let original = from.join(&entry.name);
@@ -478,9 +529,10 @@ fn remove_originals(from: &Path, to: &Path, entries: &[ManifestEntry]) -> Vec<St
             }
         }
         let copied = measure(&to.join(&entry.name)).is_some_and(|copy| {
-            copy.bytes == entry.measure.bytes && copy.files == entry.measure.files
+            (copy.bytes == entry.measure.bytes || rebindings.iter().any(|record| record.relative_path.starts_with(&entry.name)))
+                && copy.files == entry.measure.files
         });
-        if copied && matches!(redundant_tree(&original, &to.join(&entry.name), false), Ok(true)) {
+        if copied && matches!(redundant_tree_with_rebindings(&original, &to.join(&entry.name), false, Some((from, rebindings, false))), Ok(true)) {
             if let Err(error) = remove_path(&original) {
                 tracing::warn!(path = %original.display(), %error, "a moved original could not be removed");
                 kept.push(entry.name.clone());
@@ -501,6 +553,31 @@ fn read_manifest(to: &Path) -> Result<Option<MoveManifest>, String> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(error.to_string()),
     }
+}
+
+fn record_manifest_rebinding(to: &Path, move_id: &str, path: &Path, before: &[u8], after: &[u8]) -> Result<(), String> {
+    use std::io::Write;
+    let relative = path.strip_prefix(to).map_err(|error| error.to_string())?;
+    if !relative.components().all(|part| matches!(part, std::path::Component::Normal(_))) {
+        return Err("the rebound manifest is outside the target folder".into());
+    }
+    if std::fs::read(path).map_err(|error| error.to_string())? != before {
+        return Err("the copied model manifest changed before relocation".into());
+    }
+    let mut manifest = read_manifest(to)?.filter(|manifest| manifest.move_id == move_id)
+        .ok_or_else(|| "the move manifest is missing".to_owned())?;
+    manifest.rebound_files.push(ReboundManifest {
+        relative_path: relative.to_owned(), before_hash: blake3::hash(before).to_hex().to_string(),
+        after_hash: blake3::hash(after).to_hex().to_string(),
+    });
+    let bytes = serde_json::to_vec(&manifest).map_err(|error| error.to_string())?;
+    let next = to.join(format!("{MODELS_MOVE_MANIFEST}.next"));
+    let mut file = std::fs::File::create(&next).map_err(|error| error.to_string())?;
+    file.write_all(&bytes).and_then(|()| file.sync_all()).map_err(|error| error.to_string())?;
+    std::fs::rename(next, to.join(MODELS_MOVE_MANIFEST)).map_err(|error| error.to_string())?;
+    #[cfg(not(target_os = "windows"))]
+    std::fs::File::open(to).and_then(|file| file.sync_all()).map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 /// Removes the manifest `move_id` left in `to` without applying it, for a
@@ -626,9 +703,9 @@ where
     let from = Path::new(&manifest.from);
     let committed = paths_equal(&current, to);
     let kept = if committed {
-        remove_originals(from, to, &manifest.entries)
+        remove_originals(from, to, &manifest.entries, &manifest.rebound_files)
     } else {
-        undo_copies(from, to, &manifest.entries)
+        undo_copies(from, to, &manifest.entries, &manifest.rebound_files)
     };
     if let Err(error) = std::fs::remove_file(to.join(MODELS_MOVE_MANIFEST)) {
         tracing::warn!(%error, "a resolved move manifest could not be removed");
@@ -669,6 +746,7 @@ fn migrate_models_dir(
         move_id: move_id.to_owned(),
         from: from.to_string_lossy().into_owned(),
         entries: entries.clone(),
+        rebound_files: Vec::new(),
     })
     .map_err(|error| FolderMoveError::Copy(error.to_string()))?;
     {
@@ -678,7 +756,12 @@ fn migrate_models_dir(
         file.sync_all().map_err(copy_error)?;
     }
     let undo = |error: FolderMoveError| {
-        let kept = undo_copies(from, to, &entries);
+        let rebindings = match read_manifest(to) {
+            Ok(Some(manifest)) => manifest.rebound_files,
+            Ok(None) => return FolderMoveError::Copy(format!("{error}; the move journal is missing, so copies were preserved")),
+            Err(cause) => return FolderMoveError::Copy(format!("{error}; copies were preserved because the move journal could not be read: {cause}")),
+        };
+        let kept = undo_copies(from, to, &entries, &rebindings);
         if kept.is_empty() {
             let _ = std::fs::remove_file(&manifest_path);
         }
@@ -695,7 +778,9 @@ fn migrate_models_dir(
         return Err(undo(FolderMoveError::Cancelled));
     }
     let rewired = commit().map_err(undo)?;
-    let kept = remove_originals(from, to, &entries);
+    let recorded = read_manifest(to).map_err(FolderMoveError::Copy)?
+        .ok_or_else(|| FolderMoveError::Copy("the committed move manifest is missing".into()))?;
+    let kept = remove_originals(from, to, &entries, &recorded.rebound_files);
     if kept.is_empty()
         && let Err(error) = std::fs::remove_file(&manifest_path)
     {
@@ -763,10 +848,24 @@ where
             let device = repository
                 .load_device_settings()
                 .map_err(|error| storage(&error))?;
+            let roots = crate::speech::speech_roots::retained_model_roots(&device, app_folder);
+            crate::speech::speech_roots::rebind_memory_model_manifests(&roots, &old_path, &new_path,
+                |path, before, after| record_manifest_rebinding(&new_path, move_id, path, before, after))
+                .map_err(FolderMoveError::Storage)?;
             repository
                 .relocate_model_paths_and_save_device(
                     &|path| lettuce_models::rewrite_path_prefix(path, &old, &new),
-                    with_folder(device),
+                    {
+                        let mut roots = crate::speech::speech_roots::retained_model_roots(&device, app_folder);
+                        for root in [&mut roots.whisper, &mut roots.kokoro, &mut roots.embedding, &mut roots.thymos] {
+                            if let Some(path) = root.as_deref().and_then(|path| lettuce_models::rewrite_path_prefix(path, &old, &new)) {
+                                *root = Some(path);
+                            }
+                        }
+                        let mut moved = with_folder(device);
+                        moved.retained_model_roots = roots;
+                        moved
+                    },
                     now,
                 )
                 .map_err(|error| storage(&error))
@@ -959,6 +1058,55 @@ mod tests {
     }
 
     #[test]
+    fn custom_root_overlap_rebinds_speech_and_embedding_manifests_and_device_roots() {
+        use lettuce_model_hub::{EmbeddingInstallStore, EmbeddingModelFamily, InstalledEmbeddingManifest,
+            InstalledModelArtifact, InstalledWhisperManifest, WhisperModelRepository};
+        let scratch = scratch("retained-overlap");
+        let app = scratch.join("app");
+        let target = scratch.join("destination");
+        let backend = crate::AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+        let database = backend.database();
+        let whisper = crate::whisper_models_root(&app);
+        let whisper_file = whisper.join("tiny.en").join("ggml-tiny.en.bin");
+        std::fs::create_dir_all(whisper_file.parent().expect("parent")).expect("folder");
+        std::fs::write(&whisper_file, b"retained whisper").expect("whisper");
+        let admitted = InstalledWhisperManifest::inspect_legacy(&whisper, &whisper_file, TimestampMillis::new(2)).expect("manifest");
+        database.admit_whisper_model(admitted.clone()).expect("admit");
+        let embedding_root = crate::embedding_models_root(&app);
+        let files = embedding_root.join(EmbeddingModelFamily::LettuceEmbV4.install_dir());
+        std::fs::create_dir_all(&files).expect("embedding folder");
+        std::fs::write(files.join("model.onnx"), b"model").expect("model");
+        std::fs::write(files.join("tokenizer.json"), b"tokenizer").expect("tokenizer");
+        let manifest = InstalledEmbeddingManifest {
+            family: EmbeddingModelFamily::LettuceEmbV4, source_revision: "legacy-import".into(),
+            model: InstalledModelArtifact::inspect(files.join("model.onnx")).expect("model"),
+            tokenizer: InstalledModelArtifact::inspect(files.join("tokenizer.json")).expect("tokenizer"),
+            calibration: None, max_sequence_length: 512, native_dimensions: 768,
+        };
+        EmbeddingInstallStore::new(&embedding_root).record(&manifest).expect("record");
+        let mut device = database.load_device_settings().expect("device");
+        device.llm_models_dir = Some(app.to_string_lossy().into_owned());
+        database.save_device_settings(device).expect("custom root");
+        set_llm_models_dir(database, &app, target.to_str().expect("target"), true,
+            TimestampMillis::new(3), "retained-overlap", &|| false).expect("move");
+        let device = database.load_device_settings().expect("new device");
+        let roots = crate::speech::speech_roots::retained_model_roots(&device, &app);
+        assert_eq!(roots.whisper.as_deref(), target.join("models/whisper").to_str());
+        assert_eq!(roots.embedding.as_deref(), target.join("models/embedding").to_str());
+        assert_eq!(roots.kokoro.as_deref(), target.join("kokoro").to_str());
+        assert_eq!(roots.thymos.as_deref(), target.join("models/thymos").to_str());
+        let rebound = database.get_whisper_model(&admitted.model_id).expect("whisper").expect("model");
+        rebound.verify_contents().expect("verified moved whisper");
+        assert_eq!(rebound.model.blake3, admitted.model.blake3);
+        let moved = EmbeddingInstallStore::new(target.join("models/embedding"))
+            .manifest(EmbeddingModelFamily::LettuceEmbV4).expect("embedding manifest").expect("model");
+        moved.verify().expect("verified embedding");
+        assert_eq!(moved.model.blake3, manifest.model.blake3);
+        assert!(!app.join("models").exists(), "verified originals should be removed after rebinding");
+        std::fs::remove_dir_all(scratch).expect("cleanup");
+    }
+
+    #[test]
     fn moving_the_folder_moves_the_files_and_the_model_paths() {
         let app = scratch("move");
         let backend = crate::AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
@@ -1143,6 +1291,7 @@ mod tests {
         serde_json::to_vec(&MoveManifest {
             move_id: "move-1".to_owned(),
             from: root.to_string_lossy().into_owned(),
+            rebound_files: Vec::new(),
             entries: names
                 .iter()
                 .map(|name| ManifestEntry {
@@ -1427,4 +1576,53 @@ mod tests {
         assert!(!root.join("org--model").exists());
         std::fs::remove_dir_all(&app).expect("cleanup");
     }
+    #[test]
+    fn rebound_manifest_journals_finish_or_undo_without_removing_changed_files() {
+        for committed in [false, true] {
+            for tampered in [false, true] {
+                let app = scratch("rebound-journal");
+                let from = app.join("source");
+                let to = app.join("destination");
+                let relative = PathBuf::from("model/manifest.json");
+                std::fs::create_dir_all(from.join("model")).expect("source");
+                std::fs::create_dir_all(to.join("model")).expect("target");
+                let before = serde_json::to_vec(&serde_json::json!({"path":from.join("model/weights")})).expect("before");
+                let after = serde_json::to_vec(&serde_json::json!({"path":to.join("model/weights")})).expect("after");
+                std::fs::write(from.join(&relative), &before).expect("original manifest");
+                std::fs::write(to.join(&relative), &after).expect("rebound manifest");
+                std::fs::write(from.join("model/weights"), b"weights").expect("original weights");
+                std::fs::write(to.join("model/weights"), b"weights").expect("copied weights");
+                let manifest = MoveManifest { move_id: "rebind".into(), from: from.to_string_lossy().into_owned(),
+                    entries: vec![ManifestEntry { name: "model".into(), measure: measure(&from.join("model")).expect("measure") }],
+                    rebound_files: vec![ReboundManifest { relative_path: relative.clone(),
+                        before_hash: blake3::hash(&before).to_hex().to_string(), after_hash: blake3::hash(&after).to_hex().to_string() }],
+                };
+                std::fs::write(to.join(MODELS_MOVE_MANIFEST), serde_json::to_vec(&manifest).expect("json")).expect("journal");
+                if tampered { std::fs::write(to.join("model/weights"), b"changed").expect("external change"); }
+                let backend = crate::AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+                let database = backend.database();
+                let mut device = database.load_device_settings().expect("device");
+                device.llm_models_dir = Some(if committed { &to } else { &from }.to_string_lossy().into_owned());
+                database.save_device_settings(device).expect("chosen folder");
+                let result = recover_models_folder_move(database, &app, &to, "rebind").expect("recover").expect("journal");
+                assert_eq!(result.committed, committed);
+                assert_eq!(result.kept.is_empty(), !tampered);
+                if tampered {
+                    assert!(from.join("model").exists()); assert!(to.join("model").exists());
+                } else if committed { assert!(!from.join("model").exists()); assert!(to.join("model").exists()); }
+                else { assert!(from.join("model").exists()); assert!(!to.join("model").exists()); }
+                std::fs::remove_dir_all(app).expect("cleanup");
+            }
+        }
+    }
+
+    #[test]
+    fn manifest_rebinding_proof_rejects_content_identity_changes() {
+        let before = br#"{"model":{"path":"/source/weights","blake3":"abc","byte_size":7},"revision":"fixed"}"#;
+        let valid = br#"{"model":{"path":"/target/weights","blake3":"abc","byte_size":7},"revision":"fixed"}"#;
+        let changed = br#"{"model":{"path":"/target/weights","blake3":"def","byte_size":7},"revision":"fixed"}"#;
+        assert!(paths_only_rebinding(before, valid, Path::new("/source"), Path::new("/target")));
+        assert!(!paths_only_rebinding(before, changed, Path::new("/source"), Path::new("/target")));
+    }
+
 }

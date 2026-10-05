@@ -964,3 +964,154 @@ async fn shutdown_discards_an_active_capture_and_refuses_new_recordings() {
     assert_eq!(super::dictation_cancel(&env.context, dto::DictationCancelRequest { capture_id: started.capture_id }).await.expect_err("ended").code, ApiErrorCode::Conflict);
     assert_eq!(super::dictation_start(&env.context, dto::DictationStartRequest { conversation_id: None }).await.expect_err("shutdown").code, ApiErrorCode::Unavailable);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn kokoro_api_inventories_blends_removes_and_reports_missing_dependencies() {
+    let folder = std::env::temp_dir().join(format!("kokoro-api-{}", lettuce_types::OperationId::new()));
+    let harness = crate::api::tests::harness_in(Reply::Text("Hello."), Arc::new(lettuce_jobs::SystemClock), None, Some(folder.clone()), Arc::new(NoModels));
+    let root = crate::kokoro_root(&folder);
+    let inventory = crate::api::kokoro_inventory(&harness.context, dto::KokoroInventoryRequest { variant: "int8".into(), selected_voice_id: None }).await.expect("inventory");
+    assert!(inventory.model.is_none());
+    assert!(crate::api::kokoro_inventory(&harness.context, dto::KokoroInventoryRequest { variant: "wrong".into(), selected_voice_id: None }).await.expect_err("invalid variant").code == ApiErrorCode::InvalidInput);
+    let bytes = std::iter::repeat_n(0.5_f32, lettuce_speech::KOKORO_STYLE_DIMENSIONS).flat_map(f32::to_le_bytes).collect::<Vec<_>>();
+    use sha2::{Digest, Sha256};
+    let remote = lettuce_model_hub::RemoteKokoroVoice::pinned("af_heart", "ef".repeat(20), u64::try_from(bytes.len()).expect("size"), format!("{:x}", Sha256::digest(&bytes))).expect("voice pin");
+    let store = lettuce_model_hub::KokoroVoiceInstallStore::open(&root).expect("store");
+    let lettuce_model_hub::KokoroVoicePreparation::Download(mut download) = store.prepare(remote).expect("prepare") else { panic!("new download"); };
+    download.append(&bytes).expect("bytes"); download.finish().expect("finish");
+    assert_eq!(crate::api::kokoro_voices_installed(&harness.context).await.expect("installed")[0].id, "af_heart");
+    let blend = crate::api::kokoro_blend(&harness.context, dto::KokoroBlendRequest { voices: vec![dto::KokoroVoiceBlendInput { voice_id: "af_heart".into(), weight: 25.0 }, dto::KokoroVoiceBlendInput { voice_id: "af_heart".into(), weight: 75.0 }] }).await.expect("blend");
+    assert_eq!(blend.voices.len(), 1); assert_eq!(blend.voices[0].weight, 1.0); assert_eq!(blend.style_rows, 1);
+    let error = crate::api::kokoro_phonemize(&harness.context, dto::KokoroPhonemizeRequest { variant: "int8".into(), voice_id: "af_heart".into(), text: "Hello.".into() }).await.expect_err("model missing");
+    assert_eq!(error.code, ApiErrorCode::ModelRequired);
+    assert!(matches!(error.details, Some(ApiErrorDetails::Speech { failure: SpeechFailure::ModelRequired { model: SpeechModelKind::Kokoro } })));
+    let voice = || dto::KokoroVoiceRequest { voice_id: "af_heart".into() };
+    assert!(crate::api::kokoro_uninstall_voice(&harness.context, voice()).await.expect("remove"));
+    assert!(!crate::api::kokoro_uninstall_voice(&harness.context, voice()).await.expect("repeat removal"));
+    std::fs::remove_dir_all(folder).expect("cleanup");
+}
+
+#[tokio::test]
+async fn provider_and_user_voice_api_updates_use_revisions_and_keep_secrets_private() {
+    use lettuce_speech::TtsConfigurationRepository;
+    let env = env(TtsMode::Speak, AsrMode::Text("text"), None);
+    let provider = synthesis_request("metadata").provider;
+    env.context.backend().database().upsert_audio_provider(provider.clone(), None).expect("provider");
+    let voices = env.context.backend().tts_configuration(env.context.secret_store().as_ref())
+        .create_user_voice(provider.id, "Narrator".into(), "speech".into(), "reference".into(), None, START).expect("voice");
+    let listed = super::audio_providers_list(&env.context).await.expect("list");
+    assert_eq!(listed.len(), 1); assert!(!listed[0].has_api_key);
+    let update = || dto::AudioProviderUpdateRequest { provider_id: provider.id.to_string(), expected_revision: 1,
+        label: "Local service".into(), configuration: dto::AudioProviderConfiguration::FishSpeech { base_url: Some("http://localhost:9000".into()), request_path: None } };
+    let changed = super::audio_provider_update(&env.context, update()).await.expect("update");
+    assert_eq!(changed.revision, 2);
+    assert_eq!(super::audio_provider_update(&env.context, update()).await.expect_err("stale").code, ApiErrorCode::Conflict);
+    let changed_voice = super::user_voice_update(&env.context, dto::UserVoiceUpdateRequest { id: voices.id.to_string(), expected_revision: 1,
+        name: "Updated narrator".into(), model_id: "speech".into(), voice_id: "reference".into(), prompt: Some("Warm".into()) }).await.expect("update voice");
+    assert_eq!(changed_voice.revision, 2);
+    assert_eq!(super::user_voices_list(&env.context).await.expect("voices")[0], changed_voice);
+    super::user_voice_delete(&env.context, dto::UserVoiceRequest { voice_id: voices.id.to_string() }).await.expect("delete voice");
+    super::audio_provider_delete(&env.context, dto::AudioProviderDeleteRequest { provider_id: provider.id.to_string(), expected_revision: 2 }).await.expect("delete provider");
+    assert!(super::audio_providers_list(&env.context).await.expect("empty").is_empty());
+}
+
+#[tokio::test]
+async fn queued_local_synthesis_waits_for_folder_move_and_preload_returns_busy() {
+    use lettuce_settings::DeviceSettingsStore;
+    use lettuce_speech::TtsConfigurationRepository;
+    use crate::api::JobHandler;
+    let env = env(TtsMode::Speak, AsrMode::Text("text"), None);
+    let mut device = env.context.backend().database().load_device_settings().expect("device");
+    device.llm_models_dir = Some(env.root.to_string_lossy().into_owned());
+    env.context.backend().database().save_device_settings(device).expect("root");
+    let mut provider = synthesis_request("queued").provider;
+    provider.config = AudioProviderConfig::Kokoro { variant: Some("int8".into()) };
+    env.context.backend().database().upsert_audio_provider(provider.clone(), None).expect("provider");
+    let accepted = super::tts_synthesize(&env.context, dto::TtsSynthesizeRequest {
+        request_id: RequestId::new().to_string(), provider_id: provider.id.to_string(), model_id: "kokoro".into(),
+        voice_id: "af_heart".into(), prompt: None, text: "queued".into(), retained: true,
+    }).await.expect("synthesis");
+    crate::api::local_models_dir_set(&env.context, dto::LocalModelsDirSetRequest {
+        client_operation_id: "speech-folder-move".into(), path: env.root.join("other").to_string_lossy().into_owned(), move_existing: false,
+    }).await.expect("move admission");
+    let id: JobId = accepted.job_id.parse().expect("job id");
+    let snapshot = env.context.backend().database().get(id).expect("get").expect("job");
+    assert!(crate::api::jobs::speech::SpeechSynthesizeHandler.claim(&env.context, &snapshot, WorkerId::new()).await.expect("claim").is_none());
+    assert_eq!(env.context.backend().database().get(id).expect("queued").expect("job").state, JobState::Queued);
+    let error = super::whisper_preload(&env.context, dto::WhisperPreloadRequest { model_id: None, run: Default::default() }).await.expect_err("busy");
+    assert_eq!(error.code, ApiErrorCode::Busy);
+    assert!(matches!(error.details, Some(ApiErrorDetails::LocalModelsBusy { reason: dto::LocalModelsBusyReason::FolderMoveActive { .. } })));
+}
+
+#[tokio::test]
+async fn asr_library_api_filters_exports_and_keeps_audio_as_an_asset_reference() {
+    let env = env(TtsMode::Speak, AsrMode::Text("text"), None);
+    let library = env.context.backend().asr_learning();
+    let term = lettuce_speech::AsrVocabularyTerm::new("Ford", Some("en"), Some("names"), Some("conversation"), 4, START).expect("term");
+    let term = library.save_vocabulary(term).expect("save term");
+    library.save_vocabulary(lettuce_speech::AsrVocabularyTerm::new("Other", Some("en"), None, Some("other"), 1, START).expect("other")).expect("save other");
+    let filter = || dto::AsrLearningFilter { language: Some("EN".into()), scopes: vec!["conversation".into()] };
+    let vocabulary = super::asr_vocabulary_list(&env.context, filter()).await.expect("vocabulary");
+    assert_eq!(vocabulary.len(), 1); assert_eq!(vocabulary[0].id, term.id.to_string());
+    let asset = ingest_wav(&env.context, tone());
+    let mut example = lettuce_speech::AsrVoiceExample::new(asset, "Ford", Some("fort".into()), Some("en"), Some("conversation"), START).expect("example");
+    example.vocabulary_term_id = Some(term.id);
+    library.save_voice_example(example.clone()).expect("save example");
+    let examples = super::asr_voice_examples_list(&env.context, filter()).await.expect("examples");
+    assert_eq!(examples.len(), 1); assert_eq!(examples[0].audio.asset_id, asset.to_string());
+    assert_eq!(examples[0].audio, env.context.asset_ref(asset));
+    let suggestions = super::asr_suggestions(&env.context, dto::AsrSuggestionsRequest { before: "the fort waits".into(), after: "the Ford waits".into(), language: Some("en".into()), scope: Some("conversation".into()) }).await.expect("suggestions");
+    assert_eq!(suggestions.len(), 1); assert_eq!(suggestions[0].correct, "Ford");
+    let export = env.root.join("learning.json");
+    super::asr_learning_export(&env.context, dto::AsrLearningExportRequest { target: dto::FileTarget { uri: export.to_string_lossy().into_owned() }, filter: filter() }).await.expect("export");
+    let document: lettuce_transfer::AsrLearningDocument = serde_json::from_slice(&std::fs::read(export).expect("export bytes")).expect("document");
+    document.validate().expect("validated export");
+    assert_eq!(document.vocabulary.len(), 1); assert_eq!(document.voice_examples.len(), 1); assert_eq!(document.audio_assets.len(), 1);
+    super::asr_voice_example_delete(&env.context, dto::AsrLearningItemRequest { id: example.id.to_string() }).await.expect("delete example");
+    super::asr_vocabulary_delete(&env.context, dto::AsrLearningItemRequest { id: term.id.to_string() }).await.expect("delete term");
+    assert!(super::asr_vocabulary_list(&env.context, filter()).await.expect("empty").is_empty());
+}
+
+#[test]
+fn installed_speech_runtime_follows_the_retained_kokoro_root() {
+    use lettuce_settings::DeviceSettingsStore;
+    let env = env(TtsMode::Speak, AsrMode::Text("hello"), None);
+    let host = super::InstalledSpeech::new(None);
+    let initial = host.tts_runtime(&env.context).expect("initial runtime");
+    let reused = host.tts_runtime(&env.context).expect("reused runtime");
+    assert!(Arc::ptr_eq(&initial, &reused));
+    let database = env.context.backend().database();
+    let mut device = database.load_device_settings().expect("device settings");
+    device.retained_model_roots.kokoro = Some(env.root.join("moved-kokoro").to_string_lossy().into_owned());
+    database.save_device_settings(device).expect("moved root");
+    let moved = host.tts_runtime(&env.context).expect("moved runtime");
+    assert!(!Arc::ptr_eq(&initial, &moved));
+}
+
+#[tokio::test]
+async fn provider_voice_search_keeps_openai_empty_and_rejects_other_provider_kinds() {
+    use lettuce_speech::TtsConfigurationRepository;
+    let env = env(TtsMode::Speak, AsrMode::Text("text"), None);
+    let mut provider = synthesis_request("search").provider;
+    provider.config = AudioProviderConfig::OpenAiCompatible { base_url: None, request_path: None };
+    env.context.backend().database().upsert_audio_provider(provider.clone(), None).expect("provider");
+    let provider_id = provider.id;
+    let request = || dto::AudioProviderVoiceSearchRequest { provider_id: provider_id.to_string(), search: "narrator".into() };
+    assert!(super::audio_provider_voices_search(&env.context, request()).await.expect("empty").is_empty());
+    provider.config = AudioProviderConfig::FishSpeech { base_url: Some("http://localhost:9000".into()), request_path: None };
+    env.context.backend().database().upsert_audio_provider(provider, Some(Revision::new(1))).expect("changed kind");
+    assert_eq!(super::audio_provider_voices_search(&env.context, request()).await.expect_err("unsupported kind").code, ApiErrorCode::InvalidInput);
+}
+
+#[tokio::test]
+async fn voice_design_preview_rejects_invalid_provider_before_a_billable_request() {
+    use lettuce_speech::TtsConfigurationRepository;
+    let env = env(TtsMode::Speak, AsrMode::Text("text"), None);
+    let provider = synthesis_request("voice-design").provider;
+    let provider_id = provider.id;
+    let request = || dto::VoiceDesignPreviewRequest { provider_id: provider_id.to_string(), text_sample: "A sample. ".repeat(20),
+        voice_description: "A warm narrator with a clear voice.".into(), model_id: None, num_previews: Some(1) };
+    assert_eq!(super::voice_design_preview(&env.context, request()).await.expect_err("missing account").code, ApiErrorCode::NotFound);
+    env.context.backend().database().upsert_audio_provider(provider, None).expect("provider");
+    assert_eq!(super::voice_design_preview(&env.context, request()).await.expect_err("wrong provider kind").code, ApiErrorCode::InvalidInput);
+}

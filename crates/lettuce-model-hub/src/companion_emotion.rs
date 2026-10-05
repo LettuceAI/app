@@ -492,6 +492,22 @@ impl CompanionEmotionInstallStore {
         Ok(Some(manifest))
     }
 
+    /// Rebinds a copied install from its former root, verifying unchanged content.
+    pub fn rebind_from(&self, old_root: &Path) -> Result<(), CompanionEmotionInstallError> {
+        let source = Self::open(old_root)?;
+        let Some(mut manifest) = source.installed()? else { return Ok(()); };
+        for artifact in [&mut manifest.model, &mut manifest.tokenizer, &mut manifest.labels] {
+            let relative = artifact.path.strip_prefix(old_root)
+                .map_err(|_| ModelArtifactError::InvalidManifest)?;
+            artifact.path = self.root.join(relative);
+        }
+        manifest.verify()?;
+        let bytes = serde_json::to_vec(&manifest).map_err(|_| ModelArtifactError::InvalidManifest)?;
+        self.write_record(INSTALLED_MANIFEST_FILE, &bytes)?;
+        self.installed()?.ok_or(ModelArtifactError::Missing)?;
+        Ok(())
+    }
+
     /// Installed when the recorded files exist at their recorded sizes;
     /// loading rehashes them.
     #[must_use]
@@ -908,6 +924,28 @@ mod tests {
             .expect("empty digest is absent");
         assert_eq!(labels.model_sha256(), None);
         assert_eq!(labels.stride(), 1);
+    }
+
+    #[test]
+    fn copied_install_rebinds_only_paths_and_preserves_verified_identity() {
+        let parent = std::env::temp_dir().join(format!("thymos-rebind-{}", OperationId::new()));
+        let source = parent.join("source");
+        let destination = parent.join("destination");
+        let labels = labels_json(Some(&sha256(b"model")));
+        let remote = remote(b"model", b"tokenizer", &labels);
+        install(&source, &remote, [b"model", b"tokenizer", &labels]);
+        let store = CompanionEmotionInstallStore::open(&source).expect("source");
+        let original = store.lock().complete(&remote).expect("complete").manifest;
+        install(&destination, &remote, [b"model", b"tokenizer", &labels]);
+        let target = CompanionEmotionInstallStore::open(&destination).expect("destination");
+        target.rebind_from(&source).expect("rebind");
+        let rebound = target.installed().expect("manifest").expect("model");
+        rebound.verify().expect("verify");
+        assert_eq!(rebound.source_revision, original.source_revision);
+        assert_eq!(rebound.model.blake3, original.model.blake3);
+        assert!(rebound.model.path.starts_with(&destination));
+        assert_eq!(store.installed().expect("source unchanged"), Some(original));
+        std::fs::remove_dir_all(parent).expect("cleanup");
     }
 
     #[test]

@@ -951,11 +951,12 @@ pub(crate) async fn admit_models_folder_move(
             if let Some(job_id) = replay(context, &key, &digest)? {
                 return Ok(job_id);
             }
+            let _folder_access = context.local_models().folder_access();
             folder_move_active(context)?;
             let from = models_root(context)?;
             let to = PathBuf::from(&path);
             if move_existing && !crate::models::gguf_library::paths_equal(&from, &to) {
-                if let Some(reason) = folder_busy(context, &from) {
+                if let Some(reason) = folder_busy(context, &from)? {
                     return Err(busy(reason));
                 }
                 crate::check_folder_move(&from, &to).map_err(|error| match error {
@@ -1491,7 +1492,7 @@ async fn move_folder(context: &ApiContext, started: &Arc<StartedJob>) -> Settlem
     let cancellation = started.cancellation.clone();
     let move_id = started.job_id.to_string();
     let moving = context.blocking(move |context| {
-        if move_existing && folder_busy(context, Path::new(&from)).is_some() {
+        if move_existing && folder_busy(context, Path::new(&from))?.is_some() {
             return Ok(Settlement::Failed(job_error(
                 JobErrorCode::ResourceUnavailable,
                 true,
@@ -1529,6 +1530,7 @@ async fn move_folder(context: &ApiContext, started: &Arc<StartedJob>) -> Settlem
                 &|| cancellation.is_cancelled(),
             ) {
                 Ok(change) => {
+                    context.models_changed();
                     #[cfg(not(any(target_os = "android", target_os = "ios")))]
                     if let Err(error) = context.backend().rebind_local_diffusion(&app_folder) {
                         tracing::error!(%error, "the image engine could not follow the moved models folder");

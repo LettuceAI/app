@@ -29,6 +29,7 @@ pub(crate) struct LocalModelsState {
     hugging_face_endpoint: Mutex<String>,
     browser: Mutex<Option<Arc<HuggingFaceBrowser>>>,
     resident_files: Mutex<Option<ResidentFiles>>,
+    folder_access: Mutex<()>,
 }
 
 impl Default for LocalModelsState {
@@ -37,6 +38,7 @@ impl Default for LocalModelsState {
             hugging_face_endpoint: Mutex::new(lettuce_model_hub::HUGGING_FACE_ENDPOINT.to_owned()),
             browser: Mutex::new(None),
             resident_files: Mutex::new(None),
+            folder_access: Mutex::new(()),
         }
     }
 }
@@ -48,6 +50,10 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 impl LocalModelsState {
+    pub(crate) fn folder_access(&self) -> MutexGuard<'_, ()> {
+        lock(&self.folder_access)
+    }
+
     /// The browser, built on first use with the device's trusted
     /// certificates.
     pub(crate) fn browser(
@@ -775,9 +781,9 @@ fn image_work_active(context: &ApiContext) -> Option<Option<String>> {
 /// Why moving the folder at `root` would break work in progress: an install
 /// writing below it, a model llama.cpp holds open from it, or local image
 /// work that reads the image models below it.
-pub(crate) fn folder_busy(context: &ApiContext, root: &Path) -> Option<dto::LocalModelsBusyReason> {
+pub(crate) fn folder_busy(context: &ApiContext, root: &Path) -> Result<Option<dto::LocalModelsBusyReason>, ApiError> {
     if let Some(job_id) = image_work_active(context) {
-        return Some(dto::LocalModelsBusyReason::ImageWorkActive { job_id });
+        return Ok(Some(dto::LocalModelsBusyReason::ImageWorkActive { job_id }));
     }
     if let Some((job_id, _)) = context
         .jobs()
@@ -785,16 +791,36 @@ pub(crate) fn folder_busy(context: &ApiContext, root: &Path) -> Option<dto::Loca
         .into_iter()
         .find(|(_, install_root)| install_root.starts_with(root))
     {
-        return Some(dto::LocalModelsBusyReason::InstallActive {
+        return Ok(Some(dto::LocalModelsBusyReason::InstallActive {
             job_id: job_id.to_string(),
-        });
+        }));
     }
-    context
+    if let Some(path) = context.backend().whisper_runtime().resident_files()
+        .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?
+        .into_iter().find(|path| path.starts_with(root)) {
+        return Ok(Some(dto::LocalModelsBusyReason::ModelLoaded { path: path.to_string_lossy().into_owned() }));
+    }
+    {
+        let roots = context.retained_model_roots()?;
+        for (kind, path) in [(dto::RequiredModel::Embedding, roots.embedding), (dto::RequiredModel::Emotion, roots.thymos)] {
+            if context.models().is_loaded(kind)
+                && let Some(path) = path
+                && Path::new(&path).starts_with(root) {
+                return Ok(Some(dto::LocalModelsBusyReason::ModelLoaded { path }));
+            }
+        }
+    }
+    if let Some((job_id, path)) = super::jobs::speech::active_local_files(context, root)? {
+        if Path::new(&path).starts_with(root) {
+            return Ok(Some(dto::LocalModelsBusyReason::SpeechWorkActive { job_id: job_id.to_string() }));
+        }
+    }
+    Ok(context
         .local_models()
         .resident_files(context)
         .into_iter()
         .find(|file| Path::new(file).starts_with(root))
-        .map(|path| dto::LocalModelsBusyReason::ModelLoaded { path })
+        .map(|path| dto::LocalModelsBusyReason::ModelLoaded { path }))
 }
 
 /// Uses another models folder as a job: with `move_existing` the current

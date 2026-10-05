@@ -147,8 +147,35 @@ export const commands = {
 	embeddingUnload: () => typedError<null, ApiError>(__TAURI_INVOKE("embedding_unload")),
 	companionEmotionStatus: () => typedError<ThymosStatus, ApiError>(__TAURI_INVOKE("companion_emotion_status")),
 	companionEmotionRemove: () => typedError<boolean, ApiError>(__TAURI_INVOKE("companion_emotion_remove")),
+	kokoroInventory: (request: KokoroInventoryRequest) => typedError<KokoroInventory, ApiError>(__TAURI_INVOKE("kokoro_inventory", { request })),
+	kokoroVariants: () => typedError<KokoroVariantView[], ApiError>(__TAURI_INVOKE("kokoro_variants")),
+	kokoroVoicesInstalled: () => typedError<KokoroInstalledVoiceView[], ApiError>(__TAURI_INVOKE("kokoro_voices_installed")),
+	kokoroVoicesAvailable: () => typedError<KokoroAvailableVoiceView[], ApiError>(__TAURI_INVOKE("kokoro_voices_available")),
+	kokoroInstallModel: (request: KokoroVariantRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("kokoro_install_model", { request })),
+	kokoroInstallVoices: (request: KokoroVoicesInstallRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("kokoro_install_voices", { request })),
+	kokoroUninstallModel: (request: KokoroVariantRequest) => typedError<boolean, ApiError>(__TAURI_INVOKE("kokoro_uninstall_model", { request })),
+	kokoroUninstallVoice: (request: KokoroVoiceRequest) => typedError<boolean, ApiError>(__TAURI_INVOKE("kokoro_uninstall_voice", { request })),
+	kokoroBlend: (request: KokoroBlendRequest) => typedError<KokoroBlendView, ApiError>(__TAURI_INVOKE("kokoro_blend", { request })),
+	kokoroPhonemize: (request: KokoroPhonemizeRequest) => typedError<KokoroPhonemizationView, ApiError>(__TAURI_INVOKE("kokoro_phonemize", { request })),
+	audioProvidersList: () => typedError<AudioProviderView[], ApiError>(__TAURI_INVOKE("audio_providers_list")),
+	audioProviderUpdate: (request: AudioProviderUpdateRequest) => typedError<AudioProviderView, ApiError>(__TAURI_INVOKE("audio_provider_update", { request })),
+	audioProviderDelete: (request: AudioProviderDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("audio_provider_delete", { request })),
+	userVoicesList: () => typedError<UserVoiceView[], ApiError>(__TAURI_INVOKE("user_voices_list")),
+	userVoiceUpdate: (request: UserVoiceUpdateRequest) => typedError<UserVoiceView, ApiError>(__TAURI_INVOKE("user_voice_update", { request })),
+	userVoiceDelete: (request: UserVoiceRequest) => typedError<null, ApiError>(__TAURI_INVOKE("user_voice_delete", { request })),
+	asrLearningExport: (request: AsrLearningExportRequest) => typedError<null, ApiError>(__TAURI_INVOKE("asr_learning_export", { request })),
+	asrVocabularyList: (request: AsrLearningFilter) => typedError<AsrVocabularyView[], ApiError>(__TAURI_INVOKE("asr_vocabulary_list", { request })),
+	asrCorrectionsList: (request: AsrLearningFilter) => typedError<AsrCorrectionView[], ApiError>(__TAURI_INVOKE("asr_corrections_list", { request })),
+	asrIgnoredSuggestionsList: (request: AsrLearningFilter) => typedError<AsrIgnoredSuggestionView[], ApiError>(__TAURI_INVOKE("asr_ignored_suggestions_list", { request })),
+	asrVoiceExamplesList: (request: AsrLearningFilter) => typedError<AsrVoiceExampleView[], ApiError>(__TAURI_INVOKE("asr_voice_examples_list", { request })),
+	asrVocabularyDelete: (request: AsrLearningItemRequest) => typedError<null, ApiError>(__TAURI_INVOKE("asr_vocabulary_delete", { request })),
+	asrCorrectionDelete: (request: AsrLearningItemRequest) => typedError<null, ApiError>(__TAURI_INVOKE("asr_correction_delete", { request })),
+	asrVoiceExampleDelete: (request: AsrLearningItemRequest) => typedError<null, ApiError>(__TAURI_INVOKE("asr_voice_example_delete", { request })),
+	asrSuggestions: (request: AsrSuggestionsRequest) => typedError<AsrSuggestionView[], ApiError>(__TAURI_INVOKE("asr_suggestions", { request })),
 	audioProviderVerify: (request: AudioProviderVerifyRequest) => typedError<boolean, ApiError>(__TAURI_INVOKE("audio_provider_verify", { request })),
 	audioProviderVoices: (request: AudioProviderRequest) => typedError<AudioVoiceView[], ApiError>(__TAURI_INVOKE("audio_provider_voices", { request })),
+	audioProviderVoicesSearch: (request: AudioProviderVoiceSearchRequest) => typedError<AudioVoiceView[], ApiError>(__TAURI_INVOKE("audio_provider_voices_search", { request })),
+	voiceDesignPreview: (request: VoiceDesignPreviewRequest) => typedError<VoiceDesignPreviewView[], ApiError>(__TAURI_INVOKE("voice_design_preview", { request })),
 	audioProviderVoicesRefresh: (request: AudioProviderRequest) => typedError<AudioVoiceView[], ApiError>(__TAURI_INVOKE("audio_provider_voices_refresh", { request })),
 	ttsModels: (request: TtsModelsRequest) => typedError<TtsModelView[], ApiError>(__TAURI_INVOKE("tts_models", { request })),
 	ttsVoiceDesignModels: (request: TtsModelsRequest) => typedError<TtsModelView[], ApiError>(__TAURI_INVOKE("tts_voice_design_models", { request })),
@@ -252,6 +279,92 @@ export type AppliedCorrectionView = {
 	matched_text: string,
 };
 
+export type AsrCorrectionView = {
+	id: string,
+	wrong: string,
+	correct: string,
+	language: string | null,
+	scope: string,
+	confidence: number | null,
+	use_count: number,
+	accepted_count: number,
+	rejected_count: number,
+	seen_count: number,
+	last_seen_at: number | null,
+	user_approved: boolean,
+	created_at: number,
+	updated_at: number,
+};
+
+export type AsrIgnoredSuggestionView = {
+	id: string,
+	wrong: string,
+	correct: string,
+	language: string | null,
+	scope: string,
+	ignored_count: number,
+	last_ignored_at: number,
+	created_at: number,
+	updated_at: number,
+};
+
+export type AsrLearningExportRequest = {
+	target: FileTarget,
+	filter?: AsrLearningFilter,
+};
+
+export type AsrLearningFilter = {
+	language?: string | null,
+	scopes?: string[],
+};
+
+export type AsrLearningItemRequest = {
+	id: string,
+};
+
+export type AsrSuggestionView = {
+	wrong: string,
+	correct: string,
+	language: string | null,
+	scope: string,
+	confidence: number | null,
+	accepted_count: number,
+	rejected_count: number,
+	seen_count: number,
+};
+
+export type AsrSuggestionsRequest = {
+	before: string,
+	after: string,
+	language: string | null,
+	scope: string | null,
+};
+
+export type AsrVocabularyView = {
+	id: string,
+	term: string,
+	language: string | null,
+	category: string | null,
+	scope: string,
+	priority: number,
+	use_count: number,
+	created_at: number,
+	updated_at: number,
+};
+
+export type AsrVoiceExampleView = {
+	id: string,
+	audio: AssetRef,
+	expected_text: string,
+	whisper_output: string | null,
+	language: string | null,
+	scope: string,
+	vocabulary_term_id: string | null,
+	correction_id: string | null,
+	created_at: number,
+	updated_at: number,
+};
+
 /**  What a picked image or audio file is for. */
 export type AssetIngestRole = "avatar" | "background" | "attachment" | "voice_example" | "reference_image";
 
@@ -271,6 +384,11 @@ export type AssetsIngestRequest = {
 
 export type AudioProviderConfiguration = { type: "gemini"; project_id: string | null; location: string } | { type: "elevenlabs" } | { type: "fish_tts" } | { type: "fish_speech"; base_url: string | null; request_path: string | null } | { type: "open_ai_compatible"; base_url: string | null; request_path: string | null } | { type: "kokoro"; variant: string | null };
 
+export type AudioProviderDeleteRequest = {
+	provider_id: string,
+	expected_revision: number,
+};
+
 export type AudioProviderDraft = {
 	configuration: AudioProviderConfiguration,
 	api_key: string | null,
@@ -282,7 +400,28 @@ export type AudioProviderRequest = {
 
 export type AudioProviderType = "gemini" | "elevenlabs" | "fish_tts" | "fish_speech" | "open_ai_compatible" | "kokoro";
 
+export type AudioProviderUpdateRequest = {
+	provider_id: string,
+	expected_revision: number,
+	label: string,
+	configuration: AudioProviderConfiguration,
+};
+
 export type AudioProviderVerifyRequest = { type: "saved"; provider_id: string } | { type: "draft"; draft: AudioProviderDraft };
+
+/**  Account metadata; credentials remain in the secret store. */
+export type AudioProviderView = {
+	id: string,
+	label: string,
+	configuration: AudioProviderConfiguration,
+	has_api_key: boolean,
+	revision: number,
+};
+
+export type AudioProviderVoiceSearchRequest = {
+	provider_id: string,
+	search: string,
+};
 
 export type AudioVoiceView = {
 	voice_id: string,
@@ -848,6 +987,11 @@ export type FileKind = "character_card" | "persona_file" | "lorebook" | "prompt_
  *  resolves (such as an Android `content://` URI).
  */
 export type FileSource = {
+	uri: string,
+};
+
+/**  Where an export is written, as chosen by the save dialog. */
+export type FileTarget = {
 	uri: string,
 };
 
@@ -1700,6 +1844,95 @@ export type JobsListRequest = {
 	limit: number | null,
 };
 
+export type KokoroArtifactView = {
+	byte_size: number,
+	blake3: string,
+};
+
+export type KokoroAvailableVoiceView = {
+	id: string,
+	installed: boolean,
+	source_revision: string,
+	byte_size: number,
+};
+
+export type KokoroBlendRequest = {
+	voices: KokoroVoiceBlendInput[],
+};
+
+export type KokoroBlendView = {
+	voices: KokoroVoiceBlendInput[],
+	style_rows: number,
+};
+
+export type KokoroInstalledVoiceView = {
+	id: string,
+	artifact: KokoroArtifactView,
+};
+
+export type KokoroInventory = {
+	variant: string,
+	variant_allowed_on_platform: boolean,
+	model: KokoroArtifactView | null,
+	config: KokoroArtifactView | null,
+	tokenizer: KokoroArtifactView | null,
+	tokenizer_config: KokoroArtifactView | null,
+	installed_voices: KokoroInstalledVoiceView[],
+	selected_voice_installed: boolean | null,
+};
+
+export type KokoroInventoryRequest = {
+	variant: string,
+	selected_voice_id: string | null,
+};
+
+export type KokoroPhonemizationSegmentView = {
+	kind: string,
+	source_text: string,
+	ipa: string,
+	token_ids: number[],
+};
+
+export type KokoroPhonemizationView = {
+	normalized_text: string,
+	effective_text: string,
+	language: string,
+	used_lexicon_entries: string[],
+	segments: KokoroPhonemizationSegmentView[],
+	token_ids: number[],
+};
+
+export type KokoroPhonemizeRequest = {
+	variant: string,
+	voice_id: string,
+	text: string,
+};
+
+export type KokoroVariantRequest = {
+	variant: string,
+};
+
+export type KokoroVariantView = {
+	id: string,
+	label: string,
+	filename: string,
+	size_mb: number | null,
+	mobile_supported: boolean,
+};
+
+export type KokoroVoiceBlendInput = {
+	voice_id: string,
+	weight: number | null,
+};
+
+export type KokoroVoiceRequest = {
+	voice_id: string,
+};
+
+export type KokoroVoicesInstallRequest = {
+	voice_ids: string[],
+};
+
 /**  A character's or group's newest conversation, archived included. */
 export type LatestConversation = {
 	/**  The character or group id. */
@@ -1945,7 +2178,7 @@ export type LocalModelReference = {
  *  What keeps the local models folder busy: an install into it, a move of
  *  it, or a model llama.cpp holds open from it (the UI offers to unload).
  */
-export type LocalModelsBusyReason = { type: "install_active"; job_id: string } | { type: "folder_move_active"; job_id: string } | { type: "model_loaded"; path: string } | { type: "image_work_active"; job_id: string | null };
+export type LocalModelsBusyReason = { type: "install_active"; job_id: string } | { type: "speech_work_active"; job_id: string } | { type: "folder_move_active"; job_id: string } | { type: "model_loaded"; path: string } | { type: "image_work_active"; job_id: string | null };
 
 export type LocalModelsDir = {
 	path: string,
@@ -3043,6 +3276,43 @@ export type TtsSynthesizeRequest = {
 	prompt: string | null,
 	text: string,
 	retained?: boolean,
+};
+
+export type UserVoiceRequest = {
+	voice_id: string,
+};
+
+export type UserVoiceUpdateRequest = {
+	id: string,
+	expected_revision: number,
+	name: string,
+	model_id: string,
+	voice_id: string,
+	prompt: string | null,
+};
+
+export type UserVoiceView = {
+	id: string,
+	provider_id: string,
+	name: string,
+	model_id: string,
+	voice_id: string,
+	prompt: string | null,
+	revision: number,
+};
+
+export type VoiceDesignPreviewRequest = {
+	provider_id: string,
+	text_sample: string,
+	voice_description: string,
+	model_id: string | null,
+	num_previews: number | null,
+};
+
+export type VoiceDesignPreviewView = {
+	generated_voice_id: string,
+	audio: AssetRef,
+	duration_secs: number | null,
 };
 
 export type WhisperCacheCleared = {

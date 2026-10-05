@@ -241,6 +241,7 @@ pub(crate) async fn admit_install_with_detail(
 ) -> Result<dto::JobAccepted, ApiError> {
     let job_id = context
         .blocking(move |context| {
+            let _folder_access = context.local_models().folder_access();
             if is_image_install(&work) || work.root().starts_with(crate::api::local_models::models_root(context)?) {
                 super::local::folder_move_active(context)?;
             }
@@ -399,12 +400,8 @@ pub(crate) fn recover_queued_installs(context: &ApiContext) -> Result<Vec<JobId>
             }
         }
     }
-    if let Some(app_folder) = context.app_folder() {
-        resume_companion_emotion(
-            context,
-            &crate::companion_emotion_root(app_folder),
-            &waiting,
-        );
+    if let Some(root) = context.retained_model_roots()?.thymos {
+        resume_companion_emotion(context, std::path::Path::new(&root), &waiting);
     }
     let mut cancelled = Vec::new();
     for job in waiting {

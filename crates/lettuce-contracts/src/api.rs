@@ -65,6 +65,7 @@ pub enum OllamaFailure {
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum LocalModelsBusyReason {
     InstallActive { job_id: String },
+    SpeechWorkActive { job_id: String },
     FolderMoveActive { job_id: String },
     ModelLoaded { path: String },
     ImageWorkActive { job_id: Option<String> },

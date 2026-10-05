@@ -135,7 +135,7 @@ impl IntoApiError for TtsConfigurationRepositoryError {
     fn into_api_error(self) -> ApiError {
         let code = match self {
             Self::NotFound | Self::ProviderMissing => ApiErrorCode::NotFound,
-            Self::StaleRevision | Self::AlreadyExists => ApiErrorCode::Conflict,
+            Self::StaleRevision | Self::AlreadyExists | Self::InUse => ApiErrorCode::Conflict,
             Self::InvalidData => ApiErrorCode::InvalidInput,
             Self::Storage => ApiErrorCode::Internal,
         };

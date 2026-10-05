@@ -104,3 +104,96 @@ pub struct TtsSynthesizeRequest {
     #[serde(default)]
     pub retained: bool,
 }
+
+/// Account metadata; credentials remain in the secret store.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct AudioProviderView {
+    pub id: String,
+    pub label: String,
+    pub configuration: AudioProviderConfiguration,
+    pub has_api_key: bool,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub revision: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct AudioProviderUpdateRequest {
+    pub provider_id: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub expected_revision: u64,
+    pub label: String,
+    pub configuration: AudioProviderConfiguration,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct AudioProviderDeleteRequest {
+    pub provider_id: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub expected_revision: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct UserVoiceView {
+    pub id: String,
+    pub provider_id: String,
+    pub name: String,
+    pub model_id: String,
+    pub voice_id: String,
+    pub prompt: Option<String>,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub revision: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct UserVoiceRequest { pub voice_id: String }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct UserVoiceUpdateRequest {
+    pub id: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub expected_revision: u64,
+    pub name: String,
+    pub model_id: String,
+    pub voice_id: String,
+    pub prompt: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct AudioProviderVoiceSearchRequest {
+    pub provider_id: String,
+    pub search: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct VoiceDesignPreviewRequest {
+    pub provider_id: String,
+    pub text_sample: String,
+    pub voice_description: String,
+    pub model_id: Option<String>,
+    pub num_previews: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct VoiceDesignPreviewView {
+    pub generated_voice_id: String,
+    pub audio: crate::AssetRef,
+    pub duration_secs: f64,
+}

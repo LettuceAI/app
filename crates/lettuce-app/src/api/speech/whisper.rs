@@ -17,11 +17,9 @@ fn unavailable(error: impl std::fmt::Display) -> ApiError {
     api_error(ApiErrorCode::Unavailable, error.to_string())
 }
 
-pub(super) fn whisper_root(context: &ApiContext) -> Result<PathBuf, ApiError> {
-    let folder = context
-        .app_folder()
-        .ok_or_else(|| unavailable("no app data folder is open"))?;
-    Ok(crate::whisper_models_root(folder))
+pub(crate) fn whisper_root(context: &ApiContext) -> Result<PathBuf, ApiError> {
+    context.retained_model_roots()?.whisper.map(PathBuf::from)
+        .ok_or_else(|| api_error(ApiErrorCode::Unavailable, "the Whisper root is unavailable"))
 }
 
 fn filename(model_id: &str) -> String {
@@ -282,6 +280,11 @@ pub async fn whisper_preload(
 ) -> Result<(), ApiError> {
     context
         .blocking(move |context| {
+            let _folder_access = context.local_models().folder_access();
+            let root = whisper_root(context)?;
+            if root.starts_with(crate::api::local_models::models_root(context)?) {
+                crate::api::jobs::local::folder_move_active(context)?;
+            }
             let model = resolve_model(context, request.model_id.as_deref())?;
             let options = engine_options(&dto::TranscribeOptions {
                 run: request.run,

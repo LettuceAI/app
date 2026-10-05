@@ -8,7 +8,7 @@ mod image_tools;
 pub(super) mod install;
 pub(super) mod local;
 mod runner;
-mod speech;
+pub(crate) mod speech;
 mod state;
 mod text;
 

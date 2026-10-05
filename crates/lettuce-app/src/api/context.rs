@@ -317,6 +317,15 @@ impl ApiContext {
         &self.inner.parts.backend
     }
 
+    pub(crate) fn retained_model_roots(&self) -> Result<lettuce_settings::RetainedModelRoots, lettuce_contracts::ApiError> {
+        use lettuce_settings::DeviceSettingsStore;
+        let folder = self.app_folder().ok_or_else(|| super::error::api_error(
+            lettuce_contracts::ApiErrorCode::Unavailable, "the app folder is unavailable"))?;
+        let device = self.backend().database().load_device_settings().map_err(|error|
+            super::error::api_error(lettuce_contracts::ApiErrorCode::Internal, error.to_string()))?;
+        Ok(crate::speech::speech_roots::retained_model_roots(&device, folder))
+    }
+
     #[must_use]
     pub fn secret_store(&self) -> &Arc<dyn SecretStore> {
         &self.inner.parts.secret_store

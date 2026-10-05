@@ -68,7 +68,7 @@ impl SpeechHost for NoSpeech {
 /// eSpeak NG on the device's path, and the host's microphone.
 pub struct InstalledSpeech {
     microphone: Option<Arc<dyn MicrophoneCapture>>,
-    runtime: Mutex<Option<Arc<dyn TtsRuntime>>>,
+    runtime: Mutex<Option<(std::path::PathBuf, Arc<dyn TtsRuntime>)>>,
 }
 
 impl InstalledSpeech {
@@ -93,15 +93,17 @@ impl SpeechHost for InstalledSpeech {
             .runtime
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some(runtime) = runtime.as_ref() {
-            return Ok(Arc::clone(runtime));
-        }
         let folder = context.app_folder().ok_or_else(|| {
             api_error(ApiErrorCode::Unavailable, "no app data folder is open")
         })?;
         let unavailable =
             |error: &dyn std::fmt::Display| api_error(ApiErrorCode::Unavailable, error.to_string());
-        let root = crate::kokoro_root(folder);
+        let root = context.retained_model_roots()?.kokoro.map(std::path::PathBuf::from)
+            .ok_or_else(|| api_error(ApiErrorCode::Unavailable, "the Kokoro root is unavailable"))?;
+        if let Some((installed_root, cached)) = runtime.as_ref()
+            && installed_root == &root {
+            return Ok(Arc::clone(cached));
+        }
         std::fs::create_dir_all(&root).map_err(|error| unavailable(&error))?;
         let tls = context
             .backend()
@@ -122,7 +124,7 @@ impl SpeechHost for InstalledSpeech {
                 )
                 .map_err(|error| unavailable(&error))?,
         );
-        *runtime = Some(Arc::clone(&built));
+        *runtime = Some((root, Arc::clone(&built)));
         Ok(built)
     }
 
