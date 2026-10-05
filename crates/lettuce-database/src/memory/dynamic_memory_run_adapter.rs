@@ -116,13 +116,14 @@ pub(crate) fn load_run_in(
 ) -> Result<DynamicMemoryRun, DynamicMemoryRunRepositoryError> {
     let mut run = connection
         .query_row(
-            "SELECT conversation_id,space_id,time_awareness_enabled,supersession_enabled,structured_fallback_format,summary_message_interval,summary_window_start,summary_window_end,starting_memory_json,profile_json,tool_request_json,created_at \
+            "SELECT conversation_id,space_id,time_awareness_enabled,supersession_enabled,structured_fallback_format,summary_message_interval,summary_window_start,summary_window_end,starting_memory_json,profile_json,tool_request_json,created_at,branch_id \
              FROM dynamic_memory_runs WHERE id=?1",
             [id.to_string()],
             |row| {
                 Ok(DynamicMemoryRun {
                     id,
                     conversation_id: parse_id(row.get(0)?)?,
+                    branch_id: parse_id(row.get(12)?)?,
                     space_id: parse_id(row.get(1)?)?,
                     time_awareness_enabled: row.get(2)?,
                     supersession_enabled: row.get(3)?,
@@ -800,8 +801,8 @@ pub(crate) fn insert_restored_run_in(
     transaction
         .execute(
             "INSERT INTO dynamic_memory_runs \
-             (id,conversation_id,space_id,time_awareness_enabled,supersession_enabled,structured_fallback_format,summary_message_interval,summary_window_start,summary_window_end,starting_memory_json,profile_json,tool_request_json,created_at) \
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
+             (id,conversation_id,space_id,time_awareness_enabled,supersession_enabled,structured_fallback_format,summary_message_interval,summary_window_start,summary_window_end,starting_memory_json,profile_json,tool_request_json,created_at,branch_id) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
             params![
                 run.id.to_string(),
                 run.conversation_id.to_string(),
@@ -816,6 +817,7 @@ pub(crate) fn insert_restored_run_in(
                 encode_versioned(&run.profile, JSON_VERSION).map_err(storage)?,
                 encode_versioned(&run.tool_request, JSON_VERSION).map_err(storage)?,
                 run.created_at.get(),
+                run.branch_id.to_string(),
             ],
         )
         .map_err(storage)?;
@@ -1038,6 +1040,7 @@ impl DynamicMemoryRunRepository for Database {
         let requested_run = DynamicMemoryRun {
             id: input.run_id,
             conversation_id: input.conversation_id,
+            branch_id: input.branch_id,
             space_id: input.space_id,
             starting_memory: input.starting_memory,
             source_messages: input.source_messages,
@@ -1101,8 +1104,8 @@ impl DynamicMemoryRunRepository for Database {
         transaction
             .execute(
                 "INSERT INTO dynamic_memory_runs \
-                 (id,conversation_id,space_id,time_awareness_enabled,supersession_enabled,structured_fallback_format,summary_message_interval,summary_window_start,summary_window_end,starting_memory_json,profile_json,tool_request_json,created_at) \
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
+                 (id,conversation_id,space_id,time_awareness_enabled,supersession_enabled,structured_fallback_format,summary_message_interval,summary_window_start,summary_window_end,starting_memory_json,profile_json,tool_request_json,created_at,branch_id) \
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
                 params![
                     requested_run.id.to_string(),
                     requested_run.conversation_id.to_string(),
@@ -1118,6 +1121,7 @@ impl DynamicMemoryRunRepository for Database {
                     encode_versioned(&requested_run.profile, JSON_VERSION).map_err(storage)?,
                     encode_versioned(&requested_run.tool_request, JSON_VERSION).map_err(storage)?,
                     requested_run.created_at.get(),
+                    requested_run.branch_id.to_string(),
                 ],
             )
             .map_err(|error| match error.sqlite_error_code() {
@@ -2037,6 +2041,22 @@ mod tests {
         );
     }
 
+    fn fixture_branch(
+        database: &Database,
+        conversation_id: ConversationId,
+    ) -> ConversationBranchId {
+        let id: String = database
+            .connection()
+            .expect("connection")
+            .query_row(
+                "SELECT active_branch_id FROM conversations WHERE id = ?1",
+                [conversation_id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("branch");
+        id.parse().expect("branch id")
+    }
+
     fn conversation_fixture(
         database: &Database,
     ) -> (
@@ -2294,6 +2314,7 @@ mod tests {
                 run_id,
                 attempt_id,
                 conversation_id,
+                branch_id: fixture_branch(&database, conversation_id),
                 space_id,
                 starting_memory: database.get(space_id).expect("memory").expect("space"),
                 cycle_start_change: None,
@@ -2319,6 +2340,25 @@ mod tests {
                 now: TimestampMillis::new(10),
             })
             .expect("run");
+        let stored_branch: String = database
+            .connection()
+            .expect("connection")
+            .query_row(
+                "SELECT branch_id FROM dynamic_memory_runs WHERE id = ?1",
+                [run_id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("run branch");
+        let own_branch: String = database
+            .connection()
+            .expect("connection")
+            .query_row(
+                "SELECT branch_id FROM conversation_memory_spaces WHERE space_id = ?1",
+                [space_id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("own branch");
+        assert_eq!(stored_branch, own_branch);
         database
             .transition_dynamic_memory_attempt(
                 attempt_id,
@@ -2413,6 +2453,7 @@ mod tests {
                 run_id,
                 attempt_id,
                 conversation_id,
+                branch_id: fixture_branch(&database, conversation_id),
                 space_id,
                 starting_memory: database.get(space_id).expect("memory").expect("space"),
                 cycle_start_change: None,
@@ -2657,6 +2698,7 @@ mod tests {
                 run_id,
                 attempt_id,
                 conversation_id,
+                branch_id: fixture_branch(&database, conversation_id),
                 space_id,
                 starting_memory: starting_memory.clone(),
                 cycle_start_change: change,
@@ -2726,6 +2768,7 @@ mod tests {
                 run_id: first_run_id,
                 attempt_id: first_attempt_id,
                 conversation_id,
+                branch_id: fixture_branch(&database, conversation_id),
                 space_id,
                 starting_memory: database.get(space_id).expect("memory").expect("space"),
                 cycle_start_change: None,
@@ -2804,6 +2847,7 @@ mod tests {
                 run_id: second_run_id,
                 attempt_id: second_attempt_id,
                 conversation_id,
+                branch_id: fixture_branch(&database, conversation_id),
                 space_id,
                 starting_memory: before_second.clone(),
                 cycle_start_change: None,
@@ -3037,6 +3081,7 @@ mod tests {
                 run_id,
                 attempt_id,
                 conversation_id,
+                branch_id: fixture_branch(&database, conversation_id),
                 space_id,
                 starting_memory: database.get(space_id).expect("memory").expect("space"),
                 cycle_start_change: None,
@@ -3259,6 +3304,7 @@ mod tests {
             run_id,
             attempt_id: parent_id,
             conversation_id,
+            branch_id: fixture_branch(&database, conversation_id),
             space_id,
             starting_memory: database.get(space_id).expect("memory").expect("space"),
             cycle_start_change: None,
@@ -3283,6 +3329,27 @@ mod tests {
             job_id: JobId::new(),
             now: TimestampMillis::new(10),
         };
+        let child_branch_id = ConversationBranchId::new();
+        database.connection().expect("connection").execute(
+            "INSERT INTO conversation_branches (conversation_id,id,parent_branch_id,fork_message_id,status,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,'active',1,2,2)",
+            params![conversation_id.to_string(), child_branch_id.to_string(), admission.branch_id.to_string(), messages[0].message_id.to_string()],
+        ).expect("child branch");
+        let mut sibling_space = admission.clone();
+        sibling_space.branch_id = child_branch_id;
+        assert_eq!(
+            database.admit_dynamic_memory_run_attempt(sibling_space),
+            Err(DynamicMemoryRunRepositoryError::Conflict)
+        );
+        assert_eq!(
+            database.load_dynamic_memory_run(run_id),
+            Err(DynamicMemoryRunRepositoryError::NotFound)
+        );
+        let mut foreign_branch = admission.clone();
+        foreign_branch.branch_id = ConversationBranchId::new();
+        assert_eq!(
+            database.admit_dynamic_memory_run_attempt(foreign_branch),
+            Err(DynamicMemoryRunRepositoryError::Conflict)
+        );
         let mut stale_start = admission.clone();
         stale_start.run_id = DynamicMemoryRunId::new();
         stale_start.attempt_id = DynamicMemoryAttemptId::new();

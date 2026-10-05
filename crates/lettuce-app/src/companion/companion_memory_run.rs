@@ -221,6 +221,12 @@ impl<
                         run_id,
                         attempt_id,
                         conversation_id,
+                        branch_id: self
+                            .conversations
+                            .get(conversation_id)
+                            .map_err(CompanionPostTurnMemoryRunError::Conversation)?
+                            .conversation
+                            .active_branch_id,
                         space_id: starting_memory.id,
                         starting_memory,
                         cycle_start_change,
@@ -725,6 +731,7 @@ pub(crate) mod tests {
             let run = DynamicMemoryRun {
                 id: input.run_id,
                 conversation_id: input.conversation_id,
+                branch_id: input.branch_id,
                 space_id: input.space_id,
                 starting_memory: input.starting_memory,
                 source_messages: input.source_messages,

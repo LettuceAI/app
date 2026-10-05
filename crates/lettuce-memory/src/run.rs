@@ -5,8 +5,8 @@ use lettuce_conversations::{
     ReplayRetention, ResolvedInferenceProfile, ToolPolicy, ToolRequest,
 };
 use lettuce_types::{
-    ConversationId, DynamicMemoryAttemptId, DynamicMemoryRunId, JobId, MemorySpaceId, MessageId,
-    Revision, TimestampMillis, ToolExecutionId,
+    ConversationBranchId, ConversationId, DynamicMemoryAttemptId, DynamicMemoryRunId, JobId,
+    MemorySpaceId, MessageId, Revision, TimestampMillis, ToolExecutionId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -103,6 +103,7 @@ pub struct DynamicMemorySourceMessage {
 pub struct DynamicMemoryRun {
     pub id: DynamicMemoryRunId,
     pub conversation_id: ConversationId,
+    pub branch_id: ConversationBranchId,
     pub space_id: MemorySpaceId,
     pub starting_memory: crate::MemorySpaceSnapshot,
     pub source_messages: Vec<DynamicMemorySourceMessage>,
@@ -161,6 +162,7 @@ pub struct NewDynamicMemoryRunAttempt {
     pub run_id: DynamicMemoryRunId,
     pub attempt_id: DynamicMemoryAttemptId,
     pub conversation_id: ConversationId,
+    pub branch_id: ConversationBranchId,
     pub space_id: MemorySpaceId,
     /// The memory space as the cycle sees it, after `cycle_start_change`.
     pub starting_memory: crate::MemorySpaceSnapshot,

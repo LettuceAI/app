@@ -7,7 +7,7 @@ use lettuce_memory::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const DYNAMIC_MEMORY_BACKUP_VERSION: u32 = 1;
+pub const DYNAMIC_MEMORY_BACKUP_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -79,6 +79,17 @@ impl DynamicMemoryBackup {
             .conversations
             .iter()
             .map(|entry| entry.aggregate.conversation.id)
+            .collect::<BTreeSet<_>>();
+        let branches = history
+            .conversations
+            .iter()
+            .flat_map(|entry| {
+                entry
+                    .aggregate
+                    .branches
+                    .iter()
+                    .map(move |branch| (entry.aggregate.conversation.id, branch.id))
+            })
             .collect::<BTreeSet<_>>();
         let spaces = memory
             .spaces
@@ -154,6 +165,7 @@ impl DynamicMemoryBackup {
             if entry.run.validate().is_err()
                 || !run_ids.insert(entry.run.id)
                 || !conversations.contains(&entry.run.conversation_id)
+                || !branches.contains(&(entry.run.conversation_id, entry.run.branch_id))
                 || spaces
                     .get(&(entry.run.conversation_id, entry.run.space_id))
                     .is_none_or(|snapshot| entry.run.starting_memory.revision > snapshot.revision)

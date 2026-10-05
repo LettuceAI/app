@@ -182,6 +182,7 @@ BEGIN SELECT RAISE(ABORT, 'memory retrieval access cannot be deleted'); END;
 CREATE TABLE dynamic_memory_runs (
     id TEXT PRIMARY KEY,
     conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE RESTRICT,
+    branch_id TEXT NOT NULL,
     space_id TEXT NOT NULL REFERENCES memory_spaces(id) ON DELETE RESTRICT,
     time_awareness_enabled INTEGER NOT NULL CHECK (time_awareness_enabled IN (0,1)),
     supersession_enabled INTEGER NOT NULL CHECK (supersession_enabled IN (0,1)),
@@ -203,7 +204,9 @@ CREATE TABLE dynamic_memory_runs (
         AND json_type(tool_request_json, '$.value.definitions') = 'array'
     ),
     created_at INTEGER NOT NULL,
-    UNIQUE (id, conversation_id)
+    UNIQUE (id, conversation_id),
+    FOREIGN KEY (conversation_id, branch_id)
+        REFERENCES conversation_branches(conversation_id, id) ON DELETE RESTRICT
 ) STRICT;
 
 CREATE TABLE dynamic_memory_run_source_messages (
@@ -478,6 +481,7 @@ BEFORE INSERT ON dynamic_memory_runs
 WHEN NOT EXISTS (
     SELECT 1 FROM conversation_memory_spaces binding
     WHERE binding.conversation_id = NEW.conversation_id AND binding.space_id = NEW.space_id
+      AND (binding.pooled = 1 OR binding.branch_id = NEW.branch_id)
 )
 BEGIN SELECT RAISE(ABORT, 'dynamic-memory run memory-space ownership mismatch'); END;
 

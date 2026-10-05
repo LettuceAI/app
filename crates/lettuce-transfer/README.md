@@ -57,7 +57,7 @@ A backup is complete: it holds every user-owned domain, every referenced media o
 | `data/companion-effects.json` | Turn effects and suffix-rewind receipts |
 | `data/memory.json` | Memory spaces, items, summaries, retrieval receipts, and pools no conversation is bound to |
 | `data/memory-projections.json` | Stored embedding projections, ready and repair-needed |
-| `data/dynamic-memory.json` | Dynamic memory approvals, runs, attempts, rounds, results and summary checkpoints |
+| `data/dynamic-memory.json` | Dynamic memory approvals, branch-owned runs, attempts, rounds, results and summary checkpoints (section version 2) |
 | `media/blobs/<hash>` | One section per ready media blob |
 | `conversation/snapshots/<id>`, `conversation/replays/<id>` | Protected conversation snapshots and provider replay artifacts |
 

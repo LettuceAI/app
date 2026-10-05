@@ -3377,6 +3377,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             run_id: failure_run_id,
             attempt_id: failure_attempt_id,
             conversation_id: current.id,
+            branch_id: current.active_branch_id,
             space_id: failure_memory.id,
             cycle_start_change: None,
             starting_memory: failure_memory,
@@ -3490,6 +3491,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                 run_id,
                 attempt_id,
                 conversation_id: current.id,
+                branch_id: current.active_branch_id,
                 space_id: memory.id,
                 cycle_start_change: None,
                 starting_memory: memory,
@@ -11545,6 +11547,7 @@ async fn companion_memory_loop_replays_two_round_checkpoint_without_duplicate_wo
             run_id,
             attempt_id,
             conversation_id,
+            branch_id: source.message.branch_id,
             space_id,
             cycle_start_change: None,
             starting_memory: MemoryRepository::get(&database, space_id)

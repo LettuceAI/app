@@ -1342,6 +1342,7 @@ mod tests {
             DynamicMemoryRun {
                 id: run_id,
                 conversation_id: lettuce_types::ConversationId::new(),
+                branch_id: lettuce_types::ConversationBranchId::new(),
                 space_id,
                 starting_memory: MemorySpaceSnapshot {
                     id: space_id,
