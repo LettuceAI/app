@@ -1221,10 +1221,14 @@ async fn models_folder_refuses_app_data_overlap_and_allows_the_default() {
         assert_eq!(error.code, ApiErrorCode::InvalidInput);
         assert!(matches!(error.details, Some(ApiErrorDetails::InvalidField { field, .. }) if field == "path"));
     }
-    local_models_dir_set(&harness.context, dto::LocalModelsDirSetRequest {
-        path: folder.join("models").join("gguf").to_string_lossy().into_owned(),
-        move_existing: false, client_operation_id: "default-layout".into(),
-    }).await.expect("default layout remains allowed");
+    for (index, path) in [folder.join("models"), folder.join("models").join("gguf")].into_iter().enumerate() {
+        let accepted = local_models_dir_set(&harness.context, dto::LocalModelsDirSetRequest {
+            path: path.to_string_lossy().into_owned(), move_existing: false,
+            client_operation_id: format!("default-layout-{index}"),
+        }).await.expect("default layout remains allowed");
+        run(&runner(&harness.context, None)).await;
+        assert_eq!(view(&harness.context, job_id(&accepted)).await.state, dto::JobStateDto::Succeeded);
+    }
 }
 
 #[cfg(unix)]
