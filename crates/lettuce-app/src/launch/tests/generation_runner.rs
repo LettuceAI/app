@@ -4915,6 +4915,104 @@ async fn restart_resumes_a_memory_job_whose_window_is_still_due() {
 }
 
 #[tokio::test]
+async fn a_claimed_memory_run_settles_on_its_branch_while_another_is_selected() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let scenario = finalized_dynamic_turn(&backend, "selected-during-run").await;
+    let database = backend.database();
+    let root = ConversationReader::get(database, scenario.conversation_id)
+        .expect("conversation")
+        .conversation;
+    let engine = ScenarioEmbeddingEngine;
+    let memory = successful_memory_cycle();
+    let host = backend.companion_memory_host(&engine, &memory);
+    let work = host
+        .after_turn(
+            scenario.conversation_id,
+            lettuce_conversations::GenerationOperation::Send,
+            WorkerId::new(),
+            TimestampMillis::new(1_030),
+            LEASE,
+            &ResourceAvailability::all(),
+        )
+        .expect("admit the due window")
+        .into_iter()
+        .next()
+        .expect("claimed memory work");
+    let anchor = branch_timeline(database, scenario.conversation_id, root.active_branch_id)
+        .into_iter()
+        .find(|message| message.message.role == MessageRole::User)
+        .expect("user anchor")
+        .message
+        .id;
+    let forked = database
+        .fork_branch(
+            &lettuce_conversations::ForkBranch {
+                conversation_id: scenario.conversation_id,
+                source_branch_id: root.active_branch_id,
+                at_message_id: Some(anchor),
+                expected_revision: root.revision,
+                operation: OperationToken {
+                    key: key("selected-during-run-fork"),
+                    request_digest: ContentHash::parse("b1".repeat(32)).expect("digest"),
+                },
+            },
+            TimestampMillis::new(1_031),
+        )
+        .expect("fork while the run is claimed")
+        .value;
+    let child = forked.branch.id;
+    let mut revision = forked.conversation.revision;
+    for (index, branch) in [root.active_branch_id, child].into_iter().enumerate() {
+        revision = database
+            .select_branch(
+                &lettuce_conversations::SelectBranch {
+                    conversation_id: scenario.conversation_id,
+                    branch_id: branch,
+                    expected_revision: revision,
+                    operation: OperationToken {
+                        key: key(&format!("selected-during-run-select-{index}")),
+                        request_digest: ContentHash::parse(format!("c{index}").repeat(32))
+                            .expect("digest"),
+                    },
+                },
+                TimestampMillis::new(1_032 + i64::try_from(index).expect("index")),
+            )
+            .expect("select a branch while the run is claimed")
+            .value
+            .revision;
+    }
+    let child_before = MemoryRepository::get_for_branch(database, scenario.conversation_id, child)
+        .expect("child")
+        .expect("space");
+    host.run_claimed(work, CancellationReason::User, TimestampMillis::new(1_040))
+        .await
+        .expect("run on the root branch");
+    let runs = lettuce_memory::DynamicMemoryRunRepository::list_dynamic_memory_runs(
+        database,
+        scenario.conversation_id,
+    )
+    .expect("runs");
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].branch_id, root.active_branch_id);
+    assert_eq!(runs[0].space_id, scenario.space_id.expect("root space"));
+    assert_eq!(
+        stored_summary(database, &scenario).as_deref(),
+        Some("The user chose tea.")
+    );
+    assert_eq!(
+        MemoryRepository::get_for_branch(database, scenario.conversation_id, child).expect("child"),
+        Some(child_before)
+    );
+    assert_eq!(
+        ConversationReader::get(database, scenario.conversation_id)
+            .expect("conversation")
+            .conversation
+            .active_branch_id,
+        child
+    );
+}
+
+#[tokio::test]
 async fn restart_runs_a_plain_queued_parent_batch_after_selecting_a_child() {
     let path = std::env::temp_dir().join(format!(
         "lettuce-memory-branch-restart-{}.db",
