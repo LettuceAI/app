@@ -327,7 +327,6 @@ Everything the Tauri phase (phase (c)) still has to connect:
 - The advanced `lorebook_scan_depth` setting (1 to 20 recent messages, default 10): no Tauri command or settings control reads or writes it yet.
 - Automatic OpenRouter cost capture after inference (no host polling, scheduling or cache exists; `capture_job` is caller-triggered).
 - The analytics exit event.
-- TTS preview caching.
 - Memory of a branch that a delete forks: the new branch starts from the conversation's single memory space, so memory is not yet "as of the anchor". Seeding it belongs with branch-aware memory.
 
 ## Image API: held and open
