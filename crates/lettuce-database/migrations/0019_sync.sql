@@ -675,14 +675,14 @@ CREATE TRIGGER sync_deleted_memory_items
 AFTER DELETE ON memory_items
 WHEN (SELECT 'pool:' || character_id FROM companion_memory_pools WHERE space_id = OLD.space_id
      UNION ALL
-     SELECT 'conversation:' || conversation_id FROM conversation_memory_spaces
+     SELECT 'conversation:' || conversation_id || ':branch:' || branch_id FROM conversation_memory_spaces
       WHERE space_id = OLD.space_id AND pooled = 0
      LIMIT 1) IS NOT NULL
 BEGIN
     INSERT INTO sync_deleted_entities (entity_kind, entity_id, deleted_at)
     VALUES ('memory_item', (SELECT 'pool:' || character_id FROM companion_memory_pools WHERE space_id = OLD.space_id
      UNION ALL
-     SELECT 'conversation:' || conversation_id FROM conversation_memory_spaces
+     SELECT 'conversation:' || conversation_id || ':branch:' || branch_id FROM conversation_memory_spaces
       WHERE space_id = OLD.space_id AND pooled = 0
      LIMIT 1) || '/' || OLD.id, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER))
     ON CONFLICT(entity_kind, entity_id) DO NOTHING;

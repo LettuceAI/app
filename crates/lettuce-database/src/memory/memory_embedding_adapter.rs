@@ -440,6 +440,7 @@ mod tests {
         let database = Database::open_in_memory().expect("database");
         let (space_id, before) = recounted_space(&database);
         let conversation_id = lettuce_types::ConversationId::new();
+        let branch_id = lettuce_types::ConversationBranchId::new();
         {
             let connection = database.connection().expect("connection");
             connection
@@ -447,12 +448,12 @@ mod tests {
                 .expect("fixture mode");
             connection
                 .execute(
-                    "INSERT INTO conversation_memory_spaces (conversation_id, branch_id, space_id) VALUES (?1, 'test-branch', ?2)",
-                    rusqlite::params![conversation_id.to_string(), space_id.to_string()],
+                    "INSERT INTO conversation_memory_spaces (conversation_id, branch_id, space_id) VALUES (?1, ?3, ?2)",
+                    rusqlite::params![conversation_id.to_string(), space_id.to_string(), branch_id.to_string()],
                 )
                 .expect("binding");
         }
-        let owner = format!("conversation:{conversation_id}");
+        let owner = format!("conversation:{conversation_id}:branch:{branch_id}");
         let put = |item: &lettuce_memory::MemoryItem| {
             let mut connection = database.connection().expect("connection");
             let transaction = connection.transaction().expect("transaction");

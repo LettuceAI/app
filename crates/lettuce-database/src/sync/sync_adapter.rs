@@ -2274,13 +2274,15 @@ const MEMORY_CURSOR_CODEC: SnapshotCodec = SnapshotCodec {
     empty: None,
     seed: None,
     decode: |id, bytes| {
-        parse_conversation(id)?;
+        crate::sync::memory_sync_adapter::branch_owner(id).ok_or(ApplyOneError::Corrupt)?;
         serde_json::from_slice::<u64>(bytes)
             .map(|_| ())
             .map_err(|_| ApplyOneError::Corrupt)
     },
     current: |tx, id| {
-        crate::sync::memory_sync_adapter::sync_load_memory_cursor(tx, parse_conversation(id)?)
+        let (conversation_id, branch_id) =
+            crate::sync::memory_sync_adapter::branch_owner(id).ok_or(ApplyOneError::Corrupt)?;
+        crate::sync::memory_sync_adapter::sync_load_memory_cursor(tx, conversation_id, branch_id)
             .map_err(memory_apply_error)?
             .map(|cursor| {
                 json_payload(
@@ -2295,7 +2297,12 @@ const MEMORY_CURSOR_CODEC: SnapshotCodec = SnapshotCodec {
         let cursor: u64 = serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
         crate::sync::memory_sync_adapter::sync_store_memory_cursor(
             tx,
-            parse_conversation(id)?,
+            crate::sync::memory_sync_adapter::branch_owner(id)
+                .ok_or(ApplyOneError::Corrupt)?
+                .0,
+            crate::sync::memory_sync_adapter::branch_owner(id)
+                .ok_or(ApplyOneError::Corrupt)?
+                .1,
             cursor,
         )
         .map_err(memory_apply_error)?;
@@ -2315,7 +2322,14 @@ fn decode_memory_summary(
     if !crate::sync::memory_sync_adapter::valid_owner(id) {
         return Err(ApplyOneError::Corrupt);
     }
-    serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)
+    let summary: lettuce_memory::MemorySummary =
+        serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
+    if crate::sync::memory_sync_adapter::branch_owner(id)
+        .is_some_and(|(_, branch)| branch != summary.branch_id)
+    {
+        return Err(ApplyOneError::Corrupt);
+    }
+    Ok(summary)
 }
 
 const MEMORY_SUMMARY_CODEC: SnapshotCodec = SnapshotCodec {

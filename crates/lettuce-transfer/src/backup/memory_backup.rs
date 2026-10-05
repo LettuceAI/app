@@ -4,7 +4,7 @@ use lettuce_memory::{MemoryRetrievalAccessReceipt, MemorySpaceSnapshot, MemorySu
 use lettuce_types::ConversationId;
 use serde::{Deserialize, Serialize};
 
-pub const MEMORY_BACKUP_VERSION: u32 = 1;
+pub const MEMORY_BACKUP_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -12,12 +12,21 @@ pub struct MemoryBackup {
     pub version: u32,
     pub spaces: Vec<BackupMemorySpace>,
     pub retrieval_accesses: Vec<MemoryRetrievalAccessReceipt>,
+    pub synced_cursors: Vec<BackupMemoryCursor>,
     /// The companion character that owns each shared memory pool.
     #[serde(default)]
     pub pools: Vec<BackupCompanionMemoryPool>,
     /// Pool spaces no conversation is bound to yet or anymore.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unbound_pools: Vec<MemorySpaceSnapshot>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackupMemoryCursor {
+    pub conversation_id: ConversationId,
+    pub branch_id: lettuce_types::ConversationBranchId,
+    pub window_end: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -31,6 +40,7 @@ pub struct BackupCompanionMemoryPool {
 #[serde(deny_unknown_fields)]
 pub struct BackupMemorySpace {
     pub conversation_id: ConversationId,
+    pub branch_id: Option<lettuce_types::ConversationBranchId>,
     pub snapshot: MemorySpaceSnapshot,
     pub summary: Option<MemorySummary>,
     /// Other conversations bound to the same space: a companion memory pool
@@ -51,7 +61,23 @@ impl MemoryBackup {
             return Err(MemoryBackupError::InvalidData);
         }
         self.spaces
-            .sort_by_key(|space| (space.conversation_id, space.snapshot.id));
+            .sort_by_key(|space| (space.conversation_id, space.branch_id, space.snapshot.id));
+        self.synced_cursors
+            .sort_by_key(|cursor| (cursor.conversation_id, cursor.branch_id));
+        let mut cursor_owners = BTreeSet::new();
+        if self.synced_cursors.iter().any(|cursor| {
+            !cursor_owners.insert((cursor.conversation_id, cursor.branch_id))
+                || !history.conversations.iter().any(|entry| {
+                    entry.aggregate.conversation.id == cursor.conversation_id
+                        && entry
+                            .aggregate
+                            .branches
+                            .iter()
+                            .any(|branch| branch.id == cursor.branch_id)
+                })
+        }) {
+            return Err(MemoryBackupError::InvalidData);
+        }
         self.pools.sort_by_key(|pool| pool.character_id);
         self.unbound_pools.sort_by_key(|space| space.id);
         let space_ids = self
@@ -118,10 +144,23 @@ impl MemoryBackup {
             let pool = pool_spaces.contains(&space.snapshot.id);
             if bound.iter().any(|id| !known_conversations.contains(id))
                 || space.snapshot.validate().is_err()
+                || (pool != space.branch_id.is_none())
+                || space.branch_id.is_some_and(|branch_id| {
+                    !history.conversations.iter().any(|entry| {
+                        entry.aggregate.conversation.id == space.conversation_id
+                            && entry
+                                .aggregate
+                                .branches
+                                .iter()
+                                .any(|branch| branch.id == branch_id)
+                    })
+                })
                 || (!pool && !space.shared_conversation_ids.is_empty())
-                || bound
-                    .iter()
-                    .any(|id| spaces.insert((*id, pool), space.snapshot.id).is_some())
+                || bound.iter().any(|id| {
+                    spaces
+                        .insert((*id, space.branch_id), space.snapshot.id)
+                        .is_some()
+                })
                 || !space_ids.insert(space.snapshot.id)
                 || space.snapshot.items.iter().any(|item| {
                     memory_owners.insert(item.id, space.snapshot.id).is_some()
@@ -137,6 +176,15 @@ impl MemoryBackup {
                 || space.summary.as_ref().is_some_and(|summary| {
                     summary.validate().is_err()
                         || summary.space_id != space.snapshot.id
+                        || (!pool && Some(summary.branch_id) != space.branch_id)
+                        || !history.conversations.iter().any(|entry| {
+                            entry.aggregate.conversation.id == space.conversation_id
+                                && entry
+                                    .aggregate
+                                    .branches
+                                    .iter()
+                                    .any(|branch| branch.id == summary.branch_id)
+                        })
                         || summary.source_message_ids.iter().any(|id| {
                             messages.get(id).map(|value| value.0) != Some(space.conversation_id)
                         })
@@ -183,9 +231,9 @@ impl MemoryBackup {
             }
         }
         let binds = |conversation_id: ConversationId, space_id: lettuce_types::MemorySpaceId| {
-            [false, true]
-                .iter()
-                .any(|pool| spaces.get(&(conversation_id, *pool)) == Some(&space_id))
+            spaces.iter().any(|((owner, _), bound_space)| {
+                *owner == conversation_id && *bound_space == space_id
+            })
         };
         let mut access_owners = BTreeSet::new();
         for receipt in &self.retrieval_accesses {
@@ -230,9 +278,10 @@ impl MemoryBackup {
             }
         }
         for effect in &effects.effects {
-            let bound = [false, true]
+            let bound = spaces
                 .iter()
-                .filter_map(|pool| spaces.get(&(effect.conversation_id, *pool)))
+                .filter(|((owner, _), _)| *owner == effect.conversation_id)
+                .map(|(_, space)| space)
                 .collect::<Vec<_>>();
             if bound.is_empty() {
                 if effect.memory_changes == Default::default() {

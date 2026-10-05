@@ -2864,6 +2864,7 @@ async fn app_backend_runs_resolved_group_speakers_and_rejects_unresolved_turns()
         MemorySummaryChange {
             expected_revision: manual_space.revision,
             summary: MemorySummary {
+                branch_id: turn.branch_id,
                 space_id: manual_space.id,
                 text: "The cast reached the harbor.".into(),
                 token_count: 5,
@@ -4908,6 +4909,103 @@ async fn restart_resumes_a_memory_job_whose_window_is_still_due() {
     assert_eq!(
         stored_summary(backend.database(), &scenario).as_deref(),
         Some("The user chose tea.")
+    );
+    drop(backend);
+    let _ = std::fs::remove_file(&path);
+}
+
+#[tokio::test]
+async fn restart_runs_a_plain_queued_parent_batch_after_selecting_a_child() {
+    let path = std::env::temp_dir().join(format!(
+        "lettuce-memory-branch-restart-{}.db",
+        ConversationId::new()
+    ));
+    let backend = AppBackend::open(&path, TimestampMillis::new(1)).expect("backend");
+    let scenario = finalized_dynamic_turn(&backend, "queued-parent-branch").await;
+    let database = backend.database();
+    let root = ConversationReader::get(database, scenario.conversation_id)
+        .expect("conversation")
+        .conversation;
+    let queued = crate::CompanionPostTurnMemoryAdmissionCoordinator::new(database, database)
+        .admit_plain_after_turn(
+            scenario.conversation_id,
+            2,
+            lettuce_memory::DynamicMemoryRunMode::Auto,
+            TimestampMillis::new(1_030),
+        )
+        .expect("queued admission")
+        .expect("due batch");
+    assert_eq!(queued.job.state, JobState::Queued);
+    assert!(
+        lettuce_memory::DynamicMemoryRunRepository::list_dynamic_memory_runs(
+            database,
+            scenario.conversation_id
+        )
+        .expect("runs")
+        .is_empty()
+    );
+    let anchor = branch_timeline(database, scenario.conversation_id, root.active_branch_id)
+        .into_iter()
+        .find(|message| message.message.role == MessageRole::User)
+        .expect("user anchor")
+        .message
+        .id;
+    let child = database
+        .fork_branch(
+            &lettuce_conversations::ForkBranch {
+                conversation_id: scenario.conversation_id,
+                source_branch_id: root.active_branch_id,
+                at_message_id: Some(anchor),
+                expected_revision: root.revision,
+                operation: OperationToken {
+                    key: key("queued-parent-fork"),
+                    request_digest: ContentHash::parse("a3".repeat(32)).expect("digest"),
+                },
+            },
+            TimestampMillis::new(1_031),
+        )
+        .expect("fork queued parent")
+        .value
+        .branch
+        .id;
+    let child_before = MemoryRepository::get_for_branch(database, scenario.conversation_id, child)
+        .expect("child")
+        .expect("space");
+    drop(backend);
+    let backend = AppBackend::open(&path, TimestampMillis::new(1_040)).expect("reopen");
+    let engine = ScenarioEmbeddingEngine;
+    let memory = successful_memory_cycle();
+    let cancelled = backend
+        .companion_memory_host(&engine, &memory)
+        .resume_after_restart(
+            WorkerId::new(),
+            LEASE,
+            &FakeClock::new(TimestampMillis::new(1_041)),
+            &crate::CompanionFollowUpHost::new(backend.database(), &memory),
+        )
+        .await
+        .expect("restart host");
+    assert!(cancelled.is_empty());
+    assert_eq!(
+        persisted_job(backend.database(), queued.job.id).state,
+        JobState::Succeeded
+    );
+    let runs = lettuce_memory::DynamicMemoryRunRepository::list_dynamic_memory_runs(
+        backend.database(),
+        scenario.conversation_id,
+    )
+    .expect("runs");
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].branch_id, root.active_branch_id);
+    assert_eq!(runs[0].space_id, scenario.space_id.expect("root space"));
+    assert_eq!(
+        stored_summary(backend.database(), &scenario).as_deref(),
+        Some("The user chose tea.")
+    );
+    assert_eq!(
+        MemoryRepository::get_for_branch(backend.database(), scenario.conversation_id, child)
+            .expect("child"),
+        Some(child_before)
     );
     drop(backend);
     let _ = std::fs::remove_file(&path);
@@ -7127,6 +7225,48 @@ async fn concurrent_replies_fork_into_a_branch_and_notify_both_devices() {
         .run(&work, input(&scenario), TimestampMillis::new(1_020))
         .await
         .expect("run");
+    let seed_item = MemoryItem {
+        id: MemoryId::new(),
+        short_id: lettuce_memory::MemoryShortId::new(4242).expect("short id"),
+        text: "Mira drinks jasmine tea.".into(),
+        category: MemoryCategory::Preference,
+        source_message_id: None,
+        source_role: None,
+        observed_at: None,
+        observed_time_precision: None,
+        superseded_by: None,
+        superseded_at: None,
+        supersedes: vec![],
+        token_count: 5,
+        is_cold: false,
+        is_pinned: true,
+        importance: Score::FULL,
+        persistence_importance: Score::FULL,
+        prompt_importance: Score::FULL,
+        volatility: Score::LEGACY_VOLATILITY,
+        access_count: 0,
+        created_at: TimestampMillis::new(1_030),
+        last_accessed_at: TimestampMillis::new(1_030),
+    };
+    let root_space = MemoryRepository::get_for_branch(
+        &a,
+        scenario.conversation_id,
+        ConversationReader::get(&a, scenario.conversation_id)
+            .expect("conversation")
+            .conversation
+            .active_branch_id,
+    )
+    .expect("space")
+    .expect("root space");
+    MemoryRepository::compare_and_apply(
+        &a,
+        MemoryChangeSet {
+            space_id: root_space.id,
+            expected_revision: root_space.revision,
+            items: vec![seed_item.clone()],
+        },
+    )
+    .expect("root seed");
     sync_prompts(&a, &b, 1_500);
 
     let turn_a = send_and_generate(&a, &scenario, "from-a", "Reply to a", 2_000).await;
@@ -7149,6 +7289,22 @@ async fn concurrent_replies_fork_into_a_branch_and_notify_both_devices() {
     assert_eq!(forks_a[0].branch_id, forks_b[0].branch_id);
     assert_ne!(forks_a[0].holds_local, forks_b[0].holds_local);
     let fork = forks_a[0].branch_id;
+    let expected_memory_id = MemoryId::from_uuid(uuid::Uuid::new_v5(
+        &fork.as_uuid(),
+        seed_item.id.as_uuid().as_bytes(),
+    ));
+    let memory_a = MemoryRepository::get_for_branch(&a, scenario.conversation_id, fork)
+        .expect("fork a")
+        .expect("own space a");
+    let memory_b = MemoryRepository::get_for_branch(&b, scenario.conversation_id, fork)
+        .expect("fork b")
+        .expect("own space b");
+    assert_eq!(memory_a.items.len(), 1);
+    assert_eq!(memory_b.items.len(), 1);
+    assert_eq!(memory_a.items[0].id, expected_memory_id);
+    assert_eq!(memory_b.items[0].id, expected_memory_id);
+    assert_eq!(memory_a.items[0].text, seed_item.text);
+    assert_eq!(memory_b.items[0].text, seed_item.text);
     let forked = branch_timeline(&a, scenario.conversation_id, fork);
     assert_eq!(forked, branch_timeline(&b, scenario.conversation_id, fork));
     assert_eq!(forked.len(), 4);
@@ -7396,6 +7552,13 @@ async fn memory_spaces_sync_their_items_and_summary_under_their_owner() {
         lettuce_memory::MemorySummaryChange {
             expected_revision: space.revision,
             summary: lettuce_memory::MemorySummary {
+                branch_id: lettuce_conversations::ConversationReader::get(
+                    &a,
+                    scenario.conversation_id,
+                )
+                .expect("conversation")
+                .conversation
+                .active_branch_id,
                 space_id: space.id,
                 text: "They talked about tea.".into(),
                 token_count: 5,
@@ -7439,7 +7602,11 @@ async fn memory_spaces_sync_their_items_and_summary_under_their_owner() {
         lettuce_memory::MemorySummaryRepository::summary_cursor(
             &b,
             on_b.id,
-            scenario.conversation_id
+            scenario.conversation_id,
+            lettuce_conversations::ConversationReader::get(&b, scenario.conversation_id)
+                .expect("conversation")
+                .conversation
+                .active_branch_id,
         )
         .expect("cursor"),
         2
@@ -7532,6 +7699,66 @@ async fn memory_spaces_sync_their_items_and_summary_under_their_owner() {
     sync_prompts(&a, &b, 3_300);
     expected.retain(|id| *id != from_b);
     assert_eq!(ids(&b, on_b.id), expected);
+    let conversation = lettuce_conversations::ConversationReader::get(&a, scenario.conversation_id)
+        .expect("root conversation")
+        .conversation;
+    let root_branch = conversation.active_branch_id;
+    let anchor = branch_timeline(&a, scenario.conversation_id, root_branch)
+        .into_iter()
+        .find(|message| message.message.role == MessageRole::Assistant)
+        .expect("assistant anchor")
+        .message
+        .id;
+    let child_branch = a
+        .fork_branch(
+            &lettuce_conversations::ForkBranch {
+                conversation_id: scenario.conversation_id,
+                source_branch_id: root_branch,
+                at_message_id: Some(anchor),
+                expected_revision: conversation.revision,
+                operation: OperationToken {
+                    key: key("synced-memory-child"),
+                    request_digest: ContentHash::parse("f5".repeat(32)).expect("digest"),
+                },
+            },
+            TimestampMillis::new(3_400),
+        )
+        .expect("fork own memory")
+        .value
+        .branch
+        .id;
+    let child_a = MemoryRepository::get_for_branch(&a, scenario.conversation_id, child_branch)
+        .expect("child a")
+        .expect("child own space");
+    assert_ne!(child_a.id, space.id);
+    lettuce_memory::MemorySummaryRepository::compare_and_apply_summary(
+        &a,
+        lettuce_memory::MemorySummaryChange {
+            expected_revision: child_a.revision,
+            summary: lettuce_memory::MemorySummary {
+                space_id: child_a.id,
+                branch_id: child_branch,
+                updated_at: TimestampMillis::new(3_450),
+                ..summary_b.clone()
+            },
+        },
+    )
+    .expect("child summary before sync");
+    sync_prompts(&a, &b, 3_500);
+    let child_b = MemoryRepository::get_for_branch(&b, scenario.conversation_id, child_branch)
+        .expect("child b")
+        .expect("received child own space");
+    assert_eq!(ids(&a, child_a.id), ids(&b, child_b.id));
+    assert!(ids(&b, child_b.id).iter().all(|id| !expected.contains(id)));
+    let child_summary = lettuce_memory::MemorySummaryRepository::get_summary(&b, child_b.id)
+        .expect("child summary")
+        .expect("received summary");
+    assert_eq!(child_summary.branch_id, child_branch);
+    assert_eq!(child_summary.window_end, 2);
+    let child_added = add(&b, child_b.id, "Child-only preference.");
+    sync_prompts(&b, &a, 3_600);
+    assert!(ids(&a, child_a.id).contains(&child_added));
+    assert_eq!(ids(&a, space.id), expected);
     assert_rescans_are_empty(&[&a, &b], 4_000);
 }
 

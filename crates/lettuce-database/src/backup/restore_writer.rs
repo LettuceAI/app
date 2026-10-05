@@ -393,11 +393,13 @@ impl ProviderBackupRestoreWriter for Database {
                     .iter()
                     .any(|pool| pool.space_id == space.snapshot.id)
             };
-            let memory = graph
-                .memory
-                .spaces
-                .iter()
-                .find(|space| space.conversation_id == conversation_id && !is_pool(space));
+            let memory = graph.memory.spaces.iter().find(|space| {
+                space.conversation_id == conversation_id
+                    && !is_pool(space)
+                    && restored_history.aggregate.branches.iter().any(|branch| {
+                        branch.parent_branch_id.is_none() && Some(branch.id) == space.branch_id
+                    })
+            });
             let pool = graph.memory.spaces.iter().find(|space| {
                 is_pool(space)
                     && (space.conversation_id == conversation_id
@@ -439,6 +441,40 @@ impl ProviderBackupRestoreWriter for Database {
                 },
             )
             .map_err(invalid)?;
+        }
+        for space in &graph.memory.spaces {
+            let Some(branch_id) = space.branch_id else {
+                continue;
+            };
+            let existing: bool = transaction.query_row("SELECT EXISTS(SELECT 1 FROM conversation_memory_spaces WHERE conversation_id = ?1 AND branch_id = ?2 AND pooled = 0)", params![space.conversation_id.to_string(), branch_id.to_string()], |row| row.get(0)).map_err(invalid)?;
+            if existing {
+                continue;
+            }
+            crate::memory::memory_adapter::insert_space_in(
+                &transaction,
+                space.conversation_id,
+                branch_id,
+                &space.snapshot,
+            )
+            .map_err(invalid)?;
+            let projections = graph
+                .memory_projections
+                .projections
+                .iter()
+                .filter(|projection| projection.space_id == space.snapshot.id)
+                .cloned()
+                .collect::<Vec<_>>();
+            crate::conversation::conversation_history_writer::insert_memory_state(
+                &transaction,
+                space.conversation_id,
+                space,
+                true,
+                &projections,
+            )
+            .map_err(invalid)?;
+        }
+        for cursor in &graph.memory.synced_cursors {
+            transaction.execute("INSERT INTO memory_synced_cursors (conversation_id,branch_id,window_end) VALUES (?1,?2,?3)", params![cursor.conversation_id.to_string(),cursor.branch_id.to_string(),i64::try_from(cursor.window_end).map_err(invalid)?]).map_err(invalid)?;
         }
         for follow_up in &graph.conversation_history.scene_follow_ups {
             crate::conversation::scene_follow_up_adapter::insert_restored_in(

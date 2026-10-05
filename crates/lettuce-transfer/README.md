@@ -55,7 +55,7 @@ A backup is complete: it holds every user-owned domain, every referenced media o
 | `data/conversation-outbox.json` | Operation records and the per-conversation event journal |
 | `data/companion-state.json` | Relationship and emotional state, signals, continuity episodes, replacement receipts |
 | `data/companion-effects.json` | Turn effects and suffix-rewind receipts |
-| `data/memory.json` | Memory spaces, items, summaries, retrieval receipts, and pools no conversation is bound to |
+| `data/memory.json` | Branch-owned spaces, items, summaries, retrieval receipts, and conversation-scoped pools (section version 2) |
 | `data/memory-projections.json` | Stored embedding projections, ready and repair-needed |
 | `data/dynamic-memory.json` | Dynamic memory approvals, branch-owned runs, attempts, rounds, results and summary checkpoints (section version 2) |
 | `media/blobs/<hash>` | One section per ready media blob |
@@ -141,3 +141,5 @@ For a version 1 backup, the plan itself serves as the source: `LegacyBackupConfi
 The ASR learning document (version 3) is the interchange format for vocabulary, corrections, ignored suggestions and voice examples. It has no row limit and carries each voice example's audio as an asset description (kind, origin, redacted provenance, hash, size, MIME type, duration) instead of a path; the application validates and remaps the whole graph before an atomic import. The legacy version 2 ASR JSON is a separate camelCase compatibility document.
 
 Full backups include generic job details and canonical operation receipts alongside jobs, and checked scene follow-up targets alongside conversation history. Validation checks each follow-up target against its owning candidate or native starter revision before restore; device sync does not transport these local workflow records.
+
+Own memory spaces retain their conversation and branch binding; pool memberships remain per conversation. A restored child keeps its exported memory state and summary cursor without reseeding from the restored parent. Summaries retain the branch that wrote them, including in shared pools.

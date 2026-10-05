@@ -870,6 +870,7 @@ fn attach_companion_pools(
             let (space, projections) = memory_space(
                 scope,
                 record.history.aggregate.conversation.id,
+                record.history.aggregate.conversation.active_branch_id,
                 &format!("companion-pool:{legacy_character_id}"),
                 owner,
                 texts,
@@ -887,6 +888,7 @@ fn attach_companion_pools(
         let Some((mut space, projections)) = pool else {
             continue;
         };
+        space.branch_id = None;
         space.shared_conversation_ids = mapped
             .iter()
             .filter(|(record, pending)| {
@@ -1302,6 +1304,7 @@ pub(crate) fn memory_owner<'a>(
 fn memory_space(
     scope: LegacyIdScope,
     conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
     source_id: &str,
     owner: Option<&LegacyBackupMemoryEmbeddingOwner>,
     texts: Option<&str>,
@@ -1431,6 +1434,7 @@ fn memory_space(
                 .clamp(1, dialogue.len());
             Ok::<_, Error>(MemorySummary {
                 space_id,
+                branch_id,
                 text: text.to_owned(),
                 token_count: u32::try_from(summary_token_count).unwrap_or(u32::MAX),
                 window_start: 0,
@@ -1446,6 +1450,7 @@ fn memory_space(
     Ok((
         Some(BackupMemorySpace {
             conversation_id,
+            branch_id: Some(branch_id),
             snapshot: MemorySpaceSnapshot {
                 id: space_id,
                 revision: Revision::INITIAL,
@@ -1873,6 +1878,7 @@ pub(crate) fn conversation_record(
     let (memory, memory_projections) = memory_space(
         context.scope,
         conversation_id,
+        branch_id,
         source.source_id,
         source.memory,
         source.memory_texts,

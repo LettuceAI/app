@@ -10587,6 +10587,7 @@ async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_promp
         MemorySummaryChange {
             expected_revision: first_space.revision,
             summary: MemorySummary {
+                branch_id: first.active_branch_id,
                 space_id: first_space.id,
                 text: "  Harbour facts accumulated.  ".into(),
                 token_count: 4,

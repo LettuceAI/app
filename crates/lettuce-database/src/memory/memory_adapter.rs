@@ -582,7 +582,7 @@ pub(crate) fn get_summary_in(
 ) -> Result<Option<MemorySummary>, MemoryRepositoryError> {
     let row = transaction
         .query_row(
-            "SELECT text, token_count, window_start, window_end, updated_at
+            "SELECT text, token_count, window_start, window_end, updated_at, branch_id
                FROM memory_summaries
               WHERE space_id = ?1",
             [space_id.to_string()],
@@ -593,12 +593,13 @@ pub(crate) fn get_summary_in(
                     row.get::<_, i64>(2)?,
                     row.get::<_, i64>(3)?,
                     row.get::<_, i64>(4)?,
+                    row.get::<_, String>(5)?,
                 ))
             },
         )
         .optional()
         .map_err(storage)?;
-    let Some((text, token_count, window_start, window_end, updated_at)) = row else {
+    let Some((text, token_count, window_start, window_end, updated_at, branch_id)) = row else {
         return Ok(None);
     };
     let source_message_ids = {
@@ -621,6 +622,7 @@ pub(crate) fn get_summary_in(
     };
     let summary = MemorySummary {
         space_id,
+        branch_id: parse_id(branch_id)?,
         text,
         token_count: u32::try_from(token_count).map_err(storage)?,
         window_start: u64::try_from(window_start).map_err(storage)?,
@@ -671,11 +673,12 @@ pub(crate) fn replace_summary_in(
         transaction
             .execute(
                 "INSERT INTO memory_summaries (
-                    space_id, conversation_id, text, token_count,
+                    space_id, conversation_id, branch_id, text, token_count,
                     window_start, window_end, updated_at
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                 ) VALUES (?1, ?2, ?8, ?3, ?4, ?5, ?6, ?7)
                  ON CONFLICT(space_id) DO UPDATE SET
                     conversation_id = excluded.conversation_id,
+                    branch_id = excluded.branch_id,
                     text = excluded.text,
                     token_count = excluded.token_count,
                     window_start = excluded.window_start,
@@ -689,6 +692,7 @@ pub(crate) fn replace_summary_in(
                     i64::try_from(summary.window_start).map_err(storage)?,
                     i64::try_from(summary.window_end).map_err(storage)?,
                     summary.updated_at.get(),
+                    summary.branch_id.to_string(),
                 ],
             )
             .map_err(storage)?;
@@ -795,24 +799,32 @@ pub(crate) fn run_cursor_in(
     transaction: &Transaction<'_>,
     space_id: MemorySpaceId,
     conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
 ) -> Result<u64, MemoryRepositoryError> {
     let cursor = transaction
         .query_row(
             "SELECT MAX(run.summary_window_end)
                FROM dynamic_memory_runs run
                JOIN dynamic_memory_summary_checkpoints checkpoint ON checkpoint.run_id = run.id
-              WHERE run.space_id = ?1 AND run.conversation_id = ?2
+              WHERE run.space_id = ?1 AND run.conversation_id = ?2 AND run.branch_id = ?3
                 AND EXISTS (
                     SELECT 1 FROM dynamic_memory_run_attempts attempt
                      WHERE attempt.run_id = run.id AND attempt.status = 'succeeded'
                 )
                 AND NOT EXISTS (
                     SELECT 1 FROM dynamic_memory_suffix_rewinds rewind
-                     WHERE rewind.conversation_id = run.conversation_id
+                      JOIN dynamic_memory_runs invalid ON invalid.id = rewind.invalid_run_id
+                     WHERE invalid.branch_id = run.branch_id
+                       AND invalid.created_at <= run.created_at
+                       AND rewind.conversation_id = run.conversation_id
                        AND rewind.space_id = run.space_id
                        AND rewind.applied_at >= checkpoint.settled_at
                 )",
-            params![space_id.to_string(), conversation_id.to_string()],
+            params![
+                space_id.to_string(),
+                conversation_id.to_string(),
+                branch_id.to_string()
+            ],
             |row| row.get::<_, Option<i64>>(0),
         )
         .map_err(storage)?
@@ -826,6 +838,7 @@ fn failed_summary_run_start_in(
     transaction: &Transaction<'_>,
     space_id: MemorySpaceId,
     conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
     window_end: i64,
 ) -> Result<Option<u64>, MemoryRepositoryError> {
     transaction
@@ -835,20 +848,33 @@ fn failed_summary_run_start_in(
                JOIN dynamic_memory_runs run
                  ON run.space_id = summary.space_id
                 AND run.conversation_id = ?2
+                AND run.branch_id = ?4
                 AND run.summary_window_end = summary.window_end
                JOIN dynamic_memory_summary_checkpoints checkpoint
                  ON checkpoint.run_id = run.id AND checkpoint.settled_at = summary.updated_at
               WHERE summary.space_id = ?1 AND summary.window_end = ?3
-                AND NOT EXISTS (
-                    SELECT 1 FROM dynamic_memory_run_attempts attempt
-                     WHERE attempt.run_id = run.id AND attempt.status = 'succeeded'
+                AND (
+                    NOT EXISTS (
+                        SELECT 1 FROM dynamic_memory_run_attempts attempt
+                         WHERE attempt.run_id = run.id AND attempt.status = 'succeeded'
+                    )
+                    OR EXISTS (
+                        SELECT 1 FROM dynamic_memory_suffix_rewinds rewind
+                        JOIN dynamic_memory_runs invalid ON invalid.id = rewind.invalid_run_id
+                        WHERE invalid.branch_id = run.branch_id
+                          AND invalid.created_at <= run.created_at
+                          AND rewind.conversation_id = run.conversation_id
+                          AND rewind.space_id = run.space_id
+                          AND rewind.applied_at >= checkpoint.settled_at
+                    )
                 )
               ORDER BY checkpoint.settled_at DESC
               LIMIT 1",
             params![
                 space_id.to_string(),
                 conversation_id.to_string(),
-                window_end
+                window_end,
+                branch_id.to_string(),
             ],
             |row| row.get::<_, i64>(0),
         )
@@ -866,31 +892,40 @@ pub(crate) fn summary_cursor_in(
     transaction: &Transaction<'_>,
     space_id: MemorySpaceId,
     conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
 ) -> Result<u64, MemoryRepositoryError> {
     let summary_owner = transaction
         .query_row(
-            "SELECT conversation_id, window_end FROM memory_summaries WHERE space_id = ?1",
+            "SELECT conversation_id, window_end, branch_id FROM memory_summaries WHERE space_id = ?1",
             [space_id.to_string()],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?, row.get::<_, String>(2)?)),
         )
         .optional()
         .map_err(storage)?;
     match summary_owner {
-        None => Ok(0),
-        Some((owner, window_end)) if owner == conversation_id.to_string() => {
-            match failed_summary_run_start_in(transaction, space_id, conversation_id, window_end)? {
+        Some((owner, window_end, summary_branch))
+            if owner == conversation_id.to_string() && summary_branch == branch_id.to_string() =>
+        {
+            match failed_summary_run_start_in(
+                transaction,
+                space_id,
+                conversation_id,
+                branch_id,
+                window_end,
+            )? {
                 None => u64::try_from(window_end).map_err(storage),
                 Some(start) => {
-                    let succeeded = run_cursor_in(transaction, space_id, conversation_id)?;
+                    let succeeded =
+                        run_cursor_in(transaction, space_id, conversation_id, branch_id)?;
                     Ok(if succeeded > 0 { succeeded } else { start })
                 }
             }
         }
-        Some(_) => {
+        None | Some(_) => {
             let synced = transaction
                 .query_row(
-                    "SELECT window_end FROM memory_synced_cursors WHERE conversation_id = ?1",
-                    [conversation_id.to_string()],
+                    "SELECT window_end FROM memory_synced_cursors WHERE conversation_id = ?1 AND branch_id = ?2",
+                    params![conversation_id.to_string(), branch_id.to_string()],
                     |row| row.get::<_, i64>(0),
                 )
                 .optional()
@@ -899,7 +934,7 @@ pub(crate) fn summary_cursor_in(
                 .transpose()
                 .map_err(storage)?
                 .unwrap_or(0);
-            Ok(run_cursor_in(transaction, space_id, conversation_id)?.max(synced))
+            Ok(run_cursor_in(transaction, space_id, conversation_id, branch_id)?.max(synced))
         }
     }
 }
@@ -1176,12 +1211,13 @@ impl MemorySummaryRepository for Database {
         &self,
         space_id: MemorySpaceId,
         conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
     ) -> Result<u64, MemoryRepositoryError> {
         let mut connection = self.connection().map_err(storage)?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Deferred)
             .map_err(storage)?;
-        let cursor = summary_cursor_in(&transaction, space_id, conversation_id)?;
+        let cursor = summary_cursor_in(&transaction, space_id, conversation_id, branch_id)?;
         transaction.commit().map_err(storage)?;
         Ok(cursor)
     }
@@ -1623,6 +1659,7 @@ mod tests {
             .expect("binding");
         let source_message_ids = vec![MessageId::new(), MessageId::new()];
         let summary = MemorySummary {
+            branch_id: ConversationBranchId::new(),
             space_id,
             text: "Mira learned the route.".to_owned(),
             token_count: 6,
@@ -1670,6 +1707,7 @@ mod tests {
             .expect("binding");
         let source_message_ids = (0..1100).map(|_| MessageId::new()).collect::<Vec<_>>();
         let summary = MemorySummary {
+            branch_id: ConversationBranchId::new(),
             space_id,
             text: "s".repeat(20_000),
             token_count: 5_000,
@@ -1707,6 +1745,7 @@ mod tests {
             .expect("binding");
         let source_id = MessageId::new();
         let current = MemorySummary {
+            branch_id: ConversationBranchId::new(),
             space_id,
             text: "Current summary".to_owned(),
             token_count: 2,
@@ -1745,20 +1784,23 @@ mod tests {
         let character_id = lettuce_types::CharacterId::new();
         let first = lettuce_types::ConversationId::new();
         let second = lettuce_types::ConversationId::new();
+        let first_branch = ConversationBranchId::new();
+        let second_branch = ConversationBranchId::new();
+        let sibling_branch = ConversationBranchId::new();
         let (first_space, second_space) = {
             let mut connection = database.connection().expect("connection");
             let transaction = connection.transaction().expect("transaction");
             let first_space = crate::memory::memory_adapter::join_companion_pool_in(
                 &transaction,
                 first,
-                ConversationBranchId::new(),
+                first_branch,
                 character_id,
             )
             .expect("first binding");
             let second_space = crate::memory::memory_adapter::join_companion_pool_in(
                 &transaction,
                 second,
-                ConversationBranchId::new(),
+                second_branch,
                 character_id,
             )
             .expect("second binding");
@@ -1766,22 +1808,33 @@ mod tests {
             (first_space, second_space)
         };
         assert_eq!(first_space, second_space);
+        assert_eq!(
+            database
+                .summary_cursor(first_space, first, sibling_branch)
+                .expect("sibling cursor"),
+            0
+        );
         database
             .connection()
             .expect("connection")
             .execute(
-                "INSERT INTO memory_summaries (space_id, conversation_id, text, token_count, window_start, window_end, updated_at) VALUES (?1, ?2, 'Shared summary', 2, 0, 2, 10)",
-                rusqlite::params![first_space.to_string(), first.to_string()],
+                "INSERT INTO memory_summaries (space_id, conversation_id, branch_id, text, token_count, window_start, window_end, updated_at) VALUES (?1, ?2, ?3, 'Shared summary', 2, 0, 2, 10)",
+                rusqlite::params![first_space.to_string(), first.to_string(), first_branch.to_string()],
             )
             .expect("summary");
         assert_eq!(
-            lettuce_memory::MemorySummaryRepository::summary_cursor(&database, first_space, first)
-                .expect("cursor"),
+            lettuce_memory::MemorySummaryRepository::summary_cursor(
+                &database,
+                first_space,
+                first,
+                first_branch
+            )
+            .expect("cursor"),
             2
         );
         assert_eq!(
             database
-                .summary_cursor(first_space, second)
+                .summary_cursor(first_space, second, second_branch)
                 .expect("cursor"),
             0
         );
@@ -1789,20 +1842,42 @@ mod tests {
             .connection()
             .expect("connection")
             .execute_batch(&format!(
-                "PRAGMA foreign_keys = OFF; INSERT INTO memory_synced_cursors (conversation_id, window_end) VALUES ('{second}', 7)"
+                "PRAGMA foreign_keys = OFF; INSERT INTO memory_synced_cursors (conversation_id, branch_id, window_end) VALUES ('{second}', '{second_branch}', 7)"
             ))
             .expect("synced cursor");
+        database.connection().expect("connection").execute("INSERT INTO memory_synced_cursors (conversation_id,branch_id,window_end) VALUES (?1,?2,9)", rusqlite::params![first.to_string(),sibling_branch.to_string()]).expect("sibling synced cursor");
         assert_eq!(
             database
-                .summary_cursor(first_space, second)
+                .summary_cursor(first_space, first, sibling_branch)
+                .expect("sibling synced cursor"),
+            9
+        );
+        assert_eq!(
+            database
+                .summary_cursor(first_space, second, second_branch)
                 .expect("cursor from another device"),
             7
         );
         assert_eq!(
             database
-                .summary_cursor(first_space, first)
+                .summary_cursor(first_space, first, first_branch)
                 .expect("owner cursor"),
             2
+        );
+
+        database
+            .connection()
+            .expect("connection")
+            .execute(
+                "DELETE FROM memory_summaries WHERE space_id = ?1",
+                [first_space.to_string()],
+            )
+            .expect("remove pool summary");
+        assert_eq!(
+            database
+                .summary_cursor(first_space, second, second_branch)
+                .expect("synced cursor without summary"),
+            7
         );
 
         let private_space = MemorySpaceId::new();

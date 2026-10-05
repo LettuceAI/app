@@ -368,6 +368,7 @@ pub(crate) fn load_summary_checkpoint_in(
     };
     let summary = MemorySummary {
         space_id,
+        branch_id: run.branch_id,
         text,
         token_count,
         window_start: run.summary_window.start,
@@ -1740,6 +1741,7 @@ impl DynamicMemoryRunRepository for Database {
         }
         let summary = MemorySummary {
             space_id: run.space_id,
+            branch_id: run.branch_id,
             text: commit.text,
             token_count: commit.token_count,
             window_start: run.summary_window.start,
@@ -2580,6 +2582,58 @@ mod tests {
     }
 
     #[test]
+    fn memory_item_delete_stamp_uses_the_owning_branch() {
+        let database = Database::open_in_memory().expect("database");
+        let (conversation_id, space_id, _) = conversation_fixture(&database);
+        let branch_id = fixture_branch(&database, conversation_id);
+        let item = memory_item(MemoryId::new(), "deleted branch memory", 10);
+        let inserted = database
+            .compare_and_apply(MemoryChangeSet {
+                space_id,
+                expected_revision: Revision::INITIAL,
+                items: vec![item.clone()],
+            })
+            .expect("insert item");
+        database
+            .compare_and_apply(MemoryChangeSet {
+                space_id,
+                expected_revision: inserted.revision,
+                items: Vec::new(),
+            })
+            .expect("delete item");
+        let owner = format!(
+            "conversation:{conversation_id}:branch:{branch_id}/{}",
+            item.id
+        );
+        let stamped: bool = database.connection().expect("connection").query_row(
+            "SELECT EXISTS(SELECT 1 FROM sync_deleted_entities WHERE entity_kind = 'memory_item' AND entity_id = ?1)",
+            [owner], |row| row.get(0),
+        ).expect("delete stamp");
+        assert!(stamped);
+    }
+
+    #[test]
+    fn synced_cursor_schema_keeps_sibling_windows_separate() {
+        let database = Database::open_in_memory().expect("database");
+        let (conversation_id, _, messages) = conversation_fixture(&database);
+        let root = fixture_branch(&database, conversation_id);
+        let child = ConversationBranchId::new();
+        let connection = database.connection().expect("connection");
+        connection.execute("INSERT INTO conversation_branches (conversation_id,id,parent_branch_id,fork_message_id,status,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,'active',1,20,20)", params![conversation_id.to_string(),child.to_string(),root.to_string(),messages[0].message_id.to_string()]).expect("child branch");
+        for (branch, cursor) in [(root, 4), (child, 2)] {
+            connection.execute("INSERT INTO memory_synced_cursors (conversation_id,branch_id,window_end) VALUES (?1,?2,?3)", params![conversation_id.to_string(),branch.to_string(),cursor]).expect("branch cursor");
+        }
+        let cursors: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM memory_synced_cursors WHERE conversation_id = ?1",
+                [conversation_id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("cursor count");
+        assert_eq!(cursors, 2);
+    }
+
+    #[test]
     fn ask_first_prompt_baseline_survives_restart() {
         let path = std::env::temp_dir().join(format!(
             "lettuce-memory-approval-{}.sqlite3",
@@ -2807,7 +2861,11 @@ mod tests {
         assert_eq!(database.get_summary(space_id).expect("summary"), None);
         assert_eq!(
             database
-                .summary_cursor(space_id, conversation_id)
+                .summary_cursor(
+                    space_id,
+                    conversation_id,
+                    fixture_branch(&database, conversation_id)
+                )
                 .expect("cursor before tools"),
             0
         );
@@ -2861,7 +2919,7 @@ mod tests {
                 run_id,
                 attempt_id,
                 conversation_id,
-                branch_id: fixture_branch(&database, conversation_id),
+                branch_id: fixture_branch(database, conversation_id),
                 space_id,
                 starting_memory: database.get(space_id).expect("memory").expect("space"),
                 cycle_start_change: None,
@@ -2968,7 +3026,11 @@ mod tests {
         );
         assert_eq!(
             database
-                .summary_cursor(space_id, conversation_id)
+                .summary_cursor(
+                    space_id,
+                    conversation_id,
+                    fixture_branch(&database, conversation_id)
+                )
                 .expect("cursor after failed tools"),
             0
         );
@@ -2991,7 +3053,11 @@ mod tests {
         );
         assert_eq!(
             database
-                .summary_cursor(space_id, conversation_id)
+                .summary_cursor(
+                    space_id,
+                    conversation_id,
+                    fixture_branch(&database, conversation_id)
+                )
                 .expect("cursor after success"),
             2
         );
@@ -3056,7 +3122,11 @@ mod tests {
         assert_eq!(database.get_summary(space_id).expect("summary"), None);
         assert_eq!(
             database
-                .summary_cursor(space_id, conversation_id)
+                .summary_cursor(
+                    space_id,
+                    conversation_id,
+                    fixture_branch(&database, conversation_id)
+                )
                 .expect("cursor"),
             0
         );
@@ -3168,6 +3238,7 @@ mod tests {
     fn suffix_rewind_restores_the_prior_run_boundary_once() {
         let database = Database::open_in_memory().expect("database");
         let (conversation_id, space_id, messages) = conversation_fixture(&database);
+        let root_branch = fixture_branch(&database, conversation_id);
 
         let first_run_id = DynamicMemoryRunId::new();
         let first_attempt_id = DynamicMemoryAttemptId::new();
@@ -3176,7 +3247,7 @@ mod tests {
                 run_id: first_run_id,
                 attempt_id: first_attempt_id,
                 conversation_id,
-                branch_id: fixture_branch(&database, conversation_id),
+                branch_id: root_branch,
                 space_id,
                 starting_memory: database.get(space_id).expect("memory").expect("space"),
                 cycle_start_change: None,
@@ -3255,7 +3326,7 @@ mod tests {
                 run_id: second_run_id,
                 attempt_id: second_attempt_id,
                 conversation_id,
-                branch_id: fixture_branch(&database, conversation_id),
+                branch_id: root_branch,
                 space_id,
                 starting_memory: before_second.clone(),
                 cycle_start_change: None,
@@ -3318,6 +3389,32 @@ mod tests {
             )
             .expect("second summary");
 
+        let sibling_branch = ConversationBranchId::new();
+        let sibling_space = {
+            let mut connection = database.connection().expect("connection");
+            let transaction = connection.transaction().expect("transaction");
+            let anchor: String = transaction.query_row("SELECT id FROM conversation_messages WHERE conversation_id = ?1 ORDER BY logical_time LIMIT 1", [conversation_id.to_string()], |row| row.get(0)).expect("anchor");
+            transaction.execute("INSERT INTO conversation_branches (conversation_id,id,parent_branch_id,fork_message_id,status,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,'active',1,18,18)", params![conversation_id.to_string(),sibling_branch.to_string(),root_branch.to_string(),anchor]).expect("sibling branch");
+            let space = crate::memory::memory_adapter::create_conversation_space_in(
+                &transaction,
+                conversation_id,
+                sibling_branch,
+            )
+            .expect("sibling space");
+            transaction
+                .execute(
+                    "UPDATE conversations SET active_branch_id = ?2 WHERE id = ?1",
+                    params![conversation_id.to_string(), sibling_branch.to_string()],
+                )
+                .expect("select sibling");
+            transaction.execute("INSERT INTO memory_synced_cursors (conversation_id,branch_id,window_end) VALUES (?1,?2,9)", params![conversation_id.to_string(),sibling_branch.to_string()]).expect("sibling cursor");
+            transaction.commit().expect("commit sibling");
+            space
+        };
+        let sibling_before = database
+            .get(sibling_space)
+            .expect("sibling memory")
+            .expect("space");
         let rewind = DynamicMemorySuffixRewind {
             operation_id: OperationId::new(),
             conversation_id,
@@ -3351,6 +3448,7 @@ mod tests {
                 &database,
                 space_id,
                 conversation_id,
+                root_branch,
             )
             .expect("cursor"),
             2
@@ -3362,6 +3460,12 @@ mod tests {
             receipt
         );
 
+        assert_eq!(
+            database.get(sibling_space).expect("sibling memory"),
+            Some(sibling_before)
+        );
+        let sibling_cursor: i64 = database.connection().expect("connection").query_row("SELECT window_end FROM memory_synced_cursors WHERE conversation_id = ?1 AND branch_id = ?2", params![conversation_id.to_string(),sibling_branch.to_string()], |row| row.get(0)).expect("sibling cursor retained");
+        assert_eq!(sibling_cursor, 9);
         let mut changed = rewind;
         changed.at = TimestampMillis::new(19);
         assert_eq!(
@@ -3482,6 +3586,29 @@ mod tests {
     fn background_round_memory_and_results_commit_once() {
         let database = Database::open_in_memory().expect("database");
         let (conversation_id, space_id, messages) = conversation_fixture(&database);
+        let root_branch = fixture_branch(&database, conversation_id);
+        let sibling_branch = ConversationBranchId::new();
+        {
+            let mut connection = database.connection().expect("connection");
+            let transaction = connection.transaction().expect("transaction");
+            let character = lettuce_types::CharacterId::new();
+            transaction.execute("INSERT INTO characters (id,status,name,normalized_name,profile_json,provenance_json,defaults_json,interaction_mode,memory_policy,voice_autoplay,presentation_json,revision,created_at,updated_at) VALUES (?1,'active','Pool','pool','{}','{}','{}','companion','dynamic',0,'{}',1,1,1)", [character.to_string()]).expect("pool character");
+            transaction
+                .execute(
+                    "DELETE FROM conversation_memory_spaces WHERE conversation_id = ?1",
+                    [conversation_id.to_string()],
+                )
+                .expect("replace fixture binding");
+            transaction
+                .execute(
+                    "INSERT INTO companion_memory_pools (character_id,space_id) VALUES (?1,?2)",
+                    params![character.to_string(), space_id.to_string()],
+                )
+                .expect("pool");
+            transaction.execute("INSERT INTO conversation_memory_spaces (conversation_id,branch_id,space_id,pooled) VALUES (?1,?2,?3,1)", params![conversation_id.to_string(),root_branch.to_string(),space_id.to_string()]).expect("pool binding");
+            transaction.execute("INSERT INTO conversation_branches (conversation_id,id,parent_branch_id,fork_message_id,status,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,'active',1,18,18)", params![conversation_id.to_string(),sibling_branch.to_string(),root_branch.to_string(),messages[0].message_id.to_string()]).expect("sibling");
+            transaction.commit().expect("pool fixture");
+        }
         let run_id = DynamicMemoryRunId::new();
         let attempt_id = DynamicMemoryAttemptId::new();
         let admitted = database
@@ -3688,17 +3815,175 @@ mod tests {
                 items: vec![stored.items[0].clone(), other_chat_memory.clone()],
             })
             .expect("other chat memory");
+        let sibling_run_id = DynamicMemoryRunId::new();
+        let sibling_attempt_id = DynamicMemoryAttemptId::new();
+        let sibling_run = database
+            .admit_dynamic_memory_run_attempt(NewDynamicMemoryRunAttempt {
+                run_id: sibling_run_id,
+                attempt_id: sibling_attempt_id,
+                conversation_id,
+                branch_id: sibling_branch,
+                space_id,
+                starting_memory: pooled.clone(),
+                cycle_start_change: None,
+                source_messages: messages.clone(),
+                profile: profile(),
+                time_awareness_enabled: true,
+                supersession_enabled: true,
+                structured_fallback_format: DynamicMemoryStructuredFallbackFormat::Xml,
+                summary_window: lettuce_memory::DynamicMemorySummaryWindow {
+                    message_interval: 2,
+                    start: 0,
+                    end: 2,
+                },
+                tool_request: lettuce_memory::dynamic_memory_tool_request_for_run(
+                    lettuce_memory::DynamicMemoryToolOptions {
+                        group: false,
+                        supersession_enabled: true,
+                        require_source_message_id: true,
+                    },
+                    &|key| key.to_owned(),
+                ),
+                job_id: JobId::new(),
+                now: TimestampMillis::new(22),
+            })
+            .expect("sibling run");
+        database
+            .transition_dynamic_memory_attempt(
+                sibling_attempt_id,
+                sibling_run.attempt.revision,
+                DynamicMemoryAttemptStatus::Processing,
+                None,
+                TimestampMillis::new(23),
+            )
+            .expect("sibling processing");
+        let sibling_summary = database
+            .commit_dynamic_memory_summary(
+                DynamicMemorySummaryCommit {
+                    run_id: sibling_run_id,
+                    attempt_id: sibling_attempt_id,
+                    expected_memory_revision: pooled.revision,
+                    text: "Sibling summary".into(),
+                    token_count: 2,
+                    request_context: ProviderNeutralContext {
+                        messages: Vec::new(),
+                        attributions: Default::default(),
+                        budget: Default::default(),
+                    },
+                    usage: None,
+                    provider_request_id: None,
+                },
+                TimestampMillis::new(26),
+            )
+            .expect("sibling summary");
+        let sibling_memory_id = MemoryId::new();
+        let sibling_call_id = ToolExecutionId::new();
+        database
+            .admit_dynamic_memory_inference_round(
+                sibling_run_id,
+                sibling_attempt_id,
+                0,
+                0,
+                NewDynamicMemoryInferenceRound {
+                    ordinal: 0,
+                    request_context: ProviderNeutralContext {
+                        messages: Vec::new(),
+                        attributions: Default::default(),
+                        budget: Default::default(),
+                    },
+                    parts: Vec::new(),
+                    provider_replay: None,
+                    usage: None,
+                    finish_reason: DynamicMemoryRoundFinishReason::Stop,
+                    kind: DynamicMemoryRoundKind::Manager,
+                    provider_request_id: None,
+                    calls: vec![NewDynamicMemoryToolCall {
+                        id: sibling_call_id,
+                        definition_version: 1,
+                        call: lettuce_conversations::ProposedToolCall {
+                            provider_call_id: Some("sibling-create".into()),
+                            name: "create_memory".into(),
+                            arguments: json!({"text":"sibling memory","category":"preference"}),
+                            raw_arguments: None,
+                            provider_replay: None,
+                        },
+                    }],
+                    admitted_at: TimestampMillis::new(24),
+                },
+            )
+            .expect("sibling round");
+        let sibling_item = memory_item(sibling_memory_id, "sibling memory", 24);
+        let mut siblings_items = pooled.items.clone();
+        siblings_items.push(sibling_item.clone());
+        let sibling_settled = database
+            .commit_dynamic_memory_background_round(
+                DynamicMemoryBackgroundRoundCommit {
+                    run_id: sibling_run_id,
+                    attempt_id: sibling_attempt_id,
+                    round_ordinal: 0,
+                    space_id,
+                    expected_memory_revision: sibling_summary.resulting_memory_revision,
+                    change: Some(MemoryChangeSet {
+                        space_id,
+                        expected_revision: sibling_summary.resulting_memory_revision,
+                        items: siblings_items,
+                    }),
+                    results: vec![MemoryToolResult {
+                        execution_id: sibling_call_id,
+                        outcome: MemoryToolOutcome::Created {
+                            id: sibling_memory_id,
+                            short_id: sibling_item.short_id,
+                            memories: Vec::new(),
+                        },
+                    }],
+                },
+                TimestampMillis::new(25),
+            )
+            .expect("sibling creates memory");
+        let sibling_attempt = database
+            .load_dynamic_memory_attempt(sibling_attempt_id)
+            .expect("sibling attempt");
+        database
+            .transition_dynamic_memory_attempt(
+                sibling_attempt_id,
+                sibling_attempt.revision,
+                DynamicMemoryAttemptStatus::Succeeded,
+                None,
+                TimestampMillis::new(27),
+            )
+            .expect("sibling succeeded");
         let undone = database
             .rewind_dynamic_memory_suffix(DynamicMemorySuffixRewind {
                 operation_id: OperationId::new(),
                 conversation_id,
                 invalid_run_id: Some(run_id),
-                expected_memory_revision: pooled.revision,
+                expected_memory_revision: sibling_settled.resulting_memory_revision,
                 invalidated_effect_ids: Vec::new(),
-                at: TimestampMillis::new(21),
+                at: TimestampMillis::new(28),
             })
             .expect("own-space rewind");
-        assert_eq!(undone.memory.items, vec![other_chat_memory]);
+        assert_eq!(undone.memory.items, vec![other_chat_memory, sibling_item]);
+        assert_eq!(undone.summary, Some(sibling_summary.summary));
+        let mut connection = database.connection().expect("connection");
+        let transaction = connection.transaction().expect("transaction");
+        assert_eq!(
+            crate::memory::memory_adapter::run_cursor_in(
+                &transaction,
+                space_id,
+                conversation_id,
+                sibling_branch
+            )
+            .expect("sibling run cursor"),
+            2
+        );
+        transaction.commit().expect("read cursor");
+        drop(connection);
+        assert!(
+            database
+                .load_dynamic_memory_round_settlement(sibling_run_id, sibling_attempt_id, 0)
+                .expect("sibling settlement retained")
+                .is_some()
+        );
     }
 
     #[test]

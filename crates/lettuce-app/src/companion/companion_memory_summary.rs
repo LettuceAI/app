@@ -127,7 +127,7 @@ impl<
             .map_err(CompanionMemoryInferenceError::Memory)?;
         if window_already_summarized(
             self.repository
-                .summary_cursor(run.space_id, run.conversation_id)
+                .summary_cursor(run.space_id, run.conversation_id, run.branch_id)
                 .map_err(CompanionMemoryInferenceError::Memory)?,
             run.summary_window,
             window_selection,

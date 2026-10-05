@@ -13584,6 +13584,116 @@ mod tests {
     }
 
     #[test]
+    fn implicit_memory_forks_roll_back_on_seed_failure_and_retry_atomically() {
+        for message_delete in [false, true] {
+            let mut fixture = direct_fixture();
+            let messages = conversation_with_two_exchanges(&mut fixture, "implicit-memory-fork");
+            {
+                let mut connection = fixture.database.connection().expect("connection");
+                let transaction = connection.transaction().expect("transaction");
+                crate::memory::memory_adapter::create_conversation_space_in(
+                    &transaction,
+                    fixture.conversation_id,
+                    fixture.branch_id,
+                )
+                .expect("parent memory");
+                transaction.commit().expect("parent binding");
+            }
+            if message_delete {
+                fixture
+                    .database
+                    .fork_branch(
+                        &ForkBranch {
+                            conversation_id: fixture.conversation_id,
+                            source_branch_id: fixture.branch_id,
+                            at_message_id: Some(messages[1]),
+                            expected_revision: fixture.revision,
+                            operation: token("implicit-shared-fork", "cd"),
+                        },
+                        TimestampMillis::new(180),
+                    )
+                    .expect("sharing branch");
+                fixture.revision = conversation_revision(&fixture);
+                fixture
+                    .database
+                    .select_branch(
+                        &SelectBranch {
+                            conversation_id: fixture.conversation_id,
+                            branch_id: fixture.branch_id,
+                            expected_revision: fixture.revision,
+                            operation: token("implicit-select-root", "cd"),
+                        },
+                        TimestampMillis::new(181),
+                    )
+                    .expect("select root");
+                fixture.revision = conversation_revision(&fixture);
+            }
+            let branches_before: i64 = scalar::<i64>(
+                &fixture.database,
+                "SELECT count(*) FROM conversation_branches WHERE conversation_id = ?1",
+                &fixture.conversation_id.to_string(),
+            );
+            fixture.database.connection().expect("connection").execute_batch("CREATE TEMP TRIGGER fail_implicit_seed BEFORE INSERT ON memory_spaces BEGIN SELECT RAISE(ABORT, 'injected seed failure'); END;").expect("inject seed failure");
+            let command = TombstoneMessage {
+                conversation_id: fixture.conversation_id,
+                message_id: messages[1],
+                expected_revision: fixture.revision,
+                operation: token("implicit-delete", "cd"),
+                descendants: if message_delete {
+                    DescendantPolicy::Preserve
+                } else {
+                    DescendantPolicy::Fork
+                },
+            };
+            let apply = || {
+                if message_delete {
+                    fixture
+                        .database
+                        .delete_message(&command, TimestampMillis::new(200))
+                        .map(|_| ())
+                } else {
+                    fixture
+                        .database
+                        .tombstone_message(&command, TimestampMillis::new(200))
+                        .map(|_| ())
+                }
+            };
+            assert!(apply().is_err());
+            assert_eq!(conversation_revision(&fixture), fixture.revision);
+            assert_eq!(
+                scalar::<i64>(
+                    &fixture.database,
+                    "SELECT count(*) FROM conversation_branches WHERE conversation_id = ?1",
+                    &fixture.conversation_id.to_string()
+                ),
+                branches_before
+            );
+            fixture
+                .database
+                .connection()
+                .expect("connection")
+                .execute_batch("DROP TRIGGER fail_implicit_seed;")
+                .expect("remove injection");
+            apply().expect("same operation retry");
+            apply().expect("exact operation replay");
+            let aggregate =
+                ConversationReader::get(fixture.database.as_ref(), fixture.conversation_id)
+                    .expect("conversation");
+            assert_ne!(aggregate.conversation.active_branch_id, fixture.branch_id);
+            assert_eq!(
+                aggregate.branches.len(),
+                usize::try_from(branches_before + 1).expect("branch count")
+            );
+            let spaces: i64 = scalar::<i64>(
+                &fixture.database,
+                "SELECT count(*) FROM conversation_memory_spaces WHERE conversation_id = ?1 AND pooled = 0",
+                &fixture.conversation_id.to_string(),
+            );
+            assert_eq!(spaces, branches_before + 1);
+        }
+    }
+
+    #[test]
     fn memory_seed_failure_rolls_back_branch_selection_and_operation() {
         let mut fixture = direct_fixture();
         let messages = conversation_with_two_exchanges(&mut fixture, "memory-rollback");

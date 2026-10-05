@@ -1,7 +1,7 @@
 //! Memory exchanged by sync.
 //!
 //! Each device picks its own space ids, so memory is exchanged under the
-//! space's owner: `conversation:<id>` for a conversation's own space and
+//! space's owner: `conversation:<id>:branch:<id>` for a branch's own space and
 //! `pool:<character id>` for a companion character's shared pool. Every item
 //! is its own entity (`<owner>/<memory id>`), so a retrieval that touches a
 //! few items journals only those, concurrent additions on two devices are
@@ -27,13 +27,24 @@ fn exchanged_space_id() -> MemorySpaceId {
 
 const OWNERS: &str = "SELECT 'pool:' || character_id AS owner, space_id FROM companion_memory_pools
      UNION ALL
-     SELECT 'conversation:' || conversation_id AS owner, space_id FROM conversation_memory_spaces
+     SELECT 'conversation:' || conversation_id || ':branch:' || branch_id AS owner, space_id FROM conversation_memory_spaces
       WHERE pooled = 0";
+
+pub(crate) fn branch_owner(
+    owner: &str,
+) -> Option<(
+    lettuce_types::ConversationId,
+    lettuce_types::ConversationBranchId,
+)> {
+    let rest = owner.strip_prefix("conversation:")?;
+    let (conversation, branch) = rest.split_once(":branch:")?;
+    Some((conversation.parse().ok()?, branch.parse().ok()?))
+}
 
 pub(crate) fn valid_owner(owner: &str) -> bool {
     match owner.split_once(':') {
         Some(("pool", id)) => id.parse::<lettuce_types::CharacterId>().is_ok(),
-        Some(("conversation", id)) => id.parse::<lettuce_types::ConversationId>().is_ok(),
+        Some(("conversation", _)) => branch_owner(owner).is_some(),
         _ => false,
     }
 }
@@ -275,6 +286,14 @@ pub(crate) fn sync_replace_memory_summary(
             return Err(MemoryRepositoryError::NotFound);
         }
     }
+    let branch_present: bool = transaction.query_row(
+        "SELECT EXISTS(SELECT 1 FROM conversation_branches WHERE id = ?1 AND conversation_id = (SELECT conversation_id FROM conversation_messages WHERE id = ?2))",
+        params![summary.branch_id.to_string(), summary.source_message_ids[0].to_string()],
+        |row| row.get(0),
+    ).map_err(storage)?;
+    if !branch_present {
+        return Err(MemoryRepositoryError::NotFound);
+    }
     if sync_load_memory_summary(transaction, owner)?.as_ref() == Some(summary) {
         return Ok(());
     }
@@ -306,7 +325,7 @@ pub(crate) fn sync_delete_memory_summary(
 pub(crate) fn sync_memory_cursor_ids(connection: &Connection) -> rusqlite::Result<Vec<String>> {
     connection
         .prepare(
-            "SELECT conversation_id FROM conversation_memory_spaces WHERE pooled = 1 ORDER BY 1",
+            "SELECT 'conversation:' || binding.conversation_id || ':branch:' || branch.id FROM conversation_memory_spaces binding JOIN conversation_branches branch ON branch.conversation_id = binding.conversation_id WHERE binding.pooled = 1 ORDER BY 1",
         )?
         .query_map([], |row| row.get(0))?
         .collect()
@@ -318,6 +337,7 @@ pub(crate) fn sync_memory_cursor_ids(connection: &Connection) -> rusqlite::Resul
 pub(crate) fn sync_load_memory_cursor(
     transaction: &Transaction<'_>,
     conversation_id: lettuce_types::ConversationId,
+    branch_id: lettuce_types::ConversationBranchId,
 ) -> Result<Option<u64>, MemoryRepositoryError> {
     let space: Option<String> = transaction
         .query_row(
@@ -335,6 +355,7 @@ pub(crate) fn sync_load_memory_cursor(
         transaction,
         space.parse().map_err(storage)?,
         conversation_id,
+        branch_id,
     )?;
     Ok((cursor > 0).then_some(cursor))
 }
@@ -344,12 +365,13 @@ pub(crate) fn sync_load_memory_cursor(
 pub(crate) fn sync_store_memory_cursor(
     transaction: &Transaction<'_>,
     conversation_id: lettuce_types::ConversationId,
+    branch_id: lettuce_types::ConversationBranchId,
     window_end: u64,
 ) -> Result<(), MemoryRepositoryError> {
     let present: bool = transaction
         .query_row(
-            "SELECT EXISTS(SELECT 1 FROM conversations WHERE id = ?1)",
-            [conversation_id.to_string()],
+            "SELECT EXISTS(SELECT 1 FROM conversation_branches WHERE conversation_id = ?1 AND id = ?2)",
+            params![conversation_id.to_string(), branch_id.to_string()],
             |row| row.get(0),
         )
         .map_err(storage)?;
@@ -358,11 +380,12 @@ pub(crate) fn sync_store_memory_cursor(
     }
     transaction
         .execute(
-            "INSERT INTO memory_synced_cursors (conversation_id, window_end) VALUES (?1, ?2)
-             ON CONFLICT(conversation_id) DO UPDATE SET window_end = excluded.window_end",
+            "INSERT INTO memory_synced_cursors (conversation_id, branch_id, window_end) VALUES (?1, ?3, ?2)
+             ON CONFLICT(conversation_id, branch_id) DO UPDATE SET window_end = excluded.window_end",
             params![
                 conversation_id.to_string(),
-                i64::try_from(window_end).map_err(storage)?
+                i64::try_from(window_end).map_err(storage)?,
+                branch_id.to_string(),
             ],
         )
         .map_err(storage)?;

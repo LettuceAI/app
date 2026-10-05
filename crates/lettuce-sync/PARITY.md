@@ -68,3 +68,5 @@ The sync design was built in stages. The stage names are still used in commit me
 - Follow-up: launch snapshot artifacts travel inside their snapshot entity as base64. Moving them to the blob phase (chunked, content-addressed like media) would remove the largest payloads and the memory cost of the 256 MiB limit.
 
 Character snapshot schema version 2 includes provider-account voice preferences. The session fingerprint changes with that version, so a peer with the old character payload cannot silently pair under the same schema contract.
+
+Own memory entities identify both conversation and branch; received user forks start with an empty own space and receive their seeded items and summaries through normal changes. Legacy represented a fork as another session with copied memory (`old-code/src/core/storage/repo.ts:547-586`). Shared pools retain character ownership and exchange a separate cursor for each conversation and branch.

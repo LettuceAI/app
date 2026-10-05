@@ -633,6 +633,7 @@ impl<
             self.effects,
             space.id,
             conversation_id,
+            branch_id,
         )
         .map_err(CompanionPostTurnMemoryAdmissionError::Memory)?;
         let cursor = usize::try_from(cursor)
@@ -678,6 +679,32 @@ impl<
             + lettuce_memory::MemoryRepository
             + lettuce_memory::MemorySummaryRepository,
     {
+        let branch_id = ConversationReader::get(self.effects, conversation_id)
+            .map_err(CompanionPostTurnMemoryAdmissionError::Conversation)?
+            .conversation
+            .active_branch_id;
+        self.admit_plain_for_branch(
+            conversation_id,
+            branch_id,
+            summary_message_interval,
+            run_mode,
+            now,
+        )
+    }
+
+    pub(crate) fn admit_plain_for_branch(
+        &self,
+        conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
+        summary_message_interval: u32,
+        run_mode: DynamicMemoryRunMode,
+        now: TimestampMillis,
+    ) -> Result<Option<CompanionPostTurnMemoryAdmission>, CompanionPostTurnMemoryAdmissionError>
+    where
+        R: ConversationReader
+            + lettuce_memory::MemoryRepository
+            + lettuce_memory::MemorySummaryRepository,
+    {
         let interval = usize::try_from(summary_message_interval)
             .ok()
             .filter(|interval| *interval >= 1)
@@ -685,10 +712,6 @@ impl<
         if run_mode == DynamicMemoryRunMode::Manual {
             return Ok(None);
         }
-        let branch_id = ConversationReader::get(self.effects, conversation_id)
-            .map_err(CompanionPostTurnMemoryAdmissionError::Conversation)?
-            .conversation
-            .active_branch_id;
         let messages = visible_dialogue(self.effects, conversation_id, branch_id)?;
         let Some(&(last_assistant, _)) = messages
             .iter()
@@ -716,6 +739,7 @@ impl<
             self.effects,
             space.id,
             conversation_id,
+            branch_id,
         )
         .map_err(CompanionPostTurnMemoryAdmissionError::Memory)?;
         let cursor = usize::try_from(cursor)
@@ -964,7 +988,6 @@ fn effect_message_count(effects: &[CompanionTurnEffect]) -> u64 {
         .sum()
 }
 
-#[allow(clippy::too_many_arguments)]
 #[allow(clippy::too_many_arguments)]
 fn batch_idempotency_key(
     conversation_id: ConversationId,

@@ -112,6 +112,7 @@ pub(crate) fn insert_historical_conversation(
     let own_created = match input.memory {
         Some(space)
             if space.conversation_id == conversation_id
+                && space.branch_id == Some(root_branch_id)
                 && space.shared_conversation_ids.is_empty() =>
         {
             crate::memory::memory_adapter::insert_space_in(
@@ -336,7 +337,7 @@ pub(crate) fn insert_historical_conversation(
     Ok(stored)
 }
 
-fn insert_memory_state(
+pub(crate) fn insert_memory_state(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
     space: &BackupMemorySpace,

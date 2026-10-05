@@ -337,7 +337,10 @@ where
             .repository
             .list_dynamic_memory_runs(command.conversation_id)?
             .into_iter()
-            .filter(|run| Some(run.space_id) == active_space)
+            .filter(|run| {
+                Some(run.space_id) == active_space
+                    && run.branch_id == tombstone.value.message.branch_id
+            })
             .collect::<Vec<_>>();
         let effects = self
             .repository

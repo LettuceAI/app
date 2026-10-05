@@ -1380,6 +1380,7 @@ mod tests {
             MemorySummaryChange {
                 expected_revision: memory_after_item.revision,
                 summary: MemorySummary {
+                    branch_id: direct_conversation.active_branch_id,
                     space_id: memory_space.id,
                     text: "The conversation established a backup preference.".into(),
                     token_count: 7,
@@ -1921,6 +1922,64 @@ mod tests {
                 },
             )
             .expect("settle job inference evidence");
+        let before_fork = lettuce_conversations::ConversationReader::get(
+            backend.database(),
+            direct_conversation.id,
+        )
+        .expect("conversation before fork");
+        let child_branch = ConversationRepository::fork_branch(
+            backend.database(),
+            &lettuce_conversations::ForkBranch {
+                conversation_id: direct_conversation.id,
+                source_branch_id: direct_conversation.active_branch_id,
+                at_message_id: Some(effect_user_message_id),
+                expected_revision: before_fork.conversation.revision,
+                operation: lettuce_conversations::OperationToken {
+                    key: lettuce_jobs::IdempotencyKey::new("backup-child-memory").expect("key"),
+                    request_digest: lettuce_types::ContentHash::parse("f3".repeat(32))
+                        .expect("digest"),
+                },
+            },
+            TimestampMillis::new(40),
+        )
+        .expect("fork backup branch")
+        .value
+        .branch
+        .id;
+        let child_space =
+            lettuce_transfer::ProviderBackupSource::read_provider_backup_graph(backend.database())
+                .expect("branch backup graph")
+                .memory
+                .spaces
+                .into_iter()
+                .find(|space| space.branch_id == Some(child_branch))
+                .expect("seeded child own space")
+                .snapshot;
+        let child_memory_id = lettuce_types::MemoryId::new();
+        let child_memory = MemoryRepository::compare_and_apply(
+            backend.database(),
+            MemoryChangeSet {
+                space_id: child_space.id,
+                expected_revision: child_space.revision,
+                items: vec![MemoryItem {
+                    id: child_memory_id,
+                    short_id: lettuce_memory::MemoryShortId::derived(child_memory_id),
+                    text: "The child remembers a different preference.".into(),
+                    ..memory_after_projection_edit.items[0].clone()
+                }],
+            },
+        )
+        .expect("child independent memory");
+        DynamicMemoryApprovalRepository::prompt_dynamic_memory_if_due(
+            backend.database(),
+            direct_conversation.id,
+            child_branch,
+            2,
+            1,
+            TimestampMillis::new(41),
+        )
+        .expect("child approval")
+        .expect("pending child approval");
         drop(backend);
 
         let reopened = AppBackend::open(&path, TimestampMillis::new(3)).expect("reopen backend");
@@ -1966,7 +2025,7 @@ mod tests {
             open_backup(&envelope, "wrong password"),
             Err(BackupEnvelopeError::Authentication)
         );
-        let restore_plan = lettuce_transfer::decode_provider_backup_restore_plan(
+        let mut restore_plan = lettuce_transfer::decode_provider_backup_restore_plan(
             std::io::Cursor::new(envelope.clone()),
             "backup password",
         )
@@ -2027,6 +2086,15 @@ mod tests {
                 .expect("restored secret")
                 .with(|value| value == "provider-backup-canary")
         );
+        restore_plan
+            .graph
+            .memory
+            .synced_cursors
+            .push(lettuce_transfer::BackupMemoryCursor {
+                conversation_id: direct_conversation.id,
+                branch_id: child_branch,
+                window_end: 9,
+            });
         let restored = Database::open_in_memory().expect("restore target");
         lettuce_transfer::ProviderBackupRestoreWriter::restore_provider_backup_graph(
             &restored,
@@ -2450,7 +2518,13 @@ mod tests {
             corrupt_effects.canonicalize_and_validate(&history, &runtime),
             Err(lettuce_transfer::CompanionEffectBackupError::InvalidData)
         );
-        assert_eq!(memory.spaces.len(), 3);
+        assert_eq!(memory.spaces.len(), 4);
+        let child_backup = memory
+            .spaces
+            .iter()
+            .find(|space| space.branch_id == Some(child_branch))
+            .expect("restored child memory");
+        assert_eq!(child_backup.snapshot, child_memory);
         let direct_memory = memory
             .spaces
             .iter()
@@ -2527,7 +2601,13 @@ mod tests {
             Err(lettuce_transfer::MemoryProjectionBackupError::InvalidData)
         );
         assert_eq!(dynamic_memory.runs.len(), 2);
-        assert_eq!(dynamic_memory.pending_approvals.len(), 1);
+        assert_eq!(dynamic_memory.pending_approvals.len(), 2);
+        assert!(
+            dynamic_memory
+                .pending_approvals
+                .iter()
+                .any(|approval| approval.branch_id == child_branch && approval.pending)
+        );
         let terminal_run = dynamic_memory
             .runs
             .iter()

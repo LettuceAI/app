@@ -128,3 +128,5 @@ Facts about how `lettuce-transfer` relates to the legacy app (2.2.x): what each 
 - The previous README called domain-row and secret export, profile restore and cutover, record mapping, media discovery and import writes "later slices"; they are implemented now (`lettuce-database` restore writer and import adapter, `lettuce-app` coordinators).
 - The previous README said playground history travels in its own version 2 section. In the code it is a field of the provider graph document (`ProviderBackupGraph.playground_history`), like the legacy import audit records (`legacy_imports`) and creation records.
 - The crate docs refer to a crate `PLAN.md`; there is none in the crate directory.
+
+Memory section version 2 preserves every own branch binding, the branch owner of each summary and per-branch received cursors. Restore writes the exported child state directly. Legacy exported session memory and companion shared memory separately (`old-code/src-tauri/src/storage_manager/backup.rs:655-668,678`); the rewrite keeps those ownership boundaries while retaining the branch graph.

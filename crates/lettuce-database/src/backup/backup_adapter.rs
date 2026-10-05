@@ -207,17 +207,30 @@ fn read_memory(
     transaction: &rusqlite::Transaction<'_>,
 ) -> Result<MemoryBackup, ProviderBackupSourceError> {
     let owners = transaction
-        .prepare("SELECT conversation_id,space_id FROM conversation_memory_spaces ORDER BY conversation_id, pooled")
+        .prepare("SELECT conversation_id,space_id,branch_id,pooled FROM conversation_memory_spaces ORDER BY conversation_id, branch_id, pooled")
         .and_then(|mut statement| {
             statement
                 .query_map([], |row| {
-                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, bool>(3)?,
+                    ))
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()
         })
         .map_err(backup_error)?;
     let mut bound = std::collections::BTreeMap::<String, Vec<ConversationId>>::new();
-    for (conversation_id, space_id) in owners {
+    let mut own_branches = std::collections::BTreeMap::new();
+    for (conversation_id, space_id, branch_id, pooled) in owners {
+        if !pooled {
+            own_branches.insert(
+                space_id.clone(),
+                branch_id.parse::<lettuce_types::ConversationBranchId>()
+                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+            );
+        }
         bound.entry(space_id).or_default().push(
             conversation_id
                 .parse()
@@ -238,6 +251,7 @@ fn read_memory(
                 .map(|value| value.parse::<ConversationId>())
                 .transpose()
                 .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+            let branch_id = own_branches.get(&space_id).copied();
             let space_id = space_id
                 .parse()
                 .map_err(|_| ProviderBackupSourceError::InvalidData)?;
@@ -252,6 +266,7 @@ fn read_memory(
                 .map_err(|_| ProviderBackupSourceError::InvalidData)?;
             Ok(BackupMemorySpace {
                 conversation_id,
+                branch_id,
                 snapshot,
                 summary,
                 shared_conversation_ids: conversations,
@@ -345,7 +360,32 @@ fn read_memory(
                 .ok_or(ProviderBackupSourceError::InvalidData)
         })
         .collect::<Result<Vec<_>, ProviderBackupSourceError>>()?;
+    let synced_cursors = transaction
+        .prepare("SELECT conversation_id, branch_id, window_end FROM memory_synced_cursors ORDER BY conversation_id, branch_id")
+        .and_then(|mut statement| {
+            statement.query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            })?.collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(backup_error)?
+        .into_iter()
+        .map(|(conversation, branch, end)| {
+            Ok(lettuce_transfer::BackupMemoryCursor {
+                conversation_id: conversation.parse()
+                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                branch_id: branch.parse()
+                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                window_end: u64::try_from(end)
+                    .map_err(|_| ProviderBackupSourceError::InvalidData)?,
+            })
+        })
+        .collect::<Result<Vec<_>, ProviderBackupSourceError>>()?;
     Ok(MemoryBackup {
+        synced_cursors,
         version: MEMORY_BACKUP_VERSION,
         spaces,
         retrieval_accesses,

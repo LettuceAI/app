@@ -316,7 +316,7 @@ where
         )
     }
 
-    fn claim_admissions(
+    pub(crate) fn claim_admissions(
         &self,
         admissions: Vec<CompanionPostTurnMemoryAdmission>,
         worker_id: WorkerId,

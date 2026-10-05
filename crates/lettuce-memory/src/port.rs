@@ -158,17 +158,17 @@ pub trait MemorySummaryRepository: Send + Sync {
         space_id: MemorySpaceId,
     ) -> Result<Option<MemorySummary>, MemoryRepositoryError>;
 
-    /// How far one conversation's dialogue is summarized inside a space. A
-    /// companion memory pool is shared by several conversations, so the cursor
-    /// belongs to the conversation.
+    /// The summary cursor of one branch, including inside shared pools.
     fn summary_cursor(
         &self,
         space_id: MemorySpaceId,
         conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
     ) -> Result<u64, MemoryRepositoryError> {
         let _ = conversation_id;
         Ok(self
             .get_summary(space_id)?
+            .filter(|summary| summary.branch_id == branch_id)
             .map_or(0, |summary| summary.window_end))
     }
 

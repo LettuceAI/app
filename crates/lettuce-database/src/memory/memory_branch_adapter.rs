@@ -176,6 +176,7 @@ pub(crate) fn seed_branch_space_in(
     }
     if let Some(mut summary) = summary {
         summary.space_id = space_id;
+        summary.branch_id = branch_id;
         memory_adapter::replace_summary_in(transaction, space_id, Some(&summary))
             .map_err(storage)?;
     }

@@ -276,6 +276,7 @@ impl MemorySpaceSnapshot {
 #[serde(deny_unknown_fields)]
 pub struct MemorySummary {
     pub space_id: MemorySpaceId,
+    pub branch_id: lettuce_types::ConversationBranchId,
     pub text: String,
     pub token_count: u32,
     pub window_start: u64,
@@ -424,6 +425,7 @@ mod tests {
     #[test]
     fn summary_cursor_must_exactly_cover_its_window() {
         let summary = MemorySummary {
+            branch_id: lettuce_types::ConversationBranchId::new(),
             space_id: MemorySpaceId::new(),
             text: "summary".to_owned(),
             token_count: 1,

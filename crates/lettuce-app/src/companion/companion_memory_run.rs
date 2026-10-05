@@ -162,7 +162,7 @@ impl<
             Err(DynamicMemoryRunRepositoryError::NotFound) => {
                 let summary_window = summary_window(
                     self.repository
-                        .summary_cursor(snapshot.id, conversation_id)
+                        .summary_cursor(snapshot.id, conversation_id, admission.batch.branch_id)
                         .map_err(CompanionPostTurnMemoryRunError::Memory)?,
                     admission.batch.summary_message_interval,
                     admission.batch.window_selection,
@@ -1051,6 +1051,7 @@ pub(crate) mod tests {
     fn new_summary_window_starts_after_the_durable_cursor() {
         let space_id = MemorySpaceId::new();
         let previous = lettuce_memory::MemorySummary {
+            branch_id: ConversationBranchId::new(),
             space_id,
             text: "previous".to_owned(),
             token_count: 1,
@@ -1284,6 +1285,7 @@ pub(crate) mod tests {
             )
         );
         *repository.summary.lock().expect("summary") = Some(lettuce_memory::MemorySummary {
+            branch_id: first.run.branch_id,
             space_id: repository.snapshot.id,
             text: "persisted by the run".to_owned(),
             token_count: 4,

@@ -174,6 +174,12 @@ impl DynamicMemoryBackup {
                 || !run_ids.insert(entry.run.id)
                 || !conversations.contains(&entry.run.conversation_id)
                 || !branches.contains(&(entry.run.conversation_id, entry.run.branch_id))
+                || !memory.spaces.iter().any(|space| {
+                    space.snapshot.id == entry.run.space_id
+                        && space
+                            .branch_id
+                            .is_none_or(|branch| branch == entry.run.branch_id)
+                })
                 || spaces
                     .get(&(entry.run.conversation_id, entry.run.space_id))
                     .is_none_or(|snapshot| entry.run.starting_memory.revision > snapshot.revision)

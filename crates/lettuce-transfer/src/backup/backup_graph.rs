@@ -1802,6 +1802,7 @@ mod tests {
                 rewinds: Vec::new(),
             },
             memory: crate::MemoryBackup {
+                synced_cursors: Vec::new(),
                 pools: Vec::new(),
                 unbound_pools: Vec::new(),
                 version: crate::MEMORY_BACKUP_VERSION,

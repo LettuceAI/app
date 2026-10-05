@@ -27,7 +27,7 @@ A `MemoryItem` carries:
 
 A space holds any number of items. `MemoryPolicy` decides what a memory cycle keeps: `max_entries` (at most `MAX_MEMORY_ITEMS`, 4096), the hot token budget, the cold threshold, the default delete confidence, the per-cycle hard-delete ratio and the decay rate.
 
-`MemorySummary` is the cumulative summary of the conversation so far. Besides the text and token count it stores its window, a half-open range of message positions, and the exact ids of the messages it covers; the window length must equal the id count. The window end is the summary cursor: where the next cycle starts reading. In a companion pool the cursor is per conversation (`MemorySummaryRepository::summary_cursor`).
+`MemorySummary` is the cumulative summary of the conversation so far. Besides the text and token count it stores its window, a half-open range of message positions, and the exact ids of the messages it covers; the window length must equal the id count. The window end is the summary cursor: where the next cycle starts reading. The summary records its owning branch; in a companion pool the cursor is per conversation and branch (`MemorySummaryRepository::summary_cursor`).
 
 ## Writing memory
 
@@ -115,3 +115,5 @@ It is idempotent by operation id. Working out which run is the first invalid one
 ## Backups
 
 The space, item, summary and retrieval-access types are also the versioned backup document. Backup validation reuses their invariants and keeps the exact access metadata that later retrieval depends on; scores are never recalculated. Separate versioned documents carry the embedding projection cache and the full run graph (approvals, runs, attempts, rounds, results and summary checkpoints). Export runs no workflow.
+
+A summary carries its owning branch. `MemorySummaryRepository::summary_cursor` requires the conversation and branch: the pool's latest summary advances only its owner, and other branches use their own succeeded runs and synced cursors. A seeded child summary is rebound to the child branch.

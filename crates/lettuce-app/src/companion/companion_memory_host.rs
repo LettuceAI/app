@@ -674,6 +674,62 @@ where
         for conversation_id in conversations {
             self.run_pass(conversation_id, worker_id, lease_for, clock, follow_ups)
                 .await;
+            let Some(active) = self.active_cycle(conversation_id)? else {
+                continue;
+            };
+            if active.companion {
+                continue;
+            }
+            let aggregate = ConversationReader::get(self.repository, conversation_id)
+                .map_err(CompanionMemoryHostError::Conversation)?;
+            for branch in aggregate.branches {
+                if branch.id == aggregate.conversation.active_branch_id
+                    || branch.status != lettuce_conversations::BranchStatus::Active
+                {
+                    continue;
+                }
+                let mut remains = false;
+                for job in queued
+                    .iter()
+                    .filter(|job| job.subject.id.as_str() == conversation_id.to_string())
+                {
+                    remains |= JobStore::get(self.repository, job.id)
+                        .map_err(|error| CompanionMemoryHostError::Dispatch(error.into()))?
+                        .is_some_and(|current| current.state == lettuce_jobs::JobState::Queued);
+                }
+                if !remains {
+                    break;
+                }
+                let admission = crate::CompanionPostTurnMemoryAdmissionCoordinator::new(
+                    self.repository,
+                    self.repository,
+                )
+                .admit_plain_for_branch(
+                    conversation_id,
+                    branch.id,
+                    active.settings.summary_message_interval,
+                    run_mode(active.settings.run_mode),
+                    clock.now(),
+                )
+                .map_err(|error| CompanionMemoryHostError::Dispatch(error.into()))?;
+                let works =
+                    CompanionMemoryDispatchCoordinator::new(self.repository, self.repository)
+                        .claim_admissions(
+                            admission.into_iter().collect(),
+                            worker_id,
+                            clock.now(),
+                            lease_for,
+                            &ResourceAvailability::all(),
+                        )?;
+                for work in works {
+                    let settled = self
+                        .run_claimed(work, CancellationReason::Recovery, clock.now())
+                        .await?;
+                    follow_ups
+                        .after_memory(&settled, worker_id, lease_for, clock)
+                        .await;
+                }
+            }
         }
         let mut cancelled = Vec::new();
         for job in self.queued_memory_jobs()? {

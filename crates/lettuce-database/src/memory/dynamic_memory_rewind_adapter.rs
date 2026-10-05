@@ -165,11 +165,12 @@ fn prior_summary(
                FROM dynamic_memory_runs run
                JOIN dynamic_memory_summary_checkpoints checkpoint ON checkpoint.run_id=run.id
               WHERE run.conversation_id=?1 AND run.id<>?2 AND run.summary_window_end<=?3
-                AND run.space_id=?4
+                AND run.space_id=?4 AND run.branch_id=(SELECT branch_id FROM dynamic_memory_runs WHERE id=?2)
                 AND NOT EXISTS (
                     SELECT 1 FROM dynamic_memory_suffix_rewinds rewind
                       JOIN dynamic_memory_runs undone ON undone.id = rewind.invalid_run_id
                      WHERE rewind.conversation_id = run.conversation_id
+                       AND undone.branch_id = run.branch_id
                        AND undone.created_at <= run.created_at
                        AND rewind.applied_at >= run.created_at
                 )
@@ -220,12 +221,14 @@ pub(crate) fn undo_runs(
                    FROM dynamic_memory_runs run
                    JOIN dynamic_memory_runs invalid ON invalid.id = ?2
                   WHERE run.conversation_id = ?1 AND run.space_id = invalid.space_id
+                    AND run.branch_id = invalid.branch_id
                     AND run.created_at >= invalid.created_at
                     AND NOT EXISTS (
                         SELECT 1 FROM dynamic_memory_suffix_rewinds rewind
                           JOIN dynamic_memory_runs undone ON undone.id = rewind.invalid_run_id
                          WHERE rewind.conversation_id = run.conversation_id
-                           AND undone.created_at <= run.created_at
+                           AND undone.branch_id = run.branch_id
+                       AND undone.created_at <= run.created_at
                            AND rewind.applied_at >= run.created_at
                     )
                   ORDER BY run.created_at DESC, run.id DESC",
@@ -462,16 +465,30 @@ impl DynamicMemorySuffixRewindRepository for Database {
         }
         let branch: String = transaction
             .query_row(
-                "SELECT active_branch_id FROM conversations WHERE id = ?1",
-                [rewind.conversation_id.to_string()],
+                "SELECT coalesce(
+                    (SELECT branch_id FROM dynamic_memory_runs WHERE conversation_id = ?1 AND id = ?2),
+                    (SELECT turn.branch_id FROM companion_turn_effects effect JOIN conversation_turns turn ON turn.id = effect.turn_id WHERE effect.conversation_id = ?1 AND effect.id = ?3)
+                )",
+                params![rewind.conversation_id.to_string(), rewind.invalid_run_id.map(|id| id.to_string()), rewind.invalidated_effect_ids.first().map(|id| id.to_string())],
                 |row| row.get(0),
             )
             .map_err(storage)?;
         let branch_id = branch.parse().map_err(storage)?;
-        let space_id =
-            memory_adapter::branch_space_id_in(&transaction, rewind.conversation_id, branch_id)
-                .map_err(storage)?
-                .ok_or(DynamicMemorySuffixRewindError::NotFound)?;
+        let space_id = match rewind.invalid_run_id {
+            Some(run_id) => {
+                let space: String = transaction.query_row(
+                    "SELECT space_id FROM dynamic_memory_runs WHERE conversation_id = ?1 AND id = ?2",
+                    params![rewind.conversation_id.to_string(), run_id.to_string()],
+                    |row| row.get(0),
+                ).map_err(storage)?;
+                parse_id(space)?
+            }
+            None => {
+                memory_adapter::branch_space_id_in(&transaction, rewind.conversation_id, branch_id)
+                    .map_err(storage)?
+                    .ok_or(DynamicMemorySuffixRewindError::NotFound)?
+            }
+        };
         let current = memory_adapter::get_in(&transaction, space_id)
             .map_err(memory_error)?
             .ok_or(DynamicMemorySuffixRewindError::NotFound)?;
@@ -566,8 +583,8 @@ impl DynamicMemorySuffixRewindRepository for Database {
             .map_err(storage)?;
         transaction
             .execute(
-                "DELETE FROM memory_synced_cursors WHERE conversation_id = ?1",
-                [rewind.conversation_id.to_string()],
+                "DELETE FROM memory_synced_cursors WHERE conversation_id = ?1 AND branch_id = ?2",
+                params![rewind.conversation_id.to_string(), branch_id.to_string()],
             )
             .map_err(storage)?;
 

@@ -34,13 +34,17 @@ CREATE TABLE dynamic_memory_pending_approvals (
 -- A pool conversation's dynamic-memory cursor received from another device;
 -- the local cursor is the larger of this and the device's own runs.
 CREATE TABLE memory_synced_cursors (
-    conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
-    window_end INTEGER NOT NULL CHECK (window_end >= 0)
+    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    branch_id TEXT NOT NULL,
+    window_end INTEGER NOT NULL CHECK (window_end >= 0),
+    PRIMARY KEY (conversation_id, branch_id),
+    FOREIGN KEY (conversation_id, branch_id) REFERENCES conversation_branches(conversation_id, id) ON DELETE CASCADE
 ) STRICT;
 
 CREATE TABLE memory_summaries (
     space_id TEXT PRIMARY KEY REFERENCES memory_spaces(id) ON DELETE RESTRICT,
     conversation_id TEXT NOT NULL,
+    branch_id TEXT NOT NULL,
     text TEXT NOT NULL CHECK (
         length(trim(text)) > 0
         AND length(CAST(text AS BLOB)) <= 8388608
@@ -50,6 +54,7 @@ CREATE TABLE memory_summaries (
     window_end INTEGER NOT NULL CHECK (window_end > window_start),
     updated_at INTEGER NOT NULL,
     UNIQUE (space_id, conversation_id),
+    FOREIGN KEY (conversation_id, branch_id) REFERENCES conversation_branches(conversation_id, id) ON DELETE RESTRICT,
     FOREIGN KEY (conversation_id, space_id)
         REFERENCES conversation_memory_spaces(conversation_id, space_id) ON DELETE RESTRICT
 ) STRICT;
