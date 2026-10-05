@@ -349,7 +349,7 @@ New features to design with the user; legacy never had them.
 - The unused companion-emotion neutral-fallback loader is removed. The API requires the installed Thymos classifier and reports typed model failures instead of a neutral fallback (old-code/src-tauri/src/chat_manager/companion/mod.rs:1407-1435).
 
 - Device `embeddingKeepModelLoaded` defaults off and releases each embedding runtime after its call, matching old-code/src-tauri/src/embedding/settings.rs:26-40 and inference.rs:451-520,551-620. Embedding and Thymos downloads share a lane, matching the shared admission state at old-code/src-tauri/src/embedding/download.rs:339-352.
-- Unsaved audio-provider drafts verify without a configuration or secret write. Non-discovery voice refresh returns Gemini catalog voices or an empty list for OpenAI-compatible, Fish Speech and Kokoro, matching old-code/src-tauri/src/tts_manager/commands.rs:580-587 (Kokoro installed voices remain a separate inventory).
+- Unsaved audio-provider drafts verify without a configuration or secret write. Non-discovery voice listing and refresh return Gemini catalog voices, installed Kokoro voices with library/engine labels, or an empty list for OpenAI-compatible and Fish Speech, matching old-code/src-tauri/src/tts_manager/commands.rs:472-520,580-587.
 
 - Speech synthesis and transcription fail terminally for missing dependencies and local runtime or storage failures. Only remote provider/network unavailability retries, on a bounded schedule; ONNX Runtime absence has its own runtime-missing label. Legacy returned local setup failures directly (`old-code/src-tauri/src/tts_manager/commands.rs:887-903`).
 

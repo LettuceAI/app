@@ -132,12 +132,32 @@ fn voice_view(voice: lettuce_speech::DiscoveredVoice) -> dto::AudioVoiceView {
     dto::AudioVoiceView { voice_id: voice.voice_id, name: voice.name, preview_url: voice.preview_url, labels: voice.labels }
 }
 
+fn built_in_provider_voices(context: &ApiContext, provider: &AudioProvider) -> Result<Option<Vec<dto::AudioVoiceView>>, ApiError> {
+    match &provider.config {
+        AudioProviderConfig::Gemini { .. } => Ok(Some(lettuce_speech::tts_catalog_voices(AudioProviderKind::GeminiTts)
+            .into_iter().map(|voice| dto::AudioVoiceView { voice_id: voice.id.to_owned(), name: voice.name.to_owned(), preview_url: None,
+                labels: voice.labels.into_iter().map(|(key, value)| (key.to_owned(), value.to_owned())).collect() }).collect())),
+        AudioProviderConfig::Kokoro { .. } => {
+            let root = context.retained_model_roots()?.kokoro.ok_or_else(|| api_error(ApiErrorCode::Unavailable, "the Kokoro root is unavailable"))?;
+            let voices = crate::KokoroAssetInventoryCoordinator::open_managed(root).and_then(|inventory| inventory.installed_voices())
+                .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?;
+            Ok(Some(voices.into_iter().map(|voice| dto::AudioVoiceView { name: voice.id.clone(), voice_id: voice.id, preview_url: None,
+                labels: [("category".into(), "library".into()), ("engine".into(), "kokoro".into())].into() }).collect()))
+        }
+        AudioProviderConfig::OpenAiCompatible { .. } | AudioProviderConfig::FishSpeech { .. } => Ok(Some(Vec::new())),
+        AudioProviderConfig::Elevenlabs | AudioProviderConfig::FishTts => Ok(None),
+    }
+}
+
 pub async fn audio_provider_voices_refresh(
     context: &ApiContext,
     request: dto::AudioProviderRequest,
 ) -> Result<Vec<dto::AudioVoiceView>, ApiError> {
     let id: AudioProviderId = parse_id(&request.provider_id, "provider_id")?;
     context.blocking(move |context| {
+        let provider = context.backend().database().get_audio_provider(id).map_err(IntoApiError::into_api_error)?
+            .ok_or_else(|| api_error(ApiErrorCode::NotFound, "the audio provider was not found"))?;
+        if let Some(voices) = built_in_provider_voices(context, &provider)? { return Ok(voices); }
         let discovery = Control::new(context)?;
         tokio::runtime::Handle::current().block_on(
             context.backend().tts_voice_refresh(context.secret_store().as_ref())
@@ -156,13 +176,7 @@ pub async fn audio_provider_voices(
         let provider = context.backend().database().get_audio_provider(id)
             .map_err(IntoApiError::into_api_error)?
             .ok_or_else(|| api_error(ApiErrorCode::NotFound, "the audio provider was not found"))?;
-        if matches!(provider.config, AudioProviderConfig::Gemini { .. }) {
-            return Ok(lettuce_speech::tts_catalog_voices(AudioProviderKind::GeminiTts)
-                .into_iter().map(|voice| dto::AudioVoiceView {
-                    voice_id: voice.id.to_owned(), name: voice.name.to_owned(), preview_url: None,
-                    labels: voice.labels.into_iter().map(|(key, value)| (key.to_owned(), value.to_owned())).collect(),
-                }).collect());
-        }
+        if let Some(voices) = built_in_provider_voices(context, &provider)? { return Ok(voices); }
         context.backend().tts_voice_refresh(context.secret_store().as_ref()).list(id)
             .map(|voices| voices.into_iter().map(voice_view).collect()).map_err(IntoApiError::into_api_error)
     }).await

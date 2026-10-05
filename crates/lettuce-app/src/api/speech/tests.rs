@@ -984,6 +984,16 @@ async fn kokoro_api_inventories_blends_removes_and_reports_missing_dependencies(
     let lettuce_model_hub::KokoroVoicePreparation::Download(mut download) = store.prepare(remote).expect("prepare") else { panic!("new download"); };
     download.append(&bytes).expect("bytes"); download.finish().expect("finish");
     assert_eq!(crate::api::kokoro_voices_installed(&harness.context).await.expect("installed")[0].id, "af_heart");
+    use lettuce_speech::TtsConfigurationRepository;
+    let mut provider = synthesis_request("kokoro voices").provider;
+    provider.config = AudioProviderConfig::Kokoro { variant: Some("int8".into()) };
+    harness.context.backend().database().upsert_audio_provider(provider.clone(), None).expect("provider");
+    let provider_request = || dto::AudioProviderRequest { provider_id: provider.id.to_string() };
+    let listed = super::audio_provider_voices(&harness.context, provider_request()).await.expect("provider voices");
+    assert_eq!(listed.len(), 1); assert_eq!(listed[0].voice_id, "af_heart");
+    assert_eq!(listed[0].labels.get("engine").map(String::as_str), Some("kokoro"));
+    assert_eq!(listed[0].labels.get("category").map(String::as_str), Some("library"));
+    assert_eq!(super::audio_provider_voices_refresh(&harness.context, provider_request()).await.expect("refresh local"), listed);
     let blend = crate::api::kokoro_blend(&harness.context, dto::KokoroBlendRequest { voices: vec![dto::KokoroVoiceBlendInput { voice_id: "af_heart".into(), weight: 25.0 }, dto::KokoroVoiceBlendInput { voice_id: "af_heart".into(), weight: 75.0 }] }).await.expect("blend");
     assert_eq!(blend.voices.len(), 1); assert_eq!(blend.voices[0].weight, 1.0); assert_eq!(blend.style_rows, 1);
     let error = crate::api::kokoro_phonemize(&harness.context, dto::KokoroPhonemizeRequest { variant: "int8".into(), voice_id: "af_heart".into(), text: "Hello.".into() }).await.expect_err("model missing");
