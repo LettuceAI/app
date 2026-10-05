@@ -320,9 +320,11 @@ pub(crate) fn find_reusable_in(transaction: &Transaction<'_>, key: &SynthesisReu
             .query_row(
                 "SELECT s.job_id
                    FROM speech_syntheses AS s
+                   JOIN audio_providers AS p ON p.id = s.provider_id
                    JOIN media_assets AS a ON a.id = s.result_asset_id
                    JOIN media_blobs AS b ON b.id = a.blob_id
                   WHERE s.provider_id = ?1
+                    AND json_extract(s.request_json, '$.value.provider.config') = json_extract(p.config_json, '$.value')
                     AND json_extract(s.request_json, '$.value.text') = ?2
                     AND json_extract(s.request_json, '$.value.model_id') = ?3
                     AND json_extract(s.request_json, '$.value.voice_id') = ?4

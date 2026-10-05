@@ -72,6 +72,7 @@ Facts about how `lettuce-database` relates to the legacy app (2.2.x). The crate 
 - Restore used to give an unfinished attempt a usage id without an event, so a restored database with such work could not be backed up again.
 - Job pruning used to delete terminal jobs a speech transcription or synthesis still bound; one such job made every later prune fail.
 - Retained synthesis cache lookup and the new request's receipt commit together. Cache hits reference the existing succeeded speech job rather than creating a second job or duplicating synthesis evidence.
+- Cache reuse also requires the recorded provider configuration to match the current account. Updating an endpoint or provider kind preserves old evidence for replay while preventing new requests from using it.
 - Local model admission can commit the job and its detail in one transaction; an insertion failure rolls back the job and its change feed, and replay validates the original detail.
 - The previous README said the database exposed only an internal create/read slice while the conversation repository mutation port was still being implemented. `Database` implements `ConversationRepository` in `conversation/conversation_mutations.rs`, and the helpers in `conversation_vertical_slice.rs` are shared by the adapters.
 - The previous README said "the future full repository must validate projection equality on every write and hydrate". The mutation kernel does: `read_operation_any` checks the stored projection columns against the decoded reference.

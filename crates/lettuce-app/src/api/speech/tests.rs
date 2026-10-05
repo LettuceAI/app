@@ -1229,3 +1229,26 @@ async fn audio_credential_rotation_uses_generation_cas_and_returns_no_secret() {
     let listed = serde_json::to_string(&super::audio_providers_list(&env.context).await.expect("metadata")).expect("json");
     assert!(!listed.contains("secret-canary"));
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn retained_audio_from_a_previous_provider_configuration_is_not_reused() {
+    use lettuce_speech::TtsConfigurationRepository;
+    let env = env(TtsMode::Speak, AsrMode::Text("unused"), None);
+    let provider = synthesis_request("config cache").provider;
+    let provider_id = provider.id;
+    env.context.backend().database().upsert_audio_provider(provider, None).expect("provider");
+    let request = || dto::TtsSynthesizeRequest { request_id: RequestId::new().to_string(), provider_id: provider_id.to_string(),
+        model_id: "speech".into(), voice_id: "reference".into(), text: "Same narration.".into(), prompt: None, retained: true };
+    let original = request();
+    let first = super::tts_synthesize(&env.context, original.clone()).await.expect("first");
+    let runner = runner(&env.context); assert!(run_to_idle(&runner).await);
+    super::audio_provider_update(&env.context, dto::AudioProviderUpdateRequest { provider_id: provider_id.to_string(), expected_revision: 1,
+        label: "Changed server".into(), configuration: dto::AudioProviderConfiguration::FishSpeech {
+            base_url: Some("http://localhost:9000".into()), request_path: None,
+        } }).await.expect("new server");
+    let second = super::tts_synthesize(&env.context, request()).await.expect("fresh synthesis");
+    assert_ne!(first, second);
+    assert!(run_to_idle(&runner).await);
+    assert_eq!(env.tts.calls.load(Ordering::SeqCst), 2);
+    assert_eq!(super::tts_synthesize(&env.context, original).await.expect("original replay"), first);
+}
