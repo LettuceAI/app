@@ -219,6 +219,7 @@ impl Recorder {
         (level.clamp(0.0, 1.0) * 1000.0).round() as u16
     }
 
+    /// Drains the writer before finalizing WAV, on the stop worker after native capture stops.
     fn finish(&self) -> Result<u64, ApiError> {
         self.stopped.store(true, Ordering::Release);
         let writer = self
@@ -227,8 +228,6 @@ impl Recorder {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take()
             .ok_or_else(|| api_error(ApiErrorCode::Internal, "the recording was closed"))?;
-        // Called on the stop worker after the native session stops, never
-        // from the audio callback. Drain queued samples before patching WAV.
         let _ = self.sender.send(WriteBlock::Finish);
         let bytes = writer
             .join()
@@ -466,7 +465,6 @@ pub async fn dictation_stop(
             let audio = match ingest_recording(context, &path) {
                 Ok(audio) => audio,
                 Err(error) => {
-                    // Keep a sealed capture for stop retry; do not call finish again.
                     let mut inner = lock(context.speech_state().dictation());
                     inner.ended.retain(|(id, _)| id != &capture_id);
                     inner.active = Some(active);
@@ -604,7 +602,6 @@ mod recorder_tests {
             .recv_timeout(Duration::from_secs(1))
             .expect("writer started");
         assert_ne!(writer_thread, std::thread::current().id());
-        // The writer cannot advance until release; push must still return.
         for _ in 0..QUEUED_SAMPLE_BLOCKS {
             recorder.push(&[0.25; SAMPLE_BLOCK_SIZE]);
         }

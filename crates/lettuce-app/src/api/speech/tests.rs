@@ -2888,7 +2888,6 @@ async fn voice_creation_jobs_replay_settle_and_never_resend_after_restart() {
                 .await
                 .expect("claim")
                 .expect("work");
-            // The provider has received the request, but the process dies before a response.
             struct NoProgress;
             impl crate::api::JobProgressSink for NoProgress {
                 fn text_delta(&self, _: Option<String>, _: Option<String>) {}
