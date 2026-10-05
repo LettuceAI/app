@@ -50,79 +50,21 @@ pub(crate) fn seed_branch_space_in(
     else {
         return Ok(());
     };
-    let position: i64 = transaction.query_row(
-        "WITH RECURSIVE prefix(id) AS (
-            SELECT ?2 UNION ALL SELECT message.parent_message_id
-              FROM conversation_messages message JOIN prefix ON message.id = prefix.id
-             WHERE message.conversation_id = ?1 AND message.parent_message_id IS NOT NULL
-         ) SELECT count(*) FROM conversation_messages message JOIN prefix ON message.id = prefix.id
-            WHERE message.conversation_id = ?1 AND message.role IN ('user','assistant') AND message.visibility = 'visible'",
-        params![conversation_id.to_string(), fork_message_id.to_string()],
-        |row| row.get(0),
-    ).map_err(storage)?;
-    let run_ids = {
-        let mut statement = transaction.prepare(
-            "WITH RECURSIVE lineage(branch_id) AS (
-                SELECT ?2 UNION ALL SELECT branch.parent_branch_id FROM conversation_branches branch
-                  JOIN lineage ON branch.id = lineage.branch_id
-                 WHERE branch.conversation_id = ?1 AND branch.parent_branch_id IS NOT NULL
-            ), ancestry(message_id) AS (
-                SELECT coalesce(head_message_id,fork_message_id) FROM conversation_branches WHERE conversation_id = ?1 AND id = ?2
-                UNION ALL SELECT message.parent_message_id FROM conversation_messages message JOIN ancestry ON message.id = ancestry.message_id
-                 WHERE message.conversation_id = ?1 AND message.parent_message_id IS NOT NULL
-            ) SELECT run.id FROM dynamic_memory_runs run
-              JOIN conversation_memory_spaces binding ON binding.conversation_id = run.conversation_id AND binding.branch_id = run.branch_id AND binding.space_id = run.space_id AND binding.pooled = 0
-              WHERE run.conversation_id = ?1 AND run.branch_id IN (SELECT branch_id FROM lineage)
-                AND (run.branch_id = ?2 OR NOT EXISTS (
-                    SELECT 1 FROM dynamic_memory_run_source_messages source WHERE source.run_id = run.id
-                    AND source.message_id NOT IN (SELECT message_id FROM ancestry)
-                ))
-                AND NOT EXISTS (
-                    SELECT 1 FROM dynamic_memory_suffix_rewinds rewind
-                    JOIN dynamic_memory_runs invalid ON invalid.id = rewind.invalid_run_id
-                    WHERE rewind.conversation_id = run.conversation_id AND invalid.branch_id = run.branch_id
-                      AND invalid.created_at <= run.created_at AND rewind.applied_at >= run.created_at
-                )
-              ORDER BY run.summary_window_start, run.summary_window_end, run.created_at, run.id",
-        ).map_err(storage)?;
-        statement
-            .query_map(
-                params![conversation_id.to_string(), parent_branch_id.to_string()],
-                |row| row.get::<_, String>(0),
-            )
+    let position = message_position_in(transaction, conversation_id, fork_message_id)?;
+    let (cut, summary) = branch_state_in(
+        transaction,
+        conversation_id,
+        parent_branch_id,
+        parent_space_id,
+        position,
+        None,
+    )?;
+    let seed = match cut {
+        Some(snapshot) => snapshot,
+        None => memory_adapter::get_in(transaction, parent_space_id)
             .map_err(storage)?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(storage)?
+            .ok_or(ConversationRepositoryError::Storage)?,
     };
-    let mut seed = memory_adapter::get_in(transaction, parent_space_id)
-        .map_err(storage)?
-        .ok_or(ConversationRepositoryError::Storage)?;
-    let mut summary = None;
-    for id in run_ids {
-        let run_id: DynamicMemoryRunId = id.parse().map_err(storage)?;
-        let run = dynamic_memory_run_adapter::load_run_in(transaction, run_id).map_err(storage)?;
-        let settled: bool = transaction.query_row(
-            "SELECT EXISTS(SELECT 1 FROM dynamic_memory_run_attempts WHERE run_id = ?1 AND status IN ('succeeded','failed','cancelled'))
-                AND NOT EXISTS(SELECT 1 FROM dynamic_memory_run_attempts WHERE run_id = ?1 AND status IN ('created','processing'))",
-            [id], |row| row.get(0),
-        ).map_err(storage)?;
-        if run.summary_window.end > u64::try_from(position).map_err(storage)? || !settled {
-            seed = run.starting_memory;
-            break;
-        }
-        let succeeded: bool = transaction.query_row(
-            "SELECT EXISTS(SELECT 1 FROM dynamic_memory_run_attempts WHERE run_id = ?1 AND status = 'succeeded')",
-            [run_id.to_string()], |row| row.get(0),
-        ).map_err(storage)?;
-        if succeeded {
-            if let Some(checkpoint) =
-                dynamic_memory_run_adapter::load_summary_checkpoint_in(transaction, run_id)
-                    .map_err(storage)?
-            {
-                summary = Some(checkpoint.summary);
-            }
-        }
-    }
     let space_id = if deterministic {
         MemorySpaceId::from_uuid(uuid::Uuid::new_v5(&branch_id.as_uuid(), b"memory-space"))
     } else {
@@ -181,4 +123,205 @@ pub(crate) fn seed_branch_space_in(
             .map_err(storage)?;
     }
     Ok(())
+}
+
+pub(crate) fn message_position_in(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    message_id: MessageId,
+) -> Result<u64, ConversationRepositoryError> {
+    let position: i64 = transaction.query_row(
+        "WITH RECURSIVE prefix(id) AS (
+            SELECT ?2 UNION ALL SELECT message.parent_message_id
+              FROM conversation_messages message JOIN prefix ON message.id = prefix.id
+             WHERE message.conversation_id = ?1 AND message.parent_message_id IS NOT NULL
+         ) SELECT count(*) FROM conversation_messages message JOIN prefix ON message.id = prefix.id
+            WHERE message.conversation_id = ?1 AND message.role IN ('user','assistant') AND message.visibility = 'visible'",
+        params![conversation_id.to_string(), message_id.to_string()],
+        |row| row.get(0),
+    ).map_err(storage)?;
+    u64::try_from(position).map_err(storage)
+}
+
+struct OwnRun {
+    run: lettuce_memory::DynamicMemoryRun,
+    in_flight: bool,
+    succeeded: bool,
+}
+
+/// The branch's own runs in its own space, in window order. With `cutoff`
+/// only runs that existed then count, and a run that had not settled by then
+/// is in flight.
+fn own_runs_in(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
+    space_id: MemorySpaceId,
+    cutoff: Option<i64>,
+) -> Result<Vec<OwnRun>, ConversationRepositoryError> {
+    let ids = {
+        let mut statement = transaction
+            .prepare(
+                "SELECT run.id FROM dynamic_memory_runs run
+                  WHERE run.conversation_id = ?1 AND run.branch_id = ?2 AND run.space_id = ?3
+                    AND (?4 IS NULL OR run.created_at < ?4)
+                    AND NOT EXISTS (
+                        SELECT 1 FROM dynamic_memory_suffix_rewinds rewind
+                        JOIN dynamic_memory_runs invalid ON invalid.id = rewind.invalid_run_id
+                        WHERE rewind.conversation_id = run.conversation_id AND invalid.branch_id = run.branch_id
+                          AND invalid.created_at <= run.created_at AND rewind.applied_at >= run.created_at
+                          AND (?4 IS NULL OR rewind.applied_at < ?4)
+                    )
+                  ORDER BY run.summary_window_start, run.summary_window_end, run.created_at, run.id",
+            )
+            .map_err(storage)?;
+        statement
+            .query_map(
+                params![
+                    conversation_id.to_string(),
+                    branch_id.to_string(),
+                    space_id.to_string(),
+                    cutoff
+                ],
+                |row| row.get::<_, String>(0),
+            )
+            .map_err(storage)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(storage)?
+    };
+    ids.into_iter()
+        .map(|id| {
+            let (in_flight, succeeded): (bool, bool) = transaction
+                .query_row(
+                    "SELECT
+                        EXISTS(SELECT 1 FROM dynamic_memory_run_attempts WHERE run_id = ?1 AND status IN ('created','processing'))
+                          OR (?2 IS NOT NULL AND coalesce((SELECT max(coalesce(finished_at, updated_at)) FROM dynamic_memory_run_attempts WHERE run_id = ?1), 0) > ?2),
+                        EXISTS(SELECT 1 FROM dynamic_memory_run_attempts WHERE run_id = ?1 AND status = 'succeeded'
+                                  AND (?2 IS NULL OR finished_at <= ?2))",
+                    params![id, cutoff],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .map_err(storage)?;
+            let run_id: DynamicMemoryRunId = id.parse().map_err(storage)?;
+            let run =
+                dynamic_memory_run_adapter::load_run_in(transaction, run_id).map_err(storage)?;
+            Ok(OwnRun {
+                run,
+                in_flight,
+                succeeded,
+            })
+        })
+        .collect()
+}
+
+/// The branch's memory as of `position`: the starting snapshot of its first
+/// own run that reaches past `position` or is in flight (none means its
+/// current items), and the summary it had then. Ancestor branches count only
+/// through the state this branch was seeded with.
+fn branch_state_in(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
+    space_id: MemorySpaceId,
+    position: u64,
+    cutoff: Option<i64>,
+) -> Result<
+    (
+        Option<MemorySpaceSnapshot>,
+        Option<lettuce_memory::MemorySummary>,
+    ),
+    ConversationRepositoryError,
+> {
+    let mut cut = None;
+    let mut summary = None;
+    for own in own_runs_in(transaction, conversation_id, branch_id, space_id, cutoff)? {
+        if own.run.summary_window.end > position || own.in_flight {
+            cut = Some(own.run.starting_memory);
+            break;
+        }
+        if own.succeeded
+            && let Some(checkpoint) =
+                dynamic_memory_run_adapter::load_summary_checkpoint_in(transaction, own.run.id)
+                    .map_err(storage)?
+        {
+            summary = Some(checkpoint.summary);
+        }
+    }
+    if summary.is_none() {
+        summary = base_summary_in(transaction, conversation_id, branch_id, space_id, position)?;
+    }
+    Ok((cut, summary))
+}
+
+/// The summary a branch started from, before any of its own runs: its stored
+/// summary while no own run has replaced it, otherwise what its parent had at
+/// the fork when the branch was created.
+fn base_summary_in(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
+    space_id: MemorySpaceId,
+    position: u64,
+) -> Result<Option<lettuce_memory::MemorySummary>, ConversationRepositoryError> {
+    let replaced: bool = transaction
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM dynamic_memory_runs run
+                JOIN dynamic_memory_summary_checkpoints checkpoint ON checkpoint.run_id = run.id
+               WHERE run.conversation_id = ?1 AND run.branch_id = ?2 AND run.space_id = ?3)",
+            params![
+                conversation_id.to_string(),
+                branch_id.to_string(),
+                space_id.to_string()
+            ],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    if !replaced {
+        return Ok(memory_adapter::get_summary_in(transaction, space_id)
+            .map_err(storage)?
+            .filter(|summary| summary.window_end <= position));
+    }
+    Ok(
+        inherited_summary_in(transaction, conversation_id, branch_id)?
+            .filter(|summary| summary.window_end <= position),
+    )
+}
+
+/// What the branch's parent had as of the fork message when the branch was
+/// created; the root branch inherits nothing.
+pub(crate) fn inherited_summary_in(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
+) -> Result<Option<lettuce_memory::MemorySummary>, ConversationRepositoryError> {
+    let point: Option<(Option<String>, Option<String>, i64)> = transaction
+        .query_row(
+            "SELECT parent_branch_id, fork_message_id, created_at FROM conversation_branches
+              WHERE conversation_id = ?1 AND id = ?2",
+            params![conversation_id.to_string(), branch_id.to_string()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()
+        .map_err(storage)?;
+    let Some((Some(parent), Some(fork_message), created_at)) = point else {
+        return Ok(None);
+    };
+    let parent: ConversationBranchId = parent.parse().map_err(storage)?;
+    let Some(parent_space) = own_space_in(transaction, conversation_id, parent)? else {
+        return Ok(None);
+    };
+    let position = message_position_in(
+        transaction,
+        conversation_id,
+        fork_message.parse().map_err(storage)?,
+    )?;
+    Ok(branch_state_in(
+        transaction,
+        conversation_id,
+        parent,
+        parent_space,
+        position,
+        Some(created_at),
+    )?
+    .1)
 }

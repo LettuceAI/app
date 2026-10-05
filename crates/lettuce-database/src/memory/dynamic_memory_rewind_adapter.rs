@@ -537,13 +537,27 @@ impl DynamicMemorySuffixRewindRepository for Database {
                             .map_err(memory_error)?,
                     )
                 } else {
-                    let (prior_run_id, summary) = prior_summary(
+                    let (prior_run_id, mut summary) = prior_summary(
                         &transaction,
                         rewind.conversation_id,
                         space_id,
                         invalid_run_id,
                         run.summary_window.start,
                     )?;
+                    if prior_run_id.is_none() {
+                        summary = crate::memory::memory_branch_adapter::inherited_summary_in(
+                            &transaction,
+                            rewind.conversation_id,
+                            run.branch_id,
+                        )
+                        .map_err(|_| DynamicMemorySuffixRewindError::Storage)?
+                        .filter(|inherited| inherited.window_end <= run.summary_window.start)
+                        .map(|mut inherited| {
+                            inherited.space_id = space_id;
+                            inherited.branch_id = run.branch_id;
+                            inherited
+                        });
+                    }
                     memory_adapter::replace_summary_in(&transaction, space_id, summary.as_ref())
                         .map_err(memory_error)?;
                     (memory, prior_run_id, summary)

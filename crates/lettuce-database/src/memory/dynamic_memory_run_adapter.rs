@@ -2560,6 +2560,384 @@ mod tests {
         assert_eq!(source, messages[0].message_id.to_string());
     }
 
+    fn seed_child(
+        database: &Database,
+        conversation_id: ConversationId,
+        parent: ConversationBranchId,
+        fork_message: MessageId,
+        at: i64,
+    ) -> (ConversationBranchId, MemorySpaceId) {
+        let child = ConversationBranchId::new();
+        let mut connection = database.connection().expect("connection");
+        let transaction = connection.transaction().expect("transaction");
+        transaction.execute(
+            "INSERT INTO conversation_branches (conversation_id,id,parent_branch_id,fork_message_id,status,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,'active',1,?5,?5)",
+            params![conversation_id.to_string(), child.to_string(), parent.to_string(), fork_message.to_string(), at],
+        ).expect("branch");
+        super::super::memory_branch_adapter::seed_branch_space_in(
+            &transaction,
+            conversation_id,
+            parent,
+            child,
+            fork_message,
+            false,
+        )
+        .expect("seed");
+        let space: String = transaction.query_row(
+            "SELECT space_id FROM conversation_memory_spaces WHERE conversation_id = ?1 AND branch_id = ?2 AND pooled = 0",
+            params![conversation_id.to_string(), child.to_string()], |row| row.get(0),
+        ).expect("child space");
+        transaction.commit().expect("commit");
+        (child, space.parse().expect("space id"))
+    }
+
+    fn set_items(database: &Database, space_id: MemorySpaceId, text: &str) {
+        let current = database.get(space_id).expect("memory").expect("space");
+        database
+            .compare_and_apply(lettuce_memory::MemoryChangeSet {
+                space_id,
+                expected_revision: current.revision,
+                items: vec![memory_item(MemoryId::new(), text, 1)],
+            })
+            .expect("items");
+    }
+
+    fn branch_message(
+        database: &Database,
+        conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
+        parent: MessageId,
+        ordinal: i64,
+    ) -> MessageId {
+        branch_source(database, conversation_id, branch_id, parent, ordinal).message_id
+    }
+
+    fn branch_source(
+        database: &Database,
+        conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
+        parent: MessageId,
+        ordinal: i64,
+    ) -> DynamicMemorySourceMessage {
+        let message_id = MessageId::new();
+        let revision_id = MessageRevisionId::new();
+        let mut connection = database.connection().expect("connection");
+        let connection = connection.transaction().expect("transaction");
+        let participant: String = connection
+            .query_row(
+                "SELECT id FROM conversation_participants WHERE conversation_id = ?1 AND role = 'user'",
+                [conversation_id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("user participant");
+        connection
+            .execute(
+                "INSERT INTO conversation_messages \
+             (conversation_id,id,branch_id,parent_message_id,author_participant_id,role,\
+              timeline_ordinal,logical_time,effective_time,visibility,pinned,scene_edited,\
+              active_revision_id,active_candidate_id,revision,created_at,updated_at) \
+             VALUES (?1,?2,?3,?4,?5,'user',?6,?6,?6,'visible',0,0,?7,NULL,1,?6,?6)",
+                params![
+                    conversation_id.to_string(),
+                    message_id.to_string(),
+                    branch_id.to_string(),
+                    parent.to_string(),
+                    participant,
+                    ordinal,
+                    revision_id.to_string()
+                ],
+            )
+            .expect("branch message");
+        connection.execute(
+            "INSERT INTO conversation_message_revisions \
+             (conversation_id,id,message_id,branch_id,sequence,parts_json,authored_at,\
+              source_turn_id,provider_replay_artifact_id,provider_replay_retention) \
+             VALUES (?1,?2,?3,?4,1,?5,?6,NULL,NULL,NULL)",
+            params![conversation_id.to_string(), revision_id.to_string(), message_id.to_string(), branch_id.to_string(),
+                json!({"format_version":1,"value":[{"kind":"text","details":{"text":"branch message"}}]}).to_string(), ordinal],
+        ).expect("branch revision");
+        connection.commit().expect("commit");
+        DynamicMemorySourceMessage {
+            message_id,
+            role: lettuce_conversations::MessageRole::User,
+            render_source: MessageRenderSource::Revision(revision_id),
+            effective_time: TimestampMillis::new(ordinal),
+        }
+    }
+
+    #[test]
+    fn grandchild_seed_ignores_runs_the_parent_never_inherited() {
+        let database = Database::open_in_memory().expect("database");
+        let (conversation_id, root_space, messages) =
+            conversation_fixture_with_message_count(&database, 6);
+        let root = fixture_branch(&database, conversation_id);
+        let first = checkpointed_window(
+            &database,
+            conversation_id,
+            root_space,
+            &messages[0..2],
+            "First summary",
+            10,
+            0,
+        );
+        set_items(&database, root_space, "After cycle 1");
+        finish(&database, &first, true, 12);
+        let (child, child_space) =
+            seed_child(&database, conversation_id, root, messages[3].message_id, 30);
+        let second = checkpointed_window(
+            &database,
+            conversation_id,
+            root_space,
+            &messages[2..4],
+            "Second summary",
+            40,
+            2,
+        );
+        set_items(&database, root_space, "After cycle 2");
+        finish(&database, &second, true, 42);
+        let child_message = branch_message(
+            &database,
+            conversation_id,
+            child,
+            messages[3].message_id,
+            45,
+        );
+        let (_, grandchild_space) =
+            seed_child(&database, conversation_id, child, child_message, 50);
+        let grandchild = database
+            .get(grandchild_space)
+            .expect("memory")
+            .expect("space");
+        assert_eq!(grandchild.items[0].text, "After cycle 1");
+        let summary = database
+            .get_summary(grandchild_space)
+            .expect("summary")
+            .expect("inherited summary");
+        assert_eq!(summary.text, "First summary");
+        assert_eq!(summary.window_end, 2);
+        assert_eq!(
+            database
+                .get_summary(child_space)
+                .expect("summary")
+                .expect("child")
+                .text,
+            "First summary"
+        );
+    }
+
+    #[test]
+    fn rewinding_a_branch_first_run_restores_the_inherited_summary() {
+        let database = Database::open_in_memory().expect("database");
+        let (conversation_id, root_space, messages) = conversation_fixture(&database);
+        let root = fixture_branch(&database, conversation_id);
+        let first = checkpointed_run(
+            &database,
+            conversation_id,
+            root_space,
+            &messages,
+            "Root summary",
+            10,
+        );
+        set_items(&database, root_space, "Root memory");
+        finish(&database, &first, true, 12);
+        let (child, child_space) =
+            seed_child(&database, conversation_id, root, messages[1].message_id, 20);
+        let first_source = branch_source(
+            &database,
+            conversation_id,
+            child,
+            messages[1].message_id,
+            21,
+        );
+        let second_source = branch_source(
+            &database,
+            conversation_id,
+            child,
+            first_source.message_id,
+            22,
+        );
+        database
+            .connection()
+            .expect("connection")
+            .execute(
+                "UPDATE conversations SET active_branch_id = ?2 WHERE id = ?1",
+                params![conversation_id.to_string(), child.to_string()],
+            )
+            .expect("select child");
+        let own = checkpointed_window(
+            &database,
+            conversation_id,
+            child_space,
+            &[first_source, second_source],
+            "Child summary",
+            30,
+            2,
+        );
+        finish(&database, &own, true, 32);
+        let memory = database.get(child_space).expect("memory").expect("space");
+        database
+            .rewind_dynamic_memory_suffix(DynamicMemorySuffixRewind {
+                operation_id: OperationId::new(),
+                conversation_id,
+                invalid_run_id: Some(own.run_id),
+                expected_memory_revision: memory.revision,
+                invalidated_effect_ids: Vec::new(),
+                at: TimestampMillis::new(40),
+            })
+            .expect("rewind");
+        let summary = database
+            .get_summary(child_space)
+            .expect("summary")
+            .expect("inherited summary");
+        assert_eq!(summary.text, "Root summary");
+        assert_eq!(summary.window_end, 2);
+        assert_eq!(
+            database
+                .summary_cursor(child_space, conversation_id, child)
+                .expect("cursor"),
+            2
+        );
+    }
+
+    #[test]
+    fn a_pooled_fork_continues_at_its_parent_cursor() {
+        let database = Database::open_in_memory().expect("database");
+        let (conversation_id, space_id, messages) =
+            conversation_fixture_with_message_count(&database, 4);
+        let root = fixture_branch(&database, conversation_id);
+        let child = ConversationBranchId::new();
+        {
+            let mut connection = database.connection().expect("connection");
+            let transaction = connection.transaction().expect("transaction");
+            let character = lettuce_types::CharacterId::new();
+            transaction.execute("INSERT INTO characters (id,status,name,normalized_name,profile_json,provenance_json,defaults_json,interaction_mode,memory_policy,voice_autoplay,presentation_json,revision,created_at,updated_at) VALUES (?1,'active','Pool','pool','{}','{}','{}','companion','dynamic',0,'{}',1,1,1)", [character.to_string()]).expect("pool character");
+            transaction
+                .execute(
+                    "DELETE FROM conversation_memory_spaces WHERE conversation_id = ?1",
+                    [conversation_id.to_string()],
+                )
+                .expect("replace fixture binding");
+            transaction
+                .execute(
+                    "INSERT INTO companion_memory_pools (character_id,space_id) VALUES (?1,?2)",
+                    params![character.to_string(), space_id.to_string()],
+                )
+                .expect("pool");
+            transaction.execute("INSERT INTO conversation_memory_spaces (conversation_id,branch_id,space_id,pooled) VALUES (?1,?2,?3,1)", params![conversation_id.to_string(),root.to_string(),space_id.to_string()]).expect("pool binding");
+            transaction.commit().expect("pool fixture");
+        }
+        let first = checkpointed_window(
+            &database,
+            conversation_id,
+            space_id,
+            &messages[0..2],
+            "Pool summary",
+            10,
+            0,
+        );
+        finish(&database, &first, true, 12);
+        database.connection().expect("connection").execute(
+            "INSERT INTO conversation_branches (conversation_id,id,parent_branch_id,fork_message_id,status,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,'active',1,20,20)",
+            params![conversation_id.to_string(), child.to_string(), root.to_string(), messages[3].message_id.to_string()],
+        ).expect("child branch");
+        assert_eq!(
+            database
+                .summary_cursor(space_id, conversation_id, root)
+                .expect("root cursor"),
+            2
+        );
+        assert_eq!(
+            database
+                .summary_cursor(space_id, conversation_id, child)
+                .expect("child cursor"),
+            2
+        );
+    }
+
+    #[test]
+    fn branch_seed_keeps_an_imported_summary_without_runs() {
+        let database = Database::open_in_memory().expect("database");
+        let (conversation_id, space_id, messages) = conversation_fixture(&database);
+        let parent = fixture_branch(&database, conversation_id);
+        set_items(&database, space_id, "Imported memory");
+        {
+            let mut connection = database.connection().expect("connection");
+            let transaction = connection.transaction().expect("transaction");
+            super::memory_adapter::replace_summary_in(
+                &transaction,
+                space_id,
+                Some(&lettuce_memory::MemorySummary {
+                    space_id,
+                    branch_id: parent,
+                    text: "Imported summary".into(),
+                    token_count: 3,
+                    window_start: 0,
+                    window_end: 2,
+                    source_message_ids: messages.iter().map(|source| source.message_id).collect(),
+                    updated_at: TimestampMillis::new(5),
+                }),
+            )
+            .expect("imported summary");
+            transaction.commit().expect("commit");
+        }
+        let (_, child_space) = seed_child(
+            &database,
+            conversation_id,
+            parent,
+            messages[1].message_id,
+            20,
+        );
+        let summary = database
+            .get_summary(child_space)
+            .expect("summary")
+            .expect("copied summary");
+        assert_eq!(summary.text, "Imported summary");
+        assert_eq!(summary.window_end, 2);
+        assert_eq!(summary.source_message_ids.len(), 2);
+    }
+
+    #[test]
+    fn an_interrupted_run_counts_as_settled_for_later_forks() {
+        let database = Database::open_in_memory().expect("database");
+        let (conversation_id, space_id, messages) = conversation_fixture(&database);
+        let parent = fixture_branch(&database, conversation_id);
+        set_items(&database, space_id, "Before the run");
+        let attempt = checkpointed_run(
+            &database,
+            conversation_id,
+            space_id,
+            &messages,
+            "Summary",
+            10,
+        );
+        database
+            .transition_dynamic_memory_attempt(
+                attempt.id,
+                attempt.revision,
+                DynamicMemoryAttemptStatus::Interrupted,
+                None,
+                TimestampMillis::new(11),
+            )
+            .expect("interrupted");
+        set_items(&database, space_id, "Changed after the run");
+        let (_, child_space) = seed_child(
+            &database,
+            conversation_id,
+            parent,
+            messages[1].message_id,
+            20,
+        );
+        assert_eq!(
+            database
+                .get(child_space)
+                .expect("memory")
+                .expect("space")
+                .items[0]
+                .text,
+            "Changed after the run"
+        );
+    }
+
     #[test]
     fn branch_approval_schema_keeps_sibling_baselines_separate() {
         let database = Database::open_in_memory().expect("database");

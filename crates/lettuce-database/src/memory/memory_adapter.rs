@@ -934,9 +934,53 @@ pub(crate) fn summary_cursor_in(
                 .transpose()
                 .map_err(storage)?
                 .unwrap_or(0);
-            Ok(run_cursor_in(transaction, space_id, conversation_id, branch_id)?.max(synced))
+            let cursor =
+                run_cursor_in(transaction, space_id, conversation_id, branch_id)?.max(synced);
+            if cursor > 0 {
+                return Ok(cursor);
+            }
+            inherited_pool_cursor_in(transaction, space_id, conversation_id, branch_id)
         }
     }
+}
+
+/// A forked branch of a pooled conversation that has no pool cursor of its
+/// own continues where its parent was at the fork message.
+fn inherited_pool_cursor_in(
+    transaction: &Transaction<'_>,
+    space_id: MemorySpaceId,
+    conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
+) -> Result<u64, MemoryRepositoryError> {
+    let pooled: bool = transaction
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM companion_memory_pools WHERE space_id = ?1)",
+            [space_id.to_string()],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    if !pooled {
+        return Ok(0);
+    }
+    let fork: Option<(Option<String>, Option<String>)> = transaction
+        .query_row(
+            "SELECT parent_branch_id, fork_message_id FROM conversation_branches
+              WHERE conversation_id = ?1 AND id = ?2",
+            params![conversation_id.to_string(), branch_id.to_string()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(storage)?;
+    let Some((Some(parent), Some(fork_message))) = fork else {
+        return Ok(0);
+    };
+    let position = crate::memory::memory_branch_adapter::message_position_in(
+        transaction,
+        conversation_id,
+        parse_id(fork_message)?,
+    )
+    .map_err(|_| storage("fork position"))?;
+    Ok(summary_cursor_in(transaction, space_id, conversation_id, parse_id(parent)?)?.min(position))
 }
 
 impl MemoryRepository for Database {
