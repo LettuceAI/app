@@ -197,3 +197,22 @@ pub struct VoiceDesignPreviewView {
     pub audio: crate::AssetRef,
     pub duration_secs: f64,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum MessageVoiceOverride {
+    UserVoice { voice_id: String },
+    Provider { provider_id: String, voice_id: String, model_id: Option<String>, prompt: Option<String> },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MessageSpeakRequest {
+    pub request_id: String,
+    pub message_id: String,
+    pub voice_override: Option<MessageVoiceOverride>,
+    #[serde(default)]
+    pub swap_places: bool,
+}

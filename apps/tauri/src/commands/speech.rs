@@ -327,3 +327,15 @@ pub async fn audio_provider_voices_search(context: State<'_, ApiContext>, reques
 pub async fn voice_design_preview(context: State<'_, ApiContext>, request: dto::VoiceDesignPreviewRequest) -> Result<Vec<dto::VoiceDesignPreviewView>, ApiError> {
     lettuce_app::api::voice_design_preview(&context, request).await
 }
+
+#[tauri::command]
+#[specta::specta]
+pub async fn message_speak(context: State<'_, ApiContext>, request: dto::MessageSpeakRequest) -> Result<dto::JobAccepted, ApiError> {
+    lettuce_app::api::message_speak(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn asr_voice_example_suggest(context: State<'_, ApiContext>, request: dto::AsrLearningItemRequest) -> Result<Option<dto::AsrSuggestionView>, ApiError> {
+    lettuce_app::api::asr_voice_example_suggest(&context, request).await
+}

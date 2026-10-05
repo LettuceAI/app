@@ -136,3 +136,14 @@ pub async fn asr_learning_export(context: &ApiContext, request: dto::AsrLearning
         Ok(())
     }).await
 }
+
+pub async fn asr_voice_example_suggest(context: &ApiContext, request: dto::AsrLearningItemRequest) -> Result<Option<dto::AsrSuggestionView>, ApiError> {
+    let id = parse_id(&request.id, "id")?;
+    context.blocking(move |context| {
+        let library = context.backend().asr_learning();
+        let example = library.get_voice_example(id).map_err(IntoApiError::into_api_error)?
+            .ok_or_else(|| crate::api::error::api_error(dto::ApiErrorCode::NotFound, "the voice example was not found"))?;
+        library.suggest_voice_example_correction(&example).map(|suggestion| suggestion.map(suggestion_view))
+            .map_err(IntoApiError::into_api_error)
+    }).await
+}

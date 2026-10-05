@@ -425,6 +425,7 @@ pub trait AsrLearningRepository: Send + Sync {
         language: Option<&str>,
         scopes: &[String],
     ) -> Result<Vec<AsrVoiceExample>, AsrLearningRepositoryError>;
+    fn get_voice_example(&self, id: AsrVoiceExampleId) -> Result<Option<AsrVoiceExample>, AsrLearningRepositoryError>;
     fn save_voice_example(
         &self,
         example: AsrVoiceExample,
@@ -681,6 +682,10 @@ impl<R: AsrLearningRepository + ?Sized> AsrLearningLibrary<'_, R> {
         self.repository
             .list_voice_examples(language.as_deref(), &scopes)
             .map_err(Into::into)
+    }
+
+    pub fn get_voice_example(&self, id: AsrVoiceExampleId) -> Result<Option<AsrVoiceExample>, AsrLearningError> {
+        self.repository.get_voice_example(id).map_err(Into::into)
     }
 
     pub fn save_voice_example(

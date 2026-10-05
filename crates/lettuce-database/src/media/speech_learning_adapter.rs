@@ -850,6 +850,17 @@ impl AsrLearningRepository for Database {
         Ok(examples)
     }
 
+    fn get_voice_example(&self, id: AsrVoiceExampleId) -> Result<Option<AsrVoiceExample>, AsrLearningRepositoryError> {
+        let connection = self.connection().map_err(storage)?;
+        let mut statement = connection.prepare(
+            "SELECT id,audio_asset_id,expected_text,normalized_expected_text,whisper_output,normalized_whisper_output,
+                    language,scope,vocabulary_term_id,correction_id,created_at,updated_at
+             FROM asr_voice_examples WHERE id=?1",
+        ).map_err(storage)?;
+        let mut rows = statement.query([id.to_string()]).map_err(storage)?;
+        rows.next().map_err(storage)?.map(map_voice_example_row).transpose()
+    }
+
     fn save_voice_example(
         &self,
         example: AsrVoiceExample,

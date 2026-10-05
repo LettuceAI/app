@@ -210,13 +210,17 @@ impl Drop for Env {
 }
 
 fn env(tts: TtsMode, asr: AsrMode, microphone: Option<Arc<dyn MicrophoneCapture>>) -> Env {
+    env_with_reply(tts, asr, microphone, Reply::Text(""))
+}
+
+fn env_with_reply(tts: TtsMode, asr: AsrMode, microphone: Option<Arc<dyn MicrophoneCapture>>, reply: Reply) -> Env {
     let root = std::env::temp_dir().join(format!("lettuce-api-speech-{}", RequestId::new()));
     std::fs::create_dir_all(&root).expect("root");
     let clock = FakeClock::new(lettuce_jobs::Clock::now(&lettuce_jobs::SystemClock));
     let backend = Arc::new(crate::AppBackend::open(root.join("media.sqlite3"), START).expect("backend"));
     let harness = harness_over(
         backend,
-        Reply::Text(""),
+        reply,
         Arc::new(clock.clone()),
         Some(media_store(&root)),
         Some(root.clone()),
@@ -1060,6 +1064,10 @@ async fn asr_library_api_filters_exports_and_keeps_audio_as_an_asset_reference()
     let examples = super::asr_voice_examples_list(&env.context, filter()).await.expect("examples");
     assert_eq!(examples.len(), 1); assert_eq!(examples[0].audio.asset_id, asset.to_string());
     assert_eq!(examples[0].audio, env.context.asset_ref(asset));
+    let learned = super::asr_voice_example_suggest(&env.context, dto::AsrLearningItemRequest { id: example.id.to_string() })
+        .await.expect("example suggestion").expect("suggestion");
+    assert_eq!(learned.correct, "Ford");
+
     let suggestions = super::asr_suggestions(&env.context, dto::AsrSuggestionsRequest { before: "the fort waits".into(), after: "the Ford waits".into(), language: Some("en".into()), scope: Some("conversation".into()) }).await.expect("suggestions");
     assert_eq!(suggestions.len(), 1); assert_eq!(suggestions[0].correct, "Ford");
     let export = env.root.join("learning.json");
@@ -1114,4 +1122,69 @@ async fn voice_design_preview_rejects_invalid_provider_before_a_billable_request
     assert_eq!(super::voice_design_preview(&env.context, request()).await.expect_err("missing account").code, ApiErrorCode::NotFound);
     env.context.backend().database().upsert_audio_provider(provider, None).expect("provider");
     assert_eq!(super::voice_design_preview(&env.context, request()).await.expect_err("wrong provider kind").code, ApiErrorCode::InvalidInput);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn retained_synthesis_cache_reuses_the_real_job_and_records_each_request_replay() {
+    use lettuce_speech::TtsConfigurationRepository;
+    let env = env(TtsMode::Speak, AsrMode::Text("unused"), None);
+    let provider = synthesis_request("cached").provider;
+    let provider_id = provider.id;
+    env.context.backend().database().upsert_audio_provider(provider, None).expect("provider");
+    let make = || dto::TtsSynthesizeRequest { request_id: RequestId::new().to_string(), provider_id: provider_id.to_string(),
+        model_id: "speech".into(), voice_id: "reference".into(), prompt: None, text: "Cached narration.".into(), retained: true };
+    let first = super::tts_synthesize(&env.context, make()).await.expect("admit");
+    let runner = runner(&env.context);
+    assert!(run_to_idle(&runner).await);
+    let repeated = make();
+    let reused = super::tts_synthesize(&env.context, repeated.clone()).await.expect("cached");
+    assert_eq!(reused, first);
+    assert!(!run_to_idle(&runner).await);
+    assert_eq!(env.tts.calls.load(Ordering::SeqCst), 1);
+    let mut conflict = repeated.clone(); conflict.text = "Another narration.".into();
+    assert_eq!(super::tts_synthesize(&env.context, conflict).await.expect_err("conflict").code, ApiErrorCode::Conflict);
+    env.context.backend().database().delete_audio_provider(provider_id, Revision::INITIAL).expect("delete provider");
+    assert_eq!(super::tts_synthesize(&env.context, repeated).await.expect("replay after deletion"), reused);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn message_playback_resolves_live_provider_voice_and_reuses_frozen_audio() {
+    use lettuce_characters::{CharacterRepository, VoicePreference};
+    use lettuce_speech::{SynthesisRepository, TtsConfigurationRepository};
+    let env = env_with_reply(TtsMode::Speak, AsrMode::Text("unused"), None, Reply::Text("Hello {{char}}."));
+    let database = env.context.backend().database();
+    let provider = synthesis_request("message").provider;
+    let provider_id = provider.id;
+    database.upsert_audio_provider(provider, None).expect("provider");
+    let set_voice = |voice_id: &str| {
+        let character = CharacterRepository::get(database, env.harness.character_id).expect("read").expect("character").character;
+        let mut defaults = character.defaults;
+        defaults.voice = Some(VoicePreference::Provider { provider_id, voice_id: voice_id.into(), model_id: None, voice_name: Some("Narrator".into()) });
+        CharacterRepository::update_defaults(database, env.harness.character_id, character.revision, defaults, env.context.now()).expect("voice");
+    };
+    set_voice("voice-a");
+    let (chat, message_id) = crate::api::turns_tests::replied_chat(&env.harness, "speak").await;
+    let request = || dto::MessageSpeakRequest { request_id: RequestId::new().to_string(), message_id: message_id.clone(), voice_override: None, swap_places: false };
+    let original_request = request();
+    let first = super::message_speak(&env.context, original_request.clone()).await.expect("speak");
+    let frozen = SynthesisRepository::get(database, first.job_id.parse().expect("job")).expect("record");
+    assert_eq!(frozen.request.text, "Hello Ada.");
+    assert_eq!(frozen.request.voice_id, "voice-a");
+    assert_eq!(frozen.request.model_id, "server-default");
+    let runner = runner(&env.context);
+    assert!(run_to_idle(&runner).await);
+    set_voice("voice-b");
+    assert_eq!(super::message_speak(&env.context, original_request.clone()).await.expect("frozen replay"), first);
+    let second = super::message_speak(&env.context, request()).await.expect("live voice");
+    assert_ne!(second, first);
+    assert_eq!(SynthesisRepository::get(database, second.job_id.parse().expect("job")).expect("record").request.voice_id, "voice-b");
+    assert!(run_to_idle(&runner).await);
+    let reused = super::message_speak(&env.context, request()).await.expect("cache");
+    assert_eq!(reused, second);
+    assert!(!run_to_idle(&runner).await);
+    assert_eq!(env.tts.calls.load(Ordering::SeqCst), 2);
+    let mut conflict = original_request.clone(); conflict.swap_places = true;
+    assert_eq!(super::message_speak(&env.context, conflict).await.expect_err("conflict").code, ApiErrorCode::Conflict);
+    crate::api::conversation_delete(&env.context, dto::ConversationRequest { conversation_id: chat }).await.expect("delete chat");
+    assert_eq!(super::message_speak(&env.context, original_request).await.expect("replay after deletion"), first);
 }

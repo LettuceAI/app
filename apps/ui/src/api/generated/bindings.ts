@@ -168,6 +168,16 @@ export const commands = {
 	asrCorrectionsList: (request: AsrLearningFilter) => typedError<AsrCorrectionView[], ApiError>(__TAURI_INVOKE("asr_corrections_list", { request })),
 	asrIgnoredSuggestionsList: (request: AsrLearningFilter) => typedError<AsrIgnoredSuggestionView[], ApiError>(__TAURI_INVOKE("asr_ignored_suggestions_list", { request })),
 	asrVoiceExamplesList: (request: AsrLearningFilter) => typedError<AsrVoiceExampleView[], ApiError>(__TAURI_INVOKE("asr_voice_examples_list", { request })),
+	asrVoiceExampleSuggest: (request: AsrLearningItemRequest) => typedError<{
+	wrong: string,
+	correct: string,
+	language: string | null,
+	scope: string,
+	confidence: number | null,
+	accepted_count: number,
+	rejected_count: number,
+	seen_count: number,
+} | null, ApiError>(__TAURI_INVOKE("asr_voice_example_suggest", { request })),
 	asrVocabularyDelete: (request: AsrLearningItemRequest) => typedError<null, ApiError>(__TAURI_INVOKE("asr_vocabulary_delete", { request })),
 	asrCorrectionDelete: (request: AsrLearningItemRequest) => typedError<null, ApiError>(__TAURI_INVOKE("asr_correction_delete", { request })),
 	asrVoiceExampleDelete: (request: AsrLearningItemRequest) => typedError<null, ApiError>(__TAURI_INVOKE("asr_voice_example_delete", { request })),
@@ -182,6 +192,7 @@ export const commands = {
 	ttsCacheStats: () => typedError<TtsCacheStats, ApiError>(__TAURI_INVOKE("tts_cache_stats")),
 	ttsCacheClear: () => typedError<null, ApiError>(__TAURI_INVOKE("tts_cache_clear")),
 	ttsSynthesize: (request: TtsSynthesizeRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("tts_synthesize", { request })),
+	messageSpeak: (request: MessageSpeakRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("message_speak", { request })),
 	whisperCatalog: () => typedError<WhisperCatalog, ApiError>(__TAURI_INVOKE("whisper_catalog")),
 	whisperModelsList: () => typedError<WhisperInstalledModels, ApiError>(__TAURI_INVOKE("whisper_models_list")),
 	whisperDownload: (request: WhisperModelRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("whisper_download", { request })),
@@ -2463,6 +2474,15 @@ export type MessageSceneSelectRequest = {
 	scene_id: string,
 	client_operation_id: string,
 };
+
+export type MessageSpeakRequest = {
+	request_id: string,
+	message_id: string,
+	voice_override: MessageVoiceOverride | null,
+	swap_places?: boolean,
+};
+
+export type MessageVoiceOverride = { type: "user_voice"; voice_id: string } | { type: "provider"; provider_id: string; voice_id: string; model_id: string | null; prompt: string | null };
 
 /**
  *  Visible messages in conversation order, oldest first. `before_cursor`

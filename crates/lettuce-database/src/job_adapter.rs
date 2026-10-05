@@ -81,6 +81,36 @@ impl Database {
         Ok(job)
     }
 
+    pub fn reuse_speech_synthesis(
+        &self,
+        operation_key: &str,
+        request_digest: &str,
+        reuse_key: &lettuce_speech::SynthesisReuseKey,
+        now: lettuce_types::TimestampMillis,
+    ) -> Result<Option<JobSnapshot>, StoreError> {
+        use rusqlite::OptionalExtension;
+        if operation_key.trim().is_empty() || request_digest.is_empty() { return Err(StoreError::InvalidData); }
+        let mut connection = self.connection.lock().map_err(|_| StoreError::Storage)?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(|_| StoreError::Storage)?;
+        let prior = transaction.query_row("SELECT request_digest,job_id FROM job_operations WHERE operation_key=?1", [operation_key],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))).optional().map_err(|_| StoreError::Storage)?;
+        let job = if let Some((digest, id)) = prior {
+            if digest != request_digest { return Err(StoreError::IdempotencyConflict); }
+            let id = id.parse().map_err(|_| StoreError::InvalidData)?;
+            Some(select_ids(&transaction, [id])?.remove(&id).ok_or(StoreError::InvalidData)?.snapshot)
+        } else if let Some(record) = crate::media::tts_synthesis_adapter::find_reusable_in(&transaction, reuse_key, now)
+            .map_err(|_| StoreError::Storage)? {
+            let job = select_ids(&transaction, [record.job_id])?.remove(&record.job_id).ok_or(StoreError::InvalidData)?.snapshot;
+            if job.state == lettuce_jobs::JobState::Succeeded {
+                transaction.execute("INSERT INTO job_operations(operation_key,request_digest,job_id) VALUES (?1,?2,?3)",
+                    params![operation_key, request_digest, job.id.to_string()]).map_err(|_| StoreError::Storage)?;
+                Some(job)
+            } else { None }
+        } else { None };
+        transaction.commit().map_err(|_| StoreError::Storage)?;
+        Ok(job)
+    }
+
     pub fn admit_speech_transcription(
         &self,
         spec: NewJob,
