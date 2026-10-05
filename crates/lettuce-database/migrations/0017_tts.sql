@@ -4,7 +4,7 @@ CREATE TABLE api_operation_receipts (
     request_digest TEXT NOT NULL CHECK (length(trim(request_digest)) > 0),
     result_json TEXT NOT NULL CHECK (
         json_valid(result_json)
-        AND json_extract(result_json, '$.format_version') IS 1
+        AND json_extract(result_json, '$.format_version') IS 2
         AND json_type(result_json, '$.value') IS NOT NULL
     ),
     committed_at INTEGER NOT NULL,

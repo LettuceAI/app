@@ -77,6 +77,7 @@ pub enum LocalModelsBusyReason {
 pub enum ApiErrorDetails {
     InvalidField { field: String },
     AudioProviderInUse { characters: Vec<CharacterReferenceView> },
+    OperationAppliedRecordDeleted { command: String, record_id: String },
     Model { model: RequiredModel },
     HuggingFace { failure: HfFailure },
     Ollama { failure: OllamaFailure },

@@ -370,15 +370,19 @@ pub async fn audio_provider_api_key_rotate(context: &ApiContext, request: dto::A
 pub async fn user_voice_create(context: &ApiContext, request: dto::UserVoiceCreateRequest) -> Result<dto::UserVoiceView, ApiError> {
     super::operations::validate_key(&request.client_operation_id)?;
     let digest = super::operations::digest(&request)?;
-    context.blocking(move |context| super::operations::commit(context, "user_voice_create", &request.client_operation_id, &digest, |transaction| {
+    context.blocking(move |context| {
+        let record = super::operations::commit(context, "user_voice_create", &request.client_operation_id, &digest, |transaction| {
         let voice = lettuce_speech::UserVoice {
             id: lettuce_types::VoiceProfileId::new(), provider_id: parse_id(&request.provider_id, "provider_id")?,
             name: request.name, model_id: request.model_id, voice_id: request.voice_id, prompt: request.prompt,
             revision: lettuce_types::Revision::INITIAL, created_at: context.now(), updated_at: context.now(),
         };
         transaction.create_user_voice(&voice).map_err(IntoApiError::into_api_error)?;
-        Ok(user_voice_view(voice))
-    })).await
+        Ok(super::operations::StoredRecord::new(voice.id, Some(voice.revision.get())))
+    })?;
+        context.backend().database().get_user_voice(parse_id(&record.id, "id")?).map_err(IntoApiError::into_api_error)?
+            .map(user_voice_view).ok_or_else(|| super::operations::applied_deleted("user_voice_create", &record.id))
+    }).await
 }
 
 const SPEECH_CREATE_NAMESPACE: uuid::Uuid = uuid::Uuid::from_u128(0x6c65_7474_7563_6553_7065_6563_6843_7274);
@@ -415,14 +419,14 @@ pub async fn audio_provider_create(context: &ApiContext, request: dto::AudioProv
     let digest = super::operations::digest(&request)?;
     context.blocking(move |context| {
         let _creation = context.speech_state().provider_creation();
-        let prior = super::operations::replay::<dto::AudioProviderView>(context, "audio_provider_create", &request.client_operation_id, &digest)?;
+        let prior = super::operations::replay::<super::operations::StoredRecord>(context, "audio_provider_create", &request.client_operation_id, &digest)?;
         let credential = request.draft.api_key.map(SecretValue::new).transpose()
             .map_err(|_| invalid_field("api_key", "the credential is invalid"))?;
         if let Some(result) = prior {
-            if let Some(provider) = context.backend().database().get_audio_provider(parse_id(&result.id, "id")?).map_err(IntoApiError::into_api_error)? {
-                fill_missing_provider_key(context, &provider, credential)?;
-            }
-            return Ok(result);
+            let provider = context.backend().database().get_audio_provider(parse_id(&result.id, "id")?).map_err(IntoApiError::into_api_error)?
+                .ok_or_else(|| super::operations::applied_deleted("audio_provider_create", &result.id))?;
+            fill_missing_provider_key(context, &provider, credential)?;
+            return Ok(provider_view(provider));
         }
         let config = configuration(request.draft.configuration);
         crate::speech::tts_configuration::validate_secret_choice(&config, credential.is_some()).map_err(IntoApiError::into_api_error)?;
@@ -434,9 +438,11 @@ pub async fn audio_provider_create(context: &ApiContext, request: dto::AudioProv
         provider.validate().map_err(|error| invalid_field("draft", error.to_string()))?;
         let result = super::operations::commit(context, "audio_provider_create", &request.client_operation_id, &digest, |transaction| {
             transaction.create_audio_provider(&provider).map_err(IntoApiError::into_api_error)?;
-            Ok(provider_view(provider.clone()))
+            Ok(super::operations::StoredRecord::new(provider.id, Some(provider.revision.get())))
         })?;
         fill_missing_provider_key(context, &provider, credential)?;
-        Ok(result)
+        let current = context.backend().database().get_audio_provider(parse_id(&result.id, "id")?).map_err(IntoApiError::into_api_error)?
+            .ok_or_else(|| super::operations::applied_deleted("audio_provider_create", &result.id))?;
+        Ok(provider_view(current))
     }).await
 }

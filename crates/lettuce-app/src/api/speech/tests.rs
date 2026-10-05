@@ -1294,18 +1294,22 @@ async fn retained_audio_from_a_previous_provider_configuration_is_not_reused() {
 }
 
 #[tokio::test]
-async fn library_receipts_preserve_counts_and_original_results_after_edits_and_deletes() {
+async fn library_receipts_preserve_counts_without_retaining_deleted_content() {
     let env = env(TtsMode::Speak, AsrMode::Text("Hello."), None);
     let context = &env.context;
     let vocabulary = dto::AsrVocabularySaveRequest { client_operation_id: "vocabulary-create".into(), id: None, term: "Lettuce".into(), language: Some("en".into()), category: None, scope: None, priority: None, use_count: None };
     let original = super::asr_vocabulary_save(context, vocabulary.clone()).await.expect("vocabulary");
     assert_eq!(original.priority, 50);
+    let receipt = context.backend().database().lookup_api_operation("asr_vocabulary_save", "vocabulary-create").expect("receipt").expect("present");
+    assert_eq!(receipt.result, serde_json::json!({"id": original.id}), "receipt retains only identity");
     let mut edit = vocabulary.clone(); edit.client_operation_id = "vocabulary-edit".into(); edit.id = Some(original.id.clone()); edit.term = "Lettuce AI".into();
     let edited = super::asr_vocabulary_save(context, edit).await.expect("edit");
     assert_eq!(edited.created_at, original.created_at);
-    assert_eq!(super::asr_vocabulary_save(context, vocabulary.clone()).await.expect("original snapshot"), original);
+    assert_eq!(super::asr_vocabulary_save(context, vocabulary.clone()).await.expect("current view"), edited);
     super::asr_vocabulary_delete(context, dto::AsrLearningItemRequest { id: original.id.clone() }).await.expect("delete");
-    assert_eq!(super::asr_vocabulary_save(context, vocabulary).await.expect("replay after deletion"), original);
+    let deleted = super::asr_vocabulary_save(context, vocabulary).await.expect_err("already applied and deleted");
+    assert_eq!(deleted.code, ApiErrorCode::NotFound);
+    assert_eq!(serde_json::to_value(deleted.details).expect("details")["type"], "operation_applied_record_deleted");
     let correction = dto::AsrCorrectionSaveRequest { client_operation_id: "correction-create".into(), id: None, wrong: "let us".into(), correct: "Lettuce".into(), language: Some("en".into()), scope: None, confidence: None, use_count: None, accepted_count: None, rejected_count: None, seen_count: None, last_seen_at: None, user_approved: Some(true) };
     let first = super::asr_correction_save(context, correction.clone()).await.expect("correction");
     assert_eq!((first.accepted_count, first.seen_count), (1, 1));
@@ -1327,7 +1331,7 @@ async fn library_receipts_preserve_counts_and_original_results_after_edits_and_d
     ignored_request.client_operation_id = "ignore-again".into();
     assert_eq!(super::asr_suggestion_ignore(context, ignored_request).await.expect("second distinct ignore").ignored_count, 2);
     super::asr_correction_delete(context, dto::AsrLearningItemRequest { id: first.id.clone() }).await.expect("delete");
-    assert_eq!(super::asr_correction_save(context, correction).await.expect("original correction after delete"), first);
+    assert_eq!(super::asr_correction_save(context, correction).await.expect_err("applied correction deleted").code, ApiErrorCode::NotFound);
 }
 
 fn provider_create_request(key: &str) -> dto::AudioProviderCreateRequest {
@@ -1344,7 +1348,7 @@ async fn voice_create_examples_and_library_import_have_receipts() {
         name: "Narrator".into(), model_id: "eleven_multilingual_v2".into(), voice_id: "remote-voice".into(), prompt: None };
     let original = super::user_voice_create(context, voice.clone()).await.expect("voice");
     super::user_voice_delete(context, dto::UserVoiceRequest { voice_id: original.id.clone() }).await.expect("delete voice");
-    assert_eq!(super::user_voice_create(context, voice).await.expect("deleted voice replay"), original);
+    assert_eq!(super::user_voice_create(context, voice).await.expect_err("applied voice deleted").code, ApiErrorCode::NotFound);
     let asset = ingest_wav(context, tone());
     let example = dto::AsrVoiceExampleSaveRequest { client_operation_id: "example-save".into(), id: None, audio_asset_id: asset.to_string(), expected_text: "Lettuce".into(), whisper_output: Some("let us".into()), language: Some("en".into()), scope: None, vocabulary_term_id: None, correction_id: None };
     let saved = super::asr_voice_example_save(context, example.clone()).await.expect("example");
@@ -1358,7 +1362,7 @@ async fn voice_create_examples_and_library_import_have_receipts() {
     let examples = super::asr_voice_examples_list(context, dto::AsrLearningFilter { language: None, scopes: vec!["global".into()], user_approved_only: None }).await.expect("examples");
     assert_eq!(examples.len(), 2);
     super::asr_voice_example_delete(context, dto::AsrLearningItemRequest { id: saved.id }).await.expect("delete example");
-    assert_eq!(super::asr_voice_example_save(context, example).await.expect("example replay after deletion").audio.asset_id, asset.to_string());
+    assert_eq!(super::asr_voice_example_save(context, example).await.expect_err("applied example deleted").code, ApiErrorCode::NotFound);
 }
 
 #[tokio::test]
@@ -1499,4 +1503,35 @@ async fn provider_create_commits_before_secret_put_and_replay_recovers_the_missi
         let (_, owner, reference) = super::providers::provider_create_ids(key);
         assert!(context.secret_store().load(&reference, &lettuce_settings::SecretPurpose::AudioApiKey { owner }).await.is_ok());
     }
+}
+
+#[tokio::test]
+async fn provider_receipts_replay_current_metadata_and_keep_only_identity_in_backups() {
+    use lettuce_transfer::{ProviderBackupSource, ProviderBackupRestoreWriter};
+    let env = env(TtsMode::Speak, AsrMode::Text("text"), None);
+    let context = &env.context;
+    let request = provider_create_request("private-provider-receipt");
+    let created = super::audio_provider_create(context, request.clone()).await.expect("create");
+    let changed = super::audio_provider_update(context, dto::AudioProviderUpdateRequest {
+        provider_id: created.id.clone(), expected_revision: created.revision, label: "Changed private label".into(), configuration: dto::AudioProviderConfiguration::Elevenlabs,
+    }).await.expect("edit");
+    assert_eq!(super::audio_provider_create(context, request.clone()).await.expect("current view"), changed);
+    super::audio_provider_delete(context, dto::AudioProviderDeleteRequest { provider_id: created.id.clone(), expected_revision: changed.revision }).await.expect("delete");
+    let error = super::audio_provider_create(context, request.clone()).await.expect_err("applied but deleted");
+    assert_eq!(error.code, ApiErrorCode::NotFound);
+    assert!(matches!(error.details, Some(dto::ApiErrorDetails::OperationAppliedRecordDeleted { .. })));
+    let mut conflict = request; conflict.label = "Different digest".into();
+    assert_eq!(super::audio_provider_create(context, conflict).await.expect_err("changed request").code, ApiErrorCode::Conflict);
+    let graph = context.backend().database().read_provider_backup_graph().expect("backup");
+    let receipt = &graph.job_backup.api_operation_receipts[0];
+    assert_eq!(receipt.result_format_version, 2);
+    assert_eq!(receipt.result, serde_json::json!({"id": created.id, "revision": 1}));
+    let serialized = serde_json::to_string(&graph.job_backup.api_operation_receipts).expect("receipt document");
+    for private in ["Hosted voices", "Changed private label", "private-canary"] { assert!(!serialized.contains(private)); }
+    let restored = lettuce_database::Database::open_in_memory().expect("restored");
+    restored.restore_provider_backup_graph(&graph, &[]).expect("restore");
+    assert_eq!(restored.lookup_api_operation("audio_provider_create", "private-provider-receipt").expect("receipt").expect("present").result, receipt.result);
+    let mut old_graph = graph;
+    old_graph.job_backup.api_operation_receipts[0].result_format_version = 1;
+    assert!(lettuce_transfer::canonicalize_and_validate(&mut old_graph).is_err(), "old full-content receipt format is rejected");
 }

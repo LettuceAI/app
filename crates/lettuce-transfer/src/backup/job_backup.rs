@@ -35,6 +35,7 @@ pub struct JobBackup {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BackupApiOperationReceipt {
+    pub result_format_version: u32,
     pub command: String,
     pub client_operation_id: String,
     pub request_digest: String,
@@ -102,7 +103,7 @@ impl JobBackup {
         self.api_operation_receipts.sort_by(|a, b| (&a.command, &a.client_operation_id).cmp(&(&b.command, &b.client_operation_id)));
         let mut receipt_keys = BTreeSet::new();
         for receipt in &self.api_operation_receipts {
-            if receipt.command.trim().is_empty() || receipt.client_operation_id.trim().is_empty()
+            if receipt.result_format_version != 2 || receipt.command.trim().is_empty() || receipt.client_operation_id.trim().is_empty()
                 || receipt.request_digest.trim().is_empty()
                 || !receipt_keys.insert((&receipt.command, &receipt.client_operation_id)) {
                 return Err(JobBackupError::InvalidData);

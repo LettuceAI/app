@@ -415,6 +415,7 @@ pub trait AsrLearningRepository: Send + Sync {
         &self,
         suggestion: AsrIgnoredSuggestion,
     ) -> Result<AsrIgnoredSuggestion, AsrLearningRepositoryError>;
+    fn get_ignored_suggestion(&self, id: AsrIgnoredSuggestionId) -> Result<Option<AsrIgnoredSuggestion>, AsrLearningRepositoryError>;
     fn list_ignored_suggestions(
         &self,
         language: Option<&str>,
@@ -696,6 +697,10 @@ impl<R: AsrLearningRepository + ?Sized> AsrLearningLibrary<'_, R> {
         self.repository
             .save_voice_example(example)
             .map_err(Into::into)
+    }
+
+    pub fn get_ignored_suggestion(&self, id: AsrIgnoredSuggestionId) -> Result<Option<AsrIgnoredSuggestion>, AsrLearningError> {
+        self.repository.get_ignored_suggestion(id).map_err(Into::into)
     }
 
     pub fn list_ignored_suggestions(

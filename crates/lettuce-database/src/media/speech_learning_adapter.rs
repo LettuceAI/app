@@ -8,7 +8,7 @@ use lettuce_types::{
     AsrCorrectionId, AsrIgnoredSuggestionId, AsrVocabularyTermId, AsrVoiceExampleId,
     TimestampMillis,
 };
-use rusqlite::{ToSql, Transaction, TransactionBehavior, params};
+use rusqlite::{OptionalExtension, ToSql, Transaction, TransactionBehavior, params};
 
 use crate::Database;
 
@@ -655,6 +655,14 @@ impl AsrLearningRepository for Database {
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(storage)?;
         let value = save_ignored_suggestion_in(&transaction, suggestion)?;
         transaction.commit().map_err(storage)?;
+        Ok(value)
+    }
+
+    fn get_ignored_suggestion(&self, id: AsrIgnoredSuggestionId) -> Result<Option<AsrIgnoredSuggestion>, AsrLearningRepositoryError> {
+        let connection = self.connection().map_err(storage)?;
+        let value = connection.query_row("SELECT id,wrong,normalized_wrong,correct,normalized_correct,language,scope,ignored_count,last_ignored_at,created_at,updated_at FROM asr_ignored_suggestions WHERE id=?1",
+            [id.to_string()], map_ignored_row).optional().map_err(corrupt)?;
+        if let Some(value) = &value { value.validate().map_err(corrupt)?; }
         Ok(value)
     }
 

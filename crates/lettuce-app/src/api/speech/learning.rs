@@ -151,7 +151,8 @@ pub async fn asr_voice_example_suggest(context: &ApiContext, request: dto::AsrLe
 pub async fn asr_vocabulary_save(context: &ApiContext, request: dto::AsrVocabularySaveRequest) -> Result<dto::AsrVocabularyView, ApiError> {
     super::operations::validate_key(&request.client_operation_id)?;
     let digest = super::operations::digest(&request)?;
-    context.blocking(move |context| super::operations::commit(context, "asr_vocabulary_save", &request.client_operation_id, &digest, |transaction| {
+    context.blocking(move |context| {
+        let record = super::operations::commit(context, "asr_vocabulary_save", &request.client_operation_id, &digest, |transaction| {
         let mut term = lettuce_speech::AsrVocabularyTerm::new(request.term, request.language.as_deref(), request.category.as_deref(), request.scope.as_deref(), request.priority.unwrap_or(50), context.now()).map_err(IntoApiError::into_api_error)?;
         if let Some(id) = request.id {
             term.id = parse_id(&id, "id")?;
@@ -161,22 +162,27 @@ pub async fn asr_vocabulary_save(context: &ApiContext, request: dto::AsrVocabula
             term.updated_at = term.updated_at.max(existing.updated_at);
         }
         term.use_count = request.use_count.unwrap_or(0);
-        transaction.save_vocabulary(term).map(vocabulary_view).map_err(super::operations::learning_error)
-    })).await
+        transaction.save_vocabulary(term).map(|value| super::operations::StoredRecord::new(value.id, None)).map_err(super::operations::learning_error)
+    })?;
+        vocabulary_result(context, "asr_vocabulary_save", record)
+    }).await
 }
 
 pub async fn asr_correction_save(context: &ApiContext, request: dto::AsrCorrectionSaveRequest) -> Result<dto::AsrCorrectionView, ApiError> {
     super::operations::validate_key(&request.client_operation_id)?;
     let digest = super::operations::digest(&request)?;
-    context.blocking(move |context| super::operations::commit(context, "asr_correction_save", &request.client_operation_id, &digest, |transaction| {
+    context.blocking(move |context| {
+        let record = super::operations::commit(context, "asr_correction_save", &request.client_operation_id, &digest, |transaction| {
         let draft = lettuce_speech::AsrCorrectionDraft {
             id: request.id.map(|id| parse_id(&id, "id")).transpose()?, wrong: request.wrong, correct: request.correct,
             language: request.language, scope: request.scope, confidence: request.confidence,
             use_count: request.use_count, accepted_count: request.accepted_count, rejected_count: request.rejected_count,
             seen_count: request.seen_count, last_seen_at: request.last_seen_at.map(lettuce_types::TimestampMillis::new), user_approved: request.user_approved,
         };
-        transaction.save_correction_draft(draft, context.now()).map(correction_view).map_err(super::operations::learning_error)
-    })).await
+        transaction.save_correction_draft(draft, context.now()).map(|value| super::operations::StoredRecord::new(value.id, None)).map_err(super::operations::learning_error)
+    })?;
+        correction_result(context, "asr_correction_save", record)
+    }).await
 }
 
 fn authored_suggestion(value: dto::AsrSuggestionView, now: lettuce_types::TimestampMillis) -> Result<lettuce_speech::AsrLearnedSuggestion, ApiError> {
@@ -196,28 +202,35 @@ fn authored_suggestion(value: dto::AsrSuggestionView, now: lettuce_types::Timest
 pub async fn asr_suggestion_approve(context: &ApiContext, request: dto::AsrSuggestionWriteRequest) -> Result<dto::AsrCorrectionView, ApiError> {
     super::operations::validate_key(&request.client_operation_id)?;
     let digest = super::operations::digest(&request)?;
-    context.blocking(move |context| super::operations::commit(context, "asr_suggestion_approve", &request.client_operation_id, &digest, |transaction| {
+    context.blocking(move |context| {
+        let record = super::operations::commit(context, "asr_suggestion_approve", &request.client_operation_id, &digest, |transaction| {
         let suggestion = authored_suggestion(request.suggestion, context.now())?;
         transaction.save_correction_draft(lettuce_speech::AsrCorrectionDraft {
             wrong: suggestion.wrong, correct: suggestion.correct, language: suggestion.language,
             scope: Some(suggestion.scope), confidence: Some(suggestion.confidence), user_approved: Some(true), ..Default::default()
-        }, context.now()).map(correction_view).map_err(super::operations::learning_error)
-    })).await
+        }, context.now()).map(|value| super::operations::StoredRecord::new(value.id, None)).map_err(super::operations::learning_error)
+    })?;
+        correction_result(context, "asr_suggestion_approve", record)
+    }).await
 }
 
 pub async fn asr_suggestion_ignore(context: &ApiContext, request: dto::AsrSuggestionWriteRequest) -> Result<dto::AsrIgnoredSuggestionView, ApiError> {
     super::operations::validate_key(&request.client_operation_id)?;
     let digest = super::operations::digest(&request)?;
-    context.blocking(move |context| super::operations::commit(context, "asr_suggestion_ignore", &request.client_operation_id, &digest, |transaction| {
+    context.blocking(move |context| {
+        let record = super::operations::commit(context, "asr_suggestion_ignore", &request.client_operation_id, &digest, |transaction| {
         let suggestion = authored_suggestion(request.suggestion, context.now())?;
-        transaction.ignore_suggestion(suggestion, context.now()).map(ignored_view).map_err(super::operations::learning_error)
-    })).await
+        transaction.ignore_suggestion(suggestion, context.now()).map(|value| super::operations::StoredRecord::new(value.id, None)).map_err(super::operations::learning_error)
+    })?;
+        ignored_result(context, "asr_suggestion_ignore", record)
+    }).await
 }
 
 pub async fn asr_voice_example_save(context: &ApiContext, request: dto::AsrVoiceExampleSaveRequest) -> Result<dto::AsrVoiceExampleView, ApiError> {
     super::operations::validate_key(&request.client_operation_id)?;
     let digest = super::operations::digest(&request)?;
-    context.blocking(move |context| super::operations::commit(context, "asr_voice_example_save", &request.client_operation_id, &digest, |transaction| {
+    context.blocking(move |context| {
+        let record = super::operations::commit(context, "asr_voice_example_save", &request.client_operation_id, &digest, |transaction| {
         let mut example = lettuce_speech::AsrVoiceExample::new(parse_id(&request.audio_asset_id, "audio_asset_id")?, request.expected_text, request.whisper_output, request.language.as_deref(), request.scope.as_deref(), context.now()).map_err(IntoApiError::into_api_error)?;
         if let Some(id) = request.id {
             example.id = parse_id(&id, "id")?;
@@ -228,8 +241,10 @@ pub async fn asr_voice_example_save(context: &ApiContext, request: dto::AsrVoice
         }
         example.vocabulary_term_id = request.vocabulary_term_id.map(|id| parse_id(&id, "vocabulary_term_id")).transpose()?;
         example.correction_id = request.correction_id.map(|id| parse_id(&id, "correction_id")).transpose()?;
-        transaction.save_voice_example(example).map(|value| example_view(value, context)).map_err(super::operations::learning_error)
-    })).await
+        transaction.save_voice_example(example).map(|value| super::operations::StoredRecord::new(value.id, None)).map_err(super::operations::learning_error)
+    })?;
+        example_result(context, "asr_voice_example_save", record)
+    }).await
 }
 
 pub async fn asr_learning_import(context: &ApiContext, request: dto::AsrLearningImportRequest) -> Result<dto::AsrLearningImportView, ApiError> {
@@ -265,4 +280,22 @@ pub async fn asr_learning_import(context: &ApiContext, request: dto::AsrLearning
             }).map_err(super::operations::learning_error)
         })
     }).await
+}
+
+fn vocabulary_result(context: &ApiContext, command: &str, record: super::operations::StoredRecord) -> Result<dto::AsrVocabularyView, ApiError> {
+    context.backend().asr_learning().get_vocabulary(parse_id(&record.id, "id")?).map_err(IntoApiError::into_api_error)?
+        .map(vocabulary_view).ok_or_else(|| super::operations::applied_deleted(command, &record.id))
+}
+fn correction_result(context: &ApiContext, command: &str, record: super::operations::StoredRecord) -> Result<dto::AsrCorrectionView, ApiError> {
+    context.backend().asr_learning().get_correction(parse_id(&record.id, "id")?).map_err(IntoApiError::into_api_error)?
+        .map(correction_view).ok_or_else(|| super::operations::applied_deleted(command, &record.id))
+}
+fn ignored_result(context: &ApiContext, command: &str, record: super::operations::StoredRecord) -> Result<dto::AsrIgnoredSuggestionView, ApiError> {
+    context.backend().asr_learning().get_ignored_suggestion(parse_id(&record.id, "id")?).map_err(IntoApiError::into_api_error)?
+        .map(ignored_view)
+        .ok_or_else(|| super::operations::applied_deleted(command, &record.id))
+}
+fn example_result(context: &ApiContext, command: &str, record: super::operations::StoredRecord) -> Result<dto::AsrVoiceExampleView, ApiError> {
+    context.backend().asr_learning().get_voice_example(parse_id(&record.id, "id")?).map_err(IntoApiError::into_api_error)?
+        .map(|value| example_view(value, context)).ok_or_else(|| super::operations::applied_deleted(command, &record.id))
 }

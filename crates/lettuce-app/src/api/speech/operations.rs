@@ -51,3 +51,23 @@ pub(super) fn learning_error(error: lettuce_speech::AsrLearningRepositoryError) 
     use crate::api::error::IntoApiError;
     lettuce_speech::AsrLearningError::Repository(error).into_api_error()
 }
+
+/// Receipts keep identity only; authored content lives in the current record.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct StoredRecord {
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revision: Option<u64>,
+}
+impl StoredRecord {
+    pub fn new(id: impl ToString, revision: Option<u64>) -> Self { Self { id: id.to_string(), revision } }
+}
+
+pub(super) fn applied_deleted(command: &str, id: &str) -> ApiError {
+    ApiError {
+        code: ApiErrorCode::NotFound,
+        message: "the operation was already applied; its record was deleted".into(),
+        details: Some(lettuce_contracts::ApiErrorDetails::OperationAppliedRecordDeleted { command: command.into(), record_id: id.into() }),
+    }
+}

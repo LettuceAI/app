@@ -28,18 +28,18 @@ fn lookup_in(connection: &Connection, command: &str, key: &str) -> Result<Option
         "SELECT request_digest,result_json,committed_at FROM api_operation_receipts WHERE command=?1 AND client_operation_id=?2",
         params![command, key], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, i64>(2)?)),
     ).optional().map_err(storage)?.map(|(request_digest, result, at)| Ok(BackupApiOperationReceipt {
-        command: command.to_owned(), client_operation_id: key.to_owned(), request_digest,
-        result: crate::decode_versioned(&result, 1).map_err(invalid)?, committed_at: TimestampMillis::new(at),
+        result_format_version: 2, command: command.to_owned(), client_operation_id: key.to_owned(), request_digest,
+        result: crate::decode_versioned(&result, 2).map_err(invalid)?, committed_at: TimestampMillis::new(at),
     })).transpose()
 }
 
 pub(crate) fn insert_in(connection: &Connection, receipt: &BackupApiOperationReceipt) -> Result<(), ApiOperationError> {
-    if receipt.command.trim().is_empty() || receipt.client_operation_id.trim().is_empty() || receipt.request_digest.trim().is_empty() {
+    if receipt.result_format_version != 2 || receipt.command.trim().is_empty() || receipt.client_operation_id.trim().is_empty() || receipt.request_digest.trim().is_empty() {
         return Err(ApiOperationError::InvalidData);
     }
     connection.execute("INSERT INTO api_operation_receipts(command,client_operation_id,request_digest,result_json,committed_at) VALUES (?1,?2,?3,?4,?5)",
         params![receipt.command, receipt.client_operation_id, receipt.request_digest,
-            crate::encode_versioned(&receipt.result, 1).map_err(invalid)?, receipt.committed_at.get()],
+            crate::encode_versioned(&receipt.result, 2).map_err(invalid)?, receipt.committed_at.get()],
     ).map_err(storage)?;
     Ok(())
 }
@@ -73,7 +73,7 @@ impl Database {
         }
         let result = apply(&ApiOperationTransaction { transaction: &transaction })?;
         insert_in(&transaction, &BackupApiOperationReceipt {
-            command: command.to_owned(), client_operation_id: key.to_owned(), request_digest: digest.to_owned(),
+            result_format_version: 2, command: command.to_owned(), client_operation_id: key.to_owned(), request_digest: digest.to_owned(),
             result: serde_json::to_value(&result).map_err(invalid)?, committed_at: at,
         })?;
         transaction.commit().map_err(storage)?;

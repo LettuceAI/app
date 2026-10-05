@@ -5721,13 +5721,13 @@ mod tests {
     fn generic_api_receipts_have_versioned_immutable_results_and_unrestricted_commands() {
         let database = Database::open_in_memory().expect("database");
         let connection = database.connection().expect("connection");
-        connection.execute("INSERT INTO api_operation_receipts(command,client_operation_id,request_digest,result_json,committed_at) VALUES ('future_character_create','key','digest','{\"format_version\":1,\"value\":{\"id\":\"created\"}}',1)", []).expect("future commands are accepted");
-        assert!(connection.execute("UPDATE api_operation_receipts SET result_json='{\"format_version\":1,\"value\":null}'", []).is_err());
+        connection.execute("INSERT INTO api_operation_receipts(command,client_operation_id,request_digest,result_json,committed_at) VALUES ('future_character_create','key','digest','{\"format_version\":2,\"value\":{\"id\":\"created\"}}',1)", []).expect("future commands are accepted");
+        assert!(connection.execute("UPDATE api_operation_receipts SET result_json='{\"format_version\":2,\"value\":null}'", []).is_err());
         for (command, key, digest, result) in [
-            (" ", "key", "digest", "{\"format_version\":1,\"value\":null}"),
-            ("new", " ", "digest", "{\"format_version\":1,\"value\":null}"),
-            ("new", "key", " ", "{\"format_version\":1,\"value\":null}"),
-            ("new", "key", "digest", "{\"format_version\":2,\"value\":null}"),
+            (" ", "key", "digest", "{\"format_version\":2,\"value\":null}"),
+            ("new", " ", "digest", "{\"format_version\":2,\"value\":null}"),
+            ("new", "key", " ", "{\"format_version\":2,\"value\":null}"),
+            ("new", "key", "digest", "{\"format_version\":1,\"value\":null}"),
             ("new", "key", "digest", "not json"),
         ] {
             assert!(connection.execute("INSERT INTO api_operation_receipts VALUES (?1,?2,?3,?4,1)", rusqlite::params![command,key,digest,result]).is_err());
