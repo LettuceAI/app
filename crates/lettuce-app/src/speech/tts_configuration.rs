@@ -24,6 +24,7 @@ pub struct TtsSecretCleanup {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UpdateUserVoiceRequest {
     pub id: VoiceProfileId,
+    pub provider_id: AudioProviderId,
     pub expected_revision: Revision,
     pub name: String,
     pub model_id: String,
@@ -302,6 +303,7 @@ where
                 TtsConfigurationRepositoryError::StaleRevision,
             ));
         }
+        voice.provider_id = request.provider_id;
         voice.name = request.name;
         voice.model_id = request.model_id;
         voice.voice_id = request.voice_id;

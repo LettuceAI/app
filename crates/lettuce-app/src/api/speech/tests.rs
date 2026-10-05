@@ -1010,12 +1010,20 @@ async fn provider_and_user_voice_api_updates_use_revisions_and_keep_secrets_priv
     let changed = super::audio_provider_update(&env.context, update()).await.expect("update");
     assert_eq!(changed.revision, 2);
     assert_eq!(super::audio_provider_update(&env.context, update()).await.expect_err("stale").code, ApiErrorCode::Conflict);
-    let changed_voice = super::user_voice_update(&env.context, dto::UserVoiceUpdateRequest { id: voices.id.to_string(), expected_revision: 1,
+    let mut second_provider = provider.clone(); second_provider.id = AudioProviderId::new(); second_provider.secret_owner_id = lettuce_settings::SecretOwnerId::new();
+    env.context.backend().database().upsert_audio_provider(second_provider.clone(), None).expect("other provider");
+    let changed_voice = super::user_voice_update(&env.context, dto::UserVoiceUpdateRequest { id: voices.id.to_string(), provider_id: second_provider.id.to_string(), expected_revision: 1,
         name: "Updated narrator".into(), model_id: "speech".into(), voice_id: "reference".into(), prompt: Some("Warm".into()) }).await.expect("update voice");
     assert_eq!(changed_voice.revision, 2);
+    assert_eq!(changed_voice.provider_id, second_provider.id.to_string());
+    let invalid_update = |expected_revision| dto::UserVoiceUpdateRequest { id: voices.id.to_string(), provider_id: AudioProviderId::new().to_string(),
+        expected_revision, name: "Uncommitted".into(), model_id: "speech".into(), voice_id: "other".into(), prompt: None };
+    assert_eq!(super::user_voice_update(&env.context, invalid_update(2)).await.expect_err("provider absent").code, ApiErrorCode::NotFound);
+    assert_eq!(super::user_voice_update(&env.context, invalid_update(1)).await.expect_err("stale update").code, ApiErrorCode::Conflict);
     assert_eq!(super::user_voices_list(&env.context).await.expect("voices")[0], changed_voice);
     super::user_voice_delete(&env.context, dto::UserVoiceRequest { voice_id: voices.id.to_string() }).await.expect("delete voice");
     super::audio_provider_delete(&env.context, dto::AudioProviderDeleteRequest { provider_id: provider.id.to_string(), expected_revision: 2 }).await.expect("delete provider");
+    super::audio_provider_delete(&env.context, dto::AudioProviderDeleteRequest { provider_id: second_provider.id.to_string(), expected_revision: 1 }).await.expect("delete other provider");
     assert!(super::audio_providers_list(&env.context).await.expect("empty").is_empty());
 }
 

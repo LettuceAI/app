@@ -162,6 +162,7 @@ pub struct UserVoiceRequest { pub voice_id: String }
 #[serde(deny_unknown_fields)]
 pub struct UserVoiceUpdateRequest {
     pub id: String,
+    pub provider_id: String,
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub expected_revision: u64,
     pub name: String,

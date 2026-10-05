@@ -3318,6 +3318,7 @@ export type UserVoiceRequest = {
 
 export type UserVoiceUpdateRequest = {
 	id: string,
+	provider_id: string,
 	expected_revision: number,
 	name: string,
 	model_id: string,

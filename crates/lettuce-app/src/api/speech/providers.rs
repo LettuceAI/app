@@ -262,9 +262,10 @@ pub async fn user_voices_list(context: &ApiContext) -> Result<Vec<dto::UserVoice
 
 pub async fn user_voice_update(context: &ApiContext, request: dto::UserVoiceUpdateRequest) -> Result<dto::UserVoiceView, ApiError> {
     let id = parse_id(&request.id, "id")?;
+    let provider_id = parse_id(&request.provider_id, "provider_id")?;
     let expected_revision = revision(request.expected_revision)?;
     context.blocking(move |context| context.backend().tts_configuration(context.secret_store().as_ref())
-        .update_user_voice(crate::UpdateUserVoiceRequest { id, expected_revision, name: request.name,
+        .update_user_voice(crate::UpdateUserVoiceRequest { id, provider_id, expected_revision, name: request.name,
             model_id: request.model_id, voice_id: request.voice_id, prompt: request.prompt, now: context.now() })
         .map(user_voice_view).map_err(IntoApiError::into_api_error)).await
 }
