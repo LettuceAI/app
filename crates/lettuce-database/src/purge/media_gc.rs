@@ -113,9 +113,6 @@ fn drop_referenced(
         .map_err(storage)?;
     for table in tables.into_iter().filter(|table| scanned(table)) {
         for column in text_columns(connection, &table)? {
-            if table == "job_operations" && column == "request_digest" {
-                continue;
-            }
             probes.push(format!(
                 "SELECT 1 FROM \"{table}\" WHERE instr(CAST(\"{column}\" AS TEXT), c.value) > 0"
             ));

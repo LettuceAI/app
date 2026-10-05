@@ -67,8 +67,7 @@ pub(super) fn admit_transcription(
         options,
         created_at: context.now(),
     };
-    let digest = serde_json::to_string(&(request_id, audio, &request.model, &request.options))
-        .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?;
+    let digest = super::operations::digest(&(request_id, audio, &request.model, &request.options))?;
     let job = atomic_transcription(context, request, &digest)?;
     context.jobs().wake();
     Ok(dto::JobAccepted {
@@ -104,8 +103,7 @@ pub async fn transcribe_file(
     request: dto::TranscribeFileRequest,
 ) -> Result<dto::JobAccepted, ApiError> {
     let request_id: RequestId = parse_id(&request.request_id, "request_id")?;
-    let digest = serde_json::to_string(&request)
-        .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?;
+    let digest = super::operations::digest(&request)?;
     let uri = request.source.uri.trim().to_owned();
     if uri.is_empty() {
         return Err(invalid_field("source", "source is empty"));

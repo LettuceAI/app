@@ -1086,6 +1086,47 @@ async fn synthesis_admission_replays_and_conflicts_even_after_provider_deletion(
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn operation_digests_keep_no_request_content() {
+    use lettuce_speech::TtsConfigurationRepository;
+    let env = env(TtsMode::Speak, AsrMode::Text("unused"), None);
+    let provider = synthesis_request("Unused").provider;
+    env.context
+        .backend()
+        .database()
+        .upsert_audio_provider(provider.clone(), None)
+        .expect("provider");
+    let request_id = RequestId::new();
+    super::tts_synthesize(
+        &env.context,
+        dto::TtsSynthesizeRequest {
+            request_id: request_id.to_string(),
+            provider_id: provider.id.to_string(),
+            model_id: "speech".into(),
+            voice_id: "reference".into(),
+            prompt: None,
+            text: "A private sentence.".into(),
+            retained: false,
+        },
+    )
+    .await
+    .expect("accepted");
+    let digest = env
+        .context
+        .backend()
+        .database()
+        .job_operation(&format!("tts_synthesize:{request_id}"))
+        .expect("operation")
+        .expect("recorded")
+        .request_digest;
+    assert_eq!(digest.len(), 64, "{digest}");
+    assert!(
+        digest
+            .chars()
+            .all(|character| character.is_ascii_hexdigit())
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_local_provider_draft_verifies_without_saving_its_configuration() {
     use lettuce_speech::TtsConfigurationRepository;
     let env = env(TtsMode::Speak, AsrMode::Text("unused"), None);

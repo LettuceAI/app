@@ -25,8 +25,7 @@ pub async fn message_speak(
 ) -> Result<dto::JobAccepted, ApiError> {
     let id: RequestId = parse_id(&request.request_id, "request_id")?;
     let message_id = parse_id(&request.message_id, "message_id")?;
-    let digest = serde_json::to_string(&request)
-        .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?;
+    let digest = super::operations::digest(&request)?;
     context
         .blocking(move |context| {
             let key = format!("message_speak:{id}");

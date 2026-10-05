@@ -13,8 +13,7 @@ pub async fn tts_synthesize(
 ) -> Result<dto::JobAccepted, ApiError> {
     let id: RequestId = parse_id(&request.request_id, "request_id")?;
     let provider_id: AudioProviderId = parse_id(&request.provider_id, "provider_id")?;
-    let digest = serde_json::to_string(&request)
-        .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?;
+    let digest = super::operations::digest(&request)?;
     context
         .blocking(move |context| {
             let database = context.backend().database();
