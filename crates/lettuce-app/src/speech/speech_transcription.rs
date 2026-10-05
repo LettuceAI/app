@@ -309,7 +309,12 @@ impl<R: TranscriptionRepository + ?Sized, J: JobStore + ?Sized>
     ) -> Result<TranscriptionResult, SpeechTranscriptionError> {
         let token = work.handle.cancellation_token();
         check_cancelled(&token)?;
-        let decoded = audio.decode(work.record.request.audio_asset_id)?;
+        let decoded = audio.decode(
+            work.record
+                .request
+                .audio_asset_id
+                .ok_or(SpeechTranscriptionError::InvalidWork)?,
+        )?;
         let samples = decoded.mono_16khz()?;
         check_cancelled(&token)?;
         let vocabulary_prompt = library.build_prompt(
@@ -378,7 +383,7 @@ impl<R: TranscriptionRepository + ?Sized, J: JobStore + ?Sized>
         })?;
         Ok(SpeechTranscriptionRunResult::Succeeded(Box::new(
             SpeechTranscriptionSuccess {
-                record: work.record,
+                record: self.transcriptions.get(work.job.id)?,
                 job,
                 replayed,
             },
@@ -626,7 +631,7 @@ mod tests {
     fn request(audio_asset_id: AssetId) -> TranscriptionRequest {
         TranscriptionRequest {
             id: RequestId::new(),
-            audio_asset_id,
+            audio_asset_id: Some(audio_asset_id),
             model: AsrModelDescriptor {
                 id: AsrModelId::new("small.en-q5_1").expect("model id"),
                 artifact_hash: ContentHash::parse("cd".repeat(32)).expect("model hash"),

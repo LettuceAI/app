@@ -3373,7 +3373,7 @@ export type TranscriptSegment = {
  */
 export type TranscriptionView = {
 	request_id: string,
-	audio: AssetRef,
+	audio: AssetRef | null,
 	model_id: string,
 	raw_text: string,
 	text: string,

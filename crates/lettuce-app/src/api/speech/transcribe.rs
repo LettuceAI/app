@@ -63,7 +63,7 @@ pub(super) fn admit_transcription(
 ) -> Result<dto::JobAccepted, ApiError> {
     let request = TranscriptionRequest {
         id: request_id,
-        audio_asset_id: audio,
+        audio_asset_id: Some(audio),
         model,
         options,
         created_at: context.now(),
@@ -136,7 +136,7 @@ pub async fn transcribe_file(
                 context,
                 TranscriptionRequest {
                     id: request_id,
-                    audio_asset_id: audio,
+                    audio_asset_id: Some(audio),
                     model,
                     options: engine_options(&request.options),
                     created_at: context.now(),
@@ -166,7 +166,7 @@ pub(crate) fn transcription_view(
     };
     Ok(Some(dto::TranscriptionView {
         request_id: result.request_id.to_string(),
-        audio: context.asset_ref(result.audio_asset_id),
+        audio: result.audio_asset_id.map(|id| context.asset_ref(id)),
         model_id: result.model.id.as_str().to_owned(),
         raw_text: result.raw_text,
         text: result.corrected_text,
@@ -191,4 +191,35 @@ pub(crate) fn transcription_view(
             })
             .collect(),
     }))
+}
+
+/// Collects released inputs through the normal media entry point, with
+/// protection for objects cataloged by another database on production hosts.
+pub(crate) fn collect_recordings(context: &ApiContext) -> Result<(), ApiError> {
+    let Some(media) = context.media() else {
+        return Ok(());
+    };
+    if let Some(files) = context.database_files() {
+        crate::collect_media_garbage(
+            context.backend().database(),
+            &crate::MediaGarbageScope {
+                store: media,
+                location: &files.location,
+                open_database: &files.active,
+            },
+            context.now(),
+        )
+        .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?;
+    } else {
+        media
+            .remove_released_objects(|| {
+                context
+                    .backend()
+                    .database()
+                    .collect_media_garbage(context.now())
+                    .map_err(|_| lettuce_media::MediaStoreError::CatalogFailure)
+            })
+            .map_err(IntoApiError::into_api_error)?;
+    }
+    Ok(())
 }

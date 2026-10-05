@@ -5009,12 +5009,44 @@ mod tests {
         asset.retention = RetentionClass::Temporary { expires_at: TimestampMillis::new(100) };
         let asset = MediaAssetRepository::create(&database, asset).expect("asset");
         let id = lettuce_types::RequestId::new();
-        let request = TranscriptionRequest { id, audio_asset_id: asset.id, model: AsrModelDescriptor { id: AsrModelId::new("base").expect("model"), artifact_hash: ContentHash::parse("0".repeat(64)).expect("hash"), english_only: false }, options: TranscriptionOptions::default(), created_at: TimestampMillis::new(20) };
+        let request = TranscriptionRequest { id, audio_asset_id: Some(asset.id), model: AsrModelDescriptor { id: AsrModelId::new("base").expect("model"), artifact_hash: ContentHash::parse("0".repeat(64)).expect("hash"), english_only: false }, options: TranscriptionOptions::default(), created_at: TimestampMillis::new(20) };
         let spec = JobSpec::new(JobKind::SpeechTranscribe, JobSubject::new(SubjectKind::SpeechRequest, id.to_string()).expect("subject"), OutcomeRef::Request(id)).with_resources(vec![ResourceClass::Cpu]);
         database.admit_speech_transcription(spec, "queued-recording", "digest", &serde_json::json!({"kind":"speech_transcribe"}), request).expect("admit");
         database.connection().expect("connection").execute("INSERT INTO media_gc_candidates(asset_id,queued_at) VALUES (?1,100)", [asset.id.to_string()]).expect("queue collection");
         assert!(database.collect_media_garbage(TimestampMillis::new(25 * 60 * 60 * 1000)).expect("gc").is_empty());
         assert_eq!(MediaAssetRepository::get(&database, asset.id).expect("asset"), Some(asset));
+    }
+
+    #[test]
+    fn transcription_terminal_release_is_atomic_and_startup_interruption_retains_expiring_audio() {
+        use lettuce_jobs::{CancellationPolicy, JobKind, JobMutation, JobSpec, JobState, JobStore, JobSubject, OutcomeRef, RecoveryPolicy, ResourceAvailability, SubjectKind, WorkerId};
+        use lettuce_speech::{AsrModelDescriptor, AsrModelId, TranscriptionOptions, TranscriptionRepository, TranscriptionRequest};
+        let database = Database::open_in_memory().expect("database");
+        let now = lettuce_jobs::Clock::now(&lettuce_jobs::SystemClock).get();
+        let nullable: i64 = database.connection().expect("connection").query_row("SELECT \"notnull\" FROM pragma_table_info('speech_transcriptions') WHERE name='audio_asset_id'", [], |row| row.get(0)).expect("nullable input schema");
+        assert_eq!(nullable, 0);
+        let blob = ready_blob(&database, 'b', MediaKind::Audio);
+        let mut asset = media_asset(AssetId::new(), blob.id, AssetKind::OtherAudio);
+        asset.retention = RetentionClass::Temporary { expires_at: TimestampMillis::new(now + 100) };
+        let asset = MediaAssetRepository::create(&database, asset).expect("asset");
+        let id = lettuce_types::RequestId::new();
+        let request = TranscriptionRequest { id, audio_asset_id: Some(asset.id), model: AsrModelDescriptor { id: AsrModelId::new("base").expect("model"), artifact_hash: ContentHash::parse("0".repeat(64)).expect("hash"), english_only: false }, options: TranscriptionOptions::default(), created_at: TimestampMillis::new(now) };
+        let spec = JobSpec::new(JobKind::SpeechTranscribe, JobSubject::new(SubjectKind::SpeechRequest, id.to_string()).expect("subject"), OutcomeRef::Request(id)).with_resources(vec![lettuce_jobs::ResourceClass::Cpu]).with_policies(RecoveryPolicy::MarkInterrupted, CancellationPolicy::Cooperative);
+        let job = database.admit_speech_transcription(spec, "interrupted-recording", "digest", &serde_json::json!({"kind":"speech_transcribe"}), request).expect("admit");
+        let claim = database.claim(job.id, WorkerId::new(), job.updated_at, std::time::Duration::from_secs(60), &ResourceAvailability::all()).expect("claim").expect("claimed");
+        database.append_and_transition(JobMutation::Start { claim: claim.claim.clone(), at: job.updated_at }).expect("start");
+        database.connection().expect("connection").execute_batch("CREATE TRIGGER refuse_test_release BEFORE UPDATE OF audio_asset_id ON speech_transcriptions BEGIN SELECT RAISE(ABORT,'injected release failure'); END;").expect("inject");
+        assert!(database.orphaned_claims(TimestampMillis::new(now + 1), 100).is_err());
+        assert_eq!(JobStore::get(&database, job.id).expect("job").expect("exists").state, JobState::Running);
+        assert_eq!(TranscriptionRepository::get(&database, job.id).expect("record").request.audio_asset_id, Some(asset.id));
+        database.connection().expect("connection").execute_batch("DROP TRIGGER refuse_test_release").expect("remove injection");
+        database.orphaned_claims(TimestampMillis::new(now + 1), 100).expect("startup orphan recovery");
+        assert_eq!(JobStore::get(&database, job.id).expect("job").expect("exists").state, JobState::Interrupted);
+        assert!(TranscriptionRepository::get(&database, job.id).expect("record").request.audio_asset_id.is_none());
+        assert!(database.collect_media_garbage(TimestampMillis::new(now + 1)).expect("before expiry").is_empty());
+        assert!(MediaAssetRepository::get(&database, asset.id).expect("asset").is_some());
+        assert_eq!(database.collect_media_garbage(TimestampMillis::new(now + 101)).expect("expiry").len(), 1);
+        assert!(MediaAssetRepository::get(&database, asset.id).expect("asset").is_none());
     }
 
     #[test]

@@ -1781,7 +1781,7 @@ mod tests {
         crate::SpeechTranscriptionCoordinator::new(backend.database(), backend.database())
             .admit(lettuce_speech::TranscriptionRequest {
                 id: lettuce_types::RequestId::new(),
-                audio_asset_id: voice_audio.asset.id,
+                audio_asset_id: Some(voice_audio.asset.id),
                 model: lettuce_speech::AsrModelDescriptor {
                     id: lettuce_speech::AsrModelId::new("small.en-q5_1").expect("model id"),
                     artifact_hash: lettuce_types::ContentHash::parse("cd".repeat(32))

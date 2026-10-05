@@ -149,7 +149,7 @@ impl TranscriptionOptions {
 #[serde(deny_unknown_fields)]
 pub struct TranscriptionRequest {
     pub id: RequestId,
-    pub audio_asset_id: AssetId,
+    pub audio_asset_id: Option<AssetId>,
     pub model: AsrModelDescriptor,
     pub options: TranscriptionOptions,
     pub created_at: TimestampMillis,
@@ -195,7 +195,7 @@ pub struct AppliedCorrection {
 #[serde(deny_unknown_fields)]
 pub struct TranscriptionResult {
     pub request_id: RequestId,
-    pub audio_asset_id: AssetId,
+    pub audio_asset_id: Option<AssetId>,
     pub model: AsrModelDescriptor,
     pub sample_rate_hz: u32,
     pub prompt: String,

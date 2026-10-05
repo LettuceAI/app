@@ -33,7 +33,7 @@ fn load_in(
             |row| {
                 Ok((
                     row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(1)?,
                     row.get::<_, String>(2)?,
                     row.get::<_, String>(3)?,
                     row.get::<_, i64>(4)?,
@@ -69,7 +69,13 @@ fn load_in(
     };
     record.validate().map_err(corrupt)?;
     if record.request.id != RequestId::from_str(&row.0).map_err(corrupt)?
-        || record.request.audio_asset_id != AssetId::from_str(&row.1).map_err(corrupt)?
+        || record.request.audio_asset_id
+            != row
+                .1
+                .as_deref()
+                .map(AssetId::from_str)
+                .transpose()
+                .map_err(corrupt)?
         || record.request.model.id.as_str() != row.2
         || record.request.model.artifact_hash != ContentHash::parse(row.3).map_err(corrupt)?
         || record.request.created_at != TimestampMillis::new(row.4)
@@ -101,7 +107,7 @@ fn insert_pending_row(
             params![
                 record.job_id.to_string(),
                 record.request.id.to_string(),
-                record.request.audio_asset_id.to_string(),
+                record.request.audio_asset_id.map(|id| id.to_string()),
                 record.request.model.id.as_str(),
                 record.request.model.artifact_hash.as_str(),
                 record.request.created_at.get(),
@@ -176,6 +182,9 @@ fn same_request(
 ) -> bool {
     let mut replayed = replayed.clone();
     replayed.created_at = stored.created_at;
+    if stored.audio_asset_id.is_none() {
+        replayed.audio_asset_id = None;
+    }
     *stored == replayed
 }
 
@@ -192,6 +201,13 @@ impl TranscriptionRepository for Database {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;
+        if let Some(stored) = load_in(&transaction, record.job_id)? {
+            if !same_request(&stored.request, &record.request) {
+                return Err(TranscriptionRepositoryError::Conflict);
+            }
+            transaction.commit().map_err(storage)?;
+            return Ok(stored);
+        }
         let inserted = insert_pending_row(&transaction, &record)?;
         let stored =
             load_in(&transaction, record.job_id)?.ok_or(TranscriptionRepositoryError::Storage)?;
@@ -241,4 +257,19 @@ impl TranscriptionRepository for Database {
         transaction.commit().map_err(storage)?;
         Ok(stored)
     }
+}
+
+/// Releases the input in the job's terminal-settlement transaction.
+pub(crate) fn release_input_in(
+    transaction: &Transaction<'_>,
+    job_id: JobId,
+    state: lettuce_jobs::JobState,
+    at: TimestampMillis,
+) -> Result<(), lettuce_jobs::StoreError> {
+    if state == lettuce_jobs::JobState::Succeeded {
+        transaction.execute("INSERT OR IGNORE INTO media_gc_candidates(asset_id,queued_at) SELECT audio_asset_id,?2 FROM speech_transcriptions WHERE job_id=?1 AND audio_asset_id IN (SELECT id FROM media_assets WHERE retention='temporary')", params![job_id.to_string(), at.get()]).map_err(|_| lettuce_jobs::StoreError::Storage)?;
+    }
+    transaction.execute("UPDATE speech_transcriptions SET audio_asset_id=NULL,request_json=json_set(request_json,'$.value.audio_asset_id',NULL),result_json=json_set(result_json,'$.value.audio_asset_id',NULL) WHERE job_id=?1 AND audio_asset_id IS NOT NULL AND result_json IS NOT NULL", [job_id.to_string()]).map_err(|_| lettuce_jobs::StoreError::Storage)?;
+    transaction.execute("UPDATE speech_transcriptions SET audio_asset_id=NULL,request_json=json_set(request_json,'$.value.audio_asset_id',NULL) WHERE job_id=?1 AND audio_asset_id IS NOT NULL AND result_json IS NULL", [job_id.to_string()]).map_err(|_| lettuce_jobs::StoreError::Storage)?;
+    Ok(())
 }

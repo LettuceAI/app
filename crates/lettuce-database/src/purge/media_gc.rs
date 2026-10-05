@@ -111,6 +111,9 @@ fn drop_referenced(
         .map_err(storage)?;
     for table in tables.into_iter().filter(|table| scanned(table)) {
         for column in text_columns(connection, &table)? {
+            if table == "job_operations" && column == "request_digest" {
+                continue;
+            }
             probes.push(format!(
                 "SELECT 1 FROM \"{table}\" WHERE instr(CAST(\"{column}\" AS TEXT), c.value) > 0"
             ));
@@ -141,6 +144,7 @@ fn collect(
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(storage)?;
+    transaction.execute("INSERT OR IGNORE INTO media_gc_candidates(asset_id,queued_at) SELECT id,?1 FROM media_assets WHERE retention='temporary' AND expires_at<=?1", [now.get()]).map_err(storage)?;
     let queued: Vec<(String, Option<String>, Option<String>)> = transaction
         .prepare(
             "SELECT candidate.asset_id, asset.blob_id, asset.retention

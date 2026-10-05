@@ -174,7 +174,7 @@ pub struct AppliedCorrectionView {
 #[serde(deny_unknown_fields)]
 pub struct TranscriptionView {
     pub request_id: String,
-    pub audio: crate::AssetRef,
+    pub audio: Option<crate::AssetRef>,
     pub model_id: String,
     pub raw_text: String,
     pub text: String,

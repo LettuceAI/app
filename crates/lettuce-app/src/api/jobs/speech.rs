@@ -300,7 +300,11 @@ impl ClaimedJob for ClaimedTranscription {
         )
         .await;
         match result {
-            Ok(_) => Ok(()),
+            Ok(_) => {
+                run_context
+                    .blocking(crate::api::speech::collect_recordings)
+                    .await
+            }
             Err(error) => {
                 let failed = run_context
                     .blocking(move |context| {

@@ -163,6 +163,16 @@ impl JobBackup {
                 return Err(JobBackupError::InvalidData);
             }
         }
+        for transcription in &self.speech_transcriptions {
+            let job = self
+                .jobs
+                .iter()
+                .find(|job| job.snapshot.id == transcription.job_id)
+                .ok_or(JobBackupError::InvalidData)?;
+            if job.snapshot.state.is_terminal() != transcription.request.audio_asset_id.is_none() {
+                return Err(JobBackupError::InvalidData);
+            }
+        }
         self.local_model_jobs.sort_by_key(|job| job.job_id);
         self.local_model_operations
             .sort_by(|a, b| a.operation_key.cmp(&b.operation_key));

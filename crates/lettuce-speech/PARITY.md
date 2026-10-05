@@ -68,3 +68,5 @@ Whisper installation identity and content hashes remain immutable. Only the mode
 Correction listing accepts legacy user_approved_only: true filters to user-approved rules; false or null keeps all matching corrections. Language and scope filtering still apply.
 
 Deleting an audio provider used by a character is refused with typed referencing character ids and names. Legacy deleted the provider and left a dangling character voice; this deliberate refusal lets the user update those characters first.
+
+- Settled transcription requests/results carry no audio asset reference. The application discards unreferenced temporary recording blobs after successful transcription, as legacy retained microphone PCM only in memory; failed, cancelled or interrupted input remains available until its original temporary expiry for retry. Queued/running inputs and audio used by voice examples remain protected.

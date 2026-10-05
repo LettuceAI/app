@@ -744,6 +744,15 @@ pub(crate) fn persist_changes(
                 ],
             )
             .map_err(|_| StoreError::Storage)?;
+        if snapshot.kind == lettuce_jobs::JobKind::SpeechTranscribe && snapshot.state.is_terminal()
+        {
+            crate::media::speech_adapter::release_input_in(
+                transaction,
+                *id,
+                snapshot.state,
+                snapshot.updated_at,
+            )?;
+        }
         let persisted_event_count = before.get(id).map_or(0, |stored| stored.events.len());
         if before
             .get(id)

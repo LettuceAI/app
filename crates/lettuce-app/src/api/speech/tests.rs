@@ -64,6 +64,7 @@ enum AsrMode {
     WaitForFinish(Arc<AtomicBool>),
     Text(&'static str),
     WaitForCancel,
+    Fail(AsrRuntimeError),
 }
 
 struct FakeAsr {
@@ -83,6 +84,7 @@ impl AsrRuntime for FakeAsr {
         self.calls.fetch_add(1, Ordering::SeqCst);
         assert!(!samples.is_empty());
         match self.mode {
+            AsrMode::Fail(error) => Err(error),
             AsrMode::Text(text) => Ok(RuntimeTranscription {
                 raw_text: text.to_owned(),
                 detected_language: Some("en".to_owned()),
@@ -315,7 +317,7 @@ fn descriptor(id: &str) -> AsrModelDescriptor {
 fn transcription_request(context: &ApiContext, id: &str) -> TranscriptionRequest {
     TranscriptionRequest {
         id: RequestId::new(),
-        audio_asset_id: ingest_wav(context, tone()),
+        audio_asset_id: Some(ingest_wav(context, tone())),
         model: descriptor(id),
         options: TranscriptionOptions::default(),
         created_at: START,
@@ -808,12 +810,7 @@ async fn dictation_records_to_an_asset_and_transcribes_without_audio_over_the_ap
         panic!("a transcription result");
     };
     assert_eq!(transcription.text, "hello there");
-    assert!(
-        transcription
-            .audio
-            .url
-            .contains(&transcription.audio.asset_id)
-    );
+    assert!(transcription.audio.is_none());
 
     let ended = super::dictation_stop(
         &env.context,
@@ -3192,7 +3189,8 @@ async fn queued_dictation_input_survives_collection_after_twenty_four_hours() {
     let audio = TranscriptionRepository::get(env.context.backend().database(), id)
         .expect("input reference")
         .request
-        .audio_asset_id;
+        .audio_asset_id
+        .expect("active input");
     env.clock.advance(Duration::from_secs(25 * 60 * 60));
     assert!(
         env.context
@@ -3227,4 +3225,289 @@ fn exhausted_speech_errors_keep_the_last_transient_cause() {
         serde_json::to_value(provider).expect("provider"),
         serde_json::json!({"type":"retries_exhausted","cause":{"type":"provider_unavailable","status":503}})
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn completed_dictation_discards_the_temporary_input_and_keeps_its_transcript() {
+    use lettuce_speech::TranscriptionRepository;
+    let env = env(
+        TtsMode::Speak,
+        AsrMode::Text("transcript survives"),
+        Some(Arc::new(FakeMic {
+            outcome: Ok(vec![0.25; 8_000]),
+        })),
+    );
+    install_whisper_file(&env.root);
+    let capture = super::dictation_start(
+        &env.context,
+        dto::DictationStartRequest {
+            conversation_id: None,
+        },
+    )
+    .await
+    .expect("start");
+    let admitted = super::dictation_stop(
+        &env.context,
+        dto::DictationStopRequest {
+            capture_id: capture.capture_id,
+            model_id: None,
+            options: dto::TranscribeOptions::default(),
+        },
+    )
+    .await
+    .expect("stop");
+    let id = admitted.job_id.parse().expect("id");
+    let input = TranscriptionRepository::get(env.context.backend().database(), id)
+        .expect("input")
+        .request
+        .audio_asset_id
+        .expect("active input");
+    let object = recording_object(&env, input);
+    assert!(run_to_idle(&runner(&env.context)).await);
+    assert_eq!(
+        job(&env.context, id).await.state,
+        dto::JobStateDto::Succeeded,
+        "{:?}",
+        job(&env.context, id).await
+    );
+    assert!(
+        lettuce_speech::TranscriptionRepository::get(env.context.backend().database(), id)
+            .expect("settled")
+            .request
+            .audio_asset_id
+            .is_none()
+    );
+    assert!(
+        env.context
+            .media()
+            .expect("media")
+            .open_ready(input)
+            .is_err(),
+        "completed recording must be discarded"
+    );
+    let dto::JobResultDto::Transcription { transcription } =
+        job(&env.context, id).await.result.expect("result")
+    else {
+        panic!("transcript");
+    };
+    assert_eq!(transcription.text, "transcript survives");
+    assert!(!object.exists(), "recording blob removed");
+}
+
+async fn temporary_transcription(env: &Env) -> (JobId, AssetId) {
+    use lettuce_speech::TranscriptionRepository;
+    install_whisper_file(&env.root);
+    let path = env.root.join("recording.wav");
+    std::fs::write(&path, tone()).expect("recording");
+    let admitted = super::transcribe_file(
+        &env.context,
+        dto::TranscribeFileRequest {
+            request_id: RequestId::new().to_string(),
+            source: dto::FileSource {
+                uri: path.to_string_lossy().into_owned(),
+            },
+            model_id: None,
+            options: dto::TranscribeOptions::default(),
+        },
+    )
+    .await
+    .expect("admission");
+    let job = admitted.job_id.parse().expect("job");
+    let input = TranscriptionRepository::get(env.context.backend().database(), job)
+        .expect("record")
+        .request
+        .audio_asset_id
+        .expect("active audio");
+    (job, input)
+}
+
+fn recording_object(env: &Env, input: AssetId) -> PathBuf {
+    let opened = env
+        .context
+        .media()
+        .expect("media")
+        .open_ready(input)
+        .expect("input");
+    let hash = opened.blob.content_hash.as_str();
+    env.root
+        .join("platform-v2/media-blobs/objects")
+        .join(&hash[..2])
+        .join(&hash[2..4])
+        .join(hash)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn failed_transcription_retains_retry_audio_until_expiry() {
+    use lettuce_speech::TranscriptionRepository;
+    let env = env(
+        TtsMode::Speak,
+        AsrMode::Fail(AsrRuntimeError::Rejected),
+        None,
+    );
+    let (id, input) = temporary_transcription(&env).await;
+    let object = recording_object(&env, input);
+    assert!(run_to_idle(&runner(&env.context)).await);
+    assert_eq!(job(&env.context, id).await.state, dto::JobStateDto::Failed);
+    assert!(
+        TranscriptionRepository::get(env.context.backend().database(), id)
+            .expect("failed record")
+            .request
+            .audio_asset_id
+            .is_none()
+    );
+    assert!(object.exists());
+    let retry = super::transcribe_file(
+        &env.context,
+        dto::TranscribeFileRequest {
+            request_id: RequestId::new().to_string(),
+            source: dto::FileSource {
+                uri: env.context.asset_ref(input).url,
+            },
+            model_id: None,
+            options: dto::TranscribeOptions::default(),
+        },
+    )
+    .await
+    .expect("retry existing audio");
+    assert!(run_to_idle(&runner(&env.context)).await);
+    assert_eq!(
+        job(&env.context, retry.job_id.parse().expect("job"))
+            .await
+            .state,
+        dto::JobStateDto::Failed
+    );
+    env.clock.advance(Duration::from_secs(25 * 60 * 60));
+    super::collect_recordings(&env.context).expect("expiry GC");
+    assert!(!object.exists());
+    assert!(
+        env.context
+            .media()
+            .expect("media")
+            .open_ready(input)
+            .is_err()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn startup_collects_successful_input_after_crash_before_gc_and_backup_restores_null() {
+    use lettuce_speech::TranscriptionRepository;
+    use lettuce_transfer::{ProviderBackupRestoreWriter, ProviderBackupSource};
+    let env = env(TtsMode::Speak, AsrMode::Text("durable transcript"), None);
+    let (id, input) = temporary_transcription(&env).await;
+    let object = recording_object(&env, input);
+    let backend = env.context.backend();
+    let coordinator = backend.speech_transcriptions();
+    let work = coordinator
+        .claim(
+            id,
+            WorkerId::new(),
+            env.context.now(),
+            Duration::from_secs(600),
+            &ResourceAvailability::all(),
+        )
+        .expect("claim")
+        .expect("work");
+    coordinator
+        .run(
+            work,
+            env.context.media().expect("media"),
+            &backend.asr_learning(),
+            env.asr.as_ref(),
+            lettuce_jobs::CancellationReason::User,
+            env.context.now(),
+        )
+        .expect("settle without GC");
+    assert!(object.exists(), "crash gap leaves blob for startup GC");
+    let record = TranscriptionRepository::get(backend.database(), id).expect("settled");
+    assert!(record.request.audio_asset_id.is_none());
+    env.context
+        .restarted()
+        .recover_after_restart()
+        .expect("startup");
+    assert!(!object.exists());
+    let graph = backend
+        .database()
+        .read_provider_backup_graph()
+        .expect("backup");
+    let restored = lettuce_database::Database::open_in_memory().expect("restore database");
+    restored
+        .restore_provider_backup_graph(&graph, &[])
+        .expect("restore without audio");
+    assert_eq!(
+        TranscriptionRepository::get(&restored, id).expect("restored transcription"),
+        record
+    );
+    let dto::JobResultDto::Transcription { transcription } =
+        job(&env.context, id).await.result.expect("result")
+    else {
+        panic!("transcription");
+    };
+    assert_eq!(transcription.text, "durable transcript");
+    assert!(transcription.audio.is_none());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn completed_transcription_preserves_input_referenced_by_voice_example() {
+    use lettuce_speech::AsrLearningRepository;
+    let env = env(TtsMode::Speak, AsrMode::Text("example"), None);
+    let (id, input) = temporary_transcription(&env).await;
+    let object = recording_object(&env, input);
+    let example = lettuce_speech::AsrVoiceExample::new(
+        input,
+        "example",
+        None,
+        Some("en"),
+        None,
+        env.context.now(),
+    )
+    .expect("example");
+    env.context
+        .backend()
+        .database()
+        .save_voice_example(example)
+        .expect("save example");
+    assert!(run_to_idle(&runner(&env.context)).await);
+    assert_eq!(
+        job(&env.context, id).await.state,
+        dto::JobStateDto::Succeeded
+    );
+    env.clock.advance(Duration::from_secs(25 * 60 * 60));
+    super::collect_recordings(&env.context).expect("expired GC");
+    assert!(object.exists());
+    env.context
+        .media()
+        .expect("media")
+        .open_ready(input)
+        .expect("voice example retained");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn cancelled_transcription_releases_input_but_retains_blob_until_expiry() {
+    use lettuce_speech::TranscriptionRepository;
+    let env = env(TtsMode::Speak, AsrMode::Text("unused"), None);
+    let (id, input) = temporary_transcription(&env).await;
+    let object = recording_object(&env, input);
+    job_cancel(
+        &env.context,
+        dto::JobCancelRequest {
+            job_id: id.to_string(),
+        },
+    )
+    .await
+    .expect("cancel");
+    assert_eq!(
+        job(&env.context, id).await.state,
+        dto::JobStateDto::Cancelled
+    );
+    assert!(
+        TranscriptionRepository::get(env.context.backend().database(), id)
+            .expect("record")
+            .request
+            .audio_asset_id
+            .is_none()
+    );
+    assert!(object.exists());
+    env.clock.advance(Duration::from_secs(25 * 60 * 60));
+    super::collect_recordings(&env.context).expect("GC");
+    assert!(!object.exists());
 }

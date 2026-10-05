@@ -23,7 +23,7 @@ pub use dictation::{dictation_cancel, dictation_start, dictation_stop};
 pub use host::{InstalledSpeech, NoSpeech, SpeechHost};
 pub(crate) use state::SpeechApiState;
 pub use transcribe::transcribe_file;
-pub(crate) use transcribe::transcription_view;
+pub(crate) use transcribe::{collect_recordings, transcription_view};
 pub use whisper::{
     whisper_catalog, whisper_clear_cache, whisper_delete, whisper_dictation_model_set,
     whisper_download, whisper_models_list, whisper_preload,

@@ -383,6 +383,7 @@ impl ApiContext {
         super::jobs::voice_creation::recover_queued(self)?;
         super::scenes::recover(self)?;
         super::speech::sweep_scratch(self);
+        super::speech::collect_recordings(self)?;
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         if let Some(engine) = self.backend().local_diffusion() {
             engine.clear_upscale_scratch();
