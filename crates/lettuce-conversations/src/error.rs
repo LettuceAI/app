@@ -43,6 +43,8 @@ pub enum ConversationRepositoryError {
     JobAlreadyAttached,
     #[error("the job is already owned by another generation attempt")]
     JobInUse,
+    #[error("branch-owned work is still active")]
+    Busy,
     #[error("the conversation has a dependent record")]
     Dependency,
     #[error("the conversation operation is invalid")]

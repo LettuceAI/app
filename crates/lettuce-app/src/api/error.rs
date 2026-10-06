@@ -121,6 +121,7 @@ impl IntoApiError for ValidationError {
 impl IntoApiError for ConversationRepositoryError {
     fn into_api_error(self) -> ApiError {
         let code = match &self {
+            Self::Busy => ApiErrorCode::Busy,
             Self::NotFound => ApiErrorCode::NotFound,
             Self::StaleRevision { .. }
             | Self::Conflict

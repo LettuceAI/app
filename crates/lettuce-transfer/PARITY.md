@@ -132,3 +132,5 @@ Facts about how `lettuce-transfer` relates to the legacy app (2.2.x): what each 
 Memory section version 2 preserves every own branch binding, the branch owner of each summary and per-branch received cursors. Restore writes the exported child state directly. Legacy exported session memory and companion shared memory separately (`old-code/src-tauri/src/storage_manager/backup.rs:655-668,678`); the rewrite keeps those ownership boundaries while retaining the branch graph.
 
 Conversation backups retain origin ids independently of source rows. Legacy direct-to-character branching recorded parent-session and branched-message metadata (`old-code/src/core/storage/repo.ts:1744-1748`); lineage now survives deletion of those source rows and backup restore.
+
+Branch-delete outbox history is preserved in version 3 backups with its stable branch result and exclusive-message tombstone events.

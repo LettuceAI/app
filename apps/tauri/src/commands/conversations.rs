@@ -469,3 +469,12 @@ pub async fn conversation_duplicate(
 ) -> Result<lettuce_contracts::ConversationCopyResult, ApiError> {
     api::conversation_duplicate(&context, request).await
 }
+
+#[tauri::command]
+#[specta::specta]
+pub async fn conversation_branch_delete(
+    context: State<'_, ApiContext>,
+    request: lettuce_contracts::ConversationBranchMutationRequest,
+) -> Result<lettuce_contracts::ConversationBranchChanged, ApiError> {
+    api::conversation_branch_delete(&context, request).await
+}

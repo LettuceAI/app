@@ -540,6 +540,17 @@ impl<R: ConversationRepository> ConversationManager<R> {
             .map_err(Into::into)
     }
 
+    pub fn delete_branch(
+        &self,
+        command: &crate::DeleteBranch,
+        now: TimestampMillis,
+    ) -> Result<crate::MutationCommit<crate::BranchResult>, ConversationServiceError> {
+        command.validate()?;
+        self.repository
+            .delete_branch(command, now)
+            .map_err(Into::into)
+    }
+
     pub fn select_branch(
         &self,
         command: &crate::commands::SelectBranch,

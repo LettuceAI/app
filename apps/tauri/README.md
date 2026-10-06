@@ -80,3 +80,5 @@ Microphone capture uses CPAL on desktop and Android. Android checks the Activity
 Branch list, fork, rename and select commands forward their typed requests to the application API and export their DTOs through the shared command registry.
 
 The `conversation_duplicate` command delegates transactional copying to the application API and returns its stable conversation identity and revision.
+
+`conversation_branch_delete` forwards branch revision and operation-key validation to the application API and returns its typed errors and stable replay result.

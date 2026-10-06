@@ -68,8 +68,8 @@ mod turns_tests;
 pub use app::{app_status, app_ui_state_update, purge_notice_dismiss, purge_notices_list};
 pub use assets::{AssetBytes, AssetRange, AssetRead, OPEN_RANGE_CHUNK, read_asset};
 pub use branches::{
-    conversation_branch_fork, conversation_branch_rename, conversation_branch_select,
-    conversation_branches,
+    conversation_branch_delete, conversation_branch_fork, conversation_branch_rename,
+    conversation_branch_select, conversation_branches,
 };
 pub use characters::characters_list;
 pub use context::{ApiContext, ApiContextParts, ApiDatabaseFiles, ApiMediaStore};

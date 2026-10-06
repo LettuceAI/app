@@ -558,3 +558,5 @@ The branch API exposes list, fork, rename and select. Reads return creation-orde
 Opening a conversation returns its stored origin conversation and message ids when present, including after the source has been purged.
 
 `conversation_duplicate` submits one transaction over the source settings, new launch, optional selected timeline and memory, creation outbox and stable API receipt. Receipt lookup precedes source lookup so retries survive source removal. The command returns the new conversation identity and its committed revision.
+
+`conversation_branch_delete` resolves the retained branch row, applies revisioned deletion and returns the original committed revision on replay. The root and selected branch return Conflict; branch-owned live work returns Busy, allowing a later retry without cancelling the work.

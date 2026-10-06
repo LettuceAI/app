@@ -63,7 +63,6 @@ pub(crate) fn sync_conversation_ids(connection: &Connection) -> rusqlite::Result
 fn normalized_branch(branch: &ConversationBranch) -> ConversationBranch {
     ConversationBranch {
         head_message_id: None,
-        status: BranchStatus::Active,
         revision: Revision::INITIAL,
         updated_at: branch.label_updated_at.unwrap_or(branch.created_at),
         ..branch.clone()
@@ -945,9 +944,22 @@ pub(crate) fn sync_insert_branch(
             .validate()
             .map_err(ConversationRepositoryError::Invalid)?;
         transaction.execute(
-            "UPDATE conversation_branches SET label = ?3, label_updated_at = ?4, revision = revision + 1, updated_at = max(updated_at, ?4) WHERE conversation_id = ?1 AND id = ?2",
-            params![conversation_id, branch.id.to_string(), branch.label, branch.label_updated_at.map(TimestampMillis::get)],
+            "UPDATE conversation_branches SET label = ?3, label_updated_at = ?4, status = CASE WHEN status = 'tombstoned' OR ?5 = 'tombstoned' THEN 'tombstoned' ELSE 'active' END, revision = revision + 1, updated_at = max(updated_at, ?4) WHERE conversation_id = ?1 AND id = ?2",
+            params![conversation_id, branch.id.to_string(), branch.label, branch.label_updated_at.map(TimestampMillis::get), if branch.status == BranchStatus::Tombstoned { "tombstoned" } else { "active" }],
         ).map_err(storage)?;
+        if branch.status == BranchStatus::Tombstoned || current.status == BranchStatus::Tombstoned {
+            crate::purge::purge_branch_memory_in(
+                transaction,
+                branch.conversation_id,
+                branch.id,
+                branch.updated_at,
+            )
+            .map_err(|error| match error {
+                crate::purge::PurgeError::Busy => ConversationRepositoryError::Busy,
+                _ => ConversationRepositoryError::Storage,
+            })?;
+            transaction.execute("UPDATE conversations SET active_branch_id = (SELECT id FROM conversation_branches WHERE conversation_id = ?1 AND parent_branch_id IS NULL) WHERE id = ?1 AND active_branch_id = ?2",params![conversation_id,branch.id.to_string()]).map_err(storage)?;
+        }
         transaction
             .execute(
                 "UPDATE conversations SET revision = revision + 1 WHERE id = ?1",
@@ -967,12 +979,14 @@ pub(crate) fn sync_insert_branch(
         return Err(ConversationRepositoryError::NotFound);
     }
     history::insert_branch(transaction, &normalized_branch(branch))?;
-    crate::memory::memory_branch_adapter::create_empty_branch_space_in(
-        transaction,
-        branch.conversation_id,
-        parent,
-        branch.id,
-    )?;
+    if branch.status == BranchStatus::Active {
+        crate::memory::memory_branch_adapter::create_empty_branch_space_in(
+            transaction,
+            branch.conversation_id,
+            parent,
+            branch.id,
+        )?;
+    }
     transaction
         .execute(
             "UPDATE conversations SET revision = revision + 1 WHERE id = ?1",

@@ -481,6 +481,7 @@ fn repository_terminal(
         | ConversationRepositoryError::Conflict
         | ConversationRepositoryError::JobAlreadyAttached
         | ConversationRepositoryError::JobInUse
+        | ConversationRepositoryError::Busy
         | ConversationRepositoryError::Dependency
         | ConversationRepositoryError::Invalid(_)
         | ConversationRepositoryError::Unsupported => {

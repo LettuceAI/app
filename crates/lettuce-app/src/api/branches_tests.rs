@@ -101,6 +101,38 @@ async fn branches_list_fork_rename_select_and_replay() {
         .expect("final list");
     assert!(final_list.branches[0].active);
     assert_eq!(final_list.branches[1].label, "fork label");
+    let delete = dto::ConversationBranchMutationRequest {
+        branch_id: fork.branch_id.clone(),
+        expected_revision: final_list.revision,
+        client_operation_id: "branches-delete".into(),
+    };
+    let deleted = conversation_branch_delete(&harness.context, delete.clone())
+        .await
+        .expect("delete inactive branch");
+    assert_eq!(
+        conversation_branch_delete(&harness.context, delete.clone())
+            .await
+            .expect("delete replay"),
+        deleted
+    );
+    let list = conversation_branches(
+        &harness.context,
+        dto::ConversationRequest {
+            conversation_id: conversation_id.clone(),
+        },
+    )
+    .await
+    .expect("after delete");
+    assert_eq!(list.branches.len(), 1);
+    let mut changed = delete;
+    changed.branch_id = root;
+    assert_eq!(
+        conversation_branch_delete(&harness.context, changed)
+            .await
+            .expect_err("changed delete digest")
+            .code,
+        ApiErrorCode::Conflict
+    );
 }
 
 #[tokio::test]

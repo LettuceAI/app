@@ -616,6 +616,11 @@ pub enum ConversationOutboxEvent {
         label: String,
         at: TimestampMillis,
     },
+    BranchDeleted {
+        conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
+        at: TimestampMillis,
+    },
     CandidateChosen {
         conversation_id: ConversationId,
         message_id: MessageId,
@@ -734,6 +739,9 @@ impl ConversationOutboxRecord {
             | ConversationOutboxEvent::BranchLabelChanged {
                 conversation_id, ..
             }
+            | ConversationOutboxEvent::BranchDeleted {
+                conversation_id, ..
+            }
             | ConversationOutboxEvent::BranchSelected {
                 conversation_id, ..
             }
@@ -829,6 +837,7 @@ pub enum OperationKind {
     Fork,
     SelectBranch,
     RenameBranch,
+    DeleteBranch,
     Tombstone,
     Archive,
     Restore,
@@ -1380,6 +1389,11 @@ pub trait ConversationRepository: ConversationCreator {
     fn rename_branch(
         &self,
         command: &crate::RenameBranch,
+        now: TimestampMillis,
+    ) -> Result<MutationCommit<BranchResult>, ConversationRepositoryError>;
+    fn delete_branch(
+        &self,
+        command: &crate::DeleteBranch,
         now: TimestampMillis,
     ) -> Result<MutationCommit<BranchResult>, ConversationRepositoryError>;
     fn select_branch(

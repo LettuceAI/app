@@ -345,9 +345,18 @@ impl<'c> Purge<'c> {
             "dynamic_memory_inference_rounds",
             "dynamic_memory_summary_checkpoints",
             "dynamic_memory_run_source_messages",
-            "dynamic_memory_run_attempts",
         ] {
             self.delete(table, &by_run, &values)?;
+        }
+        loop {
+            let deleted = self.delete(
+                "dynamic_memory_run_attempts",
+                &format!("({by_run}) AND NOT EXISTS (SELECT 1 FROM dynamic_memory_run_attempts AS child WHERE child.retry_parent_id = dynamic_memory_run_attempts.id)"),
+                &values,
+            )?;
+            if deleted == 0 {
+                break;
+            }
         }
         self.delete(
             "companion_turn_effect_invalidations",
@@ -609,6 +618,42 @@ impl<'c> Purge<'c> {
         }
         Ok(())
     }
+}
+
+pub(crate) fn purge_branch_memory_in(
+    connection: &Connection,
+    conversation_id: lettuce_types::ConversationId,
+    branch_id: lettuce_types::ConversationBranchId,
+    now: TimestampMillis,
+) -> Result<(), PurgeError> {
+    let mut purge = Purge::new(connection, now);
+    let values = [
+        Value::Text(conversation_id.to_string()),
+        Value::Text(branch_id.to_string()),
+    ];
+    if purge.exists(
+        "SELECT EXISTS(SELECT 1 FROM dynamic_memory_runs AS run JOIN dynamic_memory_run_attempts AS attempt ON attempt.run_id = run.id WHERE run.conversation_id = ?1 AND run.branch_id = ?2 AND attempt.status IN ('created', 'processing'))",
+        &values,
+    )? {
+        return Err(PurgeError::Busy);
+    }
+    let spaces = purge.strings(
+        "SELECT space_id FROM conversation_memory_spaces WHERE conversation_id = ?1 AND branch_id = ?2 AND pooled = 0",
+        &values,
+    )?;
+    for space in &spaces {
+        purge.authorize(space)?;
+    }
+    for table in ["dynamic_memory_pending_approvals", "memory_synced_cursors"] {
+        purge.delete(table, "conversation_id = ?1 AND branch_id = ?2", &values)?;
+    }
+    purge.delete(
+        "dynamic_memory_pending_suffix_rewinds",
+        "conversation_id = ?1 AND EXISTS (SELECT 1 FROM conversation_messages message WHERE message.conversation_id = ?1 AND message.branch_id = ?2 AND message.id = json_extract(pending_json, '$.value.tombstone.message_id'))",
+        &values,
+    )?;
+    purge.memory(None, &spaces)?;
+    purge.finish(now)
 }
 
 /// The TEXT, BLOB and untyped columns of `table`.

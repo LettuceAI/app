@@ -199,3 +199,37 @@ pub async fn conversation_branch_select(
         })
         .await
 }
+
+pub async fn conversation_branch_delete(
+    context: &ApiContext,
+    request: dto::ConversationBranchMutationRequest,
+) -> Result<dto::ConversationBranchChanged, ApiError> {
+    let branch_id = parse_id(&request.branch_id, "branch_id")?;
+    let expected_revision = expected_revision(request.expected_revision)?;
+    let operation = operation(
+        request.client_operation_id,
+        &[b"branch-delete", request.branch_id.as_bytes()],
+    )?;
+    context
+        .blocking(move |context| {
+            let conversation_id = branch_conversation(context, branch_id)?;
+            let commit = context
+                .backend()
+                .database()
+                .delete_branch(
+                    &lettuce_conversations::DeleteBranch {
+                        conversation_id,
+                        branch_id,
+                        expected_revision,
+                        operation,
+                    },
+                    context.now(),
+                )
+                .map_err(IntoApiError::into_api_error)?;
+            Ok(dto::ConversationBranchChanged {
+                branch_id: branch_id.to_string(),
+                revision: committed_revision(&commit.outbox),
+            })
+        })
+        .await
+}

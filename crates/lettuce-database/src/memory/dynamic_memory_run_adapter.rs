@@ -1083,6 +1083,10 @@ impl DynamicMemoryRunRepository for Database {
             Err(DynamicMemoryRunRepositoryError::NotFound) => {}
             Err(error) => return Err(error),
         }
+        let branch_active: bool = transaction.query_row("SELECT EXISTS(SELECT 1 FROM conversation_branches WHERE conversation_id = ?1 AND id = ?2 AND status = 'active')",params![input.conversation_id.to_string(),input.branch_id.to_string()],|row| row.get(0)).map_err(storage)?;
+        if !branch_active {
+            return Err(DynamicMemoryRunRepositoryError::Conflict);
+        }
         if let Some(change) = &cycle_start_change {
             memory_adapter::compare_and_apply_in(&transaction, change).map_err(
                 |error| match error {
@@ -1831,7 +1835,7 @@ impl DynamicMemoryRunRepository for Database {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use lettuce_companions::{
         CompanionTurnEffectRepository, CompanionTurnEffectSeed, CompanionTurnEffectStatus,
     };
@@ -1869,7 +1873,7 @@ mod tests {
 
     use crate::Database;
 
-    fn profile() -> ResolvedInferenceProfile {
+    pub(crate) fn profile() -> ResolvedInferenceProfile {
         let account_id = ProviderAccountId::new();
         let profile_id = ModelProfileId::new();
         let account = ProviderAccount {
@@ -2409,6 +2413,56 @@ mod tests {
                 1
             );
         }
+    }
+
+    #[test]
+    fn branch_memory_purge_leaves_the_companion_pool_untouched() {
+        let database = Database::open_in_memory().expect("database");
+        let (conversation, own, _) = conversation_fixture(&database);
+        let branch = fixture_branch(&database, conversation);
+        let character = CharacterId::new();
+        let defaults = lettuce_characters::CharacterDefaults {
+            companion_soul: Some(lettuce_companions::CompanionSoulConfig::default()),
+            ..Default::default()
+        };
+        let pool = {
+            let mut connection = database.connection().expect("connection");
+            let transaction = connection.transaction().expect("transaction");
+            transaction.execute("INSERT INTO characters (id,status,name,normalized_name,profile_json,provenance_json,defaults_json,interaction_mode,memory_policy,voice_autoplay,presentation_json,revision,created_at,updated_at) VALUES (?1,'active','Pool','pool','{}','{}',?2,'companion','manual',0,'{}',1,1,1)",params![character.to_string(),crate::encode_versioned(&defaults,1).expect("defaults")]).expect("character");
+            let pool = crate::memory::memory_adapter::join_companion_pool_in(
+                &transaction,
+                conversation,
+                branch,
+                character,
+            )
+            .expect("pool");
+            transaction.commit().expect("commit");
+            pool
+        };
+        for space_id in [own, pool] {
+            database
+                .compare_and_apply(MemoryChangeSet {
+                    space_id,
+                    expected_revision: Revision::INITIAL,
+                    items: vec![memory_item(MemoryId::new(), "Kept memory", 1)],
+                })
+                .expect("memory");
+        }
+        let before = database.get(pool).expect("pool").expect("pool space");
+        let mut connection = database.connection().expect("connection");
+        let transaction = connection.transaction().expect("transaction");
+        crate::purge::purge_branch_memory_in(
+            &transaction,
+            conversation,
+            branch,
+            TimestampMillis::new(10),
+        )
+        .expect("purge own branch memory");
+        transaction.commit().expect("commit");
+        drop(connection);
+        assert!(database.get(own).expect("own memory").is_none());
+        assert_eq!(database.get(pool).expect("pool memory"), Some(before));
+        assert_eq!(database.connection().expect("connection").query_row("SELECT count(*) FROM conversation_memory_spaces WHERE conversation_id = ?1 AND pooled = 1",[conversation.to_string()],|row| row.get::<_,i64>(0)).expect("pool binding"),1);
     }
 
     #[test]

@@ -122,7 +122,7 @@ pub const CONVERSATION_MESSAGE_SYNC_VERSION: u32 = 2;
 
 pub const CONVERSATION_BRANCH_SYNC_KIND: &str = "conversation_branch";
 pub const CONVERSATION_BRANCH_SYNC_SCHEMA: &str = "conversation.branch";
-pub const CONVERSATION_BRANCH_SYNC_VERSION: u32 = 2;
+pub const CONVERSATION_BRANCH_SYNC_VERSION: u32 = 3;
 
 pub const MEMORY_ITEM_SYNC_KIND: &str = "memory_item";
 pub const MEMORY_ITEM_SYNC_SCHEMA: &str = "memory.item";

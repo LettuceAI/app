@@ -74,3 +74,5 @@ Own memory entities identify both conversation and branch; received user forks s
 Branch labels use the same last-writer-wins entity policy as titles while parent, fork message and creation time remain immutable. Legacy branches were sessions with their own title (`old-code/src/core/storage/repo.ts:1683`; rename caller `old-code/src/ui/pages/chats/ChatTreePage.tsx:213-220`). The separate label edit timestamp prevents local head changes from promoting an older label.
 
 Conversation lineage travels with its root as creation metadata and stays valid after source deletion. Legacy direct-to-character branches recorded parent-session and branched-message fields (`old-code/src/core/storage/repo.ts:1744-1748`); sync no longer needs a surviving source to retain that provenance.
+
+Branch deletion exchanges a retained topology payload with a monotonic tombstoned lifecycle, including when deletion happens before the first sync. An active payload cannot resurrect it, and a concurrent label edit cannot suppress deletion. Parent and fork identities remain immutable; labels retain their independent last-writer-wins behavior.

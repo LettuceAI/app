@@ -147,3 +147,5 @@ Own memory spaces retain their conversation and branch binding; pool memberships
 Conversation outbox section version 2 includes branch-label-change events and their rename operation records. Ownership and timestamp validation applies to these records before export or restore.
 
 Conversation history section version 2 carries branch labels and nullable conversation lineage. Restore keeps the recorded origin ids even when the source conversation and message are absent from the backup.
+
+Conversation outbox backup version 3 includes branch-deletion events alongside retained branch topology in the history graph.

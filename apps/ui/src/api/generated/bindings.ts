@@ -13,6 +13,7 @@ export const commands = {
 	conversationBranchFork: (request: ConversationBranchForkRequest) => typedError<ConversationBranchChanged, ApiError>(__TAURI_INVOKE("conversation_branch_fork", { request })),
 	conversationBranchRename: (request: ConversationBranchRenameRequest) => typedError<ConversationBranchChanged, ApiError>(__TAURI_INVOKE("conversation_branch_rename", { request })),
 	conversationBranchSelect: (request: ConversationBranchMutationRequest) => typedError<ConversationBranchChanged, ApiError>(__TAURI_INVOKE("conversation_branch_select", { request })),
+	conversationBranchDelete: (request: ConversationBranchMutationRequest) => typedError<ConversationBranchChanged, ApiError>(__TAURI_INVOKE("conversation_branch_delete", { request })),
 	conversationDuplicate: (request: ConversationDuplicateRequest) => typedError<ConversationCopyResult, ApiError>(__TAURI_INVOKE("conversation_duplicate", { request })),
 	conversationMessages: (request: ConversationMessagesRequest) => typedError<MessagePage, ApiError>(__TAURI_INVOKE("conversation_messages", { request })),
 	messageEdit: (request: MessageEditRequest) => typedError<MessageChanged, ApiError>(__TAURI_INVOKE("message_edit", { request })),

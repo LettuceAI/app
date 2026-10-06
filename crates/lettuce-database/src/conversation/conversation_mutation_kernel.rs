@@ -97,6 +97,7 @@ pub(crate) fn operation_kind_name(value: OperationKind) -> &'static str {
         OperationKind::Fork => "fork",
         OperationKind::SelectBranch => "select_branch",
         OperationKind::RenameBranch => "rename_branch",
+        OperationKind::DeleteBranch => "delete_branch",
         OperationKind::Tombstone => "tombstone",
         OperationKind::Archive => "archive",
         OperationKind::Restore => "restore",
@@ -737,7 +738,7 @@ mod tests {
         (database, conversation_id, branch_id)
     }
 
-    const OPERATION_KINDS: [OperationKind; 27] = [
+    const OPERATION_KINDS: [OperationKind; 28] = [
         OperationKind::Create,
         OperationKind::Send,
         OperationKind::Continue,
@@ -755,6 +756,7 @@ mod tests {
         OperationKind::Fork,
         OperationKind::SelectBranch,
         OperationKind::RenameBranch,
+        OperationKind::DeleteBranch,
         OperationKind::Tombstone,
         OperationKind::Archive,
         OperationKind::Restore,

@@ -220,3 +220,5 @@ Conversation lineage is optional creation metadata: the source conversation and 
 `ConversationContentCopy` identifies source and target branches for the database transaction primitive that copies selected content with fresh message identities. The primitive is composed with conversation creation and an API operation receipt.
 
 `DuplicateConversation` selects source settings and optional selected content for a new conversation, carrying the target identity and creation operation token.
+
+Branch deletion uses the mutation kernel to retain a tombstoned ancestry row while removing exclusive visible messages and the branch's own memory space. The root and selected branch cannot be deleted. Nonterminal work owned by the target branch returns Busy without cancellation or waiting; the same request can be retried after that work settles.

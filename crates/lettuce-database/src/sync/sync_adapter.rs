@@ -2149,7 +2149,8 @@ fn conversation_apply_error(
     error: lettuce_conversations::ConversationRepositoryError,
 ) -> ApplyOneError {
     match error {
-        lettuce_conversations::ConversationRepositoryError::NotFound => ApplyOneError::Pending,
+        lettuce_conversations::ConversationRepositoryError::NotFound
+        | lettuce_conversations::ConversationRepositoryError::Busy => ApplyOneError::Pending,
         lettuce_conversations::ConversationRepositoryError::Storage => ApplyOneError::Storage,
         _ => ApplyOneError::Corrupt,
     }
@@ -4094,6 +4095,22 @@ fn settle_snapshot_change(
                 .as_ref()
                 .is_some_and(|current| incoming_wins(change, current)),
         };
+    if codec.kind == lettuce_sync::CONVERSATION_BRANCH_SYNC_KIND && !winner_is_incoming {
+        let incoming = decode_branch(change.entity().id(), payload.bytes())?;
+        if incoming.status == lettuce_conversations::BranchStatus::Tombstoned {
+            let current = current_payload.as_ref().ok_or(ApplyOneError::Corrupt)?;
+            let mut retained = decode_branch(change.entity().id(), current.bytes())?;
+            if retained.parent_branch_id != incoming.parent_branch_id
+                || retained.fork_message_id != incoming.fork_message_id
+                || retained.created_at != incoming.created_at
+            {
+                return Err(ApplyOneError::Corrupt);
+            }
+            retained.status = lettuce_conversations::BranchStatus::Tombstoned;
+            crate::sync::conversation_sync_adapter::sync_insert_branch(tx, &retained)
+                .map_err(conversation_apply_error)?;
+        }
+    }
     let mut unmaterialized = false;
     if winner_is_incoming && !same {
         unmaterialized = !(codec.materialize)(tx, change.entity().id(), payload.bytes())?;

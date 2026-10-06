@@ -5426,6 +5426,159 @@ impl ConversationRepository for Database {
         )
     }
 
+    fn delete_branch(
+        &self,
+        command: &lettuce_conversations::DeleteBranch,
+        now: TimestampMillis,
+    ) -> Result<lettuce_conversations::MutationCommit<BranchResult>, ConversationRepositoryError>
+    {
+        command
+            .validate()
+            .map_err(ConversationRepositoryError::Invalid)?;
+        kernel::run_mutation(
+            self,
+            command.conversation_id,
+            OperationKind::DeleteBranch,
+            &command.operation,
+            now,
+            |transaction, context| {
+                let conversation = kernel::cas_conversation(
+                    transaction,
+                    context.conversation_id,
+                    command.expected_revision,
+                )?;
+                kernel::require_writable(&conversation)?;
+                let branch = load_branch(transaction, context.conversation_id, command.branch_id)?;
+                let current = conversation_value(transaction, context.conversation_id)?;
+                if branch.parent_branch_id.is_none()
+                    || current.active_branch_id == command.branch_id
+                {
+                    return Err(ConversationRepositoryError::Dependency);
+                }
+                if branch.status == lettuce_conversations::BranchStatus::Tombstoned {
+                    return Err(ConversationRepositoryError::Conflict);
+                }
+                let busy: bool = transaction.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM conversation_turns WHERE conversation_id = ?1 AND branch_id = ?2 AND status NOT IN ('succeeded','failed','cancelled','interrupted'))",
+                    params![context.conversation_id.to_string(),command.branch_id.to_string()], |row| row.get(0),
+                ).map_err(slice::db)?;
+                if busy {
+                    return Err(ConversationRepositoryError::Busy);
+                }
+                crate::purge::purge_branch_memory_in(
+                    transaction,
+                    context.conversation_id,
+                    command.branch_id,
+                    context.now,
+                )
+                .map_err(|error| match error {
+                    crate::purge::PurgeError::Busy => ConversationRepositoryError::Busy,
+                    _ => ConversationRepositoryError::Storage,
+                })?;
+                let messages = {
+                    let mut statement = transaction.prepare("SELECT id FROM conversation_messages WHERE conversation_id = ?1 AND branch_id = ?2 AND visibility <> 'tombstoned' ORDER BY timeline_ordinal").map_err(slice::db)?;
+                    statement
+                        .query_map(
+                            params![
+                                context.conversation_id.to_string(),
+                                command.branch_id.to_string()
+                            ],
+                            |row| row.get::<_, String>(0),
+                        )
+                        .map_err(slice::db)?
+                        .collect::<Result<Vec<_>, _>>()
+                        .map_err(slice::db)?
+                };
+                let revision =
+                    kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
+                let mut events = Vec::new();
+                for id in messages {
+                    let message_id = id
+                        .parse()
+                        .map_err(|_| ConversationRepositoryError::Storage)?;
+                    if conversation_query::any_on_other_branches(
+                        transaction,
+                        context.conversation_id,
+                        command.branch_id,
+                        &[message_id],
+                    )? {
+                        continue;
+                    }
+                    let affected = message_state(transaction, context.conversation_id, message_id)?;
+                    transaction.execute("UPDATE conversation_messages SET visibility = 'tombstoned', revision = revision + 1, updated_at = ?3 WHERE conversation_id = ?1 AND id = ?2",params![context.conversation_id.to_string(),message_id.to_string(),context.now.get()]).map_err(kernel::map_constraint)?;
+                    let mut deltas = Vec::new();
+                    if let Some(owner) = affected.render_owner() {
+                        set_owner_media_state(
+                            transaction,
+                            context.conversation_id,
+                            owner,
+                            "historical",
+                        )?;
+                        deltas = owner_deltas(
+                            &owner_assets(transaction, context.conversation_id, owner)?,
+                            owner,
+                            AssetReferenceState::Released,
+                        );
+                    }
+                    events.push(kernel::StagedEvent {
+                        conversation_revision: revision,
+                        at: context.now,
+                        event: ConversationOutboxEvent::MessageTombstoned {
+                            conversation_id: context.conversation_id,
+                            branch_id: command.branch_id,
+                            message_id,
+                            descendants: DescendantPolicy::Preserve,
+                            affected_message_ids: Vec::new(),
+                            affected_revision_ids: affected
+                                .active_revision_id
+                                .into_iter()
+                                .collect(),
+                            asset_reference_deltas: deltas,
+                            at: context.now,
+                        },
+                    });
+                }
+                retreat_branch_head(
+                    transaction,
+                    context.conversation_id,
+                    command.branch_id,
+                    context.now,
+                )?;
+                transaction.execute("UPDATE conversation_branches SET status = 'tombstoned', revision = revision + 1, updated_at = max(updated_at,?3) WHERE conversation_id = ?1 AND id = ?2",params![context.conversation_id.to_string(),command.branch_id.to_string(),context.now.get()]).map_err(kernel::map_constraint)?;
+                events.push(kernel::StagedEvent {
+                    conversation_revision: revision,
+                    at: context.now,
+                    event: ConversationOutboxEvent::BranchDeleted {
+                        conversation_id: context.conversation_id,
+                        branch_id: command.branch_id,
+                        at: context.now,
+                    },
+                });
+                Ok(kernel::Staged {
+                    value: BranchResult {
+                        branch: load_branch(
+                            transaction,
+                            context.conversation_id,
+                            command.branch_id,
+                        )?,
+                        conversation: conversation_value(transaction, context.conversation_id)?,
+                    },
+                    result: OperationResultRef::Branch(command.branch_id),
+                    events,
+                })
+            },
+            |transaction, operation| {
+                if operation.result != OperationResultRef::Branch(command.branch_id) {
+                    return Err(ConversationRepositoryError::Conflict);
+                }
+                Ok(BranchResult {
+                    branch: load_branch(transaction, command.conversation_id, command.branch_id)?,
+                    conversation: conversation_value(transaction, command.conversation_id)?,
+                })
+            },
+        )
+    }
+
     fn select_branch(
         &self,
         command: &SelectBranch,
@@ -14313,6 +14466,505 @@ mod tests {
             .revision = Revision::INITIAL;
         assert_eq!(target.conversation.current_settings, expected_settings);
         crate::backup::restore_writer::tests::assert_backup_round_trip(source.database.as_ref());
+    }
+
+    #[test]
+    fn branch_delete_refuses_root_and_active_and_atomically_preserves_descendant_ancestors() {
+        let mut fixture = direct_fixture();
+        let root = fixture.branch_id;
+        let root_space = {
+            let mut connection = fixture.database.connection().expect("connection");
+            let transaction = connection.transaction().expect("transaction");
+            let space = crate::memory::memory_adapter::create_conversation_space_in(
+                &transaction,
+                fixture.conversation_id,
+                root,
+            )
+            .expect("root memory");
+            transaction.commit().expect("commit space");
+            space
+        };
+        let root_message = fixture
+            .database
+            .append_user_message(
+                &send_command(&fixture, "delete-root-source", "ab", text("root")),
+                TimestampMillis::new(20),
+            )
+            .expect("root message")
+            .value
+            .id;
+        fixture.revision = conversation_revision(&fixture);
+        let child = fixture
+            .database
+            .fork_branch(
+                &ForkBranch {
+                    conversation_id: fixture.conversation_id,
+                    source_branch_id: root,
+                    at_message_id: Some(root_message),
+                    expected_revision: fixture.revision,
+                    operation: token("delete-child-create", "ab"),
+                },
+                TimestampMillis::new(30),
+            )
+            .expect("child")
+            .value
+            .branch
+            .id;
+        fixture.branch_id = child;
+        fixture.revision = conversation_revision(&fixture);
+        let shared = fixture
+            .database
+            .append_user_message(
+                &send_command(&fixture, "delete-shared", "ab", text("shared")),
+                TimestampMillis::new(40),
+            )
+            .expect("shared message")
+            .value
+            .id;
+        fixture.revision = conversation_revision(&fixture);
+        let descendant = fixture
+            .database
+            .fork_branch(
+                &ForkBranch {
+                    conversation_id: fixture.conversation_id,
+                    source_branch_id: child,
+                    at_message_id: Some(shared),
+                    expected_revision: fixture.revision,
+                    operation: token("delete-descendant-create", "ab"),
+                },
+                TimestampMillis::new(50),
+            )
+            .expect("descendant")
+            .value
+            .branch
+            .id;
+        fixture.revision = conversation_revision(&fixture);
+        fixture
+            .database
+            .select_branch(
+                &SelectBranch {
+                    conversation_id: fixture.conversation_id,
+                    branch_id: child,
+                    expected_revision: fixture.revision,
+                    operation: token("delete-select-child", "ab"),
+                },
+                TimestampMillis::new(60),
+            )
+            .expect("select child");
+        fixture.revision = conversation_revision(&fixture);
+        let exclusive = fixture
+            .database
+            .append_user_message(
+                &send_command(&fixture, "delete-exclusive", "ab", text("exclusive")),
+                TimestampMillis::new(70),
+            )
+            .expect("exclusive message")
+            .value
+            .id;
+        fixture.revision = conversation_revision(&fixture);
+        fixture
+            .database
+            .select_branch(
+                &SelectBranch {
+                    conversation_id: fixture.conversation_id,
+                    branch_id: descendant,
+                    expected_revision: fixture.revision,
+                    operation: token("delete-select-descendant", "ab"),
+                },
+                TimestampMillis::new(80),
+            )
+            .expect("select descendant");
+        fixture.revision = conversation_revision(&fixture);
+        let command = lettuce_conversations::DeleteBranch {
+            conversation_id: fixture.conversation_id,
+            branch_id: child,
+            expected_revision: fixture.revision,
+            operation: token("delete-child", "ac"),
+        };
+        for refused in [root, descendant] {
+            let mut invalid = command.clone();
+            invalid.branch_id = refused;
+            assert_eq!(
+                fixture
+                    .database
+                    .delete_branch(&invalid, TimestampMillis::new(90)),
+                Err(ConversationRepositoryError::Dependency)
+            );
+        }
+        let child_space: lettuce_types::MemorySpaceId = scalar::<String>(
+            fixture.database.as_ref(),
+            "SELECT space_id FROM conversation_memory_spaces WHERE branch_id = ?1 AND pooled = 0",
+            &child.to_string(),
+        )
+        .parse()
+        .expect("child space id");
+        use lettuce_memory::{DynamicMemoryRunRepository, MemoryRepository};
+        let source_item = ConversationReader::timeline_page(
+            fixture.database.as_ref(),
+            fixture.conversation_id,
+            child,
+            &PageRequest {
+                cursor: None,
+                limit: PageLimit::new(20),
+            },
+        )
+        .expect("source timeline")
+        .items
+        .into_iter()
+        .find(|item| item.message.id == root_message)
+        .expect("root source");
+        let admitted = fixture
+            .database
+            .admit_dynamic_memory_run_attempt(lettuce_memory::NewDynamicMemoryRunAttempt {
+                run_id: lettuce_types::DynamicMemoryRunId::new(),
+                attempt_id: lettuce_types::DynamicMemoryAttemptId::new(),
+                conversation_id: fixture.conversation_id,
+                branch_id: child,
+                space_id: child_space,
+                starting_memory: MemoryRepository::get(fixture.database.as_ref(), child_space)
+                    .expect("child memory")
+                    .expect("child space"),
+                cycle_start_change: None,
+                source_messages: vec![lettuce_memory::DynamicMemorySourceMessage {
+                    message_id: root_message,
+                    role: source_item.message.role,
+                    render_source: source_item.message.active_render_source,
+                    effective_time: source_item.message.effective_time,
+                }],
+                profile: crate::memory::dynamic_memory_run_adapter::tests::profile(),
+                time_awareness_enabled: false,
+                supersession_enabled: false,
+                structured_fallback_format:
+                    lettuce_memory::DynamicMemoryStructuredFallbackFormat::Xml,
+                summary_window: lettuce_memory::DynamicMemorySummaryWindow {
+                    message_interval: 2,
+                    start: 0,
+                    end: 1,
+                },
+                tool_request: lettuce_memory::dynamic_memory_tool_request_for_run(
+                    lettuce_memory::DynamicMemoryToolOptions {
+                        group: false,
+                        supersession_enabled: false,
+                        require_source_message_id: false,
+                    },
+                    &|key| key.to_owned(),
+                ),
+                job_id: lettuce_types::JobId::new(),
+                now: TimestampMillis::new(85),
+            })
+            .expect("queued memory attempt");
+        assert_eq!(
+            fixture
+                .database
+                .delete_branch(&command, TimestampMillis::new(86)),
+            Err(ConversationRepositoryError::Busy)
+        );
+        let processing = fixture
+            .database
+            .transition_dynamic_memory_attempt(
+                admitted.attempt.id,
+                admitted.attempt.revision,
+                lettuce_memory::DynamicMemoryAttemptStatus::Processing,
+                None,
+                TimestampMillis::new(87),
+            )
+            .expect("dispatched memory attempt");
+        assert_eq!(
+            fixture
+                .database
+                .delete_branch(&command, TimestampMillis::new(88)),
+            Err(ConversationRepositoryError::Busy)
+        );
+        assert_eq!(
+            fixture
+                .database
+                .load_dynamic_memory_attempt(processing.id)
+                .expect("unchanged attempt"),
+            processing
+        );
+        let retry = fixture
+            .database
+            .recover_dynamic_memory_attempt(lettuce_memory::NewDynamicMemoryAttemptRecovery {
+                run_id: admitted.run.id,
+                parent_attempt_id: processing.id,
+                child_attempt_id: lettuce_types::DynamicMemoryAttemptId::new(),
+                job_id: lettuce_types::JobId::new(),
+                now: TimestampMillis::new(89),
+            })
+            .expect("retry memory attempt");
+        fixture
+            .database
+            .transition_dynamic_memory_attempt(
+                retry.child.id,
+                retry.child.revision,
+                lettuce_memory::DynamicMemoryAttemptStatus::Failed,
+                Some(lettuce_memory::DynamicMemoryAttemptFailureCode::ProviderUnavailable),
+                TimestampMillis::new(89),
+            )
+            .expect("settle retry");
+        fixture.database.connection().expect("connection").execute_batch("CREATE TEMP TRIGGER fail_branch_delete BEFORE INSERT ON conversation_outbox BEGIN SELECT RAISE(ABORT, 'injected delete failure'); END;").expect("inject failure");
+        assert!(
+            fixture
+                .database
+                .delete_branch(&command, TimestampMillis::new(90))
+                .is_err()
+        );
+        assert_eq!(
+            scalar::<String>(
+                fixture.database.as_ref(),
+                "SELECT status FROM conversation_branches WHERE id = ?1",
+                &child.to_string()
+            ),
+            "active"
+        );
+        assert_eq!(
+            scalar::<i64>(
+                fixture.database.as_ref(),
+                "SELECT count(*) FROM conversation_memory_spaces WHERE branch_id = ?1",
+                &child.to_string()
+            ),
+            1
+        );
+        assert_eq!(
+            scalar::<String>(
+                fixture.database.as_ref(),
+                "SELECT visibility FROM conversation_messages WHERE id = ?1",
+                &exclusive.to_string()
+            ),
+            "visible"
+        );
+        assert_eq!(conversation_revision(&fixture), fixture.revision);
+        fixture
+            .database
+            .connection()
+            .expect("connection")
+            .execute_batch("DROP TRIGGER fail_branch_delete;")
+            .expect("remove injection");
+        let deleted = fixture
+            .database
+            .delete_branch(&command, TimestampMillis::new(90))
+            .expect("delete");
+        assert_eq!(
+            deleted.value.branch.status,
+            lettuce_conversations::BranchStatus::Tombstoned
+        );
+        assert_eq!(deleted.value.conversation.active_branch_id, descendant);
+        assert_eq!(
+            scalar::<i64>(
+                fixture.database.as_ref(),
+                "SELECT count(*) FROM conversation_memory_spaces WHERE branch_id = ?1",
+                &child.to_string()
+            ),
+            0
+        );
+        assert_eq!(
+            scalar::<i64>(
+                fixture.database.as_ref(),
+                "SELECT count(*) FROM memory_spaces WHERE id = ?1",
+                &root_space.to_string()
+            ),
+            1
+        );
+        assert_eq!(
+            scalar::<i64>(
+                fixture.database.as_ref(),
+                "SELECT count(*) FROM conversation_memory_spaces WHERE conversation_id = ?1",
+                &fixture.conversation_id.to_string()
+            ),
+            2
+        );
+        assert_eq!(
+            scalar::<String>(
+                fixture.database.as_ref(),
+                "SELECT visibility FROM conversation_messages WHERE id = ?1",
+                &shared.to_string()
+            ),
+            "visible"
+        );
+        assert_eq!(
+            scalar::<String>(
+                fixture.database.as_ref(),
+                "SELECT visibility FROM conversation_messages WHERE id = ?1",
+                &exclusive.to_string()
+            ),
+            "tombstoned"
+        );
+        let timeline = ConversationReader::timeline_page(
+            fixture.database.as_ref(),
+            fixture.conversation_id,
+            descendant,
+            &PageRequest {
+                cursor: None,
+                limit: PageLimit::new(20),
+            },
+        )
+        .expect("descendant timeline");
+        assert_eq!(timeline.items.len(), 2);
+        assert!(timeline.items.iter().any(|item| item.message.id == shared));
+        assert_eq!(
+            fixture
+                .database
+                .delete_branch(&command, TimestampMillis::new(100))
+                .expect("replay")
+                .operation,
+            deleted.operation
+        );
+        let mut changed = command;
+        changed.operation = token("delete-child", "ad");
+        assert_eq!(
+            fixture
+                .database
+                .delete_branch(&changed, TimestampMillis::new(100)),
+            Err(ConversationRepositoryError::Conflict)
+        );
+        let peer = Database::open_in_memory().expect("fresh peer");
+        sync_all(fixture.database.as_ref(), &peer, 1_000);
+        let copied =
+            ConversationReader::get(&peer, fixture.conversation_id).expect("synced topology");
+        let parent = copied
+            .branches
+            .iter()
+            .find(|branch| branch.id == child)
+            .expect("retained deleted parent");
+        assert_eq!(
+            parent.status,
+            lettuce_conversations::BranchStatus::Tombstoned
+        );
+        assert_eq!(parent.parent_branch_id, Some(root));
+        let timeline = ConversationReader::timeline_page(
+            &peer,
+            fixture.conversation_id,
+            descendant,
+            &PageRequest {
+                cursor: None,
+                limit: PageLimit::new(20),
+            },
+        )
+        .expect("synced descendant");
+        assert_eq!(timeline.items.len(), 2);
+        let mut stale = parent.clone();
+        stale.status = lettuce_conversations::BranchStatus::Active;
+        let mut connection = peer.connection().expect("peer connection");
+        let transaction = connection.transaction().expect("peer transaction");
+        crate::sync::conversation_sync_adapter::sync_insert_branch(&transaction, &stale)
+            .expect("old active payload");
+        transaction.commit().expect("commit stale payload");
+        drop(connection);
+        assert_eq!(
+            scalar::<String>(
+                &peer,
+                "SELECT status FROM conversation_branches WHERE id = ?1",
+                &child.to_string()
+            ),
+            "tombstoned"
+        );
+        crate::backup::restore_writer::tests::assert_backup_round_trip(fixture.database.as_ref());
+    }
+
+    #[test]
+    fn branch_delete_sync_wins_over_concurrent_and_later_active_labels() {
+        let mut fixture = direct_fixture();
+        let root = fixture.branch_id;
+        let message = fixture
+            .database
+            .append_user_message(
+                &send_command(&fixture, "delete-sync-source", "ab", text("source")),
+                TimestampMillis::new(20),
+            )
+            .expect("message")
+            .value
+            .id;
+        fixture.revision = conversation_revision(&fixture);
+        let child = fixture
+            .database
+            .fork_branch(
+                &ForkBranch {
+                    conversation_id: fixture.conversation_id,
+                    source_branch_id: root,
+                    at_message_id: Some(message),
+                    expected_revision: fixture.revision,
+                    operation: token("delete-sync-fork", "ab"),
+                },
+                TimestampMillis::new(30),
+            )
+            .expect("fork")
+            .value
+            .branch
+            .id;
+        let peer = Database::open_in_memory().expect("peer");
+        sync_all(fixture.database.as_ref(), &peer, 100);
+        fixture.revision = conversation_revision(&fixture);
+        fixture
+            .database
+            .select_branch(
+                &SelectBranch {
+                    conversation_id: fixture.conversation_id,
+                    branch_id: root,
+                    expected_revision: fixture.revision,
+                    operation: token("delete-sync-root", "ab"),
+                },
+                TimestampMillis::new(40),
+            )
+            .expect("root selection");
+        fixture.revision = conversation_revision(&fixture);
+        fixture
+            .database
+            .delete_branch(
+                &lettuce_conversations::DeleteBranch {
+                    conversation_id: fixture.conversation_id,
+                    branch_id: child,
+                    expected_revision: fixture.revision,
+                    operation: token("delete-sync-delete", "ab"),
+                },
+                TimestampMillis::new(50),
+            )
+            .expect("delete");
+        peer.connection().expect("connection").execute("UPDATE conversation_branches SET label = 'Concurrent label',label_updated_at = 200,updated_at = 200 WHERE id = ?1",[child.to_string()]).expect("concurrent label");
+        sync_all(fixture.database.as_ref(), &peer, 300);
+        assert_eq!(
+            scalar::<String>(
+                &peer,
+                "SELECT status FROM conversation_branches WHERE id = ?1",
+                &child.to_string()
+            ),
+            "tombstoned"
+        );
+        assert_eq!(
+            scalar::<String>(
+                &peer,
+                "SELECT label FROM conversation_branches WHERE id = ?1",
+                &child.to_string()
+            ),
+            "Concurrent label"
+        );
+        sync_all(&peer, fixture.database.as_ref(), 400);
+        peer.connection().expect("connection").execute("UPDATE conversation_branches SET status = 'active',label = 'Later active label',label_updated_at = 500,updated_at = 500 WHERE id = ?1",[child.to_string()]).expect("stale client active edit");
+        sync_all(&peer, fixture.database.as_ref(), 600);
+        assert_eq!(
+            scalar::<String>(
+                fixture.database.as_ref(),
+                "SELECT status FROM conversation_branches WHERE id = ?1",
+                &child.to_string()
+            ),
+            "tombstoned"
+        );
+        assert_eq!(
+            scalar::<String>(
+                fixture.database.as_ref(),
+                "SELECT label FROM conversation_branches WHERE id = ?1",
+                &child.to_string()
+            ),
+            "Later active label"
+        );
+        sync_all(fixture.database.as_ref(), &peer, 700);
+        assert_eq!(
+            scalar::<String>(
+                &peer,
+                "SELECT status FROM conversation_branches WHERE id = ?1",
+                &child.to_string()
+            ),
+            "tombstoned"
+        );
     }
 
     #[test]

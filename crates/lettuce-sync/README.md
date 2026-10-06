@@ -153,7 +153,7 @@ A third device replying inside a chain that later loses can leave devices with d
 | launch snapshot | `conversation.snapshot_artifact` | insert-only |
 | conversation | `conversation.root` | |
 | message | `conversation.message` | |
-| branch | `conversation.branch` | label is last writer wins; topology is immutable |
+| branch | `conversation.branch` | label is last writer wins; topology is immutable; deletion is permanent |
 | memory | `memory.item`, `memory.summary`, `memory.cursor` | |
 | companion | `companion.soul`, `companion.relationship`, `companion.session`, `companion.scheduled_note` | |
 | usage | `usage.cost_basis`, `usage.job_inference`, `usage.job_cost_basis`, `usage.legacy_record` | row codec |
@@ -251,3 +251,5 @@ Entities travel as whole snapshots, so the payload limit bounds one entity, not 
 The change journal is never compacted. A peer receives every origin's changes in contiguous sequence (a gap is a causal dependency and keeps the batch pending), and devices pair per session with no list of known peers, so a device that has never synced may need the whole history from sequence one. Dropping even changes every known peer has acknowledged would strand the next device to pair. A schema change restarts the journal, which leaves one snapshot per entity.
 
 Conversation root payload version 5 includes nullable origin conversation and message ids as creation metadata. These ids impose no dependency on the source, so a root can arrive after its source was deleted.
+
+A deleted branch retains its topology in sync payload version 3, so descendants can resolve their ancestry on a fresh peer even if the parent was deleted before any sync. Tombstoned lifecycle wins permanently, independently of the label winner, and never resurrects. Materialization purges only that branch's own memory once its work is terminal; when the deleted branch was selected locally, selection returns to the root.

@@ -140,6 +140,7 @@ pub(crate) fn operation_kind(value: &str) -> Result<OperationKind, ConversationR
         "fork" => OperationKind::Fork,
         "select_branch" => OperationKind::SelectBranch,
         "rename_branch" => OperationKind::RenameBranch,
+        "delete_branch" => OperationKind::DeleteBranch,
         "tombstone" => OperationKind::Tombstone,
         "archive" => OperationKind::Archive,
         "restore" => OperationKind::Restore,
@@ -680,7 +681,8 @@ pub(crate) fn validate_outbox_event_exact(
             )?;
         }
         ConversationOutboxEvent::BranchForked { branch_id, .. }
-        | ConversationOutboxEvent::BranchLabelChanged { branch_id, .. } => {
+        | ConversationOutboxEvent::BranchLabelChanged { branch_id, .. }
+        | ConversationOutboxEvent::BranchDeleted { branch_id, .. } => {
             require_exists(
                 transaction,
                 "SELECT EXISTS(SELECT 1 FROM conversation_branches WHERE conversation_id = ?1 AND id = ?2)",
@@ -2167,6 +2169,7 @@ pub(crate) fn validate_outbox_event_timestamp(
         | ConversationOutboxEvent::CandidateChosen { at, .. }
         | ConversationOutboxEvent::BranchSelected { at, .. }
         | ConversationOutboxEvent::BranchLabelChanged { at, .. }
+        | ConversationOutboxEvent::BranchDeleted { at, .. }
         | ConversationOutboxEvent::ConversationLifecycleChanged { at, .. }
         | ConversationOutboxEvent::SettingsChanged { at, .. }
         | ConversationOutboxEvent::ParticipantPolicyChanged { at, .. }
@@ -2466,7 +2469,8 @@ pub(crate) fn validate_outbox_event(
         }
         ConversationOutboxEvent::BranchForked { branch_id, .. }
         | ConversationOutboxEvent::BranchSelected { branch_id, .. }
-        | ConversationOutboxEvent::BranchLabelChanged { branch_id, .. } => owned_ref(
+        | ConversationOutboxEvent::BranchLabelChanged { branch_id, .. }
+        | ConversationOutboxEvent::BranchDeleted { branch_id, .. } => owned_ref(
             transaction,
             "conversation_branches",
             "id",
