@@ -776,7 +776,8 @@ pub(crate) fn replace_in(
     let next_relationship = current.relationship_revision.next().map_err(corrupt)?;
     let relationship = &replacement.state.relationship_state;
     let key = persona_key(owner);
-    if read_relationship(tx, owner)?.is_none() {
+    let private = uses_private_relationship(tx, owner.conversation_id)?;
+    if !private && read_relationship(tx, owner)?.is_none() {
         tx.execute(
             "INSERT INTO companion_relationship_states (
                character_id, persona_key, persona_id, closeness, trust, affection, tension,
@@ -799,6 +800,30 @@ pub(crate) fn replace_in(
         )
         .map_err(failure)?;
     }
+    if private {
+        tx.execute(
+            "INSERT OR IGNORE INTO companion_relationship_states (
+               character_id, persona_key, persona_id, closeness, trust, affection, tension,
+               stability, interaction_count, last_interaction_at, revision, created_at, updated_at
+             )
+             SELECT anchor.character_id, ?3, ?4, anchor.closeness, anchor.trust, anchor.affection,
+                    anchor.tension, anchor.stability, anchor.interaction_count,
+                    anchor.last_interaction_at, 1, ?5, ?5
+             FROM companion_session_states session
+             JOIN companion_relationship_states anchor
+               ON anchor.character_id = session.character_id
+              AND anchor.persona_key = session.persona_key
+             WHERE session.conversation_id = ?1 AND session.character_id = ?2",
+            params![
+                owner.conversation_id.to_string(),
+                owner.character_id.to_string(),
+                key,
+                owner.persona_id.map(|id| id.to_string()),
+                replacement.applied_at.get()
+            ],
+        )
+        .map_err(failure)?;
+    }
     tx.execute(
         "UPDATE companion_session_states SET persona_key = ?2, persona_id = ?3
          WHERE conversation_id = ?1 AND persona_key <> ?2",
@@ -809,7 +834,6 @@ pub(crate) fn replace_in(
         ],
     )
     .map_err(failure)?;
-    let private = uses_private_relationship(tx, owner.conversation_id)?;
     if private {
         tx.execute("INSERT OR IGNORE INTO companion_conversation_relationship_states (conversation_id, character_id, persona_key, persona_id, closeness, trust, affection, tension, stability, interaction_count, last_interaction_at, revision, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13)", params![owner.conversation_id.to_string(), owner.character_id.to_string(), key, owner.persona_id.map(|id| id.to_string()), relationship.closeness, relationship.trust, relationship.affection, relationship.tension, relationship.stability, i64::from(relationship.interaction_count), relationship.last_interaction_at.get(), sql_revision(current.relationship_revision)?, replacement.applied_at.get()]).map_err(failure)?;
     }

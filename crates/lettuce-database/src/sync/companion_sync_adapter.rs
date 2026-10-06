@@ -312,6 +312,19 @@ pub(crate) fn sync_load_session(
     }))
 }
 
+fn session_never_advanced(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+) -> Result<bool, ConversationRepositoryError> {
+    transaction
+        .query_row(
+            "SELECT revision = 1 FROM companion_session_states WHERE conversation_id = ?1",
+            [conversation_id.to_string()],
+            |row| row.get(0),
+        )
+        .map_err(storage)
+}
+
 /// Writes a synced companion session once its conversation and relationship
 /// exist. A new continuity episode takes the next local index after the
 /// latest episode of the same character and persona.
@@ -322,6 +335,9 @@ pub(crate) fn sync_replace_session(
 ) -> Result<(), ConversationRepositoryError> {
     if let Some(local) = sync_load_session(transaction, conversation_id)?
         && local.private_relationships.is_some() != session.private_relationships.is_some()
+        && !(local.private_relationships.is_none()
+            && session.private_relationships.is_some()
+            && session_never_advanced(transaction, conversation_id)?)
     {
         return Err(ConversationRepositoryError::Conflict);
     }

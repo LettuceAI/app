@@ -248,6 +248,20 @@ impl crate::ApiOperationTransaction<'_, '_> {
         &self,
         command: &ConversationContentCopy,
     ) -> Result<Vec<MessageId>, ConversationRepositoryError> {
+        self.copy_selected_content(command)
+            .map(|(messages, _)| messages)
+    }
+
+    fn copy_selected_content(
+        &self,
+        command: &ConversationContentCopy,
+    ) -> Result<
+        (
+            Vec<MessageId>,
+            std::collections::HashMap<lettuce_types::MemoryId, lettuce_types::MemoryId>,
+        ),
+        ConversationRepositoryError,
+    > {
         if command.source_conversation_id == command.target_conversation_id {
             return Err(invalid("copy.target_conversation"));
         }
@@ -532,13 +546,14 @@ impl crate::ApiOperationTransaction<'_, '_> {
             command.target_branch_id,
             parent,
         )?;
+        let mut memory_ids = std::collections::HashMap::new();
         if !result.is_empty()
             || matches!(
                 command.kind,
                 SelectedConversationCopyKind::GroupToCharacter { .. }
             )
         {
-            crate::memory::memory_branch_adapter::seed_new_conversation_space_in(
+            memory_ids = crate::memory::memory_branch_adapter::seed_new_conversation_space_in(
                 self.transaction,
                 command.source_conversation_id,
                 command.source_branch_id,
@@ -557,7 +572,7 @@ impl crate::ApiOperationTransaction<'_, '_> {
                 )
                 .map_err(slice::db)?;
         }
-        Ok(result)
+        Ok((result, memory_ids))
     }
 }
 
@@ -715,21 +730,6 @@ impl crate::ApiOperationTransaction<'_, '_> {
                         now,
                     )
                     .map_err(super::state_adapter::conversation_state_error)?;
-                    if !crate::catalog::character_adapter::companion_soul_shared_in(
-                        transaction,
-                        owner.character_id,
-                    )
-                    .map_err(|_| ConversationRepositoryError::Storage)?
-                    {
-                        crate::companion::soul_adapter::clone_conversation_soul_in(
-                            transaction,
-                            owner.character_id,
-                            command.source_conversation_id,
-                            command.conversation_id,
-                            now,
-                        )
-                        .map_err(|_| ConversationRepositoryError::Storage)?;
-                    }
                 }
                 Ok(())
             },
@@ -756,15 +756,35 @@ impl crate::ApiOperationTransaction<'_, '_> {
             "INSERT INTO conversation_snapshot_refs (conversation_id,artifact_id) SELECT ?1,artifact_id FROM conversation_snapshot_refs WHERE conversation_id = ?2 ON CONFLICT DO NOTHING",
             rusqlite::params![command.conversation_id.to_string(), command.source_conversation_id.to_string()],
         ).map_err(slice::db)?;
-        if command.with_messages {
-            self.copy_selected_conversation_content(&ConversationContentCopy {
+        let memory_ids = if command.with_messages {
+            self.copy_selected_content(&ConversationContentCopy {
                 source_conversation_id: command.source_conversation_id,
                 source_branch_id: source.conversation.active_branch_id,
                 target_conversation_id: command.conversation_id,
                 target_branch_id: target.active_branch_id,
                 through_message_id: None,
                 kind: SelectedConversationCopyKind::Duplicate,
-            })?;
+            })?
+            .1
+        } else {
+            std::collections::HashMap::new()
+        };
+        if let Some(owner) = companion
+            && !crate::catalog::character_adapter::companion_soul_shared_in(
+                self.transaction,
+                owner.character_id,
+            )
+            .map_err(|_| ConversationRepositoryError::Storage)?
+        {
+            crate::companion::soul_adapter::clone_conversation_soul_in(
+                self.transaction,
+                owner.character_id,
+                command.source_conversation_id,
+                command.conversation_id,
+                &memory_ids,
+                now,
+            )
+            .map_err(|_| ConversationRepositoryError::Storage)?;
         }
         commit.value =
             slice::hydrate_conversation(self.transaction, command.conversation_id, || {})?;

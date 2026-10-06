@@ -489,11 +489,14 @@ pub(crate) fn copy_character_soul_in(
 
 /// Gives a duplicated conversation its own Soul, a copy of the source
 /// conversation's with new fact ids and the fact references remapped to them.
+/// Source memory ids copied into the duplicate follow `memory_ids`; the rest
+/// keep pointing at the memory they named.
 pub(crate) fn clone_conversation_soul_in(
     tx: &Transaction<'_>,
     character_id: CharacterId,
     source: lettuce_types::ConversationId,
     target: lettuce_types::ConversationId,
+    memory_ids: &std::collections::HashMap<lettuce_types::MemoryId, lettuce_types::MemoryId>,
     now: TimestampMillis,
 ) -> Result<(), SoulRepositoryError> {
     let Some(state) = get_in(
@@ -519,6 +522,16 @@ pub(crate) fn clone_conversation_soul_in(
             id: remap(&fact.id),
             supersedes: fact.supersedes.iter().map(|id| remap(id)).collect(),
             superseded_by: fact.superseded_by.as_deref().map(&mut remap),
+            source_memory_ids: fact
+                .source_memory_ids
+                .iter()
+                .map(|id| {
+                    id.parse::<lettuce_types::MemoryId>()
+                        .ok()
+                        .and_then(|id| memory_ids.get(&id))
+                        .map_or_else(|| id.clone(), ToString::to_string)
+                })
+                .collect(),
             ..fact.clone()
         })
         .collect::<Vec<_>>();
