@@ -1104,6 +1104,7 @@ async fn private_duplicate_persona_switch_never_touches_the_shared_relationship(
             .into_iter()
             .find(|row| row.character_id == character_id && row.persona_id == persona_id)
     };
+    advance(owner_of(&source.conversation_id, None), 0.9).expect("source moves its own row");
     advance(owner_of(&other.conversation_id, Some(shared_persona)), 0.61)
         .expect("other chat claims the shared persona row");
     let shared_before = shared_relationships(Some(shared_persona)).expect("shared row");
@@ -1136,11 +1137,24 @@ async fn private_duplicate_persona_switch_never_touches_the_shared_relationship(
         0.19,
     )
     .expect("duplicate switches to a persona with no shared row");
-    let anchor = shared_relationships(Some(fresh_persona));
-    assert!(
-        anchor.is_none_or(|row| (row.state.closeness - 0.19).abs() > 1e-9),
-        "private values must not leak into the shared relationship"
-    );
+    let config = lettuce_companions::CompanionSoulConfig::default();
+    let defaults = lettuce_companions::initial_runtime_state(
+        &config.soul.baseline_affect,
+        &config.soul.regulation_style,
+        &config.relationship_defaults,
+    )
+    .relationship_state;
+    let anchor = shared_relationships(Some(fresh_persona)).expect("anchor row");
+    assert_eq!(anchor.state, defaults);
+    assert_eq!(anchor.revision, lettuce_types::Revision::INITIAL);
+    let fresh_chat = launch_companion("persona-fresh").await;
+    let fresh = CompanionStateRepository::get(
+        database,
+        owner_of(&fresh_chat.conversation_id, Some(fresh_persona)),
+    )
+    .expect("fresh chat state")
+    .expect("fresh chat");
+    assert_eq!(fresh.state.relationship_state, defaults);
     assert_eq!(
         shared_relationships(Some(shared_persona)).expect("shared row"),
         shared_before
@@ -1333,8 +1347,7 @@ async fn refusing_to_delete_the_root_or_selected_branch_says_which() {
     assert_eq!(stale.details, None);
 }
 
-#[tokio::test]
-async fn private_duplicate_sync_wins_over_a_peer_that_lazily_created_the_state() {
+async fn lazy_peer_race(peer_advances: bool) {
     use lettuce_companions::{CompanionStateOwner, CompanionStateRepository};
     use lettuce_sync::{
         IncomingBatchState, IncomingChangeRepository, LocalChangeJournal, SyncDeviceId,
@@ -1394,8 +1407,7 @@ async fn private_duplicate_sync_wins_over_a_peer_that_lazily_created_the_state()
             .expect("stage");
         peer.database()
             .apply_incoming_batch(id, lettuce_types::TimestampMillis::new(at))
-            .expect("apply")
-            .state
+            .map(|result| result.state)
     };
     let outbound = |at: i64| {
         database
@@ -1414,7 +1426,7 @@ async fn private_duplicate_sync_wins_over_a_peer_that_lazily_created_the_state()
         .into_iter()
         .partition(|change| change.entity().kind() == lettuce_sync::COMPANION_SESSION_SYNC_KIND);
     assert!(!sessions.is_empty());
-    assert_eq!(apply(rest, 1_001), IncomingBatchState::Committed);
+    assert_eq!(apply(rest, 1_001), Ok(IncomingBatchState::Committed));
     let config = lettuce_companions::CompanionSoulConfig::default();
     CompanionStateRepository::create(
         peer.database(),
@@ -1427,6 +1439,25 @@ async fn private_duplicate_sync_wins_over_a_peer_that_lazily_created_the_state()
         lettuce_types::TimestampMillis::new(400),
     )
     .expect("peer lazily creates the state");
+    if peer_advances {
+        let local = CompanionStateRepository::get(peer.database(), owner)
+            .expect("peer state")
+            .expect("peer copy");
+        let mut moved = local.state.clone();
+        moved.relationship_state.closeness = 0.77;
+        CompanionStateRepository::replace(
+            peer.database(),
+            owner,
+            lettuce_types::OperationRecordId::new(),
+            lettuce_companions::CompanionStateReplacement {
+                expected_session_revision: local.session_revision,
+                expected_relationship_revision: local.relationship_revision,
+                state: moved,
+                applied_at: harness.context.now(),
+            },
+        )
+        .expect("peer advances its own state");
+    }
     peer.database()
         .journal_current_state(lettuce_types::TimestampMillis::new(500))
         .expect("scan peer");
@@ -1447,15 +1478,10 @@ async fn private_duplicate_sync_wins_over_a_peer_that_lazily_created_the_state()
         },
     )
     .expect("advance the duplicate");
-    assert_eq!(apply(outbound(2_001), 2_002), IncomingBatchState::Committed);
-    let on_peer = CompanionStateRepository::get(peer.database(), owner)
-        .expect("peer state")
-        .expect("peer copy");
-    assert_eq!(on_peer.state, advanced);
-    let graph = lettuce_transfer::ProviderBackupSource::read_provider_backup_graph(peer.database())
-        .expect("peer graph");
-    assert!(
-        graph
+    let applied = apply(outbound(2_001), 2_002);
+    let private_on_peer = || {
+        lettuce_transfer::ProviderBackupSource::read_provider_backup_graph(peer.database())
+            .expect("peer graph")
             .companion_state
             .sessions
             .iter()
@@ -1463,5 +1489,26 @@ async fn private_duplicate_sync_wins_over_a_peer_that_lazily_created_the_state()
             .expect("peer session")
             .private_relationships
             .is_some()
-    );
+    };
+    if peer_advances {
+        assert!(applied.is_err());
+        assert!(!private_on_peer());
+        return;
+    }
+    assert_eq!(applied, Ok(IncomingBatchState::Committed));
+    let on_peer = CompanionStateRepository::get(peer.database(), owner)
+        .expect("peer state")
+        .expect("peer copy");
+    assert_eq!(on_peer.state, advanced);
+    assert!(private_on_peer());
+}
+
+#[tokio::test]
+async fn private_duplicate_sync_wins_over_a_peer_that_lazily_created_the_state() {
+    lazy_peer_race(false).await;
+}
+
+#[tokio::test]
+async fn private_duplicate_sync_conflicts_with_a_peer_state_that_already_advanced() {
+    lazy_peer_race(true).await;
 }

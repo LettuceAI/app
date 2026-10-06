@@ -801,24 +801,36 @@ pub(crate) fn replace_in(
         .map_err(failure)?;
     }
     if private {
+        let config =
+            crate::catalog::character_adapter::load_character_details(tx, owner.character_id)
+                .map_err(failure)?
+                .ok_or(Error::NotFound)?
+                .character
+                .defaults
+                .companion_soul
+                .unwrap_or_default();
+        let initial = lettuce_companions::initial_runtime_state(
+            &config.soul.baseline_affect,
+            &config.soul.regulation_style,
+            &config.relationship_defaults,
+        )
+        .relationship_state;
         tx.execute(
             "INSERT OR IGNORE INTO companion_relationship_states (
                character_id, persona_key, persona_id, closeness, trust, affection, tension,
                stability, interaction_count, last_interaction_at, revision, created_at, updated_at
-             )
-             SELECT anchor.character_id, ?3, ?4, anchor.closeness, anchor.trust, anchor.affection,
-                    anchor.tension, anchor.stability, anchor.interaction_count,
-                    anchor.last_interaction_at, 1, ?5, ?5
-             FROM companion_session_states session
-             JOIN companion_relationship_states anchor
-               ON anchor.character_id = session.character_id
-              AND anchor.persona_key = session.persona_key
-             WHERE session.conversation_id = ?1 AND session.character_id = ?2",
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 1, ?11, ?11)",
             params![
-                owner.conversation_id.to_string(),
                 owner.character_id.to_string(),
                 key,
                 owner.persona_id.map(|id| id.to_string()),
+                initial.closeness,
+                initial.trust,
+                initial.affection,
+                initial.tension,
+                initial.stability,
+                i64::from(initial.interaction_count),
+                initial.last_interaction_at.get(),
                 replacement.applied_at.get()
             ],
         )
