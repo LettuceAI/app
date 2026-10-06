@@ -1683,3 +1683,18 @@ mod tests {
 pub struct CommandTime {
     pub requested_at: TimestampMillis,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelectedConversationCopyKind {
+    Duplicate,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConversationContentCopy {
+    pub source_conversation_id: ConversationId,
+    pub source_branch_id: ConversationBranchId,
+    pub target_conversation_id: ConversationId,
+    pub target_branch_id: ConversationBranchId,
+    pub through_message_id: Option<MessageId>,
+    pub kind: SelectedConversationCopyKind,
+}

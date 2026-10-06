@@ -1,5 +1,6 @@
 pub(crate) mod chat_import_adapter;
 pub(crate) mod conversation_artifact_adapter;
+pub(crate) mod conversation_copy_adapter;
 pub(crate) mod conversation_creator;
 pub(crate) mod conversation_history_writer;
 pub(crate) mod conversation_mutation_kernel;

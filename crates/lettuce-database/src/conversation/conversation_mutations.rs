@@ -2412,7 +2412,7 @@ fn validate_resolved_speaker(
     Ok(())
 }
 
-fn allocate_timeline_ordinal(
+pub(crate) fn allocate_timeline_ordinal(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
 ) -> Result<i64, ConversationRepositoryError> {
@@ -3117,7 +3117,9 @@ where
     )
 }
 
-fn shown_parts(item: &lettuce_conversations::TimelineItem) -> (Vec<MessagePart>, TimestampMillis) {
+pub(crate) fn shown_parts(
+    item: &lettuce_conversations::TimelineItem,
+) -> (Vec<MessagePart>, TimestampMillis) {
     match (&item.active_revision, &item.active_candidate) {
         (Some(revision), _) => (revision.parts.clone(), revision.authored_at),
         (None, Some(candidate)) => (candidate.parts.clone(), candidate.created_at),
@@ -13716,6 +13718,251 @@ mod tests {
                 .expect("fork replay")
                 .value
         );
+    }
+
+    #[test]
+    fn selected_content_copy_uses_new_ids_and_drops_candidates_usage_and_reasoning() {
+        let mut source = direct_fixture();
+        let messages = conversation_with_two_exchanges(&mut source, "copy-content");
+        let source_timeline = ConversationReader::timeline_page(
+            source.database.as_ref(),
+            source.conversation_id,
+            source.branch_id,
+            &PageRequest {
+                cursor: None,
+                limit: PageLimit::new(20),
+            },
+        )
+        .expect("source timeline");
+        let candidate = source_timeline
+            .items
+            .iter()
+            .find_map(|item| item.active_candidate.as_ref())
+            .expect("source candidate");
+        let mut candidate_parts = candidate.parts.clone();
+        candidate_parts.push(MessagePart::ReasoningSummary {
+            text: "private reasoning".into(),
+        });
+        source
+            .database
+            .connection()
+            .expect("connection")
+            .execute(
+                "UPDATE conversation_message_candidates SET parts_json = ?2 WHERE id = ?1",
+                params![
+                    candidate.id.to_string(),
+                    slice::encode(&candidate_parts).expect("parts")
+                ],
+            )
+            .expect("reasoning fixture");
+        let aggregate = ConversationReader::get(source.database.as_ref(), source.conversation_id)
+            .expect("source");
+        let ConversationKind::Direct(details) = aggregate.conversation.kind else {
+            panic!("direct")
+        };
+        let target = direct_fixture_for(source.database.clone(), details.character.source_id);
+        let result = source
+            .database
+            .commit_api_operation(
+                "copy-content",
+                "copy",
+                "digest",
+                TimestampMillis::new(400),
+                |scope| {
+                    scope
+                        .copy_selected_conversation_content(
+                            &lettuce_conversations::ConversationContentCopy {
+                                source_conversation_id: source.conversation_id,
+                                source_branch_id: source.branch_id,
+                                target_conversation_id: target.conversation_id,
+                                target_branch_id: target.branch_id,
+                                through_message_id: None,
+                                kind:
+                                    lettuce_conversations::SelectedConversationCopyKind::Duplicate,
+                            },
+                        )
+                        .map_err(|_| crate::ApiOperationError::Storage)
+                },
+            )
+            .expect("copy content");
+        assert_eq!(result.len(), 4);
+        for (old, new) in messages.iter().zip(&result) {
+            assert_ne!(old, new);
+        }
+        let history = ConversationReader::timeline_page(
+            source.database.as_ref(),
+            target.conversation_id,
+            target.branch_id,
+            &PageRequest {
+                cursor: None,
+                limit: PageLimit::new(20),
+            },
+        )
+        .expect("copied history");
+        assert_eq!(history.items.len(), 4);
+        for item in history.items {
+            assert!(item.active_candidate.is_none());
+            let revision = item.active_revision.expect("selected revision");
+            assert!(revision.source_turn_id.is_none());
+            assert!(
+                revision
+                    .parts
+                    .iter()
+                    .all(|part| !matches!(part, MessagePart::ReasoningSummary { .. }))
+            );
+            assert!(matches!(
+                item.message.active_render_source,
+                lettuce_conversations::MessageRenderSource::Revision(_)
+            ));
+        }
+        assert_eq!(
+            scalar::<i64>(
+                source.database.as_ref(),
+                "SELECT count(*) FROM conversation_turns WHERE conversation_id = ?1",
+                &target.conversation_id.to_string()
+            ),
+            0
+        );
+    }
+
+    #[test]
+    fn selected_content_copy_rolls_back_replays_and_retains_shared_media_after_source_purge() {
+        let source = direct_fixture();
+        let source_aggregate =
+            ConversationReader::get(source.database.as_ref(), source.conversation_id)
+                .expect("source");
+        let ConversationKind::Direct(details) = source_aggregate.conversation.kind else {
+            panic!("direct")
+        };
+        let target = direct_fixture_for(source.database.clone(), details.character.source_id);
+        let asset_id = stage_media_asset(source.database.as_ref(), "6a");
+        source
+            .database
+            .append_user_message(
+                &send_command(
+                    &source,
+                    "copy-media-source",
+                    "dd",
+                    vec![
+                        MessagePart::Text {
+                            text: "shared".into(),
+                        },
+                        MessagePart::MediaAsset {
+                            asset_id,
+                            role: lettuce_conversations::MediaAssetRole::Attachment,
+                        },
+                    ],
+                ),
+                TimestampMillis::new(20),
+            )
+            .expect("source media");
+        let command = lettuce_conversations::ConversationContentCopy {
+            source_conversation_id: source.conversation_id,
+            source_branch_id: source.branch_id,
+            target_conversation_id: target.conversation_id,
+            target_branch_id: target.branch_id,
+            through_message_id: None,
+            kind: lettuce_conversations::SelectedConversationCopyKind::Duplicate,
+        };
+        let failed: Result<Vec<MessageId>, crate::ApiOperationError> =
+            source.database.commit_api_operation(
+                "copy-content",
+                "media-copy",
+                "digest",
+                TimestampMillis::new(30),
+                |scope| {
+                    scope
+                        .copy_selected_conversation_content(&command)
+                        .map_err(|_| crate::ApiOperationError::Storage)?;
+                    Err(crate::ApiOperationError::Storage)
+                },
+            );
+        assert_eq!(failed, Err(crate::ApiOperationError::Storage));
+        assert_eq!(
+            scalar::<i64>(
+                source.database.as_ref(),
+                "SELECT count(*) FROM conversation_messages WHERE conversation_id = ?1",
+                &target.conversation_id.to_string()
+            ),
+            0
+        );
+        assert_eq!(
+            scalar::<i64>(
+                source.database.as_ref(),
+                "SELECT count(*) FROM revision_media_refs WHERE conversation_id = ?1",
+                &target.conversation_id.to_string()
+            ),
+            0
+        );
+        let copied = source
+            .database
+            .commit_api_operation(
+                "copy-content",
+                "media-copy",
+                "digest",
+                TimestampMillis::new(30),
+                |scope| {
+                    scope
+                        .copy_selected_conversation_content(&command)
+                        .map_err(|_| crate::ApiOperationError::Storage)
+                },
+            )
+            .expect("copy");
+        let replay: Vec<MessageId> = source
+            .database
+            .commit_api_operation(
+                "copy-content",
+                "media-copy",
+                "digest",
+                TimestampMillis::new(31),
+                |_| -> Result<Vec<MessageId>, crate::ApiOperationError> {
+                    panic!("replay must not copy")
+                },
+            )
+            .expect("replay");
+        assert_eq!(copied, replay);
+        let conflict: Result<Vec<MessageId>, crate::ApiOperationError> =
+            source.database.commit_api_operation(
+                "copy-content",
+                "media-copy",
+                "other",
+                TimestampMillis::new(32),
+                |_| panic!("conflict must not copy"),
+            );
+        assert_eq!(conflict, Err(crate::ApiOperationError::Conflict));
+        source
+            .database
+            .purge_conversation(source.conversation_id, TimestampMillis::new(40))
+            .expect("purge source");
+        assert_eq!(
+            scalar::<i64>(
+                source.database.as_ref(),
+                "SELECT count(*) FROM revision_media_refs WHERE conversation_id = ?1 AND state = 'active'",
+                &target.conversation_id.to_string()
+            ),
+            1
+        );
+        assert_eq!(
+            scalar::<i64>(
+                source.database.as_ref(),
+                "SELECT count(*) FROM media_assets WHERE id = ?1",
+                &asset_id.to_string()
+            ),
+            1
+        );
+        let replay_after_purge: Vec<MessageId> = source
+            .database
+            .commit_api_operation(
+                "copy-content",
+                "media-copy",
+                "digest",
+                TimestampMillis::new(50),
+                |_| -> Result<Vec<MessageId>, crate::ApiOperationError> {
+                    panic!("deleted source replay")
+                },
+            )
+            .expect("replay after purge");
+        assert_eq!(copied, replay_after_purge);
     }
 
     #[test]

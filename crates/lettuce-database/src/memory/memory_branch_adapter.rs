@@ -125,6 +125,128 @@ pub(crate) fn seed_branch_space_in(
     Ok(())
 }
 
+pub(crate) fn seed_new_conversation_space_in(
+    transaction: &Transaction<'_>,
+    source_conversation_id: ConversationId,
+    source_branch_id: ConversationBranchId,
+    target: (ConversationId, ConversationBranchId),
+    at_message_id: Option<MessageId>,
+    message_ids: &HashMap<MessageId, MessageId>,
+) -> Result<(), ConversationRepositoryError> {
+    let (conversation_id, branch_id) = target;
+    let pooled_character: Option<String> = transaction.query_row(
+        "SELECT pool.character_id FROM conversation_memory_spaces binding JOIN companion_memory_pools pool ON pool.space_id = binding.space_id WHERE binding.conversation_id = ?1 AND binding.branch_id = ?2 AND binding.pooled = 1",
+        params![conversation_id.to_string(), branch_id.to_string()], |row| row.get(0),
+    ).optional().map_err(storage)?;
+    if let Some(character_id) = pooled_character {
+        let character_id = character_id.parse().map_err(storage)?;
+        if crate::catalog::character_adapter::companion_memory_shared_in(transaction, character_id)
+            .map_err(storage)?
+        {
+            return Ok(());
+        }
+    }
+    let Some(source_space) = own_space_in(transaction, source_conversation_id, source_branch_id)?
+    else {
+        return Ok(());
+    };
+    let (cut, mut summary) = if let Some(message_id) = at_message_id {
+        let position = message_position_in(transaction, source_conversation_id, message_id)?;
+        branch_state_in(
+            transaction,
+            source_conversation_id,
+            source_branch_id,
+            source_space,
+            position,
+            None,
+        )?
+    } else {
+        (
+            None,
+            memory_adapter::get_summary_in(transaction, source_space).map_err(storage)?,
+        )
+    };
+    let seed = cut.map_or_else(
+        || {
+            memory_adapter::get_in(transaction, source_space)
+                .map_err(storage)?
+                .ok_or(ConversationRepositoryError::Storage)
+        },
+        Ok,
+    )?;
+    let space_id = match own_space_in(transaction, conversation_id, branch_id)? {
+        Some(id) => {
+            let current = memory_adapter::get_in(transaction, id)
+                .map_err(storage)?
+                .ok_or(ConversationRepositoryError::Storage)?;
+            if !current.items.is_empty()
+                || memory_adapter::get_summary_in(transaction, id)
+                    .map_err(storage)?
+                    .is_some()
+            {
+                return Err(ConversationRepositoryError::Conflict);
+            }
+            id
+        }
+        None => {
+            memory_adapter::create_conversation_space_in(transaction, conversation_id, branch_id)?
+        }
+    };
+    let ids: HashMap<_, _> = seed
+        .items
+        .iter()
+        .map(|item| (item.id, MemoryId::new()))
+        .collect();
+    let mut items = seed.items.clone();
+    for item in &mut items {
+        item.id = ids[&item.id];
+        item.superseded_by = item.superseded_by.and_then(|id| ids.get(&id).copied());
+        if item.superseded_by.is_none() {
+            item.superseded_at = None;
+        }
+        item.supersedes = item
+            .supersedes
+            .iter()
+            .filter_map(|id| ids.get(id).copied())
+            .collect();
+        item.source_message_id = item
+            .source_message_id
+            .and_then(|id| message_ids.get(&id).copied());
+        if item.source_message_id.is_none() {
+            item.source_role = None;
+            item.observed_at = None;
+            item.observed_time_precision = None;
+        }
+    }
+    if let Some(summary) = &mut summary {
+        summary.space_id = space_id;
+        summary.branch_id = branch_id;
+        summary.source_message_ids = summary
+            .source_message_ids
+            .iter()
+            .filter_map(|id| message_ids.get(id).copied())
+            .collect();
+        summary.validate().map_err(|_| {
+            ConversationRepositoryError::Invalid(
+                lettuce_conversations::ValidationError::InvalidReference {
+                    field: "copy.summary.source_messages",
+                },
+            )
+        })?;
+    }
+    memory_adapter::insert_items(transaction, space_id, &items).map_err(storage)?;
+    for item in &seed.items {
+        transaction.execute(
+            "INSERT INTO memory_embedding_projections (space_id,memory_id,source_revision,dimensions,source_text,status,vector,updated_at)
+             SELECT ?1,?2,source_revision,dimensions,source_text,status,vector,updated_at FROM memory_embedding_projections
+              WHERE space_id = ?3 AND memory_id = ?4 AND source_text = ?5",
+            params![space_id.to_string(), ids[&item.id].to_string(), seed.id.to_string(), item.id.to_string(), item.text],
+        ).map_err(storage)?;
+    }
+    memory_adapter::replace_summary_in(transaction, space_id, summary.as_ref()).map_err(storage)?;
+    Ok(())
+}
+
 pub(crate) fn message_position_in(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,

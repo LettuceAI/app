@@ -2325,6 +2325,182 @@ mod tests {
     }
 
     #[test]
+    fn copied_conversation_seed_respects_companion_memory_sharing() {
+        for shared in [false, true] {
+            let database = Database::open_in_memory().expect("database");
+            let (source, source_space, source_messages) = conversation_fixture(&database);
+            let (target, target_space, target_messages) = conversation_fixture(&database);
+            let source_branch = fixture_branch(&database, source);
+            let target_branch = fixture_branch(&database, target);
+            database
+                .compare_and_apply(lettuce_memory::MemoryChangeSet {
+                    space_id: source_space,
+                    expected_revision: Revision::INITIAL,
+                    items: vec![memory_item(MemoryId::new(), "Source memory", 1)],
+                })
+                .expect("source memory");
+            let character = lettuce_types::CharacterId::new();
+            let pool = lettuce_types::MemorySpaceId::new();
+            let mut config = lettuce_companions::CompanionSoulConfig::default();
+            config.share_memory_across_chats = shared;
+            let defaults = lettuce_characters::CharacterDefaults {
+                interaction_mode: lettuce_characters::InteractionMode::Companion,
+                companion_soul: Some(config),
+                ..Default::default()
+            };
+            let ids = source_messages
+                .iter()
+                .zip(&target_messages)
+                .map(|(source, target)| (source.message_id, target.message_id))
+                .collect();
+            let mut connection = database.connection().expect("connection");
+            let transaction = connection.transaction().expect("transaction");
+            transaction.execute("INSERT INTO characters (id,status,name,normalized_name,profile_json,provenance_json,defaults_json,interaction_mode,memory_policy,voice_autoplay,presentation_json,revision,created_at,updated_at) VALUES (?1,'active','Pool','pool','{}','{}',?2,'companion','manual',0,'{}',1,1,1)", params![character.to_string(), crate::encode_versioned(&defaults, 1).expect("defaults")]).expect("character");
+            transaction
+                .execute(
+                    "INSERT INTO memory_spaces (id,revision) VALUES (?1,1)",
+                    [pool.to_string()],
+                )
+                .expect("pool space");
+            transaction
+                .execute(
+                    "INSERT INTO companion_memory_pools (character_id,space_id) VALUES (?1,?2)",
+                    params![character.to_string(), pool.to_string()],
+                )
+                .expect("pool");
+            transaction.execute("INSERT INTO conversation_memory_spaces (conversation_id,branch_id,space_id,pooled) VALUES (?1,?2,?3,1)", params![target.to_string(), target_branch.to_string(), pool.to_string()]).expect("pool binding");
+            crate::memory::memory_branch_adapter::seed_new_conversation_space_in(
+                &transaction,
+                source,
+                source_branch,
+                (target, target_branch),
+                Some(source_messages[1].message_id),
+                &ids,
+            )
+            .expect("copy seed");
+            transaction.commit().expect("commit");
+            drop(connection);
+            assert_eq!(
+                database
+                    .get(target_space)
+                    .expect("target memory")
+                    .expect("own space")
+                    .items
+                    .len(),
+                usize::from(!shared)
+            );
+            assert!(
+                database
+                    .get(pool)
+                    .expect("pool memory")
+                    .expect("pool space")
+                    .items
+                    .is_empty()
+            );
+            assert_eq!(
+                database
+                    .get(source_space)
+                    .expect("source memory")
+                    .expect("source space")
+                    .items
+                    .len(),
+                1
+            );
+        }
+    }
+
+    #[test]
+    fn copied_conversation_seed_remaps_items_and_summary_sources() {
+        let database = Database::open_in_memory().expect("database");
+        let (source, source_space, source_messages) =
+            conversation_fixture_with_message_count(&database, 3);
+        let source_branch = fixture_branch(&database, source);
+        let (target, target_space, target_messages) = conversation_fixture(&database);
+        let target_branch = fixture_branch(&database, target);
+        let mut copied = memory_item(MemoryId::new(), "Copied source", 1);
+        copied.source_message_id = Some(source_messages[0].message_id);
+        copied.source_role = Some(source_messages[0].role);
+        copied.observed_at = Some(source_messages[0].effective_time);
+        copied.observed_time_precision = Some("turn".into());
+        let mut uncopied = memory_item(MemoryId::new(), "Uncopied source", 2);
+        uncopied.source_message_id = Some(source_messages[2].message_id);
+        uncopied.source_role = Some(source_messages[2].role);
+        uncopied.observed_at = Some(source_messages[2].effective_time);
+        uncopied.observed_time_precision = Some("turn".into());
+        database
+            .compare_and_apply(lettuce_memory::MemoryChangeSet {
+                space_id: source_space,
+                expected_revision: Revision::INITIAL,
+                items: vec![copied.clone(), uncopied.clone()],
+            })
+            .expect("source items");
+        let attempt = checkpointed_window(
+            &database,
+            source,
+            source_space,
+            &source_messages[..2],
+            "Source summary",
+            10,
+            0,
+        );
+        finish(&database, &attempt, true, 12);
+        let ids = source_messages[..2]
+            .iter()
+            .zip(&target_messages)
+            .map(|(source, target)| (source.message_id, target.message_id))
+            .collect();
+        let mut connection = database.connection().expect("connection");
+        let transaction = connection.transaction().expect("transaction");
+        super::super::memory_branch_adapter::seed_new_conversation_space_in(
+            &transaction,
+            source,
+            source_branch,
+            (target, target_branch),
+            Some(source_messages[1].message_id),
+            &ids,
+        )
+        .expect("copy memory");
+        transaction.commit().expect("commit");
+        drop(connection);
+        let seed = database
+            .get(target_space)
+            .expect("memory")
+            .expect("target space");
+        let copied_seed = seed
+            .items
+            .iter()
+            .find(|item| item.text == copied.text)
+            .expect("copied item");
+        assert_ne!(copied_seed.id, copied.id);
+        assert_eq!(
+            copied_seed.source_message_id,
+            Some(target_messages[0].message_id)
+        );
+        let uncopied_seed = seed
+            .items
+            .iter()
+            .find(|item| item.text == uncopied.text)
+            .expect("uncopied item");
+        assert_eq!(uncopied_seed.source_message_id, None);
+        assert_eq!(uncopied_seed.source_role, None);
+        assert_eq!(uncopied_seed.observed_at, None);
+        assert_eq!(uncopied_seed.observed_time_precision, None);
+        let summary = database
+            .get_summary(target_space)
+            .expect("summary")
+            .expect("copied summary");
+        assert_eq!(summary.text, "Source summary");
+        assert_eq!(
+            summary.source_message_ids,
+            target_messages
+                .iter()
+                .map(|message| message.message_id)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(summary.branch_id, target_branch);
+    }
+
+    #[test]
     fn branch_seed_uses_unsettled_snapshot_and_settled_current_state() {
         for succeeded in [false, true] {
             let database = Database::open_in_memory().expect("database");

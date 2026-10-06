@@ -293,3 +293,5 @@ Branch overview reads hydrate labels and timeline counts in one read transaction
 Conversation lineage columns store source conversation and message ids without foreign keys. Aggregate and overview hydration, history inserts, sync roots and backup restore preserve them even when neither source row exists.
 
 Conversation creation can stage its artifacts, aggregate, initial timeline, operation and outbox on an existing write transaction. The ordinary creator owns and commits that transaction; copy commands can share it with their API result receipt and additional profile, message and memory writes. A failure after creation staging rolls back the whole transaction, including the outer receipt.
+
+`conversation_copy_adapter` writes selected content into an empty new root on an `ApiOperationTransaction`, retaining asset references and allocating fresh message/revision identities. The memory copy helper seeds from the source branch and remaps copied message attribution, preserving projections for identical text; a pooled target keeps its normal pool binding. Both helpers participate in the same transaction as creation and the API receipt.
