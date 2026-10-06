@@ -255,7 +255,7 @@ export type ApiError = {
  */
 export type ApiErrorCode = "not_found" | "conflict" | "invalid_input" | "unsupported" | "unavailable" | "cancelled" | "busy" | "internal" | "model_required" | "model_unavailable";
 
-export type ApiErrorDetails = { type: "invalid_field"; field: string } | { type: "captured_audio"; audio: AssetRef } | { type: "audio_provider_in_use"; characters: CharacterReferenceView[] } | { type: "operation_applied_record_deleted"; command: string; record_id: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "image"; failure: ImageFailureKind } | { type: "speech"; failure: SpeechFailure } | { type: "pending_memory_rewind"; conversation_id: string };
+export type ApiErrorDetails = { type: "invalid_field"; field: string } | { type: "captured_audio"; audio: AssetRef } | { type: "audio_provider_in_use"; characters: CharacterReferenceView[] } | { type: "operation_applied_record_deleted"; command: string; record_id: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "image"; failure: ImageFailureKind } | { type: "speech"; failure: SpeechFailure } | { type: "pending_memory_rewind"; conversation_id: string } | { type: "branch_delete_refused"; reason: BranchDeleteRefusal };
 
 /**
  *  Application-wide events the host broadcasts to every window.
@@ -564,6 +564,12 @@ export type AvatarPromptRequest = {
 };
 
 export type BackgroundChange = { type: "image"; asset_id: string } | { type: "hidden" } | { type: "reset" };
+
+/**
+ *  Why a branch cannot be deleted: it is the conversation's first branch or
+ *  the one currently selected.
+ */
+export type BranchDeleteRefusal = "root_branch" | "selected_branch";
 
 /**  The selected branch and the message it currently ends at. */
 export type BranchHead = {

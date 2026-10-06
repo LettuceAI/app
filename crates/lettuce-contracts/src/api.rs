@@ -71,6 +71,16 @@ pub enum LocalModelsBusyReason {
     ImageWorkActive { job_id: Option<String> },
 }
 
+/// Why a branch cannot be deleted: it is the conversation's first branch or
+/// the one currently selected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum BranchDeleteRefusal {
+    RootBranch,
+    SelectedBranch,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
@@ -108,6 +118,9 @@ pub enum ApiErrorDetails {
     },
     PendingMemoryRewind {
         conversation_id: String,
+    },
+    BranchDeleteRefused {
+        reason: BranchDeleteRefusal,
     },
 }
 

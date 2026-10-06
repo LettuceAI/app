@@ -1,7 +1,8 @@
 use lettuce_contracts::{self as dto, ApiError, ApiErrorCode};
 use lettuce_conversations::{
-    ConversationOverviewReader, ConversationReader, ConversationRepository, ForkBranch,
-    OperationKind, OperationResultRef, RenameBranch, SelectBranch,
+    BranchStatus, ConversationOverviewReader, ConversationReader, ConversationRepository,
+    ConversationRepositoryError, ForkBranch, OperationKind, OperationResultRef, RenameBranch,
+    SelectBranch,
 };
 use lettuce_types::{ConversationBranchId, ConversationId, MessageId};
 
@@ -47,6 +48,48 @@ pub async fn conversation_branches(
             })
         })
         .await
+}
+
+fn is_live(
+    aggregate: &lettuce_conversations::ConversationAggregate,
+    id: ConversationBranchId,
+) -> bool {
+    aggregate
+        .branches
+        .iter()
+        .any(|branch| branch.id == id && branch.status == BranchStatus::Active)
+}
+
+fn fork_source_branch(
+    context: &ApiContext,
+    conversation_id: ConversationId,
+    aggregate: &lettuce_conversations::ConversationAggregate,
+    message_id: MessageId,
+) -> Result<ConversationBranchId, ApiError> {
+    let active = aggregate.conversation.active_branch_id;
+    let on_active = on_timeline(context, conversation_id, active, message_id);
+    if let Ok(anchor) = &on_active {
+        let owner = anchor.item.message.branch_id;
+        return Ok(if is_live(aggregate, owner) {
+            owner
+        } else {
+            active
+        });
+    }
+    let mut live: Vec<_> = aggregate
+        .branches
+        .iter()
+        .filter(|branch| branch.status == BranchStatus::Active && branch.id != active)
+        .collect();
+    live.sort_by_key(|branch| (branch.created_at, branch.id));
+    for branch in live {
+        if let Ok(anchor) = on_timeline(context, conversation_id, branch.id, message_id)
+            && !is_live(aggregate, anchor.item.message.branch_id)
+        {
+            return Ok(branch.id);
+        }
+    }
+    on_active.map(|_| active)
 }
 
 pub async fn conversation_branch_fork(
@@ -96,15 +139,7 @@ pub async fn conversation_branch_fork(
                             api_error(ApiErrorCode::Internal, "the fork parent is missing")
                         })?
                 } else {
-                    on_timeline(
-                        context,
-                        conversation_id,
-                        aggregate.conversation.active_branch_id,
-                        message_id,
-                    )?
-                    .item
-                    .message
-                    .branch_id
+                    fork_source_branch(context, conversation_id, &aggregate, message_id)?
                 };
             let commit = database
                 .fork_branch(
@@ -225,11 +260,46 @@ pub async fn conversation_branch_delete(
                     },
                     context.now(),
                 )
-                .map_err(IntoApiError::into_api_error)?;
+                .map_err(|error| match error {
+                    ConversationRepositoryError::Dependency => {
+                        delete_refusal(context, conversation_id, branch_id)
+                    }
+                    error => error.into_api_error(),
+                })?;
             Ok(dto::ConversationBranchChanged {
                 branch_id: branch_id.to_string(),
                 revision: committed_revision(&commit.outbox),
             })
         })
         .await
+}
+
+fn delete_refusal(
+    context: &ApiContext,
+    conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
+) -> ApiError {
+    let is_root = ConversationReader::get(context.backend().database(), conversation_id).is_ok_and(
+        |aggregate| {
+            aggregate
+                .branches
+                .iter()
+                .any(|branch| branch.id == branch_id && branch.parent_branch_id.is_none())
+        },
+    );
+    ApiError {
+        code: ApiErrorCode::Conflict,
+        message: if is_root {
+            "the first branch cannot be deleted".into()
+        } else {
+            "the selected branch cannot be deleted".into()
+        },
+        details: Some(dto::ApiErrorDetails::BranchDeleteRefused {
+            reason: if is_root {
+                dto::BranchDeleteRefusal::RootBranch
+            } else {
+                dto::BranchDeleteRefusal::SelectedBranch
+            },
+        }),
+    }
 }
