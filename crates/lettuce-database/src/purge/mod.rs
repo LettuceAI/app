@@ -378,6 +378,8 @@ impl<'c> Purge<'c> {
         for table in [
             "dynamic_memory_runs",
             "memory_retrieval_accesses",
+            "memory_inherited_summary_source_messages",
+            "memory_inherited_summaries",
             "memory_summary_source_messages",
             "memory_summaries",
         ] {

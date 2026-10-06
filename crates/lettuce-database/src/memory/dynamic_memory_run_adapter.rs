@@ -3574,7 +3574,7 @@ pub(crate) mod tests {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn checkpointed_window(
+    pub(crate) fn checkpointed_window(
         database: &Database,
         conversation_id: ConversationId,
         space_id: MemorySpaceId,
@@ -3653,7 +3653,7 @@ pub(crate) mod tests {
         processing
     }
 
-    fn finish(
+    pub(crate) fn finish(
         database: &Database,
         attempt: &lettuce_memory::DynamicMemoryAttempt,
         succeeded: bool,

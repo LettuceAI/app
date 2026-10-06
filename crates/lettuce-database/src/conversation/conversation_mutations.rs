@@ -5253,18 +5253,32 @@ impl ConversationRepository for Database {
                 if source.status != lettuce_conversations::BranchStatus::Active {
                     return Err(ConversationRepositoryError::Conflict);
                 }
-                let fork_message_id = match command.at_message_id {
+                let (fork_message_id, parent_branch_id) = match command.at_message_id {
                     Some(message_id) => {
                         let state =
                             message_state(transaction, context.conversation_id, message_id)?;
                         if state.branch_id != command.source_branch_id {
-                            return Err(ConversationRepositoryError::Conflict);
+                            let owner =
+                                load_branch(transaction, context.conversation_id, state.branch_id)?;
+                            if owner.status != lettuce_conversations::BranchStatus::Tombstoned
+                                || !conversation_query::on_branch_timeline(
+                                    transaction,
+                                    context.conversation_id,
+                                    command.source_branch_id,
+                                    message_id,
+                                )?
+                            {
+                                return Err(ConversationRepositoryError::Conflict);
+                            }
                         }
-                        message_id
+                        (message_id, state.branch_id)
                     }
-                    None => source
-                        .head_message_id
-                        .ok_or(ConversationRepositoryError::Conflict)?,
+                    None => (
+                        source
+                            .head_message_id
+                            .ok_or(ConversationRepositoryError::Conflict)?,
+                        command.source_branch_id,
+                    ),
                 };
                 let branch_id = ConversationBranchId::new();
                 transaction
@@ -5273,7 +5287,7 @@ impl ConversationRepository for Database {
                         params![
                             context.conversation_id.to_string(),
                             branch_id.to_string(),
-                            command.source_branch_id.to_string(),
+                            parent_branch_id.to_string(),
                             fork_message_id.to_string(),
                             context.now.get(),
                         ],
@@ -5287,6 +5301,13 @@ impl ConversationRepository for Database {
                     fork_message_id,
                     false,
                 )?;
+                if parent_branch_id != command.source_branch_id {
+                    crate::memory::memory_branch_adapter::pin_seeded_summary_in(
+                        transaction,
+                        context.conversation_id,
+                        branch_id,
+                    )?;
+                }
                 select_active_branch(transaction, context.conversation_id, branch_id)?;
                 let revision =
                     kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
@@ -5465,6 +5486,11 @@ impl ConversationRepository for Database {
                 if busy {
                     return Err(ConversationRepositoryError::Busy);
                 }
+                crate::memory::memory_branch_adapter::materialise_inherited_summaries_in(
+                    transaction,
+                    context.conversation_id,
+                    command.branch_id,
+                )?;
                 crate::purge::purge_branch_memory_in(
                     transaction,
                     context.conversation_id,
@@ -15733,6 +15759,266 @@ mod tests {
             forked.value.branch.parent_branch_id,
             Some(fixture.branch_id)
         );
+    }
+
+    fn memory_source(
+        fixture: &Fixture,
+        message_id: MessageId,
+    ) -> lettuce_memory::DynamicMemorySourceMessage {
+        let (role, revision, candidate, effective_time): (String, Option<String>, Option<String>, i64) =
+            fixture
+                .database
+                .connection()
+                .expect("connection")
+                .query_row(
+                    "SELECT role, active_revision_id, active_candidate_id, effective_time FROM conversation_messages WHERE conversation_id = ?1 AND id = ?2",
+                    params![fixture.conversation_id.to_string(), message_id.to_string()],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                )
+                .expect("message");
+        lettuce_memory::DynamicMemorySourceMessage {
+            message_id,
+            role: if role == "user" {
+                MessageRole::User
+            } else {
+                MessageRole::Assistant
+            },
+            render_source: match candidate {
+                Some(candidate) => lettuce_conversations::MessageRenderSource::Candidate(
+                    candidate.parse().expect("candidate id"),
+                ),
+                None => lettuce_conversations::MessageRenderSource::Revision(
+                    revision.expect("revision").parse().expect("revision id"),
+                ),
+            },
+            effective_time: TimestampMillis::new(effective_time),
+        }
+    }
+
+    fn exchange(fixture: &mut Fixture, key: &str, at: i64) -> (MessageId, MessageId) {
+        let send = fixture
+            .database
+            .begin_send(
+                &send_command(fixture, &format!("{key}-send"), "cd", text("hello")),
+                TimestampMillis::new(at),
+            )
+            .expect("send");
+        let GenerationInput::UserMessage { message_id } = send.value.turn.input else {
+            panic!("expected a user message");
+        };
+        let (assistant, _) = settle_succeeded(fixture, &send.value.turn, at + 1);
+        fixture.revision = conversation_revision(fixture);
+        (message_id, assistant)
+    }
+
+    fn summary_view(
+        database: &Database,
+        conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
+    ) -> Option<(String, u64, u64)> {
+        use lettuce_memory::{MemoryRepository, MemorySummaryRepository};
+        let space = database
+            .get_for_branch(conversation_id, branch_id)
+            .expect("memory")
+            .expect("space")
+            .id;
+        database
+            .get_summary(space)
+            .expect("summary")
+            .map(|summary| (summary.text, summary.window_start, summary.window_end))
+    }
+
+    #[test]
+    fn deleting_a_parent_branch_keeps_the_summary_its_child_inherited() {
+        use crate::memory::dynamic_memory_run_adapter::tests::{checkpointed_window, finish};
+        use lettuce_memory::MemoryRepository;
+        let mut fixture = direct_fixture();
+        let messages = conversation_with_two_exchanges(&mut fixture, "inherit");
+        let root = fixture.branch_id;
+        {
+            let mut connection = fixture.database.connection().expect("connection");
+            let transaction = connection.transaction().expect("transaction");
+            crate::memory::memory_adapter::create_conversation_space_in(
+                &transaction,
+                fixture.conversation_id,
+                root,
+            )
+            .expect("root memory");
+            transaction.commit().expect("commit");
+        }
+        let fork = |fixture: &mut Fixture,
+                    source: ConversationBranchId,
+                    at: MessageId,
+                    key: &str,
+                    now: i64| {
+            let branch = fixture
+                .database
+                .fork_branch(
+                    &ForkBranch {
+                        conversation_id: fixture.conversation_id,
+                        source_branch_id: source,
+                        at_message_id: Some(at),
+                        expected_revision: fixture.revision,
+                        operation: token(key, "ab"),
+                    },
+                    TimestampMillis::new(now),
+                )
+                .expect("fork")
+                .value
+                .branch
+                .id;
+            fixture.revision = conversation_revision(fixture);
+            branch
+        };
+        let parent = fork(&mut fixture, root, messages[1], "inherit-parent", 300);
+        fixture.branch_id = parent;
+        let (parent_user, parent_assistant) = exchange(&mut fixture, "inherit-parent", 310);
+        let parent_space = fixture
+            .database
+            .get_for_branch(fixture.conversation_id, parent)
+            .expect("memory")
+            .expect("space")
+            .id;
+        let parent_run = checkpointed_window(
+            &fixture.database,
+            fixture.conversation_id,
+            parent_space,
+            &[
+                memory_source(&fixture, parent_user),
+                memory_source(&fixture, parent_assistant),
+            ],
+            "Parent summary",
+            330,
+            2,
+        );
+        finish(&fixture.database, &parent_run, true, 335);
+        let child = fork(&mut fixture, parent, parent_assistant, "inherit-child", 340);
+        fixture.branch_id = child;
+        let (child_user, child_assistant) = exchange(&mut fixture, "inherit-child", 350);
+        let child_space = fixture
+            .database
+            .get_for_branch(fixture.conversation_id, child)
+            .expect("memory")
+            .expect("space")
+            .id;
+        let child_run = checkpointed_window(
+            &fixture.database,
+            fixture.conversation_id,
+            child_space,
+            &[
+                memory_source(&fixture, child_user),
+                memory_source(&fixture, child_assistant),
+            ],
+            "Child summary",
+            370,
+            4,
+        );
+        finish(&fixture.database, &child_run, true, 375);
+        fixture
+            .database
+            .select_branch(
+                &SelectBranch {
+                    conversation_id: fixture.conversation_id,
+                    branch_id: root,
+                    expected_revision: fixture.revision,
+                    operation: token("inherit-select-root", "ab"),
+                },
+                TimestampMillis::new(380),
+            )
+            .expect("select root");
+        fixture.revision = conversation_revision(&fixture);
+
+        let copied_summary = |fixture: &Fixture| {
+            let mut copy = direct_fixture_on(fixture.database.clone());
+            let copy_messages = conversation_with_two_exchanges(&mut copy, "inherit-copy");
+            let map: std::collections::HashMap<MessageId, MessageId> = [
+                (parent_user, copy_messages[0]),
+                (parent_assistant, copy_messages[1]),
+            ]
+            .into_iter()
+            .collect();
+            let mut connection = fixture.database.connection().expect("connection");
+            let transaction = connection.transaction().expect("transaction");
+            crate::memory::memory_branch_adapter::seed_new_conversation_space_in(
+                &transaction,
+                fixture.conversation_id,
+                child,
+                (copy.conversation_id, copy.branch_id),
+                Some(child_user),
+                &map,
+            )
+            .expect("copy seed");
+            let space: String = transaction
+                .query_row(
+                    "SELECT space_id FROM conversation_memory_spaces WHERE conversation_id = ?1 AND branch_id = ?2 AND pooled = 0",
+                    params![copy.conversation_id.to_string(), copy.branch_id.to_string()],
+                    |row| row.get(0),
+                )
+                .expect("copy space");
+            let summary = crate::memory::memory_adapter::get_summary_in(
+                &transaction,
+                space.parse().expect("space id"),
+            )
+            .expect("summary");
+            transaction.commit().expect("commit");
+            summary.map(|summary| (summary.text, summary.window_start, summary.window_end))
+        };
+
+        let before = fork(&mut fixture, child, child_user, "inherit-before", 400);
+        let expected = Some(("Parent summary".to_owned(), 2, 4));
+        assert_eq!(
+            summary_view(&fixture.database, fixture.conversation_id, before),
+            expected
+        );
+        assert_eq!(copied_summary(&fixture), expected);
+        fixture
+            .database
+            .select_branch(
+                &SelectBranch {
+                    conversation_id: fixture.conversation_id,
+                    branch_id: root,
+                    expected_revision: fixture.revision,
+                    operation: token("inherit-reselect-root", "ab"),
+                },
+                TimestampMillis::new(410),
+            )
+            .expect("select root again");
+        fixture.revision = conversation_revision(&fixture);
+        fixture
+            .database
+            .delete_branch(
+                &lettuce_conversations::DeleteBranch {
+                    conversation_id: fixture.conversation_id,
+                    branch_id: parent,
+                    expected_revision: fixture.revision,
+                    operation: token("inherit-delete-parent", "ab"),
+                },
+                TimestampMillis::new(420),
+            )
+            .expect("delete parent");
+        fixture.revision = conversation_revision(&fixture);
+        let after = fork(&mut fixture, child, child_user, "inherit-after", 430);
+        assert_eq!(
+            summary_view(&fixture.database, fixture.conversation_id, after),
+            expected
+        );
+        assert_eq!(copied_summary(&fixture), expected);
+        let orphan = fork(&mut fixture, child, parent_assistant, "inherit-orphan", 440);
+        assert_eq!(
+            summary_view(&fixture.database, fixture.conversation_id, orphan),
+            expected
+        );
+        let parent_of_orphan: String = fixture
+            .database
+            .connection()
+            .expect("connection")
+            .query_row(
+                "SELECT parent_branch_id FROM conversation_branches WHERE id = ?1",
+                [orphan.to_string()],
+                |row| row.get(0),
+            )
+            .expect("orphan parent");
+        assert_eq!(parent_of_orphan, parent.to_string());
     }
 
     #[test]

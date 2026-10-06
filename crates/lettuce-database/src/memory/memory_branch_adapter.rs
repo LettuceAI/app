@@ -132,7 +132,7 @@ pub(crate) fn seed_new_conversation_space_in(
     target: (ConversationId, ConversationBranchId),
     at_message_id: Option<MessageId>,
     message_ids: &HashMap<MessageId, MessageId>,
-) -> Result<(), ConversationRepositoryError> {
+) -> Result<HashMap<MemoryId, MemoryId>, ConversationRepositoryError> {
     let (conversation_id, branch_id) = target;
     let pooled_character: Option<String> = transaction.query_row(
         "SELECT pool.character_id FROM conversation_memory_spaces binding JOIN companion_memory_pools pool ON pool.space_id = binding.space_id WHERE binding.conversation_id = ?1 AND binding.branch_id = ?2 AND binding.pooled = 1",
@@ -143,12 +143,12 @@ pub(crate) fn seed_new_conversation_space_in(
         if crate::catalog::character_adapter::companion_memory_shared_in(transaction, character_id)
             .map_err(storage)?
         {
-            return Ok(());
+            return Ok(HashMap::new());
         }
     }
     let Some(source_space) = own_space_in(transaction, source_conversation_id, source_branch_id)?
     else {
-        return Ok(());
+        return Ok(HashMap::new());
     };
     let (cut, mut summary) = if let Some(message_id) = at_message_id {
         let position = message_position_in(transaction, source_conversation_id, message_id)?;
@@ -258,7 +258,7 @@ pub(crate) fn seed_new_conversation_space_in(
         ).map_err(storage)?;
     }
     memory_adapter::replace_summary_in(transaction, space_id, summary.as_ref()).map_err(storage)?;
-    Ok(())
+    Ok(ids)
 }
 
 pub(crate) fn message_position_in(
@@ -442,6 +442,11 @@ pub(crate) fn inherited_summary_in(
     let Some((Some(parent), Some(fork_message), created_at)) = point else {
         return Ok(None);
     };
+    if let Some(space_id) = own_space_in(transaction, conversation_id, branch_id)?
+        && let Some(summary) = load_materialised_summary_in(transaction, space_id, branch_id)?
+    {
+        return Ok(Some(summary));
+    }
     let parent: ConversationBranchId = parent.parse().map_err(storage)?;
     let Some(parent_space) = own_space_in(transaction, conversation_id, parent)? else {
         return Ok(None);
@@ -460,4 +465,154 @@ pub(crate) fn inherited_summary_in(
         Some(created_at),
     )?
     .1)
+}
+
+fn load_materialised_summary_in(
+    transaction: &Transaction<'_>,
+    space_id: MemorySpaceId,
+    branch_id: ConversationBranchId,
+) -> Result<Option<lettuce_memory::MemorySummary>, ConversationRepositoryError> {
+    let row: Option<(String, i64, i64, i64, i64)> = transaction
+        .query_row(
+            "SELECT text, token_count, window_start, window_end, updated_at
+               FROM memory_inherited_summaries WHERE space_id = ?1",
+            [space_id.to_string()],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(storage)?;
+    let Some((text, token_count, window_start, window_end, updated_at)) = row else {
+        return Ok(None);
+    };
+    let source_message_ids = {
+        let mut statement = transaction
+            .prepare(
+                "SELECT message_id FROM memory_inherited_summary_source_messages
+                  WHERE space_id = ?1 ORDER BY ordinal",
+            )
+            .map_err(storage)?;
+        statement
+            .query_map([space_id.to_string()], |row| row.get::<_, String>(0))
+            .map_err(storage)?
+            .map(|id| id.map_err(storage)?.parse().map_err(storage))
+            .collect::<Result<Vec<MessageId>, ConversationRepositoryError>>()?
+    };
+    let summary = lettuce_memory::MemorySummary {
+        space_id,
+        branch_id,
+        text,
+        token_count: u32::try_from(token_count).map_err(storage)?,
+        window_start: u64::try_from(window_start).map_err(storage)?,
+        window_end: u64::try_from(window_end).map_err(storage)?,
+        source_message_ids,
+        updated_at: lettuce_types::TimestampMillis::new(updated_at),
+    };
+    summary.validate().map_err(storage)?;
+    Ok(Some(summary))
+}
+
+/// Stores, in each live child's own space, the summary it currently inherits
+/// from `branch_id`, so the child stays complete once `branch_id` is purged.
+pub(crate) fn materialise_inherited_summaries_in(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
+) -> Result<(), ConversationRepositoryError> {
+    let children = {
+        let mut statement = transaction
+            .prepare(
+                "SELECT id FROM conversation_branches
+                  WHERE conversation_id = ?1 AND parent_branch_id = ?2 AND status = 'active'
+                  ORDER BY created_at, id",
+            )
+            .map_err(storage)?;
+        statement
+            .query_map(
+                params![conversation_id.to_string(), branch_id.to_string()],
+                |row| row.get::<_, String>(0),
+            )
+            .map_err(storage)?
+            .map(|id| id.map_err(storage)?.parse().map_err(storage))
+            .collect::<Result<Vec<ConversationBranchId>, ConversationRepositoryError>>()?
+    };
+    for child in children {
+        let Some(space_id) = own_space_in(transaction, conversation_id, child)? else {
+            continue;
+        };
+        if load_materialised_summary_in(transaction, space_id, child)?.is_some() {
+            continue;
+        }
+        let Some(summary) = inherited_summary_in(transaction, conversation_id, child)? else {
+            continue;
+        };
+        store_materialised_summary_in(transaction, conversation_id, child, space_id, &summary)?;
+    }
+    Ok(())
+}
+
+fn store_materialised_summary_in(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
+    space_id: MemorySpaceId,
+    summary: &lettuce_memory::MemorySummary,
+) -> Result<(), ConversationRepositoryError> {
+    transaction
+        .execute(
+            "INSERT INTO memory_inherited_summaries (
+                space_id, conversation_id, branch_id, text, token_count,
+                window_start, window_end, updated_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                space_id.to_string(),
+                conversation_id.to_string(),
+                branch_id.to_string(),
+                summary.text,
+                i64::from(summary.token_count),
+                i64::try_from(summary.window_start).map_err(storage)?,
+                i64::try_from(summary.window_end).map_err(storage)?,
+                summary.updated_at.get(),
+            ],
+        )
+        .map_err(storage)?;
+    for (ordinal, message_id) in summary.source_message_ids.iter().enumerate() {
+        transaction
+            .execute(
+                "INSERT INTO memory_inherited_summary_source_messages (
+                    space_id, conversation_id, message_id, ordinal
+                 ) VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    space_id.to_string(),
+                    conversation_id.to_string(),
+                    message_id.to_string(),
+                    i64::try_from(ordinal).map_err(storage)?,
+                ],
+            )
+            .map_err(storage)?;
+    }
+    Ok(())
+}
+
+/// Keeps the summary a fork was just seeded with as its inherited summary,
+/// for a fork whose recorded parent is not the branch it was seeded from.
+pub(crate) fn pin_seeded_summary_in(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
+) -> Result<(), ConversationRepositoryError> {
+    let Some(space_id) = own_space_in(transaction, conversation_id, branch_id)? else {
+        return Ok(());
+    };
+    if let Some(summary) = memory_adapter::get_summary_in(transaction, space_id).map_err(storage)? {
+        store_materialised_summary_in(transaction, conversation_id, branch_id, space_id, &summary)?;
+    }
+    Ok(())
 }

@@ -5951,6 +5951,8 @@ mod tests {
                 "media_blobs",
                 "media_gc_candidates",
                 "memory_embedding_projections",
+                "memory_inherited_summaries",
+                "memory_inherited_summary_source_messages",
                 "memory_items",
                 "memory_retrieval_accesses",
                 "memory_spaces",
