@@ -864,6 +864,25 @@ where
         overrides: &GroupLaunchOverrides,
         now: TimestampMillis,
     ) -> Result<PreparedConversationLaunch, ConversationLaunchError> {
+        self.prepare_group_source(request, overrides, None, now)
+    }
+
+    pub(crate) fn prepare_new_group(
+        &self,
+        request: &GroupConversationLaunchRequest,
+        group: GroupDetails,
+        now: TimestampMillis,
+    ) -> Result<PreparedConversationLaunch, ConversationLaunchError> {
+        self.prepare_group_source(request, &GroupLaunchOverrides::default(), Some(group), now)
+    }
+
+    fn prepare_group_source(
+        &self,
+        request: &GroupConversationLaunchRequest,
+        overrides: &GroupLaunchOverrides,
+        provided: Option<GroupDetails>,
+        now: TimestampMillis,
+    ) -> Result<PreparedConversationLaunch, ConversationLaunchError> {
         if request.format_version != GROUP_LAUNCH_REQUEST_FORMAT_V1 {
             return Err(ConversationLaunchError::InvalidRequest {
                 field: "format_version",
@@ -875,9 +894,13 @@ where
         let identities = LaunchIdentities::new(conversation_id);
         let group_id = request.group_id;
 
-        let mut group = GroupRepository::get(self.sources, group_id)
-            .map_err(LaunchSourceError::Group)?
-            .ok_or(ConversationLaunchError::GroupNotFound { group_id })?;
+        let new_group = provided.is_some();
+        let mut group = match provided {
+            Some(group) => group,
+            None => GroupRepository::get(self.sources, group_id)
+                .map_err(LaunchSourceError::Group)?
+                .ok_or(ConversationLaunchError::GroupNotFound { group_id })?,
+        };
         overrides.apply(&mut group);
         if group.group.status == lettuce_characters::LifecycleStatus::Archived {
             return Err(ConversationLaunchError::GroupArchived { group_id });
@@ -937,9 +960,12 @@ where
         let prompt = self.resolve_group_prompt(&group.group, chat_mode)?;
         let member_prompts = self.resolve_member_prompts(&characters, chat_mode)?;
 
-        let group_bindings =
+        let group_bindings = if new_group {
+            Vec::new()
+        } else {
             GroupLorebookBindingRepository::list_group_bindings(self.sources, group_id)
-                .map_err(LaunchSourceError::Binding)?;
+                .map_err(LaunchSourceError::Binding)?
+        };
         let member_books_disabled = group.group.disable_character_lorebooks;
         let mut member_bindings: Vec<Vec<LorebookBinding>> = Vec::new();
         if !member_books_disabled {
@@ -960,7 +986,7 @@ where
             }
             None => Vec::new(),
         };
-        self.check_for_group_drift(&group, &characters, persona.value())?;
+        self.check_for_group_drift(&group, &characters, persona.value(), new_group)?;
 
         let mut group_lorebooks = Selected::Explicit(policy::enabled_lorebooks(&group_bindings));
         let mut member_lorebooks: Vec<Selected<Vec<LorebookId>>> = if member_books_disabled {
@@ -1472,11 +1498,18 @@ where
         group: &GroupDetails,
         characters: &[lettuce_characters::CharacterDetails],
         persona: Option<&Persona>,
+        new_group: bool,
     ) -> Result<(), ConversationLaunchError> {
         let group_id = group.group.id;
-        let reread = GroupRepository::get(self.sources, group_id)
-            .map_err(LaunchSourceError::Group)?
-            .ok_or(ConversationLaunchError::GroupNotFound { group_id })?;
+        let group_revision = if new_group {
+            group.group.revision
+        } else {
+            GroupRepository::get(self.sources, group_id)
+                .map_err(LaunchSourceError::Group)?
+                .ok_or(ConversationLaunchError::GroupNotFound { group_id })?
+                .group
+                .revision
+        };
         let mut member_revisions = Vec::with_capacity(characters.len());
         for details in characters {
             let character_id = details.character.id;
@@ -1501,7 +1534,7 @@ where
             None => None,
         };
         match policy::detect_group_source_drift(
-            (group_id, group.group.revision, reread.group.revision),
+            (group_id, group.group.revision, group_revision),
             &member_revisions,
             persona_revisions,
         ) {

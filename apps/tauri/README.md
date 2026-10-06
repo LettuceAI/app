@@ -82,3 +82,5 @@ Branch list, fork, rename and select commands forward their typed requests to th
 The `conversation_duplicate` command delegates transactional copying to the application API and returns its stable conversation identity and revision.
 
 `conversation_branch_delete` forwards branch revision and operation-key validation to the application API and returns its typed errors and stable replay result.
+
+The four conversation copy wrappers pass typed requests to lettuce-app. The shell transports IDs and managed asset references; it performs no copy planning, SQL or model calls.

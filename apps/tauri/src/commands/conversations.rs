@@ -478,3 +478,39 @@ pub async fn conversation_branch_delete(
 ) -> Result<lettuce_contracts::ConversationBranchChanged, ApiError> {
     api::conversation_branch_delete(&context, request).await
 }
+
+#[tauri::command]
+#[specta::specta]
+pub async fn conversation_branch_to_character_from_message(
+    context: State<'_, ApiContext>,
+    request: lettuce_contracts::ConversationCharacterCopyRequest,
+) -> Result<lettuce_contracts::ConversationCopyResult, ApiError> {
+    api::conversation_branch_to_character_from_message(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn conversation_branch_to_character(
+    context: State<'_, ApiContext>,
+    request: lettuce_contracts::ConversationGroupCharacterCopyRequest,
+) -> Result<lettuce_contracts::ConversationCopyResult, ApiError> {
+    api::conversation_branch_to_character(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn conversation_branch_direct_to_character(
+    context: State<'_, ApiContext>,
+    request: lettuce_contracts::ConversationCharacterCopyRequest,
+) -> Result<lettuce_contracts::ConversationCopyResult, ApiError> {
+    api::conversation_branch_direct_to_character(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn conversation_branch_direct_to_group(
+    context: State<'_, ApiContext>,
+    request: lettuce_contracts::ConversationGroupCopyRequest,
+) -> Result<lettuce_contracts::ConversationCopyResult, ApiError> {
+    api::conversation_branch_direct_to_group(&context, request).await
+}

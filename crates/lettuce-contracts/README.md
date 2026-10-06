@@ -35,3 +35,5 @@ Branch management DTOs describe creation-ordered branch rows and revisioned fork
 Conversation views return nullable origin conversation and message ids for provenance. These fields are plain identities and do not require the source to remain present.
 
 `ConversationDuplicateRequest` selects the source, optional title and whether messages are copied. `ConversationCopyResult` carries the stable new conversation identity and the revision committed with its receipt.
+
+Character-copy requests carry source conversation, selected message and target character IDs plus an operation key. Whole-group copies omit the message boundary. New-group copies carry an ordered distinct member list, including the source owner. All return the stable new conversation ID and revision.

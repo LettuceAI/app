@@ -166,4 +166,8 @@ pub use turns::{
 };
 pub use worker::ConversationGenerationWorker;
 
-pub use copies::conversation_duplicate;
+pub use copies::{
+    conversation_branch_direct_to_character, conversation_branch_direct_to_group,
+    conversation_branch_to_character, conversation_branch_to_character_from_message,
+    conversation_duplicate,
+};

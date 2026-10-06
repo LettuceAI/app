@@ -15,6 +15,10 @@ export const commands = {
 	conversationBranchSelect: (request: ConversationBranchMutationRequest) => typedError<ConversationBranchChanged, ApiError>(__TAURI_INVOKE("conversation_branch_select", { request })),
 	conversationBranchDelete: (request: ConversationBranchMutationRequest) => typedError<ConversationBranchChanged, ApiError>(__TAURI_INVOKE("conversation_branch_delete", { request })),
 	conversationDuplicate: (request: ConversationDuplicateRequest) => typedError<ConversationCopyResult, ApiError>(__TAURI_INVOKE("conversation_duplicate", { request })),
+	conversationBranchToCharacterFromMessage: (request: ConversationCharacterCopyRequest) => typedError<ConversationCopyResult, ApiError>(__TAURI_INVOKE("conversation_branch_to_character_from_message", { request })),
+	conversationBranchToCharacter: (request: ConversationGroupCharacterCopyRequest) => typedError<ConversationCopyResult, ApiError>(__TAURI_INVOKE("conversation_branch_to_character", { request })),
+	conversationBranchDirectToCharacter: (request: ConversationCharacterCopyRequest) => typedError<ConversationCopyResult, ApiError>(__TAURI_INVOKE("conversation_branch_direct_to_character", { request })),
+	conversationBranchDirectToGroup: (request: ConversationGroupCopyRequest) => typedError<ConversationCopyResult, ApiError>(__TAURI_INVOKE("conversation_branch_direct_to_group", { request })),
 	conversationMessages: (request: ConversationMessagesRequest) => typedError<MessagePage, ApiError>(__TAURI_INVOKE("conversation_messages", { request })),
 	messageEdit: (request: MessageEditRequest) => typedError<MessageChanged, ApiError>(__TAURI_INVOKE("message_edit", { request })),
 	messageDelete: (request: MessageDeleteRequest) => typedError<MessagesDeleteResult, ApiError>(__TAURI_INVOKE("message_delete", { request })),
@@ -751,6 +755,13 @@ export type ConversationBranchView = {
 	active: boolean,
 };
 
+export type ConversationCharacterCopyRequest = {
+	conversation_id: string,
+	message_id: string,
+	character_id: string,
+	client_operation_id: string,
+};
+
 /**
  *  Generates a new reply after the newest message, from `forced_speaker_participant_id`
  *  in a group chat or by the chat's speaker selection.
@@ -772,6 +783,19 @@ export type ConversationDuplicateRequest = {
 	conversation_id: string,
 	with_messages: boolean,
 	title: string | null,
+	client_operation_id: string,
+};
+
+export type ConversationGroupCharacterCopyRequest = {
+	conversation_id: string,
+	character_id: string,
+	client_operation_id: string,
+};
+
+export type ConversationGroupCopyRequest = {
+	conversation_id: string,
+	message_id: string,
+	character_ids: string[],
 	client_operation_id: string,
 };
 

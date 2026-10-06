@@ -1238,3 +1238,32 @@ pub struct ConversationCopyResult {
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub revision: u64,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct ConversationCharacterCopyRequest {
+    pub conversation_id: String,
+    pub message_id: String,
+    pub character_id: String,
+    pub client_operation_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct ConversationGroupCharacterCopyRequest {
+    pub conversation_id: String,
+    pub character_id: String,
+    pub client_operation_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct ConversationGroupCopyRequest {
+    pub conversation_id: String,
+    pub message_id: String,
+    pub character_ids: Vec<String>,
+    pub client_operation_id: String,
+}
