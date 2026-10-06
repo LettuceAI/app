@@ -444,6 +444,32 @@ pub(crate) fn create_with_hook<F>(
     launch: PreparedConversationLaunch,
     now: TimestampMillis,
     memory: MemoryBinding,
+    hook: F,
+) -> Result<lettuce_conversations::CreateConversationResult, ConversationRepositoryError>
+where
+    F: FnMut(
+        &Transaction<'_>,
+        &lettuce_conversations::CreateConversationPlan,
+    ) -> Result<(), ConversationRepositoryError>,
+{
+    let mut connection = database
+        .connection()
+        .map_err(|_| ConversationRepositoryError::Storage)?;
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(conversation_vertical_slice::db)?;
+    let result = create_on_transaction(&transaction, launch, now, memory, hook)?;
+    transaction
+        .commit()
+        .map_err(conversation_vertical_slice::db)?;
+    Ok(result)
+}
+
+pub(crate) fn create_on_transaction<F>(
+    transaction: &Transaction<'_>,
+    launch: PreparedConversationLaunch,
+    now: TimestampMillis,
+    memory: MemoryBinding,
     mut hook: F,
 ) -> Result<lettuce_conversations::CreateConversationResult, ConversationRepositoryError>
 where
@@ -458,20 +484,13 @@ where
         .map_err(ConversationRepositoryError::Invalid)?;
     let plan_id = launch.plan().conversation_id;
     let token = launch.plan().operation.clone();
-    let mut connection = database
-        .connection()
-        .map_err(|_| ConversationRepositoryError::Storage)?;
-    let transaction = connection
-        .transaction_with_behavior(TransactionBehavior::Immediate)
-        .map_err(conversation_vertical_slice::db)?;
-
-    if let Some(operation) = read_operation(&transaction, plan_id, &token)? {
+    if let Some(operation) = read_operation(transaction, plan_id, &token)? {
         if operation.operation.request_digest != token.request_digest {
             return Err(ConversationRepositoryError::Conflict);
         }
         let aggregate =
-            conversation_vertical_slice::hydrate_conversation(&transaction, plan_id, || {})?;
-        let outbox = read_creation_outbox(&transaction, plan_id, operation.id)?;
+            conversation_vertical_slice::hydrate_conversation(transaction, plan_id, || {})?;
+        let outbox = read_creation_outbox(transaction, plan_id, operation.id)?;
         let ConversationOutboxEvent::ConversationCreated {
             conversation_id,
             root_branch_id: _,
@@ -501,11 +520,8 @@ where
                 return Err(ConversationRepositoryError::Storage);
             }
         conversation_query::validate_outbox_event_timestamp(&outbox)?;
-        conversation_query::validate_outbox_event(&transaction, &outbox)?;
-        conversation_query::validate_outbox_event_exact(&transaction, &outbox)?;
-        transaction
-            .commit()
-            .map_err(conversation_vertical_slice::db)?;
+        conversation_query::validate_outbox_event(transaction, &outbox)?;
+        conversation_query::validate_outbox_event_exact(transaction, &outbox)?;
         return Ok(lettuce_conversations::MutationCommit {
             value: aggregate,
             operation,
@@ -526,7 +542,7 @@ where
     let launch_intent = launch.launch_intent().cloned();
     let (plan, drafts) = launch.into_parts();
     let expected = expected_snapshot_refs(&plan)?;
-    let staged = stage_artifacts(&transaction, drafts, now)?;
+    let staged = stage_artifacts(transaction, drafts, now)?;
     if staged != expected {
         return Err(ConversationRepositoryError::ArtifactReference(
             lettuce_conversations::ArtifactError::InvalidReference(
@@ -536,11 +552,11 @@ where
             ),
         ));
     }
-    preflight_media(&transaction, &plan)?;
+    preflight_media(transaction, &plan)?;
 
     let root_branch_id = ConversationBranchId::new();
     let aggregate = make_aggregate(&plan, root_branch_id, now)?;
-    conversation_vertical_slice::save_conversation(&transaction, &aggregate.conversation)?;
+    conversation_vertical_slice::save_conversation(transaction, &aggregate.conversation)?;
     if let Some(intent) = launch_intent {
         transaction
             .execute(
@@ -553,19 +569,19 @@ where
         match memory {
             MemoryBinding::PerConversation => {
                 crate::memory::memory_adapter::create_conversation_space_in(
-                    &transaction,
+                    transaction,
                     plan.conversation_id,
                     root_branch_id,
                 )?;
             }
             MemoryBinding::CompanionPool(character_id) => {
                 crate::memory::memory_adapter::create_conversation_space_in(
-                    &transaction,
+                    transaction,
                     plan.conversation_id,
                     root_branch_id,
                 )?;
                 crate::memory::memory_adapter::join_companion_pool_in(
-                    &transaction,
+                    transaction,
                     plan.conversation_id,
                     root_branch_id,
                     character_id,
@@ -573,7 +589,7 @@ where
             }
         }
     }
-    conversation_vertical_slice::save_branch(&transaction, &aggregate.branches[0])?;
+    conversation_vertical_slice::save_branch(transaction, &aggregate.branches[0])?;
     for reference in expected.values() {
         transaction
                 .execute(
@@ -582,14 +598,11 @@ where
                 )
                 .map_err(conversation_vertical_slice::db)?;
     }
-    let head_message_id = persist_initial_timeline(&transaction, &plan, root_branch_id, now)?;
-    hook(&transaction, &plan)?;
+    let head_message_id = persist_initial_timeline(transaction, &plan, root_branch_id, now)?;
+    hook(transaction, &plan)?;
     let (operation, outbox) =
-        persist_operation_and_outbox(&transaction, &plan, root_branch_id, head_message_id, now)?;
-    let aggregate = hydrate_and_validate(&transaction, &plan, root_branch_id, &operation, &outbox)?;
-    transaction
-        .commit()
-        .map_err(conversation_vertical_slice::db)?;
+        persist_operation_and_outbox(transaction, &plan, root_branch_id, head_message_id, now)?;
+    let aggregate = hydrate_and_validate(transaction, &plan, root_branch_id, &operation, &outbox)?;
     Ok(lettuce_conversations::MutationCommit {
         value: aggregate,
         operation,
@@ -874,6 +887,96 @@ mod tests {
         })
         .collect();
         PreparedConversationLaunch::new(plan, drafts).expect("prepared timeline launch")
+    }
+
+    #[test]
+    fn creation_and_outer_api_receipt_roll_back_and_replay_together() {
+        let database = Database::open_in_memory().expect("database");
+        let conversation_id = ConversationId::new();
+        let character_id = CharacterId::new();
+        let failed = database.commit_api_operation(
+            "copy_test",
+            "failed",
+            "digest",
+            TimestampMillis::new(10),
+            |scope| {
+                create_on_transaction(
+                    scope.transaction,
+                    prepared(conversation_id, character_id),
+                    TimestampMillis::new(10),
+                    MemoryBinding::PerConversation,
+                    |_, _| Ok(()),
+                )
+                .map_err(|_| crate::ApiOperationError::Storage)?;
+                Err::<ConversationId, crate::ApiOperationError>(crate::ApiOperationError::Storage)
+            },
+        );
+        assert_eq!(failed, Err(crate::ApiOperationError::Storage));
+        assert!(
+            database
+                .lookup_api_operation("copy_test", "failed")
+                .expect("receipt lookup")
+                .is_none()
+        );
+        let connection = database.connection().expect("connection");
+        for table in [
+            "conversations",
+            "conversation_snapshot_artifacts",
+            "conversation_operations",
+            "conversation_outbox",
+        ] {
+            assert_eq!(
+                connection
+                    .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| row
+                        .get::<_, i64>(0))
+                    .expect("rollback count"),
+                0
+            );
+        }
+        drop(connection);
+        let first = database
+            .commit_api_operation(
+                "copy_test",
+                "success",
+                "digest",
+                TimestampMillis::new(10),
+                |scope| {
+                    let result = create_on_transaction(
+                        scope.transaction,
+                        prepared(conversation_id, character_id),
+                        TimestampMillis::new(10),
+                        MemoryBinding::PerConversation,
+                        |_, _| Ok(()),
+                    )
+                    .map_err(|_| crate::ApiOperationError::Storage)?;
+                    Ok::<_, crate::ApiOperationError>(result.value.conversation.id)
+                },
+            )
+            .expect("atomic create");
+        let replay = database
+            .commit_api_operation(
+                "copy_test",
+                "success",
+                "digest",
+                TimestampMillis::new(11),
+                |_| -> Result<ConversationId, crate::ApiOperationError> {
+                    panic!("receipt replay must not create");
+                },
+            )
+            .expect("replay");
+        assert_eq!(first, replay);
+        assert_eq!(
+            database.commit_api_operation(
+                "copy_test",
+                "success",
+                "changed",
+                TimestampMillis::new(12),
+                |_| -> Result<ConversationId, crate::ApiOperationError> {
+                    panic!("conflicting request must not create");
+                }
+            ),
+            Err(crate::ApiOperationError::Conflict)
+        );
     }
 
     #[test]

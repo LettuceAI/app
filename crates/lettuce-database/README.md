@@ -291,3 +291,5 @@ Fork labels and their edit timestamps live on `conversation_branches`. Every loc
 Branch overview reads hydrate labels and timeline counts in one read transaction. Globally unique branch ids resolve branch-only API commands to their conversation. Branch rename performs the conversation revision check, title or label update, operation receipt and outbox insert in one write transaction; an exact retry retains the original receipt and events.
 
 Conversation lineage columns store source conversation and message ids without foreign keys. Aggregate and overview hydration, history inserts, sync roots and backup restore preserve them even when neither source row exists.
+
+Conversation creation can stage its artifacts, aggregate, initial timeline, operation and outbox on an existing write transaction. The ordinary creator owns and commits that transaction; copy commands can share it with their API result receipt and additional profile, message and memory writes. A failure after creation staging rolls back the whole transaction, including the outer receipt.
