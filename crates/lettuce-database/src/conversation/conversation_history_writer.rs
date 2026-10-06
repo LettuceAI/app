@@ -354,6 +354,18 @@ pub(crate) fn insert_memory_state(
         crate::memory::memory_adapter::replace_summary_in(transaction, space_id, Some(summary))
             .map_err(|_| ConversationRepositoryError::Storage)?;
     }
+    if space.conversation_id == conversation_id
+        && let Some(branch_id) = space.branch_id
+        && let Some(summary) = &space.inherited_summary
+    {
+        crate::memory::memory_branch_adapter::store_materialised_summary_in(
+            transaction,
+            conversation_id,
+            branch_id,
+            space_id,
+            summary,
+        )?;
+    }
     Ok(())
 }
 

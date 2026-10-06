@@ -132,6 +132,10 @@ pub const MEMORY_SUMMARY_SYNC_KIND: &str = "memory_summary";
 pub const MEMORY_SUMMARY_SYNC_SCHEMA: &str = "memory.summary";
 pub const MEMORY_SUMMARY_SYNC_VERSION: u32 = 2;
 
+pub const MEMORY_INHERITED_SUMMARY_SYNC_KIND: &str = "memory_inherited_summary";
+pub const MEMORY_INHERITED_SUMMARY_SYNC_SCHEMA: &str = "memory.inherited_summary";
+pub const MEMORY_INHERITED_SUMMARY_SYNC_VERSION: u32 = 1;
+
 pub const MEMORY_CURSOR_SYNC_KIND: &str = "memory_cursor";
 pub const MEMORY_CURSOR_SYNC_SCHEMA: &str = "memory.cursor";
 pub const MEMORY_CURSOR_SYNC_VERSION: u32 = 2;

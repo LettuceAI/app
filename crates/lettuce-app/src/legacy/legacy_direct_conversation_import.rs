@@ -1457,6 +1457,7 @@ fn memory_space(
                 items,
             },
             summary,
+            inherited_summary: None,
             shared_conversation_ids: Vec::new(),
         }),
         projections,

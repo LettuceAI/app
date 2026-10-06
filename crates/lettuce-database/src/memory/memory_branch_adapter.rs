@@ -20,13 +20,49 @@ pub(crate) fn create_empty_branch_space_in(
     parent_branch_id: ConversationBranchId,
     branch_id: ConversationBranchId,
 ) -> Result<(), ConversationRepositoryError> {
-    if own_space_in(transaction, conversation_id, parent_branch_id)?.is_some() {
+    if own_space_in(transaction, conversation_id, parent_branch_id)?.is_some()
+        || (parent_is_tombstoned(transaction, conversation_id, parent_branch_id)?
+            && root_has_own_space(transaction, conversation_id)?)
+    {
         memory_adapter::create_conversation_space_in(transaction, conversation_id, branch_id)?;
     }
     Ok(())
 }
 
-fn own_space_in(
+fn parent_is_tombstoned(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
+) -> Result<bool, ConversationRepositoryError> {
+    transaction
+        .query_row(
+            "SELECT status = 'tombstoned' FROM conversation_branches WHERE conversation_id = ?1 AND id = ?2",
+            params![conversation_id.to_string(), branch_id.to_string()],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(storage)
+        .map(|value| value.unwrap_or(false))
+}
+
+fn root_has_own_space(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+) -> Result<bool, ConversationRepositoryError> {
+    transaction
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM conversation_memory_spaces binding
+               JOIN conversation_branches branch
+                 ON branch.conversation_id = binding.conversation_id AND branch.id = binding.branch_id
+              WHERE binding.conversation_id = ?1 AND binding.pooled = 0
+                AND branch.parent_branch_id IS NULL)",
+            [conversation_id.to_string()],
+            |row| row.get(0),
+        )
+        .map_err(storage)
+}
+
+pub(crate) fn own_space_in(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
     branch_id: ConversationBranchId,
@@ -413,9 +449,16 @@ fn base_summary_in(
         )
         .map_err(storage)?;
     if !replaced {
-        return Ok(memory_adapter::get_summary_in(transaction, space_id)
+        let stored = memory_adapter::get_summary_in(transaction, space_id)
             .map_err(storage)?
-            .filter(|summary| summary.window_end <= position));
+            .filter(|summary| summary.window_end <= position);
+        if stored.is_some() {
+            return Ok(stored);
+        }
+        return Ok(
+            load_materialised_summary_in(transaction, space_id, branch_id)?
+                .filter(|summary| summary.window_end <= position),
+        );
     }
     Ok(
         inherited_summary_in(transaction, conversation_id, branch_id)?
@@ -467,7 +510,7 @@ pub(crate) fn inherited_summary_in(
     .1)
 }
 
-fn load_materialised_summary_in(
+pub(crate) fn load_materialised_summary_in(
     transaction: &Transaction<'_>,
     space_id: MemorySpaceId,
     branch_id: ConversationBranchId,
@@ -558,7 +601,7 @@ pub(crate) fn materialise_inherited_summaries_in(
     Ok(())
 }
 
-fn store_materialised_summary_in(
+pub(crate) fn store_materialised_summary_in(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
     branch_id: ConversationBranchId,

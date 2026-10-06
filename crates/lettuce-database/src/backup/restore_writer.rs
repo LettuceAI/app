@@ -863,7 +863,17 @@ pub(crate) mod tests {
     /// Exports a database with its protected artifacts, restores it into an
     /// empty one and asserts the restored graph reads back equal.
     pub(crate) fn assert_backup_round_trip(database: &Database) -> ProviderBackupGraph {
+        backup_round_trip(database, |_| {}).0
+    }
+
+    /// The round trip of `assert_backup_round_trip`, keeping the restored
+    /// database; `adjust` edits the exported graph before it is validated again.
+    pub(crate) fn backup_round_trip(
+        database: &Database,
+        adjust: impl FnOnce(&mut ProviderBackupGraph),
+    ) -> (ProviderBackupGraph, Database) {
         let mut graph = database.read_provider_backup_graph().expect("export graph");
+        adjust(&mut graph);
         lettuce_transfer::canonicalize_and_validate(&mut graph).expect("canonical graph");
         lettuce_transfer::settle_in_flight_generation(&mut graph);
         lettuce_transfer::canonicalize_and_validate(&mut graph).expect("settled graph");
@@ -897,7 +907,7 @@ pub(crate) mod tests {
         lettuce_transfer::canonicalize_and_validate(&mut round_trip)
             .expect("canonical restored graph");
         assert_eq!(round_trip, graph);
-        graph
+        (graph, restored)
     }
 
     #[test]

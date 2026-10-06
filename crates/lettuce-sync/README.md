@@ -154,7 +154,7 @@ A third device replying inside a chain that later loses can leave devices with d
 | conversation | `conversation.root` | |
 | message | `conversation.message` | |
 | branch | `conversation.branch` | label is last writer wins; topology is immutable; deletion is permanent |
-| memory | `memory.item`, `memory.summary`, `memory.cursor` | |
+| memory | `memory.item`, `memory.summary`, `memory.inherited_summary`, `memory.cursor` | |
 | companion | `companion.soul`, `companion.relationship`, `companion.session`, `companion.scheduled_note` | |
 | usage | `usage.cost_basis`, `usage.job_inference`, `usage.job_cost_basis`, `usage.legacy_record` | row codec |
 | audio and ASR | `audio.provider`, `audio.user_voice`, `asr.*` | row codec |

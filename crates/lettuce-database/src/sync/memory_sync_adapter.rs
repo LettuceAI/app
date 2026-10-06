@@ -322,6 +322,121 @@ pub(crate) fn sync_delete_memory_summary(
     Ok(true)
 }
 
+pub(crate) fn sync_inherited_summary_owners(
+    connection: &Connection,
+) -> rusqlite::Result<Vec<String>> {
+    connection
+        .prepare(&format!(
+            "SELECT owners.owner FROM memory_inherited_summaries summary
+               JOIN ({OWNERS}) owners ON owners.space_id = summary.space_id
+              ORDER BY 1"
+        ))?
+        .query_map([], |row| row.get(0))?
+        .collect()
+}
+
+fn branch_space(
+    transaction: &Transaction<'_>,
+    owner: &str,
+) -> Result<Option<(MemorySpaceId, lettuce_types::ConversationBranchId)>, MemoryRepositoryError> {
+    let Some((_, branch)) = branch_owner(owner) else {
+        return Err(storage("invalid inherited summary owner"));
+    };
+    Ok(local_space(transaction, owner)?.map(|space| (space, branch)))
+}
+
+pub(crate) fn sync_load_inherited_summary(
+    transaction: &Transaction<'_>,
+    owner: &str,
+) -> Result<Option<MemorySummary>, MemoryRepositoryError> {
+    let Some((space_id, branch_id)) = branch_space(transaction, owner)? else {
+        return Ok(None);
+    };
+    Ok(
+        crate::memory::memory_branch_adapter::load_materialised_summary_in(
+            transaction,
+            space_id,
+            branch_id,
+        )
+        .map_err(storage)?
+        .map(|summary| MemorySummary {
+            space_id: exchanged_space_id(),
+            ..summary
+        }),
+    )
+}
+
+/// Replaces the branch's inherited summary once its space and source messages exist.
+pub(crate) fn sync_replace_inherited_summary(
+    transaction: &Transaction<'_>,
+    owner: &str,
+    summary: &MemorySummary,
+) -> Result<(), MemoryRepositoryError> {
+    summary.validate()?;
+    let Some((space_id, branch_id)) = branch_space(transaction, owner)? else {
+        return Err(MemoryRepositoryError::NotFound);
+    };
+    let conversation_id = branch_owner(owner)
+        .map(|(conversation, _)| conversation)
+        .ok_or_else(|| storage("invalid inherited summary owner"))?;
+    for message in &summary.source_message_ids {
+        let present: bool = transaction
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM conversation_messages WHERE conversation_id = ?1 AND id = ?2)",
+                params![conversation_id.to_string(), message.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(storage)?;
+        if !present {
+            return Err(MemoryRepositoryError::NotFound);
+        }
+    }
+    if sync_load_inherited_summary(transaction, owner)?.as_ref() == Some(summary) {
+        return Ok(());
+    }
+    delete_inherited_rows(transaction, space_id)?;
+    crate::memory::memory_branch_adapter::store_materialised_summary_in(
+        transaction,
+        conversation_id,
+        branch_id,
+        space_id,
+        &MemorySummary {
+            space_id,
+            branch_id,
+            ..summary.clone()
+        },
+    )
+    .map_err(storage)
+}
+
+fn delete_inherited_rows(
+    transaction: &Transaction<'_>,
+    space_id: MemorySpaceId,
+) -> Result<(), MemoryRepositoryError> {
+    for table in [
+        "memory_inherited_summary_source_messages",
+        "memory_inherited_summaries",
+    ] {
+        transaction
+            .execute(
+                &format!("DELETE FROM {table} WHERE space_id = ?1"),
+                [space_id.to_string()],
+            )
+            .map_err(storage)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn sync_delete_inherited_summary(
+    transaction: &Transaction<'_>,
+    owner: &str,
+) -> Result<bool, MemoryRepositoryError> {
+    if let Some((space_id, _)) = branch_space(transaction, owner)? {
+        delete_inherited_rows(transaction, space_id)?;
+    }
+    Ok(true)
+}
+
 pub(crate) fn sync_memory_cursor_ids(connection: &Connection) -> rusqlite::Result<Vec<String>> {
     connection
         .prepare(

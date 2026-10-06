@@ -15795,22 +15795,6 @@ mod tests {
         }
     }
 
-    fn exchange(fixture: &mut Fixture, key: &str, at: i64) -> (MessageId, MessageId) {
-        let send = fixture
-            .database
-            .begin_send(
-                &send_command(fixture, &format!("{key}-send"), "cd", text("hello")),
-                TimestampMillis::new(at),
-            )
-            .expect("send");
-        let GenerationInput::UserMessage { message_id } = send.value.turn.input else {
-            panic!("expected a user message");
-        };
-        let (assistant, _) = settle_succeeded(fixture, &send.value.turn, at + 1);
-        fixture.revision = conversation_revision(fixture);
-        (message_id, assistant)
-    }
-
     fn summary_view(
         database: &Database,
         conversation_id: ConversationId,
@@ -15828,12 +15812,89 @@ mod tests {
             .map(|summary| (summary.text, summary.window_start, summary.window_end))
     }
 
-    #[test]
-    fn deleting_a_parent_branch_keeps_the_summary_its_child_inherited() {
+    struct InheritedScenario {
+        fixture: Fixture,
+        root: ConversationBranchId,
+        parent: ConversationBranchId,
+        child: ConversationBranchId,
+        parent_user: MessageId,
+        parent_assistant: MessageId,
+        child_user: MessageId,
+    }
+
+    fn user_messages(fixture: &mut Fixture, key: &str, count: i64, at: i64) -> Vec<MessageId> {
+        (0..count)
+            .map(|index| {
+                let id = fixture
+                    .database
+                    .append_user_message(
+                        &send_command(
+                            fixture,
+                            &format!("{key}-{index}"),
+                            "ab",
+                            text("memory test"),
+                        ),
+                        TimestampMillis::new(at + index),
+                    )
+                    .expect("user message")
+                    .value
+                    .id;
+                fixture.revision = conversation_revision(fixture);
+                id
+            })
+            .collect()
+    }
+
+    const INHERITED_SUMMARY: (&str, u64, u64) = ("Parent summary", 2, 4);
+
+    fn fork_at(
+        fixture: &mut Fixture,
+        source: ConversationBranchId,
+        at: MessageId,
+        key: &str,
+        now: i64,
+    ) -> ConversationBranchId {
+        let branch = fixture
+            .database
+            .fork_branch(
+                &ForkBranch {
+                    conversation_id: fixture.conversation_id,
+                    source_branch_id: source,
+                    at_message_id: Some(at),
+                    expected_revision: fixture.revision,
+                    operation: token(key, "ab"),
+                },
+                TimestampMillis::new(now),
+            )
+            .expect("fork")
+            .value
+            .branch
+            .id;
+        fixture.revision = conversation_revision(fixture);
+        branch
+    }
+
+    fn select(fixture: &mut Fixture, branch_id: ConversationBranchId, key: &str, now: i64) {
+        fixture
+            .database
+            .select_branch(
+                &SelectBranch {
+                    conversation_id: fixture.conversation_id,
+                    branch_id,
+                    expected_revision: fixture.revision,
+                    operation: token(key, "ab"),
+                },
+                TimestampMillis::new(now),
+            )
+            .expect("select branch");
+        fixture.revision = conversation_revision(fixture);
+    }
+
+    fn inherited_scenario() -> InheritedScenario {
         use crate::memory::dynamic_memory_run_adapter::tests::{checkpointed_window, finish};
         use lettuce_memory::MemoryRepository;
         let mut fixture = direct_fixture();
-        let messages = conversation_with_two_exchanges(&mut fixture, "inherit");
+        let messages = user_messages(&mut fixture, "inherit", 4, 20);
         let root = fixture.branch_id;
         {
             let mut connection = fixture.database.connection().expect("connection");
@@ -15846,33 +15907,10 @@ mod tests {
             .expect("root memory");
             transaction.commit().expect("commit");
         }
-        let fork = |fixture: &mut Fixture,
-                    source: ConversationBranchId,
-                    at: MessageId,
-                    key: &str,
-                    now: i64| {
-            let branch = fixture
-                .database
-                .fork_branch(
-                    &ForkBranch {
-                        conversation_id: fixture.conversation_id,
-                        source_branch_id: source,
-                        at_message_id: Some(at),
-                        expected_revision: fixture.revision,
-                        operation: token(key, "ab"),
-                    },
-                    TimestampMillis::new(now),
-                )
-                .expect("fork")
-                .value
-                .branch
-                .id;
-            fixture.revision = conversation_revision(fixture);
-            branch
-        };
-        let parent = fork(&mut fixture, root, messages[1], "inherit-parent", 300);
+        let parent = fork_at(&mut fixture, root, messages[1], "inherit-parent", 300);
         fixture.branch_id = parent;
-        let (parent_user, parent_assistant) = exchange(&mut fixture, "inherit-parent", 310);
+        let parent_pair = user_messages(&mut fixture, "inherit-parent", 2, 310);
+        let (parent_user, parent_assistant) = (parent_pair[0], parent_pair[1]);
         let parent_space = fixture
             .database
             .get_for_branch(fixture.conversation_id, parent)
@@ -15892,9 +15930,10 @@ mod tests {
             2,
         );
         finish(&fixture.database, &parent_run, true, 335);
-        let child = fork(&mut fixture, parent, parent_assistant, "inherit-child", 340);
+        let child = fork_at(&mut fixture, parent, parent_assistant, "inherit-child", 340);
         fixture.branch_id = child;
-        let (child_user, child_assistant) = exchange(&mut fixture, "inherit-child", 350);
+        let child_pair = user_messages(&mut fixture, "inherit-child", 2, 350);
+        let (child_user, child_assistant) = (child_pair[0], child_pair[1]);
         let child_space = fixture
             .database
             .get_for_branch(fixture.conversation_id, child)
@@ -15914,101 +15953,124 @@ mod tests {
             4,
         );
         finish(&fixture.database, &child_run, true, 375);
-        fixture
-            .database
-            .select_branch(
-                &SelectBranch {
-                    conversation_id: fixture.conversation_id,
-                    branch_id: root,
-                    expected_revision: fixture.revision,
-                    operation: token("inherit-select-root", "ab"),
-                },
-                TimestampMillis::new(380),
-            )
-            .expect("select root");
-        fixture.revision = conversation_revision(&fixture);
+        select(&mut fixture, root, "inherit-select-root", 380);
+        InheritedScenario {
+            fixture,
+            root,
+            parent,
+            child,
+            parent_user,
+            parent_assistant,
+            child_user,
+        }
+    }
 
-        let copied_summary = |fixture: &Fixture| {
-            let mut copy = direct_fixture_on(fixture.database.clone());
-            let copy_messages = conversation_with_two_exchanges(&mut copy, "inherit-copy");
-            let map: std::collections::HashMap<MessageId, MessageId> = [
-                (parent_user, copy_messages[0]),
-                (parent_assistant, copy_messages[1]),
-            ]
-            .into_iter()
-            .collect();
-            let mut connection = fixture.database.connection().expect("connection");
-            let transaction = connection.transaction().expect("transaction");
-            crate::memory::memory_branch_adapter::seed_new_conversation_space_in(
-                &transaction,
-                fixture.conversation_id,
-                child,
-                (copy.conversation_id, copy.branch_id),
-                Some(child_user),
-                &map,
-            )
-            .expect("copy seed");
-            let space: String = transaction
-                .query_row(
-                    "SELECT space_id FROM conversation_memory_spaces WHERE conversation_id = ?1 AND branch_id = ?2 AND pooled = 0",
-                    params![copy.conversation_id.to_string(), copy.branch_id.to_string()],
-                    |row| row.get(0),
-                )
-                .expect("copy space");
-            let summary = crate::memory::memory_adapter::get_summary_in(
-                &transaction,
-                space.parse().expect("space id"),
-            )
-            .expect("summary");
-            transaction.commit().expect("commit");
-            summary.map(|summary| (summary.text, summary.window_start, summary.window_end))
-        };
-
-        let before = fork(&mut fixture, child, child_user, "inherit-before", 400);
-        let expected = Some(("Parent summary".to_owned(), 2, 4));
-        assert_eq!(
-            summary_view(&fixture.database, fixture.conversation_id, before),
-            expected
-        );
-        assert_eq!(copied_summary(&fixture), expected);
-        fixture
-            .database
-            .select_branch(
-                &SelectBranch {
-                    conversation_id: fixture.conversation_id,
-                    branch_id: root,
-                    expected_revision: fixture.revision,
-                    operation: token("inherit-reselect-root", "ab"),
-                },
-                TimestampMillis::new(410),
-            )
-            .expect("select root again");
-        fixture.revision = conversation_revision(&fixture);
+    fn delete_inherited_parent(scenario: &mut InheritedScenario) {
+        let fixture = &mut scenario.fixture;
         fixture
             .database
             .delete_branch(
                 &lettuce_conversations::DeleteBranch {
                     conversation_id: fixture.conversation_id,
-                    branch_id: parent,
+                    branch_id: scenario.parent,
                     expected_revision: fixture.revision,
                     operation: token("inherit-delete-parent", "ab"),
                 },
                 TimestampMillis::new(420),
             )
             .expect("delete parent");
-        fixture.revision = conversation_revision(&fixture);
-        let after = fork(&mut fixture, child, child_user, "inherit-after", 430);
+        fixture.revision = conversation_revision(fixture);
+    }
+
+    fn forked_summary(
+        scenario: &mut InheritedScenario,
+        key: &str,
+        now: i64,
+    ) -> Option<(String, u64, u64)> {
+        let child = scenario.child;
+        let at = scenario.child_user;
+        let branch = fork_at(&mut scenario.fixture, child, at, key, now);
+        summary_view(
+            &scenario.fixture.database,
+            scenario.fixture.conversation_id,
+            branch,
+        )
+    }
+
+    fn copied_summary(scenario: &InheritedScenario) -> Option<(String, u64, u64)> {
+        let fixture = &scenario.fixture;
+        let mut copy = direct_fixture_on(fixture.database.clone());
+        let copy_messages = user_messages(&mut copy, "inherit-copy", 2, 20);
+        let map: std::collections::HashMap<MessageId, MessageId> = [
+            (scenario.parent_user, copy_messages[0]),
+            (scenario.parent_assistant, copy_messages[1]),
+        ]
+        .into_iter()
+        .collect();
+        let mut connection = fixture.database.connection().expect("connection");
+        let transaction = connection.transaction().expect("transaction");
+        crate::memory::memory_branch_adapter::seed_new_conversation_space_in(
+            &transaction,
+            fixture.conversation_id,
+            scenario.child,
+            (copy.conversation_id, copy.branch_id),
+            Some(scenario.child_user),
+            &map,
+        )
+        .expect("copy seed");
+        let space: String = transaction
+            .query_row(
+                "SELECT space_id FROM conversation_memory_spaces WHERE conversation_id = ?1 AND branch_id = ?2 AND pooled = 0",
+                params![copy.conversation_id.to_string(), copy.branch_id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("copy space");
+        let summary = crate::memory::memory_adapter::get_summary_in(
+            &transaction,
+            space.parse().expect("space id"),
+        )
+        .expect("summary");
+        transaction.commit().expect("commit");
+        summary.map(|summary| (summary.text, summary.window_start, summary.window_end))
+    }
+
+    fn expected_inherited_summary() -> Option<(String, u64, u64)> {
+        Some((
+            INHERITED_SUMMARY.0.to_owned(),
+            INHERITED_SUMMARY.1,
+            INHERITED_SUMMARY.2,
+        ))
+    }
+
+    #[test]
+    fn deleting_a_parent_branch_keeps_the_summary_its_child_inherited() {
+        let mut scenario = inherited_scenario();
         assert_eq!(
-            summary_view(&fixture.database, fixture.conversation_id, after),
-            expected
+            forked_summary(&mut scenario, "inherit-before", 400),
+            expected_inherited_summary()
         );
-        assert_eq!(copied_summary(&fixture), expected);
-        let orphan = fork(&mut fixture, child, parent_assistant, "inherit-orphan", 440);
+        assert_eq!(copied_summary(&scenario), expected_inherited_summary());
+        let root = scenario.root;
+        select(&mut scenario.fixture, root, "inherit-reselect-root", 410);
+        delete_inherited_parent(&mut scenario);
         assert_eq!(
-            summary_view(&fixture.database, fixture.conversation_id, orphan),
-            expected
+            forked_summary(&mut scenario, "inherit-after", 430),
+            expected_inherited_summary()
         );
-        let parent_of_orphan: String = fixture
+        assert_eq!(copied_summary(&scenario), expected_inherited_summary());
+        let child = scenario.child;
+        let at = scenario.parent_assistant;
+        let orphan = fork_at(&mut scenario.fixture, child, at, "inherit-orphan", 440);
+        assert_eq!(
+            summary_view(
+                &scenario.fixture.database,
+                scenario.fixture.conversation_id,
+                orphan
+            ),
+            expected_inherited_summary()
+        );
+        let parent_of_orphan: String = scenario
+            .fixture
             .database
             .connection()
             .expect("connection")
@@ -16018,7 +16080,86 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("orphan parent");
-        assert_eq!(parent_of_orphan, parent.to_string());
+        assert_eq!(parent_of_orphan, scenario.parent.to_string());
+    }
+
+    #[test]
+    fn a_restored_backup_keeps_the_summary_inherited_from_a_deleted_branch() {
+        let mut scenario = inherited_scenario();
+        delete_inherited_parent(&mut scenario);
+        let (graph, restored) = crate::backup::restore_writer::tests::backup_round_trip(
+            scenario.fixture.database.as_ref(),
+            |graph| graph.dynamic_memory.runs.clear(),
+        );
+        assert!(
+            graph
+                .memory
+                .spaces
+                .iter()
+                .any(|space| space.inherited_summary.is_some())
+        );
+        let tampered = |edit: &dyn Fn(&mut lettuce_memory::MemorySummary)| {
+            let mut broken = graph.clone();
+            let summary = broken
+                .memory
+                .spaces
+                .iter_mut()
+                .find_map(|space| space.inherited_summary.as_mut())
+                .expect("inherited summary");
+            edit(summary);
+            lettuce_transfer::canonicalize_and_validate(&mut broken)
+        };
+        assert!(tampered(&|_| {}).is_ok());
+        assert!(tampered(&|summary| summary.branch_id = ConversationBranchId::new()).is_err());
+        assert!(
+            tampered(&|summary| summary.space_id = lettuce_types::MemorySpaceId::new()).is_err()
+        );
+        assert!(tampered(&|summary| summary.source_message_ids = vec![MessageId::new()]).is_err());
+        let mut restored_scenario = InheritedScenario {
+            fixture: Fixture {
+                database: std::rc::Rc::new(restored),
+                conversation_id: scenario.fixture.conversation_id,
+                branch_id: scenario.fixture.branch_id,
+                user_participant: scenario.fixture.user_participant,
+                characters: scenario.fixture.characters.clone(),
+                revision: scenario.fixture.revision,
+            },
+            ..scenario
+        };
+        restored_scenario.fixture.revision = conversation_revision(&restored_scenario.fixture);
+        assert_eq!(
+            forked_summary(&mut restored_scenario, "restored-fork", 500),
+            expected_inherited_summary()
+        );
+        assert_eq!(
+            copied_summary(&restored_scenario),
+            expected_inherited_summary()
+        );
+    }
+
+    #[test]
+    fn a_synced_peer_keeps_the_summary_inherited_from_a_deleted_branch() {
+        let mut scenario = inherited_scenario();
+        delete_inherited_parent(&mut scenario);
+        let peer = Database::open_in_memory().expect("peer");
+        sync_all(scenario.fixture.database.as_ref(), &peer, 500);
+        let mut peer_scenario = InheritedScenario {
+            fixture: Fixture {
+                database: std::rc::Rc::new(peer),
+                conversation_id: scenario.fixture.conversation_id,
+                branch_id: scenario.fixture.branch_id,
+                user_participant: scenario.fixture.user_participant,
+                characters: scenario.fixture.characters.clone(),
+                revision: scenario.fixture.revision,
+            },
+            ..scenario
+        };
+        peer_scenario.fixture.revision = conversation_revision(&peer_scenario.fixture);
+        assert_eq!(
+            forked_summary(&mut peer_scenario, "peer-fork", 600),
+            expected_inherited_summary()
+        );
+        assert_eq!(copied_summary(&peer_scenario), expected_inherited_summary());
     }
 
     #[test]

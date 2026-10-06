@@ -1380,6 +1380,11 @@ fn supported_change(change: &CanonicalChange) -> Result<bool, IncomingChangeErro
             lettuce_sync::MEMORY_SUMMARY_SYNC_VERSION,
         )
         | (
+            lettuce_sync::MEMORY_INHERITED_SUMMARY_SYNC_KIND,
+            lettuce_sync::MEMORY_INHERITED_SUMMARY_SYNC_SCHEMA,
+            lettuce_sync::MEMORY_INHERITED_SUMMARY_SYNC_VERSION,
+        )
+        | (
             lettuce_sync::CONVERSATION_BRANCH_SYNC_KIND,
             lettuce_sync::CONVERSATION_BRANCH_SYNC_SCHEMA,
             lettuce_sync::CONVERSATION_BRANCH_SYNC_VERSION,
@@ -2368,6 +2373,40 @@ const MEMORY_SUMMARY_CODEC: SnapshotCodec = SnapshotCodec {
     }),
 };
 
+const MEMORY_INHERITED_SUMMARY_CODEC: SnapshotCodec = SnapshotCodec {
+    kind: lettuce_sync::MEMORY_INHERITED_SUMMARY_SYNC_KIND,
+    assets: no_assets,
+    empty: None,
+    seed: None,
+    decode: |id, bytes| decode_memory_summary(id, bytes).map(|_| ()),
+    current: |tx, id| {
+        crate::sync::memory_sync_adapter::sync_load_inherited_summary(tx, id)
+            .map_err(memory_apply_error)?
+            .map(|summary| {
+                json_payload(
+                    lettuce_sync::MEMORY_INHERITED_SUMMARY_SYNC_SCHEMA,
+                    lettuce_sync::MEMORY_INHERITED_SUMMARY_SYNC_VERSION,
+                    &summary,
+                )
+            })
+            .transpose()
+    },
+    materialize: |tx, id, bytes| {
+        let summary = decode_memory_summary(id, bytes)?;
+        crate::sync::memory_sync_adapter::sync_replace_inherited_summary(tx, id, &summary)
+            .map_err(memory_apply_error)?;
+        Ok(true)
+    },
+    ids: Some(|connection| {
+        crate::sync::memory_sync_adapter::sync_inherited_summary_owners(connection)
+            .map_err(|_| ApplyOneError::Storage)
+    }),
+    delete: Some(|tx, change, _| {
+        crate::sync::memory_sync_adapter::sync_delete_inherited_summary(tx, change.entity().id())
+            .map_err(memory_apply_error)
+    }),
+};
+
 fn json_payload<T: serde::Serialize>(
     schema: &str,
     version: u32,
@@ -2941,7 +2980,7 @@ const CONVERSATION_MESSAGE_CODEC: SnapshotCodec = SnapshotCodec {
 
 /// Aggregates journaled by comparing their current state with the latest
 /// journaled snapshot, in dependency order (deletes run in reverse).
-const SCANNED_CODECS: [&SnapshotCodec; 35] = [
+const SCANNED_CODECS: [&SnapshotCodec; 36] = [
     &PROVIDER_ACCOUNT_CODEC,
     &MODEL_PROFILE_CODEC,
     &PERSONA_CODEC,
@@ -2959,6 +2998,7 @@ const SCANNED_CODECS: [&SnapshotCodec; 35] = [
     &CONVERSATION_MESSAGE_CODEC,
     &MEMORY_ITEM_CODEC,
     &MEMORY_SUMMARY_CODEC,
+    &MEMORY_INHERITED_SUMMARY_CODEC,
     &MEMORY_CURSOR_CODEC,
     &COMPANION_SOUL_CODEC,
     &COMPANION_NOTE_CODEC,

@@ -264,11 +264,23 @@ fn read_memory(
                 .ok_or(ProviderBackupSourceError::InvalidData)?;
             let summary = crate::memory::memory_adapter::get_summary_in(transaction, space_id)
                 .map_err(|_| ProviderBackupSourceError::InvalidData)?;
+            let inherited_summary = branch_id
+                .map(|branch_id| {
+                    crate::memory::memory_branch_adapter::load_materialised_summary_in(
+                        transaction,
+                        space_id,
+                        branch_id,
+                    )
+                })
+                .transpose()
+                .map_err(|_| ProviderBackupSourceError::InvalidData)?
+                .flatten();
             Ok(BackupMemorySpace {
                 conversation_id,
                 branch_id,
                 snapshot,
                 summary,
+                inherited_summary,
                 shared_conversation_ids: conversations,
             })
         })

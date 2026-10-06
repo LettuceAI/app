@@ -4,7 +4,7 @@ use lettuce_memory::{MemoryRetrievalAccessReceipt, MemorySpaceSnapshot, MemorySu
 use lettuce_types::ConversationId;
 use serde::{Deserialize, Serialize};
 
-pub const MEMORY_BACKUP_VERSION: u32 = 2;
+pub const MEMORY_BACKUP_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -43,6 +43,10 @@ pub struct BackupMemorySpace {
     pub branch_id: Option<lettuce_types::ConversationBranchId>,
     pub snapshot: MemorySpaceSnapshot,
     pub summary: Option<MemorySummary>,
+    /// The summary this branch's space inherited from a branch that was later
+    /// deleted, kept so forks and copies of the branch still see it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inherited_summary: Option<MemorySummary>,
     /// Other conversations bound to the same space: a companion memory pool
     /// is shared by the companion's conversations; `conversation_id` owns the
     /// summary.
@@ -171,6 +175,14 @@ impl MemoryBackup {
                                         .source_role
                                         .is_some_and(|source_role| source_role != *role)
                             })
+                        })
+                })
+                || space.inherited_summary.as_ref().is_some_and(|summary| {
+                    pool || summary.validate().is_err()
+                        || summary.space_id != space.snapshot.id
+                        || Some(summary.branch_id) != space.branch_id
+                        || summary.source_message_ids.iter().any(|id| {
+                            messages.get(id).map(|value| value.0) != Some(space.conversation_id)
                         })
                 })
                 || space.summary.as_ref().is_some_and(|summary| {
