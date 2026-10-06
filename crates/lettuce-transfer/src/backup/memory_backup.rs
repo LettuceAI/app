@@ -178,7 +178,13 @@ impl MemoryBackup {
                         })
                 })
                 || space.inherited_summary.as_ref().is_some_and(|summary| {
-                    pool || summary.validate().is_err()
+                    pool || !history.conversations.iter().any(|entry| {
+                        entry.aggregate.conversation.id == space.conversation_id
+                            && entry.aggregate.branches.iter().any(|branch| {
+                                Some(branch.id) == space.branch_id
+                                    && branch.parent_branch_id.is_some()
+                            })
+                    }) || summary.validate().is_err()
                         || summary.space_id != space.snapshot.id
                         || Some(summary.branch_id) != space.branch_id
                         || summary.source_message_ids.iter().any(|id| {

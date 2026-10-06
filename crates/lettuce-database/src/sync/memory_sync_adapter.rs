@@ -379,6 +379,17 @@ pub(crate) fn sync_replace_inherited_summary(
     let conversation_id = branch_owner(owner)
         .map(|(conversation, _)| conversation)
         .ok_or_else(|| storage("invalid inherited summary owner"))?;
+    if !crate::memory::memory_branch_adapter::branch_has_parent(
+        transaction,
+        conversation_id,
+        branch_id,
+    )
+    .map_err(storage)?
+    {
+        return Err(MemoryRepositoryError::Invalid(
+            lettuce_memory::MemoryValidationError::InvalidSpaceId,
+        ));
+    }
     for message in &summary.source_message_ids {
         let present: bool = transaction
             .query_row(

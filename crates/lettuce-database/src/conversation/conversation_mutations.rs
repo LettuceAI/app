@@ -15817,6 +15817,7 @@ mod tests {
         root: ConversationBranchId,
         parent: ConversationBranchId,
         child: ConversationBranchId,
+        root_last: MessageId,
         parent_user: MessageId,
         parent_assistant: MessageId,
         child_user: MessageId,
@@ -15959,6 +15960,7 @@ mod tests {
             root,
             parent,
             child,
+            root_last: messages[3],
             parent_user,
             parent_assistant,
             child_user,
@@ -16086,11 +16088,13 @@ mod tests {
     #[test]
     fn a_restored_backup_keeps_the_summary_inherited_from_a_deleted_branch() {
         let mut scenario = inherited_scenario();
+        let root = scenario.root;
         delete_inherited_parent(&mut scenario);
         let (graph, restored) = crate::backup::restore_writer::tests::backup_round_trip(
             scenario.fixture.database.as_ref(),
-            |graph| graph.dynamic_memory.runs.clear(),
+            |_| {},
         );
+        assert!(!graph.dynamic_memory.runs.is_empty());
         assert!(
             graph
                 .memory
@@ -16109,6 +16113,25 @@ mod tests {
             edit(summary);
             lettuce_transfer::canonicalize_and_validate(&mut broken)
         };
+        let mut on_root = graph.clone();
+        let moved = on_root
+            .memory
+            .spaces
+            .iter_mut()
+            .find_map(|space| space.inherited_summary.take())
+            .expect("inherited summary");
+        let root_space = on_root
+            .memory
+            .spaces
+            .iter_mut()
+            .find(|space| space.branch_id == Some(root))
+            .expect("root space");
+        root_space.inherited_summary = Some(lettuce_memory::MemorySummary {
+            space_id: root_space.snapshot.id,
+            branch_id: root,
+            ..moved
+        });
+        assert!(lettuce_transfer::canonicalize_and_validate(&mut on_root).is_err());
         assert!(tampered(&|_| {}).is_ok());
         assert!(tampered(&|summary| summary.branch_id = ConversationBranchId::new()).is_err());
         assert!(
@@ -16134,6 +16157,85 @@ mod tests {
         assert_eq!(
             copied_summary(&restored_scenario),
             expected_inherited_summary()
+        );
+    }
+
+    #[test]
+    fn a_synced_inherited_summary_for_a_root_branch_is_rejected() {
+        let mut scenario = inherited_scenario();
+        delete_inherited_parent(&mut scenario);
+        let conversation_id = scenario.fixture.conversation_id;
+        let mut connection = scenario.fixture.database.connection().expect("connection");
+        let transaction = connection.transaction().expect("transaction");
+        let child_owner = format!("conversation:{conversation_id}:branch:{}", scenario.child);
+        let root_owner = format!("conversation:{conversation_id}:branch:{}", scenario.root);
+        let inherited = crate::sync::memory_sync_adapter::sync_load_inherited_summary(
+            &transaction,
+            &child_owner,
+        )
+        .expect("load")
+        .expect("child inherited summary");
+        let result = crate::sync::memory_sync_adapter::sync_replace_inherited_summary(
+            &transaction,
+            &root_owner,
+            &lettuce_memory::MemorySummary {
+                branch_id: scenario.root,
+                ..inherited
+            },
+        );
+        assert!(matches!(
+            result,
+            Err(lettuce_memory::MemoryRepositoryError::Invalid(_))
+        ));
+        let stored: i64 = transaction
+            .query_row(
+                "SELECT count(*) FROM memory_inherited_summaries WHERE branch_id = ?1",
+                [scenario.root.to_string()],
+                |row| row.get(0),
+            )
+            .expect("count");
+        assert_eq!(stored, 0);
+    }
+
+    #[test]
+    fn a_stray_inherited_summary_on_a_root_branch_never_reaches_its_forks() {
+        use lettuce_memory::MemoryRepository;
+        let mut scenario = inherited_scenario();
+        let (conversation_id, root) = (scenario.fixture.conversation_id, scenario.root);
+        let root_space = scenario
+            .fixture
+            .database
+            .get_for_branch(conversation_id, root)
+            .expect("memory")
+            .expect("root space")
+            .id;
+        {
+            let mut connection = scenario.fixture.database.connection().expect("connection");
+            let transaction = connection.transaction().expect("transaction");
+            crate::memory::memory_branch_adapter::store_materialised_summary_in(
+                &transaction,
+                conversation_id,
+                root,
+                root_space,
+                &lettuce_memory::MemorySummary {
+                    space_id: root_space,
+                    branch_id: root,
+                    text: "Injected".into(),
+                    token_count: 1,
+                    window_start: 0,
+                    window_end: 1,
+                    source_message_ids: vec![scenario.parent_user],
+                    updated_at: TimestampMillis::new(1),
+                },
+            )
+            .expect("stray row");
+            transaction.commit().expect("commit");
+        }
+        let at = scenario.root_last;
+        let fork = fork_at(&mut scenario.fixture, root, at, "stray-root-fork", 450);
+        assert_eq!(
+            summary_view(&scenario.fixture.database, conversation_id, fork),
+            None
         );
     }
 

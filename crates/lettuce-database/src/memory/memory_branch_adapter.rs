@@ -29,6 +29,22 @@ pub(crate) fn create_empty_branch_space_in(
     Ok(())
 }
 
+pub(crate) fn branch_has_parent(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    branch_id: ConversationBranchId,
+) -> Result<bool, ConversationRepositoryError> {
+    transaction
+        .query_row(
+            "SELECT parent_branch_id IS NOT NULL FROM conversation_branches WHERE conversation_id = ?1 AND id = ?2",
+            params![conversation_id.to_string(), branch_id.to_string()],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(storage)
+        .map(|value| value.unwrap_or(false))
+}
+
 fn parent_is_tombstoned(
     transaction: &Transaction<'_>,
     conversation_id: ConversationId,
@@ -454,6 +470,9 @@ fn base_summary_in(
             .filter(|summary| summary.window_end <= position);
         if stored.is_some() {
             return Ok(stored);
+        }
+        if !branch_has_parent(transaction, conversation_id, branch_id)? {
+            return Ok(None);
         }
         return Ok(
             load_materialised_summary_in(transaction, space_id, branch_id)?

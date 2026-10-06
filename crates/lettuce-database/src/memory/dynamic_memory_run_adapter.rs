@@ -3573,6 +3573,25 @@ pub(crate) mod tests {
         checkpointed_window(database, conversation_id, space_id, messages, text, at, 0)
     }
 
+    fn memory_job(database: &Database, conversation_id: ConversationId) -> JobId {
+        lettuce_jobs::JobStore::create_or_get(
+            database,
+            lettuce_jobs::JobSpec::new(
+                lettuce_jobs::JobKind::MemoryExtraction,
+                lettuce_jobs::JobSubject::new(
+                    lettuce_jobs::SubjectKind::Conversation,
+                    conversation_id.to_string(),
+                )
+                .expect("subject"),
+                lettuce_jobs::OutcomeRef::Conversation(conversation_id),
+            )
+            .with_resources(vec![lettuce_jobs::ResourceClass::Cpu]),
+        )
+        .expect("memory job")
+        .job
+        .id
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn checkpointed_window(
         database: &Database,
@@ -3612,7 +3631,7 @@ pub(crate) mod tests {
                     },
                     &|key| key.to_owned(),
                 ),
-                job_id: JobId::new(),
+                job_id: memory_job(database, conversation_id),
                 now: TimestampMillis::new(at),
             })
             .expect("run");
