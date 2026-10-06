@@ -424,3 +424,39 @@ impl GenerationEventSink for ChannelSink {
         }
     }
 }
+
+#[tauri::command]
+#[specta::specta]
+pub async fn conversation_branches(
+    context: State<'_, ApiContext>,
+    request: lettuce_contracts::ConversationRequest,
+) -> Result<lettuce_contracts::ConversationBranchList, ApiError> {
+    api::conversation_branches(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn conversation_branch_fork(
+    context: State<'_, ApiContext>,
+    request: lettuce_contracts::ConversationBranchForkRequest,
+) -> Result<lettuce_contracts::ConversationBranchChanged, ApiError> {
+    api::conversation_branch_fork(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn conversation_branch_rename(
+    context: State<'_, ApiContext>,
+    request: lettuce_contracts::ConversationBranchRenameRequest,
+) -> Result<lettuce_contracts::ConversationBranchChanged, ApiError> {
+    api::conversation_branch_rename(&context, request).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn conversation_branch_select(
+    context: State<'_, ApiContext>,
+    request: lettuce_contracts::ConversationBranchMutationRequest,
+) -> Result<lettuce_contracts::ConversationBranchChanged, ApiError> {
+    api::conversation_branch_select(&context, request).await
+}

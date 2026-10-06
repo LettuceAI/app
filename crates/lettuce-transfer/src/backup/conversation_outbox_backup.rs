@@ -7,7 +7,7 @@ use lettuce_conversations::{
 use lettuce_types::{ConversationId, GenerationAttemptId, GenerationTurnId, UsageEventId};
 use serde::{Deserialize, Serialize};
 
-pub const CONVERSATION_OUTBOX_BACKUP_VERSION: u32 = 1;
+pub const CONVERSATION_OUTBOX_BACKUP_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -324,7 +324,8 @@ impl ConversationReferences {
                 ..
             } => self.branches.contains(branch_id) && self.owns_attempt(*turn_id, *attempt_id),
             ConversationOutboxEvent::BranchForked { branch_id, .. }
-            | ConversationOutboxEvent::BranchSelected { branch_id, .. } => {
+            | ConversationOutboxEvent::BranchSelected { branch_id, .. }
+            | ConversationOutboxEvent::BranchLabelChanged { branch_id, .. } => {
                 self.branches.contains(branch_id)
             }
             ConversationOutboxEvent::CandidateChosen {
@@ -372,6 +373,7 @@ fn event_timestamp(event: &ConversationOutboxEvent) -> lettuce_types::TimestampM
         | ConversationOutboxEvent::BranchForked { at, .. }
         | ConversationOutboxEvent::CandidateChosen { at, .. }
         | ConversationOutboxEvent::BranchSelected { at, .. }
+        | ConversationOutboxEvent::BranchLabelChanged { at, .. }
         | ConversationOutboxEvent::ConversationLifecycleChanged { at, .. }
         | ConversationOutboxEvent::TitleChanged { at, .. }
         | ConversationOutboxEvent::SettingsChanged { at, .. }
@@ -412,6 +414,7 @@ fn operation_kind_rank(kind: OperationKind) -> u8 {
         OperationKind::ResolveSpeaker => 24,
         OperationKind::AppendMessage => 25,
         OperationKind::ParticipantAdd => 26,
+        OperationKind::RenameBranch => 27,
     }
 }
 

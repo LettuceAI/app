@@ -812,6 +812,23 @@ pub struct ForkBranch {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct RenameBranch {
+    pub conversation_id: ConversationId,
+    pub branch_id: ConversationBranchId,
+    pub label: String,
+    pub expected_revision: Revision,
+    pub operation: OperationToken,
+}
+
+impl RenameBranch {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        validate_expected(self.expected_revision)?;
+        validate_text("branch.label", &self.label, 1_048_576, true)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SelectBranch {
     pub conversation_id: ConversationId,
     pub branch_id: ConversationBranchId,
@@ -1458,6 +1475,7 @@ pub enum ConversationMutation {
     Flags(UpdateMessageFlags),
     Fork(ForkBranch),
     SelectBranch(SelectBranch),
+    RenameBranch(RenameBranch),
     Tombstone(TombstoneMessage),
     Archive(ArchiveConversation),
     Restore(RestoreConversation),
@@ -1510,6 +1528,7 @@ impl ConversationMutation {
             }
             Self::Fork(command) => validate_expected(command.expected_revision),
             Self::SelectBranch(command) => validate_expected(command.expected_revision),
+            Self::RenameBranch(command) => command.validate(),
             Self::Tombstone(command) => validate_expected(command.expected_revision),
             Self::Archive(command) => validate_expected(command.expected_revision),
             Self::Restore(command) => validate_expected(command.expected_revision),

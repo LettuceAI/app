@@ -139,6 +139,7 @@ pub(crate) fn operation_kind(value: &str) -> Result<OperationKind, ConversationR
         "flags" => OperationKind::Flags,
         "fork" => OperationKind::Fork,
         "select_branch" => OperationKind::SelectBranch,
+        "rename_branch" => OperationKind::RenameBranch,
         "tombstone" => OperationKind::Tombstone,
         "archive" => OperationKind::Archive,
         "restore" => OperationKind::Restore,
@@ -678,7 +679,8 @@ pub(crate) fn validate_outbox_event_exact(
                 ],
             )?;
         }
-        ConversationOutboxEvent::BranchForked { branch_id, .. } => {
+        ConversationOutboxEvent::BranchForked { branch_id, .. }
+        | ConversationOutboxEvent::BranchLabelChanged { branch_id, .. } => {
             require_exists(
                 transaction,
                 "SELECT EXISTS(SELECT 1 FROM conversation_branches WHERE conversation_id = ?1 AND id = ?2)",
@@ -2164,6 +2166,7 @@ pub(crate) fn validate_outbox_event_timestamp(
         | ConversationOutboxEvent::BranchForked { at, .. }
         | ConversationOutboxEvent::CandidateChosen { at, .. }
         | ConversationOutboxEvent::BranchSelected { at, .. }
+        | ConversationOutboxEvent::BranchLabelChanged { at, .. }
         | ConversationOutboxEvent::ConversationLifecycleChanged { at, .. }
         | ConversationOutboxEvent::SettingsChanged { at, .. }
         | ConversationOutboxEvent::ParticipantPolicyChanged { at, .. }
@@ -2462,7 +2465,8 @@ pub(crate) fn validate_outbox_event(
             )?;
         }
         ConversationOutboxEvent::BranchForked { branch_id, .. }
-        | ConversationOutboxEvent::BranchSelected { branch_id, .. } => owned_ref(
+        | ConversationOutboxEvent::BranchSelected { branch_id, .. }
+        | ConversationOutboxEvent::BranchLabelChanged { branch_id, .. } => owned_ref(
             transaction,
             "conversation_branches",
             "id",
@@ -2844,6 +2848,69 @@ const DIRECT_CHARACTER_SQL: &str = "json_extract(kind_json, '$.value.details.cha
 const GROUP_SOURCE_SQL: &str = "json_extract(kind_json, '$.value.details.group.source_id')";
 
 impl lettuce_conversations::ConversationOverviewReader for Database {
+    fn branch_conversation(
+        &self,
+        branch_id: ConversationBranchId,
+    ) -> Result<Option<ConversationId>, ConversationRepositoryError> {
+        let connection = open_read(self)?;
+        connection
+            .query_row(
+                "SELECT conversation_id FROM conversation_branches WHERE id = ?1",
+                [branch_id.to_string()],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(slice::db)?
+            .map(parse)
+            .transpose()
+    }
+
+    fn branch_overviews(
+        &self,
+        conversation_id: ConversationId,
+    ) -> Result<
+        (
+            lettuce_types::Revision,
+            Vec<lettuce_conversations::ConversationBranchOverview>,
+        ),
+        ConversationRepositoryError,
+    > {
+        let mut connection = open_read(self)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Deferred)
+            .map_err(slice::db)?;
+        let aggregate = slice::hydrate_conversation(&transaction, conversation_id, || {})?;
+        let counts: std::collections::HashMap<String, u64> = transaction.prepare(
+            "WITH RECURSIVE ancestry(branch_id, id) AS (SELECT branch.id, coalesce(branch.head_message_id, branch.fork_message_id) FROM conversation_branches AS branch WHERE branch.conversation_id = ?1 AND branch.status <> 'tombstoned' AND coalesce(branch.head_message_id, branch.fork_message_id) IS NOT NULL UNION ALL SELECT ancestry.branch_id, message.parent_message_id FROM ancestry JOIN conversation_messages AS message ON message.conversation_id = ?1 AND message.id = ancestry.id WHERE message.parent_message_id IS NOT NULL) SELECT ancestry.branch_id, count(*) FROM ancestry JOIN conversation_messages AS message ON message.conversation_id = ?1 AND message.id = ancestry.id WHERE message.visibility = 'visible' GROUP BY ancestry.branch_id",
+        ).map_err(slice::db)?.query_map([conversation_id.to_string()], |row| Ok((row.get(0)?, row.get::<_, i64>(1)?))).map_err(slice::db)?.map(|row| {
+            let (id, count) = row.map_err(slice::db)?;
+            Ok((id, u64::try_from(count).map_err(|_| ConversationRepositoryError::Storage)?))
+        }).collect::<Result<_, ConversationRepositoryError>>()?;
+        let revision = aggregate.conversation.revision;
+        let branches = aggregate
+            .branches
+            .into_iter()
+            .filter(|branch| branch.status != lettuce_conversations::BranchStatus::Tombstoned)
+            .map(|branch| {
+                let label = branch.label.clone().unwrap_or_else(|| {
+                    if branch.parent_branch_id.is_none() {
+                        aggregate.conversation.title.clone()
+                    } else {
+                        format!("{} (branch)", aggregate.conversation.title)
+                    }
+                });
+                lettuce_conversations::ConversationBranchOverview {
+                    message_count: counts.get(&branch.id.to_string()).copied().unwrap_or(0),
+                    active: aggregate.conversation.active_branch_id == branch.id,
+                    branch,
+                    label,
+                }
+            })
+            .collect();
+        transaction.commit().map_err(slice::db)?;
+        Ok((revision, branches))
+    }
+
     fn overview_page(
         &self,
         query: &ConversationQuery,

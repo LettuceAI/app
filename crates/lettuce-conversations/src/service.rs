@@ -529,6 +529,17 @@ impl<R: ConversationRepository> ConversationManager<R> {
         Ok(result)
     }
 
+    pub fn rename_branch(
+        &self,
+        command: &crate::RenameBranch,
+        now: TimestampMillis,
+    ) -> Result<crate::MutationCommit<crate::BranchResult>, ConversationServiceError> {
+        command.validate()?;
+        self.repository
+            .rename_branch(command, now)
+            .map_err(Into::into)
+    }
+
     pub fn select_branch(
         &self,
         command: &crate::commands::SelectBranch,

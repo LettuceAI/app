@@ -610,6 +610,12 @@ pub enum ConversationOutboxEvent {
         branch_id: ConversationBranchId,
         at: TimestampMillis,
     },
+    BranchLabelChanged {
+        conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
+        label: String,
+        at: TimestampMillis,
+    },
     CandidateChosen {
         conversation_id: ConversationId,
         message_id: MessageId,
@@ -725,6 +731,9 @@ impl ConversationOutboxRecord {
             | ConversationOutboxEvent::CandidateChosen {
                 conversation_id, ..
             }
+            | ConversationOutboxEvent::BranchLabelChanged {
+                conversation_id, ..
+            }
             | ConversationOutboxEvent::BranchSelected {
                 conversation_id, ..
             }
@@ -819,6 +828,7 @@ pub enum OperationKind {
     Flags,
     Fork,
     SelectBranch,
+    RenameBranch,
     Tombstone,
     Archive,
     Restore,
@@ -1048,7 +1058,26 @@ pub struct ConversationOverview {
 }
 
 /// Read models behind the conversation list and chat screens.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConversationBranchOverview {
+    pub branch: ConversationBranch,
+    pub label: String,
+    pub message_count: u64,
+    pub active: bool,
+}
+
 pub trait ConversationOverviewReader: Send + Sync {
+    fn branch_overviews(
+        &self,
+        conversation_id: ConversationId,
+    ) -> Result<
+        (lettuce_types::Revision, Vec<ConversationBranchOverview>),
+        ConversationRepositoryError,
+    >;
+    fn branch_conversation(
+        &self,
+        branch_id: ConversationBranchId,
+    ) -> Result<Option<ConversationId>, ConversationRepositoryError>;
     /// Conversations in the order and pages of `ConversationReader::page`.
     fn overview_page(
         &self,
@@ -1348,6 +1377,11 @@ pub trait ConversationRepository: ConversationCreator {
         command: &ForkBranch,
         now: TimestampMillis,
     ) -> Result<ForkBranchResult, ConversationRepositoryError>;
+    fn rename_branch(
+        &self,
+        command: &crate::RenameBranch,
+        now: TimestampMillis,
+    ) -> Result<MutationCommit<BranchResult>, ConversationRepositoryError>;
     fn select_branch(
         &self,
         command: &SelectBranch,

@@ -39,3 +39,5 @@ Facts about how `lettuce-conversations` relates to the legacy app (2.2.x). The c
 - Several async ports in `ports.rs` (`LaunchResolver`, `SpeakerPolicy`, `ModelResolver`, `MediaPort`, `MemoryPort`, `CompanionPort`, `JobPort`, `Clock`, `ConversationApplication`) have no implementation outside this crate; `lettuce-app` composes the generation flow directly.
 
 A fork stores `"{conversation title} (branch)"` without numbering, matching `old-code/src/core/storage/repo.ts:1683`. Its own label can evolve independently while the root name remains the conversation title; legacy represented each branch as a separately titled session (`old-code/src/ui/pages/chats/ChatTreePage.tsx:213-220`).
+
+Branch list, fork, rename and select are exposed through the application API. Legacy tree nodes were independent sessions ordered by creation (`old-code/src-tauri/src/storage_manager/sessions.rs:2429-2493`, `old-code/src/ui/pages/chats/ChatTreePage.tsx:45-64,105-116`); the rewrite lists surviving branches in creation order and counts visible messages across all roles. Root rename changes the conversation title and fork rename changes only its stored label.

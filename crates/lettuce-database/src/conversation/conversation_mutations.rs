@@ -5325,6 +5325,105 @@ impl ConversationRepository for Database {
         )
     }
 
+    fn rename_branch(
+        &self,
+        command: &lettuce_conversations::RenameBranch,
+        now: TimestampMillis,
+    ) -> Result<lettuce_conversations::MutationCommit<BranchResult>, ConversationRepositoryError>
+    {
+        command
+            .validate()
+            .map_err(ConversationRepositoryError::Invalid)?;
+        kernel::run_mutation(
+            self,
+            command.conversation_id,
+            OperationKind::RenameBranch,
+            &command.operation,
+            now,
+            |transaction, context| {
+                let conversation = kernel::cas_conversation(
+                    transaction,
+                    context.conversation_id,
+                    command.expected_revision,
+                )?;
+                kernel::require_writable(&conversation)?;
+                let branch = load_branch(transaction, context.conversation_id, command.branch_id)?;
+                if branch.status == lettuce_conversations::BranchStatus::Tombstoned {
+                    return Err(ConversationRepositoryError::Conflict);
+                }
+                let label = command.label.trim();
+                let event = if branch.parent_branch_id.is_none() {
+                    let rename = RenameConversation {
+                        conversation_id: command.conversation_id,
+                        expected_revision: command.expected_revision,
+                        operation: command.operation.clone(),
+                        title: label.to_owned(),
+                    };
+                    rename
+                        .validate()
+                        .map_err(ConversationRepositoryError::Invalid)?;
+                    transaction
+                        .execute(
+                            "UPDATE conversations SET title = ?2 WHERE id = ?1",
+                            params![context.conversation_id.to_string(), label],
+                        )
+                        .map_err(kernel::map_constraint)?;
+                    ConversationOutboxEvent::TitleChanged {
+                        conversation_id: context.conversation_id,
+                        title: label.to_owned(),
+                        at: context.now,
+                    }
+                } else {
+                    let label = if label.is_empty() {
+                        crate::conversation::conversation_history_writer::default_branch_label_in(
+                            transaction,
+                            context.conversation_id,
+                        )?
+                    } else {
+                        label.to_owned()
+                    };
+                    transaction.execute(
+                        "UPDATE conversation_branches SET label = ?3, label_updated_at = ?4, updated_at = max(updated_at, ?4), revision = revision + 1 WHERE conversation_id = ?1 AND id = ?2",
+                        params![context.conversation_id.to_string(), command.branch_id.to_string(), label, context.now.get()],
+                    ).map_err(kernel::map_constraint)?;
+                    ConversationOutboxEvent::BranchLabelChanged {
+                        conversation_id: context.conversation_id,
+                        branch_id: command.branch_id,
+                        label,
+                        at: context.now,
+                    }
+                };
+                let revision =
+                    kernel::bump_conversation(transaction, context.conversation_id, context.now)?;
+                Ok(kernel::Staged {
+                    value: BranchResult {
+                        branch: load_branch(
+                            transaction,
+                            context.conversation_id,
+                            command.branch_id,
+                        )?,
+                        conversation: conversation_value(transaction, context.conversation_id)?,
+                    },
+                    result: OperationResultRef::Branch(command.branch_id),
+                    events: vec![kernel::StagedEvent {
+                        conversation_revision: revision,
+                        at: context.now,
+                        event,
+                    }],
+                })
+            },
+            |transaction, operation| {
+                if operation.result != OperationResultRef::Branch(command.branch_id) {
+                    return Err(ConversationRepositoryError::Conflict);
+                }
+                Ok(BranchResult {
+                    branch: load_branch(transaction, command.conversation_id, command.branch_id)?,
+                    conversation: conversation_value(transaction, command.conversation_id)?,
+                })
+            },
+        )
+    }
+
     fn select_branch(
         &self,
         command: &SelectBranch,
@@ -13535,6 +13634,149 @@ mod tests {
             ),
             Err(ConversationRepositoryError::Conflict),
             "the fork point must live on the source branch"
+        );
+    }
+
+    #[test]
+    fn branch_rename_handles_root_blank_defaults_and_operation_replays() {
+        let mut fixture = direct_fixture();
+        let messages = conversation_with_two_exchanges(&mut fixture, "branch-rename");
+        let root_command = lettuce_conversations::RenameBranch {
+            conversation_id: fixture.conversation_id,
+            branch_id: fixture.branch_id,
+            label: "  Renamed chat  ".to_owned(),
+            expected_revision: fixture.revision,
+            operation: token("rename-root", "ab"),
+        };
+        let renamed = fixture
+            .database
+            .rename_branch(&root_command, TimestampMillis::new(300))
+            .expect("root rename");
+        assert_eq!(renamed.value.conversation.title, "Renamed chat");
+        assert_eq!(renamed.value.branch.label, None);
+        assert!(
+            renamed
+                .outbox
+                .iter()
+                .any(|event| matches!(event.event, ConversationOutboxEvent::TitleChanged { .. }))
+        );
+        let replay = fixture
+            .database
+            .rename_branch(&root_command, TimestampMillis::new(301))
+            .expect("replay");
+        assert_eq!(renamed.value, replay.value);
+        let mut changed = root_command.clone();
+        changed.operation = token("rename-root", "ba");
+        changed.label = "Different".to_owned();
+        assert!(matches!(
+            fixture
+                .database
+                .rename_branch(&changed, TimestampMillis::new(302)),
+            Err(ConversationRepositoryError::Conflict)
+        ));
+        fixture.revision = renamed.value.conversation.revision;
+        let fork = fixture
+            .database
+            .fork_branch(
+                &ForkBranch {
+                    conversation_id: fixture.conversation_id,
+                    source_branch_id: fixture.branch_id,
+                    at_message_id: Some(messages[1]),
+                    expected_revision: fixture.revision,
+                    operation: token("rename-fork", "bc"),
+                },
+                TimestampMillis::new(310),
+            )
+            .expect("fork");
+        let command = lettuce_conversations::RenameBranch {
+            conversation_id: fixture.conversation_id,
+            branch_id: fork.value.branch.id,
+            label: "   ".to_owned(),
+            expected_revision: fork.value.conversation.revision,
+            operation: token("rename-fork-blank", "cb"),
+        };
+        let reset = fixture
+            .database
+            .rename_branch(&command, TimestampMillis::new(320))
+            .expect("default label");
+        assert_eq!(
+            reset.value.branch.label.as_deref(),
+            Some("Renamed chat (branch)")
+        );
+        assert_eq!(
+            reset.value.branch.label_updated_at,
+            Some(TimestampMillis::new(320))
+        );
+        assert_eq!(reset.value.conversation.title, "Renamed chat");
+        assert_eq!(
+            reset.value,
+            fixture
+                .database
+                .rename_branch(&command, TimestampMillis::new(321))
+                .expect("fork replay")
+                .value
+        );
+    }
+
+    #[test]
+    fn failed_branch_rename_rolls_back_label_revision_and_receipt() {
+        let mut fixture = direct_fixture();
+        let messages = conversation_with_two_exchanges(&mut fixture, "rename-rollback");
+        let fork = fixture
+            .database
+            .fork_branch(
+                &ForkBranch {
+                    conversation_id: fixture.conversation_id,
+                    source_branch_id: fixture.branch_id,
+                    at_message_id: Some(messages[1]),
+                    expected_revision: fixture.revision,
+                    operation: token("rollback-fork", "ac"),
+                },
+                TimestampMillis::new(300),
+            )
+            .expect("fork");
+        fixture.database.connection().expect("connection").execute_batch(
+            "CREATE TRIGGER fail_branch_rename_outbox BEFORE INSERT ON conversation_outbox BEGIN SELECT RAISE(ABORT, 'injected write failure'); END;"
+        ).expect("inject failure");
+        let command = lettuce_conversations::RenameBranch {
+            conversation_id: fixture.conversation_id,
+            branch_id: fork.value.branch.id,
+            label: "Changed".into(),
+            expected_revision: fork.value.conversation.revision,
+            operation: token("failed-rename", "ca"),
+        };
+        assert!(
+            fixture
+                .database
+                .rename_branch(&command, TimestampMillis::new(310))
+                .is_err()
+        );
+        let aggregate = lettuce_conversations::ConversationReader::get(
+            fixture.database.as_ref(),
+            fixture.conversation_id,
+        )
+        .expect("unchanged conversation");
+        assert_eq!(
+            aggregate.conversation.revision,
+            fork.value.conversation.revision
+        );
+        assert_eq!(
+            aggregate
+                .branches
+                .iter()
+                .find(|branch| branch.id == command.branch_id)
+                .expect("branch"),
+            &fork.value.branch
+        );
+        assert!(
+            lettuce_conversations::ConversationReader::operation_record(
+                fixture.database.as_ref(),
+                fixture.conversation_id,
+                OperationKind::RenameBranch,
+                &command.operation
+            )
+            .expect("receipt lookup")
+            .is_none()
         );
     }
 

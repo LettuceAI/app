@@ -167,6 +167,7 @@ CREATE TABLE conversation_branches (
     CHECK (parent_branch_id IS NULL OR parent_branch_id <> id),
     CHECK (created_at <= updated_at)
 ) STRICT;
+CREATE UNIQUE INDEX conversation_branch_id_uq ON conversation_branches(id);
 CREATE UNIQUE INDEX conversation_branch_root_uq
     ON conversation_branches(conversation_id) WHERE parent_branch_id IS NULL;
 CREATE INDEX conversation_branch_order_idx
@@ -812,7 +813,7 @@ CREATE TABLE conversation_usage_refs (
 CREATE TABLE conversation_operations (
     id TEXT PRIMARY KEY,
     conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE RESTRICT,
-    kind TEXT NOT NULL CHECK (kind IN ('create', 'send', 'continue', 'regenerate', 'retry', 'checkpoint', 'cancel', 'finalize', 'fail', 'interrupt', 'recover', 'choose_candidate', 'edit', 'flags', 'fork', 'select_branch', 'tombstone', 'archive', 'restore', 'rename', 'participant_policy', 'participant_add', 'settings', 'attach_job', 'prepare_generation', 'resolve_speaker', 'append_message')),
+    kind TEXT NOT NULL CHECK (kind IN ('create', 'send', 'continue', 'regenerate', 'retry', 'checkpoint', 'cancel', 'finalize', 'fail', 'interrupt', 'recover', 'choose_candidate', 'edit', 'flags', 'fork', 'select_branch', 'rename_branch', 'tombstone', 'archive', 'restore', 'rename', 'participant_policy', 'participant_add', 'settings', 'attach_job', 'prepare_generation', 'resolve_speaker', 'append_message')),
     operation_key TEXT NOT NULL CHECK (length(trim(operation_key)) > 0),
     request_digest TEXT NOT NULL CHECK (length(request_digest) = 64 AND lower(request_digest) = request_digest AND request_digest NOT GLOB '*[^0-9a-f]*'),
     result_kind TEXT NOT NULL CHECK (result_kind IN ('conversation', 'turn', 'message', 'candidate', 'branch')),

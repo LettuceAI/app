@@ -143,3 +143,5 @@ The ASR learning document (version 3) is the interchange format for vocabulary, 
 Full backups include generic job details and canonical operation receipts alongside jobs, and checked scene follow-up targets alongside conversation history. Validation checks each follow-up target against its owning candidate or native starter revision before restore; device sync does not transport these local workflow records.
 
 Own memory spaces retain their conversation and branch binding; pool memberships remain per conversation. A restored child keeps its exported memory state and summary cursor without reseeding from the restored parent. Summaries retain the branch that wrote them, including in shared pools.
+
+Conversation outbox section version 2 includes branch-label-change events and their rename operation records. Ownership and timestamp validation applies to these records before export or restore.

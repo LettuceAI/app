@@ -9,6 +9,10 @@ export const commands = {
 	conversationsLatestByCharacter: (request: LatestConversationsRequest) => typedError<LatestConversationPage, ApiError>(__TAURI_INVOKE("conversations_latest_by_character", { request })),
 	conversationsLatestByGroup: (request: LatestConversationsRequest) => typedError<LatestConversationPage, ApiError>(__TAURI_INVOKE("conversations_latest_by_group", { request })),
 	conversationOpen: (request: ConversationOpenRequest) => typedError<ConversationView, ApiError>(__TAURI_INVOKE("conversation_open", { request })),
+	conversationBranches: (request: ConversationRequest) => typedError<ConversationBranchList, ApiError>(__TAURI_INVOKE("conversation_branches", { request })),
+	conversationBranchFork: (request: ConversationBranchForkRequest) => typedError<ConversationBranchChanged, ApiError>(__TAURI_INVOKE("conversation_branch_fork", { request })),
+	conversationBranchRename: (request: ConversationBranchRenameRequest) => typedError<ConversationBranchChanged, ApiError>(__TAURI_INVOKE("conversation_branch_rename", { request })),
+	conversationBranchSelect: (request: ConversationBranchMutationRequest) => typedError<ConversationBranchChanged, ApiError>(__TAURI_INVOKE("conversation_branch_select", { request })),
 	conversationMessages: (request: ConversationMessagesRequest) => typedError<MessagePage, ApiError>(__TAURI_INVOKE("conversation_messages", { request })),
 	messageEdit: (request: MessageEditRequest) => typedError<MessageChanged, ApiError>(__TAURI_INVOKE("message_edit", { request })),
 	messageDelete: (request: MessageDeleteRequest) => typedError<MessagesDeleteResult, ApiError>(__TAURI_INVOKE("message_delete", { request })),
@@ -703,6 +707,46 @@ export type ConversationAddUserMessageRequest = {
 	text: string,
 	expected_revision: number,
 	client_operation_id: string,
+};
+
+export type ConversationBranchChanged = {
+	branch_id: string,
+	revision: number,
+};
+
+export type ConversationBranchForkRequest = {
+	conversation_id: string,
+	message_id: string,
+	expected_revision: number,
+	client_operation_id: string,
+};
+
+export type ConversationBranchList = {
+	revision: number,
+	branches: ConversationBranchView[],
+};
+
+export type ConversationBranchMutationRequest = {
+	branch_id: string,
+	expected_revision: number,
+	client_operation_id: string,
+};
+
+export type ConversationBranchRenameRequest = {
+	branch_id: string,
+	label: string,
+	expected_revision: number,
+	client_operation_id: string,
+};
+
+export type ConversationBranchView = {
+	id: string,
+	label: string,
+	parent_branch_id: string | null,
+	fork_message_id: string | null,
+	message_count: number,
+	updated_at: number,
+	active: boolean,
 };
 
 /**

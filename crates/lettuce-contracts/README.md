@@ -29,3 +29,5 @@ The provider contracts in `src/lib.rs` predate the application API and are not e
 - `KeyVerificationContract` reports whether an account's key verified, with the HTTP status when there was one.
 
 `lettuce-app` builds these from the provider catalog in `lettuce-providers` (`generation/provider_runtime.rs`).
+
+Branch management DTOs describe creation-ordered branch rows and revisioned fork, rename and select requests. Mutation responses return the branch id and the revision from the committed operation, so replay returns the same response after later writes.
