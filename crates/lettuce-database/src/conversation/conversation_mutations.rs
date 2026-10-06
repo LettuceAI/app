@@ -13874,6 +13874,280 @@ mod tests {
     }
 
     #[test]
+    fn direct_character_copy_drops_only_orphan_alternatives_after_excluding_scene() {
+        let mut source = direct_fixture();
+        let scene_id = lettuce_types::SceneId::new();
+        let (reference, scene_draft) = artifact(SnapshotSource::Scene(scene_id), b"scene");
+        let scene_message = MessageId::new();
+        let scene_revision = MessageRevisionId::new();
+        let original = ConversationReader::get(source.database.as_ref(), source.conversation_id)
+            .expect("original");
+        let mut kind = original.conversation.kind.clone();
+        let ConversationKind::Direct(details) = &mut kind else {
+            panic!("direct source");
+        };
+        let character_draft = source
+            .database
+            .copy_snapshot_draft(&details.character.snapshot_ref)
+            .expect("character snapshot");
+        details.scene = SnapshotSelection::Explicit(lettuce_conversations::SceneLaunchSnapshot {
+            snapshot_ref: reference.clone(),
+            source_id: scene_id,
+            source_revision: Revision::INITIAL,
+            title: "Scene".into(),
+        });
+        source.conversation_id = ConversationId::new();
+        source.user_participant = ConversationParticipantId::new();
+        source.characters = vec![ConversationParticipantId::new()];
+        source.revision = launch(
+            source.database.as_ref(),
+            CreateConversationPlan {
+                conversation_id: source.conversation_id,
+                title: "Scene source".into(),
+                kind,
+                participants: vec![
+                    participant(
+                        source.user_participant,
+                        ParticipantRole::User,
+                        0,
+                        ParticipantSource::User,
+                        "User",
+                    ),
+                    participant(
+                        source.characters[0],
+                        ParticipantRole::Character,
+                        1,
+                        original.conversation.participants[1].source,
+                        "Ada",
+                    ),
+                ],
+                initial_timeline: InitialTimelineDraft {
+                    format_version: 1,
+                    entries: vec![lettuce_conversations::InitialMessageDraft {
+                        message_id: scene_message,
+                        revision_id: scene_revision,
+                        origin: lettuce_conversations::InitialMessageOrigin::SelectedScene {
+                            snapshot_ref: reference,
+                        },
+                        role: MessageRole::Scene,
+                        author_participant_id: None,
+                        parts: text("Excluded scene"),
+                    }],
+                },
+                operation: token("create-scene-source", "ab"),
+                current_settings: None,
+            },
+            vec![character_draft, scene_draft],
+        );
+        source.branch_id =
+            ConversationReader::get(source.database.as_ref(), source.conversation_id)
+                .expect("scene source")
+                .conversation
+                .active_branch_id;
+        let continuing = source
+            .database
+            .begin_continue(
+                &ContinueConversation {
+                    conversation_id: source.conversation_id,
+                    branch_id: source.branch_id,
+                    expected_revision: source.revision,
+                    forced_speaker: None,
+                    swap_roles: false,
+                    operation: token("orphan-continue", "ab"),
+                },
+                TimestampMillis::new(30),
+            )
+            .expect("continue");
+        let (assistant, selected) = settle_succeeded(&source, &continuing.value.turn, 31);
+        source.revision = conversation_revision(&source);
+        let regenerated = source
+            .database
+            .begin_regenerate(
+                &regenerate_command(&source, assistant, "orphan-regenerate"),
+                TimestampMillis::new(100),
+            )
+            .expect("regenerate");
+        settle_succeeded(&source, &regenerated.value.turn, 101);
+        source.revision = conversation_revision(&source);
+        store_fixture_model_snapshots(&source.database);
+        source
+            .database
+            .choose_candidate(
+                &ChooseCandidate {
+                    conversation_id: source.conversation_id,
+                    message_id: assistant,
+                    candidate_id: selected,
+                    expected_revision: source.revision,
+                    operation: token("orphan-select-first", "ab"),
+                },
+                TimestampMillis::new(160),
+            )
+            .expect("select first");
+        let target = direct_fixture_on(source.database.clone());
+        let copied: Vec<MessageId> = source.database.commit_api_operation("orphan-copy","orphan-copy","ab",TimestampMillis::new(170),|scope|scope.copy_selected_conversation_content(&lettuce_conversations::ConversationContentCopy {source_conversation_id:source.conversation_id,source_branch_id:source.branch_id,target_conversation_id:target.conversation_id,target_branch_id:target.branch_id,through_message_id:Some(assistant),kind:lettuce_conversations::SelectedConversationCopyKind::DirectToCharacter}).map_err(|_|crate::ApiOperationError::Storage)).expect("copy selected orphan");
+        assert_eq!(copied.len(), 1);
+        let timeline = ConversationReader::timeline_page(
+            source.database.as_ref(),
+            target.conversation_id,
+            target.branch_id,
+            &PageRequest {
+                cursor: None,
+                limit: PageLimit::new(20),
+            },
+        )
+        .expect("copied timeline");
+        assert_eq!(timeline.items[0].message.role, MessageRole::Assistant);
+        assert_eq!(timeline.items[0].message.parent_message_id, None);
+        assert!(matches!(
+            timeline.items[0].message.active_render_source,
+            lettuce_conversations::MessageRenderSource::Revision(_)
+        ));
+        assert_eq!(
+            scalar::<i64>(
+                source.database.as_ref(),
+                "SELECT count(*) FROM conversation_message_candidates WHERE message_id = ?1",
+                &copied[0].to_string()
+            ),
+            0
+        );
+        assert_eq!(
+            scalar::<i64>(
+                source.database.as_ref(),
+                "SELECT count(*) FROM conversation_message_candidates WHERE message_id = ?1",
+                &assistant.to_string()
+            ),
+            2
+        );
+    }
+
+    #[test]
+    fn direct_character_copy_preserves_variants_and_selected_render() {
+        let mut source = direct_fixture();
+        let messages = conversation_with_two_exchanges(&mut source, "copy-variants");
+        source
+            .database
+            .edit_message(
+                &EditMessage {
+                    conversation_id: source.conversation_id,
+                    message_id: messages[1],
+                    expected_revision: source.revision,
+                    operation: token("copy-edited-variant", "ab"),
+                    draft: lettuce_conversations::MessageEditDraft {
+                        parts: text("Edited selected variant"),
+                        visibility: MessageVisibility::Visible,
+                        pinned: true,
+                        scene_edited: false,
+                    },
+                },
+                TimestampMillis::new(250),
+            )
+            .expect("edit selected variant");
+        let target = direct_fixture_on(source.database.clone());
+        let source_page = ConversationReader::timeline_page(
+            source.database.as_ref(),
+            source.conversation_id,
+            source.branch_id,
+            &PageRequest {
+                cursor: None,
+                limit: PageLimit::new(20),
+            },
+        )
+        .expect("source timeline");
+        let copied: Vec<MessageId> = source.database.commit_api_operation("copy-variants","copy-variants","ab",TimestampMillis::new(300),|scope| scope.copy_selected_conversation_content(&lettuce_conversations::ConversationContentCopy {source_conversation_id:source.conversation_id,source_branch_id:source.branch_id,target_conversation_id:target.conversation_id,target_branch_id:target.branch_id,through_message_id:Some(messages[3]),kind:lettuce_conversations::SelectedConversationCopyKind::DirectToCharacter}).map_err(|_|crate::ApiOperationError::Storage)).expect("copy");
+        let page = ConversationReader::timeline_page(
+            source.database.as_ref(),
+            target.conversation_id,
+            target.branch_id,
+            &PageRequest {
+                cursor: None,
+                limit: PageLimit::new(20),
+            },
+        )
+        .expect("target timeline");
+        assert_eq!(page.items.len(), source_page.items.len());
+        assert_eq!(copied.len(), page.items.len());
+        for (original, target) in source_page.items.iter().zip(&page.items) {
+            assert_ne!(original.message.id, target.message.id);
+            assert_eq!(
+                crate::conversation::conversation_mutations::shown_parts(original).0,
+                crate::conversation::conversation_mutations::shown_parts(target).0
+            );
+            if original.message.role == MessageRole::Assistant {
+                assert_eq!(
+                    matches!(
+                        target.message.active_render_source,
+                        lettuce_conversations::MessageRenderSource::Candidate(_)
+                    ),
+                    matches!(
+                        original.message.active_render_source,
+                        lettuce_conversations::MessageRenderSource::Candidate(_)
+                    )
+                );
+                let original_count = scalar::<i64>(
+                    source.database.as_ref(),
+                    "SELECT count(*) FROM conversation_message_candidates WHERE message_id = ?1",
+                    &original.message.id.to_string(),
+                );
+                assert_eq!(
+                    scalar::<i64>(
+                        source.database.as_ref(),
+                        "SELECT count(*) FROM conversation_message_candidates WHERE message_id = ?1",
+                        &target.message.id.to_string()
+                    ),
+                    original_count
+                );
+            }
+        }
+        let copied_edit = page
+            .items
+            .iter()
+            .find(|item| item.message.id == copied[1])
+            .expect("copied edited message")
+            .active_revision
+            .as_ref()
+            .expect("copied selected edit");
+        let edited_candidate = copied_edit
+            .supersedes_candidate_id
+            .expect("remapped edited candidate");
+        target
+            .database
+            .choose_candidate(
+                &ChooseCandidate {
+                    conversation_id: target.conversation_id,
+                    message_id: copied[1],
+                    candidate_id: edited_candidate,
+                    expected_revision: target.revision,
+                    operation: token("choose-copied-edit", "ab"),
+                },
+                TimestampMillis::new(400),
+            )
+            .expect("select copied edited variant");
+        let selected = ConversationReader::timeline_page(
+            source.database.as_ref(),
+            target.conversation_id,
+            target.branch_id,
+            &PageRequest {
+                cursor: None,
+                limit: PageLimit::new(20),
+            },
+        )
+        .expect("selected target timeline");
+        assert_eq!(
+            crate::conversation::conversation_mutations::shown_parts(
+                selected
+                    .items
+                    .iter()
+                    .find(|item| item.message.id == copied[1])
+                    .expect("selected edited message")
+            )
+            .0,
+            text("Edited selected variant")
+        );
+        store_fixture_model_snapshots(&source.database);
+        crate::backup::restore_writer::tests::assert_backup_round_trip(source.database.as_ref());
+    }
+
+    #[test]
     fn selected_content_copy_uses_new_ids_and_drops_candidates_usage_and_reasoning() {
         let mut source = direct_fixture();
         let messages = conversation_with_two_exchanges(&mut source, "copy-content");

@@ -1701,9 +1701,13 @@ pub struct CommandTime {
     pub requested_at: TimestampMillis,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SelectedConversationCopyKind {
     Duplicate,
+    GroupToCharacterFromMessage { placeholder_names: Vec<String> },
+    GroupToCharacter { placeholder_names: Vec<String> },
+    DirectToCharacter,
+    DirectToGroup,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -20,6 +20,7 @@ mod backup;
 mod legacy;
 mod api_operation_adapter;
 pub use api_operation_adapter::{ApiOperationError, ApiOperationTransaction};
+pub use conversation::conversation_copy_adapter::ConversationCopyLaunch;
 mod purge;
 
 pub use models::*;
