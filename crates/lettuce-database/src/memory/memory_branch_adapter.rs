@@ -218,6 +218,20 @@ pub(crate) fn seed_new_conversation_space_in(
             item.observed_time_precision = None;
         }
     }
+    if summary.as_ref().is_some_and(|value| {
+        value
+            .source_message_ids
+            .iter()
+            .any(|id| !message_ids.contains_key(id))
+    }) {
+        summary = None;
+        transaction
+            .execute(
+                "DELETE FROM memory_synced_cursors WHERE conversation_id = ?1 AND branch_id = ?2",
+                params![conversation_id.to_string(), branch_id.to_string()],
+            )
+            .map_err(storage)?;
+    }
     if let Some(summary) = &mut summary {
         summary.space_id = space_id;
         summary.branch_id = branch_id;

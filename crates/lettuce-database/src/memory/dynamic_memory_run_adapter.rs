@@ -2466,6 +2466,67 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn copied_summary_with_any_missing_source_is_discarded_and_cursor_restarts() {
+        for kept in 0..2 {
+            let database = Database::open_in_memory().expect("database");
+            let (source, source_space, source_messages) = conversation_fixture(&database);
+            let source_branch = fixture_branch(&database, source);
+            let (target, target_space, target_messages) = conversation_fixture(&database);
+            let target_branch = fixture_branch(&database, target);
+            let attempt = checkpointed_window(
+                &database,
+                source,
+                source_space,
+                &source_messages,
+                "Complete source summary",
+                10,
+                0,
+            );
+            finish(&database, &attempt, true, 12);
+            let ids = source_messages
+                .iter()
+                .zip(&target_messages)
+                .take(kept)
+                .map(|(source, target)| (source.message_id, target.message_id))
+                .collect();
+            let mut connection = database.connection().expect("connection");
+            let transaction = connection.transaction().expect("transaction");
+            super::super::memory_branch_adapter::seed_new_conversation_space_in(
+                &transaction,
+                source,
+                source_branch,
+                (target, target_branch),
+                Some(source_messages[1].message_id),
+                &ids,
+            )
+            .expect("copy without incomplete summary");
+            assert!(
+                crate::memory::memory_adapter::get_summary_in(&transaction, target_space)
+                    .expect("summary")
+                    .is_none()
+            );
+            assert_eq!(
+                crate::memory::memory_adapter::summary_cursor_in(
+                    &transaction,
+                    target_space,
+                    target,
+                    target_branch
+                )
+                .expect("cursor"),
+                0
+            );
+            transaction.commit().expect("commit");
+            drop(connection);
+            assert!(
+                database
+                    .get_summary(source_space)
+                    .expect("source summary")
+                    .is_some()
+            );
+        }
+    }
+
+    #[test]
     fn copied_conversation_seed_remaps_items_and_summary_sources() {
         let database = Database::open_in_memory().expect("database");
         let (source, source_space, source_messages) =
