@@ -8,7 +8,7 @@ use lettuce_conversations::{ConversationKind, SnapshotSelection};
 use lettuce_types::{CharacterId, ContentHash, PersonaId, Revision, TimestampMillis};
 use serde::{Deserialize, Serialize};
 
-pub const COMPANION_STATE_BACKUP_VERSION: u32 = 1;
+pub const COMPANION_STATE_BACKUP_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -70,6 +70,7 @@ pub struct BackupCompanionRelationship {
 pub struct BackupCompanionSession {
     pub owner: CompanionStateOwner,
     pub initial_state_hash: ContentHash,
+    pub private_relationships: Option<Vec<BackupCompanionRelationship>>,
     pub emotional_state: EmotionalState,
     pub active_signals: Vec<String>,
     pub state_updated_at: TimestampMillis,
@@ -145,9 +146,34 @@ impl CompanionStateBackup {
             let kind = conversations
                 .get(&owner.conversation_id)
                 .ok_or(CompanionStateBackupError::InvalidData)?;
+            let private_relationship = if let Some(values) = &session.private_relationships {
+                let mut keys = BTreeSet::new();
+                if values.is_empty()
+                    || values.iter().any(|value| {
+                        value.character_id != owner.character_id
+                            || value
+                                .persona_id
+                                .is_some_and(|id| !persona_ids.contains(&id))
+                            || !keys.insert(value.persona_id)
+                            || value.revision.get() == 0
+                            || value.created_at > value.updated_at
+                            || !valid_relationship(&value.state)
+                    })
+                {
+                    return Err(CompanionStateBackupError::InvalidData);
+                }
+                Some(
+                    values
+                        .iter()
+                        .find(|value| value.persona_id == owner.persona_id)
+                        .ok_or(CompanionStateBackupError::InvalidData)?,
+                )
+            } else {
+                None
+            };
             let runtime = lettuce_companions::CompanionRuntimeState {
                 emotional_state: session.emotional_state.clone(),
-                relationship_state: relationship.state.clone(),
+                relationship_state: private_relationship.unwrap_or(relationship).state.clone(),
                 active_signals: session.active_signals.clone(),
                 updated_at: session.state_updated_at,
             };

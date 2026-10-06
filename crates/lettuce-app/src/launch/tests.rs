@@ -14144,7 +14144,7 @@ fn the_app_backend_exposes_the_group_launch() {
 use std::collections::VecDeque;
 use std::sync::Mutex;
 
-fn sync_prompts(from: &Database, to: &Database, at: i64) {
+pub(crate) fn sync_prompts(from: &Database, to: &Database, at: i64) {
     use lettuce_sync::{IncomingBatchState, IncomingChangeRepository, LocalChangeJournal};
     from.journal_current_state(TimestampMillis::new(at))
         .expect("scan source");

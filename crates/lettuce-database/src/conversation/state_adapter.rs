@@ -214,7 +214,7 @@ pub(crate) fn read_signals(
 /// The conversation's state with the relationship of the owner's persona. A
 /// persona the conversation switched to that has no stored relationship reads
 /// the conversation's current one, which the next write stores under it.
-fn get_in(
+pub(crate) fn get_in(
     tx: &Transaction<'_>,
     owner: CompanionStateOwner,
 ) -> Result<Option<CompanionStateSnapshot>, Error> {
@@ -284,18 +284,155 @@ fn get_in(
     }))
 }
 
+pub(crate) fn read_private_relationships_in(
+    tx: &Transaction<'_>,
+    conversation_id: ConversationId,
+) -> Result<Option<Vec<lettuce_transfer::BackupCompanionRelationship>>, Error> {
+    if !uses_private_relationship(tx, conversation_id)? {
+        return Ok(None);
+    }
+    let mut statement = tx.prepare("SELECT character_id, persona_id, closeness, trust, affection, tension, stability, interaction_count, last_interaction_at, revision, created_at, updated_at FROM companion_conversation_relationship_states WHERE conversation_id = ?1 ORDER BY persona_key").map_err(corrupt)?;
+    let rows = statement
+        .query_map([conversation_id.to_string()], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                RelationshipState {
+                    closeness: row.get(2)?,
+                    trust: row.get(3)?,
+                    affection: row.get(4)?,
+                    tension: row.get(5)?,
+                    stability: row.get(6)?,
+                    interaction_count: row.get(7)?,
+                    last_interaction_at: TimestampMillis::new(row.get(8)?),
+                },
+                row.get::<_, i64>(9)?,
+                row.get::<_, i64>(10)?,
+                row.get::<_, i64>(11)?,
+            ))
+        })
+        .map_err(corrupt)?;
+    let mut values = Vec::new();
+    for row in rows {
+        let (character, persona, state, revision, created, updated) = row.map_err(corrupt)?;
+        values.push(lettuce_transfer::BackupCompanionRelationship {
+            character_id: character.parse().map_err(corrupt)?,
+            persona_id: persona.map(|id| id.parse()).transpose().map_err(corrupt)?,
+            state,
+            revision: parse_revision(revision)?,
+            created_at: TimestampMillis::new(created),
+            updated_at: TimestampMillis::new(updated),
+        });
+    }
+    if values.is_empty() {
+        return Err(Error::Corrupt);
+    }
+    Ok(Some(values))
+}
+
+pub(crate) fn write_private_relationships_in(
+    tx: &Transaction<'_>,
+    conversation_id: ConversationId,
+    values: &[lettuce_transfer::BackupCompanionRelationship],
+) -> Result<(), Error> {
+    if values.is_empty() {
+        return Err(Error::Invalid);
+    }
+    tx.execute(
+        "UPDATE companion_session_states SET private_relationship = 1 WHERE conversation_id = ?1",
+        [conversation_id.to_string()],
+    )
+    .map_err(failure)?;
+    for value in values {
+        let state = &value.state;
+        tx.execute("INSERT INTO companion_conversation_relationship_states (conversation_id, character_id, persona_key, persona_id, closeness, trust, affection, tension, stability, interaction_count, last_interaction_at, revision, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14) ON CONFLICT(conversation_id, persona_key) DO UPDATE SET closeness = excluded.closeness, trust = excluded.trust, affection = excluded.affection, tension = excluded.tension, stability = excluded.stability, interaction_count = excluded.interaction_count, last_interaction_at = excluded.last_interaction_at, revision = companion_conversation_relationship_states.revision + 1, updated_at = max(companion_conversation_relationship_states.updated_at, excluded.updated_at)", params![conversation_id.to_string(), value.character_id.to_string(), value.persona_id.map(|id| id.to_string()).unwrap_or_else(|| "__default__".into()), value.persona_id.map(|id| id.to_string()), state.closeness, state.trust, state.affection, state.tension, state.stability, i64::from(state.interaction_count), state.last_interaction_at.get(), sql_revision(value.revision)?, value.created_at.get(), value.updated_at.get()]).map_err(failure)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn copy_state_in(
+    tx: &Transaction<'_>,
+    source: CompanionStateOwner,
+    target: CompanionStateOwner,
+    now: TimestampMillis,
+) -> Result<(), Error> {
+    let stored = get_in(tx, source)?.ok_or(Error::NotFound)?;
+    create_in(tx, target, &stored.state, now)?;
+    let mut relationships = read_private_relationships_in(tx, source.conversation_id)?
+        .unwrap_or_else(|| {
+            vec![lettuce_transfer::BackupCompanionRelationship {
+                character_id: source.character_id,
+                persona_id: source.persona_id,
+                state: stored.state.relationship_state.clone(),
+                revision: Revision::INITIAL,
+                created_at: now,
+                updated_at: now,
+            }]
+        });
+    for value in &mut relationships {
+        value.revision = Revision::INITIAL;
+        value.created_at = now;
+        value.updated_at = now;
+    }
+    if !relationships
+        .iter()
+        .any(|value| value.persona_id == target.persona_id)
+    {
+        relationships.push(lettuce_transfer::BackupCompanionRelationship {
+            character_id: target.character_id,
+            persona_id: target.persona_id,
+            state: stored.state.relationship_state,
+            revision: Revision::INITIAL,
+            created_at: now,
+            updated_at: now,
+        });
+    }
+    write_private_relationships_in(tx, target.conversation_id, &relationships)?;
+    let episode: (i64, Option<i64>, i64, Option<String>) = tx.query_row("SELECT started_at, ended_at, updated_at, previous_conversation_id FROM companion_continuity_episodes WHERE conversation_id = ?1", [source.conversation_id.to_string()], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))).map_err(corrupt)?;
+    let index: i64 = tx.query_row("SELECT coalesce(max(episode_index), 0) + 1 FROM companion_continuity_episodes WHERE character_id = ?1 AND persona_key = ?2", params![target.character_id.to_string(), persona_key(target)], |row| row.get(0)).map_err(corrupt)?;
+    tx.execute("INSERT INTO companion_continuity_episodes (conversation_id, character_id, persona_key, persona_id, episode_index, previous_conversation_id, started_at, ended_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)", params![target.conversation_id.to_string(), target.character_id.to_string(), persona_key(target), target.persona_id.map(|id| id.to_string()), index, episode.3, episode.0, episode.1, episode.2]).map_err(failure)?;
+    Ok(())
+}
+
+fn uses_private_relationship(
+    tx: &Transaction<'_>,
+    conversation_id: ConversationId,
+) -> Result<bool, Error> {
+    tx.query_row(
+        "SELECT private_relationship FROM companion_session_states WHERE conversation_id = ?1",
+        [conversation_id.to_string()],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(corrupt)
+    .map(|value| value.unwrap_or(false))
+}
+
 /// The relationship stored for the owner's character and persona.
 fn read_relationship(
     tx: &Transaction<'_>,
     owner: CompanionStateOwner,
 ) -> Result<Option<(RelationshipState, i64)>, Error> {
     let key = persona_key(owner);
-    tx.query_row(
+    let private = uses_private_relationship(tx, owner.conversation_id)?;
+    let sql = if private {
+        "SELECT closeness, trust, affection, tension, stability, interaction_count, last_interaction_at, revision FROM companion_conversation_relationship_states WHERE conversation_id = ?1 AND persona_key = ?2"
+    } else {
         "SELECT closeness, trust, affection, tension, stability, interaction_count,
                     last_interaction_at, revision
              FROM companion_relationship_states
-             WHERE character_id = ?1 AND persona_key = ?2",
-        params![owner.character_id.to_string(), key],
+             WHERE character_id = ?1 AND persona_key = ?2"
+    };
+    tx.query_row(
+        sql,
+        params![
+            if private {
+                owner.conversation_id.to_string()
+            } else {
+                owner.character_id.to_string()
+            },
+            key
+        ],
         |row| {
             Ok((
                 RelationshipState {
@@ -548,6 +685,7 @@ pub(crate) fn ensure_continuity_episode_in(
             "SELECT conversation_id, episode_index
              FROM companion_continuity_episodes
              WHERE character_id = ?1 AND persona_key = ?2
+               AND NOT EXISTS (SELECT 1 FROM companion_session_states session WHERE session.conversation_id = companion_continuity_episodes.conversation_id AND session.private_relationship = 1)
              ORDER BY started_at DESC, episode_index DESC
              LIMIT 1",
             params![owner.character_id.to_string(), key],
@@ -671,14 +809,24 @@ pub(crate) fn replace_in(
         ],
     )
     .map_err(failure)?;
+    let private = uses_private_relationship(tx, owner.conversation_id)?;
+    if private {
+        tx.execute("INSERT OR IGNORE INTO companion_conversation_relationship_states (conversation_id, character_id, persona_key, persona_id, closeness, trust, affection, tension, stability, interaction_count, last_interaction_at, revision, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13)", params![owner.conversation_id.to_string(), owner.character_id.to_string(), key, owner.persona_id.map(|id| id.to_string()), relationship.closeness, relationship.trust, relationship.affection, relationship.tension, relationship.stability, i64::from(relationship.interaction_count), relationship.last_interaction_at.get(), sql_revision(current.relationship_revision)?, replacement.applied_at.get()]).map_err(failure)?;
+    }
+    let relationship_sql = if private {
+        "UPDATE companion_conversation_relationship_states SET closeness = ?3, trust = ?4, affection = ?5, tension = ?6, stability = ?7, interaction_count = ?8, last_interaction_at = ?9, revision = ?10, updated_at = ?11 WHERE conversation_id = ?1 AND persona_key = ?2 AND revision = ?12"
+    } else {
+        "UPDATE companion_relationship_states SET closeness = ?3, trust = ?4, affection = ?5, tension = ?6, stability = ?7, interaction_count = ?8, last_interaction_at = ?9, revision = ?10, updated_at = ?11 WHERE character_id = ?1 AND persona_key = ?2 AND revision = ?12"
+    };
     let relationship_updated = tx
         .execute(
-            "UPDATE companion_relationship_states SET
-               closeness = ?3, trust = ?4, affection = ?5, tension = ?6, stability = ?7,
-               interaction_count = ?8, last_interaction_at = ?9, revision = ?10, updated_at = ?11
-             WHERE character_id = ?1 AND persona_key = ?2 AND revision = ?12",
+            relationship_sql,
             params![
-                owner.character_id.to_string(),
+                if private {
+                    owner.conversation_id.to_string()
+                } else {
+                    owner.character_id.to_string()
+                },
                 key,
                 relationship.closeness,
                 relationship.trust,

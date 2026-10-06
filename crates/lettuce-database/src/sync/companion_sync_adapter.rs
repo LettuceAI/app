@@ -221,6 +221,7 @@ pub(crate) struct SyncCompanionSession {
     pub character_id: CharacterId,
     pub persona_id: Option<PersonaId>,
     pub initial_hash: String,
+    pub private_relationships: Option<Vec<lettuce_transfer::BackupCompanionRelationship>>,
     pub emotional_state: EmotionalState,
     pub active_signals: Vec<String>,
     pub updated_at: TimestampMillis,
@@ -270,6 +271,15 @@ pub(crate) fn sync_load_session(
         )
         .optional()
         .map_err(storage)?;
+    let private_relationships =
+        state_adapter::read_private_relationships_in(transaction, conversation_id)
+            .map_err(storage)?
+            .map(|mut values| {
+                for value in &mut values {
+                    value.revision = lettuce_types::Revision::INITIAL;
+                }
+                values
+            });
     Ok(Some(SyncCompanionSession {
         character_id: character.parse().map_err(storage)?,
         persona_id: persona.map(|id| id.parse()).transpose().map_err(storage)?,
@@ -277,6 +287,7 @@ pub(crate) fn sync_load_session(
             .map_err(storage)?
             .to_hex()
             .to_string(),
+        private_relationships,
         emotional_state: EmotionalState {
             felt: state_adapter::read_vector(transaction, conversation_id, "felt")
                 .map_err(storage)?,
@@ -309,6 +320,11 @@ pub(crate) fn sync_replace_session(
     conversation_id: ConversationId,
     session: &SyncCompanionSession,
 ) -> Result<(), ConversationRepositoryError> {
+    if let Some(local) = sync_load_session(transaction, conversation_id)?
+        && local.private_relationships.is_some() != session.private_relationships.is_some()
+    {
+        return Err(ConversationRepositoryError::Conflict);
+    }
     let key = persona_key(session.persona_id);
     if !exists(
         transaction,
@@ -353,6 +369,10 @@ pub(crate) fn sync_replace_session(
             ],
         )
         .map_err(storage)?;
+    if let Some(values) = &session.private_relationships {
+        state_adapter::write_private_relationships_in(transaction, conversation_id, values)
+            .map_err(storage)?;
+    }
     state_adapter::replace_vectors(transaction, conversation_id, emotional).map_err(storage)?;
     state_adapter::replace_signals(
         transaction,

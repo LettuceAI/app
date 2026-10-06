@@ -53,7 +53,7 @@ A backup is complete: it holds every user-owned domain, every referenced media o
 | `data/jobs.json` | Job specs, snapshots and event histories, job dispatch usage and job cost bases |
 | `data/conversation-usage.json` | Terminal usage events, counters, cost bases, and the ids of overlapping job dispatches |
 | `data/conversation-outbox.json` | Operation records and the per-conversation event journal |
-| `data/companion-state.json` | Relationship and emotional state, signals, continuity episodes, replacement receipts |
+| `data/companion-state.json` | Relationship and emotional state, signals, continuity episodes, replacement receipts; version 2 carries a conversation's private relationships when it owns them |
 | `data/companion-effects.json` | Turn effects and suffix-rewind receipts |
 | `data/memory.json` | Branch-owned spaces, items, summaries, retrieval receipts, and conversation-scoped pools (section version 2) |
 | `data/memory-projections.json` | Stored embedding projections, ready and repair-needed |

@@ -20,6 +20,29 @@ CREATE TABLE companion_relationship_states (
     CHECK (created_at <= updated_at)
 ) STRICT;
 
+CREATE TABLE companion_conversation_relationship_states (
+    conversation_id TEXT NOT NULL REFERENCES companion_session_states(conversation_id) ON DELETE CASCADE,
+    character_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    persona_key TEXT NOT NULL,
+    persona_id TEXT,
+    closeness REAL NOT NULL CHECK (closeness BETWEEN -1.0 AND 1.0),
+    trust REAL NOT NULL CHECK (trust BETWEEN -1.0 AND 1.0),
+    affection REAL NOT NULL CHECK (affection BETWEEN -1.0 AND 1.0),
+    tension REAL NOT NULL CHECK (tension BETWEEN 0.0 AND 1.0),
+    stability REAL NOT NULL CHECK (stability BETWEEN 0.0 AND 1.0),
+    interaction_count INTEGER NOT NULL CHECK (interaction_count >= 0),
+    last_interaction_at INTEGER NOT NULL,
+    revision INTEGER NOT NULL CHECK (revision >= 1),
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (conversation_id, persona_key),
+    CHECK (
+        (persona_id IS NULL AND persona_key = '__default__') OR
+        (persona_id IS NOT NULL AND persona_key = persona_id)
+    ),
+    CHECK (created_at <= updated_at)
+) STRICT;
+
 CREATE TABLE companion_continuity_episodes (
     conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE RESTRICT,
     character_id TEXT NOT NULL REFERENCES characters(id) ON DELETE RESTRICT,
@@ -43,6 +66,7 @@ CREATE TABLE companion_session_states (
     persona_key TEXT NOT NULL,
     persona_id TEXT,
     initial_hash BLOB NOT NULL CHECK (length(initial_hash) = 32),
+    private_relationship INTEGER NOT NULL DEFAULT 0 CHECK (private_relationship IN (0, 1)),
     confidence REAL NOT NULL CHECK (confidence BETWEEN 0.0 AND 1.0),
     emotional_updated_at INTEGER NOT NULL,
     state_updated_at INTEGER NOT NULL,
@@ -428,3 +452,8 @@ WHEN EXISTS (
 BEGIN
     SELECT RAISE(ABORT, 'a conversation memory space is not a companion memory pool');
 END;
+
+CREATE TRIGGER companion_private_relationship_immutable
+BEFORE UPDATE OF private_relationship ON companion_session_states
+WHEN NEW.private_relationship <> OLD.private_relationship AND OLD.private_relationship = 1
+BEGIN SELECT RAISE(ABORT, 'private companion relationship ownership is immutable'); END;

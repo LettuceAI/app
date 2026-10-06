@@ -146,7 +146,7 @@ pub const COMPANION_RELATIONSHIP_SYNC_VERSION: u32 = 1;
 
 pub const COMPANION_SESSION_SYNC_KIND: &str = "companion_session";
 pub const COMPANION_SESSION_SYNC_SCHEMA: &str = "companion.session";
-pub const COMPANION_SESSION_SYNC_VERSION: u32 = 1;
+pub const COMPANION_SESSION_SYNC_VERSION: u32 = 2;
 
 pub const COMPANION_NOTE_SYNC_KIND: &str = "companion_note";
 pub const COMPANION_NOTE_SYNC_SCHEMA: &str = "companion.scheduled_note";

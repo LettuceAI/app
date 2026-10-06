@@ -613,3 +613,328 @@ async fn new_group_copy_rolls_back_profile_messages_and_receipt_together() {
         });
     assert_eq!(changed, Err(lettuce_database::ApiOperationError::Conflict));
 }
+
+#[tokio::test]
+async fn companion_duplicate_copies_state_and_relationship_then_advances_independently() {
+    use lettuce_companions::{
+        CompanionStateOwner, CompanionStateReplacement, CompanionStateRepository,
+    };
+    let harness = harness(Reply::Text("reply"));
+    let database = harness.context.backend().database();
+    let character_id = super::tests::create_character(
+        database,
+        "Companion",
+        lettuce_characters::CharacterDefaults {
+            interaction_mode: lettuce_characters::InteractionMode::Companion,
+            companion_soul: Some(lettuce_companions::CompanionSoulConfig::default()),
+            memory_policy: lettuce_characters::MemoryPolicy::Dynamic,
+            ..lettuce_characters::CharacterDefaults::default()
+        },
+    );
+    let source = conversation_launch_direct(
+        &harness.context,
+        dto::LaunchDirectRequest {
+            character_id: character_id.to_string(),
+            title: None,
+            scene_id: None,
+            starter_id: None,
+            client_operation_id: "companion-copy-source".into(),
+        },
+    )
+    .await
+    .expect("source companion");
+    let owner = CompanionStateOwner {
+        conversation_id: source.conversation_id.parse().expect("source id"),
+        character_id,
+        persona_id: None,
+    };
+    let before = CompanionStateRepository::get(database, owner)
+        .expect("source state")
+        .expect("source state exists");
+    let mut state = before.state;
+    state.emotional_state.felt.warmth = 0.73;
+    state.relationship_state.closeness = 0.47;
+    CompanionStateRepository::replace(
+        database,
+        owner,
+        lettuce_types::OperationRecordId::new(),
+        CompanionStateReplacement {
+            expected_session_revision: before.session_revision,
+            expected_relationship_revision: before.relationship_revision,
+            state,
+            applied_at: harness.context.now(),
+        },
+    )
+    .expect("advance source before copy");
+    let source_state = CompanionStateRepository::get(database, owner)
+        .expect("source state")
+        .expect("source");
+    let source_episode =
+        CompanionStateRepository::get_continuity_episode(database, owner.conversation_id)
+            .expect("source continuity")
+            .expect("episode");
+    for with_messages in [false, true] {
+        let request = dto::ConversationDuplicateRequest {
+            conversation_id: source.conversation_id.clone(),
+            title: None,
+            with_messages,
+            client_operation_id: format!("companion-copy-{with_messages}"),
+        };
+        let copied = conversation_duplicate(&harness.context, request.clone())
+            .await
+            .expect("duplicate companion");
+        let target_owner = CompanionStateOwner {
+            conversation_id: copied.conversation_id.parse().expect("copy id"),
+            ..owner
+        };
+        let target = CompanionStateRepository::get(database, target_owner)
+            .expect("target state")
+            .expect("target");
+        assert_eq!(target.state, source_state.state);
+        assert_eq!(target.session_revision, lettuce_types::Revision::INITIAL);
+        assert_eq!(
+            target.relationship_revision,
+            lettuce_types::Revision::INITIAL
+        );
+        assert_eq!(
+            CompanionStateRepository::get_continuity_episode(database, owner.conversation_id)
+                .expect("source episode"),
+            Some(source_episode.clone())
+        );
+        let episode = CompanionStateRepository::get_continuity_episode(
+            database,
+            target_owner.conversation_id,
+        )
+        .expect("target episode")
+        .expect("episode");
+        assert_eq!(episode.started_at, source_episode.started_at);
+        assert_eq!(episode.ended_at, source_episode.ended_at);
+        let mut changed = target.state;
+        changed.emotional_state.felt.warmth = 0.11;
+        changed.relationship_state.closeness = -0.31;
+        CompanionStateRepository::replace(
+            database,
+            target_owner,
+            lettuce_types::OperationRecordId::new(),
+            CompanionStateReplacement {
+                expected_session_revision: target.session_revision,
+                expected_relationship_revision: target.relationship_revision,
+                state: changed.clone(),
+                applied_at: harness.context.now(),
+            },
+        )
+        .expect("advance copy");
+        assert_eq!(
+            CompanionStateRepository::get(database, owner)
+                .expect("source after copy update")
+                .expect("source")
+                .state,
+            source_state.state
+        );
+        assert_eq!(
+            CompanionStateRepository::get(database, target_owner)
+                .expect("copy after update")
+                .expect("copy")
+                .state,
+            changed
+        );
+        assert_eq!(
+            conversation_duplicate(&harness.context, request)
+                .await
+                .expect("stable duplicate replay"),
+            copied
+        );
+    }
+}
+
+#[tokio::test]
+async fn companion_duplicate_private_state_validates_for_backup_and_syncs_to_a_peer() {
+    use lettuce_companions::{
+        CompanionStateOwner, CompanionStateReplacement, CompanionStateRepository,
+    };
+    let harness = harness(Reply::Text("reply"));
+    let database = harness.context.backend().database();
+    let character_id = super::tests::create_character(
+        database,
+        "Companion",
+        lettuce_characters::CharacterDefaults {
+            interaction_mode: lettuce_characters::InteractionMode::Companion,
+            companion_soul: Some(lettuce_companions::CompanionSoulConfig::default()),
+            memory_policy: lettuce_characters::MemoryPolicy::Dynamic,
+            ..lettuce_characters::CharacterDefaults::default()
+        },
+    );
+    let source = conversation_launch_direct(
+        &harness.context,
+        dto::LaunchDirectRequest {
+            character_id: character_id.to_string(),
+            title: None,
+            scene_id: None,
+            starter_id: None,
+            client_operation_id: "companion-sync-source".into(),
+        },
+    )
+    .await
+    .expect("source companion");
+    let copied = conversation_duplicate(
+        &harness.context,
+        dto::ConversationDuplicateRequest {
+            conversation_id: source.conversation_id.clone(),
+            title: None,
+            with_messages: false,
+            client_operation_id: "companion-sync-copy".into(),
+        },
+    )
+    .await
+    .expect("duplicate companion");
+    let owner = CompanionStateOwner {
+        conversation_id: copied.conversation_id.parse().expect("copy id"),
+        character_id,
+        persona_id: None,
+    };
+    let current = CompanionStateRepository::get(database, owner)
+        .expect("copy state")
+        .expect("copy");
+    let mut changed = current.state.clone();
+    changed.relationship_state.closeness = -0.42;
+    CompanionStateRepository::replace(
+        database,
+        owner,
+        lettuce_types::OperationRecordId::new(),
+        CompanionStateReplacement {
+            expected_session_revision: current.session_revision,
+            expected_relationship_revision: current.relationship_revision,
+            state: changed.clone(),
+            applied_at: harness.context.now(),
+        },
+    )
+    .expect("advance copy");
+    let mut graph = lettuce_transfer::ProviderBackupSource::read_provider_backup_graph(database)
+        .expect("graph");
+    lettuce_transfer::canonicalize_and_validate(&mut graph)
+        .expect("graph with private relationship validates");
+    let session = graph
+        .companion_state
+        .sessions
+        .iter()
+        .find(|session| session.owner == owner)
+        .expect("copy session in backup");
+    assert!(session.private_relationships.is_some());
+    let source_session = graph
+        .companion_state
+        .sessions
+        .iter()
+        .find(|session| session.owner.conversation_id.to_string() == source.conversation_id)
+        .expect("source session in backup");
+    assert!(source_session.private_relationships.is_none());
+    let peer =
+        crate::AppBackend::open_in_memory(lettuce_types::TimestampMillis::new(1)).expect("peer");
+    crate::launch::tests::sync_prompts(database, peer.database(), 1_000);
+    let on_peer = CompanionStateRepository::get(peer.database(), owner)
+        .expect("peer state")
+        .expect("peer copy");
+    assert_eq!(on_peer.state, changed);
+    let source_owner = CompanionStateOwner {
+        conversation_id: source.conversation_id.parse().expect("source id"),
+        ..owner
+    };
+    assert_ne!(
+        CompanionStateRepository::get(peer.database(), source_owner)
+            .expect("peer source")
+            .expect("source")
+            .state
+            .relationship_state,
+        changed.relationship_state
+    );
+}
+
+#[tokio::test]
+async fn companion_duplicate_clones_conversation_soul_only_when_growth_is_not_shared() {
+    use lettuce_companions::{SoulFact, SoulFactKind, SoulFactPolicy, SoulOwner, SoulRepository};
+    for shared in [false, true] {
+        let harness = harness(Reply::Text("reply"));
+        let database = harness.context.backend().database();
+        let fact = SoulFact {
+            id: "authored-fact".into(),
+            category: lettuce_companions::SoulCategory::Traits,
+            value: "Dry humor".into(),
+            kind: SoulFactKind::Authored,
+            policy: SoulFactPolicy::Current,
+            slot: "traits".into(),
+            confidence: 1.0,
+            evidence_count: 1,
+            weight: 1.0,
+            valid_from: lettuce_types::TimestampMillis::new(1),
+            valid_until: None,
+            locked: false,
+            source_memory_ids: vec!["memory-1".into()],
+            created_at: lettuce_types::TimestampMillis::new(1),
+            supersedes: vec!["older-fact".into()],
+            superseded_by: None,
+            superseded_at: None,
+        };
+        let character_id = super::tests::create_character(
+            database,
+            "Companion",
+            lettuce_characters::CharacterDefaults {
+                interaction_mode: lettuce_characters::InteractionMode::Companion,
+                companion_soul: Some(lettuce_companions::CompanionSoulConfig {
+                    authored_facts: vec![fact],
+                    share_soul_growth_across_chats: shared,
+                    ..lettuce_companions::CompanionSoulConfig::default()
+                }),
+                memory_policy: lettuce_characters::MemoryPolicy::Dynamic,
+                ..lettuce_characters::CharacterDefaults::default()
+            },
+        );
+        let source = conversation_launch_direct(
+            &harness.context,
+            dto::LaunchDirectRequest {
+                character_id: character_id.to_string(),
+                title: None,
+                scene_id: None,
+                starter_id: None,
+                client_operation_id: format!("soul-copy-source-{shared}"),
+            },
+        )
+        .await
+        .expect("source companion");
+        let copied = conversation_duplicate(
+            &harness.context,
+            dto::ConversationDuplicateRequest {
+                conversation_id: source.conversation_id.clone(),
+                title: None,
+                with_messages: false,
+                client_operation_id: format!("soul-copy-{shared}"),
+            },
+        )
+        .await
+        .expect("duplicate companion");
+        let owner_of = |id: &str| SoulOwner::Conversation {
+            character_id,
+            conversation_id: id.parse().expect("conversation id"),
+        };
+        let target =
+            SoulRepository::get(database, owner_of(&copied.conversation_id)).expect("target soul");
+        if shared {
+            assert!(target.is_none());
+            continue;
+        }
+        let source_soul = SoulRepository::get(database, owner_of(&source.conversation_id))
+            .expect("source soul")
+            .expect("source has own soul");
+        let target = target.expect("target has own soul");
+        assert_eq!(target.facts.len(), source_soul.facts.len());
+        for (copy, original) in target.facts.iter().zip(&source_soul.facts) {
+            assert_ne!(copy.id, original.id);
+            assert_eq!(copy.value, original.value);
+            assert_eq!(copy.source_memory_ids, original.source_memory_ids);
+            assert_eq!(copy.supersedes.len(), original.supersedes.len());
+            assert!(
+                copy.supersedes
+                    .iter()
+                    .all(|id| !original.supersedes.contains(id))
+            );
+        }
+    }
+}

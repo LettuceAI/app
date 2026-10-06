@@ -679,15 +679,60 @@ impl crate::ApiOperationTransaction<'_, '_> {
             "SELECT pool.character_id FROM conversation_memory_spaces binding JOIN companion_memory_pools pool ON pool.space_id = binding.space_id WHERE binding.conversation_id = ?1 AND binding.pooled = 1",
             [command.source_conversation_id.to_string()], |row| row.get(0),
         ).optional().map_err(slice::db)?;
-        if pooled_character.is_some() {
-            return Err(ConversationRepositoryError::Unsupported);
-        }
+        let companion = pooled_character
+            .map(|id| {
+                let character_id = id
+                    .parse()
+                    .map_err(|_| ConversationRepositoryError::Storage)?;
+                let effective =
+                    lettuce_conversations::resolve_effective_settings(&source.conversation, None)
+                        .map_err(ConversationRepositoryError::Invalid)?;
+                Ok::<_, ConversationRepositoryError>(lettuce_companions::CompanionStateOwner {
+                    conversation_id: command.source_conversation_id,
+                    character_id,
+                    persona_id: effective.persona.map(|persona| persona.source_id),
+                })
+            })
+            .transpose()?;
+        let memory_binding = companion.map_or(
+            super::conversation_creator::MemoryBinding::PerConversation,
+            |owner| super::conversation_creator::MemoryBinding::CompanionPool(owner.character_id),
+        );
         let mut commit = super::conversation_creator::create_on_transaction(
             self.transaction,
             launch,
             now,
-            super::conversation_creator::MemoryBinding::PerConversation,
-            |_, _| Ok(()),
+            memory_binding,
+            |transaction, _| {
+                if let Some(owner) = companion {
+                    super::state_adapter::copy_state_in(
+                        transaction,
+                        owner,
+                        lettuce_companions::CompanionStateOwner {
+                            conversation_id: command.conversation_id,
+                            ..owner
+                        },
+                        now,
+                    )
+                    .map_err(super::state_adapter::conversation_state_error)?;
+                    if !crate::catalog::character_adapter::companion_soul_shared_in(
+                        transaction,
+                        owner.character_id,
+                    )
+                    .map_err(|_| ConversationRepositoryError::Storage)?
+                    {
+                        crate::companion::soul_adapter::clone_conversation_soul_in(
+                            transaction,
+                            owner.character_id,
+                            command.source_conversation_id,
+                            command.conversation_id,
+                            now,
+                        )
+                        .map_err(|_| ConversationRepositoryError::Storage)?;
+                    }
+                }
+                Ok(())
+            },
         )?;
         let mut target = commit.value.conversation.clone();
         target.participants = source

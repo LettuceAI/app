@@ -530,6 +530,14 @@ impl ProviderBackupRestoreWriter for Database {
                     ],
                 )
                 .map_err(invalid)?;
+            if let Some(values) = &session.private_relationships {
+                crate::conversation::state_adapter::write_private_relationships_in(
+                    &transaction,
+                    owner.conversation_id,
+                    values,
+                )
+                .map_err(invalid)?;
+            }
             crate::conversation::state_adapter::replace_vectors(
                 &transaction,
                 owner.conversation_id,

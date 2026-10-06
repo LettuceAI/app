@@ -487,6 +487,52 @@ pub(crate) fn copy_character_soul_in(
     }
 }
 
+/// Gives a duplicated conversation its own Soul, a copy of the source
+/// conversation's with new fact ids and the fact references remapped to them.
+pub(crate) fn clone_conversation_soul_in(
+    tx: &Transaction<'_>,
+    character_id: CharacterId,
+    source: lettuce_types::ConversationId,
+    target: lettuce_types::ConversationId,
+    now: TimestampMillis,
+) -> Result<(), SoulRepositoryError> {
+    let Some(state) = get_in(
+        tx,
+        SoulOwner::Conversation {
+            character_id,
+            conversation_id: source,
+        },
+    )?
+    else {
+        return Ok(());
+    };
+    let mut ids = std::collections::HashMap::<String, String>::new();
+    let mut remap = |id: &str| {
+        ids.entry(id.to_owned())
+            .or_insert_with(|| uuid::Uuid::new_v4().to_string())
+            .clone()
+    };
+    let facts = state
+        .facts
+        .iter()
+        .map(|fact| SoulFact {
+            id: remap(&fact.id),
+            supersedes: fact.supersedes.iter().map(|id| remap(id)).collect(),
+            superseded_by: fact.superseded_by.as_deref().map(&mut remap),
+            ..fact.clone()
+        })
+        .collect::<Vec<_>>();
+    replace_facts_in(
+        tx,
+        SoulOwner::Conversation {
+            character_id,
+            conversation_id: target,
+        },
+        &facts,
+        now,
+    )
+}
+
 pub(crate) fn create_in(
     tx: &Transaction<'_>,
     owner: SoulOwner,

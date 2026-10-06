@@ -701,6 +701,11 @@ fn read_companion_state(
                 persona_id,
             },
             initial_state_hash: backup_hash(&row.4)?,
+            private_relationships: crate::conversation::state_adapter::read_private_relationships_in(
+                transaction,
+                conversation_id,
+            )
+            .map_err(|_| ProviderBackupSourceError::InvalidData)?,
             emotional_state: lettuce_companions::EmotionalState {
                 felt: crate::conversation::state_adapter::read_vector(transaction, conversation_id, "felt")
                     .map_err(|_| ProviderBackupSourceError::InvalidData)?,
