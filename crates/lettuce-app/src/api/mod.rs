@@ -12,6 +12,7 @@ mod conversation_delete;
 mod conversation_feed;
 mod conversation_settings;
 mod conversations;
+mod copies;
 mod embedding_health;
 mod error;
 mod events;
@@ -164,3 +165,5 @@ pub use turns::{
     conversation_retry,
 };
 pub use worker::ConversationGenerationWorker;
+
+pub use copies::conversation_duplicate;

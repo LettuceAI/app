@@ -33,3 +33,5 @@ The provider contracts in `src/lib.rs` predate the application API and are not e
 Branch management DTOs describe creation-ordered branch rows and revisioned fork, rename and select requests. Mutation responses return the branch id and the revision from the committed operation, so replay returns the same response after later writes.
 
 Conversation views return nullable origin conversation and message ids for provenance. These fields are plain identities and do not require the source to remain present.
+
+`ConversationDuplicateRequest` selects the source, optional title and whether messages are copied. `ConversationCopyResult` carries the stable new conversation identity and the revision committed with its receipt.

@@ -25,6 +25,7 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::conversations::conversation_branch_fork,
             commands::conversations::conversation_branch_rename,
             commands::conversations::conversation_branch_select,
+            commands::conversations::conversation_duplicate,
             commands::conversations::conversation_messages,
             commands::conversations::message_edit,
             commands::conversations::message_delete,

@@ -102,3 +102,82 @@ async fn branches_list_fork_rename_select_and_replay() {
     assert!(final_list.branches[0].active);
     assert_eq!(final_list.branches[1].label, "fork label");
 }
+
+#[tokio::test]
+async fn duplicate_copies_messages_and_replays_after_source_deletion() {
+    let harness = harness(Reply::Text("reply"));
+    let conversation_id = launch(&harness, "duplicate-launch").await;
+    let root = conversation_branches(
+        &harness.context,
+        dto::ConversationRequest {
+            conversation_id: conversation_id.clone(),
+        },
+    )
+    .await
+    .expect("source root");
+    let message = conversation_add_user_message(
+        &harness.context,
+        dto::ConversationAddUserMessageRequest {
+            conversation_id: conversation_id.clone(),
+            text: "Copied message".into(),
+            expected_revision: root.revision,
+            client_operation_id: "duplicate-message".into(),
+        },
+    )
+    .await
+    .expect("source message");
+    let request = dto::ConversationDuplicateRequest {
+        conversation_id: conversation_id.clone(),
+        with_messages: true,
+        title: None,
+        client_operation_id: "duplicate-api".into(),
+    };
+    let copied = conversation_duplicate(&harness.context, request.clone())
+        .await
+        .expect("duplicate");
+    assert_ne!(copied.conversation_id, conversation_id);
+    assert_eq!(copied.revision, 1);
+    let target = lettuce_conversations::ConversationReader::get(
+        harness.context.backend().database(),
+        copied.conversation_id.parse().expect("target id"),
+    )
+    .expect("target");
+    assert_eq!(target.conversation.origin_conversation_id, None);
+    assert_eq!(target.conversation.origin_message_id, None);
+    let page = lettuce_conversations::ConversationReader::timeline_page(
+        harness.context.backend().database(),
+        target.conversation.id,
+        target.conversation.active_branch_id,
+        &lettuce_types::PageRequest {
+            cursor: None,
+            limit: lettuce_types::PageLimit::new(20),
+        },
+    )
+    .expect("target messages");
+    assert_eq!(page.items.len(), 1);
+    assert_ne!(page.items[0].message.id.to_string(), message.message.id);
+    harness
+        .context
+        .backend()
+        .database()
+        .purge_conversation(
+            conversation_id.parse().expect("source id"),
+            harness.context.now(),
+        )
+        .expect("delete source");
+    assert_eq!(
+        conversation_duplicate(&harness.context, request.clone())
+            .await
+            .expect("replay"),
+        copied
+    );
+    let mut changed = request;
+    changed.with_messages = false;
+    assert_eq!(
+        conversation_duplicate(&harness.context, changed)
+            .await
+            .expect_err("changed digest")
+            .code,
+        ApiErrorCode::Conflict
+    );
+}

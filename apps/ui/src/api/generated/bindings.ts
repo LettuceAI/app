@@ -13,6 +13,7 @@ export const commands = {
 	conversationBranchFork: (request: ConversationBranchForkRequest) => typedError<ConversationBranchChanged, ApiError>(__TAURI_INVOKE("conversation_branch_fork", { request })),
 	conversationBranchRename: (request: ConversationBranchRenameRequest) => typedError<ConversationBranchChanged, ApiError>(__TAURI_INVOKE("conversation_branch_rename", { request })),
 	conversationBranchSelect: (request: ConversationBranchMutationRequest) => typedError<ConversationBranchChanged, ApiError>(__TAURI_INVOKE("conversation_branch_select", { request })),
+	conversationDuplicate: (request: ConversationDuplicateRequest) => typedError<ConversationCopyResult, ApiError>(__TAURI_INVOKE("conversation_duplicate", { request })),
 	conversationMessages: (request: ConversationMessagesRequest) => typedError<MessagePage, ApiError>(__TAURI_INVOKE("conversation_messages", { request })),
 	messageEdit: (request: MessageEditRequest) => typedError<MessageChanged, ApiError>(__TAURI_INVOKE("message_edit", { request })),
 	messageDelete: (request: MessageDeleteRequest) => typedError<MessagesDeleteResult, ApiError>(__TAURI_INVOKE("message_delete", { request })),
@@ -759,6 +760,18 @@ export type ConversationContinueRequest = {
 	client_operation_id: string,
 	forced_speaker_participant_id: string | null,
 	swap_places: boolean,
+};
+
+export type ConversationCopyResult = {
+	conversation_id: string,
+	revision: number,
+};
+
+export type ConversationDuplicateRequest = {
+	conversation_id: string,
+	with_messages: boolean,
+	title: string | null,
+	client_operation_id: string,
 };
 
 /**

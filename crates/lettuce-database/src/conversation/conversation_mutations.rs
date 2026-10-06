@@ -13966,6 +13966,356 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_construction_copies_direct_and_group_settings_without_launch_messages() {
+        for group in [false, true] {
+            let source = if group {
+                group_fixture()
+            } else {
+                direct_fixture()
+            };
+            let mut settings =
+                lettuce_conversations::CurrentConversationSettings::inherited(Revision::INITIAL);
+            settings.author_note = Some("Private note".into());
+            settings.author_note_provenance =
+                lettuce_conversations::SettingProvenance::CurrentOverride;
+            settings.background = Some(lettuce_conversations::ConversationBackground::Hidden);
+            let mut connection = source.database.connection().expect("connection");
+            let transaction = connection.transaction().expect("transaction");
+            write_settings(
+                &transaction,
+                source.conversation_id,
+                &settings,
+                true,
+                TimestampMillis::new(20),
+            )
+            .expect("settings");
+            transaction.commit().expect("commit settings");
+            drop(connection);
+            source
+                .database
+                .append_user_message(
+                    &send_command(&source, "duplicate-source", "de", text("Kept text")),
+                    TimestampMillis::new(30),
+                )
+                .expect("source message");
+            let original =
+                ConversationReader::get(source.database.as_ref(), source.conversation_id)
+                    .expect("source");
+            let target_id = ConversationId::new();
+            let command = lettuce_conversations::DuplicateConversation {
+                source_conversation_id: source.conversation_id,
+                conversation_id: target_id,
+                title: None,
+                with_messages: false,
+                operation: token("duplicate", "ab"),
+            };
+            let copied = source
+                .database
+                .commit_api_operation(
+                    "duplicate",
+                    "duplicate",
+                    "ab",
+                    TimestampMillis::new(40),
+                    |scope| {
+                        scope
+                            .duplicate_conversation(&command, TimestampMillis::new(40))
+                            .map(|value| value.value.conversation.id)
+                            .map_err(|_| crate::ApiOperationError::Storage)
+                    },
+                )
+                .expect("duplicate");
+            assert_eq!(copied, target_id);
+            let target =
+                ConversationReader::get(source.database.as_ref(), target_id).expect("target");
+            assert_eq!(
+                target.conversation.title,
+                format!("{} (copy)", original.conversation.title)
+            );
+            assert_eq!(target.conversation.origin_conversation_id, None);
+            assert_eq!(target.conversation.origin_message_id, None);
+            assert_eq!(
+                target
+                    .conversation
+                    .current_settings
+                    .as_ref()
+                    .expect("settings")
+                    .author_note,
+                None
+            );
+            assert_eq!(
+                target
+                    .conversation
+                    .current_settings
+                    .as_ref()
+                    .expect("settings")
+                    .background,
+                settings.background
+            );
+            for (old, new) in original
+                .conversation
+                .participants
+                .iter()
+                .zip(&target.conversation.participants)
+            {
+                assert_ne!(old.id, new.id);
+                assert_eq!(old.source, new.source);
+                assert_eq!(old.enabled, new.enabled);
+                assert_eq!(old.muted, new.muted);
+            }
+            assert_eq!(
+                scalar::<i64>(
+                    source.database.as_ref(),
+                    "SELECT count(*) FROM conversation_messages WHERE conversation_id = ?1",
+                    &target_id.to_string()
+                ),
+                0
+            );
+            assert_eq!(
+                scalar::<i64>(
+                    source.database.as_ref(),
+                    "SELECT count(*) FROM conversation_initial_message_origins WHERE conversation_id = ?1",
+                    &target_id.to_string()
+                ),
+                0
+            );
+            assert_eq!(
+                scalar::<i64>(
+                    source.database.as_ref(),
+                    "SELECT count(*) FROM memory_items WHERE space_id IN (SELECT space_id FROM conversation_memory_spaces WHERE conversation_id = ?1)",
+                    &target_id.to_string()
+                ),
+                0
+            );
+        }
+    }
+
+    #[test]
+    fn duplicate_construction_with_messages_is_atomic_replayable_and_backup_valid() {
+        for group in [false, true] {
+            let source = if group {
+                group_fixture()
+            } else {
+                direct_fixture()
+            };
+            let asset_id = stage_media_asset(source.database.as_ref(), "7a");
+            let original = source
+                .database
+                .append_user_message(
+                    &send_command(
+                        &source,
+                        "duplicate-source",
+                        "de",
+                        vec![
+                            MessagePart::Text {
+                                text: "Shared source".into(),
+                            },
+                            MessagePart::MediaAsset {
+                                asset_id,
+                                role: lettuce_conversations::MediaAssetRole::Attachment,
+                            },
+                        ],
+                    ),
+                    TimestampMillis::new(30),
+                )
+                .expect("source message")
+                .value
+                .id;
+            let command = lettuce_conversations::DuplicateConversation {
+                source_conversation_id: source.conversation_id,
+                conversation_id: ConversationId::new(),
+                title: Some("Owned title".into()),
+                with_messages: true,
+                operation: token("duplicate", "ab"),
+            };
+            let failed: Result<ConversationId, crate::ApiOperationError> =
+                source.database.commit_api_operation(
+                    "duplicate",
+                    "duplicate",
+                    "ab",
+                    TimestampMillis::new(40),
+                    |scope| {
+                        scope
+                            .duplicate_conversation(&command, TimestampMillis::new(40))
+                            .map_err(|_| crate::ApiOperationError::Storage)?;
+                        Err(crate::ApiOperationError::Storage)
+                    },
+                );
+            assert_eq!(failed, Err(crate::ApiOperationError::Storage));
+            assert_eq!(
+                scalar::<i64>(
+                    source.database.as_ref(),
+                    "SELECT count(*) FROM conversations WHERE id = ?1",
+                    &command.conversation_id.to_string()
+                ),
+                0
+            );
+            assert_eq!(
+                scalar::<i64>(
+                    source.database.as_ref(),
+                    "SELECT count(*) FROM conversation_outbox WHERE conversation_id = ?1",
+                    &command.conversation_id.to_string()
+                ),
+                0
+            );
+            let copied = source
+                .database
+                .commit_api_operation(
+                    "duplicate",
+                    "duplicate",
+                    "ab",
+                    TimestampMillis::new(40),
+                    |scope| {
+                        scope
+                            .duplicate_conversation(&command, TimestampMillis::new(40))
+                            .map(|value| value.value.conversation.id)
+                            .map_err(|_| crate::ApiOperationError::Storage)
+                    },
+                )
+                .expect("duplicate");
+            let target = ConversationReader::get(source.database.as_ref(), copied).expect("target");
+            assert_eq!(target.conversation.title, "Owned title");
+            let page = ConversationReader::timeline_page(
+                source.database.as_ref(),
+                copied,
+                target.conversation.active_branch_id,
+                &PageRequest {
+                    cursor: None,
+                    limit: PageLimit::new(20),
+                },
+            )
+            .expect("timeline");
+            assert_eq!(page.items.len(), 1);
+            assert_ne!(page.items[0].message.id, original);
+            assert_eq!(page.items[0].message.created_at, TimestampMillis::new(30));
+            assert!(page.items[0].active_revision.as_ref().expect("revision").parts.iter().any(|part| matches!(part, MessagePart::MediaAsset { asset_id: id, .. } if *id == asset_id)));
+            source
+                .database
+                .purge_conversation(source.conversation_id, TimestampMillis::new(50))
+                .expect("purge source");
+            let replay: ConversationId = source
+                .database
+                .commit_api_operation(
+                    "duplicate",
+                    "duplicate",
+                    "ab",
+                    TimestampMillis::new(60),
+                    |_| -> Result<ConversationId, crate::ApiOperationError> {
+                        panic!("deleted source replay")
+                    },
+                )
+                .expect("replay");
+            assert_eq!(copied, replay);
+            let conflict: Result<ConversationId, crate::ApiOperationError> =
+                source.database.commit_api_operation(
+                    "duplicate",
+                    "duplicate",
+                    "other",
+                    TimestampMillis::new(60),
+                    |_| panic!("changed digest"),
+                );
+            assert_eq!(conflict, Err(crate::ApiOperationError::Conflict));
+            crate::backup::restore_writer::tests::assert_backup_round_trip(
+                source.database.as_ref(),
+            );
+        }
+    }
+
+    #[test]
+    fn duplicate_construction_keeps_added_members_and_current_participant_overrides() {
+        let mut source = group_fixture();
+        let character = CharacterId::new();
+        let added_id = ConversationParticipantId::new();
+        let (member, draft) = added_member(character, b"duplicate-added-member");
+        source
+            .database
+            .add_participant(
+                lettuce_conversations::PreparedParticipantAdd::new(
+                    add_command(
+                        &source,
+                        source.revision,
+                        token("duplicate-add", "ac"),
+                        added_id,
+                        character,
+                        Some(member),
+                        true,
+                    ),
+                    vec![draft],
+                )
+                .expect("prepared member"),
+                TimestampMillis::new(20),
+            )
+            .expect("add member");
+        source.revision = conversation_revision(&source);
+        let model = staged_model(source.database.as_ref());
+        source
+            .database
+            .update_participant_policy(
+                &lettuce_conversations::UpdateParticipantPolicy {
+                    conversation_id: source.conversation_id,
+                    participant_id: source.characters[0],
+                    expected_revision: source.revision,
+                    operation: token("duplicate-policy", "ac"),
+                    enabled: None,
+                    muted: Some(true),
+                    model_override: Some(SnapshotSelection::Explicit(model.clone())),
+                    materialize: Vec::new(),
+                    overrides: lettuce_conversations::ParticipantOverrides {
+                        members: false,
+                        muted: true,
+                        member_models: true,
+                    },
+                },
+                TimestampMillis::new(30),
+            )
+            .expect("current policy");
+        let command = lettuce_conversations::DuplicateConversation {
+            source_conversation_id: source.conversation_id,
+            conversation_id: ConversationId::new(),
+            title: None,
+            with_messages: false,
+            operation: token("duplicate-current", "ad"),
+        };
+        source
+            .database
+            .commit_api_operation(
+                "duplicate",
+                "duplicate-current",
+                "ad",
+                TimestampMillis::new(40),
+                |scope| {
+                    scope
+                        .duplicate_conversation(&command, TimestampMillis::new(40))
+                        .map(|value| value.value.conversation.id)
+                        .map_err(|_| crate::ApiOperationError::Storage)
+                },
+            )
+            .expect("duplicate");
+        let target = ConversationReader::get(source.database.as_ref(), command.conversation_id)
+            .expect("target");
+        let original = ConversationReader::get(source.database.as_ref(), source.conversation_id)
+            .expect("source");
+        assert_eq!(target.conversation.participants.len(), 4);
+        assert!(
+            target.conversation.participants[3]
+                .member_snapshot
+                .is_some()
+        );
+        assert_ne!(target.conversation.participants[3].id, added_id);
+        assert_eq!(
+            target.conversation.participants[1].model_selection,
+            SnapshotSelection::Explicit(model)
+        );
+        assert!(target.conversation.participants[1].muted);
+        let mut expected_settings = original.conversation.current_settings;
+        expected_settings
+            .as_mut()
+            .expect("source settings")
+            .revision = Revision::INITIAL;
+        assert_eq!(target.conversation.current_settings, expected_settings);
+        crate::backup::restore_writer::tests::assert_backup_round_trip(source.database.as_ref());
+    }
+
+    #[test]
     fn conversation_lineage_survives_removing_the_source_and_round_trips() {
         let source = direct_fixture();
         let destination = direct_fixture_on(source.database.clone());

@@ -218,3 +218,5 @@ Branch list rows contain the stored fork label or the root conversation title, t
 Conversation lineage is optional creation metadata: the source conversation and source message ids. The ids retain provenance after the source is deleted and carry no ownership or foreign-key relationship. Normal launches and historical imports leave them absent.
 
 `ConversationContentCopy` identifies source and target branches for the database transaction primitive that copies selected content with fresh message identities. The primitive is composed with conversation creation and an API operation receipt.
+
+`DuplicateConversation` selects source settings and optional selected content for a new conversation, carrying the target identity and creation operation token.

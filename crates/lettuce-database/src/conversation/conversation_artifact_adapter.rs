@@ -198,6 +198,31 @@ pub(crate) fn sync_load_snapshot(
     }))
 }
 
+pub(crate) fn snapshot_draft_in(
+    transaction: &Transaction<'_>,
+    reference: &ProtectedSnapshotRef,
+) -> Result<SnapshotArtifactDraft, ArtifactError> {
+    verify_snapshot_in_transaction(transaction, reference)?;
+    let (codec, bytes): (String, Vec<u8>) = transaction
+        .query_row(
+            "SELECT codec, bytes FROM conversation_snapshot_artifacts WHERE artifact_id = ?1",
+            [reference.artifact_id.to_string()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(db_error)?;
+    Ok(SnapshotArtifactDraft {
+        source: reference.source,
+        source_revision: reference.source_revision,
+        artifact_id: reference.artifact_id,
+        digest: reference.digest.clone(),
+        schema_version: reference.schema_version,
+        byte_size: reference.byte_size,
+        codec: codec_from_name(&codec)?,
+        retention: ArtifactRetention::Conversation,
+        bytes: ProtectedArtifactBytes::new(bytes)?,
+    })
+}
+
 /// Stages a synced snapshot artifact through the same verified path as a
 /// local launch; an existing different artifact under the id is a conflict.
 pub(crate) fn sync_stage_snapshot(

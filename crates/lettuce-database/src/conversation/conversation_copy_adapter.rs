@@ -169,3 +169,169 @@ impl crate::ApiOperationTransaction<'_, '_> {
         Ok(result)
     }
 }
+
+impl crate::ApiOperationTransaction<'_, '_> {
+    pub fn duplicate_conversation(
+        &self,
+        command: &lettuce_conversations::DuplicateConversation,
+        now: lettuce_types::TimestampMillis,
+    ) -> Result<lettuce_conversations::CreateConversationResult, ConversationRepositoryError> {
+        use lettuce_conversations::{
+            ConversationKind, ConversationParticipantDraft, CreateConversationPlan,
+            InitialTimelineDraft, ParticipantRole, ParticipantSource, PreparedConversationLaunch,
+            SettingProvenance,
+        };
+        use lettuce_types::ConversationParticipantId;
+        use rusqlite::OptionalExtension;
+
+        if command.source_conversation_id == command.conversation_id {
+            return Err(invalid("duplicate.target_conversation"));
+        }
+        let source =
+            slice::hydrate_conversation(self.transaction, command.source_conversation_id, || {})?;
+        let participant_ids: HashMap<_, _> = source
+            .conversation
+            .participants
+            .iter()
+            .map(|participant| (participant.id, ConversationParticipantId::new()))
+            .collect();
+        let mut kind = source.conversation.kind.clone();
+        if let ConversationKind::Group(details) = &mut kind {
+            for member in &mut details.initial_participant_policy.members {
+                member.participant_id = *participant_ids
+                    .get(&member.participant_id)
+                    .ok_or_else(|| invalid("duplicate.participant_policy"))?;
+            }
+            details.initial_participant_policy.revision = Revision::INITIAL;
+            details.initial_participant_policy.created_at = now;
+            details.initial_participant_policy.updated_at = now;
+        }
+        let mut current_settings = source.conversation.current_settings.clone();
+        if let Some(settings) = &mut current_settings {
+            settings.revision = Revision::INITIAL;
+            settings.author_note = None;
+            settings.author_note_provenance = SettingProvenance::LaunchInherited;
+        }
+        let mut participants = Vec::new();
+        for participant in source
+            .conversation
+            .participants
+            .iter()
+            .filter(|participant| participant.member_snapshot.is_none())
+        {
+            let mut draft = ConversationParticipantDraft {
+                id: participant_ids[&participant.id],
+                role: participant.role,
+                ordinal: participant.ordinal,
+                source: participant.source,
+                enabled: participant.enabled,
+                muted: participant.muted,
+                display_name: participant.display_name.clone(),
+                authored_description: participant.authored_description.clone(),
+                model_selection: participant.model_selection.clone(),
+            };
+            match &kind {
+                ConversationKind::Direct(details) if draft.role == ParticipantRole::Character => {
+                    draft.model_selection = details.model.clone()
+                }
+                ConversationKind::Group(details) if draft.role == ParticipantRole::Character => {
+                    let member = details
+                        .group
+                        .members
+                        .iter()
+                        .find(|member| {
+                            draft.source == ParticipantSource::Character(member.character.source_id)
+                        })
+                        .ok_or_else(|| invalid("duplicate.group_member"))?;
+                    draft.enabled = member.enabled;
+                    draft.muted = member.muted;
+                    draft.model_selection = member.model_override.clone();
+                }
+                _ => {}
+            }
+            participants.push(draft);
+        }
+        let plan = CreateConversationPlan {
+            conversation_id: command.conversation_id,
+            title: command
+                .title
+                .clone()
+                .unwrap_or_else(|| format!("{} (copy)", source.conversation.title)),
+            kind,
+            participants,
+            initial_timeline: InitialTimelineDraft {
+                format_version: 1,
+                entries: Vec::new(),
+            },
+            operation: command.operation.clone(),
+            current_settings,
+        };
+        let references = lettuce_conversations::conversation_launch_snapshot_references(&plan);
+        let mut unique = std::collections::BTreeMap::new();
+        for reference in references {
+            if let Some(previous) = unique.insert(reference.artifact_id, reference.clone())
+                && previous != *reference
+            {
+                return Err(invalid("duplicate.snapshot_references"));
+            }
+        }
+        let drafts = unique
+            .values()
+            .map(|reference| {
+                super::conversation_artifact_adapter::snapshot_draft_in(self.transaction, reference)
+                    .map_err(ConversationRepositoryError::ArtifactReference)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let launch = PreparedConversationLaunch::new(plan, drafts)
+            .map_err(|_| invalid("duplicate.launch"))?;
+        let pooled_character: Option<String> = self.transaction.query_row(
+            "SELECT pool.character_id FROM conversation_memory_spaces binding JOIN companion_memory_pools pool ON pool.space_id = binding.space_id WHERE binding.conversation_id = ?1 AND binding.pooled = 1",
+            [command.source_conversation_id.to_string()], |row| row.get(0),
+        ).optional().map_err(slice::db)?;
+        if pooled_character.is_some() {
+            return Err(ConversationRepositoryError::Unsupported);
+        }
+        let mut commit = super::conversation_creator::create_on_transaction(
+            self.transaction,
+            launch,
+            now,
+            super::conversation_creator::MemoryBinding::PerConversation,
+            |_, _| Ok(()),
+        )?;
+        let mut target = commit.value.conversation.clone();
+        target.participants = source
+            .conversation
+            .participants
+            .iter()
+            .map(|participant| {
+                let mut copied = participant.clone();
+                copied.id = participant_ids[&participant.id];
+                copied.revision = Revision::INITIAL;
+                copied.created_at = now;
+                copied.updated_at = now;
+                copied
+            })
+            .collect();
+        target
+            .validate()
+            .map_err(ConversationRepositoryError::Invalid)?;
+        slice::save_participants(self.transaction, &target)?;
+        self.transaction.execute(
+            "INSERT INTO conversation_snapshot_refs (conversation_id,artifact_id) SELECT ?1,artifact_id FROM conversation_snapshot_refs WHERE conversation_id = ?2 ON CONFLICT DO NOTHING",
+            rusqlite::params![command.conversation_id.to_string(), command.source_conversation_id.to_string()],
+        ).map_err(slice::db)?;
+        if command.with_messages {
+            self.copy_selected_conversation_content(&ConversationContentCopy {
+                source_conversation_id: command.source_conversation_id,
+                source_branch_id: source.conversation.active_branch_id,
+                target_conversation_id: command.conversation_id,
+                target_branch_id: target.active_branch_id,
+                through_message_id: None,
+                kind: SelectedConversationCopyKind::Duplicate,
+            })?;
+        }
+        commit.value =
+            slice::hydrate_conversation(self.transaction, command.conversation_id, || {})?;
+        Ok(commit)
+    }
+}

@@ -556,3 +556,5 @@ Memory batches freeze their admitted branch before dispatch. Plain automatic job
 The branch API exposes list, fork, rename and select. Reads return creation-ordered branches with labels and timeline counts. Fork validates the selected timeline before calling the existing transactional fork and memory seed; retries resolve the original parent from the operation record. Rename and select resolve the globally unique branch id to its conversation and use the existing revisioned mutation kernel.
 
 Opening a conversation returns its stored origin conversation and message ids when present, including after the source has been purged.
+
+`conversation_duplicate` submits one transaction over the source settings, new launch, optional selected timeline and memory, creation outbox and stable API receipt. Receipt lookup precedes source lookup so retries survive source removal. The command returns the new conversation identity and its committed revision.

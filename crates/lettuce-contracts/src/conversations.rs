@@ -1219,3 +1219,22 @@ pub struct ConversationBranchChanged {
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub revision: u64,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct ConversationDuplicateRequest {
+    pub conversation_id: String,
+    pub with_messages: bool,
+    pub title: Option<String>,
+    pub client_operation_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct ConversationCopyResult {
+    pub conversation_id: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub revision: u64,
+}

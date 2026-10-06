@@ -1698,3 +1698,12 @@ pub struct ConversationContentCopy {
     pub through_message_id: Option<MessageId>,
     pub kind: SelectedConversationCopyKind,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DuplicateConversation {
+    pub source_conversation_id: ConversationId,
+    pub conversation_id: ConversationId,
+    pub title: Option<String>,
+    pub with_messages: bool,
+    pub operation: OperationToken,
+}

@@ -460,3 +460,12 @@ pub async fn conversation_branch_select(
 ) -> Result<lettuce_contracts::ConversationBranchChanged, ApiError> {
     api::conversation_branch_select(&context, request).await
 }
+
+#[tauri::command]
+#[specta::specta]
+pub async fn conversation_duplicate(
+    context: State<'_, ApiContext>,
+    request: lettuce_contracts::ConversationDuplicateRequest,
+) -> Result<lettuce_contracts::ConversationCopyResult, ApiError> {
+    api::conversation_duplicate(&context, request).await
+}

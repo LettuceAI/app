@@ -2341,8 +2341,10 @@ mod tests {
                 .expect("source memory");
             let character = lettuce_types::CharacterId::new();
             let pool = lettuce_types::MemorySpaceId::new();
-            let mut config = lettuce_companions::CompanionSoulConfig::default();
-            config.share_memory_across_chats = shared;
+            let config = lettuce_companions::CompanionSoulConfig {
+                share_memory_across_chats: shared,
+                ..Default::default()
+            };
             let defaults = lettuce_characters::CharacterDefaults {
                 interaction_mode: lettuce_characters::InteractionMode::Companion,
                 companion_soul: Some(config),
