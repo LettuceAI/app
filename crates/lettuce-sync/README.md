@@ -253,3 +253,5 @@ The change journal is never compacted. A peer receives every origin's changes in
 Conversation root payload version 5 includes nullable origin conversation and message ids as creation metadata. These ids impose no dependency on the source, so a root can arrive after its source was deleted.
 
 A deleted branch retains its topology in sync payload version 3, so descendants can resolve their ancestry on a fresh peer even if the parent was deleted before any sync. Tombstoned lifecycle wins permanently, independently of the label winner, and never resurrects. Materialization purges only that branch's own memory once its work is terminal; when the deleted branch was selected locally, selection returns to the root.
+
+Conversation message schema version 3 carries immutable copied-scene source provenance. Receivers verify and attach the protected source scene artifact before hydrating the scene; later merges cannot replace the provenance.

@@ -134,3 +134,5 @@ Memory section version 2 preserves every own branch binding, the branch owner of
 Conversation backups retain origin ids independently of source rows. Legacy direct-to-character branching recorded parent-session and branched-message metadata (`old-code/src/core/storage/repo.ts:1744-1748`); lineage now survives deletion of those source rows and backup restore.
 
 Branch-delete outbox history is preserved in version 3 backups with its stable branch result and exclusive-message tombstone events.
+
+Conversation copies carry immutable protected source-scene provenance separately from launch origins, preserving copied scene messages under different target defaults (`old-code/src/core/storage/repo.ts:1898-1978`). Backup and sync retain the reference after source purge; launch-origin validation remains unchanged.

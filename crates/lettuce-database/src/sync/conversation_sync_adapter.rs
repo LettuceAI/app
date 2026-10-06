@@ -323,6 +323,7 @@ pub(crate) fn sync_replace_conversation_root(
             message: initial.message.clone(),
             timeline_ordinal: u64::try_from(index).unwrap_or(u64::MAX).saturating_add(1),
             initial_origin: Some(initial.origin.clone()),
+            copied_scene_source: None,
             revisions: vec![initial.revision.clone()],
             candidates: Vec::new(),
             historical_media_revision_ids: Vec::new(),
@@ -792,7 +793,8 @@ fn merge_message(
 ) -> Result<(), ConversationRepositoryError> {
     let message = &incoming.message.message;
     let current = &local.message.message;
-    if message.branch_id != current.branch_id
+    if incoming.message.copied_scene_source != local.message.copied_scene_source
+        || message.branch_id != current.branch_id
         || message.parent_message_id != current.parent_message_id
         || message.role != current.role
         || message.created_at != current.created_at
@@ -1401,6 +1403,7 @@ pub(crate) fn fork_losing_message_version(
             },
             timeline_ordinal: u64::try_from(next).map_err(storage)?,
             initial_origin: None,
+            copied_scene_source: None,
             revisions: vec![revision],
             candidates: Vec::new(),
             historical_media_revision_ids: Vec::new(),
@@ -1619,6 +1622,7 @@ fn copy_messages_into(
                 },
                 timeline_ordinal: u64::try_from(next).map_err(storage)?,
                 initial_origin: None,
+                copied_scene_source: None,
                 revisions: vec![revision],
                 candidates: Vec::new(),
                 historical_media_revision_ids: Vec::new(),

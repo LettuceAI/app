@@ -292,6 +292,7 @@ impl<'c> Purge<'c> {
             "conversation_message_candidates",
             "conversation_message_revisions",
             "conversation_initial_message_origins",
+            "conversation_message_scene_sources",
             "conversation_turns",
             "generation_attempts",
             "sync_conversation_forks",

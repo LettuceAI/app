@@ -960,7 +960,11 @@ pub(crate) fn message_row(
         return Err(ConversationRepositoryError::Storage);
     }
     let initial_origin = hydrate_initial_origin(transaction, conversation_id, id)?;
-    if message.role == MessageRole::Scene && initial_origin.is_none() {
+    let copied_scene_source = hydrate_copied_scene_source(transaction, conversation_id, id)?;
+    if message.role == MessageRole::Scene
+        && initial_origin.is_none()
+        && copied_scene_source.is_none()
+    {
         return Err(ConversationRepositoryError::Storage);
     }
     validate_initial_origin_message(transaction, conversation_id, id, initial_origin.as_ref())?;
@@ -973,6 +977,48 @@ pub(crate) fn message_row(
         },
         row.get(11).map_err(slice::db)?,
     ))
+}
+
+pub(crate) fn hydrate_copied_scene_source(
+    transaction: &Transaction<'_>,
+    conversation_id: ConversationId,
+    message_id: MessageId,
+) -> Result<Option<ProtectedSnapshotRef>, ConversationRepositoryError> {
+    let row = transaction.query_row(
+        "SELECT artifact.source_id, artifact.source_revision, artifact.artifact_id, artifact.digest, artifact.schema_version, artifact.byte_size FROM conversation_message_scene_sources AS source JOIN conversation_snapshot_artifacts AS artifact ON artifact.artifact_id = source.snapshot_artifact_id AND artifact.source_kind = 'scene' WHERE source.conversation_id = ?1 AND source.message_id = ?2",
+        params![conversation_id.to_string(), message_id.to_string()],
+        |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?, row.get::<_, String>(2)?, row.get::<_, String>(3)?, row.get::<_, i64>(4)?, row.get::<_, i64>(5)?)),
+    ).optional().map_err(slice::db)?;
+    let Some((source_id, source_revision, artifact_id, digest, schema_version, byte_size)) = row
+    else {
+        return Ok(None);
+    };
+    let reference = ProtectedSnapshotRef {
+        source: lettuce_conversations::SnapshotSource::Scene(parse(source_id)?),
+        source_revision: slice::rev(source_revision)?,
+        artifact_id: parse(artifact_id)?,
+        digest: digest
+            .parse()
+            .map_err(|_| ConversationRepositoryError::Storage)?,
+        schema_version: u32::try_from(schema_version)
+            .map_err(|_| ConversationRepositoryError::Storage)?,
+        byte_size: u64::try_from(byte_size).map_err(|_| ConversationRepositoryError::Storage)?,
+    };
+    reference
+        .validate()
+        .map_err(|_| ConversationRepositoryError::Storage)?;
+    if hydrate_initial_origin(transaction, conversation_id, message_id)?.is_some() {
+        return Err(ConversationRepositoryError::Storage);
+    }
+    validate_initial_origin_message(
+        transaction,
+        conversation_id,
+        message_id,
+        Some(&InitialMessageOrigin::SelectedScene {
+            snapshot_ref: reference.clone(),
+        }),
+    )?;
+    Ok(Some(reference))
 }
 
 fn validate_initial_origin_message(

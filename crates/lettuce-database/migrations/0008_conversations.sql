@@ -539,6 +539,34 @@ CREATE TABLE conversation_initial_message_origins (
 CREATE INDEX conversation_initial_message_origins_source_idx
     ON conversation_initial_message_origins(conversation_id, source_kind, snapshot_artifact_id);
 
+CREATE TABLE conversation_message_scene_sources (
+    conversation_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    snapshot_artifact_id TEXT NOT NULL,
+    source_kind TEXT NOT NULL DEFAULT 'scene' CHECK (source_kind = 'scene'),
+    PRIMARY KEY (conversation_id, message_id),
+    FOREIGN KEY (conversation_id, message_id) REFERENCES conversation_messages(conversation_id, id) ON DELETE RESTRICT,
+    FOREIGN KEY (snapshot_artifact_id, source_kind) REFERENCES conversation_snapshot_artifacts(artifact_id, source_kind) ON DELETE RESTRICT,
+    FOREIGN KEY (conversation_id, snapshot_artifact_id) REFERENCES conversation_snapshot_refs(conversation_id, artifact_id) ON DELETE RESTRICT
+) STRICT;
+CREATE TRIGGER conversation_message_scene_source_shape
+BEFORE INSERT ON conversation_message_scene_sources
+WHEN NOT EXISTS (SELECT 1 FROM conversation_messages WHERE conversation_id = NEW.conversation_id AND id = NEW.message_id AND role = 'scene' AND author_participant_id IS NULL)
+OR EXISTS (SELECT 1 FROM conversation_initial_message_origins WHERE conversation_id = NEW.conversation_id AND message_id = NEW.message_id)
+BEGIN SELECT RAISE(ABORT, 'copied scene source requires an ordinary scene message'); END;
+CREATE TRIGGER conversation_message_scene_source_immutable_update
+BEFORE UPDATE ON conversation_message_scene_sources
+BEGIN SELECT RAISE(ABORT, 'copied scene source is immutable'); END;
+CREATE TRIGGER conversation_message_scene_source_immutable_delete
+BEFORE DELETE ON conversation_message_scene_sources
+WHEN NOT EXISTS (SELECT 1 FROM purge_authorizations WHERE owner_id = OLD.conversation_id)
+BEGIN SELECT RAISE(ABORT, 'copied scene source is immutable'); END;
+
+CREATE TRIGGER conversation_initial_origin_copied_scene_exclusion
+BEFORE INSERT ON conversation_initial_message_origins
+WHEN EXISTS (SELECT 1 FROM conversation_message_scene_sources WHERE conversation_id = NEW.conversation_id AND message_id = NEW.message_id)
+BEGIN SELECT RAISE(ABORT, 'copied scene cannot become a launch origin'); END;
+
 CREATE TABLE generation_attempts (
     conversation_id TEXT NOT NULL,
     turn_id TEXT NOT NULL,

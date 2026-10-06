@@ -636,6 +636,7 @@ pub(crate) fn insert_message_with_turns(
     if let Some(origin) = &backup.initial_origin {
         insert_origin(transaction, backup, origin)?;
     }
+    insert_copied_scene_source(transaction, backup)?;
     for turn in creators {
         settle_turn(transaction, Some(backup), turn, evidence)?;
     }
@@ -643,6 +644,39 @@ pub(crate) fn insert_message_with_turns(
         insert_turn(transaction, turn)?;
         settle_turn(transaction, Some(backup), turn, evidence)?;
     }
+    Ok(())
+}
+
+pub(crate) fn insert_copied_scene_source(
+    transaction: &Transaction<'_>,
+    backup: &BackupMessage,
+) -> Result<(), ConversationRepositoryError> {
+    let Some(reference) = &backup.copied_scene_source else {
+        return Ok(());
+    };
+    if backup.initial_origin.is_some()
+        || backup.message.role != lettuce_conversations::MessageRole::Scene
+        || backup.message.author_participant_id.is_some()
+        || !matches!(
+            reference.source,
+            lettuce_conversations::SnapshotSource::Scene(_)
+        )
+        || !backup.revisions.iter().any(|revision| {
+            revision
+                .parts
+                .iter()
+                .any(|part| matches!(part, MessagePart::Text { text } if !text.trim().is_empty()))
+        })
+    {
+        return Err(invalid("history.copied_scene_source"));
+    }
+    super::conversation_artifact_adapter::verify_snapshot_in_transaction(transaction, reference)
+        .map_err(|error| match error {
+            lettuce_conversations::ArtifactError::NotFound => ConversationRepositoryError::NotFound,
+            _ => ConversationRepositoryError::Storage,
+        })?;
+    transaction.execute("INSERT INTO conversation_snapshot_refs (conversation_id, artifact_id) VALUES (?1, ?2) ON CONFLICT DO NOTHING", params![backup.message.conversation_id.to_string(), reference.artifact_id.to_string()]).map_err(kernel::map_constraint)?;
+    transaction.execute("INSERT INTO conversation_message_scene_sources (conversation_id, message_id, snapshot_artifact_id) VALUES (?1, ?2, ?3)", params![backup.message.conversation_id.to_string(), backup.message.id.to_string(), reference.artifact_id.to_string()]).map_err(kernel::map_constraint)?;
     Ok(())
 }
 

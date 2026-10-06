@@ -76,3 +76,5 @@ Branch labels use the same last-writer-wins entity policy as titles while parent
 Conversation lineage travels with its root as creation metadata and stays valid after source deletion. Legacy direct-to-character branches recorded parent-session and branched-message fields (`old-code/src/core/storage/repo.ts:1744-1748`); sync no longer needs a surviving source to retain that provenance.
 
 Branch deletion exchanges a retained topology payload with a monotonic tombstoned lifecycle, including when deletion happens before the first sync. An active payload cannot resurrect it, and a concurrent label edit cannot suppress deletion. Parent and fork identities remain immutable; labels retain their independent last-writer-wins behavior.
+
+Conversation copies carry immutable protected source-scene provenance separately from launch origins, preserving copied scene messages under different target defaults (`old-code/src/core/storage/repo.ts:1898-1978`). Backup and sync retain the reference after source purge; launch-origin validation remains unchanged.

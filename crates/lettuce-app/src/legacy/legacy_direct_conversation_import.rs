@@ -2079,6 +2079,7 @@ impl SessionWriter<'_> {
             },
             timeline_ordinal,
             initial_origin: origin,
+            copied_scene_source: None,
             historical_media_revision_ids: revisions
                 .iter()
                 .filter(|revision| {

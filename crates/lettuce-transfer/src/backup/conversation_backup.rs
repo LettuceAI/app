@@ -9,7 +9,7 @@ use lettuce_conversations::{
 use lettuce_types::{MessageId, ReplayArtifactId, SnapshotArtifactId};
 use serde::{Deserialize, Serialize};
 
-pub const CONVERSATION_HISTORY_BACKUP_VERSION: u32 = 2;
+pub const CONVERSATION_HISTORY_BACKUP_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -33,6 +33,7 @@ pub struct BackupMessage {
     pub message: Message,
     pub timeline_ordinal: u64,
     pub initial_origin: Option<InitialMessageOrigin>,
+    pub copied_scene_source: Option<lettuce_conversations::ProtectedSnapshotRef>,
     pub revisions: Vec<MessageRevision>,
     pub candidates: Vec<MessageCandidate>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -156,6 +157,9 @@ impl ConversationHistoryBackup {
                         InitialMessageOrigin::SelectedScene { snapshot_ref }
                         | InitialMessageOrigin::StarterMessage { snapshot_ref, .. } => snapshot_ref,
                     };
+                    insert_snapshot(&mut snapshots, reference)?;
+                }
+                if let Some(reference) = &message.copied_scene_source {
                     insert_snapshot(&mut snapshots, reference)?;
                 }
                 for revision in &message.revisions {
@@ -396,6 +400,21 @@ fn validate_initial_origin(
     starter_ids: &mut BTreeSet<lettuce_types::StarterMessageId>,
     scene_origins: &mut usize,
 ) -> Result<(), ConversationHistoryBackupError> {
+    if let Some(reference) = &entry.copied_scene_source {
+        if entry.initial_origin.is_some()
+            || entry.message.role != MessageRole::Scene
+            || entry.message.author_participant_id.is_some()
+            || !matches!(reference.source, SnapshotSource::Scene(_))
+            || reference.validate().is_err()
+            || !entry.revisions.iter().any(|revision| {
+                revision.parts.iter().any(
+                    |part| matches!(part, MessagePart::Text { text } if !text.trim().is_empty()),
+                )
+            })
+        {
+            return Err(ConversationHistoryBackupError::InvalidData);
+        }
+    }
     let Some(origin) = &entry.initial_origin else {
         return Ok(());
     };

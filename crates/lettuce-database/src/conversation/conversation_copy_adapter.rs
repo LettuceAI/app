@@ -352,12 +352,6 @@ impl crate::ApiOperationTransaction<'_, '_> {
         }
         self.transaction.execute("INSERT INTO conversation_snapshot_refs (conversation_id,artifact_id) SELECT ?1,artifact_id FROM conversation_snapshot_refs WHERE conversation_id = ?2 ON CONFLICT DO NOTHING",rusqlite::params![command.target_conversation_id.to_string(),command.source_conversation_id.to_string()]).map_err(slice::db)?;
 
-        if items
-            .iter()
-            .any(|item| item.message.role == lettuce_conversations::MessageRole::Scene)
-        {
-            return Err(ConversationRepositoryError::Unsupported);
-        }
         let mut message_ids = HashMap::new();
         let mut result = Vec::with_capacity(items.len());
         let mut parent = target_branch.head_message_id;
@@ -458,6 +452,21 @@ impl crate::ApiOperationTransaction<'_, '_> {
             } else {
                 None
             };
+            let copied_scene_source =
+                if item.message.role == lettuce_conversations::MessageRole::Scene {
+                    match &item.initial_origin {
+                        Some(lettuce_conversations::InitialMessageOrigin::SelectedScene {
+                            snapshot_ref,
+                        }) => Some(snapshot_ref.clone()),
+                        _ => query::hydrate_copied_scene_source(
+                            self.transaction,
+                            command.source_conversation_id,
+                            item.message.id,
+                        )?,
+                    }
+                } else {
+                    None
+                };
             let mut message = item.message;
             let old_id = message.id;
             message.id = id;
@@ -492,6 +501,7 @@ impl crate::ApiOperationTransaction<'_, '_> {
                 timeline_ordinal: u64::try_from(ordinal)
                     .map_err(|_| invalid("copy.timeline_ordinal"))?,
                 initial_origin: None,
+                copied_scene_source,
                 revisions: vec![revision],
                 candidates: Vec::new(),
                 historical_media_revision_ids: Vec::new(),
@@ -510,6 +520,7 @@ impl crate::ApiOperationTransaction<'_, '_> {
             } else {
                 history::insert_message(self.transaction, &backup)?;
                 history::insert_revision(self.transaction, &backup, &backup.revisions[0])?;
+                history::insert_copied_scene_source(self.transaction, &backup)?;
             }
             message_ids.insert(old_id, id);
             result.push(id);

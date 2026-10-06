@@ -149,3 +149,5 @@ Conversation outbox section version 2 includes branch-label-change events and th
 Conversation history section version 2 carries branch labels and nullable conversation lineage. Restore keeps the recorded origin ids even when the source conversation and message are absent from the backup.
 
 Conversation outbox backup version 3 includes branch-deletion events alongside retained branch topology in the history graph.
+
+Conversation history backup version 3 includes copied scene source snapshot references separately from launch origins. Validation requires a scene message, a protected scene artifact and exclusive provenance, and exports the artifact descriptor for restore.

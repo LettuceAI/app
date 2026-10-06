@@ -1947,11 +1947,17 @@ fn backup_message(
             item.message.id
         ),
     )?;
+    let copied_scene_source =
+        crate::conversation::conversation_query::hydrate_copied_scene_source(
+            transaction, conversation_id, item.message.id,
+        )
+        .map_err(|_| ProviderBackupSourceError::InvalidData)?;
     Ok(BackupMessage {
         message: item.message,
         timeline_ordinal: u64::try_from(ordinal)
             .map_err(|_| ProviderBackupSourceError::InvalidData)?,
         initial_origin: item.initial_origin,
+        copied_scene_source,
         revisions,
         candidates,
         historical_media_revision_ids,

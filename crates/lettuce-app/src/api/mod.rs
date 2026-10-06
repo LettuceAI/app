@@ -43,6 +43,8 @@ mod conversation_list_tests;
 #[cfg(test)]
 mod conversation_settings_tests;
 #[cfg(test)]
+mod copy_scene_tests;
+#[cfg(test)]
 mod foundation_tests;
 #[cfg(test)]
 mod help_me_reply_tests;

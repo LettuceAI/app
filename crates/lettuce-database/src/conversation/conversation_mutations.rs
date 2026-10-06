@@ -13873,8 +13873,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn direct_character_copy_drops_only_orphan_alternatives_after_excluding_scene() {
+    fn scene_copy_fixture() -> Fixture {
         let mut source = direct_fixture();
         let scene_id = lettuce_types::SceneId::new();
         let (reference, scene_draft) = artifact(SnapshotSource::Scene(scene_id), b"scene");
@@ -13944,6 +13943,58 @@ mod tests {
                 .expect("scene source")
                 .conversation
                 .active_branch_id;
+        source
+    }
+
+    #[test]
+    fn copied_scene_provenance_survives_source_purge_backup_and_fresh_peer_sync() {
+        let source = scene_copy_fixture();
+        let target = direct_fixture_on(source.database.clone());
+        let copied: Vec<MessageId> = source.database.commit_api_operation("scene-copy", "scene-copy", "ab", TimestampMillis::new(170), |scope| scope.copy_selected_conversation_content(&lettuce_conversations::ConversationContentCopy {
+            source_conversation_id: source.conversation_id,
+            source_branch_id: source.branch_id,
+            target_conversation_id: target.conversation_id,
+            target_branch_id: target.branch_id,
+            through_message_id: None,
+            kind: lettuce_conversations::SelectedConversationCopyKind::Duplicate,
+        }).map_err(|_| crate::ApiOperationError::Storage)).expect("copied source scene");
+        assert_eq!(copied.len(), 1);
+        {
+            let connection = source.database.connection().expect("connection");
+            assert!(connection.execute("UPDATE conversation_message_scene_sources SET snapshot_artifact_id = snapshot_artifact_id WHERE conversation_id = ?1", [target.conversation_id.to_string()]).is_err());
+            assert!(connection.execute("DELETE FROM conversation_message_scene_sources WHERE conversation_id = ?1", [target.conversation_id.to_string()]).is_err());
+        }
+        let next = direct_fixture_on(source.database.clone());
+        let recopied: Vec<MessageId> = source.database.commit_api_operation("scene-recopy", "scene-recopy", "ab", TimestampMillis::new(180), |scope| scope.copy_selected_conversation_content(&lettuce_conversations::ConversationContentCopy {
+            source_conversation_id: target.conversation_id,
+            source_branch_id: target.branch_id,
+            target_conversation_id: next.conversation_id,
+            target_branch_id: next.branch_id,
+            through_message_id: None,
+            kind: lettuce_conversations::SelectedConversationCopyKind::Duplicate,
+        }).map_err(|_| crate::ApiOperationError::Storage)).expect("recopied scene");
+        assert_eq!(recopied.len(), 1);
+        let mut graph = lettuce_transfer::ProviderBackupSource::read_provider_backup_graph(source.database.as_ref()).expect("graph");
+        graph.conversation_history.canonicalize_and_validate(&std::collections::BTreeSet::new()).expect("valid copied scene");
+        let backup = graph.conversation_history.conversations.iter().find(|value| value.aggregate.conversation.id == target.conversation_id).expect("copy backup");
+        assert!(backup.messages[0].initial_origin.is_none());
+        assert!(backup.messages[0].copied_scene_source.is_some());
+        crate::backup::restore_writer::tests::assert_backup_round_trip(source.database.as_ref());
+        let peer = Database::open_in_memory().expect("peer");
+        sync_all(source.database.as_ref(), &peer, 200);
+        let timeline = ConversationReader::timeline_page(&peer, target.conversation_id, target.branch_id, &PageRequest { cursor: None, limit: PageLimit::new(20) }).expect("synced scene");
+        assert_eq!(timeline.items[0].message.role, MessageRole::Scene);
+        source.database.purge_conversation(source.conversation_id, TimestampMillis::new(210)).expect("purge source");
+        crate::backup::restore_writer::tests::assert_backup_round_trip(source.database.as_ref());
+        let fresh = Database::open_in_memory().expect("fresh peer");
+        sync_all(source.database.as_ref(), &fresh, 220);
+        let timeline = ConversationReader::timeline_page(&fresh, target.conversation_id, target.branch_id, &PageRequest { cursor: None, limit: PageLimit::new(20) }).expect("scene survives source purge");
+        assert_eq!(timeline.items[0].message.role, MessageRole::Scene);
+    }
+
+    #[test]
+    fn direct_character_copy_drops_only_orphan_alternatives_after_excluding_scene() {
+        let mut source = scene_copy_fixture();
         let continuing = source
             .database
             .begin_continue(

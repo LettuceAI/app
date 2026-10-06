@@ -5864,6 +5864,7 @@ mod tests {
                 "conversation_memory_spaces",
                 "conversation_message_candidates",
                 "conversation_message_revisions",
+                "conversation_message_scene_sources",
                 "conversation_messages",
                 "conversation_operations",
                 "conversation_outbox",

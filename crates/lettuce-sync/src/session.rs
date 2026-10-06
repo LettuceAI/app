@@ -525,7 +525,7 @@ mod tests {
         );
         assert_eq!(
             current_sync_schema_fingerprint().as_str(),
-            "8594f3adf112e48aec61df81eef5a3c59f3852973c284645361462af239da18a"
+            "edbe485c59871c37e88d4b7cece2e30a2cc544e4ffc43af700b82d83795588a2"
         );
     }
 
