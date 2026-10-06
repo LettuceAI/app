@@ -7,6 +7,8 @@ CREATE TABLE conversations (
     kind TEXT NOT NULL CHECK (kind IN ('direct', 'group')),
     lifecycle TEXT NOT NULL CHECK (lifecycle IN ('active', 'archived', 'tombstoned')),
     title TEXT NOT NULL CHECK (length(trim(title)) > 0),
+    origin_conversation_id TEXT,
+    origin_message_id TEXT,
     active_branch_id TEXT NOT NULL,
     kind_json TEXT NOT NULL CHECK (json_valid(kind_json) AND json_extract(kind_json, '$.format_version') = 1),
     revision INTEGER NOT NULL CHECK (revision >= 1),

@@ -530,6 +530,8 @@ pub(crate) mod tests {
             let now = TimestampMillis::new(1);
             Ok(ConversationAggregate {
                 conversation: Conversation {
+                    origin_conversation_id: None,
+                    origin_message_id: None,
                     id,
                     lifecycle: ConversationLifecycle::Active,
                     title: "Memory test".into(),

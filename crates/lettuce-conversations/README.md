@@ -214,3 +214,5 @@ The database stamps each new message of a companion direct chat with this effect
 `extract_scene_prompt` removes every `<img>…</img>` scene tag from a direct chat reply and returns the cleaned text and the first non-blank prompt. A tag closes at `</img>`, `[continue]` or `[/continue]` in any case; an unclosed tag drops the rest of the text.
 
 Branch list rows contain the stored fork label or the root conversation title, the visible message count across all roles and the selected flag. Branch ids are globally unique. Renaming a fork changes only its label; renaming the root changes the conversation title. Rename operations use the same revision check, operation receipt and outbox transaction as the other writes.
+
+Conversation lineage is optional creation metadata: the source conversation and source message ids. The ids retain provenance after the source is deleted and carry no ownership or foreign-key relationship. Normal launches and historical imports leave them absent.

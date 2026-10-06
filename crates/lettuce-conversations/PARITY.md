@@ -41,3 +41,5 @@ Facts about how `lettuce-conversations` relates to the legacy app (2.2.x). The c
 A fork stores `"{conversation title} (branch)"` without numbering, matching `old-code/src/core/storage/repo.ts:1683`. Its own label can evolve independently while the root name remains the conversation title; legacy represented each branch as a separately titled session (`old-code/src/ui/pages/chats/ChatTreePage.tsx:213-220`).
 
 Branch list, fork, rename and select are exposed through the application API. Legacy tree nodes were independent sessions ordered by creation (`old-code/src-tauri/src/storage_manager/sessions.rs:2429-2493`, `old-code/src/ui/pages/chats/ChatTreePage.tsx:45-64,105-116`); the rewrite lists surviving branches in creation order and counts visible messages across all roles. Root rename changes the conversation title and fork rename changes only its stored label.
+
+Conversation roots can retain lineage for direct-to-character copies, matching legacy parent-session and branched-message metadata (`old-code/src/core/storage/repo.ts:1744-1748`). The source ids remain readable after deletion of the source; they do not retain that conversation or its messages.

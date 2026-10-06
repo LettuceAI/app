@@ -1831,6 +1831,8 @@ pub(crate) fn conversation_record(
         );
     }
     let conversation = Conversation {
+        origin_conversation_id: None,
+        origin_message_id: None,
         id: conversation_id,
         lifecycle: if source.archived {
             ConversationLifecycle::Archived

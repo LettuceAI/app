@@ -178,6 +178,8 @@ pub struct BranchHead {
 #[serde(deny_unknown_fields)]
 pub struct ConversationView {
     pub id: String,
+    pub origin_conversation_id: Option<String>,
+    pub origin_message_id: Option<String>,
     pub kind: ConversationKind,
     pub title: String,
     pub participants: Vec<ParticipantView>,

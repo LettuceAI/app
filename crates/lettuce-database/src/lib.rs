@@ -3748,6 +3748,14 @@ mod tests {
             )
             .expect("candidate author column");
         assert_eq!(candidate_author, 1);
+        for column in ["origin_conversation_id", "origin_message_id"] {
+            let present: i64 = connection.query_row(
+                "SELECT count(*) FROM pragma_table_info('conversations') WHERE name = ?1",
+                [column],
+                |row| row.get(0),
+            ).expect("lineage column");
+            assert_eq!(present, 1, "missing lineage column {column}");
+        }
         for column in ["label", "label_updated_at"] {
             let present: i64 = connection.query_row(
                 "SELECT count(*) FROM pragma_table_info('conversation_branches') WHERE name = ?1",

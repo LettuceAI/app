@@ -3187,7 +3187,7 @@ fn overview_conversation(
 ) -> Result<lettuce_conversations::Conversation, ConversationRepositoryError> {
     let mut conversation = transaction
         .query_row(
-            "SELECT lifecycle, title, active_branch_id, kind_json, revision, created_at, updated_at, kind FROM conversations WHERE id = ?1",
+            "SELECT lifecycle, title, active_branch_id, kind_json, revision, created_at, updated_at, kind, origin_conversation_id, origin_message_id FROM conversations WHERE id = ?1",
             [conversation_id.to_string()],
             |row| slice::read_conversation_row(row, conversation_id),
         )

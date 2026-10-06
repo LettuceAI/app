@@ -137,6 +137,8 @@ fn make_aggregate(
         })
         .collect();
     let conversation = Conversation {
+        origin_conversation_id: None,
+        origin_message_id: None,
         id: plan.conversation_id,
         lifecycle: ConversationLifecycle::Active,
         title: plan.title.clone(),

@@ -496,6 +496,8 @@ mod tests {
         let user_id = ConversationParticipantId::new();
         let character_participant_id = ConversationParticipantId::new();
         Conversation {
+            origin_conversation_id: None,
+            origin_message_id: None,
             id: ConversationId::new(),
             lifecycle: ConversationLifecycle::Active,
             title: "Direct".into(),
@@ -616,6 +618,8 @@ mod tests {
             },
         };
         let conversation = Conversation {
+            origin_conversation_id: None,
+            origin_message_id: None,
             id: ConversationId::new(),
             lifecycle: ConversationLifecycle::Active,
             title: "Group".into(),

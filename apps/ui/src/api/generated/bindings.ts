@@ -999,6 +999,8 @@ export type ConversationSummary = {
 
 export type ConversationView = {
 	id: string,
+	origin_conversation_id: string | null,
+	origin_message_id: string | null,
 	kind: ConversationKind,
 	title: string,
 	participants: ParticipantView[],

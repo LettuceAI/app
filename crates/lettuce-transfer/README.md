@@ -145,3 +145,5 @@ Full backups include generic job details and canonical operation receipts alongs
 Own memory spaces retain their conversation and branch binding; pool memberships remain per conversation. A restored child keeps its exported memory state and summary cursor without reseeding from the restored parent. Summaries retain the branch that wrote them, including in shared pools.
 
 Conversation outbox section version 2 includes branch-label-change events and their rename operation records. Ownership and timestamp validation applies to these records before export or restore.
+
+Conversation history section version 2 carries branch labels and nullable conversation lineage. Restore keeps the recorded origin ids even when the source conversation and message are absent from the backup.

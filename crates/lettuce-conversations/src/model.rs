@@ -532,6 +532,8 @@ pub struct Conversation {
     pub id: ConversationId,
     pub lifecycle: ConversationLifecycle,
     pub title: String,
+    pub origin_conversation_id: Option<ConversationId>,
+    pub origin_message_id: Option<lettuce_types::MessageId>,
     pub kind: ConversationKind,
     pub active_branch_id: ConversationBranchId,
     pub participants: Vec<ConversationParticipant>,

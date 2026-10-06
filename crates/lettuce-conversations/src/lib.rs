@@ -262,6 +262,8 @@ mod tests {
         });
         let now = TimestampMillis::UNIX_EPOCH;
         let conversation = Conversation {
+            origin_conversation_id: None,
+            origin_message_id: None,
             id: ConversationId::new(),
             lifecycle: ConversationLifecycle::Active,
             title: "Chat".into(),
@@ -2231,6 +2233,8 @@ mod tests {
             second_id,
         ));
         let conversation = Conversation {
+            origin_conversation_id: None,
+            origin_message_id: None,
             id: conversation_id,
             lifecycle: ConversationLifecycle::Active,
             title: "Group chat".into(),
@@ -2296,6 +2300,8 @@ mod tests {
             member_snapshot: None,
         };
         let mut conversation = Conversation {
+            origin_conversation_id: None,
+            origin_message_id: None,
             id: conversation_id,
             lifecycle: ConversationLifecycle::Active,
             title: "Group chat".into(),
@@ -3039,6 +3045,8 @@ mod tests {
         let character_id = CharacterId::new();
         let now = TimestampMillis::UNIX_EPOCH;
         let conversation = Conversation {
+            origin_conversation_id: None,
+            origin_message_id: None,
             id: conversation_id,
             lifecycle: ConversationLifecycle::Active,
             title: "Chat".into(),
@@ -3158,6 +3166,8 @@ mod tests {
         let character_id = CharacterId::new();
         let now = TimestampMillis::UNIX_EPOCH;
         Conversation {
+            origin_conversation_id: None,
+            origin_message_id: None,
             id: conversation_id,
             lifecycle: ConversationLifecycle::Active,
             title: "Chat".into(),

@@ -554,3 +554,5 @@ Dictation stop keeps a stopped, sealed recording available for retry when ingest
 Memory batches freeze their admitted branch before dispatch. Plain automatic jobs queued across a restart are reconstructed against active and sibling branch paths, so selecting a child leaves a still-due parent window eligible. Dispatch writes the run snapshot and settles changes into its frozen space. Owed rewinds derive their branch from the durable run or effect rather than the current selection.
 
 The branch API exposes list, fork, rename and select. Reads return creation-ordered branches with labels and timeline counts. Fork validates the selected timeline before calling the existing transactional fork and memory seed; retries resolve the original parent from the operation record. Rename and select resolve the globally unique branch id to its conversation and use the existing revisioned mutation kernel.
+
+Opening a conversation returns its stored origin conversation and message ids when present, including after the source has been purged.

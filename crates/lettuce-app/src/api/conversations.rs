@@ -268,6 +268,10 @@ pub async fn conversation_open(
             );
             let missing_models = MissingModels::new(context)?.of(context, &conversation)?;
             Ok(dto::ConversationView {
+                origin_conversation_id: conversation
+                    .origin_conversation_id
+                    .map(|id| id.to_string()),
+                origin_message_id: conversation.origin_message_id.map(|id| id.to_string()),
                 id: conversation.id.to_string(),
                 kind: mapping::conversation_kind(&conversation.kind),
                 participants,

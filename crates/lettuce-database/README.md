@@ -289,3 +289,5 @@ Memory summaries identify their owning branch, and local run cursors and receive
 Fork labels and their edit timestamps live on `conversation_branches`. Every local and conflict fork stores the conversation title followed by ` (branch)` when it is created; historical writes preserve an explicit label or materialize that default. Sync can update the label while preserving parent, fork message and creation time. The label timestamp travels with history and stamps the branch payload independently of later head writes.
 
 Branch overview reads hydrate labels and timeline counts in one read transaction. Globally unique branch ids resolve branch-only API commands to their conversation. Branch rename performs the conversation revision check, title or label update, operation receipt and outbox insert in one write transaction; an exact retry retains the original receipt and events.
+
+Conversation lineage columns store source conversation and message ids without foreign keys. Aggregate and overview hydration, history inserts, sync roots and backup restore preserve them even when neither source row exists.

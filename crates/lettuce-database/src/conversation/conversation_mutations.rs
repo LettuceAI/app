@@ -13719,6 +13719,91 @@ mod tests {
     }
 
     #[test]
+    fn conversation_lineage_survives_removing_the_source_and_round_trips() {
+        let source = direct_fixture();
+        let destination = direct_fixture_on(source.database.clone());
+        let source_message = source
+            .database
+            .append_user_message(
+                &send_command(&source, "lineage-source", "da", text("source")),
+                TimestampMillis::new(20),
+            )
+            .expect("source message")
+            .value
+            .id;
+        destination.database.connection().expect("connection").execute(
+            "UPDATE conversations SET origin_conversation_id = ?2, origin_message_id = ?3 WHERE id = ?1",
+            params![destination.conversation_id.to_string(), source.conversation_id.to_string(), source_message.to_string()],
+        ).expect("persist lineage");
+        destination
+            .database
+            .purge_conversation(source.conversation_id, TimestampMillis::new(400))
+            .expect("purge source");
+        let aggregate = lettuce_conversations::ConversationReader::get(
+            destination.database.as_ref(),
+            destination.conversation_id,
+        )
+        .expect("copied conversation");
+        let value = serde_json::to_value(&aggregate.conversation).expect("serialize lineage");
+        assert_eq!(
+            value["origin_conversation_id"],
+            source.conversation_id.to_string()
+        );
+        assert_eq!(value["origin_message_id"], source_message.to_string());
+        let peer = Database::open_in_memory().expect("peer");
+        sync_all(destination.database.as_ref(), &peer, 1_000);
+        let synced =
+            lettuce_conversations::ConversationReader::get(&peer, destination.conversation_id)
+                .expect("synced copy");
+        assert_eq!(
+            synced.conversation.origin_conversation_id,
+            Some(source.conversation_id)
+        );
+        assert_eq!(synced.conversation.origin_message_id, Some(source_message));
+        let mut check = lettuce_transfer::ProviderBackupSource::read_provider_backup_graph(
+            destination.database.as_ref(),
+        )
+        .expect("backup graph");
+        check
+            .conversation_history
+            .canonicalize_and_validate(&std::collections::BTreeSet::new())
+            .expect("lineage history valid");
+        check
+            .conversation_runtime
+            .canonicalize_and_validate(&check.conversation_history)
+            .expect("runtime valid");
+        check
+            .conversation_usage
+            .canonicalize_and_validate(&check.conversation_runtime, &check.job_backup)
+            .expect("usage valid");
+        check
+            .conversation_outbox
+            .canonicalize_and_validate(
+                &check.conversation_history,
+                &check.conversation_runtime,
+                &check.conversation_usage,
+            )
+            .expect("outbox valid");
+        let graph = crate::backup::restore_writer::tests::assert_backup_round_trip(
+            destination.database.as_ref(),
+        );
+        let backed_up = graph
+            .conversation_history
+            .conversations
+            .iter()
+            .find(|entry| entry.aggregate.conversation.id == destination.conversation_id)
+            .expect("backed up copy");
+        assert_eq!(
+            backed_up.aggregate.conversation.origin_conversation_id,
+            Some(source.conversation_id)
+        );
+        assert_eq!(
+            backed_up.aggregate.conversation.origin_message_id,
+            Some(source_message)
+        );
+    }
+
+    #[test]
     fn failed_branch_rename_rolls_back_label_revision_and_receipt() {
         let mut fixture = direct_fixture();
         let messages = conversation_with_two_exchanges(&mut fixture, "rename-rollback");

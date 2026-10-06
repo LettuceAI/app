@@ -9,7 +9,7 @@ use lettuce_conversations::{
 use lettuce_types::{MessageId, ReplayArtifactId, SnapshotArtifactId};
 use serde::{Deserialize, Serialize};
 
-pub const CONVERSATION_HISTORY_BACKUP_VERSION: u32 = 1;
+pub const CONVERSATION_HISTORY_BACKUP_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

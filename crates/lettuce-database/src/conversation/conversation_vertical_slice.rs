@@ -211,7 +211,7 @@ pub(crate) fn save_conversation(
     conversation: &Conversation,
 ) -> Result<(), ConversationRepositoryError> {
     let revision = sql_revision(conversation.revision)?;
-    transaction.execute("INSERT INTO conversations (id, kind, lifecycle, title, active_branch_id, kind_json, revision, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)", params![conversation.id.to_string(), if conversation.kind.is_group() { "group" } else { "direct" }, lifecycle_name(conversation.lifecycle), conversation.title, conversation.active_branch_id.to_string(), encode(&conversation.kind)?, revision, conversation.created_at.get(), conversation.updated_at.get()]).map_err(db)?;
+    transaction.execute("INSERT INTO conversations (id, kind, lifecycle, title, active_branch_id, kind_json, revision, created_at, updated_at, origin_conversation_id, origin_message_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)", params![conversation.id.to_string(), if conversation.kind.is_group() { "group" } else { "direct" }, lifecycle_name(conversation.lifecycle), conversation.title, conversation.active_branch_id.to_string(), encode(&conversation.kind)?, revision, conversation.created_at.get(), conversation.updated_at.get(), conversation.origin_conversation_id.map(|id| id.to_string()), conversation.origin_message_id.map(|id| id.to_string())]).map_err(db)?;
     save_participants(transaction, conversation)?;
     save_settings(transaction, conversation)?;
     if let Some(settings) = &conversation.current_settings {
@@ -306,6 +306,8 @@ impl Database {
             })
             .collect();
         let conversation = Conversation {
+            origin_conversation_id: None,
+            origin_message_id: None,
             id: plan.conversation_id,
             lifecycle: ConversationLifecycle::Active,
             title: plan.title.clone(),
@@ -402,7 +404,7 @@ where
     F: FnOnce(),
 {
     let row = transaction
-        .query_row("SELECT lifecycle, title, active_branch_id, kind_json, revision, created_at, updated_at, kind FROM conversations WHERE id = ?1", [id.to_string()], |row| read_conversation_row(row, id))
+        .query_row("SELECT lifecycle, title, active_branch_id, kind_json, revision, created_at, updated_at, kind, origin_conversation_id, origin_message_id FROM conversations WHERE id = ?1", [id.to_string()], |row| read_conversation_row(row, id))
         .optional()
         .map_err(db)?
         .ok_or(ConversationRepositoryError::NotFound)?;
@@ -578,6 +580,16 @@ pub(crate) fn read_conversation_row(
         return Err(rusqlite::Error::InvalidQuery);
     }
     Ok(Conversation {
+        origin_conversation_id: row
+            .get::<_, Option<String>>(8)?
+            .map(parse_id)
+            .transpose()
+            .map_err(|_| rusqlite::Error::InvalidQuery)?,
+        origin_message_id: row
+            .get::<_, Option<String>>(9)?
+            .map(parse_id)
+            .transpose()
+            .map_err(|_| rusqlite::Error::InvalidQuery)?,
         id,
         lifecycle: lifecycle_from_name(&lifecycle).map_err(|_| rusqlite::Error::InvalidQuery)?,
         title: row.get(1)?,

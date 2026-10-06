@@ -31,3 +31,5 @@ The provider contracts in `src/lib.rs` predate the application API and are not e
 `lettuce-app` builds these from the provider catalog in `lettuce-providers` (`generation/provider_runtime.rs`).
 
 Branch management DTOs describe creation-ordered branch rows and revisioned fork, rename and select requests. Mutation responses return the branch id and the revision from the committed operation, so replay returns the same response after later writes.
+
+Conversation views return nullable origin conversation and message ids for provenance. These fields are plain identities and do not require the source to remain present.
