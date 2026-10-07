@@ -1379,3 +1379,122 @@ async fn memory_ids_of_a_deleted_branch_are_refused_and_nothing_is_written() {
         before
     );
 }
+
+#[tokio::test]
+async fn parent_delete_after_never_changes_a_forked_childs_memory() {
+    let harness = harness(Reply::Text("reply"));
+    let conversation_id = launch(&harness, "parent-undo-launch").await;
+    let anchor = conversation_add_user_message(
+        &harness.context,
+        dto::ConversationAddUserMessageRequest {
+            conversation_id: conversation_id.clone(),
+            text: "Fork here".into(),
+            expected_revision: 1,
+            client_operation_id: "parent-undo-anchor".into(),
+        },
+    )
+    .await
+    .expect("anchor");
+    let added = memory_add(
+        &harness.context,
+        dto::MemoryAddRequest {
+            conversation_id: conversation_id.clone(),
+            text: "Before cut".into(),
+            category: None,
+            observed_at: None,
+            expected_revision: 1,
+            client_operation_id: "parent-undo-add".into(),
+        },
+    )
+    .await
+    .expect("add");
+    let later = conversation_add_user_message(
+        &harness.context,
+        dto::ConversationAddUserMessageRequest {
+            conversation_id: conversation_id.clone(),
+            text: "Removed suffix".into(),
+            expected_revision: anchor.revision,
+            client_operation_id: "parent-undo-later".into(),
+        },
+    )
+    .await
+    .expect("later");
+    memory_update(
+        &harness.context,
+        dto::MemoryUpdateRequest {
+            conversation_id: conversation_id.clone(),
+            memory_id: added.memory_id.expect("id"),
+            text: Some("After cut".into()),
+            category: dto::MemoryCategoryChange::Keep,
+            observed_at: dto::MemoryObservedAtChange::Keep,
+            expected_revision: 2,
+            client_operation_id: "parent-undo-update".into(),
+        },
+    )
+    .await
+    .expect("update");
+    let database = harness.context.backend().database();
+    let root = ConversationReader::get(database, conversation_id.parse().expect("id"))
+        .expect("conversation")
+        .conversation
+        .active_branch_id;
+    let fork = conversation_branch_fork(
+        &harness.context,
+        dto::ConversationBranchForkRequest {
+            conversation_id: conversation_id.clone(),
+            message_id: anchor.message.id.clone(),
+            expected_revision: later.revision,
+            client_operation_id: "parent-undo-fork".into(),
+        },
+    )
+    .await
+    .expect("fork");
+    let child_before = memory_get(
+        &harness.context,
+        dto::ConversationRequest {
+            conversation_id: conversation_id.clone(),
+        },
+    )
+    .await
+    .expect("child memory");
+    assert_eq!(child_before.items[0].text, "Before cut");
+    let selected = conversation_branch_select(
+        &harness.context,
+        dto::ConversationBranchMutationRequest {
+            branch_id: root.to_string(),
+            expected_revision: fork.revision,
+            client_operation_id: "parent-undo-select".into(),
+        },
+    )
+    .await
+    .expect("select the parent");
+    messages_delete_after(
+        &harness.context,
+        dto::MessageDeleteRequest {
+            conversation_id: conversation_id.clone(),
+            message_id: anchor.message.id,
+            expected_revision: selected.revision,
+            client_operation_id: "parent-undo-delete".into(),
+        },
+    )
+    .await
+    .expect("delete after on the parent");
+    let parent = memory_get(
+        &harness.context,
+        dto::ConversationRequest {
+            conversation_id: conversation_id.clone(),
+        },
+    )
+    .await
+    .expect("parent memory");
+    assert_eq!(parent.items[0].text, "Before cut");
+    let child_space = MemoryRepository::get_for_branch(
+        database,
+        conversation_id.parse().expect("id"),
+        fork.branch_id.parse().expect("child branch"),
+    )
+    .expect("child space")
+    .expect("present");
+    assert_eq!(child_space.revision.get(), child_before.revision);
+    assert_eq!(child_space.items[0].text, "Before cut");
+}

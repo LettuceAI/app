@@ -46,10 +46,7 @@ Facts about how `lettuce-memory` relates to the legacy app (2.2.x). The crate RE
 
 ## Not wired yet
 
-The memory host validates admitted companion effects and source-message identities and applies supersession through the shared reducer. API job-handler and generation-worker wiring remain in the composition root.
-
-- UI events for memory runs;
-- API job-handler and generation-worker wiring for background runs.
+The memory host validates admitted companion effects and source-message identities and applies supersession through the shared reducer. The API job handlers, the generation-worker driver, the streamed job output and the status read model are wired in the composition root; what remains is the frontend surface for them.
 
 Manual item and user-summary counts can remain unknown without a tokenizer. Legacy substituted zero when counting failed (`old-code/src-tauri/src/chat_manager/memory/flow.rs:3791-3792`); null preserves the distinction. Hot-budget reduction refuses unknown counts instead of treating them as zero.
 
