@@ -274,25 +274,34 @@ pub(crate) fn sync_replace_memory_summary(
     let Some(space_id) = local_space(transaction, owner)? else {
         return Err(MemoryRepositoryError::NotFound);
     };
+    let branch_present: bool = transaction
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM conversation_branches branch
+                JOIN conversation_memory_spaces binding
+                  ON binding.conversation_id = branch.conversation_id
+                 AND binding.branch_id = branch.id
+                WHERE branch.id = ?1 AND binding.space_id = ?2)",
+            params![summary.branch_id.to_string(), space_id.to_string()],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    if !branch_present {
+        return Err(MemoryRepositoryError::NotFound);
+    }
     for message in &summary.source_message_ids {
         let present: bool = transaction
             .query_row(
-                "SELECT EXISTS(SELECT 1 FROM conversation_messages WHERE id = ?1)",
-                [message.to_string()],
+                "SELECT EXISTS(SELECT 1 FROM conversation_messages message
+                    JOIN conversation_branches branch
+                      ON branch.conversation_id = message.conversation_id
+                    WHERE message.id = ?1 AND branch.id = ?2)",
+                params![message.to_string(), summary.branch_id.to_string()],
                 |row| row.get(0),
             )
             .map_err(storage)?;
         if !present {
             return Err(MemoryRepositoryError::NotFound);
         }
-    }
-    let branch_present: bool = transaction.query_row(
-        "SELECT EXISTS(SELECT 1 FROM conversation_branches WHERE id = ?1 AND conversation_id = (SELECT conversation_id FROM conversation_messages WHERE id = ?2))",
-        params![summary.branch_id.to_string(), summary.source_message_ids[0].to_string()],
-        |row| row.get(0),
-    ).map_err(storage)?;
-    if !branch_present {
-        return Err(MemoryRepositoryError::NotFound);
     }
     if sync_load_memory_summary(transaction, owner)?.as_ref() == Some(summary) {
         return Ok(());

@@ -660,3 +660,61 @@ async fn delete_after_in_one_pooled_chat_keeps_the_other_chats_later_edit() {
         .collect::<Vec<_>>();
     assert_eq!(texts, vec!["Tea v3".to_owned()]);
 }
+
+#[tokio::test]
+async fn source_free_user_summaries_sync_to_fresh_direct_and_pooled_peers() {
+    use lettuce_memory::{MemoryRepository, MemorySummaryRepository};
+    use lettuce_sync::{IncomingBatchState, IncomingChangeRepository, LocalChangeJournal};
+    for pooled in [false, true] {
+        let harness = harness(Reply::Text("reply"));
+        let chat = if pooled {
+            let character = super::tests::create_character(
+                harness.context.backend().database(),
+                "Summary pool",
+                lettuce_characters::CharacterDefaults {
+                    interaction_mode: lettuce_characters::InteractionMode::Companion,
+                    companion_soul: Some(lettuce_companions::CompanionSoulConfig::default()),
+                    memory_policy: lettuce_characters::MemoryPolicy::Dynamic,
+                    ..lettuce_characters::CharacterDefaults::default()
+                },
+            );
+            launch_companion(&harness, character, "summary-pool").await
+        } else {
+            super::tests::launch(&harness, "summary-direct").await
+        };
+        memory_summary_update(
+            &harness.context,
+            dto::MemorySummaryUpdateRequest {
+                conversation_id: chat.clone(),
+                summary: dto::MemorySummaryEdit::Set { text: "My source-free summary".into() },
+                expected_revision: 1,
+                client_operation_id: "source-free-summary".into(),
+            },
+        ).await.expect("summary edit");
+        let source = harness.context.backend().database();
+        let peer = lettuce_database::Database::open_in_memory().expect("fresh peer");
+        source.journal_current_state(harness.context.now()).expect("journal");
+        loop {
+            let batch = source.outbound_changes(
+                &peer.local_frontier().expect("frontier"),
+                lettuce_sync::MAX_OUTBOUND_CHANGES,
+                lettuce_sync::MAX_OUTBOUND_PAYLOAD_BYTES,
+            ).expect("batch");
+            if batch.changes.is_empty() { break; }
+            let id = lettuce_types::OperationId::new();
+            peer.stage_incoming_batch(
+                lettuce_sync::SyncDeviceId::new(), id,
+                &lettuce_sync::canonical_batch_hash(&batch.changes), &batch.changes,
+                harness.context.now(),
+            ).expect("stage");
+            assert_eq!(peer.apply_incoming_batch(id, harness.context.now()).expect("apply").state,
+                IncomingBatchState::Committed);
+        }
+        let conversation = lettuce_conversations::ConversationReader::get(&peer, chat.parse().expect("chat id")).expect("conversation").conversation;
+        let space = peer.get_for_branch(conversation.id, conversation.active_branch_id).expect("memory").expect("space");
+        let summary = peer.get_summary(space.id).expect("summary").expect("synced");
+        assert_eq!(summary.text, "My source-free summary");
+        assert_eq!(summary.origin, lettuce_memory::MemoryOrigin::User);
+        assert!(summary.source_message_ids.is_empty());
+    }
+}
