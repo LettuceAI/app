@@ -9,7 +9,7 @@ use lettuce_conversations::{
     DescendantPolicy, ForkBranch, MessageVisibility, OperationKind, OperationResultRef,
     OperationToken, TombstoneMessage, TombstoneMessageResult,
 };
-use lettuce_jobs::JobStore;
+
 use lettuce_memory::{
     DynamicMemoryApprovalRepository, DynamicMemoryRunRepository, DynamicMemoryRunRepositoryError,
     DynamicMemorySuffixRewind, DynamicMemorySuffixRewindError, DynamicMemorySuffixRewindReceipt,
@@ -108,7 +108,7 @@ where
         + DynamicMemoryApprovalRepository
         + PendingSuffixRewindRepository
         + ?Sized,
-    J: JobStore + ?Sized,
+    J: crate::MemoryAdmissionStore + ?Sized,
 {
     /// Removes what follows the anchor on the selected branch. Rewinds a
     /// crash left owed for the conversation finish first. When every

@@ -38,7 +38,7 @@ use lettuce_conversations::{
 use lettuce_database::Database;
 use lettuce_embeddings::{EmbeddingRequest, EmbeddingVector};
 use lettuce_jobs::{
-    AttemptNo, CancellationPolicy, CancellationReason, Claim, ClaimRef, InMemoryJobStore, JobKind,
+    AttemptNo, CancellationPolicy, CancellationReason, Claim, ClaimRef, JobKind,
     JobOutcome, JobState, LeaseId, OutcomeRef, RecoveryPolicy, ResourceAvailability, ResourceClass,
     WorkerId, handle::CancellationToken, handle::JobHandle,
 };
@@ -11303,7 +11303,7 @@ fn delete_after_without_memory_history_only_tombstones_the_suffix() {
     let current = ConversationReader::get(&database, conversation.id)
         .expect("conversation")
         .conversation;
-    let jobs = InMemoryJobStore::new();
+    let jobs = crate::companion::companion_memory_job::memory_job_test_store::MemoryJobs::new();
     let deleted = crate::DynamicMemoryDeleteAfterCoordinator::new(&database, &jobs)
         .delete_after(
             &crate::DeleteAfterMessages {
@@ -11352,7 +11352,7 @@ fn group_delete_after_keeps_the_scene_anchor_and_tombstones_the_reply() {
         .launch_group(&group_request(group_id, "group-delete-after-launch"), NOW)
         .expect("launch group");
     let conversation = launched.value.conversation;
-    let jobs = InMemoryJobStore::new();
+    let jobs = crate::companion::companion_memory_job::memory_job_test_store::MemoryJobs::new();
     assert!(matches!(
         crate::CompanionPostTurnMemoryAdmissionCoordinator::new(&database, &jobs)
             .retry_direct_with_model_and_admit(conversation.id, 512, 20, model_id, true),

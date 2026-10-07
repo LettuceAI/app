@@ -36,6 +36,38 @@ pub struct ManualSceneImageAdmission<'a> {
 }
 
 impl Database {
+    pub fn admit_memory_job_with_detail_result(
+        &self,
+        conversation_id: lettuce_types::ConversationId,
+        branch_id: lettuce_types::ConversationBranchId,
+        spec: NewJob,
+        operation_key: &str,
+        request_digest: &str,
+        detail: &serde_json::Value,
+    ) -> Result<CreateJobResult, StoreError> {
+        let mut connection = self.connection.lock().map_err(|_| StoreError::Storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| StoreError::Storage)?;
+        let present: bool = transaction
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM conversation_branches branch
+                JOIN conversations conversation ON conversation.id = branch.conversation_id
+               WHERE branch.conversation_id = ?1 AND branch.id = ?2
+                 AND branch.status <> 'tombstoned' AND conversation.lifecycle <> 'tombstoned')",
+                params![conversation_id.to_string(), branch_id.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(|_| StoreError::Storage)?;
+        if !present {
+            return Err(StoreError::NotFound);
+        }
+        let (job, _, created) =
+            admit_job_detail_in(&transaction, spec, operation_key, request_digest, detail)?;
+        transaction.commit().map_err(|_| StoreError::Storage)?;
+        Ok(CreateJobResult { job, created })
+    }
+
     /// Publishes a terminal job and its result together. A crash cannot leave
     /// a known external result attached to a still-running job.
     pub fn settle_job_with_detail(
@@ -124,6 +156,23 @@ impl Database {
         Ok(created)
     }
 
+    pub fn admit_job_with_detail_result(
+        &self,
+        spec: NewJob,
+        operation_key: &str,
+        request_digest: &str,
+        detail: &serde_json::Value,
+    ) -> Result<CreateJobResult, StoreError> {
+        let mut connection = self.connection.lock().map_err(|_| StoreError::Storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| StoreError::Storage)?;
+        let (job, _, created) =
+            admit_job_detail_in(&transaction, spec, operation_key, request_digest, detail)?;
+        transaction.commit().map_err(|_| StoreError::Storage)?;
+        Ok(CreateJobResult { job, created })
+    }
+
     pub fn admit_job_with_detail(
         &self,
         spec: NewJob,
@@ -135,7 +184,7 @@ impl Database {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|_| StoreError::Storage)?;
-        let (job, _) =
+        let (job, _, _) =
             admit_job_detail_in(&transaction, spec, operation_key, request_digest, detail)?;
         transaction.commit().map_err(|_| StoreError::Storage)?;
         Ok(job)
@@ -154,7 +203,7 @@ impl Database {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|_| StoreError::Storage)?;
         let detail = serde_json::json!({"kind": "speech_synthesize"});
-        let (job, replayed) =
+        let (job, replayed, _) =
             admit_job_detail_in(&transaction, spec, operation_key, request_digest, &detail)?;
         if !replayed {
             let record = lettuce_speech::SynthesisRecord {
@@ -238,7 +287,7 @@ impl Database {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|_| StoreError::Storage)?;
-        let (job, replayed) =
+        let (job, replayed, _) =
             admit_job_detail_in(&transaction, spec, operation_key, request_digest, detail)?;
         if !replayed {
             let record = lettuce_speech::TranscriptionRecord {
@@ -272,7 +321,7 @@ impl Database {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|_| StoreError::Storage)?;
         let detail = serde_json::json!({"kind": "scene_image", "conversation_id": conversation_id, "message_id": message_id, "target": target});
-        let (job, replayed) =
+        let (job, replayed, _) =
             admit_job_detail_in(&transaction, spec, operation_key, request_digest, &detail)?;
         if !replayed {
             use lettuce_conversations::{SceneFollowUp, SceneFollowUpMode, SceneFollowUpState};
@@ -369,7 +418,7 @@ fn admit_job_detail_in(
     operation_key: &str,
     request_digest: &str,
     detail: &serde_json::Value,
-) -> Result<(JobSnapshot, bool), StoreError> {
+) -> Result<(JobSnapshot, bool, bool), StoreError> {
     spec.validate()?;
     if operation_key.trim().is_empty() || request_digest.is_empty() || !detail.is_object() {
         return Err(StoreError::InvalidData);
@@ -394,6 +443,7 @@ fn admit_job_detail_in(
                 .ok_or(StoreError::InvalidData)?
                 .snapshot,
             true,
+            false,
         ));
     }
     let before = creation_set(transaction, &spec)?;
@@ -415,7 +465,7 @@ fn admit_job_detail_in(
     }
     transaction.execute("INSERT INTO job_details (job_id, detail_json) VALUES (?1, ?2) ON CONFLICT(job_id) DO NOTHING", params![admitted.job.id.to_string(), detail.to_string()]).map_err(|_| StoreError::Storage)?;
     transaction.execute("INSERT INTO job_operations (operation_key, request_digest, job_id) VALUES (?1, ?2, ?3)", params![operation_key, request_digest, admitted.job.id.to_string()]).map_err(|_| StoreError::Storage)?;
-    Ok((admitted.job, false))
+    Ok((admitted.job, false, admitted.created))
 }
 
 fn apply_to_job_set<R>(
@@ -1542,6 +1592,66 @@ mod tests {
                 .expect("count");
             assert_eq!(count, 1, "{table}");
         }
+    }
+
+    #[test]
+    fn frozen_admission_result_is_atomic_and_replays_across_reopen() {
+        let path = std::env::temp_dir().join(format!("lettuce-frozen-{}.sqlite", Uuid::new_v4()));
+        let database = Database::open(&path).expect("database");
+        let detail = serde_json::json!({"version": 1, "batch": {"branch_id": "frozen-parent"}});
+        database.connection().expect("connection").execute_batch("CREATE TRIGGER reject_frozen_detail BEFORE INSERT ON job_details BEGIN SELECT RAISE(ABORT, 'injected'); END;").expect("trigger");
+        assert_eq!(
+            database.admit_job_with_detail_result(
+                spec("frozen-key"),
+                "frozen-operation",
+                "digest",
+                &detail
+            ),
+            Err(StoreError::Storage)
+        );
+        for table in ["jobs", "job_details", "job_operations"] {
+            let count: i64 = database
+                .connection()
+                .expect("connection")
+                .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .expect("count");
+            assert_eq!(count, 0);
+        }
+        database
+            .connection()
+            .expect("connection")
+            .execute_batch("DROP TRIGGER reject_frozen_detail")
+            .expect("remove trigger");
+        let admitted = database
+            .admit_job_with_detail_result(spec("frozen-key"), "frozen-operation", "digest", &detail)
+            .expect("admit");
+        assert!(admitted.created);
+        drop(database);
+        let database = Database::open(&path).expect("reopen");
+        let replay = database
+            .admit_job_with_detail_result(spec("frozen-key"), "frozen-operation", "digest", &detail)
+            .expect("replay");
+        assert!(!replay.created);
+        assert_eq!(replay.job, admitted.job);
+        assert_eq!(
+            database
+                .job_detail(replay.job.id)
+                .expect("detail")
+                .expect("stored")
+                .detail,
+            detail
+        );
+        assert_eq!(
+            database.admit_job_with_detail_result(
+                spec("frozen-key"),
+                "frozen-operation",
+                "changed",
+                &detail
+            ),
+            Err(StoreError::IdempotencyConflict)
+        );
     }
 
     #[test]

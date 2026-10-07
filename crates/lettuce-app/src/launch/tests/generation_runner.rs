@@ -4486,6 +4486,15 @@ async fn run_plain_dynamic_cycle_with_racing_edits(edits: usize, cancel: bool) {
         .into_iter()
         .next()
         .expect("claimed plain memory work");
+    let detail = database
+        .job_detail(work.job.id)
+        .expect("read memory admission")
+        .expect("persisted frozen memory admission");
+    assert_eq!(detail.detail["version"], 1);
+    assert_eq!(
+        detail.detail["batch"]["branch_id"],
+        work.admission.batch.branch_id.to_string()
+    );
     let expected_sources = work
         .admission
         .batch

@@ -24,13 +24,13 @@ use crate::CompanionPostTurnEffect;
 
 pub const MAX_COMPANION_POST_TURN_EFFECTS: u16 = 512;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CompanionMemoryWindowSelection {
     Automatic,
     Recent,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum PostTurnMemorySource {
     CompanionEffects {
         effects: Vec<CompanionTurnEffect>,
@@ -40,7 +40,8 @@ pub enum PostTurnMemorySource {
     Messages(Vec<(MessageId, MessageRole)>),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CompanionPostTurnMemoryBatch {
     pub conversation_id: ConversationId,
     pub branch_id: ConversationBranchId,
@@ -116,6 +117,70 @@ pub struct CompanionPostTurnMemoryAdmission {
     pub created: bool,
 }
 
+pub trait MemoryAdmissionStore: JobStore {
+    fn admit_memory_batch(
+        &self,
+        spec: JobSpec,
+        batch: CompanionPostTurnMemoryBatch,
+    ) -> Result<CompanionPostTurnMemoryAdmission, StoreError>;
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct FrozenMemoryAdmission {
+    pub version: u32,
+    pub batch: CompanionPostTurnMemoryBatch,
+}
+
+pub(crate) fn decode_memory_admission(
+    detail: serde_json::Value,
+) -> Result<CompanionPostTurnMemoryBatch, StoreError> {
+    let frozen: FrozenMemoryAdmission =
+        serde_json::from_value(detail).map_err(|_| StoreError::InvalidData)?;
+    if frozen.version != 1 || frozen.batch.source_messages().is_none() {
+        return Err(StoreError::InvalidData);
+    }
+    Ok(frozen.batch)
+}
+
+impl MemoryAdmissionStore for lettuce_database::Database {
+    fn admit_memory_batch(
+        &self,
+        spec: JobSpec,
+        batch: CompanionPostTurnMemoryBatch,
+    ) -> Result<CompanionPostTurnMemoryAdmission, StoreError> {
+        if batch.source_messages().is_none() || batch.summary_message_interval == 0 {
+            return Err(StoreError::InvalidData);
+        }
+        let key = batch.idempotency_key.as_str().to_owned();
+        let conversation_id = batch.conversation_id;
+        let branch_id = batch.branch_id;
+        let detail = serde_json::to_value(FrozenMemoryAdmission { version: 1, batch })
+            .map_err(|_| StoreError::InvalidData)?;
+        let admitted = self.admit_memory_job_with_detail_result(
+            conversation_id,
+            branch_id,
+            spec,
+            &key,
+            &key,
+            &detail,
+        )?;
+        let stored = self
+            .job_detail(admitted.job.id)
+            .map_err(|_| StoreError::Storage)?
+            .ok_or(StoreError::InvalidData)?;
+        let batch = decode_memory_admission(stored.detail)?;
+        if batch.idempotency_key.as_str() != key {
+            return Err(StoreError::InvalidData);
+        }
+        Ok(CompanionPostTurnMemoryAdmission {
+            batch,
+            job: admitted.job,
+            created: admitted.created,
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CompanionPostTurnMemoryAdmissionError {
     #[error("companion effect discovery failed: {0:?}")]
@@ -143,7 +208,7 @@ pub struct CompanionPostTurnMemoryAdmissionCoordinator<'a, R: ?Sized, J: ?Sized>
 impl<
     'a,
     R: CompanionTurnEffectRepository + DynamicMemoryApprovalRepository + ?Sized,
-    J: JobStore + ?Sized,
+    J: MemoryAdmissionStore + ?Sized,
 > CompanionPostTurnMemoryAdmissionCoordinator<'a, R, J>
 {
     #[must_use]
@@ -906,34 +971,27 @@ impl<
             }
             idempotency_key = retry_idempotency_key(&idempotency_key, ended.id)?;
         }
-        let admitted = match jobs.into_iter().find(|job| !job.is_terminal()) {
-            Some(job) if job.idempotency_key.as_ref() == Some(&idempotency_key) => {
-                lettuce_jobs::CreateJobResult {
-                    job,
-                    created: false,
-                }
-            }
-            Some(_) => return Ok(None),
-            None => self
-                .jobs
-                .create_or_get(job_spec(conversation_id, idempotency_key.clone())?)
-                .map_err(CompanionPostTurnMemoryAdmissionError::Jobs)?,
+        if jobs
+            .into_iter()
+            .any(|job| !job.is_terminal() && job.idempotency_key.as_ref() != Some(&idempotency_key))
+        {
+            return Ok(None);
+        }
+        let batch = CompanionPostTurnMemoryBatch {
+            conversation_id,
+            branch_id,
+            idempotency_key: idempotency_key.clone(),
+            summary_message_interval,
+            window_selection,
+            unsummarized_message_count,
+            source,
+            selected_model_profile_id,
+            update_dynamic_memory_model_on_success,
         };
-        Ok(Some(CompanionPostTurnMemoryAdmission {
-            batch: CompanionPostTurnMemoryBatch {
-                conversation_id,
-                branch_id,
-                idempotency_key,
-                summary_message_interval,
-                window_selection,
-                unsummarized_message_count,
-                source,
-                selected_model_profile_id,
-                update_dynamic_memory_model_on_success,
-            },
-            job: admitted.job,
-            created: admitted.created,
-        }))
+        self.jobs
+            .admit_memory_batch(job_spec(conversation_id, idempotency_key)?, batch)
+            .map(Some)
+            .map_err(CompanionPostTurnMemoryAdmissionError::Jobs)
     }
 }
 
@@ -1153,15 +1211,18 @@ fn job_spec(
 }
 
 #[cfg(test)]
+pub(crate) mod memory_job_test_store;
+
+#[cfg(test)]
 mod tests {
     use std::{sync::Mutex, time::Duration};
 
+    use super::memory_job_test_store::MemoryJobs as InMemoryJobStore;
     use lettuce_companions::{
         CompanionMemoryChanges, CompanionTurnEffectOutcome, CompanionTurnEffectSeed,
     };
     use lettuce_jobs::{
-        CancellationReason, InMemoryJobStore, JobErrorCode, JobState, ResourceAvailability,
-        WorkerId,
+        CancellationReason, JobErrorCode, JobState, ResourceAvailability, WorkerId,
     };
     use lettuce_types::{CompanionEffectId, GenerationTurnId, MessageId, TimestampMillis};
 
@@ -1448,6 +1509,45 @@ mod tests {
             ])
         );
         assert_eq!(batch.effects().len(), 2);
+    }
+
+    #[test]
+    fn missing_branch_admission_leaves_no_job_or_receipt() {
+        let database = lettuce_database::Database::open_in_memory().expect("database");
+        let conversation_id = ConversationId::new();
+        let key = IdempotencyKey::new("missing-memory-branch").expect("key");
+        let batch = CompanionPostTurnMemoryBatch {
+            conversation_id,
+            branch_id: ConversationBranchId::new(),
+            idempotency_key: key.clone(),
+            summary_message_interval: 2,
+            window_selection: CompanionMemoryWindowSelection::Automatic,
+            unsummarized_message_count: 2,
+            source: PostTurnMemorySource::Messages(vec![
+                (MessageId::new(), MessageRole::User),
+                (MessageId::new(), MessageRole::Assistant),
+            ]),
+            selected_model_profile_id: None,
+            update_dynamic_memory_model_on_success: false,
+        };
+        assert!(matches!(
+            database
+                .admit_memory_batch(job_spec(conversation_id, key.clone()).expect("spec"), batch),
+            Err(StoreError::NotFound)
+        ));
+        assert!(
+            database
+                .list(Default::default())
+                .expect("jobs")
+                .items
+                .is_empty()
+        );
+        assert!(
+            database
+                .job_operation(key.as_str())
+                .expect("receipt")
+                .is_none()
+        );
     }
 
     #[test]

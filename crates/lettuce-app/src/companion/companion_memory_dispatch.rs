@@ -3,8 +3,8 @@ use std::time::Duration;
 use lettuce_companions::CompanionTurnEffectRepository;
 use lettuce_jobs::{
     CancellationReason, Claim, FiniteFraction, JobError, JobErrorCode, JobMutation, JobOutcome,
-    JobSnapshot, JobState, JobStore, OutcomeRef, ProgressSnapshot, ResourceAvailability,
-    StageSnapshot, StoreError, WorkerId, handle::JobHandle,
+    JobSnapshot, JobState, OutcomeRef, ProgressSnapshot, ResourceAvailability, StageSnapshot,
+    StoreError, WorkerId, handle::JobHandle,
 };
 use lettuce_memory::{DynamicMemoryApprovalRepository, DynamicMemoryRunMode};
 use lettuce_types::TimestampMillis;
@@ -62,7 +62,7 @@ pub struct CompanionMemoryDispatchCoordinator<'a, R: ?Sized, J: ?Sized> {
 impl<'a, R, J> CompanionMemoryDispatchCoordinator<'a, R, J>
 where
     R: CompanionTurnEffectRepository + DynamicMemoryApprovalRepository + ?Sized,
-    J: JobStore + ?Sized,
+    J: crate::MemoryAdmissionStore + ?Sized,
 {
     #[must_use]
     pub const fn new(effects: &'a R, jobs: &'a J) -> Self {

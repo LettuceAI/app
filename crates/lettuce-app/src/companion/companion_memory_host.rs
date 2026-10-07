@@ -116,6 +116,7 @@ pub trait CompanionMemoryHostSources:
     + ProviderAccountRepository
     + PromptRepository
     + JobStore
+    + crate::MemoryAdmissionStore
 {
 }
 
@@ -142,6 +143,7 @@ impl<T> CompanionMemoryHostSources for T where
         + ProviderAccountRepository
         + PromptRepository
         + JobStore
+        + crate::MemoryAdmissionStore
 {
 }
 
