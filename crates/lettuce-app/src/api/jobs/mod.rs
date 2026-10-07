@@ -226,6 +226,7 @@ pub(crate) fn job_view(context: &ApiContext, job: &JobSnapshot) -> Result<dto::J
     let feature = text::feature_view(context, job)?;
     let (image_result, image_failure) = image_view(context, job)?;
     let (speech_result, speech_failure) = speech::speech_view(context, job)?;
+    let soul_result = memory::soul_draft_view(context, job)?;
     Ok(dto::JobView {
         id: job.id.to_string(),
         kind: job_kind_dto(job.kind),
@@ -282,6 +283,7 @@ pub(crate) fn job_view(context: &ApiContext, job: &JobSnapshot) -> Result<dto::J
             }),
         result: feature
             .or(local.result)
+            .or(soul_result)
             .or(image_result)
             .or(speech_result)
             .or_else(|| {

@@ -233,6 +233,12 @@ pub enum JobResultDto {
         moved_entries: u32,
         rewired_models: u32,
     },
+    /// The Soul draft a Soul writer job produced, a partial companion
+    /// configuration the caller merges into its unsaved draft.
+    CompanionSoulDraft {
+        #[cfg_attr(feature = "specta", specta(type = specta_typescript::Unknown))]
+        draft: serde_json::Value,
+    },
     /// The text a help-me-reply or scene prompt job wrote, cleaned.
     GeneratedText {
         text: String,

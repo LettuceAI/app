@@ -372,3 +372,32 @@ impl crate::CompanionMemoryJobOutput for MemoryJobOutput {
         self.context.jobs().finish_running(job_id);
     }
 }
+
+/// The draft a succeeded Soul writer job produced: its last round's draft,
+/// or the starting draft when no round changed anything.
+pub(super) fn soul_draft_view(
+    context: &ApiContext,
+    job: &JobSnapshot,
+) -> Result<Option<lettuce_contracts::JobResultDto>, ApiError> {
+    use lettuce_companions::CompanionSoulWriterRunRepository;
+    if job.kind != JobKind::CompanionSoulWriter {
+        return Ok(None);
+    }
+    let Some(lettuce_jobs::JobOutcome::Success {
+        result_ref: OutcomeRef::Request(request_id),
+    }) = &job.outcome
+    else {
+        return Ok(None);
+    };
+    let run = context
+        .backend()
+        .database()
+        .load_companion_soul_writer_run(*request_id)
+        .map_err(internal)?;
+    Ok(Some(lettuce_contracts::JobResultDto::CompanionSoulDraft {
+        draft: run
+            .rounds
+            .last()
+            .map_or(run.starting_draft, |round| round.resulting_draft.clone()),
+    }))
+}

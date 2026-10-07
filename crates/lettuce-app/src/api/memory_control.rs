@@ -48,7 +48,7 @@ fn host_error(
 /// recorded result, another request under the key is `Conflict`. A crash
 /// between the action and its receipt repeats the action, which every caller
 /// makes idempotent.
-async fn controlled<T, R>(
+pub(super) async fn controlled<T, R>(
     context: &ApiContext,
     command: &'static str,
     key: &str,

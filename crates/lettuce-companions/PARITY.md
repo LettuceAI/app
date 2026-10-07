@@ -45,3 +45,5 @@ Facts about how `lettuce-companions` relates to the legacy app (2.2.x). The crat
 - Verified ONNX tokenization and model execution for the classifier moved to `lettuce-embeddings`; model discovery, prompt rendering and direct companion turn wiring are done. The previous README listed provider and job coordination and frontend events for the classifier, and worker execution for turn effects, as deferred application work.
 - Soul growth user edits were added on 2026-09-23.
 - The previous README said "Foundation scaffolding is active"; the crate has since filled in the domain described in the README.
+
+Legacy returned two different error texts for a missing character and a non-companion character when saving a scheduled note (`old-code/src-tauri/src/storage_manager/companion_scheduled_notes.rs:263-281,391-458`); the rewrite storage had folded both into `Invalid`, and now keeps them apart as `CharacterNotFound` and `NotCompanion`.

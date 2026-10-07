@@ -4,6 +4,7 @@
 
 mod api;
 mod app;
+mod companion;
 mod conversations;
 mod files;
 mod hugging_face;
@@ -21,6 +22,7 @@ mod speech_tts;
 
 pub use api::*;
 pub use app::*;
+pub use companion::*;
 pub use conversations::*;
 pub use files::*;
 pub use hugging_face::*;

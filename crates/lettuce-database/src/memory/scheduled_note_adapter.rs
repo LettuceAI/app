@@ -165,10 +165,11 @@ fn ensure_companion(
         )
         .optional()
         .map_err(failure)?;
-    if mode.as_deref() != Some("companion") {
-        return Err(CompanionScheduledNoteError::Invalid);
+    match mode.as_deref() {
+        Some("companion") => Ok(()),
+        Some(_) => Err(CompanionScheduledNoteError::NotCompanion),
+        None => Err(CompanionScheduledNoteError::CharacterNotFound),
     }
-    Ok(())
 }
 
 impl CompanionScheduledNoteRepository for Database {

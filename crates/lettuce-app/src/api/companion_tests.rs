@@ -1,0 +1,501 @@
+use std::sync::{Arc, Mutex};
+
+use super::jobs::JobFeed;
+use super::tests::{Harness, Reply, harness};
+use super::*;
+use lettuce_contracts::{self as dto, ApiErrorCode};
+use lettuce_types::CharacterId;
+
+fn companion(harness: &Harness, name: &str, share_soul_growth: bool) -> CharacterId {
+    let fact = lettuce_companions::SoulFact {
+        id: "authored-fact".into(),
+        category: lettuce_companions::SoulCategory::Traits,
+        value: "Dry humor".into(),
+        kind: lettuce_companions::SoulFactKind::Authored,
+        policy: lettuce_companions::SoulFactPolicy::Current,
+        slot: "traits".into(),
+        confidence: 1.0,
+        evidence_count: 1,
+        weight: 1.0,
+        valid_from: lettuce_types::TimestampMillis::new(1),
+        valid_until: None,
+        locked: false,
+        source_memory_ids: vec![],
+        created_at: lettuce_types::TimestampMillis::new(1),
+        supersedes: vec![],
+        superseded_by: None,
+        superseded_at: None,
+    };
+    super::tests::create_character(
+        harness.context.backend().database(),
+        name,
+        lettuce_characters::CharacterDefaults {
+            interaction_mode: lettuce_characters::InteractionMode::Companion,
+            companion_soul: Some(lettuce_companions::CompanionSoulConfig {
+                authored_facts: vec![fact],
+                share_soul_growth_across_chats: share_soul_growth,
+                share_memory_across_chats: false,
+                ..lettuce_companions::CompanionSoulConfig::default()
+            }),
+            memory_policy: lettuce_characters::MemoryPolicy::Dynamic,
+            ..lettuce_characters::CharacterDefaults::default()
+        },
+    )
+}
+
+async fn launch_companion(harness: &Harness, character: CharacterId, key: &str) -> String {
+    conversation_launch_direct(
+        &harness.context,
+        dto::LaunchDirectRequest {
+            character_id: character.to_string(),
+            title: None,
+            scene_id: None,
+            starter_id: None,
+            client_operation_id: key.into(),
+        },
+    )
+    .await
+    .expect("launch companion")
+    .conversation_id
+}
+
+fn note(character: CharacterId, key: &str) -> dto::CompanionNoteUpsertRequest {
+    dto::CompanionNoteUpsertRequest {
+        character_id: character.to_string(),
+        note_id: None,
+        label: "  Birthday  ".into(),
+        content: "  Her birthday is today.  ".into(),
+        available_at: 1_000,
+        expires_at: Some(5_000),
+        recurrence: dto::CompanionNoteRecurrence::Yearly,
+        recurrence_window_ms: Some(2_000),
+        enabled: true,
+        client_operation_id: key.into(),
+    }
+}
+
+#[tokio::test]
+async fn notes_get_api_assigned_ids_and_timestamps_and_distinct_errors() {
+    let harness = harness(Reply::Text("reply"));
+    let character = companion(&harness, "Noted", true);
+    let created = companion_notes_upsert(&harness.context, note(character, "note-create"))
+        .await
+        .expect("create");
+    assert!(uuid::Uuid::parse_str(&created.id).is_ok());
+    assert_eq!(created.label, "Birthday");
+    assert_eq!(created.content, "Her birthday is today.");
+    assert_eq!(created.created_at, created.updated_at);
+    assert!(created.created_at > 0);
+    assert_eq!(
+        companion_notes_upsert(&harness.context, note(character, "note-create"))
+            .await
+            .expect("replay"),
+        created
+    );
+    let mut changed = note(character, "note-create");
+    changed.content = "Another note".into();
+    assert_eq!(
+        companion_notes_upsert(&harness.context, changed)
+            .await
+            .expect_err("changed request")
+            .code,
+        ApiErrorCode::Conflict
+    );
+    let mut update = note(character, "note-update");
+    update.note_id = Some(created.id.clone());
+    update.content = "Updated content".into();
+    let updated = companion_notes_upsert(&harness.context, update)
+        .await
+        .expect("update");
+    assert_eq!(updated.id, created.id);
+    assert_eq!(updated.created_at, created.created_at);
+    assert!(updated.updated_at >= created.updated_at);
+    assert_eq!(updated.content, "Updated content");
+    let listed = companion_notes_list(
+        &harness.context,
+        dto::CompanionNotesRequest {
+            character_id: character.to_string(),
+        },
+    )
+    .await
+    .expect("list");
+    assert_eq!(listed, vec![updated.clone()]);
+
+    let mut unknown = note(character, "note-unknown");
+    unknown.note_id = Some(uuid::Uuid::new_v4().to_string());
+    assert_eq!(
+        companion_notes_upsert(&harness.context, unknown)
+            .await
+            .expect_err("the API assigns ids")
+            .code,
+        ApiErrorCode::NotFound
+    );
+    let missing = companion_notes_upsert(
+        &harness.context,
+        note(CharacterId::new(), "note-no-character"),
+    )
+    .await
+    .expect_err("character not found");
+    assert_eq!(missing.code, ApiErrorCode::NotFound);
+    let roleplay = companion_notes_upsert(
+        &harness.context,
+        note(harness.character_id, "note-roleplay"),
+    )
+    .await
+    .expect_err("not a companion");
+    assert_eq!(roleplay.code, ApiErrorCode::Unsupported);
+    assert_ne!(missing.message, roleplay.message);
+    let mut backwards = note(character, "note-backwards");
+    backwards.expires_at = Some(500);
+    assert_eq!(
+        companion_notes_upsert(&harness.context, backwards)
+            .await
+            .expect_err("expires before it starts")
+            .code,
+        ApiErrorCode::InvalidInput
+    );
+    let mut empty = note(character, "note-empty");
+    empty.content = "   ".into();
+    assert_eq!(
+        companion_notes_upsert(&harness.context, empty)
+            .await
+            .expect_err("empty content")
+            .code,
+        ApiErrorCode::InvalidInput
+    );
+    let preview = |as_of| {
+        let context = harness.context.clone();
+        async move {
+            companion_notes_active_preview(
+                &context,
+                dto::CompanionNotesActivePreviewRequest {
+                    character_id: character.to_string(),
+                    as_of,
+                },
+            )
+            .await
+            .expect("preview")
+        }
+    };
+    assert_eq!(preview(1_500).await.len(), 1);
+    assert!(preview(500).await.is_empty());
+    assert!(preview(6_000).await.is_empty());
+    let delete = dto::CompanionNoteDeleteRequest {
+        note_id: created.id.clone(),
+        client_operation_id: "note-delete".into(),
+    };
+    companion_notes_delete(&harness.context, delete.clone())
+        .await
+        .expect("delete");
+    companion_notes_delete(&harness.context, delete)
+        .await
+        .expect("replay");
+    companion_notes_delete(
+        &harness.context,
+        dto::CompanionNoteDeleteRequest {
+            note_id: created.id,
+            client_operation_id: "note-delete-missing".into(),
+        },
+    )
+    .await
+    .expect("a missing note deletes silently");
+    assert!(
+        companion_notes_list(
+            &harness.context,
+            dto::CompanionNotesRequest {
+                character_id: character.to_string(),
+            },
+        )
+        .await
+        .expect("list")
+        .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn soul_commands_act_on_the_conversation_soul_or_the_shared_character_soul() {
+    for shared in [false, true] {
+        let harness = harness(Reply::Text("reply"));
+        let character = companion(&harness, "Soulful", shared);
+        let source = launch_companion(&harness, character, "soul-source").await;
+        let copy = conversation_duplicate(
+            &harness.context,
+            dto::ConversationDuplicateRequest {
+                conversation_id: source.clone(),
+                title: None,
+                with_messages: false,
+                client_operation_id: "soul-copy".into(),
+            },
+        )
+        .await
+        .expect("duplicate")
+        .conversation_id;
+        let view = |conversation: Option<&str>| {
+            let context = harness.context.clone();
+            let conversation = conversation.map(str::to_owned);
+            async move {
+                companion_soul_get(
+                    &context,
+                    dto::CompanionSoulGetRequest {
+                        character_id: character.to_string(),
+                        conversation_id: conversation,
+                    },
+                )
+                .await
+                .expect("soul")
+            }
+        };
+        let in_copy = view(Some(&copy)).await;
+        assert_eq!(
+            in_copy.growth.owner,
+            if shared {
+                dto::SoulOwnerKind::Character
+            } else {
+                dto::SoulOwnerKind::Conversation
+            }
+        );
+        assert_eq!(in_copy.config["soul"]["essence"], "");
+        assert_eq!(in_copy.config["authoredFacts"][0]["id"], "authored-fact");
+        assert_eq!(in_copy.growth.facts.len(), 1);
+        assert_eq!(in_copy.growth.active_count, 1);
+        assert_eq!(in_copy.growth.superseded_count, 0);
+        let fact = in_copy.growth.facts[0].id.clone();
+        let lock = dto::CompanionSoulGrowthLockRequest {
+            character_id: character.to_string(),
+            conversation_id: Some(copy.clone()),
+            fact_id: fact.clone(),
+            locked: true,
+            client_operation_id: "soul-lock".into(),
+        };
+        assert!(
+            companion_soul_growth_lock(&harness.context, lock.clone())
+                .await
+                .expect("lock")
+        );
+        assert!(
+            companion_soul_growth_lock(&harness.context, lock)
+                .await
+                .expect("replay")
+        );
+        assert!(view(Some(&copy)).await.growth.facts[0].locked);
+        let in_source = view(Some(&source)).await;
+        assert_eq!(in_source.growth.facts[0].locked, shared);
+        assert_eq!(
+            view(None).await.growth.facts.iter().any(|f| f.locked),
+            shared
+        );
+        assert!(
+            !companion_soul_growth_remove(
+                &harness.context,
+                dto::CompanionSoulGrowthRemoveRequest {
+                    character_id: character.to_string(),
+                    conversation_id: Some(copy.clone()),
+                    fact_id: "no-such-fact".into(),
+                    client_operation_id: "soul-remove-missing".into(),
+                },
+            )
+            .await
+            .expect("remove missing")
+        );
+        assert!(
+            companion_soul_growth_remove(
+                &harness.context,
+                dto::CompanionSoulGrowthRemoveRequest {
+                    character_id: character.to_string(),
+                    conversation_id: Some(copy.clone()),
+                    fact_id: fact,
+                    client_operation_id: "soul-remove".into(),
+                },
+            )
+            .await
+            .expect("remove locked entry too")
+        );
+        assert!(view(Some(&copy)).await.growth.facts.is_empty());
+        assert_eq!(
+            view(Some(&source)).await.growth.facts.len(),
+            usize::from(!shared)
+        );
+        let clear = dto::CompanionSoulGrowthClearRequest {
+            character_id: character.to_string(),
+            conversation_id: Some(source.clone()),
+            client_operation_id: "soul-clear".into(),
+        };
+        let cleared = companion_soul_growth_clear(&harness.context, clear.clone())
+            .await
+            .expect("clear");
+        assert_eq!(cleared, u32::from(!shared));
+        assert_eq!(
+            companion_soul_growth_clear(&harness.context, clear)
+                .await
+                .expect("replay"),
+            cleared
+        );
+        assert!(view(Some(&source)).await.growth.facts.is_empty());
+    }
+}
+
+#[tokio::test]
+async fn soul_commands_refuse_unknown_non_companion_and_foreign_targets() {
+    let harness = harness(Reply::Text("reply"));
+    let character = companion(&harness, "Soulful", true);
+    let other = companion(&harness, "Other", true);
+    let chat = launch_companion(&harness, other, "soul-foreign").await;
+    let get = |character: String, conversation: Option<String>| {
+        let context = harness.context.clone();
+        async move {
+            companion_soul_get(
+                &context,
+                dto::CompanionSoulGetRequest {
+                    character_id: character,
+                    conversation_id: conversation,
+                },
+            )
+            .await
+        }
+    };
+    assert_eq!(
+        get(CharacterId::new().to_string(), None)
+            .await
+            .expect_err("unknown character")
+            .code,
+        ApiErrorCode::NotFound
+    );
+    assert_eq!(
+        get(harness.character_id.to_string(), None)
+            .await
+            .expect_err("roleplay character")
+            .code,
+        ApiErrorCode::Unsupported
+    );
+    assert_eq!(
+        get(character.to_string(), Some(chat))
+            .await
+            .expect_err("another character's chat")
+            .code,
+        ApiErrorCode::InvalidInput
+    );
+}
+
+#[derive(Default)]
+struct RecordingJob(Mutex<Vec<dto::JobEvent>>, tokio::sync::Notify);
+
+impl JobEventSink for RecordingJob {
+    fn emit(&self, event: dto::JobEvent) -> bool {
+        self.0.lock().expect("job events").push(event);
+        self.1.notify_one();
+        true
+    }
+}
+
+const SOUL_REPLY: &str = r#"{"operations":[{"name":"set_identity","arguments":{"traits":"Patient and observant"}},{"name":"done","arguments":{}}]}"#;
+
+fn writer(key: &str) -> dto::CompanionSoulWriterRunRequest {
+    dto::CompanionSoulWriterRunRequest {
+        character_name: "Mira".into(),
+        character_definition: Some("A careful traveller".into()),
+        character_description: None,
+        opening_context: Some("At the station".into()),
+        current_soul: Some(serde_json::json!({"soul": {"traits": "Careful"}})),
+        user_notes: None,
+        model_profile_id: None,
+        client_operation_id: key.into(),
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_soul_writer_streams_deltas_and_completes_with_its_draft() {
+    let harness = harness(Reply::Text(SOUL_REPLY));
+    let mut feed = JobFeed::start(&harness.context).await.expect("feed");
+    let accepted = companion_soul_writer_run(&harness.context, writer("soul-writer"))
+        .await
+        .expect("accepted");
+    assert_eq!(
+        companion_soul_writer_run(&harness.context, writer("soul-writer"))
+            .await
+            .expect("replay"),
+        accepted
+    );
+    let mut changed = writer("soul-writer");
+    changed.character_name = "Someone else".into();
+    assert_eq!(
+        companion_soul_writer_run(&harness.context, changed)
+            .await
+            .expect_err("changed request")
+            .code,
+        ApiErrorCode::Conflict
+    );
+    let sink = Arc::new(RecordingJob::default());
+    job_watch(
+        &harness.context,
+        dto::JobWatchRequest {
+            job_id: accepted.job_id.clone(),
+        },
+        sink.clone(),
+    )
+    .await
+    .expect("watch");
+    let runner = JobRunner::new(harness.context.clone(), JobHandlers::standard());
+    while runner.run_once().await.expect("runner") {}
+    runner.wait_idle().await;
+    feed.publish(&harness.context).await.expect("publish");
+    let events = sink.0.lock().expect("events").clone();
+    let deltas = events
+        .iter()
+        .filter_map(|event| match event {
+            dto::JobEvent::TextDelta { text, .. } => text.clone(),
+            _ => None,
+        })
+        .collect::<String>();
+    assert!(deltas.contains("Hel"));
+    match events.last().expect("a last event") {
+        dto::JobEvent::Completed { job } => match job.result.as_ref().expect("a result") {
+            dto::JobResultDto::CompanionSoulDraft { draft } => {
+                assert_eq!(draft["soul"]["traits"], "Patient and observant");
+            }
+            other => panic!("expected a Soul draft, got {other:?}"),
+        },
+        other => panic!("expected completion, got {other:?}"),
+    }
+    let view = job_get(
+        &harness.context,
+        dto::JobGetRequest {
+            job_id: accepted.job_id,
+        },
+    )
+    .await
+    .expect("job");
+    assert!(matches!(
+        view.result,
+        Some(dto::JobResultDto::CompanionSoulDraft { .. })
+    ));
+}
+
+#[tokio::test]
+async fn the_soul_writer_names_a_missing_model_and_a_blank_name() {
+    let harness = harness(Reply::Text(SOUL_REPLY));
+    let database = harness.context.backend().database();
+    let stored = lettuce_settings::GlobalSettingsStore::load(database).expect("settings");
+    lettuce_settings::GlobalSettingsStore::save(database, stored.settings, None, stored.revision)
+        .expect("no default model");
+    let error = companion_soul_writer_run(&harness.context, writer("soul-no-model"))
+        .await
+        .expect_err("no model");
+    assert_eq!(error.code, ApiErrorCode::InvalidInput);
+    assert_eq!(
+        error.details,
+        Some(dto::ApiErrorDetails::InvalidField {
+            field: "model_profile_id".into()
+        })
+    );
+    let mut blank = writer("soul-blank");
+    blank.character_name = "  ".into();
+    assert_eq!(
+        companion_soul_writer_run(&harness.context, blank)
+            .await
+            .expect_err("blank name")
+            .details,
+        Some(dto::ApiErrorDetails::InvalidField {
+            field: "character_name".into()
+        })
+    );
+}

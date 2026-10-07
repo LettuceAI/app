@@ -7,6 +7,7 @@ mod app;
 mod assets;
 mod branches;
 mod characters;
+mod companion;
 mod context;
 mod conversation_delete;
 mod conversation_feed;
@@ -40,6 +41,8 @@ mod worker;
 
 #[cfg(test)]
 mod branches_tests;
+#[cfg(test)]
+mod companion_tests;
 #[cfg(test)]
 pub(crate) mod conversation_delete_tests;
 #[cfg(test)]
@@ -82,6 +85,11 @@ pub use branches::{
     conversation_branch_select, conversation_branches,
 };
 pub use characters::characters_list;
+pub use companion::{
+    companion_notes_active_preview, companion_notes_delete, companion_notes_list,
+    companion_notes_upsert, companion_soul_get, companion_soul_growth_clear,
+    companion_soul_growth_lock, companion_soul_growth_remove, companion_soul_writer_run,
+};
 pub use context::{ApiContext, ApiContextParts, ApiDatabaseFiles, ApiMediaStore};
 pub use conversation_delete::conversation_delete;
 pub use conversation_settings::{

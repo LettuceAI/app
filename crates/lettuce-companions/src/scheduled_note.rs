@@ -38,6 +38,10 @@ pub struct CompanionScheduledNote {
 pub enum CompanionScheduledNoteError {
     #[error("companion scheduled note was not found")]
     NotFound,
+    #[error("the character of the scheduled note was not found")]
+    CharacterNotFound,
+    #[error("scheduled notes are only available for companion-mode characters")]
+    NotCompanion,
     #[error("companion scheduled note conflicts with durable state")]
     Conflict,
     #[error("companion scheduled note is invalid")]

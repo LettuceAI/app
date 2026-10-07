@@ -103,3 +103,5 @@ A `CompanionTurnEffect` (`effect.rs`) records what one turn did to the companion
 Effects, seeds, deltas, memory changes and source windows are strictly serializable, and a full backup exports the same validated values the repository uses.
 
 Memory-owned effect settlement and API Soul-writer round commits carry job ownership to the database transaction. A replaced worker cannot publish effect changes or a draft after another worker claims its job. The API uses the existing Soul admission, execution and dispatch coordinators for job watch streaming.
+
+Scheduled-note storage reports a missing character and a character that is not in companion mode as two errors, so callers can tell them apart; the note errors are `CharacterNotFound` and `NotCompanion`.
