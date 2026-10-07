@@ -1,4 +1,6 @@
-use lettuce_types::{ConversationId, DynamicMemoryRunId, MemorySpaceId, Revision, TimestampMillis};
+use lettuce_types::{
+    ConversationId, DynamicMemoryRunId, MemoryId, MemorySpaceId, Revision, TimestampMillis,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::MemoryRepositoryError;
@@ -53,6 +55,8 @@ pub enum MemoryCycleRevertError {
     NothingToRevert,
     #[error("a later cycle started from this cycle's result")]
     Dependent { later_run_id: DynamicMemoryRunId },
+    #[error("a memory the cycle changed was edited by the user afterwards")]
+    UserEdited { memory_id: MemoryId },
     #[error("the revert is invalid")]
     Invalid,
     #[error("memory storage failed")]

@@ -1661,3 +1661,143 @@ async fn a_user_edit_during_a_run_survives_the_models_delete_and_unpin() {
     );
     assert!(after.items.iter().all(|item| item.id != untouched.id));
 }
+
+#[tokio::test]
+async fn the_store_admits_one_active_memory_job_per_conversation() {
+    use crate::companion::companion_memory_job::{
+        CompanionMemoryWindowSelection, CompanionPostTurnMemoryBatch, PostTurnMemorySource,
+        job_spec,
+    };
+    use lettuce_conversations::{ConversationReader, MessageRole};
+    use lettuce_jobs::{IdempotencyKey, JobKind, JobQuery, JobStore, StoreError};
+    let harness = harness(Reply::Text("reply"));
+    let (chat, _) = replied_chat(&harness, "one-active").await;
+    make_dynamic(&harness, true);
+    let database = harness.context.backend().database();
+    let conversation_id: lettuce_types::ConversationId = chat.parse().expect("id");
+    let branch_id = ConversationReader::get(database, conversation_id)
+        .expect("conversation")
+        .conversation
+        .active_branch_id;
+    let view = super::turns_tests::open(&harness, &chat).await;
+    let messages = view
+        .messages
+        .items
+        .iter()
+        .rev()
+        .map(|message| {
+            (
+                message.id.parse().expect("message"),
+                if message.role == dto::MessageRole::User {
+                    MessageRole::User
+                } else {
+                    MessageRole::Assistant
+                },
+            )
+        })
+        .collect::<Vec<_>>();
+    let admit = |key: &str, selection| {
+        let key = IdempotencyKey::new(key.to_owned()).expect("key");
+        crate::companion::companion_memory_job::MemoryAdmissionStore::admit_memory_batch(
+            database,
+            job_spec(conversation_id, key.clone()).expect("spec"),
+            CompanionPostTurnMemoryBatch {
+                conversation_id,
+                branch_id,
+                idempotency_key: key,
+                summary_message_interval: 2,
+                window_selection: selection,
+                unsummarized_message_count: 2,
+                source: PostTurnMemorySource::Messages(messages.clone()),
+                selected_model_profile_id: None,
+                update_dynamic_memory_model_on_success: false,
+            },
+        )
+    };
+    let first =
+        admit("one-active-a", CompanionMemoryWindowSelection::Automatic).expect("first admission");
+    assert!(first.created);
+    assert_eq!(
+        admit("one-active-a", CompanionMemoryWindowSelection::Automatic)
+            .expect("the same window replays")
+            .job
+            .id,
+        first.job.id
+    );
+    assert_eq!(
+        admit("one-active-b", CompanionMemoryWindowSelection::Recent).expect_err("a second"),
+        StoreError::AlreadyActive
+    );
+    let jobs = database
+        .list(JobQuery {
+            state: None,
+            kind: Some(JobKind::MemoryExtraction),
+            subject: None,
+            page: lettuce_types::PageRequest {
+                cursor: None,
+                limit: lettuce_types::PageLimit::new(50),
+            },
+        })
+        .expect("jobs");
+    assert_eq!(jobs.items.len(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_concurrent_trigger_and_post_turn_admission_create_one_job() {
+    use lettuce_jobs::{JobKind, JobQuery, JobStore, ResourceAvailability, WorkerId};
+    for round in 0..10 {
+        let harness = harness(Reply::Text("reply"));
+        let (chat, _) = replied_chat(&harness, &format!("race-{round}")).await;
+        make_dynamic(&harness, true);
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let post_turn = {
+            let context = harness.context.clone();
+            let chat = chat.clone();
+            let barrier = barrier.clone();
+            tokio::task::spawn_blocking(move || {
+                let embedding = context.embedding();
+                let host = context
+                    .backend()
+                    .companion_memory_host(embedding.as_ref(), context.inference());
+                barrier.wait();
+                host.after_turn(
+                    chat.parse().expect("id"),
+                    lettuce_conversations::GenerationOperation::Send,
+                    WorkerId::new(),
+                    context.now(),
+                    std::time::Duration::from_secs(30),
+                    &ResourceAvailability::all(),
+                )
+            })
+        };
+        let trigger = {
+            let context = harness.context.clone();
+            let chat = chat.clone();
+            let barrier = barrier.clone();
+            tokio::task::spawn_blocking(move || {
+                barrier.wait();
+                tokio::runtime::Handle::current().block_on(memory_trigger(
+                    &context,
+                    trigger_request(&chat, "race-trigger"),
+                ))
+            })
+        };
+        let _ = post_turn.await.expect("post turn thread");
+        let _ = trigger.await.expect("trigger thread");
+        let jobs = harness
+            .context
+            .backend()
+            .database()
+            .list(JobQuery {
+                state: None,
+                kind: Some(JobKind::MemoryExtraction),
+                subject: None,
+                page: lettuce_types::PageRequest {
+                    cursor: None,
+                    limit: lettuce_types::PageLimit::new(50),
+                },
+            })
+            .expect("jobs");
+        assert_eq!(jobs.items.len(), 1, "round {round}");
+    }
+}

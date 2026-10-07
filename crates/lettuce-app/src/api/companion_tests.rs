@@ -499,3 +499,136 @@ async fn the_soul_writer_names_a_missing_model_and_a_blank_name() {
         })
     );
 }
+
+#[tokio::test]
+async fn delete_after_in_one_pooled_chat_keeps_the_other_chats_later_edit() {
+    let harness = super::tests::harness_in(
+        Reply::Text("reply"),
+        Arc::new(lettuce_jobs::SystemClock),
+        None,
+        None,
+        Arc::new(super::inspect_tests::AllModels),
+    );
+    let character = super::tests::create_character(
+        harness.context.backend().database(),
+        "Pooled",
+        lettuce_characters::CharacterDefaults {
+            interaction_mode: lettuce_characters::InteractionMode::Companion,
+            companion_soul: Some(lettuce_companions::CompanionSoulConfig::default()),
+            memory_policy: lettuce_characters::MemoryPolicy::Dynamic,
+            ..lettuce_characters::CharacterDefaults::default()
+        },
+    );
+    let a = launch_companion(&harness, character, "pool-a").await;
+    let first = conversation_add_user_message(
+        &harness.context,
+        dto::ConversationAddUserMessageRequest {
+            conversation_id: a.clone(),
+            text: "Keep".into(),
+            expected_revision: 1,
+            client_operation_id: "pool-a-first".into(),
+        },
+    )
+    .await
+    .expect("first message");
+    let b = conversation_duplicate(
+        &harness.context,
+        dto::ConversationDuplicateRequest {
+            conversation_id: a.clone(),
+            title: None,
+            with_messages: true,
+            client_operation_id: "pool-b".into(),
+        },
+    )
+    .await
+    .expect("duplicate")
+    .conversation_id;
+    let revision = |chat: String| {
+        let context = harness.context.clone();
+        async move {
+            memory_get(
+                &context,
+                dto::ConversationRequest {
+                    conversation_id: chat,
+                },
+            )
+            .await
+            .expect("memory")
+        }
+    };
+    let added = memory_add(
+        &harness.context,
+        dto::MemoryAddRequest {
+            conversation_id: a.clone(),
+            text: "Tea v1".into(),
+            category: None,
+            observed_at: None,
+            expected_revision: revision(a.clone()).await.revision,
+            client_operation_id: "pool-add".into(),
+        },
+    )
+    .await
+    .expect("add")
+    .memory_id
+    .expect("id");
+    let later = conversation_add_user_message(
+        &harness.context,
+        dto::ConversationAddUserMessageRequest {
+            conversation_id: a.clone(),
+            text: "Removed".into(),
+            expected_revision: first.revision,
+            client_operation_id: "pool-a-later".into(),
+        },
+    )
+    .await
+    .expect("later message");
+    let edit = |chat: &str, text: &str, expected: u64, key: &str| dto::MemoryUpdateRequest {
+        conversation_id: chat.into(),
+        memory_id: added.clone(),
+        text: Some(text.into()),
+        category: dto::MemoryCategoryChange::Keep,
+        observed_at: dto::MemoryObservedAtChange::Keep,
+        expected_revision: expected,
+        client_operation_id: key.into(),
+    };
+    memory_update(
+        &harness.context,
+        edit(
+            &a,
+            "Tea v2",
+            revision(a.clone()).await.revision,
+            "pool-a-edit",
+        ),
+    )
+    .await
+    .expect("edit in a");
+    memory_update(
+        &harness.context,
+        edit(
+            &b,
+            "Tea v3",
+            revision(b.clone()).await.revision,
+            "pool-b-edit",
+        ),
+    )
+    .await
+    .expect("edit in b");
+    messages_delete_after(
+        &harness.context,
+        dto::MessageDeleteRequest {
+            conversation_id: a.clone(),
+            message_id: first.message.id,
+            expected_revision: later.revision,
+            client_operation_id: "pool-a-delete-after".into(),
+        },
+    )
+    .await
+    .expect("delete after in a");
+    let texts = revision(b)
+        .await
+        .items
+        .into_iter()
+        .map(|item| item.text)
+        .collect::<Vec<_>>();
+    assert_eq!(texts, vec!["Tea v3".to_owned()]);
+}

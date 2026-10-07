@@ -75,6 +75,8 @@ pub enum StoreError {
     NotFound,
     #[error("idempotency key conflicts with a different submission")]
     IdempotencyConflict,
+    #[error("another job of the same subject is already active")]
+    AlreadyActive,
     #[error("parent job was not found")]
     ParentNotFound,
     #[error("parent job is terminal")]

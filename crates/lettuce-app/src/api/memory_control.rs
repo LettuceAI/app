@@ -248,6 +248,13 @@ impl From<MemoryCycleRevertError> for RevertFailure {
                     later_run_id: later_run_id.to_string(),
                 }),
             },
+            MemoryCycleRevertError::UserEdited { memory_id } => ApiError {
+                code: ApiErrorCode::Conflict,
+                message: error.to_string(),
+                details: Some(ApiErrorDetails::MemoryCycleUserEdited {
+                    memory_id: memory_id.to_string(),
+                }),
+            },
             MemoryCycleRevertError::Storage => api_error(ApiErrorCode::Internal, error.to_string()),
         })
     }

@@ -1039,10 +1039,14 @@ impl<
             selected_model_profile_id,
             update_dynamic_memory_model_on_success,
         };
-        self.jobs
+        match self
+            .jobs
             .admit_memory_batch(job_spec(conversation_id, idempotency_key)?, batch)
-            .map(Some)
-            .map_err(CompanionPostTurnMemoryAdmissionError::Jobs)
+        {
+            Ok(admission) => Ok(Some(admission)),
+            Err(StoreError::AlreadyActive) => Ok(None),
+            Err(error) => Err(CompanionPostTurnMemoryAdmissionError::Jobs(error)),
+        }
     }
 }
 
@@ -1238,7 +1242,7 @@ fn ready_effect_prefix(
     None
 }
 
-fn job_spec(
+pub(crate) fn job_spec(
     conversation_id: ConversationId,
     idempotency_key: IdempotencyKey,
 ) -> Result<JobSpec, CompanionPostTurnMemoryAdmissionError> {

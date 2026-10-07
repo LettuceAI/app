@@ -289,6 +289,44 @@ impl ApiOperationTransaction<'_, '_> {
                 later_run_id: later.parse().map_err(storage)?,
             });
         }
+        let outcomes = transaction
+            .prepare(
+                "SELECT outcome_json FROM dynamic_memory_background_tool_results WHERE run_id = ?1",
+            )
+            .and_then(|mut statement| {
+                statement
+                    .query_map([run.id.to_string()], |row| row.get::<_, String>(0))?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+            })
+            .map_err(storage)?
+            .into_iter()
+            .map(|json| {
+                crate::decode_versioned::<lettuce_memory::MemoryToolOutcome>(&json, 1)
+                    .map_err(storage)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let changed = outcomes
+            .iter()
+            .filter_map(|outcome| match outcome {
+                lettuce_memory::MemoryToolOutcome::Created { id, .. }
+                | lettuce_memory::MemoryToolOutcome::Deleted { id, .. }
+                | lettuce_memory::MemoryToolOutcome::SoftDeleted { id, .. }
+                | lettuce_memory::MemoryToolOutcome::Pinned { id, .. }
+                | lettuce_memory::MemoryToolOutcome::Unpinned { id, .. } => Some(*id),
+                _ => None,
+            })
+            .collect::<std::collections::BTreeSet<_>>();
+        let edited = memory_adapter::manual_edited_items_in(
+            transaction,
+            space_id,
+            run.starting_memory.revision,
+        )
+        .map_err(memory_error)?;
+        if let Some(memory_id) = changed.iter().find(|id| edited.contains(id)) {
+            return Err(MemoryCycleRevertError::UserEdited {
+                memory_id: *memory_id,
+            });
+        }
         let mut summary =
             memory_adapter::get_summary_in(transaction, space_id).map_err(memory_error)?;
         let memory = dynamic_memory_rewind_adapter::undo_events(
@@ -742,5 +780,51 @@ mod tests {
             .expect("kept");
         assert_eq!(summary.text, "Mine");
         assert_eq!(summary.origin, MemoryOrigin::User);
+    }
+
+    #[test]
+    fn a_later_user_edit_of_an_item_the_cycle_created_refuses_the_revert_naming_it() {
+        let database = Database::open_in_memory().expect("database");
+        let (conversation_id, space_id, _, second) = two_cycles(&database);
+        let branch_id = fixture_branch(&database, conversation_id);
+        let memory = database.get(space_id).expect("memory").expect("space");
+        let edit = MemoryManualEdit {
+            id: OperationId::new(),
+            conversation_id,
+            branch_id,
+            conversation_revision: Revision::INITIAL,
+            expected_revision: memory.revision,
+            space_id,
+            context_revisions: vec![],
+            mutation: MemoryManualMutation::Pin {
+                memory_id: second.item,
+                pinned: true,
+            },
+            at: TimestampMillis::new(250),
+        };
+        database
+            .commit_api_operation::<MemoryManualHistory, Failure>(
+                "memory_pin",
+                "pin-created",
+                "digest",
+                edit.at,
+                |scope| {
+                    scope
+                        .apply_memory_manual_edit(&edit, None)
+                        .map_err(Failure::from)
+                },
+            )
+            .expect("user pin");
+        let before = database.get(space_id).expect("memory").expect("space");
+        match revert(&database, conversation_id, second.run_id, "pinned", 300) {
+            Err(Failure::Revert(MemoryCycleRevertError::UserEdited { memory_id })) => {
+                assert_eq!(memory_id, second.item);
+            }
+            other => panic!("expected the user edit to refuse the revert, got {other:?}"),
+        }
+        assert_eq!(
+            database.get(space_id).expect("memory").expect("space"),
+            before
+        );
     }
 }

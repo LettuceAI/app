@@ -272,11 +272,20 @@ pub fn undo_manual_memory_edit(
 ) -> Result<(), MemoryRepositoryError> {
     history.validate()?;
     if let MemoryManualMutation::Summary { .. } = &history.edit.mutation {
-        summary.clone_from(&history.before_summary);
+        let same = |left: &Option<MemorySummary>, right: &Option<MemorySummary>| match (left, right)
+        {
+            (None, None) => true,
+            (Some(left), Some(right)) => left.text == right.text && left.origin == right.origin,
+            _ => false,
+        };
+        if same(summary, &history.after_summary) {
+            summary.clone_from(&history.before_summary);
+        }
         return Ok(());
     }
     if let MemoryManualMutation::Add { item } = &history.edit.mutation {
-        items.retain(|current| current.id != item.id);
+        let added = history.after_item.as_ref().unwrap_or(item);
+        items.retain(|current| current.id != item.id || !same_user_fields(current, added));
         return Ok(());
     }
     let before = history
@@ -298,6 +307,10 @@ pub fn undo_manual_memory_edit(
     let Some(item) = items.iter_mut().find(|item| item.id == before.id) else {
         return Ok(());
     };
+    let after = history
+        .after_item
+        .as_ref()
+        .ok_or(MemoryRepositoryError::Conflict)?;
     match &history.edit.mutation {
         MemoryManualMutation::Update {
             text,
@@ -305,31 +318,49 @@ pub fn undo_manual_memory_edit(
             observed_at,
             ..
         } => {
-            if text.is_some() {
+            if text.is_some() && item.text == after.text {
                 item.text.clone_from(&before.text);
                 item.token_count = before.token_count;
             }
-            if matches!(category, MemoryFieldChange::Set(_)) {
+            if matches!(category, MemoryFieldChange::Set(_)) && item.category == after.category {
                 item.category = before.category;
             }
-            if matches!(observed_at, MemoryFieldChange::Set(_)) {
+            if matches!(observed_at, MemoryFieldChange::Set(_))
+                && item.observed_at == after.observed_at
+                && item.observed_time_precision == after.observed_time_precision
+            {
                 item.observed_at = before.observed_at;
                 item.observed_time_precision
                     .clone_from(&before.observed_time_precision);
             }
         }
-        MemoryManualMutation::Pin { .. } => item.is_pinned = before.is_pinned,
+        MemoryManualMutation::Pin { .. } => {
+            if item.is_pinned == after.is_pinned {
+                item.is_pinned = before.is_pinned;
+            }
+        }
         MemoryManualMutation::Temperature { .. } => {
-            item.is_cold = before.is_cold;
-            item.importance = if before.is_cold {
-                crate::Score::ZERO
-            } else {
-                crate::Score::FULL
-            };
+            if item.is_cold == after.is_cold {
+                item.is_cold = before.is_cold;
+                item.importance = if before.is_cold {
+                    crate::Score::ZERO
+                } else {
+                    crate::Score::FULL
+                };
+            }
         }
         _ => return Err(MemoryRepositoryError::Conflict),
     }
     Ok(())
+}
+
+fn same_user_fields(left: &MemoryItem, right: &MemoryItem) -> bool {
+    left.text == right.text
+        && left.category == right.category
+        && left.observed_at == right.observed_at
+        && left.observed_time_precision == right.observed_time_precision
+        && left.is_pinned == right.is_pinned
+        && left.is_cold == right.is_cold
 }
 
 #[cfg(test)]

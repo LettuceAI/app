@@ -128,6 +128,9 @@ pub enum ApiErrorDetails {
     MemoryCycleDependent {
         later_run_id: String,
     },
+    MemoryCycleUserEdited {
+        memory_id: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

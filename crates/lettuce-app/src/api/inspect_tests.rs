@@ -69,7 +69,7 @@ impl CompanionEmotionEngine for NeutralEmotion {
     }
 }
 
-struct AllModels;
+pub(super) struct AllModels;
 
 #[async_trait]
 impl ModelLoader for AllModels {

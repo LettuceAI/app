@@ -47,3 +47,5 @@ Forced memory cycles take the conversation and an operation key; a retry may nam
 `memory_cycles` pages the activity log newest first: each cycle has its window label, outcome actions, published summary, status, typed failure, `reverted`, `revertable` and the later cycle that blocks a revert. `memory_cycle_revert` takes the run, the expected memory revision and an operation key; a cycle a later cycle started from is a `Conflict` with `ApiErrorDetails::MemoryCycleDependent` naming that cycle. `memory_error_dismiss` hides the failure the status shows.
 
 Companion commands return the authored Soul configuration as a document next to the growth facts of the Soul in effect (`companion_soul_get`), edit growth by fact id, queue the Soul writer as a job whose result is a `CompanionSoulDraft` document, and manage scheduled notes with API-assigned ids and timestamps. A missing character is `NotFound` and a character that is not a companion is `Unsupported`.
+
+A revert refused because the user edited an item the cycle changed carries `ApiErrorDetails::MemoryCycleUserEdited` with that memory's id.

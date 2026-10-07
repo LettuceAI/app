@@ -98,6 +98,25 @@ impl Database {
         if !present {
             return Err(StoreError::NotFound);
         }
+        let key = spec
+            .idempotency_key
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_default();
+        let active: bool = transaction
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM jobs
+                  WHERE kind = 'memory_extraction' AND subject_kind = 'conversation'
+                    AND subject_id = ?1
+                    AND state NOT IN ('succeeded', 'failed', 'cancelled', 'interrupted')
+                    AND coalesce(idempotency_key, '') <> ?2)",
+                params![conversation_id.to_string(), key],
+                |row| row.get(0),
+            )
+            .map_err(|_| StoreError::Storage)?;
+        if active {
+            return Err(StoreError::AlreadyActive);
+        }
         let (job, _, created) =
             admit_job_detail_in(&transaction, spec, operation_key, request_digest, detail)?;
         transaction.commit().map_err(|_| StoreError::Storage)?;
