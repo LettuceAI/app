@@ -744,6 +744,13 @@ pub enum GenerationEvent {
     Started {
         turn_id: String,
     },
+    SpeakerSelecting {
+        turn_id: String,
+    },
+    SpeakerSelected {
+        turn_id: String,
+        character_id: String,
+    },
     Delta {
         turn_id: String,
         text: Option<String>,

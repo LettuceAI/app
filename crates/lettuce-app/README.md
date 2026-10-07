@@ -584,3 +584,5 @@ The companion API resolves one Soul per request: the character's when it shares 
 The conversation feed also follows the memory change journal and sends one `ApiEvent::MemoryChanged` per changed conversation per read, after the commit and never on a timer, so a cycle, edit, revert, dismissal, lazy recount, delete-after undo, sync apply or restore in one chat refreshes every chat that shares the memory.
 
 Memory trigger and retry store their API operation receipt in the job admission transaction, so an admitted cycle always has its replay identity, including after the job finishes. Memory skip, Soul growth edits, scheduled-note writes and Soul writer admission also commit their changes and API receipts together.
+
+Generation streams announce speaker selection before text deltas. Group turns that choose a speaker emit `SpeakerSelecting`, then `SpeakerSelected` with the character id; direct and explicitly directed turns emit only the selected character. The API keeps the selected speaker while the turn runs and sends it to a stream that attaches late, then drops it when the turn settles.

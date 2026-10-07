@@ -18,3 +18,22 @@ pub trait JobEventSink: Send + Sync {
     /// Returns `false` once the consumer is gone, which ends the watch.
     fn emit(&self, event: JobEvent) -> bool;
 }
+
+#[derive(Clone)]
+pub(crate) struct GenerationLiveEvents(std::sync::Arc<dyn Fn(GenerationEvent) + Send + Sync>);
+
+impl std::fmt::Debug for GenerationLiveEvents {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("GenerationLiveEvents")
+    }
+}
+
+impl GenerationLiveEvents {
+    pub(crate) fn new(emit: impl Fn(GenerationEvent) + Send + Sync + 'static) -> Self {
+        Self(std::sync::Arc::new(emit))
+    }
+
+    pub(crate) fn emit(&self, event: GenerationEvent) {
+        (self.0)(event);
+    }
+}

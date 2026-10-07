@@ -88,11 +88,17 @@ impl ConversationGenerationWorker {
             None => &UnstoredReplyMedia,
         };
         let embedding = context.embedding();
-        let runner = backend.prepared_conversation_generation_runner(
-            embedding.as_ref(),
-            context.inference(),
-            reply_media,
-        );
+        let event_context = context.clone();
+        let event_turn = next.turn_id;
+        let runner = backend
+            .prepared_conversation_generation_runner(
+                embedding.as_ref(),
+                context.inference(),
+                reply_media,
+            )
+            .with_live_events(super::events::GenerationLiveEvents::new(move |event| {
+                event_context.live_generation_event(event_turn, event);
+            }));
         let turn_label = next.turn_id.to_string();
         let (cancellation, _shutdown_link) = shutdown_child(context.shutdown_token());
         let mut stream_sink = None;

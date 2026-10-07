@@ -174,6 +174,7 @@ pub struct PreparedConversationGenerationJobRunner<'a, E: ?Sized, R: ?Sized, I: 
     inference: &'a I,
     inference_runtime: Option<&'a InferenceRuntime>,
     reply_media: Option<&'a dyn crate::ReplyMediaStore>,
+    live_events: Option<crate::api::events::GenerationLiveEvents>,
 }
 
 impl<'a, E: ?Sized, R: ?Sized, I: ?Sized> PreparedConversationGenerationJobRunner<'a, E, R, I> {
@@ -184,6 +185,7 @@ impl<'a, E: ?Sized, R: ?Sized, I: ?Sized> PreparedConversationGenerationJobRunne
             inference,
             inference_runtime: None,
             reply_media: None,
+            live_events: None,
         }
     }
 
@@ -192,6 +194,14 @@ impl<'a, E: ?Sized, R: ?Sized, I: ?Sized> PreparedConversationGenerationJobRunne
     #[must_use]
     pub const fn with_reply_media(mut self, reply_media: &'a dyn crate::ReplyMediaStore) -> Self {
         self.reply_media = Some(reply_media);
+        self
+    }
+
+    pub(crate) fn with_live_events(
+        mut self,
+        events: crate::api::events::GenerationLiveEvents,
+    ) -> Self {
+        self.live_events = Some(events);
         self
     }
 
@@ -593,6 +603,8 @@ where
             ),
             ConversationKind::Group(_) => None,
         };
+        let speaker = self.generation_speaker(&aggregate.conversation, &turn)?;
+        self.emit_selected_speaker(work.turn_id, &aggregate.conversation, speaker.as_ref());
         let mut request = record.request;
         request.attempt_id = work.attempt_id;
         request.cancellation = Some(work.handle.id());
@@ -744,6 +756,13 @@ where
             prior_speaker,
             timeline: timeline.items,
         };
+        if mention_source.is_none()
+            && let Some(events) = &self.live_events
+        {
+            events.emit(lettuce_contracts::GenerationEvent::SpeakerSelecting {
+                turn_id: work.turn_id.to_string(),
+            });
+        }
         let selected_speaker = if mention_source.is_none()
             && speaker_selection == lettuce_conversations::GroupSpeakerSelectionSnapshot::Llm
         {
@@ -1278,6 +1297,11 @@ where
             return Err(ConversationGenerationInputError::InvalidTurn);
         }
         let selected_speaker = self.generation_speaker(&aggregate.conversation, &turn)?;
+        self.emit_selected_speaker(
+            work.turn_id,
+            &aggregate.conversation,
+            selected_speaker.as_ref(),
+        );
         let settings = lettuce_conversations::resolve_effective_settings(
             &aggregate.conversation,
             selected_speaker
@@ -1552,6 +1576,34 @@ where
                 &aggregate.conversation,
             ),
         })
+    }
+
+    fn emit_selected_speaker(
+        &self,
+        turn_id: lettuce_types::GenerationTurnId,
+        conversation: &lettuce_conversations::Conversation,
+        selected: Option<&SelectedSpeakerDecision>,
+    ) {
+        let Some(events) = &self.live_events else {
+            return;
+        };
+        let participant = match selected {
+            Some(selected) => conversation
+                .participants
+                .iter()
+                .find(|participant| participant.id == selected.participant_id),
+            None => conversation.participants.iter().find(|participant| {
+                participant.role == lettuce_conversations::ParticipantRole::Character
+            }),
+        };
+        if let Some(lettuce_conversations::ParticipantSource::Character(character_id)) =
+            participant.map(|participant| participant.source)
+        {
+            events.emit(lettuce_contracts::GenerationEvent::SpeakerSelected {
+                turn_id: turn_id.to_string(),
+                character_id: character_id.to_string(),
+            });
+        }
     }
 
     fn generation_speaker(

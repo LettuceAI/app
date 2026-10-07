@@ -16,7 +16,7 @@ mod conversations;
 mod copies;
 mod embedding_health;
 mod error;
-mod events;
+pub(crate) mod events;
 mod file_kind;
 mod files;
 mod hugging_face;
@@ -61,6 +61,8 @@ mod image_tests;
 mod inspect_tests;
 #[cfg(test)]
 mod legacy_regenerate_tests;
+#[cfg(test)]
+mod llama_events_tests;
 #[cfg(test)]
 mod local_models_tests;
 #[cfg(test)]

@@ -86,6 +86,7 @@ struct ApiContextInner {
     parts: ApiContextParts,
     models: ModelSlots,
     streams: Mutex<HashMap<GenerationTurnId, Arc<dyn GenerationEventSink>>>,
+    speakers: Mutex<HashMap<GenerationTurnId, GenerationEvent>>,
     wake: tokio::sync::Notify,
     shutdown: CancellationToken,
     jobs: JobHostState,
@@ -139,6 +140,7 @@ impl ApiContext {
                 models: ModelSlots::new(Arc::clone(&parts.models)),
                 parts,
                 streams: Mutex::new(HashMap::new()),
+                speakers: Mutex::new(HashMap::new()),
                 wake: tokio::sync::Notify::new(),
                 shutdown: CancellationToken::new(),
                 jobs,
@@ -563,7 +565,25 @@ impl ApiContext {
         sink: Arc<dyn GenerationEventSink>,
     ) {
         if let Ok(mut streams) = self.inner.streams.lock() {
+            if let Ok(speakers) = self.inner.speakers.lock()
+                && let Some(event) = speakers.get(&turn_id)
+            {
+                sink.emit(event.clone());
+            }
             streams.insert(turn_id, sink);
+        }
+    }
+
+    pub(crate) fn live_generation_event(&self, turn_id: GenerationTurnId, event: GenerationEvent) {
+        if let Ok(streams) = self.inner.streams.lock() {
+            if matches!(event, GenerationEvent::SpeakerSelected { .. })
+                && let Ok(mut speakers) = self.inner.speakers.lock()
+            {
+                speakers.insert(turn_id, event.clone());
+            }
+            if let Some(sink) = streams.get(&turn_id) {
+                sink.emit(event);
+            }
         }
     }
 
@@ -578,6 +598,9 @@ impl ApiContext {
     /// Sends a turn's last event and forgets its stream; returns whether the
     /// turn still had one.
     pub(crate) fn finish_stream(&self, turn_id: GenerationTurnId, event: GenerationEvent) -> bool {
+        if let Ok(mut speakers) = self.inner.speakers.lock() {
+            speakers.remove(&turn_id);
+        }
         match self.forget_stream(turn_id) {
             Some(sink) => {
                 sink.emit(event);

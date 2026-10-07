@@ -53,3 +53,5 @@ A revert refused because the user edited an item the cycle changed carries `ApiE
 `companion_soul_get` returns the authored Soul configuration as a typed `CompanionSoulConfigView` (identity text, baseline affect, regulation style, authored facts, relationship defaults, prompting and the sharing toggles) derived from the companion domain type, and the Soul writer takes and returns the typed `CompanionSoulDraft`. Contracts hold no free-form JSON for them.
 
 `ApiEvent::MemoryChanged` names a conversation whose `memory_get` result changed.
+
+Generation streams include `SpeakerSelecting` and `SpeakerSelected` with the resolved character id before text deltas. The API replays the resolved speaker to a late stream attached to a running turn.

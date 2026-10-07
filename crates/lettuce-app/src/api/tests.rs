@@ -477,6 +477,10 @@ async fn send_streams_deltas_completes_and_persists_the_reply() {
             GenerationEvent::Started {
                 turn_id: turn_id.clone()
             },
+            GenerationEvent::SpeakerSelected {
+                turn_id: turn_id.clone(),
+                character_id: harness.character_id.to_string(),
+            },
             GenerationEvent::Delta {
                 turn_id: turn_id.clone(),
                 text: Some("Hel".into()),
