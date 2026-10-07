@@ -149,7 +149,7 @@ pub async fn memory_trigger(
 }
 
 /// A forced cycle with a different summarisation model. A chosen model also
-/// becomes the default after the cycle succeeds, as the legacy retry did.
+/// becomes the default after the cycle succeeds.
 pub async fn memory_retry(
     context: &ApiContext,
     request: dto::MemoryRetryRequest,
