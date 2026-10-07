@@ -121,6 +121,8 @@ Facts about how `lettuce-app` relates to the legacy app (2.2.x): what follows le
 
 ## Deliberate differences from legacy
 
+- Manual memory token counts use null for unknown counts instead of legacy's zero on tokenizer failure (`old-code/src-tauri/src/chat_manager/memory/flow.rs:3791-3792`). The recount helper uses the memory tokenizer without embedding; conditional derived writes preserve revisions and reject stale text or summary timestamps.
+
 - The legacy inventory walk follows no symbolic links and leaves out names that cannot form a safe archive path, unlike the legacy exporter.
 - Legacy used an app-wide template of any type in a direct chat; only a direct-chat document is used.
 - `Clear` stores a disabled prompt, a state legacy never had; the frontend's reset must send `UseLaunchDefault`.

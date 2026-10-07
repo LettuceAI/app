@@ -311,3 +311,5 @@ Copied scene messages retain an immutable reference to the protected source scen
 Generic job-detail admission can return both the job snapshot and whether it was created, while committing the job, operation receipt and immutable input document together. Memory extraction uses this boundary to retain its frozen branch and source batch before a worker can claim the job.
 
 Dynamic memory attempts retain their job claim generation alongside the job identity. Memory admissions, summary and round commits, capacity changes and owned effect settlements check that generation and the live job state within their write transaction. Soul-writer round commits receive the current claim generation and use the same guard. Exact settled replay returns stored evidence without applying a new write.
+
+Memory item, own-summary and inherited-summary token counts allow null. The token-count port fills only unknown counts matching the source text; summary writes also match their branch and timestamp and commit together. These derived writes do not advance the space revision.

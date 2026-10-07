@@ -208,7 +208,7 @@ pub struct MemoryItem {
     pub superseded_by: Option<MemoryId>,
     pub superseded_at: Option<TimestampMillis>,
     pub supersedes: Vec<MemoryId>,
-    pub token_count: u32,
+    pub token_count: Option<u32>,
     pub is_cold: bool,
     pub is_pinned: bool,
     pub importance: Score,
@@ -243,7 +243,7 @@ impl MemoryItem {
             superseded_by: None,
             superseded_at: None,
             supersedes: Vec::new(),
-            token_count: 0,
+            token_count: None,
             is_cold: false,
             is_pinned: false,
             importance: Score::FULL,
@@ -325,7 +325,7 @@ pub struct MemorySummary {
     pub space_id: MemorySpaceId,
     pub branch_id: lettuce_types::ConversationBranchId,
     pub text: String,
-    pub token_count: u32,
+    pub token_count: Option<u32>,
     pub window_start: u64,
     pub window_end: u64,
     pub source_message_ids: Vec<MessageId>,
@@ -530,6 +530,36 @@ mod tests {
     }
 
     #[test]
+    fn unknown_item_and_user_summary_counts_round_trip_as_null() {
+        let id = lettuce_types::MemoryId::new();
+        let item = super::MemoryItem::written(
+            id,
+            super::MemoryShortId::derived(id),
+            "A manual memory".into(),
+            TimestampMillis::new(10),
+        );
+        let mut encoded = serde_json::to_value(item).expect("encode item");
+        encoded["token_count"] = serde_json::Value::Null;
+        let item: super::MemoryItem = serde_json::from_value(encoded).expect("unknown item count");
+        assert_eq!(item.validate(), Ok(()));
+        assert!(serde_json::to_value(item).expect("item")["token_count"].is_null());
+        let summary: MemorySummary = serde_json::from_value(serde_json::json!({
+            "space_id": MemorySpaceId::new(),
+            "branch_id": lettuce_types::ConversationBranchId::new(),
+            "origin": "user",
+            "text": "An authored summary",
+            "token_count": null,
+            "window_start": 0,
+            "window_end": 0,
+            "source_message_ids": [],
+            "updated_at": 10
+        }))
+        .expect("unknown user summary count");
+        assert_eq!(summary.validate(), Ok(()));
+        assert!(serde_json::to_value(summary).expect("summary")["token_count"].is_null());
+    }
+
+    #[test]
     fn companion_and_null_categories_round_trip_without_mapping_to_other() {
         let id = lettuce_types::MemoryId::new();
         let item = super::MemoryItem::written(
@@ -585,7 +615,7 @@ mod tests {
             branch_id: lettuce_types::ConversationBranchId::new(),
             space_id: MemorySpaceId::new(),
             text: "summary".to_owned(),
-            token_count: 1,
+            token_count: Some(1),
             window_start: 4,
             window_end: 7,
             source_message_ids: vec![MessageId::new(), MessageId::new()],

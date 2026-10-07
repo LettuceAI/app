@@ -180,6 +180,22 @@ pub trait MemorySummaryRepository: Send + Sync {
     ) -> Result<MemorySummaryCommit, MemoryRepositoryError>;
 }
 
+pub trait MemoryTokenCountRepository: Send + Sync {
+    fn count_unknown_item(
+        &self,
+        space_id: MemorySpaceId,
+        memory_id: MemoryId,
+        source_text: &str,
+        token_count: u32,
+    ) -> Result<bool, MemoryRepositoryError>;
+
+    fn count_unknown_summary(
+        &self,
+        summary: &MemorySummary,
+        token_count: u32,
+    ) -> Result<bool, MemoryRepositoryError>;
+}
+
 pub trait DynamicMemoryRunRepository: Send + Sync {
     fn apply_dynamic_memory_cycle_finish(
         &self,

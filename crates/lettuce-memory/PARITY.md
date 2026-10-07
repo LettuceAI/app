@@ -50,3 +50,5 @@ The memory host validates admitted companion effects and source-message identiti
 
 - UI events for memory runs;
 - API job-handler and generation-worker wiring for background runs.
+
+Manual item and user-summary counts can remain unknown without a tokenizer. Legacy substituted zero when counting failed (`old-code/src-tauri/src/chat_manager/memory/flow.rs:3791-3792`); null preserves the distinction. Hot-budget reduction refuses unknown counts instead of treating them as zero.

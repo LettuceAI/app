@@ -1366,7 +1366,7 @@ fn memory_space(
                 .iter()
                 .map(|value| memory_item_id(scope, source_id, value))
                 .collect(),
-            token_count: memory.token_count,
+            token_count: Some(memory.token_count),
             is_cold: memory.is_cold && !memory.is_pinned,
             is_pinned: memory.is_pinned,
             importance: score(memory.importance_score)?,
@@ -1437,7 +1437,7 @@ fn memory_space(
                 space_id,
                 branch_id,
                 text: text.to_owned(),
-                token_count: u32::try_from(summary_token_count).unwrap_or(u32::MAX),
+                token_count: Some(u32::try_from(summary_token_count).unwrap_or(u32::MAX)),
                 window_start: 0,
                 window_end: u64::try_from(end).map_err(|_| Error::InvalidInput)?,
                 source_message_ids: dialogue[..end].to_vec(),

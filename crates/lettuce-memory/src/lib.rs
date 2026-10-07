@@ -23,7 +23,8 @@ pub use port::{
     DynamicMemorySummaryCheckpoint, DynamicMemorySummaryCommit, MemoryChangeSet, MemoryRepository,
     MemoryRepositoryError, MemoryRetrievalAccess, MemoryRetrievalAccessReceipt,
     MemoryRetrievalRepository, MemorySummaryChange, MemorySummaryCommit, MemorySummaryRepository,
-    OwedRewindFailure, PendingSuffixRewind, PendingSuffixRewindRepository,
+    MemoryTokenCountRepository, OwedRewindFailure, PendingSuffixRewind,
+    PendingSuffixRewindRepository,
 };
 pub use repair::{
     MEMORY_CATEGORIES, MEMORY_REPAIR_TOOL_NAME, MEMORY_REPAIR_TOOL_TEXT_KEYS,

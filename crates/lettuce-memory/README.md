@@ -28,7 +28,7 @@ A `MemoryItem` carries:
 
 A space holds any number of items. `MemoryPolicy` decides what a memory cycle keeps: `max_entries` (at most `MAX_MEMORY_ITEMS`, 4096), the hot token budget, the cold threshold, the default delete confidence, the per-cycle hard-delete ratio and the decay rate.
 
-`MemorySummary` carries its origin, text and token count. A user-authored summary has no source messages or coverage window; its window coordinates are both zero. Model and imported summaries store a half-open range of message positions and the exact ids covered, with the window length equal to the id count. Model coverage advances the summary cursor, where the next cycle starts reading. The summary records its owning branch; in a companion pool the cursor is per conversation and branch (`MemorySummaryRepository::summary_cursor`).
+`MemorySummary` carries its origin, text and nullable token count. Item and summary counts are null until the memory tokenizer has counted their text; null is distinct from a known zero. `MemoryTokenCountRepository` stores derived counts only while the read text still matches and the count remains unknown, without advancing the memory revision. A user-authored summary has no source messages or coverage window; its window coordinates are both zero. Model and imported summaries store a half-open range of message positions and the exact ids covered, with the window length equal to the id count. Model coverage advances the summary cursor, where the next cycle starts reading. The summary records its owning branch; in a companion pool the cursor is per conversation and branch (`MemorySummaryRepository::summary_cursor`).
 
 ## Writing memory
 

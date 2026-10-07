@@ -16,6 +16,81 @@ use lettuce_types::TimestampMillis;
 use crate::{EmbeddingGenerationError, MemoryEmbeddingEngine};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct MemoryTokenRecount {
+    pub counted: usize,
+    pub superseded: usize,
+    pub unknown: usize,
+}
+
+pub fn recount_unknown_memory_tokens<E, R>(
+    engine: &E,
+    repository: &R,
+    memory: &MemorySpaceSnapshot,
+    summary: Option<&lettuce_memory::MemorySummary>,
+    cancellation: &CancellationToken,
+) -> Result<MemoryTokenRecount, MemoryEmbeddingBackfillError>
+where
+    E: MemoryEmbeddingEngine + ?Sized,
+    R: lettuce_memory::MemoryTokenCountRepository + ?Sized,
+{
+    let mut result = MemoryTokenRecount::default();
+    for item in &memory.items {
+        if item.token_count.is_some() {
+            continue;
+        }
+        if cancellation.is_cancelled() {
+            return Err(MemoryEmbeddingBackfillError::Cancelled);
+        }
+        let count = match engine.count_tokens(&item.text) {
+            Ok(count) => count,
+            Err(EmbeddingGenerationError::Unavailable) => {
+                result.unknown += 1;
+                continue;
+            }
+            Err(EmbeddingGenerationError::Cancelled) => {
+                return Err(MemoryEmbeddingBackfillError::Cancelled);
+            }
+        };
+        if cancellation.is_cancelled() {
+            return Err(MemoryEmbeddingBackfillError::Cancelled);
+        }
+        if repository
+            .count_unknown_item(memory.id, item.id, &item.text, count)
+            .map_err(|_| MemoryEmbeddingBackfillError::Repository)?
+        {
+            result.counted += 1;
+        } else {
+            result.superseded += 1;
+        }
+    }
+    if let Some(summary) = summary.filter(|summary| summary.token_count.is_none()) {
+        if cancellation.is_cancelled() {
+            return Err(MemoryEmbeddingBackfillError::Cancelled);
+        }
+        match engine.count_tokens(&summary.text) {
+            Ok(count) => {
+                if cancellation.is_cancelled() {
+                    return Err(MemoryEmbeddingBackfillError::Cancelled);
+                }
+                if repository
+                    .count_unknown_summary(summary, count)
+                    .map_err(|_| MemoryEmbeddingBackfillError::Repository)?
+                {
+                    result.counted += 1;
+                } else {
+                    result.superseded += 1;
+                }
+            }
+            Err(EmbeddingGenerationError::Unavailable) => result.unknown += 1,
+            Err(EmbeddingGenerationError::Cancelled) => {
+                return Err(MemoryEmbeddingBackfillError::Cancelled);
+            }
+        }
+    }
+    Ok(result)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct MemoryEmbeddingBackfill {
     pub embedded: usize,
     /// Memories whose text changed while they were embedded; the new text
@@ -127,6 +202,7 @@ mod tests {
         fail_text: Option<&'static str>,
         during_embed: EmbedHook<'a>,
         required: bool,
+        tokenizer_available: bool,
     }
 
     impl MemoryEmbeddingEngine for Engine<'_> {
@@ -139,7 +215,11 @@ mod tests {
         }
 
         fn count_tokens(&self, _text: &str) -> Result<u32, EmbeddingGenerationError> {
-            Ok(1)
+            if self.tokenizer_available {
+                Ok(1)
+            } else {
+                Err(EmbeddingGenerationError::Unavailable)
+            }
         }
 
         fn embed_memory(
@@ -183,7 +263,7 @@ mod tests {
             superseded_by: None,
             superseded_at: None,
             supersedes: Vec::new(),
-            token_count: 2,
+            token_count: Some(2),
             is_cold: false,
             is_pinned: false,
             importance: Score::FULL,
@@ -204,6 +284,7 @@ mod tests {
             fail_text,
             during_embed: std::sync::Mutex::new(None),
             required: false,
+            tokenizer_available: true,
         }
     }
 
@@ -230,6 +311,78 @@ mod tests {
             TimestampMillis::new(2),
         )
         .expect("backfill")
+    }
+
+    #[test]
+    fn lazy_token_recount_uses_the_tokenizer_without_embedding() {
+        let database = Database::open_in_memory().expect("database");
+        let mut unknown = item("A manually written memory");
+        unknown.token_count = None;
+        let memory = database
+            .create(MemorySpaceSnapshot {
+                id: lettuce_types::MemorySpaceId::new(),
+                revision: Revision::INITIAL,
+                items: vec![unknown],
+            })
+            .expect("space");
+        let engine = engine("v5", None);
+        let result = recount_unknown_memory_tokens(
+            &engine,
+            &database,
+            &memory,
+            None,
+            &CancellationToken::new(),
+        )
+        .expect("recount");
+        assert_eq!(result.counted, 1);
+        assert_eq!(engine.calls.load(Ordering::SeqCst), 0);
+        let read = MemoryRepository::get(&database, memory.id)
+            .expect("read")
+            .expect("space");
+        assert_eq!(read.items[0].token_count, Some(1));
+        assert_eq!(read.revision, memory.revision);
+        assert_eq!(
+            recount_unknown_memory_tokens(
+                &engine,
+                &database,
+                &read,
+                None,
+                &CancellationToken::new()
+            )
+            .expect("read again"),
+            MemoryTokenRecount::default()
+        );
+    }
+
+    #[test]
+    fn unavailable_tokenizer_keeps_counts_unknown() {
+        let database = Database::open_in_memory().expect("database");
+        let mut unknown = item("A manually written memory");
+        unknown.token_count = None;
+        let memory = database
+            .create(MemorySpaceSnapshot {
+                id: lettuce_types::MemorySpaceId::new(),
+                revision: Revision::INITIAL,
+                items: vec![unknown],
+            })
+            .expect("space");
+        let engine = Engine {
+            tokenizer_available: false,
+            ..engine("v5", None)
+        };
+        let result = recount_unknown_memory_tokens(
+            &engine,
+            &database,
+            &memory,
+            None,
+            &CancellationToken::new(),
+        )
+        .expect("unavailable");
+        assert_eq!(result.unknown, 1);
+        assert_eq!(
+            MemoryRepository::get(&database, memory.id).expect("read"),
+            Some(memory)
+        );
     }
 
     #[test]
@@ -267,7 +420,12 @@ mod tests {
         let recounted = MemoryRepository::get(&database, memory.id)
             .expect("space")
             .expect("present");
-        assert!(recounted.items.iter().all(|item| item.token_count == 1));
+        assert!(
+            recounted
+                .items
+                .iter()
+                .all(|item| item.token_count == Some(1))
+        );
         assert_eq!(recounted.revision, memory.revision);
 
         let cancelled = CancellationToken::new();
@@ -339,7 +497,7 @@ mod tests {
         let edited = MemoryRepository::get(&database, space)
             .expect("space")
             .expect("present");
-        assert_eq!(edited.items[0].token_count, 2);
+        assert_eq!(edited.items[0].token_count, Some(2));
         assert_eq!(
             backfill(&engine("v5", None), &database, &edited).embedded,
             1
@@ -356,7 +514,7 @@ mod tests {
                 .expect("present")
                 .items[0]
                 .token_count,
-            1
+            Some(1)
         );
     }
 }

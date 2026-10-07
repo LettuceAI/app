@@ -252,7 +252,7 @@ mod tests {
             superseded_by: None,
             superseded_at: None,
             supersedes: Vec::new(),
-            token_count: 2,
+            token_count: Some(2),
             is_cold: false,
             is_pinned: false,
             importance: Score::FULL,
@@ -421,10 +421,10 @@ mod tests {
         let (space_id, before) = recounted_space(&database);
         let recounted = database.get(space_id).expect("get").expect("space");
         assert_eq!(recounted.revision, before.revision);
-        assert_eq!(recounted.items[0].token_count, 9);
+        assert_eq!(recounted.items[0].token_count, Some(9));
         let mut items = before.items.clone();
         items[1].text = "another, edited".to_owned();
-        items[1].token_count = 5;
+        items[1].token_count = Some(5);
         let applied = database
             .compare_and_apply(MemoryChangeSet {
                 space_id,
@@ -432,8 +432,8 @@ mod tests {
                 items,
             })
             .expect("older snapshot still applies");
-        assert_eq!(applied.items[0].token_count, 9);
-        assert_eq!(applied.items[1].token_count, 5);
+        assert_eq!(applied.items[0].token_count, Some(9));
+        assert_eq!(applied.items[1].token_count, Some(5));
     }
 
     #[test]
@@ -468,14 +468,14 @@ mod tests {
             placed
         };
         let mut remote = before.items[0].clone();
-        remote.token_count = 2;
+        remote.token_count = Some(2);
         remote.access_count = 4;
         assert!(put(&remote));
         let synced = database.get(space_id).expect("get").expect("space");
-        assert_eq!(synced.items[0].token_count, 9);
+        assert_eq!(synced.items[0].token_count, Some(9));
         assert_eq!(synced.items[0].access_count, 4);
         remote.text = "a memory, edited elsewhere".to_owned();
-        remote.token_count = 6;
+        remote.token_count = Some(6);
         assert!(put(&remote));
         let synced = database.get(space_id).expect("get").expect("space");
         let edited = synced
@@ -483,7 +483,7 @@ mod tests {
             .iter()
             .find(|item| item.id == remote.id)
             .expect("edited item");
-        assert_eq!(edited.token_count, 6);
+        assert_eq!(edited.token_count, Some(6));
     }
 
     #[test]

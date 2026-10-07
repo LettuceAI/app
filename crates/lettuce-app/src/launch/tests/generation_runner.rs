@@ -1505,7 +1505,7 @@ async fn app_backend_builds_manual_inputs_for_send_continue_and_regenerate() {
         superseded_by: None,
         superseded_at: None,
         supersedes: vec![],
-        token_count: 6,
+        token_count: Some(6),
         is_cold: false,
         is_pinned: false,
         importance: Score::FULL,
@@ -2869,7 +2869,7 @@ async fn app_backend_runs_resolved_group_speakers_and_rejects_unresolved_turns()
                 branch_id: turn.branch_id,
                 space_id: manual_space.id,
                 text: "The cast reached the harbor.".into(),
-                token_count: 5,
+                token_count: Some(5),
                 window_start: 0,
                 window_end: 1,
                 source_message_ids: vec![user_message_id],
@@ -3121,7 +3121,7 @@ async fn app_backend_builds_dynamic_memory_input_and_replays_exactly() {
         superseded_by: None,
         superseded_at: None,
         supersedes: vec![],
-        token_count: 6,
+        token_count: Some(6),
         is_cold: true,
         is_pinned: false,
         importance: Score::from_basis_points(3_000).expect("score"),
@@ -3145,7 +3145,7 @@ async fn app_backend_builds_dynamic_memory_input_and_replays_exactly() {
         superseded_by: None,
         superseded_at: None,
         supersedes: vec![],
-        token_count: 5,
+        token_count: Some(5),
         is_cold: false,
         is_pinned: false,
         importance: Score::from_basis_points(4_000).expect("score"),
@@ -3402,7 +3402,7 @@ fn seed_retrieved_and_hot_memories(database: &Database, space_id: MemorySpaceId)
             superseded_by: None,
             superseded_at: None,
             supersedes: vec![],
-            token_count: 6,
+            token_count: Some(6),
             is_cold,
             is_pinned: false,
             importance: Score::from_basis_points(4_000).expect("score"),
@@ -3912,7 +3912,7 @@ fn seed_unrelated_cold_memory(database: &Database, space_id: MemorySpaceId) {
         superseded_by: None,
         superseded_at: None,
         supersedes: vec![],
-        token_count: 5,
+        token_count: Some(5),
         is_cold: true,
         is_pinned: false,
         importance: Score::from_basis_points(4_000).expect("score"),
@@ -4114,7 +4114,7 @@ async fn calibrated_retrieval(
             superseded_by: None,
             superseded_at: None,
             supersedes: vec![],
-            token_count: 6,
+            token_count: Some(6),
             is_cold: false,
             is_pinned: false,
             importance: Score::from_basis_points(4_000).expect("score"),
@@ -4244,7 +4244,7 @@ async fn disabled_global_dynamic_memory_renders_direct_memories_like_manual_mode
         superseded_by: None,
         superseded_at: None,
         supersedes: vec![],
-        token_count: 8,
+        token_count: Some(8),
         is_cold: true,
         is_pinned: false,
         importance: Score::from_basis_points(3_000).expect("score"),
@@ -4342,7 +4342,7 @@ async fn chat_runtime_sections_follow_catalog_edits() {
                 superseded_by: None,
                 superseded_at: None,
                 supersedes: vec![],
-                token_count: 6,
+                token_count: Some(6),
                 is_cold: false,
                 is_pinned: false,
                 importance: Score::FULL,
@@ -4587,7 +4587,7 @@ async fn run_plain_dynamic_cycle_with_racing_edits(edits: usize, cancel: bool) {
                     TimestampMillis::new(1_032),
                 );
                 written.is_pinned = true;
-                written.token_count = 3;
+                written.token_count = Some(3);
                 snapshot.items.push(written);
                 MemoryRepository::compare_and_apply(
                     self.database,
@@ -4915,7 +4915,7 @@ async fn post_turn_memory_host_runs_the_plain_cycle_from_live_settings() {
         .expect("memory space");
     assert_eq!(stored_memory.items.len(), 1);
     assert_eq!(stored_memory.items[0].text, "The user prefers tea");
-    assert_eq!(stored_memory.items[0].token_count, 4);
+    assert_eq!(stored_memory.items[0].token_count, Some(4));
     assert!(stored_memory.items[0].is_cold);
 
     let (group, _) = group_scenario(
@@ -7906,7 +7906,7 @@ async fn concurrent_replies_fork_into_a_branch_and_notify_both_devices() {
         superseded_by: None,
         superseded_at: None,
         supersedes: vec![],
-        token_count: 5,
+        token_count: Some(5),
         is_cold: false,
         is_pinned: true,
         importance: Score::FULL,
@@ -8182,7 +8182,7 @@ async fn memory_spaces_sync_their_items_and_summary_under_their_owner() {
         superseded_by: None,
         superseded_at: None,
         supersedes: vec![],
-        token_count: 5,
+        token_count: Some(5),
         is_cold: false,
         is_pinned: true,
         importance: Score::FULL,
@@ -8232,7 +8232,7 @@ async fn memory_spaces_sync_their_items_and_summary_under_their_owner() {
                 .active_branch_id,
                 space_id: space.id,
                 text: "They talked about tea.".into(),
-                token_count: 5,
+                token_count: Some(5),
                 window_start: 0,
                 window_end: 2,
                 source_message_ids: sources,
@@ -8468,7 +8468,7 @@ async fn retrieval_embeds_memories_without_a_current_vector_first() {
         superseded_by: None,
         superseded_at: None,
         supersedes: vec![],
-        token_count: 5,
+        token_count: Some(5),
         is_cold: true,
         is_pinned: false,
         importance: Score::from_basis_points(3_000).expect("score"),

@@ -44,6 +44,7 @@ impl CompanionMemoryTerminalFailure {
     #[must_use]
     pub fn from_inference_error(error: &CompanionMemoryInferenceError) -> Self {
         match error {
+            CompanionMemoryInferenceError::UnknownTokenCount => Self::EmbeddingUnavailable,
             CompanionMemoryInferenceError::Cancelled
             | CompanionMemoryInferenceError::Inference(PortError::Cancelled) => Self::Cancelled,
             CompanionMemoryInferenceError::NoToolCalls
@@ -406,7 +407,7 @@ mod tests {
             superseded_by: None,
             superseded_at: None,
             supersedes: Vec::new(),
-            token_count: 1,
+            token_count: Some(1),
             is_cold: false,
             is_pinned: false,
             importance: Score::ZERO,

@@ -4,7 +4,7 @@ Facts about how sync relates to the legacy app (2.2.x), and how the design got t
 
 ## Legacy parity
 
-- Memory item payload version 3 preserves manually chosen dates with `user` precision and optional source attribution, matching `old-code/src-tauri/src/storage_manager/sessions.rs:4561-4568`. Its version changes the handshake schema fingerprint.
+- Memory item payload version 4 preserves manually chosen dates with `user` precision and optional source attribution, matching `old-code/src-tauri/src/storage_manager/sessions.rs:4561-4568`. Its version changes the handshake schema fingerprint.
 
 - Pairing is session-scoped, matching the legacy UI. No persistent peer-trust model was invented.
 - The state scan stamps deletes with the time this device deleted the entity, like legacy's per-write capture.
@@ -84,3 +84,5 @@ Conversation copies carry immutable protected source-scene provenance separately
 Companion session payload version 2 carries the private relationship rows of a duplicated companion conversation, so a peer reproduces independent relationship state instead of resolving to the shared character relationship. A payload whose private ownership differs from the receiving device is a conflict, and ownership never reverts. Legacy had no companion duplicate.
 
 Memory summary and inherited-summary payloads preserve user/model/import provenance, including a user summary with no source coverage; category and observed-time metadata are retained in item payloads.
+
+Item and own-summary payload version 4 and inherited-summary version 3 preserve nullable token counts. Their schema versions change the handshake fingerprint; derived counts remain conditional on the current text.

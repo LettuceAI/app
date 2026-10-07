@@ -387,7 +387,7 @@ pub(crate) fn load_summary_checkpoint_in(
         space_id,
         branch_id: run.branch_id,
         text,
-        token_count,
+        token_count: Some(token_count),
         window_start: run.summary_window.start,
         window_end: run.summary_window.end,
         source_message_ids: run
@@ -999,7 +999,7 @@ pub(crate) fn insert_restored_run_in(
                     sql_u64(checkpoint.expected_memory_revision.get())?,
                     sql_u64(checkpoint.resulting_memory_revision.get())?,
                     checkpoint.summary.text,
-                    i64::from(checkpoint.summary.token_count),
+                    checkpoint.summary.token_count.map(i64::from).ok_or(DynamicMemoryRunRepositoryError::Invalid)?,
                     encode_versioned(&checkpoint.request_context, JSON_VERSION).map_err(storage)?,
                     usage.map(|usage| sql_u64(usage.input_tokens)).transpose()?,
                     usage.map(|usage| sql_u64(usage.output_tokens)).transpose()?,
@@ -1799,7 +1799,7 @@ impl DynamicMemoryRunRepository for Database {
             if stored.attempt_id == commit.attempt_id
                 && stored.expected_memory_revision == commit.expected_memory_revision
                 && stored.summary.text == commit.text
-                && stored.summary.token_count == commit.token_count
+                && stored.summary.token_count == Some(commit.token_count)
                 && stored.request_context == commit.request_context
                 && stored.usage == commit.usage
                 && stored.provider_request_id == commit.provider_request_id
@@ -1832,7 +1832,7 @@ impl DynamicMemoryRunRepository for Database {
             space_id: run.space_id,
             branch_id: run.branch_id,
             text: commit.text,
-            token_count: commit.token_count,
+            token_count: Some(commit.token_count),
             window_start: run.summary_window.start,
             window_end: run.summary_window.end,
             source_message_ids: run
@@ -1885,7 +1885,7 @@ impl DynamicMemoryRunRepository for Database {
                     sql_u64(commit.expected_memory_revision.get())?,
                     sql_u64(applied.revision.get())?,
                     summary.text,
-                    i64::from(summary.token_count),
+                    summary.token_count.map(i64::from).ok_or(DynamicMemoryRunRepositoryError::Invalid)?,
                     encode_versioned(&commit.request_context, JSON_VERSION).map_err(storage)?,
                     input_tokens,
                     output_tokens,
@@ -2401,7 +2401,7 @@ pub(crate) mod tests {
             superseded_by: None,
             superseded_at: None,
             supersedes: Vec::new(),
-            token_count: 3,
+            token_count: Some(3),
             is_cold: false,
             is_pinned: false,
             importance: Score::FULL,
@@ -3317,7 +3317,7 @@ pub(crate) mod tests {
                     space_id,
                     branch_id: parent,
                     text: "Imported summary".into(),
-                    token_count: 3,
+                    token_count: Some(3),
                     window_start: 0,
                     window_end: 2,
                     source_message_ids: messages.iter().map(|source| source.message_id).collect(),
@@ -3997,7 +3997,7 @@ pub(crate) mod tests {
             superseded_by: None,
             superseded_at: None,
             supersedes: Vec::new(),
-            token_count: 4,
+            token_count: Some(4),
             is_cold: false,
             is_pinned: false,
             importance: Score::from_basis_points(4_200).expect("score"),
@@ -4587,7 +4587,7 @@ pub(crate) mod tests {
                     superseded_by: None,
                     superseded_at: None,
                     supersedes: Vec::new(),
-                    token_count: 4,
+                    token_count: Some(4),
                     is_cold: false,
                     is_pinned: false,
                     importance: Score::FULL,
@@ -5018,7 +5018,7 @@ pub(crate) mod tests {
                             superseded_by: None,
                             superseded_at: None,
                             supersedes: Vec::new(),
-                            token_count: 4,
+                            token_count: Some(4),
                             is_cold: false,
                             is_pinned: false,
                             importance: Score::FULL,

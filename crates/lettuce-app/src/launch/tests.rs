@@ -2761,7 +2761,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
         .expect("summary")
         .expect("stored summary");
     assert_eq!(stored_summary.text, "The user told Mira they missed her.");
-    assert_eq!(stored_summary.token_count, 7);
+    assert_eq!(stored_summary.token_count, Some(7));
     assert_eq!(
         stored_summary.source_message_ids,
         [user_message_id, finalized.value.assistant_message.id]
@@ -10566,7 +10566,7 @@ async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_promp
         superseded_by: None,
         superseded_at: None,
         supersedes: Vec::new(),
-        token_count: 8,
+        token_count: Some(8),
         is_cold: false,
         is_pinned: false,
         importance: Score::ZERO,
@@ -10595,7 +10595,7 @@ async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_promp
                 branch_id: first.active_branch_id,
                 space_id: first_space.id,
                 text: "  Harbour facts accumulated.  ".into(),
-                token_count: 4,
+                token_count: Some(4),
                 window_start: 0,
                 window_end: 1,
                 source_message_ids: vec![selected_message_id],
@@ -10633,7 +10633,7 @@ async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_promp
                 superseded_by: None,
                 superseded_at: None,
                 supersedes: Vec::new(),
-                token_count: 2,
+                token_count: Some(2),
                 is_cold: false,
                 is_pinned: false,
                 importance: Score::ZERO,

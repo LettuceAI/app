@@ -163,7 +163,7 @@ mod tests {
             superseded_by: None,
             superseded_at: None,
             supersedes: Vec::new(),
-            token_count: 3,
+            token_count: Some(3),
             is_cold: false,
             is_pinned: false,
             importance: Score::FULL,

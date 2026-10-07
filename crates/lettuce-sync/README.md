@@ -256,4 +256,4 @@ A deleted branch retains its topology in sync payload version 3, so descendants 
 
 Conversation message schema version 3 carries immutable copied-scene source provenance. Receivers verify and attach the protected source scene artifact before hydrating the scene; later merges cannot replace the provenance.
 
-Memory summary payload version 3 and inherited-summary payload version 2 preserve provenance and source-free user summaries. Memory item payload version 3 carries origin, nullable categories and user-observed time precision.
+Memory summary payload version 4 and inherited-summary payload version 3 preserve nullable token counts, provenance and source-free user summaries. Memory item payload version 4 carries nullable counts, origin, nullable categories and user-observed time precision.

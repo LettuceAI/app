@@ -6177,7 +6177,7 @@ mod tests {
             superseded_by: None,
             superseded_at: Some(TimestampMillis::new(20)),
             supersedes: Vec::new(),
-            token_count: 3,
+            token_count: Some(3),
             is_cold: false,
             is_pinned: false,
             importance: lettuce_memory::Score::FULL,

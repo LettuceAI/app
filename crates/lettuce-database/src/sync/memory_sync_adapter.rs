@@ -136,7 +136,7 @@ pub(crate) fn sync_put_memory_item(
         items: vec![item.clone()],
     }
     .validate()?;
-    let placed: Option<(String, i64, i64, String, u32)> = transaction
+    let placed: Option<(String, i64, i64, String, Option<u32>)> = transaction
         .query_row(
             "SELECT space_id, ordinal, short_id, text, token_count FROM memory_items WHERE id = ?1",
             [item_id.to_string()],

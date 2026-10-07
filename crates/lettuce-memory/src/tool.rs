@@ -821,7 +821,7 @@ impl MemoryToolReducer {
         let mut items = snapshot.items.clone();
         ensure_pinned_hot(&mut items);
         let trimmed_ids = trim_to_capacity(&mut items, policy.max_entries);
-        let demoted_ids = enforce_hot_budget(&mut items, policy.hot_token_budget);
+        let demoted_ids = enforce_hot_budget(&mut items, policy.hot_token_budget)?;
         let change = (items != snapshot.items).then_some(MemoryChangeSet {
             space_id: snapshot.id,
             expected_revision: snapshot.revision,
@@ -916,7 +916,7 @@ fn apply_create(
         superseded_by: None,
         superseded_at: None,
         supersedes: supersedes.clone(),
-        token_count: preparation.token_count,
+        token_count: Some(preparation.token_count),
         is_cold: false,
         is_pinned: important,
         importance: Score::FULL,
@@ -1120,13 +1120,19 @@ fn ensure_pinned_hot(items: &mut [MemoryItem]) {
 
 /// Demotes the least recently accessed hot, unpinned memories until the hot
 /// tokens fit `budget`; equal access times keep item order.
-fn enforce_hot_budget(items: &mut [MemoryItem], budget: u32) -> Vec<MemoryId> {
+fn enforce_hot_budget(
+    items: &mut [MemoryItem],
+    budget: u32,
+) -> Result<Vec<MemoryId>, MemoryToolError> {
     let mut current = items
         .iter()
         .filter(|item| !item.is_cold)
-        .fold(0u32, |total, item| total.saturating_add(item.token_count));
+        .try_fold(0u32, |total, item| {
+            let count = item.token_count.ok_or(MemoryToolError::UnknownTokenCount)?;
+            Ok::<_, MemoryToolError>(total.saturating_add(count))
+        })?;
     if current <= budget {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let mut candidates = items
         .iter()
@@ -1142,10 +1148,14 @@ fn enforce_hot_budget(items: &mut [MemoryItem], budget: u32) -> Vec<MemoryId> {
             break;
         }
         items[index].is_cold = true;
-        current = current.saturating_sub(items[index].token_count);
+        current = current.saturating_sub(
+            items[index]
+                .token_count
+                .ok_or(MemoryToolError::UnknownTokenCount)?,
+        );
         demoted.push(id);
     }
-    demoted
+    Ok(demoted)
 }
 
 /// Drops the lowest scored unpinned memories down to `max_entries`; equal
@@ -1209,6 +1219,8 @@ pub enum MemoryToolError {
     InvalidField(&'static str),
     #[error("memory category is invalid")]
     InvalidCategory,
+    #[error("memory token count is unknown")]
+    UnknownTokenCount,
     #[error("memory text was not kept: {0:?}")]
     Text(crate::MemoryTextProblem),
     #[error("done summary is too large")]
@@ -1290,7 +1302,7 @@ mod tests {
             superseded_by: None,
             superseded_at: None,
             supersedes: Vec::new(),
-            token_count: tokens,
+            token_count: Some(tokens),
             is_cold: false,
             is_pinned: pinned,
             importance: Score::FULL,
@@ -1304,6 +1316,18 @@ mod tests {
     }
 
     #[test]
+    fn hot_budget_refuses_unknown_counts_without_demoting_items() {
+        let mut memory = item("A manual memory", 1, 10, false);
+        memory.token_count = None;
+        let mut items = vec![memory.clone()];
+        assert!(matches!(
+            super::enforce_hot_budget(&mut items, 0),
+            Err(MemoryToolError::UnknownTokenCount)
+        ));
+        assert_eq!(items, vec![memory]);
+    }
+
+    #[test]
     fn trim_and_demotion_ties_follow_item_order_like_legacy_stable_sort() {
         let mut first = item("User owns a cat", 4, 5, false);
         let mut second = item("User owns a dog", 4, 5, false);
@@ -1311,7 +1335,10 @@ mod tests {
             std::mem::swap(&mut first.id, &mut second.id);
         }
         let mut items = vec![first.clone(), second.clone()];
-        assert_eq!(super::enforce_hot_budget(&mut items, 4), vec![first.id]);
+        assert_eq!(
+            super::enforce_hot_budget(&mut items, 4).expect("known counts"),
+            vec![first.id]
+        );
 
         let mut items = vec![first.clone(), second.clone()];
         assert_eq!(super::trim_to_capacity(&mut items, 1), vec![first.id]);

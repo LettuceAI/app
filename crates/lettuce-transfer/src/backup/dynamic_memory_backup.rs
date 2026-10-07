@@ -7,7 +7,7 @@ use lettuce_memory::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const DYNAMIC_MEMORY_BACKUP_VERSION: u32 = 3;
+pub const DYNAMIC_MEMORY_BACKUP_VERSION: u32 = 4;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -264,6 +264,7 @@ fn validate_run(
         && (checkpoint.run_id != entry.run.id
             || checkpoint.summary.space_id != entry.run.space_id
             || checkpoint.summary.validate().is_err()
+            || checkpoint.summary.token_count.is_none()
             || !attempts.contains_key(&checkpoint.attempt_id)
             || checkpoint.resulting_memory_revision.get()
                 != checkpoint.expected_memory_revision.get().saturating_add(1))

@@ -1062,7 +1062,7 @@ pub(crate) mod tests {
             branch_id: ConversationBranchId::new(),
             space_id,
             text: "previous".to_owned(),
-            token_count: 1,
+            token_count: Some(1),
             window_start: 6,
             window_end: 10,
             source_message_ids: (0..4).map(|_| MessageId::new()).collect(),
@@ -1298,7 +1298,7 @@ pub(crate) mod tests {
             branch_id: first.run.branch_id,
             space_id: repository.snapshot.id,
             text: "persisted by the run".to_owned(),
-            token_count: 4,
+            token_count: Some(4),
             window_start: first.run.summary_window.start,
             window_end: first.run.summary_window.end,
             source_message_ids: first

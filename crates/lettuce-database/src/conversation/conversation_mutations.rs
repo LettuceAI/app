@@ -16225,7 +16225,7 @@ mod tests {
                     space_id: root_space,
                     branch_id: root,
                     text: "Injected".into(),
-                    token_count: 1,
+                    token_count: Some(1),
                     window_start: 0,
                     window_end: 1,
                     source_message_ids: vec![scenario.parent_user],

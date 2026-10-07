@@ -102,7 +102,7 @@ pub(crate) fn insert_item_at(
                 item.superseded_by.map(|id| id.to_string()),
                 item.superseded_at.map(TimestampMillis::get),
                 serde_json::to_string(&item.supersedes).map_err(storage)?,
-                i64::from(item.token_count),
+                item.token_count.map(i64::from),
                 item.is_cold,
                 item.is_pinned,
                 i64::from(item.importance.basis_points()),
@@ -582,7 +582,7 @@ pub(crate) fn get_summary_in(
             |row| {
                 Ok((
                     row.get::<_, String>(0)?,
-                    row.get::<_, i64>(1)?,
+                    row.get::<_, Option<i64>>(1)?,
                     row.get::<_, i64>(2)?,
                     row.get::<_, i64>(3)?,
                     row.get::<_, i64>(4)?,
@@ -621,7 +621,10 @@ pub(crate) fn get_summary_in(
         space_id,
         branch_id: parse_id(branch_id)?,
         text,
-        token_count: u32::try_from(token_count).map_err(storage)?,
+        token_count: token_count
+            .map(u32::try_from)
+            .transpose()
+            .map_err(storage)?,
         window_start: u64::try_from(window_start).map_err(storage)?,
         window_end: u64::try_from(window_end).map_err(storage)?,
         source_message_ids,
@@ -684,7 +687,7 @@ pub(crate) fn replace_summary_in(
                     space_id.to_string(),
                     conversation_id,
                     summary.text,
-                    i64::from(summary.token_count),
+                    summary.token_count.map(i64::from),
                     i64::try_from(summary.window_start).map_err(storage)?,
                     i64::try_from(summary.window_end).map_err(storage)?,
                     summary.updated_at.get(),
@@ -1234,6 +1237,64 @@ impl MemoryRetrievalRepository for Database {
     }
 }
 
+impl lettuce_memory::MemoryTokenCountRepository for Database {
+    fn count_unknown_item(
+        &self,
+        space_id: MemorySpaceId,
+        memory_id: MemoryId,
+        source_text: &str,
+        token_count: u32,
+    ) -> Result<bool, MemoryRepositoryError> {
+        let connection = self.connection().map_err(storage)?;
+        let written = connection
+            .execute(
+                "UPDATE memory_items SET token_count = ?4
+             WHERE space_id = ?1 AND id = ?2 AND text = ?3 AND token_count IS NULL",
+                params![
+                    space_id.to_string(),
+                    memory_id.to_string(),
+                    source_text,
+                    i64::from(token_count)
+                ],
+            )
+            .map_err(storage)?;
+        Ok(written > 0)
+    }
+
+    fn count_unknown_summary(
+        &self,
+        summary: &MemorySummary,
+        token_count: u32,
+    ) -> Result<bool, MemoryRepositoryError> {
+        summary.validate()?;
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(storage)?;
+        let mut written = 0;
+        for table in ["memory_summaries", "memory_inherited_summaries"] {
+            written += transaction
+                .execute(
+                    &format!(
+                        "UPDATE {table} SET token_count = ?5
+                 WHERE space_id = ?1 AND branch_id = ?2 AND text = ?3
+                   AND updated_at = ?4 AND token_count IS NULL"
+                    ),
+                    params![
+                        summary.space_id.to_string(),
+                        summary.branch_id.to_string(),
+                        summary.text,
+                        summary.updated_at.get(),
+                        i64::from(token_count)
+                    ],
+                )
+                .map_err(storage)?;
+        }
+        transaction.commit().map_err(storage)?;
+        Ok(written > 0)
+    }
+}
+
 impl MemorySummaryRepository for Database {
     fn get_summary(
         &self,
@@ -1395,6 +1456,7 @@ impl DynamicMemoryApprovalRepository for Database {
 
 #[cfg(test)]
 mod tests {
+    use lettuce_memory::MemoryTokenCountRepository;
     use lettuce_memory::{
         MemoryCategory, MemoryChangeSet, MemoryItem, MemoryRepository, MemoryRepositoryError,
         MemorySpaceSnapshot, MemorySummary, MemorySummaryChange, MemorySummaryRepository, Score,
@@ -1402,6 +1464,7 @@ mod tests {
     use lettuce_types::{
         ConversationBranchId, MemoryId, MemorySpaceId, MessageId, Revision, TimestampMillis,
     };
+    use rusqlite::params;
 
     use super::Database;
 
@@ -1419,7 +1482,7 @@ mod tests {
             superseded_by: None,
             superseded_at: None,
             supersedes: Vec::new(),
-            token_count: 3,
+            token_count: Some(3),
             is_cold: false,
             is_pinned: false,
             importance: Score::FULL,
@@ -1468,6 +1531,185 @@ mod tests {
         assert_eq!(changed.revision, Revision::new(2));
         assert_eq!(changed.items.len(), 2);
         assert_eq!(database.get(space_id).expect("get"), Some(changed));
+    }
+
+    #[test]
+    fn unknown_item_counts_stay_null_in_storage_and_reads() {
+        let database = Database::open_in_memory().expect("database");
+        let memory = item(MemoryId::new(), "A manual memory");
+        let space = database
+            .create(snapshot(MemorySpaceId::new(), vec![memory.clone()]))
+            .expect("space");
+        database
+            .connection()
+            .expect("connection")
+            .execute(
+                "UPDATE memory_items SET token_count = NULL WHERE id = ?1",
+                [memory.id.to_string()],
+            )
+            .expect("unknown count must be nullable");
+        let read = database.get(space.id).expect("read").expect("space");
+        assert!(serde_json::to_value(&read.items[0]).expect("item")["token_count"].is_null());
+        assert_eq!(read.revision, space.revision);
+        for table in ["memory_summaries", "memory_inherited_summaries"] {
+            let connection = database.connection().expect("connection");
+            let mut columns = connection
+                .prepare(&format!("PRAGMA table_info({table})"))
+                .expect("columns");
+            let nullable = columns
+                .query_map([], |row| {
+                    Ok((row.get::<_, String>(1)?, row.get::<_, bool>(3)?))
+                })
+                .expect("rows")
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .expect("column values")
+                .into_iter()
+                .find(|(name, _)| name == "token_count")
+                .expect("token column");
+            assert!(!nullable.1, "{table} token counts must be nullable");
+        }
+    }
+
+    #[test]
+    fn lazy_item_count_is_conditional_and_does_not_advance_revision() {
+        let database = Database::open_in_memory().expect("database");
+        let mut memory = item(MemoryId::new(), "A manual memory");
+        memory.token_count = None;
+        let space = database
+            .create(snapshot(MemorySpaceId::new(), vec![memory.clone()]))
+            .expect("space");
+        assert!(
+            database
+                .count_unknown_item(space.id, memory.id, &memory.text, 4)
+                .expect("count")
+        );
+        assert!(
+            !database
+                .count_unknown_item(space.id, memory.id, &memory.text, 99)
+                .expect("already counted")
+        );
+        let read = database.get(space.id).expect("read").expect("space");
+        assert_eq!(read.items[0].token_count, Some(4));
+        assert_eq!(read.revision, space.revision);
+        let mut edited = read.items.clone();
+        edited[0].text = "Edited manual memory".into();
+        edited[0].token_count = None;
+        let edited = database
+            .compare_and_apply(MemoryChangeSet {
+                space_id: space.id,
+                expected_revision: read.revision,
+                items: edited,
+            })
+            .expect("edit");
+        assert!(
+            !database
+                .count_unknown_item(space.id, memory.id, &memory.text, 4)
+                .expect("stale count")
+        );
+        assert_eq!(database.get(space.id).expect("read"), Some(edited));
+    }
+
+    #[test]
+    fn lazy_summary_count_preserves_inherited_rows_and_rejects_replaced_summaries() {
+        let database = Database::open_in_memory().expect("database");
+        database
+            .connection()
+            .expect("connection")
+            .execute_batch("PRAGMA foreign_keys = OFF")
+            .expect("fixtures");
+        let space = database
+            .create(snapshot(MemorySpaceId::new(), vec![]))
+            .expect("space");
+        let summary = MemorySummary {
+            space_id: space.id,
+            branch_id: ConversationBranchId::new(),
+            origin: lettuce_memory::MemoryOrigin::User,
+            text: "User summary".into(),
+            token_count: None,
+            window_start: 0,
+            window_end: 0,
+            source_message_ids: vec![],
+            updated_at: TimestampMillis::new(50),
+        };
+        for table in ["memory_summaries", "memory_inherited_summaries"] {
+            database.connection().expect("connection").execute(
+                &format!("INSERT INTO {table} (space_id, conversation_id, branch_id, origin, text, token_count, window_start, window_end, updated_at)
+                VALUES (?1, 'conversation', ?2, 'user', ?3, NULL, 0, 0, ?4)"),
+                params![space.id.to_string(), summary.branch_id.to_string(), summary.text, summary.updated_at.get()],
+            ).expect("summary");
+        }
+        assert!(database.count_unknown_summary(&summary, 2).expect("count"));
+        assert!(
+            !database
+                .count_unknown_summary(&summary, 99)
+                .expect("already counted")
+        );
+        assert_eq!(
+            database
+                .get_summary(space.id)
+                .expect("summary")
+                .expect("present")
+                .token_count,
+            Some(2)
+        );
+        assert_eq!(database.get(space.id).expect("space"), Some(space.clone()));
+        for table in ["memory_summaries", "memory_inherited_summaries"] {
+            database
+                .connection()
+                .expect("connection")
+                .execute(
+                    &format!(
+                        "UPDATE {table} SET token_count = NULL, updated_at = 51 WHERE space_id = ?1"
+                    ),
+                    [space.id.to_string()],
+                )
+                .expect("replace summary");
+        }
+        assert!(
+            !database
+                .count_unknown_summary(&summary, 2)
+                .expect("stale summary")
+        );
+        assert_eq!(
+            database
+                .get_summary(space.id)
+                .expect("summary")
+                .expect("present")
+                .token_count,
+            None
+        );
+        let mut current = summary;
+        current.updated_at = TimestampMillis::new(51);
+        assert!(
+            database
+                .count_unknown_summary(&current, 3)
+                .expect("fresh count")
+        );
+        let inherited: u32 = database
+            .connection()
+            .expect("connection")
+            .query_row(
+                "SELECT token_count FROM memory_inherited_summaries WHERE space_id = ?1",
+                [space.id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("inherited count");
+        assert_eq!(inherited, 3);
+        database.connection().expect("connection").execute_batch(
+            "UPDATE memory_summaries SET token_count = NULL;
+             UPDATE memory_inherited_summaries SET token_count = NULL;
+             CREATE TRIGGER fail_summary_recount BEFORE UPDATE OF token_count ON memory_inherited_summaries
+             BEGIN SELECT RAISE(ABORT, 'injected recount interruption'); END;",
+        ).expect("inject interruption");
+        assert!(database.count_unknown_summary(&current, 3).is_err());
+        assert_eq!(
+            database
+                .get_summary(space.id)
+                .expect("summary")
+                .expect("present")
+                .token_count,
+            None
+        );
     }
 
     #[test]
@@ -1794,7 +2036,7 @@ mod tests {
             space_id,
             branch_id: ConversationBranchId::new(),
             text: "A summary a person wrote".into(),
-            token_count: 6,
+            token_count: Some(6),
             window_start: 0,
             window_end: 0,
             source_message_ids: Vec::new(),
@@ -1851,7 +2093,7 @@ mod tests {
             branch_id: ConversationBranchId::new(),
             space_id,
             text: "Mira learned the route.".to_owned(),
-            token_count: 6,
+            token_count: Some(6),
             window_start: 0,
             window_end: 2,
             source_message_ids,
@@ -1900,7 +2142,7 @@ mod tests {
             branch_id: ConversationBranchId::new(),
             space_id,
             text: "s".repeat(20_000),
-            token_count: 5_000,
+            token_count: Some(5_000),
             window_start: 0,
             window_end: 1100,
             source_message_ids,
@@ -1939,7 +2181,7 @@ mod tests {
             branch_id: ConversationBranchId::new(),
             space_id,
             text: "Current summary".to_owned(),
-            token_count: 2,
+            token_count: Some(2),
             window_start: 0,
             window_end: 1,
             source_message_ids: vec![source_id],

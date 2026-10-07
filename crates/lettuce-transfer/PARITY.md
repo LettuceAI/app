@@ -118,7 +118,7 @@ Facts about how `lettuce-transfer` relates to the legacy app (2.2.x): what each 
 
 ## Memory backup
 
-- Memory section version 4 and dynamic-memory section version 3 preserve user-observed times in live spaces and frozen run snapshots. Legacy items with `user` precision materialize with their projections instead of remaining evidence only; manual date changes do not require a source message (`old-code/src-tauri/src/storage_manager/sessions.rs:4561-4568`).
+- Memory section version 5 and dynamic-memory section version 4 preserve user-observed times in live spaces and frozen run snapshots. Legacy items with `user` precision materialize with their projections instead of remaining evidence only; manual date changes do not require a source message (`old-code/src-tauri/src/storage_manager/sessions.rs:4561-4568`).
 
 - `MemoryBackup.unbound_pools` carries companion pool spaces no conversation is bound to (a pool from a character file before its first chat, or one whose chats were all deleted); they restore before conversations with their items and projections. Such a pool used to make the whole backup fail.
 
@@ -138,3 +138,5 @@ Conversation backups retain origin ids independently of source rows. Legacy dire
 Branch-delete outbox history is preserved in version 3 backups with its stable branch result and exclusive-message tombstone events.
 
 Conversation copies carry immutable protected source-scene provenance separately from launch origins, preserving copied scene messages under different target defaults (`old-code/src/core/storage/repo.ts:1898-1978`). Backup and sync retain the reference after source purge; launch-origin validation remains unchanged.
+
+Memory section version 5 and dynamic-memory section version 4 carry nullable item and summary counts in live state and frozen snapshots. Model summary checkpoints still require counted tokens. Legacy unknown counts were represented as zero after tokenizer failure (`old-code/src-tauri/src/chat_manager/memory/flow.rs:3791-3792`).

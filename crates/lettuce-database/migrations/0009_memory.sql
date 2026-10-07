@@ -50,7 +50,7 @@ CREATE TABLE memory_summaries (
         length(trim(text)) > 0
         AND length(CAST(text AS BLOB)) <= 8388608
     ),
-    token_count INTEGER NOT NULL CHECK (token_count BETWEEN 0 AND 4294967295),
+    token_count INTEGER CHECK (token_count BETWEEN 0 AND 4294967295),
     window_start INTEGER NOT NULL CHECK (window_start >= 0),
     window_end INTEGER NOT NULL CHECK (
         (origin = 'user' AND window_start = 0 AND window_end = 0)
@@ -85,7 +85,7 @@ CREATE TABLE memory_inherited_summaries (
         length(trim(text)) > 0
         AND length(CAST(text AS BLOB)) <= 8388608
     ),
-    token_count INTEGER NOT NULL CHECK (token_count BETWEEN 0 AND 4294967295),
+    token_count INTEGER CHECK (token_count BETWEEN 0 AND 4294967295),
     window_start INTEGER NOT NULL CHECK (window_start >= 0),
     window_end INTEGER NOT NULL CHECK (
         (origin = 'user' AND window_start = 0 AND window_end = 0)
@@ -133,7 +133,7 @@ CREATE TABLE memory_items (
     superseded_by TEXT,
     superseded_at INTEGER,
     supersedes_json TEXT NOT NULL CHECK (json_valid(supersedes_json) AND json_type(supersedes_json) = 'array'),
-    token_count INTEGER NOT NULL CHECK (token_count BETWEEN 0 AND 4294967295),
+    token_count INTEGER CHECK (token_count BETWEEN 0 AND 4294967295),
     is_cold INTEGER NOT NULL CHECK (is_cold IN (0, 1)),
     is_pinned INTEGER NOT NULL CHECK (is_pinned IN (0, 1)),
     importance INTEGER NOT NULL CHECK (importance BETWEEN 0 AND 10000),

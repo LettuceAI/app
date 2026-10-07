@@ -42,6 +42,8 @@ pub enum CompanionMemoryInferenceError {
     InvalidSource,
     #[error("background memory request is too large")]
     ContextTooLarge,
+    #[error("background memory contains an unknown token count")]
+    UnknownTokenCount,
     #[error("background memory inference was cancelled")]
     Cancelled,
     #[error("background memory inference returned multiple candidates")]
@@ -593,12 +595,19 @@ fn build_first_request(
     policy
         .validate()
         .map_err(|_| CompanionMemoryInferenceError::InvalidPrompt)?;
-    let current_tokens = memory
-        .items
-        .iter()
-        .filter(|item| !item.is_cold)
-        .try_fold(0u32, |total, item| total.checked_add(item.token_count))
-        .ok_or(CompanionMemoryInferenceError::ContextTooLarge)?;
+    let current_tokens =
+        memory
+            .items
+            .iter()
+            .filter(|item| !item.is_cold)
+            .try_fold(0u32, |total, item| {
+                let count = item
+                    .token_count
+                    .ok_or(CompanionMemoryInferenceError::UnknownTokenCount)?;
+                total
+                    .checked_add(count)
+                    .ok_or(CompanionMemoryInferenceError::ContextTooLarge)
+            })?;
     if sources
         .iter()
         .any(|source| !matches!(source.role, MessageRole::User | MessageRole::Assistant))
@@ -1424,7 +1433,7 @@ mod tests {
                 superseded_by: None,
                 superseded_at: None,
                 supersedes: Vec::new(),
-                token_count: 7,
+                token_count: Some(7),
                 is_cold: false,
                 is_pinned: false,
                 importance: Score::FULL,

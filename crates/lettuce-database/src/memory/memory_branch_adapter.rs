@@ -536,7 +536,7 @@ pub(crate) fn load_materialised_summary_in(
     space_id: MemorySpaceId,
     branch_id: ConversationBranchId,
 ) -> Result<Option<lettuce_memory::MemorySummary>, ConversationRepositoryError> {
-    let row: Option<(String, i64, i64, i64, i64, String)> = transaction
+    let row: Option<(String, Option<i64>, i64, i64, i64, String)> = transaction
         .query_row(
             "SELECT text, token_count, window_start, window_end, updated_at, origin
                FROM memory_inherited_summaries WHERE space_id = ?1",
@@ -576,7 +576,10 @@ pub(crate) fn load_materialised_summary_in(
         space_id,
         branch_id,
         text,
-        token_count: u32::try_from(token_count).map_err(storage)?,
+        token_count: token_count
+            .map(u32::try_from)
+            .transpose()
+            .map_err(storage)?,
         window_start: u64::try_from(window_start).map_err(storage)?,
         window_end: u64::try_from(window_end).map_err(storage)?,
         source_message_ids,
@@ -643,7 +646,7 @@ pub(crate) fn store_materialised_summary_in(
                 conversation_id.to_string(),
                 branch_id.to_string(),
                 summary.text,
-                i64::from(summary.token_count),
+                summary.token_count.map(i64::from),
                 i64::try_from(summary.window_start).map_err(storage)?,
                 i64::try_from(summary.window_end).map_err(storage)?,
                 summary.updated_at.get(),
