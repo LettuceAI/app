@@ -88,3 +88,5 @@ Memory summary and inherited-summary payloads preserve user/model/import provena
 Item and own-summary payload version 4 and inherited-summary version 3 preserve nullable token counts. Their schema versions change the handshake fingerprint; derived counts remain conditional on the current text.
 
 Manual edit history is exchanged as canonical entities, retaining the legacy edit anchor semantics (`old-code/src-tauri/src/storage_manager/sessions.rs:3936-3993`). Local sequence, space and short ids are rebound rather than copying legacy SQLite row positions between devices.
+
+Memory cycle reverts and dismissed memory failures are not synced. They qualify the device-local dynamic-memory runs they refer to (runs, attempts and their outcomes never leave the device); the item and summary changes a revert makes sync like any other memory change.

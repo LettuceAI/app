@@ -259,3 +259,5 @@ Conversation message schema version 3 carries immutable copied-scene source prov
 Memory summary payload version 4 and inherited-summary payload version 3 preserve nullable token counts, provenance and source-free user summaries. Memory item payload version 4 carries nullable counts, origin, nullable categories and user-observed time precision.
 
 The `memory_manual_edit` entity carries one immutable manual edit plus its undo timestamp. Its payload normalizes local space ids, insertion sequences and short ids; materialization resolves the local own space or pool and restores local identities. A missing branch or anchor defers the entity. The added payload schema changes the handshake fingerprint.
+
+Memory cycle reverts and dismissed memory failures stay on the device: they annotate runs, which are not synced. The memory items and summary a revert restores travel as ordinary memory changes.

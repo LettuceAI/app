@@ -60,11 +60,15 @@ pub struct SoulFactView {
     pub confidence: f64,
     pub evidence_count: u32,
     pub weight: f64,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub valid_from: i64,
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
     pub valid_until: Option<i64>,
     pub locked: bool,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub created_at: i64,
     pub superseded_by: Option<String>,
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
     pub superseded_at: Option<i64>,
 }
 
@@ -168,13 +172,17 @@ pub struct CompanionNoteView {
     pub character_id: String,
     pub label: String,
     pub content: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub available_at: i64,
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
     pub expires_at: Option<i64>,
     pub recurrence: CompanionNoteRecurrence,
     #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
     pub recurrence_window_ms: Option<u64>,
     pub enabled: bool,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub created_at: i64,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub updated_at: i64,
 }
 
@@ -195,7 +203,9 @@ pub struct CompanionNoteUpsertRequest {
     pub note_id: Option<String>,
     pub label: String,
     pub content: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub available_at: i64,
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
     pub expires_at: Option<i64>,
     pub recurrence: CompanionNoteRecurrence,
     #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
@@ -218,5 +228,6 @@ pub struct CompanionNoteDeleteRequest {
 #[serde(deny_unknown_fields)]
 pub struct CompanionNotesActivePreviewRequest {
     pub character_id: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub as_of: i64,
 }

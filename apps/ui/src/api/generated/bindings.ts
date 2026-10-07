@@ -148,6 +148,28 @@ export const commands = {
 	hfAuthStatus: () => typedError<HfTokenStatus, ApiError>(__TAURI_INVOKE("hf_auth_status")),
 	hfAuthSave: (request: HfAuthSaveRequest) => typedError<HfTokenStatus, ApiError>(__TAURI_INVOKE("hf_auth_save", { request })),
 	hfAuthClear: () => typedError<null, ApiError>(__TAURI_INVOKE("hf_auth_clear")),
+	memoryGet: (request: ConversationRequest) => typedError<MemoryView, ApiError>(__TAURI_INVOKE("memory_get", { request })),
+	memoryAdd: (request: MemoryAddRequest) => typedError<MemoryEditResult, ApiError>(__TAURI_INVOKE("memory_add", { request })),
+	memoryUpdate: (request: MemoryUpdateRequest) => typedError<MemoryEditResult, ApiError>(__TAURI_INVOKE("memory_update", { request })),
+	memoryDelete: (request: MemoryDeleteRequest) => typedError<MemoryEditResult, ApiError>(__TAURI_INVOKE("memory_delete", { request })),
+	memoryPin: (request: MemoryPinRequest) => typedError<MemoryEditResult, ApiError>(__TAURI_INVOKE("memory_pin", { request })),
+	memorySetTemperature: (request: MemoryTemperatureRequest) => typedError<MemoryEditResult, ApiError>(__TAURI_INVOKE("memory_set_temperature", { request })),
+	memorySummaryUpdate: (request: MemorySummaryUpdateRequest) => typedError<MemoryEditResult, ApiError>(__TAURI_INVOKE("memory_summary_update", { request })),
+	memoryTrigger: (request: MemoryTriggerRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("memory_trigger", { request })),
+	memoryRetry: (request: MemoryRetryRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("memory_retry", { request })),
+	memorySkip: (request: MemorySkipRequest) => typedError<null, ApiError>(__TAURI_INVOKE("memory_skip", { request })),
+	memoryCycles: (request: MemoryCyclesRequest) => typedError<MemoryCyclePage, ApiError>(__TAURI_INVOKE("memory_cycles", { request })),
+	memoryCycleRevert: (request: MemoryCycleRevertRequest) => typedError<MemoryEditResult, ApiError>(__TAURI_INVOKE("memory_cycle_revert", { request })),
+	memoryErrorDismiss: (request: MemoryErrorDismissRequest) => typedError<null, ApiError>(__TAURI_INVOKE("memory_error_dismiss", { request })),
+	companionSoulGet: (request: CompanionSoulGetRequest) => typedError<CompanionSoulView, ApiError>(__TAURI_INVOKE("companion_soul_get", { request })),
+	companionSoulGrowthClear: (request: CompanionSoulGrowthClearRequest) => typedError<number, ApiError>(__TAURI_INVOKE("companion_soul_growth_clear", { request })),
+	companionSoulGrowthRemove: (request: CompanionSoulGrowthRemoveRequest) => typedError<boolean, ApiError>(__TAURI_INVOKE("companion_soul_growth_remove", { request })),
+	companionSoulGrowthLock: (request: CompanionSoulGrowthLockRequest) => typedError<boolean, ApiError>(__TAURI_INVOKE("companion_soul_growth_lock", { request })),
+	companionSoulWriterRun: (request: CompanionSoulWriterRunRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("companion_soul_writer_run", { request })),
+	companionNotesList: (request: CompanionNotesRequest) => typedError<CompanionNoteView[], ApiError>(__TAURI_INVOKE("companion_notes_list", { request })),
+	companionNotesUpsert: (request: CompanionNoteUpsertRequest) => typedError<CompanionNoteView, ApiError>(__TAURI_INVOKE("companion_notes_upsert", { request })),
+	companionNotesDelete: (request: CompanionNoteDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("companion_notes_delete", { request })),
+	companionNotesActivePreview: (request: CompanionNotesActivePreviewRequest) => typedError<CompanionNoteView[], ApiError>(__TAURI_INVOKE("companion_notes_active_preview", { request })),
 	embeddingInstall: (request: EmbeddingInstallRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("embedding_install", { request })),
 	companionEmotionInstall: () => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("companion_emotion_install")),
 	embeddingStatus: () => typedError<EmbeddingModelView[], ApiError>(__TAURI_INVOKE("embedding_status")),
@@ -255,7 +277,7 @@ export type ApiError = {
  */
 export type ApiErrorCode = "not_found" | "conflict" | "invalid_input" | "unsupported" | "unavailable" | "cancelled" | "busy" | "internal" | "model_required" | "model_unavailable";
 
-export type ApiErrorDetails = { type: "invalid_field"; field: string } | { type: "captured_audio"; audio: AssetRef } | { type: "audio_provider_in_use"; characters: CharacterReferenceView[] } | { type: "operation_applied_record_deleted"; command: string; record_id: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "image"; failure: ImageFailureKind } | { type: "speech"; failure: SpeechFailure } | { type: "pending_memory_rewind"; conversation_id: string } | { type: "branch_delete_refused"; reason: BranchDeleteRefusal };
+export type ApiErrorDetails = { type: "invalid_field"; field: string } | { type: "captured_audio"; audio: AssetRef } | { type: "audio_provider_in_use"; characters: CharacterReferenceView[] } | { type: "operation_applied_record_deleted"; command: string; record_id: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "image"; failure: ImageFailureKind } | { type: "speech"; failure: SpeechFailure } | { type: "pending_memory_rewind"; conversation_id: string } | { type: "branch_delete_refused"; reason: BranchDeleteRefusal } | { type: "memory_gate"; gate: MemoryGateReason } | { type: "memory_cycle_dependent"; later_run_id: string };
 
 /**
  *  Application-wide events the host broadcasts to every window.
@@ -707,6 +729,107 @@ export type CivitaiVersion = {
 };
 
 export type CompanionEffectStatus = "processing" | "ready" | "failed" | "invalidated";
+
+export type CompanionNoteDeleteRequest = {
+	note_id: string,
+	client_operation_id: string,
+};
+
+export type CompanionNoteRecurrence = "none" | "daily" | "weekly" | "monthly" | "yearly";
+
+/**
+ *  Creates a note, or updates the note `note_id` names. The API assigns the
+ *  id and the timestamps.
+ */
+export type CompanionNoteUpsertRequest = {
+	character_id: string,
+	note_id: string | null,
+	label: string,
+	content: string,
+	available_at: number,
+	expires_at: number | null,
+	recurrence: CompanionNoteRecurrence,
+	recurrence_window_ms: number | null,
+	enabled: boolean,
+	client_operation_id: string,
+};
+
+export type CompanionNoteView = {
+	id: string,
+	character_id: string,
+	label: string,
+	content: string,
+	available_at: number,
+	expires_at: number | null,
+	recurrence: CompanionNoteRecurrence,
+	recurrence_window_ms: number | null,
+	enabled: boolean,
+	created_at: number,
+	updated_at: number,
+};
+
+/**  The notes that apply to the companion at `as_of`, a time the user chose. */
+export type CompanionNotesActivePreviewRequest = {
+	character_id: string,
+	as_of: number,
+};
+
+export type CompanionNotesRequest = {
+	character_id: string,
+};
+
+export type CompanionSoulGetRequest = {
+	character_id: string,
+	conversation_id: string | null,
+};
+
+export type CompanionSoulGrowthClearRequest = {
+	character_id: string,
+	conversation_id: string | null,
+	client_operation_id: string,
+};
+
+export type CompanionSoulGrowthLockRequest = {
+	character_id: string,
+	conversation_id: string | null,
+	fact_id: string,
+	locked: boolean,
+	client_operation_id: string,
+};
+
+export type CompanionSoulGrowthRemoveRequest = {
+	character_id: string,
+	conversation_id: string | null,
+	fact_id: string,
+	client_operation_id: string,
+};
+
+/**
+ *  A companion's authored Soul configuration with the growth the Soul in
+ *  effect for the conversation (or the character) has gathered. `config` is
+ *  the authored configuration document of the character.
+ */
+export type CompanionSoulView = {
+	character_id: string,
+	conversation_id: string | null,
+	config: unknown,
+	growth: SoulGrowthView,
+};
+
+/**
+ *  Asks the Soul writer to draft a Soul from the character's text and the
+ *  unsaved draft. The draft arrives as the job's result; nothing is saved.
+ */
+export type CompanionSoulWriterRunRequest = {
+	character_name: string,
+	character_definition: string | null,
+	character_description: string | null,
+	opening_context: string | null,
+	current_soul: unknown | null,
+	user_notes: string | null,
+	model_profile_id: string | null,
+	client_operation_id: string,
+};
 
 export type ComponentSource = "image_components" | "llm_library" | "image_downloads";
 
@@ -1983,6 +2106,11 @@ export type JobProgressUnit = "bytes" | "items" | "permille";
  *  asked for one, the llama.cpp model it became.
  */
 export type JobResultDto = { type: "voice_created"; voice_id: string } | { type: "artifact_installed" } | { type: "asset"; asset: AssetRef } | { type: "transcription"; transcription: TranscriptionView } | { type: "generation_turn"; turn_id: string } | { type: "conversation"; conversation_id: string } | { type: "group"; group_id: string } | { type: "character"; character_id: string } | { type: "model_profile"; model_profile_id: string } | { type: "model_installed"; model_path: string; model_profile_id: string | null } | { type: "model_pulled"; model: string } | { type: "models_folder_moved"; path: string; moved_entries: number; rewired_models: number } | 
+/**
+ *  The Soul draft a Soul writer job produced, a partial companion
+ *  configuration the caller merges into its unsaved draft.
+ */
+{ type: "companion_soul_draft"; draft: unknown } | 
 /**  The text a help-me-reply or scene prompt job wrote, cleaned. */
 { type: "generated_text"; text: string } | 
 /**  The images an image generation job stored. */
@@ -2476,12 +2604,135 @@ export type LorebooksChange = { type: "set"; ids: string[] } | { type: "reset" }
 
 export type MediaRole = "inline" | "attachment" | "avatar" | "scene" | "reference";
 
+export type MemoryAddRequest = {
+	conversation_id: string,
+	text: string,
+	category: MemoryCategory | null,
+	observed_at: number | null,
+	expected_revision: number,
+	client_operation_id: string,
+};
+
 /**  Why a chat's dynamic memory does not run. */
 export type MemoryBlockedReason = { type: "owed_rewind_failed"; code: MemoryRewindFailureCode };
+
+export type MemoryCategory = "character_trait" | "relationship" | "plot_event" | "preference" | "world_detail" | "other" | "milestone" | "boundary" | "profile" | "routine" | "episodic" | "emotional_snapshot";
+
+export type MemoryCategoryChange = { type: "keep" } | { type: "set"; value: MemoryCategory | null };
+
+export type MemoryCycleAction = {
+	kind: MemoryCycleActionKind,
+	memory_id: string | null,
+	text: string | null,
+};
+
+/**  What one tool call of a cycle did. */
+export type MemoryCycleActionKind = "created" | "duplicate_skipped" | "deleted" | "soft_deleted" | "pinned" | "unpinned" | "target_not_found" | "done" | "rejected" | "skipped" | "stopped_after_done";
+
+export type MemoryCyclePage = {
+	items: MemoryCycleView[],
+	next_cursor: string | null,
+};
+
+export type MemoryCycleRevertRequest = {
+	conversation_id: string,
+	run_id: string,
+	expected_revision: number,
+	client_operation_id: string,
+};
+
+export type MemoryCycleStatus = "queued" | "processing" | "complete" | "failed" | "cancelled" | "interrupted";
+
+/**
+ *  One memory cycle of the activity log, newest first. `blocked_by` names
+ *  the later cycle that started from this one's result and keeps it from
+ *  being reverted.
+ */
+export type MemoryCycleView = {
+	run_id: string,
+	job_id: string,
+	started_at: number,
+	label: string,
+	window_start: number,
+	window_end: number,
+	status: MemoryCycleStatus,
+	failure: MemoryFailureCode | null,
+	summary: string | null,
+	actions: MemoryCycleAction[],
+	reverted: boolean,
+	revertable: boolean,
+	blocked_by: string | null,
+};
+
+export type MemoryCyclesRequest = {
+	conversation_id: string,
+	cursor: string | null,
+	limit: number | null,
+};
+
+export type MemoryDeleteRequest = {
+	conversation_id: string,
+	memory_id: string,
+	expected_revision: number,
+	client_operation_id: string,
+};
+
+export type MemoryEditResult = {
+	revision: number,
+	memory_id: string | null,
+};
+
+export type MemoryErrorDismissRequest = {
+	conversation_id: string,
+	client_operation_id: string,
+};
+
+export type MemoryFailureCode = "embedding_unavailable" | "model_missing" | "model_invalid" | "prompt_missing" | "settings_invalid" | "provider_unavailable" | "provider_rejected" | "empty_response" | "timed_out" | "round_limit" | "tool_failed" | "storage_failure" | "lease_lost" | "internal";
+
+/**
+ *  Why a forced memory cycle cannot start: the conversation does not use
+ *  dynamic memory, the global dynamic memory switch is off, there is no
+ *  dialogue to summarise yet, or a cycle already runs for it.
+ */
+export type MemoryGateReason = "not_dynamic" | "disabled" | "nothing_to_summarise" | "cycle_running";
+
+export type MemoryItemView = {
+	id: string,
+	short_id: string,
+	text: string,
+	category: MemoryCategory | null,
+	origin: MemoryOrigin,
+	pinned: boolean,
+	temperature: MemoryTemperature,
+	observed_at: number | null,
+	observed_time_precision: string | null,
+	token_count: number | null,
+	cycle_label: string | null,
+};
 
 export type MemoryMode = "manual" | "dynamic" | "disabled";
 
 export type MemoryModeChange = { type: "set"; mode: MemoryMode } | { type: "reset" };
+
+export type MemoryObservedAtChange = { type: "keep" } | { type: "set"; value: number | null };
+
+export type MemoryOrigin = "user" | "model" | "import";
+
+export type MemoryPausedReason = "lease_lost";
+
+export type MemoryPinRequest = {
+	conversation_id: string,
+	memory_id: string,
+	pinned: boolean,
+	expected_revision: number,
+	client_operation_id: string,
+};
+
+export type MemoryRetryRequest = {
+	conversation_id: string,
+	model_profile_id: string | null,
+	client_operation_id: string,
+};
 
 /**  Why the memory rewind a delete owes could not finish. */
 export type MemoryRewindFailureCode = "conflict" | "inconsistent" | "storage" | "other";
@@ -2492,6 +2743,74 @@ export type MemoryRewindRetryOutcome = { type: "nothing_owed" } | { type: "compl
 /**  Asks for the memory rewind a chat owes to be finished now. */
 export type MemoryRewindRetryRequest = {
 	conversation_id: string,
+};
+
+export type MemoryRunMode = "auto" | "ask_first" | "manual";
+
+export type MemorySkipRequest = {
+	conversation_id: string,
+	client_operation_id: string,
+};
+
+export type MemoryStatusView = {
+	run_mode: MemoryRunMode,
+	interval: number,
+	messages_since_last_cycle: number,
+	messages_until_next_cycle: number,
+	total_conversation_messages: number,
+	pending_approval_count: number | null,
+	skipped: boolean,
+	latest_cycle_status: MemoryCycleStatus | null,
+	latest_job_id: string | null,
+	failure: MemoryFailureCode | null,
+	paused_reason: MemoryPausedReason | null,
+};
+
+export type MemorySummaryEdit = { type: "set"; text: string } | { type: "clear" };
+
+export type MemorySummaryUpdateRequest = {
+	conversation_id: string,
+	summary: MemorySummaryEdit,
+	expected_revision: number,
+	client_operation_id: string,
+};
+
+export type MemorySummaryView = {
+	text: string,
+	origin: MemoryOrigin,
+	token_count: number | null,
+};
+
+export type MemoryTemperature = "hot" | "cold";
+
+export type MemoryTemperatureRequest = {
+	conversation_id: string,
+	memory_id: string,
+	temperature: MemoryTemperature,
+	expected_revision: number,
+	client_operation_id: string,
+};
+
+export type MemoryTriggerRequest = {
+	conversation_id: string,
+	client_operation_id: string,
+};
+
+export type MemoryUpdateRequest = {
+	conversation_id: string,
+	memory_id: string,
+	text: string | null,
+	category?: MemoryCategoryChange,
+	observed_at?: MemoryObservedAtChange,
+	expected_revision: number,
+	client_operation_id: string,
+};
+
+export type MemoryView = {
+	items: MemoryItemView[],
+	summary: MemorySummaryView | null,
+	status: MemoryStatusView,
+	revision: number,
 };
 
 export type MessageCandidatePage = {
@@ -3369,6 +3688,44 @@ export type SettingSpeakerSelection = {
 	method: SpeakerSelectionMethod,
 	source: SettingSource,
 };
+
+export type SoulCategory = "essence" | "traits" | "backstory" | "appearance" | "goals" | "likes" | "voice" | "relational_style" | "vulnerabilities" | "fears" | "habits" | "boundaries";
+
+export type SoulFactKind = "add" | "adjust" | "authored" | "consolidated";
+
+export type SoulFactPolicy = "current" | "adaptive" | "historical";
+
+export type SoulFactView = {
+	id: string,
+	category: SoulCategory,
+	value: string,
+	kind: SoulFactKind,
+	policy: SoulFactPolicy,
+	slot: string,
+	confidence: number | null,
+	evidence_count: number,
+	weight: number | null,
+	valid_from: number,
+	valid_until: number | null,
+	locked: boolean,
+	created_at: number,
+	superseded_by: string | null,
+	superseded_at: number | null,
+};
+
+export type SoulGrowthView = {
+	owner: SoulOwnerKind,
+	revision: number,
+	active_count: number,
+	superseded_count: number,
+	facts: SoulFactView[],
+};
+
+/**
+ *  Which Soul a view or edit acts on: the character's, shared by all of its
+ *  chats, or one chat's own while the character does not share Soul growth.
+ */
+export type SoulOwnerKind = "character" | "conversation";
 
 export type SpeakerSelectionChange = { type: "set"; method: SpeakerSelectionMethod } | { type: "reset" };
 

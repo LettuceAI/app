@@ -60,7 +60,10 @@ pub enum MemoryCategoryChange {
 pub enum MemoryObservedAtChange {
     #[default]
     Keep,
-    Set(Option<i64>),
+    Set(
+        #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
+        Option<i64>,
+    ),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -78,6 +81,7 @@ pub struct MemoryAddRequest {
     pub conversation_id: String,
     pub text: String,
     pub category: Option<MemoryCategory>,
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
     pub observed_at: Option<i64>,
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub expected_revision: u64,
@@ -257,6 +261,7 @@ pub struct MemoryCycleAction {
 pub struct MemoryCycleView {
     pub run_id: String,
     pub job_id: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub started_at: i64,
     pub label: String,
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
@@ -291,6 +296,7 @@ pub struct MemoryItemView {
     pub origin: MemoryOrigin,
     pub pinned: bool,
     pub temperature: MemoryTemperature,
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
     pub observed_at: Option<i64>,
     pub observed_time_precision: Option<String>,
     pub token_count: Option<u32>,
