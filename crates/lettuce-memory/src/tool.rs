@@ -430,7 +430,7 @@ fn required_string(
 #[serde(deny_unknown_fields)]
 pub struct CreateMemoryPreparation {
     pub id: MemoryId,
-    pub token_count: u32,
+    pub token_count: Option<u32>,
     pub created_at: TimestampMillis,
     /// Qualified evidence supplied by the embedding coordinator, one entry per
     /// existing memory whose similarity passed the threshold. The reducer
@@ -952,7 +952,7 @@ fn apply_create(
         superseded_by: None,
         superseded_at: None,
         supersedes: supersedes.clone(),
-        token_count: Some(preparation.token_count),
+        token_count: preparation.token_count,
         is_cold: false,
         is_pinned: important,
         importance: Score::FULL,
@@ -1774,7 +1774,7 @@ mod tests {
         });
         create.create = Some(CreateMemoryPreparation {
             id: created_id,
-            token_count: 4,
+            token_count: Some(4),
             created_at: TimestampMillis::new(2),
             semantic_duplicates: Vec::new(),
         });
@@ -1808,7 +1808,7 @@ mod tests {
         });
         create.create = Some(CreateMemoryPreparation {
             id: created_id,
-            token_count: 4,
+            token_count: Some(4),
             created_at: TimestampMillis::new(2),
             semantic_duplicates: Vec::new(),
         });
@@ -1853,7 +1853,7 @@ mod tests {
         });
         create.create = Some(CreateMemoryPreparation {
             id: created_id,
-            token_count: 4,
+            token_count: Some(4),
             created_at: TimestampMillis::new(2),
             semantic_duplicates: Vec::new(),
         });
@@ -1910,7 +1910,7 @@ mod tests {
         });
         create.create = Some(CreateMemoryPreparation {
             id: MemoryId::new(),
-            token_count: 1,
+            token_count: Some(1),
             created_at: TimestampMillis::new(43),
             semantic_duplicates: Vec::new(),
         });
@@ -1960,7 +1960,7 @@ mod tests {
         });
         create.create = Some(CreateMemoryPreparation {
             id: MemoryId::new(),
-            token_count: 5,
+            token_count: Some(5),
             created_at: TimestampMillis::new(3),
             semantic_duplicates: vec![
                 evidence(deleted_id, 9_900),
@@ -2005,7 +2005,7 @@ mod tests {
         });
         first.create = Some(CreateMemoryPreparation {
             id: create_id,
-            token_count: 5,
+            token_count: Some(5),
             created_at: TimestampMillis::new(2),
             semantic_duplicates: Vec::new(),
         });
@@ -2034,7 +2034,7 @@ mod tests {
         });
         semantic.create = Some(CreateMemoryPreparation {
             id: MemoryId::new(),
-            token_count: 5,
+            token_count: Some(5),
             created_at: TimestampMillis::new(2),
             semantic_duplicates: vec![super::SemanticDuplicateEvidence {
                 existing_id,
@@ -2116,7 +2116,7 @@ mod tests {
         });
         duplicate.create = Some(CreateMemoryPreparation {
             id: MemoryId::new(),
-            token_count: 3,
+            token_count: Some(3),
             created_at: TimestampMillis::new(2),
             semantic_duplicates: Vec::new(),
         });
@@ -2129,7 +2129,7 @@ mod tests {
         });
         untagged.create = Some(CreateMemoryPreparation {
             id: MemoryId::new(),
-            token_count: 4,
+            token_count: Some(4),
             created_at: TimestampMillis::new(2),
             semantic_duplicates: Vec::new(),
         });
@@ -2172,7 +2172,7 @@ mod tests {
         });
         create.create = Some(CreateMemoryPreparation {
             id: create_id,
-            token_count: 7,
+            token_count: Some(7),
             created_at: TimestampMillis::new(4),
             semantic_duplicates: Vec::new(),
         });
@@ -2249,7 +2249,7 @@ mod tests {
         });
         create.create = Some(CreateMemoryPreparation {
             id: MemoryId::new(),
-            token_count: 3,
+            token_count: Some(3),
             created_at: TimestampMillis::new(2),
             semantic_duplicates: vec![super::SemanticDuplicateEvidence {
                 existing_id: existing.id,
@@ -2585,7 +2585,7 @@ mod tests {
         });
         create.create = Some(CreateMemoryPreparation {
             id: create_id,
-            token_count: 8,
+            token_count: Some(8),
             created_at: TimestampMillis::new(9_000),
             semantic_duplicates: Vec::new(),
         });

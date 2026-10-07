@@ -1306,7 +1306,17 @@ const fn storage() -> CompanionMemoryHostError {
 }
 
 /// The validated memory text's tokens are counted with the embedding
-/// tokenizer; zero is stored when counting fails.
+/// tokenizer; the count stays unknown when counting fails and is counted
+/// later.
+fn seed_token_count<E: MemoryEmbeddingEngine + ?Sized>(
+    engine: &E,
+    arguments: &serde_json::Value,
+) -> Option<u32> {
+    let text = arguments.get("text").and_then(serde_json::Value::as_str)?;
+    let counted = lettuce_memory::normalize_memory_text(text).unwrap_or_else(|_| text.to_owned());
+    engine.count_tokens(&counted).ok()
+}
+
 fn create_seeds<E: MemoryEmbeddingEngine + ?Sized>(
     engine: &E,
     round: &lettuce_memory::DynamicMemoryInferenceRound,
@@ -1317,17 +1327,7 @@ fn create_seeds<E: MemoryEmbeddingEngine + ?Sized>(
         .iter()
         .filter(|call| call.call.name == "create_memory")
         .map(|call| {
-            let token_count = call
-                .call
-                .arguments
-                .get("text")
-                .and_then(serde_json::Value::as_str)
-                .map(|text| {
-                    let counted = lettuce_memory::normalize_memory_text(text)
-                        .unwrap_or_else(|_| text.to_owned());
-                    engine.count_tokens(&counted).unwrap_or(0)
-                })
-                .unwrap_or(0);
+            let token_count = seed_token_count(engine, &call.call.arguments);
             MemoryCreateSeed {
                 execution_id: call.id,
                 id: MemoryId::new(),
@@ -1410,6 +1410,41 @@ mod tests {
             .operation
             .top_k,
             ParameterOverride::Clear
+        );
+    }
+
+    struct Counter(Option<u32>);
+
+    impl crate::MemoryEmbeddingEngine for Counter {
+        fn source_revision(&self) -> &str {
+            "counter"
+        }
+        fn dimensions(&self) -> lettuce_embeddings::EmbeddingDimensions {
+            lettuce_embeddings::EmbeddingDimensions::D64
+        }
+        fn count_tokens(&self, _: &str) -> Result<u32, crate::EmbeddingGenerationError> {
+            self.0.ok_or(crate::EmbeddingGenerationError::Unavailable)
+        }
+        fn embed_memory(
+            &self,
+            _: &lettuce_embeddings::EmbeddingRequest,
+            _: &lettuce_jobs::handle::CancellationToken,
+        ) -> Result<lettuce_embeddings::EmbeddingVector, crate::EmbeddingGenerationError> {
+            Err(crate::EmbeddingGenerationError::Unavailable)
+        }
+    }
+
+    #[test]
+    fn a_model_created_memory_keeps_an_unknown_count_without_a_tokenizer() {
+        let arguments = serde_json::json!({"text": "The user keeps bees"});
+        assert_eq!(super::seed_token_count(&Counter(None), &arguments), None);
+        assert_eq!(
+            super::seed_token_count(&Counter(Some(5)), &arguments),
+            Some(5)
+        );
+        assert_eq!(
+            super::seed_token_count(&Counter(Some(5)), &serde_json::json!({})),
+            None
         );
     }
 }

@@ -254,8 +254,8 @@ async fn soul_commands_act_on_the_conversation_soul_or_the_shared_character_soul
                 dto::SoulOwnerKind::Conversation
             }
         );
-        assert_eq!(in_copy.config["soul"]["essence"], "");
-        assert_eq!(in_copy.config["authoredFacts"][0]["id"], "authored-fact");
+        assert_eq!(in_copy.config.soul.essence, "");
+        assert_eq!(in_copy.config.authored_facts[0].id, "authored-fact");
         assert_eq!(in_copy.growth.facts.len(), 1);
         assert_eq!(in_copy.growth.active_count, 1);
         assert_eq!(in_copy.growth.superseded_count, 0);
@@ -387,15 +387,38 @@ impl JobEventSink for RecordingJob {
     }
 }
 
-const SOUL_REPLY: &str = r#"{"operations":[{"name":"set_identity","arguments":{"traits":"Patient and observant"}},{"name":"done","arguments":{}}]}"#;
+const SOUL_REPLY: &str = r#"{"operations":[{"name":"set_identity","arguments":{"traits":"Patient and observant"}},{"name":"set_authored_facts","arguments":{"facts":[{"category":"backstory","value":"Raised by the sea","policy":"historical","slot":"origin","confidence":1.0}]}},{"name":"done","arguments":{}}]}"#;
 
-fn writer(key: &str) -> dto::CompanionSoulWriterRunRequest {
+async fn base_draft(harness: &Harness) -> dto::CompanionSoulDraft {
+    let character = companion(harness, "Draft base", true);
+    let view = companion_soul_get(
+        &harness.context,
+        dto::CompanionSoulGetRequest {
+            character_id: character.to_string(),
+            conversation_id: None,
+        },
+    )
+    .await
+    .expect("soul");
+    let mut soul = view.config.soul;
+    soul.traits = "Careful".into();
+    dto::CompanionSoulDraft {
+        soul,
+        authored_facts: vec![],
+        relationship_defaults: view.config.relationship_defaults,
+    }
+}
+
+fn writer(
+    key: &str,
+    current_soul: Option<dto::CompanionSoulDraft>,
+) -> dto::CompanionSoulWriterRunRequest {
     dto::CompanionSoulWriterRunRequest {
         character_name: "Mira".into(),
         character_definition: Some("A careful traveller".into()),
         character_description: None,
         opening_context: Some("At the station".into()),
-        current_soul: Some(serde_json::json!({"soul": {"traits": "Careful"}})),
+        current_soul,
         user_notes: None,
         model_profile_id: None,
         client_operation_id: key.into(),
@@ -405,17 +428,19 @@ fn writer(key: &str) -> dto::CompanionSoulWriterRunRequest {
 #[tokio::test(flavor = "multi_thread")]
 async fn the_soul_writer_streams_deltas_and_completes_with_its_draft() {
     let harness = harness(Reply::Text(SOUL_REPLY));
+    let draft = Some(base_draft(&harness).await);
     let mut feed = JobFeed::start(&harness.context).await.expect("feed");
-    let accepted = companion_soul_writer_run(&harness.context, writer("soul-writer"))
-        .await
-        .expect("accepted");
+    let accepted =
+        companion_soul_writer_run(&harness.context, writer("soul-writer", draft.clone()))
+            .await
+            .expect("accepted");
     assert_eq!(
-        companion_soul_writer_run(&harness.context, writer("soul-writer"))
+        companion_soul_writer_run(&harness.context, writer("soul-writer", draft.clone()))
             .await
             .expect("replay"),
         accepted
     );
-    let mut changed = writer("soul-writer");
+    let mut changed = writer("soul-writer", draft.clone());
     changed.character_name = "Someone else".into();
     assert_eq!(
         companion_soul_writer_run(&harness.context, changed)
@@ -450,7 +475,10 @@ async fn the_soul_writer_streams_deltas_and_completes_with_its_draft() {
     match events.last().expect("a last event") {
         dto::JobEvent::Completed { job } => match job.result.as_ref().expect("a result") {
             dto::JobResultDto::CompanionSoulDraft { draft } => {
-                assert_eq!(draft["soul"]["traits"], "Patient and observant");
+                assert_eq!(draft.soul.traits, "Patient and observant");
+                assert_eq!(draft.authored_facts.len(), 1);
+                assert_eq!(draft.authored_facts[0].value, "Raised by the sea");
+                assert_eq!(draft.authored_facts[0].kind, dto::SoulFactKind::Authored);
             }
             other => panic!("expected a Soul draft, got {other:?}"),
         },
@@ -477,7 +505,7 @@ async fn the_soul_writer_names_a_missing_model_and_a_blank_name() {
     let stored = lettuce_settings::GlobalSettingsStore::load(database).expect("settings");
     lettuce_settings::GlobalSettingsStore::save(database, stored.settings, None, stored.revision)
         .expect("no default model");
-    let error = companion_soul_writer_run(&harness.context, writer("soul-no-model"))
+    let error = companion_soul_writer_run(&harness.context, writer("soul-no-model", None))
         .await
         .expect_err("no model");
     assert_eq!(error.code, ApiErrorCode::InvalidInput);
@@ -487,7 +515,7 @@ async fn the_soul_writer_names_a_missing_model_and_a_blank_name() {
             field: "model_profile_id".into()
         })
     );
-    let mut blank = writer("soul-blank");
+    let mut blank = writer("soul-blank", None);
     blank.character_name = "  ".into();
     assert_eq!(
         companion_soul_writer_run(&harness.context, blank)

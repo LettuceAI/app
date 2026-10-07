@@ -166,9 +166,227 @@ fn fact_view(fact: &SoulFact) -> dto::SoulFactView {
         valid_until: fact.valid_until.map(TimestampMillis::get),
         locked: fact.locked,
         created_at: fact.created_at.get(),
+        source_memory_ids: fact.source_memory_ids.clone(),
+        supersedes: fact.supersedes.clone(),
         superseded_by: fact.superseded_by.clone(),
         superseded_at: fact.superseded_at.map(TimestampMillis::get),
     }
+}
+
+fn emotion_view(value: &lettuce_companions::EmotionVector) -> dto::CompanionEmotionVector {
+    dto::CompanionEmotionVector {
+        warmth: value.warmth,
+        trust: value.trust,
+        calm: value.calm,
+        vulnerability: value.vulnerability,
+        longing: value.longing,
+        hurt: value.hurt,
+        tension: value.tension,
+        irritation: value.irritation,
+        affection_intensity: value.affection_intensity,
+        reassurance_need: value.reassurance_need,
+    }
+}
+
+fn emotion_from(value: &dto::CompanionEmotionVector) -> lettuce_companions::EmotionVector {
+    lettuce_companions::EmotionVector {
+        warmth: value.warmth,
+        trust: value.trust,
+        calm: value.calm,
+        vulnerability: value.vulnerability,
+        longing: value.longing,
+        hurt: value.hurt,
+        tension: value.tension,
+        irritation: value.irritation,
+        affection_intensity: value.affection_intensity,
+        reassurance_need: value.reassurance_need,
+    }
+}
+
+fn regulation_view(value: &lettuce_companions::RegulationStyle) -> dto::CompanionRegulationStyle {
+    dto::CompanionRegulationStyle {
+        suppression: value.suppression,
+        volatility: value.volatility,
+        recovery_speed: value.recovery_speed,
+        conflict_avoidance: value.conflict_avoidance,
+        reassurance_seeking: value.reassurance_seeking,
+        protest_behavior: value.protest_behavior,
+        emotional_transparency: value.emotional_transparency,
+        attachment_activation: value.attachment_activation,
+        pride: value.pride,
+    }
+}
+
+fn regulation_from(value: &dto::CompanionRegulationStyle) -> lettuce_companions::RegulationStyle {
+    lettuce_companions::RegulationStyle {
+        suppression: value.suppression,
+        volatility: value.volatility,
+        recovery_speed: value.recovery_speed,
+        conflict_avoidance: value.conflict_avoidance,
+        reassurance_seeking: value.reassurance_seeking,
+        protest_behavior: value.protest_behavior,
+        emotional_transparency: value.emotional_transparency,
+        attachment_activation: value.attachment_activation,
+        pride: value.pride,
+    }
+}
+
+fn identity_view(value: &lettuce_companions::CompanionSoulIdentity) -> dto::CompanionSoulIdentity {
+    dto::CompanionSoulIdentity {
+        essence: value.essence.clone(),
+        traits: value.traits.clone(),
+        backstory: value.backstory.clone(),
+        appearance: value.appearance.clone(),
+        goals: value.goals.clone(),
+        likes: value.likes.clone(),
+        voice: value.voice.clone(),
+        relational_style: value.relational_style.clone(),
+        vulnerabilities: value.vulnerabilities.clone(),
+        fears: value.fears.clone(),
+        habits: value.habits.clone(),
+        boundaries: value.boundaries.clone(),
+        baseline_affect: emotion_view(&value.baseline_affect),
+        regulation_style: regulation_view(&value.regulation_style),
+    }
+}
+
+fn identity_from(value: &dto::CompanionSoulIdentity) -> lettuce_companions::CompanionSoulIdentity {
+    lettuce_companions::CompanionSoulIdentity {
+        essence: value.essence.clone(),
+        traits: value.traits.clone(),
+        backstory: value.backstory.clone(),
+        appearance: value.appearance.clone(),
+        goals: value.goals.clone(),
+        likes: value.likes.clone(),
+        voice: value.voice.clone(),
+        relational_style: value.relational_style.clone(),
+        vulnerabilities: value.vulnerabilities.clone(),
+        fears: value.fears.clone(),
+        habits: value.habits.clone(),
+        boundaries: value.boundaries.clone(),
+        baseline_affect: emotion_from(&value.baseline_affect),
+        regulation_style: regulation_from(&value.regulation_style),
+    }
+}
+
+fn defaults_view(
+    value: &lettuce_companions::RelationshipDefaults,
+) -> dto::CompanionRelationshipDefaults {
+    dto::CompanionRelationshipDefaults {
+        closeness: value.closeness,
+        trust: value.trust,
+        affection: value.affection,
+        tension: value.tension,
+    }
+}
+
+fn defaults_from(
+    value: &dto::CompanionRelationshipDefaults,
+) -> lettuce_companions::RelationshipDefaults {
+    lettuce_companions::RelationshipDefaults {
+        closeness: value.closeness,
+        trust: value.trust,
+        affection: value.affection,
+        tension: value.tension,
+    }
+}
+
+fn fact_from(view: &dto::SoulFactView) -> SoulFact {
+    use lettuce_companions as c;
+    SoulFact {
+        id: view.id.clone(),
+        category: match view.category {
+            dto::SoulCategory::Essence => c::SoulCategory::Essence,
+            dto::SoulCategory::Traits => c::SoulCategory::Traits,
+            dto::SoulCategory::Backstory => c::SoulCategory::Backstory,
+            dto::SoulCategory::Appearance => c::SoulCategory::Appearance,
+            dto::SoulCategory::Goals => c::SoulCategory::Goals,
+            dto::SoulCategory::Likes => c::SoulCategory::Likes,
+            dto::SoulCategory::Voice => c::SoulCategory::Voice,
+            dto::SoulCategory::RelationalStyle => c::SoulCategory::RelationalStyle,
+            dto::SoulCategory::Vulnerabilities => c::SoulCategory::Vulnerabilities,
+            dto::SoulCategory::Fears => c::SoulCategory::Fears,
+            dto::SoulCategory::Habits => c::SoulCategory::Habits,
+            dto::SoulCategory::Boundaries => c::SoulCategory::Boundaries,
+        },
+        value: view.value.clone(),
+        kind: match view.kind {
+            dto::SoulFactKind::Add => c::SoulFactKind::Add,
+            dto::SoulFactKind::Adjust => c::SoulFactKind::Adjust,
+            dto::SoulFactKind::Authored => c::SoulFactKind::Authored,
+            dto::SoulFactKind::Consolidated => c::SoulFactKind::Consolidated,
+        },
+        policy: match view.policy {
+            dto::SoulFactPolicy::Current => c::SoulFactPolicy::Current,
+            dto::SoulFactPolicy::Adaptive => c::SoulFactPolicy::Adaptive,
+            dto::SoulFactPolicy::Historical => c::SoulFactPolicy::Historical,
+        },
+        slot: view.slot.clone(),
+        confidence: view.confidence,
+        evidence_count: view.evidence_count,
+        weight: view.weight,
+        valid_from: TimestampMillis::new(view.valid_from),
+        valid_until: view.valid_until.map(TimestampMillis::new),
+        locked: view.locked,
+        source_memory_ids: view.source_memory_ids.clone(),
+        created_at: TimestampMillis::new(view.created_at),
+        supersedes: view.supersedes.clone(),
+        superseded_by: view.superseded_by.clone(),
+        superseded_at: view.superseded_at.map(TimestampMillis::new),
+    }
+}
+
+fn config_view(config: &CompanionSoulConfig) -> dto::CompanionSoulConfigView {
+    dto::CompanionSoulConfigView {
+        soul: identity_view(&config.soul),
+        authored_facts: config.authored_facts.iter().map(fact_view).collect(),
+        relationship_defaults: defaults_view(&config.relationship_defaults),
+        prompting: dto::CompanionPrompting {
+            prompt_template_id: config.prompting.prompt_template_id.map(|id| id.to_string()),
+            style_notes: config.prompting.style_notes.clone(),
+        },
+        time_awareness: config.time_awareness,
+        share_memory_across_chats: config.share_memory_across_chats,
+        share_soul_growth_across_chats: config.share_soul_growth_across_chats,
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DraftDocument {
+    #[serde(default)]
+    soul: lettuce_companions::CompanionSoulIdentity,
+    #[serde(default)]
+    authored_facts: Vec<SoulFact>,
+    #[serde(default)]
+    relationship_defaults: lettuce_companions::RelationshipDefaults,
+}
+
+/// The typed draft of a Soul writer document.
+pub(crate) fn draft_from_document(
+    document: serde_json::Value,
+) -> Result<dto::CompanionSoulDraft, ApiError> {
+    let document: DraftDocument = serde_json::from_value(document)
+        .map_err(|_| api_error(ApiErrorCode::Internal, "the Soul draft is invalid"))?;
+    Ok(dto::CompanionSoulDraft {
+        soul: identity_view(&document.soul),
+        authored_facts: document.authored_facts.iter().map(fact_view).collect(),
+        relationship_defaults: defaults_view(&document.relationship_defaults),
+    })
+}
+
+fn draft_document(draft: &dto::CompanionSoulDraft) -> Result<serde_json::Value, ApiError> {
+    serde_json::to_value(DraftDocument {
+        soul: identity_from(&draft.soul),
+        authored_facts: draft.authored_facts.iter().map(fact_from).collect(),
+        relationship_defaults: defaults_from(&draft.relationship_defaults),
+    })
+    .map_err(|_| {
+        api_error(
+            ApiErrorCode::Internal,
+            "the Soul draft could not be encoded",
+        )
+    })
 }
 
 /// The companion's authored Soul configuration together with the growth of
@@ -198,12 +416,7 @@ pub async fn companion_soul_get(
             Ok(dto::CompanionSoulView {
                 character_id: target.character_id.to_string(),
                 conversation_id: target.conversation_id.map(|id| id.to_string()),
-                config: serde_json::to_value(&target.config).map_err(|_| {
-                    api_error(
-                        ApiErrorCode::Internal,
-                        "the Soul configuration could not be encoded",
-                    )
-                })?,
+                config: config_view(&target.config),
                 growth: dto::SoulGrowthView {
                     owner: match target.owner {
                         SoulOwner::Character(_) => dto::SoulOwnerKind::Character,
@@ -376,6 +589,11 @@ pub async fn companion_soul_writer_run(
                 return Err(invalid_field("character_name", "the character needs a name"));
             }
             let database = context.backend().database();
+            let current_soul = request
+                .current_soul
+                .as_ref()
+                .map(draft_document)
+                .transpose()?;
             let stored = GlobalSettingsStore::load(database)
                 .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?;
             let configured = stored.settings.companion_soul_writer;
@@ -438,7 +656,7 @@ pub async fn companion_soul_writer_run(
                     character_definition: request.character_definition.as_deref(),
                     character_description: request.character_description.as_deref(),
                     opening_context: request.opening_context.as_deref(),
-                    current_soul: request.current_soul.as_ref(),
+                    current_soul: current_soul.as_ref(),
                     user_notes: request.user_notes.as_deref(),
                     fallback_format: match configured.structured_fallback_format {
                         lettuce_settings::MemoryStructuredFallbackFormat::Json => {

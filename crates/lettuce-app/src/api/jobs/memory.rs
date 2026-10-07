@@ -394,10 +394,11 @@ pub(super) fn soul_draft_view(
         .database()
         .load_companion_soul_writer_run(*request_id)
         .map_err(internal)?;
+    let document = run
+        .rounds
+        .last()
+        .map_or(run.starting_draft, |round| round.resulting_draft.clone());
     Ok(Some(lettuce_contracts::JobResultDto::CompanionSoulDraft {
-        draft: run
-            .rounds
-            .last()
-            .map_or(run.starting_draft, |round| round.resulting_draft.clone()),
+        draft: crate::api::companion::draft_from_document(document)?,
     }))
 }

@@ -32,7 +32,7 @@ pub enum PreparedMemoryProjection {
 pub struct MemoryCreateSeed {
     pub execution_id: ToolExecutionId,
     pub id: MemoryId,
-    pub token_count: u32,
+    pub token_count: Option<u32>,
     pub created_at: TimestampMillis,
 }
 
@@ -473,7 +473,7 @@ mod tests {
             &[MemoryCreateSeed {
                 execution_id: call.id,
                 id: MemoryId::new(),
-                token_count: 4,
+                token_count: Some(4),
                 created_at: TimestampMillis::new(4),
             }],
             Score::from_basis_points(9_000).expect("score"),
@@ -626,7 +626,7 @@ mod tests {
         let seeds = [&first, &second].map(|call| MemoryCreateSeed {
             execution_id: call.id,
             id: MemoryId::new(),
-            token_count: 4,
+            token_count: Some(4),
             created_at: TimestampMillis::new(4),
         });
         let (claim, handle) = admitted_embedding_job();

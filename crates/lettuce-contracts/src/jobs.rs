@@ -192,7 +192,7 @@ pub struct JobFailureDto {
 /// What a finished job produced, where the job kind has a typed result.
 /// `ModelInstalled` names a downloaded model's path and, when the download
 /// asked for one, the llama.cpp model it became.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum JobResultDto {
@@ -233,11 +233,10 @@ pub enum JobResultDto {
         moved_entries: u32,
         rewired_models: u32,
     },
-    /// The Soul draft a Soul writer job produced, a partial companion
-    /// configuration the caller merges into its unsaved draft.
+    /// The Soul draft a Soul writer job produced, which the caller merges
+    /// into its unsaved draft.
     CompanionSoulDraft {
-        #[cfg_attr(feature = "specta", specta(type = specta_typescript::Unknown))]
-        draft: serde_json::Value,
+        draft: crate::CompanionSoulDraft,
     },
     /// The text a help-me-reply or scene prompt job wrote, cleaned.
     GeneratedText {
@@ -266,7 +265,7 @@ pub enum JobResultDto {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct JobView {
@@ -297,7 +296,7 @@ pub struct JobsListRequest {
     pub limit: Option<u32>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct JobPage {
@@ -336,7 +335,7 @@ pub struct JobAccepted {
 
 /// The stream `job_watch` attaches. It starts with the job's current state;
 /// `Completed`, `Failed` and `Cancelled` are the last event.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum JobEvent {

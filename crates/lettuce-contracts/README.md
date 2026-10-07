@@ -49,3 +49,5 @@ Forced memory cycles take the conversation and an operation key; a retry may nam
 Companion commands return the authored Soul configuration as a document next to the growth facts of the Soul in effect (`companion_soul_get`), edit growth by fact id, queue the Soul writer as a job whose result is a `CompanionSoulDraft` document, and manage scheduled notes with API-assigned ids and timestamps. A missing character is `NotFound` and a character that is not a companion is `Unsupported`.
 
 A revert refused because the user edited an item the cycle changed carries `ApiErrorDetails::MemoryCycleUserEdited` with that memory's id.
+
+`companion_soul_get` returns the authored Soul configuration as a typed `CompanionSoulConfigView` (identity text, baseline affect, regulation style, authored facts, relationship defaults, prompting and the sharing toggles) derived from the companion domain type, and the Soul writer takes and returns the typed `CompanionSoulDraft`. Contracts hold no free-form JSON for them.

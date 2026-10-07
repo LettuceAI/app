@@ -412,7 +412,7 @@ mod tests {
             execution_id: calls[0].id,
             preparation: CreateMemoryPreparation {
                 id: memory_id,
-                token_count: 4,
+                token_count: Some(4),
                 created_at: TimestampMillis::new(1),
                 semantic_duplicates: Vec::new(),
             },
@@ -535,7 +535,7 @@ mod tests {
                 execution_id: call.id,
                 preparation: CreateMemoryPreparation {
                     id: MemoryId::new(),
-                    token_count: 4,
+                    token_count: Some(4),
                     created_at: TimestampMillis::new(1),
                     semantic_duplicates: Vec::new(),
                 },
@@ -580,7 +580,7 @@ mod tests {
                 execution_id: unanchored.id,
                 preparation: CreateMemoryPreparation {
                     id: MemoryId::new(),
-                    token_count: 4,
+                    token_count: Some(4),
                     created_at: TimestampMillis::new(1),
                     semantic_duplicates: Vec::new(),
                 },
@@ -610,7 +610,7 @@ mod tests {
                 execution_id: call.id,
                 preparation: CreateMemoryPreparation {
                     id: MemoryId::new(),
-                    token_count: 4,
+                    token_count: Some(4),
                     created_at: TimestampMillis::new(1),
                     semantic_duplicates: Vec::new(),
                 },

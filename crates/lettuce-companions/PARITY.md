@@ -47,3 +47,5 @@ Facts about how `lettuce-companions` relates to the legacy app (2.2.x). The crat
 - The previous README said "Foundation scaffolding is active"; the crate has since filled in the domain described in the README.
 
 Legacy returned two different error texts for a missing character and a non-companion character when saving a scheduled note (`old-code/src-tauri/src/storage_manager/companion_scheduled_notes.rs:263-281,391-458`); the rewrite storage had folded both into `Invalid`, and now keeps them apart as `CharacterNotFound` and `NotCompanion`.
+
+Authored facts a Soul-writer round proposes get ids derived from their content and the round time. Random ids made the stored run fail its own replay check, so any round that set authored facts could not be saved.

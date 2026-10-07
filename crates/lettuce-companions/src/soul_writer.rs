@@ -991,7 +991,11 @@ fn parse_authored_fact(fact: &Value, now: TimestampMillis) -> Option<AuthoredFac
         return None;
     }
     Some(AuthoredFact {
-        id: uuid::Uuid::new_v4().to_string(),
+        id: uuid::Uuid::new_v5(
+            &uuid::Uuid::NAMESPACE_OID,
+            format!("soul-fact\0{category}\0{slot}\0{value}\0{}", now.get()).as_bytes(),
+        )
+        .to_string(),
         category: category.to_owned(),
         value: value.to_owned(),
         kind: "authored".to_owned(),
@@ -1048,6 +1052,28 @@ fn apply_numeric_section(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn authored_fact_ids_are_stable_across_reductions() {
+        let calls = vec![call(
+            SET_AUTHORED_FACTS_TOOL_NAME,
+            json!({"facts": [{
+                "category": "backstory",
+                "value": "Raised by the sea",
+                "policy": "historical",
+                "slot": "origin",
+                "confidence": 1.0
+            }]}),
+        )];
+        let now = TimestampMillis::new(10);
+        let first = reduce_soul_writer_calls(None, &calls, now);
+        let second = reduce_soul_writer_calls(None, &calls, now);
+        assert_eq!(first.draft, second.draft);
+        assert_eq!(
+            first.draft["authoredFacts"].as_array().map(Vec::len),
+            Some(1)
+        );
+    }
 
     fn call(name: &str, arguments: Value) -> ProposedToolCall {
         ProposedToolCall {

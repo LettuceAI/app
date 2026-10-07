@@ -7,7 +7,7 @@ mod app;
 mod assets;
 mod branches;
 mod characters;
-mod companion;
+pub(crate) mod companion;
 mod context;
 mod conversation_delete;
 mod conversation_feed;

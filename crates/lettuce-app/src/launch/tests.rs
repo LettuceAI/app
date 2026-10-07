@@ -2697,7 +2697,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                     vec![crate::MemoryCreateSeed {
                         execution_id: round.calls[0].id,
                         id: memory_id,
-                        token_count: 5,
+                        token_count: Some(5),
                         created_at: TimestampMillis::new(NOW.get() + 12),
                     }]
                 } else {
@@ -11760,7 +11760,7 @@ async fn companion_memory_loop_replays_two_round_checkpoint_without_duplicate_wo
                     vec![crate::MemoryCreateSeed {
                         execution_id: create_id,
                         id: memory_id,
-                        token_count: 4,
+                        token_count: Some(4),
                         created_at: TimestampMillis::new(1_013),
                     }]
                 } else {
@@ -11873,7 +11873,7 @@ async fn companion_memory_loop_replays_two_round_checkpoint_without_duplicate_wo
                     vec![crate::MemoryCreateSeed {
                         execution_id: repair_create_id,
                         id: repaired_memory_id,
-                        token_count: 4,
+                        token_count: Some(4),
                         created_at: TimestampMillis::new(1_101),
                     }]
                 } else {

@@ -159,7 +159,7 @@ pub struct ApiError {
 /// adoption (open views re-read their missing models). `MessageEffectSettled`
 /// and `MessageSceneImageChanged` follow a message's companion effect and
 /// scene image follow-up.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ApiEvent {

@@ -277,7 +277,7 @@ export type ApiError = {
  */
 export type ApiErrorCode = "not_found" | "conflict" | "invalid_input" | "unsupported" | "unavailable" | "cancelled" | "busy" | "internal" | "model_required" | "model_unavailable";
 
-export type ApiErrorDetails = { type: "invalid_field"; field: string } | { type: "captured_audio"; audio: AssetRef } | { type: "audio_provider_in_use"; characters: CharacterReferenceView[] } | { type: "operation_applied_record_deleted"; command: string; record_id: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "image"; failure: ImageFailureKind } | { type: "speech"; failure: SpeechFailure } | { type: "pending_memory_rewind"; conversation_id: string } | { type: "branch_delete_refused"; reason: BranchDeleteRefusal } | { type: "memory_gate"; gate: MemoryGateReason } | { type: "memory_cycle_dependent"; later_run_id: string };
+export type ApiErrorDetails = { type: "invalid_field"; field: string } | { type: "captured_audio"; audio: AssetRef } | { type: "audio_provider_in_use"; characters: CharacterReferenceView[] } | { type: "operation_applied_record_deleted"; command: string; record_id: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "image"; failure: ImageFailureKind } | { type: "speech"; failure: SpeechFailure } | { type: "pending_memory_rewind"; conversation_id: string } | { type: "branch_delete_refused"; reason: BranchDeleteRefusal } | { type: "memory_gate"; gate: MemoryGateReason } | { type: "memory_cycle_dependent"; later_run_id: string } | { type: "memory_cycle_user_edited"; memory_id: string };
 
 /**
  *  Application-wide events the host broadcasts to every window.
@@ -730,6 +730,19 @@ export type CivitaiVersion = {
 
 export type CompanionEffectStatus = "processing" | "ready" | "failed" | "invalidated";
 
+export type CompanionEmotionVector = {
+	warmth: number | null,
+	trust: number | null,
+	calm: number | null,
+	vulnerability: number | null,
+	longing: number | null,
+	hurt: number | null,
+	tension: number | null,
+	irritation: number | null,
+	affection_intensity: number | null,
+	reassurance_need: number | null,
+};
+
 export type CompanionNoteDeleteRequest = {
 	note_id: string,
 	client_operation_id: string,
@@ -778,6 +791,51 @@ export type CompanionNotesRequest = {
 	character_id: string,
 };
 
+export type CompanionPrompting = {
+	prompt_template_id: string | null,
+	style_notes: string,
+};
+
+export type CompanionRegulationStyle = {
+	suppression: number | null,
+	volatility: number | null,
+	recovery_speed: number | null,
+	conflict_avoidance: number | null,
+	reassurance_seeking: number | null,
+	protest_behavior: number | null,
+	emotional_transparency: number | null,
+	attachment_activation: number | null,
+	pride: number | null,
+};
+
+export type CompanionRelationshipDefaults = {
+	closeness: number | null,
+	trust: number | null,
+	affection: number | null,
+	tension: number | null,
+};
+
+/**  The authored configuration of a companion character. */
+export type CompanionSoulConfigView = {
+	soul: CompanionSoulIdentity,
+	authored_facts: SoulFactView[],
+	relationship_defaults: CompanionRelationshipDefaults,
+	prompting: CompanionPrompting,
+	time_awareness: boolean,
+	share_memory_across_chats: boolean,
+	share_soul_growth_across_chats: boolean,
+};
+
+/**
+ *  What the Soul writer drafts and takes as the draft to refine: the Soul
+ *  identity, the authored facts and the relationship defaults.
+ */
+export type CompanionSoulDraft = {
+	soul: CompanionSoulIdentity,
+	authored_facts: SoulFactView[],
+	relationship_defaults: CompanionRelationshipDefaults,
+};
+
 export type CompanionSoulGetRequest = {
 	character_id: string,
 	conversation_id: string | null,
@@ -804,15 +862,31 @@ export type CompanionSoulGrowthRemoveRequest = {
 	client_operation_id: string,
 };
 
+export type CompanionSoulIdentity = {
+	essence: string,
+	traits: string,
+	backstory: string,
+	appearance: string,
+	goals: string,
+	likes: string,
+	voice: string,
+	relational_style: string,
+	vulnerabilities: string,
+	fears: string,
+	habits: string,
+	boundaries: string,
+	baseline_affect: CompanionEmotionVector,
+	regulation_style: CompanionRegulationStyle,
+};
+
 /**
  *  A companion's authored Soul configuration with the growth the Soul in
- *  effect for the conversation (or the character) has gathered. `config` is
- *  the authored configuration document of the character.
+ *  effect for the conversation (or the character) has gathered.
  */
 export type CompanionSoulView = {
 	character_id: string,
 	conversation_id: string | null,
-	config: unknown,
+	config: CompanionSoulConfigView,
 	growth: SoulGrowthView,
 };
 
@@ -825,7 +899,7 @@ export type CompanionSoulWriterRunRequest = {
 	character_definition: string | null,
 	character_description: string | null,
 	opening_context: string | null,
-	current_soul: unknown | null,
+	current_soul: CompanionSoulDraft | null,
 	user_notes: string | null,
 	model_profile_id: string | null,
 	client_operation_id: string,
@@ -2107,10 +2181,10 @@ export type JobProgressUnit = "bytes" | "items" | "permille";
  */
 export type JobResultDto = { type: "voice_created"; voice_id: string } | { type: "artifact_installed" } | { type: "asset"; asset: AssetRef } | { type: "transcription"; transcription: TranscriptionView } | { type: "generation_turn"; turn_id: string } | { type: "conversation"; conversation_id: string } | { type: "group"; group_id: string } | { type: "character"; character_id: string } | { type: "model_profile"; model_profile_id: string } | { type: "model_installed"; model_path: string; model_profile_id: string | null } | { type: "model_pulled"; model: string } | { type: "models_folder_moved"; path: string; moved_entries: number; rewired_models: number } | 
 /**
- *  The Soul draft a Soul writer job produced, a partial companion
- *  configuration the caller merges into its unsaved draft.
+ *  The Soul draft a Soul writer job produced, which the caller merges
+ *  into its unsaved draft.
  */
-{ type: "companion_soul_draft"; draft: unknown } | 
+{ type: "companion_soul_draft"; draft: CompanionSoulDraft } | 
 /**  The text a help-me-reply or scene prompt job wrote, cleaned. */
 { type: "generated_text"; text: string } | 
 /**  The images an image generation job stored. */
@@ -2616,7 +2690,7 @@ export type MemoryAddRequest = {
 /**  Why a chat's dynamic memory does not run. */
 export type MemoryBlockedReason = { type: "owed_rewind_failed"; code: MemoryRewindFailureCode };
 
-export type MemoryCategory = "character_trait" | "relationship" | "plot_event" | "preference" | "world_detail" | "other" | "milestone" | "boundary" | "profile" | "routine" | "episodic" | "emotional_snapshot";
+export type MemoryCategory = "character_trait" | "relationship" | "plot_event" | "world_detail" | "preference" | "other" | "milestone" | "boundary" | "profile" | "routine" | "episodic" | "emotional_snapshot";
 
 export type MemoryCategoryChange = { type: "keep" } | { type: "set"; value: MemoryCategory | null };
 
@@ -3709,6 +3783,8 @@ export type SoulFactView = {
 	valid_until: number | null,
 	locked: boolean,
 	created_at: number,
+	source_memory_ids: string[],
+	supersedes: string[],
 	superseded_by: string | null,
 	superseded_at: number | null,
 };

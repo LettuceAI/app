@@ -4644,7 +4644,7 @@ async fn run_plain_dynamic_cycle_with_racing_edits(edits: usize, cancel: bool) {
                     vec![crate::MemoryCreateSeed {
                         execution_id: round.calls[0].id,
                         id: memory_id,
-                        token_count: 4,
+                        token_count: Some(4),
                         created_at: TimestampMillis::new(1_032),
                     }]
                 } else {
