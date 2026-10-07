@@ -43,3 +43,5 @@ Manual memory requests carry the conversation, expected memory revision and oper
 Memory views expose nullable counts, authored origins, cycle labels and status with typed model, embedding, provider and lease-loss failures. The read request identifies a conversation; its active branch determines the selected own space or pool.
 
 Forced memory cycles take the conversation and an operation key; a retry may name a summarisation model. A cycle that cannot start is refused with `ApiErrorDetails::MemoryGate`, naming whether the conversation lacks dynamic memory, the global switch is off, there is no dialogue to summarise, or a cycle already runs. Cancelling stays `job_cancel`.
+
+`memory_cycles` pages the activity log newest first: each cycle has its window label, outcome actions, published summary, status, typed failure, `reverted`, `revertable` and the later cycle that blocks a revert. `memory_cycle_revert` takes the run, the expected memory revision and an operation key; a cycle a later cycle started from is a `Conflict` with `ApiErrorDetails::MemoryCycleDependent` naming that cycle. `memory_error_dismiss` hides the failure the status shows.

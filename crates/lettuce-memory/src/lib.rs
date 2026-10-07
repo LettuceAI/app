@@ -7,6 +7,7 @@ mod model;
 mod port;
 mod read;
 mod repair;
+mod revert;
 mod run;
 mod structured_fallback;
 mod text;
@@ -37,6 +38,7 @@ pub use repair::{
     MEMORY_CATEGORIES, MEMORY_REPAIR_TOOL_NAME, MEMORY_REPAIR_TOOL_TEXT_KEYS,
     guess_memory_category, memory_repair_tool_request, memory_repairs_fallback_prompt_key,
 };
+pub use revert::{MemoryCycleRevert, MemoryCycleRevertError, MemoryCycleRevertRecord};
 pub use run::{
     DynamicMemoryAttempt, DynamicMemoryAttemptFailureCode, DynamicMemoryAttemptRecovery,
     DynamicMemoryAttemptStatus, DynamicMemoryInferenceRound, DynamicMemoryRoundFinishReason,
@@ -64,4 +66,4 @@ pub use tool::{
     undo_memory_tool_outcomes,
 };
 
-pub use read::{MemoryActivityCycle, MemoryReadRepository, MemoryReadScope};
+pub use read::{MemoryActivityCycle, MemoryReadRepository, MemoryReadScope, cycle_revert_blocker};

@@ -152,7 +152,7 @@ fn load_receipt(
     }))
 }
 
-fn prior_summary(
+pub(crate) fn prior_summary(
     transaction: &Transaction<'_>,
     conversation_id: lettuce_types::ConversationId,
     space_id: lettuce_types::MemorySpaceId,
@@ -166,6 +166,7 @@ fn prior_summary(
                JOIN dynamic_memory_summary_checkpoints checkpoint ON checkpoint.run_id=run.id
               WHERE run.conversation_id=?1 AND run.id<>?2 AND run.summary_window_end<=?3
                 AND run.space_id=?4 AND run.branch_id=(SELECT branch_id FROM dynamic_memory_runs WHERE id=?2)
+                AND NOT EXISTS (SELECT 1 FROM dynamic_memory_cycle_reverts revert WHERE revert.run_id = run.id)
                 AND NOT EXISTS (
                     SELECT 1 FROM dynamic_memory_suffix_rewinds rewind
                       JOIN dynamic_memory_runs undone ON undone.id = rewind.invalid_run_id
@@ -217,7 +218,7 @@ pub(crate) fn undo_runs_and_manual(
     summary: &mut Option<MemorySummary>,
 ) -> Result<lettuce_memory::MemorySpaceSnapshot, DynamicMemorySuffixRewindError> {
     let run_ids = if let Some(invalid_run_id) = invalid_run_id {
-        let mut statement = transaction.prepare("SELECT run.id FROM dynamic_memory_runs run JOIN dynamic_memory_runs invalid ON invalid.id=?2 WHERE run.conversation_id=?1 AND run.space_id=invalid.space_id AND run.branch_id=invalid.branch_id AND run.created_at>=invalid.created_at AND NOT EXISTS(SELECT 1 FROM dynamic_memory_suffix_rewinds rewind JOIN dynamic_memory_runs undone ON undone.id=rewind.invalid_run_id WHERE rewind.conversation_id=run.conversation_id AND undone.branch_id=run.branch_id AND undone.created_at<=run.created_at AND rewind.applied_at>=run.created_at) ORDER BY run.created_at DESC,run.id DESC").map_err(storage)?;
+        let mut statement = transaction.prepare("SELECT run.id FROM dynamic_memory_runs run JOIN dynamic_memory_runs invalid ON invalid.id=?2 WHERE run.conversation_id=?1 AND run.space_id=invalid.space_id AND run.branch_id=invalid.branch_id AND run.created_at>=invalid.created_at AND NOT EXISTS (SELECT 1 FROM dynamic_memory_cycle_reverts revert WHERE revert.run_id = run.id) AND NOT EXISTS(SELECT 1 FROM dynamic_memory_suffix_rewinds rewind JOIN dynamic_memory_runs undone ON undone.id=rewind.invalid_run_id WHERE rewind.conversation_id=run.conversation_id AND undone.branch_id=run.branch_id AND undone.created_at<=run.created_at AND rewind.applied_at>=run.created_at) ORDER BY run.created_at DESC,run.id DESC").map_err(storage)?;
         statement
             .query_map(
                 params![conversation_id.to_string(), invalid_run_id.to_string()],
@@ -229,6 +230,29 @@ pub(crate) fn undo_runs_and_manual(
     } else {
         Vec::new()
     };
+    let always_apply = !manual.is_empty() || invalid_run_id.is_some();
+    undo_events(
+        transaction,
+        current,
+        conversation_id,
+        run_ids,
+        manual,
+        summary,
+        always_apply,
+    )
+}
+
+/// Undoes the outcomes of `run_ids` and the `manual` edits together, latest
+/// first, and applies the resulting items under the space's revision.
+pub(crate) fn undo_events(
+    transaction: &Transaction<'_>,
+    current: &lettuce_memory::MemorySpaceSnapshot,
+    conversation_id: lettuce_types::ConversationId,
+    run_ids: Vec<DynamicMemoryRunId>,
+    manual: &[lettuce_memory::MemoryManualHistory],
+    summary: &mut Option<MemorySummary>,
+    always_apply: bool,
+) -> Result<lettuce_memory::MemorySpaceSnapshot, DynamicMemorySuffixRewindError> {
     enum Undo {
         Tool {
             before: Vec<lettuce_memory::MemoryItem>,
@@ -296,7 +320,7 @@ pub(crate) fn undo_runs_and_manual(
             }
         }
     }
-    if items == current.items && manual.is_empty() && invalid_run_id.is_none() {
+    if items == current.items && !always_apply {
         return Ok(current.clone());
     }
     memory_adapter::compare_and_apply_in(

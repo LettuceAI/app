@@ -144,3 +144,5 @@ Memory section version 5 and dynamic-memory section version 4 carry nullable ite
 Memory section version 6 preserves manual edit anchors, before/after items and summaries, revisions and undo state. Unlike the legacy capped edit list (`old-code/src-tauri/src/storage_manager/sessions.rs:3936-3993`), all durable branch edits survive export and restore.
 
 Manual-only delete-after rewinds carry the recorded user edit undo evidence and their receipt in backups. Validation cross-checks removed anchors instead of assuming that every revision-changing rewind came from a model run; legacy replay also rewound user edit events (`old-code/src-tauri/src/conversation_manager/memory.rs:47-110`).
+
+Cycle reverts and dismissed failures are new backup state (memory section version 7, dynamic-memory section version 5); the legacy revert only existed as a saved session rebuilt from events (`old-code/src/core/storage/memoryToolEvents.ts:299-310`), which the legacy importer never carries, so nothing is imported for them.

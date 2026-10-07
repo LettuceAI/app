@@ -40,7 +40,7 @@ fn category(value: lettuce_memory::MemoryCategory) -> dto::MemoryCategory {
     }
 }
 
-fn latest_memory_job(
+pub(super) fn latest_memory_job(
     context: &ApiContext,
     scope: &MemoryReadScope,
 ) -> Result<Option<JobSnapshot>, ApiError> {
@@ -168,7 +168,8 @@ pub async fn memory_get(
             } else {
                 &stored.settings.dynamic_memory
             };
-            let latest = latest_memory_job(context, &scope)?;
+            let latest = latest_memory_job(context, &scope)?
+                .filter(|job| scope.dismissed_job != Some(job.id));
             let failure = latest.as_ref().and_then(failure);
             let mut labels = HashMap::new();
             let mut text_labels = HashMap::new();

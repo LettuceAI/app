@@ -357,6 +357,10 @@ fn own_runs_in(
                   WHERE run.conversation_id = ?1 AND run.branch_id = ?2 AND run.space_id = ?3
                     AND (?4 IS NULL OR run.created_at < ?4)
                     AND NOT EXISTS (
+                        SELECT 1 FROM dynamic_memory_cycle_reverts revert
+                         WHERE revert.run_id = run.id AND (?4 IS NULL OR revert.reverted_at < ?4)
+                    )
+                    AND NOT EXISTS (
                         SELECT 1 FROM dynamic_memory_suffix_rewinds rewind
                         JOIN dynamic_memory_runs invalid ON invalid.id = rewind.invalid_run_id
                         WHERE rewind.conversation_id = run.conversation_id AND invalid.branch_id = run.branch_id

@@ -404,7 +404,21 @@ fn read_memory(
                 undone_at: undone_at.map(TimestampMillis::new),
             })
         }).collect::<Result<Vec<_>, ProviderBackupSourceError>>()?;
+    let error_dismissals = crate::memory::memory_cycle_revert_adapter::dismissal_records_in(
+        transaction,
+    )
+    .map_err(|_| ProviderBackupSourceError::InvalidData)?
+    .into_iter()
+    .map(
+        |(space_id, job_id, dismissed_at)| lettuce_transfer::BackupMemoryErrorDismissal {
+            space_id,
+            job_id,
+            dismissed_at,
+        },
+    )
+    .collect();
     Ok(MemoryBackup {
+        error_dismissals,
         manual_edits,
         synced_cursors,
         version: MEMORY_BACKUP_VERSION,
@@ -600,6 +614,8 @@ fn read_dynamic_memory(
         pending_approvals,
         pending_suffix_rewinds,
         runs,
+        cycle_reverts: crate::memory::memory_cycle_revert_adapter::revert_records_in(transaction)
+            .map_err(|_| ProviderBackupSourceError::InvalidData)?,
     })
 }
 

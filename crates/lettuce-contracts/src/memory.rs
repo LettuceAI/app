@@ -79,6 +79,7 @@ pub struct MemoryAddRequest {
     pub text: String,
     pub category: Option<MemoryCategory>,
     pub observed_at: Option<i64>,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub expected_revision: u64,
     pub client_operation_id: String,
 }
@@ -94,6 +95,7 @@ pub struct MemoryUpdateRequest {
     pub category: MemoryCategoryChange,
     #[serde(default)]
     pub observed_at: MemoryObservedAtChange,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub expected_revision: u64,
     pub client_operation_id: String,
 }
@@ -104,6 +106,7 @@ pub struct MemoryUpdateRequest {
 pub struct MemoryDeleteRequest {
     pub conversation_id: String,
     pub memory_id: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub expected_revision: u64,
     pub client_operation_id: String,
 }
@@ -115,6 +118,7 @@ pub struct MemoryPinRequest {
     pub conversation_id: String,
     pub memory_id: String,
     pub pinned: bool,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub expected_revision: u64,
     pub client_operation_id: String,
 }
@@ -126,6 +130,7 @@ pub struct MemoryTemperatureRequest {
     pub conversation_id: String,
     pub memory_id: String,
     pub temperature: MemoryTemperature,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub expected_revision: u64,
     pub client_operation_id: String,
 }
@@ -136,6 +141,7 @@ pub struct MemoryTemperatureRequest {
 pub struct MemorySummaryUpdateRequest {
     pub conversation_id: String,
     pub summary: MemorySummaryEdit,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub expected_revision: u64,
     pub client_operation_id: String,
 }
@@ -144,6 +150,7 @@ pub struct MemorySummaryUpdateRequest {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct MemoryEditResult {
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub revision: u64,
     pub memory_id: Option<String>,
 }
@@ -192,6 +199,85 @@ pub struct MemorySkipRequest {
 pub struct MemoryErrorDismissRequest {
     pub conversation_id: String,
     pub client_operation_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MemoryCyclesRequest {
+    pub conversation_id: String,
+    pub cursor: Option<String>,
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MemoryCycleRevertRequest {
+    pub conversation_id: String,
+    pub run_id: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub expected_revision: u64,
+    pub client_operation_id: String,
+}
+
+/// What one tool call of a cycle did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryCycleActionKind {
+    Created,
+    DuplicateSkipped,
+    Deleted,
+    SoftDeleted,
+    Pinned,
+    Unpinned,
+    TargetNotFound,
+    Done,
+    Rejected,
+    Skipped,
+    StoppedAfterDone,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MemoryCycleAction {
+    pub kind: MemoryCycleActionKind,
+    pub memory_id: Option<String>,
+    pub text: Option<String>,
+}
+
+/// One memory cycle of the activity log, newest first. `blocked_by` names
+/// the later cycle that started from this one's result and keeps it from
+/// being reverted.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MemoryCycleView {
+    pub run_id: String,
+    pub job_id: String,
+    pub started_at: i64,
+    pub label: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub window_start: u64,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub window_end: u64,
+    pub status: MemoryCycleStatus,
+    pub failure: Option<MemoryFailureCode>,
+    pub summary: Option<String>,
+    pub actions: Vec<MemoryCycleAction>,
+    pub reverted: bool,
+    pub revertable: bool,
+    pub blocked_by: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MemoryCyclePage {
+    pub items: Vec<MemoryCycleView>,
+    pub next_cursor: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -286,9 +372,13 @@ pub enum MemoryPausedReason {
 pub struct MemoryStatusView {
     pub run_mode: MemoryRunMode,
     pub interval: u32,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub messages_since_last_cycle: u64,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub messages_until_next_cycle: u64,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub total_conversation_messages: u64,
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
     pub pending_approval_count: Option<u64>,
     pub skipped: bool,
     pub latest_cycle_status: Option<MemoryCycleStatus>,
@@ -304,5 +394,6 @@ pub struct MemoryView {
     pub items: Vec<MemoryItemView>,
     pub summary: Option<MemorySummaryView>,
     pub status: MemoryStatusView,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub revision: u64,
 }

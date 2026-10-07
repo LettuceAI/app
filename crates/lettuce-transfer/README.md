@@ -157,3 +157,5 @@ Memory backup version 4 and dynamic-run backup version 3 preserve item and summa
 Memory section version 6 carries uncapped manual edit history and undo timestamps alongside the current spaces. Restore validates the referenced conversation, branch, space and anchor and restores the history in the same transaction as the memory graph.
 
 The companion-effects backup section uses version 2. A manual-only suffix rewind advances the memory revision only when matching manual history records identify the same space, conversation, undo time and tombstoned anchor; validation rejects a revision-changing receipt without that evidence.
+
+Memory backup version 7 carries the failure each space's status stopped showing, and dynamic-memory backup version 5 the reverted cycles. Validation requires every revert to name a backed-up run of the same conversation and space, a restored-summary run of that space, and revisions the space's snapshot has reached.

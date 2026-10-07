@@ -189,5 +189,8 @@ pub use memory::{
     memory_update,
 };
 
-pub use memory_control::{memory_retry, memory_skip, memory_trigger};
+pub use memory_control::{
+    memory_cycle_revert, memory_cycles, memory_error_dismiss, memory_retry, memory_skip,
+    memory_trigger,
+};
 pub use memory_read::memory_get;

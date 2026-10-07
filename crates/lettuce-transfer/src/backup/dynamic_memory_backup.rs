@@ -3,11 +3,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use lettuce_memory::{
     DynamicMemoryAttempt, DynamicMemoryBackgroundRoundSettlement, DynamicMemoryInferenceRound,
     DynamicMemoryPendingApproval, DynamicMemoryRun, DynamicMemorySummaryCheckpoint,
-    PendingSuffixRewind,
+    MemoryCycleRevertRecord, PendingSuffixRewind,
 };
 use serde::{Deserialize, Serialize};
 
-pub const DYNAMIC_MEMORY_BACKUP_VERSION: u32 = 4;
+pub const DYNAMIC_MEMORY_BACKUP_VERSION: u32 = 5;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -16,6 +16,9 @@ pub struct DynamicMemoryBackup {
     pub pending_approvals: Vec<DynamicMemoryPendingApproval>,
     pub pending_suffix_rewinds: Vec<BackupPendingSuffixRewind>,
     pub runs: Vec<BackupDynamicMemoryRun>,
+    /// Cycles the user reverted; the runs keep their recorded outcomes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cycle_reverts: Vec<MemoryCycleRevertRecord>,
 }
 
 /// A delete-after whose memory rewind is still owed, with the time it was
@@ -63,6 +66,7 @@ impl DynamicMemoryBackup {
         self.pending_approvals
             .sort_by_key(|approval| (approval.conversation_id, approval.branch_id));
         self.runs.sort_by_key(|entry| entry.run.id);
+        self.cycle_reverts.sort_by_key(|record| record.run_id);
         self.pending_suffix_rewinds.sort_by(|left, right| {
             (
                 left.recorded_at,
@@ -199,6 +203,33 @@ impl DynamicMemoryBackup {
                 .attempts
                 .sort_by_key(|attempt| attempt.attempt.ordinal);
             validate_run(entry, &job_ids)?;
+        }
+        let by_run = self
+            .runs
+            .iter()
+            .map(|entry| (entry.run.id, &entry.run))
+            .collect::<BTreeMap<_, _>>();
+        let mut reverted = BTreeSet::new();
+        for record in &self.cycle_reverts {
+            let Some(run) = by_run.get(&record.run_id) else {
+                return Err(DynamicMemoryBackupError::InvalidData);
+            };
+            if record.validate().is_err()
+                || !reverted.insert(record.run_id)
+                || record.space_id != run.space_id
+                || record.conversation_id != run.conversation_id
+                || record.source_revision < run.starting_memory.revision
+                || spaces
+                    .get(&(run.conversation_id, run.space_id))
+                    .is_none_or(|snapshot| record.resulting_revision > snapshot.revision)
+                || record.restored_summary_run_id.is_some_and(|id| {
+                    by_run
+                        .get(&id)
+                        .is_none_or(|prior| prior.space_id != run.space_id)
+                })
+            {
+                return Err(DynamicMemoryBackupError::InvalidData);
+            }
         }
         Ok(())
     }

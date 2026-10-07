@@ -812,6 +812,9 @@ pub(crate) fn run_cursor_in(
                      WHERE attempt.run_id = run.id AND attempt.status = 'succeeded'
                 )
                 AND NOT EXISTS (
+                    SELECT 1 FROM dynamic_memory_cycle_reverts revert WHERE revert.run_id = run.id
+                )
+                AND NOT EXISTS (
                     SELECT 1 FROM dynamic_memory_suffix_rewinds rewind
                       JOIN dynamic_memory_runs invalid ON invalid.id = rewind.invalid_run_id
                      WHERE invalid.branch_id = run.branch_id
@@ -857,6 +860,9 @@ fn failed_summary_run_start_in(
                     NOT EXISTS (
                         SELECT 1 FROM dynamic_memory_run_attempts attempt
                          WHERE attempt.run_id = run.id AND attempt.status = 'succeeded'
+                    )
+                    OR EXISTS (
+                        SELECT 1 FROM dynamic_memory_cycle_reverts revert WHERE revert.run_id = run.id
                     )
                     OR EXISTS (
                         SELECT 1 FROM dynamic_memory_suffix_rewinds rewind

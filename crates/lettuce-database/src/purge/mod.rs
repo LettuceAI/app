@@ -375,6 +375,17 @@ impl<'c> Purge<'c> {
             ),
             &values,
         )?;
+        self.delete(
+            "dynamic_memory_cycle_reverts",
+            &format!("({by_owner} OR run_id IN ({RUNS}) OR restored_summary_run_id IN ({RUNS}))"),
+            &values,
+        )?;
+        self.delete("memory_manual_edits", &by_owner, &values)?;
+        self.delete(
+            "memory_error_dismissals",
+            &format!("({in_spaces})"),
+            &values,
+        )?;
         for table in [
             "dynamic_memory_runs",
             "memory_retrieval_accesses",

@@ -4,7 +4,7 @@ use lettuce_memory::{MemoryRetrievalAccessReceipt, MemorySpaceSnapshot, MemorySu
 use lettuce_types::ConversationId;
 use serde::{Deserialize, Serialize};
 
-pub const MEMORY_BACKUP_VERSION: u32 = 6;
+pub const MEMORY_BACKUP_VERSION: u32 = 7;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -13,6 +13,10 @@ pub struct MemoryBackup {
     pub spaces: Vec<BackupMemorySpace>,
     pub retrieval_accesses: Vec<MemoryRetrievalAccessReceipt>,
     pub manual_edits: Vec<BackupMemoryManualEdit>,
+    /// The memory-cycle failure each space's status hides after the user
+    /// dismissed it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub error_dismissals: Vec<BackupMemoryErrorDismissal>,
     pub synced_cursors: Vec<BackupMemoryCursor>,
     /// The companion character that owns each shared memory pool.
     #[serde(default)]
@@ -20,6 +24,14 @@ pub struct MemoryBackup {
     /// Pool spaces no conversation is bound to yet or anymore.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unbound_pools: Vec<MemorySpaceSnapshot>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackupMemoryErrorDismissal {
+    pub space_id: lettuce_types::MemorySpaceId,
+    pub job_id: lettuce_types::JobId,
+    pub dismissed_at: lettuce_types::TimestampMillis,
 }
 
 pub type BackupMemoryManualEdit = lettuce_memory::MemoryManualEditRecord;
@@ -87,6 +99,8 @@ impl MemoryBackup {
         }
         self.pools.sort_by_key(|pool| pool.character_id);
         self.unbound_pools.sort_by_key(|space| space.id);
+        self.error_dismissals
+            .sort_by_key(|dismissal| dismissal.space_id);
         let space_ids = self
             .spaces
             .iter()
@@ -94,6 +108,12 @@ impl MemoryBackup {
             .chain(self.unbound_pools.iter().map(|space| space.id))
             .collect::<BTreeSet<_>>();
         if space_ids.len() != self.spaces.len() + self.unbound_pools.len() {
+            return Err(MemoryBackupError::InvalidData);
+        }
+        let mut dismissed_spaces = BTreeSet::new();
+        if self.error_dismissals.iter().any(|dismissal| {
+            !space_ids.contains(&dismissal.space_id) || !dismissed_spaces.insert(dismissal.space_id)
+        }) {
             return Err(MemoryBackupError::InvalidData);
         }
         let mut pool_characters = BTreeSet::new();

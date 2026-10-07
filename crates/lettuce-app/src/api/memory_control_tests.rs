@@ -327,3 +327,587 @@ async fn skip_answers_an_ask_first_approval_and_a_trigger_clears_it() {
         assert_eq!(answered.skipped, skip);
     }
 }
+
+struct RecordedCycle {
+    run_id: String,
+    item: String,
+}
+
+async fn recorded_cycle(
+    harness: &super::tests::Harness,
+    chat: &str,
+    summary: &str,
+    text: &str,
+    at: i64,
+    start: u64,
+) -> RecordedCycle {
+    use lettuce_conversations::{ConversationOverviewReader, ConversationReader};
+    use lettuce_jobs::{
+        JobKind, JobSpec, JobStore, JobSubject, OutcomeRef, ResourceClass, SubjectKind,
+    };
+    use lettuce_memory::{
+        DynamicMemoryAttemptStatus, DynamicMemoryBackgroundRoundCommit,
+        DynamicMemoryInferenceRound, DynamicMemoryRoundFinishReason, DynamicMemoryRoundKind,
+        DynamicMemoryRunRepository, DynamicMemorySourceMessage, DynamicMemorySummaryCommit,
+        ListedMemory, MemoryChangeSet, MemoryItem, MemoryRepository, MemoryShortId,
+        MemoryToolOutcome, MemoryToolResult, NewDynamicMemoryInferenceRound,
+        NewDynamicMemoryRunAttempt, NewDynamicMemoryToolCall,
+    };
+    use lettuce_types::{
+        DynamicMemoryAttemptId, DynamicMemoryRunId, MemoryId, TimestampMillis, ToolExecutionId,
+    };
+    let _ = std::any::type_name::<(DynamicMemoryInferenceRound, DynamicMemoryRoundFinishReason)>();
+    let database = harness.context.backend().database();
+    let conversation_id: lettuce_types::ConversationId = chat.parse().expect("conversation");
+    let branch_id = ConversationReader::get(database, conversation_id)
+        .expect("conversation")
+        .conversation
+        .active_branch_id;
+    let view = super::turns_tests::open(harness, chat).await;
+    let mut sources = Vec::new();
+    for message in view.messages.items.iter().rev() {
+        let item = ConversationOverviewReader::timeline_anchor(
+            database,
+            conversation_id,
+            branch_id,
+            message.id.parse().expect("message"),
+        )
+        .expect("anchor")
+        .item;
+        sources.push(DynamicMemorySourceMessage {
+            message_id: item.message.id,
+            role: item.message.role,
+            render_source: item.message.active_render_source,
+            effective_time: item.message.effective_time,
+        });
+    }
+    let memory = MemoryRepository::get_for_branch(database, conversation_id, branch_id)
+        .expect("memory")
+        .expect("space");
+    let job = JobStore::create_or_get(
+        database,
+        JobSpec::new(
+            JobKind::MemoryExtraction,
+            JobSubject::new(SubjectKind::Conversation, format!("{chat}-{at}")).expect("subject"),
+            OutcomeRef::Conversation(conversation_id),
+        )
+        .with_resources(vec![ResourceClass::Cpu]),
+    )
+    .expect("job")
+    .job;
+    let run_id = DynamicMemoryRunId::new();
+    let attempt_id = DynamicMemoryAttemptId::new();
+    let admitted = database
+        .admit_dynamic_memory_run_attempt(NewDynamicMemoryRunAttempt {
+            run_id,
+            attempt_id,
+            conversation_id,
+            branch_id,
+            space_id: memory.id,
+            cycle_start_change: None,
+            starting_memory: memory.clone(),
+            source_messages: sources.clone(),
+            profile: crate::companion::companion_memory_run::tests::profile(),
+            time_awareness_enabled: false,
+            supersession_enabled: false,
+            structured_fallback_format: lettuce_memory::DynamicMemoryStructuredFallbackFormat::Xml,
+            summary_window: lettuce_memory::DynamicMemorySummaryWindow {
+                message_interval: 2,
+                start,
+                end: start + u64::try_from(sources.len()).expect("count"),
+            },
+            tool_request: lettuce_memory::dynamic_memory_tool_request_for_run(
+                lettuce_memory::DynamicMemoryToolOptions {
+                    group: false,
+                    supersession_enabled: false,
+                    require_source_message_id: false,
+                },
+                &|key| key.to_owned(),
+            ),
+            job_id: job.id,
+            job_attempt: None,
+            now: TimestampMillis::new(at),
+        })
+        .expect("run");
+    let processing = database
+        .transition_dynamic_memory_attempt(
+            attempt_id,
+            admitted.attempt.revision,
+            DynamicMemoryAttemptStatus::Processing,
+            None,
+            TimestampMillis::new(at),
+        )
+        .expect("processing");
+    let context = lettuce_conversations::ProviderNeutralContext {
+        messages: vec![lettuce_conversations::ProviderNeutralMessage {
+            role: lettuce_conversations::MessageRole::User,
+            parts: vec![lettuce_conversations::ProviderContextPart::Text {
+                text: "summary request".into(),
+            }],
+        }],
+        attributions: Default::default(),
+        budget: Default::default(),
+    };
+    database
+        .commit_dynamic_memory_summary(
+            DynamicMemorySummaryCommit {
+                run_id,
+                attempt_id,
+                expected_memory_revision: memory.revision,
+                text: summary.into(),
+                token_count: 5,
+                request_context: context,
+                usage: None,
+                provider_request_id: None,
+            },
+            TimestampMillis::new(at + 1),
+        )
+        .expect("summary checkpoint");
+    let call_id = ToolExecutionId::new();
+    database
+        .admit_dynamic_memory_inference_round(
+            run_id,
+            attempt_id,
+            0,
+            0,
+            NewDynamicMemoryInferenceRound {
+                ordinal: 0,
+                request_context: lettuce_conversations::ProviderNeutralContext {
+                    messages: vec![],
+                    attributions: Default::default(),
+                    budget: Default::default(),
+                },
+                parts: vec![],
+                provider_replay: None,
+                usage: None,
+                finish_reason: DynamicMemoryRoundFinishReason::Stop,
+                kind: DynamicMemoryRoundKind::Manager,
+                provider_request_id: None,
+                calls: vec![NewDynamicMemoryToolCall {
+                    id: call_id,
+                    definition_version: 1,
+                    call: lettuce_conversations::ProposedToolCall {
+                        provider_call_id: Some("create".into()),
+                        name: "create_memory".into(),
+                        arguments: serde_json::json!({"text": text}),
+                        raw_arguments: None,
+                        provider_replay: None,
+                    },
+                }],
+                admitted_at: TimestampMillis::new(at + 2),
+            },
+        )
+        .expect("round");
+    let current = MemoryRepository::get(database, memory.id)
+        .expect("memory")
+        .expect("space");
+    let id = MemoryId::new();
+    let item = MemoryItem::written(
+        id,
+        MemoryShortId::derived(id),
+        text.into(),
+        TimestampMillis::new(at + 3),
+    );
+    let mut items = current.items.clone();
+    items.push(item.clone());
+    database
+        .commit_dynamic_memory_background_round(
+            DynamicMemoryBackgroundRoundCommit {
+                run_id,
+                attempt_id,
+                round_ordinal: 0,
+                space_id: memory.id,
+                expected_memory_revision: current.revision,
+                change: Some(MemoryChangeSet {
+                    space_id: memory.id,
+                    expected_revision: current.revision,
+                    items,
+                }),
+                results: vec![MemoryToolResult {
+                    execution_id: call_id,
+                    outcome: MemoryToolOutcome::Created {
+                        id,
+                        short_id: item.short_id,
+                        memories: vec![ListedMemory {
+                            short_id: item.short_id,
+                            text: text.into(),
+                        }],
+                    },
+                }],
+            },
+            TimestampMillis::new(at + 3),
+        )
+        .expect("create tool");
+    database
+        .transition_dynamic_memory_attempt(
+            attempt_id,
+            processing.revision,
+            DynamicMemoryAttemptStatus::Succeeded,
+            None,
+            TimestampMillis::new(at + 4),
+        )
+        .expect("finish");
+    RecordedCycle {
+        run_id: run_id.to_string(),
+        item: id.to_string(),
+    }
+}
+
+#[tokio::test]
+async fn the_activity_log_lists_outcomes_pages_newest_first_and_names_blockers() {
+    let harness = harness(Reply::Text("reply"));
+    let (chat, _) = replied_chat(&harness, "log").await;
+    make_dynamic(&harness, true);
+    let first = recorded_cycle(&harness, &chat, "First summary", "First fact", 1_000, 0).await;
+    let second = recorded_cycle(&harness, &chat, "Second summary", "Second fact", 2_000, 2).await;
+    let page = memory_cycles(
+        &harness.context,
+        dto::MemoryCyclesRequest {
+            conversation_id: chat.clone(),
+            cursor: None,
+            limit: Some(1),
+        },
+    )
+    .await
+    .expect("first page");
+    assert_eq!(page.items.len(), 1);
+    let newest = &page.items[0];
+    assert_eq!(newest.run_id, second.run_id);
+    assert_eq!(newest.label, "2-4");
+    assert_eq!(newest.status, dto::MemoryCycleStatus::Complete);
+    assert_eq!(newest.summary.as_deref(), Some("Second summary"));
+    assert!(newest.revertable);
+    assert_eq!(newest.blocked_by, None);
+    assert_eq!(newest.actions.len(), 1);
+    assert_eq!(newest.actions[0].kind, dto::MemoryCycleActionKind::Created);
+    assert_eq!(
+        newest.actions[0].memory_id.as_deref(),
+        Some(second.item.as_str())
+    );
+    assert_eq!(newest.actions[0].text.as_deref(), Some("Second fact"));
+    let rest = memory_cycles(
+        &harness.context,
+        dto::MemoryCyclesRequest {
+            conversation_id: chat.clone(),
+            cursor: page.next_cursor.clone(),
+            limit: Some(5),
+        },
+    )
+    .await
+    .expect("second page");
+    assert_eq!(rest.next_cursor, None);
+    assert_eq!(rest.items.len(), 1);
+    assert_eq!(rest.items[0].run_id, first.run_id);
+    assert!(!rest.items[0].revertable);
+    assert_eq!(rest.items[0].blocked_by, Some(second.run_id));
+    assert_eq!(
+        memory_cycles(
+            &harness.context,
+            dto::MemoryCyclesRequest {
+                conversation_id: chat,
+                cursor: Some(lettuce_types::DynamicMemoryRunId::new().to_string()),
+                limit: None,
+            },
+        )
+        .await
+        .expect_err("unknown cursor")
+        .code,
+        ApiErrorCode::InvalidInput
+    );
+}
+
+#[tokio::test]
+async fn reverting_a_cycle_replays_conflicts_and_names_the_dependent_later_cycle() {
+    let harness = harness(Reply::Text("reply"));
+    let (chat, _) = replied_chat(&harness, "revert").await;
+    make_dynamic(&harness, true);
+    let first = recorded_cycle(&harness, &chat, "First summary", "First fact", 1_000, 0).await;
+    let second = recorded_cycle(&harness, &chat, "Second summary", "Second fact", 2_000, 2).await;
+    let view = || async {
+        memory_get(
+            &harness.context,
+            dto::ConversationRequest {
+                conversation_id: chat.clone(),
+            },
+        )
+        .await
+        .expect("memory")
+    };
+    let before = view().await;
+    let request = |run: &str, revision: u64, key: &str| dto::MemoryCycleRevertRequest {
+        conversation_id: chat.clone(),
+        run_id: run.into(),
+        expected_revision: revision,
+        client_operation_id: key.into(),
+    };
+    let blocked = memory_cycle_revert(
+        &harness.context,
+        request(&first.run_id, before.revision, "revert-middle"),
+    )
+    .await
+    .expect_err("a later cycle depends on it");
+    assert_eq!(blocked.code, ApiErrorCode::Conflict);
+    assert_eq!(
+        blocked.details,
+        Some(ApiErrorDetails::MemoryCycleDependent {
+            later_run_id: second.run_id.clone()
+        })
+    );
+    assert_eq!(view().await, before);
+    assert_eq!(
+        memory_cycle_revert(
+            &harness.context,
+            request(&second.run_id, before.revision + 1, "revert-stale"),
+        )
+        .await
+        .expect_err("stale revision")
+        .code,
+        ApiErrorCode::Conflict
+    );
+    let reverted = memory_cycle_revert(
+        &harness.context,
+        request(&second.run_id, before.revision, "revert-latest"),
+    )
+    .await
+    .expect("revert the latest cycle");
+    assert_eq!(reverted.revision, before.revision + 1);
+    assert_eq!(
+        memory_cycle_revert(
+            &harness.context,
+            request(&second.run_id, before.revision, "revert-latest"),
+        )
+        .await
+        .expect("replay"),
+        reverted
+    );
+    assert_eq!(
+        memory_cycle_revert(
+            &harness.context,
+            request(&first.run_id, before.revision, "revert-latest"),
+        )
+        .await
+        .expect_err("changed request")
+        .code,
+        ApiErrorCode::Conflict
+    );
+    let after = view().await;
+    assert_eq!(after.revision, reverted.revision);
+    assert!(after.items.iter().all(|item| item.id != second.item));
+    assert!(after.items.iter().any(|item| item.id == first.item));
+    assert_eq!(after.summary.expect("summary").text, "First summary");
+    let log = memory_cycles(
+        &harness.context,
+        dto::MemoryCyclesRequest {
+            conversation_id: chat.clone(),
+            cursor: None,
+            limit: None,
+        },
+    )
+    .await
+    .expect("log");
+    assert!(log.items[0].reverted);
+    assert!(!log.items[0].revertable);
+    assert!(log.items[1].revertable);
+    assert_eq!(
+        memory_cycle_revert(
+            &harness.context,
+            request(&second.run_id, reverted.revision, "revert-again"),
+        )
+        .await
+        .expect_err("already reverted")
+        .code,
+        ApiErrorCode::Conflict
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn dismissing_a_failure_hides_it_until_a_newer_cycle_fails() {
+    use lettuce_settings::GlobalSettingsStore;
+    let harness = harness(Reply::Text("reply"));
+    let (chat, _) = replied_chat(&harness, "dismiss").await;
+    make_dynamic(&harness, true);
+    let database = harness.context.backend().database();
+    let stored = GlobalSettingsStore::load(database).expect("settings");
+    let mut settings = stored.settings;
+    settings.dynamic_memory.run_mode = lettuce_settings::MemoryRunMode::Manual;
+    GlobalSettingsStore::save(database, settings, None, stored.revision).expect("no model");
+    let workers = startup(&harness.context).await.expect("startup");
+    workers.started().await;
+    let accepted = memory_trigger(&harness.context, trigger_request(&chat, "dismiss-trigger"))
+        .await
+        .expect("trigger");
+    tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        harness.events.until(|events| {
+            events.iter().any(|event| {
+                matches!(event, dto::ApiEvent::JobUpdated { job }
+                    if job.id == accepted.job_id && job.state == dto::JobStateDto::Failed)
+            })
+        }),
+    )
+    .await
+    .expect("the cycle failed");
+    workers.stop().await;
+    let read = || async {
+        memory_get(
+            &harness.context,
+            dto::ConversationRequest {
+                conversation_id: chat.clone(),
+            },
+        )
+        .await
+        .expect("memory")
+        .status
+    };
+    assert_eq!(
+        read().await.failure,
+        Some(dto::MemoryFailureCode::ModelMissing)
+    );
+    let dismiss = dto::MemoryErrorDismissRequest {
+        conversation_id: chat.clone(),
+        client_operation_id: "dismiss-failure".into(),
+    };
+    memory_error_dismiss(&harness.context, dismiss.clone())
+        .await
+        .expect("dismiss");
+    let hidden = read().await;
+    assert_eq!(hidden.failure, None);
+    assert_eq!(hidden.latest_cycle_status, None);
+    assert_eq!(hidden.latest_job_id, None);
+    memory_error_dismiss(&harness.context, dismiss.clone())
+        .await
+        .expect("replay");
+    assert_eq!(
+        memory_error_dismiss(
+            &harness.context,
+            dto::MemoryErrorDismissRequest {
+                conversation_id: launch(&harness, "dismiss-other").await,
+                ..dismiss
+            },
+        )
+        .await
+        .expect_err("changed request")
+        .code,
+        ApiErrorCode::Conflict
+    );
+    memory_error_dismiss(
+        &harness.context,
+        dto::MemoryErrorDismissRequest {
+            conversation_id: chat,
+            client_operation_id: "dismiss-nothing".into(),
+        },
+    )
+    .await
+    .expect("nothing to dismiss succeeds silently");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn cycle_reverts_and_dismissed_failures_round_trip_through_backup() {
+    use lettuce_settings::GlobalSettingsStore;
+    use lettuce_transfer::{ProviderBackupRestoreWriter, ProviderBackupSource};
+    let harness = harness(Reply::Text("reply"));
+    let (chat, _) = replied_chat(&harness, "backup").await;
+    make_dynamic(&harness, true);
+    let database = harness.context.backend().database();
+    let stored = GlobalSettingsStore::load(database).expect("settings");
+    let mut settings = stored.settings;
+    settings.dynamic_memory.run_mode = lettuce_settings::MemoryRunMode::Manual;
+    GlobalSettingsStore::save(database, settings, None, stored.revision).expect("no model");
+    let cycle = recorded_cycle(
+        &harness,
+        &chat,
+        "Backed up summary",
+        "Backed up fact",
+        1_000,
+        0,
+    )
+    .await;
+    let revision = memory_get(
+        &harness.context,
+        dto::ConversationRequest {
+            conversation_id: chat.clone(),
+        },
+    )
+    .await
+    .expect("memory")
+    .revision;
+    memory_cycle_revert(
+        &harness.context,
+        dto::MemoryCycleRevertRequest {
+            conversation_id: chat.clone(),
+            run_id: cycle.run_id.clone(),
+            expected_revision: revision,
+            client_operation_id: "backup-revert".into(),
+        },
+    )
+    .await
+    .expect("revert");
+    let workers = startup(&harness.context).await.expect("startup");
+    workers.started().await;
+    let accepted = memory_trigger(&harness.context, trigger_request(&chat, "backup-trigger"))
+        .await
+        .expect("trigger");
+    tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        harness.events.until(|events| {
+            events.iter().any(|event| {
+                matches!(event, dto::ApiEvent::JobUpdated { job }
+                    if job.id == accepted.job_id && job.state == dto::JobStateDto::Failed)
+            })
+        }),
+    )
+    .await
+    .expect("the cycle failed");
+    workers.stop().await;
+    memory_error_dismiss(
+        &harness.context,
+        dto::MemoryErrorDismissRequest {
+            conversation_id: chat,
+            client_operation_id: "backup-dismiss".into(),
+        },
+    )
+    .await
+    .expect("dismiss");
+    let mut graph = database.read_provider_backup_graph().expect("export");
+    lettuce_transfer::canonicalize_and_validate(&mut graph).expect("valid");
+    assert_eq!(graph.dynamic_memory.cycle_reverts.len(), 1);
+    assert_eq!(graph.memory.error_dismissals.len(), 1);
+    let restored = lettuce_database::Database::open_in_memory().expect("target");
+    use lettuce_conversations::{ConversationArtifactTransferPort, TrustedArtifactDescriptor};
+    let artifacts = lettuce_transfer::provider_backup_artifact_requirements(&graph)
+        .expect("requirements")
+        .into_iter()
+        .map(|descriptor| {
+            let mut sink = super::memory_tests::MemoryArtifactBytes(Vec::new());
+            match &descriptor {
+                TrustedArtifactDescriptor::Snapshot(reference) => {
+                    database.export_snapshot(reference.artifact_id, &mut sink)
+                }
+                TrustedArtifactDescriptor::Replay(reference) => {
+                    database.export_replay(reference.artifact_id, &mut sink)
+                }
+            }
+            .expect("export artifact");
+            lettuce_transfer::BackupConversationArtifact {
+                descriptor,
+                bytes: zeroize::Zeroizing::new(sink.0),
+            }
+        })
+        .collect::<Vec<_>>();
+    restored
+        .restore_provider_backup_graph(&graph, &artifacts)
+        .expect("restore");
+    let mut again = restored.read_provider_backup_graph().expect("re-export");
+    lettuce_transfer::canonicalize_and_validate(&mut again).expect("valid again");
+    assert_eq!(
+        again.dynamic_memory.cycle_reverts,
+        graph.dynamic_memory.cycle_reverts
+    );
+    assert_eq!(again.memory.error_dismissals, graph.memory.error_dismissals);
+    let mut forged = graph.clone();
+    forged.dynamic_memory.cycle_reverts[0].space_id = lettuce_types::MemorySpaceId::new();
+    assert!(lettuce_transfer::canonicalize_and_validate(&mut forged).is_err());
+    let mut dangling = graph;
+    dangling.memory.error_dismissals[0].space_id = lettuce_types::MemorySpaceId::new();
+    assert!(lettuce_transfer::canonicalize_and_validate(&mut dangling).is_err());
+}

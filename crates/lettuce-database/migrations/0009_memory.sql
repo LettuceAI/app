@@ -670,3 +670,28 @@ CREATE TABLE memory_manual_edits (
     FOREIGN KEY (conversation_id, anchor_message_id) REFERENCES conversation_messages(conversation_id, id) ON DELETE RESTRICT
 ) STRICT;
 CREATE INDEX memory_manual_edits_branch_idx ON memory_manual_edits(conversation_id, branch_id, sequence);
+
+CREATE TABLE dynamic_memory_cycle_reverts (
+    run_id TEXT PRIMARY KEY REFERENCES dynamic_memory_runs(id) ON DELETE RESTRICT,
+    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE RESTRICT,
+    space_id TEXT NOT NULL REFERENCES memory_spaces(id) ON DELETE RESTRICT,
+    source_memory_revision INTEGER NOT NULL CHECK (source_memory_revision >= 1),
+    resulting_memory_revision INTEGER NOT NULL CHECK (resulting_memory_revision = source_memory_revision + 1),
+    restored_summary_run_id TEXT REFERENCES dynamic_memory_runs(id) ON DELETE RESTRICT,
+    reverted_at INTEGER NOT NULL
+) STRICT;
+
+CREATE TRIGGER dynamic_memory_cycle_reverts_immutable
+BEFORE UPDATE ON dynamic_memory_cycle_reverts
+BEGIN SELECT RAISE(ABORT, 'dynamic-memory cycle revert is immutable'); END;
+
+CREATE TRIGGER dynamic_memory_cycle_reverts_no_delete
+BEFORE DELETE ON dynamic_memory_cycle_reverts
+WHEN NOT EXISTS (SELECT 1 FROM purge_authorizations WHERE owner_id IN (OLD.conversation_id, OLD.space_id))
+BEGIN SELECT RAISE(ABORT, 'dynamic-memory cycle revert cannot be deleted'); END;
+
+CREATE TABLE memory_error_dismissals (
+    space_id TEXT PRIMARY KEY REFERENCES memory_spaces(id) ON DELETE CASCADE,
+    job_id TEXT NOT NULL,
+    dismissed_at INTEGER NOT NULL
+) STRICT;

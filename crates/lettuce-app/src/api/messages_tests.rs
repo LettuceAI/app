@@ -2198,7 +2198,10 @@ async fn an_owed_rewind_finishes_before_a_delete_after_with_an_earlier_anchor() 
         .expect("the owed rewind finished first");
     assert_eq!(receipt.invalid_run_id, Some(chat.run_id));
     assert!(pending_of(&harness, chat.conversation_id).is_empty());
-    assert_eq!(memory_revision(&harness, chat.conversation_id), before);
+    assert_eq!(
+        memory_revision(&harness, chat.conversation_id),
+        before.next().expect("the rewind advances the revision")
+    );
     let shown = open(&harness, chat.conversation_id).await.messages.items;
     assert_eq!(visible_ids(&shown), vec![lead.to_string()]);
 }

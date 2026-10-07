@@ -1813,6 +1813,7 @@ mod tests {
                 spaces: Vec::new(),
                 retrieval_accesses: Vec::new(),
                 manual_edits: Vec::new(),
+                error_dismissals: Vec::new(),
             },
             memory_projections: crate::MemoryProjectionBackup {
                 version: crate::MEMORY_PROJECTION_BACKUP_VERSION,
@@ -1823,6 +1824,7 @@ mod tests {
                 pending_approvals: Vec::new(),
                 pending_suffix_rewinds: Vec::new(),
                 runs: Vec::new(),
+                cycle_reverts: Vec::new(),
             },
         }
     }

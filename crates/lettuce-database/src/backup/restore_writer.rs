@@ -717,6 +717,22 @@ impl ProviderBackupRestoreWriter for Database {
             crate::memory::dynamic_memory_run_adapter::insert_restored_run_in(&transaction, entry)
                 .map_err(invalid)?;
         }
+        for record in &graph.dynamic_memory.cycle_reverts {
+            crate::memory::memory_cycle_revert_adapter::insert_revert_record_in(
+                &transaction,
+                record,
+            )
+            .map_err(invalid)?;
+        }
+        for dismissal in &graph.memory.error_dismissals {
+            crate::memory::memory_cycle_revert_adapter::insert_dismissal_in(
+                &transaction,
+                dismissal.space_id,
+                dismissal.job_id,
+                dismissal.dismissed_at,
+            )
+            .map_err(invalid)?;
+        }
         for effect in &graph.companion_effects.effects {
             crate::conversation::state_adapter::insert_restored_effect_in(&transaction, effect)
                 .map_err(invalid)?;

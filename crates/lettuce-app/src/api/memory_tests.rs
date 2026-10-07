@@ -521,7 +521,7 @@ async fn manual_edit_history_syncs_into_the_peers_resolved_space() {
     assert_eq!(record.history.edit.space_id, record.history.space_id);
 }
 
-struct MemoryArtifactBytes(Vec<u8>);
+pub(super) struct MemoryArtifactBytes(pub(super) Vec<u8>);
 impl lettuce_conversations::TrustedArtifactSink for MemoryArtifactBytes {
     fn begin(
         &mut self,
