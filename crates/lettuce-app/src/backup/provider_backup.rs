@@ -1352,6 +1352,7 @@ mod tests {
                     id: memory_id,
                     short_id: lettuce_memory::MemoryShortId::derived(memory_id),
                     text: "The user asked to preserve full backup state.".into(),
+                    origin: lettuce_memory::MemoryOrigin::Model,
                     category: Some(MemoryCategory::Preference),
                     source_message_id: Some(effect_user_message_id),
                     source_role: Some(MessageRole::User),
@@ -1380,6 +1381,7 @@ mod tests {
             MemorySummaryChange {
                 expected_revision: memory_after_item.revision,
                 summary: MemorySummary {
+                    origin: lettuce_memory::MemoryOrigin::Model,
                     branch_id: direct_conversation.active_branch_id,
                     space_id: memory_space.id,
                     text: "The conversation established a backup preference.".into(),

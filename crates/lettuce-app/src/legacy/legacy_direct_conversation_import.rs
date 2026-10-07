@@ -1339,6 +1339,7 @@ fn memory_space(
             id,
             short_id,
             text: memory.text.clone(),
+            origin: lettuce_memory::MemoryOrigin::Import,
             category: memory
                 .category
                 .as_deref()
@@ -1404,7 +1405,9 @@ fn memory_space(
         let short_id = MemoryShortId::allocate(id, |candidate| {
             items.iter().any(|item| item.short_id == candidate)
         });
-        items.push(MemoryItem::written(id, short_id, text, updated_at));
+        let mut item = MemoryItem::written(id, short_id, text, updated_at);
+        item.origin = lettuce_memory::MemoryOrigin::Import;
+        items.push(item);
     }
     let in_dialogue = |message: &&BackupMessage| {
         message.message.visibility == MessageVisibility::Visible
@@ -1430,6 +1433,7 @@ fn memory_space(
                 })
                 .clamp(1, dialogue.len());
             Ok::<_, Error>(MemorySummary {
+                origin: lettuce_memory::MemoryOrigin::Import,
                 space_id,
                 branch_id,
                 text: text.to_owned(),

@@ -18,7 +18,7 @@ const SELECT_ITEM: &str = "
     SELECT id, short_id, text, category, source_message_id, source_role, observed_at, observed_time_precision,
            superseded_by, superseded_at, supersedes_json, token_count, is_cold, is_pinned,
            importance, persistence_importance, prompt_importance, volatility,
-           access_count, created_at, last_accessed_at
+           access_count, created_at, last_accessed_at, origin
       FROM memory_items
      WHERE space_id = ?1
      ORDER BY ordinal";
@@ -83,8 +83,8 @@ pub(crate) fn insert_item_at(
                 space_id, id, ordinal, text, category, source_message_id, source_role, observed_at, observed_time_precision,
                 superseded_by, superseded_at, supersedes_json, token_count, is_cold, is_pinned,
                 importance, persistence_importance, prompt_importance, volatility,
-                access_count, created_at, last_accessed_at, short_id
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)",
+                access_count, created_at, last_accessed_at, short_id, origin
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)",
             params![
                 space_id.to_string(),
                 item.id.to_string(),
@@ -113,6 +113,7 @@ pub(crate) fn insert_item_at(
                 item.created_at.get(),
                 item.last_accessed_at.get(),
                 i64::from(item.short_id.get()),
+                item.origin.as_str(),
             ],
         )
         .map_err(storage)?;
@@ -383,6 +384,8 @@ fn item_from_row(row: &rusqlite::Row<'_>) -> Result<MemoryItem, MemoryRepository
         short_id: MemoryShortId::new(row.get(1).map_err(storage)?)
             .ok_or_else(|| storage("invalid memory short id"))?,
         text: row.get(2).map_err(storage)?,
+        origin: lettuce_memory::MemoryOrigin::parse(&row.get::<_, String>(21).map_err(storage)?)
+            .ok_or_else(|| storage("invalid memory origin"))?,
         category: row
             .get::<_, Option<String>>(3)
             .map_err(storage)?
@@ -572,7 +575,7 @@ pub(crate) fn get_summary_in(
 ) -> Result<Option<MemorySummary>, MemoryRepositoryError> {
     let row = transaction
         .query_row(
-            "SELECT text, token_count, window_start, window_end, updated_at, branch_id
+            "SELECT text, token_count, window_start, window_end, updated_at, branch_id, origin
                FROM memory_summaries
               WHERE space_id = ?1",
             [space_id.to_string()],
@@ -584,12 +587,14 @@ pub(crate) fn get_summary_in(
                     row.get::<_, i64>(3)?,
                     row.get::<_, i64>(4)?,
                     row.get::<_, String>(5)?,
+                    row.get::<_, String>(6)?,
                 ))
             },
         )
         .optional()
         .map_err(storage)?;
-    let Some((text, token_count, window_start, window_end, updated_at, branch_id)) = row else {
+    let Some((text, token_count, window_start, window_end, updated_at, branch_id, origin)) = row
+    else {
         return Ok(None);
     };
     let source_message_ids = {
@@ -611,6 +616,8 @@ pub(crate) fn get_summary_in(
         ids
     };
     let summary = MemorySummary {
+        origin: lettuce_memory::MemoryOrigin::parse(&origin)
+            .ok_or_else(|| storage("invalid summary origin"))?,
         space_id,
         branch_id: parse_id(branch_id)?,
         text,
@@ -636,21 +643,19 @@ pub(crate) fn replace_summary_in(
     let conversation_id = match (bindings.as_slice(), summary) {
         ([], _) => return Err(MemoryRepositoryError::NotFound),
         ([only], _) => only.clone(),
-        (_, Some(summary)) => {
-            let source = summary
-                .source_message_ids
-                .first()
-                .ok_or_else(|| storage("summary without source messages"))?;
-            transaction
-                .query_row(
-                    "SELECT conversation_id FROM conversation_messages WHERE id = ?1 LIMIT 1",
-                    [source.to_string()],
-                    |row| row.get::<_, String>(0),
-                )
-                .optional()
-                .map_err(storage)?
-                .ok_or(MemoryRepositoryError::NotFound)?
-        }
+        (_, Some(summary)) => transaction
+            .query_row(
+                "SELECT branch.conversation_id FROM conversation_branches branch
+                   JOIN conversation_memory_spaces binding
+                     ON binding.conversation_id = branch.conversation_id
+                    AND binding.space_id = ?2
+                  WHERE branch.id = ?1",
+                params![summary.branch_id.to_string(), space_id.to_string()],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(storage)?
+            .ok_or(MemoryRepositoryError::NotFound)?,
         (_, None) => String::new(),
     };
     transaction
@@ -664,8 +669,8 @@ pub(crate) fn replace_summary_in(
             .execute(
                 "INSERT INTO memory_summaries (
                     space_id, conversation_id, branch_id, text, token_count,
-                    window_start, window_end, updated_at
-                 ) VALUES (?1, ?2, ?8, ?3, ?4, ?5, ?6, ?7)
+                    window_start, window_end, updated_at, origin
+                 ) VALUES (?1, ?2, ?8, ?3, ?4, ?5, ?6, ?7, ?9)
                  ON CONFLICT(space_id) DO UPDATE SET
                     conversation_id = excluded.conversation_id,
                     branch_id = excluded.branch_id,
@@ -673,7 +678,8 @@ pub(crate) fn replace_summary_in(
                     token_count = excluded.token_count,
                     window_start = excluded.window_start,
                     window_end = excluded.window_end,
-                    updated_at = excluded.updated_at",
+                    updated_at = excluded.updated_at,
+                    origin = excluded.origin",
                 params![
                     space_id.to_string(),
                     conversation_id,
@@ -683,6 +689,7 @@ pub(crate) fn replace_summary_in(
                     i64::try_from(summary.window_end).map_err(storage)?,
                     summary.updated_at.get(),
                     summary.branch_id.to_string(),
+                    summary.origin.as_str(),
                 ],
             )
             .map_err(storage)?;
@@ -1403,6 +1410,7 @@ mod tests {
             id,
             short_id: lettuce_memory::MemoryShortId::derived(id),
             text: text.to_owned(),
+            origin: lettuce_memory::MemoryOrigin::Model,
             category: Some(MemoryCategory::Other),
             source_message_id: None,
             source_role: None,
@@ -1749,6 +1757,75 @@ mod tests {
     }
 
     #[test]
+    fn item_origins_and_source_free_user_summary_survive_storage() {
+        let database = Database::open_in_memory().expect("database");
+        database
+            .connection()
+            .expect("connection")
+            .execute_batch("PRAGMA foreign_keys = OFF")
+            .expect("fixture mode");
+        let space_id = MemorySpaceId::new();
+        let memories = [
+            lettuce_memory::MemoryOrigin::User,
+            lettuce_memory::MemoryOrigin::Model,
+            lettuce_memory::MemoryOrigin::Import,
+        ]
+        .into_iter()
+        .map(|origin| {
+            let mut memory = item(MemoryId::new(), "A memory with provenance");
+            memory.origin = origin;
+            memory
+        })
+        .collect();
+        let created = database
+            .create(snapshot(space_id, memories))
+            .expect("create");
+        assert_eq!(database.get(space_id).expect("read"), Some(created.clone()));
+        database
+            .connection()
+            .expect("connection")
+            .execute(
+                "INSERT INTO conversation_memory_spaces (conversation_id, branch_id, space_id) VALUES (?1, 'test-branch', ?2)",
+                rusqlite::params!["conversation", space_id.to_string()],
+            )
+            .expect("binding");
+        let summary = MemorySummary {
+            origin: lettuce_memory::MemoryOrigin::User,
+            space_id,
+            branch_id: ConversationBranchId::new(),
+            text: "A summary a person wrote".into(),
+            token_count: 6,
+            window_start: 0,
+            window_end: 0,
+            source_message_ids: Vec::new(),
+            updated_at: TimestampMillis::new(50),
+        };
+        database
+            .compare_and_apply_summary(MemorySummaryChange {
+                expected_revision: created.revision,
+                summary: summary.clone(),
+            })
+            .expect("write user summary");
+        assert_eq!(
+            database.get_summary(space_id).expect("read summary"),
+            Some(summary)
+        );
+        for sql in [
+            "UPDATE memory_items SET origin = 'unknown' WHERE space_id = ?1",
+            "UPDATE memory_summaries SET origin = 'model' WHERE space_id = ?1",
+            "UPDATE memory_summaries SET window_end = 1 WHERE space_id = ?1",
+        ] {
+            assert!(
+                database
+                    .connection()
+                    .expect("connection")
+                    .execute(sql, [space_id.to_string()])
+                    .is_err()
+            );
+        }
+    }
+
+    #[test]
     fn summary_cas_persists_ordered_cursor_and_advances_root_revision() {
         let database = Database::open_in_memory().expect("database");
         database
@@ -1770,6 +1847,7 @@ mod tests {
             .expect("binding");
         let source_message_ids = vec![MessageId::new(), MessageId::new()];
         let summary = MemorySummary {
+            origin: lettuce_memory::MemoryOrigin::Model,
             branch_id: ConversationBranchId::new(),
             space_id,
             text: "Mira learned the route.".to_owned(),
@@ -1818,6 +1896,7 @@ mod tests {
             .expect("binding");
         let source_message_ids = (0..1100).map(|_| MessageId::new()).collect::<Vec<_>>();
         let summary = MemorySummary {
+            origin: lettuce_memory::MemoryOrigin::Model,
             branch_id: ConversationBranchId::new(),
             space_id,
             text: "s".repeat(20_000),
@@ -1856,6 +1935,7 @@ mod tests {
             .expect("binding");
         let source_id = MessageId::new();
         let current = MemorySummary {
+            origin: lettuce_memory::MemoryOrigin::Model,
             branch_id: ConversationBranchId::new(),
             space_id,
             text: "Current summary".to_owned(),

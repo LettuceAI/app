@@ -82,3 +82,5 @@ Branch deletion exchanges a retained topology payload with a monotonic tombstone
 Conversation copies carry immutable protected source-scene provenance separately from launch origins, preserving copied scene messages under different target defaults (`old-code/src/core/storage/repo.ts:1898-1978`). Backup and sync retain the reference after source purge; launch-origin validation remains unchanged.
 
 Companion session payload version 2 carries the private relationship rows of a duplicated companion conversation, so a peer reproduces independent relationship state instead of resolving to the shared character relationship. A payload whose private ownership differs from the receiving device is a conflict, and ownership never reverts. Legacy had no companion duplicate.
+
+Memory summary and inherited-summary payloads preserve user/model/import provenance, including a user summary with no source coverage; category and observed-time metadata are retained in item payloads.

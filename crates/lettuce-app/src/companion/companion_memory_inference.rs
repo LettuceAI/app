@@ -1414,6 +1414,7 @@ mod tests {
                 id: memory_id,
                 short_id: lettuce_memory::MemoryShortId::derived(memory_id),
                 text: "The user prefers tea.".into(),
+                origin: lettuce_memory::MemoryOrigin::Model,
                 category: Some(MemoryCategory::Preference),
                 source_message_id: Some(run.source_messages[0].message_id),
                 source_role: None,

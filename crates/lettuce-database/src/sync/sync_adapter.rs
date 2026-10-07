@@ -6168,6 +6168,7 @@ mod tests {
             id: memory_id,
             short_id: lettuce_memory::MemoryShortId::derived(memory_id),
             text: "Likes tea".into(),
+            origin: lettuce_memory::MemoryOrigin::Model,
             category: Some(lettuce_memory::MemoryCategory::Other),
             source_message_id: None,
             source_role: None,

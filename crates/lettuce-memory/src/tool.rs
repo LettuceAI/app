@@ -907,6 +907,7 @@ fn apply_create(
         id: preparation.id,
         short_id,
         text: text.to_string(),
+        origin: crate::MemoryOrigin::Model,
         category: Some(category),
         source_message_id,
         source_role,
@@ -1280,6 +1281,7 @@ mod tests {
             id,
             short_id: MemoryShortId::derived(id),
             text: text.to_string(),
+            origin: crate::MemoryOrigin::Model,
             category: Some(MemoryCategory::Other),
             source_message_id: None,
             source_role: None,
@@ -2410,10 +2412,12 @@ mod tests {
     }
 
     #[test]
-    fn capacity_trimming_preserves_pinned_items() {
-        let pinned = item("pinned", 2, 0, true);
+    fn capacity_trimming_preserves_pinned_users_and_can_evict_unpinned_users() {
+        let mut pinned = item("pinned", 2, 0, true);
+        pinned.origin = crate::MemoryOrigin::User;
         let pinned_id = pinned.id;
-        let weakest = item("weakest", 2, 1, false);
+        let mut weakest = item("weakest", 2, 1, false);
+        weakest.origin = crate::MemoryOrigin::User;
         let weakest_id = weakest.id;
         let mut stronger = item("stronger", 2, 2, false);
         stronger.importance = score(8_000);

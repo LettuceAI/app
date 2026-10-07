@@ -255,3 +255,5 @@ Conversation root payload version 5 includes nullable origin conversation and me
 A deleted branch retains its topology in sync payload version 3, so descendants can resolve their ancestry on a fresh peer even if the parent was deleted before any sync. Tombstoned lifecycle wins permanently, independently of the label winner, and never resurrects. Materialization purges only that branch's own memory once its work is terminal; when the deleted branch was selected locally, selection returns to the root.
 
 Conversation message schema version 3 carries immutable copied-scene source provenance. Receivers verify and attach the protected source scene artifact before hydrating the scene; later merges cannot replace the provenance.
+
+Memory summary payload version 3 and inherited-summary payload version 2 preserve provenance and source-free user summaries. Memory item payload version 3 carries origin, nullable categories and user-observed time precision.

@@ -45,13 +45,17 @@ CREATE TABLE memory_summaries (
     space_id TEXT PRIMARY KEY REFERENCES memory_spaces(id) ON DELETE RESTRICT,
     conversation_id TEXT NOT NULL,
     branch_id TEXT NOT NULL,
+    origin TEXT NOT NULL DEFAULT 'model' CHECK (origin IN ('user', 'model', 'import')),
     text TEXT NOT NULL CHECK (
         length(trim(text)) > 0
         AND length(CAST(text AS BLOB)) <= 8388608
     ),
     token_count INTEGER NOT NULL CHECK (token_count BETWEEN 0 AND 4294967295),
     window_start INTEGER NOT NULL CHECK (window_start >= 0),
-    window_end INTEGER NOT NULL CHECK (window_end > window_start),
+    window_end INTEGER NOT NULL CHECK (
+        (origin = 'user' AND window_start = 0 AND window_end = 0)
+        OR (origin <> 'user' AND window_end > window_start)
+    ),
     updated_at INTEGER NOT NULL,
     UNIQUE (space_id, conversation_id),
     FOREIGN KEY (conversation_id, branch_id) REFERENCES conversation_branches(conversation_id, id) ON DELETE RESTRICT,
@@ -76,13 +80,17 @@ CREATE TABLE memory_inherited_summaries (
     space_id TEXT PRIMARY KEY REFERENCES memory_spaces(id) ON DELETE RESTRICT,
     conversation_id TEXT NOT NULL,
     branch_id TEXT NOT NULL,
+    origin TEXT NOT NULL DEFAULT 'model' CHECK (origin IN ('user', 'model', 'import')),
     text TEXT NOT NULL CHECK (
         length(trim(text)) > 0
         AND length(CAST(text AS BLOB)) <= 8388608
     ),
     token_count INTEGER NOT NULL CHECK (token_count BETWEEN 0 AND 4294967295),
     window_start INTEGER NOT NULL CHECK (window_start >= 0),
-    window_end INTEGER NOT NULL CHECK (window_end > window_start),
+    window_end INTEGER NOT NULL CHECK (
+        (origin = 'user' AND window_start = 0 AND window_end = 0)
+        OR (origin <> 'user' AND window_end > window_start)
+    ),
     updated_at INTEGER NOT NULL,
     UNIQUE (space_id, conversation_id),
     FOREIGN KEY (conversation_id, branch_id) REFERENCES conversation_branches(conversation_id, id) ON DELETE RESTRICT,
@@ -108,6 +116,7 @@ CREATE TABLE memory_items (
     id TEXT NOT NULL UNIQUE,
     short_id INTEGER NOT NULL CHECK (short_id BETWEEN 0 AND 999999),
     ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+    origin TEXT NOT NULL DEFAULT 'model' CHECK (origin IN ('user', 'model', 'import')),
     text TEXT NOT NULL CHECK (
         length(trim(text)) > 0
         AND length(CAST(text AS BLOB)) <= 8388608

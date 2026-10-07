@@ -16127,6 +16127,7 @@ mod tests {
             .find(|space| space.branch_id == Some(root))
             .expect("root space");
         root_space.inherited_summary = Some(lettuce_memory::MemorySummary {
+            origin: lettuce_memory::MemoryOrigin::Model,
             space_id: root_space.snapshot.id,
             branch_id: root,
             ..moved
@@ -16218,6 +16219,7 @@ mod tests {
                 root,
                 root_space,
                 &lettuce_memory::MemorySummary {
+                    origin: lettuce_memory::MemoryOrigin::Model,
                     space_id: root_space,
                     branch_id: root,
                     text: "Injected".into(),

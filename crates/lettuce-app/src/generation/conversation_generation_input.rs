@@ -2796,6 +2796,7 @@ mod tests {
             id,
             short_id: MemoryShortId::derived(id),
             text: format!("Harbor fact {index}"),
+            origin: lettuce_memory::MemoryOrigin::Model,
             category: Some(category),
             source_message_id: None,
             source_role: None,

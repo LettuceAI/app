@@ -18,6 +18,7 @@ Each revision has a stable identity, `memory_revision_id(space_id, revision)`, a
 A `MemoryItem` carries:
 
 - `id` and `short_id`. The short id is the six-digit number a model sees and quotes back. It is derived from the memory id, probed upward past ids in use, unique within the space and fixed at creation (`MemoryShortId::allocate`).
+- `origin` identifies user-written, model-created and imported memories.
 - `text` and an optional `MemoryCategory`. Stored categories preserve the six roleplay values and the companion values `milestone`, `boundary`, `profile`, `routine`, `episodic` and `emotional_snapshot`; an uncategorized user memory stays null. The model tool and repair protocols retain their six roleplay categories.
 - Hot/cold and pinned flags. Cold memories stay in the space and can still be retrieved; retrieval promotes a selected cold memory back to hot. A pinned memory is never cold, and snapshot validation rejects that state.
 - Scores (`importance` and friends) as `Score`, basis points from 0 to 10 000, so they compare and serialize exactly.
@@ -27,7 +28,7 @@ A `MemoryItem` carries:
 
 A space holds any number of items. `MemoryPolicy` decides what a memory cycle keeps: `max_entries` (at most `MAX_MEMORY_ITEMS`, 4096), the hot token budget, the cold threshold, the default delete confidence, the per-cycle hard-delete ratio and the decay rate.
 
-`MemorySummary` is the cumulative summary of the conversation so far. Besides the text and token count it stores its window, a half-open range of message positions, and the exact ids of the messages it covers; the window length must equal the id count. The window end is the summary cursor: where the next cycle starts reading. The summary records its owning branch; in a companion pool the cursor is per conversation and branch (`MemorySummaryRepository::summary_cursor`).
+`MemorySummary` carries its origin, text and token count. A user-authored summary has no source messages or coverage window; its window coordinates are both zero. Model and imported summaries store a half-open range of message positions and the exact ids covered, with the window length equal to the id count. Model coverage advances the summary cursor, where the next cycle starts reading. The summary records its owning branch; in a companion pool the cursor is per conversation and branch (`MemorySummaryRepository::summary_cursor`).
 
 ## Writing memory
 

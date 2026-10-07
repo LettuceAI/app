@@ -396,6 +396,7 @@ mod tests {
             id,
             short_id: lettuce_memory::MemoryShortId::derived(id),
             text: text.to_owned(),
+            origin: lettuce_memory::MemoryOrigin::Model,
             category: Some(MemoryCategory::Other),
             source_message_id,
             source_role: None,

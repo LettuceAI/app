@@ -645,12 +645,9 @@ fn companion_memory(
         let short_id = MemoryShortId::allocate(id, |candidate| {
             items.iter().any(|item| item.short_id == candidate)
         });
-        items.push(MemoryItem::written(
-            id,
-            short_id,
-            text.to_owned(),
-            updated_at,
-        ));
+        let mut item = MemoryItem::written(id, short_id, text.to_owned(), updated_at);
+        item.origin = lettuce_memory::MemoryOrigin::Import;
+        items.push(item);
     }
     let pool = (!items.is_empty()).then(|| MemorySpaceSnapshot {
         id: MemorySpaceId::from_uuid(new_id()),

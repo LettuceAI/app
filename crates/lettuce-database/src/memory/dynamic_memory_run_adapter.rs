@@ -367,6 +367,7 @@ pub(crate) fn load_summary_checkpoint_in(
         _ => return Err(DynamicMemoryRunRepositoryError::Invalid),
     };
     let summary = MemorySummary {
+        origin: lettuce_memory::MemoryOrigin::Model,
         space_id,
         branch_id: run.branch_id,
         text,
@@ -1744,6 +1745,7 @@ impl DynamicMemoryRunRepository for Database {
             return Err(DynamicMemoryRunRepositoryError::Conflict);
         }
         let summary = MemorySummary {
+            origin: lettuce_memory::MemoryOrigin::Model,
             space_id: run.space_id,
             branch_id: run.branch_id,
             text: commit.text,
@@ -2307,6 +2309,7 @@ pub(crate) mod tests {
             id,
             short_id: lettuce_memory::MemoryShortId::derived(id),
             text: text.into(),
+            origin: lettuce_memory::MemoryOrigin::Model,
             category: Some(MemoryCategory::Other),
             source_message_id: None,
             source_role: None,
@@ -3227,6 +3230,7 @@ pub(crate) mod tests {
                 &transaction,
                 space_id,
                 Some(&lettuce_memory::MemorySummary {
+                    origin: lettuce_memory::MemoryOrigin::Model,
                     space_id,
                     branch_id: parent,
                     text: "Imported summary".into(),
@@ -3899,6 +3903,7 @@ pub(crate) mod tests {
             id: memory_id,
             short_id: lettuce_memory::MemoryShortId::derived(memory_id),
             text: "The user prefers tea".into(),
+            origin: lettuce_memory::MemoryOrigin::Model,
             category: Some(MemoryCategory::Preference),
             source_message_id: None,
             source_role: None,
@@ -4484,6 +4489,7 @@ pub(crate) mod tests {
                     id: memory_id,
                     short_id: lettuce_memory::MemoryShortId::derived(memory_id),
                     text: "The user prefers tea".into(),
+                    origin: lettuce_memory::MemoryOrigin::Model,
                     category: Some(MemoryCategory::Preference),
                     source_message_id: Some(messages[0].message_id),
                     source_role: None,
@@ -4912,6 +4918,7 @@ pub(crate) mod tests {
                             id: memory_id,
                             short_id: lettuce_memory::MemoryShortId::derived(memory_id),
                             text: "The user prefers tea".into(),
+                            origin: lettuce_memory::MemoryOrigin::Model,
                             category: Some(MemoryCategory::Preference),
                             source_message_id: Some(messages[0].message_id),
                             source_role: None,

@@ -151,3 +151,5 @@ Conversation history section version 2 carries branch labels and nullable conver
 Conversation outbox backup version 3 includes branch-deletion events alongside retained branch topology in the history graph.
 
 Conversation history backup version 3 includes copied scene source snapshot references separately from launch origins. Validation requires a scene message, a protected scene artifact and exclusive provenance, and exports the artifact descriptor for restore.
+
+Memory backup version 4 and dynamic-run backup version 3 preserve item and summary origins. Imported memories are tagged `import`; source-free user summaries remain distinct from model summaries with source coverage.

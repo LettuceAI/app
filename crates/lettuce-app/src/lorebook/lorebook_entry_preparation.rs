@@ -551,6 +551,7 @@ mod tests {
             id: lettuce_types::MemoryId::new(),
             short_id: lettuce_memory::MemoryShortId::new(900001).expect("short id"),
             text: text.into(),
+            origin: lettuce_memory::MemoryOrigin::Model,
             category: Some(lettuce_memory::MemoryCategory::Preference),
             source_message_id: None,
             source_role: None,

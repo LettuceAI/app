@@ -8,7 +8,7 @@ Facts about how `lettuce-memory` relates to the legacy app (2.2.x). The crate RE
 - The cycle hard-delete budget is legacy's `floor(count_at_cycle_start * ratio).max(1)` over every item, cold included, counted across every round of the cycle.
 - `finish_cycle` trims first and then demotes, as legacy did after its loop and repair pass. Trimming and hot-budget demotion run once per cycle, not per round.
 - `start_cycle` is legacy's pass before the summary phase (decay by `decay_rate / (1 + sqrt(access_count))`, cold below `cold_threshold`).
-- A memory space holds any number of items, like legacy; only the cycle's policy pass trims to `max_entries`.
+- A memory space holds any number of items, like legacy; only the cycle's policy pass trims to `max_entries`. Capacity trimming exempts pinned items only, so an unpinned user-written memory can be evicted. The stable ascending ranking uses 0.7 importance and 0.3 recency with time bounds over unpinned items, matching `old-code/src-tauri/src/chat_manager/memory/dynamic.rs:671-726`.
 - Six-digit `short_id`s and the tool contract are legacy's: models see `[short_id] text`; `delete_memory` takes `text` (a six-digit id or the exact memory text), `pin_memory`/`unpin_memory` take `id`, `supersedes` lists ids.
 - Reference cleaning of `# * " ' [ ] ( )` is legacy's; stable UUIDs also resolve.
 - Arguments parse as leniently as legacy (unknown keys ignored, bad optional fields defaulted, `confidence` clamped, padded `category` trimmed).
@@ -21,7 +21,7 @@ Facts about how `lettuce-memory` relates to the legacy app (2.2.x). The crate RE
 - Structured fallback booleans are trimmed and ASCII-lowercased like legacy. The JSON/XML operation parsers and fallback prompts were copied from legacy.
 - Supersession keeps only the latest forty superseded records, as legacy does.
 - Time-aware memories keep legacy `turn` precision; user-observed dates keep `user` precision without a required source message. Changing or clearing the date preserves prior source attribution, like `old-code/src-tauri/src/storage_manager/sessions.rs:4561-4568`.
-- Cumulative summaries keep the legacy bounded text, token count and exact ordered source cursor.
+- Memory origins preserve the user/model/import badges. User-authored summaries have no model source coverage; model and imported summaries keep bounded text, token count and exact ordered source cursor.
 - Run modes are the legacy `auto`/`askFirst`/`manual`; the ask-first prompt threshold is the copied interval rule, and skip records the legacy skipped state.
 - Background runs preserve the legacy cycle's frozen window and model while staying separate from assistant-message generation.
 - Retrieval access is recorded as narrow per-row updates, like legacy.

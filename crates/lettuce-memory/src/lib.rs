@@ -12,7 +12,7 @@ mod tool;
 
 pub use model::{
     DynamicMemoryPendingApproval, DynamicMemoryRunMode, MAX_MEMORY_ITEMS, MAX_MEMORY_SUMMARY_BYTES,
-    MAX_MEMORY_TEXT_BYTES, MemoryCategory, MemoryItem, MemoryPolicy, MemoryShortId,
+    MAX_MEMORY_TEXT_BYTES, MemoryCategory, MemoryItem, MemoryOrigin, MemoryPolicy, MemoryShortId,
     MemorySpaceSnapshot, MemorySummary, MemoryValidationError, Score, memory_revision_id,
 };
 pub use port::{

@@ -164,6 +164,35 @@ pub enum MemoryCategory {
     EmotionalSnapshot,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryOrigin {
+    User,
+    Model,
+    Import,
+}
+
+impl MemoryOrigin {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::Model => "model",
+            Self::Import => "import",
+        }
+    }
+
+    #[must_use]
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "user" => Some(Self::User),
+            "model" => Some(Self::Model),
+            "import" => Some(Self::Import),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MemoryItem {
@@ -171,6 +200,7 @@ pub struct MemoryItem {
     pub short_id: MemoryShortId,
     pub text: String,
     pub category: Option<MemoryCategory>,
+    pub origin: MemoryOrigin,
     pub source_message_id: Option<MessageId>,
     pub source_role: Option<lettuce_conversations::MessageRole>,
     pub observed_at: Option<TimestampMillis>,
@@ -205,6 +235,7 @@ impl MemoryItem {
             short_id,
             text,
             category: None,
+            origin: MemoryOrigin::User,
             source_message_id: None,
             source_role: None,
             observed_at: None,
@@ -290,6 +321,7 @@ impl MemorySpaceSnapshot {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MemorySummary {
+    pub origin: MemoryOrigin,
     pub space_id: MemorySpaceId,
     pub branch_id: lettuce_types::ConversationBranchId,
     pub text: String,
@@ -308,6 +340,13 @@ impl MemorySummary {
         }
         if text.len() > MAX_MEMORY_SUMMARY_BYTES {
             return Err(MemoryValidationError::SummaryTooLarge);
+        }
+        if self.origin == MemoryOrigin::User {
+            if self.window_start != 0 || self.window_end != 0 || !self.source_message_ids.is_empty()
+            {
+                return Err(MemoryValidationError::InvalidSummaryWindow);
+            }
+            return Ok(());
         }
         if self.source_message_ids.is_empty()
             || self.window_end <= self.window_start
@@ -456,6 +495,41 @@ mod tests {
     }
 
     #[test]
+    fn memory_origins_round_trip_and_user_summaries_need_no_source_window() {
+        use super::{MemoryItem, MemoryShortId};
+        use lettuce_types::MemoryId;
+        let id = MemoryId::new();
+        let item = MemoryItem::written(
+            id,
+            MemoryShortId::derived(id),
+            "A written memory".into(),
+            TimestampMillis::new(10),
+        );
+        for origin in ["user", "model", "import"] {
+            let mut encoded = serde_json::to_value(&item).expect("encode memory");
+            encoded["origin"] = serde_json::json!(origin);
+            let decoded: MemoryItem = serde_json::from_value(encoded).expect("decode origin");
+            assert_eq!(
+                serde_json::to_value(decoded).expect("encode origin")["origin"],
+                origin
+            );
+        }
+        let summary: MemorySummary = serde_json::from_value(serde_json::json!({
+            "space_id": MemorySpaceId::new(),
+            "branch_id": lettuce_types::ConversationBranchId::new(),
+            "origin": "user",
+            "text": "An authored summary",
+            "token_count": 4,
+            "window_start": 0,
+            "window_end": 0,
+            "source_message_ids": [],
+            "updated_at": 10
+        }))
+        .expect("decode user summary");
+        assert_eq!(summary.validate(), Ok(()));
+    }
+
+    #[test]
     fn companion_and_null_categories_round_trip_without_mapping_to_other() {
         let id = lettuce_types::MemoryId::new();
         let item = super::MemoryItem::written(
@@ -507,6 +581,7 @@ mod tests {
     #[test]
     fn summary_cursor_must_exactly_cover_its_window() {
         let summary = MemorySummary {
+            origin: crate::MemoryOrigin::Model,
             branch_id: lettuce_types::ConversationBranchId::new(),
             space_id: MemorySpaceId::new(),
             text: "summary".to_owned(),

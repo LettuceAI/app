@@ -536,9 +536,9 @@ pub(crate) fn load_materialised_summary_in(
     space_id: MemorySpaceId,
     branch_id: ConversationBranchId,
 ) -> Result<Option<lettuce_memory::MemorySummary>, ConversationRepositoryError> {
-    let row: Option<(String, i64, i64, i64, i64)> = transaction
+    let row: Option<(String, i64, i64, i64, i64, String)> = transaction
         .query_row(
-            "SELECT text, token_count, window_start, window_end, updated_at
+            "SELECT text, token_count, window_start, window_end, updated_at, origin
                FROM memory_inherited_summaries WHERE space_id = ?1",
             [space_id.to_string()],
             |row| {
@@ -548,12 +548,13 @@ pub(crate) fn load_materialised_summary_in(
                     row.get(2)?,
                     row.get(3)?,
                     row.get(4)?,
+                    row.get(5)?,
                 ))
             },
         )
         .optional()
         .map_err(storage)?;
-    let Some((text, token_count, window_start, window_end, updated_at)) = row else {
+    let Some((text, token_count, window_start, window_end, updated_at, origin)) = row else {
         return Ok(None);
     };
     let source_message_ids = {
@@ -570,6 +571,8 @@ pub(crate) fn load_materialised_summary_in(
             .collect::<Result<Vec<MessageId>, ConversationRepositoryError>>()?
     };
     let summary = lettuce_memory::MemorySummary {
+        origin: lettuce_memory::MemoryOrigin::parse(&origin)
+            .ok_or_else(|| storage("invalid inherited summary origin"))?,
         space_id,
         branch_id,
         text,
@@ -633,8 +636,8 @@ pub(crate) fn store_materialised_summary_in(
         .execute(
             "INSERT INTO memory_inherited_summaries (
                 space_id, conversation_id, branch_id, text, token_count,
-                window_start, window_end, updated_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                window_start, window_end, updated_at, origin
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 space_id.to_string(),
                 conversation_id.to_string(),
@@ -644,6 +647,7 @@ pub(crate) fn store_materialised_summary_in(
                 i64::try_from(summary.window_start).map_err(storage)?,
                 i64::try_from(summary.window_end).map_err(storage)?,
                 summary.updated_at.get(),
+                summary.origin.as_str(),
             ],
         )
         .map_err(storage)?;

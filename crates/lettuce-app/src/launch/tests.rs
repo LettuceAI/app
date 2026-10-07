@@ -10554,6 +10554,7 @@ async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_promp
         id: selected_memory_id,
         short_id: lettuce_memory::MemoryShortId::derived(selected_memory_id),
         text: "  Ada keeps the brass harbour key.  ".into(),
+        origin: lettuce_memory::MemoryOrigin::Model,
         category: Some(MemoryCategory::WorldDetail),
         source_message_id: Some(selected_message_id),
         source_role: Some(MessageRole::User),
@@ -10587,6 +10588,7 @@ async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_promp
         MemorySummaryChange {
             expected_revision: first_space.revision,
             summary: MemorySummary {
+                origin: lettuce_memory::MemoryOrigin::Model,
                 branch_id: first.active_branch_id,
                 space_id: first_space.id,
                 text: "  Harbour facts accumulated.  ".into(),
@@ -10619,6 +10621,7 @@ async fn lorebook_entry_preparation_loads_owned_sources_and_freezes_legacy_promp
                 id: foreign_memory_id,
                 short_id: lettuce_memory::MemoryShortId::derived(foreign_memory_id),
                 text: "Foreign memory.".into(),
+                origin: lettuce_memory::MemoryOrigin::Model,
                 category: Some(MemoryCategory::Other),
                 source_message_id: Some(foreign_message_id),
                 source_role: Some(MessageRole::User),
