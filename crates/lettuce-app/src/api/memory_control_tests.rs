@@ -911,3 +911,292 @@ async fn cycle_reverts_and_dismissed_failures_round_trip_through_backup() {
     dangling.memory.error_dismissals[0].space_id = lettuce_types::MemorySpaceId::new();
     assert!(lettuce_transfer::canonicalize_and_validate(&mut dangling).is_err());
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_duplicated_companion_chat_shows_the_pools_memory_status_not_its_private_state() {
+    use lettuce_companions::{
+        CompanionStateOwner, CompanionStateReplacement, CompanionStateRepository,
+    };
+    use lettuce_settings::GlobalSettingsStore;
+    let harness = harness(Reply::Text("reply"));
+    let database = harness.context.backend().database();
+    let character_id = super::tests::create_character(
+        database,
+        "Pooled Companion",
+        lettuce_characters::CharacterDefaults {
+            interaction_mode: lettuce_characters::InteractionMode::Companion,
+            companion_soul: Some(lettuce_companions::CompanionSoulConfig::default()),
+            memory_policy: lettuce_characters::MemoryPolicy::Dynamic,
+            ..lettuce_characters::CharacterDefaults::default()
+        },
+    );
+    let source = conversation_launch_direct(
+        &harness.context,
+        dto::LaunchDirectRequest {
+            character_id: character_id.to_string(),
+            title: None,
+            scene_id: None,
+            starter_id: None,
+            client_operation_id: "pool-source".into(),
+        },
+    )
+    .await
+    .expect("source companion")
+    .conversation_id;
+    let first = conversation_add_user_message(
+        &harness.context,
+        dto::ConversationAddUserMessageRequest {
+            conversation_id: source.clone(),
+            text: "I like tea".into(),
+            expected_revision: 1,
+            client_operation_id: "pool-first".into(),
+        },
+    )
+    .await
+    .expect("first message");
+    conversation_add_user_message(
+        &harness.context,
+        dto::ConversationAddUserMessageRequest {
+            conversation_id: source.clone(),
+            text: "And I keep bees".into(),
+            expected_revision: first.revision,
+            client_operation_id: "pool-second".into(),
+        },
+    )
+    .await
+    .expect("second message");
+    let copy = conversation_duplicate(
+        &harness.context,
+        dto::ConversationDuplicateRequest {
+            conversation_id: source.clone(),
+            title: None,
+            with_messages: true,
+            client_operation_id: "pool-duplicate".into(),
+        },
+    )
+    .await
+    .expect("duplicate")
+    .conversation_id;
+    let owner = CompanionStateOwner {
+        conversation_id: copy.parse().expect("copy id"),
+        character_id,
+        persona_id: None,
+    };
+    let private = CompanionStateRepository::get(database, owner)
+        .expect("private state")
+        .expect("exists");
+    let mut changed = private.state.clone();
+    changed.relationship_state.closeness = -0.31;
+    CompanionStateRepository::replace(
+        database,
+        owner,
+        lettuce_types::OperationRecordId::new(),
+        CompanionStateReplacement {
+            expected_session_revision: private.session_revision,
+            expected_relationship_revision: private.relationship_revision,
+            state: changed.clone(),
+            applied_at: harness.context.now(),
+        },
+    )
+    .expect("diverge the private state");
+    make_dynamic(&harness, true);
+    let stored = GlobalSettingsStore::load(database).expect("settings");
+    let mut settings = stored.settings;
+    settings.dynamic_memory.run_mode = lettuce_settings::MemoryRunMode::Manual;
+    GlobalSettingsStore::save(database, settings, None, stored.revision).expect("no model");
+    let workers = startup(&harness.context).await.expect("startup");
+    workers.started().await;
+    let accepted = memory_trigger(&harness.context, trigger_request(&source, "pool-trigger"))
+        .await
+        .expect("trigger in the source chat");
+    tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        harness.events.until(|events| {
+            events.iter().any(|event| {
+                matches!(event, dto::ApiEvent::JobUpdated { job }
+                    if job.id == accepted.job_id && job.state == dto::JobStateDto::Failed)
+            })
+        }),
+    )
+    .await
+    .expect("the cycle failed");
+    workers.stop().await;
+    let status = |chat: String| {
+        let context = harness.context.clone();
+        async move {
+            memory_get(
+                &context,
+                dto::ConversationRequest {
+                    conversation_id: chat,
+                },
+            )
+            .await
+            .expect("memory")
+            .status
+        }
+    };
+    let in_source = status(source.clone()).await;
+    let in_copy = status(copy.clone()).await;
+    assert_eq!(
+        in_source.failure,
+        Some(dto::MemoryFailureCode::ModelMissing)
+    );
+    assert_eq!(in_copy, in_source);
+    assert_eq!(in_copy.latest_job_id, Some(accepted.job_id));
+    assert_eq!(
+        CompanionStateRepository::get(database, owner)
+            .expect("private state")
+            .expect("exists")
+            .state,
+        changed
+    );
+    memory_error_dismiss(
+        &harness.context,
+        dto::MemoryErrorDismissRequest {
+            conversation_id: copy,
+            client_operation_id: "pool-dismiss".into(),
+        },
+    )
+    .await
+    .expect("dismiss from the copy");
+    assert_eq!(status(source).await.failure, None);
+}
+
+#[tokio::test]
+async fn a_fork_lists_and_reverts_only_its_own_cycles_and_never_touches_the_parent() {
+    use lettuce_conversations::ConversationReader;
+    use lettuce_memory::MemoryRepository;
+    let harness = harness(Reply::Text("reply"));
+    let (chat, reply) = replied_chat(&harness, "fork").await;
+    make_dynamic(&harness, true);
+    let parent_run =
+        recorded_cycle(&harness, &chat, "Parent summary", "Parent fact", 1_000, 0).await;
+    let database = harness.context.backend().database();
+    let conversation_id: lettuce_types::ConversationId = chat.parse().expect("id");
+    let root = ConversationReader::get(database, conversation_id)
+        .expect("conversation")
+        .conversation
+        .active_branch_id;
+    let revision = ConversationReader::get(database, conversation_id)
+        .expect("conversation")
+        .conversation
+        .revision
+        .get();
+    conversation_branch_fork(
+        &harness.context,
+        dto::ConversationBranchForkRequest {
+            conversation_id: chat.clone(),
+            message_id: reply,
+            expected_revision: revision,
+            client_operation_id: "fork-here".into(),
+        },
+    )
+    .await
+    .expect("fork");
+    let parent_before = MemoryRepository::get_for_branch(database, conversation_id, root)
+        .expect("parent")
+        .expect("space");
+    let child = memory_get(
+        &harness.context,
+        dto::ConversationRequest {
+            conversation_id: chat.clone(),
+        },
+    )
+    .await
+    .expect("child memory");
+    let log = memory_cycles(
+        &harness.context,
+        dto::MemoryCyclesRequest {
+            conversation_id: chat.clone(),
+            cursor: None,
+            limit: None,
+        },
+    )
+    .await
+    .expect("child log");
+    assert!(log.items.is_empty());
+    let refused = memory_cycle_revert(
+        &harness.context,
+        dto::MemoryCycleRevertRequest {
+            conversation_id: chat,
+            run_id: parent_run.run_id,
+            expected_revision: child.revision,
+            client_operation_id: "fork-revert".into(),
+        },
+    )
+    .await
+    .expect_err("the parent's cycle is not the child's");
+    assert_eq!(refused.code, ApiErrorCode::NotFound);
+    assert_eq!(
+        MemoryRepository::get_for_branch(database, conversation_id, root)
+            .expect("parent")
+            .expect("space"),
+        parent_before
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_fork_after_a_finished_turn_does_not_move_the_parents_due_window_to_the_child() {
+    use lettuce_conversations::ConversationReader;
+    use lettuce_jobs::{JobCatalog, JobKind, JobListFilter};
+    use lettuce_settings::GlobalSettingsStore;
+    let harness = harness(Reply::Text("reply"));
+    let (chat, reply) = replied_chat(&harness, "driver-fork").await;
+    make_dynamic(&harness, true);
+    let database = harness.context.backend().database();
+    let conversation_id: lettuce_types::ConversationId = chat.parse().expect("id");
+    let root = ConversationReader::get(database, conversation_id)
+        .expect("conversation")
+        .conversation
+        .active_branch_id;
+    let revision = ConversationReader::get(database, conversation_id)
+        .expect("conversation")
+        .conversation
+        .revision
+        .get();
+    let fork = conversation_branch_fork(
+        &harness.context,
+        dto::ConversationBranchForkRequest {
+            conversation_id: chat.clone(),
+            message_id: reply,
+            expected_revision: revision,
+            client_operation_id: "driver-fork-here".into(),
+        },
+    )
+    .await
+    .expect("fork right after the turn");
+    assert_ne!(fork.branch_id, root.to_string());
+    let stored = GlobalSettingsStore::load(database).expect("settings");
+    GlobalSettingsStore::save(database, stored.settings, None, stored.revision)
+        .expect("no default model");
+    let workers = startup(&harness.context).await.expect("startup");
+    workers.started().await;
+    let mut admitted = None;
+    for _ in 0..60 {
+        let page = database
+            .list_jobs(&JobListFilter {
+                kinds: vec![JobKind::MemoryExtraction],
+                states: vec![],
+                subject: None,
+                page: lettuce_types::PageRequest {
+                    cursor: None,
+                    limit: lettuce_types::PageLimit::new(10),
+                },
+            })
+            .expect("jobs");
+        if let Some(job) = page.items.first() {
+            admitted = Some(job.id);
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    workers.stop().await;
+    let job = admitted.expect("the finished turn admitted its cycle");
+    let detail = database
+        .job_detail(job)
+        .expect("detail")
+        .expect("frozen admission");
+    let batch = crate::companion::companion_memory_job::decode_memory_admission(detail.detail)
+        .expect("admission");
+    assert_eq!(batch.branch_id, root);
+}
