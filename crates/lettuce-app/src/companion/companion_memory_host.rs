@@ -33,12 +33,40 @@ pub(crate) fn dynamic_memory_on<S>(
 where
     S: lettuce_characters::CharacterRepository + lettuce_characters::GroupRepository + ?Sized,
 {
-    let dynamic_session =
-        crate::generation::live_sources::live_memory_is_dynamic(sources, conversation, settings)?;
+    Ok(memory_gate(sources, conversation, settings)?.is_none())
+}
+
+/// Why a conversation does not run dynamic memory now; `None` when it does.
+pub(crate) fn memory_gate<S>(
+    sources: &S,
+    conversation: &lettuce_conversations::Conversation,
+    settings: &lettuce_settings::GlobalSettings,
+) -> Result<Option<MemoryGate>, lettuce_characters::RepositoryError>
+where
+    S: lettuce_characters::CharacterRepository + lettuce_characters::GroupRepository + ?Sized,
+{
+    if !crate::generation::live_sources::live_memory_is_dynamic(sources, conversation, settings)? {
+        return Ok(Some(MemoryGate::NotDynamic));
+    }
     Ok(match conversation.kind {
-        ConversationKind::Group(_) => dynamic_session,
-        ConversationKind::Direct(_) => dynamic_session && settings.dynamic_memory.enabled,
+        ConversationKind::Direct(_) if !settings.dynamic_memory.enabled => {
+            Some(MemoryGate::Disabled)
+        }
+        _ => None,
     })
+}
+
+/// What keeps a forced memory cycle from starting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum MemoryGate {
+    #[error("the conversation does not use dynamic memory")]
+    NotDynamic,
+    #[error("dynamic memory is switched off")]
+    Disabled,
+    #[error("there is no dialogue to summarise")]
+    NothingToSummarise,
+    #[error("a memory cycle is already running")]
+    CycleRunning,
 }
 
 /// Everything the memory job runner reads from live settings and the
@@ -106,6 +134,8 @@ pub enum CompanionMemoryHostError {
     Effects(lettuce_companions::CompanionTurnEffectRepositoryError),
     #[error("an owed delete-after memory rewind could not finish: {0}")]
     PendingRewind(crate::DynamicMemoryDeleteAfterError),
+    #[error("the memory cycle cannot start: {0}")]
+    Gated(MemoryGate),
 }
 
 /// Every port the post-turn memory host reads; the composition root's
@@ -462,6 +492,102 @@ where
                 lease_for,
                 allowed,
             )?)
+        }
+    }
+
+    /// The forced cycle `trigger` runs, admitted as a queued job for the job
+    /// runner to claim, with the same companion and plain paths. A gated-off
+    /// conversation, an empty dialogue and a cycle already running are named
+    /// by [`MemoryGate`] instead of an empty result.
+    pub fn trigger_admit(
+        &self,
+        conversation_id: ConversationId,
+        model_profile_id: Option<lettuce_types::ModelProfileId>,
+        update_default_on_success: bool,
+        now: TimestampMillis,
+    ) -> Result<crate::CompanionPostTurnMemoryAdmission, CompanionMemoryHostError> {
+        self.complete_pending_rewinds(conversation_id, now)?;
+        let aggregate = ConversationReader::get(self.repository, conversation_id)
+            .map_err(CompanionMemoryHostError::Conversation)?;
+        let settings = GlobalSettingsStore::load(self.repository)
+            .map_err(CompanionMemoryHostError::Settings)?
+            .settings;
+        if let Some(gate) = memory_gate(self.repository, &aggregate.conversation, &settings)
+            .map_err(CompanionMemoryHostError::Character)?
+        {
+            return Err(CompanionMemoryHostError::Gated(gate));
+        }
+        let dynamic = if matches!(aggregate.conversation.kind, ConversationKind::Group(_)) {
+            settings.effective_group_dynamic_memory()
+        } else {
+            &settings.dynamic_memory
+        };
+        let interval = dynamic.summary_message_interval;
+        let admissions = crate::CompanionPostTurnMemoryAdmissionCoordinator::new(
+            self.repository,
+            self.repository,
+        );
+        let admitted = if self.is_companion(&aggregate.conversation)? {
+            let reopened = lettuce_companions::CompanionTurnEffectRepository::reopen_failed(
+                self.repository,
+                conversation_id,
+                now,
+            )
+            .map_err(CompanionMemoryHostError::Effects)?;
+            if reopened > 0 {
+                tracing::info!(
+                    %conversation_id,
+                    reopened,
+                    "a user-triggered cycle retries failed turn effects"
+                );
+            }
+            if lettuce_companions::CompanionTurnEffectRepository::list_processing_for_conversation(
+                self.repository,
+                conversation_id,
+                1,
+            )
+            .map_err(CompanionMemoryHostError::Effects)?
+            .is_empty()
+            {
+                admissions.trigger_settled_companion_and_admit(
+                    conversation_id,
+                    interval,
+                    model_profile_id,
+                    update_default_on_success,
+                )
+            } else if let Some(model_profile_id) = model_profile_id {
+                admissions.retry_direct_with_model_and_admit(
+                    conversation_id,
+                    MAX_COMPANION_POST_TURN_EFFECTS,
+                    interval,
+                    model_profile_id,
+                    update_default_on_success,
+                )
+            } else {
+                admissions.trigger_and_admit(
+                    conversation_id,
+                    MAX_COMPANION_POST_TURN_EFFECTS,
+                    interval,
+                    crate::CompanionMemoryWindowSelection::Recent,
+                )
+            }
+        } else {
+            admissions.trigger_plain_and_admit(
+                conversation_id,
+                interval,
+                model_profile_id,
+                update_default_on_success,
+            )
+        };
+        match admitted {
+            Ok(Some(admission)) => Ok(admission),
+            Ok(None) => Err(CompanionMemoryHostError::Gated(
+                MemoryGate::NothingToSummarise,
+            )),
+            Err(crate::CompanionPostTurnMemoryAdmissionError::CycleInProgress) => {
+                Err(CompanionMemoryHostError::Gated(MemoryGate::CycleRunning))
+            }
+            Err(error) => Err(CompanionMemoryDispatchError::from(error).into()),
         }
     }
 

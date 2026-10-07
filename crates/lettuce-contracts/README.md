@@ -41,3 +41,5 @@ Character-copy requests carry source conversation, selected message and target c
 Manual memory requests carry the conversation, expected memory revision and operation key. Update uses explicit keep/set choices for nullable categories and observed time; summary editing distinguishes set from clear. Mutation results return the original committed revision and item id for exact replay.
 
 Memory views expose nullable counts, authored origins, cycle labels and status with typed model, embedding, provider and lease-loss failures. The read request identifies a conversation; its active branch determines the selected own space or pool.
+
+Forced memory cycles take the conversation and an operation key; a retry may name a summarisation model. A cycle that cannot start is refused with `ApiErrorDetails::MemoryGate`, naming whether the conversation lacks dynamic memory, the global switch is off, there is no dialogue to summarise, or a cycle already runs. Cancelling stays `job_cancel`.

@@ -148,6 +148,52 @@ pub struct MemoryEditResult {
     pub memory_id: Option<String>,
 }
 
+/// Why a forced memory cycle cannot start: the conversation does not use
+/// dynamic memory, the global dynamic memory switch is off, there is no
+/// dialogue to summarise yet, or a cycle already runs for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryGateReason {
+    NotDynamic,
+    Disabled,
+    NothingToSummarise,
+    CycleRunning,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MemoryTriggerRequest {
+    pub conversation_id: String,
+    pub client_operation_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MemoryRetryRequest {
+    pub conversation_id: String,
+    pub model_profile_id: Option<String>,
+    pub client_operation_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MemorySkipRequest {
+    pub conversation_id: String,
+    pub client_operation_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MemoryErrorDismissRequest {
+    pub conversation_id: String,
+    pub client_operation_id: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]

@@ -1288,3 +1288,94 @@ async fn delete_after_undoes_every_manual_setter_and_summary_at_the_removed_anch
         .retain(|record| record.undone_at.is_none());
     assert!(lettuce_transfer::canonicalize_and_validate(&mut missing_evidence).is_err());
 }
+
+#[tokio::test]
+async fn memory_ids_of_a_deleted_branch_are_refused_and_nothing_is_written() {
+    let harness = harness(Reply::Text("reply"));
+    let conversation_id = launch(&harness, "tombstone-launch").await;
+    let anchor = conversation_add_user_message(
+        &harness.context,
+        dto::ConversationAddUserMessageRequest {
+            conversation_id: conversation_id.clone(),
+            text: "Fork here".into(),
+            expected_revision: 1,
+            client_operation_id: "tombstone-anchor".into(),
+        },
+    )
+    .await
+    .expect("anchor");
+    let database = harness.context.backend().database();
+    let root = ConversationReader::get(database, conversation_id.parse().expect("id"))
+        .expect("conversation")
+        .conversation
+        .active_branch_id;
+    let fork = conversation_branch_fork(
+        &harness.context,
+        dto::ConversationBranchForkRequest {
+            conversation_id: conversation_id.clone(),
+            message_id: anchor.message.id,
+            expected_revision: anchor.revision,
+            client_operation_id: "tombstone-fork".into(),
+        },
+    )
+    .await
+    .expect("fork");
+    let child_item = memory_add(
+        &harness.context,
+        dto::MemoryAddRequest {
+            conversation_id: conversation_id.clone(),
+            text: "Only on the fork".into(),
+            category: None,
+            observed_at: None,
+            expected_revision: 1,
+            client_operation_id: "tombstone-add".into(),
+        },
+    )
+    .await
+    .expect("fork memory")
+    .memory_id
+    .expect("id");
+    let selected = conversation_branch_select(
+        &harness.context,
+        dto::ConversationBranchMutationRequest {
+            branch_id: root.to_string(),
+            expected_revision: fork.revision,
+            client_operation_id: "tombstone-select".into(),
+        },
+    )
+    .await
+    .expect("select root");
+    conversation_branch_delete(
+        &harness.context,
+        dto::ConversationBranchMutationRequest {
+            branch_id: fork.branch_id.clone(),
+            expected_revision: selected.revision,
+            client_operation_id: "tombstone-delete".into(),
+        },
+    )
+    .await
+    .expect("delete fork");
+    let before =
+        MemoryRepository::get_for_branch(database, conversation_id.parse().expect("id"), root)
+            .expect("parent memory")
+            .expect("space");
+    let refused = memory_pin(
+        &harness.context,
+        dto::MemoryPinRequest {
+            conversation_id: conversation_id.clone(),
+            memory_id: child_item,
+            pinned: true,
+            expected_revision: before.revision.get(),
+            client_operation_id: "tombstone-pin".into(),
+        },
+    )
+    .await
+    .expect_err("memory of a deleted branch");
+    assert_eq!(refused.code, ApiErrorCode::NotFound);
+    assert_eq!(
+        MemoryRepository::get_for_branch(database, conversation_id.parse().expect("id"), root)
+            .expect("parent memory")
+            .expect("space"),
+        before
+    );
+}

@@ -122,6 +122,12 @@ pub enum ApiErrorDetails {
     BranchDeleteRefused {
         reason: BranchDeleteRefusal,
     },
+    MemoryGate {
+        gate: crate::MemoryGateReason,
+    },
+    MemoryCycleDependent {
+        later_run_id: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

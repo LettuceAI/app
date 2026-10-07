@@ -25,6 +25,7 @@ mod jobs;
 mod local_models;
 mod mapping;
 mod memory;
+mod memory_control;
 mod memory_models;
 mod memory_read;
 mod memory_worker;
@@ -59,6 +60,8 @@ mod inspect_tests;
 mod legacy_regenerate_tests;
 #[cfg(test)]
 mod local_models_tests;
+#[cfg(test)]
+mod memory_control_tests;
 #[cfg(test)]
 mod memory_tests;
 #[cfg(test)]
@@ -186,4 +189,5 @@ pub use memory::{
     memory_update,
 };
 
+pub use memory_control::{memory_retry, memory_skip, memory_trigger};
 pub use memory_read::memory_get;

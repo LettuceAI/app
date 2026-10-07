@@ -16,7 +16,7 @@ use lettuce_types::{ConversationId, MemoryId, OperationId, TimestampMillis};
 use super::error::{IntoApiError, api_error, invalid_field, model_error, parse_id};
 use super::{ApiContext, messages};
 
-struct EditFailure(ApiError);
+pub(super) struct EditFailure(pub(super) ApiError);
 
 impl From<ApiOperationError> for EditFailure {
     fn from(error: ApiOperationError) -> Self {
@@ -84,6 +84,26 @@ fn embedding_error(context: &ApiContext, error: crate::EmbeddingGenerationError)
             RequiredModel::Embedding,
         ),
     }
+}
+
+pub(super) fn live_conversation(
+    database: &lettuce_database::Database,
+    conversation_id: ConversationId,
+) -> Result<lettuce_conversations::Conversation, ApiError> {
+    let aggregate =
+        ConversationReader::get(database, conversation_id).map_err(IntoApiError::into_api_error)?;
+    let conversation = aggregate.conversation;
+    if conversation.lifecycle == ConversationLifecycle::Tombstoned
+        || !aggregate.branches.iter().any(|branch| {
+            branch.id == conversation.active_branch_id && branch.status == BranchStatus::Active
+        })
+    {
+        return Err(api_error(
+            ApiErrorCode::NotFound,
+            "the active conversation branch is unavailable",
+        ));
+    }
+    Ok(conversation)
 }
 
 enum Edit {
