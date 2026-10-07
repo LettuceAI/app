@@ -695,3 +695,136 @@ CREATE TABLE memory_error_dismissals (
     job_id TEXT NOT NULL,
     dismissed_at INTEGER NOT NULL
 ) STRICT;
+
+CREATE TABLE memory_changes (
+    position INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id TEXT NOT NULL UNIQUE
+) STRICT;
+
+CREATE TRIGGER memory_items_record_insert AFTER INSERT ON memory_items
+BEGIN
+    DELETE FROM memory_changes WHERE conversation_id IN (SELECT conversation_id FROM conversation_memory_spaces WHERE space_id = NEW.space_id);
+    INSERT INTO memory_changes (conversation_id) SELECT DISTINCT conversation_id FROM conversation_memory_spaces WHERE space_id = NEW.space_id;
+END;
+CREATE TRIGGER memory_items_record_update AFTER UPDATE ON memory_items
+BEGIN
+    DELETE FROM memory_changes WHERE conversation_id IN (SELECT conversation_id FROM conversation_memory_spaces WHERE space_id = NEW.space_id);
+    INSERT INTO memory_changes (conversation_id) SELECT DISTINCT conversation_id FROM conversation_memory_spaces WHERE space_id = NEW.space_id;
+END;
+CREATE TRIGGER memory_items_record_delete AFTER DELETE ON memory_items
+BEGIN
+    DELETE FROM memory_changes WHERE conversation_id IN (SELECT conversation_id FROM conversation_memory_spaces WHERE space_id = OLD.space_id);
+    INSERT INTO memory_changes (conversation_id) SELECT DISTINCT conversation_id FROM conversation_memory_spaces WHERE space_id = OLD.space_id;
+END;
+CREATE TRIGGER memory_summaries_record_insert AFTER INSERT ON memory_summaries
+BEGIN
+    DELETE FROM memory_changes WHERE conversation_id IN (SELECT conversation_id FROM conversation_memory_spaces WHERE space_id = NEW.space_id);
+    INSERT INTO memory_changes (conversation_id) SELECT DISTINCT conversation_id FROM conversation_memory_spaces WHERE space_id = NEW.space_id;
+END;
+CREATE TRIGGER memory_summaries_record_update AFTER UPDATE ON memory_summaries
+BEGIN
+    DELETE FROM memory_changes WHERE conversation_id IN (SELECT conversation_id FROM conversation_memory_spaces WHERE space_id = NEW.space_id);
+    INSERT INTO memory_changes (conversation_id) SELECT DISTINCT conversation_id FROM conversation_memory_spaces WHERE space_id = NEW.space_id;
+END;
+CREATE TRIGGER memory_summaries_record_delete AFTER DELETE ON memory_summaries
+BEGIN
+    DELETE FROM memory_changes WHERE conversation_id IN (SELECT conversation_id FROM conversation_memory_spaces WHERE space_id = OLD.space_id);
+    INSERT INTO memory_changes (conversation_id) SELECT DISTINCT conversation_id FROM conversation_memory_spaces WHERE space_id = OLD.space_id;
+END;
+CREATE TRIGGER memory_inherited_summaries_record_insert AFTER INSERT ON memory_inherited_summaries
+BEGIN
+    DELETE FROM memory_changes WHERE conversation_id IN (SELECT conversation_id FROM conversation_memory_spaces WHERE space_id = NEW.space_id);
+    INSERT INTO memory_changes (conversation_id) SELECT DISTINCT conversation_id FROM conversation_memory_spaces WHERE space_id = NEW.space_id;
+END;
+CREATE TRIGGER memory_inherited_summaries_record_update AFTER UPDATE ON memory_inherited_summaries
+BEGIN
+    DELETE FROM memory_changes WHERE conversation_id IN (SELECT conversation_id FROM conversation_memory_spaces WHERE space_id = NEW.space_id);
+    INSERT INTO memory_changes (conversation_id) SELECT DISTINCT conversation_id FROM conversation_memory_spaces WHERE space_id = NEW.space_id;
+END;
+CREATE TRIGGER memory_inherited_summaries_record_delete AFTER DELETE ON memory_inherited_summaries
+BEGIN
+    DELETE FROM memory_changes WHERE conversation_id IN (SELECT conversation_id FROM conversation_memory_spaces WHERE space_id = OLD.space_id);
+    INSERT INTO memory_changes (conversation_id) SELECT DISTINCT conversation_id FROM conversation_memory_spaces WHERE space_id = OLD.space_id;
+END;
+CREATE TRIGGER memory_error_dismissals_record_insert AFTER INSERT ON memory_error_dismissals
+BEGIN
+    DELETE FROM memory_changes WHERE conversation_id IN (SELECT conversation_id FROM conversation_memory_spaces WHERE space_id = NEW.space_id);
+    INSERT INTO memory_changes (conversation_id) SELECT DISTINCT conversation_id FROM conversation_memory_spaces WHERE space_id = NEW.space_id;
+END;
+CREATE TRIGGER memory_error_dismissals_record_update AFTER UPDATE ON memory_error_dismissals
+BEGIN
+    DELETE FROM memory_changes WHERE conversation_id IN (SELECT conversation_id FROM conversation_memory_spaces WHERE space_id = NEW.space_id);
+    INSERT INTO memory_changes (conversation_id) SELECT DISTINCT conversation_id FROM conversation_memory_spaces WHERE space_id = NEW.space_id;
+END;
+CREATE TRIGGER dynamic_memory_cycle_reverts_record_insert AFTER INSERT ON dynamic_memory_cycle_reverts
+BEGIN
+    DELETE FROM memory_changes WHERE conversation_id IN (SELECT conversation_id FROM conversation_memory_spaces WHERE space_id = NEW.space_id);
+    INSERT INTO memory_changes (conversation_id) SELECT DISTINCT conversation_id FROM conversation_memory_spaces WHERE space_id = NEW.space_id;
+END;
+CREATE TRIGGER dynamic_memory_cycle_reverts_record_update AFTER UPDATE ON dynamic_memory_cycle_reverts
+BEGIN
+    DELETE FROM memory_changes WHERE conversation_id IN (SELECT conversation_id FROM conversation_memory_spaces WHERE space_id = NEW.space_id);
+    INSERT INTO memory_changes (conversation_id) SELECT DISTINCT conversation_id FROM conversation_memory_spaces WHERE space_id = NEW.space_id;
+END;
+CREATE TRIGGER memory_spaces_record_update AFTER UPDATE ON memory_spaces
+BEGIN
+    DELETE FROM memory_changes WHERE conversation_id IN (SELECT conversation_id FROM conversation_memory_spaces WHERE space_id = NEW.id);
+    INSERT INTO memory_changes (conversation_id) SELECT DISTINCT conversation_id FROM conversation_memory_spaces WHERE space_id = NEW.id;
+END;
+CREATE TRIGGER dynamic_memory_runs_record_insert AFTER INSERT ON dynamic_memory_runs
+BEGIN
+    DELETE FROM memory_changes WHERE conversation_id IN (SELECT conversation_id FROM conversation_memory_spaces WHERE space_id = NEW.space_id);
+    INSERT INTO memory_changes (conversation_id) SELECT DISTINCT conversation_id FROM conversation_memory_spaces WHERE space_id = NEW.space_id;
+END;
+CREATE TRIGGER dynamic_memory_run_attempts_record_insert AFTER INSERT ON dynamic_memory_run_attempts
+BEGIN
+    DELETE FROM memory_changes WHERE conversation_id IN (SELECT conversation_id FROM conversation_memory_spaces WHERE space_id = (SELECT space_id FROM dynamic_memory_runs WHERE id = NEW.run_id));
+    INSERT INTO memory_changes (conversation_id) SELECT DISTINCT conversation_id FROM conversation_memory_spaces WHERE space_id = (SELECT space_id FROM dynamic_memory_runs WHERE id = NEW.run_id);
+END;
+CREATE TRIGGER dynamic_memory_run_attempts_record_update AFTER UPDATE ON dynamic_memory_run_attempts
+BEGIN
+    DELETE FROM memory_changes WHERE conversation_id IN (SELECT conversation_id FROM conversation_memory_spaces WHERE space_id = (SELECT space_id FROM dynamic_memory_runs WHERE id = NEW.run_id));
+    INSERT INTO memory_changes (conversation_id) SELECT DISTINCT conversation_id FROM conversation_memory_spaces WHERE space_id = (SELECT space_id FROM dynamic_memory_runs WHERE id = NEW.run_id);
+END;
+CREATE TRIGGER dynamic_memory_pending_approvals_record_insert AFTER INSERT ON dynamic_memory_pending_approvals
+BEGIN
+    DELETE FROM memory_changes WHERE conversation_id = NEW.conversation_id;
+    INSERT INTO memory_changes (conversation_id) VALUES (NEW.conversation_id);
+END;
+CREATE TRIGGER dynamic_memory_pending_approvals_record_update AFTER UPDATE ON dynamic_memory_pending_approvals
+BEGIN
+    DELETE FROM memory_changes WHERE conversation_id = NEW.conversation_id;
+    INSERT INTO memory_changes (conversation_id) VALUES (NEW.conversation_id);
+END;
+CREATE TRIGGER dynamic_memory_pending_approvals_record_delete AFTER DELETE ON dynamic_memory_pending_approvals
+BEGIN
+    DELETE FROM memory_changes WHERE conversation_id = OLD.conversation_id;
+    INSERT INTO memory_changes (conversation_id) VALUES (OLD.conversation_id);
+END;
+CREATE TRIGGER memory_synced_cursors_record_insert AFTER INSERT ON memory_synced_cursors
+BEGIN
+    DELETE FROM memory_changes WHERE conversation_id = NEW.conversation_id;
+    INSERT INTO memory_changes (conversation_id) VALUES (NEW.conversation_id);
+END;
+CREATE TRIGGER memory_synced_cursors_record_update AFTER UPDATE ON memory_synced_cursors
+BEGIN
+    DELETE FROM memory_changes WHERE conversation_id = NEW.conversation_id;
+    INSERT INTO memory_changes (conversation_id) VALUES (NEW.conversation_id);
+END;
+CREATE TRIGGER memory_synced_cursors_record_delete AFTER DELETE ON memory_synced_cursors
+BEGIN
+    DELETE FROM memory_changes WHERE conversation_id = OLD.conversation_id;
+    INSERT INTO memory_changes (conversation_id) VALUES (OLD.conversation_id);
+END;
+CREATE TRIGGER jobs_record_memory_insert AFTER INSERT ON jobs
+FOR EACH ROW WHEN NEW.kind = 'memory_extraction' AND NEW.subject_kind = 'conversation'
+BEGIN
+    DELETE FROM memory_changes WHERE conversation_id IN (SELECT peer.conversation_id FROM conversation_memory_spaces own JOIN conversation_memory_spaces peer ON peer.space_id = own.space_id WHERE own.conversation_id = NEW.subject_id);
+    INSERT INTO memory_changes (conversation_id) SELECT DISTINCT peer.conversation_id FROM conversation_memory_spaces own JOIN conversation_memory_spaces peer ON peer.space_id = own.space_id WHERE own.conversation_id = NEW.subject_id;
+END;
+CREATE TRIGGER jobs_record_memory_state AFTER UPDATE OF state ON jobs
+FOR EACH ROW WHEN NEW.kind = 'memory_extraction' AND NEW.subject_kind = 'conversation'
+BEGIN
+    DELETE FROM memory_changes WHERE conversation_id IN (SELECT peer.conversation_id FROM conversation_memory_spaces own JOIN conversation_memory_spaces peer ON peer.space_id = own.space_id WHERE own.conversation_id = NEW.subject_id);
+    INSERT INTO memory_changes (conversation_id) SELECT DISTINCT peer.conversation_id FROM conversation_memory_spaces own JOIN conversation_memory_spaces peer ON peer.space_id = own.space_id WHERE own.conversation_id = NEW.subject_id;
+END;

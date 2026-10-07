@@ -51,3 +51,5 @@ Companion commands return the authored Soul configuration as a document next to 
 A revert refused because the user edited an item the cycle changed carries `ApiErrorDetails::MemoryCycleUserEdited` with that memory's id.
 
 `companion_soul_get` returns the authored Soul configuration as a typed `CompanionSoulConfigView` (identity text, baseline affect, regulation style, authored facts, relationship defaults, prompting and the sharing toggles) derived from the companion domain type, and the Soul writer takes and returns the typed `CompanionSoulDraft`. Contracts hold no free-form JSON for them.
+
+`ApiEvent::MemoryChanged` names a conversation whose `memory_get` result changed.

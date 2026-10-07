@@ -5951,6 +5951,7 @@ mod tests {
                 "media_assets",
                 "media_blobs",
                 "media_gc_candidates",
+                "memory_changes",
                 "memory_embedding_projections",
                 "memory_error_dismissals",
                 "memory_inherited_summaries",

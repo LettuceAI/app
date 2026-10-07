@@ -46,6 +46,7 @@ fn database_changes(
 pub(crate) struct ConversationFeed {
     position: u64,
     signals: u64,
+    memory: u64,
     reads: Arc<AtomicUsize>,
     read: Arc<ChangeRead>,
 }
@@ -75,9 +76,19 @@ impl ConversationFeed {
                     .map_err(IntoApiError::into_api_error)
             })
             .await?;
+        let memory = context
+            .blocking(|context| {
+                context
+                    .backend()
+                    .database()
+                    .memory_change_position()
+                    .map_err(super::memory::memory_error)
+            })
+            .await?;
         Ok(Self {
             position,
             signals,
+            memory,
             reads: Arc::new(AtomicUsize::new(0)),
             read,
         })
@@ -183,6 +194,28 @@ impl ConversationFeed {
                 self.signals = signal.position;
             }
             if !full || self.signals == after {
+                break;
+            }
+        }
+        loop {
+            let after = self.memory;
+            let changes = context
+                .blocking(move |context| {
+                    context
+                        .backend()
+                        .database()
+                        .memory_changes_since(after, FEED_PAGE)
+                        .map_err(super::memory::memory_error)
+                })
+                .await?;
+            let full = changes.len() >= FEED_PAGE as usize;
+            for (position, conversation_id) in &changes {
+                context.emit(ApiEvent::MemoryChanged {
+                    conversation_id: conversation_id.to_string(),
+                });
+                self.memory = *position;
+            }
+            if !full || self.memory == after {
                 return completion;
             }
         }

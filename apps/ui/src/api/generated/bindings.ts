@@ -288,7 +288,13 @@ export type ApiErrorDetails = { type: "invalid_field"; field: string } | { type:
  *  and `MessageSceneImageChanged` follow a message's companion effect and
  *  scene image follow-up.
  */
-export type ApiEvent = { type: "generation_settled"; conversation_id: string; turn_id: string } | { type: "job_updated"; job: JobView } | { type: "conversation_changed"; conversation_id: string } | { type: "conversation_removed"; conversation_id: string } | { type: "required_models_changed" } | 
+export type ApiEvent = { type: "generation_settled"; conversation_id: string; turn_id: string } | { type: "job_updated"; job: JobView } | { type: "conversation_changed"; conversation_id: string } | { type: "conversation_removed"; conversation_id: string } | 
+/**
+ *  What `memory_get` shows for the conversation changed: its items,
+ *  summary, revision, cycle, approval or dismissal state. Every chat that
+ *  shares the memory gets one.
+ */
+{ type: "memory_changed"; conversation_id: string } | { type: "required_models_changed" } | 
 /**
  *  The companion effect of a reply settled (`message_companion_effect`
  *  reads it).

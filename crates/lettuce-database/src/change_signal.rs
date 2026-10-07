@@ -29,7 +29,9 @@ impl ChangeFeed {
     fn of_table(table: &str) -> Option<Self> {
         match table {
             "job_changes" => Some(Self::Jobs),
-            "conversation_changes" | "message_signals" => Some(Self::Conversations),
+            "conversation_changes" | "message_signals" | "memory_changes" => {
+                Some(Self::Conversations)
+            }
             _ => None,
         }
     }

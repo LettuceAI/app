@@ -176,6 +176,12 @@ pub enum ApiEvent {
     ConversationRemoved {
         conversation_id: String,
     },
+    /// What `memory_get` shows for the conversation changed: its items,
+    /// summary, revision, cycle, approval or dismissal state. Every chat that
+    /// shares the memory gets one.
+    MemoryChanged {
+        conversation_id: String,
+    },
     RequiredModelsChanged,
     /// The companion effect of a reply settled (`message_companion_effect`
     /// reads it).

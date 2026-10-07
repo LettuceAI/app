@@ -1801,3 +1801,177 @@ async fn a_concurrent_trigger_and_post_turn_admission_create_one_job() {
         assert_eq!(jobs.items.len(), 1, "round {round}");
     }
 }
+
+fn memory_events(harness: &super::tests::Harness, chat: &str) -> usize {
+    super::tests::api_events(harness)
+        .into_iter()
+        .filter(|event| matches!(event, dto::ApiEvent::MemoryChanged { conversation_id } if conversation_id == chat))
+        .count()
+}
+
+#[tokio::test]
+async fn a_manual_edit_emits_one_memory_changed_after_it_commits_and_a_rollback_none() {
+    use super::conversation_feed::ConversationFeed;
+    let harness = harness(Reply::Text("reply"));
+    let (chat, _) = replied_chat(&harness, "events").await;
+    let mut feed = ConversationFeed::start(&harness.context)
+        .await
+        .expect("feed");
+    feed.publish(&harness.context).await.expect("idle publish");
+    let baseline = memory_events(&harness, &chat);
+    let revision = status_of(&harness, &chat).await.revision;
+    memory_add(
+        &harness.context,
+        dto::MemoryAddRequest {
+            conversation_id: chat.clone(),
+            text: "Event fact".into(),
+            category: None,
+            observed_at: None,
+            expected_revision: revision,
+            client_operation_id: "events-add".into(),
+        },
+    )
+    .await
+    .expect("add");
+    feed.publish(&harness.context).await.expect("publish");
+    assert_eq!(memory_events(&harness, &chat), baseline + 1);
+    feed.publish(&harness.context).await.expect("quiet publish");
+    assert_eq!(memory_events(&harness, &chat), baseline + 1);
+
+    let database = harness.context.backend().database();
+    let conversation_id: lettuce_types::ConversationId = chat.parse().expect("id");
+    let branch_id = lettuce_conversations::ConversationReader::get(database, conversation_id)
+        .expect("conversation")
+        .conversation
+        .active_branch_id;
+    let space =
+        lettuce_memory::MemoryRepository::get_for_branch(database, conversation_id, branch_id)
+            .expect("memory")
+            .expect("space");
+    let conversation_revision =
+        lettuce_conversations::ConversationReader::get(database, conversation_id)
+            .expect("conversation")
+            .conversation
+            .revision;
+    let failed: Result<(), lettuce_database::ApiOperationError> = database.commit_api_operation(
+        "events-rollback",
+        "events-rollback",
+        "digest",
+        harness.context.now(),
+        |scope| {
+            scope
+                .apply_memory_manual_edit(
+                    &lettuce_memory::MemoryManualEdit {
+                        id: lettuce_types::OperationId::new(),
+                        conversation_id,
+                        branch_id,
+                        conversation_revision,
+                        expected_revision: space.revision,
+                        space_id: space.id,
+                        context_revisions: vec![],
+                        mutation: lettuce_memory::MemoryManualMutation::Summary { summary: None },
+                        at: harness.context.now(),
+                    },
+                    None,
+                )
+                .expect("the edit applies before the operation fails");
+            Err(lettuce_database::ApiOperationError::Storage)
+        },
+    );
+    assert!(failed.is_err());
+    feed.publish(&harness.context)
+        .await
+        .expect("rollback publish");
+    assert_eq!(memory_events(&harness, &chat), baseline + 1);
+}
+
+#[tokio::test]
+async fn a_cycle_in_one_pooled_chat_emits_memory_changed_for_the_other() {
+    use super::conversation_feed::ConversationFeed;
+    let harness = harness(Reply::Text("reply"));
+    let database = harness.context.backend().database();
+    let character = super::tests::create_character(
+        database,
+        "Pool events",
+        lettuce_characters::CharacterDefaults {
+            interaction_mode: lettuce_characters::InteractionMode::Companion,
+            companion_soul: Some(lettuce_companions::CompanionSoulConfig::default()),
+            memory_policy: lettuce_characters::MemoryPolicy::Dynamic,
+            ..lettuce_characters::CharacterDefaults::default()
+        },
+    );
+    let a = conversation_launch_direct(
+        &harness.context,
+        dto::LaunchDirectRequest {
+            character_id: character.to_string(),
+            title: None,
+            scene_id: None,
+            starter_id: None,
+            client_operation_id: "pool-events-a".into(),
+        },
+    )
+    .await
+    .expect("launch")
+    .conversation_id;
+    let message = conversation_add_user_message(
+        &harness.context,
+        dto::ConversationAddUserMessageRequest {
+            conversation_id: a.clone(),
+            text: "Hello".into(),
+            expected_revision: 1,
+            client_operation_id: "pool-events-message".into(),
+        },
+    )
+    .await
+    .expect("message");
+    let _ = message;
+    let b = conversation_duplicate(
+        &harness.context,
+        dto::ConversationDuplicateRequest {
+            conversation_id: a.clone(),
+            title: None,
+            with_messages: true,
+            client_operation_id: "pool-events-b".into(),
+        },
+    )
+    .await
+    .expect("duplicate")
+    .conversation_id;
+    let mut feed = ConversationFeed::start(&harness.context)
+        .await
+        .expect("feed");
+    feed.publish(&harness.context).await.expect("idle publish");
+    let (before_a, before_b) = (memory_events(&harness, &a), memory_events(&harness, &b));
+    recorded_cycle(&harness, &a, "Pool summary", "Pool fact", 1_000, 0).await;
+    feed.publish(&harness.context).await.expect("publish");
+    assert_eq!(memory_events(&harness, &a), before_a + 1);
+    assert_eq!(memory_events(&harness, &b), before_b + 1);
+}
+
+#[tokio::test]
+async fn a_revert_emits_memory_changed() {
+    use super::conversation_feed::ConversationFeed;
+    let harness = harness(Reply::Text("reply"));
+    let (chat, _) = replied_chat(&harness, "events-revert").await;
+    make_dynamic(&harness, true);
+    let cycle = recorded_cycle(&harness, &chat, "Summary", "Fact", 1_000, 0).await;
+    let mut feed = ConversationFeed::start(&harness.context)
+        .await
+        .expect("feed");
+    feed.publish(&harness.context).await.expect("idle publish");
+    let baseline = memory_events(&harness, &chat);
+    let revision = status_of(&harness, &chat).await.revision;
+    memory_cycle_revert(
+        &harness.context,
+        dto::MemoryCycleRevertRequest {
+            conversation_id: chat.clone(),
+            run_id: cycle.run_id,
+            expected_revision: revision,
+            client_operation_id: "events-revert".into(),
+        },
+    )
+    .await
+    .expect("revert");
+    feed.publish(&harness.context).await.expect("publish");
+    assert_eq!(memory_events(&harness, &chat), baseline + 1);
+}

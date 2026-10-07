@@ -399,6 +399,6 @@ pub(super) fn soul_draft_view(
         .last()
         .map_or(run.starting_draft, |round| round.resulting_draft.clone());
     Ok(Some(lettuce_contracts::JobResultDto::CompanionSoulDraft {
-        draft: crate::api::companion::draft_from_document(document)?,
+        draft: Box::new(crate::api::companion::draft_from_document(document)?),
     }))
 }

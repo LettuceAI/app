@@ -236,7 +236,7 @@ pub enum JobResultDto {
     /// The Soul draft a Soul writer job produced, which the caller merges
     /// into its unsaved draft.
     CompanionSoulDraft {
-        draft: crate::CompanionSoulDraft,
+        draft: Box<crate::CompanionSoulDraft>,
     },
     /// The text a help-me-reply or scene prompt job wrote, cleaned.
     GeneratedText {
