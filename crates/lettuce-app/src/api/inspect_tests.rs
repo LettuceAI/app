@@ -833,3 +833,85 @@ async fn the_snapshot_preserves_distinct_lore_titles_for_identical_placed_conten
         stored.budget.estimated_input_tokens
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn production_workers_admit_memory_after_a_finished_dynamic_turn() {
+    use lettuce_jobs::JobStore;
+    let mut harness = harness_in(
+        Reply::Text("Hello."),
+        Arc::new(SystemClock),
+        None,
+        None,
+        Arc::new(AllModels),
+    );
+    let database = harness.context.backend().database();
+    harness.character_id = create_character(
+        database,
+        "Dynamic Ada",
+        CharacterDefaults {
+            memory_policy: lettuce_characters::MemoryPolicy::Dynamic,
+            ..CharacterDefaults::default()
+        },
+    );
+    let stored = GlobalSettingsStore::load(database).expect("settings");
+    let mut settings = stored.settings;
+    settings.dynamic_memory.enabled = true;
+    settings.dynamic_memory.summary_message_interval = 2;
+    settings.dynamic_memory.run_mode = lettuce_settings::MemoryRunMode::Auto;
+    GlobalSettingsStore::save(
+        database,
+        settings,
+        stored.default_model_profile_id,
+        stored.revision,
+    )
+    .expect("enable automatic memory");
+    let workers = startup(&harness.context).await.expect("startup");
+    workers.started().await;
+    let chat = super::tests::launch(&harness, "production-memory-launch").await;
+    let accepted = send(
+        &harness,
+        &chat,
+        "production-memory-send",
+        "Hi there",
+        stream(),
+    )
+    .await
+    .expect("send");
+    tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        harness.events.until(|events| {
+            events.iter().any(|event| {
+                matches!(event, ApiEvent::GenerationSettled { turn_id, .. } if turn_id == &accepted.turn_id)
+            })
+        }),
+    )
+    .await
+    .expect("generation settled");
+    let turn = ConversationReader::get_turn(database, accepted.turn_id.parse().expect("turn"))
+        .expect("stored turn");
+    assert_eq!(turn.status, GenerationTurnStatus::Succeeded);
+    let admitted = tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        harness.events.until(|_| {
+            JobStore::list(
+                database,
+                lettuce_jobs::JobQuery {
+                    state: None,
+                    kind: Some(lettuce_jobs::JobKind::MemoryExtraction),
+                    subject: None,
+                    page: lettuce_types::PageRequest {
+                        cursor: None,
+                        limit: lettuce_types::PageLimit::new(1),
+                    },
+                },
+            )
+            .expect("memory jobs")
+            .items
+            .iter()
+            .any(|job| job.subject.id.as_str() == chat)
+        }),
+    )
+    .await;
+    workers.stop().await;
+    assert!(admitted.is_ok(), "the finished turn never admitted memory");
+}

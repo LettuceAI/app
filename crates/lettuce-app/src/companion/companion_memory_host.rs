@@ -70,6 +70,24 @@ pub enum CompanionMemoryRuntimeInputError {
     Storage,
 }
 
+#[derive(Debug, Clone, Copy, thiserror::Error)]
+#[error("memory job output is unavailable")]
+pub struct CompanionMemoryOutputError;
+
+#[async_trait::async_trait]
+pub trait CompanionMemoryJobOutput: std::fmt::Debug + Send + Sync {
+    fn open(
+        &self,
+        job_id: lettuce_types::JobId,
+        cancellation: lettuce_jobs::handle::CancellationToken,
+    ) -> Result<lettuce_types::RequestId, CompanionMemoryOutputError>;
+
+    async fn close(&self, sink: lettuce_types::RequestId)
+    -> Result<(), CompanionMemoryOutputError>;
+
+    fn finished(&self, _job_id: lettuce_types::JobId) {}
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum CompanionMemoryHostError {
     #[error("post-turn memory settings are unavailable: {0}")]
@@ -155,6 +173,7 @@ pub struct CompanionMemoryHostCoordinator<'a, R: ?Sized, E: ?Sized, I: ?Sized> {
     engine: &'a E,
     inference: &'a I,
     inference_runtime: Option<&'a lettuce_inference::InferenceRuntime>,
+    output: Option<&'a dyn CompanionMemoryJobOutput>,
 }
 
 impl<'a, R: ?Sized, E: ?Sized, I: ?Sized> CompanionMemoryHostCoordinator<'a, R, E, I> {
@@ -165,7 +184,14 @@ impl<'a, R: ?Sized, E: ?Sized, I: ?Sized> CompanionMemoryHostCoordinator<'a, R, 
             engine,
             inference,
             inference_runtime: None,
+            output: None,
         }
+    }
+
+    #[must_use]
+    pub const fn with_job_output(mut self, output: &'a dyn CompanionMemoryJobOutput) -> Self {
+        self.output = Some(output);
+        self
     }
 
     /// Registers each running cycle's cancellation under its job, so a
@@ -177,6 +203,76 @@ impl<'a, R: ?Sized, E: ?Sized, I: ?Sized> CompanionMemoryHostCoordinator<'a, R, 
     ) -> Self {
         self.inference_runtime = Some(runtime);
         self
+    }
+}
+
+pub(crate) struct JobOutputInference<'a, I: ?Sized> {
+    inference: &'a I,
+    runtime: Option<&'a lettuce_inference::InferenceRuntime>,
+    sink: Option<lettuce_types::RequestId>,
+    sequence: std::sync::atomic::AtomicU64,
+}
+
+impl<'a, I: ?Sized> JobOutputInference<'a, I> {
+    pub(crate) fn new(
+        inference: &'a I,
+        runtime: Option<&'a lettuce_inference::InferenceRuntime>,
+        sink: Option<lettuce_types::RequestId>,
+    ) -> Self {
+        Self {
+            inference,
+            runtime,
+            sink,
+            sequence: std::sync::atomic::AtomicU64::new(0),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl<I: InferencePort + ?Sized> InferencePort for JobOutputInference<'_, I> {
+    async fn run(
+        &self,
+        mut request: lettuce_conversations::InferenceRequest,
+    ) -> Result<lettuce_conversations::InferenceOutcome, lettuce_conversations::PortError> {
+        use lettuce_conversations::PortError;
+        use lettuce_inference::InferenceRuntimePort;
+        let (Some(runtime), Some(parent)) = (self.runtime, self.sink) else {
+            return self.inference.run(request).await;
+        };
+        if request.stream_sink != Some(parent) {
+            return self.inference.run(request).await;
+        }
+        let child = lettuce_types::RequestId::new();
+        let mut receiver = runtime
+            .register_stream(child)
+            .map_err(|_| PortError::Unavailable)?;
+        request.stream_sink = Some(child);
+        let response = async {
+            let response = self.inference.run(request).await;
+            runtime
+                .unregister_stream(child)
+                .map_err(|_| PortError::Unavailable)?;
+            response
+        };
+        let forward = async {
+            while let Some(mut event) = receiver.recv().await {
+                event.turn_id = lettuce_types::GenerationTurnId::from_uuid(parent.as_uuid());
+                event.attempt_id = lettuce_types::GenerationAttemptId::from_uuid(parent.as_uuid());
+                event.sequence = self
+                    .sequence
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                    .checked_add(1)
+                    .ok_or(PortError::Unavailable)?;
+                runtime
+                    .emit(parent, event)
+                    .await
+                    .map_err(|_| PortError::Unavailable)?;
+            }
+            Ok::<(), PortError>(())
+        };
+        let (response, forwarded) = tokio::join!(response, forward);
+        forwarded?;
+        response
     }
 }
 
@@ -577,17 +673,39 @@ where
         })
     }
 
-    /// Runs one claimed cycle with live inputs and settles its job. Missing
-    /// runtime inputs (no summarisation model configured) reschedule the job
-    /// without starting a run, so it is tried again on the next turn.
+    /// Runs one claimed cycle with live inputs and settles its job.
     pub async fn run_claimed(
         &self,
         work: CompanionMemoryClaimedWork,
         cancellation_reason: CancellationReason,
         now: TimestampMillis,
     ) -> Result<CompanionMemorySettledWork, CompanionMemoryHostError> {
-        self.run_claimed_with_stream(work, cancellation_reason, None, now)
-            .await
+        let sink = match self.output {
+            Some(output) => match output.open(work.handle.id(), work.handle.cancellation_token()) {
+                Ok(sink) => Some(sink),
+                Err(error) => {
+                    return Ok(CompanionMemoryDispatchCoordinator::new(
+                        self.repository,
+                        self.repository,
+                    )
+                    .settle_run(
+                        work,
+                        Err(CompanionMemoryJobRunError::Output(error)),
+                        cancellation_reason,
+                        now,
+                    )?);
+                }
+            },
+            None => None,
+        };
+        let job_id = work.handle.id();
+        let result = self
+            .run_claimed_with_stream(work, cancellation_reason, sink, now)
+            .await;
+        if let Some(output) = self.output {
+            output.finished(job_id);
+        }
+        result
     }
 
     pub async fn run_claimed_with_stream(
@@ -608,12 +726,11 @@ where
                         CompanionMemoryRuntimeInputError::Storage
                     }
                 };
-                return Ok(dispatcher.settle_run(
-                    work,
-                    Err(CompanionMemoryJobRunError::RuntimeInputs(error)),
-                    cancellation_reason,
-                    now,
-                )?);
+                let error = match self.finish_output(stream_sink).await {
+                    Ok(()) => CompanionMemoryJobRunError::RuntimeInputs(error),
+                    Err(error) => CompanionMemoryJobRunError::Output(error),
+                };
+                return Ok(dispatcher.settle_run(work, Err(error), cancellation_reason, now)?);
             }
         };
         let engine = self.engine;
@@ -626,11 +743,13 @@ where
                     job_id: work.handle.id(),
                 })
         });
+        let inference =
+            JobOutputInference::new(self.inference, self.inference_runtime, stream_sink);
         let result = CompanionMemoryJobRunner::new(
             self.engine,
             self.repository,
             self.repository,
-            self.inference,
+            &inference,
         )
         .run(
             &work.admission,
@@ -649,7 +768,21 @@ where
             |round| create_seeds(engine, round, now),
         )
         .await;
+        let result = match self.finish_output(stream_sink).await {
+            Ok(()) => result,
+            Err(error) => Err(CompanionMemoryJobRunError::Output(error)),
+        };
         Ok(dispatcher.settle_run(work, result, cancellation_reason, now)?)
+    }
+
+    async fn finish_output(
+        &self,
+        sink: Option<lettuce_types::RequestId>,
+    ) -> Result<(), CompanionMemoryOutputError> {
+        if let (Some(output), Some(sink)) = (self.output, sink) {
+            output.close(sink).await?;
+        }
+        Ok(())
     }
 
     /// Runs passes until no turn asked for another or the conversation is

@@ -431,6 +431,8 @@ pub enum CompanionMemoryJobRunError {
     RuntimeInputs(crate::CompanionMemoryRuntimeInputError),
     #[error("memory job progress failed: {0}")]
     Jobs(lettuce_jobs::StoreError),
+    #[error("memory job output failed: {0}")]
+    Output(crate::CompanionMemoryOutputError),
 }
 
 impl CompanionMemoryJobRunError {
@@ -442,6 +444,7 @@ impl CompanionMemoryJobRunError {
             }
             Self::Loop(error) => Some(CompanionMemoryTerminalFailure::from_loop_error(error)),
             Self::Repair(_) => Some(CompanionMemoryTerminalFailure::Cancelled),
+            Self::Output(_) => Some(CompanionMemoryTerminalFailure::Recovery),
             Self::RuntimeInputs(_)
             | Self::Jobs(_)
             | Self::Admission(_)

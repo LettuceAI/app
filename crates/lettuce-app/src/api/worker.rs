@@ -168,6 +168,12 @@ impl ConversationGenerationWorker {
                         let turn =
                             ConversationReader::get_turn(context.backend().database(), turn_id)
                                 .map_err(IntoApiError::into_api_error)?;
+                        if turn.operation != lettuce_conversations::GenerationOperation::Regenerate
+                        {
+                            context
+                                .memory_work()
+                                .enqueue(conversation_id, turn.branch_id);
+                        }
                         for candidate_id in turn.candidate_ids {
                             super::scenes::start_auto(
                                 context,

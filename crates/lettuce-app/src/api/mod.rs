@@ -25,6 +25,7 @@ mod jobs;
 mod local_models;
 mod mapping;
 mod memory_models;
+mod memory_worker;
 mod messages;
 mod models;
 mod ollama;
@@ -114,6 +115,7 @@ pub use inspect::{
 };
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub use jobs::CatalogVariant;
+pub(crate) use jobs::MemoryJobOutput;
 pub use jobs::{
     ArtifactInstallHandler, ClaimedJob, ImageGenerateHandler, ImageToolHandler, InstallFinish,
     InstallSources, InstallWork, JobHandler, JobHandlers, JobLane, JobProgressSink, JobRunner,

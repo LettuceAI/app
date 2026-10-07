@@ -5293,6 +5293,136 @@ async fn memory_job_handler_respects_another_worker_and_the_frozen_parent_branch
     assert_eq!(inference.requests.lock().expect("requests").len(), 2);
 }
 
+#[tokio::test]
+async fn memory_job_output_drains_deltas_before_terminal_settlement() {
+    struct StreamingInference {
+        runtime: std::sync::Arc<lettuce_inference::InferenceRuntime>,
+        scripted: ScriptedInference,
+    }
+    #[async_trait::async_trait]
+    impl InferencePort for StreamingInference {
+        async fn run(&self, request: InferenceRequest) -> Result<InferenceOutcome, PortError> {
+            let sink = request.stream_sink.expect("memory stream sink");
+            self.runtime
+                .emit(
+                    sink,
+                    lettuce_conversations::GenerationStreamEventEnvelope {
+                        operation: request.operation,
+                        turn_id: request.turn_id,
+                        attempt_id: request.attempt_id,
+                        sequence: 1,
+                        event: lettuce_conversations::GenerationStreamEvent::TextDelta {
+                            text: "memory output".into(),
+                        },
+                    },
+                )
+                .await
+                .map_err(|_| PortError::Unavailable)?;
+            self.scripted.run(request).await
+        }
+    }
+    #[derive(Default)]
+    struct Watch(std::sync::Mutex<Vec<lettuce_contracts::JobEvent>>);
+    impl crate::api::JobEventSink for Watch {
+        fn emit(&self, event: lettuce_contracts::JobEvent) -> bool {
+            self.0.lock().expect("events").push(event);
+            true
+        }
+    }
+    #[derive(Debug)]
+    struct OrderedOutput<'a> {
+        inner: crate::api::MemoryJobOutput,
+        database: &'a Database,
+        job_id: JobId,
+    }
+    #[async_trait::async_trait]
+    impl crate::CompanionMemoryJobOutput for OrderedOutput<'_> {
+        fn open(
+            &self,
+            job_id: JobId,
+            cancellation: CancellationToken,
+        ) -> Result<lettuce_types::RequestId, crate::CompanionMemoryOutputError> {
+            self.inner.open(job_id, cancellation)
+        }
+        async fn close(
+            &self,
+            sink: lettuce_types::RequestId,
+        ) -> Result<(), crate::CompanionMemoryOutputError> {
+            self.inner.close(sink).await?;
+            assert_eq!(
+                JobStore::get(self.database, self.job_id)
+                    .expect("job")
+                    .expect("exists")
+                    .state,
+                JobState::Running
+            );
+            Ok(())
+        }
+        fn finished(&self, job_id: JobId) {
+            self.inner.finished(job_id);
+        }
+    }
+    let backend =
+        std::sync::Arc::new(AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend"));
+    let scenario = finalized_dynamic_turn(&backend, "stream-memory").await;
+    let inference = std::sync::Arc::new(StreamingInference {
+        runtime: std::sync::Arc::clone(backend.inference_runtime()),
+        scripted: successful_memory_cycle(),
+    });
+    let context =
+        crate::api::conversation_delete_tests::context_over(backend.clone(), inference.clone());
+    let work = backend
+        .companion_memory_host(&ScenarioEmbeddingEngine, inference.as_ref())
+        .after_turn(
+            scenario.conversation_id,
+            lettuce_conversations::GenerationOperation::Send,
+            WorkerId::new(),
+            TimestampMillis::new(1_030),
+            LEASE,
+            &ResourceAvailability::all(),
+        )
+        .expect("admit")
+        .pop()
+        .expect("work");
+    let watch = std::sync::Arc::new(Watch::default());
+    crate::api::job_watch(
+        &context,
+        lettuce_contracts::JobWatchRequest {
+            job_id: work.job.id.to_string(),
+        },
+        watch.clone(),
+    )
+    .await
+    .expect("watch memory");
+    let output = OrderedOutput {
+        inner: crate::api::MemoryJobOutput::new(context),
+        database: backend.database(),
+        job_id: work.job.id,
+    };
+    let settled = backend
+        .companion_memory_host(&ScenarioEmbeddingEngine, inference.as_ref())
+        .with_inference_runtime(backend.inference_runtime())
+        .with_job_output(&output)
+        .run_claimed(work, CancellationReason::User, TimestampMillis::new(1_030))
+        .await
+        .expect("run");
+    assert!(matches!(
+        settled,
+        crate::CompanionMemorySettledWork::Succeeded { .. }
+    ));
+    let deltas: Vec<_> = watch
+        .0
+        .lock()
+        .expect("events")
+        .iter()
+        .filter_map(|event| match event {
+            lettuce_contracts::JobEvent::TextDelta { text, .. } => text.clone(),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(deltas, vec!["memory output", "memory output"]);
+}
+
 async fn crash_during_memory_cycle(prefix: &str) -> (std::path::PathBuf, Scenario, JobId) {
     let path = std::env::temp_dir().join(format!("lettuce-{prefix}-{}.db", ConversationId::new()));
     let backend = AppBackend::open(&path, TimestampMillis::new(1)).expect("backend");

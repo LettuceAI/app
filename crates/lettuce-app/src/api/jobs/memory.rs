@@ -1,4 +1,8 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use async_trait::async_trait;
 use lettuce_contracts::ApiError;
@@ -86,20 +90,21 @@ impl ClaimedJob for ClaimedMemory {
         context: ApiContext,
         progress: Arc<dyn JobProgressSink>,
     ) -> Result<(), ApiError> {
-        let runtime = context.backend().inference_runtime();
-        let sink = RequestId::new();
-        let receiver = runtime.register_stream(sink).map_err(internal)?;
-        let forwarder = tokio::spawn(forward(receiver, progress));
+        use crate::CompanionFollowUps;
+        let worker_id = self.0.claim.claim.worker_id;
+        let output = MemoryJobOutput::new(context.clone()).with_progress(progress);
         let embedding = context.embedding();
-        let result = context
+        let settled = context
             .backend()
             .companion_memory_host(embedding.as_ref(), context.inference())
-            .with_inference_runtime(runtime)
-            .run_claimed_with_stream(self.0, CancellationReason::User, Some(sink), context.now())
+            .with_inference_runtime(context.backend().inference_runtime())
+            .with_job_output(&output)
+            .run_claimed(self.0, CancellationReason::User, context.now())
+            .await
+            .map_err(internal)?;
+        crate::CompanionFollowUpHost::new(context.backend().database(), context.inference())
+            .after_memory(&settled, worker_id, MEMORY_LEASE, context.clock())
             .await;
-        runtime.unregister_stream(sink).map_err(internal)?;
-        forwarder.await.map_err(internal)?;
-        result.map_err(internal)?;
         Ok(())
     }
 }
@@ -204,17 +209,21 @@ impl ClaimedJob for ClaimedSoul {
         let sink = RequestId::new();
         let receiver = runtime.register_stream(sink).map_err(internal)?;
         let forwarder = tokio::spawn(forward(receiver, progress));
-        let result =
-            crate::CompanionSoulWriterExecutionCoordinator::new(database, context.inference())
-                .with_job_attempt(self.0.claim.claim.attempt.get())
-                .run(
-                    self.0.run.request_id,
-                    &prompt,
-                    &self.0.handle,
-                    Some(sink),
-                    context.now(),
-                )
-                .await;
+        let inference = crate::companion::companion_memory_host::JobOutputInference::new(
+            context.inference(),
+            Some(runtime),
+            Some(sink),
+        );
+        let result = crate::CompanionSoulWriterExecutionCoordinator::new(database, &inference)
+            .with_job_attempt(self.0.claim.claim.attempt.get())
+            .run(
+                self.0.run.request_id,
+                &prompt,
+                &self.0.handle,
+                Some(sink),
+                context.now(),
+            )
+            .await;
         runtime.unregister_stream(sink).map_err(internal)?;
         forwarder.await.map_err(internal)?;
         context
@@ -254,4 +263,112 @@ fn retry_due(job: &JobSnapshot) -> Option<lettuce_types::TimestampMillis> {
     Some(lettuce_types::TimestampMillis::new(
         job.updated_at.get().saturating_add(delay),
     ))
+}
+
+pub(crate) struct MemoryJobOutput {
+    context: ApiContext,
+    progress: Option<Arc<dyn JobProgressSink>>,
+    streams: Mutex<HashMap<RequestId, MemoryStream>>,
+}
+
+struct MemoryStream {
+    forwarder: tokio::task::JoinHandle<()>,
+    _shutdown: crate::api::worker::ShutdownLink,
+}
+
+impl std::fmt::Debug for MemoryJobOutput {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("MemoryJobOutput")
+            .finish_non_exhaustive()
+    }
+}
+
+impl MemoryJobOutput {
+    pub(crate) fn new(context: ApiContext) -> Self {
+        Self {
+            context,
+            progress: None,
+            streams: Mutex::new(HashMap::new()),
+        }
+    }
+
+    fn with_progress(mut self, progress: Arc<dyn JobProgressSink>) -> Self {
+        self.progress = Some(progress);
+        self
+    }
+}
+
+struct MemoryProgress {
+    context: ApiContext,
+    job_id: lettuce_types::JobId,
+}
+
+impl JobProgressSink for MemoryProgress {
+    fn text_delta(&self, text: Option<String>, reasoning: Option<String>) {
+        self.context.jobs().text_delta(self.job_id, text, reasoning);
+    }
+
+    fn image_progress(&self, progress: lettuce_contracts::ImageProgress) {
+        self.context.jobs().image_progress(self.job_id, progress);
+    }
+}
+
+#[async_trait]
+impl crate::CompanionMemoryJobOutput for MemoryJobOutput {
+    fn open(
+        &self,
+        job_id: lettuce_types::JobId,
+        cancellation: CancellationToken,
+    ) -> Result<RequestId, crate::CompanionMemoryOutputError> {
+        let sink = RequestId::new();
+        let receiver = self
+            .context
+            .backend()
+            .inference_runtime()
+            .register_stream(sink)
+            .map_err(|_| crate::CompanionMemoryOutputError)?;
+        let progress = self.progress.clone().unwrap_or_else(|| {
+            Arc::new(MemoryProgress {
+                context: self.context.clone(),
+                job_id,
+            })
+        });
+        let shutdown = crate::api::worker::link_to_shutdown(
+            self.context.shutdown_token(),
+            cancellation.clone(),
+        );
+        self.context.jobs().start_running(job_id, cancellation);
+        let stream = MemoryStream {
+            forwarder: tokio::spawn(forward(receiver, progress)),
+            _shutdown: shutdown,
+        };
+        self.streams
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(sink, stream);
+        Ok(sink)
+    }
+
+    async fn close(&self, sink: RequestId) -> Result<(), crate::CompanionMemoryOutputError> {
+        let stream = self
+            .streams
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&sink)
+            .ok_or(crate::CompanionMemoryOutputError)?;
+        let unregistered = self
+            .context
+            .backend()
+            .inference_runtime()
+            .unregister_stream(sink);
+        let forwarded = stream.forwarder.await;
+        unregistered.map_err(|_| crate::CompanionMemoryOutputError)?;
+        forwarded.map_err(|_| crate::CompanionMemoryOutputError)?;
+        Ok(())
+    }
+
+    fn finished(&self, job_id: lettuce_types::JobId) {
+        self.context.jobs().finish_running(job_id);
+    }
 }

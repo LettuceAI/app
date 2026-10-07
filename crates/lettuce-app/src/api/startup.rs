@@ -124,7 +124,7 @@ impl ApiWorkers {
 /// v4 embedding files. Then, on its own thread, it resumes
 /// background memory and companion jobs, recovers queued installs, sweeps
 /// orphaned media files, and last starts the conversation generation worker,
-/// the job runner with the job change feed, and the conversation change
+/// the memory worker, the job runner with the job change feed, and the conversation change
 /// feed. It downloads and loads nothing: optional models load when a chat
 /// needs them.
 pub async fn startup(context: &ApiContext) -> Result<ApiWorkers, ApiError> {
@@ -394,6 +394,10 @@ fn start_workers(
     let conversation = worker_thread("conversation-generation", stopped, move |stopped| {
         Box::pin(async move { generation.run(until_stopped(stopped)).await })
     })?;
+    let memory_worker = super::memory_worker::MemoryWorker::new(context.clone());
+    let memory = worker_thread("post-turn-memory", stopped, move |stopped| {
+        Box::pin(async move { memory_worker.run(until_stopped(stopped)).await })
+    })?;
     let runner = JobRunner::new(context.clone(), JobHandlers::standard());
     let feed_context = context.clone();
     let jobs = worker_thread("jobs", stopped, move |stopped| {
@@ -410,5 +414,5 @@ fn start_workers(
                 .await;
         })
     })?;
-    Ok(vec![conversation, jobs, changes])
+    Ok(vec![conversation, memory, jobs, changes])
 }

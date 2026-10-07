@@ -51,6 +51,7 @@ pub use local::{ModelPullHandler, ModelsFolderMoveHandler};
 pub(crate) use local::{
     admit_gguf_download, admit_model_pull, admit_models_folder_move, recover_local_model_jobs,
 };
+pub(crate) use memory::MemoryJobOutput;
 pub use memory::{MemoryExtractionHandler, SoulWriterHandler};
 pub use runner::{ClaimedJob, JobHandler, JobHandlers, JobLane, JobProgressSink, JobRunner};
 pub use speech::{SpeechSynthesizeHandler, SpeechTranscribeHandler};

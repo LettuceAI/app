@@ -89,6 +89,7 @@ struct ApiContextInner {
     wake: tokio::sync::Notify,
     shutdown: CancellationToken,
     jobs: JobHostState,
+    memory_work: super::memory_worker::MemoryWorkState,
     conversations_changed: Arc<tokio::sync::Notify>,
     committed: tokio::sync::watch::Sender<u64>,
     app_usage: AppActiveUsageTracker,
@@ -141,6 +142,7 @@ impl ApiContext {
                 wake: tokio::sync::Notify::new(),
                 shutdown: CancellationToken::new(),
                 jobs,
+                memory_work: super::memory_worker::MemoryWorkState::default(),
                 conversations_changed,
                 committed,
                 app_usage: AppActiveUsageTracker::new(now),
@@ -469,6 +471,10 @@ impl ApiContext {
 
     pub(crate) fn database_files(&self) -> Option<&ApiDatabaseFiles> {
         self.inner.parts.database_files.as_ref()
+    }
+
+    pub(super) fn memory_work(&self) -> &super::memory_worker::MemoryWorkState {
+        &self.inner.memory_work
     }
 
     pub(crate) fn jobs(&self) -> &JobHostState {
