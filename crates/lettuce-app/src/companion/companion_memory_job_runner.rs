@@ -125,7 +125,12 @@ impl<
                     Some(claim.claim.attempt.get()),
                     now,
                 )?;
-        if let Err(error) = self.recount_memory(dispatch.run.space_id, handle) {
+        if let Err(error) = self.recount_memory(
+            dispatch.run.space_id,
+            dispatch.run.conversation_id,
+            dispatch.run.branch_id,
+            handle,
+        ) {
             CompanionMemoryTerminalCoordinator::new(self.repository).settle_failure(
                 dispatch.run.id,
                 dispatch.attempt.id,
@@ -322,6 +327,8 @@ impl<
     fn recount_memory(
         &self,
         space_id: lettuce_types::MemorySpaceId,
+        conversation_id: lettuce_types::ConversationId,
+        branch_id: lettuce_types::ConversationBranchId,
         handle: &JobHandle,
     ) -> Result<(), CompanionMemoryInferenceError> {
         let memory = MemoryRepository::get(self.repository, space_id)
@@ -331,7 +338,7 @@ impl<
             ))?;
         let summary = self
             .repository
-            .get_summary(space_id)
+            .get_summary_for_branch(space_id, conversation_id, branch_id)
             .map_err(CompanionMemoryInferenceError::Memory)?;
         let recounted = crate::recount_unknown_memory_tokens(
             self.engine,

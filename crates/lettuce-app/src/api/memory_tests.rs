@@ -537,3 +537,423 @@ impl lettuce_conversations::TrustedArtifactSink for MemoryArtifactBytes {
         Ok(())
     }
 }
+
+#[derive(Default)]
+struct ReadTokenizerModels {
+    installed: std::sync::atomic::AtomicBool,
+    counts: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+}
+
+#[async_trait::async_trait]
+impl ModelLoader for ReadTokenizerModels {
+    fn installed(&self, _: &ApiContext, model: dto::RequiredModel) -> bool {
+        model == dto::RequiredModel::Embedding
+            && self.installed.load(std::sync::atomic::Ordering::SeqCst)
+    }
+    async fn prepare(&self, _: &ApiContext) -> bool {
+        true
+    }
+    fn embedding(
+        &self,
+        _: &ApiContext,
+    ) -> ModelLoad<std::sync::Arc<dyn crate::MemoryEmbeddingEngine>> {
+        if self.installed.load(std::sync::atomic::Ordering::SeqCst) {
+            ModelLoad::Loaded(std::sync::Arc::new(ReadTokenizer(self.counts.clone())))
+        } else {
+            ModelLoad::NotInstalled
+        }
+    }
+    fn emotion(
+        &self,
+        _: &ApiContext,
+    ) -> ModelLoad<std::sync::Arc<dyn crate::CompanionEmotionEngine>> {
+        ModelLoad::NotInstalled
+    }
+}
+
+struct ReadTokenizer(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+impl crate::MemoryEmbeddingEngine for ReadTokenizer {
+    fn source_revision(&self) -> &str {
+        "read-tokenizer"
+    }
+    fn dimensions(&self) -> lettuce_embeddings::EmbeddingDimensions {
+        lettuce_embeddings::EmbeddingDimensions::D64
+    }
+    fn count_tokens(&self, text: &str) -> Result<u32, crate::EmbeddingGenerationError> {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(u32::try_from(text.split_whitespace().count()).expect("fixture count"))
+    }
+    fn embed_memory(
+        &self,
+        _: &lettuce_embeddings::EmbeddingRequest,
+        _: &lettuce_jobs::handle::CancellationToken,
+    ) -> Result<lettuce_embeddings::EmbeddingVector, crate::EmbeddingGenerationError> {
+        panic!("manual memory reads and writes must not embed")
+    }
+}
+
+#[tokio::test]
+async fn memory_get_recounts_unknown_items_and_summary_once_without_embedding_or_revision_changes()
+{
+    let models = std::sync::Arc::new(ReadTokenizerModels::default());
+    let harness = super::tests::harness_in(
+        Reply::Text("reply"),
+        std::sync::Arc::new(lettuce_jobs::SystemClock),
+        None,
+        None,
+        models.clone(),
+    );
+    let conversation_id = launch(&harness, "memory-get-launch").await;
+    memory_add(
+        &harness.context,
+        dto::MemoryAddRequest {
+            conversation_id: conversation_id.clone(),
+            text: "Four token manual memory".into(),
+            category: None,
+            observed_at: None,
+            expected_revision: 1,
+            client_operation_id: "read-add".into(),
+        },
+    )
+    .await
+    .expect("add unknown");
+    memory_summary_update(
+        &harness.context,
+        dto::MemorySummaryUpdateRequest {
+            conversation_id: conversation_id.clone(),
+            summary: dto::MemorySummaryEdit::Set {
+                text: "Three token summary".into(),
+            },
+            expected_revision: 2,
+            client_operation_id: "read-summary".into(),
+        },
+    )
+    .await
+    .expect("summary unknown");
+    let request = dto::ConversationRequest { conversation_id };
+    let unknown = memory_get(&harness.context, request.clone())
+        .await
+        .expect("unknown read");
+    assert_eq!(unknown.revision, 3);
+    assert_eq!(unknown.items[0].token_count, None);
+    assert_eq!(unknown.summary.expect("summary").token_count, None);
+    models
+        .installed
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    harness.context.models_changed();
+    let counted = memory_get(&harness.context, request.clone())
+        .await
+        .expect("counted read");
+    assert_eq!(counted.revision, 3);
+    assert_eq!(counted.items[0].token_count, Some(4));
+    assert_eq!(
+        counted.summary.as_ref().expect("summary").token_count,
+        Some(3)
+    );
+    assert_eq!(counted.items[0].origin, dto::MemoryOrigin::User);
+    assert_eq!(
+        counted.summary.as_ref().expect("summary").origin,
+        dto::MemoryOrigin::User
+    );
+    assert_eq!(models.counts.load(std::sync::atomic::Ordering::SeqCst), 2);
+    assert_eq!(
+        memory_get(&harness.context, request)
+            .await
+            .expect("repeat read"),
+        counted
+    );
+    assert_eq!(models.counts.load(std::sync::atomic::Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn clear_own_user_summary_resolves_the_original_inherited_summary_after_parent_changes() {
+    let harness = harness(Reply::Text("reply"));
+    let conversation_id = launch(&harness, "inherited-summary-launch").await;
+    let message = conversation_add_user_message(
+        &harness.context,
+        dto::ConversationAddUserMessageRequest {
+            conversation_id: conversation_id.clone(),
+            text: "Fork here".into(),
+            expected_revision: 1,
+            client_operation_id: "inherited-message".into(),
+        },
+    )
+    .await
+    .expect("message");
+    memory_summary_update(
+        &harness.context,
+        dto::MemorySummaryUpdateRequest {
+            conversation_id: conversation_id.clone(),
+            summary: dto::MemorySummaryEdit::Set {
+                text: "Parent as of fork".into(),
+            },
+            expected_revision: 1,
+            client_operation_id: "parent-summary".into(),
+        },
+    )
+    .await
+    .expect("parent summary");
+    let database = harness.context.backend().database();
+    let root = ConversationReader::get(database, conversation_id.parse().expect("conversation"))
+        .expect("conversation")
+        .conversation
+        .active_branch_id;
+    let fork = conversation_branch_fork(
+        &harness.context,
+        dto::ConversationBranchForkRequest {
+            conversation_id: conversation_id.clone(),
+            message_id: message.message.id,
+            expected_revision: message.revision,
+            client_operation_id: "summary-fork".into(),
+        },
+    )
+    .await
+    .expect("fork");
+    memory_summary_update(
+        &harness.context,
+        dto::MemorySummaryUpdateRequest {
+            conversation_id: conversation_id.clone(),
+            summary: dto::MemorySummaryEdit::Set {
+                text: "Child override".into(),
+            },
+            expected_revision: 1,
+            client_operation_id: "child-summary".into(),
+        },
+    )
+    .await
+    .expect("child summary");
+    let selected = conversation_branch_select(
+        &harness.context,
+        dto::ConversationBranchMutationRequest {
+            branch_id: root.to_string(),
+            expected_revision: fork.revision,
+            client_operation_id: "select-summary-parent".into(),
+        },
+    )
+    .await
+    .expect("parent");
+    memory_summary_update(
+        &harness.context,
+        dto::MemorySummaryUpdateRequest {
+            conversation_id: conversation_id.clone(),
+            summary: dto::MemorySummaryEdit::Set {
+                text: "Parent changed later".into(),
+            },
+            expected_revision: 2,
+            client_operation_id: "parent-later-summary".into(),
+        },
+    )
+    .await
+    .expect("parent change");
+    conversation_branch_select(
+        &harness.context,
+        dto::ConversationBranchMutationRequest {
+            branch_id: fork.branch_id.clone(),
+            expected_revision: selected.revision,
+            client_operation_id: "select-summary-child".into(),
+        },
+    )
+    .await
+    .expect("child");
+    memory_summary_update(
+        &harness.context,
+        dto::MemorySummaryUpdateRequest {
+            conversation_id: conversation_id.clone(),
+            summary: dto::MemorySummaryEdit::Clear,
+            expected_revision: 2,
+            client_operation_id: "child-clear-summary".into(),
+        },
+    )
+    .await
+    .expect("clear child");
+    let conversation =
+        ConversationReader::get(database, conversation_id.parse().expect("conversation"))
+            .expect("conversation")
+            .conversation;
+    let memory =
+        MemoryRepository::get_for_branch(database, conversation.id, conversation.active_branch_id)
+            .expect("memory")
+            .expect("space");
+    assert!(
+        database
+            .get_summary(memory.id)
+            .expect("own summary")
+            .is_none()
+    );
+    let inherited = database
+        .get_summary_for_branch(memory.id, conversation.id, conversation.active_branch_id)
+        .expect("resolved summary")
+        .expect("inherited summary");
+    assert_eq!(inherited.text, "Parent as of fork");
+    let view = memory_get(
+        &harness.context,
+        dto::ConversationRequest { conversation_id },
+    )
+    .await
+    .expect("read actual summary");
+    assert_eq!(view.summary.expect("summary").text, inherited.text);
+}
+
+#[tokio::test]
+async fn a_source_free_user_summary_is_used_by_the_manual_chat_prompt() {
+    let harness = harness(Reply::Text("reply"));
+    let conversation_id = launch(&harness, "manual-summary-prompt-launch").await;
+    memory_summary_update(
+        &harness.context,
+        dto::MemorySummaryUpdateRequest {
+            conversation_id: conversation_id.clone(),
+            summary: dto::MemorySummaryEdit::Set {
+                text: "The user chose this durable summary".into(),
+            },
+            expected_revision: 1,
+            client_operation_id: "manual-summary-prompt".into(),
+        },
+    )
+    .await
+    .expect("summary");
+    super::tests::send(
+        &harness,
+        &conversation_id,
+        "manual-summary-turn",
+        "Hello",
+        std::sync::Arc::new(super::tests::RecordingStream::default()),
+    )
+    .await
+    .expect("send");
+    super::turns_tests::run_generation(&harness).await;
+    let requests = harness.provider.requests.lock().expect("requests");
+    let context = serde_json::to_string(&requests.last().expect("generation request").context)
+        .expect("context");
+    assert!(context.contains("The user chose this durable summary"));
+}
+
+#[tokio::test]
+async fn memory_status_reports_real_model_and_embedding_failures_and_lease_pause() {
+    use lettuce_characters::CharacterRepository;
+    use lettuce_jobs::{CancellationReason, JobStore, ResourceAvailability, WorkerId};
+    use lettuce_settings::GlobalSettingsStore;
+    use lettuce_types::TimestampMillis;
+    for case in ["model", "embedding", "lease"] {
+        let harness = harness(Reply::Text("reply"));
+        let (conversation_id, _) =
+            super::turns_tests::replied_chat(&harness, &format!("status-{case}")).await;
+        if case == "embedding" {
+            memory_add(
+                &harness.context,
+                dto::MemoryAddRequest {
+                    conversation_id: conversation_id.clone(),
+                    text: "Unknown manual count".into(),
+                    category: None,
+                    observed_at: None,
+                    expected_revision: 1,
+                    client_operation_id: "status-add".into(),
+                },
+            )
+            .await
+            .expect("unknown item");
+        }
+        let database = harness.context.backend().database();
+        let character = CharacterRepository::get(database, harness.character_id)
+            .expect("character")
+            .expect("present")
+            .character;
+        let mut defaults = character.defaults;
+        defaults.memory_policy = lettuce_characters::MemoryPolicy::Dynamic;
+        CharacterRepository::update_defaults(
+            database,
+            harness.character_id,
+            character.revision,
+            defaults,
+            harness.context.now(),
+        )
+        .expect("dynamic character");
+        let stored = GlobalSettingsStore::load(database).expect("settings");
+        let mut settings = stored.settings;
+        settings.dynamic_memory.enabled = true;
+        settings.dynamic_memory.summary_message_interval = 2;
+        GlobalSettingsStore::save(
+            database,
+            settings,
+            if case == "model" {
+                None
+            } else {
+                stored.default_model_profile_id
+            },
+            stored.revision,
+        )
+        .expect("dynamic settings");
+        let engine = if case == "embedding" {
+            harness.context.embedding()
+        } else {
+            std::sync::Arc::new(ReadTokenizer(std::sync::Arc::default()))
+                as std::sync::Arc<dyn crate::MemoryEmbeddingEngine>
+        };
+        let host = harness
+            .context
+            .backend()
+            .companion_memory_host(engine.as_ref(), harness.context.inference());
+        let now = harness.context.now();
+        let work = host
+            .after_turn(
+                conversation_id.parse().expect("id"),
+                lettuce_conversations::GenerationOperation::Send,
+                WorkerId::new(),
+                now,
+                std::time::Duration::from_secs(30),
+                &ResourceAvailability::all(),
+            )
+            .expect("admit")
+            .into_iter()
+            .next()
+            .expect("work");
+        let job_id = work.job.id;
+        if case == "lease" {
+            let expired = database
+                .orphaned_claims(TimestampMillis::new(now.get() + 1), 100)
+                .expect("recover claim");
+            assert!(expired.iter().any(|claim| claim.job_id == job_id));
+            crate::jobs::job_recovery::fail_interrupted_job(
+                database,
+                &JobStore::get(database, job_id)
+                    .expect("job")
+                    .expect("present"),
+                TimestampMillis::new(now.get() + 2),
+            )
+            .expect("pause repeated crashes");
+        } else {
+            assert!(matches!(
+                host.run_claimed(
+                    work,
+                    CancellationReason::User,
+                    TimestampMillis::new(now.get() + 1)
+                )
+                .await
+                .expect("settle"),
+                crate::CompanionMemorySettledWork::Failed { .. }
+            ));
+        }
+        let view = memory_get(
+            &harness.context,
+            dto::ConversationRequest { conversation_id },
+        )
+        .await
+        .expect("status");
+        assert_eq!(view.status.latest_job_id, Some(job_id.to_string()));
+        assert_eq!(
+            view.status.latest_cycle_status,
+            Some(dto::MemoryCycleStatus::Failed)
+        );
+        assert_eq!(
+            view.status.failure,
+            Some(match case {
+                "model" => dto::MemoryFailureCode::ModelMissing,
+                "embedding" => dto::MemoryFailureCode::EmbeddingUnavailable,
+                _ => dto::MemoryFailureCode::LeaseLost,
+            })
+        );
+        assert_eq!(
+            view.status.paused_reason,
+            (case == "lease").then_some(dto::MemoryPausedReason::LeaseLost)
+        );
+    }
+}

@@ -26,6 +26,7 @@ mod local_models;
 mod mapping;
 mod memory;
 mod memory_models;
+mod memory_read;
 mod memory_worker;
 mod messages;
 mod models;
@@ -184,3 +185,5 @@ pub use memory::{
     memory_add, memory_delete, memory_pin, memory_set_temperature, memory_summary_update,
     memory_update,
 };
+
+pub use memory_read::memory_get;

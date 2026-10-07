@@ -1309,6 +1309,26 @@ impl MemorySummaryRepository for Database {
         Ok(summary)
     }
 
+    fn get_summary_for_branch(
+        &self,
+        space_id: MemorySpaceId,
+        conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
+    ) -> Result<Option<MemorySummary>, MemoryRepositoryError> {
+        let mut connection = self.connection().map_err(storage)?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(storage)?;
+        let summary = super::memory_read_adapter::resolved_summary_in(
+            &transaction,
+            space_id,
+            conversation_id,
+            branch_id,
+        )?;
+        transaction.commit().map_err(storage)?;
+        Ok(summary)
+    }
+
     fn summary_cursor(
         &self,
         space_id: MemorySpaceId,

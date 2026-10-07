@@ -39,3 +39,5 @@ Conversation views return nullable origin conversation and message ids for prove
 Character-copy requests carry source conversation, selected message and target character IDs plus an operation key. Whole-group copies omit the message boundary. New-group copies carry an ordered distinct member list, including the source owner. All return the stable new conversation ID and revision.
 
 Manual memory requests carry the conversation, expected memory revision and operation key. Update uses explicit keep/set choices for nullable categories and observed time; summary editing distinguishes set from clear. Mutation results return the original committed revision and item id for exact replay.
+
+Memory views expose nullable counts, authored origins, cycle labels and status with typed model, embedding, provider and lease-loss failures. The read request identifies a conversation; its active branch determines the selected own space or pool.

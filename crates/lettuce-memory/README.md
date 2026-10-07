@@ -122,3 +122,5 @@ A summary carries its owning branch. `MemorySummaryRepository::summary_cursor` r
 A dynamic attempt can record the job claim attempt that owns it. The database checks this monotonic generation inside each memory write transaction; a newly claimed worker recovers into a new dynamic attempt while retaining the frozen run and settled evidence. Imported or repository-only records may omit the claim generation.
 
 Manual edits use `MemoryManualMutation` and `reduce_manual_memory`: text, category and observed-time changes preserve provenance and source attribution, pinning heats the item and restores importance and access time, and pinned items cannot be cooled. `MemoryManualHistory` records the branch, message anchor and position, before/after item or summary, and committed root revision. History is uncapped.
+
+The read port returns one coherent active-branch scope with resolved summary, cursor, approvals and durable cycle outcomes. Summary repositories expose branch resolution separately from the own-summary read, allowing consumers to use the same inherited summary after an own override is cleared.

@@ -185,3 +185,78 @@ mod tests {
         assert_eq!(request.observed_at, MemoryObservedAtChange::Keep);
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryRunMode {
+    Auto,
+    AskFirst,
+    Manual,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryCycleStatus {
+    Queued,
+    Processing,
+    Complete,
+    Failed,
+    Cancelled,
+    Interrupted,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryFailureCode {
+    EmbeddingUnavailable,
+    ModelMissing,
+    ModelInvalid,
+    PromptMissing,
+    SettingsInvalid,
+    ProviderUnavailable,
+    ProviderRejected,
+    EmptyResponse,
+    TimedOut,
+    RoundLimit,
+    ToolFailed,
+    StorageFailure,
+    LeaseLost,
+    Internal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum MemoryPausedReason {
+    LeaseLost,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MemoryStatusView {
+    pub run_mode: MemoryRunMode,
+    pub interval: u32,
+    pub messages_since_last_cycle: u64,
+    pub messages_until_next_cycle: u64,
+    pub total_conversation_messages: u64,
+    pub pending_approval_count: Option<u64>,
+    pub skipped: bool,
+    pub latest_cycle_status: Option<MemoryCycleStatus>,
+    pub latest_job_id: Option<String>,
+    pub failure: Option<MemoryFailureCode>,
+    pub paused_reason: Option<MemoryPausedReason>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct MemoryView {
+    pub items: Vec<MemoryItemView>,
+    pub summary: Option<MemorySummaryView>,
+    pub status: MemoryStatusView,
+    pub revision: u64,
+}

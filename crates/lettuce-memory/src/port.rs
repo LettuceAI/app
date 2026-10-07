@@ -158,6 +158,16 @@ pub trait MemorySummaryRepository: Send + Sync {
         space_id: MemorySpaceId,
     ) -> Result<Option<MemorySummary>, MemoryRepositoryError>;
 
+    fn get_summary_for_branch(
+        &self,
+        space_id: MemorySpaceId,
+        conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
+    ) -> Result<Option<MemorySummary>, MemoryRepositoryError> {
+        let _ = (conversation_id, branch_id);
+        self.get_summary(space_id)
+    }
+
     /// The summary cursor of one branch, including inside shared pools.
     fn summary_cursor(
         &self,

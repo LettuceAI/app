@@ -5,6 +5,7 @@
 mod manual;
 mod model;
 mod port;
+mod read;
 mod repair;
 mod run;
 mod structured_fallback;
@@ -61,3 +62,5 @@ pub use tool::{
     dynamic_memory_tool_request_for_run, dynamic_memory_tool_shape, list_memories,
     undo_memory_tool_outcomes,
 };
+
+pub use read::{MemoryActivityCycle, MemoryReadRepository, MemoryReadScope};

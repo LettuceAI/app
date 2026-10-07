@@ -1643,9 +1643,16 @@ where
         }
         .map_err(ConversationGenerationInputError::Memory)?
         .ok_or(ConversationGenerationInputError::MemoryInputUnavailable)?;
-        let summary = MemorySummaryRepository::get_summary(self.repository, memory.id)
-            .map_err(ConversationGenerationInputError::Memory)?
-            .map(|summary| summary.text);
+        let summary = MemorySummaryRepository::get_summary_for_branch(
+            self.repository,
+            memory.id,
+            work.conversation_id,
+            ConversationReader::get_turn(self.repository, work.turn_id)
+                .map_err(ConversationGenerationInputError::Repository)?
+                .branch_id,
+        )
+        .map_err(ConversationGenerationInputError::Memory)?
+        .map(|summary| summary.text);
         let (selected, revision, effective_now) = if let Some(receipt) = prior_access {
             if receipt.access.space_id != memory.id || receipt.resulting_revision != memory.revision
             {
@@ -1718,13 +1725,15 @@ where
         let memory = MemoryRepository::get_for_branch(self.repository, conversation_id, branch_id)
             .map_err(ConversationGenerationInputError::Memory)?
             .ok_or(ConversationGenerationInputError::MemoryInputUnavailable)?;
-        let summary = if group {
-            MemorySummaryRepository::get_summary(self.repository, memory.id)
-                .map_err(ConversationGenerationInputError::Memory)?
-                .map(|summary| summary.text)
-        } else {
-            None
-        };
+        let summary = MemorySummaryRepository::get_summary_for_branch(
+            self.repository,
+            memory.id,
+            conversation_id,
+            branch_id,
+        )
+        .map_err(ConversationGenerationInputError::Memory)?
+        .filter(|summary| group || summary.origin == lettuce_memory::MemoryOrigin::User)
+        .map(|summary| summary.text);
         let key_memories = memory
             .items
             .iter()

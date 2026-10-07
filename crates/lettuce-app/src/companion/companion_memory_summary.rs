@@ -123,7 +123,7 @@ impl<
             .ok_or(CompanionMemoryInferenceError::InvalidOwnership)?;
         let previous = self
             .repository
-            .get_summary(run.space_id)
+            .get_summary_for_branch(run.space_id, run.conversation_id, run.branch_id)
             .map_err(CompanionMemoryInferenceError::Memory)?;
         if window_already_summarized(
             self.repository

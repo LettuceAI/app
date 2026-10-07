@@ -173,6 +173,7 @@ pub(crate) fn seed_branch_space_in(
         summary.branch_id = branch_id;
         memory_adapter::replace_summary_in(transaction, space_id, Some(&summary))
             .map_err(storage)?;
+        store_materialised_summary_in(transaction, conversation_id, branch_id, space_id, &summary)?;
     }
     Ok(())
 }
@@ -682,6 +683,9 @@ pub(crate) fn pin_seeded_summary_in(
     let Some(space_id) = own_space_in(transaction, conversation_id, branch_id)? else {
         return Ok(());
     };
+    if load_materialised_summary_in(transaction, space_id, branch_id)?.is_some() {
+        return Ok(());
+    }
     if let Some(summary) = memory_adapter::get_summary_in(transaction, space_id).map_err(storage)? {
         store_materialised_summary_in(transaction, conversation_id, branch_id, space_id, &summary)?;
     }
