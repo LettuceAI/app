@@ -4416,7 +4416,21 @@ async fn chat_runtime_sections_follow_catalog_edits() {
 }
 
 #[tokio::test]
-async fn plain_dynamic_turns_admit_and_run_a_post_turn_memory_cycle() {
+async fn plain_dynamic_cycle_keeps_a_user_edit_that_races_round_settlement() {
+    run_plain_dynamic_cycle_with_racing_edits(1, false).await;
+}
+
+#[tokio::test]
+async fn plain_dynamic_cycle_bounds_repeated_round_conflicts_without_losing_user_edits() {
+    run_plain_dynamic_cycle_with_racing_edits(3, false).await;
+}
+
+#[tokio::test]
+async fn plain_dynamic_cycle_cancel_during_round_preparation_keeps_user_edits() {
+    run_plain_dynamic_cycle_with_racing_edits(1, true).await;
+}
+
+async fn run_plain_dynamic_cycle_with_racing_edits(edits: usize, cancel: bool) {
     let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
     let database = backend.database();
     let scenario = scenario_with_resolvable_profile(database, true, "post-turn", true);
@@ -4515,6 +4529,79 @@ async fn plain_dynamic_turns_admit_and_run_a_post_turn_memory_cycle() {
         ),
     ]);
     let memory_id = MemoryId::new();
+    struct EditingEmbedding<'a> {
+        database: &'a lettuce_database::Database,
+        space_id: MemorySpaceId,
+        remaining: std::sync::atomic::AtomicUsize,
+        cancel: bool,
+    }
+    impl crate::MemoryEmbeddingEngine for EditingEmbedding<'_> {
+        fn source_revision(&self) -> &str {
+            "scenario-v1"
+        }
+
+        fn dimensions(&self) -> lettuce_embeddings::EmbeddingDimensions {
+            lettuce_embeddings::EmbeddingDimensions::D128
+        }
+
+        fn count_tokens(&self, text: &str) -> Result<u32, crate::EmbeddingGenerationError> {
+            ScenarioEmbeddingEngine.count_tokens(text)
+        }
+
+        fn embed_memory(
+            &self,
+            request: &EmbeddingRequest,
+            cancellation: &CancellationToken,
+        ) -> Result<EmbeddingVector, crate::EmbeddingGenerationError> {
+            if self
+                .remaining
+                .fetch_update(
+                    std::sync::atomic::Ordering::SeqCst,
+                    std::sync::atomic::Ordering::SeqCst,
+                    |remaining| remaining.checked_sub(1),
+                )
+                .is_ok()
+            {
+                let mut snapshot = MemoryRepository::get(self.database, self.space_id)
+                    .expect("read before user edit")
+                    .expect("memory space");
+                snapshot
+                    .items
+                    .retain(|item| item.origin != lettuce_memory::MemoryOrigin::User);
+                let id = MemoryId::new();
+                let mut written = MemoryItem::written(
+                    id,
+                    lettuce_memory::MemoryShortId::allocate(id, |candidate| {
+                        snapshot.items.iter().any(|item| item.short_id == candidate)
+                    }),
+                    "A user-authored anniversary".into(),
+                    TimestampMillis::new(1_032),
+                );
+                written.is_pinned = true;
+                written.token_count = 3;
+                snapshot.items.push(written);
+                MemoryRepository::compare_and_apply(
+                    self.database,
+                    MemoryChangeSet {
+                        space_id: snapshot.id,
+                        expected_revision: snapshot.revision,
+                        items: snapshot.items,
+                    },
+                )
+                .expect("commit user edit during embedding");
+                if self.cancel {
+                    cancellation.cancel();
+                }
+            }
+            ScenarioEmbeddingEngine.embed_memory(request, cancellation)
+        }
+    }
+    let engine = EditingEmbedding {
+        database,
+        space_id: scenario.space_id.expect("memory space"),
+        remaining: std::sync::atomic::AtomicUsize::new(edits),
+        cancel,
+    };
     let result = crate::CompanionMemoryJobRunner::new(&engine, database, database, &memory)
         .run(
             &work.admission,
@@ -4556,8 +4643,42 @@ async fn plain_dynamic_turns_admit_and_run_a_post_turn_memory_cycle() {
                 }
             },
         )
-        .await
-        .expect("run plain post-turn memory cycle");
+        .await;
+    if cancel || edits >= 3 {
+        if cancel {
+            assert!(matches!(
+                result,
+                Err(crate::CompanionMemoryJobRunError::Loop(
+                    crate::CompanionMemoryLoopError::Execution(
+                        crate::CompanionMemoryRoundExecutionError::Cancelled
+                    )
+                ))
+            ));
+        } else {
+            assert!(matches!(
+                result,
+                Err(crate::CompanionMemoryJobRunError::Loop(
+                    crate::CompanionMemoryLoopError::Execution(
+                        crate::CompanionMemoryRoundExecutionError::Run(
+                            lettuce_memory::DynamicMemoryRunRepositoryError::Conflict
+                        )
+                    )
+                ))
+            ));
+            assert_eq!(
+                engine.remaining.load(std::sync::atomic::Ordering::SeqCst),
+                0
+            );
+        }
+        let stored = MemoryRepository::get(database, engine.space_id)
+            .expect("read")
+            .expect("space");
+        assert_eq!(stored.items.len(), 1);
+        assert_eq!(stored.items[0].origin, lettuce_memory::MemoryOrigin::User);
+        assert_eq!(stored.items[0].text, "A user-authored anniversary");
+        return;
+    }
+    let result = result.expect("run plain post-turn memory cycle");
     assert_eq!(
         result.dispatch.attempt.status,
         lettuce_memory::DynamicMemoryAttemptStatus::Succeeded
@@ -4584,10 +4705,21 @@ async fn plain_dynamic_turns_admit_and_run_a_post_turn_memory_cycle() {
     let stored = MemoryRepository::get(database, space_id)
         .expect("memory")
         .expect("memory space");
-    assert_eq!(stored.items.len(), 1);
-    assert_eq!(stored.items[0].id, memory_id);
+    assert_eq!(stored.items.len(), 2);
+    let user = stored
+        .items
+        .iter()
+        .find(|item| item.origin == lettuce_memory::MemoryOrigin::User)
+        .expect("preserved user edit");
+    assert_eq!(user.text, "A user-authored anniversary");
+    assert!(user.is_pinned);
+    let generated = stored
+        .items
+        .iter()
+        .find(|item| item.id == memory_id)
+        .expect("model-created memory");
     assert!(
-        stored.items[0].is_cold,
+        generated.is_cold,
         "the cycle end demotes the created memory past the two-token hot budget"
     );
     assert!(

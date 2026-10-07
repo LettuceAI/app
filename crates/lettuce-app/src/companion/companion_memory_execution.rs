@@ -16,6 +16,8 @@ use crate::{
     MemoryEmbeddingEngine, PreparedMemoryCreate, persist_created_projections,
 };
 
+const ROUND_SETTLEMENT_ATTEMPTS: usize = 3;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompanionMemoryRoundExecutionResult {
     pub settlement: DynamicMemoryBackgroundRoundSettlement,
@@ -43,6 +45,40 @@ impl<
 {
     #[allow(clippy::too_many_arguments)]
     pub fn execute_round(
+        &self,
+        run_id: DynamicMemoryRunId,
+        attempt_id: DynamicMemoryAttemptId,
+        round_ordinal: u8,
+        policy: &MemoryPolicy,
+        seeds: &[MemoryCreateSeed],
+        duplicate_threshold: lettuce_memory::Score,
+        claim: &Claim,
+        handle: &JobHandle,
+        now: TimestampMillis,
+    ) -> Result<CompanionMemoryRoundExecutionResult, CompanionMemoryRoundExecutionError> {
+        for retry in 0..ROUND_SETTLEMENT_ATTEMPTS {
+            match self.execute_round_once(
+                run_id,
+                attempt_id,
+                round_ordinal,
+                policy,
+                seeds,
+                duplicate_threshold,
+                claim,
+                handle,
+                now,
+            ) {
+                Err(CompanionMemoryRoundExecutionError::Run(
+                    DynamicMemoryRunRepositoryError::Conflict,
+                )) if retry + 1 < ROUND_SETTLEMENT_ATTEMPTS => {}
+                result => return result,
+            }
+        }
+        Err(DynamicMemoryRunRepositoryError::Conflict.into())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn execute_round_once(
         &self,
         run_id: DynamicMemoryRunId,
         attempt_id: DynamicMemoryAttemptId,
