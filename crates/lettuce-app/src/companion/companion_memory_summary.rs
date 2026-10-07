@@ -162,7 +162,10 @@ impl<
         if handle.cancellation_token().is_cancelled() {
             return Err(CompanionMemoryInferenceError::Cancelled);
         }
-        let token_count = self.engine.count_tokens(&text).unwrap_or(0);
+        let token_count = self.engine.count_tokens(&text).map_err(|error| match error {
+            crate::EmbeddingGenerationError::Unavailable => CompanionMemoryInferenceError::UnknownTokenCount,
+            crate::EmbeddingGenerationError::Cancelled => CompanionMemoryInferenceError::Cancelled,
+        })?;
         let checkpoint = self
             .repository
             .commit_dynamic_memory_summary(

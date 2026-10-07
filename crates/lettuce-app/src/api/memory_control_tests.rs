@@ -1465,6 +1465,7 @@ async fn open_round(
             at,
         )
         .expect("processing");
+    if !calls.is_empty() {
     database
         .admit_dynamic_memory_inference_round(
             run_id,
@@ -1503,6 +1504,7 @@ async fn open_round(
             },
         )
         .expect("round");
+    }
     let _ = DynamicMemoryRunRepository::load_dynamic_memory_run(database, run_id).expect("run");
     OpenRound {
         run_id,
@@ -2148,4 +2150,64 @@ async fn pooled_delete_after_preserves_retained_user_edits_when_undoing_model_to
             _ => assert_eq!(item.text, "User-confirmed fact"),
         }
     }
+}
+
+#[tokio::test]
+async fn generated_summary_with_failed_tokenizer_keeps_usage_without_publishing_false_zero() {
+    use lettuce_context::PromptRepository;
+    use lettuce_memory::{DynamicMemoryRunRepository, MemorySummaryRepository};
+    struct FailedTokenizer;
+    impl crate::MemoryEmbeddingEngine for FailedTokenizer {
+        fn source_revision(&self) -> &str { "failed-summary-tokenizer" }
+        fn dimensions(&self) -> lettuce_embeddings::EmbeddingDimensions {
+            lettuce_embeddings::EmbeddingDimensions::D64
+        }
+        fn count_tokens(&self, _: &str) -> Result<u32, crate::EmbeddingGenerationError> {
+            Err(crate::EmbeddingGenerationError::Unavailable)
+        }
+        fn embed_memory(
+            &self, _: &lettuce_embeddings::EmbeddingRequest,
+            _: &lettuce_jobs::handle::CancellationToken,
+        ) -> Result<lettuce_embeddings::EmbeddingVector, crate::EmbeddingGenerationError> {
+            panic!("summary counting must not embed")
+        }
+    }
+    let harness = super::tests::harness_in(
+        Reply::Text("Mira remembered the user's preferred tea."),
+        std::sync::Arc::new(lettuce_jobs::SystemClock), None, None,
+        std::sync::Arc::new(super::inspect_tests::AllModels),
+    );
+    let (chat, _) = replied_chat(&harness, "failed-summary-tokenizer").await;
+    make_dynamic(&harness, false);
+    let round = open_round(&harness, &chat, vec![]).await;
+    let database = harness.context.backend().database();
+    let ids = crate::BuiltInPromptService::new(database).expect("prompts")
+        .bootstrap(harness.context.now()).expect("bootstrap");
+    let prompt = PromptRepository::get(database, ids.get(crate::BuiltInPromptId::DynamicSummary))
+        .expect("prompt").expect("summary prompt");
+    let run = database.load_dynamic_memory_run(round.run_id).expect("run");
+    let failed = crate::CompanionMemorySummaryCoordinator::new(
+        &FailedTokenizer, database, database, harness.context.inference(),
+    ).run(round.run_id, round.attempt_id, crate::CompanionMemoryWindowSelection::Recent,
+        &prompt, &round.handle, None, harness.context.now()).await;
+    assert!(matches!(failed, Err(crate::CompanionMemoryInferenceError::UnknownTokenCount)),
+        "a successful inference with an unavailable tokenizer must fail truthfully: {failed:?}");
+    assert!(database.load_dynamic_memory_summary_checkpoint(round.run_id).expect("checkpoint").is_none());
+    assert!(database.get_summary(run.space_id).expect("summary").is_none());
+    assert_eq!(database.summary_cursor(run.space_id, run.conversation_id, run.branch_id).expect("cursor"), 0);
+    assert_eq!(lettuce_usage::JobUsageLedger::job_usage(database, round.handle.id()).expect("usage").len(), 1);
+    let engine = harness.context.embedding();
+    let recovered = crate::CompanionMemorySummaryCoordinator::new(
+        engine.as_ref(), database, database, harness.context.inference(),
+    ).run(round.run_id, round.attempt_id, crate::CompanionMemoryWindowSelection::Recent,
+        &prompt, &round.handle, None, harness.context.now()).await.expect("retry summary");
+    assert_eq!(recovered.checkpoint.summary.token_count, Some(1));
+    let dispatched = harness.provider.requests.lock().expect("requests").len();
+    let replayed = crate::CompanionMemorySummaryCoordinator::new(
+        &FailedTokenizer, database, database, harness.context.inference(),
+    ).run(round.run_id, round.attempt_id, crate::CompanionMemoryWindowSelection::Recent,
+        &prompt, &round.handle, None, harness.context.now()).await.expect("durable checkpoint replay");
+    assert!(replayed.replayed);
+    assert_eq!(replayed.checkpoint, recovered.checkpoint);
+    assert_eq!(harness.provider.requests.lock().expect("requests").len(), dispatched);
 }

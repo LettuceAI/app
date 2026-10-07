@@ -5322,7 +5322,11 @@ async fn memory_job_handler_respects_another_worker_and_the_frozen_parent_branch
         job.error.expect("visible error").message.as_str(),
         "embedding-model-unavailable"
     );
-    assert_eq!(inference.requests.lock().expect("requests").len(), 2);
+    assert_eq!(inference.requests.lock().expect("requests").len(), 1);
+    assert!(
+        stored_summary(database, &scenario).is_none(),
+        "an unavailable summary tokenizer must not publish a zero-count summary"
+    );
 }
 
 #[tokio::test]
