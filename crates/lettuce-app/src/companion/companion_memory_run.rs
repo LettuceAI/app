@@ -693,6 +693,14 @@ pub(crate) mod tests {
         ) -> Result<MemorySpaceSnapshot, MemoryRepositoryError> {
             unimplemented!()
         }
+        fn manual_edited_items_since(
+            &self,
+            _space_id: MemorySpaceId,
+            _after_revision: lettuce_types::Revision,
+        ) -> Result<std::collections::HashSet<lettuce_types::MemoryId>, MemoryRepositoryError>
+        {
+            Ok(std::collections::HashSet::new())
+        }
     }
 
     impl lettuce_memory::MemorySummaryRepository for Repository {

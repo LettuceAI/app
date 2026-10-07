@@ -157,6 +157,11 @@ impl<
             run.supersession_enabled,
             &prepared,
         )?;
+        let edited = self
+            .repository
+            .manual_edited_items_since(run.space_id, run.starting_memory.revision)?;
+        let mut calls = calls;
+        lettuce_memory::skip_user_edited_calls(&mut calls, &snapshot.items, &edited);
         let mut hard_deletes_used = 0;
         for earlier in rounds
             .iter()

@@ -230,6 +230,7 @@ pub enum MemoryToolSkipReason {
     MissingTarget,
     UnsupportedTool,
     MalformedArguments,
+    UserEdited,
 }
 
 /// A memory as the model named it: a six-digit short id, a stable id, or (for
@@ -267,6 +268,41 @@ impl MemoryReference {
         }
         self.resolve_id(items)
             .or_else(|| items.iter().position(|item| item.text == self.0))
+    }
+}
+
+/// Withholds the calls that would change an item the user edited after the
+/// run began: a delete, pin or unpin of it settles as skipped, and a create no
+/// longer supersedes it.
+pub fn skip_user_edited_calls(
+    calls: &mut [MemoryToolCall],
+    items: &[MemoryItem],
+    edited: &HashSet<MemoryId>,
+) {
+    let touched = |reference: &MemoryReference, text: bool| {
+        let index = if text {
+            reference.resolve_id_or_text(items)
+        } else {
+            reference.resolve_id(items)
+        };
+        index.is_some_and(|index| edited.contains(&items[index].id))
+    };
+    for call in calls {
+        let skip = match &mut call.arguments {
+            MemoryToolArguments::DeleteMemory { target, .. } => touched(target, true),
+            MemoryToolArguments::PinMemory { target }
+            | MemoryToolArguments::UnpinMemory { target } => touched(target, false),
+            MemoryToolArguments::CreateMemory { supersedes, .. } => {
+                supersedes.retain(|reference| !touched(reference, false));
+                false
+            }
+            _ => false,
+        };
+        if skip {
+            call.arguments = MemoryToolArguments::Unusable {
+                reason: MemoryToolSkipReason::UserEdited,
+            };
+        }
     }
 }
 
@@ -2573,6 +2609,70 @@ mod tests {
         assert_eq!(change.items.len(), crate::model::MAX_MEMORY_ITEMS + 1);
         assert!(change.items.iter().any(|item| item.id == create_id));
         assert!(change.items.iter().any(|item| item.id == weakest_id));
+    }
+
+    #[test]
+    fn user_edited_targets_are_skipped_and_never_superseded() {
+        let item = |text: &str| {
+            let id = MemoryId::new();
+            MemoryItem::written(
+                id,
+                MemoryShortId::derived(id),
+                text.into(),
+                TimestampMillis::new(1),
+            )
+        };
+        let (edited, other) = (item("Edited"), item("Other"));
+        let items = vec![edited.clone(), other.clone()];
+        let touched = HashSet::from([edited.id]);
+        let call = |arguments| MemoryToolCall {
+            execution_id: ToolExecutionId::new(),
+            arguments,
+            create: None,
+            source_role: None,
+            observed_at: None,
+        };
+        let mut calls = vec![
+            call(MemoryToolArguments::DeleteMemory {
+                target: MemoryReference("Edited".into()),
+                confidence: None,
+            }),
+            call(MemoryToolArguments::PinMemory {
+                target: MemoryReference(edited.short_id.to_string()),
+            }),
+            call(MemoryToolArguments::UnpinMemory {
+                target: MemoryReference(other.short_id.to_string()),
+            }),
+            call(MemoryToolArguments::CreateMemory {
+                text: "New".into(),
+                category: CategoryArgument::Missing,
+                important: false,
+                source_message_id: None,
+                supersedes: vec![
+                    MemoryReference(edited.short_id.to_string()),
+                    MemoryReference(other.short_id.to_string()),
+                ],
+            }),
+        ];
+        crate::skip_user_edited_calls(&mut calls, &items, &touched);
+        let skipped = MemoryToolArguments::Unusable {
+            reason: MemoryToolSkipReason::UserEdited,
+        };
+        assert_eq!(calls[0].arguments, skipped);
+        assert_eq!(calls[1].arguments, skipped);
+        assert!(matches!(
+            calls[2].arguments,
+            MemoryToolArguments::UnpinMemory { .. }
+        ));
+        match &calls[3].arguments {
+            MemoryToolArguments::CreateMemory { supersedes, .. } => {
+                assert_eq!(
+                    supersedes,
+                    &vec![MemoryReference(other.short_id.to_string())]
+                );
+            }
+            other => panic!("unexpected {other:?}"),
+        }
     }
 
     #[test]

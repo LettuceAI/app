@@ -62,6 +62,19 @@ impl crate::ApiOperationTransaction<'_, '_> {
             return Err(MemoryRepositoryError::Conflict);
         }
         let before_summary = super::memory_adapter::get_summary_in(tx, edit.space_id)?;
+        let coverage = if matches!(
+            edit.mutation,
+            lettuce_memory::MemoryManualMutation::Summary { .. }
+        ) {
+            Some(super::memory_adapter::summary_cursor_in(
+                tx,
+                edit.space_id,
+                edit.conversation_id,
+                edit.branch_id,
+            )?)
+        } else {
+            None
+        };
         let reduction = reduce_manual_memory(&current, &edit.mutation, edit.at)?;
         if let Some(summary) = reduction
             .summary
@@ -82,6 +95,18 @@ impl crate::ApiOperationTransaction<'_, '_> {
         )?;
         if let Some(summary) = &reduction.summary {
             super::memory_adapter::replace_summary_in(tx, edit.space_id, summary.as_ref())?;
+        }
+        if let Some(coverage) = coverage.filter(|coverage| *coverage > 0) {
+            tx.execute(
+                "INSERT INTO memory_synced_cursors (conversation_id,branch_id,window_end) VALUES (?1,?2,?3)
+                 ON CONFLICT(conversation_id,branch_id) DO UPDATE SET window_end=max(window_end,excluded.window_end)",
+                params![
+                    edit.conversation_id.to_string(),
+                    edit.branch_id.to_string(),
+                    i64::try_from(coverage).map_err(storage)?
+                ],
+            )
+            .map_err(storage)?;
         }
         if let Some(projection) = projection {
             if projection.space_id != edit.space_id

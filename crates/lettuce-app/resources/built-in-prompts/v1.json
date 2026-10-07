@@ -5518,6 +5518,20 @@
           "promptEntryPayload": null
         },
         {
+          "key": "memory_skip_user_edited",
+          "name": "Skip reason: edited by the user",
+          "role": "system",
+          "content": "the memory was edited by the user during this cycle and is left as they set it",
+          "enabled": true,
+          "injectionPosition": "relative",
+          "injectionDepth": 0,
+          "conditionalMinMessages": null,
+          "intervalTurns": null,
+          "systemPrompt": false,
+          "conditions": null,
+          "promptEntryPayload": null
+        },
+        {
           "key": "memory_skip_unsupported_tool",
           "name": "Skip reason: unsupported tool",
           "role": "system",

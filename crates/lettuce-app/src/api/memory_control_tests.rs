@@ -1200,3 +1200,464 @@ async fn a_fork_after_a_finished_turn_does_not_move_the_parents_due_window_to_th
         .expect("admission");
     assert_eq!(batch.branch_id, root);
 }
+
+async fn status_of(harness: &super::tests::Harness, chat: &str) -> dto::MemoryView {
+    memory_get(
+        &harness.context,
+        dto::ConversationRequest {
+            conversation_id: chat.into(),
+        },
+    )
+    .await
+    .expect("memory")
+}
+
+async fn set_user_summary(harness: &super::tests::Harness, chat: &str, key: &str) {
+    let revision = status_of(harness, chat).await.revision;
+    memory_summary_update(
+        &harness.context,
+        dto::MemorySummaryUpdateRequest {
+            conversation_id: chat.into(),
+            summary: dto::MemorySummaryEdit::Set {
+                text: "Mine".into(),
+            },
+            expected_revision: revision,
+            client_operation_id: key.into(),
+        },
+    )
+    .await
+    .expect("user summary");
+}
+
+#[tokio::test]
+async fn a_user_summary_set_or_clear_keeps_the_model_cycle_cursor() {
+    let harness = harness(Reply::Text("reply"));
+    let (chat, _) = replied_chat(&harness, "cursor-model").await;
+    make_dynamic(&harness, true);
+    recorded_cycle(&harness, &chat, "Model summary", "A fact", 1_000, 0).await;
+    let before = status_of(&harness, &chat).await.status;
+    assert_eq!(before.messages_since_last_cycle, 0);
+    set_user_summary(&harness, &chat, "cursor-set").await;
+    let set = status_of(&harness, &chat).await.status;
+    assert_eq!(set.messages_since_last_cycle, 0);
+    assert_eq!(
+        set.messages_until_next_cycle,
+        before.messages_until_next_cycle
+    );
+    let revision = status_of(&harness, &chat).await.revision;
+    memory_summary_update(
+        &harness.context,
+        dto::MemorySummaryUpdateRequest {
+            conversation_id: chat.clone(),
+            summary: dto::MemorySummaryEdit::Clear,
+            expected_revision: revision,
+            client_operation_id: "cursor-clear".into(),
+        },
+    )
+    .await
+    .expect("clear");
+    let cleared = status_of(&harness, &chat).await.status;
+    assert_eq!(cleared.messages_since_last_cycle, 0);
+}
+
+#[tokio::test]
+async fn a_user_summary_over_an_imported_one_keeps_its_coverage_even_when_cleared() {
+    use lettuce_conversations::ConversationReader;
+    use lettuce_memory::{
+        MemoryOrigin, MemoryRepository, MemorySummary, MemorySummaryChange, MemorySummaryRepository,
+    };
+    let harness = harness(Reply::Text("reply"));
+    let (chat, _) = replied_chat(&harness, "cursor-import").await;
+    make_dynamic(&harness, true);
+    let database = harness.context.backend().database();
+    let conversation_id: lettuce_types::ConversationId = chat.parse().expect("id");
+    let branch_id = ConversationReader::get(database, conversation_id)
+        .expect("conversation")
+        .conversation
+        .active_branch_id;
+    let space = MemoryRepository::get_for_branch(database, conversation_id, branch_id)
+        .expect("memory")
+        .expect("space");
+    let view = super::turns_tests::open(&harness, &chat).await;
+    let sources = view
+        .messages
+        .items
+        .iter()
+        .rev()
+        .map(|message| message.id.parse().expect("message"))
+        .collect::<Vec<_>>();
+    database
+        .compare_and_apply_summary(MemorySummaryChange {
+            expected_revision: space.revision,
+            summary: MemorySummary {
+                origin: MemoryOrigin::Import,
+                space_id: space.id,
+                branch_id,
+                text: "Imported".into(),
+                token_count: Some(3),
+                window_start: 0,
+                window_end: u64::try_from(sources.len()).expect("count"),
+                source_message_ids: sources,
+                updated_at: harness.context.now(),
+            },
+        })
+        .expect("imported summary");
+    let before = status_of(&harness, &chat).await.status;
+    assert_eq!(before.messages_since_last_cycle, 0);
+    set_user_summary(&harness, &chat, "cursor-import-set").await;
+    assert_eq!(
+        status_of(&harness, &chat)
+            .await
+            .status
+            .messages_since_last_cycle,
+        0
+    );
+    let revision = status_of(&harness, &chat).await.revision;
+    memory_summary_update(
+        &harness.context,
+        dto::MemorySummaryUpdateRequest {
+            conversation_id: chat.clone(),
+            summary: dto::MemorySummaryEdit::Clear,
+            expected_revision: revision,
+            client_operation_id: "cursor-import-clear".into(),
+        },
+    )
+    .await
+    .expect("clear");
+    assert_eq!(
+        status_of(&harness, &chat)
+            .await
+            .status
+            .messages_since_last_cycle,
+        0
+    );
+}
+
+struct OpenRound {
+    run_id: lettuce_types::DynamicMemoryRunId,
+    attempt_id: lettuce_types::DynamicMemoryAttemptId,
+    claim: lettuce_jobs::Claim,
+    handle: lettuce_jobs::handle::JobHandle,
+}
+
+async fn open_round(
+    harness: &super::tests::Harness,
+    chat: &str,
+    calls: Vec<(&str, serde_json::Value)>,
+) -> OpenRound {
+    use lettuce_conversations::{ConversationOverviewReader, ConversationReader};
+    use lettuce_jobs::{
+        JobKind, JobSpec, JobStore, JobSubject, OutcomeRef, ResourceAvailability, ResourceClass,
+        SubjectKind, WorkerId,
+    };
+    use lettuce_memory::{
+        DynamicMemoryAttemptStatus, DynamicMemoryRoundFinishReason, DynamicMemoryRoundKind,
+        DynamicMemoryRunRepository, DynamicMemorySourceMessage, MemoryRepository,
+        NewDynamicMemoryInferenceRound, NewDynamicMemoryRunAttempt, NewDynamicMemoryToolCall,
+    };
+    use lettuce_types::{
+        DynamicMemoryAttemptId, DynamicMemoryRunId, TimestampMillis, ToolExecutionId,
+    };
+    let database = harness.context.backend().database();
+    let conversation_id: lettuce_types::ConversationId = chat.parse().expect("conversation");
+    let branch_id = ConversationReader::get(database, conversation_id)
+        .expect("conversation")
+        .conversation
+        .active_branch_id;
+    let view = super::turns_tests::open(harness, chat).await;
+    let mut sources = Vec::new();
+    for message in view.messages.items.iter().rev() {
+        let item = ConversationOverviewReader::timeline_anchor(
+            database,
+            conversation_id,
+            branch_id,
+            message.id.parse().expect("message"),
+        )
+        .expect("anchor")
+        .item;
+        sources.push(DynamicMemorySourceMessage {
+            message_id: item.message.id,
+            role: item.message.role,
+            render_source: item.message.active_render_source,
+            effective_time: item.message.effective_time,
+        });
+    }
+    let memory = MemoryRepository::get_for_branch(database, conversation_id, branch_id)
+        .expect("memory")
+        .expect("space");
+    let job = JobStore::create_or_get(
+        database,
+        JobSpec::new(
+            JobKind::MemoryExtraction,
+            JobSubject::new(SubjectKind::Conversation, format!("{chat}-open")).expect("subject"),
+            OutcomeRef::Conversation(conversation_id),
+        )
+        .with_resources(vec![
+            ResourceClass::Network,
+            ResourceClass::ModelLoad,
+            ResourceClass::DiskRead,
+            ResourceClass::DiskWrite,
+            ResourceClass::Cpu,
+        ])
+        .with_policies(
+            lettuce_jobs::RecoveryPolicy::Restart,
+            lettuce_jobs::CancellationPolicy::Cooperative,
+        ),
+    )
+    .expect("job")
+    .job;
+    let claim = JobStore::claim(
+        database,
+        job.id,
+        WorkerId::new(),
+        harness.context.now(),
+        std::time::Duration::from_secs(600),
+        &ResourceAvailability::all(),
+    )
+    .expect("claim")
+    .expect("claimed");
+    let run_id = DynamicMemoryRunId::new();
+    let attempt_id = DynamicMemoryAttemptId::new();
+    let at = harness.context.now();
+    let admitted = database
+        .admit_dynamic_memory_run_attempt(NewDynamicMemoryRunAttempt {
+            run_id,
+            attempt_id,
+            conversation_id,
+            branch_id,
+            space_id: memory.id,
+            cycle_start_change: None,
+            starting_memory: memory,
+            source_messages: sources.clone(),
+            profile: crate::companion::companion_memory_run::tests::profile(),
+            time_awareness_enabled: false,
+            supersession_enabled: false,
+            structured_fallback_format: lettuce_memory::DynamicMemoryStructuredFallbackFormat::Xml,
+            summary_window: lettuce_memory::DynamicMemorySummaryWindow {
+                message_interval: 2,
+                start: 0,
+                end: u64::try_from(sources.len()).expect("count"),
+            },
+            tool_request: lettuce_memory::dynamic_memory_tool_request_for_run(
+                lettuce_memory::DynamicMemoryToolOptions {
+                    group: false,
+                    supersession_enabled: false,
+                    require_source_message_id: false,
+                },
+                &|key| key.to_owned(),
+            ),
+            job_id: job.id,
+            job_attempt: None,
+            now: at,
+        })
+        .expect("run");
+    database
+        .transition_dynamic_memory_attempt(
+            attempt_id,
+            admitted.attempt.revision,
+            DynamicMemoryAttemptStatus::Processing,
+            None,
+            at,
+        )
+        .expect("processing");
+    database
+        .admit_dynamic_memory_inference_round(
+            run_id,
+            attempt_id,
+            0,
+            0,
+            NewDynamicMemoryInferenceRound {
+                ordinal: 0,
+                request_context: lettuce_conversations::ProviderNeutralContext {
+                    messages: vec![],
+                    attributions: Default::default(),
+                    budget: Default::default(),
+                },
+                parts: vec![],
+                provider_replay: None,
+                usage: None,
+                finish_reason: DynamicMemoryRoundFinishReason::Stop,
+                kind: DynamicMemoryRoundKind::Manager,
+                provider_request_id: None,
+                calls: calls
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, (name, arguments))| NewDynamicMemoryToolCall {
+                        id: ToolExecutionId::new(),
+                        definition_version: 1,
+                        call: lettuce_conversations::ProposedToolCall {
+                            provider_call_id: Some(format!("{name}-{index}")),
+                            name: name.into(),
+                            arguments,
+                            raw_arguments: None,
+                            provider_replay: None,
+                        },
+                    })
+                    .collect(),
+                admitted_at: TimestampMillis::new(at.get() + 1),
+            },
+        )
+        .expect("round");
+    let _ = DynamicMemoryRunRepository::load_dynamic_memory_run(database, run_id).expect("run");
+    OpenRound {
+        run_id,
+        attempt_id,
+        handle: lettuce_jobs::handle::JobHandle::new(job.id),
+        claim,
+    }
+}
+
+fn settle(
+    harness: &super::tests::Harness,
+    round: &OpenRound,
+) -> lettuce_memory::DynamicMemoryBackgroundRoundSettlement {
+    let engine = harness.context.embedding();
+    crate::CompanionMemoryRoundExecutor::new(engine.as_ref(), harness.context.backend().database())
+        .execute_round(
+            round.run_id,
+            round.attempt_id,
+            0,
+            &lettuce_memory::MemoryPolicy {
+                max_entries: 10,
+                hot_token_budget: 1_000,
+                cold_threshold: lettuce_memory::Score::from_basis_points(2_000).expect("score"),
+                delete_confidence_default: lettuce_memory::Score::from_basis_points(5_000)
+                    .expect("score"),
+                max_hard_delete_ratio_per_cycle: lettuce_memory::Score::from_basis_points(10_000)
+                    .expect("score"),
+                decay_rate: lettuce_memory::Score::from_basis_points(800).expect("score"),
+            },
+            &[],
+            lettuce_memory::Score::from_basis_points(9_000).expect("score"),
+            &round.claim,
+            &round.handle,
+            harness.context.now(),
+        )
+        .expect("settle")
+        .settlement
+}
+
+async fn item(harness: &super::tests::Harness, chat: &str, text: &str) -> dto::MemoryItemView {
+    status_of(harness, chat)
+        .await
+        .items
+        .into_iter()
+        .find(|item| item.text == text)
+        .unwrap_or_else(|| panic!("{text} is missing"))
+}
+
+#[tokio::test]
+async fn a_user_edit_during_a_run_survives_the_models_delete_and_unpin() {
+    let harness = harness(Reply::Text("reply"));
+    let (chat, _) = replied_chat(&harness, "stale").await;
+    for (index, text) in ["Edited by the user", "Pinned by the model run", "Untouched"]
+        .into_iter()
+        .enumerate()
+    {
+        let revision = status_of(&harness, &chat).await.revision;
+        memory_add(
+            &harness.context,
+            dto::MemoryAddRequest {
+                conversation_id: chat.clone(),
+                text: text.into(),
+                category: None,
+                observed_at: None,
+                expected_revision: revision,
+                client_operation_id: format!("stale-add-{index}"),
+            },
+        )
+        .await
+        .expect("add");
+    }
+    let edited = item(&harness, &chat, "Edited by the user").await;
+    let unpinned = item(&harness, &chat, "Pinned by the model run").await;
+    let untouched = item(&harness, &chat, "Untouched").await;
+    let revision = status_of(&harness, &chat).await.revision;
+    memory_pin(
+        &harness.context,
+        dto::MemoryPinRequest {
+            conversation_id: chat.clone(),
+            memory_id: unpinned.id.clone(),
+            pinned: true,
+            expected_revision: revision,
+            client_operation_id: "stale-pin-before".into(),
+        },
+    )
+    .await
+    .expect("pin before the run");
+    let round = open_round(
+        &harness,
+        &chat,
+        vec![
+            (
+                "delete_memory",
+                serde_json::json!({"text": edited.short_id, "confidence": 1.0}),
+            ),
+            ("unpin_memory", serde_json::json!({"id": unpinned.short_id})),
+            (
+                "delete_memory",
+                serde_json::json!({"text": untouched.short_id, "confidence": 1.0}),
+            ),
+        ],
+    )
+    .await;
+    let revision = status_of(&harness, &chat).await.revision;
+    memory_update(
+        &harness.context,
+        dto::MemoryUpdateRequest {
+            conversation_id: chat.clone(),
+            memory_id: edited.id.clone(),
+            text: Some("Edited by the user again".into()),
+            category: dto::MemoryCategoryChange::Keep,
+            observed_at: dto::MemoryObservedAtChange::Keep,
+            expected_revision: revision,
+            client_operation_id: "stale-edit".into(),
+        },
+    )
+    .await
+    .expect("edit during the run");
+    let revision = status_of(&harness, &chat).await.revision;
+    memory_pin(
+        &harness.context,
+        dto::MemoryPinRequest {
+            conversation_id: chat.clone(),
+            memory_id: unpinned.id.clone(),
+            pinned: true,
+            expected_revision: revision,
+            client_operation_id: "stale-repin".into(),
+        },
+    )
+    .await
+    .expect("pin again during the run");
+    let settlement = settle(&harness, &round);
+    assert!(matches!(
+        settlement.results[0].outcome,
+        lettuce_memory::MemoryToolOutcome::Skipped {
+            reason: lettuce_memory::MemoryToolSkipReason::UserEdited
+        }
+    ));
+    assert!(matches!(
+        settlement.results[1].outcome,
+        lettuce_memory::MemoryToolOutcome::Skipped {
+            reason: lettuce_memory::MemoryToolSkipReason::UserEdited
+        }
+    ));
+    assert!(matches!(
+        settlement.results[2].outcome,
+        lettuce_memory::MemoryToolOutcome::Deleted { .. }
+    ));
+    let after = status_of(&harness, &chat).await;
+    assert!(
+        after
+            .items
+            .iter()
+            .any(|item| item.text == "Edited by the user again")
+    );
+    assert!(
+        after
+            .items
+            .iter()
+            .any(|item| item.id == unpinned.id && item.pinned)
+    );
+    assert!(after.items.iter().all(|item| item.id != untouched.id));
+}

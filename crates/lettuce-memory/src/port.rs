@@ -87,6 +87,14 @@ pub trait MemoryRepository: Send + Sync {
         &self,
         change: MemoryChangeSet,
     ) -> Result<MemorySpaceSnapshot, MemoryRepositoryError>;
+
+    /// The items the user edited by hand after the space reached
+    /// `after_revision` and has not undone since.
+    fn manual_edited_items_since(
+        &self,
+        space_id: MemorySpaceId,
+        after_revision: Revision,
+    ) -> Result<std::collections::HashSet<MemoryId>, MemoryRepositoryError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

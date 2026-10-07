@@ -902,7 +902,7 @@ pub(crate) fn summary_cursor_in(
 ) -> Result<u64, MemoryRepositoryError> {
     let summary_owner = transaction
         .query_row(
-            "SELECT conversation_id, window_end, branch_id FROM memory_summaries WHERE space_id = ?1",
+            "SELECT conversation_id, window_end, branch_id FROM memory_summaries WHERE space_id = ?1 AND origin <> 'user'",
             [space_id.to_string()],
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?, row.get::<_, String>(2)?)),
         )
@@ -1048,6 +1048,32 @@ impl MemoryRepository for Database {
         }
         transaction.commit().map_err(storage)?;
         Ok(snapshot)
+    }
+
+    fn manual_edited_items_since(
+        &self,
+        space_id: MemorySpaceId,
+        after_revision: Revision,
+    ) -> Result<std::collections::HashSet<MemoryId>, MemoryRepositoryError> {
+        let connection = self.connection().map_err(storage)?;
+        let rows = connection
+            .prepare("SELECT history_json FROM memory_manual_edits WHERE space_id = ?1 AND undone_at IS NULL")
+            .and_then(|mut statement| {
+                statement
+                    .query_map([space_id.to_string()], |row| row.get::<_, String>(0))?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+            })
+            .map_err(storage)?;
+        let mut edited = std::collections::HashSet::new();
+        for json in rows {
+            let history: lettuce_memory::MemoryManualHistory =
+                serde_json::from_str(&json).map_err(storage)?;
+            if history.resulting_revision > after_revision {
+                edited.extend(history.before_item.iter().map(|item| item.id));
+                edited.extend(history.after_item.iter().map(|item| item.id));
+            }
+        }
+        Ok(edited)
     }
 
     fn compare_and_apply(

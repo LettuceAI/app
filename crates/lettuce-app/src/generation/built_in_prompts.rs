@@ -1445,6 +1445,7 @@ mod tests {
             "memory_skip_invalid_category",
             "memory_skip_missing_target",
             "memory_skip_malformed_arguments",
+            "memory_skip_user_edited",
             "memory_skip_unsupported_tool",
             "memory_skip_target_not_found",
             "memory_skip_duplicate_text",

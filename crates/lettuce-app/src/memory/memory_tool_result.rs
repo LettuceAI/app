@@ -177,6 +177,7 @@ fn skip_reason(
         MemoryToolSkipReason::MissingTarget => "memory_skip_missing_target",
         MemoryToolSkipReason::UnsupportedTool => "memory_skip_unsupported_tool",
         MemoryToolSkipReason::MalformedArguments => "memory_skip_malformed_arguments",
+        MemoryToolSkipReason::UserEdited => "memory_skip_user_edited",
     };
     text.render_with(key, [])
 }
