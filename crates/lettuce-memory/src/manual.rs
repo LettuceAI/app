@@ -303,9 +303,8 @@ pub fn undo_manual_memory_edit_preserving(
         return Ok(());
     }
     if let MemoryManualMutation::Add { item } = &history.edit.mutation {
-        let added = history.after_item.as_ref().unwrap_or(item);
         if item_edits.is_empty() {
-            items.retain(|current| current.id != item.id || !same_user_fields(current, added));
+            items.retain(|current| current.id != item.id);
         }
         return Ok(());
     }
@@ -389,15 +388,6 @@ pub fn undo_manual_memory_edit_preserving(
         _ => return Err(MemoryRepositoryError::Conflict),
     }
     Ok(())
-}
-
-fn same_user_fields(left: &MemoryItem, right: &MemoryItem) -> bool {
-    left.text == right.text
-        && left.category == right.category
-        && left.observed_at == right.observed_at
-        && left.observed_time_precision == right.observed_time_precision
-        && left.is_pinned == right.is_pinned
-        && left.is_cold == right.is_cold
 }
 
 #[cfg(test)]

@@ -1350,6 +1350,15 @@ async fn open_round(
     chat: &str,
     calls: Vec<(&str, serde_json::Value)>,
 ) -> OpenRound {
+    open_round_with_decay(harness, chat, calls, false).await
+}
+
+async fn open_round_with_decay(
+    harness: &super::tests::Harness,
+    chat: &str,
+    calls: Vec<(&str, serde_json::Value)>,
+    decay: bool,
+) -> OpenRound {
     use lettuce_conversations::{ConversationOverviewReader, ConversationReader};
     use lettuce_jobs::{
         JobKind, JobSpec, JobStore, JobSubject, OutcomeRef, ResourceAvailability, ResourceClass,
@@ -1390,6 +1399,21 @@ async fn open_round(
     let memory = MemoryRepository::get_for_branch(database, conversation_id, branch_id)
         .expect("memory")
         .expect("space");
+    let cycle_start_change = if decay {
+        lettuce_memory::MemoryToolReducer.start_cycle(&memory, &lettuce_memory::MemoryPolicy {
+            max_entries: 10, hot_token_budget: 1_000,
+            cold_threshold: lettuce_memory::Score::from_basis_points(2_000).expect("score"),
+            delete_confidence_default: lettuce_memory::Score::from_basis_points(5_000).expect("score"),
+            max_hard_delete_ratio_per_cycle: lettuce_memory::Score::FULL,
+            decay_rate: lettuce_memory::Score::FULL,
+        }).expect("real cycle-start decay").change
+    } else { None };
+    let memory = match &cycle_start_change {
+        Some(change) => lettuce_memory::MemorySpaceSnapshot {
+            id: memory.id, revision: memory.revision.next().expect("revision"), items: change.items.clone(),
+        },
+        None => memory,
+    };
     let job = JobStore::create_or_get(
         database,
         JobSpec::new(
@@ -1431,7 +1455,7 @@ async fn open_round(
             conversation_id,
             branch_id,
             space_id: memory.id,
-            cycle_start_change: None,
+            cycle_start_change,
             starting_memory: memory,
             source_messages: sources.clone(),
             profile: crate::companion::companion_memory_run::tests::profile(),
@@ -2210,4 +2234,81 @@ async fn generated_summary_with_failed_tokenizer_keeps_usage_without_publishing_
     assert!(replayed.replayed);
     assert_eq!(replayed.checkpoint, recovered.checkpoint);
     assert_eq!(harness.provider.requests.lock().expect("requests").len(), dispatched);
+}
+
+#[tokio::test]
+async fn delete_after_removes_a_decayed_manual_add_unless_another_pool_chat_edited_it() {
+    use lettuce_jobs::{JobMutation, JobOutcome, JobStore, OutcomeRef};
+    use lettuce_memory::{DynamicMemoryAttemptStatus, DynamicMemoryRunRepository};
+    for retained in [false, true] {
+        let harness = super::tests::harness_in(
+            Reply::Text("reply"), std::sync::Arc::new(lettuce_jobs::SystemClock), None, None,
+            std::sync::Arc::new(super::inspect_tests::AllModels),
+        );
+        let character = super::tests::create_character(
+            harness.context.backend().database(), "Decayed addition",
+            lettuce_characters::CharacterDefaults {
+                interaction_mode: lettuce_characters::InteractionMode::Companion,
+                companion_soul: Some(lettuce_companions::CompanionSoulConfig::default()),
+                memory_policy: lettuce_characters::MemoryPolicy::Dynamic,
+                ..lettuce_characters::CharacterDefaults::default()
+            },
+        );
+        let a = conversation_launch_direct(&harness.context, dto::LaunchDirectRequest {
+            character_id: character.to_string(), title: None, scene_id: None, starter_id: None,
+            client_operation_id: "decay-a".into(),
+        }).await.expect("companion").conversation_id;
+        let first = conversation_add_user_message(&harness.context, dto::ConversationAddUserMessageRequest {
+            conversation_id: a.clone(), text: "Keep this anchor".into(), expected_revision: 1,
+            client_operation_id: "decay-first".into(),
+        }).await.expect("first");
+        let b = conversation_duplicate(&harness.context, dto::ConversationDuplicateRequest {
+            conversation_id: a.clone(), title: None, with_messages: true,
+            client_operation_id: "decay-b".into(),
+        }).await.expect("pooled chat").conversation_id;
+        let later = conversation_add_user_message(&harness.context, dto::ConversationAddUserMessageRequest {
+            conversation_id: a.clone(), text: "Removed anchor".into(), expected_revision: first.revision,
+            client_operation_id: "decay-later".into(),
+        }).await.expect("suffix");
+        let added = memory_add(&harness.context, dto::MemoryAddRequest {
+            conversation_id: a.clone(), text: "Added in the removed suffix".into(), category: None,
+            observed_at: None, expected_revision: status_of(&harness, &a).await.revision,
+            client_operation_id: "decay-add".into(),
+        }).await.expect("manual add").memory_id.expect("id");
+        let round = open_round_with_decay(&harness, &a, vec![("done", serde_json::json!({}))], true).await;
+        let cold = status_of(&harness, &a).await;
+        assert_eq!(cold.items.iter().find(|item| item.id == added).expect("added").temperature,
+            dto::MemoryTemperature::Cold, "the persisted background cycle decayed the addition");
+        let database = harness.context.backend().database();
+        database.append_and_transition(JobMutation::Start {
+            claim: round.claim.claim.clone(), at: harness.context.now(),
+        }).expect("start");
+        let attempt = database.load_dynamic_memory_attempt(round.attempt_id).expect("attempt");
+        database.transition_dynamic_memory_attempt(round.attempt_id, attempt.revision,
+            DynamicMemoryAttemptStatus::Succeeded, None, harness.context.now()).expect("finish cycle");
+        database.append_and_transition(JobMutation::Succeed {
+            claim: round.claim.claim.clone(), outcome: JobOutcome::Success {
+                result_ref: OutcomeRef::Conversation(a.parse().expect("conversation")),
+            }, at: harness.context.now(),
+        }).expect("finish job");
+        if retained {
+            memory_update(&harness.context, dto::MemoryUpdateRequest {
+                conversation_id: b.clone(), memory_id: added.clone(), text: Some("Retained user's fact".into()),
+                category: dto::MemoryCategoryChange::Keep, observed_at: dto::MemoryObservedAtChange::Keep,
+                expected_revision: status_of(&harness, &b).await.revision,
+                client_operation_id: "decay-retained-edit".into(),
+            }).await.expect("retained pooled edit");
+        }
+        messages_delete_after(&harness.context, dto::MessageDeleteRequest {
+            conversation_id: a.clone(), message_id: first.message.id, expected_revision: later.revision,
+            client_operation_id: "decay-delete-after".into(),
+        }).await.expect("rewind decayed add");
+        let memory = status_of(&harness, &b).await;
+        let kept = memory.items.iter().find(|item| item.id == added);
+        if retained {
+            assert_eq!(kept.expect("retained pooled item").text, "Retained user's fact");
+        } else {
+            assert!(kept.is_none(), "background decay must not turn an undone manual Add into a retained item");
+        }
+    }
 }
