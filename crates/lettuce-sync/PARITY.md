@@ -4,6 +4,8 @@ Facts about how sync relates to the legacy app (2.2.x), and how the design got t
 
 ## Legacy parity
 
+- Memory item payload version 3 preserves manually chosen dates with `user` precision and optional source attribution, matching `old-code/src-tauri/src/storage_manager/sessions.rs:4561-4568`. Its version changes the handshake schema fingerprint.
+
 - Pairing is session-scoped, matching the legacy UI. No persistent peer-trust model was invented.
 - The state scan stamps deletes with the time this device deleted the entity, like legacy's per-write capture.
 - Deletes follow legacy: a delete beats a concurrent update on both sides.

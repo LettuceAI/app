@@ -19,7 +19,7 @@ Facts about how `lettuce-memory` relates to the legacy app (2.2.x). The crate RE
 - Every outcome carries what legacy echoed back to the model (six-digit id, deleted text, the listing after the call, the duplicate kind); the application renders them into the legacy tool-result payloads.
 - Structured fallback booleans are trimmed and ASCII-lowercased like legacy. The JSON/XML operation parsers and fallback prompts were copied from legacy.
 - Supersession keeps only the latest forty superseded records, as legacy does.
-- Time-aware memories keep legacy `turn` precision.
+- Time-aware memories keep legacy `turn` precision; user-observed dates keep `user` precision without a required source message. Changing or clearing the date preserves prior source attribution, like `old-code/src-tauri/src/storage_manager/sessions.rs:4561-4568`.
 - Cumulative summaries keep the legacy bounded text, token count and exact ordered source cursor.
 - Run modes are the legacy `auto`/`askFirst`/`manual`; the ask-first prompt threshold is the copied interval rule, and skip records the legacy skipped state.
 - Background runs preserve the legacy cycle's frozen window and model while staying separate from assistant-message generation.

@@ -529,7 +529,7 @@ mod tests {
         );
         assert_eq!(
             current_sync_schema_fingerprint().as_str(),
-            "891c7c6e27f7a51752624c2e698613094e8cdf174e72a0157982ab233f5d99a7"
+            "9d21bafc6a9bcb879759fb234eadccc54d1657e180532aad03eebd1dac2c5242"
         );
     }
 

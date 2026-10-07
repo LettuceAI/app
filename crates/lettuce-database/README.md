@@ -168,7 +168,7 @@ The shared-message check that keeps a delete from changing another branch (`suff
 
 ## Memory
 
-Migration 9 stores `lettuce-memory`'s model: revisioned memory spaces with typed, ordered items (six-digit `short_id` unique per space, source attribution with role, observed time and `turn` precision, supersession links), the cumulative summary with its ordered source-message cursor, and the dynamic-memory run graph.
+Migration 9 stores `lettuce-memory`'s model: revisioned memory spaces with typed, ordered items (six-digit `short_id` unique per space, source attribution with role, model-observed times with `turn` precision, user-observed times with `user` precision, supersession links), the cumulative summary with its ordered source-message cursor, and the dynamic-memory run graph. The table checks distinguish a user date without a source from a model date that requires a source message and role. Copies keep user dates when the source message is absent from the copied timeline.
 
 ### Own spaces and companion pools
 

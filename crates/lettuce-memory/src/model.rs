@@ -224,9 +224,18 @@ impl MemoryItem {
         if self.is_pinned && self.is_cold {
             return Err(MemoryValidationError::PinnedCold);
         }
-        if self.source_role.is_some() != self.observed_at.is_some()
-            || self.observed_time_precision.as_deref() != self.observed_at.map(|_| "turn")
-            || (self.observed_at.is_some() && self.source_message_id.is_none())
+        let valid_observation = match self.observed_time_precision.as_deref() {
+            None => self.observed_at.is_none(),
+            Some("user") => self.observed_at.is_some(),
+            Some("turn") => {
+                self.observed_at.is_some()
+                    && self.source_message_id.is_some()
+                    && self.source_role.is_some()
+            }
+            Some(_) => false,
+        };
+        if !valid_observation
+            || (self.source_role.is_some() && self.source_message_id.is_none())
             || self.source_role.is_some_and(|role| {
                 !matches!(
                     role,
@@ -420,6 +429,43 @@ mod tests {
             snapshot.validate(),
             Err(MemoryValidationError::InvalidRevision)
         );
+    }
+
+    #[test]
+    fn user_observed_time_without_source_message_round_trips() {
+        let id = lettuce_types::MemoryId::new();
+        let mut item = super::MemoryItem::written(
+            id,
+            super::MemoryShortId::derived(id),
+            "An anniversary".into(),
+            TimestampMillis::new(10),
+        );
+        item.observed_at = Some(TimestampMillis::new(5));
+        item.observed_time_precision = Some("user".into());
+        assert_eq!(item.validate(), Ok(()));
+        let encoded = serde_json::to_vec(&item).expect("encode memory");
+        let decoded: super::MemoryItem = serde_json::from_slice(&encoded).expect("decode memory");
+        assert_eq!(decoded, item);
+        assert_eq!(decoded.validate(), Ok(()));
+    }
+
+    #[test]
+    fn user_observed_time_preserves_existing_source_attribution() {
+        let id = lettuce_types::MemoryId::new();
+        let mut item = super::MemoryItem::written(
+            id,
+            super::MemoryShortId::derived(id),
+            "An anniversary".into(),
+            TimestampMillis::new(10),
+        );
+        item.source_message_id = Some(MessageId::new());
+        item.source_role = Some(lettuce_conversations::MessageRole::Assistant);
+        item.observed_at = Some(TimestampMillis::new(5));
+        item.observed_time_precision = Some("user".into());
+        assert_eq!(item.validate(), Ok(()));
+        item.observed_at = None;
+        item.observed_time_precision = None;
+        assert_eq!(item.validate(), Ok(()));
     }
 
     #[test]

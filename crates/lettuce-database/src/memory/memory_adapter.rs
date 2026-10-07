@@ -1473,6 +1473,51 @@ mod tests {
     }
 
     #[test]
+    fn user_observed_time_is_stored_without_a_source_message() {
+        let database = Database::open_in_memory().expect("database");
+        let space_id = MemorySpaceId::new();
+        let mut memory = item(MemoryId::new(), "A remembered anniversary");
+        memory.observed_at = Some(TimestampMillis::new(42));
+        memory.observed_time_precision = Some("user".into());
+        let created = database
+            .create(snapshot(space_id, vec![memory]))
+            .expect("create user-observed memory");
+        assert_eq!(database.get(space_id).expect("read memory"), Some(created));
+    }
+
+    #[test]
+    fn user_observed_time_sql_checks_reject_inconsistent_shapes_atomically() {
+        let database = Database::open_in_memory().expect("database");
+        let space_id = MemorySpaceId::new();
+        let mut memory = item(MemoryId::new(), "An anniversary");
+        memory.observed_at = Some(TimestampMillis::new(42));
+        memory.observed_time_precision = Some("user".into());
+        let created = database
+            .create(snapshot(space_id, vec![memory]))
+            .expect("create memory");
+        for sql in [
+            "UPDATE memory_items SET observed_time_precision = NULL WHERE space_id = ?1",
+            "UPDATE memory_items SET observed_at = NULL WHERE space_id = ?1",
+            "UPDATE memory_items SET observed_time_precision = 'turn' WHERE space_id = ?1",
+            "UPDATE memory_items SET source_role = 'assistant' WHERE space_id = ?1",
+            "UPDATE memory_items SET observed_time_precision = 'month' WHERE space_id = ?1",
+        ] {
+            assert!(
+                database
+                    .connection()
+                    .expect("connection")
+                    .execute(sql, [space_id.to_string()])
+                    .is_err(),
+                "accepted inconsistent shape: {sql}"
+            );
+            assert_eq!(
+                database.get(space_id).expect("unchanged memory"),
+                Some(created.clone())
+            );
+        }
+    }
+
+    #[test]
     fn stale_compare_and_apply_keeps_the_committed_snapshot() {
         let database = Database::open_in_memory().expect("database");
         let space_id = MemorySpaceId::new();

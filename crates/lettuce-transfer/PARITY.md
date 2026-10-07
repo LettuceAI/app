@@ -118,6 +118,8 @@ Facts about how `lettuce-transfer` relates to the legacy app (2.2.x): what each 
 
 ## Memory backup
 
+- Memory section version 4 and dynamic-memory section version 3 preserve user-observed times in live spaces and frozen run snapshots. Legacy items with `user` precision materialize with their projections instead of remaining evidence only; manual date changes do not require a source message (`old-code/src-tauri/src/storage_manager/sessions.rs:4561-4568`).
+
 - `MemoryBackup.unbound_pools` carries companion pool spaces no conversation is bound to (a pool from a character file before its first chat, or one whose chats were all deleted); they restore before conversations with their items and projections. Such a pool used to make the whole backup fail.
 
 ## History

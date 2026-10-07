@@ -55,9 +55,9 @@ A backup is complete: it holds every user-owned domain, every referenced media o
 | `data/conversation-outbox.json` | Operation records and the per-conversation event journal |
 | `data/companion-state.json` | Relationship and emotional state, signals, continuity episodes, replacement receipts; version 2 carries a conversation's private relationships when it owns them |
 | `data/companion-effects.json` | Turn effects and suffix-rewind receipts |
-| `data/memory.json` | Branch-owned spaces, items, summaries, retrieval receipts, and conversation-scoped pools (section version 2) |
+| `data/memory.json` | Branch-owned spaces, items, summaries, retrieval receipts, and conversation-scoped pools (section version 4); user-observed dates remain distinct from model source times |
 | `data/memory-projections.json` | Stored embedding projections, ready and repair-needed |
-| `data/dynamic-memory.json` | Dynamic memory approvals, branch-owned runs, attempts, rounds, results and summary checkpoints (section version 2) |
+| `data/dynamic-memory.json` | Dynamic memory approvals, branch-owned runs, attempts, rounds, results and summary checkpoints (section version 3); starting snapshots preserve user-observed dates |
 | `media/blobs/<hash>` | One section per ready media blob |
 | `conversation/snapshots/<id>`, `conversation/replays/<id>` | Protected conversation snapshots and provider replay artifacts |
 

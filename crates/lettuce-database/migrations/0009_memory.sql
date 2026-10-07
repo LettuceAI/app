@@ -119,7 +119,7 @@ CREATE TABLE memory_items (
     source_message_id TEXT,
     source_role TEXT CHECK (source_role IN ('user','assistant')),
     observed_at INTEGER,
-    observed_time_precision TEXT CHECK (observed_time_precision = 'turn'),
+    observed_time_precision TEXT CHECK (observed_time_precision IN ('turn', 'user')),
     superseded_by TEXT,
     superseded_at INTEGER,
     supersedes_json TEXT NOT NULL CHECK (json_valid(supersedes_json) AND json_type(supersedes_json) = 'array'),
@@ -138,9 +138,11 @@ CREATE TABLE memory_items (
     UNIQUE (space_id, short_id),
     CHECK (NOT (is_pinned = 1 AND is_cold = 1)),
     CHECK (
-        (source_role IS NULL AND observed_at IS NULL AND observed_time_precision IS NULL)
-        OR (source_message_id IS NOT NULL AND source_role IS NOT NULL AND observed_at IS NOT NULL AND observed_time_precision = 'turn')
+        (observed_at IS NULL AND observed_time_precision IS NULL)
+        OR (observed_at IS NOT NULL AND observed_time_precision IS NOT NULL AND observed_time_precision = 'user')
+        OR (source_message_id IS NOT NULL AND source_role IS NOT NULL AND observed_at IS NOT NULL AND observed_time_precision IS NOT NULL AND observed_time_precision = 'turn')
     ),
+    CHECK (source_role IS NULL OR source_message_id IS NOT NULL),
     CHECK ((superseded_by IS NULL) = (superseded_at IS NULL)),
     CHECK (superseded_by IS NULL OR superseded_by <> id)
 ) STRICT;

@@ -266,8 +266,10 @@ pub(crate) fn seed_new_conversation_space_in(
             .and_then(|id| message_ids.get(&id).copied());
         if item.source_message_id.is_none() {
             item.source_role = None;
-            item.observed_at = None;
-            item.observed_time_precision = None;
+            if item.observed_time_precision.as_deref() == Some("turn") {
+                item.observed_at = None;
+                item.observed_time_precision = None;
+            }
         }
     }
     if summary.as_ref().is_some_and(|value| {

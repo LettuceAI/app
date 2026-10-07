@@ -4,7 +4,7 @@ Facts about how `lettuce-database` relates to the legacy app (2.2.x). The crate 
 
 ## Legacy parity
 
-- Memory items keep legacy `turn` precision beside their source-message attribution.
+- Memory items keep legacy `turn` precision beside their source-message attribution and `user` precision for manually chosen dates (`old-code/src-tauri/src/storage_manager/sessions.rs:4561-4568`). A copied item keeps its user date even when its source message was not copied.
 - Retrieval access applies the legacy cold promotion and access-count updates.
 - Scheduled notes keep the legacy recurrence, availability, expiry, enabled and recurrence-window fields and list in legacy `available_at`, id order.
 - Companion turn-effect seeds are the legacy seed, normalized; continuations use the legacy zero-delta seed with a nullable user-message reference.

@@ -22,7 +22,7 @@ A `MemoryItem` carries:
 - Hot/cold and pinned flags. Cold memories stay in the space and can still be retrieved; retrieval promotes a selected cold memory back to hot. A pinned memory is never cold, and snapshot validation rejects that state.
 - Scores (`importance` and friends) as `Score`, basis points from 0 to 10 000, so they compare and serialize exactly.
 - Retrieval metadata: `access_count` and `last_accessed_at`.
-- Optional source attribution: the transcript message the model named as the memory's source, its role (user or assistant), the observed time and `"turn"` precision. Time-aware memories carry all four; others carry at most the message id. When several turns are coalesced into one cycle, the message id is what companion post-turn effect settlement uses to attribute a memory to its turn.
+- Optional source attribution: the transcript message the model named as the memory's source and its role (user or assistant). Model-observed times use `"turn"` precision and require both source fields. A user-set observed time uses `"user"` precision without requiring a source; editing or clearing that time preserves existing source attribution. When several turns are coalesced into one cycle, the message id is what companion post-turn effect settlement uses to attribute a memory to its turn.
 - Supersession links (`supersedes`, `superseded_by`, `superseded_at`).
 
 A space holds any number of items. `MemoryPolicy` decides what a memory cycle keeps: `max_entries` (at most `MAX_MEMORY_ITEMS`, 4096), the hot token budget, the cold threshold, the default delete confidence, the per-cycle hard-delete ratio and the decay rate.

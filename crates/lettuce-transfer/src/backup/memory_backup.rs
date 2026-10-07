@@ -4,7 +4,7 @@ use lettuce_memory::{MemoryRetrievalAccessReceipt, MemorySpaceSnapshot, MemorySu
 use lettuce_types::ConversationId;
 use serde::{Deserialize, Serialize};
 
-pub const MEMORY_BACKUP_VERSION: u32 = 3;
+pub const MEMORY_BACKUP_VERSION: u32 = 4;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

@@ -412,13 +412,17 @@ fn map_memories(
                 row.source_role.as_deref(),
                 None | Some("user" | "assistant")
             )
-            && row.observed_at.is_some() == row.source_role.is_some()
-            && row.observed_at.is_some() == row.source_message_id.is_some()
-            && row.observed_time_precision.is_some() == row.observed_at.is_some()
-            && row
-                .observed_time_precision
-                .as_deref()
-                .is_none_or(|value| value == "turn")
+            && (row.source_role.is_none() || row.source_message_id.is_some())
+            && match row.observed_time_precision.as_deref() {
+                None => row.observed_at.is_none(),
+                Some("user") => row.observed_at.is_some(),
+                Some("turn") => {
+                    row.observed_at.is_some()
+                        && row.source_role.is_some()
+                        && row.source_message_id.is_some()
+                }
+                Some(_) => false,
+            }
             && row.source_message_id.as_deref().is_none_or(|value| {
                 uuid::Uuid::parse_str(value).is_ok() && source_message_ids.contains(value)
             })
@@ -858,6 +862,35 @@ mod tests {
         assert_eq!(memory.token_count, 6);
         assert!(memory.is_pinned);
         assert_eq!(memory.embedding_source_version.as_deref(), Some("v4"));
+        assert_eq!(
+            memory.materialization,
+            LegacyBackupMemoryMaterialization::InitialItemAndProjection
+        );
+    }
+
+    #[test]
+    fn user_observed_time_imports_as_an_item_with_its_projection() {
+        let character_id = id(41);
+        let session_id = id(42);
+        let mut row = memory(&id(43), 64);
+        row["observedAt"] = json!(15);
+        row["observedTimePrecision"] = json!("user");
+        let raw = serde_json::to_string(&json!([row])).expect("memory JSON");
+        let standalone = json!([{
+            "session_id": session_id,
+            "session_kind": "session",
+            "memory_embeddings": raw
+        }]);
+        let plan = plan_legacy_backup_memory_embeddings(source(
+            Some(standalone),
+            &raw,
+            &character_id,
+            &session_id,
+        ))
+        .expect("embedding plan");
+        let memory = &plan.owners[0].memories[0];
+        assert_eq!(memory.observed_at, Some(15));
+        assert_eq!(memory.observed_time_precision.as_deref(), Some("user"));
         assert_eq!(
             memory.materialization,
             LegacyBackupMemoryMaterialization::InitialItemAndProjection

@@ -2544,11 +2544,14 @@ pub(crate) mod tests {
         uncopied.source_role = Some(source_messages[2].role);
         uncopied.observed_at = Some(source_messages[2].effective_time);
         uncopied.observed_time_precision = Some("turn".into());
+        let mut user_dated = memory_item(MemoryId::new(), "User dated", 3);
+        user_dated.observed_at = Some(TimestampMillis::new(5));
+        user_dated.observed_time_precision = Some("user".into());
         database
             .compare_and_apply(lettuce_memory::MemoryChangeSet {
                 space_id: source_space,
                 expected_revision: Revision::INITIAL,
-                items: vec![copied.clone(), uncopied.clone()],
+                items: vec![copied.clone(), uncopied.clone(), user_dated.clone()],
             })
             .expect("source items");
         let attempt = checkpointed_window(
@@ -2602,6 +2605,16 @@ pub(crate) mod tests {
         assert_eq!(uncopied_seed.source_role, None);
         assert_eq!(uncopied_seed.observed_at, None);
         assert_eq!(uncopied_seed.observed_time_precision, None);
+        let user_dated_seed = seed
+            .items
+            .iter()
+            .find(|item| item.text == user_dated.text)
+            .expect("user-dated item");
+        assert_eq!(user_dated_seed.observed_at, user_dated.observed_at);
+        assert_eq!(
+            user_dated_seed.observed_time_precision,
+            user_dated.observed_time_precision
+        );
         let summary = database
             .get_summary(target_space)
             .expect("summary")
@@ -2615,6 +2628,60 @@ pub(crate) mod tests {
                 .collect::<Vec<_>>()
         );
         assert_eq!(summary.branch_id, target_branch);
+    }
+
+    #[test]
+    fn user_observed_time_round_trips_through_the_sync_item_codec() {
+        let source = Database::open_in_memory().expect("source database");
+        let (conversation_id, space_id, _) = conversation_fixture(&source);
+        let branch_id = fixture_branch(&source, conversation_id);
+        let mut memory = memory_item(MemoryId::new(), "User anniversary", 1);
+        memory.observed_at = Some(TimestampMillis::new(5));
+        memory.observed_time_precision = Some("user".into());
+        source
+            .compare_and_apply(lettuce_memory::MemoryChangeSet {
+                space_id,
+                expected_revision: Revision::INITIAL,
+                items: vec![memory.clone()],
+            })
+            .expect("source memory");
+        let mut connection = source.connection().expect("source connection");
+        let transaction = connection.transaction().expect("source transaction");
+        let exchanged = crate::sync::memory_sync_adapter::sync_load_memory_item(
+            &transaction,
+            &format!(
+                "conversation:{conversation_id}:branch:{branch_id}/{}",
+                memory.id
+            ),
+        )
+        .expect("encode memory")
+        .expect("source item");
+        let bytes = serde_json::to_vec(&exchanged).expect("sync payload");
+        let decoded = serde_json::from_slice(&bytes).expect("decode sync payload");
+        transaction.commit().expect("source commit");
+        let target = Database::open_in_memory().expect("target database");
+        let (target_conversation, target_space, _) = conversation_fixture(&target);
+        let target_branch = fixture_branch(&target, target_conversation);
+        let mut connection = target.connection().expect("target connection");
+        let transaction = connection.transaction().expect("target transaction");
+        assert!(
+            crate::sync::memory_sync_adapter::sync_put_memory_item(
+                &transaction,
+                &format!(
+                    "conversation:{target_conversation}:branch:{target_branch}/{}",
+                    memory.id
+                ),
+                &decoded,
+            )
+            .expect("materialize sync memory")
+        );
+        transaction.commit().expect("target commit");
+        drop(connection);
+        let received = target
+            .get(target_space)
+            .expect("read memory")
+            .expect("space");
+        assert_eq!(received.items, vec![memory]);
     }
 
     #[test]
