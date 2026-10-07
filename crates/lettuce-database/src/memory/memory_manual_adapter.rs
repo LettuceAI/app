@@ -190,6 +190,21 @@ pub(crate) fn history_in(
         .into_iter().map(|json| serde_json::from_str(&json).map_err(storage)).collect()
 }
 
+pub(crate) fn retained_history_in(
+    tx: &rusqlite::Transaction<'_>,
+    space_id: lettuce_types::MemorySpaceId,
+    undone: &[MemoryManualHistory],
+) -> Result<Vec<MemoryManualHistory>, MemoryRepositoryError> {
+    let rows = tx.prepare("SELECT history_json FROM memory_manual_edits WHERE space_id = ?1 AND undone_at IS NULL ORDER BY sequence")
+        .and_then(|mut statement| statement.query_map([space_id.to_string()], |row| row.get::<_, String>(0))?.collect::<rusqlite::Result<Vec<_>>>())
+        .map_err(storage)?;
+    rows.into_iter().map(|json| serde_json::from_str::<MemoryManualHistory>(&json).map_err(storage))
+        .filter_map(|result| match result {
+            Ok(edit) if undone.iter().any(|undo| undo.edit.id == edit.edit.id) => None,
+            result => Some(result),
+        }).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -270,7 +270,25 @@ pub fn undo_manual_memory_edit(
     summary: &mut Option<MemorySummary>,
     history: &MemoryManualHistory,
 ) -> Result<(), MemoryRepositoryError> {
+    undo_manual_memory_edit_preserving(items, summary, history, &[])
+}
+
+pub fn undo_manual_memory_edit_preserving(
+    items: &mut Vec<MemoryItem>,
+    summary: &mut Option<MemorySummary>,
+    history: &MemoryManualHistory,
+    retained: &[MemoryManualHistory],
+) -> Result<(), MemoryRepositoryError> {
     history.validate()?;
+    let later = retained.iter().filter(|edit| {
+        edit.space_id == history.space_id
+            && edit.resulting_revision > history.resulting_revision
+    }).collect::<Vec<_>>();
+    let target = history.before_item.as_ref().or(history.after_item.as_ref()).map(|item| item.id);
+    let item_edits = later.iter().filter(|edit| {
+        edit.before_item.as_ref().or(edit.after_item.as_ref()).map(|item| item.id) == target
+            && target.is_some()
+    }).collect::<Vec<_>>();
     if let MemoryManualMutation::Summary { .. } = &history.edit.mutation {
         let same = |left: &Option<MemorySummary>, right: &Option<MemorySummary>| match (left, right)
         {
@@ -278,14 +296,17 @@ pub fn undo_manual_memory_edit(
             (Some(left), Some(right)) => left.text == right.text && left.origin == right.origin,
             _ => false,
         };
-        if same(summary, &history.after_summary) {
+        let overwritten = later.iter().any(|edit| matches!(edit.edit.mutation, MemoryManualMutation::Summary { .. }));
+        if !overwritten && same(summary, &history.after_summary) {
             summary.clone_from(&history.before_summary);
         }
         return Ok(());
     }
     if let MemoryManualMutation::Add { item } = &history.edit.mutation {
         let added = history.after_item.as_ref().unwrap_or(item);
-        items.retain(|current| current.id != item.id || !same_user_fields(current, added));
+        if item_edits.is_empty() {
+            items.retain(|current| current.id != item.id || !same_user_fields(current, added));
+        }
         return Ok(());
     }
     let before = history
@@ -293,7 +314,7 @@ pub fn undo_manual_memory_edit(
         .as_ref()
         .ok_or(MemoryRepositoryError::Conflict)?;
     if let MemoryManualMutation::Delete { .. } = &history.edit.mutation {
-        if items.iter().all(|item| item.id != before.id) {
+        if item_edits.is_empty() && items.iter().all(|item| item.id != before.id) {
             let mut restored = before.clone();
             if items.iter().any(|item| item.short_id == restored.short_id) {
                 restored.short_id = crate::MemoryShortId::allocate(restored.id, |id| {
@@ -318,14 +339,20 @@ pub fn undo_manual_memory_edit(
             observed_at,
             ..
         } => {
-            if text.is_some() && item.text == after.text {
+            let text_owned = item_edits.iter().any(|edit| matches!(&edit.edit.mutation,
+                MemoryManualMutation::Update { text: Some(_), .. } | MemoryManualMutation::Add { .. } | MemoryManualMutation::Delete { .. }));
+            let category_owned = item_edits.iter().any(|edit| matches!(&edit.edit.mutation,
+                MemoryManualMutation::Update { category: MemoryFieldChange::Set(_), .. } | MemoryManualMutation::Add { .. } | MemoryManualMutation::Delete { .. }));
+            let observed_owned = item_edits.iter().any(|edit| matches!(&edit.edit.mutation,
+                MemoryManualMutation::Update { observed_at: MemoryFieldChange::Set(_), .. } | MemoryManualMutation::Add { .. } | MemoryManualMutation::Delete { .. }));
+            if !text_owned && text.is_some() && item.text == after.text {
                 item.text.clone_from(&before.text);
                 item.token_count = before.token_count;
             }
-            if matches!(category, MemoryFieldChange::Set(_)) && item.category == after.category {
+            if !category_owned && matches!(category, MemoryFieldChange::Set(_)) && item.category == after.category {
                 item.category = before.category;
             }
-            if matches!(observed_at, MemoryFieldChange::Set(_))
+            if !observed_owned && matches!(observed_at, MemoryFieldChange::Set(_))
                 && item.observed_at == after.observed_at
                 && item.observed_time_precision == after.observed_time_precision
             {
@@ -335,12 +362,17 @@ pub fn undo_manual_memory_edit(
             }
         }
         MemoryManualMutation::Pin { .. } => {
-            if item.is_pinned == after.is_pinned {
+            let owned = item_edits.iter().any(|edit| matches!(edit.edit.mutation,
+                MemoryManualMutation::Pin { .. } | MemoryManualMutation::Add { .. } | MemoryManualMutation::Delete { .. }));
+            if !owned && item.is_pinned == after.is_pinned {
                 item.is_pinned = before.is_pinned;
             }
         }
         MemoryManualMutation::Temperature { .. } => {
-            if item.is_cold == after.is_cold {
+            let owned = item_edits.iter().any(|edit| matches!(edit.edit.mutation,
+                MemoryManualMutation::Temperature { .. } | MemoryManualMutation::Pin { pinned: true, .. }
+                    | MemoryManualMutation::Add { .. } | MemoryManualMutation::Delete { .. }));
+            if !owned && !(before.is_cold && item.is_pinned) && item.is_cold == after.is_cold {
                 item.is_cold = before.is_cold;
                 item.importance = if before.is_cold {
                     crate::Score::ZERO

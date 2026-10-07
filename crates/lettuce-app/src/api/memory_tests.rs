@@ -1498,3 +1498,124 @@ async fn parent_delete_after_never_changes_a_forked_childs_memory() {
     assert_eq!(child_space.revision.get(), child_before.revision);
     assert_eq!(child_space.items[0].text, "Before cut");
 }
+
+#[tokio::test]
+async fn delete_after_in_one_pooled_chat_preserves_a_later_equal_pin() {
+    for aba in [false, true] {
+    let harness = super::tests::harness_in(
+        Reply::Text("reply"),
+        std::sync::Arc::new(lettuce_jobs::SystemClock),
+        None,
+        None,
+        std::sync::Arc::new(super::inspect_tests::AllModels),
+    );
+    let character = super::tests::create_character(
+        harness.context.backend().database(),
+        "Pooled",
+        lettuce_characters::CharacterDefaults {
+            interaction_mode: lettuce_characters::InteractionMode::Companion,
+            companion_soul: Some(lettuce_companions::CompanionSoulConfig::default()),
+            memory_policy: lettuce_characters::MemoryPolicy::Dynamic,
+            ..lettuce_characters::CharacterDefaults::default()
+        },
+    );
+    let a = conversation_launch_direct(&harness.context, dto::LaunchDirectRequest {
+        character_id: character.to_string(), title: None, scene_id: None, starter_id: None,
+        client_operation_id: "pool-a".into(),
+    }).await.expect("companion").conversation_id;
+    let first = conversation_add_user_message(
+        &harness.context,
+        dto::ConversationAddUserMessageRequest {
+            conversation_id: a.clone(),
+            text: "Keep".into(),
+            expected_revision: 1,
+            client_operation_id: "pool-a-first".into(),
+        },
+    )
+    .await
+    .expect("first message");
+    let b = conversation_duplicate(
+        &harness.context,
+        dto::ConversationDuplicateRequest {
+            conversation_id: a.clone(),
+            title: None,
+            with_messages: true,
+            client_operation_id: "pool-b".into(),
+        },
+    )
+    .await
+    .expect("duplicate")
+    .conversation_id;
+    let revision = |chat: String| {
+        let context = harness.context.clone();
+        async move {
+            memory_get(
+                &context,
+                dto::ConversationRequest {
+                    conversation_id: chat,
+                },
+            )
+            .await
+            .expect("memory")
+        }
+    };
+    let added = memory_add(
+        &harness.context,
+        dto::MemoryAddRequest {
+            conversation_id: a.clone(),
+            text: "Tea v1".into(),
+            category: None,
+            observed_at: None,
+            expected_revision: revision(a.clone()).await.revision,
+            client_operation_id: "pool-add".into(),
+        },
+    )
+    .await
+    .expect("add")
+    .memory_id
+    .expect("id");
+    let later = conversation_add_user_message(
+        &harness.context,
+        dto::ConversationAddUserMessageRequest {
+            conversation_id: a.clone(),
+            text: "Removed".into(),
+            expected_revision: first.revision,
+            client_operation_id: "pool-a-later".into(),
+        },
+    )
+    .await
+    .expect("later message");
+    let mut pins = vec![(&a, "pin-a", true)];
+    if aba { pins.push((&b, "unpin-b", false)); }
+    pins.push((&b, "pin-b", true));
+    for (chat, key, pinned) in pins {
+        memory_pin(
+            &harness.context,
+            dto::MemoryPinRequest {
+                conversation_id: chat.clone(),
+                memory_id: added.clone(),
+                pinned,
+                expected_revision: revision(chat.clone()).await.revision,
+                client_operation_id: key.into(),
+            },
+        )
+        .await
+        .expect("explicit pin");
+    }
+    messages_delete_after(
+        &harness.context,
+        dto::MessageDeleteRequest {
+            conversation_id: a.clone(),
+            message_id: first.message.id,
+            expected_revision: later.revision,
+            client_operation_id: "pool-a-delete-after".into(),
+        },
+    )
+    .await
+    .expect("delete after in a");
+    let kept = revision(b).await;
+    assert_eq!(kept.items.len(), 1);
+    assert!(kept.items[0].pinned, "the retained chat owns the later pin");
+    }
+}
+

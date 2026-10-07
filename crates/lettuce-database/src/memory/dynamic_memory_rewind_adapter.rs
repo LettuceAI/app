@@ -260,6 +260,8 @@ pub(crate) fn undo_events(
         },
         Manual(Box<lettuce_memory::MemoryManualHistory>),
     }
+    let retained = super::memory_manual_adapter::retained_history_in(transaction, current.id, manual)
+        .map_err(memory_error)?;
     let mut events = Vec::new();
     for run_id in run_ids {
         let run = dynamic_memory_run_adapter::load_run_in(transaction, run_id).map_err(storage)?;
@@ -315,7 +317,7 @@ pub(crate) fn undo_events(
                 lettuce_memory::undo_memory_tool_outcomes(&mut items, &before, &[outcome])
             }
             Undo::Manual(edit) => {
-                lettuce_memory::undo_manual_memory_edit(&mut items, summary, &edit)
+                lettuce_memory::undo_manual_memory_edit_preserving(&mut items, summary, &edit, &retained)
                     .map_err(memory_error)?
             }
         }
