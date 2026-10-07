@@ -553,6 +553,68 @@ pub fn undo_memory_tool_outcomes(
     }
 }
 
+/// Rewinds tool effects without replacing fields claimed by later retained
+/// manual edits, including equal-value setters from another pooled chat.
+pub fn undo_memory_tool_outcomes_preserving(
+    items: &mut Vec<MemoryItem>,
+    before: &[MemoryItem],
+    outcomes: &[MemoryToolOutcome],
+    settled_revision: lettuce_types::Revision,
+    retained: &[crate::MemoryManualHistory],
+) {
+    use crate::MemoryManualMutation;
+    for outcome in outcomes.iter().rev() {
+        let skip = match outcome {
+            MemoryToolOutcome::Created { id, .. } => {
+                items.iter().any(|item| item.id == *id)
+                    && retained_item_edits(retained, settled_revision, *id).next().is_some()
+            }
+            MemoryToolOutcome::Deleted { id, .. } => {
+                retained_item_edits(retained, settled_revision, *id)
+                    .any(|edit| matches!(edit.edit.mutation, MemoryManualMutation::Delete { .. }))
+            }
+            MemoryToolOutcome::SoftDeleted { id, .. } => {
+                retained_item_edits(retained, settled_revision, *id).any(|edit| matches!(
+                    edit.edit.mutation,
+                    MemoryManualMutation::Temperature { .. } | MemoryManualMutation::Pin { pinned: true, .. }
+                        | MemoryManualMutation::Add { .. } | MemoryManualMutation::Delete { .. }
+                ))
+            }
+            MemoryToolOutcome::Pinned { id, .. } | MemoryToolOutcome::Unpinned { id, .. } => {
+                let pin_owned = retained_item_edits(retained, settled_revision, *id).any(|edit| matches!(
+                    edit.edit.mutation,
+                    MemoryManualMutation::Pin { .. } | MemoryManualMutation::Add { .. } | MemoryManualMutation::Delete { .. }
+                ));
+                let unpinned = matches!(outcome, MemoryToolOutcome::Unpinned { .. });
+                let cold_owned = unpinned && retained_item_edits(retained, settled_revision, *id)
+                    .any(|edit| matches!(edit.edit.mutation, MemoryManualMutation::Temperature { cold: true, .. }));
+                if unpinned && !pin_owned && !cold_owned
+                    && let Some(item) = items.iter_mut().find(|item| item.id == *id)
+                {
+                    item.is_cold = false;
+                    item.importance = Score::FULL;
+                }
+                pin_owned || cold_owned
+            }
+            _ => false,
+        };
+        if !skip {
+            undo_memory_tool_outcomes(items, before, std::slice::from_ref(outcome));
+        }
+    }
+}
+
+fn retained_item_edits(
+    retained: &[crate::MemoryManualHistory],
+    settled_revision: lettuce_types::Revision,
+    id: MemoryId,
+) -> impl Iterator<Item = &crate::MemoryManualHistory> {
+    retained.iter().filter(move |edit| {
+        edit.resulting_revision > settled_revision
+            && edit.before_item.iter().chain(&edit.after_item).any(|item| item.id == id)
+    })
+}
+
 #[must_use]
 pub fn list_memories(items: &[MemoryItem]) -> Vec<ListedMemory> {
     items

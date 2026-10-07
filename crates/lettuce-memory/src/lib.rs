@@ -63,7 +63,7 @@ pub use tool::{
     MemoryToolError, MemoryToolOutcome, MemoryToolReducer, MemoryToolRejection, MemoryToolResult,
     MemoryToolSkipReason, SemanticDuplicateEvidence, SoftDeleteReason,
     dynamic_memory_tool_request_for_run, dynamic_memory_tool_shape, list_memories,
-    skip_user_edited_calls, undo_memory_tool_outcomes,
+    skip_user_edited_calls, undo_memory_tool_outcomes, undo_memory_tool_outcomes_preserving,
 };
 
 pub use read::{MemoryActivityCycle, MemoryReadRepository, MemoryReadScope, cycle_revert_blocker};

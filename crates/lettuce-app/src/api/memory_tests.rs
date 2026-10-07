@@ -1501,7 +1501,7 @@ async fn parent_delete_after_never_changes_a_forked_childs_memory() {
 
 #[tokio::test]
 async fn delete_after_in_one_pooled_chat_preserves_a_later_equal_pin() {
-    for aba in [false, true] {
+    for mode in ["equal", "aba", "cold"] {
     let harness = super::tests::harness_in(
         Reply::Text("reply"),
         std::sync::Arc::new(lettuce_jobs::SystemClock),
@@ -1574,6 +1574,13 @@ async fn delete_after_in_one_pooled_chat_preserves_a_later_equal_pin() {
     .expect("add")
     .memory_id
     .expect("id");
+    if mode == "cold" {
+        memory_pin(&harness.context, dto::MemoryPinRequest {
+            conversation_id: a.clone(), memory_id: added.clone(), pinned: true,
+            expected_revision: revision(a.clone()).await.revision,
+            client_operation_id: "pool-initial-pin".into(),
+        }).await.expect("initial retained pin");
+    }
     let later = conversation_add_user_message(
         &harness.context,
         dto::ConversationAddUserMessageRequest {
@@ -1585,9 +1592,9 @@ async fn delete_after_in_one_pooled_chat_preserves_a_later_equal_pin() {
     )
     .await
     .expect("later message");
-    let mut pins = vec![(&a, "pin-a", true)];
-    if aba { pins.push((&b, "unpin-b", false)); }
-    pins.push((&b, "pin-b", true));
+    let mut pins = vec![(&a, "pin-a", mode != "cold")];
+    if mode == "aba" { pins.push((&b, "unpin-b", false)); }
+    if mode != "cold" { pins.push((&b, "pin-b", true)); }
     for (chat, key, pinned) in pins {
         memory_pin(
             &harness.context,
@@ -1602,6 +1609,13 @@ async fn delete_after_in_one_pooled_chat_preserves_a_later_equal_pin() {
         .await
         .expect("explicit pin");
     }
+    if mode == "cold" {
+        memory_set_temperature(&harness.context, dto::MemoryTemperatureRequest {
+            conversation_id: b.clone(), memory_id: added.clone(), temperature: dto::MemoryTemperature::Cold,
+            expected_revision: revision(b.clone()).await.revision,
+            client_operation_id: "pool-retained-cold".into(),
+        }).await.expect("retained cold setter");
+    }
     messages_delete_after(
         &harness.context,
         dto::MessageDeleteRequest {
@@ -1615,7 +1629,12 @@ async fn delete_after_in_one_pooled_chat_preserves_a_later_equal_pin() {
     .expect("delete after in a");
     let kept = revision(b).await;
     assert_eq!(kept.items.len(), 1);
-    assert!(kept.items[0].pinned, "the retained chat owns the later pin");
+    if mode == "cold" {
+        assert!(!kept.items[0].pinned, "the retained cold setter prevents restoring a pin");
+        assert_eq!(kept.items[0].temperature, dto::MemoryTemperature::Cold);
+    } else {
+        assert!(kept.items[0].pinned, "the retained chat owns the later pin");
+    }
     }
 }
 

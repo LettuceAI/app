@@ -1516,7 +1516,35 @@ fn settle(
     harness: &super::tests::Harness,
     round: &OpenRound,
 ) -> lettuce_memory::DynamicMemoryBackgroundRoundSettlement {
-    let engine = harness.context.embedding();
+    use lettuce_memory::DynamicMemoryRunRepository;
+    let rounds = harness.context.backend().database().list_dynamic_memory_inference_rounds(round.run_id, round.attempt_id).expect("rounds");
+    let seeds = rounds[0].calls.iter().filter(|call| call.call.name == "create_memory")
+        .map(|call| crate::MemoryCreateSeed {
+            execution_id: call.id, id: lettuce_types::MemoryId::new(), token_count: None,
+            created_at: harness.context.now(),
+        }).collect::<Vec<_>>();
+    struct CreateEmbedding;
+    impl crate::MemoryEmbeddingEngine for CreateEmbedding {
+        fn source_revision(&self) -> &str { "control-create-test" }
+        fn dimensions(&self) -> lettuce_embeddings::EmbeddingDimensions {
+            lettuce_embeddings::EmbeddingDimensions::D64
+        }
+        fn count_tokens(&self, _: &str) -> Result<u32, crate::EmbeddingGenerationError> { Ok(1) }
+        fn embed_memory(
+            &self,
+            request: &lettuce_embeddings::EmbeddingRequest,
+            _: &lettuce_jobs::handle::CancellationToken,
+        ) -> Result<lettuce_embeddings::EmbeddingVector, crate::EmbeddingGenerationError> {
+            let mut values = vec![0.0; request.dimensions.get()];
+            values[0] = 1.0;
+            Ok(lettuce_embeddings::EmbeddingVector { source_revision: "control-create-test".into(), values })
+        }
+    }
+    let engine: std::sync::Arc<dyn crate::MemoryEmbeddingEngine> = if seeds.is_empty() {
+        harness.context.embedding()
+    } else {
+        std::sync::Arc::new(CreateEmbedding)
+    };
     crate::CompanionMemoryRoundExecutor::new(engine.as_ref(), harness.context.backend().database())
         .execute_round(
             round.run_id,
@@ -1532,7 +1560,7 @@ fn settle(
                     .expect("score"),
                 decay_rate: lettuce_memory::Score::from_basis_points(800).expect("score"),
             },
-            &[],
+            &seeds,
             lettuce_memory::Score::from_basis_points(9_000).expect("score"),
             &round.claim,
             &round.handle,
@@ -2014,4 +2042,110 @@ async fn a_memory_retry_receipt_replays_before_the_selected_model_is_resolved_ag
         |_| Ok(accepted.clone()),
     ).unwrap_or_else(|error| panic!("receipt write failed: {}", error.0.message));
     assert_eq!(memory_retry(&harness.context, request).await.expect("receipt replay"), accepted);
+}
+
+#[tokio::test]
+async fn pooled_delete_after_preserves_retained_user_edits_when_undoing_model_tools() {
+    use lettuce_jobs::{JobMutation, JobOutcome, JobStore, OutcomeRef};
+    use lettuce_memory::{DynamicMemoryAttemptStatus, DynamicMemoryRunRepository};
+    for tool in ["pin_memory", "unpin_memory", "create_memory"] {
+        let harness = super::tests::harness_in(
+            Reply::Text("reply"), std::sync::Arc::new(lettuce_jobs::SystemClock), None, None,
+            std::sync::Arc::new(super::inspect_tests::AllModels),
+        );
+        let character = super::tests::create_character(
+            harness.context.backend().database(), "Retained tool edits",
+            lettuce_characters::CharacterDefaults {
+                interaction_mode: lettuce_characters::InteractionMode::Companion,
+                companion_soul: Some(lettuce_companions::CompanionSoulConfig::default()),
+                memory_policy: lettuce_characters::MemoryPolicy::Dynamic,
+                ..lettuce_characters::CharacterDefaults::default()
+            },
+        );
+        let a = conversation_launch_direct(&harness.context, dto::LaunchDirectRequest {
+            character_id: character.to_string(), title: None, scene_id: None, starter_id: None,
+            client_operation_id: "tool-pool-a".into(),
+        }).await.expect("companion").conversation_id;
+        let first = conversation_add_user_message(&harness.context, dto::ConversationAddUserMessageRequest {
+            conversation_id: a.clone(), text: "Keep".into(), expected_revision: 1,
+            client_operation_id: "tool-pool-first".into(),
+        }).await.expect("kept anchor");
+        let b = conversation_duplicate(&harness.context, dto::ConversationDuplicateRequest {
+            conversation_id: a.clone(), title: None, with_messages: true,
+            client_operation_id: "tool-pool-b".into(),
+        }).await.expect("pooled duplicate").conversation_id;
+        let target = if tool == "create_memory" {
+            None
+        } else {
+            let added = memory_add(&harness.context, dto::MemoryAddRequest {
+                conversation_id: a.clone(), text: "Shared tool target".into(), category: None,
+                observed_at: None, expected_revision: status_of(&harness, &a).await.revision,
+                client_operation_id: "tool-pool-add".into(),
+            }).await.expect("existing target").memory_id.expect("id");
+            if tool == "unpin_memory" {
+                memory_pin(&harness.context, dto::MemoryPinRequest {
+                    conversation_id: a.clone(), memory_id: added.clone(), pinned: true,
+                    expected_revision: status_of(&harness, &a).await.revision,
+                    client_operation_id: "tool-pool-pin-before".into(),
+                }).await.expect("initial pin");
+            }
+            Some(added)
+        };
+        let later = conversation_add_user_message(&harness.context, dto::ConversationAddUserMessageRequest {
+            conversation_id: a.clone(), text: "Remove this suffix".into(), expected_revision: first.revision,
+            client_operation_id: "tool-pool-later".into(),
+        }).await.expect("removed anchor");
+        let arguments = match &target {
+            Some(id) => serde_json::json!({"id": id}),
+            None => serde_json::json!({"text": "New model fact", "category": "preference"}),
+        };
+        let round = open_round(&harness, &a, vec![(tool, arguments)]).await;
+        harness.context.backend().database().append_and_transition(JobMutation::Start {
+            claim: round.claim.claim.clone(), at: harness.context.now(),
+        }).expect("started model job");
+        let settlement = settle(&harness, &round);
+        let target = target.unwrap_or_else(|| match &settlement.results[0].outcome {
+            lettuce_memory::MemoryToolOutcome::Created { id, .. } => id.to_string(),
+            other => panic!("expected create, got {other:?}"),
+        });
+        let database = harness.context.backend().database();
+        let attempt = database.load_dynamic_memory_attempt(round.attempt_id).expect("attempt");
+        database.transition_dynamic_memory_attempt(round.attempt_id, attempt.revision,
+            DynamicMemoryAttemptStatus::Succeeded, None, harness.context.now()).expect("finished cycle");
+        database.append_and_transition(JobMutation::Succeed {
+            claim: round.claim.claim.clone(), outcome: JobOutcome::Success {
+                result_ref: OutcomeRef::Conversation(a.parse().expect("conversation")),
+            }, at: harness.context.now(),
+        }).expect("finished job");
+        let revision = status_of(&harness, &b).await.revision;
+        match tool {
+            "pin_memory" => { memory_pin(&harness.context, dto::MemoryPinRequest {
+                conversation_id: b.clone(), memory_id: target.clone(), pinned: true,
+                expected_revision: revision, client_operation_id: "tool-pool-retained-pin".into(),
+            }).await.expect("retained equal pin"); }
+            "unpin_memory" => { memory_set_temperature(&harness.context, dto::MemoryTemperatureRequest {
+                conversation_id: b.clone(), memory_id: target.clone(), temperature: dto::MemoryTemperature::Cold,
+                expected_revision: revision, client_operation_id: "tool-pool-retained-cold".into(),
+            }).await.expect("retained cold setter"); }
+            _ => { memory_update(&harness.context, dto::MemoryUpdateRequest {
+                conversation_id: b.clone(), memory_id: target.clone(), text: Some("User-confirmed fact".into()),
+                category: dto::MemoryCategoryChange::Keep, observed_at: dto::MemoryObservedAtChange::Keep,
+                expected_revision: revision, client_operation_id: "tool-pool-retained-text".into(),
+            }).await.expect("retained edit of model-created item"); }
+        }
+        messages_delete_after(&harness.context, dto::MessageDeleteRequest {
+            conversation_id: a.clone(), message_id: first.message.id, expected_revision: later.revision,
+            client_operation_id: "tool-pool-delete-after".into(),
+        }).await.expect("delete after preserves retained pool edits");
+        let memory = status_of(&harness, &b).await;
+        let item = memory.items.iter().find(|item| item.id == target).expect("retained item");
+        match tool {
+            "pin_memory" => assert!(item.pinned, "the retained user pin owns this field"),
+            "unpin_memory" => {
+                assert!(!item.pinned);
+                assert_eq!(item.temperature, dto::MemoryTemperature::Cold);
+            }
+            _ => assert_eq!(item.text, "User-confirmed fact"),
+        }
+    }
 }

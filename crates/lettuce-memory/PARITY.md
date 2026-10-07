@@ -61,3 +61,5 @@ A user summary is not part of the cycle cursor. Setting or clearing it keeps the
 Undoing a manual edit restores a field only while it still holds the value that edit gave it and no later retained edit claimed that field, so in a shared companion pool a delete-after in one chat leaves another chat's later change in place; legacy never rewound pooled edits at all (`old-code/src-tauri/src/storage_manager/sessions.rs:3958-3993`).
 
 The cycle revert dependency check covers indirect item changes (supersession links, cycle-start decay and finish demotion), as well as tool targets. The changed-item journal survives backup and restore.
+
+A pooled delete-after also preserves retained user edits while undoing model tools: a later pin or temperature setter owns its field, and an edited model-created item stays. This extends the same user-data protection to model outcomes rather than only manual undo records.

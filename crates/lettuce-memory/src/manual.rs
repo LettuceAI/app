@@ -363,9 +363,14 @@ pub fn undo_manual_memory_edit_preserving(
         }
         MemoryManualMutation::Pin { .. } => {
             let owned = item_edits.iter().any(|edit| matches!(edit.edit.mutation,
-                MemoryManualMutation::Pin { .. } | MemoryManualMutation::Add { .. } | MemoryManualMutation::Delete { .. }));
+                MemoryManualMutation::Pin { .. } | MemoryManualMutation::Temperature { cold: true, .. }
+                    | MemoryManualMutation::Add { .. } | MemoryManualMutation::Delete { .. }));
             if !owned && item.is_pinned == after.is_pinned {
                 item.is_pinned = before.is_pinned;
+                if item.is_pinned && item.is_cold {
+                    item.is_cold = false;
+                    item.importance = crate::Score::FULL;
+                }
             }
         }
         MemoryManualMutation::Temperature { .. } => {

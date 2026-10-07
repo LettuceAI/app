@@ -8,7 +8,7 @@ use lettuce_memory::{
     DynamicMemorySuffixRewindRepository, MemoryChangeSet, MemoryRepositoryError, MemorySummary,
     PendingSuffixRewind, PendingSuffixRewindRepository,
 };
-use lettuce_types::{DynamicMemoryRunId, OperationId};
+use lettuce_types::{DynamicMemoryRunId, OperationId, Revision};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 
 use crate::{
@@ -311,10 +311,13 @@ pub(crate) fn undo_events(
     }
     events.sort_by_key(|(at, revision, ordinal, _)| (*at, *revision, *ordinal));
     let mut items = current.items.clone();
-    for (_, _, _, event) in events.into_iter().rev() {
+    for (_, revision, _, event) in events.into_iter().rev() {
         match event {
             Undo::Tool { before, outcome } => {
-                lettuce_memory::undo_memory_tool_outcomes(&mut items, &before, &[outcome])
+                let settled_revision = Revision::new(u64::try_from(revision).map_err(storage)?);
+                lettuce_memory::undo_memory_tool_outcomes_preserving(
+                    &mut items, &before, &[outcome], settled_revision, &retained,
+                )
             }
             Undo::Manual(edit) => {
                 lettuce_memory::undo_manual_memory_edit_preserving(&mut items, summary, &edit, &retained)
