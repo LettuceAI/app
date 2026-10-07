@@ -607,6 +607,8 @@ fn read_dynamic_memory(
             run,
             attempts,
             summary_checkpoint,
+            changed_item_ids: crate::memory::dynamic_memory_run_adapter::changed_items_in(transaction, run_id)
+                .map_err(|_| ProviderBackupSourceError::InvalidData)?,
         });
     }
     Ok(DynamicMemoryBackup {

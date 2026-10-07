@@ -5898,6 +5898,7 @@ mod tests {
                 "dynamic_memory_admitted_tool_calls",
                 "dynamic_memory_background_round_settlements",
                 "dynamic_memory_background_tool_results",
+                "dynamic_memory_changed_items",
                 "dynamic_memory_cycle_reverts",
                 "dynamic_memory_inference_rounds",
                 "dynamic_memory_pending_approvals",

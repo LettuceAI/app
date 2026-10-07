@@ -870,6 +870,7 @@ async fn cycle_reverts_and_dismissed_failures_round_trip_through_backup() {
     .expect("dismiss");
     let mut graph = database.read_provider_backup_graph().expect("export");
     lettuce_transfer::canonicalize_and_validate(&mut graph).expect("valid");
+    assert!(graph.dynamic_memory.runs.iter().any(|run| !run.changed_item_ids.is_empty()));
     assert_eq!(graph.dynamic_memory.cycle_reverts.len(), 1);
     assert_eq!(graph.memory.error_dismissals.len(), 1);
     let restored = lettuce_database::Database::open_in_memory().expect("target");
@@ -902,6 +903,10 @@ async fn cycle_reverts_and_dismissed_failures_round_trip_through_backup() {
     assert_eq!(
         again.dynamic_memory.cycle_reverts,
         graph.dynamic_memory.cycle_reverts
+    );
+    assert_eq!(
+        again.dynamic_memory.runs.iter().map(|entry| (entry.run.id, &entry.changed_item_ids)).collect::<Vec<_>>(),
+        graph.dynamic_memory.runs.iter().map(|entry| (entry.run.id, &entry.changed_item_ids)).collect::<Vec<_>>(),
     );
     assert_eq!(again.memory.error_dismissals, graph.memory.error_dismissals);
     let mut forged = graph.clone();

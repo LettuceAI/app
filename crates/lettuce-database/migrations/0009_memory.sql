@@ -828,3 +828,9 @@ BEGIN
     DELETE FROM memory_changes WHERE conversation_id IN (SELECT peer.conversation_id FROM conversation_memory_spaces own JOIN conversation_memory_spaces peer ON peer.space_id = own.space_id WHERE own.conversation_id = NEW.subject_id);
     INSERT INTO memory_changes (conversation_id) SELECT DISTINCT peer.conversation_id FROM conversation_memory_spaces own JOIN conversation_memory_spaces peer ON peer.space_id = own.space_id WHERE own.conversation_id = NEW.subject_id;
 END;
+
+CREATE TABLE dynamic_memory_changed_items (
+    run_id TEXT NOT NULL REFERENCES dynamic_memory_runs(id) ON DELETE CASCADE,
+    memory_id TEXT NOT NULL CHECK (length(memory_id) = 36),
+    PRIMARY KEY (run_id, memory_id)
+) STRICT;

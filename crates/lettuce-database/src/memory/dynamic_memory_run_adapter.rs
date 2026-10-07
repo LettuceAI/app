@@ -839,6 +839,10 @@ pub(crate) fn insert_restored_run_in(
             ],
         )
         .map_err(storage)?;
+    for id in &backup.changed_item_ids {
+        transaction.execute("INSERT INTO dynamic_memory_changed_items (run_id, memory_id) VALUES (?1, ?2)",
+            params![run.id.to_string(), id.to_string()]).map_err(storage)?;
+    }
     for (ordinal, source) in run.source_messages.iter().enumerate() {
         let (revision_id, candidate_id) = match source.render_source {
             MessageRenderSource::Revision(id) => (Some(id.to_string()), None),
@@ -1022,6 +1026,33 @@ pub(crate) fn insert_restored_run_in(
     Ok(())
 }
 
+pub(crate) fn changed_items_in(
+    connection: &rusqlite::Connection,
+    run_id: DynamicMemoryRunId,
+) -> Result<Vec<lettuce_types::MemoryId>, DynamicMemoryRunRepositoryError> {
+    let ids = connection.prepare("SELECT memory_id FROM dynamic_memory_changed_items WHERE run_id = ?1 ORDER BY memory_id")
+        .and_then(|mut statement| statement.query_map([run_id.to_string()], |row| row.get::<_, String>(0))?.collect::<rusqlite::Result<Vec<_>>>())
+        .map_err(storage)?;
+    ids.into_iter().map(|id| id.parse().map_err(storage)).collect()
+}
+
+fn record_changed_items_in(
+    transaction: &rusqlite::Transaction<'_>,
+    run_id: DynamicMemoryRunId,
+    before: &lettuce_memory::MemorySpaceSnapshot,
+    after: &lettuce_memory::MemorySpaceSnapshot,
+) -> Result<(), DynamicMemoryRunRepositoryError> {
+    let before_items = before.items.iter().map(|item| (item.id, item)).collect::<std::collections::BTreeMap<_, _>>();
+    let after_items = after.items.iter().map(|item| (item.id, item)).collect::<std::collections::BTreeMap<_, _>>();
+    for id in before_items.keys().chain(after_items.keys()).collect::<std::collections::BTreeSet<_>>() {
+        if before_items.get(id) != after_items.get(id) {
+            transaction.execute("INSERT OR IGNORE INTO dynamic_memory_changed_items (run_id, memory_id) VALUES (?1, ?2)",
+                params![run_id.to_string(), id.to_string()]).map_err(storage)?;
+        }
+    }
+    Ok(())
+}
+
 impl DynamicMemoryRunRepository for Database {
     fn apply_dynamic_memory_cycle_finish(
         &self,
@@ -1049,7 +1080,10 @@ impl DynamicMemoryRunRepository for Database {
         if run.space_id != change.space_id {
             return Err(lettuce_memory::MemoryRepositoryError::Conflict);
         }
+        let before = memory_adapter::get_in(&tx, change.space_id)?.ok_or(MemoryRepositoryError::NotFound)?;
         let snapshot = memory_adapter::compare_and_apply_in(&tx, &change)?;
+        record_changed_items_in(&tx, run.id, &before, &snapshot)
+            .map_err(|_| MemoryRepositoryError::Failure("memory storage failed".into()))?;
         tx.commit().map_err(|_| {
             lettuce_memory::MemoryRepositoryError::Failure("memory storage failed".into())
         })?;
@@ -1148,6 +1182,9 @@ impl DynamicMemoryRunRepository for Database {
         if !branch_active {
             return Err(DynamicMemoryRunRepositoryError::Conflict);
         }
+        let cycle_before = memory_adapter::get_in(&transaction, requested_run.space_id)
+            .map_err(|_| DynamicMemoryRunRepositoryError::Storage)?
+            .ok_or(DynamicMemoryRunRepositoryError::NotFound)?;
         if let Some(change) = &cycle_start_change {
             memory_adapter::compare_and_apply_in(&transaction, change).map_err(
                 |error| match error {
@@ -1196,6 +1233,7 @@ impl DynamicMemoryRunRepository for Database {
                 }
                 _ => DynamicMemoryRunRepositoryError::Storage,
             })?;
+        record_changed_items_in(&transaction, requested_run.id, &cycle_before, &requested_run.starting_memory)?;
         for (ordinal, source) in requested_run.source_messages.iter().enumerate() {
             let (revision_id, candidate_id) = match source.render_source {
                 MessageRenderSource::Revision(id) => (Some(id.to_string()), None),
@@ -1717,8 +1755,9 @@ impl DynamicMemoryRunRepository for Database {
                 crate::memory::memory_adapter::compare_and_apply_in(&transaction, change)
                     .map_err(storage)?
             }
-            None => current,
+            None => current.clone(),
         };
+        record_changed_items_in(&transaction, run.id, &current, &resulting)?;
         transaction
             .execute(
                 "INSERT INTO dynamic_memory_background_round_settlements \

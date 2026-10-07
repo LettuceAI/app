@@ -57,7 +57,7 @@ A backup is complete: it holds every user-owned domain, every referenced media o
 | `data/companion-effects.json` | Turn effects and suffix-rewind receipts |
 | `data/memory.json` | Branch-owned spaces, items, summaries, retrieval receipts, and conversation-scoped pools and manual edit history (section version 6); nullable token counts and user-observed dates remain distinct from model source times |
 | `data/memory-projections.json` | Stored embedding projections, ready and repair-needed |
-| `data/dynamic-memory.json` | Dynamic memory approvals, branch-owned runs, attempts, rounds, results and summary checkpoints (section version 4); starting snapshots preserve nullable token counts and user-observed dates |
+| `data/dynamic-memory.json` | Dynamic memory approvals, branch-owned runs, attempts, rounds, results and summary checkpoints and exact cycle-changed item ids (section version 6); starting snapshots preserve nullable token counts and user-observed dates |
 | `media/blobs/<hash>` | One section per ready media blob |
 | `conversation/snapshots/<id>`, `conversation/replays/<id>` | Protected conversation snapshots and provider replay artifacts |
 
@@ -158,4 +158,4 @@ Memory section version 6 carries uncapped manual edit history and undo timestamp
 
 The companion-effects backup section uses version 2. A manual-only suffix rewind advances the memory revision only when matching manual history records identify the same space, conversation, undo time and tombstoned anchor; validation rejects a revision-changing receipt without that evidence.
 
-Memory backup version 7 carries the failure each space's status stopped showing, and dynamic-memory backup version 5 the reverted cycles. Validation requires every revert to name a backed-up run of the same conversation and space, a restored-summary run of that space, and revisions the space's snapshot has reached.
+Memory backup version 7 carries the failure each space's status stopped showing, and dynamic-memory backup version 6 the reverted cycles and exact changed-item journal. Validation requires every revert to name a backed-up run of the same conversation and space, a restored-summary run of that space, and revisions the space's snapshot has reached.

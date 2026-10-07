@@ -50,7 +50,8 @@ pub(crate) const UNDONE: &str = "(EXISTS (SELECT 1 FROM dynamic_memory_cycle_rev
 
 const EFFECTIVE: &str = "(EXISTS (SELECT 1 FROM dynamic_memory_run_attempts attempt WHERE attempt.run_id = run.id AND attempt.status IN ('created','processing'))
      OR EXISTS (SELECT 1 FROM dynamic_memory_background_tool_results result WHERE result.run_id = run.id)
-     OR EXISTS (SELECT 1 FROM dynamic_memory_summary_checkpoints checkpoint WHERE checkpoint.run_id = run.id))";
+     OR EXISTS (SELECT 1 FROM dynamic_memory_summary_checkpoints checkpoint WHERE checkpoint.run_id = run.id)
+     OR EXISTS (SELECT 1 FROM dynamic_memory_changed_items changed WHERE changed.run_id = run.id))";
 
 pub(crate) fn insert_revert_record_in(
     transaction: &Transaction<'_>,
@@ -289,33 +290,8 @@ impl ApiOperationTransaction<'_, '_> {
                 later_run_id: later.parse().map_err(storage)?,
             });
         }
-        let outcomes = transaction
-            .prepare(
-                "SELECT outcome_json FROM dynamic_memory_background_tool_results WHERE run_id = ?1",
-            )
-            .and_then(|mut statement| {
-                statement
-                    .query_map([run.id.to_string()], |row| row.get::<_, String>(0))?
-                    .collect::<rusqlite::Result<Vec<_>>>()
-            })
-            .map_err(storage)?
-            .into_iter()
-            .map(|json| {
-                crate::decode_versioned::<lettuce_memory::MemoryToolOutcome>(&json, 1)
-                    .map_err(storage)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let changed = outcomes
-            .iter()
-            .filter_map(|outcome| match outcome {
-                lettuce_memory::MemoryToolOutcome::Created { id, .. }
-                | lettuce_memory::MemoryToolOutcome::Deleted { id, .. }
-                | lettuce_memory::MemoryToolOutcome::SoftDeleted { id, .. }
-                | lettuce_memory::MemoryToolOutcome::Pinned { id, .. }
-                | lettuce_memory::MemoryToolOutcome::Unpinned { id, .. } => Some(*id),
-                _ => None,
-            })
-            .collect::<std::collections::BTreeSet<_>>();
+        let changed = dynamic_memory_run_adapter::changed_items_in(transaction, run.id)
+            .map_err(storage)?;
         let edited = memory_adapter::manual_edited_items_in(
             transaction,
             space_id,
@@ -449,6 +425,21 @@ mod tests {
         at: i64,
         start: u64,
     ) -> Cycle {
+        cycle_with_supersedes(database, conversation_id, space_id, messages, summary, text, at, start, None)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn cycle_with_supersedes(
+        database: &Database,
+        conversation_id: ConversationId,
+        space_id: MemorySpaceId,
+        messages: &[DynamicMemorySourceMessage],
+        summary: &str,
+        text: &str,
+        at: i64,
+        start: u64,
+        supersedes: Option<MemoryId>,
+    ) -> Cycle {
         let attempt = checkpointed_window(
             database,
             conversation_id,
@@ -495,13 +486,19 @@ mod tests {
             .expect("round");
         let memory = database.get(space_id).expect("memory").expect("space");
         let id = MemoryId::new();
-        let item = MemoryItem::written(
+        let mut item = MemoryItem::written(
             id,
             MemoryShortId::derived(id),
             text.into(),
             TimestampMillis::new(at + 3),
         );
         let mut items = memory.items.clone();
+        if let Some(target) = supersedes {
+            item.supersedes.push(target);
+            let previous = items.iter_mut().find(|item| item.id == target).expect("superseded target");
+            previous.superseded_by = Some(id);
+            previous.superseded_at = Some(TimestampMillis::new(at + 3));
+        }
         items.push(item.clone());
         database
             .commit_dynamic_memory_background_round(
@@ -827,4 +824,32 @@ mod tests {
             before
         );
     }
+    #[test]
+    fn a_user_edit_of_a_superseded_item_refuses_the_cycle_revert() {
+        let database = Database::open_in_memory().expect("database");
+        let (conversation_id, space_id, first, second) = two_cycles(&database);
+        let run = database.load_dynamic_memory_run(second.run_id).expect("run");
+        let third = cycle_with_supersedes(&database, conversation_id, space_id,
+            &run.source_messages, "Third summary", "Superseding item", 300, 2, Some(first.item));
+        let before = database.get(space_id).expect("memory").expect("space");
+        let edit = MemoryManualEdit {
+            id: OperationId::new(), conversation_id,
+            branch_id: fixture_branch(&database, conversation_id),
+            conversation_revision: Revision::INITIAL,
+            expected_revision: before.revision, space_id, context_revisions: vec![],
+            mutation: MemoryManualMutation::Pin { memory_id: first.item, pinned: true },
+            at: TimestampMillis::new(350),
+        };
+        database.commit_api_operation::<MemoryManualHistory, Failure>(
+            "memory_pin", "pin-superseded", "digest", edit.at,
+            |scope| scope.apply_memory_manual_edit(&edit, None).map_err(Failure::from),
+        ).expect("user edit");
+        let before = database.get(space_id).expect("memory").expect("space");
+        match revert(&database, conversation_id, third.run_id, "superseded", 400) {
+            Err(Failure::Revert(MemoryCycleRevertError::UserEdited { memory_id })) => assert_eq!(memory_id, first.item),
+            other => panic!("expected superseded item dependency, got {other:?}"),
+        }
+        assert_eq!(database.get(space_id).expect("memory").expect("space"), before);
+    }
+
 }

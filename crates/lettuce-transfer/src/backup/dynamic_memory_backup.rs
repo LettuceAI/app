@@ -7,7 +7,7 @@ use lettuce_memory::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const DYNAMIC_MEMORY_BACKUP_VERSION: u32 = 5;
+pub const DYNAMIC_MEMORY_BACKUP_VERSION: u32 = 6;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -36,6 +36,7 @@ pub struct BackupDynamicMemoryRun {
     pub run: DynamicMemoryRun,
     pub attempts: Vec<BackupDynamicMemoryAttempt>,
     pub summary_checkpoint: Option<DynamicMemorySummaryCheckpoint>,
+    pub changed_item_ids: Vec<lettuce_types::MemoryId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -65,6 +66,12 @@ impl DynamicMemoryBackup {
         }
         self.pending_approvals
             .sort_by_key(|approval| (approval.conversation_id, approval.branch_id));
+        for entry in &mut self.runs {
+            entry.changed_item_ids.sort();
+            if entry.changed_item_ids.windows(2).any(|pair| pair[0] == pair[1]) {
+                return Err(DynamicMemoryBackupError::InvalidData);
+            }
+        }
         self.runs.sort_by_key(|entry| entry.run.id);
         self.cycle_reverts.sort_by_key(|record| record.run_id);
         self.pending_suffix_rewinds.sort_by(|left, right| {

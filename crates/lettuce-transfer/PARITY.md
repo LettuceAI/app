@@ -146,3 +146,5 @@ Memory section version 6 preserves manual edit anchors, before/after items and s
 Manual-only delete-after rewinds carry the recorded user edit undo evidence and their receipt in backups. Validation cross-checks removed anchors instead of assuming that every revision-changing rewind came from a model run; legacy replay also rewound user edit events (`old-code/src-tauri/src/conversation_manager/memory.rs:47-110`).
 
 Cycle reverts and dismissed failures are new backup state (memory section version 7, dynamic-memory section version 5); the legacy revert only existed as a saved session rebuilt from events (`old-code/src/core/storage/memoryToolEvents.ts:299-310`), which the legacy importer never carries, so nothing is imported for them.
+
+Dynamic-memory backup version 6 preserves the cycle changed-item journal so restoring a backup keeps the user-edit dependency checks on cycle revert.
