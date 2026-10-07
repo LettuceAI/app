@@ -4284,7 +4284,10 @@ pub(crate) mod tests {
         );
         assert_eq!(
             receipt.memory.revision,
-            second_summary.resulting_memory_revision
+            second_summary
+                .resulting_memory_revision
+                .next()
+                .expect("rewind revision")
         );
         assert_eq!(receipt.memory.items, vec![edited_item]);
         assert_ne!(receipt.memory.items, vec![kept_item]);

@@ -351,6 +351,15 @@ pub enum DynamicMemorySuffixRewindError {
 }
 
 pub trait DynamicMemorySuffixRewindRepository: Send + Sync {
+    fn has_manual_memory_suffix(
+        &self,
+        _conversation_id: ConversationId,
+        _branch_id: ConversationBranchId,
+        _removed_message_ids: &[MessageId],
+    ) -> Result<bool, DynamicMemorySuffixRewindError> {
+        Ok(false)
+    }
+
     fn get_dynamic_memory_suffix_rewind(
         &self,
         _operation_id: OperationId,

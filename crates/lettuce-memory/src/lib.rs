@@ -15,6 +15,7 @@ mod tool;
 pub use manual::{
     MemoryContextRevision, MemoryFieldChange, MemoryManualEdit, MemoryManualEditRecord,
     MemoryManualHistory, MemoryManualMutation, MemoryManualReduction, reduce_manual_memory,
+    undo_manual_memory_edit,
 };
 pub use model::{
     DynamicMemoryPendingApproval, DynamicMemoryRunMode, MAX_MEMORY_ITEMS, MAX_MEMORY_SUMMARY_BYTES,

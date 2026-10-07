@@ -142,3 +142,5 @@ Conversation copies carry immutable protected source-scene provenance separately
 Memory section version 5 and dynamic-memory section version 4 carry nullable item and summary counts in live state and frozen snapshots. Model summary checkpoints still require counted tokens. Legacy unknown counts were represented as zero after tokenizer failure (`old-code/src-tauri/src/chat_manager/memory/flow.rs:3791-3792`).
 
 Memory section version 6 preserves manual edit anchors, before/after items and summaries, revisions and undo state. Unlike the legacy capped edit list (`old-code/src-tauri/src/storage_manager/sessions.rs:3936-3993`), all durable branch edits survive export and restore.
+
+Manual-only delete-after rewinds carry the recorded user edit undo evidence and their receipt in backups. Validation cross-checks removed anchors instead of assuming that every revision-changing rewind came from a model run; legacy replay also rewound user edit events (`old-code/src-tauri/src/conversation_manager/memory.rs:47-110`).

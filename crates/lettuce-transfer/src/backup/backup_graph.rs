@@ -1044,7 +1044,11 @@ pub fn canonicalize_and_validate(
         .map_err(|_| ProviderBackupGraphError::InvalidGraph)?;
     graph
         .companion_effects
-        .canonicalize_and_validate(&graph.conversation_history, &graph.conversation_runtime)
+        .canonicalize_and_validate_with_manual_edits(
+            &graph.conversation_history,
+            &graph.conversation_runtime,
+            &graph.memory.manual_edits,
+        )
         .map_err(|_| ProviderBackupGraphError::InvalidGraph)?;
     graph
         .memory

@@ -386,7 +386,14 @@ where
                 return Err(DynamicMemoryDeleteAfterError::InvalidResult);
             }
             Some(receipt)
-        } else if invalid_run_index.is_some() || !invalidated_effect_ids.is_empty() {
+        } else if invalid_run_index.is_some()
+            || !invalidated_effect_ids.is_empty()
+            || self.repository.has_manual_memory_suffix(
+                command.conversation_id,
+                tombstone.value.message.branch_id,
+                &removed_message_ids,
+            )?
+        {
             let memory = self
                 .repository
                 .get_for_branch(command.conversation_id, tombstone.value.message.branch_id)?

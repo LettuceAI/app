@@ -265,6 +265,73 @@ pub fn reduce_manual_memory(
     })
 }
 
+pub fn undo_manual_memory_edit(
+    items: &mut Vec<MemoryItem>,
+    summary: &mut Option<MemorySummary>,
+    history: &MemoryManualHistory,
+) -> Result<(), MemoryRepositoryError> {
+    history.validate()?;
+    if let MemoryManualMutation::Summary { .. } = &history.edit.mutation {
+        summary.clone_from(&history.before_summary);
+        return Ok(());
+    }
+    if let MemoryManualMutation::Add { item } = &history.edit.mutation {
+        items.retain(|current| current.id != item.id);
+        return Ok(());
+    }
+    let before = history
+        .before_item
+        .as_ref()
+        .ok_or(MemoryRepositoryError::Conflict)?;
+    if let MemoryManualMutation::Delete { .. } = &history.edit.mutation {
+        if items.iter().all(|item| item.id != before.id) {
+            let mut restored = before.clone();
+            if items.iter().any(|item| item.short_id == restored.short_id) {
+                restored.short_id = crate::MemoryShortId::allocate(restored.id, |id| {
+                    items.iter().any(|item| item.short_id == id)
+                });
+            }
+            items.push(restored);
+        }
+        return Ok(());
+    }
+    let Some(item) = items.iter_mut().find(|item| item.id == before.id) else {
+        return Ok(());
+    };
+    match &history.edit.mutation {
+        MemoryManualMutation::Update {
+            text,
+            category,
+            observed_at,
+            ..
+        } => {
+            if text.is_some() {
+                item.text.clone_from(&before.text);
+                item.token_count = before.token_count;
+            }
+            if matches!(category, MemoryFieldChange::Set(_)) {
+                item.category = before.category;
+            }
+            if matches!(observed_at, MemoryFieldChange::Set(_)) {
+                item.observed_at = before.observed_at;
+                item.observed_time_precision
+                    .clone_from(&before.observed_time_precision);
+            }
+        }
+        MemoryManualMutation::Pin { .. } => item.is_pinned = before.is_pinned,
+        MemoryManualMutation::Temperature { .. } => {
+            item.is_cold = before.is_cold;
+            item.importance = if before.is_cold {
+                crate::Score::ZERO
+            } else {
+                crate::Score::FULL
+            };
+        }
+        _ => return Err(MemoryRepositoryError::Conflict),
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

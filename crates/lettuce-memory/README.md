@@ -124,3 +124,5 @@ A dynamic attempt can record the job claim attempt that owns it. The database ch
 Manual edits use `MemoryManualMutation` and `reduce_manual_memory`: text, category and observed-time changes preserve provenance and source attribution, pinning heats the item and restores importance and access time, and pinned items cannot be cooled. `MemoryManualHistory` records the branch, message anchor and position, before/after item or summary, and committed root revision. History is uncapped.
 
 The read port returns one coherent active-branch scope with resolved summary, cursor, approvals and durable cycle outcomes. Summary repositories expose branch resolution separately from the own-summary read, allowing consumers to use the same inherited summary after an own override is cleared.
+
+Manual edit undo restores only the fields each edit changed. Deletes restore their recorded item, additions remove theirs, and summary edits restore the prior own summary. Pin undo keeps access and importance changes; temperature undo restores its prior hot/cold state and corresponding importance.

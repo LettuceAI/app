@@ -957,3 +957,334 @@ async fn memory_status_reports_real_model_and_embedding_failures_and_lease_pause
         );
     }
 }
+
+#[tokio::test]
+async fn memory_user_edits_are_cut_locally_by_fork_and_delete_after() {
+    for fork in [false, true] {
+        let harness = harness(Reply::Text("reply"));
+        let conversation_id = launch(&harness, "undo-launch").await;
+        let anchor = conversation_add_user_message(
+            &harness.context,
+            dto::ConversationAddUserMessageRequest {
+                conversation_id: conversation_id.clone(),
+                text: "Kept anchor".into(),
+                expected_revision: 1,
+                client_operation_id: "undo-anchor".into(),
+            },
+        )
+        .await
+        .expect("anchor");
+        let added = memory_add(
+            &harness.context,
+            dto::MemoryAddRequest {
+                conversation_id: conversation_id.clone(),
+                text: "Before cut".into(),
+                category: None,
+                observed_at: None,
+                expected_revision: 1,
+                client_operation_id: "undo-add".into(),
+            },
+        )
+        .await
+        .expect("add");
+        let later = conversation_add_user_message(
+            &harness.context,
+            dto::ConversationAddUserMessageRequest {
+                conversation_id: conversation_id.clone(),
+                text: "Removed suffix".into(),
+                expected_revision: anchor.revision,
+                client_operation_id: "undo-later".into(),
+            },
+        )
+        .await
+        .expect("later");
+        memory_update(
+            &harness.context,
+            dto::MemoryUpdateRequest {
+                conversation_id: conversation_id.clone(),
+                memory_id: added.memory_id.expect("id"),
+                text: Some("After cut".into()),
+                category: dto::MemoryCategoryChange::Keep,
+                observed_at: dto::MemoryObservedAtChange::Keep,
+                expected_revision: 2,
+                client_operation_id: "undo-update".into(),
+            },
+        )
+        .await
+        .expect("update");
+        let database = harness.context.backend().database();
+        let root = ConversationReader::get(database, conversation_id.parse().expect("id"))
+            .expect("conversation")
+            .conversation
+            .active_branch_id;
+        if fork {
+            conversation_branch_fork(
+                &harness.context,
+                dto::ConversationBranchForkRequest {
+                    conversation_id: conversation_id.clone(),
+                    message_id: anchor.message.id,
+                    expected_revision: later.revision,
+                    client_operation_id: "undo-fork".into(),
+                },
+            )
+            .await
+            .expect("fork");
+        } else {
+            let request = dto::MessageDeleteRequest {
+                conversation_id: conversation_id.clone(),
+                message_id: anchor.message.id,
+                expected_revision: later.revision,
+                client_operation_id: "undo-delete-after".into(),
+            };
+            let deleted = messages_delete_after(&harness.context, request.clone())
+                .await
+                .expect("delete");
+            assert_eq!(
+                messages_delete_after(&harness.context, request)
+                    .await
+                    .expect("replay"),
+                deleted
+            );
+        }
+        let view = memory_get(
+            &harness.context,
+            dto::ConversationRequest {
+                conversation_id: conversation_id.clone(),
+            },
+        )
+        .await
+        .expect("memory");
+        assert_eq!(view.items.len(), 1);
+        assert_eq!(view.items[0].text, "Before cut");
+        if fork {
+            assert_eq!(
+                MemoryRepository::get_for_branch(
+                    database,
+                    conversation_id.parse().expect("id"),
+                    root
+                )
+                .expect("parent")
+                .expect("space")
+                .items[0]
+                    .text,
+                "After cut"
+            );
+        } else {
+            use lettuce_transfer::ProviderBackupSource;
+            let history = database
+                .read_provider_backup_graph()
+                .expect("history")
+                .memory
+                .manual_edits;
+            assert!(
+                history
+                    .iter()
+                    .find(|record| matches!(
+                        record.history.edit.mutation,
+                        lettuce_memory::MemoryManualMutation::Update { .. }
+                    ))
+                    .expect("update")
+                    .undone_at
+                    .is_some()
+            );
+            assert!(
+                history
+                    .iter()
+                    .find(|record| matches!(
+                        record.history.edit.mutation,
+                        lettuce_memory::MemoryManualMutation::Add { .. }
+                    ))
+                    .expect("add")
+                    .undone_at
+                    .is_none()
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn delete_after_undoes_every_manual_setter_and_summary_at_the_removed_anchor() {
+    let harness = harness(Reply::Text("reply"));
+    let conversation_id = launch(&harness, "all-manual-undo").await;
+    let anchor = conversation_add_user_message(
+        &harness.context,
+        dto::ConversationAddUserMessageRequest {
+            conversation_id: conversation_id.clone(),
+            text: "Keep".into(),
+            expected_revision: 1,
+            client_operation_id: "all-undo-anchor".into(),
+        },
+    )
+    .await
+    .expect("anchor");
+    let item = memory_add(
+        &harness.context,
+        dto::MemoryAddRequest {
+            conversation_id: conversation_id.clone(),
+            text: "Original".into(),
+            category: Some(dto::MemoryCategory::Preference),
+            observed_at: Some(5),
+            expected_revision: 1,
+            client_operation_id: "all-undo-item".into(),
+        },
+    )
+    .await
+    .expect("item")
+    .memory_id
+    .expect("id");
+    memory_summary_update(
+        &harness.context,
+        dto::MemorySummaryUpdateRequest {
+            conversation_id: conversation_id.clone(),
+            summary: dto::MemorySummaryEdit::Set {
+                text: "Original summary".into(),
+            },
+            expected_revision: 2,
+            client_operation_id: "all-undo-summary".into(),
+        },
+    )
+    .await
+    .expect("summary");
+    let later = conversation_add_user_message(
+        &harness.context,
+        dto::ConversationAddUserMessageRequest {
+            conversation_id: conversation_id.clone(),
+            text: "Remove".into(),
+            expected_revision: anchor.revision,
+            client_operation_id: "all-undo-later".into(),
+        },
+    )
+    .await
+    .expect("later");
+    memory_update(
+        &harness.context,
+        dto::MemoryUpdateRequest {
+            conversation_id: conversation_id.clone(),
+            memory_id: item.clone(),
+            text: Some("Changed".into()),
+            category: dto::MemoryCategoryChange::Set(None),
+            observed_at: dto::MemoryObservedAtChange::Set(None),
+            expected_revision: 3,
+            client_operation_id: "all-undo-update".into(),
+        },
+    )
+    .await
+    .expect("update");
+    memory_pin(
+        &harness.context,
+        dto::MemoryPinRequest {
+            conversation_id: conversation_id.clone(),
+            memory_id: item.clone(),
+            pinned: true,
+            expected_revision: 4,
+            client_operation_id: "all-undo-pin".into(),
+        },
+    )
+    .await
+    .expect("pin");
+    memory_pin(
+        &harness.context,
+        dto::MemoryPinRequest {
+            conversation_id: conversation_id.clone(),
+            memory_id: item.clone(),
+            pinned: false,
+            expected_revision: 5,
+            client_operation_id: "all-undo-unpin".into(),
+        },
+    )
+    .await
+    .expect("unpin");
+    memory_set_temperature(
+        &harness.context,
+        dto::MemoryTemperatureRequest {
+            conversation_id: conversation_id.clone(),
+            memory_id: item.clone(),
+            temperature: dto::MemoryTemperature::Cold,
+            expected_revision: 6,
+            client_operation_id: "all-undo-cold".into(),
+        },
+    )
+    .await
+    .expect("cold");
+    memory_delete(
+        &harness.context,
+        dto::MemoryDeleteRequest {
+            conversation_id: conversation_id.clone(),
+            memory_id: item.clone(),
+            expected_revision: 7,
+            client_operation_id: "all-undo-remove".into(),
+        },
+    )
+    .await
+    .expect("remove");
+    memory_add(
+        &harness.context,
+        dto::MemoryAddRequest {
+            conversation_id: conversation_id.clone(),
+            text: "Late addition".into(),
+            category: None,
+            observed_at: None,
+            expected_revision: 8,
+            client_operation_id: "all-undo-add".into(),
+        },
+    )
+    .await
+    .expect("late addition");
+    memory_summary_update(
+        &harness.context,
+        dto::MemorySummaryUpdateRequest {
+            conversation_id: conversation_id.clone(),
+            summary: dto::MemorySummaryEdit::Set {
+                text: "Late summary".into(),
+            },
+            expected_revision: 9,
+            client_operation_id: "all-undo-late-summary".into(),
+        },
+    )
+    .await
+    .expect("late summary");
+    messages_delete_after(
+        &harness.context,
+        dto::MessageDeleteRequest {
+            conversation_id: conversation_id.clone(),
+            message_id: anchor.message.id,
+            expected_revision: later.revision,
+            client_operation_id: "all-undo-delete".into(),
+        },
+    )
+    .await
+    .expect("delete after");
+    let view = memory_get(
+        &harness.context,
+        dto::ConversationRequest { conversation_id },
+    )
+    .await
+    .expect("view");
+    assert_eq!(view.revision, 11);
+    assert_eq!(view.items.len(), 1);
+    assert_eq!(view.items[0].id, item);
+    assert_eq!(view.items[0].text, "Original");
+    assert_eq!(
+        view.items[0].category,
+        Some(dto::MemoryCategory::Preference)
+    );
+    assert_eq!(view.items[0].observed_at, Some(5));
+    assert_eq!(view.items[0].temperature, dto::MemoryTemperature::Hot);
+    assert!(!view.items[0].pinned);
+    assert_eq!(view.summary.expect("summary").text, "Original summary");
+    use lettuce_transfer::ProviderBackupSource;
+    let mut graph = harness
+        .context
+        .backend()
+        .database()
+        .read_provider_backup_graph()
+        .expect("backup");
+    lettuce_transfer::canonicalize_and_validate(&mut graph)
+        .expect("manual-only undo is valid backup state");
+    let mut missing_evidence = graph.clone();
+    missing_evidence
+        .memory
+        .manual_edits
+        .retain(|record| record.undone_at.is_none());
+    assert!(lettuce_transfer::canonicalize_and_validate(&mut missing_evidence).is_err());
+}

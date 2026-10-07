@@ -424,9 +424,11 @@ fn branch_state_in(
     ConversationRepositoryError,
 > {
     let mut cut = None;
+    let mut cut_time = None;
     let mut summary = None;
     for own in own_runs_in(transaction, conversation_id, branch_id, space_id, cutoff)? {
         if own.run.summary_window.end > position || own.in_flight {
+            cut_time = Some(own.run.created_at.get());
             cut = Some(own.run.starting_memory);
             break;
         }
@@ -440,6 +442,58 @@ fn branch_state_in(
     }
     if summary.is_none() {
         summary = base_summary_in(transaction, conversation_id, branch_id, space_id, position)?;
+    }
+    let history =
+        super::memory_manual_adapter::history_in(transaction, conversation_id, branch_id, space_id)
+            .map_err(storage)?;
+    let mut state = match &cut {
+        Some(memory) => memory.clone(),
+        None => memory_adapter::get_in(transaction, space_id)
+            .map_err(storage)?
+            .ok_or(ConversationRepositoryError::Storage)?,
+    };
+    let boundary_revision = state.revision;
+    let mut changed = false;
+    for edit in &history {
+        let included = cut_time.is_none_or(|at| {
+            edit.edit.at.get() < at
+                || (edit.edit.at.get() == at && edit.resulting_revision <= boundary_revision)
+        });
+        if edit.message_position <= position
+            || cutoff.is_some_and(|at| edit.edit.at.get() >= at)
+            || !included
+        {
+            continue;
+        }
+        lettuce_memory::undo_manual_memory_edit(&mut state.items, &mut summary, edit)
+            .map_err(storage)?;
+        changed = true;
+    }
+    if let Some(at) = cut_time {
+        for edit in history.iter().rev() {
+            if edit.message_position > position
+                || cutoff.is_some_and(|cutoff| edit.edit.at.get() >= cutoff)
+                || edit.edit.at.get() < at
+                || (edit.edit.at.get() == at && edit.resulting_revision <= boundary_revision)
+            {
+                continue;
+            }
+            match lettuce_memory::reduce_manual_memory(&state, &edit.edit.mutation, edit.edit.at) {
+                Ok(reduced) => {
+                    state.items = reduced.items;
+                    if let Some(value) = reduced.summary {
+                        summary = value;
+                    }
+                    changed = true;
+                }
+                Err(lettuce_memory::MemoryRepositoryError::NotFound) => {}
+                Err(error) => return Err(storage(error)),
+            }
+        }
+    }
+    if changed {
+        state.validate().map_err(storage)?;
+        cut = Some(state);
     }
     Ok((cut, summary))
 }

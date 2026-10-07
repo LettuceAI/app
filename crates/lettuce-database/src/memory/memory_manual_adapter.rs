@@ -154,6 +154,17 @@ pub(crate) fn insert_manual_record_in(
     Ok(())
 }
 
+pub(crate) fn history_in(
+    tx: &rusqlite::Transaction<'_>,
+    conversation_id: lettuce_types::ConversationId,
+    branch_id: lettuce_types::ConversationBranchId,
+    space_id: lettuce_types::MemorySpaceId,
+) -> Result<Vec<MemoryManualHistory>, MemoryRepositoryError> {
+    tx.prepare("SELECT history_json FROM memory_manual_edits WHERE conversation_id=?1 AND branch_id=?2 AND space_id=?3 AND undone_at IS NULL ORDER BY sequence DESC")
+        .and_then(|mut statement| statement.query_map(params![conversation_id.to_string(),branch_id.to_string(),space_id.to_string()], |row| row.get::<_, String>(0))?.collect::<rusqlite::Result<Vec<_>>>()).map_err(storage)?
+        .into_iter().map(|json| serde_json::from_str(&json).map_err(storage)).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
