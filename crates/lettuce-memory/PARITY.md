@@ -15,6 +15,7 @@ Facts about how `lettuce-memory` relates to the legacy app (2.2.x). The crate RE
 - A call that cannot be applied settles as `Skipped`, as legacy skipped such calls; a round may repeat `done`.
 - Created text goes through legacy's checks (`normalize_memory_text`), including legacy's false positives: a memory containing `i cannot` or `user:` is dropped.
 - The duplicate check runs before the category check, exactly as legacy checked text, embedding, duplicate and then category.
+- Stored memories preserve legacy companion categories and null categories without changing them to `other`. The model tool parser retains the six roleplay categories.
 - The category repair is legacy's single-tool repair contract (`retag_memory`, required tool choice, six categories as an enum); an empty repair answer falls back to legacy's keyword buckets (`guess_memory_category`).
 - Every outcome carries what legacy echoed back to the model (six-digit id, deleted text, the listing after the call, the duplicate kind); the application renders them into the legacy tool-result payloads.
 - Structured fallback booleans are trimmed and ASCII-lowercased like legacy. The JSON/XML operation parsers and fallback prompts were copied from legacy.

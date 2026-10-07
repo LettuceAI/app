@@ -112,9 +112,10 @@ CREATE TABLE memory_items (
         length(trim(text)) > 0
         AND length(CAST(text AS BLOB)) <= 8388608
     ),
-    category TEXT NOT NULL CHECK (category IN (
+    category TEXT CHECK (category IN (
         'character_trait', 'relationship', 'plot_event',
-        'world_detail', 'preference', 'other'
+        'world_detail', 'preference', 'other',
+        'milestone', 'boundary', 'profile', 'routine', 'episodic', 'emotional_snapshot'
     )),
     source_message_id TEXT,
     source_role TEXT CHECK (source_role IN ('user','assistant')),

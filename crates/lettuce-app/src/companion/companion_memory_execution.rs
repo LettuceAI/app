@@ -426,7 +426,7 @@ mod tests {
             .expect("change")
             .items
             .into_iter()
-            .find(|item| item.category == MemoryCategory::Preference)
+            .find(|item| item.category == Some(MemoryCategory::Preference))
             .expect("created memory");
         assert_eq!(created.source_message_id, Some(source_id));
         assert_eq!(

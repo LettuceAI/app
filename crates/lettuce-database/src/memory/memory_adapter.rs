@@ -27,27 +27,12 @@ fn storage(_: impl std::fmt::Debug) -> MemoryRepositoryError {
     MemoryRepositoryError::Failure("sqlite memory operation failed".to_owned())
 }
 
-fn category_name(value: MemoryCategory) -> &'static str {
-    match value {
-        MemoryCategory::CharacterTrait => "character_trait",
-        MemoryCategory::Relationship => "relationship",
-        MemoryCategory::PlotEvent => "plot_event",
-        MemoryCategory::WorldDetail => "world_detail",
-        MemoryCategory::Preference => "preference",
-        MemoryCategory::Other => "other",
-    }
+fn category_name(value: Option<MemoryCategory>) -> Option<&'static str> {
+    value.map(MemoryCategory::as_str)
 }
 
 fn parse_category(value: &str) -> Result<MemoryCategory, MemoryRepositoryError> {
-    match value {
-        "character_trait" => Ok(MemoryCategory::CharacterTrait),
-        "relationship" => Ok(MemoryCategory::Relationship),
-        "plot_event" => Ok(MemoryCategory::PlotEvent),
-        "world_detail" => Ok(MemoryCategory::WorldDetail),
-        "preference" => Ok(MemoryCategory::Preference),
-        "other" => Ok(MemoryCategory::Other),
-        _ => Err(storage(value)),
-    }
+    MemoryCategory::parse_stored(value).ok_or_else(|| storage(value))
 }
 
 pub(crate) fn sql_revision(value: Revision) -> Result<i64, MemoryRepositoryError> {
@@ -398,7 +383,12 @@ fn item_from_row(row: &rusqlite::Row<'_>) -> Result<MemoryItem, MemoryRepository
         short_id: MemoryShortId::new(row.get(1).map_err(storage)?)
             .ok_or_else(|| storage("invalid memory short id"))?,
         text: row.get(2).map_err(storage)?,
-        category: parse_category(&row.get::<_, String>(3).map_err(storage)?)?,
+        category: row
+            .get::<_, Option<String>>(3)
+            .map_err(storage)?
+            .as_deref()
+            .map(parse_category)
+            .transpose()?,
         source_message_id: row
             .get::<_, Option<String>>(4)
             .map_err(storage)?
@@ -1413,7 +1403,7 @@ mod tests {
             id,
             short_id: lettuce_memory::MemoryShortId::derived(id),
             text: text.to_owned(),
-            category: MemoryCategory::Other,
+            category: Some(MemoryCategory::Other),
             source_message_id: None,
             source_role: None,
             observed_at: None,
@@ -1470,6 +1460,38 @@ mod tests {
         assert_eq!(changed.revision, Revision::new(2));
         assert_eq!(changed.items.len(), 2);
         assert_eq!(database.get(space_id).expect("get"), Some(changed));
+    }
+
+    #[test]
+    fn companion_and_null_categories_survive_storage_and_sync_encoding() {
+        let database = Database::open_in_memory().expect("database");
+        let categories = [
+            None,
+            Some(MemoryCategory::Milestone),
+            Some(MemoryCategory::Boundary),
+            Some(MemoryCategory::Profile),
+            Some(MemoryCategory::Routine),
+            Some(MemoryCategory::Episodic),
+            Some(MemoryCategory::EmotionalSnapshot),
+        ];
+        let memories = categories
+            .into_iter()
+            .map(|category| {
+                let mut memory = item(MemoryId::new(), "A companion memory");
+                memory.category = category;
+                memory
+            })
+            .collect();
+        let space_id = MemorySpaceId::new();
+        let created = database
+            .create(snapshot(space_id, memories))
+            .expect("create categorized memories");
+        let loaded = database.get(space_id).expect("read").expect("space");
+        assert_eq!(loaded, created);
+        let encoded = serde_json::to_vec(&loaded).expect("encode snapshot");
+        let decoded: MemorySpaceSnapshot =
+            serde_json::from_slice(&encoded).expect("decode snapshot");
+        assert_eq!(decoded, created);
     }
 
     #[test]

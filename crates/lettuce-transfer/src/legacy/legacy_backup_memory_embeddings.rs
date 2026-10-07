@@ -399,13 +399,19 @@ fn map_memories(
         let item_compatible = uuid::Uuid::parse_str(&row.id).is_ok()
             && matches!(
                 row.category.as_deref(),
-                Some(
+                None | Some(
                     "character_trait"
                         | "relationship"
                         | "plot_event"
                         | "world_detail"
                         | "preference"
                         | "other"
+                        | "milestone"
+                        | "boundary"
+                        | "profile"
+                        | "routine"
+                        | "episodic"
+                        | "emotional_snapshot"
                 )
             )
             && matches!(
@@ -866,6 +872,43 @@ mod tests {
             memory.materialization,
             LegacyBackupMemoryMaterialization::InitialItemAndProjection
         );
+    }
+
+    #[test]
+    fn companion_and_null_categories_import_without_retaining_only_evidence() {
+        for category in [
+            json!("milestone"),
+            json!("boundary"),
+            json!("profile"),
+            json!("routine"),
+            json!("episodic"),
+            json!("emotional_snapshot"),
+            Value::Null,
+        ] {
+            let character_id = id(41);
+            let session_id = id(42);
+            let mut row = memory(&id(43), 64);
+            row["category"] = category.clone();
+            let raw = serde_json::to_string(&json!([row])).expect("memory JSON");
+            let standalone = json!([{
+                "session_id": session_id,
+                "session_kind": "session",
+                "memory_embeddings": raw
+            }]);
+            let plan = plan_legacy_backup_memory_embeddings(source(
+                Some(standalone),
+                &raw,
+                &character_id,
+                &session_id,
+            ))
+            .expect("embedding plan");
+            let memory = &plan.owners[0].memories[0];
+            assert_eq!(memory.category, category.as_str().map(str::to_owned));
+            assert_eq!(
+                memory.materialization,
+                LegacyBackupMemoryMaterialization::InitialItemAndProjection
+            );
+        }
     }
 
     #[test]

@@ -554,7 +554,7 @@ mod tests {
                 id: existing_id,
                 short_id: lettuce_memory::MemoryShortId::derived(existing_id),
                 text: "Mira likes green tea".to_owned(),
-                category: MemoryCategory::Other,
+                category: Some(MemoryCategory::Other),
                 source_message_id: None,
                 source_role: None,
                 observed_at: None,

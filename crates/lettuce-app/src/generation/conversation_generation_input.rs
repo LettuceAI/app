@@ -2796,7 +2796,7 @@ mod tests {
             id,
             short_id: MemoryShortId::derived(id),
             text: format!("Harbor fact {index}"),
-            category,
+            category: Some(category),
             source_message_id: None,
             source_role: None,
             observed_at: None,

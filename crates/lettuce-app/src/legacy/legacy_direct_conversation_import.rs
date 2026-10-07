@@ -1339,14 +1339,11 @@ fn memory_space(
             id,
             short_id,
             text: memory.text.clone(),
-            category: match memory.category.as_deref() {
-                Some("character_trait") => MemoryCategory::CharacterTrait,
-                Some("relationship") => MemoryCategory::Relationship,
-                Some("plot_event") => MemoryCategory::PlotEvent,
-                Some("world_detail") => MemoryCategory::WorldDetail,
-                Some("preference") => MemoryCategory::Preference,
-                _ => MemoryCategory::Other,
-            },
+            category: memory
+                .category
+                .as_deref()
+                .map(|value| MemoryCategory::parse_stored(value).ok_or(Error::InvalidInput))
+                .transpose()?,
             source_message_id: memory
                 .source_message_id
                 .as_deref()

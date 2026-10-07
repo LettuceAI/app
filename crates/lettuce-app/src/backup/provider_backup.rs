@@ -1352,7 +1352,7 @@ mod tests {
                     id: memory_id,
                     short_id: lettuce_memory::MemoryShortId::derived(memory_id),
                     text: "The user asked to preserve full backup state.".into(),
-                    category: MemoryCategory::Preference,
+                    category: Some(MemoryCategory::Preference),
                     source_message_id: Some(effect_user_message_id),
                     source_role: Some(MessageRole::User),
                     observed_at: Some(TimestampMillis::new(20)),

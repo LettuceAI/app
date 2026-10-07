@@ -156,6 +156,12 @@ pub enum MemoryCategory {
     WorldDetail,
     Preference,
     Other,
+    Milestone,
+    Boundary,
+    Profile,
+    Routine,
+    Episodic,
+    EmotionalSnapshot,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -164,7 +170,7 @@ pub struct MemoryItem {
     pub id: MemoryId,
     pub short_id: MemoryShortId,
     pub text: String,
-    pub category: MemoryCategory,
+    pub category: Option<MemoryCategory>,
     pub source_message_id: Option<MessageId>,
     pub source_role: Option<lettuce_conversations::MessageRole>,
     pub observed_at: Option<TimestampMillis>,
@@ -198,7 +204,7 @@ impl MemoryItem {
             id,
             short_id,
             text,
-            category: MemoryCategory::Other,
+            category: None,
             source_message_id: None,
             source_role: None,
             observed_at: None,
@@ -447,6 +453,36 @@ mod tests {
         let decoded: super::MemoryItem = serde_json::from_slice(&encoded).expect("decode memory");
         assert_eq!(decoded, item);
         assert_eq!(decoded.validate(), Ok(()));
+    }
+
+    #[test]
+    fn companion_and_null_categories_round_trip_without_mapping_to_other() {
+        let id = lettuce_types::MemoryId::new();
+        let item = super::MemoryItem::written(
+            id,
+            super::MemoryShortId::derived(id),
+            "A companion memory".into(),
+            TimestampMillis::new(10),
+        );
+        for category in [
+            serde_json::json!("milestone"),
+            serde_json::json!("boundary"),
+            serde_json::json!("profile"),
+            serde_json::json!("routine"),
+            serde_json::json!("episodic"),
+            serde_json::json!("emotional_snapshot"),
+            serde_json::Value::Null,
+        ] {
+            let mut encoded = serde_json::to_value(&item).expect("encode memory");
+            encoded["category"] = category.clone();
+            let decoded: super::MemoryItem =
+                serde_json::from_value(encoded).expect("decode category");
+            assert_eq!(decoded.validate(), Ok(()));
+            assert_eq!(
+                serde_json::to_value(decoded).expect("reencode memory")["category"],
+                category
+            );
+        }
     }
 
     #[test]

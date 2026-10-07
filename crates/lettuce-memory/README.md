@@ -18,7 +18,7 @@ Each revision has a stable identity, `memory_revision_id(space_id, revision)`, a
 A `MemoryItem` carries:
 
 - `id` and `short_id`. The short id is the six-digit number a model sees and quotes back. It is derived from the memory id, probed upward past ids in use, unique within the space and fixed at creation (`MemoryShortId::allocate`).
-- `text` and one of six `MemoryCategory` values.
+- `text` and an optional `MemoryCategory`. Stored categories preserve the six roleplay values and the companion values `milestone`, `boundary`, `profile`, `routine`, `episodic` and `emotional_snapshot`; an uncategorized user memory stays null. The model tool and repair protocols retain their six roleplay categories.
 - Hot/cold and pinned flags. Cold memories stay in the space and can still be retrieved; retrieval promotes a selected cold memory back to hot. A pinned memory is never cold, and snapshot validation rejects that state.
 - Scores (`importance` and friends) as `Score`, basis points from 0 to 10 000, so they compare and serialize exactly.
 - Retrieval metadata: `access_count` and `last_accessed_at`.

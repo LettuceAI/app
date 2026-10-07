@@ -30,7 +30,26 @@ impl MemoryCategory {
             Self::WorldDetail => "world_detail",
             Self::Preference => "preference",
             Self::Other => "other",
+            Self::Milestone => "milestone",
+            Self::Boundary => "boundary",
+            Self::Profile => "profile",
+            Self::Routine => "routine",
+            Self::Episodic => "episodic",
+            Self::EmotionalSnapshot => "emotional_snapshot",
         }
+    }
+
+    #[must_use]
+    pub fn parse_stored(value: &str) -> Option<Self> {
+        Self::parse(value).or(match value {
+            "milestone" => Some(Self::Milestone),
+            "boundary" => Some(Self::Boundary),
+            "profile" => Some(Self::Profile),
+            "routine" => Some(Self::Routine),
+            "episodic" => Some(Self::Episodic),
+            "emotional_snapshot" => Some(Self::EmotionalSnapshot),
+            _ => None,
+        })
     }
 
     #[must_use]

@@ -243,7 +243,7 @@ mod tests {
             id,
             short_id: lettuce_memory::MemoryShortId::derived(id),
             text: text.to_owned(),
-            category: MemoryCategory::Other,
+            category: Some(MemoryCategory::Other),
             source_message_id: None,
             source_role: None,
             observed_at: None,

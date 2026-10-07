@@ -154,7 +154,7 @@ mod tests {
             id: MemoryId::new(),
             short_id: lettuce_memory::MemoryShortId::new(900001).expect("short id"),
             text: "Mira prefers tea".into(),
-            category: MemoryCategory::Preference,
+            category: Some(MemoryCategory::Preference),
             source_message_id: None,
             source_role: None,
             observed_at: None,
