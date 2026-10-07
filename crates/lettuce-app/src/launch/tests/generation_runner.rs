@@ -4857,6 +4857,26 @@ async fn post_turn_memory_host_runs_the_plain_cycle_from_live_settings() {
     );
     assert!(memory.requests.lock().expect("memory requests").is_empty());
     set_default_model(Some(scenario.model.source_id));
+    let space_id = scenario.space_id.expect("dynamic memory space");
+    let current = MemoryRepository::get(database, space_id)
+        .expect("memory")
+        .expect("space");
+    let unknown_id = lettuce_types::MemoryId::new();
+    let mut unknown = lettuce_memory::MemoryItem::written(
+        unknown_id,
+        lettuce_memory::MemoryShortId::derived(unknown_id),
+        "An earlier manual memory".into(),
+        TimestampMillis::new(1_032),
+    );
+    unknown.is_pinned = true;
+    assert_eq!(unknown.token_count, None);
+    database
+        .compare_and_apply(lettuce_memory::MemoryChangeSet {
+            space_id,
+            expected_revision: current.revision,
+            items: vec![unknown],
+        })
+        .expect("manual item before dynamic cycle");
     let work = host
         .trigger(
             scenario.conversation_id,
@@ -4913,10 +4933,22 @@ async fn post_turn_memory_host_runs_the_plain_cycle_from_live_settings() {
     let stored_memory = MemoryRepository::get(database, space_id)
         .expect("memory")
         .expect("memory space");
-    assert_eq!(stored_memory.items.len(), 1);
-    assert_eq!(stored_memory.items[0].text, "The user prefers tea");
-    assert_eq!(stored_memory.items[0].token_count, Some(4));
-    assert!(stored_memory.items[0].is_cold);
+    assert_eq!(stored_memory.items.len(), 2);
+    let manual = stored_memory
+        .items
+        .iter()
+        .find(|item| item.id == unknown_id)
+        .expect("manual item");
+    assert_eq!(manual.token_count, Some(4));
+    assert!(manual.is_pinned);
+    let generated = stored_memory
+        .items
+        .iter()
+        .find(|item| item.id != unknown_id)
+        .expect("generated item");
+    assert_eq!(generated.text, "The user prefers tea");
+    assert_eq!(generated.token_count, Some(4));
+    assert!(generated.is_cold);
 
     let (group, _) = group_scenario(
         &backend,

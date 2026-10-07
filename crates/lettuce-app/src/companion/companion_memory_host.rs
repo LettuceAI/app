@@ -118,6 +118,7 @@ pub trait CompanionMemoryHostSources:
     + lettuce_conversations::ConversationOverviewReader
     + lettuce_memory::MemoryRepository
     + lettuce_memory::MemorySummaryRepository
+    + lettuce_memory::MemoryTokenCountRepository
     + lettuce_memory::DynamicMemoryApprovalRepository
     + lettuce_embeddings::MemoryEmbeddingRepository
     + lettuce_conversations::ProviderReplayArtifactPort
@@ -145,6 +146,7 @@ impl<T> CompanionMemoryHostSources for T where
         + lettuce_conversations::ConversationOverviewReader
         + lettuce_memory::MemoryRepository
         + lettuce_memory::MemorySummaryRepository
+        + lettuce_memory::MemoryTokenCountRepository
         + lettuce_memory::DynamicMemoryApprovalRepository
         + lettuce_embeddings::MemoryEmbeddingRepository
         + lettuce_conversations::ProviderReplayArtifactPort

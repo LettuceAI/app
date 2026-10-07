@@ -63,6 +63,7 @@ impl<
     R: DynamicMemoryRunRepository
         + MemoryRepository
         + MemorySummaryRepository
+        + lettuce_memory::MemoryTokenCountRepository
         + MemoryEmbeddingRepository
         + ProviderReplayArtifactPort
         + JobUsageLedger
@@ -124,6 +125,17 @@ impl<
                     Some(claim.claim.attempt.get()),
                     now,
                 )?;
+        if let Err(error) = self.recount_memory(dispatch.run.space_id, handle) {
+            CompanionMemoryTerminalCoordinator::new(self.repository).settle_failure(
+                dispatch.run.id,
+                dispatch.attempt.id,
+                &admission.batch,
+                handle,
+                CompanionMemoryTerminalFailure::from_inference_error(&error),
+                now,
+            )?;
+            return Err(CompanionMemoryJobRunError::Inference(error));
+        }
         self.progress(claim, 1, "memory-summarizing-conversation", now)?;
         let summary = match CompanionMemorySummaryCoordinator::new(
             self.engine,
@@ -305,6 +317,46 @@ impl<
             effects: terminal.effects,
             fresh_memories: terminal.fresh_memories,
         })
+    }
+
+    fn recount_memory(
+        &self,
+        space_id: lettuce_types::MemorySpaceId,
+        handle: &JobHandle,
+    ) -> Result<(), CompanionMemoryInferenceError> {
+        let memory = MemoryRepository::get(self.repository, space_id)
+            .map_err(CompanionMemoryInferenceError::Memory)?
+            .ok_or(CompanionMemoryInferenceError::Memory(
+                MemoryRepositoryError::NotFound,
+            ))?;
+        let summary = self
+            .repository
+            .get_summary(space_id)
+            .map_err(CompanionMemoryInferenceError::Memory)?;
+        let recounted = crate::recount_unknown_memory_tokens(
+            self.engine,
+            self.repository,
+            &memory,
+            summary.as_ref(),
+            &handle.cancellation_token(),
+        )
+        .map_err(|error| match error {
+            crate::MemoryEmbeddingBackfillError::Cancelled => {
+                CompanionMemoryInferenceError::Cancelled
+            }
+            crate::MemoryEmbeddingBackfillError::EmbeddingUnavailable => {
+                CompanionMemoryInferenceError::UnknownTokenCount
+            }
+            crate::MemoryEmbeddingBackfillError::Repository => {
+                CompanionMemoryInferenceError::Memory(MemoryRepositoryError::Failure(
+                    "memory token recount storage failed".into(),
+                ))
+            }
+        })?;
+        if recounted.unknown > 0 {
+            return Err(CompanionMemoryInferenceError::UnknownTokenCount);
+        }
+        Ok(())
     }
 
     fn progress(
