@@ -13,7 +13,8 @@ use uuid::Uuid;
 use super::ApiContext;
 use super::error::{IntoApiError, api_error, invalid_field, parse_id};
 use super::jobs::local::stable_uuid;
-use super::memory_control::controlled;
+use super::memory_control::controlled_atomic;
+use super::memory::EditFailure;
 
 fn soul_error(error: SoulRepositoryError) -> ApiError {
     api_error(
@@ -443,16 +444,17 @@ pub async fn companion_soul_growth_clear(
         request.character_id.clone(),
         request.conversation_id.clone(),
     );
-    controlled(
+    let at = context.now();
+    controlled_atomic(
         context,
         "companion_soul_growth_clear",
         &key,
         &request,
-        move |context| {
-            let database = context.backend().database();
-            let target = target(database, &character, conversation.as_deref())?;
-            crate::clear_companion_soul_growth(database, target.owner, context.now())
-                .map_err(soul_error)
+        move |context| target(context.backend().database(), &character, conversation.as_deref()).map(|target| target.owner),
+        move |scope, owner| {
+            let state = scope.edit_soul_growth(owner, lettuce_companions::SoulUserEdit::ClearAll, at)
+                .map_err(|error| EditFailure(soul_error(error)))?;
+            Ok(state.map_or(0, |state| u32::try_from(state.facts.len()).unwrap_or(u32::MAX)))
         },
     )
     .await
@@ -470,16 +472,17 @@ pub async fn companion_soul_growth_remove(
         request.conversation_id.clone(),
         request.fact_id.clone(),
     );
-    controlled(
+    let at = context.now();
+    controlled_atomic(
         context,
         "companion_soul_growth_remove",
         &key,
         &request,
-        move |context| {
-            let database = context.backend().database();
-            let target = target(database, &character, conversation.as_deref())?;
-            crate::remove_companion_soul_growth(database, target.owner, &fact, context.now())
-                .map_err(soul_error)
+        move |context| target(context.backend().database(), &character, conversation.as_deref()).map(|target| target.owner),
+        move |scope, owner| {
+            let state = scope.edit_soul_growth(owner, lettuce_companions::SoulUserEdit::Remove { fact_id: fact.clone() }, at)
+                .map_err(|error| EditFailure(soul_error(error)))?;
+            Ok(state.is_some_and(|state| state.facts.iter().any(|entry| entry.id == fact)))
         },
     )
     .await
@@ -498,22 +501,17 @@ pub async fn companion_soul_growth_lock(
         request.fact_id.clone(),
         request.locked,
     );
-    controlled(
+    let at = context.now();
+    controlled_atomic(
         context,
         "companion_soul_growth_lock",
         &key,
         &request,
-        move |context| {
-            let database = context.backend().database();
-            let target = target(database, &character, conversation.as_deref())?;
-            crate::set_companion_soul_growth_lock(
-                database,
-                target.owner,
-                &fact,
-                locked,
-                context.now(),
-            )
-            .map_err(soul_error)
+        move |context| target(context.backend().database(), &character, conversation.as_deref()).map(|target| target.owner),
+        move |scope, owner| {
+            let state = scope.edit_soul_growth(owner, lettuce_companions::SoulUserEdit::SetLocked { fact_id: fact.clone(), locked }, at)
+                .map_err(|error| EditFailure(soul_error(error)))?;
+            Ok(state.is_some_and(|state| state.facts.iter().any(|entry| entry.id == fact)))
         },
     )
     .await
@@ -578,7 +576,7 @@ pub async fn companion_soul_writer_run(
     let key = request.client_operation_id.clone();
     let action_key = key.clone();
     let action_request = request.clone();
-    let accepted = controlled(
+    let accepted = controlled_atomic(
         context,
         "companion_soul_writer_run",
         &key,
@@ -644,10 +642,10 @@ pub async fn companion_soul_writer_run(
             };
             let request_id =
                 RequestId::from_uuid(stable_uuid(&["companion-soul-writer", &action_key]));
-            let admission = context
+            let plan = context
                 .backend()
                 .companion_soul_writer_admission()
-                .admit(crate::CompanionSoulWriterAdmissionRequest {
+                .prepare(crate::CompanionSoulWriterAdmissionRequest {
                     request_id,
                     primary_profile: primary,
                     fallback_profile: fallback,
@@ -669,9 +667,12 @@ pub async fn companion_soul_writer_run(
                     now: context.now(),
                 })
                 .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?;
-            Ok(dto::JobAccepted {
-                job_id: admission.job.id.to_string(),
-            })
+            Ok(plan)
+        },
+        move |scope, (spec, run)| {
+            scope.admit_soul_writer(spec, run)
+                .map(|job| dto::JobAccepted { job_id: job.id.to_string() })
+                .map_err(EditFailure::from)
         },
     )
     .await?;
@@ -760,7 +761,7 @@ pub async fn companion_notes_upsert(
     let key = request.client_operation_id.clone();
     let action_key = key.clone();
     let action_request = request.clone();
-    controlled(
+    controlled_atomic(
         context,
         "companion_notes_upsert",
         &key,
@@ -785,9 +786,7 @@ pub async fn companion_notes_upsert(
                 .iter()
                 .find(|note| note.id == id)
                 .map_or(now, |note| note.created_at);
-            let stored = CompanionScheduledNoteRepository::upsert_scheduled_note(
-                database,
-                CompanionScheduledNote {
+            Ok(CompanionScheduledNote {
                     id,
                     character_id,
                     label: request.label,
@@ -799,10 +798,11 @@ pub async fn companion_notes_upsert(
                     enabled: request.enabled,
                     created_at,
                     updated_at: now,
-                },
-            )
-            .map_err(note_error)?;
-            Ok(note_view(&stored))
+            })
+        },
+        move |scope, note| {
+            scope.upsert_companion_note(note).map(|stored| note_view(&stored))
+                .map_err(|error| EditFailure(note_error(error)))
         },
     )
     .await
@@ -815,18 +815,10 @@ pub async fn companion_notes_delete(
 ) -> Result<(), ApiError> {
     let note_id: Uuid = parse_id(&request.note_id, "note_id")?;
     let key = request.client_operation_id.clone();
-    controlled(
-        context,
-        "companion_notes_delete",
-        &key,
-        &request,
-        move |context| {
-            CompanionScheduledNoteRepository::delete_scheduled_note(
-                context.backend().database(),
-                note_id,
-            )
-            .map_err(note_error)
-        },
+    controlled_atomic(
+        context, "companion_notes_delete", &key, &request,
+        |_| Ok(()),
+        move |scope, ()| scope.delete_companion_note(note_id).map_err(|error| EditFailure(note_error(error))),
     )
     .await
 }

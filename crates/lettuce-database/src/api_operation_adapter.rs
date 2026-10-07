@@ -27,7 +27,7 @@ fn invalid(_: impl std::fmt::Debug) -> ApiOperationError {
     ApiOperationError::InvalidData
 }
 
-fn lookup_in(
+pub(crate) fn lookup_in(
     connection: &Connection,
     command: &str,
     key: &str,
@@ -127,6 +127,55 @@ impl Database {
 }
 
 impl ApiOperationTransaction<'_, '_> {
+    pub fn edit_soul_growth(
+        &self,
+        owner: lettuce_companions::SoulOwner,
+        edit: lettuce_companions::SoulUserEdit,
+        at: TimestampMillis,
+    ) -> Result<Option<lettuce_companions::SoulState>, lettuce_companions::SoulRepositoryError> {
+        let state = crate::companion::soul_adapter::get_in(self.transaction, owner)?;
+        if let Some(state) = &state
+            && let Some(change) = lettuce_companions::prepare_user_edit(state, edit, at)
+                .map_err(lettuce_companions::SoulRepositoryError::Invalid)?
+        {
+            crate::companion::soul_adapter::apply_in(self.transaction, owner, lettuce_types::OperationRecordId::new(), change)?;
+        }
+        Ok(state)
+    }
+
+    pub fn upsert_companion_note(
+        &self, note: lettuce_companions::CompanionScheduledNote,
+    ) -> Result<lettuce_companions::CompanionScheduledNote, lettuce_companions::CompanionScheduledNoteError> {
+        if let Some(existing) = crate::memory::scheduled_note_adapter::load_in(self.transaction, note.id)?
+            && existing.character_id != note.character_id
+        {
+            return Err(lettuce_companions::CompanionScheduledNoteError::NotFound);
+        }
+        crate::memory::scheduled_note_adapter::upsert_in(self.transaction, note)
+    }
+
+    pub fn delete_companion_note(&self, id: uuid::Uuid) -> Result<(), lettuce_companions::CompanionScheduledNoteError> {
+        crate::memory::scheduled_note_adapter::delete_in(self.transaction, id)
+    }
+
+    pub fn skip_memory_approval(&self, conversation_id: lettuce_types::ConversationId, branch_id: lettuce_types::ConversationBranchId, at: TimestampMillis) -> Result<(), ApiOperationError> {
+        self.transaction.execute("UPDATE dynamic_memory_pending_approvals SET pending=0, skipped=1, updated_at=?3 WHERE conversation_id=?1 AND branch_id=?2 AND pending=1",
+            params![conversation_id.to_string(), branch_id.to_string(), at.get()]).map_err(storage)?;
+        Ok(())
+    }
+
+    pub fn admit_soul_writer(
+        &self, spec: lettuce_jobs::JobSpec, mut run: lettuce_companions::CompanionSoulWriterRun,
+    ) -> Result<lettuce_jobs::JobSnapshot, ApiOperationError> {
+        let key = format!("companion-soul-writer-{}", run.request_id);
+        let (job, _, _) = crate::job_adapter::admit_job_detail_in(
+            self.transaction, spec, &key, &key, &serde_json::json!({"kind": "companion_soul_writer"}),
+        ).map_err(storage)?;
+        run.job_id = job.id;
+        crate::companion::soul_writer_adapter::admit_run_in(self.transaction, run).map_err(storage)?;
+        Ok(job)
+    }
+
     pub fn create_audio_provider(
         &self,
         provider: &lettuce_speech::AudioProvider,

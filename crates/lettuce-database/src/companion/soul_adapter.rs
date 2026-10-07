@@ -735,56 +735,60 @@ impl SoulRepository for Database {
         operation_id: OperationRecordId,
         change_set: SoulChangeSet,
     ) -> Result<SoulApplyReceipt, SoulRepositoryError> {
-        let hash = change_hash(&change_set);
         let mut connection = self.connection().map_err(failure)?;
-        let tx = connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(failure)?;
-        if let Some((receipt, stored_hash)) = load_receipt(&tx, operation_id)? {
-            if receipt.owner == owner
-                && receipt.expected_revision == change_set.expected_revision
-                && receipt.resulting_revision == change_set.resulting_revision
-                && receipt.applied_at == change_set.applied_at
-                && stored_hash.as_slice() == hash
-            {
-                tx.commit().map_err(failure)?;
-                return Ok(receipt);
-            }
-            return Err(SoulRepositoryError::OperationMismatch);
-        }
-        let current = get_in(&tx, owner)?.ok_or(SoulRepositoryError::NotFound)?;
-        let next = apply_change_set(&current, &change_set).map_err(|error| match error {
-            SoulPolicyError::StaleRevision => SoulRepositoryError::Conflict,
-            other => SoulRepositoryError::Invalid(other),
-        })?;
-        let character_id = owner.character_id();
-        tx.execute(
-            "DELETE FROM companion_soul_facts WHERE character_id = ?1 AND scope = ?2",
-            params![character_id.to_string(), scope(owner)],
-        )
-        .map_err(failure)?;
-        insert_facts(&tx, owner, &next.facts)?;
-        let updated = tx.execute(
-            "UPDATE companion_soul_states SET revision = ?2, updated_at = max(updated_at, ?3) WHERE character_id = ?1 AND revision = ?4 AND scope = ?5",
-            params![character_id.to_string(), sql_revision(next.revision)?, change_set.recorded_at.get(), sql_revision(change_set.expected_revision)?, scope(owner)],
-        ).map_err(failure)?;
-        if updated != 1 {
-            return Err(SoulRepositoryError::Conflict);
-        }
-        tx.execute(
-            "INSERT INTO companion_soul_apply_receipts (operation_id, character_id, expected_revision, resulting_revision, applied_at, change_hash, scope) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![operation_id.to_string(), character_id.to_string(), sql_revision(change_set.expected_revision)?, sql_revision(change_set.resulting_revision)?, change_set.applied_at.get(), hash.as_slice(), scope(owner)],
-        ).map_err(failure)?;
-        let receipt = SoulApplyReceipt {
-            operation_id,
-            owner,
-            expected_revision: change_set.expected_revision,
-            resulting_revision: change_set.resulting_revision,
-            applied_at: change_set.applied_at,
-        };
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(failure)?;
+        let receipt = apply_in(&tx, owner, operation_id, change_set)?;
         tx.commit().map_err(failure)?;
         Ok(receipt)
     }
+}
+
+pub(crate) fn apply_in(
+    tx: &Transaction<'_>, owner: SoulOwner, operation_id: OperationRecordId, change_set: SoulChangeSet,
+) -> Result<SoulApplyReceipt, SoulRepositoryError> {
+    let hash = change_hash(&change_set);
+    if let Some((receipt, stored_hash)) = load_receipt(tx, operation_id)? {
+        if receipt.owner == owner
+            && receipt.expected_revision == change_set.expected_revision
+            && receipt.resulting_revision == change_set.resulting_revision
+            && receipt.applied_at == change_set.applied_at
+            && stored_hash.as_slice() == hash
+        {
+            return Ok(receipt);
+        }
+        return Err(SoulRepositoryError::OperationMismatch);
+    }
+    let current = get_in(tx, owner)?.ok_or(SoulRepositoryError::NotFound)?;
+    let next = apply_change_set(&current, &change_set).map_err(|error| match error {
+        SoulPolicyError::StaleRevision => SoulRepositoryError::Conflict,
+        other => SoulRepositoryError::Invalid(other),
+    })?;
+    let character_id = owner.character_id();
+    tx.execute(
+        "DELETE FROM companion_soul_facts WHERE character_id = ?1 AND scope = ?2",
+        params![character_id.to_string(), scope(owner)],
+    )
+    .map_err(failure)?;
+    insert_facts(tx, owner, &next.facts)?;
+    let updated = tx.execute(
+        "UPDATE companion_soul_states SET revision = ?2, updated_at = max(updated_at, ?3) WHERE character_id = ?1 AND revision = ?4 AND scope = ?5",
+        params![character_id.to_string(), sql_revision(next.revision)?, change_set.recorded_at.get(), sql_revision(change_set.expected_revision)?, scope(owner)],
+    ).map_err(failure)?;
+    if updated != 1 {
+        return Err(SoulRepositoryError::Conflict);
+    }
+    tx.execute(
+        "INSERT INTO companion_soul_apply_receipts (operation_id, character_id, expected_revision, resulting_revision, applied_at, change_hash, scope) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![operation_id.to_string(), character_id.to_string(), sql_revision(change_set.expected_revision)?, sql_revision(change_set.resulting_revision)?, change_set.applied_at.get(), hash.as_slice(), scope(owner)],
+    ).map_err(failure)?;
+    let receipt = SoulApplyReceipt {
+        operation_id,
+        owner,
+        expected_revision: change_set.expected_revision,
+        resulting_revision: change_set.resulting_revision,
+        applied_at: change_set.applied_at,
+    };
+    Ok(receipt)
 }
 
 #[cfg(test)]

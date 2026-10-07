@@ -1980,3 +1980,38 @@ async fn a_revert_emits_memory_changed() {
     feed.publish(&harness.context).await.expect("publish");
     assert_eq!(memory_events(&harness, &chat), baseline + 1);
 }
+
+#[tokio::test]
+async fn concurrent_memory_control_keys_replay_one_job_and_conflicting_digests_do_not_admit() {
+    let harness = harness(Reply::Text("reply"));
+    let (chat, _) = replied_chat(&harness, "atomic-control").await;
+    make_dynamic(&harness, true);
+    let request = trigger_request(&chat, "concurrent-control");
+    let (first, second) = tokio::join!(
+        memory_trigger(&harness.context, request.clone()),
+        memory_trigger(&harness.context, request),
+    );
+    assert_eq!(first.expect("first admission"), second.expect("same key replay"));
+    let empty = launch(&harness, "conflicting-control").await;
+    let error = memory_trigger(&harness.context, trigger_request(&empty, "concurrent-control")).await.expect_err("different digest");
+    assert_eq!(error.code, ApiErrorCode::Conflict);
+}
+
+#[tokio::test]
+async fn a_memory_retry_receipt_replays_before_the_selected_model_is_resolved_again() {
+    let harness = harness(Reply::Text("reply"));
+    let (chat, _) = replied_chat(&harness, "replay-model").await;
+    let request = dto::MemoryRetryRequest {
+        conversation_id: chat,
+        model_profile_id: Some(lettuce_types::ModelProfileId::new().to_string()),
+        client_operation_id: "completed-retry".into(),
+    };
+    let bytes = serde_json::to_vec(&request).expect("request");
+    let operation = super::messages::operation(request.client_operation_id.clone(), &[b"memory_retry", &bytes]).expect("operation");
+    let accepted = dto::JobAccepted { job_id: lettuce_types::JobId::new().to_string() };
+    harness.context.backend().database().commit_api_operation::<_, super::memory::EditFailure>(
+        "memory_retry", &request.client_operation_id, operation.request_digest.as_str(), harness.context.now(),
+        |_| Ok(accepted.clone()),
+    ).unwrap_or_else(|error| panic!("receipt write failed: {}", error.0.message));
+    assert_eq!(memory_retry(&harness.context, request).await.expect("receipt replay"), accepted);
+}

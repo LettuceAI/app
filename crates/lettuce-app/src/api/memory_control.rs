@@ -40,14 +40,17 @@ fn host_error(
         CompanionMemoryHostError::PendingRewind(error) => {
             messages::delete_after_error(context, conversation_id, error)
         }
+        CompanionMemoryHostError::Dispatch(crate::CompanionMemoryDispatchError::Admission(
+            crate::CompanionPostTurnMemoryAdmissionError::Jobs(lettuce_jobs::StoreError::IdempotencyConflict),
+        )) => api_error(ApiErrorCode::Conflict, "the operation key was used for another request"),
         error => api_error(ApiErrorCode::Internal, error.to_string()),
     }
 }
 
 /// Runs `action` once per operation key: the same request replays the
 /// recorded result, another request under the key is `Conflict`. A crash
-/// between the action and its receipt repeats the action, which every caller
-/// makes idempotent.
+/// between preparation and admission is safe because job admission writes
+/// the receipt atomically.
 pub(super) async fn controlled<T, R>(
     context: &ApiContext,
     command: &'static str,
@@ -97,6 +100,41 @@ where
         .await
 }
 
+pub(super) async fn controlled_atomic<T, R, P>(
+    context: &ApiContext,
+    command: &'static str,
+    key: &str,
+    request: &R,
+    prepare: impl FnOnce(&ApiContext) -> Result<P, ApiError> + Send + 'static,
+    action: impl FnOnce(&lettuce_database::ApiOperationTransaction<'_, '_>, P) -> Result<T, EditFailure> + Send + 'static,
+) -> Result<T, ApiError>
+where
+    T: Serialize + DeserializeOwned + Send + 'static,
+    R: Serialize,
+    P: Send + 'static,
+{
+    let bytes = zeroize::Zeroizing::new(serde_json::to_vec(request)
+        .map_err(|_| api_error(ApiErrorCode::Internal, "memory request could not be encoded"))?);
+    let operation = messages::operation(key.to_owned(), &[command.as_bytes(), &bytes])?;
+    let key = key.to_owned();
+    context.blocking(move |context| {
+        let database = context.backend().database();
+        if let Some(receipt) = database.lookup_api_operation(command, &key)
+            .map_err(|error| EditFailure::from(error).0)?
+        {
+            if receipt.request_digest != operation.request_digest.as_str() {
+                return Err(api_error(ApiErrorCode::Conflict, "the operation key was used for another request"));
+            }
+            return serde_json::from_value(receipt.result)
+                .map_err(|_| api_error(ApiErrorCode::Internal, "memory receipt is invalid"));
+        }
+        let prepared = prepare(context)?;
+        database.commit_api_operation(command, &key,
+            operation.request_digest.as_str(), context.now(), |scope| action(scope, prepared))
+            .map_err(|error| error.0)
+    }).await
+}
+
 async fn start_cycle(
     context: &ApiContext,
     command: &'static str,
@@ -106,18 +144,32 @@ async fn start_cycle(
     model_profile_id: Option<ModelProfileId>,
 ) -> Result<dto::JobAccepted, ApiError> {
     let conversation_id: ConversationId = parse_id(conversation_id, "conversation_id")?;
+    let bytes = serde_json::to_vec(request).map_err(|_| api_error(ApiErrorCode::Internal, "memory request could not be encoded"))?;
+    let token = messages::operation(key.to_owned(), &[command.as_bytes(), &bytes])?;
+    let operation = crate::companion::companion_memory_job::MemoryControlOperation {
+        command: command.to_owned(), key: key.to_owned(), digest: token.request_digest.as_str().to_owned(), at: context.now(),
+    };
     let accepted = controlled(context, command, key, request, move |context| {
         let database = context.backend().database();
-        live_conversation(database, conversation_id)?;
+        let conversation = live_conversation(database, conversation_id)?;
+        if let Some(model) = model_profile_id {
+            if matches!(conversation.kind, lettuce_conversations::ConversationKind::Group(_)) {
+                return Err(invalid_field("model_profile_id", "group chats retry with their configured model"));
+            }
+            lettuce_models::ModelProfileRepository::get(database, model)
+                .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?
+                .ok_or_else(|| api_error(ApiErrorCode::NotFound, "the model was not found"))?;
+        }
         let embedding = context.embedding();
         let admission = context
             .backend()
             .companion_memory_host(embedding.as_ref(), context.inference())
-            .trigger_admit(
+            .trigger_admit_controlled(
                 conversation_id,
                 model_profile_id,
                 model_profile_id.is_some(),
                 context.now(),
+                &operation,
             )
             .map_err(|error| host_error(context, conversation_id, error))?;
         Ok(dto::JobAccepted {
@@ -159,30 +211,6 @@ pub async fn memory_retry(
         .as_deref()
         .map(|value| parse_id::<ModelProfileId>(value, "model_profile_id"))
         .transpose()?;
-    if let Some(model) = model {
-        let conversation: ConversationId = parse_id(&request.conversation_id, "conversation_id")?;
-        context
-            .blocking(move |context| {
-                let database = context.backend().database();
-                let aggregate =
-                    lettuce_conversations::ConversationReader::get(database, conversation)
-                        .map_err(IntoApiError::into_api_error)?;
-                if matches!(
-                    aggregate.conversation.kind,
-                    lettuce_conversations::ConversationKind::Group(_)
-                ) {
-                    return Err(invalid_field(
-                        "model_profile_id",
-                        "group chats retry with their configured model",
-                    ));
-                }
-                lettuce_models::ModelProfileRepository::get(database, model)
-                    .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?
-                    .ok_or_else(|| api_error(ApiErrorCode::NotFound, "the model was not found"))?;
-                Ok(())
-            })
-            .await?;
-    }
     start_cycle(
         context,
         "memory_retry",
@@ -201,21 +229,11 @@ pub async fn memory_skip(
     request: dto::MemorySkipRequest,
 ) -> Result<(), ApiError> {
     let conversation_id: ConversationId = parse_id(&request.conversation_id, "conversation_id")?;
-    controlled(
-        context,
-        "memory_skip",
-        &request.client_operation_id,
-        &request,
-        move |context| {
-            live_conversation(context.backend().database(), conversation_id)?;
-            let embedding = context.embedding();
-            context
-                .backend()
-                .companion_memory_host(embedding.as_ref(), context.inference())
-                .skip(conversation_id, context.now())
-                .map(|_| ())
-                .map_err(|error| host_error(context, conversation_id, error))
-        },
+    let at = context.now();
+    controlled_atomic(
+        context, "memory_skip", &request.client_operation_id, &request,
+        move |context| live_conversation(context.backend().database(), conversation_id).map(|conversation| conversation.active_branch_id),
+        move |scope, branch_id| scope.skip_memory_approval(conversation_id, branch_id, at).map_err(EditFailure::from),
     )
     .await
 }

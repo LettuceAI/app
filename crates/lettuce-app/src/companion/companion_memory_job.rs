@@ -117,12 +117,30 @@ pub struct CompanionPostTurnMemoryAdmission {
     pub created: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct MemoryControlOperation {
+    pub command: String,
+    pub key: String,
+    pub digest: String,
+    pub at: TimestampMillis,
+}
+
 pub trait MemoryAdmissionStore: JobStore {
     fn admit_memory_batch(
         &self,
         spec: JobSpec,
         batch: CompanionPostTurnMemoryBatch,
     ) -> Result<CompanionPostTurnMemoryAdmission, StoreError>;
+    fn admit_controlled_memory_batch(
+        &self,
+        spec: JobSpec,
+        batch: CompanionPostTurnMemoryBatch,
+        operation: &MemoryControlOperation,
+    ) -> Result<CompanionPostTurnMemoryAdmission, StoreError> {
+        let _ = (spec, batch, operation);
+        Err(StoreError::InvalidData)
+    }
+
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -149,36 +167,55 @@ impl MemoryAdmissionStore for lettuce_database::Database {
         spec: JobSpec,
         batch: CompanionPostTurnMemoryBatch,
     ) -> Result<CompanionPostTurnMemoryAdmission, StoreError> {
-        if batch.source_messages().is_none() || batch.summary_message_interval == 0 {
-            return Err(StoreError::InvalidData);
-        }
-        let key = batch.idempotency_key.as_str().to_owned();
-        let conversation_id = batch.conversation_id;
-        let branch_id = batch.branch_id;
-        let detail = serde_json::to_value(FrozenMemoryAdmission { version: 1, batch })
-            .map_err(|_| StoreError::InvalidData)?;
-        let admitted = self.admit_memory_job_with_detail_result(
-            conversation_id,
-            branch_id,
-            spec,
-            &key,
-            &key,
-            &detail,
-        )?;
-        let stored = self
-            .job_detail(admitted.job.id)
-            .map_err(|_| StoreError::Storage)?
-            .ok_or(StoreError::InvalidData)?;
-        let batch = decode_memory_admission(stored.detail)?;
-        if batch.idempotency_key.as_str() != key {
-            return Err(StoreError::InvalidData);
-        }
-        Ok(CompanionPostTurnMemoryAdmission {
-            batch,
-            job: admitted.job,
-            created: admitted.created,
-        })
+        admit_database_memory_batch(self, spec, batch, None)
     }
+
+    fn admit_controlled_memory_batch(
+        &self,
+        spec: JobSpec,
+        batch: CompanionPostTurnMemoryBatch,
+        operation: &MemoryControlOperation,
+    ) -> Result<CompanionPostTurnMemoryAdmission, StoreError> {
+        admit_database_memory_batch(self, spec, batch, Some(operation))
+    }
+}
+
+fn admit_database_memory_batch(
+    database: &lettuce_database::Database,
+    spec: JobSpec,
+    batch: CompanionPostTurnMemoryBatch,
+    operation: Option<&MemoryControlOperation>,
+) -> Result<CompanionPostTurnMemoryAdmission, StoreError> {
+    if batch.source_messages().is_none() || batch.summary_message_interval == 0 {
+        return Err(StoreError::InvalidData);
+    }
+    let key = batch.idempotency_key.as_str().to_owned();
+    let conversation_id = batch.conversation_id;
+    let branch_id = batch.branch_id;
+    let detail = serde_json::to_value(FrozenMemoryAdmission { version: 1, batch })
+        .map_err(|_| StoreError::InvalidData)?;
+    let admitted = database.admit_memory_job_with_api_receipt(
+        conversation_id,
+        branch_id,
+        spec,
+        &key,
+        &key,
+        &detail,
+        operation.map(|op| (op.command.as_str(), op.key.as_str(), op.digest.as_str(), op.at)),
+    )?;
+    let stored = database
+        .job_detail(admitted.job.id)
+        .map_err(|_| StoreError::Storage)?
+        .ok_or(StoreError::InvalidData)?;
+    let batch = decode_memory_admission(stored.detail)?;
+    if operation.is_none() && batch.idempotency_key.as_str() != key {
+        return Err(StoreError::InvalidData);
+    }
+    Ok(CompanionPostTurnMemoryAdmission {
+        batch,
+        job: admitted.job,
+        created: admitted.created,
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -203,6 +240,7 @@ pub enum CompanionPostTurnMemoryAdmissionError {
 pub struct CompanionPostTurnMemoryAdmissionCoordinator<'a, R: ?Sized, J: ?Sized> {
     effects: &'a R,
     jobs: &'a J,
+    operation: Option<&'a MemoryControlOperation>,
 }
 
 impl<
@@ -213,7 +251,12 @@ impl<
 {
     #[must_use]
     pub const fn new(effects: &'a R, jobs: &'a J) -> Self {
-        Self { effects, jobs }
+        Self { effects, jobs, operation: None }
+    }
+
+    pub(crate) fn with_operation(mut self, operation: &'a MemoryControlOperation) -> Self {
+        self.operation = Some(operation);
+        self
     }
 
     /// Rebuilds runtime memory-extraction jobs from the durable processing
@@ -1039,10 +1082,12 @@ impl<
             selected_model_profile_id,
             update_dynamic_memory_model_on_success,
         };
-        match self
-            .jobs
-            .admit_memory_batch(job_spec(conversation_id, idempotency_key)?, batch)
-        {
+        let spec = job_spec(conversation_id, idempotency_key)?;
+        let result = match self.operation {
+            Some(operation) => self.jobs.admit_controlled_memory_batch(spec, batch, operation),
+            None => self.jobs.admit_memory_batch(spec, batch),
+        };
+        match result {
             Ok(admission) => Ok(Some(admission)),
             Err(StoreError::AlreadyActive) => Ok(None),
             Err(error) => Err(CompanionPostTurnMemoryAdmissionError::Jobs(error)),

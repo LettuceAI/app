@@ -506,6 +506,28 @@ where
         update_default_on_success: bool,
         now: TimestampMillis,
     ) -> Result<crate::CompanionPostTurnMemoryAdmission, CompanionMemoryHostError> {
+        self.trigger_admit_inner(conversation_id, model_profile_id, update_default_on_success, now, None)
+    }
+
+    pub(crate) fn trigger_admit_controlled(
+        &self,
+        conversation_id: ConversationId,
+        model_profile_id: Option<lettuce_types::ModelProfileId>,
+        update_default_on_success: bool,
+        now: TimestampMillis,
+        operation: &super::companion_memory_job::MemoryControlOperation,
+    ) -> Result<crate::CompanionPostTurnMemoryAdmission, CompanionMemoryHostError> {
+        self.trigger_admit_inner(conversation_id, model_profile_id, update_default_on_success, now, Some(operation))
+    }
+
+    fn trigger_admit_inner(
+        &self,
+        conversation_id: ConversationId,
+        model_profile_id: Option<lettuce_types::ModelProfileId>,
+        update_default_on_success: bool,
+        now: TimestampMillis,
+        operation: Option<&super::companion_memory_job::MemoryControlOperation>,
+    ) -> Result<crate::CompanionPostTurnMemoryAdmission, CompanionMemoryHostError> {
         self.complete_pending_rewinds(conversation_id, now)?;
         let aggregate = ConversationReader::get(self.repository, conversation_id)
             .map_err(CompanionMemoryHostError::Conversation)?;
@@ -527,6 +549,10 @@ where
             self.repository,
             self.repository,
         );
+        let admissions = match operation {
+            Some(operation) => admissions.with_operation(operation),
+            None => admissions,
+        };
         let admitted = if self.is_companion(&aggregate.conversation)? {
             let reopened = lettuce_companions::CompanionTurnEffectRepository::reopen_failed(
                 self.repository,

@@ -207,48 +207,9 @@ impl CompanionScheduledNoteRepository for Database {
         &self,
         note: CompanionScheduledNote,
     ) -> Result<CompanionScheduledNote, CompanionScheduledNoteError> {
-        let note = note.normalize()?;
-        let window = note
-            .recurrence_window_ms
-            .map(i64::try_from)
-            .transpose()
-            .map_err(|_| CompanionScheduledNoteError::Invalid)?;
         let mut connection = self.connection().map_err(failure)?;
-        let tx = connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(failure)?;
-        ensure_companion(&tx, note.character_id)?;
-        tx.execute(
-            "INSERT INTO companion_scheduled_notes (
-                id, character_id, label, content, available_at, expires_at, recurrence,
-                recurrence_window_ms, enabled, created_at, updated_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
-             ON CONFLICT(id) DO UPDATE SET
-                character_id = excluded.character_id,
-                label = excluded.label,
-                content = excluded.content,
-                available_at = excluded.available_at,
-                expires_at = excluded.expires_at,
-                recurrence = excluded.recurrence,
-                recurrence_window_ms = excluded.recurrence_window_ms,
-                enabled = excluded.enabled,
-                updated_at = excluded.updated_at",
-            params![
-                note.id.to_string(),
-                note.character_id.to_string(),
-                note.label,
-                note.content,
-                note.available_at.get(),
-                note.expires_at.map(TimestampMillis::get),
-                recurrence_name(note.recurrence),
-                window,
-                i64::from(note.enabled),
-                note.created_at.get(),
-                note.updated_at.get(),
-            ],
-        )
-        .map_err(failure)?;
-        let stored = load_in(&tx, note.id)?.ok_or(CompanionScheduledNoteError::Failure)?;
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(failure)?;
+        let stored = upsert_in(&tx, note)?;
         tx.commit().map_err(failure)?;
         Ok(stored)
     }
@@ -269,4 +230,53 @@ impl CompanionScheduledNoteRepository for Database {
         tx.commit().map_err(failure)?;
         Ok(())
     }
+}
+
+pub(crate) fn upsert_in(
+    tx: &Transaction<'_>, note: CompanionScheduledNote,
+) -> Result<CompanionScheduledNote, CompanionScheduledNoteError> {
+    let note = note.normalize()?;
+    let window = note.recurrence_window_ms.map(i64::try_from).transpose()
+        .map_err(|_| CompanionScheduledNoteError::Invalid)?;
+    ensure_companion(tx, note.character_id)?;
+    tx.execute(
+        "INSERT INTO companion_scheduled_notes (
+            id, character_id, label, content, available_at, expires_at, recurrence,
+            recurrence_window_ms, enabled, created_at, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+         ON CONFLICT(id) DO UPDATE SET
+            character_id = excluded.character_id,
+            label = excluded.label,
+            content = excluded.content,
+            available_at = excluded.available_at,
+            expires_at = excluded.expires_at,
+            recurrence = excluded.recurrence,
+            recurrence_window_ms = excluded.recurrence_window_ms,
+            enabled = excluded.enabled,
+            updated_at = excluded.updated_at",
+        params![
+            note.id.to_string(),
+            note.character_id.to_string(),
+            note.label,
+            note.content,
+            note.available_at.get(),
+            note.expires_at.map(TimestampMillis::get),
+            recurrence_name(note.recurrence),
+            window,
+            i64::from(note.enabled),
+            note.created_at.get(),
+            note.updated_at.get(),
+        ],
+    )
+    .map_err(failure)?;
+    let stored = load_in(tx, note.id)?.ok_or(CompanionScheduledNoteError::Failure)?;
+    Ok(stored)
+}
+
+pub(crate) fn delete_in(tx: &Transaction<'_>, id: Uuid) -> Result<(), CompanionScheduledNoteError> {
+    if let Some(note) = load_in(tx, id)? {
+        ensure_companion(tx, note.character_id)?;
+        tx.execute("DELETE FROM companion_scheduled_notes WHERE id = ?1", [id.to_string()]).map_err(failure)?;
+    }
+    Ok(())
 }

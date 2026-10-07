@@ -81,10 +81,40 @@ impl Database {
         request_digest: &str,
         detail: &serde_json::Value,
     ) -> Result<CreateJobResult, StoreError> {
+        self.admit_memory_job_with_api_receipt(
+            conversation_id, branch_id, spec, operation_key, request_digest, detail, None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn admit_memory_job_with_api_receipt(
+        &self,
+        conversation_id: lettuce_types::ConversationId,
+        branch_id: lettuce_types::ConversationBranchId,
+        spec: NewJob,
+        operation_key: &str,
+        request_digest: &str,
+        detail: &serde_json::Value,
+        receipt: Option<(&str, &str, &str, lettuce_types::TimestampMillis)>,
+    ) -> Result<CreateJobResult, StoreError> {
         let mut connection = self.connection.lock().map_err(|_| StoreError::Storage)?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|_| StoreError::Storage)?;
+        if let Some((command, key, digest, _)) = receipt {
+            if let Some(prior) = crate::api_operation_adapter::lookup_in(&transaction, command, key)
+                .map_err(|_| StoreError::Storage)?
+            {
+                if prior.request_digest != digest {
+                    return Err(StoreError::IdempotencyConflict);
+                }
+                let id = prior.result.get("job_id").and_then(serde_json::Value::as_str)
+                    .ok_or(StoreError::InvalidData)?.parse().map_err(|_| StoreError::InvalidData)?;
+                let job = select_ids(&transaction, [id])?.remove(&id)
+                    .ok_or(StoreError::InvalidData)?.snapshot;
+                return Ok(CreateJobResult { job, created: false });
+            }
+        }
         let present: bool = transaction
             .query_row(
                 "SELECT EXISTS(SELECT 1 FROM conversation_branches branch
@@ -119,6 +149,13 @@ impl Database {
         }
         let (job, _, created) =
             admit_job_detail_in(&transaction, spec, operation_key, request_digest, detail)?;
+        if let Some((command, key, digest, at)) = receipt {
+            crate::api_operation_adapter::insert_in(&transaction, &lettuce_transfer::BackupApiOperationReceipt {
+                result_format_version: 2, command: command.to_owned(), client_operation_id: key.to_owned(),
+                request_digest: digest.to_owned(), result: serde_json::json!({"job_id": job.id.to_string()}),
+                committed_at: at,
+            }).map_err(|_| StoreError::Storage)?;
+        }
         transaction.commit().map_err(|_| StoreError::Storage)?;
         Ok(CreateJobResult { job, created })
     }
@@ -467,7 +504,7 @@ impl Database {
     }
 }
 
-fn admit_job_detail_in(
+pub(crate) fn admit_job_detail_in(
     transaction: &Transaction<'_>,
     spec: NewJob,
     operation_key: &str,
@@ -1361,6 +1398,57 @@ mod tests {
 
     fn availability() -> ResourceAvailability {
         ResourceAvailability::all()
+    }
+
+    #[test]
+    fn memory_control_receipt_failure_rolls_back_admission_and_terminal_replays_keep_the_job() {
+        let path = std::env::temp_dir().join(format!("s4-memory-control-{}.sqlite", Uuid::new_v4()));
+        let database = Database::open(&path).expect("database");
+        let (conversation_id, _, _) = crate::memory::dynamic_memory_run_adapter::tests::conversation_fixture(&database);
+        let branch_id = crate::memory::dynamic_memory_run_adapter::tests::fixture_branch(&database, conversation_id);
+        let memory_spec = |key: &str| JobSpec::new(
+            JobKind::MemoryExtraction,
+            JobSubject::new(SubjectKind::Conversation, conversation_id.to_string()).expect("subject"),
+            OutcomeRef::Conversation(conversation_id),
+        ).with_resources(vec![ResourceClass::Cpu]).with_idempotency_key(IdempotencyKey::new(key).expect("key"));
+        let detail = serde_json::json!({"frozen": "original window"});
+        let at = Timestamp::new(10);
+        database.connection().expect("connection").execute_batch(
+            "CREATE TRIGGER reject_memory_receipt BEFORE INSERT ON api_operation_receipts
+             BEGIN SELECT RAISE(ABORT, 'crash at receipt'); END;"
+        ).expect("inject");
+        assert!(database.admit_memory_job_with_api_receipt(conversation_id, branch_id,
+            memory_spec("original-window"), "original-window", "original-window", &detail,
+            Some(("memory_trigger", "client-key", "digest", at))).is_err());
+        let count: i64 = database.connection().expect("connection").query_row("SELECT count(*) FROM jobs", [], |row| row.get(0)).expect("count");
+        assert_eq!(count, 0, "a missing receipt must imply no admitted job");
+        database.connection().expect("connection").execute_batch("DROP TRIGGER reject_memory_receipt").expect("remove injection");
+        let original = database.admit_memory_job_with_api_receipt(conversation_id, branch_id,
+            memory_spec("original-window"), "original-window", "original-window", &detail,
+            Some(("memory_trigger", "client-key", "digest", at))).expect("admission");
+        let claimed_at = Timestamp::new(original.job.updated_at.get() + 1);
+        let claim = database.claim(original.job.id, WorkerId::new(), claimed_at,
+            Duration::from_secs(10), &availability()).expect("claim").expect("claimed");
+        database.append_and_transition(JobMutation::Start { claim: claim.claim.clone(), at: claimed_at }).expect("start");
+        database.append_and_transition(JobMutation::Succeed { claim: claim.claim,
+            outcome: JobOutcome::Success { result_ref: OutcomeRef::Conversation(conversation_id) },
+            at: Timestamp::new(claimed_at.get() + 1),
+        }).expect("finished original job");
+        drop(database);
+        let database = Database::open(&path).expect("restart after completed admission");
+        let replay = database.admit_memory_job_with_api_receipt(conversation_id, branch_id,
+            memory_spec("next-forced-window"), "next-forced-window", "next-forced-window", &serde_json::json!({"frozen":"changed window"}),
+            Some(("memory_trigger", "client-key", "digest", at))).expect("replay after completion");
+        assert_eq!(replay.job.id, original.job.id);
+        assert!(!replay.created);
+        assert_eq!(replay.job.state, JobState::Succeeded);
+        assert_eq!(database.admit_memory_job_with_api_receipt(conversation_id, branch_id,
+            memory_spec("conflicting-window"), "conflicting-window", "conflicting-window", &detail,
+            Some(("memory_trigger", "client-key", "different digest", at))), Err(StoreError::IdempotencyConflict));
+        let count: i64 = database.connection().expect("connection").query_row("SELECT count(*) FROM jobs", [], |row| row.get(0)).expect("count");
+        assert_eq!(count, 1);
+        drop(database);
+        std::fs::remove_file(path).expect("cleanup database");
     }
 
     #[test]

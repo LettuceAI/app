@@ -86,6 +86,24 @@ impl<
             Err(CompanionSoulWriterRunRepositoryError::NotFound) => {}
             Err(error) => return Err(CompanionSoulWriterAdmissionError::Run(error)),
         }
+        let (spec, mut run) = self.prepare(request)?;
+        let admitted = self.jobs.create_or_get(spec).map_err(CompanionSoulWriterAdmissionError::Job)?;
+        run.job_id = admitted.job.id;
+        let run = self
+            .repository
+            .admit_companion_soul_writer_run(run)
+            .map_err(CompanionSoulWriterAdmissionError::Run)?;
+        Ok(CompanionSoulWriterAdmission {
+            run,
+            job: admitted.job,
+            created: admitted.created,
+        })
+    }
+
+    pub(crate) fn prepare(
+        &self,
+        request: CompanionSoulWriterAdmissionRequest<'_>,
+    ) -> Result<(JobSpec, CompanionSoulWriterRun), CompanionSoulWriterAdmissionError> {
         if request.prompt.status != LifecycleStatus::Active
             || request.prompt.purpose != PromptPurpose::CompanionSoulWriter
             || request.prompt.revision.get() == 0
@@ -128,10 +146,7 @@ impl<
                 .to_string(),
         )
         .map_err(|_| CompanionSoulWriterAdmissionError::InvalidInput)?;
-        let admitted = self
-            .jobs
-            .create_or_get(
-                JobSpec::new(
+        let spec = JobSpec::new(
                     JobKind::CompanionSoulWriter,
                     subject,
                     OutcomeRef::Request(request.request_id),
@@ -145,12 +160,10 @@ impl<
                     ResourceClass::Cpu,
                 ])
                 .with_priority(JobPriority::Interactive)
-                .with_policies(RecoveryPolicy::Restart, CancellationPolicy::Cooperative),
-            )
-            .map_err(CompanionSoulWriterAdmissionError::Job)?;
+                .with_policies(RecoveryPolicy::Restart, CancellationPolicy::Cooperative);
         let run = CompanionSoulWriterRun {
             request_id: request.request_id,
-            job_id: admitted.job.id,
+            job_id: lettuce_types::JobId::new(),
             primary_profile: request.primary_profile,
             fallback_profile: request.fallback_profile,
             prompt_id: request.prompt.id,
@@ -161,14 +174,6 @@ impl<
             created_at: request.now,
             rounds: Vec::new(),
         };
-        let run = self
-            .repository
-            .admit_companion_soul_writer_run(run)
-            .map_err(CompanionSoulWriterAdmissionError::Run)?;
-        Ok(CompanionSoulWriterAdmission {
-            run,
-            job: admitted.job,
-            created: admitted.created,
-        })
+        Ok((spec, run))
     }
 }

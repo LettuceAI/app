@@ -104,37 +104,9 @@ impl CompanionSoulWriterRunRepository for Database {
         &self,
         run: CompanionSoulWriterRun,
     ) -> Result<CompanionSoulWriterRun, CompanionSoulWriterRunRepositoryError> {
-        run.validate()?;
-        if !run.rounds.is_empty() {
-            return Err(CompanionSoulWriterRunRepositoryError::Invalid);
-        }
-        let run_json = encode_versioned(&run, RUN_FORMAT_VERSION).map_err(failure)?;
-        let rounds_json = encode_versioned(&run.rounds, ROUNDS_FORMAT_VERSION).map_err(failure)?;
         let mut connection = self.connection().map_err(failure)?;
-        let tx = connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(failure)?;
-        let inserted = tx
-            .execute(
-                "INSERT OR IGNORE INTO companion_soul_writer_runs (
-                    request_id, job_id, prompt_id, prompt_revision, created_at, run_json, rounds_json
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                params![
-                    run.request_id.to_string(),
-                    run.job_id.to_string(),
-                    run.prompt_id.to_string(),
-                    i64::try_from(run.prompt_revision.get()).map_err(failure)?,
-                    run.created_at.get(),
-                    run_json,
-                    rounds_json,
-                ],
-            )
-            .map_err(failure)?;
-        let stored =
-            load_in(&tx, run.request_id)?.ok_or(CompanionSoulWriterRunRepositoryError::Failure)?;
-        if inserted == 0 && stored != run {
-            return Err(CompanionSoulWriterRunRepositoryError::Conflict);
-        }
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(failure)?;
+        let stored = admit_run_in(&tx, run)?;
         tx.commit().map_err(failure)?;
         Ok(stored)
     }
@@ -220,4 +192,37 @@ impl Database {
         tx.commit().map_err(failure)?;
         Ok(run)
     }
+}
+
+pub(crate) fn admit_run_in(
+    tx: &Transaction<'_>, run: CompanionSoulWriterRun,
+) -> Result<CompanionSoulWriterRun, CompanionSoulWriterRunRepositoryError> {
+    run.validate()?;
+    if !run.rounds.is_empty() {
+        return Err(CompanionSoulWriterRunRepositoryError::Invalid);
+    }
+    let run_json = encode_versioned(&run, RUN_FORMAT_VERSION).map_err(failure)?;
+    let rounds_json = encode_versioned(&run.rounds, ROUNDS_FORMAT_VERSION).map_err(failure)?;
+    let inserted = tx
+        .execute(
+            "INSERT OR IGNORE INTO companion_soul_writer_runs (
+                request_id, job_id, prompt_id, prompt_revision, created_at, run_json, rounds_json
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                run.request_id.to_string(),
+                run.job_id.to_string(),
+                run.prompt_id.to_string(),
+                i64::try_from(run.prompt_revision.get()).map_err(failure)?,
+                run.created_at.get(),
+                run_json,
+                rounds_json,
+            ],
+        )
+        .map_err(failure)?;
+    let stored =
+        load_in(tx, run.request_id)?.ok_or(CompanionSoulWriterRunRepositoryError::Failure)?;
+    if inserted == 0 && stored != run {
+        return Err(CompanionSoulWriterRunRepositoryError::Conflict);
+    }
+    Ok(stored)
 }
