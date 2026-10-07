@@ -135,7 +135,14 @@ impl ApiContext {
                 committed.send_modify(|count| *count = count.wrapping_add(1));
             });
         }
-        Self {
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        {
+            parts.inference = Arc::new(super::local_runtime_events::RoutedInference {
+                inference: parts.inference,
+                router: parts.backend.local_runtime_events().clone(),
+            });
+        }
+        let context = Self {
             inner: Arc::new(ApiContextInner {
                 models: ModelSlots::new(Arc::clone(&parts.models)),
                 parts,
@@ -153,7 +160,20 @@ impl ApiContext {
                 image: super::image::ImageApiState::default(),
                 speech: super::speech::SpeechApiState::default(),
             }),
+        };
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        {
+            let weak = context.downgrade();
+            context
+                .backend()
+                .local_runtime_events()
+                .set_global(move |event| {
+                    if let Some(context) = weak.upgrade() {
+                        context.runtime_report_changed(event);
+                    }
+                });
         }
+        context
     }
 
     /// Opens the production backend under the app data directory: the active
@@ -425,6 +445,11 @@ impl ApiContext {
             url: format!("{}{asset_id}", self.inner.parts.asset_url_base),
             asset_id,
         }
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    pub(crate) fn downgrade(&self) -> WeakApiContext {
+        WeakApiContext(Arc::downgrade(&self.inner))
     }
 
     pub(crate) fn inference(&self) -> &dyn InferencePort {
@@ -718,5 +743,15 @@ impl MemoryEmbeddingEngine for UnavailableEmbedding {
         _cancellation: &CancellationToken,
     ) -> Result<EmbeddingVector, EmbeddingGenerationError> {
         Err(EmbeddingGenerationError::Unavailable)
+    }
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub(crate) struct WeakApiContext(std::sync::Weak<ApiContextInner>);
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+impl WeakApiContext {
+    pub(crate) fn upgrade(&self) -> Option<ApiContext> {
+        self.0.upgrade().map(|inner| ApiContext { inner })
     }
 }

@@ -88,3 +88,5 @@ The four conversation copy wrappers pass typed requests to lettuce-app. The shel
 The memory and companion command modules forward typed requests to lettuce-app one for one: manual memory edits, the memory read, forced cycle controls, the cycle log, revert and error dismissal, Soul reads and growth edits, the Soul writer job and scheduled notes. Forced cycles and the Soul writer return a job id; their progress, text deltas and results arrive through `job_watch`.
 
 Generation channels transport typed speaker selection events along with text deltas and settlement. Late stream attachment receives the resolved speaker from the application API; the shell does not perform speaker selection.
+
+Generation and job channels also transport typed local runtime notices. Job watches carry throughput separately from text. The global application event transports local runtime report changes with model ids; the application composition performs the request routing and model resolution.

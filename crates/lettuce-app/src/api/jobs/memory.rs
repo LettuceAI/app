@@ -272,6 +272,8 @@ pub(crate) struct MemoryJobOutput {
 }
 
 struct MemoryStream {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    _runtime_events: crate::api::local_runtime_events::FlowRegistration,
     forwarder: tokio::task::JoinHandle<()>,
     _shutdown: crate::api::worker::ShutdownLink,
 }
@@ -338,8 +340,14 @@ impl crate::CompanionMemoryJobOutput for MemoryJobOutput {
             self.context.shutdown_token(),
             cancellation.clone(),
         );
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        let runtime_events = self
+            .context
+            .register_runtime_job_events(job_id, cancellation.clone());
         self.context.jobs().start_running(job_id, cancellation);
         let stream = MemoryStream {
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            _runtime_events: runtime_events,
             forwarder: tokio::spawn(forward(receiver, progress)),
             _shutdown: shutdown,
         };
@@ -402,3 +410,7 @@ pub(super) fn soul_draft_view(
         draft: Box::new(crate::api::companion::draft_from_document(document)?),
     }))
 }
+
+#[cfg(all(test, not(any(target_os = "android", target_os = "ios"))))]
+#[path = "memory_live_tests.rs"]
+mod live_event_tests;

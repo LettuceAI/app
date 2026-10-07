@@ -368,3 +368,11 @@ pub struct LocalFileRunnability {
     pub quantization: String,
     pub metadata_available: bool,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeNoticeCode {
+    MtpDisabledForVision,
+    KvCacheMovedToRam,
+}

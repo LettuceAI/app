@@ -126,3 +126,5 @@ Ignored tests compare greedy DFlash output with plain generation on a counting p
 ## Tests on real models
 
 Ignored tests run against real files: `LETTUCE_PLAN_MODEL` prints the offload plan, an engine test loads a model on the CPU, and the generation path has been checked on a real model for CPU generation, prompt-cache reuse and MTP.
+
+Host notices retain the requesting inference id, like model load progress and heartbeats, so the application routes each signal to its live turn or job. KV fallback notice deduplication remains in the engine and resets with the loaded model.

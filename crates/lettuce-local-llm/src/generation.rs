@@ -104,7 +104,10 @@ pub enum LlamaHostEvent {
         request_id: Option<String>,
         heartbeat: GenerationHeartbeat,
     },
-    Notice(LlamaNotice),
+    Notice {
+        request_id: Option<String>,
+        notice: LlamaNotice,
+    },
     RuntimeReportUpdated {
         model_path: String,
     },

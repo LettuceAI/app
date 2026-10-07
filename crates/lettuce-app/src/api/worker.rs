@@ -101,6 +101,10 @@ impl ConversationGenerationWorker {
             }));
         let turn_label = next.turn_id.to_string();
         let (cancellation, _shutdown_link) = shutdown_child(context.shutdown_token());
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        let mut runtime_events = None;
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        let event_cancellation = cancellation.clone();
         let mut stream_sink = None;
         let mut forwarder = None;
         let outcome = runner
@@ -118,6 +122,10 @@ impl ConversationGenerationWorker {
                 },
                 context.clock(),
                 || {
+                    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+                    {
+                        runtime_events = Some(context.register_runtime_turn_events(next.turn_id, event_cancellation));
+                    }
                     let sink = context.stream(next.turn_id)?;
                     sink.emit(dto::GenerationEvent::Started {
                         turn_id: turn_label.clone(),

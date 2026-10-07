@@ -118,6 +118,10 @@ pub(super) struct FakeProvider {
     reply: Reply,
     pub(super) entered: tokio::sync::Notify,
     pub(super) requests: Mutex<Vec<InferenceRequest>>,
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    pub(super) runtime_events: std::sync::atomic::AtomicBool,
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    events_router: Arc<super::local_runtime_events::RuntimeEventRouter>,
 }
 
 #[async_trait::async_trait]
@@ -127,6 +131,26 @@ impl InferencePort for FakeProvider {
             .lock()
             .expect("requests")
             .push(request.clone());
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        if self
+            .runtime_events
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            use lettuce_local_llm::generation::{GenerationHeartbeat, LlamaHostEvent, LlamaNotice};
+            self.events_router.emit(LlamaHostEvent::Notice {
+                request_id: Some(request.attempt_id.to_string()),
+                notice: LlamaNotice::MtpDisabledForVision,
+            });
+            self.events_router.emit(LlamaHostEvent::Heartbeat {
+                request_id: Some(request.attempt_id.to_string()),
+                heartbeat: GenerationHeartbeat {
+                    tokens: 4,
+                    elapsed_ms: 10,
+                    tokens_per_second: 400.0,
+                    recent_text: "ignored heartbeat text".into(),
+                },
+            });
+        }
         if let Some(sink) = request.stream_sink {
             for (sequence, text) in (1..).zip(["Hel", "lo."]) {
                 self.runtime
@@ -283,6 +307,10 @@ pub(super) fn harness_over_files(
         reply,
         entered: tokio::sync::Notify::new(),
         requests: Mutex::new(Vec::new()),
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        runtime_events: std::sync::atomic::AtomicBool::new(false),
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        events_router: backend.local_runtime_events().clone(),
     });
     let events = Arc::new(RecordingEvents::default());
     let context = ApiContext::new(ApiContextParts {

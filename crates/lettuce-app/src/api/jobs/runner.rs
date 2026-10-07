@@ -315,8 +315,12 @@ impl JobRunner {
         if requested {
             cancellation.cancel();
         }
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        let runtime_events = context.register_runtime_job_events(job_id, cancellation);
         let lanes = Arc::clone(&self.lanes);
         let task = tokio::spawn(async move {
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            let _runtime_events = runtime_events;
             let _link = link;
             let progress: Arc<dyn JobProgressSink> = Arc::new(WatchSink {
                 context: context.clone(),

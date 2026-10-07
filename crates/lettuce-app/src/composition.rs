@@ -25,6 +25,8 @@ pub struct AppBackend {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     llama_events: Option<crate::LlamaEventSink>,
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    llama_routes: Arc<crate::api::local_runtime_events::RuntimeEventRouter>,
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     pub(crate) local_diffusion:
         Option<Arc<lettuce_image_generation::sd_runtime::server::LocalDiffusionEngine>>,
 }
@@ -64,7 +66,7 @@ impl AppBackend {
             }
         }
         let database = Arc::new(database);
-        Ok(Self {
+        let backend = Self {
             whisper_runtime: Arc::new(WhisperCppRuntime::new(database.clone())),
             database,
             built_in_prompt_ids,
@@ -75,8 +77,24 @@ impl AppBackend {
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             llama_events: None,
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            llama_routes: Arc::default(),
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
             local_diffusion: None,
-        })
+        };
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        let backend = {
+            let routes = backend.llama_routes.clone();
+            backend
+                .with_llama_event_sink(crate::LlamaEventSink::new(move |event| routes.emit(event)))
+        };
+        Ok(backend)
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    pub(crate) fn local_runtime_events(
+        &self,
+    ) -> &Arc<crate::api::local_runtime_events::RuntimeEventRouter> {
+        &self.llama_routes
     }
 
     /// The model files llama.cpp holds open or a queued request names.

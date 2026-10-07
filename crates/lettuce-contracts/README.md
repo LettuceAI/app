@@ -55,3 +55,5 @@ A revert refused because the user edited an item the cycle changed carries `ApiE
 `ApiEvent::MemoryChanged` names a conversation whose `memory_get` result changed.
 
 Generation streams include `SpeakerSelecting` and `SpeakerSelected` with the resolved character id before text deltas. The API replays the resolved speaker to a late stream attached to a running turn.
+
+Local runtime notices carry a typed code on a generation or job stream. `JobEvent::Throughput` carries generated tokens and tokens per second without duplicating text deltas. `ApiEvent::LocalModelRuntimeReportChanged` names the local model profiles whose stored report changed.

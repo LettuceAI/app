@@ -55,3 +55,5 @@ Facts about how `lettuce-providers` relates to the legacy app (2.2.x). The crate
 
 - Generic extra-body passthrough behind `extra_body_keys` belongs to the model-parameters slice (`lettuce-models` profile config). Ollama's twelve native options and the OpenRouter pinned endpoint are implemented; duplicate legacy context, output and repetition fields map to provider-neutral settings.
 - Tauri commands for the catalog, model listing and key verification (phase (c)).
+
+Local runtime notice envelopes carry the inference attempt id instead of emitting global toast text (`old-code/src-tauri/src/llama_cpp/mod.rs:2598-2607,3544-3556`). This changes routing only; the engine decides when each notice is raised.

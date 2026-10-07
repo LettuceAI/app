@@ -1370,6 +1370,28 @@ mod tests {
     use super::*;
 
     #[test]
+    fn kv_cache_notice_is_consumed_once_across_requests_using_the_loaded_model() {
+        let engine = LlamaEngine::new();
+        engine.state.lock().expect("state").model_path = Some("model.gguf".into());
+        assert!(
+            engine
+                .consume_kqv_fallback_toast("model.gguf")
+                .expect("first turn")
+        );
+        assert!(
+            !engine
+                .consume_kqv_fallback_toast("model.gguf")
+                .expect("second turn")
+        );
+        engine.state.lock().expect("state").kqv_fallback_toast_shown = false;
+        assert!(
+            engine
+                .consume_kqv_fallback_toast("model.gguf")
+                .expect("reloaded model")
+        );
+    }
+
+    #[test]
     fn gpu_progress_ranges_follow_the_split_after_the_cpu_layers() {
         let ranges = compute_gpu_progress_ranges(
             &["A".to_string(), "B".to_string()],

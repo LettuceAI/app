@@ -207,3 +207,5 @@ The request flow:
 4. Linked results are downloaded, data URLs and raw base64 decoded, and usage read from the response.
 
 ComfyUI uses the account's `ProviderConfig::ComfyUi` workflows: upload the inputs, substitute `%TOKEN%` placeholders, post to `/prompt`, poll `/history` every 1.5 s up to 400 times, and fetch the result from `/view`.
+
+The local llama observer preserves the inference attempt id on load progress, heartbeat and notice envelopes; runtime report changes remain model-path signals raised after storage. The application owns delivery to generation and job streams.

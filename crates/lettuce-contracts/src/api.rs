@@ -163,6 +163,9 @@ pub struct ApiError {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ApiEvent {
+    LocalModelRuntimeReportChanged {
+        model_ids: Vec<String>,
+    },
     GenerationSettled {
         conversation_id: String,
         turn_id: String,

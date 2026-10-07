@@ -126,7 +126,10 @@ impl GenerationObserver for ForwardingObserver {
     }
 
     fn notice(&self, notice: LlamaNotice) {
-        self.host.event(LlamaHostEvent::Notice(notice));
+        self.host.event(LlamaHostEvent::Notice {
+            request_id: self.request_id.clone(),
+            notice,
+        });
     }
 
     fn runtime_report_updated(&self, model_path: &str) {

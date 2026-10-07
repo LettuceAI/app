@@ -744,6 +744,10 @@ pub enum GenerationEvent {
     Started {
         turn_id: String,
     },
+    Notice {
+        turn_id: String,
+        code: crate::RuntimeNoticeCode,
+    },
     SpeakerSelecting {
         turn_id: String,
     },

@@ -23,6 +23,8 @@ mod hugging_face;
 mod image;
 mod inspect;
 mod jobs;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub(crate) mod local_runtime_events;
 mod local_models;
 mod mapping;
 mod memory;

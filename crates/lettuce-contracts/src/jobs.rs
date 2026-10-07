@@ -339,6 +339,14 @@ pub struct JobAccepted {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum JobEvent {
+    Notice {
+        code: crate::RuntimeNoticeCode,
+    },
+    Throughput {
+        #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+        tokens: u64,
+        tokens_per_second: f64,
+    },
     Progress {
         job: JobView,
     },

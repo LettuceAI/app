@@ -40,3 +40,5 @@ Facts about how `lettuce-local-llm` relates to the legacy app (2.2.x). The crate
 
 - The previous README listed as next steps: report and metrics storage and host events in the app, the runtime commands (devices, embedded template, unload, context info), then stable-diffusion.cpp. `lettuce-app` now has `DatabaseLlamaHost` and the device, embedded template, unload and context info commands (`models/local_llama.rs`).
 - DSpark note: DeepSeek's Qwen3-4B block-7 drafter barely drafts terse counting, upstream included, which is why its live test uses a 64-token explanation.
+
+The host notice envelope now carries the request id for application routing. The notice itself and the once-per-load KV fallback rule remain unchanged (`old-code/src-tauri/src/llama_cpp/mod.rs:2598-2607,3544-3556`; `old-code/src-tauri/src/llama_cpp/desktop/engine.rs:1399-1441`). No permanent model-path deduplication is added.
