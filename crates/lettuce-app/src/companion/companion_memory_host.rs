@@ -214,6 +214,32 @@ where
         lease_for: Duration,
         allowed: &ResourceAvailability,
     ) -> Result<Vec<CompanionMemoryClaimedWork>, CompanionMemoryHostError> {
+        let branch_id = ConversationReader::get(self.repository, conversation_id)
+            .map_err(CompanionMemoryHostError::Conversation)?
+            .conversation
+            .active_branch_id;
+        self.after_turn_for_branch(
+            conversation_id,
+            branch_id,
+            operation,
+            worker_id,
+            now,
+            lease_for,
+            allowed,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn after_turn_for_branch(
+        &self,
+        conversation_id: ConversationId,
+        branch_id: lettuce_types::ConversationBranchId,
+        operation: GenerationOperation,
+        worker_id: WorkerId,
+        now: TimestampMillis,
+        lease_for: Duration,
+        allowed: &ResourceAvailability,
+    ) -> Result<Vec<CompanionMemoryClaimedWork>, CompanionMemoryHostError> {
         self.complete_pending_rewinds(conversation_id, now)?;
         if operation == GenerationOperation::Regenerate {
             return Ok(Vec::new());
@@ -224,8 +250,9 @@ where
         let run_mode = run_mode(active.settings.run_mode);
         let dispatcher = CompanionMemoryDispatchCoordinator::new(self.repository, self.repository);
         if active.companion {
-            Ok(dispatcher.admit_companion_after_turn_and_claim(
+            Ok(dispatcher.admit_companion_for_branch_and_claim(
                 conversation_id,
+                branch_id,
                 MAX_COMPANION_POST_TURN_EFFECTS,
                 active.settings.summary_message_interval,
                 run_mode,
@@ -235,8 +262,9 @@ where
                 allowed,
             )?)
         } else {
-            Ok(dispatcher.admit_plain_after_turn_and_claim(
+            Ok(dispatcher.admit_plain_for_branch_and_claim(
                 conversation_id,
+                branch_id,
                 active.settings.summary_message_interval,
                 run_mode,
                 worker_id,
@@ -616,26 +644,38 @@ where
 
     /// Runs passes until no turn asked for another or the conversation is
     /// gone; a failed pass is logged.
+    #[allow(clippy::too_many_arguments)]
     pub async fn drive(
         &self,
         scheduler: &crate::PostTurnMemoryScheduler,
         conversation_id: ConversationId,
+        branch_id: lettuce_types::ConversationBranchId,
         worker_id: WorkerId,
         lease_for: Duration,
         clock: &dyn lettuce_jobs::Clock,
         follow_ups: &dyn crate::CompanionFollowUps,
     ) {
-        let guard =
-            crate::memory::post_turn_memory_scheduler::DriveGuard::new(scheduler, conversation_id);
+        let guard = crate::memory::post_turn_memory_scheduler::DriveGuard::new(
+            scheduler,
+            conversation_id,
+            branch_id,
+        );
         loop {
-            scheduler.begin(conversation_id);
+            scheduler.begin(conversation_id, branch_id);
             if !self
-                .run_pass(conversation_id, worker_id, lease_for, clock, follow_ups)
+                .run_pass(
+                    conversation_id,
+                    Some(branch_id),
+                    worker_id,
+                    lease_for,
+                    clock,
+                    follow_ups,
+                )
                 .await
             {
                 return;
             }
-            if !scheduler.finish(conversation_id) {
+            if !scheduler.finish(conversation_id, branch_id) {
                 guard.release();
                 return;
             }
@@ -674,8 +714,15 @@ where
             .filter_map(|job| job.subject.id.as_str().parse::<ConversationId>().ok())
             .collect::<std::collections::BTreeSet<_>>();
         for conversation_id in conversations {
-            self.run_pass(conversation_id, worker_id, lease_for, clock, follow_ups)
-                .await;
+            self.run_pass(
+                conversation_id,
+                None,
+                worker_id,
+                lease_for,
+                clock,
+                follow_ups,
+            )
+            .await;
             if let Err(error) = self
                 .resume_inactive_branches(
                     conversation_id,
@@ -793,13 +840,26 @@ where
     async fn run_pass(
         &self,
         conversation_id: ConversationId,
+        branch_id: Option<lettuce_types::ConversationBranchId>,
         worker_id: WorkerId,
         lease_for: Duration,
         clock: &dyn lettuce_jobs::Clock,
         follow_ups: &dyn crate::CompanionFollowUps,
     ) -> bool {
-        let works = match self.after_turn(
+        let branch_id = match branch_id {
+            Some(branch_id) => branch_id,
+            None => match ConversationReader::get(self.repository, conversation_id) {
+                Ok(aggregate) => aggregate.conversation.active_branch_id,
+                Err(ConversationRepositoryError::NotFound) => return false,
+                Err(error) => {
+                    tracing::warn!(%conversation_id, %error, "post-turn memory conversation could not be read");
+                    return true;
+                }
+            },
+        };
+        let works = match self.after_turn_for_branch(
             conversation_id,
+            branch_id,
             GenerationOperation::Send,
             worker_id,
             clock.now(),

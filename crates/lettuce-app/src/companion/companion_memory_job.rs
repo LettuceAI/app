@@ -321,6 +321,57 @@ impl<
         )
     }
 
+    pub fn discover_and_admit_for_branch(
+        &self,
+        conversation_id: ConversationId,
+        branch_id: ConversationBranchId,
+        limit: u16,
+        summary_message_interval: u32,
+        run_mode: DynamicMemoryRunMode,
+        now: TimestampMillis,
+    ) -> Result<Option<CompanionPostTurnMemoryAdmission>, CompanionPostTurnMemoryAdmissionError>
+    {
+        if limit == 0 || limit > MAX_COMPANION_POST_TURN_EFFECTS || summary_message_interval == 0 {
+            return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
+        }
+        let effects = self
+            .effects
+            .list_processing_for_conversation(conversation_id, limit)
+            .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?;
+        if effects.is_empty() {
+            return Ok(None);
+        }
+        if effects.iter().any(|effect| {
+            effect.status != CompanionTurnEffectStatus::Processing
+                || effect.conversation_id != conversation_id
+                || effect.source_window.is_some()
+                || effect.summary.is_some()
+        }) {
+            return Err(CompanionPostTurnMemoryAdmissionError::InvalidBatch);
+        }
+        let mut selected = Vec::new();
+        for effect in effects {
+            if self
+                .effects
+                .branch_for_effect(effect.id)
+                .map_err(CompanionPostTurnMemoryAdmissionError::Effects)?
+                == branch_id
+            {
+                selected.push(effect);
+            }
+        }
+        if selected.is_empty() {
+            return Ok(None);
+        }
+        self.admit_processing_effects(
+            conversation_id,
+            selected,
+            summary_message_interval,
+            run_mode,
+            now,
+        )
+    }
+
     fn admit_processing_effects(
         &self,
         conversation_id: ConversationId,

@@ -4969,6 +4969,16 @@ fn successful_memory_cycle() -> ScriptedInference {
     ])
 }
 
+fn scenario_branch(
+    database: &Database,
+    scenario: &Scenario,
+) -> lettuce_types::ConversationBranchId {
+    ConversationReader::get(database, scenario.conversation_id)
+        .expect("conversation")
+        .conversation
+        .active_branch_id
+}
+
 fn stored_summary(database: &Database, scenario: &Scenario) -> Option<String> {
     MemorySummaryRepository::get_summary(database, scenario.space_id.expect("memory space"))
         .expect("summary")
@@ -4982,25 +4992,67 @@ async fn post_turn_memory_driver_runs_the_due_cycle_and_releases_the_conversatio
     let engine = ScenarioEmbeddingEngine;
     let memory = successful_memory_cycle();
     let host = backend.companion_memory_host(&engine, &memory);
+    let root = ConversationReader::get(backend.database(), scenario.conversation_id)
+        .expect("conversation")
+        .conversation;
+    let anchor = branch_timeline(
+        backend.database(),
+        scenario.conversation_id,
+        root.active_branch_id,
+    )
+    .into_iter()
+    .find(|message| message.message.role == MessageRole::User)
+    .expect("user anchor")
+    .message
+    .id;
+    let child = backend
+        .database()
+        .fork_branch(
+            &lettuce_conversations::ForkBranch {
+                conversation_id: scenario.conversation_id,
+                source_branch_id: root.active_branch_id,
+                at_message_id: Some(anchor),
+                expected_revision: root.revision,
+                operation: OperationToken {
+                    key: key("driver-fork-after-turn"),
+                    request_digest: ContentHash::parse("df".repeat(32)).expect("digest"),
+                },
+            },
+            TimestampMillis::new(1_025),
+        )
+        .expect("fork before the driver starts")
+        .value
+        .branch
+        .id;
     let scheduler = crate::PostTurnMemoryScheduler::new();
     let clock = FakeClock::new(TimestampMillis::new(1_030));
-    assert!(scheduler.enqueue(scenario.conversation_id));
-    assert!(!scheduler.enqueue(scenario.conversation_id));
+    assert!(scheduler.enqueue(scenario.conversation_id, root.active_branch_id));
+    assert!(!scheduler.enqueue(scenario.conversation_id, root.active_branch_id));
     host.drive(
         &scheduler,
         scenario.conversation_id,
+        root.active_branch_id,
         WorkerId::new(),
         LEASE,
         &clock,
         &crate::CompanionFollowUpHost::new(backend.database(), &memory),
     )
     .await;
-    assert!(!scheduler.is_active(scenario.conversation_id));
+    assert!(!scheduler.is_active(scenario.conversation_id, root.active_branch_id));
     assert_eq!(
         stored_summary(backend.database(), &scenario).as_deref(),
         Some("The user chose tea.")
     );
     assert_eq!(memory.requests.lock().expect("memory requests").len(), 2);
+    let child_space =
+        MemoryRepository::get_for_branch(backend.database(), scenario.conversation_id, child)
+            .expect("child space")
+            .expect("space");
+    assert!(
+        MemorySummaryRepository::get_summary(backend.database(), child_space.id)
+            .expect("child summary")
+            .is_none()
+    );
 }
 
 async fn crash_during_memory_cycle(prefix: &str) -> (std::path::PathBuf, Scenario, JobId) {
@@ -8769,13 +8821,17 @@ async fn a_delete_queued_behind_a_memory_run_is_decided_again_after_new_messages
         let engine = ScenarioEmbeddingEngine;
         let host = backend.companion_memory_host(&engine, &blocking);
         let scheduler = crate::PostTurnMemoryScheduler::new();
-        assert!(scheduler.enqueue(scenario.conversation_id));
+        assert!(scheduler.enqueue(
+            scenario.conversation_id,
+            scenario_branch(backend.database(), &scenario)
+        ));
         let clock = FakeClock::new(TimestampMillis::new(1_030));
         let follow_up = crate::CompanionFollowUpHost::new(backend.database(), &blocking);
         tokio::select! {
             () = host.drive(
                 &scheduler,
                 scenario.conversation_id,
+                scenario_branch(backend.database(), &scenario),
                 WorkerId::new(),
                 LEASE,
                 &clock,
@@ -9172,7 +9228,10 @@ async fn deleting_a_chat_during_its_memory_run_cancels_the_run_first() {
     let engine = ScenarioEmbeddingEngine;
     let host = backend.companion_memory_host(&engine, inference.as_ref());
     let scheduler = crate::PostTurnMemoryScheduler::new();
-    assert!(scheduler.enqueue(conversation_id));
+    assert!(scheduler.enqueue(
+        conversation_id,
+        scenario_branch(backend.database(), &scenario)
+    ));
     let clock = FakeClock::new(TimestampMillis::new(1_030));
     let follow_up = crate::CompanionFollowUpHost::new(backend.database(), inference.as_ref());
     let delete = async {
@@ -9196,6 +9255,7 @@ async fn deleting_a_chat_during_its_memory_run_cancels_the_run_first() {
         host.drive(
             &scheduler,
             conversation_id,
+            scenario_branch(backend.database(), &scenario),
             WorkerId::new(),
             LEASE,
             &clock,
@@ -9227,13 +9287,17 @@ async fn memory_cycle_cut_by_exit(
     let engine = ScenarioEmbeddingEngine;
     let host = backend.companion_memory_host(&engine, &inference);
     let scheduler = crate::PostTurnMemoryScheduler::new();
-    assert!(scheduler.enqueue(conversation_id));
+    assert!(scheduler.enqueue(
+        conversation_id,
+        scenario_branch(backend.database(), &scenario)
+    ));
     let clock = FakeClock::new(TimestampMillis::new(1_030));
     let follow_up = crate::CompanionFollowUpHost::new(backend.database(), &inference);
     tokio::select! {
         () = host.drive(
             &scheduler,
             conversation_id,
+            scenario_branch(backend.database(), &scenario),
             WorkerId::new(),
             LEASE,
             &clock,

@@ -46,9 +46,7 @@ Facts about how `lettuce-memory` relates to the legacy app (2.2.x). The crate RE
 
 ## Not wired yet
 
-The previous README listed these as later slices. Supersession and a host worker (`lettuce-app/src/companion/companion_memory_host.rs`) exist now, so check the code before treating any of them as open:
+The memory host validates admitted companion effects and source-message identities and applies supersession through the shared reducer. API job-handler and generation-worker wiring remain in the composition root.
 
-- companion-required source validation;
-- supersession;
 - UI events for memory runs;
-- host worker wiring for background runs.
+- API job-handler and generation-worker wiring for background runs.

@@ -59,7 +59,7 @@ Facts about how `lettuce-app` relates to the legacy app (2.2.x): what follows le
 - `trigger`, retry, `skip` and `pending_approval_count` are legacy `trigger_dynamic_memory`, `retry_dynamic_memory`, `skip_dynamic_memory_cycle` and `dynamic_memory_pending_approval`. An explicit trigger clears the pending approval as legacy did. Approval matches the legacy forced-cycle cursor move; the group trigger keeps the legacy oldest cursor prefix; group retry has no model override, matching the legacy API. An existing run keeps its frozen settings as legacy's in-progress cycle kept the settings it had read.
 - The round-zero prompt uses the copied legacy budget variables and runtime-input wording; the tool-disabled fallback request, the tool result payloads, the tool contract (with legacy group wording and `123456` fallback examples) and the time-aware transcript format are legacy's. Recursive loops follow legacy's settings, and a recursive round without tool calls ends the cycle normally as legacy did.
 - Repair: the last answer for a text wins as with legacy's map insert, a response without a usable call still runs the structured fallback as legacy re-checked, and a failed repair round is logged and the cycle kept as legacy did. `start_cycle` is legacy's pre-summary decay.
-- The post-turn driver coalesces per conversation like legacy's scheduler; manually triggered cycles are not resumed after a crash, as legacy lost them. A failed window is admitted again on the next turn, as legacy retried a failed cycle.
+- The post-turn driver coalesces per branch within a conversation; legacy coalesced under the source session id (`old-code/src-tauri/src/chat_manager/memory/flow.rs:1721-1732,1753-1765`). An explicit finished-turn branch prevents a fork between completion and admission from moving the parent window to the child; manually triggered cycles are not resumed after a crash, as legacy lost them. A failed window is admitted again on the next turn, as legacy retried a failed cycle.
 - Create preparation embeds at legacy `embeddingDimensions` (default 768).
 - Re-embedding counts tokens with no special tokens and no cut, as legacy counted.
 
@@ -329,7 +329,6 @@ Everything the Tauri phase (phase (c)) still has to connect:
 - The advanced `lorebook_scan_depth` setting (1 to 20 recent messages, default 10): no Tauri command or settings control reads or writes it yet.
 - Automatic OpenRouter cost capture after inference (no host polling, scheduling or cache exists; `capture_job` is caller-triggered).
 - The analytics exit event.
-- Memory of a branch that a delete forks: the new branch starts from the conversation's single memory space, so memory is not yet "as of the anchor". Seeding it belongs with branch-aware memory.
 
 ## Image API: held and open
 

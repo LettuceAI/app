@@ -223,6 +223,37 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
+    pub fn admit_companion_for_branch_and_claim(
+        &self,
+        conversation_id: lettuce_types::ConversationId,
+        branch_id: lettuce_types::ConversationBranchId,
+        limit: u16,
+        summary_message_interval: u32,
+        run_mode: DynamicMemoryRunMode,
+        worker_id: WorkerId,
+        now: TimestampMillis,
+        lease_for: Duration,
+        allowed: &ResourceAvailability,
+    ) -> Result<Vec<CompanionMemoryClaimedWork>, CompanionMemoryDispatchError> {
+        let admission = CompanionPostTurnMemoryAdmissionCoordinator::new(self.effects, self.jobs)
+            .discover_and_admit_for_branch(
+            conversation_id,
+            branch_id,
+            limit,
+            summary_message_interval,
+            run_mode,
+            now,
+        )?;
+        self.claim_admissions(
+            admission.into_iter().collect(),
+            worker_id,
+            now,
+            lease_for,
+            allowed,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
     pub fn trigger_plain_and_claim(
         &self,
         conversation_id: lettuce_types::ConversationId,
@@ -307,6 +338,40 @@ where
         let admission =
             CompanionPostTurnMemoryAdmissionCoordinator::new(self.effects, self.jobs)
                 .admit_plain_after_turn(conversation_id, summary_message_interval, run_mode, now)?;
+        self.claim_admissions(
+            admission.into_iter().collect(),
+            worker_id,
+            now,
+            lease_for,
+            allowed,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn admit_plain_for_branch_and_claim(
+        &self,
+        conversation_id: lettuce_types::ConversationId,
+        branch_id: lettuce_types::ConversationBranchId,
+        summary_message_interval: u32,
+        run_mode: DynamicMemoryRunMode,
+        worker_id: WorkerId,
+        now: TimestampMillis,
+        lease_for: Duration,
+        allowed: &ResourceAvailability,
+    ) -> Result<Vec<CompanionMemoryClaimedWork>, CompanionMemoryDispatchError>
+    where
+        R: lettuce_conversations::ConversationReader
+            + lettuce_memory::MemoryRepository
+            + lettuce_memory::MemorySummaryRepository,
+    {
+        let admission = CompanionPostTurnMemoryAdmissionCoordinator::new(self.effects, self.jobs)
+            .admit_plain_for_branch(
+            conversation_id,
+            branch_id,
+            summary_message_interval,
+            run_mode,
+            now,
+        )?;
         self.claim_admissions(
             admission.into_iter().collect(),
             worker_id,
