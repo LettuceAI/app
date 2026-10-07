@@ -52,3 +52,5 @@ The memory host validates admitted companion effects and source-message identiti
 - API job-handler and generation-worker wiring for background runs.
 
 Manual item and user-summary counts can remain unknown without a tokenizer. Legacy substituted zero when counting failed (`old-code/src-tauri/src/chat_manager/memory/flow.rs:3791-3792`); null preserves the distinction. Hot-budget reduction refuses unknown counts instead of treating them as zero.
+
+Manual setters preserve legacy pin and temperature rules (`old-code/src-tauri/src/storage_manager/sessions.rs:4359-4404,4460-4504`). The branch edit history keeps legacy message anchors (`sessions.rs:3936-3993`) without its fifty-entry cap. The API transaction commits the edit, history and replay receipt together; legacy appended its edit history separately.

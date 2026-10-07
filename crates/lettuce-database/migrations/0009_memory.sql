@@ -654,3 +654,19 @@ CREATE TRIGGER dynamic_memory_tool_call_immutable_delete
 BEFORE DELETE ON dynamic_memory_admitted_tool_calls
 WHEN NOT EXISTS (SELECT 1 FROM purge_authorizations WHERE owner_id IN (SELECT conversation_id FROM dynamic_memory_runs WHERE id = OLD.run_id UNION ALL SELECT space_id FROM dynamic_memory_runs WHERE id = OLD.run_id))
 BEGIN SELECT RAISE(ABORT, 'dynamic-memory tool call cannot be deleted'); END;
+
+CREATE TABLE memory_manual_edits (
+    sequence INTEGER PRIMARY KEY CHECK (sequence >= 1),
+    id TEXT NOT NULL UNIQUE,
+    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE RESTRICT,
+    branch_id TEXT NOT NULL,
+    space_id TEXT NOT NULL REFERENCES memory_spaces(id) ON DELETE CASCADE,
+    anchor_message_id TEXT,
+    message_position INTEGER NOT NULL CHECK (message_position >= 0),
+    history_json TEXT NOT NULL CHECK (json_valid(history_json)),
+    created_at INTEGER NOT NULL,
+    undone_at INTEGER,
+    FOREIGN KEY (conversation_id, branch_id) REFERENCES conversation_branches(conversation_id, id) ON DELETE RESTRICT,
+    FOREIGN KEY (conversation_id, anchor_message_id) REFERENCES conversation_messages(conversation_id, id) ON DELETE RESTRICT
+) STRICT;
+CREATE INDEX memory_manual_edits_branch_idx ON memory_manual_edits(conversation_id, branch_id, sequence);

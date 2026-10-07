@@ -140,3 +140,5 @@ Branch-delete outbox history is preserved in version 3 backups with its stable b
 Conversation copies carry immutable protected source-scene provenance separately from launch origins, preserving copied scene messages under different target defaults (`old-code/src/core/storage/repo.ts:1898-1978`). Backup and sync retain the reference after source purge; launch-origin validation remains unchanged.
 
 Memory section version 5 and dynamic-memory section version 4 carry nullable item and summary counts in live state and frozen snapshots. Model summary checkpoints still require counted tokens. Legacy unknown counts were represented as zero after tokenizer failure (`old-code/src-tauri/src/chat_manager/memory/flow.rs:3791-3792`).
+
+Memory section version 6 preserves manual edit anchors, before/after items and summaries, revisions and undo state. Unlike the legacy capped edit list (`old-code/src-tauri/src/storage_manager/sessions.rs:3936-3993`), all durable branch edits survive export and restore.

@@ -2,6 +2,7 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
+mod manual;
 mod model;
 mod port;
 mod repair;
@@ -10,6 +11,10 @@ mod structured_fallback;
 mod text;
 mod tool;
 
+pub use manual::{
+    MemoryContextRevision, MemoryFieldChange, MemoryManualEdit, MemoryManualEditRecord,
+    MemoryManualHistory, MemoryManualMutation, MemoryManualReduction, reduce_manual_memory,
+};
 pub use model::{
     DynamicMemoryPendingApproval, DynamicMemoryRunMode, MAX_MEMORY_ITEMS, MAX_MEMORY_SUMMARY_BYTES,
     MAX_MEMORY_TEXT_BYTES, MemoryCategory, MemoryItem, MemoryOrigin, MemoryPolicy, MemoryShortId,

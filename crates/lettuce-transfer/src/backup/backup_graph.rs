@@ -1808,6 +1808,7 @@ mod tests {
                 version: crate::MEMORY_BACKUP_VERSION,
                 spaces: Vec::new(),
                 retrieval_accesses: Vec::new(),
+                manual_edits: Vec::new(),
             },
             memory_projections: crate::MemoryProjectionBackup {
                 version: crate::MEMORY_PROJECTION_BACKUP_VERSION,

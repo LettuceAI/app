@@ -396,7 +396,16 @@ fn read_memory(
             })
         })
         .collect::<Result<Vec<_>, ProviderBackupSourceError>>()?;
+    let manual_edits = transaction.prepare("SELECT history_json,undone_at FROM memory_manual_edits ORDER BY sequence")
+        .and_then(|mut statement| statement.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<i64>>(1)?)))?.collect::<rusqlite::Result<Vec<_>>>())
+        .map_err(backup_error)?.into_iter().map(|(history, undone_at)| {
+            Ok(lettuce_transfer::BackupMemoryManualEdit {
+                history: serde_json::from_str(&history).map_err(|_| ProviderBackupSourceError::InvalidData)?,
+                undone_at: undone_at.map(TimestampMillis::new),
+            })
+        }).collect::<Result<Vec<_>, ProviderBackupSourceError>>()?;
     Ok(MemoryBackup {
+        manual_edits,
         synced_cursors,
         version: MEMORY_BACKUP_VERSION,
         spaces,

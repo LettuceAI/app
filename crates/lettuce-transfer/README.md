@@ -55,7 +55,7 @@ A backup is complete: it holds every user-owned domain, every referenced media o
 | `data/conversation-outbox.json` | Operation records and the per-conversation event journal |
 | `data/companion-state.json` | Relationship and emotional state, signals, continuity episodes, replacement receipts; version 2 carries a conversation's private relationships when it owns them |
 | `data/companion-effects.json` | Turn effects and suffix-rewind receipts |
-| `data/memory.json` | Branch-owned spaces, items, summaries, retrieval receipts, and conversation-scoped pools (section version 5); nullable token counts and user-observed dates remain distinct from model source times |
+| `data/memory.json` | Branch-owned spaces, items, summaries, retrieval receipts, and conversation-scoped pools and manual edit history (section version 6); nullable token counts and user-observed dates remain distinct from model source times |
 | `data/memory-projections.json` | Stored embedding projections, ready and repair-needed |
 | `data/dynamic-memory.json` | Dynamic memory approvals, branch-owned runs, attempts, rounds, results and summary checkpoints (section version 4); starting snapshots preserve nullable token counts and user-observed dates |
 | `media/blobs/<hash>` | One section per ready media blob |
@@ -153,3 +153,5 @@ Conversation outbox backup version 3 includes branch-deletion events alongside r
 Conversation history backup version 3 includes copied scene source snapshot references separately from launch origins. Validation requires a scene message, a protected scene artifact and exclusive provenance, and exports the artifact descriptor for restore.
 
 Memory backup version 4 and dynamic-run backup version 3 preserve item and summary origins. Imported memories are tagged `import`; source-free user summaries remain distinct from model summaries with source coverage.
+
+Memory section version 6 carries uncapped manual edit history and undo timestamps alongside the current spaces. Restore validates the referenced conversation, branch, space and anchor and restores the history in the same transaction as the memory graph.

@@ -37,3 +37,5 @@ Conversation views return nullable origin conversation and message ids for prove
 `ConversationDuplicateRequest` selects the source, optional title and whether messages are copied. `ConversationCopyResult` carries the stable new conversation identity and the revision committed with its receipt.
 
 Character-copy requests carry source conversation, selected message and target character IDs plus an operation key. Whole-group copies omit the message boundary. New-group copies carry an ordered distinct member list, including the source owner. All return the stable new conversation ID and revision.
+
+Manual memory requests carry the conversation, expected memory revision and operation key. Update uses explicit keep/set choices for nullable categories and observed time; summary editing distinguishes set from clear. Mutation results return the original committed revision and item id for exact replay.

@@ -5954,6 +5954,7 @@ mod tests {
                 "memory_inherited_summaries",
                 "memory_inherited_summary_source_messages",
                 "memory_items",
+                "memory_manual_edits",
                 "memory_retrieval_accesses",
                 "memory_spaces",
                 "memory_summaries",

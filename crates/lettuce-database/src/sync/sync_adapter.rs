@@ -1365,6 +1365,11 @@ fn supported_change(change: &CanonicalChange) -> Result<bool, IncomingChangeErro
             lettuce_sync::COMPANION_NOTE_SYNC_VERSION,
         )
         | (
+            lettuce_sync::MEMORY_MANUAL_EDIT_SYNC_KIND,
+            lettuce_sync::MEMORY_MANUAL_EDIT_SYNC_SCHEMA,
+            lettuce_sync::MEMORY_MANUAL_EDIT_SYNC_VERSION,
+        )
+        | (
             lettuce_sync::MEMORY_ITEM_SYNC_KIND,
             lettuce_sync::MEMORY_ITEM_SYNC_SCHEMA,
             lettuce_sync::MEMORY_ITEM_SYNC_VERSION,
@@ -2407,6 +2412,55 @@ const MEMORY_INHERITED_SUMMARY_CODEC: SnapshotCodec = SnapshotCodec {
     }),
 };
 
+fn decode_manual_edit(
+    id: &str,
+    bytes: &[u8],
+) -> Result<lettuce_memory::MemoryManualEditRecord, ApplyOneError> {
+    let (_, operation) =
+        crate::sync::memory_sync_adapter::manual_owner(id).ok_or(ApplyOneError::Corrupt)?;
+    let record: lettuce_memory::MemoryManualEditRecord =
+        serde_json::from_slice(bytes).map_err(|_| ApplyOneError::Corrupt)?;
+    record.history.validate().map_err(memory_apply_error)?;
+    if operation != record.history.edit.id {
+        return Err(ApplyOneError::Corrupt);
+    }
+    Ok(record)
+}
+
+const MEMORY_MANUAL_EDIT_CODEC: SnapshotCodec = SnapshotCodec {
+    kind: lettuce_sync::MEMORY_MANUAL_EDIT_SYNC_KIND,
+    assets: no_assets,
+    empty: None,
+    seed: None,
+    decode: |id, bytes| decode_manual_edit(id, bytes).map(|_| ()),
+    current: |tx, id| {
+        crate::sync::memory_sync_adapter::sync_load_manual_edit(tx, id)
+            .map_err(memory_apply_error)?
+            .map(|record| {
+                json_payload(
+                    lettuce_sync::MEMORY_MANUAL_EDIT_SYNC_SCHEMA,
+                    lettuce_sync::MEMORY_MANUAL_EDIT_SYNC_VERSION,
+                    &record,
+                )
+            })
+            .transpose()
+    },
+    materialize: |tx, id, bytes| {
+        let record = decode_manual_edit(id, bytes)?;
+        crate::sync::memory_sync_adapter::sync_put_manual_edit(tx, id, &record)
+            .map_err(memory_apply_error)
+    },
+    ids: Some(|connection| {
+        crate::sync::memory_sync_adapter::sync_manual_edit_ids(connection)
+            .map_err(|_| ApplyOneError::Storage)
+    }),
+    delete: Some(|tx, change, _| {
+        crate::sync::memory_sync_adapter::sync_delete_manual_edit(tx, change.entity().id())
+            .map_err(memory_apply_error)?;
+        Ok(true)
+    }),
+};
+
 fn json_payload<T: serde::Serialize>(
     schema: &str,
     version: u32,
@@ -2980,7 +3034,7 @@ const CONVERSATION_MESSAGE_CODEC: SnapshotCodec = SnapshotCodec {
 
 /// Aggregates journaled by comparing their current state with the latest
 /// journaled snapshot, in dependency order (deletes run in reverse).
-const SCANNED_CODECS: [&SnapshotCodec; 36] = [
+const SCANNED_CODECS: [&SnapshotCodec; 37] = [
     &PROVIDER_ACCOUNT_CODEC,
     &MODEL_PROFILE_CODEC,
     &PERSONA_CODEC,
@@ -2999,6 +3053,7 @@ const SCANNED_CODECS: [&SnapshotCodec; 36] = [
     &MEMORY_ITEM_CODEC,
     &MEMORY_SUMMARY_CODEC,
     &MEMORY_INHERITED_SUMMARY_CODEC,
+    &MEMORY_MANUAL_EDIT_CODEC,
     &MEMORY_CURSOR_CODEC,
     &COMPANION_SOUL_CODEC,
     &COMPANION_NOTE_CODEC,

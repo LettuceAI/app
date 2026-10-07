@@ -86,3 +86,5 @@ Companion session payload version 2 carries the private relationship rows of a d
 Memory summary and inherited-summary payloads preserve user/model/import provenance, including a user summary with no source coverage; category and observed-time metadata are retained in item payloads.
 
 Item and own-summary payload version 4 and inherited-summary version 3 preserve nullable token counts. Their schema versions change the handshake fingerprint; derived counts remain conditional on the current text.
+
+Manual edit history is exchanged as canonical entities, retaining the legacy edit anchor semantics (`old-code/src-tauri/src/storage_manager/sessions.rs:3936-3993`). Local sequence, space and short ids are rebound rather than copying legacy SQLite row positions between devices.

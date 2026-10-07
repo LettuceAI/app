@@ -442,6 +442,10 @@ pub fn current_sync_schema_fingerprint() -> ContentHash {
             crate::MEMORY_INHERITED_SUMMARY_SYNC_VERSION,
         ),
         (
+            crate::MEMORY_MANUAL_EDIT_SYNC_SCHEMA,
+            crate::MEMORY_MANUAL_EDIT_SYNC_VERSION,
+        ),
+        (
             crate::MEMORY_ITEM_SYNC_SCHEMA,
             crate::MEMORY_ITEM_SYNC_VERSION,
         ),
@@ -529,7 +533,7 @@ mod tests {
         );
         assert_eq!(
             current_sync_schema_fingerprint().as_str(),
-            "c1b9cb9b1625bb7631d1cc657cc17b7742610ba2c53f831e8f5ae2efbcc24f42"
+            "d8c15d887a69ed7acc5e8c8cd48cef5330b09b4bbc85120b4ce090f6f3e2444a"
         );
     }
 

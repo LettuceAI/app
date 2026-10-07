@@ -2179,7 +2179,7 @@ pub(crate) mod tests {
         );
     }
 
-    fn fixture_branch(
+    pub(crate) fn fixture_branch(
         database: &Database,
         conversation_id: ConversationId,
     ) -> ConversationBranchId {
@@ -2195,7 +2195,7 @@ pub(crate) mod tests {
         id.parse().expect("branch id")
     }
 
-    fn conversation_fixture(
+    pub(crate) fn conversation_fixture(
         database: &Database,
     ) -> (
         ConversationId,

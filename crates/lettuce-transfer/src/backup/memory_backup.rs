@@ -4,7 +4,7 @@ use lettuce_memory::{MemoryRetrievalAccessReceipt, MemorySpaceSnapshot, MemorySu
 use lettuce_types::ConversationId;
 use serde::{Deserialize, Serialize};
 
-pub const MEMORY_BACKUP_VERSION: u32 = 5;
+pub const MEMORY_BACKUP_VERSION: u32 = 6;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -12,6 +12,7 @@ pub struct MemoryBackup {
     pub version: u32,
     pub spaces: Vec<BackupMemorySpace>,
     pub retrieval_accesses: Vec<MemoryRetrievalAccessReceipt>,
+    pub manual_edits: Vec<BackupMemoryManualEdit>,
     pub synced_cursors: Vec<BackupMemoryCursor>,
     /// The companion character that owns each shared memory pool.
     #[serde(default)]
@@ -20,6 +21,8 @@ pub struct MemoryBackup {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unbound_pools: Vec<MemorySpaceSnapshot>,
 }
+
+pub type BackupMemoryManualEdit = lettuce_memory::MemoryManualEditRecord;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -121,6 +124,34 @@ impl MemoryBackup {
                 })
             })
             .collect::<BTreeMap<_, _>>();
+        self.manual_edits
+            .sort_by_key(|record| record.history.sequence);
+        let mut edit_ids = BTreeSet::new();
+        let mut edit_sequences = BTreeSet::new();
+        for record in &self.manual_edits {
+            let edit = &record.history;
+            if edit.validate().is_err()
+                || !edit_ids.insert(edit.edit.id)
+                || !edit_sequences.insert(edit.sequence)
+                || !space_ids.contains(&edit.space_id)
+                || record.undone_at.is_some_and(|at| at < edit.edit.at)
+                || edit.anchor_message_id.is_some_and(|id| {
+                    messages
+                        .get(&id)
+                        .is_none_or(|(owner, _)| *owner != edit.edit.conversation_id)
+                })
+                || !history.conversations.iter().any(|entry| {
+                    entry.aggregate.conversation.id == edit.edit.conversation_id
+                        && entry
+                            .aggregate
+                            .branches
+                            .iter()
+                            .any(|branch| branch.id == edit.edit.branch_id)
+                })
+            {
+                return Err(MemoryBackupError::InvalidData);
+            }
+        }
         let attempts = runtime
             .conversations
             .iter()

@@ -517,3 +517,187 @@ pub(crate) fn sync_store_memory_cursor(
         .map_err(storage)?;
     Ok(())
 }
+
+pub(crate) fn manual_owner(id: &str) -> Option<(&str, lettuce_types::OperationId)> {
+    let (owner, operation) = id.split_once('/')?;
+    valid_owner(owner).then_some(())?;
+    Some((owner, operation.parse().ok()?))
+}
+
+pub(crate) fn sync_manual_edit_ids(connection: &Connection) -> rusqlite::Result<Vec<String>> {
+    connection.prepare(&format!("SELECT owners.owner || '/' || edit.id FROM memory_manual_edits edit JOIN ({OWNERS}) owners ON owners.space_id=edit.space_id ORDER BY 1"))?
+        .query_map([], |row| row.get(0))?.collect()
+}
+
+fn exchanged_manual_record(
+    record: &lettuce_memory::MemoryManualEditRecord,
+) -> lettuce_memory::MemoryManualEditRecord {
+    let mut record = record.clone();
+    let history = &mut record.history;
+    history.sequence = 1;
+    history.space_id = exchanged_space_id();
+    history.edit.space_id = exchanged_space_id();
+    for item in history
+        .before_item
+        .iter_mut()
+        .chain(history.after_item.iter_mut())
+    {
+        *item = exchanged_item(item);
+    }
+    for summary in history
+        .before_summary
+        .iter_mut()
+        .chain(history.after_summary.iter_mut())
+    {
+        summary.space_id = exchanged_space_id();
+    }
+    match &mut history.edit.mutation {
+        lettuce_memory::MemoryManualMutation::Add { item } => *item = exchanged_item(item),
+        lettuce_memory::MemoryManualMutation::Summary {
+            summary: Some(summary),
+        } => summary.space_id = exchanged_space_id(),
+        _ => {}
+    }
+    record
+}
+
+pub(crate) fn sync_load_manual_edit(
+    transaction: &Transaction<'_>,
+    id: &str,
+) -> Result<Option<lettuce_memory::MemoryManualEditRecord>, MemoryRepositoryError> {
+    let (owner, operation) = manual_owner(id).ok_or_else(|| storage("invalid manual edit id"))?;
+    let Some(space_id) = local_space(transaction, owner)? else {
+        return Ok(None);
+    };
+    let row: Option<(String, Option<i64>)> = transaction
+        .query_row(
+            "SELECT history_json,undone_at FROM memory_manual_edits WHERE id=?1 AND space_id=?2",
+            params![operation.to_string(), space_id.to_string()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(storage)?;
+    row.map(|(history, undone_at)| {
+        let record = lettuce_memory::MemoryManualEditRecord {
+            history: serde_json::from_str(&history).map_err(storage)?,
+            undone_at: undone_at.map(lettuce_types::TimestampMillis::new),
+        };
+        record.history.validate()?;
+        Ok(exchanged_manual_record(&record))
+    })
+    .transpose()
+}
+
+pub(crate) fn sync_put_manual_edit(
+    transaction: &Transaction<'_>,
+    id: &str,
+    record: &lettuce_memory::MemoryManualEditRecord,
+) -> Result<bool, MemoryRepositoryError> {
+    let (owner, operation) = manual_owner(id).ok_or_else(|| storage("invalid manual edit id"))?;
+    record.history.validate()?;
+    if operation != record.history.edit.id || record != &exchanged_manual_record(record) {
+        return Err(MemoryRepositoryError::Conflict);
+    }
+    let Some(space_id) = local_space(transaction, owner)? else {
+        return Err(MemoryRepositoryError::NotFound);
+    };
+    let branch_exists: bool = transaction
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM conversation_branches WHERE conversation_id=?1 AND id=?2)",
+            params![
+                record.history.edit.conversation_id.to_string(),
+                record.history.edit.branch_id.to_string()
+            ],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    if !branch_exists {
+        return Err(MemoryRepositoryError::NotFound);
+    }
+    if let Some(anchor) = record.history.anchor_message_id {
+        let present: bool = transaction.query_row("SELECT EXISTS(SELECT 1 FROM conversation_messages WHERE conversation_id=?1 AND id=?2)", params![record.history.edit.conversation_id.to_string(),anchor.to_string()], |row| row.get(0)).map_err(storage)?;
+        if !present {
+            return Err(MemoryRepositoryError::NotFound);
+        }
+    }
+    if let Some(current) = sync_load_manual_edit(transaction, id)? {
+        if current.history != record.history {
+            return Err(MemoryRepositoryError::Conflict);
+        }
+        transaction
+            .execute(
+                "UPDATE memory_manual_edits SET undone_at=?2 WHERE id=?1",
+                params![operation.to_string(), record.undone_at.map(|at| at.get())],
+            )
+            .map_err(storage)?;
+        return Ok(true);
+    }
+    let exists_elsewhere: bool = transaction
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM memory_manual_edits WHERE id=?1)",
+            [operation.to_string()],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    if exists_elsewhere {
+        return Err(MemoryRepositoryError::Conflict);
+    }
+    let mut local = record.clone();
+    let history = &mut local.history;
+    let sequence: i64 = transaction
+        .query_row(
+            "SELECT coalesce(max(sequence),0)+1 FROM memory_manual_edits",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    history.sequence = u64::try_from(sequence).map_err(storage)?;
+    history.space_id = space_id;
+    history.edit.space_id = space_id;
+    for summary in history
+        .before_summary
+        .iter_mut()
+        .chain(history.after_summary.iter_mut())
+    {
+        summary.space_id = space_id;
+    }
+    if let lettuce_memory::MemoryManualMutation::Summary {
+        summary: Some(summary),
+    } = &mut history.edit.mutation
+    {
+        summary.space_id = space_id;
+    }
+    for item in history
+        .before_item
+        .iter_mut()
+        .chain(history.after_item.iter_mut())
+    {
+        item.short_id = memory_adapter::get_item_in(transaction, space_id, item.id)?
+            .map_or_else(|| MemoryShortId::derived(item.id), |stored| stored.short_id);
+    }
+    if let lettuce_memory::MemoryManualMutation::Add { item } = &mut history.edit.mutation {
+        item.short_id = history
+            .after_item
+            .as_ref()
+            .ok_or(MemoryRepositoryError::Conflict)?
+            .short_id;
+    }
+    crate::memory::memory_manual_adapter::insert_manual_record_in(transaction, &local)?;
+    Ok(true)
+}
+
+pub(crate) fn sync_delete_manual_edit(
+    transaction: &Transaction<'_>,
+    id: &str,
+) -> Result<(), MemoryRepositoryError> {
+    let (owner, operation) = manual_owner(id).ok_or_else(|| storage("invalid manual edit id"))?;
+    if let Some(space_id) = local_space(transaction, owner)? {
+        transaction
+            .execute(
+                "DELETE FROM memory_manual_edits WHERE id=?1 AND space_id=?2",
+                params![operation.to_string(), space_id.to_string()],
+            )
+            .map_err(storage)?;
+    }
+    Ok(())
+}

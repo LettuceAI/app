@@ -24,6 +24,7 @@ mod inspect;
 mod jobs;
 mod local_models;
 mod mapping;
+mod memory;
 mod memory_models;
 mod memory_worker;
 mod messages;
@@ -57,6 +58,8 @@ mod inspect_tests;
 mod legacy_regenerate_tests;
 #[cfg(test)]
 mod local_models_tests;
+#[cfg(test)]
+mod memory_tests;
 #[cfg(test)]
 mod messages_tests;
 #[cfg(test)]
@@ -175,4 +178,9 @@ pub use copies::{
     conversation_branch_direct_to_character, conversation_branch_direct_to_group,
     conversation_branch_to_character, conversation_branch_to_character_from_message,
     conversation_duplicate,
+};
+
+pub use memory::{
+    memory_add, memory_delete, memory_pin, memory_set_temperature, memory_summary_update,
+    memory_update,
 };

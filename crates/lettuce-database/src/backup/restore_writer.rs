@@ -660,6 +660,10 @@ impl ProviderBackupRestoreWriter for Database {
                 return Err(Error::InvalidData);
             }
         }
+        for record in &graph.memory.manual_edits {
+            crate::memory::memory_manual_adapter::insert_manual_record_in(&transaction, record)
+                .map_err(invalid)?;
+        }
         for receipt in &graph.memory.retrieval_accesses {
             let access = &receipt.access;
             transaction

@@ -120,3 +120,5 @@ The space, item, summary and retrieval-access types are also the versioned backu
 A summary carries its owning branch. `MemorySummaryRepository::summary_cursor` requires the conversation and branch: the pool's latest summary advances only its owner, and other branches use their own succeeded runs and synced cursors. A seeded child summary is rebound to the child branch.
 
 A dynamic attempt can record the job claim attempt that owns it. The database checks this monotonic generation inside each memory write transaction; a newly claimed worker recovers into a new dynamic attempt while retaining the frozen run and settled evidence. Imported or repository-only records may omit the claim generation.
+
+Manual edits use `MemoryManualMutation` and `reduce_manual_memory`: text, category and observed-time changes preserve provenance and source attribution, pinning heats the item and restores importance and access time, and pinned items cannot be cooled. `MemoryManualHistory` records the branch, message anchor and position, before/after item or summary, and committed root revision. History is uncapped.

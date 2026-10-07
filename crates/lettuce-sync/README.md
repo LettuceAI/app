@@ -257,3 +257,5 @@ A deleted branch retains its topology in sync payload version 3, so descendants 
 Conversation message schema version 3 carries immutable copied-scene source provenance. Receivers verify and attach the protected source scene artifact before hydrating the scene; later merges cannot replace the provenance.
 
 Memory summary payload version 4 and inherited-summary payload version 3 preserve nullable token counts, provenance and source-free user summaries. Memory item payload version 4 carries nullable counts, origin, nullable categories and user-observed time precision.
+
+The `memory_manual_edit` entity carries one immutable manual edit plus its undo timestamp. Its payload normalizes local space ids, insertion sequences and short ids; materialization resolves the local own space or pool and restores local identities. A missing branch or anchor defers the entity. The added payload schema changes the handshake fingerprint.

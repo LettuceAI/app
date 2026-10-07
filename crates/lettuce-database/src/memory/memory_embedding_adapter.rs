@@ -50,11 +50,21 @@ fn put_current(
     projection: &MemoryEmbeddingProjection,
     token_count: Option<u32>,
 ) -> Result<ProjectionWrite, EmbeddingProjectionError> {
-    projection.validate()?;
     let mut connection = database.connection().map_err(storage)?;
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(storage)?;
+    let result = put_current_in(&transaction, projection, token_count)?;
+    transaction.commit().map_err(storage)?;
+    Ok(result)
+}
+
+pub(crate) fn put_current_in(
+    transaction: &rusqlite::Transaction<'_>,
+    projection: &MemoryEmbeddingProjection,
+    token_count: Option<u32>,
+) -> Result<ProjectionWrite, EmbeddingProjectionError> {
+    projection.validate()?;
     let written = transaction
         .execute(
             "INSERT INTO memory_embedding_projections (
@@ -95,7 +105,6 @@ fn put_current(
             )
             .map_err(storage)?;
     }
-    transaction.commit().map_err(storage)?;
     Ok(ProjectionWrite::Stored)
 }
 
