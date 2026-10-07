@@ -4837,8 +4837,8 @@ async fn post_turn_memory_host_runs_the_plain_cycle_from_live_settings() {
         )
         .await
         .expect("settle the unresolved cycle");
-    let crate::CompanionMemorySettledWork::RetryScheduled { error, job } = rescheduled else {
-        panic!("a missing summarisation model reschedules the job");
+    let crate::CompanionMemorySettledWork::Failed { error, job } = rescheduled else {
+        panic!("a missing summarisation model fails visibly");
     };
     assert!(matches!(
         error,
@@ -4846,11 +4846,28 @@ async fn post_turn_memory_host_runs_the_plain_cycle_from_live_settings() {
             crate::CompanionMemoryRuntimeInputError::MissingModel
         )
     ));
-    assert_eq!(job.state, JobState::Queued);
+    assert_eq!(job.state, JobState::Failed);
+    assert_eq!(
+        job.error
+            .as_ref()
+            .expect("typed job failure")
+            .message
+            .as_str(),
+        "memory-model-required"
+    );
     assert!(memory.requests.lock().expect("memory requests").is_empty());
     set_default_model(Some(scenario.model.source_id));
-    let work = claim(lettuce_conversations::GenerationOperation::Send)
-        .expect("the rescheduled window is claimed again")
+    let work = host
+        .trigger(
+            scenario.conversation_id,
+            None,
+            false,
+            WorkerId::new(),
+            TimestampMillis::new(1_032),
+            LEASE,
+            &ResourceAvailability::all(),
+        )
+        .expect("the corrected model can run an explicit retry")
         .into_iter()
         .next()
         .expect("claimed plain memory work");
@@ -5044,6 +5061,38 @@ async fn post_turn_memory_driver_runs_the_due_cycle_and_releases_the_conversatio
         Some("The user chose tea.")
     );
     assert_eq!(memory.requests.lock().expect("memory requests").len(), 2);
+    let runs = lettuce_memory::DynamicMemoryRunRepository::list_dynamic_memory_runs(
+        backend.database(),
+        scenario.conversation_id,
+    )
+    .expect("runs");
+    let attempt = lettuce_memory::DynamicMemoryRunRepository::load_latest_dynamic_memory_attempt(
+        backend.database(),
+        runs[0].id,
+    )
+    .expect("attempt");
+    let labels: Vec<_> = JobStore::events_since(backend.database(), attempt.job_id, None, 100)
+        .expect("job events")
+        .into_iter()
+        .filter_map(|event| match event.event {
+            lettuce_jobs::events::JobEvent::StageChanged { stage } => {
+                Some(stage.name.as_str().to_owned())
+            }
+            _ => None,
+        })
+        .collect();
+    for label in [
+        "memory-summarizing-conversation",
+        "memory-analyzing-memories",
+        "memory-applying-changes",
+        "memory-organizing-memories",
+    ] {
+        assert!(
+            labels.iter().any(|stored| stored == label),
+            "missing step {label}"
+        );
+    }
+
     let child_space =
         MemoryRepository::get_for_branch(backend.database(), scenario.conversation_id, child)
             .expect("child space")
@@ -5053,6 +5102,195 @@ async fn post_turn_memory_driver_runs_the_due_cycle_and_releases_the_conversatio
             .expect("child summary")
             .is_none()
     );
+}
+
+#[tokio::test]
+async fn a_reclaimed_memory_job_fences_the_previous_workers_summary() {
+    let backend = AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
+    let scenario = finalized_dynamic_turn(&backend, "reclaimed-memory").await;
+    let database = backend.database();
+    let idle = scripted(Vec::new());
+    let work = backend
+        .companion_memory_host(&ScenarioEmbeddingEngine, &idle)
+        .after_turn(
+            scenario.conversation_id,
+            lettuce_conversations::GenerationOperation::Send,
+            WorkerId::new(),
+            TimestampMillis::new(1_030),
+            LEASE,
+            &ResourceAvailability::all(),
+        )
+        .expect("admit memory")
+        .pop()
+        .expect("work");
+    struct ReclaimingEmbedding<'a> {
+        database: &'a Database,
+        claim: lettuce_jobs::ClaimRef,
+        reclaimed: std::sync::atomic::AtomicBool,
+    }
+    impl crate::MemoryEmbeddingEngine for ReclaimingEmbedding<'_> {
+        fn source_revision(&self) -> &str {
+            "scenario-v1"
+        }
+        fn dimensions(&self) -> lettuce_embeddings::EmbeddingDimensions {
+            lettuce_embeddings::EmbeddingDimensions::D128
+        }
+        fn count_tokens(&self, text: &str) -> Result<u32, crate::EmbeddingGenerationError> {
+            if !self
+                .reclaimed
+                .swap(true, std::sync::atomic::Ordering::SeqCst)
+            {
+                let at = JobStore::get(self.database, self.claim.job_id)
+                    .expect("job")
+                    .expect("job exists")
+                    .updated_at
+                    .get()
+                    + 1;
+                self.database
+                    .append_and_transition(lettuce_jobs::JobMutation::RetryScheduled {
+                        claim: self.claim.clone(),
+                        at: TimestampMillis::new(at),
+                    })
+                    .expect("requeue old worker");
+                let claim = self
+                    .database
+                    .claim(
+                        self.claim.job_id,
+                        WorkerId::new(),
+                        TimestampMillis::new(at + 1),
+                        LEASE,
+                        &ResourceAvailability::all(),
+                    )
+                    .expect("new claim")
+                    .expect("claimed by another worker");
+                self.database
+                    .append_and_transition(lettuce_jobs::JobMutation::Start {
+                        claim: claim.claim,
+                        at: TimestampMillis::new(at + 1),
+                    })
+                    .expect("new worker starts");
+            }
+            ScenarioEmbeddingEngine.count_tokens(text)
+        }
+        fn embed_memory(
+            &self,
+            request: &EmbeddingRequest,
+            cancellation: &CancellationToken,
+        ) -> Result<EmbeddingVector, crate::EmbeddingGenerationError> {
+            ScenarioEmbeddingEngine.embed_memory(request, cancellation)
+        }
+    }
+    let engine = ReclaimingEmbedding {
+        database,
+        claim: work.claim.claim.clone(),
+        reclaimed: Default::default(),
+    };
+    let memory = successful_memory_cycle();
+    let _result = backend
+        .companion_memory_host(&engine, &memory)
+        .run_claimed(work, CancellationReason::User, TimestampMillis::new(1_030))
+        .await;
+    assert!(
+        stored_summary(database, &scenario).is_none(),
+        "the stale worker wrote a summary after its claim was replaced"
+    );
+    assert_eq!(memory.requests.lock().expect("requests").len(), 1);
+}
+
+#[tokio::test]
+async fn memory_job_handler_respects_another_worker_and_the_frozen_parent_branch() {
+    use crate::api::{JobHandler, JobProgressSink};
+    struct NoProgress;
+    impl JobProgressSink for NoProgress {
+        fn text_delta(&self, _text: Option<String>, _reasoning: Option<String>) {}
+        fn image_progress(&self, _progress: lettuce_contracts::ImageProgress) {}
+    }
+    let backend =
+        std::sync::Arc::new(AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend"));
+    let scenario = finalized_dynamic_turn(&backend, "handler-parent").await;
+    let database = backend.database();
+    let idle = scripted(Vec::new());
+    let work = backend
+        .companion_memory_host(&ScenarioEmbeddingEngine, &idle)
+        .after_turn(
+            scenario.conversation_id,
+            lettuce_conversations::GenerationOperation::Send,
+            WorkerId::new(),
+            TimestampMillis::new(1_030),
+            LEASE,
+            &ResourceAvailability::all(),
+        )
+        .expect("admit memory")
+        .pop()
+        .expect("work");
+    let parent = work.admission.batch.branch_id;
+    let inference = std::sync::Arc::new(successful_memory_cycle());
+    let context =
+        crate::api::conversation_delete_tests::context_over(backend.clone(), inference.clone());
+    let handler = crate::api::MemoryExtractionHandler;
+    assert!(
+        handler
+            .claim(&context, &work.job, WorkerId::new())
+            .await
+            .expect("claim attempt")
+            .is_none()
+    );
+    let root = ConversationReader::get(database, scenario.conversation_id)
+        .expect("conversation")
+        .conversation;
+    let anchor = branch_timeline(database, scenario.conversation_id, parent)
+        .into_iter()
+        .find(|message| message.message.role == MessageRole::User)
+        .expect("anchor")
+        .message
+        .id;
+    database
+        .fork_branch(
+            &lettuce_conversations::ForkBranch {
+                conversation_id: scenario.conversation_id,
+                source_branch_id: parent,
+                at_message_id: Some(anchor),
+                expected_revision: root.revision,
+                operation: OperationToken {
+                    key: key("handler-fork"),
+                    request_digest: ContentHash::parse("fa".repeat(32)).expect("digest"),
+                },
+            },
+            TimestampMillis::new(1_031),
+        )
+        .expect("fork before the queued handler");
+    let at = work.job.updated_at;
+    let queued = database
+        .append_and_transition(lettuce_jobs::JobMutation::RetryScheduled {
+            claim: work.claim.claim,
+            at,
+        })
+        .expect("release the original worker");
+    let claimed = handler
+        .claim(&context, &queued, WorkerId::new())
+        .await
+        .expect("claim original batch")
+        .expect("claimed");
+    claimed
+        .run(context, std::sync::Arc::new(NoProgress))
+        .await
+        .expect("settle missing embedding model visibly");
+    let runs = lettuce_memory::DynamicMemoryRunRepository::list_dynamic_memory_runs(
+        database,
+        scenario.conversation_id,
+    )
+    .expect("runs");
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].branch_id, parent);
+    let job = JobStore::get(database, queued.id)
+        .expect("job")
+        .expect("exists");
+    assert_eq!(job.state, JobState::Failed);
+    assert_eq!(
+        job.error.expect("visible error").message.as_str(),
+        "embedding-model-unavailable"
+    );
+    assert_eq!(inference.requests.lock().expect("requests").len(), 2);
 }
 
 async fn crash_during_memory_cycle(prefix: &str) -> (std::path::PathBuf, Scenario, JobId) {

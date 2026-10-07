@@ -210,12 +210,9 @@ impl<
             .ok_or(CompanionMemoryTerminalError::InvalidOwnership)?;
         let fresh_memories = fresh_growth_memories(&run.starting_memory, &after);
         let effects = if batch.settle_effects() {
-            CompanionPostTurnEffectCoordinator::new(self.repository).settle_ready(
-                &batch.terminal_effects(),
-                &run.starting_memory,
-                &after,
-                now,
-            )?
+            CompanionPostTurnEffectCoordinator::new(self.repository)
+                .with_attempt(attempt.id)
+                .settle_ready(&batch.terminal_effects(), &run.starting_memory, &after, now)?
         } else {
             batch.effects().to_vec()
         };
@@ -306,7 +303,8 @@ impl<
                 }
                 *effect = self
                     .repository
-                    .settle(
+                    .settle_for_memory_attempt(
+                        attempt.id,
                         effect.id,
                         lettuce_companions::CompanionTurnEffectOutcome::Failed {
                             summary: failure.effect_summary().to_owned(),

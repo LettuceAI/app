@@ -179,6 +179,7 @@ pub struct NewDynamicMemoryRunAttempt {
     /// The memory tool contract with its catalog texts, frozen with the run.
     pub tool_request: lettuce_conversations::ToolRequest,
     pub job_id: JobId,
+    pub job_attempt: Option<u32>,
     pub now: TimestampMillis,
 }
 
@@ -210,6 +211,7 @@ pub struct NewDynamicMemoryAttemptRecovery {
     pub parent_attempt_id: DynamicMemoryAttemptId,
     pub child_attempt_id: DynamicMemoryAttemptId,
     pub job_id: JobId,
+    pub job_attempt: Option<u32>,
     pub now: TimestampMillis,
 }
 
@@ -234,6 +236,7 @@ pub struct DynamicMemoryAttempt {
     pub ordinal: u16,
     pub retry_parent_id: Option<DynamicMemoryAttemptId>,
     pub job_id: JobId,
+    pub job_attempt: Option<u32>,
     pub status: DynamicMemoryAttemptStatus,
     pub failure: Option<DynamicMemoryAttemptFailureCode>,
     pub revision: Revision,
@@ -245,7 +248,8 @@ pub struct DynamicMemoryAttempt {
 
 impl DynamicMemoryAttempt {
     pub fn validate(&self) -> Result<(), DynamicMemoryRunError> {
-        if (self.ordinal == 0) != self.retry_parent_id.is_none()
+        if self.job_attempt == Some(0)
+            || (self.ordinal == 0) != self.retry_parent_id.is_none()
             || self.revision.get() == 0
             || self.updated_at < self.created_at
         {

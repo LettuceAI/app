@@ -277,6 +277,16 @@ pub trait CompanionTurnEffectRepository: Send + Sync {
         now: TimestampMillis,
     ) -> Result<CompanionTurnEffect, CompanionTurnEffectRepositoryError>;
 
+    fn settle_for_memory_attempt(
+        &self,
+        _attempt_id: lettuce_types::DynamicMemoryAttemptId,
+        effect_id: CompanionEffectId,
+        outcome: CompanionTurnEffectOutcome,
+        now: TimestampMillis,
+    ) -> Result<CompanionTurnEffect, CompanionTurnEffectRepositoryError> {
+        self.settle(effect_id, outcome, now)
+    }
+
     /// How many memory cycles covering the effect's assistant message failed
     /// since the effect last became processing.
     fn failed_memory_cycles(

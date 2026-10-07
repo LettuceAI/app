@@ -107,6 +107,8 @@ impl JobHandlers {
             Arc::new(super::local::ModelPullHandler),
             Arc::new(super::local::ModelsFolderMoveHandler),
             Arc::new(super::text::TextFeatureHandler),
+            Arc::new(super::memory::MemoryExtractionHandler),
+            Arc::new(super::memory::SoulWriterHandler),
             Arc::new(super::image::ImageGenerateHandler),
             Arc::new(super::image_tools::ImageToolHandler),
             Arc::new(super::speech::SpeechTranscribeHandler),
@@ -382,4 +384,16 @@ fn queued_jobs(context: &ApiContext, kinds: &[JobKind]) -> Result<Vec<JobSnapsho
     }
     jobs.sort_by_key(|job| (job.created_at, job.id));
     Ok(jobs)
+}
+
+#[cfg(test)]
+mod memory_handler_tests {
+    use super::*;
+
+    #[test]
+    fn standard_handlers_include_memory_and_soul_writer_jobs() {
+        let handlers = JobHandlers::standard();
+        assert!(handlers.handler(JobKind::MemoryExtraction).is_some());
+        assert!(handlers.handler(JobKind::CompanionSoulWriter).is_some());
+    }
 }

@@ -7,6 +7,7 @@ mod image;
 mod image_tools;
 pub(super) mod install;
 pub(super) mod local;
+mod memory;
 mod runner;
 pub(crate) mod speech;
 mod state;
@@ -50,6 +51,7 @@ pub use local::{ModelPullHandler, ModelsFolderMoveHandler};
 pub(crate) use local::{
     admit_gguf_download, admit_model_pull, admit_models_folder_move, recover_local_model_jobs,
 };
+pub use memory::{MemoryExtractionHandler, SoulWriterHandler};
 pub use runner::{ClaimedJob, JobHandler, JobHandlers, JobLane, JobProgressSink, JobRunner};
 pub use speech::{SpeechSynthesizeHandler, SpeechTranscribeHandler};
 pub(crate) use state::JobHostState;

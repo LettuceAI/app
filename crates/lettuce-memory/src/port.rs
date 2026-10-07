@@ -181,6 +181,17 @@ pub trait MemorySummaryRepository: Send + Sync {
 }
 
 pub trait DynamicMemoryRunRepository: Send + Sync {
+    fn apply_dynamic_memory_cycle_finish(
+        &self,
+        _attempt_id: lettuce_types::DynamicMemoryAttemptId,
+        _change: MemoryChangeSet,
+        _at: TimestampMillis,
+    ) -> Result<MemorySpaceSnapshot, MemoryRepositoryError> {
+        Err(MemoryRepositoryError::Failure(
+            "cycle settlement is unavailable".into(),
+        ))
+    }
+
     fn list_dynamic_memory_runs(
         &self,
         _conversation_id: ConversationId,

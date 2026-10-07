@@ -117,9 +117,10 @@ pub use jobs::CatalogVariant;
 pub use jobs::{
     ArtifactInstallHandler, ClaimedJob, ImageGenerateHandler, ImageToolHandler, InstallFinish,
     InstallSources, InstallWork, JobHandler, JobHandlers, JobLane, JobProgressSink, JobRunner,
-    ModelPullHandler, ModelsFolderMoveHandler, NetworkInstallSources, SpeechSynthesizeHandler,
-    SpeechTranscribeHandler, TextFeatureHandler, VoiceCreationHandler, admit_install,
-    conversation_help_me_reply, job_cancel, job_get, job_watch, jobs_list, voice_design_create,
+    MemoryExtractionHandler, ModelPullHandler, ModelsFolderMoveHandler, NetworkInstallSources,
+    SoulWriterHandler, SpeechSynthesizeHandler, SpeechTranscribeHandler, TextFeatureHandler,
+    VoiceCreationHandler, admit_install, conversation_help_me_reply, job_cancel, job_get,
+    job_watch, jobs_list, voice_design_create,
 };
 pub use local_models::{
     llama_chat_template, llama_context_info, llama_devices, llama_unload, local_file_runnability,

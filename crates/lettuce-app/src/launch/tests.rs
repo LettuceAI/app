@@ -2595,6 +2595,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
             lettuce_memory::DynamicMemoryStructuredFallbackFormat::Xml,
             &policy,
             &work.handle,
+            Some(work.claim.claim.attempt.get()),
             TimestampMillis::new(NOW.get() + 12),
         )
         .expect("admit memory run");
@@ -3426,6 +3427,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                 &|key| key.to_owned(),
             ),
             job_id: failure_job_id,
+            job_attempt: None,
             now: TimestampMillis::new(NOW.get() + 39),
         })
         .expect("failure run");
@@ -3549,6 +3551,7 @@ async fn companion_effect_appears_once_with_the_finalized_assistant_message() {
                     &|key| key.to_owned(),
                 ),
                 job_id,
+                job_attempt: None,
                 now: TimestampMillis::new(at),
             })
             .expect("retry run");
@@ -11626,6 +11629,7 @@ async fn companion_memory_loop_replays_two_round_checkpoint_without_duplicate_wo
                 false, false,
             ),
             job_id,
+            job_attempt: None,
             now: TimestampMillis::new(1_010),
         })
         .expect("admit run");

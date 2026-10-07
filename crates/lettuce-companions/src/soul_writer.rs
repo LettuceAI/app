@@ -172,6 +172,14 @@ pub trait CompanionSoulWriterRunRepository: Send + Sync {
         request_id: RequestId,
         checkpoint: CompanionSoulWriterRoundCheckpoint,
     ) -> Result<CompanionSoulWriterRun, CompanionSoulWriterRunRepositoryError>;
+    fn commit_companion_soul_writer_round_for_job_attempt(
+        &self,
+        request_id: RequestId,
+        checkpoint: CompanionSoulWriterRoundCheckpoint,
+        _job_attempt: Option<u32>,
+    ) -> Result<CompanionSoulWriterRun, CompanionSoulWriterRunRepositoryError> {
+        self.commit_companion_soul_writer_round(request_id, checkpoint)
+    }
 }
 
 impl CompanionSoulWriterRun {

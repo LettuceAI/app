@@ -1382,6 +1382,7 @@ mod tests {
                 ordinal: 0,
                 retry_parent_id: None,
                 job_id,
+                job_attempt: None,
                 status: DynamicMemoryAttemptStatus::Processing,
                 failure: None,
                 revision: Revision::new(2),

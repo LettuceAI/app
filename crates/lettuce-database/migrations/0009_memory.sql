@@ -283,6 +283,7 @@ CREATE TABLE dynamic_memory_run_source_messages (
 ) STRICT;
 
 CREATE TABLE dynamic_memory_run_attempts (
+    job_attempt INTEGER CHECK (job_attempt IS NULL OR job_attempt BETWEEN 1 AND 4294967295),
     run_id TEXT NOT NULL REFERENCES dynamic_memory_runs(id) ON DELETE RESTRICT,
     id TEXT NOT NULL,
     ordinal INTEGER NOT NULL CHECK (ordinal BETWEEN 0 AND 65535),

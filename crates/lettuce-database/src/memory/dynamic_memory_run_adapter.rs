@@ -184,6 +184,21 @@ pub(crate) fn load_run_in(
     Ok(run)
 }
 
+fn ensure_attempt_job_in(
+    connection: &Connection,
+    attempt: &DynamicMemoryAttempt,
+    at: TimestampMillis,
+) -> Result<(), DynamicMemoryRunRepositoryError> {
+    crate::job_adapter::ensure_job_attempt_in(
+        connection,
+        attempt.job_id,
+        attempt.job_attempt,
+        at,
+        false,
+    )
+    .map_err(|_| DynamicMemoryRunRepositoryError::Conflict)
+}
+
 pub(crate) fn load_attempt_in(
     connection: &Connection,
     id: DynamicMemoryAttemptId,
@@ -191,7 +206,7 @@ pub(crate) fn load_attempt_in(
     let attempt = connection
         .query_row(
             "SELECT run_id,ordinal,retry_parent_id,job_id,status,failure,revision,created_at,\
-                    started_at,finished_at,updated_at \
+                    started_at,finished_at,updated_at,job_attempt \
              FROM dynamic_memory_run_attempts WHERE id=?1",
             [id.to_string()],
             |row| {
@@ -202,6 +217,7 @@ pub(crate) fn load_attempt_in(
                         .map_err(|_| rusqlite::Error::InvalidQuery)?,
                     retry_parent_id: row.get::<_, Option<String>>(2)?.map(parse_id).transpose()?,
                     job_id: parse_id::<JobId>(row.get(3)?)?,
+                    job_attempt: row.get::<_, Option<u32>>(11)?,
                     status: parse_status(&row.get::<_, String>(4)?)?,
                     failure: row
                         .get::<_, Option<String>>(5)?
@@ -893,8 +909,8 @@ pub(crate) fn insert_restored_run_in(
                     .execute(
                         "INSERT INTO dynamic_memory_run_attempts \
                          (run_id,id,ordinal,retry_parent_id,job_id,status,failure,revision,created_at,\
-                          started_at,finished_at,updated_at) \
-                         VALUES (?1,?2,?3,?4,?5,'processing',NULL,1,?6,?7,NULL,?7)",
+                          started_at,finished_at,updated_at,job_attempt) \
+                         VALUES (?1,?2,?3,?4,?5,'processing',NULL,1,?6,?7,NULL,?7,?8)",
                         params![
                             attempt.run_id.to_string(),
                             attempt.id.to_string(),
@@ -903,6 +919,7 @@ pub(crate) fn insert_restored_run_in(
                             attempt.job_id.to_string(),
                             attempt.created_at.get(),
                             started_at.get(),
+                            attempt.job_attempt,
                         ],
                     )
                     .map_err(storage)?;
@@ -912,8 +929,8 @@ pub(crate) fn insert_restored_run_in(
                     .execute(
                         "INSERT INTO dynamic_memory_run_attempts \
                          (run_id,id,ordinal,retry_parent_id,job_id,status,failure,revision,created_at,\
-                          started_at,finished_at,updated_at) \
-                         VALUES (?1,?2,?3,?4,?5,'created',NULL,1,?6,NULL,NULL,?6)",
+                          started_at,finished_at,updated_at,job_attempt) \
+                         VALUES (?1,?2,?3,?4,?5,'created',NULL,1,?6,NULL,NULL,?6,?7)",
                         params![
                             attempt.run_id.to_string(),
                             attempt.id.to_string(),
@@ -921,6 +938,7 @@ pub(crate) fn insert_restored_run_in(
                             attempt.retry_parent_id.map(|id| id.to_string()),
                             attempt.job_id.to_string(),
                             attempt.created_at.get(),
+                            attempt.job_attempt,
                         ],
                     )
                     .map_err(storage)?;
@@ -1005,6 +1023,39 @@ pub(crate) fn insert_restored_run_in(
 }
 
 impl DynamicMemoryRunRepository for Database {
+    fn apply_dynamic_memory_cycle_finish(
+        &self,
+        attempt_id: DynamicMemoryAttemptId,
+        change: lettuce_memory::MemoryChangeSet,
+        at: TimestampMillis,
+    ) -> Result<lettuce_memory::MemorySpaceSnapshot, lettuce_memory::MemoryRepositoryError> {
+        let mut connection = self.connection().map_err(|_| {
+            lettuce_memory::MemoryRepositoryError::Failure("memory storage failed".into())
+        })?;
+        let tx = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| {
+                lettuce_memory::MemoryRepositoryError::Failure("memory storage failed".into())
+            })?;
+        let attempt = load_attempt_in(&tx, attempt_id)
+            .map_err(|_| lettuce_memory::MemoryRepositoryError::Conflict)?;
+        ensure_attempt_job_in(&tx, &attempt, at)
+            .map_err(|_| lettuce_memory::MemoryRepositoryError::Conflict)?;
+        if attempt.status != DynamicMemoryAttemptStatus::Processing {
+            return Err(lettuce_memory::MemoryRepositoryError::Conflict);
+        }
+        let run = load_run_in(&tx, attempt.run_id)
+            .map_err(|_| lettuce_memory::MemoryRepositoryError::Conflict)?;
+        if run.space_id != change.space_id {
+            return Err(lettuce_memory::MemoryRepositoryError::Conflict);
+        }
+        let snapshot = memory_adapter::compare_and_apply_in(&tx, &change)?;
+        tx.commit().map_err(|_| {
+            lettuce_memory::MemoryRepositoryError::Failure("memory storage failed".into())
+        })?;
+        Ok(snapshot)
+    }
+
     fn list_dynamic_memory_runs(
         &self,
         conversation_id: lettuce_types::ConversationId,
@@ -1061,6 +1112,14 @@ impl DynamicMemoryRunRepository for Database {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;
+        crate::job_adapter::ensure_job_attempt_in(
+            &transaction,
+            input.job_id,
+            input.job_attempt,
+            input.now,
+            false,
+        )
+        .map_err(|_| DynamicMemoryRunRepositoryError::Conflict)?;
         match load_run_in(&transaction, input.run_id) {
             Ok(run) => {
                 let attempt = load_attempt_in(&transaction, input.attempt_id)?;
@@ -1069,6 +1128,7 @@ impl DynamicMemoryRunRepository for Database {
                     && attempt.ordinal == 0
                     && attempt.retry_parent_id.is_none()
                     && attempt.job_id == input.job_id
+                    && attempt.job_attempt == input.job_attempt
                     && attempt.created_at == input.now
                 {
                     transaction.commit().map_err(storage)?;
@@ -1172,13 +1232,14 @@ impl DynamicMemoryRunRepository for Database {
             .execute(
                 "INSERT INTO dynamic_memory_run_attempts \
                  (run_id,id,ordinal,retry_parent_id,job_id,status,failure,revision,created_at,\
-                  started_at,finished_at,updated_at) \
-                 VALUES (?1,?2,0,NULL,?3,'created',NULL,1,?4,NULL,NULL,?4)",
+                  started_at,finished_at,updated_at,job_attempt) \
+                 VALUES (?1,?2,0,NULL,?3,'created',NULL,1,?4,NULL,NULL,?4,?5)",
                 params![
                     requested_run.id.to_string(),
                     input.attempt_id.to_string(),
                     input.job_id.to_string(),
                     input.now.get(),
+                    input.job_attempt,
                 ],
             )
             .map_err(storage)?;
@@ -1235,6 +1296,14 @@ impl DynamicMemoryRunRepository for Database {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;
         let current = load_attempt_in(&transaction, id)?;
+        crate::job_adapter::ensure_job_attempt_in(
+            &transaction,
+            current.job_id,
+            current.job_attempt,
+            at,
+            next == DynamicMemoryAttemptStatus::Cancelled,
+        )
+        .map_err(|_| DynamicMemoryRunRepositoryError::Conflict)?;
         if current.revision != expected_revision {
             return Err(DynamicMemoryRunRepositoryError::Conflict);
         }
@@ -1283,9 +1352,19 @@ impl DynamicMemoryRunRepository for Database {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(storage)?;
+        crate::job_adapter::ensure_job_attempt_in(
+            &transaction,
+            input.job_id,
+            input.job_attempt,
+            input.now,
+            false,
+        )
+        .map_err(|_| DynamicMemoryRunRepositoryError::Conflict)?;
         let run = load_run_in(&transaction, input.run_id)?;
         let parent = load_attempt_in(&transaction, input.parent_attempt_id)?;
-        if parent.run_id != input.run_id || parent.job_id == input.job_id {
+        if parent.run_id != input.run_id
+            || (parent.job_id == input.job_id && parent.job_attempt == input.job_attempt)
+        {
             return Err(DynamicMemoryRunRepositoryError::Conflict);
         }
         let parent_rounds = list_rounds_in(&transaction, input.run_id, parent.id)?;
@@ -1334,6 +1413,7 @@ impl DynamicMemoryRunRepository for Database {
                     || child.ordinal != expected_ordinal
                     || child.retry_parent_id != Some(parent.id)
                     || child.job_id != input.job_id
+                    || child.job_attempt != input.job_attempt
                     || child.status != DynamicMemoryAttemptStatus::Processing
                     || child.created_at != input.now
                     || list_rounds_in(&transaction, input.run_id, child.id)? != expected_rounds
@@ -1389,8 +1469,8 @@ impl DynamicMemoryRunRepository for Database {
             .execute(
                 "INSERT INTO dynamic_memory_run_attempts \
                  (run_id,id,ordinal,retry_parent_id,job_id,status,failure,revision,created_at,\
-                  started_at,finished_at,updated_at) \
-                 VALUES (?1,?2,?3,?4,?5,'processing',NULL,1,?6,?6,NULL,?6)",
+                  started_at,finished_at,updated_at,job_attempt) \
+                 VALUES (?1,?2,?3,?4,?5,'processing',NULL,1,?6,?6,NULL,?6,?7)",
                 params![
                     input.run_id.to_string(),
                     input.child_attempt_id.to_string(),
@@ -1398,6 +1478,7 @@ impl DynamicMemoryRunRepository for Database {
                     parent.id.to_string(),
                     input.job_id.to_string(),
                     input.now.get(),
+                    input.job_attempt,
                 ],
             )
             .map_err(|error| match error.sqlite_error_code() {
@@ -1607,6 +1688,7 @@ impl DynamicMemoryRunRepository for Database {
         }
         let run = load_run_in(&transaction, commit.run_id)?;
         let attempt = load_attempt_in(&transaction, commit.attempt_id)?;
+        ensure_attempt_job_in(&transaction, &attempt, at)?;
         let rounds = list_rounds_in(&transaction, commit.run_id, commit.attempt_id)?;
         let round = rounds
             .get(usize::from(commit.round_ordinal))
@@ -1730,6 +1812,7 @@ impl DynamicMemoryRunRepository for Database {
         }
         let run = load_run_in(&transaction, commit.run_id)?;
         let attempt = load_attempt_in(&transaction, commit.attempt_id)?;
+        ensure_attempt_job_in(&transaction, &attempt, at)?;
         if attempt.run_id != run.id
             || attempt.status != DynamicMemoryAttemptStatus::Processing
             || transaction
@@ -3528,6 +3611,7 @@ pub(crate) mod tests {
                     &|key| key.to_owned(),
                 ),
                 job_id: JobId::new(),
+                job_attempt: None,
                 now: TimestampMillis::new(10),
             })
             .expect("run");
@@ -3703,6 +3787,7 @@ pub(crate) mod tests {
                     &|key| key.to_owned(),
                 ),
                 job_id: memory_job(database, conversation_id),
+                job_attempt: None,
                 now: TimestampMillis::new(at),
             })
             .expect("run");
@@ -3961,6 +4046,7 @@ pub(crate) mod tests {
                     &|key| key.to_owned(),
                 ),
                 job_id: JobId::new(),
+                job_attempt: None,
                 now: TimestampMillis::new(10),
             };
         let mut stale = change.clone();
@@ -4032,6 +4118,7 @@ pub(crate) mod tests {
                     &|key| key.to_owned(),
                 ),
                 job_id: JobId::new(),
+                job_attempt: None,
                 now: TimestampMillis::new(10),
             })
             .expect("first run");
@@ -4111,6 +4198,7 @@ pub(crate) mod tests {
                     &|key| key.to_owned(),
                 ),
                 job_id: JobId::new(),
+                job_attempt: None,
                 now: TimestampMillis::new(14),
             })
             .expect("second run");
@@ -4401,6 +4489,7 @@ pub(crate) mod tests {
                     &|key| key.to_owned(),
                 ),
                 job_id: JobId::new(),
+                job_attempt: None,
                 now: TimestampMillis::new(10),
             })
             .expect("run");
@@ -4608,6 +4697,7 @@ pub(crate) mod tests {
                     &|key| key.to_owned(),
                 ),
                 job_id: JobId::new(),
+                job_attempt: None,
                 now: TimestampMillis::new(22),
             })
             .expect("sibling run");
@@ -4783,6 +4873,7 @@ pub(crate) mod tests {
                 &|key| key.to_owned(),
             ),
             job_id: JobId::new(),
+            job_attempt: None,
             now: TimestampMillis::new(10),
         };
         let child_branch_id = ConversationBranchId::new();
@@ -4960,6 +5051,7 @@ pub(crate) mod tests {
             parent_attempt_id: parent_id,
             child_attempt_id: child_id,
             job_id: JobId::new(),
+            job_attempt: None,
             now: TimestampMillis::new(13),
         };
         let recovered = database

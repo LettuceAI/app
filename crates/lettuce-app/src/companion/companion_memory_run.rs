@@ -78,6 +78,7 @@ impl<
         structured_fallback_format: DynamicMemoryStructuredFallbackFormat,
         policy: &lettuce_memory::MemoryPolicy,
         handle: &JobHandle,
+        job_attempt: Option<u32>,
         now: TimestampMillis,
     ) -> Result<CompanionPostTurnMemoryRunDispatch, CompanionPostTurnMemoryRunError> {
         validate_job(admission, handle)?;
@@ -125,7 +126,7 @@ impl<
                     .repository
                     .load_latest_dynamic_memory_attempt(run_id)
                     .map_err(CompanionPostTurnMemoryRunError::Run)?;
-                if latest.job_id == handle.id() {
+                if latest.job_id == handle.id() && latest.job_attempt == job_attempt {
                     if latest.status != DynamicMemoryAttemptStatus::Processing {
                         return Err(CompanionPostTurnMemoryRunError::InvalidAdmission);
                     }
@@ -150,6 +151,7 @@ impl<
                         parent_attempt_id: latest.id,
                         child_attempt_id: child_id,
                         job_id: handle.id(),
+                        job_attempt,
                         now,
                     })
                     .map_err(CompanionPostTurnMemoryRunError::Run)?;
@@ -235,6 +237,7 @@ impl<
                         summary_window,
                         tool_request,
                         job_id: handle.id(),
+                        job_attempt,
                         now,
                     })
                     .map_err(CompanionPostTurnMemoryRunError::Run)?;
@@ -747,6 +750,7 @@ pub(crate) mod tests {
                 ordinal: 0,
                 retry_parent_id: None,
                 job_id: input.job_id,
+                job_attempt: None,
                 status: DynamicMemoryAttemptStatus::Created,
                 failure: None,
                 revision: Revision::INITIAL,
@@ -841,6 +845,7 @@ pub(crate) mod tests {
                 ordinal: parent.ordinal + 1,
                 retry_parent_id: Some(parent.id),
                 job_id: input.job_id,
+                job_attempt: None,
                 status: DynamicMemoryAttemptStatus::Processing,
                 failure: None,
                 revision: Revision::INITIAL,
@@ -1222,6 +1227,7 @@ pub(crate) mod tests {
                 DynamicMemoryStructuredFallbackFormat::Xml,
                 &policy(),
                 &first_handle,
+                None,
                 TimestampMillis::new(10),
             )
             .expect("first admission");
@@ -1314,6 +1320,7 @@ pub(crate) mod tests {
                     DynamicMemoryStructuredFallbackFormat::Json,
                     &policy(),
                     &first_handle,
+                    None,
                     TimestampMillis::new(11),
                 )
                 .expect("the frozen run keeps its inputs when live ones change"),
@@ -1330,6 +1337,7 @@ pub(crate) mod tests {
                 DynamicMemoryStructuredFallbackFormat::Xml,
                 &policy(),
                 &first_handle,
+                None,
                 TimestampMillis::new(11),
             ),
             Err(CompanionPostTurnMemoryRunError::InvalidAdmission)
@@ -1344,6 +1352,7 @@ pub(crate) mod tests {
                     DynamicMemoryStructuredFallbackFormat::Xml,
                     &policy(),
                     &first_handle,
+                    None,
                     TimestampMillis::new(11),
                 )
                 .expect("a changed supersession flag does not reject the frozen run"),
@@ -1359,6 +1368,7 @@ pub(crate) mod tests {
                     DynamicMemoryStructuredFallbackFormat::Xml,
                     &policy(),
                     &first_handle,
+                    None,
                     TimestampMillis::new(11),
                 )
                 .expect("exact replay"),
@@ -1378,6 +1388,7 @@ pub(crate) mod tests {
                 DynamicMemoryStructuredFallbackFormat::Xml,
                 &policy(),
                 &first_handle,
+                None,
                 TimestampMillis::new(11),
             ),
             Err(CompanionPostTurnMemoryRunError::InvalidAdmission)
@@ -1395,6 +1406,7 @@ pub(crate) mod tests {
                 DynamicMemoryStructuredFallbackFormat::Xml,
                 &policy(),
                 &restarted_handle,
+                None,
                 TimestampMillis::new(12),
             )
             .expect("restart recovery");

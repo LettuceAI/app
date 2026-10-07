@@ -118,3 +118,5 @@ It is idempotent by operation id. Working out which run is the first invalid one
 The space, item, summary and retrieval-access types are also the versioned backup document. Backup validation reuses their invariants and keeps the exact access metadata that later retrieval depends on; scores are never recalculated. Separate versioned documents carry the embedding projection cache and the full run graph (approvals, runs, attempts, rounds, results and summary checkpoints). Export runs no workflow.
 
 A summary carries its owning branch. `MemorySummaryRepository::summary_cursor` requires the conversation and branch: the pool's latest summary advances only its owner, and other branches use their own succeeded runs and synced cursors. A seeded child summary is rebound to the child branch.
+
+A dynamic attempt can record the job claim attempt that owns it. The database checks this monotonic generation inside each memory write transaction; a newly claimed worker recovers into a new dynamic attempt while retaining the frozen run and settled evidence. Imported or repository-only records may omit the claim generation.

@@ -158,6 +158,26 @@ impl CompanionSoulWriterRunRepository for Database {
         request_id: RequestId,
         checkpoint: CompanionSoulWriterRoundCheckpoint,
     ) -> Result<CompanionSoulWriterRun, CompanionSoulWriterRunRepositoryError> {
+        self.commit_soul_round(request_id, checkpoint, None)
+    }
+
+    fn commit_companion_soul_writer_round_for_job_attempt(
+        &self,
+        request_id: RequestId,
+        checkpoint: CompanionSoulWriterRoundCheckpoint,
+        job_attempt: Option<u32>,
+    ) -> Result<CompanionSoulWriterRun, CompanionSoulWriterRunRepositoryError> {
+        self.commit_soul_round(request_id, checkpoint, job_attempt)
+    }
+}
+
+impl Database {
+    fn commit_soul_round(
+        &self,
+        request_id: RequestId,
+        checkpoint: CompanionSoulWriterRoundCheckpoint,
+        job_attempt: Option<u32>,
+    ) -> Result<CompanionSoulWriterRun, CompanionSoulWriterRunRepositoryError> {
         let mut connection = self.connection().map_err(failure)?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -171,6 +191,14 @@ impl CompanionSoulWriterRunRepository for Database {
             }
             return Err(CompanionSoulWriterRunRepositoryError::Conflict);
         }
+        crate::job_adapter::ensure_job_attempt_in(
+            &tx,
+            run.job_id,
+            job_attempt,
+            checkpoint.reduced_at,
+            false,
+        )
+        .map_err(|_| CompanionSoulWriterRunRepositoryError::Conflict)?;
         if checkpoint.ordinal as usize != run.rounds.len()
             || run.rounds.last().is_some_and(|round| round.completed)
         {

@@ -4,7 +4,7 @@ use lettuce_conversations::{
     ConversationReader, InferencePort, ProviderReplayArtifactPort, ResolvedInferenceProfile,
 };
 use lettuce_embeddings::MemoryEmbeddingRepository;
-use lettuce_jobs::{Claim, handle::JobHandle};
+use lettuce_jobs::{Claim, JobStore, handle::JobHandle};
 use lettuce_memory::{
     DynamicMemoryInferenceRound, DynamicMemoryRunRepository, DynamicMemoryStructuredFallbackFormat,
     MemoryItem, MemoryRepository, MemoryRepositoryError, MemorySummaryRepository,
@@ -66,6 +66,7 @@ impl<
         + MemoryEmbeddingRepository
         + ProviderReplayArtifactPort
         + JobUsageLedger
+        + JobStore
         + CompanionTurnEffectRepository
         + GlobalSettingsStore
         + crate::generation::runtime_text::RuntimeTextSource
@@ -120,8 +121,10 @@ impl<
                     structured_fallback_format,
                     policy,
                     handle,
+                    Some(claim.claim.attempt.get()),
                     now,
                 )?;
+        self.progress(claim, 1, "memory-summarizing-conversation", now)?;
         let summary = match CompanionMemorySummaryCoordinator::new(
             self.engine,
             self.repository,
@@ -152,6 +155,7 @@ impl<
                 return Err(CompanionMemoryJobRunError::Inference(error));
             }
         };
+        self.progress(claim, 2, "memory-analyzing-memories", now)?;
         let first = match CompanionMemoryInferenceCoordinator::new(
             self.repository,
             self.conversations,
@@ -211,6 +215,7 @@ impl<
                     return Err(CompanionMemoryJobRunError::Loop(error));
                 }
             };
+        self.progress(claim, 3, "memory-applying-changes", now)?;
         let repaired =
             match crate::CompanionMemoryRepairCoordinator::new(self.repository, self.inference)
                 .repair_round(&dispatch.run, dispatch.attempt.id, handle, stream_sink, now)
@@ -282,6 +287,7 @@ impl<
                 }
             }
         }
+        self.progress(claim, 4, "memory-organizing-memories", now)?;
         self.finish_cycle(&dispatch, &admission.batch, policy, handle, now)?;
         let terminal = CompanionMemoryTerminalCoordinator::new(self.repository).settle_success(
             dispatch.run.id,
@@ -301,6 +307,43 @@ impl<
         })
     }
 
+    fn progress(
+        &self,
+        claim: &Claim,
+        step: u64,
+        label: &str,
+        now: TimestampMillis,
+    ) -> Result<(), CompanionMemoryJobRunError> {
+        use lettuce_jobs::{
+            JobMutation, ProgressSnapshot, SafeLabel, StageSnapshot, UnitsProgress,
+        };
+        let job = JobStore::get(self.repository, claim.claim.job_id)
+            .map_err(CompanionMemoryJobRunError::Jobs)?
+            .ok_or(CompanionMemoryJobRunError::Jobs(
+                lettuce_jobs::StoreError::NotFound,
+            ))?;
+        let at = now.max(job.updated_at);
+        self.repository
+            .append_and_transition(JobMutation::StageChanged {
+                claim: claim.claim.clone(),
+                stage: StageSnapshot::new(label, false).expect("constant memory stage"),
+                at,
+            })
+            .map_err(CompanionMemoryJobRunError::Jobs)?;
+        self.repository
+            .append_and_transition(JobMutation::Progress {
+                claim: claim.claim.clone(),
+                progress: ProgressSnapshot {
+                    units: Some(UnitsProgress::new(step, Some(4)).expect("memory step")),
+                    message: Some(SafeLabel::new(label).expect("constant memory progress label")),
+                    ..ProgressSnapshot::default()
+                },
+                at,
+            })
+            .map_err(CompanionMemoryJobRunError::Jobs)?;
+        Ok(())
+    }
+
     /// Trims to `max_entries` and demotes to the hot budget once per cycle
     /// after the loop and the repair pass; replaying a finished cycle finds
     /// nothing left to change.
@@ -313,10 +356,8 @@ impl<
         now: TimestampMillis,
     ) -> Result<(), CompanionMemoryJobRunError> {
         for attempt in 0..CYCLE_FINISH_ATTEMPTS {
-            let outcome = self
-                .repository
-                .get(dispatch.run.space_id)
-                .and_then(|snapshot| {
+            let outcome = MemoryRepository::get(self.repository, dispatch.run.space_id).and_then(
+                |snapshot| {
                     let snapshot = snapshot.ok_or(MemoryRepositoryError::NotFound)?;
                     let finish = lettuce_memory::MemoryToolReducer
                         .finish_cycle(&snapshot, policy)
@@ -324,9 +365,14 @@ impl<
                     let Some(change) = finish.change else {
                         return Ok(None);
                     };
-                    self.repository.compare_and_apply(change)?;
+                    self.repository.apply_dynamic_memory_cycle_finish(
+                        dispatch.attempt.id,
+                        change,
+                        now,
+                    )?;
                     Ok(Some((finish.trimmed_ids.len(), finish.demoted_ids.len())))
-                });
+                },
+            );
             match outcome {
                 Ok(None) => return Ok(()),
                 Ok(Some((trimmed, demoted))) => {
@@ -383,6 +429,8 @@ pub enum CompanionMemoryJobRunError {
     Repair(crate::CompanionMemoryRepairError),
     #[error("background memory runtime inputs are unavailable: {0}")]
     RuntimeInputs(crate::CompanionMemoryRuntimeInputError),
+    #[error("memory job progress failed: {0}")]
+    Jobs(lettuce_jobs::StoreError),
 }
 
 impl CompanionMemoryJobRunError {
@@ -395,6 +443,7 @@ impl CompanionMemoryJobRunError {
             Self::Loop(error) => Some(CompanionMemoryTerminalFailure::from_loop_error(error)),
             Self::Repair(_) => Some(CompanionMemoryTerminalFailure::Cancelled),
             Self::RuntimeInputs(_)
+            | Self::Jobs(_)
             | Self::Admission(_)
             | Self::Terminal(_)
             | Self::Conversation(_)

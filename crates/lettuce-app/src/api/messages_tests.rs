@@ -465,6 +465,7 @@ async fn memory_chat_with(harness: &Harness, key: &str, with_lead: bool) -> Memo
                 &|key| key.to_owned(),
             ),
             job_id: job.id,
+            job_attempt: None,
             now: harness.context.now(),
         })
         .expect("memory run");
@@ -2521,6 +2522,7 @@ fn extra_memory_run(
                 &|key| key.to_owned(),
             ),
             job_id: job.id,
+            job_attempt: None,
             now: harness.context.now(),
         })
         .expect("extra memory run");

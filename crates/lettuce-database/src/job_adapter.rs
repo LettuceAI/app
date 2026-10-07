@@ -11,7 +11,9 @@ use lettuce_jobs::{
     retention::RetentionPolicy,
 };
 use lettuce_types::{JobId, Page};
-use rusqlite::{Row, ToSql, Transaction, TransactionBehavior, params, params_from_iter};
+use rusqlite::{
+    OptionalExtension, Row, ToSql, Transaction, TransactionBehavior, params, params_from_iter,
+};
 
 use crate::{Database, decode_versioned, encode_versioned};
 
@@ -33,6 +35,40 @@ pub struct ManualSceneImageAdmission<'a> {
     pub message_id: lettuce_types::MessageId,
     pub target: lettuce_conversations::SceneFollowUpTarget,
     pub prompt: &'a str,
+}
+
+pub(crate) fn ensure_job_attempt_in(
+    connection: &rusqlite::Connection,
+    job_id: JobId,
+    attempt: Option<u32>,
+    at: Timestamp,
+    allow_cancellation: bool,
+) -> Result<(), StoreError> {
+    let Some(attempt) = attempt else {
+        return Ok(());
+    };
+    let encoded = connection
+        .query_row(
+            "SELECT snapshot_json FROM jobs WHERE id=?1",
+            [job_id.to_string()],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|_| StoreError::Storage)?
+        .ok_or(StoreError::NotFound)?;
+    let snapshot = decode_versioned::<JobSnapshot>(&encoded, JOB_FORMAT_VERSION)
+        .map_err(|_| StoreError::Storage)?;
+    if snapshot.attempt.get() != attempt
+        || snapshot.claim.is_none()
+        || (snapshot.state != lettuce_jobs::JobState::Running
+            && !(allow_cancellation
+                && snapshot.state == lettuce_jobs::JobState::CancellationRequested))
+        || (snapshot.cancellation.requested && !allow_cancellation)
+        || snapshot.lease_expires_at.is_none_or(|expires| expires < at)
+    {
+        return Err(StoreError::StaleLease);
+    }
+    Ok(())
 }
 
 impl Database {

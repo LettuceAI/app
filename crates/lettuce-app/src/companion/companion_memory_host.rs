@@ -55,8 +55,7 @@ pub struct CompanionMemoryRuntimeInputs {
     pub duplicate_threshold: lettuce_memory::Score,
 }
 
-/// Why a claimed cycle could not resolve its runtime inputs; the job is
-/// rescheduled so a settings fix lets the same window run.
+/// Why a claimed cycle could not resolve its required runtime inputs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum CompanionMemoryRuntimeInputError {
     #[error("summarisation model not configured")]
@@ -587,6 +586,17 @@ where
         cancellation_reason: CancellationReason,
         now: TimestampMillis,
     ) -> Result<CompanionMemorySettledWork, CompanionMemoryHostError> {
+        self.run_claimed_with_stream(work, cancellation_reason, None, now)
+            .await
+    }
+
+    pub async fn run_claimed_with_stream(
+        &self,
+        work: CompanionMemoryClaimedWork,
+        cancellation_reason: CancellationReason,
+        stream_sink: Option<lettuce_types::RequestId>,
+        now: TimestampMillis,
+    ) -> Result<CompanionMemorySettledWork, CompanionMemoryHostError> {
         let dispatcher = CompanionMemoryDispatchCoordinator::new(self.repository, self.repository);
         let inputs = match self.resolve_runtime_inputs(&work.admission) {
             Ok(inputs) => inputs,
@@ -634,7 +644,7 @@ where
             inputs.duplicate_threshold,
             &work.claim,
             &work.handle,
-            None,
+            stream_sink,
             now,
             |round| create_seeds(engine, round, now),
         )

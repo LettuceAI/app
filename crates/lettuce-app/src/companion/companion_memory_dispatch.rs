@@ -463,6 +463,33 @@ where
                     job,
                 })
             }
+            Err(error @ CompanionMemoryJobRunError::RuntimeInputs(input))
+                if input != crate::CompanionMemoryRuntimeInputError::Storage =>
+            {
+                let (code, label) = match input {
+                    crate::CompanionMemoryRuntimeInputError::MissingModel => {
+                        (JobErrorCode::CapabilityUnavailable, "memory-model-required")
+                    }
+                    crate::CompanionMemoryRuntimeInputError::InvalidModel => {
+                        (JobErrorCode::InvalidInput, "memory-model-invalid")
+                    }
+                    crate::CompanionMemoryRuntimeInputError::MissingPrompt => (
+                        JobErrorCode::CapabilityUnavailable,
+                        "memory-prompt-required",
+                    ),
+                    crate::CompanionMemoryRuntimeInputError::InvalidSettings => {
+                        (JobErrorCode::InvalidInput, "memory-settings-invalid")
+                    }
+                    crate::CompanionMemoryRuntimeInputError::Storage => unreachable!(),
+                };
+                let job = self.jobs.append_and_transition(JobMutation::Fail {
+                    claim: work.claim.claim,
+                    error: JobError::new(code, false, label)
+                        .expect("constant memory failure label"),
+                    at,
+                })?;
+                Ok(CompanionMemorySettledWork::Failed { error, job })
+            }
             Err(error) => match error.terminal_failure() {
                 Some(CompanionMemoryTerminalFailure::Cancelled) => {
                     self.jobs

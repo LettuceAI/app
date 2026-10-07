@@ -62,6 +62,7 @@ pub enum CompanionSoulWriterExecutionError {
 pub struct CompanionSoulWriterExecutionCoordinator<'a, R: ?Sized, I: ?Sized> {
     repository: &'a R,
     inference: &'a I,
+    job_attempt: Option<u32>,
 }
 
 impl<'a, R: ?Sized, I: ?Sized> CompanionSoulWriterExecutionCoordinator<'a, R, I> {
@@ -70,7 +71,13 @@ impl<'a, R: ?Sized, I: ?Sized> CompanionSoulWriterExecutionCoordinator<'a, R, I>
         Self {
             repository,
             inference,
+            job_attempt: None,
         }
+    }
+    #[must_use]
+    pub const fn with_job_attempt(mut self, job_attempt: u32) -> Self {
+        self.job_attempt = Some(job_attempt);
+        self
     }
 }
 
@@ -229,12 +236,12 @@ impl<
             };
             *run = commit_round(
                 self.repository,
+                self.job_attempt,
                 run,
                 target,
                 calls,
                 now,
-                outcome.usage.clone(),
-                None,
+                (outcome.usage.clone(), None),
             )?;
             if run.rounds.last().is_some_and(|round| round.completed) {
                 return completed_result(run, replayed);
@@ -274,12 +281,12 @@ impl<
         cleanup(self.repository, &fallback_outcome)?;
         *run = commit_round(
             self.repository,
+            self.job_attempt,
             run,
             target,
             calls?,
             now,
-            tool_usage,
-            fallback_outcome.usage.clone(),
+            (tool_usage, fallback_outcome.usage.clone()),
         )?;
         draft_result(run, target, replayed)
     }
@@ -372,13 +379,17 @@ fn valid_candidate(
 
 fn commit_round<R: CompanionSoulWriterRunRepository + ?Sized>(
     repository: &R,
+    job_attempt: Option<u32>,
     run: &CompanionSoulWriterRun,
     profile_target: SoulWriterProfileTarget,
     calls: Vec<ProposedToolCall>,
     now: TimestampMillis,
-    usage: Option<lettuce_conversations::InferenceUsage>,
-    fallback_usage: Option<lettuce_conversations::InferenceUsage>,
+    usage: (
+        Option<lettuce_conversations::InferenceUsage>,
+        Option<lettuce_conversations::InferenceUsage>,
+    ),
 ) -> Result<CompanionSoulWriterRun, CompanionSoulWriterExecutionError> {
+    let (usage, fallback_usage) = usage;
     let current = run
         .rounds
         .iter()
@@ -387,7 +398,7 @@ fn commit_round<R: CompanionSoulWriterRunRepository + ?Sized>(
         .map_or(&run.starting_draft, |round| &round.resulting_draft);
     let reduction = reduce_soul_writer_calls(Some(current), &calls, now);
     repository
-        .commit_companion_soul_writer_round(
+        .commit_companion_soul_writer_round_for_job_attempt(
             run.request_id,
             CompanionSoulWriterRoundCheckpoint {
                 usage,
@@ -400,6 +411,7 @@ fn commit_round<R: CompanionSoulWriterRunRepository + ?Sized>(
                 completed: reduction.completed,
                 reduced_at: now,
             },
+            job_attempt,
         )
         .map_err(CompanionSoulWriterExecutionError::Run)
 }

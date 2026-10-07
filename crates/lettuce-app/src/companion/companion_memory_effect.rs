@@ -28,12 +28,22 @@ pub enum CompanionPostTurnEffectError {
 #[derive(Debug)]
 pub struct CompanionPostTurnEffectCoordinator<'a, R: ?Sized> {
     repository: &'a R,
+    attempt_id: Option<lettuce_types::DynamicMemoryAttemptId>,
 }
 
 impl<'a, R: CompanionTurnEffectRepository + ?Sized> CompanionPostTurnEffectCoordinator<'a, R> {
     #[must_use]
     pub const fn new(repository: &'a R) -> Self {
-        Self { repository }
+        Self {
+            repository,
+            attempt_id: None,
+        }
+    }
+
+    #[must_use]
+    pub const fn with_attempt(mut self, attempt_id: lettuce_types::DynamicMemoryAttemptId) -> Self {
+        self.attempt_id = Some(attempt_id);
+        self
     }
 
     pub fn settle_ready(
@@ -82,11 +92,13 @@ impl<'a, R: CompanionTurnEffectRepository + ?Sized> CompanionPostTurnEffectCoord
                     enqueued_at: input.enqueued_at,
                 },
             };
-            settled.push(
-                self.repository
-                    .settle(effect.id, outcome, settled_at)
-                    .map_err(CompanionPostTurnEffectError::Repository)?,
-            );
+            let result = match self.attempt_id {
+                Some(attempt_id) => self
+                    .repository
+                    .settle_for_memory_attempt(attempt_id, effect.id, outcome, settled_at),
+                None => self.repository.settle(effect.id, outcome, settled_at),
+            };
+            settled.push(result.map_err(CompanionPostTurnEffectError::Repository)?);
         }
         Ok(settled)
     }

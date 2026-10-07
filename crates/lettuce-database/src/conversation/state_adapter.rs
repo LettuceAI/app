@@ -1938,11 +1938,46 @@ impl CompanionTurnEffectRepository for Database {
         outcome: CompanionTurnEffectOutcome,
         now: TimestampMillis,
     ) -> Result<CompanionTurnEffect, CompanionTurnEffectRepositoryError> {
+        self.settle_memory_effect(None, effect_id, outcome, now)
+    }
+
+    fn settle_for_memory_attempt(
+        &self,
+        attempt_id: lettuce_types::DynamicMemoryAttemptId,
+        effect_id: CompanionEffectId,
+        outcome: CompanionTurnEffectOutcome,
+        now: TimestampMillis,
+    ) -> Result<CompanionTurnEffect, CompanionTurnEffectRepositoryError> {
+        self.settle_memory_effect(Some(attempt_id), effect_id, outcome, now)
+    }
+}
+
+impl Database {
+    fn settle_memory_effect(
+        &self,
+        attempt_id: Option<lettuce_types::DynamicMemoryAttemptId>,
+        effect_id: CompanionEffectId,
+        outcome: CompanionTurnEffectOutcome,
+        now: TimestampMillis,
+    ) -> Result<CompanionTurnEffect, CompanionTurnEffectRepositoryError> {
         outcome.validate()?;
         let mut connection = self.connection().map_err(effect_failure)?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(effect_failure)?;
+        if let Some(attempt_id) = attempt_id {
+            let attempt =
+                crate::memory::dynamic_memory_run_adapter::load_attempt_in(&tx, attempt_id)
+                    .map_err(|_| CompanionTurnEffectRepositoryError::Conflict)?;
+            crate::job_adapter::ensure_job_attempt_in(
+                &tx,
+                attempt.job_id,
+                attempt.job_attempt,
+                now,
+                false,
+            )
+            .map_err(|_| CompanionTurnEffectRepositoryError::Conflict)?;
+        }
         let (conversation_id, user_message_id, assistant_message_id, created_at, current_status) =
             tx.query_row(
                 "SELECT conversation_id, user_message_id, assistant_message_id, created_at, status

@@ -101,3 +101,5 @@ A `CompanionTurnEffect` (`effect.rs`) records what one turn did to the companion
 - A rewind after deleting messages marks affected effects invalidated through an immutable overlay. The original evidence stays for audit, and invalidated processing effects leave the queue and can no longer be settled.
 
 Effects, seeds, deltas, memory changes and source windows are strictly serializable, and a full backup exports the same validated values the repository uses.
+
+Memory-owned effect settlement and API Soul-writer round commits carry job ownership to the database transaction. A replaced worker cannot publish effect changes or a draft after another worker claims its job. The API uses the existing Soul admission, execution and dispatch coordinators for job watch streaming.

@@ -1538,6 +1538,7 @@ mod tests {
                     &|key| key.to_owned(),
                 ),
                 job_id: terminal_job.id,
+                job_attempt: None,
                 now: TimestampMillis::new(33),
             },
         )
@@ -1629,6 +1630,7 @@ mod tests {
                     &|key| key.to_owned(),
                 ),
                 job_id: pending_job.id,
+                job_attempt: None,
                 now: TimestampMillis::new(37),
             },
         )

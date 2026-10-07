@@ -15001,6 +15001,7 @@ mod tests {
                     &|key| key.to_owned(),
                 ),
                 job_id: lettuce_types::JobId::new(),
+                job_attempt: None,
                 now: TimestampMillis::new(85),
             })
             .expect("queued memory attempt");
@@ -15040,6 +15041,7 @@ mod tests {
                 parent_attempt_id: processing.id,
                 child_attempt_id: lettuce_types::DynamicMemoryAttemptId::new(),
                 job_id: lettuce_types::JobId::new(),
+                job_attempt: None,
                 now: TimestampMillis::new(89),
             })
             .expect("retry memory attempt");
