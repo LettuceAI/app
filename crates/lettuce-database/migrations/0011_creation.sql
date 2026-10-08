@@ -185,12 +185,12 @@ CREATE TABLE creation_lorebook_apply_receipts (
     workflow_revision INTEGER NOT NULL CHECK (workflow_revision >= 1),
     proposal_id TEXT NOT NULL UNIQUE,
     lorebook_id TEXT NOT NULL,
+    lorebook_name TEXT NOT NULL CHECK (length(trim(lorebook_name)) > 0),
     lorebook_revision INTEGER NOT NULL CHECK (lorebook_revision >= 1),
     applied_at INTEGER NOT NULL,
     FOREIGN KEY (workflow_id) REFERENCES creation_workflows(id) ON DELETE RESTRICT,
     FOREIGN KEY (workflow_id, proposal_id)
-        REFERENCES creation_proposals(workflow_id, id) ON DELETE RESTRICT,
-    FOREIGN KEY (lorebook_id) REFERENCES lorebooks(id) ON DELETE RESTRICT
+        REFERENCES creation_proposals(workflow_id, id) ON DELETE RESTRICT
 ) STRICT;
 
 CREATE TRIGGER creation_lorebook_apply_receipts_immutable_update

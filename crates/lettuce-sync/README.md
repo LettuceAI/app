@@ -138,6 +138,8 @@ A third device replying inside a chain that later loses can leave devices with d
 
 ## What syncs
 
+Creation workflow payload version 2 includes its immutable lorebook apply receipt, with the destination id and name at apply time. Receiving the receipt needs no surviving lorebook. Inference attempts, rounds and the other helper apply receipts remain device-local.
+
 | Kind | Schema | Notes |
 | --- | --- | --- |
 | provider account | `provider_account.snapshot` | secret references only |

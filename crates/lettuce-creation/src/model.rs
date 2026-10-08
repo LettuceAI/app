@@ -333,6 +333,7 @@ pub struct CreationLorebookApplyReceipt {
     pub workflow_revision: Revision,
     pub proposal_id: CreationProposalId,
     pub lorebook_id: LorebookId,
+    pub lorebook_name: String,
     pub lorebook_revision: Revision,
     pub applied_at: TimestampMillis,
 }

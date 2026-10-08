@@ -53,6 +53,8 @@ When the helper's tool fallback setting is JSON or XML, the request carries no n
 
 `CreationApplyRepository` applies a confirmed proposal. Every apply persists an immutable receipt atomically with the authored change, so a crash retry returns the original result after the target's revision has moved, while a stale or changed command conflicts. Applying is refused while an attempt of the workflow is created or running, and an applied workflow is closed: no new turns, attempts, proposals or settlements (enforced in the adapter and by triggers).
 
+Lorebook apply receipts retain the destination id and name at apply time independently of the destination's lifecycle. Backup and sync retain the receipt even after the lorebook is deleted.
+
 - New persona: the draft goes through the normal create invariants. Existing persona: pinned to the authored revision, only name and description change; media, lifecycle, identity, timestamps and default selection stay.
 - New character: name, definition and the ordered scenes become a normal character plan, keeping proposal scene ids, text, direction and order; everything else starts at the character defaults (empty provenance, presentation customizations, media, variants and starters).
 - Existing character: revision-pinned; name, definition and the authoritative ordered scene list apply in one root CAS, and fields the draft does not have stay unchanged. Kept scene ids keep lifecycle, variants, selection, assets and creation data, and only changed scenes bump their revision; new ids start as minimal active text scenes; omitted ids are removed, unless that would break a default-scene or starter reference the draft cannot express, which is rejected.

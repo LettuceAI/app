@@ -287,7 +287,7 @@ fn load_lorebook_apply_receipt(
 ) -> Result<Option<CreationLorebookApplyReceipt>, CreationRepositoryError> {
     connection
         .query_row(
-            "SELECT workflow_revision,proposal_id,lorebook_id,lorebook_revision,applied_at \
+            "SELECT workflow_revision,proposal_id,lorebook_id,lorebook_revision,applied_at,lorebook_name \
              FROM creation_lorebook_apply_receipts WHERE workflow_id=?1",
             [workflow_id.to_string()],
             |row| {
@@ -296,6 +296,7 @@ fn load_lorebook_apply_receipt(
                     workflow_revision: revision(row.get(0)?)?,
                     proposal_id: parse_id(row.get(1)?)?,
                     lorebook_id: parse_id(row.get(2)?)?,
+                    lorebook_name: row.get(5)?,
                     lorebook_revision: revision(row.get(3)?)?,
                     applied_at: TimestampMillis::new(row.get(4)?),
                 })
@@ -312,8 +313,8 @@ fn insert_lorebook_apply_receipt(
     transaction
         .execute(
             "INSERT INTO creation_lorebook_apply_receipts \
-             (workflow_id,workflow_revision,proposal_id,lorebook_id,lorebook_revision,applied_at) \
-             VALUES (?1,?2,?3,?4,?5,?6)",
+             (workflow_id,workflow_revision,proposal_id,lorebook_id,lorebook_revision,applied_at,lorebook_name) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7)",
             params![
                 receipt.workflow_id.to_string(),
                 sql_u64(receipt.workflow_revision.get())?,
@@ -321,6 +322,7 @@ fn insert_lorebook_apply_receipt(
                 receipt.lorebook_id.to_string(),
                 sql_u64(receipt.lorebook_revision.get())?,
                 receipt.applied_at.get(),
+                receipt.lorebook_name,
             ],
         )
         .map_err(storage)?;
@@ -1159,16 +1161,13 @@ pub(crate) fn insert_restored_workflow_in(
     Ok(())
 }
 
-/// A Creation Helper session as sync exchanges it: the workflow with its
-/// proposal chain and user turns. Inference attempts, rounds and apply
-/// receipts stay on the device that ran them, and the workflow revision is
-/// local bookkeeping.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct SyncCreationWorkflow {
     pub workflow: CreationWorkflow,
     pub proposals: Vec<CreationProposal>,
     pub turns: Vec<CreationTurn>,
+    pub lorebook_receipt: Option<CreationLorebookApplyReceipt>,
 }
 
 pub(crate) fn sync_workflow_ids(connection: &Connection) -> rusqlite::Result<Vec<String>> {
@@ -1210,6 +1209,7 @@ pub(crate) fn sync_load_workflow(
         },
         proposals,
         turns,
+        lorebook_receipt: load_lorebook_apply_receipt(transaction, id)?,
     }))
 }
 
@@ -1244,6 +1244,18 @@ pub(crate) fn sync_merge_workflow(
         .ok_or(CreationRepositoryError::Invalid)?;
     if current.stage != workflow.stage {
         return Err(CreationRepositoryError::Invalid);
+    }
+    if let Some(receipt) = &incoming.lorebook_receipt {
+        if receipt.workflow_id != id
+            || receipt.proposal_id != current.id
+            || receipt.workflow_revision.get() == 0
+            || receipt.lorebook_revision.get() == 0
+            || receipt.lorebook_name.trim().is_empty()
+            || current.stage != CreationStage::AwaitingConfirmation
+            || !matches!(current.draft, lettuce_creation::CreationDraft::Lorebook { .. })
+        {
+            return Err(CreationRepositoryError::Invalid);
+        }
     }
     let present: bool = transaction
         .query_row(
@@ -1387,6 +1399,9 @@ pub(crate) fn sync_merge_workflow(
                 params![id.to_string(), workflow.updated_at.get()],
             )
             .map_err(storage)?;
+    }
+    if let Some(receipt) = &incoming.lorebook_receipt {
+        insert_lorebook_apply_receipt(transaction, receipt)?;
     }
     Ok(true)
 }
@@ -1894,6 +1909,7 @@ impl CreationApplyRepository for Database {
             workflow_revision: request.expected_workflow_revision,
             proposal_id: request.proposal_id,
             lorebook_id: details.book.id,
+            lorebook_name: details.book.name.clone(),
             lorebook_revision: details.book.revision,
             applied_at: request.now,
         };
@@ -2050,6 +2066,7 @@ impl CreationApplyRepository for Database {
             workflow_revision: request.expected_workflow_revision,
             proposal_id: request.proposal_id,
             lorebook_id: details.book.id,
+            lorebook_name: details.book.name.clone(),
             lorebook_revision: details.book.revision,
             applied_at: request.now,
         };
@@ -4889,6 +4906,75 @@ mod tests {
     }
 
     #[test]
+    fn lorebook_apply_receipt_survives_source_delete_and_restore() {
+        let database = Database::open_in_memory().expect("database");
+        let (workflow, proposal_id) = confirmed_workflow(
+            &database,
+            CreationTarget::NewLorebook,
+            CreationDraft::Lorebook {
+                name: Some("Snapshot world".into()),
+                description: None,
+                entries: Vec::new(),
+            },
+            10,
+        );
+        let request = ConfirmedLorebookApply {
+            workflow_id: workflow.id,
+            expected_workflow_revision: workflow.revision,
+            proposal_id,
+            destination_lorebook_id: LorebookId::new(),
+            now: TimestampMillis::new(15),
+        };
+        let receipt = database.apply_new_lorebook(request.clone()).expect("apply");
+        let mut connection = database.connection().expect("connection");
+        connection.execute("DELETE FROM lorebooks WHERE id=?1", [receipt.lorebook_id.to_string()])
+            .expect("history must not prevent hard delete");
+        let transaction = connection.transaction().expect("transaction");
+        let backup = read_workflows_in(&transaction).expect("backup");
+        assert_eq!(serde_json::to_value(&backup[0].lorebook_receipt).expect("json")["lorebook_name"], "Snapshot world");
+        transaction.commit().expect("commit");
+        drop(connection);
+        assert_eq!(database.apply_new_lorebook(request).expect("replay after delete"), receipt);
+        let restored = Database::open_in_memory().expect("restored");
+        let mut connection = restored.connection().expect("connection");
+        let transaction = connection.transaction().expect("transaction");
+        insert_restored_workflow_in(&transaction, &backup[0]).expect("restore without source book");
+        assert_eq!(read_workflows_in(&transaction).expect("reread"), backup);
+        transaction.commit().expect("commit");
+    }
+
+    #[test]
+    fn lorebook_apply_receipt_sync_keeps_name_on_fresh_peer() {
+        let database = Database::open_in_memory().expect("database");
+        let peer = Database::open_in_memory().expect("peer");
+        let (workflow, proposal_id) = confirmed_workflow(
+            &database,
+            CreationTarget::NewLorebook,
+            CreationDraft::Lorebook {
+                name: Some("Snapshot world".into()),
+                description: None,
+                entries: Vec::new(),
+            },
+            10,
+        );
+        let receipt = database.apply_new_lorebook(ConfirmedLorebookApply {
+            workflow_id: workflow.id,
+            expected_workflow_revision: workflow.revision,
+            proposal_id,
+            destination_lorebook_id: LorebookId::new(),
+            now: TimestampMillis::new(15),
+        }).expect("apply");
+        database.connection().expect("connection")
+            .execute("DELETE FROM lorebooks WHERE id=?1", [receipt.lorebook_id.to_string()])
+            .expect("delete before first sync");
+        sync_once(&database, &peer, 20);
+        sync_once(&database, &peer, 21);
+        let mut connection = peer.connection().expect("connection");
+        let transaction = connection.transaction().expect("transaction");
+        assert_eq!(read_workflows_in(&transaction).expect("peer workflows")[0].lorebook_receipt, Some(receipt));
+    }
+
+    #[test]
     fn confirmed_new_lorebook_apply_commits_ordered_always_active_entries_and_retries() {
         let database = Database::open_in_memory().expect("database");
         let first_entry_id = LorebookEntryId::new();
@@ -4926,6 +5012,7 @@ mod tests {
             .apply_new_lorebook(request.clone())
             .expect("apply lorebook");
         assert_eq!(receipt.lorebook_id, lorebook_id);
+        assert_eq!(receipt.lorebook_name, "Harbor lore");
         assert_eq!(receipt.lorebook_revision, Revision::INITIAL);
         let details = LorebookRepository::get(&database, lorebook_id)
             .expect("load lorebook")
@@ -5242,6 +5329,7 @@ mod tests {
         let receipt = database
             .apply_existing_lorebook(request.clone())
             .expect("apply existing lorebook");
+        assert_eq!(receipt.lorebook_name, "Revised atlas");
         assert_eq!(receipt.lorebook_revision, Revision::new(2));
         let revised = LorebookRepository::get(&database, original.book.id)
             .expect("load revised")

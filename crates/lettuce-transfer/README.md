@@ -41,6 +41,8 @@ Limits: 2 GiB per section and 1 TiB in total. A data document larger than `BACKU
 
 ## What a backup contains
 
+Provider graph version 3 carries lorebook apply receipts with the destination's name at apply time. A receipt remains restorable when its lorebook is absent. The encrypted envelope remains version 2.
+
 A backup is complete: it holds every user-owned domain, every referenced media object and every portable secret needed to recreate the profile.
 
 | Section | Contents |

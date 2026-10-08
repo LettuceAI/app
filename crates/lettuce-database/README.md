@@ -215,6 +215,8 @@ The ask-first state stores the prompt baseline and pending or skipped state per 
 
 ## Creation helper and lorebook runs
 
+Lorebook apply receipts store the destination id and name at apply time without a foreign key to the lorebook. The original receipt replays after source deletion, and restore can insert it without the source book. Workflow and proposal ownership and receipt immutability remain enforced.
+
 Migration 11 stores creation-helper workflows: the target and its expected authored revision, user turns before inference, and an immutable ordered proposal lineage, with stage and current-proposal changes under revision CAS. A workflow may leave the confirmation stage again, but once an apply receipt exists it is closed: triggers and the adapter refuse further turns, attempts, recoveries, proposals and settlements. Apply is refused while an attempt on the current proposal is created or running. Tool calls must match a declared name and version, except undeclared tools, which are admitted at version 1 and answered as unknown.
 
 Apply is the helper's only write into authored domains, and each target reuses that domain's own insert or CAS path in the same transaction as an immutable receipt: new and existing personas, new characters (root, scenes and receipt together), existing characters (profile and scenes under one root revision, unreviewed graph kept, dependent scene removal refused), new lorebooks and existing lorebooks (reviewed entry ids reconciled, hidden policy fields kept). Receipts are per workflow, so later workflows can revise the same entity with fresh CAS tokens.
