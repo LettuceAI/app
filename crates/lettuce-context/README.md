@@ -117,3 +117,5 @@ The message text keywords are matched against is not bounded. Condition trees ar
 `count_tokens_batch` counts each text with the o200k encoding from `tiktoken-rs`, reading special tokens as plain text. The lorebook editor uses it for the trigger preview.
 
 The renderer records transient substitution spans on each rendered entry, identifying the placeholder actually substituted and its byte range. Inspection uses these spans after placement rather than matching runtime strings against the final prompt.
+
+`prompt_placeholders` provides allowed and required tokens for every prompt purpose, including planner, writer, refinement and coherence. Required-token validation inspects enabled or system entries and their payload tokens; the API enforces it before create or update.

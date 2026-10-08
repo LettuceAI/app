@@ -92,3 +92,5 @@ Generation channels transport typed speaker selection events along with text del
 Generation and job channels also transport typed local runtime notices. Job watches carry throughput separately from text. The global application event transports local runtime report changes with model ids; the application composition performs the request routing and model resolution.
 
 Generation and job channels forward typed `ModelLoading` events, including retry and terminal load status, model name and GPU progress. The shell does not reconstruct load state or throttle it.
+
+Lorebook, staged project and prompt wrappers forward typed requests to the application API. Draft and stage commands return durable job identities for `job_watch`; source documents arrive as managed asset ids. Trigger and prompt previews are backend reads, and the shell performs no matching or prompt rendering.

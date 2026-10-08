@@ -151,3 +151,5 @@ Manual-only delete-after rewinds carry the recorded user edit undo evidence and 
 Cycle reverts and dismissed failures are new backup state (memory section version 7, dynamic-memory section version 5); the legacy revert only existed as a saved session rebuilt from events (`old-code/src/core/storage/memoryToolEvents.ts:299-310`), which the legacy importer never carries, so nothing is imported for them.
 
 Dynamic-memory backup version 6 preserves the cycle changed-item journal so restoring a backup keeps the user-edit dependency checks on cycle revert.
+
+Provider graph version 4 carries pending staged projects, frozen draft prompt documents and name-bearing staged commit receipts. These preserve source identity after deletion; legacy staged projects were held only in the process registry (`old-code/src-tauri/src/chat_manager/lorebook_generator/state.rs:168-177`).

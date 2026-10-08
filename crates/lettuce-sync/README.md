@@ -265,3 +265,5 @@ Memory summary payload version 4 and inherited-summary payload version 3 preserv
 The `memory_manual_edit` entity carries one immutable manual edit plus its undo timestamp. Its payload normalizes local space ids, insertion sequences and short ids; materialization resolves the local own space or pool and restores local identities. A missing branch or anchor defers the entity. The added payload schema changes the handshake fingerprint.
 
 Memory cycle reverts and dismissed memory failures stay on the device: they annotate runs, which are not synced. The memory items and summary a revert restores travel as ordinary memory changes.
+
+Prompt payload version 2 carries derivation source names without requiring the source document. Conversation message payload version 4 carries prompt and lorebook history names, and creation workflow payload version 2 carries applied lorebook receipt names without a source dependency. Their schema versions participate in the handshake fingerprint. Generator jobs and their checkpoints remain device-local.

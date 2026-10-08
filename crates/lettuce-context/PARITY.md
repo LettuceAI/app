@@ -34,3 +34,5 @@ Import/export, sessions, sync/backup, hard purge, legacy id conversion, database
 - `DeterministicV2` lorebooks use the same ordering as `LegacyV1` until a product decision makes entry priority take part (comment in `LorebookMatcher::activate`).
 - The previous README said conversation snapshots "can pin the resolved revision later"; snapshot activation (`resolve_lorebook_snapshot_activation`) exists now.
 - `PromptRepository::lookup_exact` leaves fallback and app/session precedence to conversation assembly.
+
+The placeholder registry includes all four staged generator kinds. Legacy defined their required sets (`old-code/src-tauri/src/chat_manager/prompting/parameter_engine.rs:878-899`) but omitted them from the exported registry (`parameter_engine.rs:954-987`). Required-token validation preserves enabled-or-system entry selection and payload tokens (`old-code/src-tauri/src/chat_manager/prompting/prompts.rs:251-267,984-990,1040-1046`).

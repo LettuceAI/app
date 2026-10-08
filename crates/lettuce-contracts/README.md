@@ -59,3 +59,5 @@ Generation streams include `SpeakerSelecting` and `SpeakerSelected` with the res
 Local runtime notices carry a typed code on a generation or job stream. `JobEvent::Throughput` carries generated tokens and tokens per second without duplicating text deltas. `ApiEvent::LocalModelRuntimeReportChanged` names the local model profiles whose stored report changed.
 
 Turn and job `ModelLoading` events carry typed `ModelLoadStage` and `ModelLoadStatus`, an integer overall percentage, the model name and optional `ModelLoadGpuProgress` rows. Loaded and Failed remain explicit terminal load statuses, separate from generation or job settlement.
+
+Lorebook and prompt DTOs carry aggregate revisions and operation keys, typed configured-source failures, preview explanations, staged project state and historical source names with deleted markers. Generator commands return existing job DTOs rather than inline inference results.

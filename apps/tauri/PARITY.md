@@ -5,3 +5,5 @@ Local runtime warning toasts become typed request-scoped notices (`old-code/src-
 Generation speaker signals replace group status events (`old-code/src-tauri/src/group_chat_manager/mod.rs:314-335,6584-6592`); the application supplies the resolved character and replays it to late attachments.
 
 Model-load progress moves from the global legacy event (`old-code/src/App.tsx:586-588`) to the requesting turn or job channel; typed stage/status, model name and per-GPU progress preserve the displayed load information (`App.tsx:534-580`). Overall percentages are integer and updates are coalesced by visible payload changes.
+
+Lorebook generators use durable jobs and typed results rather than direct long-running commands and the process-only staged registry (`old-code/src-tauri/src/chat_manager/lorebook_generator/state.rs:168-177`). The shell forwards library changes and affected-owner events after hard deletes; the application owns atomic reference cleanup.
