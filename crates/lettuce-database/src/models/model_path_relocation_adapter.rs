@@ -136,4 +136,18 @@ mod certificate_race_tests {
         assert_eq!(after.trusted_certificates, concurrent.trusted_certificates);
         assert_eq!(after.llm_models_dir.as_deref(), Some("/new/models"));
     }
+    #[test]
+    fn relocation_does_not_restore_a_concurrently_cleared_retained_root() {
+        let database = Database::open_in_memory().expect("database");
+        database.update_device_settings(&|device| device.retained_model_roots.whisper = Some("/old/models/whisper".into())).expect("root");
+        let mut stale = database.load_device_settings().expect("move snapshot");
+        stale.llm_models_dir = Some("/new/models".into());
+        stale.retained_model_roots.whisper = Some("/new/models/whisper".into());
+        database.update_device_settings(&|device| device.retained_model_roots.whisper = None).expect("concurrent clear");
+        database.relocate_model_paths_and_save_device(&|path| path.strip_prefix("/old/models").map(|suffix|format!("/new/models{suffix}")), stale, TimestampMillis::new(1)).expect("move");
+        let after = database.load_device_settings().expect("current");
+        assert_eq!(after.retained_model_roots.whisper,None);
+        assert_eq!(after.llm_models_dir.as_deref(),Some("/new/models"));
+    }
+
 }

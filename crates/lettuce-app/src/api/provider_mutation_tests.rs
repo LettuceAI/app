@@ -1114,3 +1114,50 @@ async fn desktop_context_reopens_with_an_invalid_stored_root_and_verifies_a_prov
     drop(context);
     std::fs::remove_dir_all(root).expect("cleanup");
 }
+
+#[tokio::test]
+async fn completed_save_replays_after_its_key_is_replaced() {
+    let harness = harness(Reply::Text("Hello."));
+    let request = save(None, Some("original-key"), false, None, "replay-rotated");
+    let first = super::provider_account_save(&harness.context, request.clone()).await.expect("first");
+    let next = super::provider_account_save(&harness.context, save(Some(first.id.clone()), Some("replacement-key"), false, Some(first.revision), "rotate-replayed")).await.expect("replace");
+    assert_eq!(super::provider_account_save(&harness.context, request).await.expect("historical replay"), first);
+    assert_eq!(super::provider_accounts_list(&harness.context).await.expect("accounts").into_iter().find(|account|account.id==next.id).expect("current").revision,next.revision);
+}
+
+#[tokio::test]
+async fn completed_save_replays_after_its_account_is_deleted() {
+    let harness = harness(Reply::Text("Hello."));
+    let request = save(None, Some("deleted-key"), false, None, "replay-deleted");
+    let first = super::provider_account_save(&harness.context, request.clone()).await.expect("first");
+    super::provider_account_delete(&harness.context, dto::ProviderAccountDeleteRequest { account_id:first.id.clone(), expected_revision:first.revision, delete_models:false, client_operation_id:"delete-replayed".into() }).await.expect("delete");
+    assert_eq!(super::provider_account_save(&harness.context, request).await.expect("historical replay"), first);
+    assert!(!super::provider_accounts_list(&harness.context).await.expect("accounts").iter().any(|account|account.id==first.id));
+    assert!(harness.context.backend().database().provider_secret_cleanup().expect("journal").is_empty());
+}
+
+#[tokio::test]
+async fn certificate_replay_rebuilds_clients_after_a_failed_post_commit_refresh() {
+    use lettuce_network::{JsonAuth, JsonClient, RequestPolicy};
+    let harness = harness(Reply::Text("Hello."));
+    let client = JsonClient::new().expect("client");
+    harness.context.backend().provider_json_clients.lock().expect("registry").push(client.downgrade());
+    let backend = harness.context.shared_backend();
+    assert!(std::thread::spawn(move || {
+        let _guard = backend.provider_json_clients.lock().expect("registry");
+        panic!("injected registry failure");
+    }).join().is_err());
+    let file = TestFile::new();
+    std::fs::write(file.path(), include_str!("../../tests/fixtures/provider-test-cert.pem")).expect("source");
+    let request = dto::CertificatesImportRequest { source:dto::FileSource { uri:file.path().to_string_lossy().into_owned() }, client_operation_id:"retry-refresh".into() };
+    assert_eq!(super::certificates_import(&harness.context, request.clone()).await.expect_err("refresh failed after commit").code,ApiErrorCode::Internal);
+    let committed = super::certificates_list(&harness.context).await.expect("committed");
+    assert_eq!(committed.certificates.len(),1);
+    harness.context.backend().provider_json_clients.clear_poison();
+    let (url, server) = tls_fixture().await;
+    assert!(client.get_json(&url,"/",&[],JsonAuth::None,vec![],RequestPolicy::BROWSE).await.is_err());
+    std::fs::remove_file(file.path()).expect("expire grant");
+    assert_eq!(super::certificates_import(&harness.context, request).await.expect("retry refresh"),committed);
+    assert_eq!(client.get_json(&url,"/",&[],JsonAuth::None,vec![],RequestPolicy::BROWSE).await.expect("rebuilt client").status,200);
+    server.abort();
+}
