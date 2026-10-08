@@ -128,6 +128,7 @@ pub struct ModelDefaultView {
 #[serde(deny_unknown_fields)]
 pub struct ProviderNanoGptUsageRequest {
     pub account_id: String,
+    pub refresh: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -16,6 +16,7 @@ async fn usage_wrong_kind_and_missing_key_are_typed() {
         .remove(0);
     let request = dto::ProviderNanoGptUsageRequest {
         account_id: account.id.to_string(),
+        refresh: true,
     };
     let wrong = super::provider_nanogpt_usage(&h.context, request.clone())
         .await
@@ -116,7 +117,10 @@ async fn usage_non_success_preserves_provider_text_and_redacts_credentials() {
     });
     let error = super::provider_nanogpt_usage(
         &h.context,
-        dto::ProviderNanoGptUsageRequest { account_id: id },
+        dto::ProviderNanoGptUsageRequest {
+            account_id: id,
+            refresh: true,
+        },
     )
     .await
     .expect_err("provider failure");
@@ -181,7 +185,10 @@ async fn completed_request_returns_success_while_quota_check_is_waiting_or_fails
     );
     let manual = super::provider_nanogpt_usage(
         &h.context,
-        dto::ProviderNanoGptUsageRequest { account_id: id },
+        dto::ProviderNanoGptUsageRequest {
+            account_id: id,
+            refresh: true,
+        },
     );
     tokio::pin!(manual);
     std::future::poll_fn(|cx| {
@@ -228,6 +235,7 @@ async fn every_quota_level_emits_once_and_context_restart_does_not_repeat_it() {
             &h.context,
             dto::ProviderNanoGptUsageRequest {
                 account_id: id.clone(),
+                refresh: true,
             },
         )
         .await
@@ -240,6 +248,7 @@ async fn every_quota_level_emits_once_and_context_restart_does_not_repeat_it() {
         &restart,
         dto::ProviderNanoGptUsageRequest {
             account_id: id.clone(),
+            refresh: true,
         },
     )
     .await
@@ -286,7 +295,10 @@ async fn shutdown_during_usage_check_cancels_without_emitting_a_warning() {
     let command = tokio::spawn(async move {
         super::provider_nanogpt_usage(
             &context,
-            dto::ProviderNanoGptUsageRequest { account_id: id },
+            dto::ProviderNanoGptUsageRequest {
+                account_id: id,
+                refresh: true,
+            },
         )
         .await
     });
@@ -320,4 +332,199 @@ async fn read_request(socket: &mut tokio::net::TcpStream) -> String {
             return String::from_utf8(request).expect("request text");
         }
     }
+}
+
+#[tokio::test]
+async fn html_provider_error_has_status_without_raw_body() {
+    use tokio::io::AsyncWriteExt;
+    let h = harness(Reply::Text("Hello."));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("listener");
+    let id = nano_account(
+        &h,
+        format!("http://{}", listener.local_addr().expect("address")),
+    )
+    .await;
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.expect("accept");
+        read_request(&mut socket).await;
+        let body = "<html>Bad Gateway nano-secret-canary</html>";
+        socket.write_all(format!("HTTP/1.1 502 Bad Gateway\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.expect("response");
+    });
+    let error = super::provider_nanogpt_usage(
+        &h.context,
+        dto::ProviderNanoGptUsageRequest {
+            account_id: id,
+            refresh: true,
+        },
+    )
+    .await
+    .expect_err("502");
+    assert!(matches!(
+        error.details,
+        Some(dto::ApiErrorDetails::ProviderQuota {
+            status: Some(502),
+            provider_message: None,
+            ..
+        })
+    ));
+    server.await.expect("server");
+}
+
+#[tokio::test]
+async fn account_deleted_during_usage_check_emits_no_warning() {
+    use tokio::io::AsyncWriteExt;
+    let h = harness(Reply::Text("Hello."));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("listener");
+    let id = nano_account(
+        &h,
+        format!("http://{}", listener.local_addr().expect("address")),
+    )
+    .await;
+    let (started, received) = tokio::sync::oneshot::channel();
+    let (release, released) = tokio::sync::oneshot::channel();
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.expect("accept");
+        read_request(&mut socket).await;
+        started.send(()).expect("started");
+        released.await.expect("release");
+        let body = r#"{"weekly":{"used":90,"limit":100,"resetAt":"window"}}"#;
+        socket
+            .write_all(
+                format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                )
+                .as_bytes(),
+            )
+            .await
+            .expect("response");
+    });
+    let context = h.context.clone();
+    let account_id = id.clone();
+    let command = tokio::spawn(async move {
+        super::provider_nanogpt_usage(
+            &context,
+            dto::ProviderNanoGptUsageRequest {
+                account_id,
+                refresh: true,
+            },
+        )
+        .await
+    });
+    received.await.expect("started");
+    ProviderAccountRepository::delete(h.context.backend().database(), id.parse().expect("id"))
+        .expect("delete");
+    release.send(()).expect("release");
+    command.await.expect("command").expect("usage result");
+    assert!(!h.events.events().iter().any(|event| matches!(event, dto::ApiEvent::ProviderQuota { account_id, .. } if account_id == &id)));
+    server.await.expect("server");
+}
+
+#[tokio::test]
+async fn usage_cached_read_reuses_result_and_refresh_fetches_again() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    use tokio::io::AsyncWriteExt;
+    let h = harness(Reply::Text("Hello."));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("listener");
+    let id = nano_account(
+        &h,
+        format!("http://{}", listener.local_addr().expect("address")),
+    )
+    .await;
+    let count = Arc::new(AtomicUsize::new(0));
+    let observed = count.clone();
+    let server = tokio::spawn(async move {
+        loop {
+            let (mut socket, _) = listener.accept().await.expect("accept");
+            read_request(&mut socket).await;
+            let used = 75 + observed.fetch_add(1, Ordering::SeqCst) * 15;
+            let body = serde_json::json!({"weekly":{"used":used,"limit":100,"resetAt":"window"}})
+                .to_string();
+            socket
+                .write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    )
+                    .as_bytes(),
+                )
+                .await
+                .expect("response");
+        }
+    });
+    let request = dto::ProviderNanoGptUsageRequest {
+        account_id: id,
+        refresh: false,
+    };
+    let first = super::provider_nanogpt_usage(&h.context, request.clone())
+        .await
+        .expect("first");
+    let cached = super::provider_nanogpt_usage(&h.context, request.clone())
+        .await
+        .expect("cached");
+    assert_eq!(cached, first);
+    assert_eq!(count.load(Ordering::SeqCst), 1);
+    let refreshed = super::provider_nanogpt_usage(
+        &h.context,
+        dto::ProviderNanoGptUsageRequest {
+            refresh: true,
+            ..request
+        },
+    )
+    .await
+    .expect("refresh");
+    assert_eq!(refreshed.weekly.expect("weekly").used, Some(90.0));
+    assert_eq!(count.load(Ordering::SeqCst), 2);
+    server.abort();
+}
+
+#[tokio::test]
+async fn provider_error_message_is_capped_by_characters() {
+    use tokio::io::AsyncWriteExt;
+    let h = harness(Reply::Text("Hello."));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("listener");
+    let id = nano_account(
+        &h,
+        format!("http://{}", listener.local_addr().expect("address")),
+    )
+    .await;
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.expect("accept");
+        read_request(&mut socket).await;
+        let body = serde_json::json!({"detail":format!("nano-secret-canary{}", "界".repeat(350))})
+            .to_string();
+        socket.write_all(format!("HTTP/1.1 502 Bad Gateway\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.expect("response");
+    });
+    let error = super::provider_nanogpt_usage(
+        &h.context,
+        dto::ProviderNanoGptUsageRequest {
+            account_id: id,
+            refresh: true,
+        },
+    )
+    .await
+    .expect_err("502");
+    match error.details {
+        Some(dto::ApiErrorDetails::ProviderQuota {
+            provider_message: Some(message),
+            ..
+        }) => {
+            assert_eq!(message.chars().count(), 300);
+            assert!(message.starts_with("[REDACTED]"));
+            assert!(!message.contains("nano-secret-canary"));
+        }
+        other => panic!("missing provider message: {other:?}"),
+    }
+    server.await.expect("server");
 }

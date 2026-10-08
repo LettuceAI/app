@@ -233,7 +233,7 @@ pub async fn provider_nanogpt_usage(
         ));
     }
     let id = super::error::parse_id(&request.account_id, "account_id")?;
-    let (claim, mut result) = context.quota().begin(id, true);
+    let (claim, mut result) = context.quota().begin(id, request.refresh);
     if let Some(claim) = claim {
         spawn(context, claim);
     }
