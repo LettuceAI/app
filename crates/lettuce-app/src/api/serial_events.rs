@@ -149,7 +149,7 @@ mod tests {
         let received = Arc::new(Mutex::new(Vec::new()));
         let consumer = Arc::clone(&received);
         let delivery = SerialEvents::new(move |event| {
-            consumer.lock().unwrap().push(event);
+            consumer.lock().expect("consumer events").push(event);
             true
         });
         for event in 0..300 {
@@ -157,6 +157,9 @@ mod tests {
         }
         delivery.finish(300);
         delivery.initialize(Vec::new());
-        assert_eq!(*received.lock().unwrap(), (0..=300).collect::<Vec<_>>());
+        assert_eq!(
+            *received.lock().expect("received events"),
+            (0..=300).collect::<Vec<_>>()
+        );
     }
 }
