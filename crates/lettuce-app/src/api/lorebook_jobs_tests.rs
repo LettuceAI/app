@@ -1380,3 +1380,33 @@ async fn planner_retry_job_runs_and_the_project_leaves_planning() {
     drop(working);
     std::fs::remove_dir_all(directory).expect("cleanup");
 }
+
+#[tokio::test]
+async fn keyword_draft_uses_the_first_text_model_not_the_default() {
+    let harness = harness(Reply::Text("ignored"));
+    let book = book(&harness).await;
+    let db = harness.context.backend().database();
+    crate::launch::tests::seed_model(db, lettuce_models::ProviderProtocol::Ollama, "ollama");
+    let models = lettuce_models::ModelCatalog::model_profiles(db).expect("models");
+    assert_eq!(models.len(), 2);
+    crate::launch::tests::set_application_default_model(db, models[1].id);
+    let admitted = lorebook_keywords_draft(&harness.context, request(&book))
+        .await
+        .expect("admit");
+    let job = JobStore::get(db, admitted.job_id.parse().expect("id"))
+        .expect("job")
+        .expect("exists");
+    let work = LorebookHandler
+        .claim(&harness.context, &job, WorkerId::new())
+        .await
+        .expect("claim")
+        .expect("claimed");
+    work.run(harness.context.clone(), Arc::new(Progress))
+        .await
+        .expect("run");
+    let requests = harness.provider.requests.lock().expect("requests");
+    assert!(!requests.is_empty());
+    for request in requests.iter() {
+        assert_eq!(request.profile.chat_profile.model_profile_id, models[0].id);
+    }
+}

@@ -6,7 +6,7 @@ use super::{
 use lettuce_context::{LifecycleStatus, LorebookRepository, PromptPurpose, PromptRepository};
 use lettuce_contracts::{self as dto, ApiError, ApiErrorCode, ApiErrorDetails};
 use lettuce_models::{
-    GlobalModelSettingsRepository, ModelCatalog, ModelProfileRepository, ProviderAccountRepository,
+    GlobalModelSettingsRepository, ModelProfileRepository, ProviderAccountRepository,
 };
 use lettuce_settings::GlobalSettingsStore;
 use lettuce_types::{ModelProfileId, RequestId};
@@ -115,10 +115,33 @@ pub(super) fn model_error(reason: dto::LorebookModelProblem) -> ApiError {
     }
 }
 
+pub(super) fn entry_text_profile(
+    context: &ApiContext,
+) -> Result<lettuce_conversations::ResolvedInferenceProfile, ApiError> {
+    use crate::image::image_feature_models::{
+        ImageFeatureModelError, LorebookEntryModelProblem, lorebook_entry_generator_model,
+    };
+    let db = context.backend().database();
+    let settings = GlobalSettingsStore::load(db).map_err(failure)?;
+    let model =
+        lorebook_entry_generator_model(db, &settings.settings).map_err(|error| match error {
+            ImageFeatureModelError::LorebookEntryGenerator(problem) => model_error(match problem {
+                LorebookEntryModelProblem::ConfiguredMissing => {
+                    dto::LorebookModelProblem::ConfiguredModelMissing
+                }
+                LorebookEntryModelProblem::ConfiguredNotText => {
+                    dto::LorebookModelProblem::ConfiguredModelNotText
+                }
+                LorebookEntryModelProblem::NoCompatible => dto::LorebookModelProblem::NoTextModel,
+            }),
+            other => api_error(ApiErrorCode::Unavailable, other.to_string()),
+        })?;
+    resolved_profile(context, &settings, model.profile, model.account, false)
+}
+
 pub(super) fn text_profile(
     context: &ApiContext,
     selected: Option<ModelProfileId>,
-    staged: bool,
 ) -> Result<lettuce_conversations::ResolvedInferenceProfile, ApiError> {
     let db = context.backend().database();
     let settings = GlobalSettingsStore::load(db).map_err(failure)?;
@@ -136,36 +159,35 @@ pub(super) fn text_profile(
                 .get(lettuce_models::Modality::Text)
                 == lettuce_models::CapabilityStatus::Supported
     };
-    let model = if let Some(id) = selected {
-        let model = ModelProfileRepository::get(db, id)
-            .map_err(failure)?
-            .ok_or_else(|| model_error(dto::LorebookModelProblem::ConfiguredModelMissing))?;
-        if !text(&model) {
-            return Err(model_error(
-                dto::LorebookModelProblem::ConfiguredModelNotText,
-            ));
-        }
-        model
-    } else {
-        let default = settings
-            .default_model_profile_id
-            .map(|id| ModelProfileRepository::get(db, id))
-            .transpose()
-            .map_err(failure)?
-            .flatten()
-            .filter(text);
-        match default {
-            Some(model) => model,
-            None => ModelCatalog::model_profiles(db)
+    let chosen = selected.or(settings.default_model_profile_id);
+    let model = match chosen {
+        Some(id) => {
+            let model = ModelProfileRepository::get(db, id)
                 .map_err(failure)?
-                .into_iter()
-                .find(text)
-                .ok_or_else(|| model_error(dto::LorebookModelProblem::NoTextModel))?,
+                .ok_or_else(|| model_error(dto::LorebookModelProblem::ConfiguredModelMissing))?;
+            if !text(&model) {
+                return Err(model_error(
+                    dto::LorebookModelProblem::ConfiguredModelNotText,
+                ));
+            }
+            model
         }
+        None => return Err(model_error(dto::LorebookModelProblem::NoTextModel)),
     };
     let account = ProviderAccountRepository::get(db, model.provider_account_id)
         .map_err(failure)?
         .ok_or_else(|| api_error(ApiErrorCode::NotFound, "provider account not found"))?;
+    resolved_profile(context, &settings, model, account, true)
+}
+
+fn resolved_profile(
+    context: &ApiContext,
+    settings: &lettuce_settings::StoredGlobalSettings,
+    model: lettuce_models::ModelProfile,
+    account: lettuce_models::ProviderAccount,
+    staged: bool,
+) -> Result<lettuce_conversations::ResolvedInferenceProfile, ApiError> {
+    let db = context.backend().database();
     let slot = if staged {
         &model.config.feature_parameters.lorebook_generator
     } else {
@@ -379,7 +401,7 @@ pub async fn lorebook_entry_draft(
                     ),
                     PromptPurpose::LorebookEntryWriter,
                 )?;
-                let profile = text_profile(context, selected.model_profile_id, false)?;
+                let profile = entry_text_profile(context)?;
                 let conversation =
                     lettuce_conversations::ConversationReader::get(db, conversation_id)
                         .map_err(failure)?;
@@ -475,7 +497,7 @@ pub async fn lorebook_keywords_draft(
                     ),
                     PromptPurpose::LorebookKeywordGenerator,
                 )?;
-                let profile = text_profile(context, selected.model_profile_id, false)?;
+                let profile = entry_text_profile(context)?;
                 context
                     .backend()
                     .lorebook_keyword_coordinator()

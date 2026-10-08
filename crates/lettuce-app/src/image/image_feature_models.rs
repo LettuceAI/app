@@ -32,12 +32,22 @@ pub enum ImageFeatureModelError {
     NoModel,
     #[error("Model not found")]
     ModelNotFound,
-    #[error("{0}")]
-    LorebookEntryGenerator(&'static str),
+    #[error(transparent)]
+    LorebookEntryGenerator(LorebookEntryModelProblem),
     #[error("{0}")]
     SoulWriter(&'static str),
     #[error("model storage is unavailable")]
     Storage,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum LorebookEntryModelProblem {
+    #[error("Configured lorebook entry generator model could not be resolved")]
+    ConfiguredMissing,
+    #[error("Configured lorebook entry generator model must support text input and text output")]
+    ConfiguredNotText,
+    #[error("No compatible lorebook entry generator model is configured")]
+    NoCompatible,
 }
 
 impl From<ModelRepositoryError> for ImageFeatureModelError {
@@ -184,20 +194,20 @@ pub fn lorebook_entry_generator_model<C: ModelCatalog + ?Sized>(
     if let Some(id) = settings.lorebook_entry_generator.model_profile_id {
         let model =
             preferred(&all, Some(id)).ok_or(ImageFeatureModelError::LorebookEntryGenerator(
-                "Configured lorebook entry generator model could not be resolved",
+                LorebookEntryModelProblem::ConfiguredMissing,
             ))?;
         return if generates_text(model) {
             Ok(model.clone())
         } else {
             Err(ImageFeatureModelError::LorebookEntryGenerator(
-                "Configured lorebook entry generator model must support text input and text output",
+                LorebookEntryModelProblem::ConfiguredNotText,
             ))
         };
     }
     all.into_iter()
         .find(generates_text)
         .ok_or(ImageFeatureModelError::LorebookEntryGenerator(
-            "No compatible lorebook entry generator model is configured",
+            LorebookEntryModelProblem::NoCompatible,
         ))
 }
 

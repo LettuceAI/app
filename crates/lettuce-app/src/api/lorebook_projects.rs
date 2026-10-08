@@ -504,7 +504,6 @@ pub async fn lorebook_project_plan(
                                 .lorebook_generator
                                 .selection
                                 .model_profile_id,
-                            true,
                         )?;
                         let prompt = prompt(
                             context,
@@ -912,7 +911,6 @@ fn overrides(
                 .lorebook_generator
                 .selection
                 .model_profile_id,
-            true,
         )?
         .chat_profile
         .model_profile_id,
