@@ -1,8 +1,6 @@
 use super::tests::{Reply, harness};
 use super::*;
-use lettuce_context::{
-    LifecycleStatus, PromptEntryDraft, PromptMetadataDraft, PromptPurpose, PromptRepository,
-};
+use lettuce_context::{LifecycleStatus, PromptEntryDraft, PromptMetadataDraft, PromptRepository};
 use lettuce_contracts::{self as dto, ApiErrorCode};
 use lettuce_creation::LorebookKeywordRunRepository;
 use lettuce_jobs::{CancellationReason, JobMutation, JobStore, WorkerId};
@@ -40,14 +38,17 @@ fn request(book: &dto::LorebookView) -> dto::LorebookKeywordsDraftRequest {
 }
 
 fn custom_prompt(harness: &super::tests::Harness) -> lettuce_context::PromptDocument {
+    custom_prompt_for(harness, crate::BuiltInPromptId::LorebookKeywordGenerator)
+}
+
+fn custom_prompt_for(
+    harness: &super::tests::Harness,
+    kind: crate::BuiltInPromptId,
+) -> lettuce_context::PromptDocument {
     let db = harness.context.backend().database();
     let seed = PromptRepository::get(
         db,
-        harness
-            .context
-            .backend()
-            .built_in_prompt_ids()
-            .lorebook_keyword_generator,
+        harness.context.backend().built_in_prompt_ids().get(kind),
     )
     .expect("seed")
     .expect("exists");
@@ -55,7 +56,7 @@ fn custom_prompt(harness: &super::tests::Harness) -> lettuce_context::PromptDocu
         db,
         PromptMetadataDraft {
             name: "Keyword source".into(),
-            purpose: PromptPurpose::LorebookKeywordGenerator,
+            purpose: seed.purpose,
             condense: seed.condense,
             behavior_version: seed.behavior_version,
         },
@@ -527,6 +528,12 @@ async fn staged_api_batches_replay_refuse_overlap_and_commit_unapproved_drafts()
     )
     .await
     .expect("refine review");
+    assert!(
+        project_get(&harness, &created.project_id)
+            .await
+            .active_job_ids
+            .contains(&refined.job_id)
+    );
     execute(&harness, &refined.job_id).await;
     let review = project_get(&harness, &created.project_id).await;
     assert_eq!(review.stage, dto::LorebookProjectStage::CoherenceReview);
@@ -542,19 +549,17 @@ async fn staged_api_batches_replay_refuse_overlap_and_commit_unapproved_drafts()
     )
     .await
     .expect("approval review");
-    let committed = lorebook_project_commit(
-        &harness.context,
-        dto::LorebookProjectCommitRequest {
-            client_operation_id: "commit".into(),
-            project_id: created.project_id.clone(),
-            expected_revision: approved.revision,
-            target: dto::LorebookProjectCommitTarget::NewLorebook {
-                name: Some("Coast".into()),
-            },
+    let commit_request = dto::LorebookProjectCommitRequest {
+        client_operation_id: "commit".into(),
+        project_id: created.project_id.clone(),
+        expected_revision: approved.revision,
+        target: dto::LorebookProjectCommitTarget::NewLorebook {
+            name: Some("Coast".into()),
         },
-    )
-    .await
-    .expect("commit");
+    };
+    let committed = lorebook_project_commit(&harness.context, commit_request.clone())
+        .await
+        .expect("commit");
     assert_eq!(committed.entry_ids.len(), 5);
     let committed_project = project_get(&harness, &created.project_id).await;
     assert_eq!(
@@ -562,6 +567,37 @@ async fn staged_api_batches_replay_refuse_overlap_and_commit_unapproved_drafts()
         dto::LorebookProjectStage::Committed
     );
     assert_eq!(committed_project.coherence_changes.len(), 1);
+    let committed_book = lorebook_get(
+        &harness.context,
+        dto::LorebookGetRequest {
+            lorebook_id: committed.lorebook_id.clone(),
+        },
+    )
+    .await
+    .expect("committed book");
+    lorebook_delete(
+        &harness.context,
+        dto::LorebookRevisionRequest {
+            client_operation_id: "delete-committed".into(),
+            lorebook_id: committed.lorebook_id.clone(),
+            expected_revision: committed_book.lorebook.revision,
+        },
+    )
+    .await
+    .expect("delete source");
+    assert_eq!(
+        lorebook_project_commit(&harness.context, commit_request)
+            .await
+            .expect("original commit replay"),
+        committed
+    );
+    assert!(
+        project_get(&harness, &created.project_id)
+            .await
+            .commit
+            .expect("history")
+            .lorebook_deleted
+    );
 }
 
 async fn prepare_stage(harness: &super::tests::Harness, stage: &str) -> (String, String) {
@@ -914,19 +950,21 @@ async fn entry_force_uses_catalog_and_save_is_atomic_and_replayable() {
         admitted
     );
     execute(&harness, &admitted.job_id).await;
-    let requests = harness.provider.requests.lock().expect("requests");
-    assert_eq!(requests.len(), 1);
-    assert!(
-        !requests[0]
-            .tools
-            .as_ref()
-            .expect("tools")
-            .definitions
-            .iter()
-            .any(|tool| tool.name == "no_entry")
-    );
-    assert!(format!("{:?}", requests[0].context.messages).contains("[FORCE MODE]"));
-    drop(requests);
+    {
+        let requests = harness.provider.requests.lock().expect("requests");
+        assert_eq!(requests.len(), 1);
+        assert!(
+            !requests[0]
+                .tools
+                .as_ref()
+                .expect("tools")
+                .definitions
+                .iter()
+                .any(|tool| tool.name == "no_entry")
+        );
+        assert!(format!("{:?}", requests[0].context.messages).contains("[FORCE MODE]"));
+    }
+
     let result = job_get(
         &harness.context,
         dto::JobGetRequest {
@@ -1003,24 +1041,183 @@ async fn deleting_lorebook_during_entry_inference_keeps_frozen_source_history() 
     let harness = harness(Reply::UntilCancelled);
     let book = book(&harness).await;
     let conversation = super::tests::launch(&harness, "entry-delete-source").await;
-    let open = conversation_open(&harness.context, dto::ConversationOpenRequest { conversation_id: conversation.clone() }).await.expect("open");
-    let message = conversation_add_user_message(&harness.context, dto::ConversationAddUserMessageRequest { conversation_id: conversation.clone(), text: "The district is on the coast.".into(), expected_revision: open.revision, client_operation_id: "entry-delete-message".into() }).await.expect("message");
-    let request = dto::LorebookEntryDraftRequest { client_operation_id: "entry-delete-draft".into(), conversation_id: conversation, lorebook_id: book.lorebook.id.clone(), source: dto::LorebookEntryDraftSource::Messages, message_ids: vec![message.message.id], memory_ids: vec![], use_summary: false, direction: None, force: false };
-    let admitted = lorebook_entry_draft(&harness.context, request.clone()).await.expect("draft");
+    let open = conversation_open(
+        &harness.context,
+        dto::ConversationOpenRequest {
+            conversation_id: conversation.clone(),
+        },
+    )
+    .await
+    .expect("open");
+    let message = conversation_add_user_message(
+        &harness.context,
+        dto::ConversationAddUserMessageRequest {
+            conversation_id: conversation.clone(),
+            text: "The district is on the coast.".into(),
+            expected_revision: open.revision,
+            client_operation_id: "entry-delete-message".into(),
+        },
+    )
+    .await
+    .expect("message");
+    let request = dto::LorebookEntryDraftRequest {
+        client_operation_id: "entry-delete-draft".into(),
+        conversation_id: conversation,
+        lorebook_id: book.lorebook.id.clone(),
+        source: dto::LorebookEntryDraftSource::Messages,
+        message_ids: vec![message.message.id],
+        memory_ids: vec![],
+        use_summary: false,
+        direction: None,
+        force: false,
+    };
+    let admitted = lorebook_entry_draft(&harness.context, request.clone())
+        .await
+        .expect("draft");
     let db = harness.context.backend().database();
-    let job = JobStore::get(db, admitted.job_id.parse().expect("id")).expect("job").expect("exists");
-    let work = LorebookHandler.claim(&harness.context, &job, WorkerId::new()).await.expect("claim").expect("work");
-    let link = super::worker::link_to_shutdown(harness.context.shutdown_token(), work.cancellation());
+    let job = JobStore::get(db, admitted.job_id.parse().expect("id"))
+        .expect("job")
+        .expect("exists");
+    let work = LorebookHandler
+        .claim(&harness.context, &job, WorkerId::new())
+        .await
+        .expect("claim")
+        .expect("work");
+    let link =
+        super::worker::link_to_shutdown(harness.context.shutdown_token(), work.cancellation());
     let context = harness.context.clone();
     let running = tokio::spawn(async move { work.run(context, Arc::new(Progress)).await });
     harness.provider.entered.notified().await;
-    lorebook_delete(&harness.context, dto::LorebookRevisionRequest { client_operation_id: "delete-running-source".into(), lorebook_id: book.lorebook.id.clone(), expected_revision: book.lorebook.revision }).await.expect("delete during inference");
-    assert_eq!(lorebook_entry_draft(&harness.context, request).await.expect("draft replay"), admitted);
-    let result = job_get(&harness.context, dto::JobGetRequest { job_id: admitted.job_id }).await.expect("history");
-    let Some(dto::JobSubjectDetail::LorebookDraft { lorebook: Some(source), .. }) = result.subject_detail else { panic!("missing history source"); };
-    assert_eq!(source, dto::HistoricalSourceView { id: book.lorebook.id, name: "Book".into(), deleted: true });
+    lorebook_delete(
+        &harness.context,
+        dto::LorebookRevisionRequest {
+            client_operation_id: "delete-running-source".into(),
+            lorebook_id: book.lorebook.id.clone(),
+            expected_revision: book.lorebook.revision,
+        },
+    )
+    .await
+    .expect("delete during inference");
+    assert_eq!(
+        lorebook_entry_draft(&harness.context, request)
+            .await
+            .expect("draft replay"),
+        admitted
+    );
+    let result = job_get(
+        &harness.context,
+        dto::JobGetRequest {
+            job_id: admitted.job_id,
+        },
+    )
+    .await
+    .expect("history");
+    let Some(dto::JobSubjectDetail::LorebookDraft {
+        lorebook: Some(source),
+        ..
+    }) = result.subject_detail
+    else {
+        panic!("missing history source");
+    };
+    assert_eq!(
+        source,
+        dto::HistoricalSourceView {
+            id: book.lorebook.id,
+            name: "Book".into(),
+            deleted: true
+        }
+    );
     harness.context.begin_shutdown();
-    tokio::time::timeout(std::time::Duration::from_secs(5), running).await.expect("shutdown").expect("task").expect("retry");
-    assert_eq!(JobStore::get(db, job.id).expect("job").expect("exists").state, lettuce_jobs::JobState::Queued);
+    tokio::time::timeout(std::time::Duration::from_secs(5), running)
+        .await
+        .expect("shutdown")
+        .expect("task")
+        .expect("retry");
+    assert_eq!(
+        JobStore::get(db, job.id)
+            .expect("job")
+            .expect("exists")
+            .state,
+        lettuce_jobs::JobState::Queued
+    );
     drop(link);
+}
+
+#[tokio::test]
+async fn configured_archived_entry_prompt_is_refused_before_job_admission() {
+    let harness = harness(Reply::LorebookTools);
+    let book = book(&harness).await;
+    let chat = super::tests::launch(&harness, "archived-entry").await;
+    let prompt = custom_prompt_for(&harness, crate::BuiltInPromptId::LorebookEntryWriter);
+    let db = harness.context.backend().database();
+    let mut stored = GlobalSettingsStore::load(db).expect("settings");
+    stored.settings.lorebook_entry_generator.entry_prompt_id = Some(prompt.id);
+    GlobalSettingsStore::save(
+        db,
+        stored.settings,
+        stored.default_model_profile_id,
+        stored.revision,
+    )
+    .expect("selection");
+    PromptRepository::archive(
+        db,
+        prompt.id,
+        prompt.revision,
+        TimestampMillis::now().expect("now"),
+    )
+    .expect("archive");
+    let error = lorebook_entry_draft(
+        &harness.context,
+        dto::LorebookEntryDraftRequest {
+            client_operation_id: "archived-entry-job".into(),
+            conversation_id: chat,
+            lorebook_id: book.lorebook.id,
+            source: dto::LorebookEntryDraftSource::Messages,
+            message_ids: vec![],
+            memory_ids: vec![],
+            use_summary: false,
+            direction: None,
+            force: false,
+        },
+    )
+    .await
+    .expect_err("configured archived prompt");
+    assert_eq!(error.code, ApiErrorCode::Unavailable);
+    assert_eq!(
+        error.details,
+        Some(dto::ApiErrorDetails::ConfiguredPromptUnavailable {
+            prompt_id: prompt.id.to_string(),
+            reason: dto::ConfiguredPromptProblem::Archived
+        })
+    );
+    assert!(
+        harness
+            .provider
+            .requests
+            .lock()
+            .expect("requests")
+            .is_empty()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn concurrent_keyword_admissions_replay_one_frozen_job() {
+    let harness = harness(Reply::LorebookTools);
+    let book = book(&harness).await;
+    let request = request(&book);
+    let mut callers = tokio::task::JoinSet::new();
+    for _ in 0..8 {
+        let context = harness.context.clone();
+        let request = request.clone();
+        callers.spawn(async move { lorebook_keywords_draft(&context, request).await });
+    }
+    let expected = callers
+        .join_next()
+        .await
+        .expect("caller")
+        .expect("task")
+        .expect("admission");
+    while let Some(result) = callers.join_next().await {
+        assert_eq!(result.expect("task").expect("replay"), expected);
+    }
 }

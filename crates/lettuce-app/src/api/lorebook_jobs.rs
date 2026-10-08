@@ -289,6 +289,56 @@ pub(super) fn replay(
     }
 }
 
+pub(super) fn with_job_replay(
+    context: &ApiContext,
+    key: &str,
+    digest: &str,
+    apply: impl FnOnce() -> Result<lettuce_types::JobId, ApiError>,
+) -> Result<lettuce_types::JobId, ApiError> {
+    if let Some(id) = replay(context, key, digest)? {
+        return Ok(id);
+    }
+    match apply() {
+        Ok(id) => Ok(id),
+        Err(error) => replay(context, key, digest)?.ok_or(error),
+    }
+}
+
+pub(super) fn with_api_replay<T: serde::de::DeserializeOwned>(
+    context: &ApiContext,
+    command: &str,
+    key: &str,
+    digest: &str,
+    apply: impl FnOnce() -> Result<T, ApiError>,
+) -> Result<T, ApiError> {
+    let replay = || -> Result<Option<T>, ApiError> {
+        let Some(receipt) = context
+            .backend()
+            .database()
+            .lookup_api_operation(command, key)
+            .map_err(failure)?
+        else {
+            return Ok(None);
+        };
+        if receipt.request_digest != digest {
+            return Err(api_error(
+                ApiErrorCode::Conflict,
+                "the operation key was reused",
+            ));
+        }
+        serde_json::from_value(receipt.result)
+            .map(Some)
+            .map_err(failure)
+    };
+    if let Some(value) = replay()? {
+        return Ok(value);
+    }
+    match apply() {
+        Ok(value) => Ok(value),
+        Err(error) => replay()?.ok_or(error),
+    }
+}
+
 pub async fn lorebook_entry_draft(
     context: &ApiContext,
     request: dto::LorebookEntryDraftRequest,
@@ -315,63 +365,63 @@ pub async fn lorebook_entry_draft(
         .collect::<Result<Vec<_>, _>>()?;
     let job_id = context
         .blocking(move |context| {
-            if let Some(id) = replay(context, &key, &digest)? {
-                return Ok(id);
-            }
-            let db = context.backend().database();
-            let settings = GlobalSettingsStore::load(db).map_err(failure)?.settings;
-            let selected = &settings.lorebook_entry_generator;
-            let prompt = prompt(
-                context,
-                selected.entry_prompt_id.unwrap_or(
-                    context
-                        .backend()
-                        .built_in_prompt_ids()
-                        .lorebook_entry_writer,
-                ),
-                PromptPurpose::LorebookEntryWriter,
-            )?;
-            let profile = text_profile(context, selected.model_profile_id, false)?;
-            let conversation = lettuce_conversations::ConversationReader::get(db, conversation_id)
-                .map_err(failure)?;
-            let clock = crate::companion::companion_clock::companion_clock_context(
-                db,
-                &conversation.conversation,
-            )
-            .map_err(|error| api_error(ApiErrorCode::Unavailable, format!("{error:?}")))?;
+            with_job_replay(context, &key, &digest, || {
+                let db = context.backend().database();
+                let settings = GlobalSettingsStore::load(db).map_err(failure)?.settings;
+                let selected = &settings.lorebook_entry_generator;
+                let prompt = prompt(
+                    context,
+                    selected.entry_prompt_id.unwrap_or(
+                        context
+                            .backend()
+                            .built_in_prompt_ids()
+                            .lorebook_entry_writer,
+                    ),
+                    PromptPurpose::LorebookEntryWriter,
+                )?;
+                let profile = text_profile(context, selected.model_profile_id, false)?;
+                let conversation =
+                    lettuce_conversations::ConversationReader::get(db, conversation_id)
+                        .map_err(failure)?;
+                let clock = crate::companion::companion_clock::companion_clock_context(
+                    db,
+                    &conversation.conversation,
+                )
+                .map_err(|error| api_error(ApiErrorCode::Unavailable, format!("{error:?}")))?;
 
-            context
-                .backend()
-                .lorebook_entry_preparation()
-                .with_operation(key, digest)
-                .prepare_and_admit(crate::LorebookEntryPreparationRequest {
-                    request_id: id,
-                    conversation_id,
-                    lorebook_id,
-                    selected_message_ids,
-                    selected_memory_ids,
-                    source: match request.source {
-                        dto::LorebookEntryDraftSource::Messages => {
-                            lettuce_creation::LorebookEntrySource::Messages
-                        }
-                        dto::LorebookEntryDraftSource::Memory => {
-                            lettuce_creation::LorebookEntrySource::Memory
-                        }
-                        dto::LorebookEntryDraftSource::Mixed => {
-                            lettuce_creation::LorebookEntrySource::Mixed
-                        }
-                    },
-                    include_memory_summary: request.use_summary,
-                    direction_prompt: request.direction,
-                    force: request.force,
-                    time_awareness_enabled: clock.time_awareness_enabled(),
-                    profile,
-                    prompt: &prompt,
-                    fallback_format: fallback(selected),
-                    now: context.now(),
-                })
-                .map(|admission| admission.job.id)
-                .map_err(failure)
+                context
+                    .backend()
+                    .lorebook_entry_preparation()
+                    .with_operation(key.clone(), digest.clone())
+                    .prepare_and_admit(crate::LorebookEntryPreparationRequest {
+                        request_id: id,
+                        conversation_id,
+                        lorebook_id,
+                        selected_message_ids,
+                        selected_memory_ids,
+                        source: match request.source {
+                            dto::LorebookEntryDraftSource::Messages => {
+                                lettuce_creation::LorebookEntrySource::Messages
+                            }
+                            dto::LorebookEntryDraftSource::Memory => {
+                                lettuce_creation::LorebookEntrySource::Memory
+                            }
+                            dto::LorebookEntryDraftSource::Mixed => {
+                                lettuce_creation::LorebookEntrySource::Mixed
+                            }
+                        },
+                        include_memory_summary: request.use_summary,
+                        direction_prompt: request.direction,
+                        force: request.force,
+                        time_awareness_enabled: clock.time_awareness_enabled(),
+                        profile,
+                        prompt: &prompt,
+                        fallback_format: fallback(selected),
+                        now: context.now(),
+                    })
+                    .map(|admission| admission.job.id)
+                    .map_err(failure)
+            })
         })
         .await?;
     context.jobs().wake();
@@ -400,51 +450,50 @@ pub async fn lorebook_keywords_draft(
         .transpose()?;
     let job_id = context
         .blocking(move |context| {
-            if let Some(id) = replay(context, &key, &digest)? {
-                return Ok(id);
-            }
-            let db = context.backend().database();
-            let book = LorebookRepository::get(db, book)
-                .map_err(failure)?
-                .ok_or_else(|| api_error(ApiErrorCode::NotFound, "lorebook not found"))?;
-            if entry.is_some_and(|id| !book.entries.iter().any(|entry| entry.id == id)) {
-                return Err(invalid_field(
-                    "entry_id",
-                    "the entry does not belong to the lorebook",
-                ));
-            }
-            let selected = GlobalSettingsStore::load(db)
-                .map_err(failure)?
-                .settings
-                .lorebook_entry_generator;
-            let prompt = prompt(
-                context,
-                selected.keyword_prompt_id.unwrap_or(
-                    context
-                        .backend()
-                        .built_in_prompt_ids()
-                        .lorebook_keyword_generator,
-                ),
-                PromptPurpose::LorebookKeywordGenerator,
-            )?;
-            let profile = text_profile(context, selected.model_profile_id, false)?;
-            context
-                .backend()
-                .lorebook_keyword_coordinator()
-                .with_operation(key, digest)
-                .prepare_and_admit(crate::LorebookKeywordRequest {
-                    request_id: id,
-                    title: request.title,
-                    content: request.content,
-                    direction_prompt: request.direction,
-                    existing_keywords: request.existing_keywords,
-                    profile,
-                    prompt: &prompt,
-                    fallback_format: fallback(&selected),
-                    now: context.now(),
-                })
-                .map(|admission| admission.job.id)
-                .map_err(failure)
+            with_job_replay(context, &key, &digest, || {
+                let db = context.backend().database();
+                let book = LorebookRepository::get(db, book)
+                    .map_err(failure)?
+                    .ok_or_else(|| api_error(ApiErrorCode::NotFound, "lorebook not found"))?;
+                if entry.is_some_and(|id| !book.entries.iter().any(|entry| entry.id == id)) {
+                    return Err(invalid_field(
+                        "entry_id",
+                        "the entry does not belong to the lorebook",
+                    ));
+                }
+                let selected = GlobalSettingsStore::load(db)
+                    .map_err(failure)?
+                    .settings
+                    .lorebook_entry_generator;
+                let prompt = prompt(
+                    context,
+                    selected.keyword_prompt_id.unwrap_or(
+                        context
+                            .backend()
+                            .built_in_prompt_ids()
+                            .lorebook_keyword_generator,
+                    ),
+                    PromptPurpose::LorebookKeywordGenerator,
+                )?;
+                let profile = text_profile(context, selected.model_profile_id, false)?;
+                context
+                    .backend()
+                    .lorebook_keyword_coordinator()
+                    .with_operation(key.clone(), digest.clone())
+                    .prepare_and_admit(crate::LorebookKeywordRequest {
+                        request_id: id,
+                        title: request.title,
+                        content: request.content,
+                        direction_prompt: request.direction,
+                        existing_keywords: request.existing_keywords,
+                        profile,
+                        prompt: &prompt,
+                        fallback_format: fallback(&selected),
+                        now: context.now(),
+                    })
+                    .map(|admission| admission.job.id)
+                    .map_err(failure)
+            })
         })
         .await?;
     context.jobs().wake();

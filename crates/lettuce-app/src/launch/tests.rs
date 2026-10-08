@@ -8040,10 +8040,23 @@ fn configured_lorebook_documents_retain_identity_and_replay_after_restart() {
         database.load_staged_lorebook(request.request_id),
         Err(lettuce_creation::StagedLorebookRepositoryError::NotFound)
     ));
+    assert_eq!(
+        database
+            .lorebook_project_jobs(request.project_id)
+            .expect("project jobs"),
+        Vec::new(),
+        "a failed admission leaves no job behind"
+    );
     let admitted = coordinator
         .admit_configured(request.clone(), &builtins)
         .expect("admit sources");
-    assert!(!admitted.created, "the failed admission's job is reused");
+    assert!(admitted.created);
+    assert_eq!(
+        database
+            .lorebook_project_jobs(request.project_id)
+            .expect("project jobs"),
+        vec![admitted.job.clone()]
+    );
     assert_eq!(admitted.run.project.excerpts[0].asset_id, Some(asset.id));
     assert_eq!(admitted.run.project.excerpts[1].asset_id, None);
     assert_eq!(admitted.run.project.excerpts[1].source_id, "src_02");
@@ -9637,7 +9650,10 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         let saved = coordinator
             .commit(request.clone())
             .expect("staged commit fixture");
-        assert_eq!(saved.created_entry_ids, vec![run.project.drafts[0].plan_id, run.project.drafts[2].plan_id]);
+        assert_eq!(
+            saved.created_entry_ids,
+            vec![run.project.drafts[0].plan_id, run.project.drafts[2].plan_id]
+        );
         assert_eq!(
             coordinator.commit(request).expect("staged commit fixture"),
             saved

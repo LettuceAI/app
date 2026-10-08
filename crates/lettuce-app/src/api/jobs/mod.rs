@@ -402,7 +402,7 @@ fn job_result(context: &ApiContext, result: &OutcomeRef) -> Option<dto::JobResul
 }
 
 /// What a chat feature job needs changed, from the label its error carries.
-fn failure_reason(label: &str) -> Option<dto::JobFailureReason> {
+pub(super) fn failure_reason(label: &str) -> Option<dto::JobFailureReason> {
     use crate::jobs::failure_labels as labels;
     Some(match label {
         labels::HELP_ME_REPLY_DISABLED => dto::JobFailureReason::HelpMeReplyDisabled,
@@ -421,7 +421,7 @@ fn failure_reason(label: &str) -> Option<dto::JobFailureReason> {
     })
 }
 
-const fn failure_code(code: JobErrorCode) -> dto::JobFailureCode {
+pub(super) const fn failure_code(code: JobErrorCode) -> dto::JobFailureCode {
     match code {
         JobErrorCode::Cancelled => dto::JobFailureCode::Cancelled,
         JobErrorCode::InvalidInput => dto::JobFailureCode::InvalidInput,
