@@ -59,13 +59,15 @@ impl From<&lettuce_local_llm::engine::ModelLoadProgress> for LoadProgress {
     }
 }
 
+type LoadSnapshot = (GenerationAttemptId, Weak<Flow>, Option<LoadProgress>);
+
 struct Flow {
     consumer: Consumer,
     cancellation: CancellationToken,
     active: AtomicBool,
     parent: Option<Arc<Flow>>,
     load_progress: Mutex<Option<LoadProgress>>,
-    snapshot: Mutex<Option<(GenerationAttemptId, Weak<Flow>, Option<LoadProgress>)>>,
+    snapshot: Mutex<Option<LoadSnapshot>>,
 }
 
 enum Dispatch {
