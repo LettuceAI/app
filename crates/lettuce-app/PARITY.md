@@ -479,3 +479,5 @@ Public OpenRouter discovery remains unauthenticated and preserves uptime, contex
 Stored certificate views include validity and a typed InvalidPem reason; runtime client construction skips invalid stored roots so users can list and remove them. New imports validate strictly before writing.
 
 Provider credential cleanup is best-effort at startup and after committed writes. Failures retain journal rows, log no secret material and retry on the next save or launch.
+
+Provider save receipts digest metadata and key presence, never credential values or their hashes. Key-bearing retries compare the requested credential in memory with the deterministic secret reference before replay; differing values return Conflict.

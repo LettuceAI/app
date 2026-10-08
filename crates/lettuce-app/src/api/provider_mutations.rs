@@ -155,8 +155,10 @@ pub async fn provider_account_save(
             "application is shutting down",
         ));
     }
-    let digest = digest(&request, &request.client_operation_id)?;
-    if let Some(view) = replay(
+    let mut keyless = serde_json::to_value(&request).map_err(|_| api_error(ApiErrorCode::Internal, "provider request cannot be encoded"))?;
+    keyless["api_key"] = serde_json::json!(request.api_key.as_ref().is_some_and(|key| !key.trim().is_empty()));
+    let digest = digest(&keyless, &request.client_operation_id)?;
+    if let Some(view) = replay::<dto::ProviderAccountView>(
         context,
         "provider_account_save",
         request.client_operation_id.clone(),
@@ -164,6 +166,14 @@ pub async fn provider_account_save(
     )
     .await?
     {
+        if let Some(key) = request.api_key.as_ref().filter(|key| !key.trim().is_empty()) {
+            let account = super::providers::account(context, view.id.clone()).await?;
+            let reference = SecretRef::from_uuid(identity("key", &request.client_operation_id, &digest));
+            let stored = context.secret_store().load(&reference, &SecretPurpose::ProviderApiKey { owner: account.secret_owner_id }).await.map_err(|_| api_error(ApiErrorCode::Unavailable, "replay credential cannot be read"))?;
+            if !stored.with(|stored| stored == key.trim()) {
+                return Err(api_error(ApiErrorCode::Conflict, "operation id was already used with another credential"));
+            }
+        }
         cleanup_secrets(context, false).await?;
         return Ok(view);
     }
