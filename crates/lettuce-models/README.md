@@ -86,3 +86,5 @@ Resolved chat profiles freeze the model display name alongside its identity, par
 Model-folder relocation merges folder and retained-root fields into current device settings in the same immediate transaction as model path changes, preserving concurrent certificate and device selections.
 
 The editor API supplies declared scope evidence on save. Declarations mark their modalities Supported without changing explicit Unsupported values. Required capability and modality resolution continues to reject Unknown. Profile duplication preserves configuration and references while the composition root supplies a fresh identity, timestamps and the caller's display name.
+
+Declared scope edits replace previously supported modalities while preserving explicit Unsupported without remote metadata; reported modalities take precedence over echoed statuses.

@@ -450,3 +450,61 @@ async fn remote_evidence_fills_missing_metadata_from_declarations_and_replay_sur
         8192
     );
 }
+
+#[tokio::test]
+async fn declared_scope_edit_removes_supported_image_and_remote_metadata_overrides_echo() {
+    let h = harness(Reply::Text("Hello."));
+    let mut request = draft(&h.context, "scope-edit-first");
+    let first = super::model_save(&h.context, request.clone())
+        .await
+        .expect("first");
+    request.model.id = Some(first.id.clone());
+    request.model.config = first.config;
+    request.expected_revision = Some(first.revision);
+    request.client_operation_id = "scope-edit-second".into();
+    request.model.input_scopes = vec![dto::ModelModality::Text];
+    let edited = super::model_save(&h.context, request.clone())
+        .await
+        .expect("edit");
+    assert_eq!(
+        edited.config["capabilities"]["input_modalities"]["image"],
+        "unknown"
+    );
+    let serialized = serde_json::to_value(&edited).expect("view");
+    assert_eq!(serialized["input_scopes"], serde_json::json!(["text"]));
+    assert_eq!(serialized["output_scopes"], serde_json::json!(["text"]));
+    request.model.config = edited.config;
+    request.model.config["capabilities"]["input_modalities"]["image"] =
+        serde_json::json!("unsupported");
+    request.expected_revision = Some(edited.revision);
+    request.client_operation_id = "scope-edit-remote".into();
+    request.model.remote_metadata = Some(serde_json::from_value(serde_json::json!({"id":"editor-model","display_name":"Editor model","input_modalities":["text","image"]})).expect("metadata"));
+    let remote = super::model_save(&h.context, request)
+        .await
+        .expect("remote");
+    assert_eq!(
+        remote.config["capabilities"]["input_modalities"]["image"],
+        "supported"
+    );
+}
+
+#[tokio::test]
+async fn model_delete_emits_models_settings_changed() {
+    let h = harness(Reply::Text("Hello."));
+    let saved = super::model_save(&h.context, draft(&h.context, "delete-settings-save"))
+        .await
+        .expect("save");
+    super::model_delete(
+        &h.context,
+        dto::ModelDeleteRequest {
+            model_id: saved.id,
+            expected_revision: saved.revision,
+            client_operation_id: "delete-settings".into(),
+        },
+    )
+    .await
+    .expect("delete");
+    assert!(h.events.events().iter().any(
+        |event| matches!(event, dto::ApiEvent::SettingsChanged { section } if section == "models")
+    ));
+}

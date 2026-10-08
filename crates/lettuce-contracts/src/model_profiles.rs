@@ -46,6 +46,8 @@ pub struct ModelView {
     pub kind: ModelKindContract,
     #[cfg_attr(feature = "specta", specta(type = std::collections::HashMap<String, specta_typescript::Unknown>))]
     pub config: serde_json::Value,
+    pub input_scopes: Vec<ModelModality>,
+    pub output_scopes: Vec<ModelModality>,
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
     pub revision: u64,
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]

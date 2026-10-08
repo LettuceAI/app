@@ -33,6 +33,17 @@ impl From<ApiOperationError> for Failure {
     }
 }
 
+fn scopes(capabilities: &ModalityCapabilities) -> Vec<dto::ModelModality> {
+    [
+        (dto::ModelModality::Text, capabilities.text),
+        (dto::ModelModality::Image, capabilities.image),
+        (dto::ModelModality::Audio, capabilities.audio),
+    ]
+    .into_iter()
+    .filter_map(|(scope, status)| (status == CapabilityStatus::Supported).then_some(scope))
+    .collect()
+}
+
 pub(super) fn view(model: ModelProfile) -> Result<dto::ModelView, ApiError> {
     Ok(dto::ModelView {
         id: model.id.to_string(),
@@ -45,6 +56,8 @@ pub(super) fn view(model: ModelProfile) -> Result<dto::ModelView, ApiError> {
             ModelKind::Embedding => dto::ModelKindContract::Embedding,
             ModelKind::Speech => dto::ModelKindContract::Speech,
         },
+        input_scopes: scopes(&model.config.capabilities.input_modalities),
+        output_scopes: scopes(&model.config.capabilities.output_modalities),
         config: serde_json::to_value(model.config)
             .map_err(|_| api_error(ApiErrorCode::Internal, "model config cannot be read"))?,
         revision: model.revision.get(),
@@ -86,6 +99,15 @@ pub async fn model_get(
 }
 
 fn declared(scopes: &[dto::ModelModality], capabilities: &mut ModalityCapabilities) {
+    for status in [
+        &mut capabilities.text,
+        &mut capabilities.image,
+        &mut capabilities.audio,
+    ] {
+        if *status != CapabilityStatus::Unsupported {
+            *status = CapabilityStatus::Unknown;
+        }
+    }
     for scope in scopes {
         let status = match scope {
             dto::ModelModality::Text => &mut capabilities.text,
@@ -106,9 +128,7 @@ fn metadata(scopes: &[String], capabilities: &mut ModalityCapabilities) {
             "audio" => &mut capabilities.audio,
             _ => continue,
         };
-        if *status != CapabilityStatus::Unsupported {
-            *status = CapabilityStatus::Supported;
-        }
+        *status = CapabilityStatus::Supported;
     }
 }
 
@@ -346,6 +366,9 @@ pub async fn model_delete(
     for group_id in groups {
         context.emit(dto::ApiEvent::GroupChanged { group_id });
     }
+    context.emit(dto::ApiEvent::SettingsChanged {
+        section: "models".into(),
+    });
     Ok(())
 }
 

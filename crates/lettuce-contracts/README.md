@@ -75,3 +75,5 @@ Provider verification preserves string messages, string error types and JSON-str
 Model profile contracts expose catalog/default revisions, profile configuration, declared modality scopes and optional listing metadata. Save, duplicate, delete and default selection carry operation ids and CAS revisions. Duplicate requires the display name authored by the caller. NanoGPT usage returns account metadata and nullable quota/subscription fields; ProviderQuota carries a typed warning level and account id, and ProviderQuota error details carry a typed failure plus redacted provider status/message.
 
 ProviderQuotaLevel maps NearLimit to 75 percent, AlmostExhausted to 90 percent and Exhausted to 100 percent. Only the highest crossed threshold is delivered for one check.
+
+Model views expose supported input and output scopes. Saves without remote metadata replace supported declarations while retaining explicit Unsupported; reported metadata overrides echoed statuses for reported modalities. Model deletion also publishes a models settings change.
