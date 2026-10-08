@@ -1526,6 +1526,19 @@ pub struct ContextRequest {
 
 impl ContextRequest {
     pub fn validate(&self) -> Result<(), crate::ValidationError> {
+        self.validate_with_source(true)
+    }
+
+    pub fn validate_empty_preview(&self) -> Result<(), crate::ValidationError> {
+        if !self.timeline.is_empty() {
+            return Err(crate::ValidationError::InvalidValue {
+                field: "context_request.preview_timeline",
+            });
+        }
+        self.validate_with_source(false)
+    }
+
+    fn validate_with_source(&self, require_source: bool) -> Result<(), crate::ValidationError> {
         if self.branch_path.is_empty() || self.branch_path.last().copied() != Some(self.branch_id) {
             return Err(crate::ValidationError::InvalidReference {
                 field: "context_request.branch_path",
@@ -1553,24 +1566,28 @@ impl ContextRequest {
         if let Some(memory) = &self.memory {
             memory.validate()?;
         }
-        let source_item = self
-            .timeline
-            .iter()
-            .find(|item| item.message.id == self.source_message_id)
-            .ok_or(crate::ValidationError::InvalidReference {
-                field: "context_request.source_message_id",
-            })?;
-        let source_role_is_coherent = match self.operation {
-            GenerationOperation::Send => source_item.message.role == MessageRole::User,
-            // Continue may be requested at either side of a sparse or
-            // imported head, so role is intentionally left open here.
-            GenerationOperation::Continue => true,
-            GenerationOperation::Regenerate => source_item.message.role == MessageRole::Assistant,
-        };
-        if !source_role_is_coherent {
-            return Err(crate::ValidationError::InvalidReference {
-                field: "context_request.source_message_id",
-            });
+        if require_source {
+            let source_item = self
+                .timeline
+                .iter()
+                .find(|item| item.message.id == self.source_message_id)
+                .ok_or(crate::ValidationError::InvalidReference {
+                    field: "context_request.source_message_id",
+                })?;
+            let source_role_is_coherent = match self.operation {
+                GenerationOperation::Send => source_item.message.role == MessageRole::User,
+                // Continue may be requested at either side of a sparse or
+                // imported head, so role is intentionally left open here.
+                GenerationOperation::Continue => true,
+                GenerationOperation::Regenerate => {
+                    source_item.message.role == MessageRole::Assistant
+                }
+            };
+            if !source_role_is_coherent {
+                return Err(crate::ValidationError::InvalidReference {
+                    field: "context_request.source_message_id",
+                });
+            }
         }
         for item in &self.timeline {
             if item.message.conversation_id != self.conversation_id {

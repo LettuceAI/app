@@ -11,8 +11,79 @@ use lettuce_models::{
 use lettuce_settings::GlobalSettingsStore;
 use lettuce_types::{ModelProfileId, RequestId};
 
-pub(super) fn failure(error: impl std::fmt::Display) -> ApiError {
-    api_error(ApiErrorCode::Conflict, error.to_string())
+pub(super) fn failure(error: impl std::error::Error + 'static) -> ApiError {
+    use super::error::IntoApiError;
+    let mut cause: &(dyn std::error::Error + 'static) = &error;
+    loop {
+        if let Some(error) = cause.downcast_ref::<lettuce_jobs::StoreError>() {
+            return error.clone().into_api_error();
+        }
+        if let Some(error) = cause.downcast_ref::<lettuce_context::LorebookRepositoryError>() {
+            return error.clone().into_api_error();
+        }
+        if let Some(error) = cause.downcast_ref::<lettuce_creation::StagedLorebookRepositoryError>()
+        {
+            return api_error(
+                match error {
+                    lettuce_creation::StagedLorebookRepositoryError::NotFound => {
+                        ApiErrorCode::NotFound
+                    }
+                    lettuce_creation::StagedLorebookRepositoryError::Conflict => {
+                        ApiErrorCode::Conflict
+                    }
+                    lettuce_creation::StagedLorebookRepositoryError::Invalid => {
+                        ApiErrorCode::InvalidInput
+                    }
+                    _ => ApiErrorCode::Internal,
+                },
+                error.to_string(),
+            );
+        }
+        if let Some(error) = cause.downcast_ref::<crate::LorebookEntryPreparationError>() {
+            if matches!(
+                error,
+                crate::LorebookEntryPreparationError::InvalidInput
+                    | crate::LorebookEntryPreparationError::SourceUnavailable
+            ) {
+                return api_error(
+                    if matches!(
+                        error,
+                        crate::LorebookEntryPreparationError::SourceUnavailable
+                    ) {
+                        ApiErrorCode::Unavailable
+                    } else {
+                        ApiErrorCode::InvalidInput
+                    },
+                    error.to_string(),
+                );
+            }
+        }
+        let invalid = cause
+            .downcast_ref::<crate::StagedLorebookAdmissionError>()
+            .is_some_and(|error| {
+                matches!(error, crate::StagedLorebookAdmissionError::InvalidInput)
+            })
+            || cause
+                .downcast_ref::<crate::StagedLorebookWriterAdmissionError>()
+                .is_some_and(|error| {
+                    matches!(
+                        error,
+                        crate::StagedLorebookWriterAdmissionError::InvalidInput
+                    )
+                })
+            || cause
+                .downcast_ref::<crate::LorebookKeywordAdmissionError>()
+                .is_some_and(|error| {
+                    matches!(error, crate::LorebookKeywordAdmissionError::InvalidInput)
+                });
+        if invalid {
+            return api_error(ApiErrorCode::InvalidInput, error.to_string());
+        }
+        match cause.source() {
+            Some(source) => cause = source,
+            None => return api_error(ApiErrorCode::Internal, error.to_string()),
+        }
+    }
 }
 
 pub(super) fn model_error(reason: dto::LorebookModelProblem) -> ApiError {
@@ -240,6 +311,14 @@ pub async fn lorebook_entry_draft(
                 PromptPurpose::LorebookEntryWriter,
             )?;
             let profile = text_profile(context, selected.model_profile_id, false)?;
+            let conversation = lettuce_conversations::ConversationReader::get(db, conversation_id)
+                .map_err(failure)?;
+            let clock = crate::companion::companion_clock::companion_clock_context(
+                db,
+                &conversation.conversation,
+            )
+            .map_err(|error| api_error(ApiErrorCode::Unavailable, format!("{error:?}")))?;
+
             context
                 .backend()
                 .lorebook_entry_preparation()
@@ -264,7 +343,7 @@ pub async fn lorebook_entry_draft(
                     include_memory_summary: request.use_summary,
                     direction_prompt: request.direction,
                     force: request.force,
-                    time_awareness_enabled: false,
+                    time_awareness_enabled: clock.time_awareness_enabled(),
                     profile,
                     prompt: &prompt,
                     fallback_format: fallback(selected),

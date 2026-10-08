@@ -5923,6 +5923,8 @@ mod tests {
                 "creation_lorebook_entry_runs",
                 "creation_lorebook_keyword_runs",
                 "creation_proposals",
+                "creation_staged_lorebook_project_sources",
+                "creation_staged_lorebook_projects",
                 "creation_staged_lorebook_runs",
                 "creation_staged_lorebook_sources",
                 "creation_staged_lorebook_writer_runs",

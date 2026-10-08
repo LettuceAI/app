@@ -855,7 +855,8 @@ fn sample_context(
         lorebook: fragment("preview_sample_lorebook")?,
         context_summary: fragment("preview_sample_summary")?,
         key_memories,
-        content_rules: crate::generation::pure_mode_rules::content_rules(database, pure_mode),
+        content_rules: crate::generation::pure_mode_rules::content_rules(database, pure_mode)
+            .map_err(|_| runtime_text_error())?,
         user_name: persona_name.clone(),
         user_description: persona_description,
         ai_name: character_name.clone(),

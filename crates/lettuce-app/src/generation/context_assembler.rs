@@ -123,9 +123,6 @@ where
         &self,
         request: ContextRequest,
     ) -> Result<ProviderNeutralContext, ContextAssemblyError> {
-        request
-            .validate()
-            .map_err(|_| ContextAssemblyError::InvalidRequest)?;
         let aggregate = ConversationReader::get(self.sources, request.conversation_id)
             .map_err(|_| ContextAssemblyError::ConversationUnavailable)?;
         validate_aggregate_and_path(&aggregate, &request)?;
@@ -136,6 +133,12 @@ where
                 .branches
                 .iter()
                 .any(|branch| branch.id == request.branch_id && branch.head_message_id.is_none());
+        if empty_preview {
+            request.validate_empty_preview()
+        } else {
+            request.validate()
+        }
+        .map_err(|_| ContextAssemblyError::InvalidRequest)?;
         if !empty_preview {
             validate_message_ancestry(&aggregate.branches, &request)?;
         }

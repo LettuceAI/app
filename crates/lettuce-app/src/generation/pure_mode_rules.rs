@@ -7,20 +7,19 @@ use crate::BuiltInPromptId;
 use crate::generation::runtime_text::{RuntimeText, RuntimeTextSource};
 
 /// The `{{content_rules}}` text for `level`; empty when Pure mode is off or
-/// the text cannot be read.
+/// fails when the text cannot be read.
 pub(crate) fn content_rules<R: RuntimeTextSource + ?Sized>(
     repository: &R,
     level: PureMode,
-) -> String {
+) -> Result<String, crate::generation::runtime_text::RuntimeTextError> {
     let key = match level {
-        PureMode::Off => return String::new(),
+        PureMode::Off => return Ok(String::new()),
         PureMode::Low => "runtime_content_rules_low",
         PureMode::Standard => "runtime_content_rules_standard",
         PureMode::Strict => "runtime_content_rules_strict",
     };
     RuntimeText::load(repository, BuiltInPromptId::ChatRuntime)
         .and_then(|text| text.render_with(key, []))
-        .unwrap_or_default()
 }
 
 /// The rules a character without rules starts with: the base rules, then
@@ -78,13 +77,13 @@ mod tests {
     fn each_level_has_the_old_rules() {
         let backend = crate::AppBackend::open_in_memory(TimestampMillis::new(1)).expect("backend");
         let database = backend.database();
-        assert_eq!(content_rules(database, PureMode::Off), "");
+        assert_eq!(content_rules(database, PureMode::Off).expect("rules"), "");
         assert_eq!(
-            content_rules(database, PureMode::Low),
+            content_rules(database, PureMode::Low).expect("rules"),
             "**Content Guidelines:**\n- Avoid explicit sexual content"
         );
-        let standard = content_rules(database, PureMode::Standard);
-        let strict = content_rules(database, PureMode::Strict);
+        let standard = content_rules(database, PureMode::Standard).expect("rules");
+        let strict = content_rules(database, PureMode::Strict).expect("rules");
         assert!(standard.starts_with("**Content Guidelines (STRICT"));
         assert_eq!(standard.lines().count(), 8);
         assert!(strict.starts_with(&standard));

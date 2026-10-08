@@ -262,3 +262,67 @@ async fn configured_archived_prompt_is_typed_and_cancelled_claim_cannot_write() 
     let run = db.load_lorebook_keyword_run(id).expect("run");
     assert_eq!(run.prompt_name, "Keyword source");
 }
+
+#[tokio::test]
+async fn project_creation_needs_no_text_model_and_planning_is_typed() {
+    let harness = harness(Reply::Text("ignored"));
+    let db = harness.context.backend().database();
+    let stored = GlobalSettingsStore::load(db).expect("settings");
+    let id = stored.default_model_profile_id.expect("model");
+    let mut model = lettuce_models::ModelProfileRepository::get(db, id)
+        .expect("model")
+        .expect("exists");
+    let revision = model.revision;
+    model.config.capabilities.output_modalities.text =
+        lettuce_models::CapabilityStatus::Unsupported;
+    lettuce_models::ModelProfileRepository::upsert(db, model, Some(revision))
+        .expect("non text model");
+    let request = dto::LorebookProjectCreateRequest {
+        client_operation_id: "project".into(),
+        brief: "A coastal city and its districts".into(),
+        lorebook_name: Some("Coast".into()),
+        target_count: Some(5),
+        sources: vec![],
+    };
+    let project = lorebook_project_create(&harness.context, request.clone())
+        .await
+        .expect("create without model");
+    assert_eq!(project.stage, dto::LorebookProjectStage::Created);
+    assert!(project.active_job_ids.is_empty());
+    let restored = super::lorebooks_tests::backup_round_trip(db);
+    assert_eq!(
+        restored
+            .pending_lorebook_project(project.project_id.parse().expect("project id"))
+            .expect("restored project")
+            .expect("exists")
+            .brief,
+        project.brief
+    );
+
+    assert_eq!(
+        lorebook_project_create(&harness.context, request)
+            .await
+            .expect("replay"),
+        project
+    );
+    let error = lorebook_project_plan(
+        &harness.context,
+        dto::LorebookProjectJobRequest {
+            client_operation_id: "plan".into(),
+            project_id: project.project_id.clone(),
+            expected_revision: project.revision,
+        },
+    )
+    .await
+    .expect_err("non text model");
+    assert_eq!(error.code, ApiErrorCode::ModelUnavailable);
+    let current = lorebook_project_get(
+        &harness.context,
+        dto::LorebookProjectGetRequest {
+            project_id: project.project_id,
+        },
+    )
+    .await
+    .expect("still exists");
+    assert_eq!(current.stage, dto::LorebookProjectStage::Created);
+}

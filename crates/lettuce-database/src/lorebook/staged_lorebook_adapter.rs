@@ -1399,3 +1399,98 @@ pub(crate) fn start_staged_lorebook_draft_batch_in(
     if transaction.execute("UPDATE creation_staged_lorebook_runs SET stage = ?2, revision = ?3, updated_at = ?4, run_json = ?5 WHERE request_id = ?1 AND revision = ?6", params![request_id.to_string(), stage(next.project.stage), i64::try_from(next.project.revision.get()).map_err(failure)?, now.get(), encoded, i64::try_from(expected_revision.get()).map_err(failure)?]).map_err(failure)? != 1 { return Err(StagedLorebookRepositoryError::Conflict); }
     Ok(next)
 }
+
+pub(crate) fn pending_project_in(
+    connection: &rusqlite::Connection,
+    id: CreationWorkflowId,
+) -> Result<Option<lettuce_creation::StagedLorebookProject>, StagedLorebookRepositoryError> {
+    let row: Option<(i64, String)> = connection.query_row("SELECT revision,project_json FROM creation_staged_lorebook_projects WHERE project_id=?1", [id.to_string()], |row| Ok((row.get(0)?, row.get(1)?))).optional().map_err(failure)?;
+    row.map(|(revision, encoded)| {
+        let project: lettuce_creation::StagedLorebookProject =
+            decode_versioned(&encoded, 1).map_err(failure)?;
+        if project.id != id
+            || project.revision != positive_revision(revision)?
+            || !matches!(
+                project.stage,
+                StagedLorebookStage::Created | StagedLorebookStage::Cancelled
+            )
+            || project.validate().is_err()
+        {
+            return Err(StagedLorebookRepositoryError::Corrupt);
+        }
+        Ok(project)
+    })
+    .transpose()
+}
+
+pub(crate) fn insert_pending_project_in(
+    transaction: &Transaction<'_>,
+    project: &lettuce_creation::StagedLorebookProject,
+) -> Result<(), StagedLorebookRepositoryError> {
+    project
+        .validate()
+        .map_err(|_| StagedLorebookRepositoryError::Invalid)?;
+    if !matches!(
+        project.stage,
+        StagedLorebookStage::Created | StagedLorebookStage::Cancelled
+    ) {
+        return Err(StagedLorebookRepositoryError::Invalid);
+    }
+    transaction.execute("INSERT INTO creation_staged_lorebook_projects(project_id,revision,project_json) VALUES (?1,?2,?3)", params![project.id.to_string(), i64::try_from(project.revision.get()).map_err(failure)?, encode_versioned(project, 1).map_err(failure)?]).map_err(failure)?;
+    for source in &project.excerpts {
+        if let Some(asset) = source.asset_id {
+            transaction.execute("INSERT INTO creation_staged_lorebook_project_sources(project_id,source_id,asset_id) VALUES (?1,?2,?3)", params![project.id.to_string(), source.source_id, asset.to_string()]).map_err(failure)?;
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn pending_projects_in(
+    connection: &rusqlite::Connection,
+) -> Result<Vec<lettuce_creation::StagedLorebookProject>, StagedLorebookRepositoryError> {
+    let ids = connection
+        .prepare("SELECT project_id FROM creation_staged_lorebook_projects ORDER BY project_id")
+        .map_err(failure)?
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(failure)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(failure)?;
+    ids.into_iter()
+        .map(|id| {
+            pending_project_in(connection, id.parse().map_err(failure)?)?
+                .ok_or(StagedLorebookRepositoryError::Corrupt)
+        })
+        .collect()
+}
+
+impl Database {
+    pub fn pending_lorebook_project(
+        &self,
+        id: CreationWorkflowId,
+    ) -> Result<Option<lettuce_creation::StagedLorebookProject>, StagedLorebookRepositoryError>
+    {
+        {
+            let connection = self.connection().map_err(failure)?;
+            pending_project_in(&connection, id)
+        }
+    }
+    pub fn lorebook_project_page(
+        &self,
+        page: lettuce_types::PageRequest,
+    ) -> Result<lettuce_types::Page<CreationWorkflowId>, StagedLorebookRepositoryError> {
+        let connection = self.connection().map_err(failure)?;
+        let ids = connection.prepare("SELECT project_id FROM (SELECT project_id FROM creation_staged_lorebook_projects UNION SELECT project_id FROM creation_staged_lorebook_runs) WHERE project_id > ?1 ORDER BY project_id LIMIT ?2").map_err(failure)?.query_map(params![page.cursor.unwrap_or_default(), i64::from(page.limit.get()) + 1], |row| row.get::<_, String>(0)).map_err(failure)?.collect::<rusqlite::Result<Vec<_>>>().map_err(failure)?;
+        let has_more = ids.len() > usize::from(page.limit.get());
+        let items = ids
+            .into_iter()
+            .take(usize::from(page.limit.get()))
+            .map(|id| id.parse().map_err(failure))
+            .collect::<Result<Vec<CreationWorkflowId>, _>>()?;
+        let next_cursor = if has_more {
+            items.last().map(ToString::to_string)
+        } else {
+            None
+        };
+        Ok(lettuce_types::Page { items, next_cursor })
+    }
+}

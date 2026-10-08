@@ -779,6 +779,13 @@ impl ProviderBackupRestoreWriter for Database {
             )
             .map_err(invalid)?;
         }
+        for project in &creation.staged_lorebook_projects {
+            crate::lorebook::staged_lorebook_adapter::insert_pending_project_in(
+                &transaction,
+                project,
+            )
+            .map_err(|_| Error::InvalidData)?;
+        }
         for run in &creation.staged_lorebooks {
             crate::lorebook::staged_lorebook_adapter::insert_restored_in(&transaction, run)
                 .map_err(invalid)?;

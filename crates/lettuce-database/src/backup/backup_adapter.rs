@@ -40,7 +40,7 @@ fn read_creation(
             &format!("SELECT request_id FROM {table} ORDER BY request_id"),
         )
     };
-    let mut creation = lettuce_transfer::CreationBackup::default();
+    let mut creation = lettuce_transfer::CreationBackup { staged_lorebook_projects: crate::lorebook::staged_lorebook_adapter::pending_projects_in(transaction).map_err(|_| ProviderBackupSourceError::InvalidData)?, ..Default::default() };
     for id in request_ids("creation_lorebook_entry_runs")? {
         creation
             .lorebook_entry_runs

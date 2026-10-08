@@ -599,3 +599,18 @@ WHEN (NEW.ordinal = 0 AND (NEW.stage != 'drafting' OR NEW.turn_id IS NOT NULL OR
         AND turn.base_proposal_id = parent.id
   ))
 BEGIN SELECT RAISE(ABORT, 'invalid creation proposal lineage'); END;
+
+CREATE TABLE creation_staged_lorebook_projects (
+    project_id TEXT PRIMARY KEY NOT NULL,
+    revision INTEGER NOT NULL CHECK (revision >= 1),
+    project_json TEXT NOT NULL CHECK (json_valid(project_json))
+) STRICT;
+
+CREATE TABLE creation_staged_lorebook_project_sources (
+    project_id TEXT NOT NULL REFERENCES creation_staged_lorebook_projects(project_id) ON DELETE CASCADE,
+    source_id TEXT NOT NULL,
+    asset_id TEXT NOT NULL,
+    blob_kind TEXT NOT NULL DEFAULT 'document' CHECK (blob_kind = 'document'),
+    PRIMARY KEY (project_id, source_id),
+    FOREIGN KEY (asset_id, blob_kind) REFERENCES media_assets(id, blob_kind) ON DELETE RESTRICT
+) STRICT;

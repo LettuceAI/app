@@ -153,6 +153,8 @@ pub enum ProviderBackupSourceError {
 #[serde(deny_unknown_fields)]
 pub struct CreationBackup {
     #[serde(default)]
+    pub staged_lorebook_projects: Vec<lettuce_creation::StagedLorebookProject>,
+    #[serde(default)]
     pub lorebook_entry_runs: Vec<BackupLorebookEntryRun>,
     #[serde(default)]
     pub lorebook_keyword_runs: Vec<BackupLorebookKeywordRun>,
@@ -741,6 +743,11 @@ pub fn canonicalize_and_validate(
     creation
         .lorebook_keyword_runs
         .sort_by_key(|entry| entry.run.request_id);
+    creation.staged_lorebook_projects.sort_by_key(|project| project.id);
+    let mut project_ids = BTreeSet::new();
+    let source_assets = graph.authored.media_assets.iter().map(|asset| (asset.id, asset.kind.blob_kind())).collect::<BTreeMap<_, _>>();
+    if creation.staged_lorebook_projects.iter().any(|project| !project_ids.insert(project.id) || project.excerpts.iter().filter_map(|source| source.asset_id).any(|id| source_assets.get(&id) != Some(&lettuce_media::MediaKind::Document))) || creation.staged_lorebooks.iter().any(|run| !project_ids.insert(run.project.id)) { return Err(ProviderBackupGraphError::InvalidGraph); }
+
     creation.staged_lorebooks.sort_by_key(|run| run.request_id);
     creation
         .staged_lorebook_writer_runs
@@ -791,7 +798,7 @@ pub fn canonicalize_and_validate(
             return Err(ProviderBackupGraphError::InvalidGraph);
         }
     }
-    if creation.lorebook_entry_runs.iter().any(|entry| {
+    if creation.staged_lorebook_projects.iter().any(|project| project.validate().is_err() || !matches!(project.stage, lettuce_creation::StagedLorebookStage::Created | lettuce_creation::StagedLorebookStage::Cancelled)) || creation.lorebook_entry_runs.iter().any(|entry| {
         entry.run.validate().is_err()
             || lettuce_creation::validate_lorebook_entry_attempts(&entry.attempts).is_err()
     }) || creation.lorebook_keyword_runs.iter().any(|entry| {

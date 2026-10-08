@@ -666,3 +666,25 @@ impl ApiOperationTransaction<'_, '_> {
         writers.into_iter().map(|(spec, input)| crate::job_adapter::admit_lorebook_job_in(self.transaction, spec, input, None).map(|(job, _, _)| job.id)).collect()
     }
 }
+
+impl ApiOperationTransaction<'_, '_> {
+    pub fn create_lorebook_project(&self, project: lettuce_creation::StagedLorebookProject) -> Result<lettuce_creation::StagedLorebookProject, StagedLorebookRepositoryError> {
+        crate::lorebook::staged_lorebook_adapter::insert_pending_project_in(self.transaction, &project)?;
+        Ok(project)
+    }
+    pub fn cancel_pending_lorebook_project(&self, id: lettuce_types::CreationWorkflowId, expected: Revision, now: TimestampMillis) -> Result<lettuce_creation::StagedLorebookProject, StagedLorebookRepositoryError> {
+        let project = crate::lorebook::staged_lorebook_adapter::pending_project_in(self.transaction, id)?.ok_or(StagedLorebookRepositoryError::NotFound)?;
+        if project.revision != expected { return Err(StagedLorebookRepositoryError::Conflict); }
+        let next = project.cancel(now).map_err(|_| StagedLorebookRepositoryError::Conflict)?;
+        self.transaction.execute("UPDATE creation_staged_lorebook_projects SET revision=?2,project_json=?3 WHERE project_id=?1", params![id.to_string(), i64::try_from(next.revision.get()).map_err(|_| StagedLorebookRepositoryError::Invalid)?, crate::encode_versioned(&next,1).map_err(|_| StagedLorebookRepositoryError::Invalid)?]).map_err(|_| StagedLorebookRepositoryError::Failure)?;
+        Ok(next)
+    }
+    pub fn plan_pending_lorebook_project(&self, expected: Revision, spec: lettuce_jobs::NewJob, run: StagedLorebookPlanningRun) -> Result<lettuce_types::JobId, lettuce_jobs::StoreError> {
+        let pending = crate::lorebook::staged_lorebook_adapter::pending_project_in(self.transaction, run.project.id).map_err(|_| lettuce_jobs::StoreError::InvalidData)?.ok_or(lettuce_jobs::StoreError::NotFound)?;
+        if pending.revision != expected || pending.stage != lettuce_creation::StagedLorebookStage::Created || pending.start_planning(run.project.updated_at).map_err(|_| lettuce_jobs::StoreError::InvalidData)? != run.project { return Err(lettuce_jobs::StoreError::IdempotencyConflict); }
+        let id = run.project.id;
+        let (job, _, _) = crate::job_adapter::admit_lorebook_job_in(self.transaction, spec, crate::LorebookJobInput::Planner(run), None)?;
+        self.transaction.execute("DELETE FROM creation_staged_lorebook_projects WHERE project_id=?1", [id.to_string()]).map_err(|_| lettuce_jobs::StoreError::Storage)?;
+        Ok(job.id)
+    }
+}

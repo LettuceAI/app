@@ -902,10 +902,17 @@ where
             ..Default::default()
         };
         let mut prompt_values = lettuce_conversations::PromptRuntimeValues {
-            content_rules: Some(crate::generation::pure_mode_rules::content_rules(
-                self.repository,
-                global_settings.pure_mode,
-            )),
+            content_rules: Some(
+                crate::generation::pure_mode_rules::content_rules(
+                    self.repository,
+                    global_settings.pure_mode,
+                )
+                .map_err(|_| {
+                    ConversationGenerationInputError::Context(
+                        ContextAssemblyError::RuntimeTextUnavailable,
+                    )
+                })?,
+            ),
             ..Default::default()
         };
         crate::companion::companion_clock::fill_time_values(&mut prompt_values, reference_now);
@@ -1658,10 +1665,17 @@ where
             prompt_values.persona_scene_lora =
                 persona_lora.map(|lora| crate::image::scene_loras::subject_binding(lora.as_ref()));
         }
-        prompt_values.content_rules = Some(crate::generation::pure_mode_rules::content_rules(
-            self.repository,
-            global_settings.pure_mode,
-        ));
+        prompt_values.content_rules = Some(
+            crate::generation::pure_mode_rules::content_rules(
+                self.repository,
+                global_settings.pure_mode,
+            )
+            .map_err(|_| {
+                ConversationGenerationInputError::Context(
+                    ContextAssemblyError::RuntimeTextUnavailable,
+                )
+            })?,
+        );
         crate::companion::companion_clock::fill_time_values(&mut prompt_values, reference_now);
         let context = ConversationContextAssembler::new(self.repository)
             .assemble(ContextRequest {

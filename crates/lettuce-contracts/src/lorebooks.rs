@@ -600,6 +600,8 @@ pub struct LorebookProjectDraftApprovalRequest {
 #[serde(deny_unknown_fields)]
 pub struct LorebookProjectRefineRequest {
     pub client_operation_id: String,
+    #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
+    pub expected_revision: u64,
     pub project_id: String,
     pub plan_id: String,
     pub feedback: String,

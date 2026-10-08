@@ -229,8 +229,6 @@ pub async fn lorebook_project_create(
     context: &ApiContext,
     request: dto::LorebookProjectCreateRequest,
 ) -> Result<dto::LorebookProjectView, ApiError> {
-    let key =
-        super::jobs::local::operation_key("lorebook_project_create", &request.client_operation_id)?;
     let digest = super::jobs::local::digest(&request)?;
     let id = request_id(
         "lorebook_project_create",
@@ -241,9 +239,6 @@ pub async fn lorebook_project_create(
     context
         .blocking(move |context| {
             let db = context.backend().database();
-            if replay(context, &key, &digest)?.is_some() {
-                return view(context, &db.load_staged_lorebook(id).map_err(failure)?);
-            }
             let sources = request
                 .sources
                 .iter()
@@ -283,49 +278,84 @@ pub async fn lorebook_project_create(
                 lettuce_creation::prepare_staged_lorebook_sources(&inputs).map_err(failure)?
             };
             let stored = GlobalSettingsStore::load(db).map_err(failure)?;
-            let selected = crate::select_staged_lorebook_settings(
-                &stored,
-                &Default::default(),
-                context.backend().built_in_prompt_ids(),
-            );
-            let profile = text_profile(
-                context,
-                stored
-                    .settings
-                    .lorebook_generator
-                    .selection
-                    .model_profile_id,
-                true,
-            )?;
-            let prompt = prompt(
-                context,
-                selected.planner_prompt_id.ok_or_else(|| {
-                    api_error(ApiErrorCode::Unavailable, "planner prompt missing")
-                })?,
-                lettuce_context::PromptPurpose::LorebookGeneratorPlanner,
-            )?;
-            let admission = context
-                .backend()
-                .staged_lorebook_coordinator()
-                .with_operation(key, digest)
-                .admit(crate::StagedLorebookAdmissionRequest {
-                    request_id: id,
-                    project_id,
-                    brief: request.brief,
-                    initial_lorebook_name: request.lorebook_name,
-                    target_count: request
-                        .target_count
-                        .unwrap_or(stored.settings.lorebook_generator.target_count()),
-                    excerpts,
-                    planner_profile: profile,
-                    planner_prompt: &prompt,
-                    configured_inputs: None,
-                    now: context.now(),
-                })
-                .map_err(failure)?;
-            view(context, &admission.run)
+            let project = lettuce_creation::StagedLorebookProject::create(
+                project_id,
+                request.brief,
+                request.lorebook_name,
+                request
+                    .target_count
+                    .unwrap_or(stored.settings.lorebook_generator.target_count()),
+                excerpts,
+                context.now(),
+            )
+            .map_err(failure)?;
+            let project = db
+                .commit_api_operation(
+                    "lorebook_project_create",
+                    &request.client_operation_id,
+                    &digest,
+                    context.now(),
+                    |scope| {
+                        scope
+                            .create_lorebook_project(project)
+                            .map_err(|error| super::lorebooks::Failure(failure(error)))
+                    },
+                )
+                .map_err(|error| error.0)?;
+            Ok(pending_view(context, &project))
         })
         .await
+}
+
+fn pending_view(
+    context: &ApiContext,
+    project: &lettuce_creation::StagedLorebookProject,
+) -> dto::LorebookProjectView {
+    dto::LorebookProjectView {
+        project_id: project.id.to_string(),
+        brief: project.brief.clone(),
+        lorebook_name: project.initial_lorebook_name.clone(),
+        target_count: project.target_count,
+        stage: if project.stage == Stage::Cancelled {
+            dto::LorebookProjectStage::Cancelled
+        } else {
+            dto::LorebookProjectStage::Created
+        },
+        sources: project
+            .excerpts
+            .iter()
+            .map(|source| dto::LorebookProjectSourceView {
+                source_id: source.source_id.clone(),
+                label: source.label.clone(),
+                document: source.asset_id.map(|id| context.asset_ref(id)),
+            })
+            .collect(),
+        outline: vec![],
+        drafts: vec![],
+        coherence_changes: vec![],
+        commit: None,
+        active_job_ids: vec![],
+        plan_failure: None,
+        revision: project.revision.get(),
+        created_at: project.created_at.get(),
+        updated_at: project.updated_at.get(),
+    }
+}
+
+fn project_view(
+    context: &ApiContext,
+    project_id: &str,
+) -> Result<dto::LorebookProjectView, ApiError> {
+    let id = parse_id(project_id, "project_id")?;
+    if let Some(project) = context
+        .backend()
+        .database()
+        .pending_lorebook_project(id)
+        .map_err(failure)?
+    {
+        return Ok(pending_view(context, &project));
+    }
+    view(context, &load(context, project_id)?)
 }
 
 pub async fn lorebook_project_get(
@@ -333,7 +363,7 @@ pub async fn lorebook_project_get(
     request: dto::LorebookProjectGetRequest,
 ) -> Result<dto::LorebookProjectView, ApiError> {
     context
-        .blocking(move |context| view(context, &load(context, &request.project_id)?))
+        .blocking(move |context| project_view(context, &request.project_id))
         .await
 }
 
@@ -346,7 +376,7 @@ pub async fn lorebook_projects_list(
             let page = context
                 .backend()
                 .database()
-                .staged_lorebook_page(PageRequest {
+                .lorebook_project_page(PageRequest {
                     cursor: request.cursor,
                     limit: super::mapping::page_limit(request.limit),
                 })
@@ -354,8 +384,8 @@ pub async fn lorebook_projects_list(
             let items = page
                 .items
                 .iter()
-                .map(|run| {
-                    view(context, run).map(|view| dto::LorebookProjectSummary {
+                .map(|id| {
+                    project_view(context, &id.to_string()).map(|view| dto::LorebookProjectSummary {
                         project_id: view.project_id,
                         brief: view.brief,
                         lorebook_name: view.lorebook_name,
@@ -385,6 +415,105 @@ pub async fn lorebook_project_plan(
     let expected = revision(request.expected_revision, "expected_revision")?;
     let job = context
         .blocking(move |context| {
+            let db = context.backend().database();
+            if let Some(receipt) = db
+                .lookup_api_operation("lorebook_project_plan", &request.client_operation_id)
+                .map_err(failure)?
+            {
+                if receipt.request_digest != digest {
+                    return Err(api_error(
+                        ApiErrorCode::Conflict,
+                        "the operation key was reused",
+                    ));
+                }
+                return serde_json::from_value(receipt.result).map_err(failure);
+            }
+            let project_id = parse_id(&request.project_id, "project_id")?;
+            if let Some(project) = db.pending_lorebook_project(project_id).map_err(failure)? {
+                if project.revision != expected {
+                    return Err(api_error(
+                        ApiErrorCode::Conflict,
+                        "the project changed since it was read",
+                    ));
+                }
+                let stored = GlobalSettingsStore::load(db).map_err(failure)?;
+                let selected = crate::select_staged_lorebook_settings(
+                    &stored,
+                    &Default::default(),
+                    context.backend().built_in_prompt_ids(),
+                );
+                let profile = text_profile(
+                    context,
+                    stored
+                        .settings
+                        .lorebook_generator
+                        .selection
+                        .model_profile_id,
+                    true,
+                )?;
+                let prompt = prompt(
+                    context,
+                    selected.planner_prompt_id.ok_or_else(|| {
+                        api_error(ApiErrorCode::Unavailable, "planner prompt missing")
+                    })?,
+                    lettuce_context::PromptPurpose::LorebookGeneratorPlanner,
+                )?;
+                let project = project.start_planning(context.now()).map_err(failure)?;
+                let id = RequestId::from_uuid(project.id.as_uuid());
+                let spec = lettuce_jobs::JobSpec::new(
+                    lettuce_jobs::JobKind::CreationRun,
+                    lettuce_jobs::JobSubject::new(
+                        lettuce_jobs::SubjectKind::CreationProject,
+                        project.id.to_string(),
+                    )
+                    .map_err(failure)?,
+                    lettuce_jobs::OutcomeRef::Request(id),
+                )
+                .with_idempotency_key(
+                    lettuce_jobs::IdempotencyKey::new(format!("staged-lorebook-{id}"))
+                        .map_err(failure)?,
+                )
+                .with_resources(vec![
+                    lettuce_jobs::ResourceClass::Network,
+                    lettuce_jobs::ResourceClass::ModelLoad,
+                    lettuce_jobs::ResourceClass::DiskRead,
+                    lettuce_jobs::ResourceClass::DiskWrite,
+                    lettuce_jobs::ResourceClass::Cpu,
+                ])
+                .with_priority(lettuce_jobs::JobPriority::Interactive)
+                .with_policies(
+                    lettuce_jobs::RecoveryPolicy::Restart,
+                    lettuce_jobs::CancellationPolicy::Cooperative,
+                );
+                let run = StagedLorebookPlanningRun {
+                    request_id: id,
+                    job_id: lettuce_types::JobId::new(),
+                    project,
+                    planner_profile: profile,
+                    planner_prompt_id: prompt.id,
+                    planner_prompt_name: prompt.name.clone(),
+                    planner_prompt_revision: prompt.revision,
+                    planner_prompt_snapshot: Some(prompt),
+                    configured_inputs: None,
+                    writer_batch_inputs: None,
+                    planner_attempt: None,
+                    planner_retries: vec![],
+                    coherence_runs: vec![],
+                };
+                return db
+                    .commit_api_operation(
+                        "lorebook_project_plan",
+                        &request.client_operation_id,
+                        &digest,
+                        context.now(),
+                        |scope| {
+                            scope
+                                .plan_pending_lorebook_project(expected, spec, run)
+                                .map_err(|error| super::lorebooks::Failure(failure(error)))
+                        },
+                    )
+                    .map_err(|error| error.0);
+            }
             let run = load(context, &request.project_id)?;
             context
                 .backend()
@@ -630,6 +759,24 @@ pub async fn lorebook_project_cancel(
     let expected = revision(request.expected_revision, "expected_revision")?;
     context
         .blocking(move |context| {
+            let id = parse_id(&request.project_id, "project_id")?;
+            let db = context.backend().database();
+            if db.pending_lorebook_project(id).map_err(failure)?.is_some() {
+                let next = db
+                    .commit_api_operation(
+                        "lorebook_project_cancel",
+                        &request.client_operation_id,
+                        &digest,
+                        context.now(),
+                        |scope| {
+                            scope
+                                .cancel_pending_lorebook_project(id, expected, context.now())
+                                .map_err(|error| super::lorebooks::Failure(failure(error)))
+                        },
+                    )
+                    .map_err(|error| error.0)?;
+                return Ok(pending_view(context, &next));
+            }
             let run = load(context, &request.project_id)?;
             let next = context
                 .backend()
@@ -791,6 +938,7 @@ pub async fn lorebook_project_refine(
         &request.client_operation_id,
         &request,
     )?;
+    let expected = revision(request.expected_revision, "expected_revision")?;
     let plan_id: LorebookEntryId = parse_id(&request.plan_id, "plan_id")?;
     let job = context
         .blocking(move |context| {
@@ -810,6 +958,7 @@ pub async fn lorebook_project_refine(
                 .backend()
                 .staged_lorebook_writer_coordinator()
                 .with_operation(key, digest)
+                .with_project_revision(expected)
                 .prepare_and_admit_configured_refinement(
                     crate::StagedLorebookConfiguredRefineRequest {
                         request_id: id,
@@ -836,6 +985,11 @@ pub async fn lorebook_project_coherence(
     context: &ApiContext,
     request: dto::LorebookProjectJobRequest,
 ) -> Result<dto::JobAccepted, ApiError> {
+    let key = super::jobs::local::operation_key(
+        "lorebook_project_coherence",
+        &request.client_operation_id,
+    )?;
+    let digest = super::jobs::local::digest(&request)?;
     let id = request_id(
         "lorebook_project_coherence",
         &request.client_operation_id,
@@ -844,6 +998,9 @@ pub async fn lorebook_project_coherence(
     let expected = revision(request.expected_revision, "expected_revision")?;
     let job = context
         .blocking(move |context| {
+            if let Some(id) = replay(context, &key, &digest)? {
+                return Ok(id);
+            }
             let run = load(context, &request.project_id)?;
             if run.project.revision != expected {
                 return Err(api_error(ApiErrorCode::Conflict, "the project changed"));
@@ -859,6 +1016,8 @@ pub async fn lorebook_project_coherence(
             context
                 .backend()
                 .staged_lorebook_coordinator()
+                .with_operation(key, digest)
+                .with_project_revision(expected)
                 .admit_configured_coherence(
                     crate::StagedLorebookConfiguredCoherenceRequest {
                         request_id: id,

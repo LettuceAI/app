@@ -92,6 +92,7 @@ pub struct StagedLorebookWriterCoordinator<'a, P: ?Sized, R: ?Sized, J: ?Sized> 
     runs: &'a R,
     jobs: &'a J,
     operation: Option<(String, String)>,
+    expected_project_revision: Option<Revision>,
 }
 
 impl<'a, P: ?Sized, R: ?Sized, J: ?Sized> StagedLorebookWriterCoordinator<'a, P, R, J> {
@@ -102,8 +103,14 @@ impl<'a, P: ?Sized, R: ?Sized, J: ?Sized> StagedLorebookWriterCoordinator<'a, P,
             runs,
             jobs,
             operation: None,
+            expected_project_revision: None,
         }
     }
+    pub fn with_project_revision(mut self, expected: Revision) -> Self {
+        self.expected_project_revision = Some(expected);
+        self
+    }
+
     pub fn with_operation(mut self, key: String, digest: String) -> Self {
         self.operation = Some((key, digest));
         self
@@ -168,6 +175,14 @@ where
         let project = self
             .projects
             .load_staged_lorebook(request.project_request_id)?;
+        if self
+            .expected_project_revision
+            .is_some_and(|expected| expected != project.project.revision)
+        {
+            return Err(StagedLorebookWriterAdmissionError::Project(
+                StagedLorebookRepositoryError::Conflict,
+            ));
+        }
         let text = crate::generation::runtime_text::RuntimeText::load(
             self.projects,
             crate::BuiltInPromptId::LorebookRuntime,
@@ -578,6 +593,14 @@ where
         let project = self
             .projects
             .load_staged_lorebook(request.project_request_id)?;
+        if self
+            .expected_project_revision
+            .is_some_and(|expected| expected != project.project.revision)
+        {
+            return Err(StagedLorebookWriterAdmissionError::Project(
+                StagedLorebookRepositoryError::Conflict,
+            ));
+        }
         let text = crate::generation::runtime_text::RuntimeText::load(
             self.projects,
             crate::BuiltInPromptId::LorebookRuntime,

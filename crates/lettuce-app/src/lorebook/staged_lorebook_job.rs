@@ -155,6 +155,7 @@ pub struct StagedLorebookCoordinator<'a, R: ?Sized, J: ?Sized> {
     repository: &'a R,
     jobs: &'a J,
     operation: Option<(String, String)>,
+    expected_project_revision: Option<Revision>,
 }
 
 impl<'a, R: ?Sized, J: ?Sized> StagedLorebookCoordinator<'a, R, J> {
@@ -164,8 +165,14 @@ impl<'a, R: ?Sized, J: ?Sized> StagedLorebookCoordinator<'a, R, J> {
             repository,
             jobs,
             operation: None,
+            expected_project_revision: None,
         }
     }
+    pub fn with_project_revision(mut self, expected: Revision) -> Self {
+        self.expected_project_revision = Some(expected);
+        self
+    }
+
     pub fn with_operation(mut self, key: String, digest: String) -> Self {
         self.operation = Some((key, digest));
         self
@@ -574,6 +581,14 @@ impl<
         let project = self
             .repository
             .load_staged_lorebook(request.project_request_id)?;
+        if self
+            .expected_project_revision
+            .is_some_and(|expected| expected != project.project.revision)
+        {
+            return Err(StagedLorebookAdmissionError::Repository(
+                StagedLorebookRepositoryError::Conflict,
+            ));
+        }
         if let Some(run) = project
             .coherence_runs
             .iter()
@@ -630,6 +645,14 @@ impl<
         let project = self
             .repository
             .load_staged_lorebook(request.project_request_id)?;
+        if self
+            .expected_project_revision
+            .is_some_and(|expected| expected != project.project.revision)
+        {
+            return Err(StagedLorebookAdmissionError::Repository(
+                StagedLorebookRepositoryError::Conflict,
+            ));
+        }
         if let Some(stored) = project
             .coherence_runs
             .iter()
