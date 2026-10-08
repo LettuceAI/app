@@ -1,5 +1,7 @@
 use super::tests::{Reply, harness};
 use lettuce_contracts::{self as dto, ApiErrorCode};
+use lettuce_models::ModelPathRelocation;
+use lettuce_settings::DeviceSettingsStore;
 
 fn save(
     id: Option<String>,
@@ -975,4 +977,38 @@ async fn duplicate_certificate_reports_its_existing_identity() {
     let error = super::certificates_import(&harness.context, request).await.expect_err("duplicate");
     assert_eq!(error.code, ApiErrorCode::Conflict);
     assert_eq!(serde_json::to_value(error.details).expect("detail"), serde_json::json!({"type":"certificate_already_imported", "certificate_id":first.certificates[0].id}));
+}
+
+struct CertificateRaceSettings<'a>(&'a lettuce_database::Database);
+impl lettuce_settings::DeviceSettingsStore for CertificateRaceSettings<'_> {
+    fn load_device_settings(&self) -> Result<lettuce_settings::DeviceSettings, lettuce_settings::GlobalSettingsStoreError> {
+        let stale = self.0.load_device_settings()?;
+        self.0.commit_api_operation("certificates_import", "folder-race", "folder-race-digest", lettuce_types::TimestampMillis::new(1), |scope| {
+            scope.import_certificate(lettuce_settings::TrustedCertificate {
+                id: uuid::Uuid::new_v4(), name: "root.pem".into(), imported_at: 1,
+                pem: include_str!("../../tests/fixtures/provider-test-cert.pem").into(),
+            }).map_err(|_| lettuce_models::ModelRepositoryError::Storage)
+        }).expect("concurrent certificate commit");
+        Ok(stale)
+    }
+    fn save_device_settings(&self, settings: lettuce_settings::DeviceSettings) -> Result<(), lettuce_settings::GlobalSettingsStoreError> { self.0.save_device_settings(settings) }
+    fn update_device_settings(&self, update: &dyn Fn(&mut lettuce_settings::DeviceSettings)) -> Result<(), lettuce_settings::GlobalSettingsStoreError> { self.0.update_device_settings(update) }
+}
+impl lettuce_models::ModelPathRelocation for CertificateRaceSettings<'_> {
+    fn relocate_model_paths(&self, relocate: &dyn Fn(&str)->Option<String>, now: lettuce_types::TimestampMillis) -> Result<u32, lettuce_models::ModelRepositoryError> { self.0.relocate_model_paths(relocate, now) }
+    fn relocate_model_paths_and_save_device(&self, relocate: &dyn Fn(&str)->Option<String>, device: lettuce_settings::DeviceSettings, now: lettuce_types::TimestampMillis) -> Result<u32, lettuce_models::ModelRepositoryError> { self.0.relocate_model_paths_and_save_device(relocate, device, now) }
+}
+
+#[test]
+fn folder_selection_keeps_an_interleaved_certificate_import() {
+    use lettuce_settings::DeviceSettingsStore;
+    let database = lettuce_database::Database::open_in_memory().expect("database");
+    let root = std::env::temp_dir().join(format!("s7a-folder-race-{}", uuid::Uuid::new_v4()));
+    let app = root.join("app");
+    let models = root.join("models");
+    crate::models::gguf_library::set_llm_models_dir(&CertificateRaceSettings(&database), &app, models.to_str().expect("path"), false, lettuce_types::TimestampMillis::new(1), "folder-race", &||false).expect("folder selection");
+    let after = database.load_device_settings().expect("both changes");
+    assert_eq!(after.trusted_certificates.len(),1);
+    assert_eq!(after.llm_models_dir.as_deref(), models.to_str());
+    std::fs::remove_dir_all(root).expect("cleanup");
 }

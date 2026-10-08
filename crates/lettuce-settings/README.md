@@ -112,3 +112,5 @@ The Hugging Face and CivitAI tokens are one per install and have no owner. `Secr
 Whisper, Kokoro, embedding and Thymos locations are device-local roots. A custom models folder move can relocate roots contained in that folder; backup restore preserves the receiving device's roots.
 
 Trusted certificates are device-local PEM bundles with metadata. The API validates certificates through the network boundary before a revisioned write. Certificate lists have no count cap; each PEM bundle is limited to 1 MiB.
+
+Device settings field updates read, modify and write under one immediate transaction. Models-folder relocation merges only folder and retained-root fields into the current record; embedding and dictation selections also use transactional field updates, preserving concurrent certificate changes.

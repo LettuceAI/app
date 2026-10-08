@@ -71,9 +71,7 @@ pub trait ModelPathRelocation: Send + Sync {
         now: lettuce_types::TimestampMillis,
     ) -> Result<u32, ModelRepositoryError>;
 
-    /// Like [`Self::relocate_model_paths`], saving `device` in the same
-    /// transaction, so the paths and the folder they point into change
-    /// together or not at all.
+    /// Relocates paths and merges model-folder fields in one transaction.
     fn relocate_model_paths_and_save_device(
         &self,
         relocate: &dyn Fn(&str) -> Option<String>,

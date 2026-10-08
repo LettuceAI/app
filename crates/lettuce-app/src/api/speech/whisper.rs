@@ -263,15 +263,11 @@ pub async fn whisper_delete(
                 .remove_managed_whisper_model(&root, &request.model_id)
                 .map_err(IntoApiError::into_api_error)?;
             let database = context.backend().database();
-            let mut device = database
-                .load_device_settings()
-                .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?;
-            if device.speech.dictation_model_id.as_deref() == Some(request.model_id.as_str()) {
-                device.speech.dictation_model_id = None;
-                database
-                    .save_device_settings(device)
-                    .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?;
-            }
+            database.update_device_settings(&|device| {
+                if device.speech.dictation_model_id.as_deref() == Some(request.model_id.as_str()) {
+                    device.speech.dictation_model_id = None;
+                }
+            }).map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?;
             Ok(())
         })
         .await
@@ -342,12 +338,8 @@ pub async fn whisper_dictation_model_set(
                 }
             }
             let database = context.backend().database();
-            let mut device = database
-                .load_device_settings()
-                .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))?;
-            device.speech.dictation_model_id = request.model_id;
             database
-                .save_device_settings(device)
+                .update_device_settings(&|device| device.speech.dictation_model_id.clone_from(&request.model_id))
                 .map_err(|error| api_error(ApiErrorCode::Internal, error.to_string()))
         })
         .await

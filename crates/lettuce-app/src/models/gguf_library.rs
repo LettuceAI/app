@@ -863,7 +863,7 @@ where
     };
     if !move_existing || paths_equal(&old_path, &new_path) {
         repository
-            .save_device_settings(with_folder(device))
+            .update_device_settings(&|device| device.llm_models_dir.clone_from(&chosen))
             .map_err(|error| storage(&error))?;
         return Ok(LlmModelsDirChange {
             path: new_path,

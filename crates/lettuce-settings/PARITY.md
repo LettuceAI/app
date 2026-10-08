@@ -60,3 +60,5 @@ Facts about how `lettuce-settings` relates to the legacy app (2.2.x). The crate 
 Audio provider metadata and its operation receipt commit before the key is stored. A crash leaves a visible provider with a missing key, and replay fills that same owner's missing credential. No aggregate keyring index or inventory is used: each key has its independent entry. This avoids lost index updates and Windows' 2560-byte credential blob limit (keyring 3.6.3 checks CRED_MAX_CREDENTIAL_BLOB_SIZE).
 
 Certificate count caps are removed; the 1 MiB PEM guard remains. Actual DER validation is required before API writes, replacing the frontend marker-only check for new imports; runtime clients still skip invalid stored roots (old-code/src/ui/pages/settings/SecurityPage.tsx:203-211; old-code/src-tauri/src/tls.rs:26-39).
+
+Device settings field updates read, modify and write under one immediate transaction. Models-folder relocation merges only folder and retained-root fields into the current record; embedding and dictation selections also use transactional field updates, preserving concurrent certificate changes.

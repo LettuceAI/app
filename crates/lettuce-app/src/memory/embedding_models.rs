@@ -267,9 +267,7 @@ impl<'a, S: DeviceSettingsStore + ?Sized> EmbeddingModelCoordinator<'a, S> {
         if self.store.manifest(family)?.is_none() {
             return Err(EmbeddingModelError::NotInstalled);
         }
-        let mut settings = self.settings.load_device_settings()?;
-        settings.embedding.model_version = Some(embedding_version_for_family(family));
-        Ok(self.settings.save_device_settings(settings)?)
+        Ok(self.settings.update_device_settings(&|settings| settings.embedding.model_version = Some(embedding_version_for_family(family)))?)
     }
 
     /// Records a succeeded install and chooses it, as a download also made
@@ -310,11 +308,9 @@ impl<'a, S: DeviceSettingsStore + ?Sized> EmbeddingModelCoordinator<'a, S> {
             return Ok(None);
         };
         self.store.record(&manifest)?;
-        let mut settings = self.settings.load_device_settings()?;
-        if settings.embedding.model_version.is_none() {
-            settings.embedding.model_version = Some(EmbeddingModelVersion::V4);
-            self.settings.save_device_settings(settings)?;
-        }
+        self.settings.update_device_settings(&|settings| {
+            if settings.embedding.model_version.is_none() { settings.embedding.model_version = Some(EmbeddingModelVersion::V4); }
+        })?;
         Ok(Some(manifest))
     }
 
@@ -380,6 +376,10 @@ mod tests {
     struct Settings(Mutex<DeviceSettings>);
 
     impl DeviceSettingsStore for Settings {
+        fn update_device_settings(&self, update: &dyn Fn(&mut DeviceSettings)) -> Result<(), GlobalSettingsStoreError> {
+            update(&mut self.0.lock().expect("settings"));
+            Ok(())
+        }
         fn load_device_settings(&self) -> Result<DeviceSettings, GlobalSettingsStoreError> {
             Ok(self.0.lock().expect("settings").clone())
         }

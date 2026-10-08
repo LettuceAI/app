@@ -489,3 +489,5 @@ Certificate sources are read under a 1 MiB PEM guard, including sources with ina
 Duplicate certificate imports return Conflict with CertificateAlreadyImported and the existing certificate id, separate from operation-id conflicts, preserving the distinct duplicate message at old-code/src/ui/pages/settings/SecurityPage.tsx:208-210.
 
 Provider verification preserves string messages, string error types and JSON-stringified error values from old-code/src-tauri/src/providers/util.rs:162-182, with credential redaction. Missing provider text uses typed MissingApiKey or InvalidApiKey details and an absent provider_message.
+
+Device settings field updates read, modify and write under one immediate transaction. Models-folder relocation merges only folder and retained-root fields into the current record; embedding and dictation selections also use transactional field updates, preserving concurrent certificate changes.

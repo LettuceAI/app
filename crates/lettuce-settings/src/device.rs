@@ -132,6 +132,8 @@ impl DeviceSettings {
 }
 
 pub trait DeviceSettingsStore: Send + Sync {
+    fn update_device_settings(&self, update: &dyn Fn(&mut DeviceSettings)) -> Result<(), GlobalSettingsStoreError>;
+
     fn load_device_settings(&self) -> Result<DeviceSettings, GlobalSettingsStoreError>;
 
     fn save_device_settings(

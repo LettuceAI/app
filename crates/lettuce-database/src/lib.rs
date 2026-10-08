@@ -1,7 +1,8 @@
-pub use models::provider_control_adapter::CertificateImportError;
 //! SQLite migrations and private adapters for domain-owned repository ports.
 
 #![deny(unsafe_op_in_unsafe_fn)]
+
+pub use models::provider_control_adapter::CertificateImportError;
 
 mod change_signal;
 mod job_adapter;
@@ -705,25 +706,25 @@ pub(crate) fn write_device_settings(
     Ok(())
 }
 
+pub(crate) fn read_device_settings(connection: &Connection) -> Result<DeviceSettings, GlobalSettingsStoreError> {
+    let settings: Option<String> = connection.query_row("SELECT settings_json FROM device_settings WHERE id = 1", [], |row| row.get(0)).optional().map_err(|_| GlobalSettingsStoreError::Storage)?;
+    settings.map_or_else(|| Ok(DeviceSettings::default()), |settings| serde_json::from_str(&settings).map_err(|_| GlobalSettingsStoreError::InvalidData))
+}
+
 impl DeviceSettingsStore for Database {
+    fn update_device_settings(&self, update: &dyn Fn(&mut DeviceSettings)) -> Result<(), GlobalSettingsStoreError> {
+        let mut connection = self.connection().map_err(|_| GlobalSettingsStoreError::Storage)?;
+        let transaction = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|_| GlobalSettingsStoreError::Storage)?;
+        let mut settings = read_device_settings(&transaction)?;
+        update(&mut settings);
+        settings.validate()?;
+        write_device_settings(&transaction, &settings).map_err(|_| GlobalSettingsStoreError::Storage)?;
+        transaction.commit().map_err(|_| GlobalSettingsStoreError::Storage)
+    }
+
     fn load_device_settings(&self) -> Result<DeviceSettings, GlobalSettingsStoreError> {
-        let connection = self
-            .connection()
-            .map_err(|_| GlobalSettingsStoreError::Storage)?;
-        let settings: Option<String> = connection
-            .query_row(
-                "SELECT settings_json FROM device_settings WHERE id = 1",
-                [],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(|_| GlobalSettingsStoreError::Storage)?;
-        settings.map_or_else(
-            || Ok(DeviceSettings::default()),
-            |settings| {
-                serde_json::from_str(&settings).map_err(|_| GlobalSettingsStoreError::InvalidData)
-            },
-        )
+        let connection = self.connection().map_err(|_| GlobalSettingsStoreError::Storage)?;
+        read_device_settings(&connection)
     }
 
     fn save_device_settings(&self, settings: DeviceSettings) -> Result<(), GlobalSettingsStoreError> {

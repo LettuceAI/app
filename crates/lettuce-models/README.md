@@ -82,3 +82,5 @@ Prompt caching is a closed policy (`Disabled` or `Enabled` with a `PromptCacheRe
 Local model files are stored by absolute path. `rewrite_path_prefix` maps a path under an old folder to a new one, `relocate_profile_paths` applies a mapping to every path a profile stores (the model file itself for local runtimes, the llama.cpp projector, MTP and DFlash drafts, the stable-diffusion.cpp components and base LoRAs), and `ModelPathRelocation` applies it to every profile in one transaction when the user moves the models folder.
 
 Resolved chat profiles freeze the model display name alongside its identity, parameters and connection metadata, so creation history and its backup and sync snapshots keep the name after model deletion.
+
+Model-folder relocation merges folder and retained-root fields into current device settings in the same immediate transaction as model path changes, preserving concurrent certificate and device selections.

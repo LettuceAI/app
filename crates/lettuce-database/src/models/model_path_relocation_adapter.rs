@@ -16,7 +16,7 @@ impl ModelPathRelocation for Database {
         let mut connection = self
             .connection()
             .map_err(|_| ModelRepositoryError::Storage)?;
-        let transaction = connection.transaction().map_err(model_error)?;
+        let transaction = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(model_error)?;
         let changed = relocate_in(&transaction, relocate, now)?;
         transaction.commit().map_err(model_error)?;
         Ok(changed)
@@ -34,9 +34,19 @@ impl ModelPathRelocation for Database {
         let mut connection = self
             .connection()
             .map_err(|_| ModelRepositoryError::Storage)?;
-        let transaction = connection.transaction().map_err(model_error)?;
+        let transaction = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(model_error)?;
         let changed = relocate_in(&transaction, relocate, now)?;
-        crate::write_device_settings(&transaction, &device).map_err(model_error)?;
+        let mut current = crate::read_device_settings(&transaction).map_err(|_| ModelRepositoryError::Storage)?;
+        current.llm_models_dir = device.llm_models_dir;
+        for (root, proposed) in [
+            (&mut current.retained_model_roots.whisper, device.retained_model_roots.whisper),
+            (&mut current.retained_model_roots.kokoro, device.retained_model_roots.kokoro),
+            (&mut current.retained_model_roots.embedding, device.retained_model_roots.embedding),
+            (&mut current.retained_model_roots.thymos, device.retained_model_roots.thymos),
+        ] {
+            *root = root.as_deref().map(|path| relocate(path).unwrap_or_else(|| path.to_owned())).or(proposed);
+        }
+        crate::write_device_settings(&transaction, &current).map_err(model_error)?;
         transaction.commit().map_err(model_error)?;
         Ok(changed)
     }

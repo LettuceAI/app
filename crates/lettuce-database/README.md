@@ -343,3 +343,5 @@ Provider control transactions commit accounts, model cascades and operation rece
 Certificate sources are read under a 1 MiB PEM guard, including sources with inaccurate size metadata. The foundation migration retains the 128 MiB device-settings CHECK; migration checksums derive from the edited SQL.
 
 Duplicate certificate imports return Conflict with CertificateAlreadyImported and the existing certificate id, separate from operation-id conflicts, preserving the distinct duplicate message at old-code/src/ui/pages/settings/SecurityPage.tsx:208-210.
+
+Device settings field updates read, modify and write under one immediate transaction. Models-folder relocation merges only folder and retained-root fields into the current record; embedding and dictation selections also use transactional field updates, preserving concurrent certificate changes.
