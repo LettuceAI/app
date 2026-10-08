@@ -497,3 +497,5 @@ Cascade coverage checks account-key removal, default promotion, every character/
 Completed provider saves replay their receipt after the account or its retired credential is removed. A credential still present under the original operation reference must match the retry.
 
 Certificate import retries rebuild provider clients from the committed certificate set before returning the receipt, recovering a failed refresh after commit without reopening the source.
+
+DeviceSettingsStore exposes transactional field updates and reads. Full replacement is confined to the database transaction helper explicitly named replace_device_settings_in, including backup restore and legacy import.

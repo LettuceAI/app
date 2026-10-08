@@ -271,10 +271,10 @@ mod tests {
             ..Default::default()
         };
         previous
-            .save_device_settings(device.clone())
+            .update_device_settings(&|current| current.clone_from(&device))
             .expect("save device settings");
         device.llm_models_dir = Some("  ".into());
-        assert!(previous.save_device_settings(device).is_err());
+        assert!(previous.update_device_settings(&|current| current.clone_from(&device)).is_err());
         let restored = Database::open(root.join("restored.sqlite3")).expect("restored database");
         restored
             .carry_device_local_state_from(&previous_path)

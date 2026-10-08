@@ -163,7 +163,7 @@ async fn certificate_listing_returns_metadata_without_pem_or_a_count_cap() {
         imported_at: 123,
     });
     database
-        .save_device_settings(settings.clone())
+        .update_device_settings(&|current| current.clone_from(&settings))
         .expect("certificates");
     let rows = super::certificates_list(&harness.context)
         .await

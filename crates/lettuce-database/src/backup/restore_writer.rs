@@ -59,7 +59,7 @@ impl ProviderBackupRestoreWriter for Database {
             retained_model_roots: Default::default(),
         };
         if device != lettuce_settings::DeviceSettings::default() {
-            crate::write_device_settings(&transaction, &device).map_err(invalid)?;
+            crate::replace_device_settings_in(&transaction, &device).map_err(invalid)?;
         }
         for day in &graph.device.app_usage_days {
             transaction
@@ -971,7 +971,7 @@ pub(crate) mod tests {
             },
         };
         source
-            .save_device_settings(settings.clone())
+            .update_device_settings(&|current| current.clone_from(&settings))
             .expect("device settings");
         source
             .add_app_usage("2026-09-20", 1_000, lettuce_types::TimestampMillis::new(1))

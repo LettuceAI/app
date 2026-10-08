@@ -62,3 +62,5 @@ Audio provider metadata and its operation receipt commit before the key is store
 Certificate count caps are removed; the 1 MiB PEM guard remains. Actual DER validation is required before API writes, replacing the frontend marker-only check for new imports; runtime clients still skip invalid stored roots (old-code/src/ui/pages/settings/SecurityPage.tsx:203-211; old-code/src-tauri/src/tls.rs:26-39).
 
 Device settings field updates read, modify and write under one immediate transaction. Models-folder relocation merges only folder and retained-root fields into the current record; embedding and dictation selections also use transactional field updates, preserving concurrent certificate changes.
+
+DeviceSettingsStore exposes transactional field updates and reads. Full replacement is confined to the database transaction helper explicitly named replace_device_settings_in, including backup restore and legacy import.

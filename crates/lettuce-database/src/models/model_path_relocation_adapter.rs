@@ -46,7 +46,7 @@ impl ModelPathRelocation for Database {
         ] {
             *root = root.as_deref().map(|path| relocate(path).unwrap_or_else(|| path.to_owned()));
         }
-        crate::write_device_settings(&transaction, &current).map_err(model_error)?;
+        crate::replace_device_settings_in(&transaction, &current).map_err(model_error)?;
         transaction.commit().map_err(model_error)?;
         Ok(changed)
     }
@@ -130,7 +130,7 @@ mod certificate_race_tests {
             id: uuid::Uuid::new_v4(), name: "root.pem".into(), imported_at: 1,
             pem: "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----".into(),
         });
-        database.save_device_settings(concurrent.clone()).expect("commit certificate");
+        database.update_device_settings(&|current| current.clone_from(&concurrent)).expect("commit certificate");
         database.relocate_model_paths_and_save_device(&|_| None, stale, TimestampMillis::new(1)).expect("move commit");
         let after = database.load_device_settings().expect("both changes");
         assert_eq!(after.trusted_certificates, concurrent.trusted_certificates);

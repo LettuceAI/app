@@ -383,14 +383,6 @@ mod tests {
         fn load_device_settings(&self) -> Result<DeviceSettings, GlobalSettingsStoreError> {
             Ok(self.0.lock().expect("settings").clone())
         }
-
-        fn save_device_settings(
-            &self,
-            settings: DeviceSettings,
-        ) -> Result<(), GlobalSettingsStoreError> {
-            *self.0.lock().expect("settings") = settings;
-            Ok(())
-        }
     }
 
     fn git_blob(bytes: &[u8]) -> String {

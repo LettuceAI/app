@@ -1108,7 +1108,7 @@ mod tests {
         }
         let mut device = database.load_device_settings().expect("settings");
         device.llm_models_dir = Some(app.to_string_lossy().into_owned());
-        database.save_device_settings(device).expect("legacy hazardous source");
+        database.update_device_settings(&|current| current.clone_from(&device)).expect("legacy hazardous source");
         let destination = app.with_file_name("safe-external-models");
         assert_eq!(set_llm_models_dir(database, &app, destination.to_str().expect("path"), true,
             TimestampMillis::new(3), "forbidden-source", &|| false), Err(FolderMoveError::AppDataOverlap));
@@ -1153,7 +1153,7 @@ mod tests {
             kokoro: Some(source.join("kokoro").to_string_lossy().into_owned()),
             thymos: Some(source.join("models/thymos").to_string_lossy().into_owned()),
         };
-        database.save_device_settings(device).expect("custom root");
+        database.update_device_settings(&|current| current.clone_from(&device)).expect("custom root");
         set_llm_models_dir(database, &app, target.to_str().expect("target"), true,
             TimestampMillis::new(3), "retained-overlap", &|| false).expect("move");
         let device = database.load_device_settings().expect("new device");
@@ -1404,7 +1404,7 @@ mod tests {
         std::fs::write(target.join(MODELS_MOVE_MANIFEST), &manifest).expect("manifest");
         let mut device = database.load_device_settings().expect("device");
         device.llm_models_dir = Some(target.to_string_lossy().into_owned());
-        database.save_device_settings(device).expect("committed");
+        database.update_device_settings(&|current| current.clone_from(&device)).expect("committed");
         assert_eq!(
             recover_models_folder_move(database, &app, &target, "move-1"),
             Ok(Some(MoveResolution {
@@ -1434,7 +1434,7 @@ mod tests {
             if committed {
                 let mut device = backend.database().load_device_settings().expect("device");
                 device.llm_models_dir = Some(target.to_string_lossy().into_owned());
-                backend.database().save_device_settings(device).expect("commit");
+                backend.database().update_device_settings(&|current| current.clone_from(&device)).expect("commit");
                 std::fs::write(root.join("notes.txt"), b"y").expect("changed source");
             } else {
                 std::fs::write(target.join("notes.txt"), b"y").expect("changed destination");
@@ -1670,7 +1670,7 @@ mod tests {
                 let database = backend.database();
                 let mut device = database.load_device_settings().expect("device");
                 device.llm_models_dir = Some(if committed { &to } else { &from }.to_string_lossy().into_owned());
-                database.save_device_settings(device).expect("chosen folder");
+                database.update_device_settings(&|current| current.clone_from(&device)).expect("chosen folder");
                 let result = recover_models_folder_move(database, &app, &to, "rebind").expect("recover").expect("journal");
                 assert_eq!(result.committed, committed);
                 assert_eq!(result.kept.is_empty(), !tampered);

@@ -689,8 +689,8 @@ pub(crate) fn write_device_ui_state(
     Ok(())
 }
 
-/// Writes this device's settings inside `transaction`.
-pub(crate) fn write_device_settings(
+/// Replaces device settings inside a transaction.
+pub(crate) fn replace_device_settings_in(
     transaction: &Connection,
     settings: &DeviceSettings,
 ) -> Result<(), rusqlite::Error> {
@@ -718,21 +718,13 @@ impl DeviceSettingsStore for Database {
         let mut settings = read_device_settings(&transaction)?;
         update(&mut settings);
         settings.validate()?;
-        write_device_settings(&transaction, &settings).map_err(|_| GlobalSettingsStoreError::Storage)?;
+        replace_device_settings_in(&transaction, &settings).map_err(|_| GlobalSettingsStoreError::Storage)?;
         transaction.commit().map_err(|_| GlobalSettingsStoreError::Storage)
     }
 
     fn load_device_settings(&self) -> Result<DeviceSettings, GlobalSettingsStoreError> {
         let connection = self.connection().map_err(|_| GlobalSettingsStoreError::Storage)?;
         read_device_settings(&connection)
-    }
-
-    fn save_device_settings(&self, settings: DeviceSettings) -> Result<(), GlobalSettingsStoreError> {
-        settings.validate()?;
-        let connection = self
-            .connection()
-            .map_err(|_| GlobalSettingsStoreError::Storage)?;
-        write_device_settings(&connection, &settings).map_err(|_| GlobalSettingsStoreError::Storage)
     }
 }
 

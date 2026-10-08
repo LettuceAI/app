@@ -114,3 +114,5 @@ Whisper, Kokoro, embedding and Thymos locations are device-local roots. A custom
 Trusted certificates are device-local PEM bundles with metadata. The API validates certificates through the network boundary before a revisioned write. Certificate lists have no count cap; each PEM bundle is limited to 1 MiB.
 
 Device settings field updates read, modify and write under one immediate transaction. Models-folder relocation merges only folder and retained-root fields into the current record; embedding and dictation selections also use transactional field updates, preserving concurrent certificate changes.
+
+DeviceSettingsStore exposes transactional field updates and reads. Full replacement is confined to the database transaction helper explicitly named replace_device_settings_in, including backup restore and legacy import.

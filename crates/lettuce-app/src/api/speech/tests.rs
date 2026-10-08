@@ -1515,7 +1515,7 @@ async fn queued_local_synthesis_waits_for_folder_move_and_preload_returns_busy()
     env.context
         .backend()
         .database()
-        .save_device_settings(device)
+        .update_device_settings(&|current| current.clone_from(&device))
         .expect("root");
     let mut provider = synthesis_request("queued").provider;
     provider.config = AudioProviderConfig::Kokoro {
@@ -1735,7 +1735,7 @@ fn installed_speech_runtime_follows_the_retained_kokoro_root() {
     let mut device = database.load_device_settings().expect("device settings");
     device.retained_model_roots.kokoro =
         Some(env.root.join("moved-kokoro").to_string_lossy().into_owned());
-    database.save_device_settings(device).expect("moved root");
+    database.update_device_settings(&|current| current.clone_from(&device)).expect("moved root");
     let moved = host.tts_runtime(&env.context).expect("moved runtime");
     assert!(!Arc::ptr_eq(&initial, &moved));
 }

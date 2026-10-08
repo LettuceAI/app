@@ -320,7 +320,7 @@ async fn installed_models_load_once_until_they_change() {
     let database = harness.context.backend().database();
     let mut device = database.load_device_settings().expect("device settings");
     device.embedding.keep_model_loaded = true;
-    database.save_device_settings(device).expect("save setting");
+    database.update_device_settings(&|current| current.clone_from(&device)).expect("save setting");
     enable_dynamic_memory(&harness);
     let defaults = CharacterDefaults {
         memory_policy: lettuce_characters::MemoryPolicy::Dynamic,
@@ -817,7 +817,7 @@ fn keep_loaded_off_releases_the_embedding_between_uses() {
     let database = harness.context.backend().database();
     let mut device = database.load_device_settings().expect("device settings");
     device.embedding.keep_model_loaded = true;
-    database.save_device_settings(device).expect("save setting");
+    database.update_device_settings(&|current| current.clone_from(&device)).expect("save setting");
     assert_eq!(engine.count_tokens("Third use."), Ok(1));
     assert_eq!(engine.count_tokens("Fourth use."), Ok(1));
     assert_eq!(models.loads.load(Ordering::SeqCst), 3);
@@ -914,7 +914,7 @@ async fn embedding_comparison_uses_one_engine_per_call_and_preserves_raw_cosine(
     let mut settings = database.load_device_settings().expect("settings");
     settings.embedding.keep_model_loaded = true;
     database
-        .save_device_settings(settings)
+        .update_device_settings(&|current| current.clone_from(&settings))
         .expect("keep loaded");
     super::embedding_compare(&harness.context, request())
         .await

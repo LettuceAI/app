@@ -1103,7 +1103,7 @@ async fn a_queued_download_for_another_folder_is_cancelled_at_restart() {
     let database = context.backend().database();
     let mut device = database.load_device_settings().expect("device");
     device.llm_models_dir = Some(folder.join("other").to_string_lossy().into_owned());
-    lettuce_settings::DeviceSettingsStore::save_device_settings(database, device)
+    lettuce_settings::DeviceSettingsStore::update_device_settings(database, &|current| current.clone_from(&device))
         .expect("other folder");
     let restarted = restart(context).await;
     assert_eq!(state(&restarted, job_id(&accepted)), JobState::Cancelled);

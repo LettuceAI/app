@@ -1542,7 +1542,7 @@ impl LegacyImportRepository for Database {
         if !earlier_settings {
             let device_settings = candidate.device_settings.clone();
             if device_settings != lettuce_settings::DeviceSettings::default() {
-                crate::write_device_settings(&transaction, &device_settings)
+                crate::replace_device_settings_in(&transaction, &device_settings)
                     .map_err(|_| LegacyImportRepositoryError::InvalidInput)?;
             }
             if !candidate.device_ui_state.is_empty() {

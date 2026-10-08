@@ -874,7 +874,7 @@ async fn invalid_stored_certificate_is_visible_and_removable_without_blocking_ru
         pem: "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----".into(),
         imported_at: 1,
     });
-    database.save_device_settings(device).expect("stored marker-only root");
+    database.update_device_settings(&|current| current.clone_from(&device)).expect("stored marker-only root");
     let tls = harness.context.backend().tls_policy().expect("TLS");
     harness.context.backend().provider_runtime(harness.context.secret_store().clone(), &tls).expect("runtime opens");
     let view = super::certificates_list(&harness.context).await.expect("list");
@@ -994,7 +994,7 @@ impl lettuce_settings::DeviceSettingsStore for CertificateRaceSettings<'_> {
         }).expect("concurrent certificate commit");
         Ok(stale)
     }
-    fn save_device_settings(&self, settings: lettuce_settings::DeviceSettings) -> Result<(), lettuce_settings::GlobalSettingsStoreError> { self.0.save_device_settings(settings) }
+
     fn update_device_settings(&self, update: &dyn Fn(&mut lettuce_settings::DeviceSettings)) -> Result<(), lettuce_settings::GlobalSettingsStoreError> { self.0.update_device_settings(update) }
 }
 impl lettuce_models::ModelPathRelocation for CertificateRaceSettings<'_> {
