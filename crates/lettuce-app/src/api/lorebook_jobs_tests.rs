@@ -1523,3 +1523,129 @@ async fn staged_plan_with_a_configured_non_text_model_is_typed() {
         })
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn lost_races_report_conflict_and_the_running_batch() {
+    let harness = harness(Reply::LorebookTools);
+    let db = harness.context.backend().database();
+    let created = staged_project(&harness, "race-project").await;
+    let project_id: lettuce_types::CreationWorkflowId = created.project_id.parse().expect("id");
+    let plan = lorebook_project_plan(
+        &harness.context,
+        dto::LorebookProjectJobRequest {
+            client_operation_id: "race-plan".into(),
+            project_id: created.project_id.clone(),
+            expected_revision: created.revision,
+        },
+    )
+    .await
+    .expect("plan");
+    let lost_cancel = db
+        .commit_api_operation(
+            "lorebook_project_cancel",
+            "lost-cancel",
+            "digest",
+            harness.context.now(),
+            |scope| {
+                scope
+                    .cancel_pending_lorebook_project(
+                        project_id,
+                        lettuce_types::Revision::new(created.revision),
+                        harness.context.now(),
+                    )
+                    .map_err(|error| super::lorebooks::Failure(lorebook_jobs::failure(error)))
+            },
+        )
+        .map(|_| ())
+        .expect_err("pending row consumed by the plan");
+    assert_eq!(lost_cancel.0.code, ApiErrorCode::Conflict);
+    let request_id = db
+        .staged_lorebook_request_for_project(&created.project_id)
+        .expect("request");
+    let run = lettuce_creation::StagedLorebookRepository::load_staged_lorebook(db, request_id)
+        .expect("run");
+    let spec = lettuce_jobs::JobSpec::new(
+        lettuce_jobs::JobKind::CreationRun,
+        lettuce_jobs::JobSubject::new(
+            lettuce_jobs::SubjectKind::CreationProject,
+            created.project_id.clone(),
+        )
+        .expect("subject"),
+        lettuce_jobs::OutcomeRef::Request(request_id),
+    );
+    let lost_plan = db
+        .commit_api_operation(
+            "lorebook_project_plan",
+            "lost-plan",
+            "digest",
+            harness.context.now(),
+            |scope| {
+                scope
+                    .plan_pending_lorebook_project(
+                        lettuce_types::Revision::new(created.revision),
+                        spec,
+                        run,
+                    )
+                    .map_err(|error| super::lorebooks::Failure(lorebook_jobs::failure(error)))
+            },
+        )
+        .map(|_| ())
+        .expect_err("pending row consumed by the plan");
+    assert_eq!(lost_plan.0.code, ApiErrorCode::Conflict);
+
+    execute(&harness, &plan.job_id).await;
+    let project = project_get(&harness, &created.project_id).await;
+    let approved = lorebook_project_outline_approve(
+        &harness.context,
+        dto::LorebookProjectRevisionRequest {
+            client_operation_id: "race-approve".into(),
+            project_id: project.project_id.clone(),
+            expected_revision: project.revision,
+        },
+    )
+    .await
+    .expect("approve");
+    let stale = lettuce_creation::StagedLorebookRepository::load_staged_lorebook(db, request_id)
+        .expect("stale run");
+    let selected = lorebook_projects::overrides(&harness.context).expect("overrides");
+    let (inputs, writers) = harness
+        .context
+        .backend()
+        .staged_lorebook_writer_coordinator()
+        .prepare_atomic_batch(
+            &stale,
+            &selected,
+            harness.context.backend().built_in_prompt_ids(),
+            harness.context.now(),
+        )
+        .expect("stale batch");
+    let first = lorebook_project_draft_next(
+        &harness.context,
+        dto::LorebookProjectJobRequest {
+            client_operation_id: "race-first".into(),
+            project_id: project.project_id.clone(),
+            expected_revision: approved.revision,
+        },
+    )
+    .await
+    .expect("first batch");
+    let lost = lorebook_projects::admit_batch(
+        &harness.context,
+        "race-second",
+        "digest",
+        &stale,
+        lettuce_types::Revision::new(approved.revision),
+        inputs,
+        writers,
+    )
+    .expect_err("lost the admission");
+    assert_eq!(lost.code, ApiErrorCode::Busy);
+    let Some(dto::ApiErrorDetails::LorebookBatchRunning { job_ids }) = lost.details else {
+        panic!("batch details missing");
+    };
+    let mut expected = first.job_ids.clone();
+    expected.sort();
+    let mut job_ids = job_ids;
+    job_ids.sort();
+    assert_eq!(job_ids, expected);
+}

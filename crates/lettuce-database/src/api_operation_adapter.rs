@@ -724,7 +724,7 @@ impl ApiOperationTransaction<'_, '_> {
     ) -> Result<lettuce_creation::StagedLorebookProject, StagedLorebookRepositoryError> {
         let project =
             crate::lorebook::staged_lorebook_adapter::pending_project_in(self.transaction, id)?
-                .ok_or(StagedLorebookRepositoryError::NotFound)?;
+                .ok_or(StagedLorebookRepositoryError::Conflict)?;
         if project.revision != expected {
             return Err(StagedLorebookRepositoryError::Conflict);
         }
@@ -745,7 +745,7 @@ impl ApiOperationTransaction<'_, '_> {
             run.project.id,
         )
         .map_err(|_| lettuce_jobs::StoreError::InvalidData)?
-        .ok_or(lettuce_jobs::StoreError::NotFound)?;
+        .ok_or(lettuce_jobs::StoreError::IdempotencyConflict)?;
         if pending.revision != expected
             || pending.stage != lettuce_creation::StagedLorebookStage::Created
             || pending

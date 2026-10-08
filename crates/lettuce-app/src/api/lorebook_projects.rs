@@ -895,7 +895,7 @@ pub async fn lorebook_generator_defaults(
         .await
 }
 
-fn overrides(
+pub(super) fn overrides(
     context: &ApiContext,
 ) -> Result<lettuce_settings::LorebookGeneratorSelection, ApiError> {
     let stored = GlobalSettingsStore::load(context.backend().database()).map_err(failure)?;
@@ -918,6 +918,62 @@ fn overrides(
         .model_profile_id,
     );
     Ok(selected)
+}
+
+pub(super) fn admit_batch(
+    context: &ApiContext,
+    client_operation_id: &str,
+    digest: &str,
+    run: &StagedLorebookPlanningRun,
+    expected: lettuce_types::Revision,
+    inputs: lettuce_creation::StagedLorebookWriterBatchInputs,
+    writers: Vec<(lettuce_jobs::NewJob, lettuce_database::LorebookJobInput)>,
+) -> Result<dto::LorebookProjectBatchAccepted, ApiError> {
+    context
+        .backend()
+        .database()
+        .commit_api_operation(
+            "lorebook_project_draft_next",
+            client_operation_id,
+            digest,
+            context.now(),
+            |scope| {
+                scope
+                    .admit_staged_lorebook_batch(
+                        run.request_id,
+                        expected,
+                        inputs,
+                        writers,
+                        context.now(),
+                    )
+                    .map(|jobs| dto::LorebookProjectBatchAccepted {
+                        job_ids: jobs.into_iter().map(|id| id.to_string()).collect(),
+                    })
+                    .map_err(|error| {
+                        super::lorebooks::Failure(match error {
+                            lettuce_jobs::StoreError::AlreadyActive => batch_running(
+                                scope
+                                    .lorebook_project_jobs(run.project.id)
+                                    .unwrap_or_default()
+                                    .iter()
+                                    .filter(|job| !job.state.is_terminal())
+                                    .map(|job| job.id.to_string())
+                                    .collect(),
+                            ),
+                            error => failure(error),
+                        })
+                    })
+            },
+        )
+        .map_err(|error| error.0)
+}
+
+fn batch_running(job_ids: Vec<String>) -> ApiError {
+    ApiError {
+        code: ApiErrorCode::Busy,
+        message: "a writer batch is running".into(),
+        details: Some(dto::ApiErrorDetails::LorebookBatchRunning { job_ids }),
+    }
 }
 
 pub async fn lorebook_project_draft_next(
@@ -955,13 +1011,7 @@ pub async fn lorebook_project_draft_next(
                     if run.project.drafts.iter().any(|draft| {
                         draft.status == lettuce_creation::StagedLorebookDraftStatus::Drafting
                     }) {
-                        return Err(ApiError {
-                            code: ApiErrorCode::Busy,
-                            message: "a writer batch is running".into(),
-                            details: Some(dto::ApiErrorDetails::LorebookBatchRunning {
-                                job_ids: view(context, &run)?.active_job_ids,
-                            }),
-                        });
+                        return Err(batch_running(view(context, &run)?.active_job_ids));
                     }
                     if run.project.revision != expected {
                         return Err(api_error(
@@ -987,27 +1037,15 @@ pub async fn lorebook_project_draft_next(
                             context.now(),
                         )
                         .map_err(failure)?;
-                    db.commit_api_operation(
-                        "lorebook_project_draft_next",
+                    admit_batch(
+                        context,
                         &request.client_operation_id,
                         &digest,
-                        context.now(),
-                        |scope| {
-                            scope
-                                .admit_staged_lorebook_batch(
-                                    run.request_id,
-                                    expected,
-                                    inputs,
-                                    writers,
-                                    context.now(),
-                                )
-                                .map(|jobs| dto::LorebookProjectBatchAccepted {
-                                    job_ids: jobs.into_iter().map(|id| id.to_string()).collect(),
-                                })
-                                .map_err(|error| super::lorebooks::Failure(failure(error)))
-                        },
+                        &run,
+                        expected,
+                        inputs,
+                        writers,
                     )
-                    .map_err(|error| error.0)
                 },
             )
         })
