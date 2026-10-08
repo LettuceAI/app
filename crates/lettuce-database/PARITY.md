@@ -155,3 +155,9 @@ Device settings field updates read, modify and write under one immediate transac
 Models-folder relocation reads retained roots inside its transaction and relocates only those current values. Unset roots remain unset, including roots cleared after the caller took its snapshot.
 
 DeviceSettingsStore exposes transactional field updates and reads. Full replacement is confined to the database transaction helper explicitly named replace_device_settings_in, including backup restore and legacy import.
+
+Model-save/default/delete operations and their replay receipts commit atomically, replacing separate frontend default writes (`old-code/src/core/storage/repo.ts:949-980`). Duplicate retains the caller's name and never selects itself as default (`old-code/src/ui/pages/settings/ModelsPage.tsx:241-254`; legacy default side effect at `repo.ts:961-965`). Model-change signals come from committed triggers, including writes outside the command path. Foundation migration is edited in place; table-list assertions include its new operational tables and checksums derive from SQL.
+
+NanoGPT warning dedup persists by account and quota window, retaining the highest emitted threshold across reopen (`old-code/src-tauri/src/providers/nanogpt_usage.rs:177-224`). Invalid thresholds/window keys and storage failures are typed instead of silently ignoring persistence (`nanogpt_usage.rs:71-102`). Records contain no credentials. Persistence precedes best-effort notification; no UI delivery acknowledgement is implied.
+
+Editor saves write local file paths as authored rather than applying sync's device-path preservation policy. Legacy model edits persisted the supplied settings and identity (`old-code/src-tauri/src/storage_manager/models.rs:160-199,263-291`). The runtime regression test demonstrated the old path being retained before the control writer was corrected.

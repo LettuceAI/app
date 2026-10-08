@@ -349,3 +349,5 @@ Device settings field updates read, modify and write under one immediate transac
 Models-folder relocation reads retained roots inside its transaction and relocates only those current values. Unset roots remain unset, including roots cleared after the caller took its snapshot.
 
 DeviceSettingsStore exposes transactional field updates and reads. Full replacement is confined to the database transaction helper explicitly named replace_device_settings_in, including backup restore and legacy import.
+
+Model control writes use the API receipt transaction for CAS, default selection, duplication and shared deletion. Saving with no selected default selects the saved profile in that same transaction; duplication bypasses selection. A catalog snapshot reads profiles and the settings revision together. Foundation model-change triggers cover profile and account mutations and changed default selections; their commit signal wakes the existing coalesced API feed and rollback discards the signal. NanoGPT warning records retain the highest warned threshold per account and window in a separate immediate transaction, without storing secrets or imposing a count cap.

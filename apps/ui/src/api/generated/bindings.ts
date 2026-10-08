@@ -293,6 +293,13 @@ export const commands = {
 	providerModelVerify: (request: ProviderModelVerifyRequest) => typedError<ProviderModelVerified, ApiError>(__TAURI_INVOKE("provider_model_verify", { request })),
 	certificatesImport: (request: CertificatesImportRequest) => typedError<CertificatesView, ApiError>(__TAURI_INVOKE("certificates_import", { request })),
 	certificatesRemove: (request: CertificatesRemoveRequest) => typedError<CertificatesView, ApiError>(__TAURI_INVOKE("certificates_remove", { request })),
+	modelsList: () => typedError<ModelsView, ApiError>(__TAURI_INVOKE("models_list")),
+	modelGet: (request: ModelGetRequest) => typedError<ModelView, ApiError>(__TAURI_INVOKE("model_get", { request })),
+	modelSave: (request: ModelSaveRequest) => typedError<ModelView, ApiError>(__TAURI_INVOKE("model_save", { request })),
+	modelDelete: (request: ModelDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("model_delete", { request })),
+	modelDuplicate: (request: ModelDuplicateRequest) => typedError<ModelView, ApiError>(__TAURI_INVOKE("model_duplicate", { request })),
+	modelDefaultSet: (request: ModelDefaultSetRequest) => typedError<ModelDefaultView, ApiError>(__TAURI_INVOKE("model_default_set", { request })),
+	providerNanogptUsage: (request: ProviderNanoGptUsageRequest) => typedError<NanoGptUsageView, ApiError>(__TAURI_INVOKE("provider_nanogpt_usage", { request })),
 	providerCatalog: () => typedError<ProviderCatalogContract, ApiError>(__TAURI_INVOKE("provider_catalog")),
 	providerAccountsList: () => typedError<ProviderAccountView[], ApiError>(__TAURI_INVOKE("provider_accounts_list")),
 	providerVerify: (request: ProviderVerifyRequest) => typedError<ProviderVerified, ApiError>(__TAURI_INVOKE("provider_verify", { request })),
@@ -326,7 +333,7 @@ export type ApiError = {
  */
 export type ApiErrorCode = "not_found" | "in_use" | "conflict" | "invalid_input" | "malformed" | "unsupported" | "unavailable" | "cancelled" | "busy" | "internal" | "model_required" | "model_unavailable";
 
-export type ApiErrorDetails = { type: "certificate_already_imported"; certificate_id: string } | { type: "provider_models_in_use"; models: string[] } | { type: "provider_verification"; status: number | null; provider_message: string | null; reason: ProviderVerificationReason | null } | { type: "invalid_field"; field: string } | { type: "captured_audio"; audio: AssetRef } | { type: "audio_provider_in_use"; characters: CharacterReferenceView[] } | { type: "operation_applied_record_deleted"; command: string; record_id: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "image"; failure: ImageFailureKind } | { type: "speech"; failure: SpeechFailure } | { type: "pending_memory_rewind"; conversation_id: string } | { type: "branch_delete_refused"; reason: BranchDeleteRefusal } | { type: "memory_gate"; gate: MemoryGateReason } | { type: "memory_cycle_dependent"; later_run_id: string } | { type: "memory_cycle_user_edited"; memory_id: string } |
+export type ApiErrorDetails = { type: "provider_quota"; reason: ProviderQuotaFailure; status: number | null; provider_message: string | null } | { type: "certificate_already_imported"; certificate_id: string } | { type: "provider_models_in_use"; models: string[] } | { type: "provider_verification"; status: number | null; provider_message: string | null; reason: ProviderVerificationReason | null } | { type: "invalid_field"; field: string } | { type: "captured_audio"; audio: AssetRef } | { type: "audio_provider_in_use"; characters: CharacterReferenceView[] } | { type: "operation_applied_record_deleted"; command: string; record_id: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "image"; failure: ImageFailureKind } | { type: "speech"; failure: SpeechFailure } | { type: "pending_memory_rewind"; conversation_id: string } | { type: "branch_delete_refused"; reason: BranchDeleteRefusal } | { type: "memory_gate"; gate: MemoryGateReason } | { type: "memory_cycle_dependent"; later_run_id: string } | { type: "memory_cycle_user_edited"; memory_id: string } |
 /**  A prompt write is missing placeholders its kind requires. */
 { type: "prompt_missing_placeholders"; placeholders: string[] } |
 /**  A built-in prompt the app needs cannot be deleted. */
@@ -352,7 +359,7 @@ export type ApiErrorDetails = { type: "certificate_already_imported"; certificat
  *  and `MessageSceneImageChanged` follow a message's companion effect and
  *  scene image follow-up.
  */
-export type ApiEvent = { type: "character_changed"; character_id: string } | { type: "persona_changed"; persona_id: string } | { type: "group_changed"; group_id: string } | { type: "models_changed" } | { type: "settings_changed"; section: string } | { type: "lorebooks_changed" } | { type: "prompts_changed" } | { type: "local_model_runtime_report_changed"; model_ids: string[] } | { type: "generation_settled"; conversation_id: string; turn_id: string } | { type: "job_updated"; job: JobView } | { type: "conversation_changed"; conversation_id: string } | { type: "conversation_removed"; conversation_id: string } |
+export type ApiEvent = { type: "character_changed"; character_id: string } | { type: "persona_changed"; persona_id: string } | { type: "group_changed"; group_id: string } | { type: "models_changed" } | { type: "provider_quota"; account_id: string; level: ProviderQuotaLevel } | { type: "settings_changed"; section: string } | { type: "lorebooks_changed" } | { type: "prompts_changed" } | { type: "local_model_runtime_report_changed"; model_ids: string[] } | { type: "generation_settled"; conversation_id: string; turn_id: string } | { type: "job_updated"; job: JobView } | { type: "conversation_changed"; conversation_id: string } | { type: "conversation_removed"; conversation_id: string } |
 /**
  *  What `memory_get` shows for the conversation changed: its items,
  *  summary, revision, cycle, approval or dismissal state. Every chat that
@@ -3588,6 +3595,48 @@ export type MessagesDeleteResult = {
 	revision: number,
 };
 
+export type ModelDefaultSetRequest = {
+	model_id: string | null,
+	expected_revision: number,
+	client_operation_id: string,
+};
+
+export type ModelDefaultView = {
+	model_id: string | null,
+	revision: number,
+};
+
+export type ModelDeleteRequest = {
+	model_id: string,
+	expected_revision: number,
+	client_operation_id: string,
+};
+
+export type ModelDuplicateRequest = {
+	model_id: string,
+	display_name: string,
+	expected_revision: number,
+	client_operation_id: string,
+};
+
+export type ModelGetRequest = {
+	model_id: string,
+};
+
+export type ModelInput = {
+	id: string | null,
+	provider_account_id: string,
+	external_model_id: string,
+	display_name: string,
+	kind: ModelKindContract,
+	config: { [key in string]: unknown },
+	input_scopes: ModelModality[],
+	output_scopes: ModelModality[],
+	remote_metadata: RemoteModelContract | null,
+};
+
+export type ModelKindContract = "chat" | "image" | "embedding" | "speech";
+
 export type ModelLoadGpuProgress = {
 	label: string,
 	percent: number,
@@ -3596,6 +3645,54 @@ export type ModelLoadGpuProgress = {
 export type ModelLoadStage = "gpu_offload" | "cpu" | "cpu_fallback" | "finalizing";
 
 export type ModelLoadStatus = "loading" | "retrying" | "loaded" | "failed";
+
+export type ModelModality = "text" | "image" | "audio";
+
+export type ModelSaveRequest = {
+	model: ModelInput,
+	expected_revision: number | null,
+	client_operation_id: string,
+};
+
+export type ModelView = {
+	id: string,
+	provider_account_id: string,
+	external_model_id: string,
+	display_name: string,
+	kind: ModelKindContract,
+	config: { [key in string]: unknown },
+	revision: number,
+	created_at: number,
+	updated_at: number,
+};
+
+export type ModelsView = {
+	models: ModelView[],
+	default_model_id: string | null,
+	revision: number,
+};
+
+export type NanoGptQuotaWindow = {
+	used: number | null,
+	remaining: number | null,
+	limit: number | null,
+	percent_used: number | null,
+	reset_at: string | null,
+	unit: string | null,
+};
+
+export type NanoGptUsageView = {
+	account_id: string,
+	account_label: string,
+	active: boolean | null,
+	state: string | null,
+	weekly: NanoGptQuotaWindow | null,
+	daily: NanoGptQuotaWindow | null,
+	monthly: NanoGptQuotaWindow | null,
+	current_period_end: string | null,
+	grace_until: string | null,
+	fetched_at: number,
+};
 
 /**
  *  Why an Ollama server request failed: it could not be reached (worth a
@@ -4086,6 +4183,10 @@ export type ProviderModelsRequest = {
 	account_id: string,
 };
 
+export type ProviderNanoGptUsageRequest = {
+	account_id: string,
+};
+
 export type ProviderOpenRouterEndpoint = {
 	id: string,
 	name: string,
@@ -4114,6 +4215,10 @@ export type ProviderParameterSupportContract = {
 };
 
 export type ProviderProtocolContract = "open_ai_compatible" | "anthropic" | "gemini" | "ollama" | "llama_cpp" | "stable_diffusion";
+
+export type ProviderQuotaFailure = "wrong_provider" | "missing_api_key" | "credentials_unavailable" | "transport" | "provider_rejected" | "malformed";
+
+export type ProviderQuotaLevel = "near_limit" | "almost_exhausted" | "exhausted";
 
 export type ProviderVerificationReason = "missing_api_key" | "invalid_api_key";
 

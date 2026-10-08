@@ -98,3 +98,5 @@ Lorebook, staged project and prompt wrappers forward typed requests to the appli
 Provider control wrappers forward catalog, account listing, saved-or-draft verification, public OpenRouter endpoint discovery and certificate metadata listing to lettuce-app. Verification request credentials cross inbound IPC only; responses carry key presence or redacted typed error details. The shell owns no provider URL or authentication policy.
 
 Provider control commands forward account save/delete, model listing/verification and certificate import/remove to lettuce-app. The shell transports FileSource locations and metadata views; it never receives secret values in results.
+
+Model profile and NanoGPT usage commands forward the catalog, profile reads, revisioned save/delete/duplicate/default requests and usage reads to the composition root. Duplicate names are supplied by the UI; the shell builds no localized text. ModelsChanged and ProviderQuota use the shared application event channel and generated contracts.

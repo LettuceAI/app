@@ -71,3 +71,7 @@ Stored certificate views include validity and a typed InvalidPem reason; runtime
 Duplicate certificate imports return Conflict with CertificateAlreadyImported and the existing certificate id, separate from operation-id conflicts.
 
 Provider verification preserves string messages, string error types and JSON-stringified error values with credential redaction. Missing provider text uses typed MissingApiKey or InvalidApiKey details and an absent provider_message.
+
+Model profile contracts expose catalog/default revisions, profile configuration, declared modality scopes and optional listing metadata. Save, duplicate, delete and default selection carry operation ids and CAS revisions. Duplicate requires the display name authored by the caller. NanoGPT usage returns account metadata and nullable quota/subscription fields; ProviderQuota carries a typed warning level and account id, and ProviderQuota error details carry a typed failure plus redacted provider status/message.
+
+ProviderQuotaLevel maps NearLimit to 75 percent, AlmostExhausted to 90 percent and Exhausted to 100 percent. Only the highest crossed threshold is delivered for one check.

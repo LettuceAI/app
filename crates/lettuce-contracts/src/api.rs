@@ -95,6 +95,11 @@ pub enum ProviderVerificationReason {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ApiErrorDetails {
+    ProviderQuota {
+        reason: crate::ProviderQuotaFailure,
+        status: Option<u16>,
+        provider_message: Option<String>,
+    },
     CertificateAlreadyImported { certificate_id: String },
     ProviderModelsInUse {
         models: Vec<String>,
@@ -232,6 +237,10 @@ pub enum ApiEvent {
         group_id: String,
     },
     ModelsChanged,
+    ProviderQuota {
+        account_id: String,
+        level: crate::ProviderQuotaLevel,
+    },
     SettingsChanged {
         section: String,
     },

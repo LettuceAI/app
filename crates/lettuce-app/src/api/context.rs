@@ -97,6 +97,9 @@ struct ApiContextInner {
     legacy_database_detected: AtomicBool,
     local_models: LocalModelsState,
     provider_writes: tokio::sync::Mutex<()>,
+    quota: super::nanogpt::QuotaState,
+    quota_inference: Arc<dyn InferencePort>,
+    quota_images: Arc<dyn ImageProviderPort>,
     image: super::image::ImageApiState,
     speech: super::speech::SpeechApiState,
 }
@@ -126,6 +129,11 @@ impl ApiContext {
             .backend
             .database()
             .on_conversation_change(move || signal.notify_one());
+        let signal = Arc::clone(&conversations_changed);
+        parts
+            .backend
+            .database()
+            .on_model_change(move || signal.notify_one());
         let (committed, _) = tokio::sync::watch::channel(0_u64);
         for listen in [
             lettuce_database::Database::on_job_change,
@@ -143,6 +151,15 @@ impl ApiContext {
                 router: parts.backend.local_runtime_events().clone(),
             });
         }
+        let quota_signal = Arc::new(std::sync::OnceLock::new());
+        let quota_inference = Arc::new(super::nanogpt::QuotaInference {
+            inference: parts.inference.clone(),
+            signal: quota_signal.clone(),
+        });
+        let quota_images = Arc::new(super::nanogpt::QuotaImages {
+            provider: parts.image_provider.clone(),
+            signal: quota_signal.clone(),
+        });
         let context = Self {
             inner: Arc::new(ApiContextInner {
                 models: ModelSlots::new(Arc::clone(&parts.models)),
@@ -159,10 +176,14 @@ impl ApiContext {
                 legacy_database_detected: AtomicBool::new(false),
                 local_models: LocalModelsState::default(),
                 provider_writes: tokio::sync::Mutex::new(()),
+                quota: super::nanogpt::QuotaState::default(),
+                quota_inference,
+                quota_images,
                 image: super::image::ImageApiState::default(),
                 speech: super::speech::SpeechApiState::default(),
             }),
         };
+        let _ = quota_signal.set(context.downgrade());
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         {
             let weak = context.downgrade();
@@ -487,17 +508,16 @@ impl ApiContext {
         }
     }
 
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     pub(crate) fn downgrade(&self) -> WeakApiContext {
         WeakApiContext(Arc::downgrade(&self.inner))
     }
 
     pub(crate) fn inference(&self) -> &dyn InferencePort {
-        self.inner.parts.inference.as_ref()
+        self.inner.quota_inference.as_ref()
     }
 
     pub(crate) fn image_provider(&self) -> &dyn ImageProviderPort {
-        self.inner.parts.image_provider.as_ref()
+        self.inner.quota_images.as_ref()
     }
 
     /// The embedding engine for one use; the installed model loads at its
@@ -853,12 +873,16 @@ impl MemoryEmbeddingEngine for UnavailableEmbedding {
     }
 }
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub(crate) struct WeakApiContext(std::sync::Weak<ApiContextInner>);
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
 impl WeakApiContext {
     pub(crate) fn upgrade(&self) -> Option<ApiContext> {
         self.0.upgrade().map(|inner| ApiContext { inner })
+    }
+}
+
+impl ApiContext {
+    pub(crate) fn quota(&self) -> &super::nanogpt::QuotaState {
+        &self.inner.quota
     }
 }

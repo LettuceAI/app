@@ -47,6 +47,7 @@ pub(crate) struct ConversationFeed {
     position: u64,
     signals: u64,
     memory: u64,
+    models: u64,
     reads: Arc<AtomicUsize>,
     read: Arc<ChangeRead>,
 }
@@ -85,10 +86,20 @@ impl ConversationFeed {
                     .map_err(super::memory::memory_error)
             })
             .await?;
+        let models = context
+            .blocking(|context| {
+                context
+                    .backend()
+                    .database()
+                    .model_change_position()
+                    .map_err(super::provider_mutations::model_error)
+            })
+            .await?;
         Ok(Self {
             position,
             signals,
             memory,
+            models,
             reads: Arc::new(AtomicUsize::new(0)),
             read,
         })
@@ -141,6 +152,19 @@ impl ConversationFeed {
 
     /// Publishes every change since the last call.
     pub(crate) async fn publish(&mut self, context: &ApiContext) -> Result<(), ApiError> {
+        let models = context
+            .blocking(|context| {
+                context
+                    .backend()
+                    .database()
+                    .model_change_position()
+                    .map_err(super::provider_mutations::model_error)
+            })
+            .await?;
+        if models > self.models {
+            context.emit(ApiEvent::ModelsChanged);
+            self.models = models;
+        }
         let completion = context
             .blocking(|context| {
                 crate::image::scene_follow_up::complete_awaiting(

@@ -65,3 +65,5 @@ Key verification keeps legacy's HTTP-status judgment and extracted message (`old
 Provider verification preserves string messages, string error types and JSON-stringified error values from old-code/src-tauri/src/providers/util.rs:162-182, with credential redaction. Missing provider text uses typed MissingApiKey or InvalidApiKey details and an absent provider_message.
 
 Verification error redaction also covers JSON-escaped credentials in stringified error objects. Missing or empty provider messages remain absent so the API can supply typed reason codes.
+
+NanoGPT usage retains endpoint suffix normalization, bearer/custom headers, weekly/daily/monthly aliases, numeric string parsing, percent normalization and period/grace fields (`old-code/src-tauri/src/providers/nanogpt_usage.rs:227-303,327-481`). It keeps a 30-second timeout without retries. Non-success responses retain redacted provider text (`nanogpt_usage.rs:265-277`); malformed or unusable usage fails typed instead of returning neutral data. Scheduling and durable warnings belong to the application, replacing the legacy provider module's process-global watcher (`nanogpt_usage.rs:57-149`).

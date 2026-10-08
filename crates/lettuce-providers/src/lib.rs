@@ -3292,3 +3292,15 @@ mod integration_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod nanogpt_usage_tests;
+
+mod nanogpt_usage;
+pub use nanogpt_usage::{NanoGptUsage, NanoGptUsageError, QuotaWindow};
+
+impl<S: SecretStore + ?Sized> RemoteProviders<S> {
+    pub async fn nanogpt_usage(&self, account: &ProviderAccount) -> Result<NanoGptUsage, NanoGptUsageError> {
+        nanogpt_usage::fetch(&*self.secret_store, &self.network, account).await
+    }
+}

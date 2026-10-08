@@ -328,7 +328,6 @@ pub async fn provider_account_save(
                 .map_err(|failure: Failure| failure.0)
         })
         .await?;
-    context.emit(dto::ApiEvent::ModelsChanged);
     cleanup_secrets(context, false).await?;
     Ok(view)
 }
@@ -377,7 +376,6 @@ pub async fn provider_account_delete(
     for group_id in groups {
         context.emit(dto::ApiEvent::GroupChanged { group_id });
     }
-    context.emit(dto::ApiEvent::ModelsChanged);
     context.emit(dto::ApiEvent::SettingsChanged {
         section: "models".into(),
     });

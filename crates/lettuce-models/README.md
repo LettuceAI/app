@@ -84,3 +84,5 @@ Local model files are stored by absolute path. `rewrite_path_prefix` maps a path
 Resolved chat profiles freeze the model display name alongside its identity, parameters and connection metadata, so creation history and its backup and sync snapshots keep the name after model deletion.
 
 Model-folder relocation merges folder and retained-root fields into current device settings in the same immediate transaction as model path changes, preserving concurrent certificate and device selections.
+
+The editor API supplies declared scope evidence on save. Declarations mark their modalities Supported without changing explicit Unsupported values. Required capability and modality resolution continues to reject Unknown. Profile duplication preserves configuration and references while the composition root supplies a fresh identity, timestamps and the caller's display name.

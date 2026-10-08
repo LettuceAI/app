@@ -200,7 +200,7 @@ pub(crate) async fn verify_api_key<S: SecretStore + ?Sized>(
     Ok(result)
 }
 
-fn redact(message: &mut String, secret: &str) {
+pub(crate) fn redact(message: &mut String, secret: &str) {
     *message = message.replace(secret, "[REDACTED]");
     if let Ok(encoded) = serde_json::to_string(secret) {
         *message = message.replace(&encoded[1..encoded.len() - 1], "[REDACTED]");
@@ -256,7 +256,7 @@ fn judge(response: &JsonResponse, post: bool) -> KeyVerification {
     }
 }
 
-fn provider_error(body: &[u8]) -> Option<String> {
+pub(crate) fn provider_error(body: &[u8]) -> Option<String> {
     let json: serde_json::Value = serde_json::from_slice(body).ok()?;
     if let Some(error) = json.get("error") {
         return Some(match error {

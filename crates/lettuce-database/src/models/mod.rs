@@ -9,3 +9,7 @@ pub use local_model_jobs_adapter::{LocalModelJobRecord, LocalModelOperation};
 
 pub(crate) mod provider_control_adapter;
 pub use provider_control_adapter::account_secret_records;
+#[cfg(test)]
+mod model_control_tests;
+
+mod model_control_adapter;

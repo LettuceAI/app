@@ -385,3 +385,43 @@ CREATE TABLE provider_secret_gc (
     purpose_json TEXT NOT NULL CHECK (json_valid(purpose_json)),
     state TEXT NOT NULL CHECK (state IN ('staged','live','retired'))
 ) STRICT;
+
+CREATE TABLE model_changes (
+    position INTEGER PRIMARY KEY AUTOINCREMENT
+) STRICT;
+
+CREATE TRIGGER model_profiles_insert_change AFTER INSERT ON model_profiles
+BEGIN
+    INSERT INTO model_changes(position) VALUES(NULL);
+END;
+CREATE TRIGGER model_profiles_update_change AFTER UPDATE ON model_profiles
+BEGIN
+    INSERT INTO model_changes(position) VALUES(NULL);
+END;
+CREATE TRIGGER model_profiles_delete_change AFTER DELETE ON model_profiles
+BEGIN
+    INSERT INTO model_changes(position) VALUES(NULL);
+END;
+CREATE TRIGGER provider_accounts_insert_model_change AFTER INSERT ON provider_accounts
+BEGIN
+    INSERT INTO model_changes(position) VALUES(NULL);
+END;
+CREATE TRIGGER provider_accounts_update_model_change AFTER UPDATE ON provider_accounts
+BEGIN
+    INSERT INTO model_changes(position) VALUES(NULL);
+END;
+CREATE TRIGGER provider_accounts_delete_model_change AFTER DELETE ON provider_accounts
+BEGIN
+    INSERT INTO model_changes(position) VALUES(NULL);
+END;
+CREATE TRIGGER app_default_model_change AFTER UPDATE OF default_model_profile_id ON app_settings
+WHEN OLD.default_model_profile_id IS NOT NEW.default_model_profile_id
+BEGIN
+    INSERT INTO model_changes(position) VALUES(NULL);
+END;
+
+CREATE TABLE provider_quota_warnings (
+    account_id TEXT PRIMARY KEY,
+    window TEXT NOT NULL CHECK (length(trim(window)) > 0),
+    level INTEGER NOT NULL CHECK (level IN (75,90,100))
+) STRICT;

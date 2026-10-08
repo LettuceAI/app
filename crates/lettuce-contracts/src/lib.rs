@@ -188,3 +188,6 @@ pub struct KeyVerificationContract {
     pub status: Option<u16>,
     pub error: Option<String>,
 }
+
+mod model_profiles;
+pub use model_profiles::*;

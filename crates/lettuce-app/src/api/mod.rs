@@ -253,3 +253,16 @@ pub use provider_mutations::{
     certificates_import, certificates_remove, provider_account_delete, provider_account_save,
 };
 pub use providers::{provider_model_verify, provider_models};
+
+#[cfg(test)]
+mod model_profiles_tests;
+#[cfg(test)]
+mod nanogpt_tests;
+
+mod model_profiles;
+pub use model_profiles::{
+    model_default_set, model_delete, model_duplicate, model_get, model_save, models_list,
+};
+
+mod nanogpt;
+pub use nanogpt::provider_nanogpt_usage;

@@ -1059,6 +1059,7 @@ async fn provider_cascade_clears_every_live_selection_and_retires_its_key() {
     let snapshot = GlobalSettingsStore::save(database, settings, Some(profile.id), snapshot.revision).expect("feature selections");
     let snapshot = GlobalSettingsStore::set_dynamic_memory_model_profile(database, Some(profile.id), snapshot.revision).expect("memory");
     let before = GlobalSettingsStore::set_group_speaker_model_profile(database, Some(profile.id), snapshot.revision).expect("speaker");
+    let mut model_feed = super::conversation_feed::ConversationFeed::start(&harness.context).await.expect("model feed");
     let event_start = harness.events.events().len();
     super::provider_account_delete(&harness.context, dto::ProviderAccountDeleteRequest { account_id: account.id, expected_revision: account.revision, delete_models: true, client_operation_id: "cascade-all".into() }).await.expect("delete");
     assert!(lettuce_models::ProviderAccountRepository::get(database, profile.provider_account_id).expect("account").is_none());
@@ -1076,6 +1077,7 @@ async fn provider_cascade_clears_every_live_selection_and_retires_its_key() {
     assert_eq!(after.group_speaker_model_profile_id,None);
     assert!(after.settings.selected_model_profiles().iter().all(Option::is_none));
     assert!(after.revision > before.revision);
+    model_feed.publish(&harness.context).await.expect("publish model changes");
     let events = &harness.events.events()[event_start..];
     for event in [dto::ApiEvent::CharacterChanged { character_id: harness.character_id.to_string() }, dto::ApiEvent::GroupChanged { group_id: group.id.to_string() }, dto::ApiEvent::ModelsChanged, dto::ApiEvent::SettingsChanged { section: "models".into() }] { assert!(events.contains(&event)); }
 }

@@ -14,21 +14,24 @@ use crate::Database;
 pub(crate) enum ChangeFeed {
     Jobs,
     Conversations,
+    Models,
 }
 
 impl ChangeFeed {
-    const ALL: [Self; 2] = [Self::Jobs, Self::Conversations];
+    const ALL: [Self; 3] = [Self::Jobs, Self::Conversations, Self::Models];
 
     const fn bit(self) -> u8 {
         match self {
             Self::Jobs => 1,
             Self::Conversations => 2,
+            Self::Models => 4,
         }
     }
 
     fn of_table(table: &str) -> Option<Self> {
         match table {
             "job_changes" => Some(Self::Jobs),
+            "model_changes" => Some(Self::Models),
             "conversation_changes" | "message_signals" | "memory_changes" => {
                 Some(Self::Conversations)
             }
@@ -112,5 +115,11 @@ impl Database {
     pub fn on_conversation_change(&self, listener: impl Fn() + Send + Sync + 'static) {
         self.changes
             .listen(ChangeFeed::Conversations, Arc::new(listener));
+    }
+}
+
+impl Database {
+    pub fn on_model_change(&self, listener: impl Fn() + Send + Sync + 'static) {
+        self.changes.listen(ChangeFeed::Models, Arc::new(listener));
     }
 }
