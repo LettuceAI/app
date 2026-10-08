@@ -78,7 +78,9 @@ ProviderQuotaLevel maps NearLimit to 75 percent, AlmostExhausted to 90 percent a
 
 Model views derive input and output scopes from Supported capability statuses. Saves without remote metadata replace Supported declarations; declaring an explicit Unsupported modality fails typed before writing. Reported metadata replaces the side it supplies. Model deletion also publishes a models settings change.
 
-NanoGPT usage requests choose refresh explicitly: cached reads reuse the account result within 300 seconds, stale reads fetch, and refresh forces a fetch; both join an active check.
+NanoGPT usage requests choose refresh explicitly: cached reads reuse a successful account result within 300 seconds, stale reads fetch, and refresh forces a fetch; both join an active check.
 
 
 Capability statuses are the only model scope source. Editor saves reject declared Unsupported modalities before writing. A reported metadata side marks listed modalities Supported and unlisted modalities Unknown unless explicitly Unsupported; an unreported side uses editor declarations.
+
+Explicit cached quota reads retry failures immediately, allowing credential repairs to take effect. Background completion checks still coalesce failures for 300 seconds; a running check is shared by both paths.

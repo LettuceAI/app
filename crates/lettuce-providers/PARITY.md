@@ -71,3 +71,5 @@ NanoGPT usage retains endpoint suffix normalization, bearer/custom headers, week
 NanoGPT window parsing accepts numeric limit aliases beside other windows, null windows and negative remaining amounts as legacy did (`old-code/src-tauri/src/providers/nanogpt_usage.rs:374-445`). Unparseable optional numbers are ignored; payloads without any usable window or subscription field remain typed Malformed.
 
 NanoGPT non-success bodies expose only error.message, message or detail with a 300-character cap, preserving `old-code/src-tauri/src/providers/nanogpt_usage.rs:265-273,305-327`. HTML, raw bodies and unrelated error fields yield status-only typed details. Secrets are redacted before truncation.
+
+All-empty windows such as weekly={} are dropped. A usable daily/monthly window can therefore drive warnings when weekly is empty. Legacy returned Some(window) for an all-empty object (`old-code/src-tauri/src/providers/nanogpt_usage.rs:374-376,445`), selected weekly first (`nanogpt_usage.rs:151-160`), then produced no warning without a percentage (`nanogpt_usage.rs:169-187`). This fallback is a deliberate deviation.

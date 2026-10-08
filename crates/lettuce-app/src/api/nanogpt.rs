@@ -53,7 +53,12 @@ impl Drop for QuotaClaim {
 }
 
 impl QuotaState {
-    fn begin(&self, id: ProviderAccountId, force: bool) -> (Option<QuotaClaim>, UsageWatch) {
+    fn begin(
+        &self,
+        id: ProviderAccountId,
+        force: bool,
+        retry_failed: bool,
+    ) -> (Option<QuotaClaim>, UsageWatch) {
         let mut state = self
             .0
             .lock()
@@ -68,6 +73,7 @@ impl QuotaState {
                 && check
                     .checked
                     .is_some_and(|checked| checked.elapsed() < std::time::Duration::from_secs(300))
+                && (!retry_failed || check.result.borrow().as_ref().is_some_and(Result::is_ok))
         {
             return (None, check.result.subscribe());
         }
@@ -85,7 +91,7 @@ impl QuotaState {
 
     #[cfg(test)]
     pub(crate) fn claim(&self, id: ProviderAccountId, force: bool) -> Option<QuotaClaim> {
-        self.begin(id, force).0
+        self.begin(id, force, false).0
     }
 }
 
@@ -233,7 +239,7 @@ pub async fn provider_nanogpt_usage(
         ));
     }
     let id = super::error::parse_id(&request.account_id, "account_id")?;
-    let (claim, mut result) = context.quota().begin(id, request.refresh);
+    let (claim, mut result) = context.quota().begin(id, request.refresh, true);
     if let Some(claim) = claim {
         spawn(context, claim);
     }
@@ -254,7 +260,7 @@ fn completed(signal: &OnceLock<WeakApiContext>, kind: &str, id: ProviderAccountI
     }
     if let Some(context) = signal.get().and_then(WeakApiContext::upgrade) {
         if !context.shutdown_token().is_cancelled() {
-            let (claim, _) = context.quota().begin(id, false);
+            let (claim, _) = context.quota().begin(id, false, false);
             if let Some(claim) = claim {
                 spawn(&context, claim);
             }

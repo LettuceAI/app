@@ -28,7 +28,9 @@ Model profile commands replace frontend storage calls with revisioned receipt-ba
 
 Declared scope edits are authoritative without remote metadata: removed Supported modalities become Unknown, explicit Unsupported is retained, and reported metadata overrides echoed modality statuses. Views derive scopes directly from Supported capability statuses. Deletion emits SettingsChanged for models like provider-account deletion because the shared core updates settings (`old-code/src/core/storage/repo.ts:969-980`).
 
-NanoGPT usage refresh=false reuses the recent account result, preventing warning toasts from making a second HTTP request. Refresh=true preserves explicit refresh, and both join a running check. Legacy fetched when the panel selection or refresh changed (`old-code/src/ui/pages/settings/NanoGptUsagePanel.tsx:411-474`); callers now distinguish cached event reads from refresh actions.
+NanoGPT usage refresh=false reuses only a successful recent account result, preventing warning toasts from making a second HTTP request. Refresh=true preserves explicit refresh, and both join a running check. Legacy fetched when the panel selection or refresh changed (`old-code/src/ui/pages/settings/NanoGptUsagePanel.tsx:411-474`); callers now distinguish cached event reads from refresh actions.
 
 
 Scope views derive only Supported modalities from capability statuses. Separate stored declaration fields were removed by re-review decision. A declaration that remains Unsupported fails typed before any write; reported metadata replaces its side, including clearing echoed Supported modalities not listed. Legacy stored input/output scopes without this typed capability check (`old-code/src-tauri/src/storage_manager/models.rs:126-159`).
+
+Explicit refresh=false quota reads retry an earlier error instead of retaining it after a credential repair. Successful reads still reuse the 300-second result, and background completion checks retain their per-account failure coalescing. Legacy manual reads fetched directly (`old-code/src-tauri/src/providers/nanogpt_usage.rs:163-174`).

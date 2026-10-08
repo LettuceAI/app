@@ -221,3 +221,5 @@ NanoGPT subscription usage reads normalize the account endpoint and use its bear
 Quota parsing ignores non-object window aliases and unparseable optional numbers, retaining negative overage values; a response must contain a usable window or subscription field.
 
 Quota failures expose only recognized JSON message fields, redacted and limited to 300 characters; other bodies expose the status alone.
+
+All-empty quota windows are dropped before warning-window selection, allowing a usable daily or monthly window to follow an empty weekly window.

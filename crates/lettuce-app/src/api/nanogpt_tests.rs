@@ -528,3 +528,108 @@ async fn provider_error_message_is_capped_by_characters() {
     }
     server.await.expect("server");
 }
+
+#[tokio::test]
+async fn rereview_failed_cached_usage_refetches_after_key_is_set() {
+    use tokio::io::AsyncWriteExt;
+    let h = harness(Reply::Text("Hello."));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("listener");
+    let id = nano_account(
+        &h,
+        format!("http://{}", listener.local_addr().expect("address")),
+    )
+    .await;
+    let database = h.context.backend().database();
+    let mut account = ProviderAccountRepository::get(database, id.parse().expect("id"))
+        .expect("account")
+        .expect("exists");
+    let key = account.api_key_ref.take();
+    let revision = account.revision;
+    let mut account =
+        ProviderAccountRepository::upsert(database, account, Some(revision)).expect("remove key");
+    let request = dto::ProviderNanoGptUsageRequest {
+        account_id: id,
+        refresh: false,
+    };
+    let error = super::provider_nanogpt_usage(&h.context, request.clone())
+        .await
+        .expect_err("missing key");
+    assert!(matches!(
+        error.details,
+        Some(dto::ApiErrorDetails::ProviderQuota {
+            reason: dto::ProviderQuotaFailure::MissingApiKey,
+            ..
+        })
+    ));
+    let revision = account.revision;
+    account.api_key_ref = key;
+    ProviderAccountRepository::upsert(database, account, Some(revision)).expect("set key");
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.expect("accept");
+        read_request(&mut socket).await;
+        let body = r#"{"weekly":{"used":50,"limit":100}}"#;
+        socket
+            .write_all(
+                format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                )
+                .as_bytes(),
+            )
+            .await
+            .expect("response");
+    });
+    let result = super::provider_nanogpt_usage(&h.context, request).await;
+    server.abort();
+    assert_eq!(
+        result
+            .expect("refetched after key repaired")
+            .weekly
+            .expect("weekly")
+            .used,
+        Some(50.0)
+    );
+}
+
+#[tokio::test]
+async fn rereview_empty_weekly_window_uses_daily_warning() {
+    use tokio::io::AsyncWriteExt;
+    let h = harness(Reply::Text("Hello."));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("listener");
+    let id = nano_account(
+        &h,
+        format!("http://{}", listener.local_addr().expect("address")),
+    )
+    .await;
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.expect("accept");
+        read_request(&mut socket).await;
+        let body = r#"{"weekly":{},"daily":{"used":90,"limit":100,"resetAt":"daily-window"}}"#;
+        socket
+            .write_all(
+                format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                )
+                .as_bytes(),
+            )
+            .await
+            .expect("response");
+    });
+    let usage = super::provider_nanogpt_usage(
+        &h.context,
+        dto::ProviderNanoGptUsageRequest {
+            account_id: id.clone(),
+            refresh: true,
+        },
+    )
+    .await
+    .expect("usage");
+    assert!(usage.weekly.is_none());
+    assert!(h.events.events().iter().any(|event| matches!(event, dto::ApiEvent::ProviderQuota { account_id, level: dto::ProviderQuotaLevel::AlmostExhausted } if account_id == &id)));
+    server.await.expect("server");
+}

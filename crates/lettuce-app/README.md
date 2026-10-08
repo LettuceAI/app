@@ -633,11 +633,13 @@ Model profile commands list a consistent catalog and default revision, read indi
 
 Model and provider commits signal the existing change-feed worker, which coalesces catalog changes into ModelsChanged. Rollbacks and operation replays generate no model notification. Defaults and model settings remain in their owning database transaction.
 
-NanoGPT usage is an account-scoped read with typed credential, transport, provider-status and malformed-response failures. Inference and image ports signal a detached check only after successful completion. Checks coalesce per account for 300 seconds after the preceding check finishes, with one check in flight; an explicit usage read starts a fresh check or joins the current one. No periodic task runs. Shutdown cancels checks and releases their in-flight state. Warning thresholds use the primary weekly, daily or monthly window and persist before ProviderQuota is emitted, so reopening the database preserves deduplication. Events carry typed warning levels; localization belongs to the UI.
+NanoGPT usage is an account-scoped read with typed credential, transport, provider-status and malformed-response failures. Inference and image ports signal a detached check only after successful completion. Checks coalesce per account for 300 seconds after the preceding check finishes, with one check in flight; an explicit usage read reuses a recent success, starts a fresh check, or joins the current one. No periodic task runs. Shutdown cancels checks and releases their in-flight state. Warning thresholds use the primary weekly, daily or monthly window and persist before ProviderQuota is emitted, so reopening the database preserves deduplication. Events carry typed warning levels; localization belongs to the UI.
 
 Model views derive input and output scopes from Supported capability statuses. Saves without remote metadata replace Supported declarations; declaring an explicit Unsupported modality fails typed before writing. Reported metadata replaces the side it supplies. Model deletion also publishes a models settings change.
 
-NanoGPT usage requests choose refresh explicitly: cached reads reuse the account result within 300 seconds, stale reads fetch, and refresh forces a fetch; both join an active check.
+NanoGPT usage requests choose refresh explicitly: cached reads reuse a successful account result within 300 seconds, stale reads fetch, and refresh forces a fetch; both join an active check.
 
 
 Capability statuses are the only model scope source. Editor saves reject declared Unsupported modalities before writing. A reported metadata side marks listed modalities Supported and unlisted modalities Unknown unless explicitly Unsupported; an unreported side uses editor declarations.
+
+Explicit cached quota reads retry failures immediately, allowing credential repairs to take effect. Background completion checks still coalesce failures for 300 seconds; a running check is shared by both paths.
