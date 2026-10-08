@@ -1221,3 +1221,77 @@ async fn concurrent_keyword_admissions_replay_one_frozen_job() {
         assert_eq!(result.expect("task").expect("replay"), expected);
     }
 }
+
+async fn run_standard_runner(harness: &super::tests::Harness) {
+    let runner = JobRunner::new(harness.context.clone(), JobHandlers::standard());
+    while runner.run_once().await.expect("runner") {}
+    runner.wait_idle().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn standard_runner_executes_entry_and_staged_planner_jobs() {
+    let harness = harness(Reply::LorebookTools);
+    let book = book(&harness).await;
+    let conversation = super::tests::launch(&harness, "runner-source").await;
+    let open = conversation_open(
+        &harness.context,
+        dto::ConversationOpenRequest {
+            conversation_id: conversation.clone(),
+        },
+    )
+    .await
+    .expect("open");
+    let message = conversation_add_user_message(
+        &harness.context,
+        dto::ConversationAddUserMessageRequest {
+            conversation_id: conversation.clone(),
+            text: "A new coastal district has opened.".into(),
+            expected_revision: open.revision,
+            client_operation_id: "runner-message".into(),
+        },
+    )
+    .await
+    .expect("message");
+    let entry = lorebook_entry_draft(
+        &harness.context,
+        dto::LorebookEntryDraftRequest {
+            client_operation_id: "runner-entry".into(),
+            conversation_id: conversation,
+            lorebook_id: book.lorebook.id.clone(),
+            source: dto::LorebookEntryDraftSource::Messages,
+            message_ids: vec![message.message.id],
+            memory_ids: vec![],
+            use_summary: false,
+            direction: None,
+            force: true,
+        },
+    )
+    .await
+    .expect("entry draft");
+    let project = staged_project(&harness, "runner-project").await;
+    let plan = lorebook_project_plan(
+        &harness.context,
+        dto::LorebookProjectJobRequest {
+            client_operation_id: "runner-plan".into(),
+            project_id: project.project_id.clone(),
+            expected_revision: project.revision,
+        },
+    )
+    .await
+    .expect("plan");
+    run_standard_runner(&harness).await;
+    let db = harness.context.backend().database();
+    for id in [&entry.job_id, &plan.job_id] {
+        assert_eq!(
+            JobStore::get(db, id.parse().expect("job id"))
+                .expect("job")
+                .expect("exists")
+                .state,
+            lettuce_jobs::JobState::Succeeded
+        );
+    }
+    assert_eq!(
+        project_get(&harness, &project.project_id).await.stage,
+        dto::LorebookProjectStage::AwaitingOutlineApproval
+    );
+}

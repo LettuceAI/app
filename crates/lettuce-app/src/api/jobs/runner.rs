@@ -130,10 +130,15 @@ impl JobHandlers {
         kinds
     }
 
-    fn handler(&self, kind: JobKind) -> Option<&Arc<dyn JobHandler>> {
+    fn route(
+        &self,
+        context: &ApiContext,
+        job: &JobSnapshot,
+    ) -> Option<(&Arc<dyn JobHandler>, JobLane)> {
         self.handlers
             .iter()
-            .find(|handler| handler.kinds().contains(&kind))
+            .filter(|handler| handler.kinds().contains(&job.kind))
+            .find_map(|handler| handler.lane(context, job).map(|lane| (handler, lane)))
     }
 }
 
@@ -233,7 +238,11 @@ impl JobRunner {
         let now = self.context.now();
         let mut next_due: Option<TimestampMillis> = None;
         for job in queued {
-            let Some(handler) = self.handlers.handler(job.kind).cloned() else {
+            let Some((handler, lane)) = self
+                .handlers
+                .route(&self.context, &job)
+                .map(|(handler, lane)| (Arc::clone(handler), lane))
+            else {
                 continue;
             };
             if let Some(due) = handler.not_before(&self.context, &job)
@@ -242,9 +251,6 @@ impl JobRunner {
                 next_due = Some(next_due.map_or(due, |earliest| earliest.min(due)));
                 continue;
             }
-            let Some(lane) = handler.lane(&self.context, &job) else {
-                continue;
-            };
             if !self.lock_lanes().insert(lane.clone()) {
                 continue;
             }
@@ -398,7 +404,8 @@ mod memory_handler_tests {
     #[test]
     fn standard_handlers_include_memory_and_soul_writer_jobs() {
         let handlers = JobHandlers::standard();
-        assert!(handlers.handler(JobKind::MemoryExtraction).is_some());
-        assert!(handlers.handler(JobKind::CompanionSoulWriter).is_some());
+        let kinds = handlers.kinds();
+        assert!(kinds.contains(&JobKind::MemoryExtraction));
+        assert!(kinds.contains(&JobKind::CompanionSoulWriter));
     }
 }
