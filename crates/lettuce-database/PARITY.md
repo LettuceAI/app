@@ -147,3 +147,5 @@ Staged commit accepts drafts-ready and coherence review, matching the legacy ski
 Provider/model cascades clear live character/group and app references atomically and advance owner revisions. The default promotes the oldest remaining model, matching old-code/src/core/storage/repo.ts:970-979. Frozen creation model ids and names remain after deletion, replacing restrictive history FKs; legacy model deletion was unconditional (old-code/src-tauri/src/storage_manager/models.rs:301-306). Device certificate CAS and durable secret garbage collection replace whole-settings writes and their crash windows (old-code/src/ui/pages/settings/SecurityPage.tsx:181-188).
 
 Certificate sources are read under a 1 MiB PEM guard, including sources with inaccurate size metadata. The foundation migration retains the 128 MiB device-settings CHECK; migration checksums derive from the edited SQL.
+
+Duplicate certificate imports return Conflict with CertificateAlreadyImported and the existing certificate id, separate from operation-id conflicts, preserving the distinct duplicate message at old-code/src/ui/pages/settings/SecurityPage.tsx:208-210.

@@ -485,3 +485,5 @@ Provider save receipts digest metadata and key presence, never credential values
 Certificate import checks the operation receipt before accessing FileSource. A matching request replays even when its source grant expired or the file changed after the committed import; a different source under the same operation id returns Conflict.
 
 Certificate sources are read under a 1 MiB PEM guard, including sources with inaccurate size metadata. The foundation migration retains the 128 MiB device-settings CHECK; migration checksums derive from the edited SQL.
+
+Duplicate certificate imports return Conflict with CertificateAlreadyImported and the existing certificate id, separate from operation-id conflicts, preserving the distinct duplicate message at old-code/src/ui/pages/settings/SecurityPage.tsx:208-210.

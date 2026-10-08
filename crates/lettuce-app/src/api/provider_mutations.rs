@@ -475,7 +475,14 @@ pub async fn certificates_import(
                     |scope| {
                         let (certificates, revision) = scope
                             .import_certificate(certificate)
-                            .map_err(|error| Failure(model_error(error)))?;
+                            .map_err(|error| Failure(match error {
+                                lettuce_database::CertificateImportError::Model(error) => model_error(error),
+                                lettuce_database::CertificateImportError::AlreadyImported { certificate_id } => ApiError {
+                                    code: ApiErrorCode::Conflict,
+                                    message: "certificate is already imported".into(),
+                                    details: Some(dto::ApiErrorDetails::CertificateAlreadyImported { certificate_id: certificate_id.to_string() }),
+                                },
+                            }))?;
                         Ok::<_, Failure>(super::providers::certificate_view(certificates, revision))
                     },
                 )

@@ -341,3 +341,5 @@ Library edits and staged project commands compose with the API operation transac
 Provider control transactions commit accounts, model cascades and operation receipts together. The reference-only provider_secret_gc journal records staged and retired native credentials for startup cleanup. One model-delete core clears character defaults, group overrides and app selections and promotes the oldest remaining default. Creation model references have no foreign key; their generated model_name columns read the frozen name from run JSON. Device settings carry a revision, and certificate writes use a single compare-and-swap.
 
 Certificate sources are read under a 1 MiB PEM guard, including sources with inaccurate size metadata. The foundation migration retains the 128 MiB device-settings CHECK; migration checksums derive from the edited SQL.
+
+Duplicate certificate imports return Conflict with CertificateAlreadyImported and the existing certificate id, separate from operation-id conflicts, preserving the distinct duplicate message at old-code/src/ui/pages/settings/SecurityPage.tsx:208-210.

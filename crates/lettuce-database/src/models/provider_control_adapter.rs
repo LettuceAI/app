@@ -6,6 +6,14 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::{ApiOperationError, ApiOperationTransaction, Database};
 
+#[derive(Debug, thiserror::Error)]
+pub enum CertificateImportError {
+    #[error(transparent)]
+    Model(#[from] ModelRepositoryError),
+    #[error("certificate is already imported")]
+    AlreadyImported { certificate_id: uuid::Uuid },
+}
+
 impl From<ApiOperationError> for ModelRepositoryError {
     fn from(error: ApiOperationError) -> Self {
         match error {
@@ -214,14 +222,10 @@ impl ApiOperationTransaction<'_, '_> {
     pub fn import_certificate(
         &self,
         certificate: TrustedCertificate,
-    ) -> Result<(Vec<TrustedCertificate>, Revision), ModelRepositoryError> {
+    ) -> Result<(Vec<TrustedCertificate>, Revision), CertificateImportError> {
         let (mut settings, revision) = device_in(self.transaction)?;
-        if settings
-            .trusted_certificates
-            .iter()
-            .any(|held| held.pem.trim() == certificate.pem.trim())
-        {
-            return Err(ModelRepositoryError::AlreadyExists);
+        if let Some(existing) = settings.trusted_certificates.iter().find(|held| held.pem.trim() == certificate.pem.trim()) {
+            return Err(CertificateImportError::AlreadyImported { certificate_id: existing.id });
         }
         settings.trusted_certificates.push(certificate);
         write_certificates_in(self.transaction, &settings, revision)?;

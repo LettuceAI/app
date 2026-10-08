@@ -1,3 +1,4 @@
+pub use models::provider_control_adapter::CertificateImportError;
 //! SQLite migrations and private adapters for domain-owned repository ports.
 
 #![deny(unsafe_op_in_unsafe_fn)]

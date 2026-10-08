@@ -67,3 +67,5 @@ Provider control commands export the catalog, secret-free account views, saved-o
 Provider control requests expose draft or saved verification, revisioned account writes with operation ids, cascading deletion, model listing and existence checks, public OpenRouter endpoints and FileSource certificate import. Views carry key presence and certificate metadata with its list revision. InUse and Malformed are explicit error categories; provider errors redact credentials.
 
 Stored certificate views include validity and a typed InvalidPem reason; runtime client construction skips invalid stored roots so users can list and remove them. New imports validate strictly before writing.
+
+Duplicate certificate imports return Conflict with CertificateAlreadyImported and the existing certificate id, separate from operation-id conflicts, preserving the distinct duplicate message at old-code/src/ui/pages/settings/SecurityPage.tsx:208-210.

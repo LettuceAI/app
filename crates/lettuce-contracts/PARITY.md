@@ -19,3 +19,5 @@ Provider catalog and control DTOs now derive Specta types. Account views omit se
 Provider account keys are write-only, blank preserves and explicit clear removes. Revision/idempotency failures and malformed model lists are typed instead of hidden. Legacy populated the editor key and displayed verify failures (old-code/src/ui/pages/settings/hooks/useProvidersPageController.ts:142,298-331). Certificate inputs move from frontend-read PEM to FileSource (old-code/src/ui/pages/settings/SecurityPage.tsx:196-218).
 
 Stored certificate views include validity and a typed InvalidPem reason; runtime client construction skips invalid stored roots so users can list and remove them. New imports validate strictly before writing.
+
+Duplicate certificate imports return Conflict with CertificateAlreadyImported and the existing certificate id, separate from operation-id conflicts, preserving the distinct duplicate message at old-code/src/ui/pages/settings/SecurityPage.tsx:208-210.

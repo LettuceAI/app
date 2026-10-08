@@ -87,6 +87,7 @@ pub enum BranchDeleteRefusal {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ApiErrorDetails {
+    CertificateAlreadyImported { certificate_id: String },
     ProviderModelsInUse {
         models: Vec<String>,
     },
