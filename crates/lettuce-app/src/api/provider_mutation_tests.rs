@@ -415,7 +415,7 @@ async fn certificate_invalid_pem_writes_nothing() {
 }
 
 #[tokio::test]
-async fn certificate_import_replays_content_digest_and_reloads_live_clients() {
+async fn certificate_import_replays_and_reloads_live_clients() {
     use lettuce_network::{JsonAuth, JsonClient, RequestPolicy};
     let harness = harness(Reply::Text("Hello."));
     let client = JsonClient::new().expect("client");
@@ -487,9 +487,8 @@ async fn certificate_import_replays_content_digest_and_reloads_live_clients() {
     assert_eq!(
         super::certificates_import(&harness.context, request)
             .await
-            .expect_err("digest")
-            .code,
-        ApiErrorCode::Conflict
+            .expect("receipt ignores later source changes"),
+        imported
     );
     let removed = super::certificates_remove(
         &harness.context,

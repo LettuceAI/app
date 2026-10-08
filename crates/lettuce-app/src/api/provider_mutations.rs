@@ -421,7 +421,12 @@ pub async fn certificates_import(
     request: dto::CertificatesImportRequest,
 ) -> Result<dto::CertificatesView, ApiError> {
     let key = request.client_operation_id.clone();
-    let (certificate, digest) = context
+    let digest = digest(&request, &key)?;
+    if let Some(view) = replay(context, "certificates_import", key.clone(), digest.clone()).await? {
+        return Ok(view);
+    }
+    let certificate_digest = digest.clone();
+    let certificate = context
         .blocking(move |context| {
             use std::io::Read;
             let description = context
@@ -439,16 +444,14 @@ pub async fn certificates_import(
                 trusted_roots_pem: vec![pem.clone()],
             })
             .map_err(|_| invalid_field("source", "invalid PEM certificate"))?;
-            let digest = digest(&(request.clone(), &pem), &request.client_operation_id)?;
-            Ok((
+            Ok(
                 TrustedCertificate {
-                    id: identity("certificate", &request.client_operation_id, &digest),
+                    id: identity("certificate", &request.client_operation_id, &certificate_digest),
                     name: description.name,
                     pem,
                     imported_at: context.now().get(),
-                },
-                digest,
-            ))
+                }
+            )
         })
         .await?;
     let result = context
