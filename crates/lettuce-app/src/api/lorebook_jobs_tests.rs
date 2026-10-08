@@ -1438,6 +1438,12 @@ async fn commit_cancels_the_projects_running_coherence_job() {
     .expect("commit");
     let after = JobStore::get(db, job.id).expect("job").expect("exists");
     assert!(after.cancellation.requested);
+    assert!(
+        harness
+            .events
+            .events()
+            .contains(&dto::ApiEvent::LorebooksChanged)
+    );
     drop(work);
 }
 

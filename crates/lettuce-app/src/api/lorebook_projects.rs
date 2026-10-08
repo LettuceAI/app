@@ -1152,7 +1152,7 @@ pub async fn lorebook_project_commit(
             expected_revision: revision(expected_revision, "target.expected_revision")?,
         },
     };
-    context
+    let receipt = context
         .blocking(move |context| {
             let run = load(context, &request.project_id)?;
             let receipt = context
@@ -1187,5 +1187,7 @@ pub async fn lorebook_project_commit(
                 .map_err(|error| error.0)?;
             Ok(receipt)
         })
-        .await
+        .await?;
+    context.emit(dto::ApiEvent::LorebooksChanged);
+    Ok(receipt)
 }
