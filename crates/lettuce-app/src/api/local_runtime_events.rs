@@ -43,9 +43,14 @@ impl From<&lettuce_local_llm::engine::ModelLoadProgress> for LoadProgress {
             },
             percent: progress.percent,
             model_name: progress.model_name.clone(),
-            gpus: progress.gpus.as_ref().map(|gpus| gpus.iter().map(|gpu| {
-                lettuce_contracts::ModelLoadGpuProgress { label: gpu.label.clone(), percent: gpu.percent }
-            }).collect()),
+            gpus: progress.gpus.as_ref().map(|gpus| {
+                gpus.iter()
+                    .map(|gpu| lettuce_contracts::ModelLoadGpuProgress {
+                        label: gpu.label.clone(),
+                        percent: gpu.percent,
+                    })
+                    .collect()
+            }),
         }
     }
 }
@@ -361,7 +366,9 @@ impl super::ApiContext {
         });
         match result {
             Ok(model_ids) if !model_ids.is_empty() => {
-                self.emit(lettuce_contracts::ApiEvent::LocalModelRuntimeReportChanged { model_ids });
+                self.emit(
+                    lettuce_contracts::ApiEvent::LocalModelRuntimeReportChanged { model_ids },
+                );
             }
             Ok(_) => {}
             Err(error) => {

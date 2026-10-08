@@ -27,15 +27,23 @@ fn concurrent_attempts_never_cross_routes_and_ended_attempts_drop_events() {
     let turn_b = GenerationTurnId::new();
     let flow_a = {
         let events = first.clone();
-        router.register_flow(FlowId::Turn(turn_a), CancellationToken::new(), move |event| {
-            events.lock().expect("events").push(event);
-        })
+        router.register_flow(
+            FlowId::Turn(turn_a),
+            CancellationToken::new(),
+            move |event| {
+                events.lock().expect("events").push(event);
+            },
+        )
     };
     let flow_b = {
         let events = second.clone();
-        router.register_flow(FlowId::Turn(turn_b), CancellationToken::new(), move |event| {
-            events.lock().expect("events").push(event);
-        })
+        router.register_flow(
+            FlowId::Turn(turn_b),
+            CancellationToken::new(),
+            move |event| {
+                events.lock().expect("events").push(event);
+            },
+        )
     };
     let id_a = GenerationAttemptId::new();
     let id_b = GenerationAttemptId::new();
@@ -99,10 +107,15 @@ fn notices_keep_the_request_identity_and_unassigned_events_are_not_broadcast() {
         notice: LlamaNotice::MtpDisabledForVision,
     };
     router.emit(notice.clone());
-    router.emit(LlamaHostEvent::Notice { request_id: None, notice: LlamaNotice::KvCacheMovedToRam });
+    router.emit(LlamaHostEvent::Notice {
+        request_id: None,
+        notice: LlamaNotice::KvCacheMovedToRam,
+    });
     router.emit(heartbeat(None));
     router.emit(heartbeat(Some(GenerationAttemptId::new())));
-    let report = LlamaHostEvent::RuntimeReportUpdated { model_path: "model.gguf".into() };
+    let report = LlamaHostEvent::RuntimeReportUpdated {
+        model_path: "model.gguf".into(),
+    };
     router.emit(report.clone());
     assert_eq!(*routed.lock().expect("events"), vec![notice]);
     assert_eq!(*global.lock().expect("global"), vec![report]);
@@ -169,7 +182,10 @@ fn model_load_progress_is_coalesced_per_attempt_by_stage_and_integer_percent() {
     router.emit(LlamaHostEvent::ModelLoadProgress(progress.clone()));
     progress.model_name = "Changed model".into();
     router.emit(LlamaHostEvent::ModelLoadProgress(progress.clone()));
-    progress.gpus = Some(vec![lettuce_local_llm::engine::GpuLoadProgress { label: "GPU".into(), percent: 9 }]);
+    progress.gpus = Some(vec![lettuce_local_llm::engine::GpuLoadProgress {
+        label: "GPU".into(),
+        percent: 9,
+    }]);
     router.emit(LlamaHostEvent::ModelLoadProgress(progress.clone()));
     progress.gpus.as_mut().expect("gpus")[0].percent = 10;
     router.emit(LlamaHostEvent::ModelLoadProgress(progress.clone()));
