@@ -417,6 +417,58 @@ async fn hard_delete_cleans_live_references_and_keeps_history_through_backup_and
     )
     .await
     .expect("delete");
+    let events = harness.events.events();
+    for id in &removed.character_ids {
+        assert!(events.contains(&dto::ApiEvent::CharacterChanged {
+            character_id: id.clone()
+        }));
+    }
+    for id in &removed.persona_ids {
+        assert!(events.contains(&dto::ApiEvent::PersonaChanged {
+            persona_id: id.clone()
+        }));
+    }
+    for id in &removed.group_ids {
+        assert!(events.contains(&dto::ApiEvent::GroupChanged {
+            group_id: id.clone()
+        }));
+    }
+    for id in &removed.conversation_ids {
+        assert!(events.contains(&dto::ApiEvent::ConversationChanged {
+            conversation_id: id.clone()
+        }));
+    }
+    assert!(events.contains(&dto::ApiEvent::LorebooksChanged));
+    let open = conversation_open(
+        &harness.context,
+        dto::ConversationOpenRequest {
+            conversation_id: chat.clone(),
+        },
+    )
+    .await
+    .expect("history chat");
+    let reply = open
+        .messages
+        .items
+        .iter()
+        .find(|message| message.role == dto::MessageRole::Assistant)
+        .expect("reply");
+    let history = message_prompt_snapshot(
+        &harness.context,
+        dto::MessagePromptSnapshotRequest {
+            message_id: reply.id.clone(),
+        },
+    )
+    .await
+    .expect("source history");
+    assert_eq!(
+        history.lorebooks,
+        vec![dto::HistoricalSourceView {
+            id: deleted.lorebook.id.clone(),
+            name: "Old harbour".into(),
+            deleted: true
+        }]
+    );
     assert_eq!(
         removed.character_ids,
         vec![harness.character_id.to_string()]

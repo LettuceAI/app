@@ -82,6 +82,8 @@ pub(super) fn snapshot_view(
     let budget = &record.request.context.budget;
     let sections = record.request.context.attributions.sections.as_ref();
     dto::PromptSnapshot {
+        prompt: None,
+        lorebooks: Vec::new(),
         turn_id: turn_id.to_string(),
         candidate_id: candidate.id.to_string(),
         operation: operation(record.request.operation),
@@ -202,7 +204,40 @@ pub async fn message_prompt_snapshot(
                     "the reply's request was never recorded",
                 )
             })?;
-            Ok(snapshot_view(context, turn.id, &candidate, &record))
+            let mut view = snapshot_view(context, turn.id, &candidate, &record);
+            view.prompt = turn
+                .prompt
+                .as_ref()
+                .map(|prompt| {
+                    Ok::<_, ApiError>(dto::HistoricalSourceView {
+                        id: prompt.document_id.to_string(),
+                        name: prompt.name.clone(),
+                        deleted: lettuce_context::PromptRepository::get(
+                            database,
+                            prompt.document_id,
+                        )
+                        .map_err(IntoApiError::into_api_error)?
+                        .is_none(),
+                    })
+                })
+                .transpose()?;
+            view.lorebooks = turn
+                .lorebooks
+                .iter()
+                .map(|book| {
+                    Ok(dto::HistoricalSourceView {
+                        id: book.lorebook_id.to_string(),
+                        name: book.name.clone(),
+                        deleted: lettuce_context::LorebookRepository::get(
+                            database,
+                            book.lorebook_id,
+                        )
+                        .map_err(IntoApiError::into_api_error)?
+                        .is_none(),
+                    })
+                })
+                .collect::<Result<_, ApiError>>()?;
+            Ok(view)
         })
         .await
 }

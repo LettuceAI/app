@@ -122,6 +122,8 @@ pub enum PromptSectionsUnavailable {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct PromptSnapshot {
+    pub prompt: Option<crate::HistoricalSourceView>,
+    pub lorebooks: Vec<crate::HistoricalSourceView>,
     pub turn_id: String,
     pub candidate_id: String,
     pub operation: PromptOperation,

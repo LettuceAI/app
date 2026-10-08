@@ -71,6 +71,44 @@ export const commands = {
 	conversationParticipantAdd: (request: ConversationParticipantAddRequest) => typedError<ConversationRevisions, ApiError>(__TAURI_INVOKE("conversation_participant_add", { request })),
 	conversationParticipantUpdate: (request: ConversationParticipantUpdateRequest) => typedError<ConversationRevisions, ApiError>(__TAURI_INVOKE("conversation_participant_update", { request })),
 	charactersList: (request: CharactersListRequest) => typedError<CharacterPage, ApiError>(__TAURI_INVOKE("characters_list", { request })),
+	promptsList: (request: PromptsListRequest) => typedError<PromptPage, ApiError>(__TAURI_INVOKE("prompts_list", { request })),
+	promptPlaceholders: (request: PromptPlaceholdersRequest) => typedError<PromptPlaceholders, ApiError>(__TAURI_INVOKE("prompt_placeholders", { request })),
+	promptValidate: (request: PromptValidateRequest) => typedError<PromptValidation, ApiError>(__TAURI_INVOKE("prompt_validate", { request })),
+	promptGet: (request: PromptGetRequest) => typedError<PromptView, ApiError>(__TAURI_INVOKE("prompt_get", { request })),
+	promptCreate: (request: PromptCreateRequest) => typedError<PromptView, ApiError>(__TAURI_INVOKE("prompt_create", { request })),
+	promptUpdate: (request: PromptUpdateRequest) => typedError<PromptView, ApiError>(__TAURI_INVOKE("prompt_update", { request })),
+	promptDelete: (request: PromptDeleteRequest) => typedError<SourceDeleteResult, ApiError>(__TAURI_INVOKE("prompt_delete", { request })),
+	promptBuiltinReset: (request: PromptBuiltinResetRequest) => typedError<PromptBuiltinResetResult, ApiError>(__TAURI_INVOKE("prompt_builtin_reset", { request })),
+	promptAppDefaultSet: (request: PromptAppDefaultSetRequest) => typedError<PromptAppDefault, ApiError>(__TAURI_INVOKE("prompt_app_default_set", { request })),
+	promptPreview: (request: PromptPreviewRequest) => typedError<PromptPreview, ApiError>(__TAURI_INVOKE("prompt_preview", { request })),
+	defaultCharacterRules: (request: DefaultCharacterRulesRequest) => typedError<DefaultCharacterRules, ApiError>(__TAURI_INVOKE("default_character_rules", { request })),
+	lorebooksList: (request: LorebooksListRequest) => typedError<LorebookPage, ApiError>(__TAURI_INVOKE("lorebooks_list", { request })),
+	lorebookGet: (request: LorebookGetRequest) => typedError<LorebookView, ApiError>(__TAURI_INVOKE("lorebook_get", { request })),
+	lorebookCreate: (request: LorebookCreateRequest) => typedError<LorebookView, ApiError>(__TAURI_INVOKE("lorebook_create", { request })),
+	lorebookUpdateMetadata: (request: LorebookUpdateMetadataRequest) => typedError<LorebookView, ApiError>(__TAURI_INVOKE("lorebook_update_metadata", { request })),
+	lorebookEntriesMutate: (request: LorebookEntriesMutateRequest) => typedError<LorebookView, ApiError>(__TAURI_INVOKE("lorebook_entries_mutate", { request })),
+	lorebookArchive: (request: LorebookRevisionRequest) => typedError<LorebookView, ApiError>(__TAURI_INVOKE("lorebook_archive", { request })),
+	lorebookRestore: (request: LorebookRevisionRequest) => typedError<LorebookView, ApiError>(__TAURI_INVOKE("lorebook_restore", { request })),
+	lorebookDelete: (request: LorebookRevisionRequest) => typedError<SourceDeleteResult, ApiError>(__TAURI_INVOKE("lorebook_delete", { request })),
+	tokensCount: (request: TokensCountRequest) => typedError<TokensCount, ApiError>(__TAURI_INVOKE("tokens_count", { request })),
+	lorebookTriggerPreview: (request: LorebookTriggerPreviewRequest) => typedError<LorebookTriggerPreview, ApiError>(__TAURI_INVOKE("lorebook_trigger_preview", { request })),
+	lorebookEntryDraft: (request: LorebookEntryDraftRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("lorebook_entry_draft", { request })),
+	lorebookKeywordsDraft: (request: LorebookKeywordsDraftRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("lorebook_keywords_draft", { request })),
+	lorebookProjectCreate: (request: LorebookProjectCreateRequest) => typedError<LorebookProjectView, ApiError>(__TAURI_INVOKE("lorebook_project_create", { request })),
+	lorebookProjectGet: (request: LorebookProjectGetRequest) => typedError<LorebookProjectView, ApiError>(__TAURI_INVOKE("lorebook_project_get", { request })),
+	lorebookProjectsList: (request: LorebookProjectsListRequest) => typedError<LorebookProjectPage, ApiError>(__TAURI_INVOKE("lorebook_projects_list", { request })),
+	lorebookProjectPlan: (request: LorebookProjectJobRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("lorebook_project_plan", { request })),
+	lorebookProjectOutlineUpdate: (request: LorebookProjectOutlineUpdateRequest) => typedError<LorebookProjectView, ApiError>(__TAURI_INVOKE("lorebook_project_outline_update", { request })),
+	lorebookProjectOutlineApprove: (request: LorebookProjectRevisionRequest) => typedError<LorebookProjectView, ApiError>(__TAURI_INVOKE("lorebook_project_outline_approve", { request })),
+	lorebookProjectDraftUpdate: (request: LorebookProjectDraftUpdateRequest) => typedError<LorebookProjectView, ApiError>(__TAURI_INVOKE("lorebook_project_draft_update", { request })),
+	lorebookProjectDraftSetApproved: (request: LorebookProjectDraftApprovalRequest) => typedError<LorebookProjectView, ApiError>(__TAURI_INVOKE("lorebook_project_draft_set_approved", { request })),
+	lorebookProjectCoherenceApply: (request: LorebookProjectCoherenceApplyRequest) => typedError<LorebookProjectView, ApiError>(__TAURI_INVOKE("lorebook_project_coherence_apply", { request })),
+	lorebookProjectCancel: (request: LorebookProjectRevisionRequest) => typedError<LorebookProjectView, ApiError>(__TAURI_INVOKE("lorebook_project_cancel", { request })),
+	lorebookGeneratorDefaults: () => typedError<LorebookGeneratorDefaults, ApiError>(__TAURI_INVOKE("lorebook_generator_defaults")),
+	lorebookProjectDraftNext: (request: LorebookProjectJobRequest) => typedError<LorebookProjectBatchAccepted, ApiError>(__TAURI_INVOKE("lorebook_project_draft_next", { request })),
+	lorebookProjectRefine: (request: LorebookProjectRefineRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("lorebook_project_refine", { request })),
+	lorebookProjectCoherence: (request: LorebookProjectJobRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("lorebook_project_coherence", { request })),
+	lorebookProjectCommit: (request: LorebookProjectCommitRequest) => typedError<LorebookProjectCommitView, ApiError>(__TAURI_INVOKE("lorebook_project_commit", { request })),
 	jobsList: (request: JobsListRequest) => typedError<JobPage, ApiError>(__TAURI_INVOKE("jobs_list", { request })),
 	jobGet: (request: JobGetRequest) => typedError<JobView, ApiError>(__TAURI_INVOKE("job_get", { request })),
 	jobCancel: (request: JobCancelRequest) => typedError<null, ApiError>(__TAURI_INVOKE("job_cancel", { request })),
@@ -277,7 +315,22 @@ export type ApiError = {
  */
 export type ApiErrorCode = "not_found" | "conflict" | "invalid_input" | "unsupported" | "unavailable" | "cancelled" | "busy" | "internal" | "model_required" | "model_unavailable";
 
-export type ApiErrorDetails = { type: "invalid_field"; field: string } | { type: "captured_audio"; audio: AssetRef } | { type: "audio_provider_in_use"; characters: CharacterReferenceView[] } | { type: "operation_applied_record_deleted"; command: string; record_id: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "image"; failure: ImageFailureKind } | { type: "speech"; failure: SpeechFailure } | { type: "pending_memory_rewind"; conversation_id: string } | { type: "branch_delete_refused"; reason: BranchDeleteRefusal } | { type: "memory_gate"; gate: MemoryGateReason } | { type: "memory_cycle_dependent"; later_run_id: string } | { type: "memory_cycle_user_edited"; memory_id: string };
+export type ApiErrorDetails = { type: "invalid_field"; field: string } | { type: "captured_audio"; audio: AssetRef } | { type: "audio_provider_in_use"; characters: CharacterReferenceView[] } | { type: "operation_applied_record_deleted"; command: string; record_id: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "image"; failure: ImageFailureKind } | { type: "speech"; failure: SpeechFailure } | { type: "pending_memory_rewind"; conversation_id: string } | { type: "branch_delete_refused"; reason: BranchDeleteRefusal } | { type: "memory_gate"; gate: MemoryGateReason } | { type: "memory_cycle_dependent"; later_run_id: string } | { type: "memory_cycle_user_edited"; memory_id: string } | 
+/**  A prompt write is missing placeholders its kind requires. */
+{ type: "prompt_missing_placeholders"; placeholders: string[] } | 
+/**  A built-in prompt the app needs cannot be deleted. */
+{ type: "prompt_protected" } | 
+/**  The prompt a feature setting selects cannot be used. */
+{ type: "configured_prompt_unavailable"; prompt_id: string; reason: ConfiguredPromptProblem } | 
+/**
+ *  The model a lorebook generator setting selects cannot be used, or no
+ *  model generates text.
+ */
+{ type: "lorebook_model_unavailable"; reason: LorebookModelProblem } | 
+/**  The app's built-in runtime text could not be read. */
+{ type: "runtime_text_unavailable" } | 
+/**  A lorebook project already has a writer batch running. */
+{ type: "lorebook_batch_running"; job_ids: string[] };
 
 /**
  *  Application-wide events the host broadcasts to every window.
@@ -288,7 +341,7 @@ export type ApiErrorDetails = { type: "invalid_field"; field: string } | { type:
  *  and `MessageSceneImageChanged` follow a message's companion effect and
  *  scene image follow-up.
  */
-export type ApiEvent = { type: "local_model_runtime_report_changed"; model_ids: string[] } | { type: "generation_settled"; conversation_id: string; turn_id: string } | { type: "job_updated"; job: JobView } | { type: "conversation_changed"; conversation_id: string } | { type: "conversation_removed"; conversation_id: string } | 
+export type ApiEvent = { type: "character_changed"; character_id: string } | { type: "persona_changed"; persona_id: string } | { type: "group_changed"; group_id: string } | { type: "lorebooks_changed" } | { type: "prompts_changed" } | { type: "local_model_runtime_report_changed"; model_ids: string[] } | { type: "generation_settled"; conversation_id: string; turn_id: string } | { type: "job_updated"; job: JobView } | { type: "conversation_changed"; conversation_id: string } | { type: "conversation_removed"; conversation_id: string } | 
 /**
  *  What `memory_get` shows for the conversation changed: its items,
  *  summary, revision, cycle, approval or dismissal state. Every chat that
@@ -913,6 +966,8 @@ export type CompanionSoulWriterRunRequest = {
 
 export type ComponentSource = "image_components" | "llm_library" | "image_downloads";
 
+export type ConfiguredPromptProblem = "missing" | "archived" | "wrong_kind";
+
 /**
  *  Adds a user message without a reply, for a director who then continues
  *  with a chosen speaker. `text` is trimmed; blank is refused.
@@ -1282,6 +1337,18 @@ export type ConversationsListRequest = {
 	lifecycle: LifecycleFilter | null,
 	cursor: string | null,
 	limit: number | null,
+};
+
+export type DefaultCharacterRules = {
+	rules: string[],
+};
+
+/**
+ *  The rules a new character starts with at `pure_mode`, or at the current
+ *  Pure mode setting when it is unset.
+ */
+export type DefaultCharacterRulesRequest = {
+	pure_mode: PureModeLevel | null,
 };
 
 export type DictationCancelRequest = {
@@ -1863,6 +1930,12 @@ export type HfSpeed = "fast" | "medium" | "slow";
  */
 export type HfTokenStatus = { type: "missing" } | { type: "valid"; username: string } | { type: "invalid" } | { type: "unknown"; offline: boolean };
 
+export type HistoricalSourceView = {
+	id: string,
+	name: string,
+	deleted: boolean,
+};
+
 export type IdChange = { type: "set"; id: string } | { type: "reset" };
 
 /**  Where the image belongs for usage reporting. */
@@ -2193,6 +2266,14 @@ export type JobResultDto = { type: "voice_created"; voice_id: string } | { type:
 { type: "companion_soul_draft"; draft: CompanionSoulDraft } | 
 /**  The text a help-me-reply or scene prompt job wrote, cleaned. */
 { type: "generated_text"; text: string } | 
+/**  The entry a lorebook entry draft job wrote; nothing is saved. */
+{ type: "lorebook_entry_draft"; draft: LorebookEntryDraftResult } | 
+/**  The lorebook entry draft job found nothing worth an entry. */
+{ type: "lorebook_no_entry"; reason: string | null } | 
+/**  The keywords a keyword draft job proposed. */
+{ type: "lorebook_keywords"; keywords: string[] } | 
+/**  The lorebook project a planner, writer or coherence job advanced. */
+{ type: "lorebook_project"; project_id: string } | 
 /**  The images an image generation job stored. */
 { type: "image_generation"; images: GeneratedImage[]; rejected_outputs: number } | { type: "image_upscaled"; upscaled: ImageUpscaled } | { type: "lora_discovered"; discovered: LoraDiscovered } | { type: "runnability"; verdict: SdRunnability } | 
 /**  What an image bundle install ended in. */
@@ -2205,7 +2286,7 @@ export type JobStateDto = "queued" | "claimed" | "running" | "cancellation_reque
  *  download installs, the model an Ollama server pulls, the folders a move
  *  goes between.
  */
-export type JobSubjectDetail = { type: "model_download"; repo: string; file: string; display_name: string } | { type: "model_pull"; provider_account_id: string; model: string } | { type: "models_folder_move"; from: string; to: string } | { type: "image_bundle"; bundle_id: string; display_name: string };
+export type JobSubjectDetail = { type: "lorebook_draft"; lorebook: HistoricalSourceView | null; prompt: HistoricalSourceView } | { type: "lorebook_project"; project_id: string; prompt: HistoricalSourceView } | { type: "companion_soul_writer"; prompt: HistoricalSourceView } | { type: "model_download"; repo: string; file: string; display_name: string } | { type: "model_pull"; provider_account_id: string; model: string } | { type: "models_folder_move"; from: string; to: string } | { type: "image_bundle"; bundle_id: string; display_name: string };
 
 /**  What a job works on. */
 export type JobSubjectDto = {
@@ -2679,8 +2760,389 @@ export type LorasUpdateKeywordsRequest = {
 	profile_id: string | null,
 };
 
+export type LorebookCoherenceChangeView = { kind: "merge_keys"; id: string; plan_id: string; remove_keys: string[]; reason: string } | { kind: "rename_term"; id: string; old_term: string; new_term: string; plan_ids: string[] | null; reason: string } | { kind: "flag_contradiction"; id: string; plan_ids: string[]; description: string } | { kind: "toggle_always_active"; id: string; plan_id: string; new_value: boolean; reason: string };
+
+export type LorebookCreateRequest = {
+	client_operation_id: string,
+	metadata: LorebookMetadataInput,
+	entries: LorebookEntryInput[],
+};
+
+/**
+ *  Which messages a lorebook scans for keywords: the latest messages up to
+ *  the scan depth setting, or only the newest user message.
+ */
+export type LorebookDetection = "recent_messages" | "latest_user_message";
+
+export type LorebookDraftRevisionView = {
+	feedback: string,
+	content: string,
+	at: number,
+};
+
+export type LorebookDraftStatus = "pending" | "drafting" | "drafted" | "approved" | "failed";
+
+export type LorebookDraftView = {
+	plan_id: string,
+	title: string,
+	keywords: string[],
+	content: string,
+	always_active: boolean,
+	status: LorebookDraftStatus,
+	revisions: LorebookDraftRevisionView[],
+};
+
+/**
+ *  Applies every mutation in order under one revision check; nothing is
+ *  written when one of them fails.
+ */
+export type LorebookEntriesMutateRequest = {
+	client_operation_id: string,
+	lorebook_id: string,
+	expected_revision: number,
+	mutations: LorebookEntryMutationInput[],
+};
+
+/**
+ *  Drafts one entry for `lorebook_id` from a direct conversation. The result
+ *  is the job's `LorebookEntryDraft` or `LorebookNoEntry`; nothing is
+ *  written to the book.
+ */
+export type LorebookEntryDraftRequest = {
+	client_operation_id: string,
+	conversation_id: string,
+	lorebook_id: string,
+	source: LorebookEntryDraftSource,
+	message_ids: string[],
+	memory_ids: string[],
+	use_summary: boolean,
+	direction: string | null,
+	force: boolean,
+};
+
+export type LorebookEntryDraftResult = {
+	title: string,
+	content: string,
+	keywords: string[],
+	always_active: boolean,
+};
+
+export type LorebookEntryDraftSource = "messages" | "memory" | "mixed";
+
+export type LorebookEntryInput = {
+	title: string,
+	enabled: boolean,
+	always_active: boolean,
+	keywords: string[],
+	case_sensitive: boolean,
+	keyword_mode: LorebookKeywordMode,
+	content: string,
+	priority: number,
+};
+
+/**
+ *  One change to a book's entries. `index` is the position after the
+ *  mutations before it; an add without one appends.
+ */
+export type LorebookEntryMutationInput = { type: "add"; entry: LorebookEntryInput; index: number | null } | { type: "update"; entry_id: string; entry: LorebookEntryInput } | { type: "remove"; entry_id: string } | { type: "reorder"; entry_id: string; index: number };
+
+export type LorebookEntryView = {
+	id: string,
+	title: string,
+	enabled: boolean,
+	always_active: boolean,
+	keywords: string[],
+	case_sensitive: boolean,
+	keyword_mode: LorebookKeywordMode,
+	content: string,
+	priority: number,
+	ordinal: number,
+	revision: number,
+	created_at: number,
+	updated_at: number,
+};
+
+export type LorebookGeneratorDefaults = {
+	target_count: number,
+	min_target_count: number,
+	max_target_count: number,
+};
+
+export type LorebookGetRequest = {
+	lorebook_id: string,
+};
+
+export type LorebookKeywordMode = "literal" | "regex";
+
+/**
+ *  Drafts keywords for an entry's content; the result is the job's
+ *  `LorebookKeywords`.
+ */
+export type LorebookKeywordsDraftRequest = {
+	client_operation_id: string,
+	lorebook_id: string,
+	entry_id: string | null,
+	title: string | null,
+	content: string,
+	existing_keywords: string[],
+	direction: string | null,
+};
+
+export type LorebookMetadataInput = {
+	name: string,
+	detection: LorebookDetection,
+	icon_asset_id: string | null,
+};
+
+export type LorebookModelProblem = "configured_model_missing" | "configured_model_not_text" | "no_text_model";
+
+export type LorebookPage = {
+	items: LorebookSummary[],
+	next_cursor: string | null,
+};
+
+export type LorebookPlanInput = {
+	/**  An existing plan keeps its id; a new one gets one. */
+	plan_id: string | null,
+	title: string,
+	category: string,
+	proposed_keys: string[],
+	rationale: string,
+	source_refs: string[],
+};
+
+export type LorebookPlanView = {
+	plan_id: string,
+	title: string,
+	category: string,
+	proposed_keys: string[],
+	rationale: string,
+	source_refs: string[],
+};
+
+export type LorebookPreviewEntry = {
+	/**  The entry's place in the injected lore, from 0. */
+	position: number,
+	source: LorebookSourceTier,
+	lorebook_id: string,
+	lorebook_name: string,
+	entry_id: string,
+	title: string,
+	matched_keywords: string[],
+	always_active: boolean,
+	token_count: number,
+};
+
+/**  The batch of writer jobs one `lorebook_project_draft_next` started. */
+export type LorebookProjectBatchAccepted = {
+	job_ids: string[],
+};
+
+export type LorebookProjectCoherenceApplyRequest = {
+	client_operation_id: string,
+	project_id: string,
+	expected_revision: number,
+	accepted_change_ids: string[],
+};
+
+export type LorebookProjectCommitRequest = {
+	client_operation_id: string,
+	project_id: string,
+	expected_revision: number,
+	target: LorebookProjectCommitTarget,
+};
+
+export type LorebookProjectCommitTarget = { type: "new_lorebook"; name: string | null } | { type: "existing_lorebook"; lorebook_id: string; expected_revision: number };
+
+export type LorebookProjectCommitView = {
+	lorebook_deleted: boolean,
+	lorebook_id: string,
+	lorebook_name: string,
+	entry_ids: string[],
+};
+
+export type LorebookProjectCreateRequest = {
+	client_operation_id: string,
+	brief: string,
+	lorebook_name: string | null,
+	target_count: number | null,
+	sources: LorebookProjectSourceInput[],
+};
+
+export type LorebookProjectDraftApprovalRequest = {
+	client_operation_id: string,
+	project_id: string,
+	expected_revision: number,
+	plan_id: string,
+	approved: boolean,
+};
+
+export type LorebookProjectDraftUpdateRequest = {
+	client_operation_id: string,
+	project_id: string,
+	expected_revision: number,
+	plan_id: string,
+	title: string,
+	keywords: string[],
+	content: string,
+	always_active: boolean,
+};
+
+export type LorebookProjectGetRequest = {
+	project_id: string,
+};
+
+export type LorebookProjectJobRequest = {
+	client_operation_id: string,
+	project_id: string,
+	expected_revision: number,
+};
+
+export type LorebookProjectOutlineUpdateRequest = {
+	client_operation_id: string,
+	project_id: string,
+	expected_revision: number,
+	outline: LorebookPlanInput[],
+};
+
+export type LorebookProjectPage = {
+	items: LorebookProjectSummary[],
+	next_cursor: string | null,
+};
+
+export type LorebookProjectRefineRequest = {
+	client_operation_id: string,
+	expected_revision: number,
+	project_id: string,
+	plan_id: string,
+	feedback: string,
+};
+
+/**  A project write checked against the project revision the caller saw. */
+export type LorebookProjectRevisionRequest = {
+	client_operation_id: string,
+	project_id: string,
+	expected_revision: number,
+};
+
+/**
+ *  One staged generator source: pasted text with a label, or a document the
+ *  app ingested (`assets_ingest`).
+ */
+export type LorebookProjectSourceInput = { type: "text"; label: string; text: string } | { type: "document"; asset_id: string };
+
+export type LorebookProjectSourceView = {
+	source_id: string,
+	label: string,
+	document: AssetRef | null,
+};
+
+export type LorebookProjectStage = "created" | "planning" | 
+/**  The planner job failed; `lorebook_project_plan` retries it. */
+"plan_failed" | "awaiting_outline_approval" | "drafting" | "drafts_ready" | "coherence_review" | "committed" | "cancelled";
+
+export type LorebookProjectSummary = {
+	project_id: string,
+	brief: string,
+	lorebook_name: string | null,
+	stage: LorebookProjectStage,
+	updated_at: number,
+};
+
+export type LorebookProjectView = {
+	project_id: string,
+	brief: string,
+	lorebook_name: string | null,
+	target_count: number,
+	stage: LorebookProjectStage,
+	sources: LorebookProjectSourceView[],
+	outline: LorebookPlanView[],
+	drafts: LorebookDraftView[],
+	coherence_changes: LorebookCoherenceChangeView[],
+	commit: LorebookProjectCommitView | null,
+	/**  The jobs still queued or running for the project. */
+	active_job_ids: string[],
+	/**  Why the last planner job failed, while the stage is `PlanFailed`. */
+	plan_failure: JobFailureDto | null,
+	revision: number,
+	created_at: number,
+	updated_at: number,
+};
+
+export type LorebookProjectsListRequest = {
+	cursor: string | null,
+	limit: number | null,
+};
+
+/**  Archive, restore and hard delete of a lorebook. */
+export type LorebookRevisionRequest = {
+	client_operation_id: string,
+	lorebook_id: string,
+	expected_revision: number,
+};
+
+export type LorebookSkipReason = "missing" | "archived" | "duplicate";
+
+export type LorebookSkippedSource = {
+	source: LorebookSourceTier,
+	lorebook_id: string,
+	reason: LorebookSkipReason,
+};
+
+/**  Where an active book came from. */
+export type LorebookSourceTier = { type: "conversation" } | { type: "character"; character_id: string } | { type: "persona"; persona_id: string } | { type: "group"; group_id: string } | { type: "editor" };
+
+export type LorebookStatus = "active" | "archived";
+
+export type LorebookSummary = {
+	id: string,
+	name: string,
+	status: LorebookStatus,
+	detection: LorebookDetection,
+	icon: AssetRef | null,
+	revision: number,
+	created_at: number,
+	updated_at: number,
+};
+
+export type LorebookTriggerPreview = {
+	entries: LorebookPreviewEntry[],
+	skipped: LorebookSkippedSource[],
+	scan_depth: number,
+};
+
+/**
+ *  What the preview evaluates: the next turn of a conversation (with the
+ *  composer text as its newest user message, and for a group the given
+ *  speaker's books), or one book against a text.
+ */
+export type LorebookTriggerPreviewRequest = { mode: "conversation"; conversation_id: string; composer_text: string | null; speaker_character_id: string | null } | { mode: "editor"; lorebook_id: string; text: string };
+
+export type LorebookUpdateMetadataRequest = {
+	client_operation_id: string,
+	lorebook_id: string,
+	expected_revision: number,
+	metadata: LorebookMetadataInput,
+};
+
+export type LorebookView = {
+	lorebook: LorebookSummary,
+	entries: LorebookEntryView[],
+};
+
 /**  An empty list turns the chat's lorebooks off. */
 export type LorebooksChange = { type: "set"; ids: string[] } | { type: "reset" };
+
+/**
+ *  Lorebooks most recently changed first; `query` keeps those whose name
+ *  contains it, ignoring case.
+ */
+export type LorebooksListRequest = {
+	query: string | null,
+	lifecycle: LifecycleFilter | null,
+	cursor: string | null,
+	limit: number | null,
+};
 
 export type MediaRole = "inline" | "attachment" | "avatar" | "scene" | "reference";
 
@@ -3243,6 +3705,20 @@ export type PlaygroundOrigin = "generated" | "imported";
 
 export type PlaygroundStatus = "pending" | "complete" | "failed" | "cancelled";
 
+export type PromptAppDefault = {
+	prompt_id: string | null,
+	settings_revision: number,
+};
+
+/**  Selects the app-wide default prompt; `None` returns to the built-in. */
+export type PromptAppDefaultSetRequest = {
+	client_operation_id: string,
+	prompt_id: string | null,
+	expected_settings_revision: number,
+};
+
+export type PromptBehavior = "legacy_v1" | "deterministic_v2";
+
 /**
  *  How much of the chat the request carried and what it is estimated to
  *  cost.
@@ -3254,6 +3730,88 @@ export type PromptBudget = {
 	estimated_input_tokens: number,
 	truncated: boolean,
 };
+
+/**
+ *  Resets one built-in prompt or every built-in to its catalog content and
+ *  entries; the user's name for it stays.
+ */
+export type PromptBuiltinResetRequest = { type: "one"; client_operation_id: string; prompt_id: string; expected_revision: number } | { type: "all"; client_operation_id: string };
+
+export type PromptBuiltinResetResult = {
+	prompts: PromptView[],
+};
+
+export type PromptChatMode = "direct" | "group";
+
+/**  When a prompt entry applies. */
+export type PromptCondition = { type: "chat_mode"; value: PromptChatMode } | { type: "info_source"; value: PromptInfoSource } | { type: "scene_generation_enabled"; value: boolean } | { type: "avatar_generation_enabled"; value: boolean } | { type: "is_local_image_generation_model"; value: boolean } | { type: "is_scene_generation_local_image_model"; value: boolean } | { type: "scene_image_protocol"; value: PromptSceneImageProtocol } | { type: "has_scene"; value: boolean } | { type: "has_scene_direction"; value: boolean } | { type: "has_persona"; value: boolean } | { type: "message_count_at_least"; value: number } | { type: "participant_count_at_least"; value: number } | { type: "keyword_any"; values: string[] } | { type: "keyword_all"; values: string[] } | { type: "keyword_none"; values: string[] } | { type: "dynamic_memory_enabled"; value: boolean } | { type: "has_memory_summary"; value: boolean } | { type: "has_key_memories"; value: boolean } | { type: "has_lorebook_content"; value: boolean } | { type: "does_author_note_exists"; value: boolean } | { type: "has_active_scheduled_note"; value: boolean } | { type: "has_subject_description"; value: boolean } | { type: "has_current_description"; value: boolean } | { type: "has_character_reference_images"; value: boolean } | { type: "has_chat_background"; value: boolean } | { type: "has_persona_reference_images"; value: boolean } | { type: "has_character_reference_text"; value: boolean } | { type: "has_persona_reference_text"; value: boolean } | { type: "input_scope_any"; values: string[] } | { type: "output_scope_any"; values: string[] } | { type: "provider_id_any"; values: string[] } | { type: "reasoning_enabled"; value: boolean } | { type: "vision_enabled"; value: boolean } | { type: "is_time_awareness_enabled"; value: boolean } | { type: "is_companion_mode"; value: boolean } | { type: "all"; conditions: PromptCondition[] } | { type: "any"; conditions: PromptCondition[] } | { type: "not"; condition: PromptCondition };
+
+export type PromptCreateRequest = {
+	client_operation_id: string,
+	prompt: PromptInput,
+};
+
+export type PromptDeleteRequest = {
+	client_operation_id: string,
+	prompt_id: string,
+	expected_revision: number,
+};
+
+export type PromptEntryInput = {
+	/**  An existing entry of the prompt keeps its id; a new entry has none. */
+	entry_id: string | null,
+	name: string,
+	role: PromptEntryRole,
+	content: string,
+	enabled: boolean,
+	position: PromptEntryPosition,
+	depth: number,
+	conditional_min_messages: number | null,
+	interval_turns: number | null,
+	system_prompt: boolean,
+	condition: PromptCondition | null,
+	image_slot: PromptImageSlot | null,
+};
+
+export type PromptEntryPosition = "relative" | "in_chat" | "conditional" | "interval";
+
+export type PromptEntryRole = "system" | "user" | "assistant";
+
+export type PromptEntryView = {
+	id: string,
+	/**  Set on the entries of a built-in prompt the catalog owns. */
+	built_in_key: string | null,
+	name: string,
+	role: PromptEntryRole,
+	content: string,
+	enabled: boolean,
+	position: PromptEntryPosition,
+	depth: number,
+	conditional_min_messages: number | null,
+	interval_turns: number | null,
+	system_prompt: boolean,
+	condition: PromptCondition | null,
+	image_slot: PromptImageSlot | null,
+};
+
+export type PromptGetRequest = {
+	prompt_id: string,
+};
+
+export type PromptImageSlot = "character" | "persona" | "chat_background" | "avatar" | "references";
+
+export type PromptInfoSource = "messages" | "memory" | "mixed";
+
+/**  A prompt as the editor submits it: metadata and every entry in order. */
+export type PromptInput = {
+	name: string,
+	kind: PromptKind,
+	condense: boolean,
+	behavior: PromptBehavior,
+	entries: PromptEntryInput[],
+};
+
+export type PromptKind = "direct_chat" | "companion_chat" | "group_chat_roleplay" | "group_chat_conversational" | "dynamic_memory_summarizer" | "dynamic_memory_manager" | "reply_helper_roleplay" | "reply_helper_conversational" | "lorebook_entry_writer" | "lorebook_keyword_generator" | "lorebook_generator_planner" | "lorebook_generator_writer" | "lorebook_generator_refine" | "lorebook_generator_coherence" | "avatar_generation" | "avatar_edit_request" | "scene_generation" | "scene_prompt_writer" | "design_reference_writer" | "companion_soul_writer" | "companion_growthcycle" | "companion_consolidation" | "runtime_text";
 
 export type PromptMessage = {
 	role: MessageRole,
@@ -3272,6 +3830,13 @@ export type PromptModel = {
 
 export type PromptOperation = "send" | "continue" | "regenerate";
 
+export type PromptOrigin = { type: "built_in"; key: string; protected: boolean; required: boolean; edited: boolean } | { type: "user" } | { type: "derived"; source_id: string; source_name: string; source_deleted: boolean } | { type: "imported" };
+
+export type PromptPage = {
+	items: PromptSummary[],
+	next_cursor: string | null,
+};
+
 /**  The sampling parameters a request resolved to. */
 export type PromptParameters = {
 	temperature: number | null,
@@ -3285,6 +3850,47 @@ export type PromptParameters = {
 };
 
 export type PromptPart = { type: "text"; text: string } | { type: "media"; asset: AssetRef; role: MediaRole } | { type: "tool_call"; name: string; arguments: string } | { type: "tool_result"; name: string; output: string };
+
+export type PromptPlaceholders = {
+	kind: PromptKind,
+	allowed: string[],
+	required: string[],
+	image_slots: PromptImageSlot[],
+};
+
+export type PromptPlaceholdersRequest = {
+	kind: PromptKind,
+};
+
+export type PromptPreview = {
+	entries: PromptPreviewEntry[],
+	/**  Entries left out by their conditions, enabled flag or position. */
+	skipped_entry_ids: string[],
+};
+
+export type PromptPreviewEntry = {
+	entry_id: string,
+	name: string,
+	role: PromptEntryRole,
+	position: PromptEntryPosition,
+	depth: number,
+	text: string,
+};
+
+/**
+ *  Renders a prompt. With a conversation it renders from that
+ *  conversation's live sources as its next turn would; without one it uses
+ *  the given character and persona (or none) and sample memories, summary
+ *  and lorebook text.
+ */
+export type PromptPreviewRequest = {
+	prompt_id: string,
+	conversation_id: string | null,
+	character_id: string | null,
+	persona_id: string | null,
+};
+
+export type PromptSceneImageProtocol = "remote" | "local";
 
 /**
  *  What one source contributed to the prompt, with its estimated tokens. A
@@ -3308,6 +3914,8 @@ export type PromptSectionsUnavailable = "predates_breakdown";
  *  sent even when the character, persona or lorebooks changed since.
  */
 export type PromptSnapshot = {
+	prompt: HistoricalSourceView | null,
+	lorebooks: HistoricalSourceView[],
 	turn_id: string,
 	candidate_id: string,
 	operation: PromptOperation,
@@ -3319,6 +3927,49 @@ export type PromptSnapshot = {
 	sections: PromptSection[] | null,
 	sections_unavailable: PromptSectionsUnavailable | null,
 };
+
+export type PromptSummary = {
+	id: string,
+	name: string,
+	kind: PromptKind,
+	archived: boolean,
+	origin: PromptOrigin,
+	app_default: boolean,
+	revision: number,
+	created_at: number,
+	updated_at: number,
+};
+
+export type PromptUpdateRequest = {
+	client_operation_id: string,
+	prompt_id: string,
+	expected_revision: number,
+	prompt: PromptInput,
+};
+
+export type PromptValidateRequest = {
+	prompt: PromptInput,
+};
+
+export type PromptValidation = {
+	missing_placeholders: string[],
+};
+
+export type PromptView = {
+	prompt: PromptSummary,
+	condense: boolean,
+	behavior: PromptBehavior,
+	entries: PromptEntryView[],
+};
+
+export type PromptsListRequest = {
+	kind: PromptKind | null,
+	lifecycle: LifecycleFilter | null,
+	cursor: string | null,
+	limit: number | null,
+};
+
+export type PureModeLevel = "off" | "low" | "standard" | "strict";
 
 export type PurgeNoticeDismissRequest = {
 	id: string,
@@ -3820,6 +4471,15 @@ export type SoulGrowthView = {
  */
 export type SoulOwnerKind = "character" | "conversation";
 
+/**  The owners whose configuration a hard delete changed. */
+export type SourceDeleteResult = {
+	character_ids: string[],
+	persona_ids: string[],
+	group_ids: string[],
+	conversation_ids: string[],
+	settings_changed: boolean,
+};
+
 export type SpeakerSelectionChange = { type: "set"; method: SpeakerSelectionMethod } | { type: "reset" };
 
 export type SpeakerSelectionMethod = "llm" | "heuristic" | "round_robin" | "director" | "director_action";
@@ -3870,6 +4530,14 @@ export type TimelineMessage = {
 	 *  its image is on the message or the user dismissed it.
 	 */
 	scene_image: SceneImageView | null,
+};
+
+export type TokensCount = {
+	counts: number[],
+};
+
+export type TokensCountRequest = {
+	texts: string[],
 };
 
 /**

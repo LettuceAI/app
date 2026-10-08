@@ -75,6 +75,9 @@ impl ApiEventSink for RecordingEvents {
 }
 
 impl RecordingEvents {
+    pub(super) fn events(&self) -> Vec<ApiEvent> {
+        self.0.lock().expect("api events").clone()
+    }
     /// Waits until the recorded events satisfy `done`.
     pub(super) async fn until(&self, done: impl Fn(&[ApiEvent]) -> bool) {
         loop {
