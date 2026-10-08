@@ -209,4 +209,4 @@ pub const PLAYGROUND_IMAGE_SYNC_VERSION: u32 = 1;
 
 pub const CREATION_WORKFLOW_SYNC_KIND: &str = "creation_workflow";
 pub const CREATION_WORKFLOW_SYNC_SCHEMA: &str = "creation.workflow";
-pub const CREATION_WORKFLOW_SYNC_VERSION: u32 = 2;
+pub const CREATION_WORKFLOW_SYNC_VERSION: u32 = 1;

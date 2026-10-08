@@ -24,7 +24,7 @@ Facts about how `lettuce-creation` relates to the legacy app (2.2.x). The crate 
 
 ## Deliberate differences from legacy
 
-- Lorebook apply receipts keep the applied id and name after source deletion, including backup and sync (slice 6 decision 14). Legacy lorebook deletion was a hard row delete (`old-code/src-tauri/src/storage_manager/lorebook.rs:316-326`); durable helper apply receipts are a rewrite mechanism.
+- Lorebook apply receipts keep the applied id and name after source deletion, including backup (slice 6 decision 14). Legacy lorebook deletion was a hard row delete (`old-code/src-tauri/src/storage_manager/lorebook.rs:316-326`); durable helper apply receipts are a rewrite mechanism.
 
 - Legacy never left its preview status. Here any successful change returns the proposal to drafting, so confirmation has to be requested again.
 - Legacy gave `write_lore_entry` a default `New entry` title; a missing title is now rejected.

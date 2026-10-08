@@ -526,7 +526,6 @@ mod tests {
 
     #[test]
     fn current_schema_fingerprint_is_stable_and_complete() {
-        assert_eq!(crate::CREATION_WORKFLOW_SYNC_VERSION, 2);
         assert_eq!(crate::CONVERSATION_MESSAGE_SYNC_VERSION, 4);
         assert_eq!(crate::PROMPT_SYNC_VERSION, 2);
         assert_eq!(
@@ -536,7 +535,7 @@ mod tests {
         );
         assert_eq!(
             current_sync_schema_fingerprint().as_str(),
-            "8e8ffe0e22a4b98d50e2872a4d8adca85a831b6fd1dfbe767838b707b44d0611"
+            "ea71412eb24d7a2d3537aaaf140091c0bd3e33fb6013a37eaa0d6e48501cc52b"
         );
     }
 

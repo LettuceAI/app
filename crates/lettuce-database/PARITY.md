@@ -62,7 +62,7 @@ Facts about how `lettuce-database` relates to the legacy app (2.2.x). The crate 
 
 ## Deliberate differences from legacy
 
-- Lorebook apply receipts outlive a hard-deleted book and keep its applied name; backup restore and sync retain that evidence (slice 6 decision 14). Legacy deleted the book row (`old-code/src-tauri/src/storage_manager/lorebook.rs:316-326`); the rewrite's immutable receipt no longer blocks that deletion.
+- Lorebook apply receipts outlive a hard-deleted book and keep its applied name; backup restore retains that evidence and sync leaves receipts on the device that applied (slice 6 decision 14). Legacy deleted the book row (`old-code/src-tauri/src/storage_manager/lorebook.rs:316-326`); the rewrite's immutable receipt no longer blocks that deletion.
 
 - Pending dynamic-memory approvals and prompt baselines are durable per conversation and branch. Legacy kept approvals and skips in a session-keyed in-memory manager (`old-code/src-tauri/src/chat_manager/memory/flow.rs:1653-1661,1696-1705`); changing the selected branch now leaves the other branch's prompt and skip state intact, including after restart.
 

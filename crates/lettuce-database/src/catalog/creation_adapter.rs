@@ -1161,13 +1161,16 @@ pub(crate) fn insert_restored_workflow_in(
     Ok(())
 }
 
+/// A Creation Helper session as sync exchanges it: the workflow with its
+/// proposal chain and user turns. Inference attempts, rounds and apply
+/// receipts stay on the device that ran them, and the workflow revision is
+/// local bookkeeping.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct SyncCreationWorkflow {
     pub workflow: CreationWorkflow,
     pub proposals: Vec<CreationProposal>,
     pub turns: Vec<CreationTurn>,
-    pub lorebook_receipt: Option<CreationLorebookApplyReceipt>,
 }
 
 pub(crate) fn sync_workflow_ids(connection: &Connection) -> rusqlite::Result<Vec<String>> {
@@ -1209,7 +1212,6 @@ pub(crate) fn sync_load_workflow(
         },
         proposals,
         turns,
-        lorebook_receipt: load_lorebook_apply_receipt(transaction, id)?,
     }))
 }
 
@@ -1244,21 +1246,6 @@ pub(crate) fn sync_merge_workflow(
         .ok_or(CreationRepositoryError::Invalid)?;
     if current.stage != workflow.stage {
         return Err(CreationRepositoryError::Invalid);
-    }
-    if let Some(receipt) = &incoming.lorebook_receipt {
-        if receipt.workflow_id != id
-            || receipt.proposal_id != current.id
-            || receipt.workflow_revision.get() == 0
-            || receipt.lorebook_revision.get() == 0
-            || receipt.lorebook_name.trim().is_empty()
-            || current.stage != CreationStage::AwaitingConfirmation
-            || !matches!(
-                current.draft,
-                lettuce_creation::CreationDraft::Lorebook { .. }
-            )
-        {
-            return Err(CreationRepositoryError::Invalid);
-        }
     }
     let present: bool = transaction
         .query_row(
@@ -1402,9 +1389,6 @@ pub(crate) fn sync_merge_workflow(
                 params![id.to_string(), workflow.updated_at.get()],
             )
             .map_err(storage)?;
-    }
-    if let Some(receipt) = &incoming.lorebook_receipt {
-        insert_lorebook_apply_receipt(transaction, receipt)?;
     }
     Ok(true)
 }
@@ -4959,7 +4943,7 @@ mod tests {
     }
 
     #[test]
-    fn lorebook_apply_receipt_sync_keeps_name_on_fresh_peer() {
+    fn lorebook_apply_receipt_stays_on_the_device_that_applied() {
         let database = Database::open_in_memory().expect("database");
         let peer = Database::open_in_memory().expect("peer");
         let (workflow, proposal_id) = confirmed_workflow(
@@ -4972,7 +4956,7 @@ mod tests {
             },
             10,
         );
-        let receipt = database
+        database
             .apply_new_lorebook(ConfirmedLorebookApply {
                 workflow_id: workflow.id,
                 expected_workflow_revision: workflow.revision,
@@ -4981,22 +4965,13 @@ mod tests {
                 now: TimestampMillis::new(15),
             })
             .expect("apply");
-        database
-            .connection()
-            .expect("connection")
-            .execute(
-                "DELETE FROM lorebooks WHERE id=?1",
-                [receipt.lorebook_id.to_string()],
-            )
-            .expect("delete before first sync");
         sync_once(&database, &peer, 20);
         sync_once(&database, &peer, 21);
         let mut connection = peer.connection().expect("connection");
         let transaction = connection.transaction().expect("transaction");
-        assert_eq!(
-            read_workflows_in(&transaction).expect("peer workflows")[0].lorebook_receipt,
-            Some(receipt)
-        );
+        let workflows = read_workflows_in(&transaction).expect("peer workflows");
+        assert_eq!(workflows.len(), 1);
+        assert_eq!(workflows[0].lorebook_receipt, None);
     }
 
     #[test]
