@@ -202,6 +202,9 @@ pub(crate) async fn verify_api_key<S: SecretStore + ?Sized>(
 
 fn redact(message: &mut String, secret: &str) {
     *message = message.replace(secret, "[REDACTED]");
+    if let Ok(encoded) = serde_json::to_string(secret) {
+        *message = message.replace(&encoded[1..encoded.len() - 1], "[REDACTED]");
+    }
     let encode = |space: &str, lower: bool| {
         secret
             .bytes()
@@ -305,6 +308,14 @@ mod tests {
             let expected = error.get("type").and_then(serde_json::Value::as_str).map(str::to_owned).unwrap_or_else(||error.to_string());
             assert_eq!(provider_error(body.as_bytes()), Some(expected));
         }
+    }
+
+    #[test]
+    fn json_fallback_redacts_escaped_credentials() {
+        let secret = "a\"b\\c";
+        let mut message = serde_json::json!({"unexpected":secret}).to_string();
+        redact(&mut message, secret);
+        assert_eq!(message, r#"{"unexpected":"[REDACTED]"}"#);
     }
 
     #[test]

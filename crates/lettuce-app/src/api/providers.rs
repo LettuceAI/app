@@ -88,13 +88,14 @@ fn verified(value: lettuce_providers::KeyVerification) -> Result<dto::ProviderVe
             status: value.status,
         });
     }
+    let provider_message = value.error.filter(|message| !message.trim().is_empty());
     Err(ApiError {
         code: ApiErrorCode::InvalidInput,
         message: "provider verification failed".into(),
         details: Some(dto::ApiErrorDetails::ProviderVerification {
             status: value.status,
-            reason: value.error.is_none().then_some(if value.status.is_none() { dto::ProviderVerificationReason::MissingApiKey } else { dto::ProviderVerificationReason::InvalidApiKey }),
-            provider_message: value.error,
+            reason: provider_message.is_none().then_some(if value.status.is_none() { dto::ProviderVerificationReason::MissingApiKey } else { dto::ProviderVerificationReason::InvalidApiKey }),
+            provider_message,
         }),
     })
 }

@@ -3034,7 +3034,7 @@ mod integration_tests {
             Ok(KeyVerification {
                 valid: false,
                 status: None,
-                error: Some("Missing API key".into()),
+                error: None,
             })
         );
         type VerifyCase<'a> = (
