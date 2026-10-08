@@ -65,3 +65,5 @@ Lorebook and prompt DTOs carry aggregate revisions and operation keys, typed con
 Provider control commands export the catalog, secret-free account views, saved-or-draft verification requests, verification results and public OpenRouter endpoint metadata to TypeScript. Verification errors carry HTTP status and a redacted provider message in ApiErrorDetails so the UI can display the provider's reason. TrustedCertificateView contains only identity, filename and import time.
 
 Provider control requests expose draft or saved verification, revisioned account writes with operation ids, cascading deletion, model listing and existence checks, public OpenRouter endpoints and FileSource certificate import. Views carry key presence and certificate metadata with its list revision. InUse and Malformed are explicit error categories; provider errors redact credentials.
+
+Stored certificate views include validity and a typed InvalidPem reason; runtime client construction skips invalid stored roots so users can list and remove them. New imports validate strictly before writing.

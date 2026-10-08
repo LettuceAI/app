@@ -39,7 +39,7 @@ Buffered responses (`get_json`, `post_json`, `delete_json` and their `_with_quer
 
 `GenerationOnce` returns redirects without following them, so a 307/308 cannot resend the operation. Other redirects are followed up to ten times, but only to the host the request went to and never from https down to http, so a credential never reaches another host. A cross-host redirect comes back as the response.
 
-TLS uses the OS trust store plus the webpki roots and every certificate in the user's extra PEM bundles from `TlsPolicy`. Invalid roots reject construction or reload. Clones share replaceable strict and insecure client state; `allow_invalid_tls` selects the insecure client only from an explicit per-account setting.
+TLS uses the OS trust store plus the webpki roots and every certificate in the user's extra PEM bundles from `TlsPolicy`. Runtime clients skip invalid stored roots and emit a metadata-only warning; explicit import validation rejects them. Clones share replaceable strict and insecure client state; `allow_invalid_tls` selects the insecure client only from an explicit per-account setting.
 
 `Debug` output of clients, responses and streams redacts bodies, request ids and retry metadata.
 
@@ -57,4 +57,6 @@ Downloads of large pinned files. It follows at most five redirects and only to h
 
 The file URLs come from `lettuce-model-hub`'s shared Hugging Face client (`resolve_url`, `pinned_resolve_url`).
 
-JSON and bulk clients share replaceable TLS state across clones. reload_tls validates every PEM bundle and rebuilds clients before swapping that state; existing requests keep their captured client and subsequent requests use the replacement. Weak client handles allow the composition root to refresh live clients without retaining temporary runtimes. Invalid certificates reject client construction.
+JSON and bulk clients share replaceable TLS state across clones. reload_tls parses stored PEM bundles and rebuilds clients before swapping that state; existing requests keep their captured client and subsequent requests use the replacement. Weak client handles allow the composition root to refresh live clients without retaining temporary runtimes. Invalid stored certificates remain removable through the API and are skipped at runtime.
+
+Stored certificate views include validity and a typed InvalidPem reason; runtime client construction skips invalid stored roots so users can list and remove them. New imports validate strictly before writing.

@@ -229,11 +229,15 @@ pub(super) fn certificate_view(
     dto::CertificatesView {
         certificates: certificates
             .into_iter()
-            .map(|certificate| dto::TrustedCertificateView {
+            .map(|certificate| {
+                let valid = lettuce_network::validate_tls_policy(&lettuce_network::TlsPolicy { trusted_roots_pem: vec![certificate.pem.clone()] }).is_ok();
+                dto::TrustedCertificateView {
+                valid,
+                reason: (!valid).then_some(dto::CertificateInvalidReason::InvalidPem),
                 id: certificate.id.to_string(),
                 name: certificate.name,
                 imported_at: certificate.imported_at,
-            })
+            }})
             .collect(),
         revision: revision.get(),
     }

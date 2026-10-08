@@ -35,4 +35,6 @@ Facts about how `lettuce-network` relates to the legacy app (2.2.x). The crate R
 - `get_json_with_query` and buffered `post_json_with_query` were added using the same validated parameter list as the streaming POST; existing GET callers delegate with an empty list. OpenRouter's HTTP fixture checks that a generation id containing `+`, `&` and `=` cannot create another query parameter.
 - The previous README described `ArtifactDownloadClient` as an unauthenticated Hugging Face transport. It now signs Hugging Face requests (same origin only) and CivitAI requests (civitai.com hosts only) with the app-wide tokens, and also probes sizes and reads file prefixes.
 
-Invalid trusted roots now reject construction and reload instead of being skipped (old-code/src-tauri/src/tls.rs:26-39). Shared client state supports immediate trust changes without restart, preserving legacy per-request certificate reads (tls.rs:4-24). Bundles trust every certificate rather than only one.
+Invalid stored trusted roots are skipped at runtime, preserving old-code/src-tauri/src/tls.rs:26-39; new imports remain strict. Shared client state supports immediate trust changes without restart, preserving legacy per-request certificate reads (tls.rs:4-24). Bundles trust every certificate rather than only one.
+
+Stored certificate views include validity and a typed InvalidPem reason; runtime client construction skips invalid stored roots so users can list and remove them. New imports validate strictly before writing.

@@ -858,3 +858,26 @@ async fn unavailable_secret_write_is_typed_and_never_commits_an_account() {
         before
     );
 }
+
+#[tokio::test]
+async fn invalid_stored_certificate_is_visible_and_removable_without_blocking_runtime() {
+    use lettuce_settings::DeviceSettingsStore;
+    let harness = harness(Reply::Text("Hello."));
+    let database = harness.context.backend().database();
+    let mut device = database.load_device_settings().expect("device");
+    device.trusted_certificates.push(lettuce_settings::TrustedCertificate {
+        id: uuid::Uuid::new_v4(), name: "broken.pem".into(),
+        pem: "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----".into(),
+        imported_at: 1,
+    });
+    database.save_device_settings(device).expect("stored marker-only root");
+    let tls = harness.context.backend().tls_policy().expect("TLS");
+    harness.context.backend().provider_runtime(harness.context.secret_store().clone(), &tls).expect("runtime opens");
+    let view = super::certificates_list(&harness.context).await.expect("list");
+    assert!(!view.certificates[0].valid);
+    assert_eq!(view.certificates[0].reason, Some(dto::CertificateInvalidReason::InvalidPem));
+    let removed = super::certificates_remove(&harness.context, dto::CertificatesRemoveRequest {
+        certificate_id: view.certificates[0].id.clone(), expected_revision: view.revision,
+    }).await.expect("remove");
+    assert!(removed.certificates.is_empty());
+}

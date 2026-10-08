@@ -1283,18 +1283,31 @@ fn apply_secret_headers(
 }
 
 pub fn validate_tls_policy(policy: &TlsPolicy) -> Result<(), JsonClientError> {
-    trusted_roots(policy).map(|_| ())
+    for pem in &policy.trusted_roots_pem {
+        parse_trusted_roots(pem)?;
+    }
+    Ok(())
+}
+
+fn parse_trusted_roots(pem: &str) -> Result<Vec<reqwest::Certificate>, JsonClientError> {
+    let roots = reqwest::Certificate::from_pem_bundle(pem.as_bytes())
+        .map_err(|_| JsonClientError::ClientConfiguration)?;
+    if roots.is_empty() { return Err(JsonClientError::ClientConfiguration); }
+    let mut builder = reqwest::Client::builder();
+    for root in &roots { builder = builder.add_root_certificate(root.clone()); }
+    builder.build().map_err(|_| JsonClientError::ClientConfiguration)?;
+    Ok(roots)
 }
 
 fn trusted_roots(policy: &TlsPolicy) -> Result<Vec<reqwest::Certificate>, JsonClientError> {
-    policy.trusted_roots_pem.iter().map(|pem| {
-        let roots = reqwest::Certificate::from_pem_bundle(pem.as_bytes()).map_err(|_| JsonClientError::ClientConfiguration)?;
-        if roots.is_empty() { return Err(JsonClientError::ClientConfiguration); }
-        let mut builder = reqwest::Client::builder();
-        for root in &roots { builder = builder.add_root_certificate(root.clone()); }
-        builder.build().map_err(|_| JsonClientError::ClientConfiguration)?;
-        Ok(roots)
-    }).collect::<Result<Vec<_>, _>>().map(|bundles| bundles.into_iter().flatten().collect())
+    let mut roots = Vec::new();
+    for pem in &policy.trusted_roots_pem {
+        match parse_trusted_roots(pem) {
+            Ok(bundle) => roots.extend(bundle),
+            Err(_) => tracing::warn!("invalid stored trusted certificate skipped"),
+        }
+    }
+    Ok(roots)
 }
 
 fn build_client(
@@ -1705,19 +1718,19 @@ mod tests {
 
     #[test]
     fn invalid_pem_is_a_typed_client_error() {
-        assert!(JsonClient::with_tls(&TlsPolicy { trusted_roots_pem: vec!["not a PEM certificate".into()] }).is_err());
+        assert!(validate_tls_policy(&TlsPolicy { trusted_roots_pem: vec!["not a PEM certificate".into()] }).is_err());
     }
 
     #[test]
-    fn an_unparsable_trusted_root_rejects_every_client() {
+    fn an_unparsable_trusted_root_is_skipped_instead_of_failing_every_client() {
         let policy = TlsPolicy {
             trusted_roots_pem: vec![
                 "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----".to_owned(),
             ],
         };
-        assert!(trusted_roots(&policy).is_err());
-        assert!(JsonClient::with_tls(&policy).is_err());
-        assert!(BulkHttpClient::with_tls(&policy).is_err());
+        assert!(trusted_roots(&policy).expect("roots").is_empty());
+        assert!(JsonClient::with_tls(&policy).is_ok());
+        assert!(BulkHttpClient::with_tls(&policy).is_ok());
     }
 
     async fn test_server(response: &'static str) -> (String, oneshot::Receiver<Vec<u8>>) {

@@ -79,10 +79,19 @@ pub struct ProviderOpenRouterEndpoint {
     pub cache_write_price: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum CertificateInvalidReason {
+    InvalidPem,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct TrustedCertificateView {
+    pub valid: bool,
+    pub reason: Option<CertificateInvalidReason>,
     pub id: String,
     pub name: String,
     #[cfg_attr(feature = "specta", specta(type = specta_typescript::Number))]
