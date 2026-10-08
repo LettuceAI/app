@@ -67,7 +67,7 @@ These store the choices only. The jobs take a resolved model profile per request
 
 `DeviceSettings` (`device.rs`) describes this machine rather than the user, lives in the device-local `device_settings` row and never syncs:
 
-- `trusted_certificates`: root certificate bundles every provider request trusts. Each needs a non-blank name (at most 1 KiB), valid PEM and no duplicate id or PEM. The API validates DER before a certificate write. `trusted_roots_pem` supplies the composition root TLS policy; invalid roots reject client construction. Lists and files are uncapped.
+- `trusted_certificates`: root certificate bundles every provider request trusts. Each needs a non-blank name (at most 1 KiB), valid PEM and no duplicate id or PEM. The API validates DER before a certificate write. `trusted_roots_pem` supplies the composition root TLS policy; runtime clients skip invalid stored roots and certificate views mark them invalid. Lists have no count cap; each PEM bundle has a 1 MiB guard.
 - `embedding`: which embedding model loads (`V3`, `V4` or `V5`, Eidos; unset prefers Eidos), its token window (unset means 4096) and whether the model stays loaded.
 - `llm_models_dir`: where GGUF downloads go, image models in its `image` folder; unset means the app's own models folder.
 

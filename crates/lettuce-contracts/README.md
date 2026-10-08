@@ -62,12 +62,12 @@ Turn and job `ModelLoading` events carry typed `ModelLoadStage` and `ModelLoadSt
 
 Lorebook and prompt DTOs carry aggregate revisions and operation keys, typed configured-source failures, preview explanations, staged project state and historical source names with deleted markers. Generator commands return existing job DTOs rather than inline inference results.
 
-Provider control commands export the catalog, secret-free account views, saved-or-draft verification requests, verification results and public OpenRouter endpoint metadata to TypeScript. Verification errors carry HTTP status and a redacted provider message in ApiErrorDetails so the UI can display the provider's reason. TrustedCertificateView contains only identity, filename and import time.
+Provider control commands export the catalog, secret-free account views, saved-or-draft verification requests, verification results and public OpenRouter endpoint metadata to TypeScript. Verification errors carry HTTP status and a redacted provider message in ApiErrorDetails so the UI can display the provider's reason. TrustedCertificateView contains identity, filename, import time and validity metadata.
 
 Provider control requests expose draft or saved verification, revisioned account writes with operation ids, cascading deletion, model listing and existence checks, public OpenRouter endpoints and FileSource certificate import. Views carry key presence and certificate metadata with its list revision. InUse and Malformed are explicit error categories; provider errors redact credentials.
 
 Stored certificate views include validity and a typed InvalidPem reason; runtime client construction skips invalid stored roots so users can list and remove them. New imports validate strictly before writing.
 
-Duplicate certificate imports return Conflict with CertificateAlreadyImported and the existing certificate id, separate from operation-id conflicts, preserving the distinct duplicate message at old-code/src/ui/pages/settings/SecurityPage.tsx:208-210.
+Duplicate certificate imports return Conflict with CertificateAlreadyImported and the existing certificate id, separate from operation-id conflicts.
 
-Provider verification preserves string messages, string error types and JSON-stringified error values from old-code/src-tauri/src/providers/util.rs:162-182, with credential redaction. Missing provider text uses typed MissingApiKey or InvalidApiKey details and an absent provider_message.
+Provider verification preserves string messages, string error types and JSON-stringified error values with credential redaction. Missing provider text uses typed MissingApiKey or InvalidApiKey details and an absent provider_message.

@@ -20,7 +20,7 @@ Facts about how `lettuce-settings` relates to the legacy app (2.2.x). The crate 
 - `ui_preferences` uses legacy's key names: `theme`, `settingsCardOpacity`, `customColors`, `customColorPresets`, `chatsViewMode`, `groupChatsViewMode`, `accessibility`, `navigationStyle`, `navigationSide`, `headerStyle`, `navItems`, `navAlign`, `navEdge`, the global `chatAppearance` and `llamaSamplerPresets`. Only the shell read them in legacy, so the backend does not interpret them.
 - `auto_download_character_card_avatars` is legacy `autoDownloadCharacterCardAvatars`, or the older `autoDownloadDiscoveryAvatars`, default on, read like legacy (the first boolean of the two keys). It is typed because character-card import reads it.
 - `DeviceUiStateStore` holds legacy `onboarding`, `tooltips`, `lastSeenAppVersion` and the `appActiveUsage*` counters. A restore keeps an imported legacy install's state, otherwise the previous database's.
-- Certificate metadata retains marker and duplicate checks; the API additionally requires valid DER and imposes no certificate count or file cap (old-code/src/ui/pages/settings/SecurityPage.tsx:203-211).
+- Certificate metadata retains marker and duplicate checks; new API imports additionally require valid DER; there is no certificate count cap and the 1 MiB PEM guard remains (old-code/src/ui/pages/settings/SecurityPage.tsx:203-211).
 - The optional group-chat memory policy beside the direct one matches legacy's settings editor and persistence owner.
 - The legacy import stores `meta.hugging_face_access_token` and `meta.civitai_access_token` at the app-wide secret references (blank ones stay unset, as legacy read them), only where the store has none, so a token already set in the new app is kept. A failed restore removes the ones it wrote.
 - The normalized app-wide direct prompt selection is set by legacy transfer only when the selected source template was admitted.
@@ -32,7 +32,7 @@ Facts about how `lettuce-settings` relates to the legacy app (2.2.x). The crate 
 - Legacy never cleared the creation helper and lorebook entry writer selections when a model was deleted, so they failed with "Model not found" and "Configured lorebook entry generator model could not be resolved". The cleared selection now falls back like an unset one (default model, first text model).
 - Legacy synced and backed up `trustedCertificates`, `embeddingModelVersion`, `embeddingMaxTokens`, `embeddingKeepModelLoaded` and `customLlmModelsDir` with its settings row. They describe one machine, so the rewrite keeps them per device. A v2 backup still carries the certificates and the embedding choice (user decision 2026-09-25).
 - Over-long certificate names are shortened, not dropped.
-- A root the TLS stack cannot parse rejects client construction and reload; legacy skipped it with a warning (old-code/src-tauri/src/tls.rs:26-39).
+- A stored root the TLS stack cannot parse remains stored, is marked invalid in certificate views and is skipped with a warning at runtime, matching legacy (old-code/src-tauri/src/tls.rs:26-39).
 - `embeddingModelVersion` `v3`/`v4` are kept as imported; `v5` is Eidos, and an unset version prefers Eidos. Embedding max tokens are stored clamped to 512..4096 on import.
 - `dynamic_memory.min_similarity_basis_points` is optional: unset lets the embedding model decide (Eidos's published thresholds, 0.35 on v4). The legacy import treats the values legacy wrote on its own (0.32 and 0.35) as unset.
 

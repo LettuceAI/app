@@ -326,7 +326,7 @@ export type ApiError = {
  */
 export type ApiErrorCode = "not_found" | "in_use" | "conflict" | "invalid_input" | "malformed" | "unsupported" | "unavailable" | "cancelled" | "busy" | "internal" | "model_required" | "model_unavailable";
 
-export type ApiErrorDetails = { type: "provider_models_in_use"; models: string[] } | { type: "provider_verification"; status: number | null; provider_message: string } | { type: "invalid_field"; field: string } | { type: "captured_audio"; audio: AssetRef } | { type: "audio_provider_in_use"; characters: CharacterReferenceView[] } | { type: "operation_applied_record_deleted"; command: string; record_id: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "image"; failure: ImageFailureKind } | { type: "speech"; failure: SpeechFailure } | { type: "pending_memory_rewind"; conversation_id: string } | { type: "branch_delete_refused"; reason: BranchDeleteRefusal } | { type: "memory_gate"; gate: MemoryGateReason } | { type: "memory_cycle_dependent"; later_run_id: string } | { type: "memory_cycle_user_edited"; memory_id: string } |
+export type ApiErrorDetails = { type: "certificate_already_imported"; certificate_id: string } | { type: "provider_models_in_use"; models: string[] } | { type: "provider_verification"; status: number | null; provider_message: string | null; reason: ProviderVerificationReason | null } | { type: "invalid_field"; field: string } | { type: "captured_audio"; audio: AssetRef } | { type: "audio_provider_in_use"; characters: CharacterReferenceView[] } | { type: "operation_applied_record_deleted"; command: string; record_id: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "image"; failure: ImageFailureKind } | { type: "speech"; failure: SpeechFailure } | { type: "pending_memory_rewind"; conversation_id: string } | { type: "branch_delete_refused"; reason: BranchDeleteRefusal } | { type: "memory_gate"; gate: MemoryGateReason } | { type: "memory_cycle_dependent"; later_run_id: string } | { type: "memory_cycle_user_edited"; memory_id: string } |
 /**  A prompt write is missing placeholders its kind requires. */
 { type: "prompt_missing_placeholders"; placeholders: string[] } |
 /**  A built-in prompt the app needs cannot be deleted. */
@@ -672,6 +672,8 @@ export type BranchHead = {
 };
 
 export type BuildVariant = "normal" | "cuda";
+
+export type CertificateInvalidReason = "invalid_pem";
 
 export type CertificatesImportRequest = {
 	source: FileSource,
@@ -4113,6 +4115,8 @@ export type ProviderParameterSupportContract = {
 
 export type ProviderProtocolContract = "open_ai_compatible" | "anthropic" | "gemini" | "ollama" | "llama_cpp" | "stable_diffusion";
 
+export type ProviderVerificationReason = "missing_api_key" | "invalid_api_key";
+
 export type ProviderVerified = {
 	valid: boolean,
 	status: number | null,
@@ -4763,6 +4767,8 @@ export type TranscriptionView = {
 };
 
 export type TrustedCertificateView = {
+	valid: boolean,
+	reason: CertificateInvalidReason | null,
 	id: string,
 	name: string,
 	imported_at: number,

@@ -57,3 +57,5 @@ oxlint enforces the import rules: `@tauri-apps/*` may only be imported inside `s
 `index.html` must not contain an inline `<style>` or script, because the shell's content security policy would then drop `'unsafe-inline'` and break React style attributes.
 
 Provider control errors include `in_use` for referenced records and `malformed` for unreadable provider responses. The API client preserves these typed errors and shared failure screens render their localized copy.
+
+Generated provider contracts expose stored-certificate validity with an InvalidPem reason, CertificateAlreadyImported details with the existing id, and optional redacted verification messages with MissingApiKey or InvalidApiKey reasons.

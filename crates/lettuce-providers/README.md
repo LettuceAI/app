@@ -212,6 +212,6 @@ The local llama observer preserves the inference attempt id on load progress, he
 
 Key verification returns the provider's message when the credential is refused. The adapter removes the request's credential and secret-header values, including query-encoded forms, before returning that text. Public OpenRouter endpoint discovery uses the adapter's fixed public endpoint with no account or authorization and returns endpoint tags, names, pricing, context length, uptime and caching support; the authenticated billing reads remain separate operations.
 
-Provider verification preserves string messages, string error types and JSON-stringified error values from old-code/src-tauri/src/providers/util.rs:162-182, with credential redaction. Missing provider text uses typed MissingApiKey or InvalidApiKey details and an absent provider_message.
+Provider verification preserves string messages, string error types and JSON-stringified error values with credential redaction. Missing provider text uses typed MissingApiKey or InvalidApiKey details and an absent provider_message.
 
 Verification error redaction also covers JSON-escaped credentials in stringified error objects. Missing or empty provider messages remain absent so the API can supply typed reason codes.
