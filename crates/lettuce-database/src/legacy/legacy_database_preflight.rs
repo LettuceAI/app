@@ -1139,6 +1139,8 @@ fn plan_legacy_provider_models_in(
                 source_version: 1,
                 observed_at: TimestampMillis::new(created_at),
             },
+            declared_input_scopes: None,
+            declared_output_scopes: None,
             input_modalities,
             output_modalities,
             streaming: if account.streaming_enabled {

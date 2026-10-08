@@ -88,3 +88,5 @@ Model-folder relocation merges folder and retained-root fields into current devi
 The editor API supplies declared scope evidence on save. Declarations mark their modalities Supported without changing explicit Unsupported values. Required capability and modality resolution continues to reject Unknown. Profile duplication preserves configuration and references while the composition root supplies a fresh identity, timestamps and the caller's display name.
 
 Declared scope edits replace previously supported modalities while preserving explicit Unsupported without remote metadata; reported modalities take precedence over echoed statuses.
+
+Optional declared scope lists live in model capability configuration and survive profile reads, copies, backup and sync. Profiles without declarations expose their Supported modalities; legacy import constructors leave the optional declaration fields absent.

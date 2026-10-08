@@ -508,3 +508,41 @@ async fn model_delete_emits_models_settings_changed() {
         |event| matches!(event, dto::ApiEvent::SettingsChanged { section } if section == "models")
     ));
 }
+
+#[tokio::test]
+async fn declared_unsupported_scope_is_returned_without_becoming_supported() {
+    let h = harness(Reply::Text("Hello."));
+    let mut request = draft(&h.context, "scope-unsupported-view");
+    request.model.config["capabilities"]["input_modalities"]["image"] =
+        serde_json::json!("unsupported");
+    let saved = super::model_save(&h.context, request.clone())
+        .await
+        .expect("save");
+    assert_eq!(saved.input_scopes, request.model.input_scopes);
+    assert_eq!(saved.output_scopes, request.model.output_scopes);
+    assert_eq!(
+        saved.config["capabilities"]["input_modalities"]["image"],
+        "unsupported"
+    );
+    let loaded = super::model_get(
+        &h.context,
+        dto::ModelGetRequest {
+            model_id: saved.id.clone(),
+        },
+    )
+    .await
+    .expect("get");
+    assert_eq!(loaded.input_scopes, request.model.input_scopes);
+    let copy = super::model_duplicate(
+        &h.context,
+        dto::ModelDuplicateRequest {
+            model_id: saved.id,
+            expected_revision: saved.revision,
+            display_name: "Copy".into(),
+            client_operation_id: "scope-unsupported-copy".into(),
+        },
+    )
+    .await
+    .expect("duplicate");
+    assert_eq!(copy.input_scopes, request.model.input_scopes);
+}

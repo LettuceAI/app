@@ -76,6 +76,8 @@ Model profile contracts expose catalog/default revisions, profile configuration,
 
 ProviderQuotaLevel maps NearLimit to 75 percent, AlmostExhausted to 90 percent and Exhausted to 100 percent. Only the highest crossed threshold is delivered for one check.
 
-Model views expose supported input and output scopes. Saves without remote metadata replace supported declarations while retaining explicit Unsupported; reported metadata overrides echoed statuses for reported modalities. Model deletion also publishes a models settings change.
+Model views expose saved declared input and output scopes, retaining Unsupported selections. Saves without remote metadata replace supported declarations while retaining explicit Unsupported; reported metadata overrides echoed statuses for reported modalities. Model deletion also publishes a models settings change.
 
 NanoGPT usage requests choose refresh explicitly: cached reads reuse the account result within 300 seconds, stale reads fetch, and refresh forces a fetch; both join an active check.
+
+Optional declared scope lists live in model capability configuration and survive profile reads, copies, backup and sync. Profiles without declarations expose their Supported modalities; legacy import constructors leave the optional declaration fields absent.

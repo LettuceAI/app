@@ -86,6 +86,10 @@ impl ModalityCapabilities {
 pub struct ModelCapabilities {
     pub format_version: u32,
     pub evidence: CapabilityEvidence,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub declared_input_scopes: Option<Vec<Modality>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub declared_output_scopes: Option<Vec<Modality>>,
     pub input_modalities: ModalityCapabilities,
     pub output_modalities: ModalityCapabilities,
     pub streaming: CapabilityStatus,
@@ -113,6 +117,8 @@ impl ModelCapabilities {
         Self {
             format_version: MODEL_CAPABILITIES_FORMAT_VERSION,
             evidence,
+            declared_input_scopes: None,
+            declared_output_scopes: None,
             input_modalities: ModalityCapabilities::unknown(),
             output_modalities: ModalityCapabilities::unknown(),
             streaming: CapabilityStatus::Unknown,

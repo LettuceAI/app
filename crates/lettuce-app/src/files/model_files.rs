@@ -127,6 +127,8 @@ where
                     source_version: 1,
                     observed_at: now,
                 },
+                declared_input_scopes: None,
+                declared_output_scopes: None,
                 input_modalities: modalities(&imported.input_scopes),
                 output_modalities: modalities(&imported.output_scopes),
                 streaming: if account.streaming_enabled {

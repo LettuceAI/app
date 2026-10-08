@@ -155,3 +155,5 @@ Dynamic-memory backup version 6 preserves the cycle changed-item journal so rest
 Provider graph version 4 carries pending staged projects, frozen draft prompt documents and name-bearing staged commit receipts. These preserve source identity after deletion; legacy staged projects were held only in the process registry (`old-code/src-tauri/src/chat_manager/lorebook_generator/state.rs:168-177`).
 
 Provider graph version 5 preserves frozen creation model names alongside ids; deleting a live model no longer blocks restoring its history. Legacy model deletion did not retain a restrictive history reference (old-code/src-tauri/src/storage_manager/models.rs:301-306).
+
+Saved input/output scope declarations remain distinct from capability status, preserving an editor selection even when it is explicitly Unsupported (`old-code/src-tauri/src/storage_manager/models.rs:126-159`). Existing profiles and legacy imports without declaration fields expose Supported modalities. The optional fields travel inside the existing portable model configuration.

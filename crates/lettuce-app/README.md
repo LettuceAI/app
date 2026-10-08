@@ -635,6 +635,8 @@ Model and provider commits signal the existing change-feed worker, which coalesc
 
 NanoGPT usage is an account-scoped read with typed credential, transport, provider-status and malformed-response failures. Inference and image ports signal a detached check only after successful completion. Checks coalesce per account for 300 seconds after the preceding check finishes, with one check in flight; an explicit usage read starts a fresh check or joins the current one. No periodic task runs. Shutdown cancels checks and releases their in-flight state. Warning thresholds use the primary weekly, daily or monthly window and persist before ProviderQuota is emitted, so reopening the database preserves deduplication. Events carry typed warning levels; localization belongs to the UI.
 
-Model views expose supported input and output scopes. Saves without remote metadata replace supported declarations while retaining explicit Unsupported; reported metadata overrides echoed statuses for reported modalities. Model deletion also publishes a models settings change.
+Model views expose saved declared input and output scopes, retaining Unsupported selections. Saves without remote metadata replace supported declarations while retaining explicit Unsupported; reported metadata overrides echoed statuses for reported modalities. Model deletion also publishes a models settings change.
 
 NanoGPT usage requests choose refresh explicitly: cached reads reuse the account result within 300 seconds, stale reads fetch, and refresh forces a fetch; both join an active check.
+
+Optional declared scope lists live in model capability configuration and survive profile reads, copies, backup and sync. Profiles without declarations expose their Supported modalities; legacy import constructors leave the optional declaration fields absent.

@@ -1837,6 +1837,8 @@ fn map_provider_models(
                     source_version: 1,
                     observed_at: TimestampMillis::new(row.created_at.max(0)),
                 },
+                declared_input_scopes: None,
+                declared_output_scopes: None,
                 input_modalities: input,
                 output_modalities: output,
                 streaming: if account.streaming_enabled {

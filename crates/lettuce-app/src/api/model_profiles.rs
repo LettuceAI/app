@@ -33,6 +33,33 @@ impl From<ApiOperationError> for Failure {
     }
 }
 
+fn modality(scope: dto::ModelModality) -> lettuce_models::Modality {
+    match scope {
+        dto::ModelModality::Text => lettuce_models::Modality::Text,
+        dto::ModelModality::Image => lettuce_models::Modality::Image,
+        dto::ModelModality::Audio => lettuce_models::Modality::Audio,
+    }
+}
+
+fn declared_view(
+    declarations: &Option<Vec<lettuce_models::Modality>>,
+    capabilities: &ModalityCapabilities,
+) -> Vec<dto::ModelModality> {
+    declarations
+        .as_ref()
+        .map(|scopes| {
+            scopes
+                .iter()
+                .map(|scope| match scope {
+                    lettuce_models::Modality::Text => dto::ModelModality::Text,
+                    lettuce_models::Modality::Image => dto::ModelModality::Image,
+                    lettuce_models::Modality::Audio => dto::ModelModality::Audio,
+                })
+                .collect()
+        })
+        .unwrap_or_else(|| scopes(capabilities))
+}
+
 fn scopes(capabilities: &ModalityCapabilities) -> Vec<dto::ModelModality> {
     [
         (dto::ModelModality::Text, capabilities.text),
@@ -56,8 +83,14 @@ pub(super) fn view(model: ModelProfile) -> Result<dto::ModelView, ApiError> {
             ModelKind::Embedding => dto::ModelKindContract::Embedding,
             ModelKind::Speech => dto::ModelKindContract::Speech,
         },
-        input_scopes: scopes(&model.config.capabilities.input_modalities),
-        output_scopes: scopes(&model.config.capabilities.output_modalities),
+        input_scopes: declared_view(
+            &model.config.capabilities.declared_input_scopes,
+            &model.config.capabilities.input_modalities,
+        ),
+        output_scopes: declared_view(
+            &model.config.capabilities.declared_output_scopes,
+            &model.config.capabilities.output_modalities,
+        ),
         config: serde_json::to_value(model.config)
             .map_err(|_| api_error(ApiErrorCode::Internal, "model config cannot be read"))?,
         revision: model.revision.get(),
@@ -263,6 +296,24 @@ pub async fn model_save(
                     &mut capabilities.output_modalities,
                 );
             }
+            capabilities.declared_input_scopes = Some(
+                request
+                    .model
+                    .input_scopes
+                    .iter()
+                    .copied()
+                    .map(modality)
+                    .collect(),
+            );
+            capabilities.declared_output_scopes = Some(
+                request
+                    .model
+                    .output_scopes
+                    .iter()
+                    .copied()
+                    .map(modality)
+                    .collect(),
+            );
             capabilities.evidence = CapabilityEvidence {
                 source: if remote_used {
                     CapabilityEvidenceSource::ProviderReported

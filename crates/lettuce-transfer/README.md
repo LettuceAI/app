@@ -167,3 +167,5 @@ Memory backup version 7 carries the failure each space's status stopped showing,
 Provider backup graph version 5 includes frozen prompt documents on entry and keyword runs, staged commit name snapshots, and created staged lorebook projects with their source references. Restore validates project identities, document roles and the complete source graph before inserting them.
 
 Provider backup graph version 5 includes frozen model display names in creation inference profiles. Historical model ids do not require a live model in the restored catalog.
+
+Optional declared scope lists live in model capability configuration and survive profile reads, copies, backup and sync. Profiles without declarations expose their Supported modalities; legacy import constructors leave the optional declaration fields absent.
