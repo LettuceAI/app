@@ -1252,7 +1252,10 @@ pub(crate) fn sync_merge_workflow(
             || receipt.lorebook_revision.get() == 0
             || receipt.lorebook_name.trim().is_empty()
             || current.stage != CreationStage::AwaitingConfirmation
-            || !matches!(current.draft, lettuce_creation::CreationDraft::Lorebook { .. })
+            || !matches!(
+                current.draft,
+                lettuce_creation::CreationDraft::Lorebook { .. }
+            )
         {
             return Err(CreationRepositoryError::Invalid);
         }
@@ -4927,14 +4930,26 @@ mod tests {
         };
         let receipt = database.apply_new_lorebook(request.clone()).expect("apply");
         let mut connection = database.connection().expect("connection");
-        connection.execute("DELETE FROM lorebooks WHERE id=?1", [receipt.lorebook_id.to_string()])
+        connection
+            .execute(
+                "DELETE FROM lorebooks WHERE id=?1",
+                [receipt.lorebook_id.to_string()],
+            )
             .expect("history must not prevent hard delete");
         let transaction = connection.transaction().expect("transaction");
         let backup = read_workflows_in(&transaction).expect("backup");
-        assert_eq!(serde_json::to_value(&backup[0].lorebook_receipt).expect("json")["lorebook_name"], "Snapshot world");
+        assert_eq!(
+            serde_json::to_value(&backup[0].lorebook_receipt).expect("json")["lorebook_name"],
+            "Snapshot world"
+        );
         transaction.commit().expect("commit");
         drop(connection);
-        assert_eq!(database.apply_new_lorebook(request).expect("replay after delete"), receipt);
+        assert_eq!(
+            database
+                .apply_new_lorebook(request)
+                .expect("replay after delete"),
+            receipt
+        );
         let restored = Database::open_in_memory().expect("restored");
         let mut connection = restored.connection().expect("connection");
         let transaction = connection.transaction().expect("transaction");
@@ -4957,21 +4972,31 @@ mod tests {
             },
             10,
         );
-        let receipt = database.apply_new_lorebook(ConfirmedLorebookApply {
-            workflow_id: workflow.id,
-            expected_workflow_revision: workflow.revision,
-            proposal_id,
-            destination_lorebook_id: LorebookId::new(),
-            now: TimestampMillis::new(15),
-        }).expect("apply");
-        database.connection().expect("connection")
-            .execute("DELETE FROM lorebooks WHERE id=?1", [receipt.lorebook_id.to_string()])
+        let receipt = database
+            .apply_new_lorebook(ConfirmedLorebookApply {
+                workflow_id: workflow.id,
+                expected_workflow_revision: workflow.revision,
+                proposal_id,
+                destination_lorebook_id: LorebookId::new(),
+                now: TimestampMillis::new(15),
+            })
+            .expect("apply");
+        database
+            .connection()
+            .expect("connection")
+            .execute(
+                "DELETE FROM lorebooks WHERE id=?1",
+                [receipt.lorebook_id.to_string()],
+            )
             .expect("delete before first sync");
         sync_once(&database, &peer, 20);
         sync_once(&database, &peer, 21);
         let mut connection = peer.connection().expect("connection");
         let transaction = connection.transaction().expect("transaction");
-        assert_eq!(read_workflows_in(&transaction).expect("peer workflows")[0].lorebook_receipt, Some(receipt));
+        assert_eq!(
+            read_workflows_in(&transaction).expect("peer workflows")[0].lorebook_receipt,
+            Some(receipt)
+        );
     }
 
     #[test]

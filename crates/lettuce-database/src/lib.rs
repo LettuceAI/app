@@ -2568,14 +2568,30 @@ mod tests {
         for (table, column, name) in [
             ("turn_lorebooks", "lorebook_id", "lorebook_name"),
             ("conversation_turns", "prompt_document_id", "prompt_name"),
-            ("creation_lorebook_entry_runs", "lorebook_id", "lorebook_name"),
+            (
+                "creation_lorebook_entry_runs",
+                "lorebook_id",
+                "lorebook_name",
+            ),
             ("creation_lorebook_entry_runs", "prompt_id", "prompt_name"),
             ("creation_lorebook_keyword_runs", "prompt_id", "prompt_name"),
             ("creation_staged_lorebook_runs", "prompt_id", "prompt_name"),
-            ("creation_staged_lorebook_writer_runs", "prompt_id", "prompt_name"),
-            ("creation_lorebook_apply_receipts", "lorebook_id", "lorebook_name"),
+            (
+                "creation_staged_lorebook_writer_runs",
+                "prompt_id",
+                "prompt_name",
+            ),
+            (
+                "creation_lorebook_apply_receipts",
+                "lorebook_id",
+                "lorebook_name",
+            ),
             ("companion_soul_writer_runs", "prompt_id", "prompt_name"),
-            ("prompt_documents", "derived_source_id", "derived_source_name"),
+            (
+                "prompt_documents",
+                "derived_source_id",
+                "derived_source_name",
+            ),
         ] {
             let foreign: i64 = connection
                 .query_row(
