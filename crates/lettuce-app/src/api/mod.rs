@@ -26,6 +26,9 @@ mod jobs;
 mod local_models;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub(crate) mod local_runtime_events;
+mod lorebook_jobs;
+mod lorebook_projects;
+mod lorebooks;
 mod mapping;
 mod memory;
 mod memory_control;
@@ -35,6 +38,7 @@ mod memory_worker;
 mod messages;
 mod models;
 mod ollama;
+mod prompts;
 mod scenes;
 mod speech;
 mod startup;
@@ -68,6 +72,10 @@ mod llama_events_tests;
 #[cfg(test)]
 mod local_models_tests;
 #[cfg(test)]
+mod lorebook_jobs_tests;
+#[cfg(test)]
+mod lorebooks_tests;
+#[cfg(test)]
 mod memory_control_tests;
 #[cfg(test)]
 mod memory_tests;
@@ -75,6 +83,8 @@ mod memory_tests;
 mod messages_tests;
 #[cfg(test)]
 mod models_tests;
+#[cfg(test)]
+mod prompts_tests;
 #[cfg(test)]
 mod scenes_tests;
 #[cfg(test)]
@@ -148,6 +158,11 @@ pub use local_models::{
     local_model_adopt, local_model_delete, local_models_dir_get, local_models_dir_set,
     local_models_list,
 };
+pub use lorebooks::{
+    lorebook_archive, lorebook_create, lorebook_delete, lorebook_entries_mutate, lorebook_get,
+    lorebook_restore, lorebook_trigger_preview, lorebook_update_metadata, lorebooks_list,
+    tokens_count,
+};
 pub use memory_models::{
     companion_emotion_install, companion_emotion_remove, companion_emotion_status,
     embedding_choose, embedding_compare, embedding_install, embedding_remove, embedding_status,
@@ -161,6 +176,11 @@ pub use messages::{
 };
 pub use models::{InstalledModels, ModelLoad, ModelLoader, NoModels};
 pub use ollama::{ollama_model_delete, ollama_models_list, ollama_pull};
+pub use prompts::{
+    default_character_rules, prompt_app_default_set, prompt_builtin_reset, prompt_create,
+    prompt_delete, prompt_get, prompt_placeholders, prompt_preview, prompt_update, prompt_validate,
+    prompts_list,
+};
 pub use scenes::{
     message_scene_image_approve, message_scene_image_dismiss, message_scene_image_generate,
     message_scene_prompt_generate,
@@ -211,3 +231,7 @@ pub use memory_read::memory_get;
 mod local_runtime_review_tests;
 
 mod serial_events;
+
+pub use jobs::LorebookHandler;
+pub use lorebook_jobs::{lorebook_entry_draft, lorebook_keywords_draft};
+pub use lorebook_projects::*;

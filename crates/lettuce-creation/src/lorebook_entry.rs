@@ -69,6 +69,7 @@ pub struct LorebookEntryGenerationRun {
     pub profile: ResolvedInferenceProfile,
     pub prompt_id: PromptDocumentId,
     pub prompt_name: String,
+    pub prompt_snapshot: lettuce_context::PromptDocument,
     pub prompt_revision: Revision,
     pub prompt_values: LorebookEntryPromptValues,
     pub fallback_format: LorebookEntryFallbackFormat,
@@ -125,6 +126,12 @@ impl LorebookEntryGenerationRun {
         let values = &self.prompt_values;
         if self.prompt_revision.get() == 0
             || self.prompt_name.trim().is_empty()
+            || self.prompt_snapshot.id != self.prompt_id
+            || self.prompt_snapshot.revision != self.prompt_revision
+            || self.prompt_snapshot.name != self.prompt_name
+            || self.prompt_snapshot.purpose != lettuce_context::PromptPurpose::LorebookEntryWriter
+            || self.prompt_snapshot.status != lettuce_context::LifecycleStatus::Active
+            || self.prompt_snapshot.validate().is_err()
             || self.created_at.get() < 0
             || values.lorebook_name.trim().is_empty()
             || values.character_name.trim().is_empty()
@@ -201,6 +208,16 @@ pub trait LorebookEntryRunRepository: Send + Sync {
         request_id: RequestId,
         checkpoint: LorebookEntryAttemptCheckpoint,
     ) -> Result<Vec<LorebookEntryAttemptCheckpoint>, LorebookEntryRunRepositoryError>;
+
+    fn commit_lorebook_entry_attempt_for_job_attempt(
+        &self,
+        request_id: RequestId,
+        checkpoint: LorebookEntryAttemptCheckpoint,
+        job_attempt: Option<u32>,
+    ) -> Result<Vec<LorebookEntryAttemptCheckpoint>, LorebookEntryRunRepositoryError> {
+        let _ = job_attempt;
+        self.commit_lorebook_entry_attempt(request_id, checkpoint)
+    }
 }
 
 impl LorebookEntryAttemptCheckpoint {

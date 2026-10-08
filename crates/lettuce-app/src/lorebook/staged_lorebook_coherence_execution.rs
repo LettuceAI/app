@@ -53,6 +53,7 @@ pub enum StagedLorebookCoherenceExecutionError {
 pub struct StagedLorebookCoherenceExecutionCoordinator<'a, R: ?Sized, I: ?Sized> {
     repository: &'a R,
     inference: &'a I,
+    job_attempt: Option<u32>,
 }
 
 impl<'a, R: ?Sized, I: ?Sized> StagedLorebookCoherenceExecutionCoordinator<'a, R, I> {
@@ -61,6 +62,7 @@ impl<'a, R: ?Sized, I: ?Sized> StagedLorebookCoherenceExecutionCoordinator<'a, R
         Self {
             repository,
             inference,
+            job_attempt: None,
         }
     }
 }
@@ -74,6 +76,11 @@ where
         + ?Sized,
     I: InferencePort + ?Sized,
 {
+    pub fn with_job_attempt(mut self, attempt: u32) -> Self {
+        self.job_attempt = Some(attempt);
+        self
+    }
+
     pub async fn run(
         &self,
         project_request_id: RequestId,
@@ -189,10 +196,11 @@ where
         }
         let stored = self
             .repository
-            .commit_staged_lorebook_coherence_attempt(
+            .commit_staged_lorebook_coherence_attempt_for_job_attempt(
                 project_request_id,
                 coherence_request_id,
                 attempt,
+                self.job_attempt,
             )
             .map_err(StagedLorebookCoherenceExecutionError::Repository)?;
         let run = stored

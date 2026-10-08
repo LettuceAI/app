@@ -54,16 +54,30 @@ pub enum LorebookEntryAdmissionError {
 pub struct LorebookEntryAdmissionCoordinator<'a, R: ?Sized, J: ?Sized> {
     repository: &'a R,
     jobs: &'a J,
+    operation: Option<(String, String)>,
 }
 
 impl<'a, R: ?Sized, J: ?Sized> LorebookEntryAdmissionCoordinator<'a, R, J> {
     #[must_use]
     pub const fn new(repository: &'a R, jobs: &'a J) -> Self {
-        Self { repository, jobs }
+        Self {
+            repository,
+            jobs,
+            operation: None,
+        }
+    }
+    pub(crate) fn with_optional_operation(mut self, operation: Option<(String, String)>) -> Self {
+        self.operation = operation;
+        self
+    }
+
+    pub fn with_operation(mut self, key: String, digest: String) -> Self {
+        self.operation = Some((key, digest));
+        self
     }
 }
 
-impl<R: LorebookEntryRunRepository + ?Sized, J: JobStore + ?Sized>
+impl<R: LorebookEntryRunRepository + crate::LorebookJobAdmission + ?Sized, J: JobStore + ?Sized>
     LorebookEntryAdmissionCoordinator<'_, R, J>
 {
     pub fn admit(
@@ -76,27 +90,29 @@ impl<R: LorebookEntryRunRepository + ?Sized, J: JobStore + ?Sized>
         {
             return Err(LorebookEntryAdmissionError::InvalidInput);
         }
-        match self.repository.load_lorebook_entry_run(request.request_id) {
-            Ok(run) => {
-                let expected = run_from_request(&request, run.job_id);
-                if run != expected {
-                    return Err(LorebookEntryAdmissionError::Run(
-                        LorebookEntryRunRepositoryError::Conflict,
-                    ));
+        if self.operation.is_none() {
+            match self.repository.load_lorebook_entry_run(request.request_id) {
+                Ok(run) => {
+                    let expected = run_from_request(&request, run.job_id);
+                    if run != expected {
+                        return Err(LorebookEntryAdmissionError::Run(
+                            LorebookEntryRunRepositoryError::Conflict,
+                        ));
+                    }
+                    let job = self
+                        .jobs
+                        .get(run.job_id)?
+                        .ok_or(LorebookEntryAdmissionError::InvalidInput)?;
+                    validate_job(&run, &job)?;
+                    return Ok(LorebookEntryAdmission {
+                        run,
+                        job,
+                        created: false,
+                    });
                 }
-                let job = self
-                    .jobs
-                    .get(run.job_id)?
-                    .ok_or(LorebookEntryAdmissionError::InvalidInput)?;
-                validate_job(&run, &job)?;
-                return Ok(LorebookEntryAdmission {
-                    run,
-                    job,
-                    created: false,
-                });
+                Err(LorebookEntryRunRepositoryError::NotFound) => {}
+                Err(error) => return Err(error.into()),
             }
-            Err(LorebookEntryRunRepositoryError::NotFound) => {}
-            Err(error) => return Err(error.into()),
         }
         let idempotency_key =
             IdempotencyKey::new(format!("lorebook-entry-generator-{}", request.request_id))
@@ -106,26 +122,34 @@ impl<R: LorebookEntryRunRepository + ?Sized, J: JobStore + ?Sized>
             request.conversation_id.to_string(),
         )
         .map_err(|_| LorebookEntryAdmissionError::InvalidInput)?;
-        let admitted = self.jobs.create_or_get(
-            JobSpec::new(
-                JobKind::CreationRun,
-                subject,
-                OutcomeRef::Request(request.request_id),
-            )
-            .with_idempotency_key(idempotency_key)
-            .with_resources(vec![
-                ResourceClass::Network,
-                ResourceClass::ModelLoad,
-                ResourceClass::DiskRead,
-                ResourceClass::DiskWrite,
-                ResourceClass::Cpu,
-            ])
-            .with_priority(JobPriority::Interactive)
-            .with_policies(RecoveryPolicy::Restart, CancellationPolicy::Cooperative),
-        )?;
-        let run = run_from_request(&request, admitted.job.id);
+        let spec = JobSpec::new(
+            JobKind::CreationRun,
+            subject,
+            OutcomeRef::Request(request.request_id),
+        )
+        .with_idempotency_key(idempotency_key)
+        .with_resources(vec![
+            ResourceClass::Network,
+            ResourceClass::ModelLoad,
+            ResourceClass::DiskRead,
+            ResourceClass::DiskWrite,
+            ResourceClass::Cpu,
+        ])
+        .with_priority(JobPriority::Interactive)
+        .with_policies(RecoveryPolicy::Restart, CancellationPolicy::Cooperative);
+        let run = run_from_request(&request, lettuce_types::JobId::new());
         run.validate()?;
-        let run = self.repository.admit_lorebook_entry_run(run)?;
+        let (job, created, input) = self.repository.admit_lorebook_job(
+            spec,
+            lettuce_database::LorebookJobInput::Entry(run),
+            self.operation
+                .as_ref()
+                .map(|(key, digest)| (key.as_str(), digest.as_str())),
+        )?;
+        let lettuce_database::LorebookJobInput::Entry(run) = input else {
+            return Err(LorebookEntryAdmissionError::InvalidInput);
+        };
+        let admitted = lettuce_jobs::CreateJobResult { job, created };
         validate_job(&run, &admitted.job)?;
         Ok(LorebookEntryAdmission {
             run,
@@ -155,6 +179,7 @@ fn run_from_request(
         profile: request.profile.clone(),
         prompt_id: request.prompt.id,
         prompt_name: request.prompt.name.clone(),
+        prompt_snapshot: request.prompt.clone(),
         prompt_revision: request.prompt.revision,
         prompt_values: request.prompt_values.clone(),
         fallback_format: request.fallback_format,

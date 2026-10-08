@@ -797,6 +797,158 @@ where
     /// rendered from the live cast, the selected branch and, when given, a
     /// user message not sent yet; nothing is sent to a provider. `None` for a
     /// one-to-one chat.
+    /// The render context `document` gets as the prompt of the selected
+    /// branch's next turn, read from live sources the way assembly reads
+    /// them. A group renders for `speaker`, else its first enabled member.
+    /// Memory is the conversation's stored summary and current memories.
+    /// Returns the context and whether scene entries are left out.
+    pub(crate) async fn prompt_preview_context(
+        &self,
+        conversation_id: lettuce_types::ConversationId,
+        document: &lettuce_context::PromptDocument,
+        speaker: Option<lettuce_types::CharacterId>,
+        now: TimestampMillis,
+    ) -> Result<(lettuce_context::PromptRenderContext, bool), ConversationGenerationInputError>
+    {
+        let unavailable = || {
+            ConversationGenerationInputError::Context(ContextAssemblyError::ConversationUnavailable)
+        };
+        let aggregate = ConversationReader::get(self.repository, conversation_id)
+            .map_err(ConversationGenerationInputError::Repository)?;
+        let branch_id = aggregate.conversation.active_branch_id;
+        let timeline = self.timeline(conversation_id, branch_id)?;
+        let source_message_id = aggregate
+            .branches
+            .iter()
+            .find(|branch| branch.id == branch_id)
+            .and_then(|branch| branch.head_message_id)
+            .unwrap_or_else(lettuce_types::MessageId::new);
+        let group = matches!(aggregate.conversation.kind, ConversationKind::Group(_));
+        let selected_speaker = if group {
+            let live = crate::generation::live_sources::live_group(
+                self.repository,
+                &aggregate.conversation,
+            )
+            .map_err(|_| unavailable())?;
+            let mut participants = crate::generation::live_sources::effective_participants(
+                &aggregate.conversation,
+                live.as_ref().and_then(|live| live.profile.as_ref()),
+            );
+            participants.sort_by_key(|participant| participant.ordinal);
+            let participant = participants
+                .iter()
+                .filter(|participant| participant.enabled)
+                .find(|participant| match (participant.source, speaker) {
+                    (lettuce_conversations::ParticipantSource::Character(id), Some(speaker)) => {
+                        id == speaker
+                    }
+                    (lettuce_conversations::ParticipantSource::Character(_), None) => true,
+                    _ => false,
+                })
+                .ok_or(ConversationGenerationInputError::InvalidTurn)?;
+            Some(SelectedSpeakerDecision {
+                participant_id: participant.id,
+                method: SpeakerDecisionMethod::Explicit,
+                fallback: lettuce_conversations::SpeakerFallback::None,
+                reference: None,
+                rationale_summary: None,
+                decision_model: None,
+                usage_event_id: None,
+            })
+        } else {
+            None
+        };
+        let global_settings = lettuce_settings::GlobalSettingsStore::load(self.repository)
+            .map_err(ConversationGenerationInputError::Settings)?
+            .settings;
+        let live_memory = crate::generation::live_sources::live_memory(
+            self.repository,
+            &aggregate.conversation,
+            &global_settings,
+        )
+        .map_err(|_| unavailable())?;
+        let memory_mode = match live_memory.as_ref().map(|memory| memory.mode) {
+            Some(MemoryModeSnapshot::Dynamic)
+                if !group && !global_settings.dynamic_memory.enabled =>
+            {
+                MemoryModeSnapshot::Manual
+            }
+            Some(mode) => mode,
+            None => MemoryModeSnapshot::Disabled,
+        };
+        let dynamic_memory = memory_mode == MemoryModeSnapshot::Dynamic;
+        let memory = match memory_mode {
+            MemoryModeSnapshot::Disabled => None,
+            _ => self.manual_memory_input(conversation_id, branch_id, group)?,
+        };
+        let clock = crate::companion::companion_clock::companion_clock_context(
+            self.repository,
+            &aggregate.conversation,
+        )
+        .map_err(|_| unavailable())?;
+        let reference_now = clock.effective_now(now);
+        let operation = lettuce_conversations::GenerationOperation::Continue;
+        let images = &global_settings.image_generation;
+        let prompt_runtime = PromptRuntimeFacts {
+            scene_generation_enabled: images.scene_enabled,
+            avatar_generation_enabled: images.avatar_enabled,
+            dynamic_memory_enabled: dynamic_memory,
+            time_awareness_enabled: clock.time_awareness_enabled(),
+            conversation_message_count: Some(conversation_message_count(
+                &timeline.items,
+                operation,
+                source_message_id,
+            )),
+            ..Default::default()
+        };
+        let mut prompt_values = lettuce_conversations::PromptRuntimeValues {
+            content_rules: Some(crate::generation::pure_mode_rules::content_rules(
+                self.repository,
+                global_settings.pure_mode,
+            )),
+            ..Default::default()
+        };
+        crate::companion::companion_clock::fill_time_values(&mut prompt_values, reference_now);
+        let window = history_window(&global_settings, dynamic_memory, group);
+        let assembler = ConversationContextAssembler::previewing(self.repository, document)
+            .map_err(ConversationGenerationInputError::Context)?;
+        assembler
+            .assemble(ContextRequest {
+                conversation_id,
+                branch_id,
+                branch_path: timeline
+                    .branch_path
+                    .iter()
+                    .map(|branch| branch.id)
+                    .collect(),
+                source_message_id,
+                operation,
+                swap_roles: false,
+                guidance: None,
+                window,
+                selected_speaker,
+                capabilities: Default::default(),
+                safety: SafetyContext::Standard,
+                prompt_runtime,
+                prompt_values,
+                reference_time: reference_now,
+                memory,
+                timeline: context_timeline(
+                    timeline.items,
+                    window,
+                    usize::from(global_settings.lorebook_scan_depth),
+                    source_message_id,
+                ),
+            })
+            .await
+            .map_err(ConversationGenerationInputError::Context)?;
+        assembler
+            .captured_preview()
+            .ok_or(ConversationGenerationInputError::Context(
+                ContextAssemblyError::PromptRender,
+            ))
+    }
+
     pub(crate) fn speaker_selection_preview(
         &self,
         conversation_id: lettuce_types::ConversationId,

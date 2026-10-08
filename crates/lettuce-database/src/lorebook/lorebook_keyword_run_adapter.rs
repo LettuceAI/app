@@ -205,6 +205,15 @@ impl LorebookKeywordRunRepository for Database {
         request_id: RequestId,
         checkpoint: LorebookKeywordAttemptCheckpoint,
     ) -> Result<Vec<LorebookKeywordAttemptCheckpoint>, LorebookKeywordRunRepositoryError> {
+        self.commit_lorebook_keyword_attempt_for_job_attempt(request_id, checkpoint, None)
+    }
+
+    fn commit_lorebook_keyword_attempt_for_job_attempt(
+        &self,
+        request_id: RequestId,
+        checkpoint: LorebookKeywordAttemptCheckpoint,
+        job_attempt: Option<u32>,
+    ) -> Result<Vec<LorebookKeywordAttemptCheckpoint>, LorebookKeywordRunRepositoryError> {
         checkpoint.validate()?;
         let mut connection = self.connection().map_err(failure)?;
         let transaction = connection
@@ -229,6 +238,16 @@ impl LorebookKeywordRunRepository for Database {
         {
             return Err(LorebookKeywordRunRepositoryError::Conflict);
         }
+        let run = load_in(&transaction, request_id)?
+            .ok_or(LorebookKeywordRunRepositoryError::NotFound)?;
+        crate::job_adapter::ensure_job_attempt_in(
+            &transaction,
+            run.job_id,
+            job_attempt,
+            checkpoint.completed_at,
+            false,
+        )
+        .map_err(|_| LorebookKeywordRunRepositoryError::Conflict)?;
         attempts.push(checkpoint);
         validate_lorebook_keyword_attempts(&attempts)?;
         let encoded = encode_versioned(&attempts, ATTEMPTS_FORMAT_VERSION).map_err(failure)?;

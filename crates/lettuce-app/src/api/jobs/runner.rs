@@ -107,6 +107,7 @@ impl JobHandlers {
             Arc::new(super::local::ModelPullHandler),
             Arc::new(super::local::ModelsFolderMoveHandler),
             Arc::new(super::text::TextFeatureHandler),
+            Arc::new(super::lorebook::LorebookHandler),
             Arc::new(super::memory::MemoryExtractionHandler),
             Arc::new(super::memory::SoulWriterHandler),
             Arc::new(super::image::ImageGenerateHandler),

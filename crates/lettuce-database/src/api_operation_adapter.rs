@@ -1,3 +1,5 @@
+use lettuce_types::{RequestId, Revision};
+use lettuce_creation::{StagedLorebookPlanningRun, StagedLorebookRepositoryError};
 use lettuce_transfer::BackupApiOperationReceipt;
 use lettuce_types::TimestampMillis;
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
@@ -494,5 +496,173 @@ mod tests {
             .query_row("SELECT count(*) FROM app_usage_days", [], |row| row.get(0))
             .expect("count");
         assert_eq!(count, 0);
+    }
+}
+
+impl ApiOperationTransaction<'_, '_> {
+    pub fn update_lorebook_metadata(&self, id: lettuce_types::LorebookId, expected: lettuce_types::Revision, metadata: lettuce_context::LorebookMetadataDraft, now: TimestampMillis) -> Result<lettuce_context::LorebookDetails, lettuce_context::LorebookRepositoryError> {
+        metadata.validate()?;
+        let mut details = crate::lorebook::lorebook_adapter::load_required(self.transaction, id)?;
+        details.book.name = metadata.name;
+        details.book.detection_policy = metadata.detection_policy;
+        details.book.icon_asset_id = metadata.icon_asset_id;
+        details.book.behavior_version = metadata.behavior_version;
+        details.book.revision = expected.next().map_err(|_| lettuce_context::LorebookRepositoryError::Conflict)?;
+        details.book.updated_at = now;
+        crate::lorebook::lorebook_adapter::replace_lorebook_details(self.transaction, expected, &details)
+    }
+
+    pub fn mutate_lorebook_entries(&self, id: lettuce_types::LorebookId, expected: lettuce_types::Revision, mutations: Vec<lettuce_context::LorebookEntryMutation>, now: TimestampMillis) -> Result<lettuce_context::LorebookDetails, lettuce_context::LorebookRepositoryError> {
+        crate::lorebook::lorebook_adapter::mutate_entries_in(self.transaction, id, expected, mutations, now).map(|result| result.details)
+    }
+
+    pub fn set_lorebook_status(&self, id: lettuce_types::LorebookId, expected: lettuce_types::Revision, status: lettuce_context::LifecycleStatus, now: TimestampMillis) -> Result<lettuce_context::LorebookDetails, lettuce_context::LorebookRepositoryError> {
+        let mut details = crate::lorebook::lorebook_adapter::load_required(self.transaction, id)?;
+        details.book.status = status;
+        details.book.revision = expected.next().map_err(|_| lettuce_context::LorebookRepositoryError::Conflict)?;
+        details.book.updated_at = now;
+        crate::lorebook::lorebook_adapter::replace_lorebook_details(self.transaction, expected, &details)
+    }
+
+    pub fn delete_lorebook(&self, id: lettuce_types::LorebookId, expected: lettuce_types::Revision, now: TimestampMillis) -> Result<crate::SourceDeletion, crate::SourceDeleteError> {
+        crate::catalog::source_delete::delete_lorebook_in(self.transaction, id, expected, now)
+    }
+
+    pub fn delete_prompt(&self, id: lettuce_types::PromptDocumentId, expected: lettuce_types::Revision, now: TimestampMillis) -> Result<crate::SourceDeletion, crate::SourceDeleteError> {
+        crate::catalog::source_delete::delete_prompt_in(self.transaction, id, expected, now)
+    }
+
+    pub fn update_prompt(&self, id: lettuce_types::PromptDocumentId, expected: lettuce_types::Revision, metadata: lettuce_context::PromptMetadataDraft, edits: Vec<lettuce_context::PromptEntryEdit>, now: TimestampMillis) -> Result<lettuce_context::PromptDocument, lettuce_context::PromptRepositoryError> {
+        crate::catalog::prompt_adapter::revise_document_in(self.transaction, id, expected, metadata, edits, now)
+    }
+}
+
+impl ApiOperationTransaction<'_, '_> {
+    pub fn retry_staged_lorebook_planner(
+        &self,
+        request_id: RequestId,
+        retry_id: RequestId,
+        expected_revision: Revision,
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError> {
+        crate::lorebook::staged_lorebook_adapter::retry_staged_lorebook_planner_in(self.transaction, request_id, retry_id, expected_revision, now)
+    }
+
+    pub fn edit_staged_lorebook_outline(
+        &self,
+        request_id: RequestId,
+        expected_revision: Revision,
+        outline: Vec<lettuce_creation::StagedLorebookEntryPlan>,
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError> {
+        crate::lorebook::staged_lorebook_adapter::edit_staged_lorebook_outline_in(self.transaction, request_id, expected_revision, outline, now)
+    }
+
+    pub fn cancel_staged_lorebook(
+        &self,
+        request_id: RequestId,
+        expected_revision: Revision,
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError> {
+        crate::lorebook::staged_lorebook_adapter::cancel_staged_lorebook_in(self.transaction, request_id, expected_revision, now)
+    }
+
+    pub fn commit_staged_lorebook(
+        &self,
+        request: lettuce_creation::StagedLorebookCommitRequest,
+    ) -> Result<lettuce_creation::StagedLorebookCommitReceipt, StagedLorebookRepositoryError> {
+        crate::lorebook::staged_lorebook_adapter::commit_staged_lorebook_in(self.transaction, request)
+    }
+
+    pub fn start_staged_lorebook_planning(
+        &self,
+        request_id: RequestId,
+        expected_revision: Revision,
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError> {
+        crate::lorebook::staged_lorebook_adapter::start_staged_lorebook_planning_in(self.transaction, request_id, expected_revision, now)
+    }
+
+    pub fn approve_staged_lorebook_outline(
+        &self,
+        request_id: RequestId,
+        expected_revision: Revision,
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError> {
+        crate::lorebook::staged_lorebook_adapter::approve_staged_lorebook_outline_in(self.transaction, request_id, expected_revision, now)
+    }
+
+    pub fn edit_staged_lorebook_draft(
+        &self,
+        request_id: RequestId,
+        expected_revision: Revision,
+        edit: lettuce_creation::StagedLorebookDraftEdit,
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError> {
+        crate::lorebook::staged_lorebook_adapter::edit_staged_lorebook_draft_in(self.transaction, request_id, expected_revision, edit, now)
+    }
+
+    pub fn set_staged_lorebook_draft_approved(
+        &self,
+        request_id: RequestId,
+        expected_revision: Revision,
+        plan_id: lettuce_types::LorebookEntryId,
+        approved: bool,
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError> {
+        crate::lorebook::staged_lorebook_adapter::set_staged_lorebook_draft_approved_in(self.transaction, request_id, expected_revision, plan_id, approved, now)
+    }
+
+    pub fn apply_staged_lorebook_coherence(
+        &self,
+        request_id: RequestId,
+        expected_revision: Revision,
+        accepted_change_ids: Vec<String>,
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError> {
+        crate::lorebook::staged_lorebook_adapter::apply_staged_lorebook_coherence_in(self.transaction, request_id, expected_revision, accepted_change_ids, now)
+    }
+
+    pub fn start_staged_lorebook_draft_batch(
+        &self,
+        request_id: RequestId,
+        expected_revision: Revision,
+        inputs: Option<lettuce_creation::StagedLorebookWriterBatchInputs>,
+        now: TimestampMillis,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError> {
+        crate::lorebook::staged_lorebook_adapter::start_staged_lorebook_draft_batch_in(self.transaction, request_id, expected_revision, inputs, now)
+    }
+}
+
+impl ApiOperationTransaction<'_, '_> {
+    pub fn reset_builtin_prompts(&self, request: lettuce_context::BuiltInReconcileRequest, expected: Option<(lettuce_types::PromptDocumentId, lettuce_types::Revision)>, now: TimestampMillis) -> Result<Vec<lettuce_context::BuiltInReconcileOutcome>, lettuce_context::PromptRepositoryError> {
+        if let Some((id, revision)) = expected {
+            let current = crate::catalog::prompt_adapter::load_document(self.transaction, id).map_err(|error| lettuce_context::PromptRepositoryError::Failure(error.to_string()))?.ok_or(lettuce_context::PromptRepositoryError::NotFound)?;
+            if current.revision != revision { return Err(lettuce_context::PromptRepositoryError::Conflict); }
+        }
+        crate::catalog::prompt_adapter::reconcile_built_ins_in(self.transaction, request, now).map_err(|error| lettuce_context::PromptRepositoryError::Failure(error.to_string()))
+    }
+    pub fn set_default_prompt(&self, id: Option<lettuce_types::PromptDocumentId>, expected: lettuce_types::Revision, now: TimestampMillis) -> Result<(Option<lettuce_types::PromptDocumentId>, lettuce_types::Revision), lettuce_context::PromptRepositoryError> {
+        if let Some(id) = id {
+            crate::catalog::prompt_adapter::load_document(self.transaction, id).map_err(|error| lettuce_context::PromptRepositoryError::Failure(error.to_string()))?.ok_or(lettuce_context::PromptRepositoryError::NotFound)?;
+        }
+        let current: (Option<String>, i64) = self.transaction.query_row("SELECT default_prompt_document_id,revision FROM app_settings WHERE id=1", [], |row| Ok((row.get(0)?, row.get(1)?))).map_err(|error| lettuce_context::PromptRepositoryError::Failure(error.to_string()))?;
+        if u64::try_from(current.1).ok() != Some(expected.get()) { return Err(lettuce_context::PromptRepositoryError::Conflict); }
+        let next = if current.0 == id.map(|id| id.to_string()) { expected } else { expected.next().map_err(|error| lettuce_context::PromptRepositoryError::Failure(error.to_string()))? };
+        self.transaction.execute("UPDATE app_settings SET default_prompt_document_id=?1,revision=?2,updated_at=?3 WHERE id=1", params![id.map(|id| id.to_string()), i64::try_from(next.get()).map_err(|error| lettuce_context::PromptRepositoryError::Failure(error.to_string()))?, now.get()]).map_err(|error| lettuce_context::PromptRepositoryError::Failure(error.to_string()))?;
+        Ok((id, next))
+    }
+}
+
+impl ApiOperationTransaction<'_, '_> {
+    pub fn admit_staged_lorebook_batch(&self, request_id: RequestId, expected: Revision, inputs: lettuce_creation::StagedLorebookWriterBatchInputs, writers: Vec<(lettuce_jobs::NewJob, crate::LorebookJobInput)>, now: TimestampMillis) -> Result<Vec<lettuce_types::JobId>, lettuce_jobs::StoreError> {
+        let current = crate::lorebook::staged_lorebook_adapter::load_in(self.transaction, request_id).map_err(|_| lettuce_jobs::StoreError::InvalidData)?.ok_or(lettuce_jobs::StoreError::NotFound)?;
+        if current.project.drafts.iter().any(|draft| draft.status == lettuce_creation::StagedLorebookDraftStatus::Drafting) { return Err(lettuce_jobs::StoreError::AlreadyActive); }
+        if current.project.revision != expected { return Err(lettuce_jobs::StoreError::IdempotencyConflict); }
+        let project = crate::lorebook::staged_lorebook_adapter::start_staged_lorebook_draft_batch_in(self.transaction, request_id, expected, Some(inputs), now).map_err(|_| lettuce_jobs::StoreError::IllegalTransition)?;
+        let plan_ids = project.project.drafts.iter().filter(|draft| draft.status == lettuce_creation::StagedLorebookDraftStatus::Drafting).map(|draft| draft.plan_id).collect::<std::collections::HashSet<_>>();
+        let provided = writers.iter().filter_map(|(_, input)| match input { crate::LorebookJobInput::Writer(run) if run.project_request_id == request_id && run.project_revision == project.project.revision => Some(run.plan_id), _ => None }).collect::<std::collections::HashSet<_>>();
+        if provided != plan_ids || writers.len() != plan_ids.len() { return Err(lettuce_jobs::StoreError::InvalidData); }
+        writers.into_iter().map(|(spec, input)| crate::job_adapter::admit_lorebook_job_in(self.transaction, spec, input, None).map(|(job, _, _)| job.id)).collect()
     }
 }

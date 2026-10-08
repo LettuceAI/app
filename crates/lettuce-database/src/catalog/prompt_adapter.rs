@@ -11,11 +11,11 @@ use lettuce_context::{
     BuiltInPromptSeed, BuiltInReconcileAction, BuiltInReconcileMode, BuiltInReconcileOutcome,
     BuiltInReconcileRequest, LifecycleFilter, LifecycleStatus, PromptBehaviorVersion,
     PromptBootstrapError, PromptBootstrapPort, PromptDependencyError, PromptDependencyReader,
-    PromptDocument, PromptEntry, PromptEntryDraft, PromptEntryInsertionTarget, PromptEntryMutation,
-    PromptEntryEdit, PromptEntryPosition, PromptEntryRole, PromptLibraryQuery, PromptLookupResult,
-    PromptMetadataDraft, PromptMutationResult, PromptProvenance, PromptPurpose, PromptReference,
-    PromptReferenceOwner, PromptRepository, PromptRepositoryError, PromptValidationError,
-    classify_prompt_lookup,
+    PromptDocument, PromptEntry, PromptEntryDraft, PromptEntryEdit, PromptEntryInsertionTarget,
+    PromptEntryMutation, PromptEntryPosition, PromptEntryRole, PromptLibraryQuery,
+    PromptLookupResult, PromptMetadataDraft, PromptMutationResult, PromptProvenance, PromptPurpose,
+    PromptReference, PromptReferenceOwner, PromptRepository, PromptRepositoryError,
+    PromptValidationError, classify_prompt_lookup,
 };
 use lettuce_types::{
     CharacterId, GroupId, Page, PromptDocumentId, PromptEntryId, Revision, TimestampMillis,
@@ -1301,185 +1301,13 @@ impl PromptBootstrapPort for Database {
         request: BuiltInReconcileRequest,
         now: TimestampMillis,
     ) -> Result<Vec<BuiltInReconcileOutcome>, PromptBootstrapError> {
-        request.validate()?;
-        let mut seeds = request.seeds;
-        seeds.sort_by_key(|seed| seed.key.trim().to_owned());
         let mut connection = self
             .connection()
             .map_err(|_| PromptBootstrapError::Failure("database lock failure".into()))?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(bootstrap_storage)?;
-        let mut outcomes = Vec::with_capacity(seeds.len());
-        for seed in seeds {
-            let key = seed.key.trim().to_owned();
-            let seed_digest = seed.computed_seed_digest()?;
-            let candidate_keys = std::iter::once(key.clone())
-                .chain(seed.aliases.iter().map(|alias| alias.trim().to_owned()))
-                .collect::<HashSet<_>>();
-            let mut matching_ids = Vec::new();
-            let mut statement = tx
-                .prepare(
-                    "SELECT id,built_in_key FROM prompt_documents WHERE provenance_kind='built_in'",
-                )
-                .map_err(bootstrap_storage)?;
-            for row in statement
-                .query_map([], |row| {
-                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-                })
-                .map_err(bootstrap_storage)?
-            {
-                let (id, stored_key) = row.map_err(bootstrap_storage)?;
-                if candidate_keys.contains(&stored_key) {
-                    matching_ids.push(id);
-                }
-            }
-            if matching_ids.len() > 1 {
-                return Err(PromptBootstrapError::AliasConflict);
-            }
-            let existing_id = matching_ids.pop();
-            let Some(existing_id) = existing_id else {
-                let id = built_in_document_id(&key);
-                let metadata = seed.metadata.clone();
-                let entries = seed
-                    .entries
-                    .iter()
-                    .cloned()
-                    .map(|draft| {
-                        let entry_id = built_in_entry_id(
-                            id,
-                            draft.built_in_entry_key.as_deref().expect("validated seed"),
-                        );
-                        entry_from_draft(draft, entry_id)
-                    })
-                    .collect();
-                let provenance = seed.provenance()?;
-                let document = metadata_document(id, metadata, entries, provenance, now)
-                    .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?;
-                insert_root(&tx, &document)
-                    .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?;
-                outcomes.push(BuiltInReconcileOutcome {
-                    key,
-                    action: BuiltInReconcileAction::Created,
-                    document: load_required(&tx, id)
-                        .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?,
-                });
-                continue;
-            };
-            let id: PromptDocumentId = existing_id
-                .parse()
-                .map_err(|_| PromptBootstrapError::Failure("invalid built-in id".into()))?;
-            let mut current = load_required(&tx, id)
-                .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?;
-            let (current_seed, current_authored) = match &current.provenance {
-                PromptProvenance::BuiltIn {
-                    seed_digest,
-                    authored_digest,
-                    ..
-                } => (seed_digest.clone(), authored_digest.clone()),
-                _ => {
-                    return Err(PromptBootstrapError::InvalidStoredBuiltIn);
-                }
-            };
-            let mut canonical_provenance = seed.provenance()?;
-            let alias_only = match &current.provenance {
-                PromptProvenance::BuiltIn {
-                    key: current_key, ..
-                } => current_key != &key,
-                _ => false,
-            };
-            if alias_only || current_authored != current_seed {
-                if let PromptProvenance::BuiltIn {
-                    authored_digest, ..
-                } = &mut canonical_provenance
-                {
-                    *authored_digest = current_authored.clone();
-                }
-            }
-            if current.provenance != canonical_provenance {
-                let (kind, canonical_key, source) = provenance_kind(&canonical_provenance);
-                let payload = encode(&canonical_provenance)
-                    .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?;
-                tx.execute(
-                    "UPDATE prompt_documents SET provenance_kind=?2,built_in_key=?3,derived_source_id=?4,provenance_json=?5,derived_source_name=?6 WHERE id=?1",
-                    params![
-                        id.to_string(),
-                        kind,
-                        canonical_key,
-                        source,
-                        payload,
-                        derived_source_name(&canonical_provenance)
-                    ],
-                )
-                .map_err(bootstrap_storage)?;
-                current.provenance = canonical_provenance.clone();
-            }
-            let legacy_unedited =
-                legacy_seed_is_unedited(&current, &seed, &current_seed, &current_authored);
-            let edited = current_authored != current_seed && !legacy_unedited;
-            if edited && request.mode == BuiltInReconcileMode::RefreshUnedited {
-                outcomes.push(BuiltInReconcileOutcome {
-                    key,
-                    action: BuiltInReconcileAction::PreservedEdited,
-                    document: current,
-                });
-                continue;
-            }
-            if !edited && current_seed == seed_digest && current.status == LifecycleStatus::Active {
-                outcomes.push(BuiltInReconcileOutcome {
-                    key,
-                    action: BuiltInReconcileAction::RefreshedUnedited,
-                    document: current,
-                });
-                continue;
-            }
-            let action = if edited {
-                BuiltInReconcileAction::ResetEdited
-            } else {
-                BuiltInReconcileAction::RefreshedUnedited
-            };
-            let legacy_ordinal_match = legacy_unedited;
-            let (entries, touched, entries_changed) =
-                reconcile_entries(&current, &seed, legacy_ordinal_match);
-            let mut metadata = seed.metadata.clone();
-            if request.mode == BuiltInReconcileMode::ResetToSeed {
-                metadata.name = current.name.clone();
-            }
-            let metadata_changed = current.name != metadata.name
-                || current.purpose != metadata.purpose
-                || current.condense != metadata.condense
-                || current.behavior_version != metadata.behavior_version;
-            let root_changed =
-                metadata_changed || entries_changed || current.status != LifecycleStatus::Active;
-            let mut document =
-                metadata_document(id, metadata, entries, seed.provenance()?, now)
-                    .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?;
-            refresh_provenance(&mut document)
-                .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?;
-            document.revision = if root_changed {
-                next_revision(current.revision)
-                    .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?
-            } else {
-                current.revision
-            };
-            document.created_at = current.created_at;
-            document.status = LifecycleStatus::Active;
-            document.updated_at = if root_changed {
-                now
-            } else {
-                current.updated_at
-            };
-            update_root(&tx, &document, current.revision)
-                .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?;
-            replace_entries(&tx, &document, now, &touched)
-                .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?;
-            outcomes.push(BuiltInReconcileOutcome {
-                key,
-                action,
-                document: load_required(&tx, id)
-                    .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?,
-            });
-        }
+        let outcomes = reconcile_built_ins_in(&tx, request, now)?;
         tx.commit().map_err(bootstrap_storage)?;
         Ok(outcomes)
     }
@@ -1849,7 +1677,10 @@ mod tests {
         assert_eq!(revised.revision.get(), document.revision.get() + 1);
         assert_eq!(revised.entries.len(), 2);
         assert_eq!(revised.entries[1].id, document.entries[0].id);
-        assert_eq!(revised.entries[1].built_in_entry_key.as_deref(), Some("one"));
+        assert_eq!(
+            revised.entries[1].built_in_entry_key.as_deref(),
+            Some("one")
+        );
         assert_eq!(revised.entries[1].content, "changed one");
         assert_eq!(
             database.revise_prompt_document(
@@ -2499,7 +2330,10 @@ mod tests {
         database
             .connection()
             .expect("lock")
-            .execute("DELETE FROM prompt_documents WHERE id=?1", [source.id.to_string()])
+            .execute(
+                "DELETE FROM prompt_documents WHERE id=?1",
+                [source.id.to_string()],
+            )
             .expect("derivation history does not restrict deletion");
         assert_eq!(
             database
@@ -2616,4 +2450,184 @@ mod tests {
         drop(first);
         std::fs::remove_file(path).expect("remove database");
     }
+}
+
+pub(crate) fn reconcile_built_ins_in(
+    tx: &Transaction<'_>,
+    request: BuiltInReconcileRequest,
+    now: TimestampMillis,
+) -> Result<Vec<BuiltInReconcileOutcome>, PromptBootstrapError> {
+    request.validate()?;
+    let mut seeds = request.seeds;
+    seeds.sort_by_key(|seed| seed.key.trim().to_owned());
+    let mut outcomes = Vec::with_capacity(seeds.len());
+    for seed in seeds {
+        let key = seed.key.trim().to_owned();
+        let seed_digest = seed.computed_seed_digest()?;
+        let candidate_keys = std::iter::once(key.clone())
+            .chain(seed.aliases.iter().map(|alias| alias.trim().to_owned()))
+            .collect::<HashSet<_>>();
+        let mut matching_ids = Vec::new();
+        let mut statement = tx
+            .prepare(
+                "SELECT id,built_in_key FROM prompt_documents WHERE provenance_kind='built_in'",
+            )
+            .map_err(bootstrap_storage)?;
+        for row in statement
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(bootstrap_storage)?
+        {
+            let (id, stored_key) = row.map_err(bootstrap_storage)?;
+            if candidate_keys.contains(&stored_key) {
+                matching_ids.push(id);
+            }
+        }
+        if matching_ids.len() > 1 {
+            return Err(PromptBootstrapError::AliasConflict);
+        }
+        let existing_id = matching_ids.pop();
+        let Some(existing_id) = existing_id else {
+            let id = built_in_document_id(&key);
+            let metadata = seed.metadata.clone();
+            let entries = seed
+                .entries
+                .iter()
+                .cloned()
+                .map(|draft| {
+                    let entry_id = built_in_entry_id(
+                        id,
+                        draft.built_in_entry_key.as_deref().expect("validated seed"),
+                    );
+                    entry_from_draft(draft, entry_id)
+                })
+                .collect();
+            let provenance = seed.provenance()?;
+            let document = metadata_document(id, metadata, entries, provenance, now)
+                .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?;
+            insert_root(&tx, &document)
+                .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?;
+            outcomes.push(BuiltInReconcileOutcome {
+                key,
+                action: BuiltInReconcileAction::Created,
+                document: load_required(&tx, id)
+                    .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?,
+            });
+            continue;
+        };
+        let id: PromptDocumentId = existing_id
+            .parse()
+            .map_err(|_| PromptBootstrapError::Failure("invalid built-in id".into()))?;
+        let mut current = load_required(&tx, id)
+            .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?;
+        let (current_seed, current_authored) = match &current.provenance {
+            PromptProvenance::BuiltIn {
+                seed_digest,
+                authored_digest,
+                ..
+            } => (seed_digest.clone(), authored_digest.clone()),
+            _ => {
+                return Err(PromptBootstrapError::InvalidStoredBuiltIn);
+            }
+        };
+        let mut canonical_provenance = seed.provenance()?;
+        let alias_only = match &current.provenance {
+            PromptProvenance::BuiltIn {
+                key: current_key, ..
+            } => current_key != &key,
+            _ => false,
+        };
+        if alias_only || current_authored != current_seed {
+            if let PromptProvenance::BuiltIn {
+                authored_digest, ..
+            } = &mut canonical_provenance
+            {
+                *authored_digest = current_authored.clone();
+            }
+        }
+        if current.provenance != canonical_provenance {
+            let (kind, canonical_key, source) = provenance_kind(&canonical_provenance);
+            let payload = encode(&canonical_provenance)
+                .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?;
+            tx.execute(
+                    "UPDATE prompt_documents SET provenance_kind=?2,built_in_key=?3,derived_source_id=?4,provenance_json=?5,derived_source_name=?6 WHERE id=?1",
+                    params![
+                        id.to_string(),
+                        kind,
+                        canonical_key,
+                        source,
+                        payload,
+                        derived_source_name(&canonical_provenance)
+                    ],
+                )
+                .map_err(bootstrap_storage)?;
+            current.provenance = canonical_provenance.clone();
+        }
+        let legacy_unedited =
+            legacy_seed_is_unedited(&current, &seed, &current_seed, &current_authored);
+        let edited = current_authored != current_seed && !legacy_unedited;
+        if edited && request.mode == BuiltInReconcileMode::RefreshUnedited {
+            outcomes.push(BuiltInReconcileOutcome {
+                key,
+                action: BuiltInReconcileAction::PreservedEdited,
+                document: current,
+            });
+            continue;
+        }
+        if !edited && current_seed == seed_digest && current.status == LifecycleStatus::Active {
+            outcomes.push(BuiltInReconcileOutcome {
+                key,
+                action: BuiltInReconcileAction::RefreshedUnedited,
+                document: current,
+            });
+            continue;
+        }
+        let action = if edited {
+            BuiltInReconcileAction::ResetEdited
+        } else {
+            BuiltInReconcileAction::RefreshedUnedited
+        };
+        let legacy_ordinal_match = legacy_unedited;
+        let (entries, touched, entries_changed) =
+            reconcile_entries(&current, &seed, legacy_ordinal_match);
+        let mut metadata = seed.metadata.clone();
+        if request.mode == BuiltInReconcileMode::ResetToSeed {
+            metadata.name = current.name.clone();
+        }
+        let metadata_changed = current.name != metadata.name
+            || current.purpose != metadata.purpose
+            || current.condense != metadata.condense
+            || current.behavior_version != metadata.behavior_version;
+        let root_changed =
+            metadata_changed || entries_changed || current.status != LifecycleStatus::Active;
+        let mut document = metadata_document(id, metadata, entries, seed.provenance()?, now)
+            .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?;
+        refresh_provenance(&mut document)
+            .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?;
+        document.revision = if root_changed {
+            next_revision(current.revision)
+                .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?
+        } else {
+            current.revision
+        };
+        document.created_at = current.created_at;
+        document.status = LifecycleStatus::Active;
+        document.updated_at = if root_changed {
+            now
+        } else {
+            current.updated_at
+        };
+        update_root(&tx, &document, current.revision)
+            .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?;
+        replace_entries(&tx, &document, now, &touched)
+            .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?;
+        outcomes.push(BuiltInReconcileOutcome {
+            key,
+            action,
+            document: load_required(&tx, id)
+                .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?,
+        });
+    }
+    Ok(outcomes)
 }

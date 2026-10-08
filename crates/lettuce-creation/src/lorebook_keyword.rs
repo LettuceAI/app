@@ -45,6 +45,7 @@ pub struct LorebookKeywordGenerationRun {
     pub profile: ResolvedInferenceProfile,
     pub prompt_id: PromptDocumentId,
     pub prompt_name: String,
+    pub prompt_snapshot: lettuce_context::PromptDocument,
     pub prompt_revision: Revision,
     pub prompt_values: LorebookKeywordPromptValues,
     pub fallback_format: LorebookEntryFallbackFormat,
@@ -86,6 +87,16 @@ pub trait LorebookKeywordRunRepository: Send + Sync {
         request_id: RequestId,
         checkpoint: LorebookKeywordAttemptCheckpoint,
     ) -> Result<Vec<LorebookKeywordAttemptCheckpoint>, LorebookKeywordRunRepositoryError>;
+
+    fn commit_lorebook_keyword_attempt_for_job_attempt(
+        &self,
+        request_id: RequestId,
+        checkpoint: LorebookKeywordAttemptCheckpoint,
+        job_attempt: Option<u32>,
+    ) -> Result<Vec<LorebookKeywordAttemptCheckpoint>, LorebookKeywordRunRepositoryError> {
+        let _ = job_attempt;
+        self.commit_lorebook_keyword_attempt(request_id, checkpoint)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -200,6 +211,13 @@ impl LorebookKeywordGenerationRun {
         let values = &self.prompt_values;
         if self.prompt_revision.get() == 0
             || self.prompt_name.trim().is_empty()
+            || self.prompt_snapshot.id != self.prompt_id
+            || self.prompt_snapshot.revision != self.prompt_revision
+            || self.prompt_snapshot.name != self.prompt_name
+            || self.prompt_snapshot.purpose
+                != lettuce_context::PromptPurpose::LorebookKeywordGenerator
+            || self.prompt_snapshot.status != lettuce_context::LifecycleStatus::Active
+            || self.prompt_snapshot.validate().is_err()
             || self.created_at.get() < 0
             || values.entry_title.trim().is_empty()
             || values.entry_title != values.entry_title.trim()

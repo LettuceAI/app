@@ -154,17 +154,29 @@ pub enum StagedLorebookAdmissionError {
 pub struct StagedLorebookCoordinator<'a, R: ?Sized, J: ?Sized> {
     repository: &'a R,
     jobs: &'a J,
+    operation: Option<(String, String)>,
 }
 
 impl<'a, R: ?Sized, J: ?Sized> StagedLorebookCoordinator<'a, R, J> {
     #[must_use]
     pub const fn new(repository: &'a R, jobs: &'a J) -> Self {
-        Self { repository, jobs }
+        Self {
+            repository,
+            jobs,
+            operation: None,
+        }
+    }
+    pub fn with_operation(mut self, key: String, digest: String) -> Self {
+        self.operation = Some((key, digest));
+        self
     }
 }
 
 impl<
-    R: StagedLorebookRepository + crate::generation::runtime_text::RuntimeTextSource + ?Sized,
+    R: crate::LorebookJobAdmission
+        + StagedLorebookRepository
+        + crate::generation::runtime_text::RuntimeTextSource
+        + ?Sized,
     J: JobStore + ?Sized,
 > StagedLorebookCoordinator<'_, R, J>
 {
@@ -278,40 +290,42 @@ impl<
             overrides: request.overrides.clone(),
             target_count: request.target_count,
         };
-        match self.repository.load_staged_lorebook(request.request_id) {
-            Ok(run) => {
-                let project = StagedLorebookProject::create(
-                    request.project_id,
-                    request.brief,
-                    request.initial_lorebook_name,
-                    request
-                        .target_count
-                        .map(|count| count.clamp(5, 50))
-                        .unwrap_or(run.project.target_count),
-                    request.excerpts,
-                    request.now,
-                )
-                .map_err(|_| StagedLorebookAdmissionError::InvalidInput)?;
-                let mut expected = run.clone();
-                expected.project = project;
-                expected.configured_inputs = Some(configured_inputs);
-                expected.planner_profile.safety_policy = request.safety_policy;
-                if !same_admission(&run, &expected) {
-                    return Err(StagedLorebookRepositoryError::Conflict.into());
+        if self.operation.is_none() {
+            match self.repository.load_staged_lorebook(request.request_id) {
+                Ok(run) => {
+                    let project = StagedLorebookProject::create(
+                        request.project_id,
+                        request.brief,
+                        request.initial_lorebook_name,
+                        request
+                            .target_count
+                            .map(|count| count.clamp(5, 50))
+                            .unwrap_or(run.project.target_count),
+                        request.excerpts,
+                        request.now,
+                    )
+                    .map_err(|_| StagedLorebookAdmissionError::InvalidInput)?;
+                    let mut expected = run.clone();
+                    expected.project = project;
+                    expected.configured_inputs = Some(configured_inputs);
+                    expected.planner_profile.safety_policy = request.safety_policy;
+                    if !same_admission(&run, &expected) {
+                        return Err(StagedLorebookRepositoryError::Conflict.into());
+                    }
+                    let job = self
+                        .jobs
+                        .get(run.job_id)?
+                        .ok_or(StagedLorebookAdmissionError::InvalidInput)?;
+                    validate_job(&run, &job)?;
+                    return Ok(StagedLorebookAdmission {
+                        run,
+                        job,
+                        created: false,
+                    });
                 }
-                let job = self
-                    .jobs
-                    .get(run.job_id)?
-                    .ok_or(StagedLorebookAdmissionError::InvalidInput)?;
-                validate_job(&run, &job)?;
-                return Ok(StagedLorebookAdmission {
-                    run,
-                    job,
-                    created: false,
-                });
+                Err(StagedLorebookRepositoryError::NotFound) => {}
+                Err(error) => return Err(error.into()),
             }
-            Err(StagedLorebookRepositoryError::NotFound) => {}
-            Err(error) => return Err(error.into()),
         }
         let (planner_profile, prompt, target_count) = self.resolve_configured_stage(
             &request.overrides,
@@ -350,50 +364,67 @@ impl<
             request.now,
         )
         .map_err(|_| StagedLorebookAdmissionError::InvalidInput)?;
-        match self.repository.load_staged_lorebook(request.request_id) {
-            Ok(run) => {
-                let expected = run_from(&request, run.job_id, project);
-                if !same_admission(&run, &expected) {
-                    return Err(StagedLorebookRepositoryError::Conflict.into());
+        if self.operation.is_none() {
+            match self.repository.load_staged_lorebook(request.request_id) {
+                Ok(run) => {
+                    let expected = run_from(&request, run.job_id, project);
+                    if !same_admission(&run, &expected) {
+                        return Err(StagedLorebookRepositoryError::Conflict.into());
+                    }
+                    let job = self
+                        .jobs
+                        .get(run.job_id)?
+                        .ok_or(StagedLorebookAdmissionError::InvalidInput)?;
+                    validate_job(&run, &job)?;
+                    return Ok(StagedLorebookAdmission {
+                        run,
+                        job,
+                        created: false,
+                    });
                 }
-                let job = self
-                    .jobs
-                    .get(run.job_id)?
-                    .ok_or(StagedLorebookAdmissionError::InvalidInput)?;
-                validate_job(&run, &job)?;
-                return Ok(StagedLorebookAdmission {
-                    run,
-                    job,
-                    created: false,
-                });
+                Err(StagedLorebookRepositoryError::NotFound) => {}
+                Err(error) => return Err(error.into()),
             }
-            Err(StagedLorebookRepositoryError::NotFound) => {}
-            Err(error) => return Err(error.into()),
         }
-        let admitted = self.jobs.create_or_get(
-            JobSpec::new(
-                JobKind::CreationRun,
-                JobSubject::new(SubjectKind::CreationProject, request.project_id.to_string())
-                    .map_err(|_| StagedLorebookAdmissionError::InvalidInput)?,
-                OutcomeRef::Request(request.request_id),
+        let spec = JobSpec::new(
+            JobKind::CreationRun,
+            JobSubject::new(SubjectKind::CreationProject, request.project_id.to_string())
+                .map_err(|_| StagedLorebookAdmissionError::InvalidInput)?,
+            OutcomeRef::Request(request.request_id),
+        )
+        .with_idempotency_key(
+            IdempotencyKey::new(format!("staged-lorebook-{}", request.request_id))
+                .map_err(|_| StagedLorebookAdmissionError::InvalidInput)?,
+        )
+        .with_resources(vec![
+            ResourceClass::Network,
+            ResourceClass::ModelLoad,
+            ResourceClass::DiskRead,
+            ResourceClass::DiskWrite,
+            ResourceClass::Cpu,
+        ])
+        .with_priority(JobPriority::Interactive)
+        .with_policies(RecoveryPolicy::Restart, CancellationPolicy::Cooperative);
+        let run = run_from(&request, lettuce_types::JobId::new(), project);
+        let (job, created, input) = self
+            .repository
+            .admit_lorebook_job(
+                spec,
+                lettuce_database::LorebookJobInput::Planner(run),
+                self.operation
+                    .as_ref()
+                    .map(|(key, digest)| (key.as_str(), digest.as_str())),
             )
-            .with_idempotency_key(
-                IdempotencyKey::new(format!("staged-lorebook-{}", request.request_id))
-                    .map_err(|_| StagedLorebookAdmissionError::InvalidInput)?,
-            )
-            .with_resources(vec![
-                ResourceClass::Network,
-                ResourceClass::ModelLoad,
-                ResourceClass::DiskRead,
-                ResourceClass::DiskWrite,
-                ResourceClass::Cpu,
-            ])
-            .with_priority(JobPriority::Interactive)
-            .with_policies(RecoveryPolicy::Restart, CancellationPolicy::Cooperative),
-        )?;
-        let run =
-            self.repository
-                .admit_staged_lorebook(run_from(&request, admitted.job.id, project))?;
+            .map_err(|error| match error {
+                StoreError::InvalidData => {
+                    StagedLorebookAdmissionError::Repository(StagedLorebookRepositoryError::Invalid)
+                }
+                error => StagedLorebookAdmissionError::Job(error),
+            })?;
+        let lettuce_database::LorebookJobInput::Planner(run) = input else {
+            return Err(StagedLorebookAdmissionError::InvalidInput);
+        };
+        let admitted = lettuce_jobs::CreateJobResult { job, created };
         validate_job(&run, &admitted.job)?;
         Ok(StagedLorebookAdmission {
             run,
@@ -635,32 +666,30 @@ impl<
         if drafted_entries.is_empty() {
             return Err(StagedLorebookAdmissionError::InvalidInput);
         }
-        let admitted = self.jobs.create_or_get(
-            JobSpec::new(
-                JobKind::CreationRun,
-                JobSubject::new(SubjectKind::CreationProject, project.project.id.to_string())
-                    .map_err(|_| StagedLorebookAdmissionError::InvalidInput)?,
-                OutcomeRef::Request(request.request_id),
-            )
-            .with_idempotency_key(
-                IdempotencyKey::new(format!("staged-lorebook-coherence-{}", request.request_id))
-                    .map_err(|_| StagedLorebookAdmissionError::InvalidInput)?,
-            )
-            .with_resources(vec![
-                ResourceClass::Network,
-                ResourceClass::ModelLoad,
-                ResourceClass::DiskRead,
-                ResourceClass::DiskWrite,
-                ResourceClass::Cpu,
-            ])
-            .with_priority(JobPriority::Interactive)
-            .with_policies(RecoveryPolicy::Restart, CancellationPolicy::Cooperative),
-        )?;
+        let spec = JobSpec::new(
+            JobKind::CreationRun,
+            JobSubject::new(SubjectKind::CreationProject, project.project.id.to_string())
+                .map_err(|_| StagedLorebookAdmissionError::InvalidInput)?,
+            OutcomeRef::Request(request.request_id),
+        )
+        .with_idempotency_key(
+            IdempotencyKey::new(format!("staged-lorebook-coherence-{}", request.request_id))
+                .map_err(|_| StagedLorebookAdmissionError::InvalidInput)?,
+        )
+        .with_resources(vec![
+            ResourceClass::Network,
+            ResourceClass::ModelLoad,
+            ResourceClass::DiskRead,
+            ResourceClass::DiskWrite,
+            ResourceClass::Cpu,
+        ])
+        .with_priority(JobPriority::Interactive)
+        .with_policies(RecoveryPolicy::Restart, CancellationPolicy::Cooperative);
         let coherence = StagedLorebookCoherenceRun {
             prompt_snapshot: Some(request.prompt.clone()),
             configured_overrides,
             request_id: request.request_id,
-            job_id: admitted.job.id,
+            job_id: lettuce_types::JobId::new(),
             project_revision: project.project.revision,
             profile: request.profile,
             prompt_id: request.prompt.id,
@@ -670,9 +699,20 @@ impl<
             created_at: request.now,
             attempt: None,
         };
+        let (job, created, _) = self.repository.admit_lorebook_job(
+            spec,
+            lettuce_database::LorebookJobInput::Coherence {
+                project_request_id: request.project_request_id,
+                run: coherence,
+            },
+            self.operation
+                .as_ref()
+                .map(|(key, digest)| (key.as_str(), digest.as_str())),
+        )?;
+        let admitted = lettuce_jobs::CreateJobResult { job, created };
         let run = self
             .repository
-            .admit_staged_lorebook_coherence(request.project_request_id, coherence)?;
+            .load_staged_lorebook(request.project_request_id)?;
         Ok(StagedLorebookCoherenceAdmission {
             run,
             job: admitted.job,

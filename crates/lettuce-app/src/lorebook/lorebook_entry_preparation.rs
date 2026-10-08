@@ -59,12 +59,21 @@ pub enum LorebookEntryPreparationError {
 pub struct LorebookEntryPreparationCoordinator<'a, S: ?Sized, J: ?Sized> {
     sources: &'a S,
     jobs: &'a J,
+    operation: Option<(String, String)>,
 }
 
 impl<'a, S: ?Sized, J: ?Sized> LorebookEntryPreparationCoordinator<'a, S, J> {
     #[must_use]
     pub const fn new(sources: &'a S, jobs: &'a J) -> Self {
-        Self { sources, jobs }
+        Self {
+            sources,
+            jobs,
+            operation: None,
+        }
+    }
+    pub fn with_operation(mut self, key: String, digest: String) -> Self {
+        self.operation = Some((key, digest));
+        self
     }
 }
 
@@ -77,6 +86,7 @@ where
         + MemoryRepository
         + MemorySummaryRepository
         + LorebookEntryRunRepository
+        + crate::LorebookJobAdmission
         + crate::generation::runtime_text::RuntimeTextSource
         + ?Sized,
     J: JobStore + ?Sized,
@@ -214,18 +224,48 @@ where
             character_name: character.character.profile.name,
             session_title: conversation.title.clone(),
             existing_entries: format_existing_entries(&lorebook.entries, &none, &fragment)?,
-            direction_prompt: request
-                .direction_prompt
-                .as_deref()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map_or_else(|| none.clone(), str::to_owned),
+            direction_prompt: {
+                let force = request
+                    .force
+                    .then(|| {
+                        fragment(
+                            match request.source {
+                                LorebookEntrySource::Messages => {
+                                    "lorebook_force_direction_messages"
+                                }
+                                LorebookEntrySource::Memory => "lorebook_force_direction_memory",
+                                LorebookEntrySource::Mixed => "lorebook_force_direction_mixed",
+                            },
+                            Vec::new(),
+                        )
+                    })
+                    .transpose()?;
+                let direction = [
+                    force,
+                    request
+                        .direction_prompt
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .map(str::to_owned),
+                ]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+                .join("\n\n");
+                if direction.is_empty() {
+                    none.clone()
+                } else {
+                    direction
+                }
+            },
             selected_messages,
             memory_summary,
             selected_memories,
             none_marker: none.clone(),
         };
         LorebookEntryAdmissionCoordinator::new(self.sources, self.jobs)
+            .with_optional_operation(self.operation.clone())
             .admit(LorebookEntryAdmissionRequest {
                 request_id: request.request_id,
                 conversation_id: request.conversation_id,

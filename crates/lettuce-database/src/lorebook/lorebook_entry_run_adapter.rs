@@ -238,6 +238,15 @@ impl LorebookEntryRunRepository for Database {
         request_id: RequestId,
         checkpoint: LorebookEntryAttemptCheckpoint,
     ) -> Result<Vec<LorebookEntryAttemptCheckpoint>, LorebookEntryRunRepositoryError> {
+        self.commit_lorebook_entry_attempt_for_job_attempt(request_id, checkpoint, None)
+    }
+
+    fn commit_lorebook_entry_attempt_for_job_attempt(
+        &self,
+        request_id: RequestId,
+        checkpoint: LorebookEntryAttemptCheckpoint,
+        job_attempt: Option<u32>,
+    ) -> Result<Vec<LorebookEntryAttemptCheckpoint>, LorebookEntryRunRepositoryError> {
         checkpoint.validate()?;
         let mut connection = self.connection().map_err(failure)?;
         let transaction = connection
@@ -262,6 +271,16 @@ impl LorebookEntryRunRepository for Database {
         {
             return Err(LorebookEntryRunRepositoryError::Conflict);
         }
+        let run =
+            load_in(&transaction, request_id)?.ok_or(LorebookEntryRunRepositoryError::NotFound)?;
+        crate::job_adapter::ensure_job_attempt_in(
+            &transaction,
+            run.job_id,
+            job_attempt,
+            checkpoint.completed_at,
+            false,
+        )
+        .map_err(|_| LorebookEntryRunRepositoryError::Conflict)?;
         attempts.push(checkpoint);
         validate_lorebook_entry_attempts(&attempts)?;
         let encoded = encode_versioned(&attempts, ATTEMPTS_FORMAT_VERSION).map_err(failure)?;

@@ -247,7 +247,7 @@ fn check_cancelled(cancellation: &CancellationToken) -> Result<(), SyncExchangeE
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use lettuce_characters::{Persona, PersonaDraftUpdate, PersonaRepository};
     use lettuce_database::Database;
@@ -406,7 +406,7 @@ mod tests {
             .expect("hello")
     }
 
-    async fn exchange(
+    pub(crate) async fn exchange(
         local: &Database,
         remote: &Database,
         session: u128,

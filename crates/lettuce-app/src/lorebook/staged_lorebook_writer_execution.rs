@@ -60,6 +60,7 @@ pub struct StagedLorebookWriterExecutionCoordinator<'a, R: ?Sized, P: ?Sized, I:
     runs: &'a R,
     projects: &'a P,
     inference: &'a I,
+    job_attempt: Option<u32>,
 }
 
 impl<'a, R: ?Sized, P: ?Sized, I: ?Sized> StagedLorebookWriterExecutionCoordinator<'a, R, P, I> {
@@ -69,6 +70,7 @@ impl<'a, R: ?Sized, P: ?Sized, I: ?Sized> StagedLorebookWriterExecutionCoordinat
             runs,
             projects,
             inference,
+            job_attempt: None,
         }
     }
 }
@@ -83,6 +85,11 @@ where
     P: StagedLorebookRepository + ?Sized,
     I: InferencePort + ?Sized,
 {
+    pub fn with_job_attempt(mut self, attempt: u32) -> Self {
+        self.job_attempt = Some(attempt);
+        self
+    }
+
     pub async fn run(
         &self,
         request_id: RequestId,
@@ -195,7 +202,11 @@ where
         }
         let stored = self
             .runs
-            .commit_staged_lorebook_writer_attempt(request_id, attempt)
+            .commit_staged_lorebook_writer_attempt_for_job_attempt(
+                request_id,
+                attempt,
+                self.job_attempt,
+            )
             .map_err(StagedLorebookWriterExecutionError::Run)?;
         settle(
             self.projects,

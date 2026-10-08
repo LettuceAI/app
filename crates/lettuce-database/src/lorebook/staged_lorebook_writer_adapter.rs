@@ -199,6 +199,15 @@ impl StagedLorebookWriterRunRepository for Database {
         request_id: RequestId,
         attempt: StagedLorebookWriterAttempt,
     ) -> Result<StagedLorebookWriterRun, StagedLorebookWriterRunRepositoryError> {
+        self.commit_staged_lorebook_writer_attempt_for_job_attempt(request_id, attempt, None)
+    }
+
+    fn commit_staged_lorebook_writer_attempt_for_job_attempt(
+        &self,
+        request_id: RequestId,
+        attempt: StagedLorebookWriterAttempt,
+        job_attempt: Option<u32>,
+    ) -> Result<StagedLorebookWriterRun, StagedLorebookWriterRunRepositoryError> {
         let mut connection = self.connection().map_err(failure)?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -223,6 +232,15 @@ impl StagedLorebookWriterRunRepository for Database {
         if matches!(project_stage.as_str(), "cancelled" | "committed") {
             return Err(StagedLorebookWriterRunRepositoryError::Conflict);
         }
+
+        crate::job_adapter::ensure_job_attempt_in(
+            &transaction,
+            run.job_id,
+            job_attempt,
+            attempt.completed_at,
+            false,
+        )
+        .map_err(|_| StagedLorebookWriterRunRepositoryError::Conflict)?;
         run.attempt = Some(attempt);
         let encoded = encode_versioned(&run, RUN_FORMAT_VERSION).map_err(failure)?;
         if transaction

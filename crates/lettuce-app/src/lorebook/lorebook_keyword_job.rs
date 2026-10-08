@@ -45,17 +45,29 @@ pub enum LorebookKeywordAdmissionError {
 pub struct LorebookKeywordCoordinator<'a, R: ?Sized, J: ?Sized> {
     repository: &'a R,
     jobs: &'a J,
+    operation: Option<(String, String)>,
 }
 
 impl<'a, R: ?Sized, J: ?Sized> LorebookKeywordCoordinator<'a, R, J> {
     #[must_use]
     pub const fn new(repository: &'a R, jobs: &'a J) -> Self {
-        Self { repository, jobs }
+        Self {
+            repository,
+            jobs,
+            operation: None,
+        }
+    }
+    pub fn with_operation(mut self, key: String, digest: String) -> Self {
+        self.operation = Some((key, digest));
+        self
     }
 }
 
 impl<
-    R: LorebookKeywordRunRepository + crate::generation::runtime_text::RuntimeTextSource + ?Sized,
+    R: LorebookKeywordRunRepository
+        + crate::LorebookJobAdmission
+        + crate::generation::runtime_text::RuntimeTextSource
+        + ?Sized,
     J: JobStore + ?Sized,
 > LorebookKeywordCoordinator<'_, R, J>
 {
@@ -80,53 +92,63 @@ impl<
             existing_keywords: format_existing_keywords(&request.existing_keywords, &none),
             direction_prompt: normalized_or(&request.direction_prompt, &none),
         };
-        match self
-            .repository
-            .load_lorebook_keyword_run(request.request_id)
-        {
-            Ok(run) => {
-                let expected = run_from_request(&request, run.job_id, prompt_values);
-                if run != expected {
-                    return Err(LorebookKeywordRunRepositoryError::Conflict.into());
+        if self.operation.is_none() {
+            match self
+                .repository
+                .load_lorebook_keyword_run(request.request_id)
+            {
+                Ok(run) => {
+                    let expected = run_from_request(&request, run.job_id, prompt_values);
+                    if run != expected {
+                        return Err(LorebookKeywordRunRepositoryError::Conflict.into());
+                    }
+                    let job = self
+                        .jobs
+                        .get(run.job_id)?
+                        .ok_or(LorebookKeywordAdmissionError::InvalidInput)?;
+                    validate_job(&run, &job)?;
+                    return Ok(LorebookKeywordAdmission {
+                        run,
+                        job,
+                        created: false,
+                    });
                 }
-                let job = self
-                    .jobs
-                    .get(run.job_id)?
-                    .ok_or(LorebookKeywordAdmissionError::InvalidInput)?;
-                validate_job(&run, &job)?;
-                return Ok(LorebookKeywordAdmission {
-                    run,
-                    job,
-                    created: false,
-                });
+                Err(LorebookKeywordRunRepositoryError::NotFound) => {}
+                Err(error) => return Err(error.into()),
             }
-            Err(LorebookKeywordRunRepositoryError::NotFound) => {}
-            Err(error) => return Err(error.into()),
         }
         let model_profile_id = request.profile.chat_profile.model_profile_id;
-        let admitted = self.jobs.create_or_get(
-            JobSpec::new(
-                JobKind::CreationRun,
-                JobSubject::new(SubjectKind::ModelProfile, model_profile_id.to_string())
-                    .map_err(|_| LorebookKeywordAdmissionError::InvalidInput)?,
-                OutcomeRef::Request(request.request_id),
-            )
-            .with_idempotency_key(
-                IdempotencyKey::new(format!("lorebook-keyword-generator-{}", request.request_id))
-                    .map_err(|_| LorebookKeywordAdmissionError::InvalidInput)?,
-            )
-            .with_resources(vec![
-                ResourceClass::Network,
-                ResourceClass::ModelLoad,
-                ResourceClass::DiskRead,
-                ResourceClass::DiskWrite,
-                ResourceClass::Cpu,
-            ])
-            .with_priority(JobPriority::Interactive)
-            .with_policies(RecoveryPolicy::Restart, CancellationPolicy::Cooperative),
+        let spec = JobSpec::new(
+            JobKind::CreationRun,
+            JobSubject::new(SubjectKind::ModelProfile, model_profile_id.to_string())
+                .map_err(|_| LorebookKeywordAdmissionError::InvalidInput)?,
+            OutcomeRef::Request(request.request_id),
+        )
+        .with_idempotency_key(
+            IdempotencyKey::new(format!("lorebook-keyword-generator-{}", request.request_id))
+                .map_err(|_| LorebookKeywordAdmissionError::InvalidInput)?,
+        )
+        .with_resources(vec![
+            ResourceClass::Network,
+            ResourceClass::ModelLoad,
+            ResourceClass::DiskRead,
+            ResourceClass::DiskWrite,
+            ResourceClass::Cpu,
+        ])
+        .with_priority(JobPriority::Interactive)
+        .with_policies(RecoveryPolicy::Restart, CancellationPolicy::Cooperative);
+        let run = run_from_request(&request, lettuce_types::JobId::new(), prompt_values);
+        let (job, created, input) = self.repository.admit_lorebook_job(
+            spec,
+            lettuce_database::LorebookJobInput::Keyword(run),
+            self.operation
+                .as_ref()
+                .map(|(key, digest)| (key.as_str(), digest.as_str())),
         )?;
-        let run = run_from_request(&request, admitted.job.id, prompt_values);
-        let run = self.repository.admit_lorebook_keyword_run(run)?;
+        let lettuce_database::LorebookJobInput::Keyword(run) = input else {
+            return Err(LorebookKeywordAdmissionError::InvalidInput);
+        };
+        let admitted = lettuce_jobs::CreateJobResult { job, created };
         validate_job(&run, &admitted.job)?;
         Ok(LorebookKeywordAdmission {
             run,
@@ -196,6 +218,7 @@ fn run_from_request(
         profile: request.profile.clone(),
         prompt_id: request.prompt.id,
         prompt_name: request.prompt.name.clone(),
+        prompt_snapshot: request.prompt.clone(),
         prompt_revision: request.prompt.revision,
         prompt_values,
         fallback_format: request.fallback_format,

@@ -308,3 +308,69 @@ impl IntoApiError for tokio::task::JoinError {
         api_error(code, "the API worker task did not finish")
     }
 }
+
+impl IntoApiError for lettuce_context::LorebookRepositoryError {
+    fn into_api_error(self) -> ApiError {
+        use lettuce_context::LorebookValidationError as Invalid;
+        let message = self.to_string();
+        match self {
+            Self::NotFound | Self::EntryNotFound => api_error(ApiErrorCode::NotFound, message),
+            Self::Conflict => api_error(ApiErrorCode::Conflict, message),
+            Self::Invalid(error) => invalid_field(
+                match error {
+                    Invalid::Prompt(_) | Invalid::AuthoredPayloadTooLarge => "lorebook",
+                    Invalid::KeywordTooLarge | Invalid::InvalidRegex(_) => "keywords",
+                    Invalid::InvalidTarget | Invalid::InvalidOrdering => "index",
+                    _ => "entries",
+                },
+                message,
+            ),
+            Self::Failure(_) => api_error(ApiErrorCode::Internal, message),
+        }
+    }
+}
+
+impl IntoApiError for lettuce_context::PromptRepositoryError {
+    fn into_api_error(self) -> ApiError {
+        let message = self.to_string();
+        match self {
+            Self::NotFound | Self::EntryNotFound => api_error(ApiErrorCode::NotFound, message),
+            Self::Conflict => api_error(ApiErrorCode::Conflict, message),
+            Self::Protected | Self::Required => ApiError {
+                code: ApiErrorCode::Conflict,
+                message,
+                details: Some(ApiErrorDetails::PromptProtected),
+            },
+            Self::Invalid(_) => invalid_field("prompt", message),
+            Self::Failure(_) => api_error(ApiErrorCode::Internal, message),
+        }
+    }
+}
+
+impl IntoApiError for lettuce_database::SourceDeleteError {
+    fn into_api_error(self) -> ApiError {
+        let message = self.to_string();
+        match self {
+            Self::NotFound => api_error(ApiErrorCode::NotFound, message),
+            Self::Conflict => api_error(ApiErrorCode::Conflict, message),
+            Self::Protected => ApiError {
+                code: ApiErrorCode::Conflict,
+                message,
+                details: Some(ApiErrorDetails::PromptProtected),
+            },
+            Self::Storage => api_error(ApiErrorCode::Internal, message),
+        }
+    }
+}
+
+/// A prompt write missing placeholders its kind requires.
+pub(crate) fn missing_placeholders(placeholders: Vec<String>) -> ApiError {
+    ApiError {
+        code: ApiErrorCode::InvalidInput,
+        message: format!(
+            "the prompt must contain the required placeholders: {}",
+            placeholders.join(", ")
+        ),
+        details: Some(ApiErrorDetails::PromptMissingPlaceholders { placeholders }),
+    }
+}

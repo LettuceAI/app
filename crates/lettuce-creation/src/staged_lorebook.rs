@@ -558,6 +558,7 @@ pub struct StagedLorebookCommitRequest {
 pub struct StagedLorebookCommitReceipt {
     pub request: StagedLorebookCommitRequest,
     pub lorebook_id: LorebookId,
+    pub lorebook_name: String,
     pub lorebook_revision: Revision,
     pub created_entry_ids: Vec<LorebookEntryId>,
 }
@@ -874,6 +875,16 @@ pub trait StagedLorebookWriterRunRepository: Send + Sync {
         request_id: RequestId,
         attempt: StagedLorebookWriterAttempt,
     ) -> Result<StagedLorebookWriterRun, StagedLorebookWriterRunRepositoryError>;
+
+    fn commit_staged_lorebook_writer_attempt_for_job_attempt(
+        &self,
+        request_id: RequestId,
+        attempt: StagedLorebookWriterAttempt,
+        job_attempt: Option<u32>,
+    ) -> Result<StagedLorebookWriterRun, StagedLorebookWriterRunRepositoryError> {
+        let _ = job_attempt;
+        self.commit_staged_lorebook_writer_attempt(request_id, attempt)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -949,6 +960,16 @@ pub trait StagedLorebookRepository: Send + Sync {
         request_id: RequestId,
         attempt: StagedLorebookPlannerAttempt,
     ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError>;
+
+    fn commit_staged_lorebook_planner_attempt_for_job_attempt(
+        &self,
+        request_id: RequestId,
+        attempt: StagedLorebookPlannerAttempt,
+        job_attempt: Option<u32>,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError> {
+        let _ = job_attempt;
+        self.commit_staged_lorebook_planner_attempt(request_id, attempt)
+    }
 
     fn approve_staged_lorebook_outline(
         &self,
@@ -1034,6 +1055,21 @@ pub trait StagedLorebookRepository: Send + Sync {
         coherence_request_id: RequestId,
         attempt: StagedLorebookCoherenceAttempt,
     ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError>;
+
+    fn commit_staged_lorebook_coherence_attempt_for_job_attempt(
+        &self,
+        project_request_id: RequestId,
+        coherence_request_id: RequestId,
+        attempt: StagedLorebookCoherenceAttempt,
+        job_attempt: Option<u32>,
+    ) -> Result<StagedLorebookPlanningRun, StagedLorebookRepositoryError> {
+        let _ = job_attempt;
+        self.commit_staged_lorebook_coherence_attempt(
+            project_request_id,
+            coherence_request_id,
+            attempt,
+        )
+    }
 }
 
 fn invalid_prompt_snapshot(
@@ -1745,12 +1781,11 @@ impl StagedLorebookProject {
             let accepted: Vec<_> = self
                 .drafts
                 .iter()
-                .filter(|draft| {
-                    !(draft.title.trim().is_empty() && draft.content.trim().is_empty())
-                })
+                .filter(|draft| !(draft.title.trim().is_empty() && draft.content.trim().is_empty()))
                 .map(|draft| draft.plan_id)
                 .collect();
             if receipt.lorebook_id != id
+                || receipt.lorebook_name.trim().is_empty()
                 || receipt.lorebook_revision != revision
                 || receipt.created_entry_ids != accepted
                 || receipt.request.now != self.updated_at

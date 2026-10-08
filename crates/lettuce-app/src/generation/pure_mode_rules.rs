@@ -24,38 +24,55 @@ pub(crate) fn content_rules<R: RuntimeTextSource + ?Sized>(
 }
 
 /// The rules a character without rules starts with: the base rules, then
-/// the level's.
-pub fn default_character_rules<R: RuntimeTextSource + ?Sized>(
+/// the level's. Fails when the chat runtime text cannot be read.
+pub(crate) fn default_character_rules<R: RuntimeTextSource + ?Sized>(
     repository: &R,
     level: PureMode,
-) -> Vec<String> {
-    let Ok(text) = RuntimeText::load(repository, BuiltInPromptId::ChatRuntime) else {
-        return Vec::new();
-    };
+) -> Result<Vec<String>, crate::generation::runtime_text::RuntimeTextError> {
+    let text = RuntimeText::load(repository, BuiltInPromptId::ChatRuntime)?;
     let level_key = match level {
         PureMode::Off => None,
         PureMode::Low => Some("character_rules_low"),
         PureMode::Standard => Some("character_rules_standard"),
         PureMode::Strict => Some("character_rules_strict"),
     };
-    std::iter::once("character_rules_base")
-        .chain(level_key)
-        .flat_map(|key| {
-            text.render_with(key, [])
-                .unwrap_or_default()
+    let mut rules = Vec::new();
+    for key in std::iter::once("character_rules_base").chain(level_key) {
+        rules.extend(
+            text.render_with(key, [])?
                 .lines()
                 .map(str::trim)
                 .filter(|line| !line.is_empty())
-                .map(str::to_owned)
-                .collect::<Vec<_>>()
-        })
-        .collect()
+                .map(str::to_owned),
+        );
+    }
+    Ok(rules)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use lettuce_types::TimestampMillis;
+
+    struct MissingRuntimeText;
+
+    impl RuntimeTextSource for MissingRuntimeText {
+        fn runtime_text_document(
+            &self,
+            _: BuiltInPromptId,
+        ) -> Result<Option<lettuce_context::PromptDocument>, lettuce_context::PromptRepositoryError>
+        {
+            Ok(None)
+        }
+    }
+
+    #[test]
+    fn unreadable_runtime_text_is_an_error_not_empty_rules() {
+        assert_eq!(
+            default_character_rules(&MissingRuntimeText, PureMode::Standard),
+            Err(crate::generation::runtime_text::RuntimeTextError::Unavailable)
+        );
+    }
 
     #[test]
     fn each_level_has_the_old_rules() {
@@ -75,14 +92,28 @@ mod tests {
             strict
                 .ends_with("- Do not use suggestive, flirty, or sexually charged language or tone")
         );
-        assert_eq!(default_character_rules(database, PureMode::Off).len(), 5);
-        assert_eq!(default_character_rules(database, PureMode::Low).len(), 6);
         assert_eq!(
-            default_character_rules(database, PureMode::Standard).len(),
+            default_character_rules(database, PureMode::Off)
+                .expect("rules")
+                .len(),
+            5
+        );
+        assert_eq!(
+            default_character_rules(database, PureMode::Low)
+                .expect("rules")
+                .len(),
+            6
+        );
+        assert_eq!(
+            default_character_rules(database, PureMode::Standard)
+                .expect("rules")
+                .len(),
             10
         );
         assert_eq!(
-            default_character_rules(database, PureMode::Strict).len(),
+            default_character_rules(database, PureMode::Strict)
+                .expect("rules")
+                .len(),
             11
         );
     }

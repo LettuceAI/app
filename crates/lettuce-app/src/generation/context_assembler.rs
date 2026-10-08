@@ -47,11 +47,57 @@ use lettuce_types::{
 #[derive(Debug)]
 pub struct ConversationContextAssembler<'a, S> {
     sources: &'a S,
+    preview: Option<PromptPreviewCapture>,
+}
+
+/// The prompt a preview renders in place of the chat's own, and the render
+/// context assembly used for it.
+#[derive(Debug)]
+struct PromptPreviewCapture {
+    prompt: PromptSnapshot,
+    name: String,
+    captured: std::sync::Mutex<Option<(PromptRenderContext, bool)>>,
 }
 
 impl<'a, S> ConversationContextAssembler<'a, S> {
     pub fn new(sources: &'a S) -> Self {
-        Self { sources }
+        Self {
+            sources,
+            preview: None,
+        }
+    }
+
+    /// An assembler that renders `document` as the turn's prompt and keeps
+    /// the render context for `captured_preview`.
+    pub(crate) fn previewing(
+        sources: &'a S,
+        document: &lettuce_context::PromptDocument,
+    ) -> Result<Self, ContextAssemblyError> {
+        Ok(Self {
+            sources,
+            preview: Some(PromptPreviewCapture {
+                prompt: prompt_document(
+                    document.id,
+                    document.revision,
+                    &crate::launch::documents::prompt_body(document),
+                )?,
+                name: document.name.clone(),
+                captured: std::sync::Mutex::new(None),
+            }),
+        })
+    }
+
+    /// The render context the previewed prompt was rendered with, and
+    /// whether its scene entries were left out because the chat has no
+    /// scene.
+    pub(crate) fn captured_preview(&self) -> Option<(PromptRenderContext, bool)> {
+        self.preview.as_ref().and_then(|preview| {
+            preview
+                .captured
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .take()
+        })
     }
 }
 
@@ -84,7 +130,15 @@ where
             .map_err(|_| ContextAssemblyError::ConversationUnavailable)?;
         validate_aggregate_and_path(&aggregate, &request)?;
         validate_timeline_items(&request)?;
-        validate_message_ancestry(&aggregate.branches, &request)?;
+        let empty_preview = self.preview.is_some()
+            && request.timeline.is_empty()
+            && aggregate
+                .branches
+                .iter()
+                .any(|branch| branch.id == request.branch_id && branch.head_message_id.is_none());
+        if !empty_preview {
+            validate_message_ancestry(&aggregate.branches, &request)?;
+        }
 
         let mut settings = lettuce_conversations::resolve_effective_settings(
             &aggregate.conversation,
@@ -136,6 +190,10 @@ where
                 self.live_group_prompt(&aggregate.conversation, group, speaker_character)?
             }
         };
+        let live_prompt = match &self.preview {
+            Some(preview) => Some((preview.prompt.clone(), preview.name.clone())),
+            None => live_prompt,
+        };
         snapshot.prompt_name = live_prompt.as_ref().map(|(_, name)| name.clone());
         snapshot.prompt = live_prompt.map(|(prompt, _)| prompt);
         let owned_cast = live_group
@@ -173,7 +231,17 @@ where
             scenes: scene_timeline,
             history,
             visible,
-        } = select_timeline(&aggregate.branches, &request)?;
+        } = if empty_preview {
+            TimelineSelection {
+                window: Vec::new(),
+                omitted_messages: 0,
+                scenes: Vec::new(),
+                history: Vec::new(),
+                visible: Vec::new(),
+            }
+        } else {
+            select_timeline(&aggregate.branches, &request)?
+        };
         let (mut scene, mut scene_direction) = snapshot.scene_values(&scene_timeline)?;
         if let Some(group) = &live_group {
             if group.chat_mode == lettuce_conversations::GroupChatModeSnapshot::Conversation {
@@ -182,7 +250,9 @@ where
             }
             scene = resolve_member_mentions(&scene, &snapshot.group_members);
         }
-        ensure_source_in_timeline(&request)?;
+        if !empty_preview {
+            ensure_source_in_timeline(&request)?;
+        }
         let companion_state = self.companion_prompt_state(&aggregate, request.reference_time)?;
         let scheduled_notes = self.companion_scheduled_notes(&aggregate, request.reference_time)?;
 
@@ -193,45 +263,23 @@ where
                 .lorebook_scan_depth,
         );
         let keyword_window = if direct { &visible } else { &history };
-        let mut scan_text = keyword_window
-            .iter()
-            .filter_map(active_text)
-            .rev()
-            .take(scan_depth)
-            .collect::<Vec<_>>();
-        scan_text.reverse();
+        let (scan_text, latest_user_message) =
+            lore_scan_text(keyword_window, &history, None, scan_depth);
         let recent_text = &scan_text[..];
-        let latest_user_message = history
-            .iter()
-            .rev()
-            .filter(|item| item.message.role == MessageRole::User)
-            .find_map(active_text);
 
-        let mut lore_entries: Vec<ResolvedLorebookEntry> = Vec::new();
-        for tier in self.live_lorebook_tiers(
-            &aggregate.conversation,
-            speaker_character,
-            persona.as_ref().map(|persona| persona.id),
-            live_group
-                .as_ref()
-                .is_some_and(|group| group.disable_character_lorebooks),
-        )? {
-            let activation = resolve_lorebook_activation(
-                &tier,
+        let lore_entries = self
+            .turn_lore(
+                &aggregate.conversation,
+                speaker_character,
+                persona.as_ref().map(|persona| persona.id),
+                live_group
+                    .as_ref()
+                    .is_some_and(|group| group.disable_character_lorebooks),
                 &scan_text,
                 latest_user_message.as_deref(),
                 scan_depth,
-            )
-            .map_err(|_| ContextAssemblyError::LorebookActivation)?;
-            for entry in activation.entries {
-                if !lore_entries
-                    .iter()
-                    .any(|active| active.entry.id == entry.entry.id)
-                {
-                    lore_entries.push(entry);
-                }
-            }
-        }
+            )?
+            .entries;
         let lorebook_text = lore_entries
             .iter()
             .map(|entry| entry.entry.content.trim())
@@ -400,12 +448,12 @@ where
             let prompt_lore_sources = lore_sources(&lore_entries, &values, group);
             resolve_substituted_values(&mut values, group);
             let without_scene;
-            let rendered_document = if direct
+            let strip_scene = direct
                 && settings.scene.is_none()
                 && !scene_timeline
                     .iter()
-                    .any(|item| active_text(item).is_some())
-            {
+                    .any(|item| active_text(item).is_some());
+            let rendered_document = if strip_scene {
                 without_scene = PromptSnapshot {
                     entries: document
                         .entries
@@ -420,6 +468,13 @@ where
                 document
             };
             let render_context = PromptRenderContext { conditions, values };
+            if let Some(preview) = &self.preview {
+                *preview
+                    .captured
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) =
+                    Some((render_context.clone(), strip_scene));
+            }
             let rendered =
                 render_prompt_snapshot(rendered_document, &render_context).map_err(|error| {
                     tracing::warn!(?error, "prompt snapshot rendering failed");
@@ -824,6 +879,148 @@ where
                 .map(|prompt| (prompt, document.name.clone()))
             })
             .transpose()
+    }
+
+    /// The lore a turn injects: each tier of `live_lorebook_tiers` activated
+    /// against the scanned text, in tier order, the first activation of an
+    /// entry kept. Assembly and the trigger preview both use it.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn turn_lore(
+        &self,
+        conversation: &lettuce_conversations::Conversation,
+        speaker: Option<CharacterId>,
+        persona: Option<PersonaId>,
+        disable_character_lorebooks: bool,
+        scan_text: &[String],
+        latest_user_message: Option<&str>,
+        scan_depth: usize,
+    ) -> Result<TurnLore, ContextAssemblyError> {
+        let mut lore = TurnLore::default();
+        for tier in
+            self.live_lorebook_tiers(conversation, speaker, persona, disable_character_lorebooks)?
+        {
+            let activation =
+                resolve_lorebook_activation(&tier, scan_text, latest_user_message, scan_depth)
+                    .map_err(|_| ContextAssemblyError::LorebookActivation)?;
+            lore.skipped.extend(activation.skipped);
+            for entry in activation.entries {
+                if !lore
+                    .entries
+                    .iter()
+                    .any(|active| active.entry.id == entry.entry.id)
+                {
+                    lore.entries.push(entry);
+                }
+            }
+        }
+        Ok(lore)
+    }
+
+    /// What the next turn of `conversation_id` would inject from its
+    /// lorebooks, with `composer_text` as its newest user message and, in a
+    /// group, `speaker`'s books: the same sources, window and order as
+    /// assembly. Returns the lore and the scan depth used.
+    pub(crate) fn preview_turn_lore(
+        &self,
+        conversation_id: ConversationId,
+        composer_text: Option<&str>,
+        speaker: Option<CharacterId>,
+    ) -> Result<(TurnLore, u8), ContextAssemblyError>
+    where
+        S: ConversationReader,
+    {
+        let unavailable = |_| ContextAssemblyError::ConversationUnavailable;
+        let aggregate = ConversationReader::get(self.sources, conversation_id)
+            .map_err(|_| ContextAssemblyError::ConversationUnavailable)?;
+        let conversation = &aggregate.conversation;
+        let live_group = crate::generation::live_sources::live_group(self.sources, conversation)
+            .map_err(unavailable)?;
+        let persona = crate::generation::live_sources::live_persona(
+            self.sources,
+            conversation,
+            live_group.as_ref().and_then(|group| group.profile.as_ref()),
+        )
+        .map_err(unavailable)?;
+        let branch = aggregate
+            .branches
+            .iter()
+            .find(|branch| branch.id == conversation.active_branch_id)
+            .ok_or(ContextAssemblyError::InvalidTimeline)?;
+        let mut items = Vec::new();
+        let mut cursor = None;
+        loop {
+            let page = ConversationReader::timeline_page(
+                self.sources,
+                conversation_id,
+                branch.id,
+                &lettuce_types::PageRequest {
+                    cursor,
+                    limit: lettuce_types::PageLimit::new(200),
+                },
+            )
+            .map_err(|_| ContextAssemblyError::ConversationUnavailable)?;
+            items.extend(page.items);
+            let Some(next) = page.next_cursor else {
+                break;
+            };
+            cursor = Some(next);
+        }
+        let by_id = items
+            .iter()
+            .map(|item| (item.message.id, item))
+            .collect::<HashMap<_, _>>();
+        let mut chain = Vec::new();
+        let mut current = branch.head_message_id;
+        while let Some(message_id) = current {
+            let Some(item) = by_id.get(&message_id) else {
+                return Err(ContextAssemblyError::InvalidTimeline);
+            };
+            if chain.len() > by_id.len() {
+                return Err(ContextAssemblyError::InvalidTimeline);
+            }
+            chain.push(*item);
+            current = item.message.parent_message_id;
+        }
+        chain.reverse();
+        let visible = chain
+            .into_iter()
+            .filter(|item| {
+                !matches!(
+                    item.message.visibility,
+                    lettuce_conversations::MessageVisibility::Hidden
+                        | lettuce_conversations::MessageVisibility::Tombstoned
+                )
+            })
+            .collect::<Vec<_>>();
+        let history = visible
+            .iter()
+            .filter(|item| item.message.role != MessageRole::Scene)
+            .copied()
+            .collect::<Vec<_>>();
+        let scan_depth = lettuce_settings::GlobalSettingsStore::load(self.sources)
+            .map_err(|_| ContextAssemblyError::LorebookActivation)?
+            .settings
+            .lorebook_scan_depth;
+        let direct = live_group.is_none();
+        let composer = composer_text.filter(|text| !text.trim().is_empty());
+        let (scan_text, latest_user_message) = lore_scan_text(
+            if direct { &visible } else { &history },
+            &history,
+            composer,
+            usize::from(scan_depth),
+        );
+        let lore = self.turn_lore(
+            conversation,
+            speaker.filter(|_| !direct),
+            persona.as_ref().map(|persona| persona.id),
+            live_group
+                .as_ref()
+                .is_some_and(|group| group.disable_character_lorebooks),
+            &scan_text,
+            latest_user_message.as_deref(),
+            usize::from(scan_depth),
+        )?;
+        Ok((lore, scan_depth))
     }
 
     /// The lorebooks a turn activates, read live each turn in ordered tiers.
@@ -2488,7 +2685,7 @@ fn prompt_values(
     values
 }
 
-fn has_scene_placeholder(content: &str) -> bool {
+pub(crate) fn has_scene_placeholder(content: &str) -> bool {
     content.contains("{{scene}}")
         || content.contains("{{scene_direction}}")
         || content.contains("{{direction}}")
@@ -2878,6 +3075,41 @@ fn parts(item: &TimelineItem) -> Vec<MessagePart> {
             .map(|candidate| candidate.parts.clone())
             .unwrap_or_default(),
     }
+}
+
+/// The lore a turn activates and the sources it skipped.
+#[derive(Debug, Default)]
+pub(crate) struct TurnLore {
+    pub entries: Vec<ResolvedLorebookEntry>,
+    pub skipped: Vec<lettuce_context::SkippedLorebookSource>,
+}
+
+/// The texts a turn scans for keywords (the latest `scan_depth` of the
+/// window, a pending composer text last) and the newest user message.
+fn lore_scan_text(
+    keyword_window: &[&TimelineItem],
+    history: &[&TimelineItem],
+    composer: Option<&str>,
+    scan_depth: usize,
+) -> (Vec<String>, Option<String>) {
+    let mut scan_text = keyword_window
+        .iter()
+        .filter_map(active_text)
+        .chain(composer.map(str::to_owned))
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .take(scan_depth)
+        .collect::<Vec<_>>();
+    scan_text.reverse();
+    let latest_user_message = composer.map(str::to_owned).or_else(|| {
+        history
+            .iter()
+            .rev()
+            .filter(|item| item.message.role == MessageRole::User)
+            .find_map(active_text)
+    });
+    (scan_text, latest_user_message)
 }
 
 fn active_text(item: &&TimelineItem) -> Option<String> {

@@ -131,6 +131,46 @@ pub enum ApiErrorDetails {
     MemoryCycleUserEdited {
         memory_id: String,
     },
+    /// A prompt write is missing placeholders its kind requires.
+    PromptMissingPlaceholders {
+        placeholders: Vec<String>,
+    },
+    /// A built-in prompt the app needs cannot be deleted.
+    PromptProtected,
+    /// The prompt a feature setting selects cannot be used.
+    ConfiguredPromptUnavailable {
+        prompt_id: String,
+        reason: ConfiguredPromptProblem,
+    },
+    /// The model a lorebook generator setting selects cannot be used, or no
+    /// model generates text.
+    LorebookModelUnavailable {
+        reason: LorebookModelProblem,
+    },
+    /// The app's built-in runtime text could not be read.
+    RuntimeTextUnavailable,
+    /// A lorebook project already has a writer batch running.
+    LorebookBatchRunning {
+        job_ids: Vec<String>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum ConfiguredPromptProblem {
+    Missing,
+    Archived,
+    WrongKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum LorebookModelProblem {
+    ConfiguredModelMissing,
+    ConfiguredModelNotText,
+    NoTextModel,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -163,6 +203,18 @@ pub struct ApiError {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ApiEvent {
+    CharacterChanged {
+        character_id: String,
+    },
+    PersonaChanged {
+        persona_id: String,
+    },
+    GroupChanged {
+        group_id: String,
+    },
+    LorebooksChanged,
+    PromptsChanged,
+
     LocalModelRuntimeReportChanged {
         model_ids: Vec<String>,
     },

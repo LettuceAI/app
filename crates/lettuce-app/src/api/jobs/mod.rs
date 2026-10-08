@@ -7,6 +7,7 @@ mod image;
 mod image_tools;
 pub(super) mod install;
 pub(super) mod local;
+mod lorebook;
 mod memory;
 mod runner;
 pub(crate) mod speech;
@@ -51,6 +52,7 @@ pub use local::{ModelPullHandler, ModelsFolderMoveHandler};
 pub(crate) use local::{
     admit_gguf_download, admit_model_pull, admit_models_folder_move, recover_local_model_jobs,
 };
+pub use lorebook::LorebookHandler;
 pub(crate) use memory::MemoryJobOutput;
 pub use memory::{MemoryExtractionHandler, SoulWriterHandler};
 pub use runner::{ClaimedJob, JobHandler, JobHandlers, JobLane, JobProgressSink, JobRunner};
@@ -241,6 +243,7 @@ pub(crate) fn job_view(context: &ApiContext, job: &JobSnapshot) -> Result<dto::J
     let (image_result, image_failure) = image_view(context, job)?;
     let (speech_result, speech_failure) = speech::speech_view(context, job)?;
     let soul_result = memory::soul_draft_view(context, job)?;
+    let lorebook_result = lorebook::result_view(context, job)?;
     Ok(dto::JobView {
         id: job.id.to_string(),
         kind: job_kind_dto(job.kind),
@@ -298,6 +301,7 @@ pub(crate) fn job_view(context: &ApiContext, job: &JobSnapshot) -> Result<dto::J
         result: feature
             .or(local.result)
             .or(soul_result)
+            .or(lorebook_result)
             .or(image_result)
             .or(speech_result)
             .or_else(|| {

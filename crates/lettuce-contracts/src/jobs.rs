@@ -242,6 +242,22 @@ pub enum JobResultDto {
     GeneratedText {
         text: String,
     },
+    /// The entry a lorebook entry draft job wrote; nothing is saved.
+    LorebookEntryDraft {
+        draft: crate::LorebookEntryDraftResult,
+    },
+    /// The lorebook entry draft job found nothing worth an entry.
+    LorebookNoEntry {
+        reason: Option<String>,
+    },
+    /// The keywords a keyword draft job proposed.
+    LorebookKeywords {
+        keywords: Vec<String>,
+    },
+    /// The lorebook project a planner, writer or coherence job advanced.
+    LorebookProject {
+        project_id: String,
+    },
     /// The images an image generation job stored.
     ImageGeneration {
         images: Vec<crate::GeneratedImage>,

@@ -56,6 +56,7 @@ pub enum StagedLorebookPlannerExecutionError {
 pub struct StagedLorebookPlannerExecutionCoordinator<'a, R: ?Sized, I: ?Sized> {
     repository: &'a R,
     inference: &'a I,
+    job_attempt: Option<u32>,
 }
 
 impl<'a, R: ?Sized, I: ?Sized> StagedLorebookPlannerExecutionCoordinator<'a, R, I> {
@@ -64,6 +65,7 @@ impl<'a, R: ?Sized, I: ?Sized> StagedLorebookPlannerExecutionCoordinator<'a, R, 
         Self {
             repository,
             inference,
+            job_attempt: None,
         }
     }
 }
@@ -77,6 +79,11 @@ where
         + ?Sized,
     I: InferencePort + ?Sized,
 {
+    pub fn with_job_attempt(mut self, attempt: u32) -> Self {
+        self.job_attempt = Some(attempt);
+        self
+    }
+
     pub async fn run(
         &self,
         request_id: RequestId,
@@ -190,7 +197,11 @@ where
         }
         let stored = self
             .repository
-            .commit_staged_lorebook_planner_attempt(request_id, attempt)
+            .commit_staged_lorebook_planner_attempt_for_job_attempt(
+                request_id,
+                attempt,
+                self.job_attempt,
+            )
             .map_err(StagedLorebookPlannerExecutionError::Repository)?;
         settle_checkpoint(
             self.repository,

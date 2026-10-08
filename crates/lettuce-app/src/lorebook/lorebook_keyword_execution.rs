@@ -56,6 +56,7 @@ pub enum LorebookKeywordExecutionError {
 pub struct LorebookKeywordExecutionCoordinator<'a, R: ?Sized, I: ?Sized> {
     repository: &'a R,
     inference: &'a I,
+    job_attempt: Option<u32>,
 }
 
 impl<'a, R: ?Sized, I: ?Sized> LorebookKeywordExecutionCoordinator<'a, R, I> {
@@ -64,6 +65,7 @@ impl<'a, R: ?Sized, I: ?Sized> LorebookKeywordExecutionCoordinator<'a, R, I> {
         Self {
             repository,
             inference,
+            job_attempt: None,
         }
     }
 }
@@ -77,6 +79,11 @@ where
         + ?Sized,
     I: InferencePort + ?Sized,
 {
+    pub fn with_job_attempt(mut self, attempt: u32) -> Self {
+        self.job_attempt = Some(attempt);
+        self
+    }
+
     pub async fn run(
         &self,
         request_id: RequestId,
@@ -130,7 +137,11 @@ where
                     cleanup(self.repository, &outcome)?;
                     attempts = self
                         .repository
-                        .commit_lorebook_keyword_attempt(request_id, checkpoint)
+                        .commit_lorebook_keyword_attempt_for_job_attempt(
+                            request_id,
+                            checkpoint,
+                            self.job_attempt,
+                        )
                         .map_err(LorebookKeywordExecutionError::Run)?;
                 }
                 Err(crate::jobs::job_inference_usage::JobInferenceError::Provider(
@@ -204,7 +215,11 @@ where
         cleanup(self.repository, &outcome)?;
         attempts = self
             .repository
-            .commit_lorebook_keyword_attempt(request_id, checkpoint)
+            .commit_lorebook_keyword_attempt_for_job_attempt(
+                request_id,
+                checkpoint,
+                self.job_attempt,
+            )
             .map_err(LorebookKeywordExecutionError::Run)?;
         completed_result(&attempts, replayed)?.ok_or(LorebookKeywordExecutionError::InvalidResponse)
     }

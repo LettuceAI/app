@@ -13,3 +13,7 @@ pub mod memory;
 pub mod memory_models;
 pub mod ollama;
 pub mod speech;
+
+pub mod lorebooks;
+
+pub mod prompts;

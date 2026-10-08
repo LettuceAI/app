@@ -6164,3 +6164,5 @@ mod tests {
         assert!(starting.commit().is_err());
     }
 }
+
+pub use job_adapter::LorebookJobInput;

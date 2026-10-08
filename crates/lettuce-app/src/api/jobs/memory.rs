@@ -248,7 +248,7 @@ async fn forward(
     }
 }
 
-fn retry_due(job: &JobSnapshot) -> Option<lettuce_types::TimestampMillis> {
+pub(super) fn retry_due(job: &JobSnapshot) -> Option<lettuce_types::TimestampMillis> {
     let attempt = job.attempt.get();
     if attempt == 0 {
         return None;
