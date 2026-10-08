@@ -458,8 +458,6 @@ where
     config.stable_diffusion.cpp = binding;
     let kept = config.capabilities.clone();
     config.capabilities = ModelCapabilities {
-        declared_input_scopes: kept.declared_input_scopes,
-        declared_output_scopes: kept.declared_output_scopes,
         streaming: kept.streaming,
         tools: kept.tools,
         structured_output: kept.structured_output,

@@ -164,4 +164,5 @@ Editor saves write local file paths as authored rather than applying sync's devi
 
 Model-change triggers retain a single AUTOINCREMENT position instead of accumulating notifications. Quota-warning rows now cascade with their account, and a late result for a deleted account is not recorded or emitted; the account existence check and warning write share an immediate transaction. Legacy dedup lived in meta without an account foreign key (`old-code/src-tauri/src/providers/nanogpt_usage.rs:71-102`).
 
-Saved input/output scope declarations remain distinct from capability status, preserving an editor selection even when it is explicitly Unsupported (`old-code/src-tauri/src/storage_manager/models.rs:126-159`). Existing profiles and legacy imports without declaration fields expose Supported modalities. The optional fields travel inside the existing portable model configuration.
+
+Scope views derive only Supported modalities from capability statuses. Separate stored declaration fields were removed by re-review decision. A declaration that remains Unsupported fails typed before any write; reported metadata replaces its side, including clearing echoed Supported modalities not listed. Legacy stored input/output scopes without this typed capability check (`old-code/src-tauri/src/storage_manager/models.rs:126-159`).

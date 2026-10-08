@@ -156,4 +156,5 @@ Provider graph version 4 carries pending staged projects, frozen draft prompt do
 
 Provider graph version 5 preserves frozen creation model names alongside ids; deleting a live model no longer blocks restoring its history. Legacy model deletion did not retain a restrictive history reference (old-code/src-tauri/src/storage_manager/models.rs:301-306).
 
-Saved input/output scope declarations remain distinct from capability status, preserving an editor selection even when it is explicitly Unsupported (`old-code/src-tauri/src/storage_manager/models.rs:126-159`). Existing profiles and legacy imports without declaration fields expose Supported modalities. The optional fields travel inside the existing portable model configuration.
+
+Scope views derive only Supported modalities from capability statuses. Separate stored declaration fields were removed by re-review decision. A declaration that remains Unsupported fails typed before any write; reported metadata replaces its side, including clearing echoed Supported modalities not listed. Legacy stored input/output scopes without this typed capability check (`old-code/src-tauri/src/storage_manager/models.rs:126-159`).

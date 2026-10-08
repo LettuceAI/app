@@ -168,4 +168,5 @@ Provider backup graph version 5 includes frozen prompt documents on entry and ke
 
 Provider backup graph version 5 includes frozen model display names in creation inference profiles. Historical model ids do not require a live model in the restored catalog.
 
-Optional declared scope lists live in model capability configuration and survive profile reads, copies, backup and sync. Profiles without declarations expose their Supported modalities; legacy import constructors leave the optional declaration fields absent.
+
+Capability statuses are the only model scope source. Editor saves reject declared Unsupported modalities before writing. A reported metadata side marks listed modalities Supported and unlisted modalities Unknown unless explicitly Unsupported; an unreported side uses editor declarations.

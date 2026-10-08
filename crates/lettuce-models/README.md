@@ -89,4 +89,5 @@ The editor API supplies declared scope evidence on save. Declarations mark their
 
 Declared scope edits replace previously supported modalities while preserving explicit Unsupported without remote metadata; reported modalities take precedence over echoed statuses.
 
-Optional declared scope lists live in model capability configuration and survive profile reads, copies, backup and sync. Profiles without declarations expose their Supported modalities; legacy import constructors leave the optional declaration fields absent.
+
+Capability statuses are the only model scope source. Editor saves reject declared Unsupported modalities before writing. A reported metadata side marks listed modalities Supported and unlisted modalities Unknown unless explicitly Unsupported; an unreported side uses editor declarations.

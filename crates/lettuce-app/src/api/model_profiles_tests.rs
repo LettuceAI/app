@@ -91,19 +91,30 @@ async fn declared_image_scopes_are_supported_and_explicit_unsupported_is_kept() 
     request.client_operation_id = "unsupported-image".into();
     request.model.config["capabilities"]["input_modalities"]["image"] =
         serde_json::json!("unsupported");
-    let saved = super::model_save(&h.context, request)
+    let before = h
+        .context
+        .backend()
+        .database()
+        .model_profiles()
+        .expect("before");
+    let error = super::model_save(&h.context, request)
         .await
-        .expect("save unsupported");
-    assert_eq!(
-        saved.config["capabilities"]["input_modalities"]["image"],
-        "unsupported"
+        .expect_err("unsupported save");
+    assert_eq!(error.code, ApiErrorCode::InvalidInput);
+    assert!(
+        matches!(error.details, Some(dto::ApiErrorDetails::InvalidField { field }) if field == "model.input_scopes")
     );
-    let blocked = ModelProfileRepository::get(
-        h.context.backend().database(),
-        saved.id.parse().expect("id"),
-    )
-    .expect("profile")
-    .expect("exists");
+    assert_eq!(
+        h.context
+            .backend()
+            .database()
+            .model_profiles()
+            .expect("after"),
+        before
+    );
+    let mut blocked = profile;
+    blocked.config.capabilities.input_modalities.image =
+        lettuce_models::CapabilityStatus::Unsupported;
     assert!(matches!(
         resolve(&h.context, &blocked),
         Err(lettuce_models::ChatProfileResolutionError::ModalityUnsupported { .. })
@@ -510,39 +521,124 @@ async fn model_delete_emits_models_settings_changed() {
 }
 
 #[tokio::test]
-async fn declared_unsupported_scope_is_returned_without_becoming_supported() {
+async fn rereview_remote_scopes_replace_echo_and_survive_plain_save() {
     let h = harness(Reply::Text("Hello."));
-    let mut request = draft(&h.context, "scope-unsupported-view");
+    let mut request = draft(&h.context, "rereview-remote");
+    request.model.input_scopes = vec![dto::ModelModality::Text];
+    request.model.config["capabilities"]["input_modalities"]["audio"] =
+        serde_json::json!("supported");
     request.model.config["capabilities"]["input_modalities"]["image"] =
         serde_json::json!("unsupported");
-    let saved = super::model_save(&h.context, request.clone())
+    request.model.remote_metadata = Some(serde_json::from_value(serde_json::json!({"id":"editor-model","input_modalities":["text","image"],"output_modalities":["text"]})).expect("metadata"));
+    let remote = super::model_save(&h.context, request.clone())
         .await
-        .expect("save");
-    assert_eq!(saved.input_scopes, request.model.input_scopes);
-    assert_eq!(saved.output_scopes, request.model.output_scopes);
+        .expect("remote");
     assert_eq!(
-        saved.config["capabilities"]["input_modalities"]["image"],
-        "unsupported"
+        remote.input_scopes,
+        vec![dto::ModelModality::Text, dto::ModelModality::Image]
     );
-    let loaded = super::model_get(
-        &h.context,
-        dto::ModelGetRequest {
-            model_id: saved.id.clone(),
-        },
+    assert_eq!(
+        remote.config["capabilities"]["input_modalities"]["audio"],
+        "unknown"
+    );
+    assert_eq!(
+        remote.config["capabilities"].get("declared_input_scopes"),
+        None
+    );
+    request.model.id = Some(remote.id);
+    request.model.config = remote.config;
+    request.model.input_scopes = vec![dto::ModelModality::Text, dto::ModelModality::Image];
+    request.model.remote_metadata = None;
+    request.expected_revision = Some(remote.revision);
+    request.client_operation_id = "rereview-plain".into();
+    let plain = super::model_save(&h.context, request).await.expect("plain");
+    assert_eq!(
+        plain.input_scopes,
+        vec![dto::ModelModality::Text, dto::ModelModality::Image]
+    );
+}
+
+#[tokio::test]
+async fn rereview_catalog_unsupported_image_declaration_is_typed_and_writes_nothing() {
+    use lettuce_image_generation::{diffusion_catalog, sd_runtime::layout::DiffusionPaths};
+    let h = harness(Reply::Text("Hello."));
+    let catalog = diffusion_catalog();
+    let profile = catalog
+        .profiles
+        .iter()
+        .find(|profile| !profile.supports_image_edit)
+        .expect("text-to-image profile");
+    let root = std::env::temp_dir().join(format!(
+        "s7b-rereview-{}",
+        lettuce_types::OperationId::new()
+    ));
+    let paths = DiffusionPaths::legacy_layout(&root, root.join("models"));
+    let model = crate::image::local_diffusion_install::register_catalog_model(
+        h.context.backend().database(),
+        &paths,
+        &profile.id,
+        &profile.variants[0].id,
+        "master-778-c00a9e9",
+        "sd-master-c00a9e9-bin-Linux-Ubuntu-24.04-x86_64-vulkan.zip",
+        h.context.now(),
     )
-    .await
-    .expect("get");
-    assert_eq!(loaded.input_scopes, request.model.input_scopes);
-    let copy = super::model_duplicate(
-        &h.context,
-        dto::ModelDuplicateRequest {
-            model_id: saved.id,
-            expected_revision: saved.revision,
-            display_name: "Copy".into(),
-            client_operation_id: "scope-unsupported-copy".into(),
+    .expect("catalog registration");
+    assert_eq!(
+        model.config.capabilities.input_modalities.image,
+        lettuce_models::CapabilityStatus::Unsupported
+    );
+    let before = h
+        .context
+        .backend()
+        .database()
+        .model_profiles()
+        .expect("before");
+    let settings = h.context.backend().database().load().expect("settings");
+    let request = dto::ModelSaveRequest {
+        model: dto::ModelInput {
+            id: Some(model.id.to_string()),
+            provider_account_id: model.provider_account_id.to_string(),
+            external_model_id: model.external_model_id.clone(),
+            display_name: "Edited".into(),
+            kind: dto::ModelKindContract::Image,
+            config: serde_json::to_value(model.config).expect("config"),
+            input_scopes: vec![dto::ModelModality::Text, dto::ModelModality::Image],
+            output_scopes: vec![dto::ModelModality::Image],
+            remote_metadata: None,
         },
-    )
-    .await
-    .expect("duplicate");
-    assert_eq!(copy.input_scopes, request.model.input_scopes);
+        expected_revision: Some(model.revision.get()),
+        client_operation_id: "rereview-catalog-unsupported".into(),
+    };
+    let error = super::model_save(&h.context, request)
+        .await
+        .expect_err("unsupported declaration");
+    assert_eq!(error.code, ApiErrorCode::InvalidInput);
+    assert!(
+        matches!(error.details, Some(dto::ApiErrorDetails::InvalidField { field }) if field == "model.input_scopes")
+    );
+    assert_eq!(
+        h.context
+            .backend()
+            .database()
+            .model_profiles()
+            .expect("after"),
+        before
+    );
+    assert_eq!(
+        h.context
+            .backend()
+            .database()
+            .load()
+            .expect("after settings"),
+        settings
+    );
+    assert!(
+        h.context
+            .backend()
+            .database()
+            .lookup_api_operation("model_save", "rereview-catalog-unsupported")
+            .expect("receipt")
+            .is_none()
+    );
+    std::fs::remove_dir_all(root).ok();
 }

@@ -33,33 +33,6 @@ impl From<ApiOperationError> for Failure {
     }
 }
 
-fn modality(scope: dto::ModelModality) -> lettuce_models::Modality {
-    match scope {
-        dto::ModelModality::Text => lettuce_models::Modality::Text,
-        dto::ModelModality::Image => lettuce_models::Modality::Image,
-        dto::ModelModality::Audio => lettuce_models::Modality::Audio,
-    }
-}
-
-fn declared_view(
-    declarations: &Option<Vec<lettuce_models::Modality>>,
-    capabilities: &ModalityCapabilities,
-) -> Vec<dto::ModelModality> {
-    declarations
-        .as_ref()
-        .map(|scopes| {
-            scopes
-                .iter()
-                .map(|scope| match scope {
-                    lettuce_models::Modality::Text => dto::ModelModality::Text,
-                    lettuce_models::Modality::Image => dto::ModelModality::Image,
-                    lettuce_models::Modality::Audio => dto::ModelModality::Audio,
-                })
-                .collect()
-        })
-        .unwrap_or_else(|| scopes(capabilities))
-}
-
 fn scopes(capabilities: &ModalityCapabilities) -> Vec<dto::ModelModality> {
     [
         (dto::ModelModality::Text, capabilities.text),
@@ -83,14 +56,8 @@ pub(super) fn view(model: ModelProfile) -> Result<dto::ModelView, ApiError> {
             ModelKind::Embedding => dto::ModelKindContract::Embedding,
             ModelKind::Speech => dto::ModelKindContract::Speech,
         },
-        input_scopes: declared_view(
-            &model.config.capabilities.declared_input_scopes,
-            &model.config.capabilities.input_modalities,
-        ),
-        output_scopes: declared_view(
-            &model.config.capabilities.declared_output_scopes,
-            &model.config.capabilities.output_modalities,
-        ),
+        input_scopes: scopes(&model.config.capabilities.input_modalities),
+        output_scopes: scopes(&model.config.capabilities.output_modalities),
         config: serde_json::to_value(model.config)
             .map_err(|_| api_error(ApiErrorCode::Internal, "model config cannot be read"))?,
         revision: model.revision.get(),
@@ -153,7 +120,34 @@ fn declared(scopes: &[dto::ModelModality], capabilities: &mut ModalityCapabiliti
     }
 }
 
+fn validate_declarations(
+    scopes: &[dto::ModelModality],
+    capabilities: &ModalityCapabilities,
+    field: &str,
+) -> Result<(), ApiError> {
+    for scope in scopes {
+        let status = match scope {
+            dto::ModelModality::Text => capabilities.text,
+            dto::ModelModality::Image => capabilities.image,
+            dto::ModelModality::Audio => capabilities.audio,
+        };
+        if status == CapabilityStatus::Unsupported {
+            return Err(invalid_field(field, "declared modality is unsupported"));
+        }
+    }
+    Ok(())
+}
+
 fn metadata(scopes: &[String], capabilities: &mut ModalityCapabilities) {
+    for status in [
+        &mut capabilities.text,
+        &mut capabilities.image,
+        &mut capabilities.audio,
+    ] {
+        if *status != CapabilityStatus::Unsupported {
+            *status = CapabilityStatus::Unknown;
+        }
+    }
     for scope in scopes {
         let status = match scope.as_str() {
             "text" => &mut capabilities.text,
@@ -253,11 +247,8 @@ pub async fn model_save(
                         "metadata identity differs from model",
                     ));
                 }
-                if !remote.input_modalities.as_ref().is_none_or(Vec::is_empty) {
-                    metadata(
-                        remote.input_modalities.as_deref().unwrap_or_default(),
-                        &mut capabilities.input_modalities,
-                    );
+                if let Some(scopes) = &remote.input_modalities {
+                    metadata(scopes, &mut capabilities.input_modalities);
                     remote_used = true;
                 } else {
                     declared(
@@ -265,11 +256,8 @@ pub async fn model_save(
                         &mut capabilities.input_modalities,
                     );
                 }
-                if !remote.output_modalities.as_ref().is_none_or(Vec::is_empty) {
-                    metadata(
-                        remote.output_modalities.as_deref().unwrap_or_default(),
-                        &mut capabilities.output_modalities,
-                    );
+                if let Some(scopes) = &remote.output_modalities {
+                    metadata(scopes, &mut capabilities.output_modalities);
                     remote_used = true;
                 } else {
                     declared(
@@ -296,24 +284,16 @@ pub async fn model_save(
                     &mut capabilities.output_modalities,
                 );
             }
-            capabilities.declared_input_scopes = Some(
-                request
-                    .model
-                    .input_scopes
-                    .iter()
-                    .copied()
-                    .map(modality)
-                    .collect(),
-            );
-            capabilities.declared_output_scopes = Some(
-                request
-                    .model
-                    .output_scopes
-                    .iter()
-                    .copied()
-                    .map(modality)
-                    .collect(),
-            );
+            validate_declarations(
+                &request.model.input_scopes,
+                &capabilities.input_modalities,
+                "model.input_scopes",
+            )?;
+            validate_declarations(
+                &request.model.output_scopes,
+                &capabilities.output_modalities,
+                "model.output_scopes",
+            )?;
             capabilities.evidence = CapabilityEvidence {
                 source: if remote_used {
                     CapabilityEvidenceSource::ProviderReported

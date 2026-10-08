@@ -354,4 +354,5 @@ Model control writes use the API receipt transaction for CAS, default selection,
 
 Model changes retain one increasing commit position. Quota warning records belong to provider accounts and cascade on deletion; late checks for removed accounts do not publish warnings.
 
-Optional declared scope lists live in model capability configuration and survive profile reads, copies, backup and sync. Profiles without declarations expose their Supported modalities; legacy import constructors leave the optional declaration fields absent.
+
+Capability statuses are the only model scope source. Editor saves reject declared Unsupported modalities before writing. A reported metadata side marks listed modalities Supported and unlisted modalities Unknown unless explicitly Unsupported; an unreported side uses editor declarations.
