@@ -356,3 +356,16 @@ pub(super) async fn api_key_set(
         None => false,
     })
 }
+
+#[cfg(test)]
+mod verification_reason_tests {
+    #[test]
+    fn verification_without_provider_text_has_a_typed_reason() {
+        for (status, reason) in [(None, "missing_api_key"), (Some(401), "invalid_api_key")] {
+            let error = super::verified(lettuce_providers::KeyVerification { valid: false, status, error: None }).expect_err("invalid");
+            let details = serde_json::to_value(error.details).expect("details");
+            assert_eq!(details["reason"], reason);
+            assert_eq!(details["provider_message"], serde_json::Value::Null);
+        }
+    }
+}

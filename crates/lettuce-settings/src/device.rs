@@ -142,6 +142,13 @@ pub trait DeviceSettingsStore: Send + Sync {
 mod tests {
     use super::*;
 
+    #[test]
+    fn oversized_certificate_pem_is_rejected() {
+        let mut settings = DeviceSettings::default();
+        settings.trusted_certificates.push(certificate(&format!("-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----", "A".repeat(1024*1024))));
+        assert_eq!(settings.validate(), Err(GlobalSettingsStoreError::InvalidData));
+    }
+
     fn certificate(pem: &str) -> TrustedCertificate {
         TrustedCertificate {
             id: uuid::Uuid::new_v4(),

@@ -104,3 +104,26 @@ fn relocate_in(
             })?;
     Ok(changed)
 }
+
+#[cfg(test)]
+mod certificate_race_tests {
+    use super::*;
+    use lettuce_settings::DeviceSettingsStore;
+
+    #[test]
+    fn relocation_merges_folder_fields_without_losing_a_concurrent_certificate() {
+        let database = Database::open_in_memory().expect("database");
+        let mut stale = database.load_device_settings().expect("before move");
+        stale.llm_models_dir = Some("/new/models".into());
+        let mut concurrent = database.load_device_settings().expect("certificate import");
+        concurrent.trusted_certificates.push(lettuce_settings::TrustedCertificate {
+            id: uuid::Uuid::new_v4(), name: "root.pem".into(), imported_at: 1,
+            pem: "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----".into(),
+        });
+        database.save_device_settings(concurrent.clone()).expect("commit certificate");
+        database.relocate_model_paths_and_save_device(&|_| None, stale, TimestampMillis::new(1)).expect("move commit");
+        let after = database.load_device_settings().expect("both changes");
+        assert_eq!(after.trusted_certificates, concurrent.trusted_certificates);
+        assert_eq!(after.llm_models_dir.as_deref(), Some("/new/models"));
+    }
+}

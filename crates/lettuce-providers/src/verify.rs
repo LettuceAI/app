@@ -299,6 +299,15 @@ mod tests {
     }
 
     #[test]
+    fn error_json_without_string_fields_preserves_legacy_text() {
+        for error in [serde_json::json!({"message": 7, "type": "quota"}), serde_json::json!({"quota": 0}), serde_json::json!([1,2]), serde_json::json!(false)] {
+            let body = serde_json::json!({"error":error}).to_string();
+            let expected = error.get("type").and_then(serde_json::Value::as_str).map(str::to_owned).unwrap_or_else(||error.to_string());
+            assert_eq!(provider_error(body.as_bytes()), Some(expected));
+        }
+    }
+
+    #[test]
     fn judges_like_legacy() {
         assert!(judge(&response(200, "{}"), false).valid);
         assert!(!judge(&response(401, "{}"), false).valid);

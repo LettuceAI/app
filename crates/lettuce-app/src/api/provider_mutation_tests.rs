@@ -924,3 +924,56 @@ async fn cleanup_failure_at_startup_preserves_staged_secret_and_starts_workers()
     assert_eq!(context.backend().database().provider_secret_cleanup().expect("journal").len(),1);
     workers.stop().await;
 }
+
+#[tokio::test]
+async fn account_receipt_digest_and_backup_are_independent_of_key_value() {
+    use lettuce_transfer::ProviderBackupSource;
+    let harness = harness(Reply::Text("Hello."));
+    let request = save(None, Some("receipt-key-canary"), false, None, "keyless-receipt");
+    super::provider_account_save(&harness.context, request.clone()).await.expect("save");
+    let receipt = harness.context.backend().database().lookup_api_operation("provider_account_save", "keyless-receipt").expect("lookup").expect("receipt");
+    let mut keyless = serde_json::to_value(&request).expect("request");
+    keyless["api_key"] = serde_json::json!(true);
+    let expected = super::jobs::local::digest(&keyless).expect("keyless digest");
+    assert_eq!(receipt.request_digest, expected);
+    let backup = harness.context.backend().database().read_provider_backup_graph().expect("backup");
+    let bytes = serde_json::to_string(&backup).expect("backup bytes");
+    assert!(!bytes.contains("receipt-key-canary"));
+    assert!(!bytes.contains(&super::jobs::local::digest(&request).expect("old keyed digest")));
+    assert!(!bytes.contains(&blake3::hash(b"receipt-key-canary").to_hex().to_string()));
+}
+
+#[tokio::test]
+async fn certificate_import_replays_after_source_grant_is_gone() {
+    let harness = harness(Reply::Text("Hello."));
+    let file = TestFile::new();
+    std::fs::write(file.path(), include_str!("../../tests/fixtures/provider-test-cert.pem")).expect("source");
+    let request = dto::CertificatesImportRequest { source: dto::FileSource { uri: file.path().to_string_lossy().into_owned() }, client_operation_id: "expired-grant".into() };
+    let first = super::certificates_import(&harness.context, request.clone()).await.expect("import");
+    std::fs::remove_file(file.path()).expect("expire source");
+    assert_eq!(super::certificates_import(&harness.context, request).await.expect("receipt before file access"), first);
+}
+
+#[tokio::test]
+async fn certificate_source_above_cap_is_rejected_without_writing() {
+    let harness = harness(Reply::Text("Hello."));
+    let file = TestFile::new();
+    let pem = include_str!("../../tests/fixtures/provider-test-cert.pem");
+    std::fs::write(file.path(), pem.repeat(1024*1024/pem.len()+1)).expect("large valid bundle");
+    let before = super::certificates_list(&harness.context).await.expect("before");
+    assert_eq!(super::certificates_import(&harness.context, dto::CertificatesImportRequest { source: dto::FileSource { uri: file.path().to_string_lossy().into_owned() }, client_operation_id: "oversized-root".into() }).await.expect_err("oversize").code, ApiErrorCode::InvalidInput);
+    assert_eq!(super::certificates_list(&harness.context).await.expect("after"), before);
+}
+
+#[tokio::test]
+async fn duplicate_certificate_reports_its_existing_identity() {
+    let harness = harness(Reply::Text("Hello."));
+    let file = TestFile::new();
+    std::fs::write(file.path(), include_str!("../../tests/fixtures/provider-test-cert.pem")).expect("source");
+    let mut request = dto::CertificatesImportRequest { source: dto::FileSource { uri: file.path().to_string_lossy().into_owned() }, client_operation_id: "duplicate-first".into() };
+    let first = super::certificates_import(&harness.context, request.clone()).await.expect("first");
+    request.client_operation_id = "duplicate-second".into();
+    let error = super::certificates_import(&harness.context, request).await.expect_err("duplicate");
+    assert_eq!(error.code, ApiErrorCode::Conflict);
+    assert_eq!(serde_json::to_value(error.details).expect("detail"), serde_json::json!({"type":"certificate_already_imported", "certificate_id":first.certificates[0].id}));
+}
