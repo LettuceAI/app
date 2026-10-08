@@ -1572,6 +1572,21 @@ pub(crate) fn reconcile_built_ins_in(
                 return Err(PromptBootstrapError::InvalidStoredBuiltIn);
             }
         };
+        let name_kept = current_authored == current_seed
+            && match &current.provenance {
+                PromptProvenance::BuiltIn {
+                    key,
+                    seed_version,
+                    required,
+                    protected,
+                    ..
+                } => {
+                    authored_digest(&current, key, *seed_version, *required, *protected)
+                        .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?
+                        != current_seed
+                }
+                _ => false,
+            };
         let mut canonical_provenance = seed.provenance()?;
         let alias_only = match &current.provenance {
             PromptProvenance::BuiltIn {
@@ -1633,7 +1648,8 @@ pub(crate) fn reconcile_built_ins_in(
         let (entries, touched, entries_changed) =
             reconcile_entries(&current, &seed, legacy_ordinal_match);
         let mut metadata = seed.metadata.clone();
-        if request.mode == BuiltInReconcileMode::ResetToSeed {
+        let keep_name = request.mode == BuiltInReconcileMode::ResetToSeed || name_kept;
+        if keep_name {
             metadata.name = current.name.clone();
         }
         let metadata_changed = current.name != metadata.name
@@ -1644,8 +1660,10 @@ pub(crate) fn reconcile_built_ins_in(
             metadata_changed || entries_changed || current.status != LifecycleStatus::Active;
         let mut document = metadata_document(id, metadata, entries, seed.provenance()?, now)
             .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?;
+        let kept_name = std::mem::replace(&mut document.name, seed.metadata.name.clone());
         refresh_provenance(&mut document)
             .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?;
+        document.name = kept_name;
         document.revision = if root_changed {
             next_revision(current.revision)
                 .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?
@@ -1936,6 +1954,70 @@ mod tests {
             reset[0].document.entries[0].id,
             created[0].document.entries[0].id
         );
+    }
+
+    #[test]
+    fn reset_of_a_renamed_built_in_counts_as_unedited_and_keeps_its_name() {
+        let database = Database::open_in_memory().expect("database");
+        let seed_with = |version: u32, content: &str| {
+            let mut entry = draft("one");
+            entry.built_in_entry_key = Some("one".into());
+            entry.content = content.into();
+            BuiltInPromptSeed {
+                key: "core".into(),
+                aliases: Vec::new(),
+                seed_version: version,
+                metadata: metadata("Core"),
+                entries: vec![entry],
+                required: true,
+                protected: false,
+            }
+        };
+        let request =
+            |seed: BuiltInPromptSeed, mode: BuiltInReconcileMode| BuiltInReconcileRequest {
+                seeds: vec![seed],
+                mode,
+            };
+        let refresh = |seed| request(seed, BuiltInReconcileMode::RefreshUnedited);
+        let created = database
+            .reconcile_built_ins(refresh(seed_with(1, "first")), TimestampMillis::new(1))
+            .expect("create");
+        database
+            .revise_metadata(
+                created[0].document.id,
+                created[0].document.revision,
+                metadata("Mine"),
+                TimestampMillis::new(2),
+            )
+            .expect("rename");
+        let reset = database
+            .reconcile_built_ins(
+                request(seed_with(1, "first"), BuiltInReconcileMode::ResetToSeed),
+                TimestampMillis::new(3),
+            )
+            .expect("reset");
+        assert_eq!(reset[0].action, BuiltInReconcileAction::ResetEdited);
+        assert_eq!(reset[0].document.name, "Mine");
+        let unchanged = database
+            .reconcile_built_ins(refresh(seed_with(1, "first")), TimestampMillis::new(4))
+            .expect("startup");
+        assert_eq!(unchanged[0].document.name, "Mine");
+        assert_ne!(unchanged[0].action, BuiltInReconcileAction::PreservedEdited);
+        let refreshed = database
+            .reconcile_built_ins(refresh(seed_with(2, "second")), TimestampMillis::new(5))
+            .expect("later seed");
+        assert_eq!(
+            refreshed[0].action,
+            BuiltInReconcileAction::RefreshedUnedited
+        );
+        assert_eq!(refreshed[0].document.name, "Mine");
+        assert_eq!(refreshed[0].document.entries[0].content, "second");
+        let again = database
+            .reconcile_built_ins(refresh(seed_with(3, "third")), TimestampMillis::new(6))
+            .expect("next seed");
+        assert_eq!(again[0].action, BuiltInReconcileAction::RefreshedUnedited);
+        assert_eq!(again[0].document.name, "Mine");
+        assert_eq!(again[0].document.entries[0].content, "third");
     }
 
     #[test]
