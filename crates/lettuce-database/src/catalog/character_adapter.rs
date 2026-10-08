@@ -3453,6 +3453,128 @@ impl Database {
     }
 }
 
+/// Clears `prompt_id` from every character default (direct, group and
+/// companion prompts) and starter that selects it, and moves each changed
+/// character's revision. Returns the characters that changed.
+pub(crate) fn clear_prompt_references_in(
+    tx: &Transaction<'_>,
+    prompt_id: PromptDocumentId,
+    now: TimestampMillis,
+) -> Result<BTreeSet<CharacterId>, rusqlite::Error> {
+    let mut changed = BTreeSet::new();
+    let rows = tx
+        .prepare(
+            "SELECT id,defaults_json FROM characters WHERE direct_prompt_id=?1 OR group_conversation_prompt_id=?1 OR group_roleplay_prompt_id=?1 OR instr(defaults_json,?1)>0 ORDER BY id",
+        )?
+        .query_map([prompt_id.to_string()], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    for (id, payload) in rows {
+        let mut defaults: CharacterDefaults = decode(&payload, DEFAULTS_VERSION)?;
+        let mut touched = false;
+        for selection in [
+            &mut defaults.direct_prompt_id,
+            &mut defaults.group_conversation_prompt_id,
+            &mut defaults.group_roleplay_prompt_id,
+        ] {
+            if *selection == Some(prompt_id) {
+                *selection = None;
+                touched = true;
+            }
+        }
+        if let Some(soul) = defaults.companion_soul.as_mut()
+            && soul.prompting.prompt_template_id == Some(prompt_id)
+        {
+            soul.prompting.prompt_template_id = None;
+            touched = true;
+        }
+        if !touched {
+            continue;
+        }
+        tx.execute(
+            "UPDATE characters SET defaults_json=?2,direct_prompt_id=?3,group_conversation_prompt_id=?4,group_roleplay_prompt_id=?5 WHERE id=?1",
+            params![
+                id,
+                encode(&defaults, DEFAULTS_VERSION).map_err(|_| invalid())?,
+                id_text(defaults.direct_prompt_id),
+                id_text(defaults.group_conversation_prompt_id),
+                id_text(defaults.group_roleplay_prompt_id),
+            ],
+        )?;
+        changed.insert(parse_id(id)?);
+    }
+    let starters = tx
+        .prepare("UPDATE conversation_starters SET prompt_id=NULL,revision=revision+1,updated_at=max(updated_at,?2) WHERE prompt_id=?1 RETURNING character_id")?
+        .query_map(params![prompt_id.to_string(), now.get()], |row| {
+            row.get::<_, String>(0)
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    for character in starters {
+        changed.insert(parse_id(character)?);
+    }
+    bump_characters_in(tx, &changed, now)?;
+    Ok(changed)
+}
+
+/// Removes `lorebook_id` from every starter's explicit lorebook selection and
+/// moves each changed character's revision. Returns the characters that
+/// changed.
+pub(crate) fn clear_starter_lorebook_in(
+    tx: &Transaction<'_>,
+    lorebook_id: LorebookId,
+    now: TimestampMillis,
+) -> Result<BTreeSet<CharacterId>, rusqlite::Error> {
+    let mut changed = BTreeSet::new();
+    let rows = tx
+        .prepare("SELECT character_id,id,lorebooks_json FROM conversation_starters WHERE instr(lorebooks_json,?1)>0 ORDER BY character_id,id")?
+        .query_map([lorebook_id.to_string()], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    for (character, starter, payload) in rows {
+        let selection: Selection<Vec<LorebookId>> = decode(&payload, LOREBOOK_VERSION)?;
+        let Selection::Explicit(mut books) = selection else {
+            continue;
+        };
+        let before = books.len();
+        books.retain(|book| *book != lorebook_id);
+        if books.len() == before {
+            continue;
+        }
+        tx.execute(
+            "UPDATE conversation_starters SET lorebooks_json=?3,revision=revision+1,updated_at=max(updated_at,?4) WHERE character_id=?1 AND id=?2",
+            params![
+                character,
+                starter,
+                encode(&Selection::Explicit(books), LOREBOOK_VERSION).map_err(|_| invalid())?,
+                now.get()
+            ],
+        )?;
+        changed.insert(parse_id(character)?);
+    }
+    bump_characters_in(tx, &changed, now)?;
+    Ok(changed)
+}
+
+fn bump_characters_in(
+    tx: &Transaction<'_>,
+    characters: &BTreeSet<CharacterId>,
+    now: TimestampMillis,
+) -> Result<(), rusqlite::Error> {
+    for character in characters {
+        tx.execute(
+            "UPDATE characters SET revision=revision+1,updated_at=max(updated_at,?2) WHERE id=?1",
+            params![character.to_string(), now.get()],
+        )?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod smoke_tests {
     use super::*;

@@ -181,6 +181,32 @@ impl GlobalSettings {
         }
         changed
     }
+
+    /// Resets every feature prompt selection `removed` accepts to its
+    /// built-in default; true when one was selected.
+    pub fn clear_prompts(&mut self, removed: impl Fn(PromptDocumentId) -> bool) -> bool {
+        let generator = &mut self.lorebook_generator.selection;
+        let mut changed = false;
+        for selection in [
+            &mut generator.planner_prompt_id,
+            &mut generator.writer_prompt_id,
+            &mut generator.refine_prompt_id,
+            &mut generator.coherence_prompt_id,
+            &mut self.dynamic_memory_prompts.summarizer_prompt_id,
+            &mut self.dynamic_memory_prompts.manager_prompt_id,
+            &mut self.help_me_reply.roleplay_prompt_id,
+            &mut self.help_me_reply.conversational_prompt_id,
+            &mut self.lorebook_entry_generator.entry_prompt_id,
+            &mut self.lorebook_entry_generator.keyword_prompt_id,
+            &mut self.companion_soul_writer.prompt_id,
+        ] {
+            if selection.is_some_and(&removed) {
+                *selection = None;
+                changed = true;
+            }
+        }
+        changed
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]

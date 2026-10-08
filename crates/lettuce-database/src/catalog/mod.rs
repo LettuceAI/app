@@ -4,3 +4,4 @@ pub(crate) mod creation_adapter;
 pub(crate) mod group_adapter;
 pub(crate) mod persona_adapter;
 pub(crate) mod prompt_adapter;
+pub(crate) mod source_delete;

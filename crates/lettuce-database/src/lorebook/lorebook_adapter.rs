@@ -906,6 +906,53 @@ fn owner_bump(
     Ok(next)
 }
 
+/// Removes `lorebook_id` from every character, persona and group binding
+/// list inside `tx`, renumbers the bindings left and moves each owner's
+/// revision. Returns the owners that changed, per owner kind.
+pub(crate) fn remove_lorebook_bindings_in(
+    tx: &Transaction<'_>,
+    lorebook_id: LorebookId,
+    now: TimestampMillis,
+) -> Result<[Vec<String>; 3], BindingRepositoryError> {
+    let mut changed: [Vec<String>; 3] = Default::default();
+    for (slot, kind) in [OwnerKind::Character, OwnerKind::Persona, OwnerKind::Group]
+        .into_iter()
+        .enumerate()
+    {
+        let owners = tx
+            .prepare(&format!(
+                "SELECT {owner} FROM {table} WHERE lorebook_id=?1 ORDER BY {owner}",
+                owner = kind.owner_column(),
+                table = kind.binding_table()
+            ))
+            .map_err(binding_db_error)?
+            .query_map([lorebook_id.to_string()], |row| row.get::<_, String>(0))
+            .map_err(binding_db_error)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(binding_db_error)?;
+        for owner in owners {
+            let previous = read_bindings(tx, kind, &owner)?;
+            let mut bindings = previous.clone();
+            bindings.retain(|binding| binding.lorebook_id != lorebook_id);
+            normalize_binding_metadata(&mut bindings, &previous, now)?;
+            tx.execute(
+                &format!(
+                    "DELETE FROM {} WHERE {}=?1",
+                    kind.binding_table(),
+                    kind.owner_column()
+                ),
+                [&owner],
+            )
+            .map_err(binding_db_error)?;
+            insert_bindings_in(tx, kind, &owner, &bindings).map_err(binding_db_error)?;
+            let revision = owner_revision(tx, kind, &owner)?;
+            owner_bump(tx, kind, &owner, revision, now)?;
+            changed[slot].push(owner);
+        }
+    }
+    Ok(changed)
+}
+
 fn parse_binding(row: &Row<'_>) -> rusqlite::Result<LorebookBinding> {
     let enabled = bool_value(row.get(2)?)?;
     Ok(LorebookBinding {

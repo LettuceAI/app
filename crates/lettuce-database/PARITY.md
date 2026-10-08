@@ -4,6 +4,8 @@ Facts about how `lettuce-database` relates to the legacy app (2.2.x). The crate 
 
 ## Legacy parity
 
+- Lorebook and prompt hard deletes remove the live references that name them in the same transaction (slice 6 decision 5). Legacy deleted the row and left the ids in character, persona, group and session lists and in settings (`old-code/src-tauri/src/storage_manager/lorebook.rs:316-326`, `old-code/src-tauri/src/chat_manager/prompting/prompts.rs:1099-1120`), and runtime skipped missing books and fell back past missing prompts (`old-code/src-tauri/src/chat_manager/prompting/prompt_engine.rs:2343-2366`, `old-code/src-tauri/src/chat_manager/prompting/prompt_engine.rs:4103-4122`). The cleanup keeps that observable result: a conversation lorebook selection keeps its other books and selects none when emptied, and prompt selections fall back to their defaults. Legacy protected templates were refused (`old-code/src-tauri/src/chat_manager/prompting/prompts.rs:1099-1108`); here every protected or required built-in is refused.
+
 - History rows name a deleted lorebook or prompt by the id and name stored at the time of use (slice 6 decision 14). Legacy hard-deleted lorebooks and templates without keeping per-turn history of them (`old-code/src-tauri/src/storage_manager/lorebook.rs:316-326`, `old-code/src-tauri/src/chat_manager/prompting/prompts.rs:1099-1120`); the per-turn and per-run records are rewrite mechanisms.
 
 - Staged lorebook commit includes unapproved non-blank drafts (`old-code/src-tauri/src/chat_manager/lorebook_generator/commands.rs:516-544`, slice 6 decision 3). Blank drafts are skipped, and the rewrite appends contiguous ordinals and commits book, project and receipt atomically.
