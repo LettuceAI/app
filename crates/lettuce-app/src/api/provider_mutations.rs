@@ -431,6 +431,7 @@ pub async fn certificates_import(
     let key = request.client_operation_id.clone();
     let digest = digest(&request, &key)?;
     if let Some(view) = replay(context, "certificates_import", key.clone(), digest.clone()).await? {
+        context.blocking(refresh_clients).await?;
         return Ok(view);
     }
     let certificate_digest = digest.clone();

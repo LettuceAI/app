@@ -495,3 +495,5 @@ Device settings field updates read, modify and write under one immediate transac
 Cascade coverage checks account-key removal, default promotion, every character/group/app/feature model selection, owner revision changes and emitted events. Startup coverage includes invalid stored roots and unavailable credential cleanup without preventing workers or certificate removal.
 
 Completed provider saves replay their receipt after the account or its retired credential is removed. A credential still present under the original operation reference must match the retry.
+
+Certificate import retries rebuild provider clients from the committed certificate set before returning the receipt, recovering a failed refresh after commit without reopening the source.

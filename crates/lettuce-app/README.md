@@ -624,3 +624,5 @@ Device settings field updates read, modify and write under one immediate transac
 Provider regression tests exercise desktop reopen with invalid stored roots, certificate replay without file access, cleanup failures with running workers and the complete transactional model cascade, including native-secret retirement and owner events.
 
 Completed provider saves replay their receipt after the account or its retired credential is removed. A credential still present under the original operation reference must match the retry.
+
+Certificate import retries rebuild provider clients from the committed certificate set before returning the receipt, recovering a failed refresh after commit without reopening the source.
