@@ -52,6 +52,7 @@ export const mockAppStatus: AppStatus = {
 
 const defaultCalls: MockCallHandlers = {
   appStatus: () => ({ status: "ok", data: mockAppStatus }),
+  appUiStateUpdate: (request) => ({ status: "ok", data: { state: { ...mockAppStatus.ui_state, ...request.patch } } }),
 };
 
 function unhandled<K extends CommandName>(command: K): CommandOutcome<K> {

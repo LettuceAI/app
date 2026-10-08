@@ -356,3 +356,5 @@ Model changes retain one increasing commit position. Quota warning records belon
 
 
 Capability statuses are the only model scope source. Editor saves reject declared Unsupported modalities before writing. A reported metadata side marks listed modalities Supported and unlisted modalities Unknown unless explicitly Unsupported; an unreported side uses editor declarations.
+
+A newly seeded app settings record stores a sampler layer with 2048 output tokens. Empty layers saved explicitly remain empty, and opening an existing database preserves its layer.

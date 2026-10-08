@@ -166,3 +166,5 @@ Model-change triggers retain a single AUTOINCREMENT position instead of accumula
 
 
 Scope views derive only Supported modalities from capability statuses. Separate stored declaration fields were removed by re-review decision. A declaration that remains Unsupported fails typed before any write; reported metadata replaces its side, including clearing echoed Supported modalities not listed. Legacy stored input/output scopes without this typed capability check (`old-code/src-tauri/src/storage_manager/models.rs:126-159`).
+
+Fresh app sampler defaults seed 2048 output tokens, matching `old-code/src-tauri/src/chat_manager/types.rs:944-948`. An explicitly saved empty layer remains empty rather than being mistaken for first-install defaults.

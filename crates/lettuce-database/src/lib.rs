@@ -413,11 +413,19 @@ fn initialize_settings(connection: &Connection) -> Result<(), DatabaseError> {
     let now = now()?.get();
     let payload = serde_json::to_string(&GlobalSettings::default())
         .map_err(|_| rusqlite::Error::InvalidQuery)?;
+    let sampler = lettuce_models::ModelSettingsLayer {
+        chat_parameters: lettuce_models::ChatParameterProfile {
+            max_output_tokens: Some(2048),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let sampler = serde_json::to_string(&sampler).map_err(|_| rusqlite::Error::InvalidQuery)?;
     connection.execute(
         "INSERT OR IGNORE INTO app_settings \
-         (id, default_model_profile_id, format_version, payload_json, revision, created_at, updated_at) \
-         VALUES (1, NULL, ?1, ?2, 1, ?3, ?3)",
-        params![GLOBAL_SETTINGS_FORMAT_VERSION, payload, now],
+         (id, default_model_profile_id, format_version, payload_json, model_settings_json, revision, created_at, updated_at) \
+         VALUES (1, NULL, ?1, ?2, ?4, 1, ?3, ?3)",
+        params![GLOBAL_SETTINGS_FORMAT_VERSION, payload, now, sampler],
     )?;
     Ok(())
 }
@@ -4318,6 +4326,16 @@ mod tests {
                 Err(ModelRepositoryError::InvalidData)
             );
         }
+    }
+
+    #[test]
+    fn slice_7c_fresh_sampler_seed_is_2048_and_empty_stays_empty() {
+        use lettuce_models::GlobalModelSettingsRepository;
+        let database = Database::open_in_memory().expect("database");
+        let (layer, revision) = database.global_model_settings().expect("layer");
+        assert_eq!(layer.chat_parameters.max_output_tokens, Some(2048));
+        database.save_global_model_settings(Default::default(), revision, TimestampMillis::new(1)).expect("clear");
+        assert!(database.global_model_settings().expect("layer").0.is_empty());
     }
 
     #[test]

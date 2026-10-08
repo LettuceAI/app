@@ -27,7 +27,7 @@ export async function bootstrap(container: HTMLElement): Promise<void> {
   }
   const root = createRoot(container);
   try {
-    const runtime = await createAppRuntime({ i18n: localization });
+    const runtime = await createAppRuntime();
     root.render(
       <StrictMode>
         <App runtime={runtime} />

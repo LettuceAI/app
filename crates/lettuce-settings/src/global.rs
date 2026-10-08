@@ -41,6 +41,8 @@ pub struct GlobalSettings {
     pub analytics_enabled: bool,
     pub update_checks_enabled: bool,
     #[serde(default)]
+    pub developer_mode_enabled: bool,
+    #[serde(default)]
     pub lorebook_generator: LorebookGeneratorSettings,
     #[serde(default)]
     pub dynamic_memory: DynamicMemorySettings,
@@ -100,6 +102,7 @@ impl Default for GlobalSettings {
             pure_mode: PureMode::Standard,
             analytics_enabled: true,
             update_checks_enabled: true,
+            developer_mode_enabled: false,
             lorebook_generator: LorebookGeneratorSettings::default(),
             dynamic_memory: DynamicMemorySettings::default(),
             group_dynamic_memory: None,
@@ -494,10 +497,11 @@ impl Default for DynamicMemorySettings {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct LorebookGeneratorSettings {
     pub selection: LorebookGeneratorSelection,
+    pub structured_fallback_format: MemoryStructuredFallbackFormat,
     pub default_target_count: Option<u32>,
     pub max_output_tokens: Option<u32>,
 }
@@ -510,6 +514,17 @@ pub struct LorebookGeneratorSelection {
     pub writer_prompt_id: Option<PromptDocumentId>,
     pub refine_prompt_id: Option<PromptDocumentId>,
     pub coherence_prompt_id: Option<PromptDocumentId>,
+}
+
+impl Default for LorebookGeneratorSettings {
+    fn default() -> Self {
+        Self {
+            selection: LorebookGeneratorSelection::default(),
+            structured_fallback_format: MemoryStructuredFallbackFormat::Json,
+            default_target_count: None,
+            max_output_tokens: None,
+        }
+    }
 }
 
 impl LorebookGeneratorSettings {
@@ -779,6 +794,17 @@ mod tests {
         );
         assert_eq!(selected.model_profile_id, Some(override_model));
         assert_eq!(selected.planner_prompt_id, Some(explicit));
+    }
+
+    #[test]
+    fn slice_7c_new_keys_round_trip_and_creation_toggle_is_rejected() {
+        let mut document = serde_json::to_value(GlobalSettings::default()).expect("document");
+        document["developer_mode_enabled"] = serde_json::json!(true);
+        document["lorebook_generator"]["structured_fallback_format"] = serde_json::json!("xml");
+        let settings: GlobalSettings = serde_json::from_value(document.clone()).expect("new keys");
+        assert_eq!(serde_json::to_value(settings).expect("document"), document);
+        document["creation_helper_enabled"] = serde_json::json!(true);
+        assert!(serde_json::from_value::<GlobalSettings>(document).is_err());
     }
 
     #[test]

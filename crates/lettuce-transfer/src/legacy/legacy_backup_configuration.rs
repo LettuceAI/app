@@ -751,6 +751,10 @@ fn map_settings(
         "companionSoulWriterPromptTemplateId",
         "companionSoulWriterStructuredFallbackFormat",
     ]);
+    mapped_advanced.extend([
+        "developerModeEnabled",
+        "lorebookGeneratorStructuredFallbackFormat",
+    ]);
     mapped_advanced.extend(UI_PREFERENCE_ADVANCED_KEYS);
     mapped_advanced.extend([
         "embeddingModelVersion",
@@ -802,10 +806,21 @@ fn map_settings(
             pure_mode,
             analytics_enabled,
             update_checks_enabled,
+            developer_mode_enabled: optional_bool_value(
+                advanced,
+                "developerModeEnabled",
+                false,
+                LegacyBackupDocumentKind::Settings,
+            )?,
             lorebook_generator: LorebookGeneratorSettings {
                 selection: LorebookGeneratorSelection::default(),
                 default_target_count: target_count,
                 max_output_tokens,
+                structured_fallback_format: fallback_format(
+                    advanced,
+                    "lorebookGeneratorStructuredFallbackFormat",
+                    MemoryStructuredFallbackFormat::Json,
+                )?,
             },
             dynamic_memory,
             group_dynamic_memory,
@@ -3474,7 +3489,13 @@ fn legacy_global_model_settings(
     notices: &mut Vec<LegacyBackupConversionNotice>,
 ) -> lettuce_models::ModelSettingsLayer {
     let Some(value) = value.filter(|value| !value.is_null()) else {
-        return Default::default();
+        return lettuce_models::ModelSettingsLayer {
+            chat_parameters: lettuce_models::ChatParameterProfile {
+                max_output_tokens: Some(2048),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
     };
     let Some(object) = value.as_object() else {
         notices.push(notice(
@@ -5017,6 +5038,33 @@ mod tests {
             == LegacyBackupConversionNoticeKind::Lossy
             && notice.document == LegacyBackupDocumentKind::AudioProviders
             && notice.field == "[1].id"));
+    }
+
+    #[test]
+    fn slice_7c_import_keeps_debug_and_lorebook_format_without_creation_toggle() {
+        let plan = plan_legacy_backup_configuration(inventory(vec![document(
+            LegacyBackupDocumentKind::Settings,
+            json!({"app_state": {}, "advanced_settings": {"developerModeEnabled": true, "lorebookGeneratorStructuredFallbackFormat": "xml", "creationHelperEnabled": true}, "created_at": 10, "updated_at": 20}),
+        )])).expect("plan");
+        let settings = serde_json::to_value(&plan.settings.value).expect("settings");
+        assert_eq!(settings["developer_mode_enabled"], true);
+        assert_eq!(
+            settings["lorebook_generator"]["structured_fallback_format"],
+            "xml"
+        );
+        assert!(settings.get("creation_helper_enabled").is_none());
+    }
+
+    #[test]
+    fn slice_7c_null_sampler_seed_is_2048() {
+        for value in [None, Some(&Value::Null)] {
+            assert_eq!(
+                legacy_global_model_settings(value, &mut Vec::new())
+                    .chat_parameters
+                    .max_output_tokens,
+                Some(2048)
+            );
+        }
     }
 
     #[test]
