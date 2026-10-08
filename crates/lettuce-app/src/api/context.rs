@@ -310,12 +310,23 @@ impl ApiContext {
 
     #[cfg(test)]
     pub(crate) fn with_secret_store(&self, store: Arc<dyn SecretStore>) -> Self {
-        let mut context = self.restarted();
-        Arc::get_mut(&mut context.inner)
-            .expect("new context is not shared")
-            .parts
-            .secret_store = store;
-        context
+        let parts = &self.inner.parts;
+        Self::new(ApiContextParts {
+            backend: Arc::clone(&parts.backend),
+            secret_store: store,
+            inference: Arc::clone(&parts.inference),
+            image_provider: Arc::clone(&parts.image_provider),
+            models: Arc::clone(&parts.models),
+            speech: Arc::clone(&parts.speech),
+            media: parts.media.clone(),
+            events: Arc::clone(&parts.events),
+            clock: Arc::clone(&parts.clock),
+            files: Arc::clone(&parts.files),
+            app_folder: parts.app_folder.clone(),
+            resource_dir: parts.resource_dir.clone(),
+            database_files: None,
+            asset_url_base: parts.asset_url_base.clone(),
+        })
     }
 
     /// A new context over the same backend and host services with another
