@@ -67,7 +67,7 @@ These store the choices only. The jobs take a resolved model profile per request
 
 `DeviceSettings` (`device.rs`) describes this machine rather than the user, lives in the device-local `device_settings` row and never syncs:
 
-- `trusted_certificates`: up to 64 root certificates every provider request trusts. Each needs a non-blank name (at most 1 KiB), PEM text with `BEGIN CERTIFICATE` and `END CERTIFICATE` markers, at most 1 MiB so CA bundles fit, and no duplicate id or PEM. `trusted_roots_pem` hands them to `lettuce-app`, which builds the `TlsPolicy` for provider clients and skips (with a warning) a root the TLS stack cannot parse.
+- `trusted_certificates`: root certificate bundles every provider request trusts. Each needs a non-blank name (at most 1 KiB), valid PEM and no duplicate id or PEM. The API validates DER before a certificate write. `trusted_roots_pem` supplies the composition root TLS policy; invalid roots reject client construction. Lists and files are uncapped.
 - `embedding`: which embedding model loads (`V3`, `V4` or `V5`, Eidos; unset prefers Eidos), its token window (unset means 4096) and whether the model stays loaded.
 - `llm_models_dir`: where GGUF downloads go, image models in its `image` folder; unset means the app's own models folder.
 
@@ -110,3 +110,5 @@ The Hugging Face and CivitAI tokens are one per install and have no owner. `Secr
 
 
 Whisper, Kokoro, embedding and Thymos locations are device-local roots. A custom models folder move can relocate roots contained in that folder; backup restore preserves the receiving device's roots.
+
+Trusted certificates are device-local PEM bundles with metadata. The API validates certificates through the network boundary before a revisioned write. Certificate lists and PEM files have no count or byte cap.

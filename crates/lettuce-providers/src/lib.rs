@@ -55,6 +55,9 @@ impl<S: SecretStore + ?Sized> RemoteProviders<S> {
         account: &ProviderAccount,
     ) -> Result<Vec<RemoteModel>, ProviderRequestError> {
         let kind = account.provider_kind.as_str();
+        if !provider_descriptor(kind).is_some_and(|descriptor| descriptor.lists_models) {
+            return Err(ProviderRequestError::Unsupported);
+        }
         let store = &*self.secret_store;
         let result = match account.protocol {
             ProviderProtocol::OpenAiCompatible => {
@@ -699,6 +702,7 @@ mod integration_tests {
                 provider_account_revision: Revision::INITIAL,
                 secret_owner_id: owner,
                 external_model_id: "test-model".to_owned(),
+                model_display_name: "Test model".into(),
                 provider_kind: kind.to_owned(),
                 provider_protocol: ProviderProtocol::OpenAiCompatible,
                 endpoint: Some(endpoint),
@@ -2954,8 +2958,8 @@ mod integration_tests {
                         owner,
                     ))
                     .await,
-                Ok(Vec::new()),
-                "legacy get_remote_models returned no models for {kind}"
+                Err(ProviderRequestError::Unsupported),
+                "model listing is explicitly unsupported for {kind}"
             );
         }
         for (kind, protocol) in [("intenserp", ProviderProtocol::OpenAiCompatible)] {
@@ -3012,7 +3016,8 @@ mod integration_tests {
             providers.verify_api_key(&chutes).await,
             Ok(KeyVerification {
                 valid: true,
-                status: None
+                status: None,
+                error: None,
             })
         );
         assert!(store.take_loads().is_empty());
@@ -3028,7 +3033,8 @@ mod integration_tests {
             providers.verify_api_key(&keyless).await,
             Ok(KeyVerification {
                 valid: false,
-                status: None
+                status: None,
+                error: Some("Missing API key".into()),
             })
         );
         type VerifyCase<'a> = (
@@ -3133,7 +3139,8 @@ mod integration_tests {
                 verification,
                 KeyVerification {
                     valid,
-                    status: Some(status)
+                    status: Some(status),
+                    error: None,
                 },
                 "{kind}"
             );
@@ -3158,7 +3165,8 @@ mod integration_tests {
             providers.verify_api_key(&custom).await,
             Ok(KeyVerification {
                 valid: true,
-                status: Some(404)
+                status: Some(404),
+                error: None,
             })
         );
         let raw = String::from_utf8(request_receiver.await.expect("request")).expect("HTTP");

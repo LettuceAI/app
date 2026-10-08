@@ -27,3 +27,5 @@ Facts about how `lettuce-models` relates to the legacy app (2.2.x). The crate RE
 - The previous README described chat parameter resolution as `operation -> session -> model -> global` for every field. In the code, top-k, the penalties, reasoning and prompt caching have no app layer.
 - The previous README said the character and group persistence slice did not yet report `GroupMemberOverride` references on profile and account deletion. `lettuce-database` now reports them.
 - The previous README said embedded-runtime sampler controls were outside the feature-parameter slice. Feature slots now carry llama.cpp sampler overrides next to the chat parameter overrides.
+
+Resolved profiles now retain the model display name for non-blocking creation history references. Model deletion clears authored selections in the persistence core, rather than refusing them, and the default promotes the first remaining model (old-code/src/core/storage/repo.ts:970-979).

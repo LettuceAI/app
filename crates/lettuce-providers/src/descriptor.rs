@@ -179,10 +179,11 @@ pub struct RemoteModel {
 }
 
 /// Result of probing an account's credential against its provider.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyVerification {
     pub valid: bool,
     pub status: Option<u16>,
+    pub error: Option<String>,
 }
 
 /// Failure categories for catalog and verification requests. Bodies and

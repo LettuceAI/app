@@ -21,7 +21,7 @@ Media never crosses IPC as bytes, base64 or a data URL, in either direction: a c
 
 ## Provider contracts
 
-The provider contracts in `src/lib.rs` predate the application API and are not exported to TypeScript yet:
+The provider contracts in `src/lib.rs` describe the catalog, model discovery and saved-account verification:
 
 - `ProviderCatalogContract` is the list the provider settings screen renders. Each `ProviderDescriptorContract` gives a provider kind's display name, `ProviderProtocolContract`, aliases, default endpoint and whether it can be edited, whether an API key is required, optional or unused and which header carries it, and what the provider supports: streaming, native tool translation, structured output, signed tool replay, reasoning together with tools, model listing, key verification, the `ReasoningSupportContract` (none, effort, budget only, dynamic), the `PromptCachingSupportContract` (none, supported, automatic) with the exact `PromptCacheRetentionContract` choices it accepts, which sampling parameters it takes (`ProviderParameterSupportContract`) and the extra request body keys it allows. Features are listed separately so the frontend never infers an unsafe combination from a protocol name or a model capability, and retention choices are typed so it never infers provider wire values.
 - `ProviderAccountRequest` names an account for account-scoped calls.
@@ -61,3 +61,7 @@ Local runtime notices carry a typed code on a generation or job stream. `JobEven
 Turn and job `ModelLoading` events carry typed `ModelLoadStage` and `ModelLoadStatus`, an integer overall percentage, the model name and optional `ModelLoadGpuProgress` rows. Loaded and Failed remain explicit terminal load statuses, separate from generation or job settlement.
 
 Lorebook and prompt DTOs carry aggregate revisions and operation keys, typed configured-source failures, preview explanations, staged project state and historical source names with deleted markers. Generator commands return existing job DTOs rather than inline inference results.
+
+Provider control commands export the catalog, secret-free account views, saved-or-draft verification requests, verification results and public OpenRouter endpoint metadata to TypeScript. Verification errors carry HTTP status and a redacted provider message in ApiErrorDetails so the UI can display the provider's reason. TrustedCertificateView contains only identity, filename and import time.
+
+Provider control requests expose draft or saved verification, revisioned account writes with operation ids, cascading deletion, model listing and existence checks, public OpenRouter endpoints and FileSource certificate import. Views carry key presence and certificate metadata with its list revision. InUse and Malformed are explicit error categories; provider errors redact credentials.

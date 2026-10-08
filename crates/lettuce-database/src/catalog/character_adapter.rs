@@ -3585,7 +3585,7 @@ mod smoke_tests {
         CompanionSoulConfig, CompanionSoulIdentity, SoulCategory, SoulFact, SoulFactKind,
         SoulFactPolicy, SoulRepository,
     };
-    use lettuce_models::{ModelProfileRepository, ModelRepositoryError};
+    use lettuce_models::ModelProfileRepository;
     use lettuce_types::{PageLimit, PageRequest};
 
     fn image_asset(database: &Database, byte: u8) -> AssetId {
@@ -4740,7 +4740,7 @@ mod smoke_tests {
     }
 
     #[test]
-    fn model_profile_delete_reports_character_default_dependency() {
+    fn model_profile_delete_clears_character_default_and_advances_revision() {
         let database = Database::open_in_memory().expect("database");
         let provider_id = lettuce_types::ProviderAccountId::new();
         let model_id = lettuce_types::ModelProfileId::new();
@@ -4765,7 +4765,7 @@ mod smoke_tests {
             ..CharacterDefaults::default()
         };
         character.media = CharacterMedia::default();
-        CharacterRepository::create(
+        let created = CharacterRepository::create(
             &database,
             CreateCharacterPlan {
                 character,
@@ -4775,10 +4775,15 @@ mod smoke_tests {
             },
         )
         .expect("character");
-        assert!(matches!(
-            ModelProfileRepository::delete_and_clear_default(&database, model_id),
-            Err(ModelRepositoryError::InUse(dependencies)) if dependencies.len() == 1
-        ));
+        ModelProfileRepository::delete_and_clear_default(&database, model_id).expect("delete");
+        let changed = CharacterRepository::get(&database, created.character.id)
+            .expect("read")
+            .expect("exists");
+        assert_eq!(changed.character.defaults.model_profile_id, None);
+        assert_eq!(
+            changed.character.revision,
+            created.character.revision.next().expect("revision")
+        );
     }
 
     #[test]

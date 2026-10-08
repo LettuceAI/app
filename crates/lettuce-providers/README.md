@@ -209,3 +209,5 @@ The request flow:
 ComfyUI uses the account's `ProviderConfig::ComfyUi` workflows: upload the inputs, substitute `%TOKEN%` placeholders, post to `/prompt`, poll `/history` every 1.5 s up to 400 times, and fetch the result from `/view`.
 
 The local llama observer preserves the inference attempt id on load progress, heartbeat and notice envelopes; runtime report changes remain model-path signals raised after storage. The application owns delivery to generation and job streams.
+
+Key verification returns the provider's message when the credential is refused. The adapter removes the request's credential and secret-header values, including query-encoded forms, before returning that text. Public OpenRouter endpoint discovery uses the adapter's fixed public endpoint with no account or authorization and returns endpoint tags, names, pricing, context length, uptime and caching support; the authenticated billing reads remain separate operations.

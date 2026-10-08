@@ -35,7 +35,7 @@ use lettuce_media::{
     MediaBlob, MediaBlobRepository, MediaBlobRepositoryError, MediaKind, RetentionClass,
 };
 use lettuce_models::{
-    ModelDependencyReference, ModelKind, ModelProfile, ModelProfileRepository,
+    ModelKind, ModelProfile, ModelProfileRepository,
     ModelRepositoryError, ProviderAccount, ProviderAccountRepository, ProviderConfig,
     ProviderProtocol, SecretHeader, validate_provider_connection,
 };
@@ -697,8 +697,8 @@ pub(crate) fn write_device_settings(
         .map_err(|_| rusqlite::Error::InvalidQuery)?;
     let settings = serde_json::to_string(settings).map_err(|_| rusqlite::Error::InvalidQuery)?;
     transaction.execute(
-        "INSERT INTO device_settings (id, settings_json, updated_at) VALUES (1, ?1, ?2) \
-         ON CONFLICT(id) DO UPDATE SET settings_json = excluded.settings_json, updated_at = excluded.updated_at",
+        "INSERT INTO device_settings (id, settings_json, updated_at, revision) VALUES (1, ?1, ?2, 2) \
+         ON CONFLICT(id) DO UPDATE SET settings_json = excluded.settings_json, updated_at = excluded.updated_at, revision = device_settings.revision + 1",
         params![settings, now().map_err(|_| rusqlite::Error::InvalidQuery)?.get()],
     )?;
     Ok(())
@@ -1077,18 +1077,6 @@ fn model_error(error: rusqlite::Error) -> ModelRepositoryError {
     }
 }
 
-fn model_dependency_sort_key(value: &ModelDependencyReference) -> (u8, String, String) {
-    match value {
-        ModelDependencyReference::CharacterDefault { character_id } => {
-            (0, character_id.to_string(), String::new())
-        }
-        ModelDependencyReference::GroupMemberOverride {
-            group_id,
-            character_id,
-        } => (1, group_id.to_string(), character_id.to_string()),
-    }
-}
-
 fn validate_account(account: &ProviderAccount) -> Result<(), ModelRepositoryError> {
     if validate_provider_connection(account).is_err()
         || account.label.trim().is_empty()
@@ -1253,93 +1241,10 @@ impl Database {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(model_error)?;
-        let dependencies = transaction
-            .prepare(
-                "SELECT characters.id FROM characters \
-                 JOIN model_profiles ON model_profiles.id=characters.model_profile_id \
-                 WHERE model_profiles.provider_account_id=?1 ORDER BY characters.id",
-            )
-            .and_then(|mut statement| {
-                statement
-                    .query_map([id.to_string()], |row| {
-                        Ok(ModelDependencyReference::CharacterDefault {
-                            character_id: row
-                                .get::<_, String>(0)?
-                                .parse()
-                                .map_err(|_| rusqlite::Error::InvalidQuery)?,
-                        })
-                    })?
-                    .collect::<rusqlite::Result<Vec<_>>>()
-            })
-            .map_err(model_error)?;
-        let mut dependencies = dependencies;
-        let group_dependencies = transaction
-            .prepare(
-                "SELECT group_id,character_id FROM group_members WHERE model_profile_override_id IN \
-                 (SELECT id FROM model_profiles WHERE provider_account_id=?1) ORDER BY group_id,character_id",
-            )
-            .and_then(|mut statement| {
-                statement
-                    .query_map([id.to_string()], |row| {
-                        Ok(ModelDependencyReference::GroupMemberOverride {
-                            group_id: row
-                                .get::<_, String>(0)?
-                                .parse()
-                                .map_err(|_| rusqlite::Error::InvalidQuery)?,
-                            character_id: row
-                                .get::<_, String>(1)?
-                                .parse()
-                                .map_err(|_| rusqlite::Error::InvalidQuery)?,
-                        })
-                    })?
-                    .collect::<rusqlite::Result<Vec<_>>>()
-            })
-            .map_err(model_error)?;
-        dependencies.extend(group_dependencies);
-        dependencies.sort_by_key(model_dependency_sort_key);
-        if !dependencies.is_empty() {
-            return Err(ModelRepositoryError::InUse(dependencies));
-        }
-        let exists = transaction
-            .query_row(
-                "SELECT 1 FROM provider_accounts WHERE id=?1",
-                [id.to_string()],
-                |_| Ok(()),
-            )
-            .optional()
-            .map_err(model_error)?
-            .is_some();
-        if !exists {
-            return Err(ModelRepositoryError::NotFound);
-        }
-        transaction
-            .execute(
-                "UPDATE app_settings SET \
-                 default_model_profile_id=CASE WHEN default_model_profile_id IN (SELECT id FROM model_profiles WHERE provider_account_id=?1) THEN NULL ELSE default_model_profile_id END, \
-                 dynamic_memory_model_profile_id=CASE WHEN dynamic_memory_model_profile_id IN (SELECT id FROM model_profiles WHERE provider_account_id=?1) THEN NULL ELSE dynamic_memory_model_profile_id END, \
-                 group_speaker_model_profile_id=CASE WHEN group_speaker_model_profile_id IN (SELECT id FROM model_profiles WHERE provider_account_id=?1) THEN NULL ELSE group_speaker_model_profile_id END, \
-                 revision=revision+1, updated_at=?2 \
-                 WHERE id=1 AND (default_model_profile_id IN (SELECT id FROM model_profiles WHERE provider_account_id=?1) OR dynamic_memory_model_profile_id IN (SELECT id FROM model_profiles WHERE provider_account_id=?1) OR group_speaker_model_profile_id IN (SELECT id FROM model_profiles WHERE provider_account_id=?1))",
-                params![id.to_string(), now().map_err(model_error)?.get()],
-            )
-            .map_err(model_error)?;
-        let deleted = {
-            let mut statement = transaction
-                .prepare("SELECT id FROM model_profiles WHERE provider_account_id=?1")
-                .map_err(model_error)?;
-            statement
-                .query_map([id.to_string()], |row| parse_id::<ModelProfileId>(row.get(0)?))
-                .and_then(|rows| rows.collect::<rusqlite::Result<std::collections::BTreeSet<_>>>())
-                .map_err(model_error)?
-        };
-        clear_deleted_settings_models(&transaction, |profile| deleted.contains(&profile))
-            .map_err(model_error)?;
-        transaction
-            .execute(
-                "DELETE FROM model_profiles WHERE provider_account_id=?1",
-                [id.to_string()],
-            )
-            .map_err(model_error)?;
+        let ids = transaction.prepare("SELECT id FROM model_profiles WHERE provider_account_id=?1 ORDER BY created_at,id").map_err(model_error)?
+            .query_map([id.to_string()], |row| parse_id::<ModelProfileId>(row.get(0)?)).map_err(model_error)?.collect::<rusqlite::Result<Vec<_>>>().map_err(model_error)?;
+        if sync_load_provider_account(&transaction, &id.to_string())?.is_none() { return Err(ModelRepositoryError::NotFound); }
+        for model in ids { models::provider_control_adapter::delete_model_in(&transaction, model, now().map_err(model_error)?)?; }
         fail_delete_at(failure_point, DeleteFailurePoint::AfterProfilesDelete)?;
         transaction
             .execute(
@@ -1430,67 +1335,7 @@ impl Database {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(model_error)?;
-        let dependencies = transaction
-            .prepare("SELECT id FROM characters WHERE model_profile_id=?1 ORDER BY id")
-            .and_then(|mut statement| {
-                statement
-                    .query_map([id.to_string()], |row| {
-                        Ok(ModelDependencyReference::CharacterDefault {
-                            character_id: row
-                                .get::<_, String>(0)?
-                                .parse()
-                                .map_err(|_| rusqlite::Error::InvalidQuery)?,
-                        })
-                    })?
-                    .collect::<rusqlite::Result<Vec<_>>>()
-            })
-            .map_err(model_error)?;
-        let mut dependencies = dependencies;
-        let group_dependencies = transaction
-            .prepare(
-                "SELECT group_id,character_id FROM group_members WHERE model_profile_override_id=?1 ORDER BY group_id,character_id",
-            )
-            .and_then(|mut statement| {
-                statement
-                    .query_map([id.to_string()], |row| {
-                        Ok(ModelDependencyReference::GroupMemberOverride {
-                            group_id: row
-                                .get::<_, String>(0)?
-                                .parse()
-                                .map_err(|_| rusqlite::Error::InvalidQuery)?,
-                            character_id: row
-                                .get::<_, String>(1)?
-                                .parse()
-                                .map_err(|_| rusqlite::Error::InvalidQuery)?,
-                        })
-                    })?
-                    .collect::<rusqlite::Result<Vec<_>>>()
-            })
-            .map_err(model_error)?;
-        dependencies.extend(group_dependencies);
-        dependencies.sort_by_key(model_dependency_sort_key);
-        if !dependencies.is_empty() {
-            return Err(ModelRepositoryError::InUse(dependencies));
-        }
-        transaction
-            .execute(
-                "UPDATE app_settings SET \
-                 default_model_profile_id=CASE WHEN default_model_profile_id=?1 THEN NULL ELSE default_model_profile_id END, \
-                 dynamic_memory_model_profile_id=CASE WHEN dynamic_memory_model_profile_id=?1 THEN NULL ELSE dynamic_memory_model_profile_id END, \
-                 group_speaker_model_profile_id=CASE WHEN group_speaker_model_profile_id=?1 THEN NULL ELSE group_speaker_model_profile_id END, \
-                 revision=revision+1, updated_at=?2 \
-                 WHERE id=1 AND (default_model_profile_id=?1 OR dynamic_memory_model_profile_id=?1 OR group_speaker_model_profile_id=?1)",
-                params![id.to_string(), now().map_err(model_error)?.get()],
-            )
-            .map_err(model_error)?;
-        clear_deleted_settings_models(&transaction, |profile| profile == id)
-            .map_err(model_error)?;
-        let changed = transaction
-            .execute("DELETE FROM model_profiles WHERE id=?1", [id.to_string()])
-            .map_err(model_error)?;
-        if changed == 0 {
-            return Err(ModelRepositoryError::NotFound);
-        }
+        models::provider_control_adapter::delete_model_in(&transaction, id, now().map_err(model_error)?)?;
         fail_delete_at(failure_point, DeleteFailurePoint::AfterProfileDelete)?;
         transaction.commit().map_err(model_error)
     }
@@ -1797,27 +1642,22 @@ pub(crate) fn sync_delete_model_profile(
     id: &str,
     now: TimestampMillis,
 ) -> Result<bool, ModelRepositoryError> {
-    let now_millis = now.get();
-    let deleted = sync_delete_unless_referenced(
-        connection,
-        &[
-            (
-                "UPDATE app_settings SET \
-                 default_model_profile_id=CASE WHEN default_model_profile_id=?1 THEN NULL ELSE default_model_profile_id END, \
-                 dynamic_memory_model_profile_id=CASE WHEN dynamic_memory_model_profile_id=?1 THEN NULL ELSE dynamic_memory_model_profile_id END, \
-                 group_speaker_model_profile_id=CASE WHEN group_speaker_model_profile_id=?1 THEN NULL ELSE group_speaker_model_profile_id END, \
-                 revision=revision+1, updated_at=?2 \
-                 WHERE id=1 AND (default_model_profile_id=?1 OR dynamic_memory_model_profile_id=?1 OR group_speaker_model_profile_id=?1)",
-                &[&id, &now_millis],
-            ),
-            ("DELETE FROM model_profiles WHERE id=?1", &[&id]),
-        ],
-    )?;
-    if deleted {
-        clear_deleted_settings_models(connection, |profile| profile.to_string() == id)
-            .map_err(model_error)?;
+    let id = id.parse().map_err(|_| ModelRepositoryError::InvalidData)?;
+    connection.execute_batch("SAVEPOINT sync_model_delete").map_err(model_error)?;
+    match models::provider_control_adapter::delete_model_in(connection, id, now) {
+        Ok(_) => {
+            connection.execute_batch("RELEASE sync_model_delete").map_err(model_error)?;
+            Ok(true)
+        }
+        Err(error) => {
+            connection.execute_batch("ROLLBACK TO sync_model_delete; RELEASE sync_model_delete").map_err(model_error)?;
+            match error {
+                ModelRepositoryError::NotFound => Ok(true),
+                ModelRepositoryError::InUse(_) => Ok(false),
+                error => Err(error),
+            }
+        }
     }
-    Ok(deleted)
 }
 
 pub(crate) fn insert_media_blob_row(
@@ -2543,7 +2383,7 @@ mod tests {
     };
     use lettuce_models::{
         CapabilityEvidence, CapabilityEvidenceSource, CustomAuth, CustomProviderConfig,
-        ModelCapabilities, ModelDependencyReference, ModelKind, ModelProfile, ModelProfileConfig,
+        ModelCapabilities, ModelKind, ModelProfile, ModelProfileConfig,
         ModelProfileRepository, ModelRepositoryError, ProviderAccount, ProviderAccountRepository,
         ProviderConfig, ProviderProtocol, QueryParameterName, SecretHeader,
     };
@@ -4033,57 +3873,23 @@ mod tests {
     }
 
     #[test]
-    fn model_deletion_reports_sorted_group_member_overrides_on_both_paths() {
-        let database = Database::open_in_memory().expect("open database");
-        let account =
-            ProviderAccountRepository::upsert(&database, provider(), None).expect("account");
-        let first = ModelProfileRepository::upsert(&database, profile(account.id), None)
-            .expect("first profile");
+    fn model_deletion_clears_group_overrides_and_advances_each_group_revision() {
+        let database = Database::open_in_memory().expect("database");
+        let account = ProviderAccountRepository::upsert(&database, provider(), None).expect("account");
+        let first = ModelProfileRepository::upsert(&database, profile(account.id), None).expect("first");
         let mut second_input = profile(account.id);
         second_input.id = ModelProfileId::new();
-        let second =
-            ModelProfileRepository::upsert(&database, second_input, None).expect("second profile");
+        let second = ModelProfileRepository::upsert(&database, second_input, None).expect("second");
         let first_dependency = insert_group_model_reference(&database, first.id);
         let second_dependency = insert_group_model_reference(&database, second.id);
-
-        assert_eq!(
-            ModelProfileRepository::delete_and_clear_default(&database, first.id),
-            Err(ModelRepositoryError::InUse(vec![
-                ModelDependencyReference::GroupMemberOverride {
-                    group_id: first_dependency.0,
-                    character_id: first_dependency.1,
-                }
-            ]))
-        );
-        let mut expected = vec![
-            ModelDependencyReference::GroupMemberOverride {
-                group_id: first_dependency.0,
-                character_id: first_dependency.1,
-            },
-            ModelDependencyReference::GroupMemberOverride {
-                group_id: second_dependency.0,
-                character_id: second_dependency.1,
-            },
-        ];
-        expected.sort_by_key(super::model_dependency_sort_key);
-        assert_eq!(
-            ProviderAccountRepository::delete_with_profiles(&database, account.id),
-            Err(ModelRepositoryError::InUse(expected))
-        );
-
-        let connection = database.connection().expect("database lock");
-        connection
-            .execute(
-                "DELETE FROM group_members WHERE group_id IN (?1,?2)",
-                rusqlite::params![
-                    first_dependency.0.to_string(),
-                    second_dependency.0.to_string()
-                ],
-            )
-            .expect("remove group dependencies");
-        drop(connection);
-        ProviderAccountRepository::delete_with_profiles(&database, account.id)
-            .expect("delete account graph after detach");
+        ModelProfileRepository::delete_and_clear_default(&database, first.id).expect("clear first override");
+        ProviderAccountRepository::delete_with_profiles(&database, account.id).expect("cascade second override");
+        let connection = database.connection().expect("connection");
+        for (group, character) in [first_dependency, second_dependency] {
+            let (model, revision): (Option<String>, i64) = connection.query_row("SELECT m.model_profile_override_id,g.revision FROM group_members m JOIN groups g ON g.id=m.group_id WHERE m.group_id=?1 AND m.character_id=?2", rusqlite::params![group.to_string(), character.to_string()], |row| Ok((row.get(0)?, row.get(1)?))).expect("override");
+            assert_eq!(model, None);
+            assert_eq!(revision, 2);
+        }
     }
 
     #[test]
@@ -6031,6 +5837,7 @@ mod tests {
                 "prompt_documents",
                 "prompt_entries",
                 "provider_accounts",
+                "provider_secret_gc",
                 "purge_authorizations",
                 "purge_notices",
                 "purge_queue",

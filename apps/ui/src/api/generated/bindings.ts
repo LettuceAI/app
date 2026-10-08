@@ -286,6 +286,17 @@ export const commands = {
 	dictationStart: (request: DictationStartRequest) => typedError<DictationStarted, ApiError>(__TAURI_INVOKE("dictation_start", { request })),
 	dictationStop: (request: DictationStopRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("dictation_stop", { request })),
 	dictationCancel: (request: DictationCancelRequest) => typedError<null, ApiError>(__TAURI_INVOKE("dictation_cancel", { request })),
+	certificatesList: () => typedError<CertificatesView, ApiError>(__TAURI_INVOKE("certificates_list")),
+	providerAccountSave: (request: ProviderAccountSaveRequest) => typedError<ProviderAccountView, ApiError>(__TAURI_INVOKE("provider_account_save", { request })),
+	providerAccountDelete: (request: ProviderAccountDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("provider_account_delete", { request })),
+	providerModels: (request: ProviderModelsRequest) => typedError<RemoteModelContract[], ApiError>(__TAURI_INVOKE("provider_models", { request })),
+	providerModelVerify: (request: ProviderModelVerifyRequest) => typedError<ProviderModelVerified, ApiError>(__TAURI_INVOKE("provider_model_verify", { request })),
+	certificatesImport: (request: CertificatesImportRequest) => typedError<CertificatesView, ApiError>(__TAURI_INVOKE("certificates_import", { request })),
+	certificatesRemove: (request: CertificatesRemoveRequest) => typedError<CertificatesView, ApiError>(__TAURI_INVOKE("certificates_remove", { request })),
+	providerCatalog: () => typedError<ProviderCatalogContract, ApiError>(__TAURI_INVOKE("provider_catalog")),
+	providerAccountsList: () => typedError<ProviderAccountView[], ApiError>(__TAURI_INVOKE("provider_accounts_list")),
+	providerVerify: (request: ProviderVerifyRequest) => typedError<ProviderVerified, ApiError>(__TAURI_INVOKE("provider_verify", { request })),
+	providerOpenrouterEndpoints: (request: ProviderOpenRouterEndpointsRequest) => typedError<ProviderOpenRouterEndpoint[], ApiError>(__TAURI_INVOKE("provider_openrouter_endpoints", { request })),
 	ollamaModelsList: (request: OllamaModelsRequest) => typedError<OllamaModelList, ApiError>(__TAURI_INVOKE("ollama_models_list", { request })),
 	ollamaModelDelete: (request: OllamaModelDeleteRequest) => typedError<null, ApiError>(__TAURI_INVOKE("ollama_model_delete", { request })),
 	ollamaPull: (request: OllamaPullRequest) => typedError<JobAccepted, ApiError>(__TAURI_INVOKE("ollama_pull", { request })),
@@ -313,22 +324,22 @@ export type ApiError = {
  *  not installed, `ModelUnavailable` one that is installed but cannot load;
  *  both name the model in `ApiErrorDetails::Model`.
  */
-export type ApiErrorCode = "not_found" | "conflict" | "invalid_input" | "unsupported" | "unavailable" | "cancelled" | "busy" | "internal" | "model_required" | "model_unavailable";
+export type ApiErrorCode = "not_found" | "in_use" | "conflict" | "invalid_input" | "malformed" | "unsupported" | "unavailable" | "cancelled" | "busy" | "internal" | "model_required" | "model_unavailable";
 
-export type ApiErrorDetails = { type: "invalid_field"; field: string } | { type: "captured_audio"; audio: AssetRef } | { type: "audio_provider_in_use"; characters: CharacterReferenceView[] } | { type: "operation_applied_record_deleted"; command: string; record_id: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "image"; failure: ImageFailureKind } | { type: "speech"; failure: SpeechFailure } | { type: "pending_memory_rewind"; conversation_id: string } | { type: "branch_delete_refused"; reason: BranchDeleteRefusal } | { type: "memory_gate"; gate: MemoryGateReason } | { type: "memory_cycle_dependent"; later_run_id: string } | { type: "memory_cycle_user_edited"; memory_id: string } | 
+export type ApiErrorDetails = { type: "provider_models_in_use"; models: string[] } | { type: "provider_verification"; status: number | null; provider_message: string } | { type: "invalid_field"; field: string } | { type: "captured_audio"; audio: AssetRef } | { type: "audio_provider_in_use"; characters: CharacterReferenceView[] } | { type: "operation_applied_record_deleted"; command: string; record_id: string } | { type: "model"; model: RequiredModel } | { type: "hugging_face"; failure: HfFailure } | { type: "ollama"; failure: OllamaFailure } | { type: "local_models_busy"; reason: LocalModelsBusyReason } | { type: "image"; failure: ImageFailureKind } | { type: "speech"; failure: SpeechFailure } | { type: "pending_memory_rewind"; conversation_id: string } | { type: "branch_delete_refused"; reason: BranchDeleteRefusal } | { type: "memory_gate"; gate: MemoryGateReason } | { type: "memory_cycle_dependent"; later_run_id: string } | { type: "memory_cycle_user_edited"; memory_id: string } |
 /**  A prompt write is missing placeholders its kind requires. */
-{ type: "prompt_missing_placeholders"; placeholders: string[] } | 
+{ type: "prompt_missing_placeholders"; placeholders: string[] } |
 /**  A built-in prompt the app needs cannot be deleted. */
-{ type: "prompt_protected" } | 
+{ type: "prompt_protected" } |
 /**  The prompt a feature setting selects cannot be used. */
-{ type: "configured_prompt_unavailable"; prompt_id: string; reason: ConfiguredPromptProblem } | 
+{ type: "configured_prompt_unavailable"; prompt_id: string; reason: ConfiguredPromptProblem } |
 /**
  *  The model a lorebook generator setting selects cannot be used, or no
  *  model generates text.
  */
-{ type: "lorebook_model_unavailable"; reason: LorebookModelProblem } | 
+{ type: "lorebook_model_unavailable"; reason: LorebookModelProblem } |
 /**  The app's built-in runtime text could not be read. */
-{ type: "runtime_text_unavailable" } | 
+{ type: "runtime_text_unavailable" } |
 /**  A lorebook project already has a writer batch running. */
 { type: "lorebook_batch_running"; job_ids: string[] };
 
@@ -341,25 +352,27 @@ export type ApiErrorDetails = { type: "invalid_field"; field: string } | { type:
  *  and `MessageSceneImageChanged` follow a message's companion effect and
  *  scene image follow-up.
  */
-export type ApiEvent = { type: "character_changed"; character_id: string } | { type: "persona_changed"; persona_id: string } | { type: "group_changed"; group_id: string } | { type: "lorebooks_changed" } | { type: "prompts_changed" } | { type: "local_model_runtime_report_changed"; model_ids: string[] } | { type: "generation_settled"; conversation_id: string; turn_id: string } | { type: "job_updated"; job: JobView } | { type: "conversation_changed"; conversation_id: string } | { type: "conversation_removed"; conversation_id: string } | 
+export type ApiEvent = { type: "character_changed"; character_id: string } | { type: "persona_changed"; persona_id: string } | { type: "group_changed"; group_id: string } | { type: "models_changed" } | { type: "settings_changed"; section: string } | { type: "lorebooks_changed" } | { type: "prompts_changed" } | { type: "local_model_runtime_report_changed"; model_ids: string[] } | { type: "generation_settled"; conversation_id: string; turn_id: string } | { type: "job_updated"; job: JobView } | { type: "conversation_changed"; conversation_id: string } | { type: "conversation_removed"; conversation_id: string } |
 /**
  *  What `memory_get` shows for the conversation changed: its items,
  *  summary, revision, cycle, approval or dismissal state. Every chat that
  *  shares the memory gets one.
  */
-{ type: "memory_changed"; conversation_id: string } | { type: "required_models_changed" } | 
+{ type: "memory_changed"; conversation_id: string } | { type: "required_models_changed" } |
 /**
  *  The companion effect of a reply settled (`message_companion_effect`
  *  reads it).
  */
-{ type: "message_effect_settled"; conversation_id: string; message_id: string } | 
+{ type: "message_effect_settled"; conversation_id: string; message_id: string } |
 /**  A reply's scene image follow-up changed state. */
-{ type: "message_scene_image_changed"; conversation_id: string; message_id: string } | 
+{ type: "message_scene_image_changed"; conversation_id: string; message_id: string } |
 /**
  *  The input level of a running dictation in thousandths, from 0 to
  *  1000. Sent only while it captures, at most about every 50 ms.
  */
 { type: "dictation_level"; capture_id: string; level: number };
+
+export type ApiKeyRequirementContract = "required" | "optional" | "not_used";
 
 /**  The application-wide event every window receives. */
 export type AppEvent = ApiEvent;
@@ -660,6 +673,21 @@ export type BranchHead = {
 
 export type BuildVariant = "normal" | "cuda";
 
+export type CertificatesImportRequest = {
+	source: FileSource,
+	client_operation_id: string,
+};
+
+export type CertificatesRemoveRequest = {
+	certificate_id: string,
+	expected_revision: number,
+};
+
+export type CertificatesView = {
+	certificates: TrustedCertificateView[],
+	revision: number,
+};
+
 export type CharacterPage = {
 	items: CharacterSummary[],
 	next_cursor: string | null,
@@ -689,7 +717,7 @@ export type ChatModeChange = { type: "set"; mode: GroupChatMode } | { type: "res
  */
 export type ChoiceChange = { type: "set"; id: string } | { type: "none" } | { type: "reset" };
 
-export type CivitaiAuthErrorKind = "missing_token" | 
+export type CivitaiAuthErrorKind = "missing_token" |
 /**  CivitAI answered, but not in a way that proves the token works. */
 "unverified" | "invalid_or_expired";
 
@@ -2197,7 +2225,7 @@ export type JobCancelRequest = {
  *  The stream `job_watch` attaches. It starts with the job's current state;
  *  `Completed`, `Failed` and `Cancelled` are the last event.
  */
-export type JobEvent = { type: "model_loading"; stage: ModelLoadStage; status: ModelLoadStatus; percent: number; model_name: string; gpus: ModelLoadGpuProgress[] | null } | { type: "notice"; code: RuntimeNoticeCode } | { type: "throughput"; tokens: number; tokens_per_second: number | null } | { type: "progress"; job: JobView } | { type: "text_delta"; text: string | null; reasoning: string | null } | 
+export type JobEvent = { type: "model_loading"; stage: ModelLoadStage; status: ModelLoadStatus; percent: number; model_name: string; gpus: ModelLoadGpuProgress[] | null } | { type: "notice"; code: RuntimeNoticeCode } | { type: "throughput"; tokens: number; tokens_per_second: number | null } | { type: "progress"; job: JobView } | { type: "text_delta"; text: string | null; reasoning: string | null } |
 /**  A running local image generation's progress. */
 { type: "image_progress"; progress: ImageProgress } | { type: "completed"; job: JobView } | { type: "failed"; job: JobView } | { type: "cancelled"; job: JobView };
 
@@ -2258,24 +2286,24 @@ export type JobProgressUnit = "bytes" | "items" | "permille";
  *  `ModelInstalled` names a downloaded model's path and, when the download
  *  asked for one, the llama.cpp model it became.
  */
-export type JobResultDto = { type: "voice_created"; voice_id: string } | { type: "artifact_installed" } | { type: "asset"; asset: AssetRef } | { type: "transcription"; transcription: TranscriptionView } | { type: "generation_turn"; turn_id: string } | { type: "conversation"; conversation_id: string } | { type: "group"; group_id: string } | { type: "character"; character_id: string } | { type: "model_profile"; model_profile_id: string } | { type: "model_installed"; model_path: string; model_profile_id: string | null } | { type: "model_pulled"; model: string } | { type: "models_folder_moved"; path: string; moved_entries: number; rewired_models: number } | 
+export type JobResultDto = { type: "voice_created"; voice_id: string } | { type: "artifact_installed" } | { type: "asset"; asset: AssetRef } | { type: "transcription"; transcription: TranscriptionView } | { type: "generation_turn"; turn_id: string } | { type: "conversation"; conversation_id: string } | { type: "group"; group_id: string } | { type: "character"; character_id: string } | { type: "model_profile"; model_profile_id: string } | { type: "model_installed"; model_path: string; model_profile_id: string | null } | { type: "model_pulled"; model: string } | { type: "models_folder_moved"; path: string; moved_entries: number; rewired_models: number } |
 /**
  *  The Soul draft a Soul writer job produced, which the caller merges
  *  into its unsaved draft.
  */
-{ type: "companion_soul_draft"; draft: CompanionSoulDraft } | 
+{ type: "companion_soul_draft"; draft: CompanionSoulDraft } |
 /**  The text a help-me-reply or scene prompt job wrote, cleaned. */
-{ type: "generated_text"; text: string } | 
+{ type: "generated_text"; text: string } |
 /**  The entry a lorebook entry draft job wrote; nothing is saved. */
-{ type: "lorebook_entry_draft"; draft: LorebookEntryDraftResult } | 
+{ type: "lorebook_entry_draft"; draft: LorebookEntryDraftResult } |
 /**  The lorebook entry draft job found nothing worth an entry. */
-{ type: "lorebook_no_entry"; reason: string | null } | 
+{ type: "lorebook_no_entry"; reason: string | null } |
 /**  The keywords a keyword draft job proposed. */
-{ type: "lorebook_keywords"; keywords: string[] } | 
+{ type: "lorebook_keywords"; keywords: string[] } |
 /**  The lorebook project a planner, writer or coherence job advanced. */
-{ type: "lorebook_project"; project_id: string } | 
+{ type: "lorebook_project"; project_id: string } |
 /**  The images an image generation job stored. */
-{ type: "image_generation"; images: GeneratedImage[]; rejected_outputs: number } | { type: "image_upscaled"; upscaled: ImageUpscaled } | { type: "lora_discovered"; discovered: LoraDiscovered } | { type: "runnability"; verdict: SdRunnability } | 
+{ type: "image_generation"; images: GeneratedImage[]; rejected_outputs: number } | { type: "image_upscaled"; upscaled: ImageUpscaled } | { type: "lora_discovered"; discovered: LoraDiscovered } | { type: "runnability"; verdict: SdRunnability } |
 /**  What an image bundle install ended in. */
 { type: "image_bundle"; bundle_id: string; state: ImageBundleState; model_id: string | null; setup_error: string | null };
 
@@ -3037,7 +3065,7 @@ export type LorebookProjectSourceView = {
 	document: AssetRef | null,
 };
 
-export type LorebookProjectStage = "created" | "planning" | 
+export type LorebookProjectStage = "created" | "planning" |
 /**  The planner job failed; `lorebook_project_plan` retries it. */
 "plan_failed" | "awaiting_outline_approval" | "drafting" | "drafts_ready" | "coherence_review" | "committed" | "cancelled";
 
@@ -3741,6 +3769,10 @@ export type PromptBuiltinResetResult = {
 	prompts: PromptView[],
 };
 
+export type PromptCacheRetentionContract = "in_memory" | "five_minutes" | "one_hour" | "twenty_four_hours";
+
+export type PromptCachingSupportContract = "none" | "supported" | "automatic";
+
 export type PromptChatMode = "direct" | "group";
 
 /**  When a prompt entry applies. */
@@ -3969,6 +4001,132 @@ export type PromptsListRequest = {
 	limit: number | null,
 };
 
+export type ProviderAccountDeleteRequest = {
+	account_id: string,
+	expected_revision: number,
+	delete_models: boolean,
+	client_operation_id: string,
+};
+
+export type ProviderAccountInput = {
+	id: string | null,
+	provider_kind: string,
+	label: string,
+	base_url: string | null,
+	enabled: boolean,
+	streaming_enabled: boolean,
+	allow_invalid_tls: boolean,
+	config: { [key in string]: unknown },
+};
+
+export type ProviderAccountSaveRequest = {
+	account: ProviderAccountInput,
+	api_key: string | null,
+	clear_api_key: boolean,
+	expected_revision: number | null,
+	client_operation_id: string,
+};
+
+export type ProviderAccountView = {
+	id: string,
+	provider_kind: string,
+	protocol: ProviderProtocolContract,
+	label: string,
+	base_url: string | null,
+	enabled: boolean,
+	streaming_enabled: boolean,
+	allow_invalid_tls: boolean,
+	api_key_set: boolean,
+	config: { [key in string]: unknown },
+	revision: number,
+	created_at: number,
+	updated_at: number,
+};
+
+export type ProviderCatalogContract = {
+	providers: ProviderDescriptorContract[],
+};
+
+/**  One provider row rendered by the settings UI. */
+export type ProviderDescriptorContract = {
+	kind: string,
+	display_name: string,
+	protocol: ProviderProtocolContract,
+	aliases: string[],
+	default_endpoint: string | null,
+	endpoint_editable: boolean,
+	api_key: ApiKeyRequirementContract,
+	auth_header: string,
+	streaming: boolean,
+	tools: boolean,
+	structured_output: boolean,
+	signed_tool_replay: boolean,
+	reasoning_with_tools: boolean,
+	lists_models: boolean,
+	verifies_key: boolean,
+	reasoning: ReasoningSupportContract,
+	prompt_caching: PromptCachingSupportContract,
+	prompt_cache_retentions: PromptCacheRetentionContract[],
+	parameters: ProviderParameterSupportContract,
+	extra_body_keys: string[],
+};
+
+export type ProviderModelVerified = {
+	exists: boolean,
+};
+
+export type ProviderModelVerifyRequest = {
+	account_id: string,
+	model: string,
+};
+
+export type ProviderModelsRequest = {
+	account_id: string,
+};
+
+export type ProviderOpenRouterEndpoint = {
+	id: string,
+	name: string,
+	prompt_price: string,
+	completion_price: string,
+	context_length: number | null,
+	uptime_last_30m: number | null,
+	supports_prompt_caching: boolean,
+	cache_read_price: string | null,
+	cache_write_price: string | null,
+};
+
+export type ProviderOpenRouterEndpointsRequest = {
+	model: string,
+};
+
+export type ProviderParameterSupportContract = {
+	temperature: boolean,
+	top_p: boolean,
+	max_output_tokens: boolean,
+	context_length: boolean,
+	frequency_penalty: boolean,
+	presence_penalty: boolean,
+	top_k: boolean,
+	reasoning_budget: boolean,
+};
+
+export type ProviderProtocolContract = "open_ai_compatible" | "anthropic" | "gemini" | "ollama" | "llama_cpp" | "stable_diffusion";
+
+export type ProviderVerified = {
+	valid: boolean,
+	status: number | null,
+};
+
+export type ProviderVerifyDraft = {
+	provider_kind: string,
+	base_url: string | null,
+	api_key: string | null,
+	config: { [key in string]: unknown },
+};
+
+export type ProviderVerifyRequest = { type: "saved"; account_id: string } | { type: "draft"; draft: ProviderVerifyDraft };
+
 export type PureModeLevel = "off" | "low" | "standard" | "strict";
 
 export type PurgeNoticeDismissRequest = {
@@ -3995,6 +4153,8 @@ export type PurgeNoticeView = {
 	recorded_at: number,
 };
 
+export type ReasoningSupportContract = "none" | "effort" | "budget_only" | "dynamic";
+
 export type RecommendedRepository = {
 	role: ImageComponentRole,
 	repository: string,
@@ -4006,6 +4166,18 @@ export type RelationshipChange = {
 	affection: number | null,
 	tension: number | null,
 	stability: number | null,
+};
+
+export type RemoteModelContract = {
+	id: string,
+	display_name: string | null,
+	description: string | null,
+	context_length: number | null,
+	input_modalities: string[] | null,
+	output_modalities: string[] | null,
+	supported_endpoints: string[] | null,
+	input_price: number | null,
+	output_price: number | null,
 };
 
 /**
@@ -4588,6 +4760,12 @@ export type TranscriptionView = {
 	detected_language: string | null,
 	segments: TranscriptSegment[],
 	applied_corrections: AppliedCorrectionView[],
+};
+
+export type TrustedCertificateView = {
+	id: string,
+	name: string,
+	imported_at: number,
 };
 
 export type TtsCacheStats = {

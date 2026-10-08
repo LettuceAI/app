@@ -19,6 +19,8 @@ export type ApiFailureCode = ApiErrorCode | "transport";
 
 const apiErrorCodes = {
   not_found: true,
+  in_use: true,
+  malformed: true,
   conflict: true,
   invalid_input: true,
   unsupported: true,

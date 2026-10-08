@@ -35,3 +35,6 @@ pub(crate) mod zai;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub use llama_cpp::{LocalLlama, LocalRuntimeExclusion};
 pub use ollama_hub::{OllamaHubError, OllamaInstalledModel, OllamaPullProgress};
+
+mod openrouter_public;
+pub use openrouter_public::OpenRouterPublicEndpoint;

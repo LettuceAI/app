@@ -7,3 +7,7 @@ Generation speaker signals replace group status events (`old-code/src-tauri/src/
 Model-load progress moves from the global legacy event (`old-code/src/App.tsx:586-588`) to the requesting turn or job channel; typed stage/status, model name and per-GPU progress preserve the displayed load information (`App.tsx:534-580`). Overall percentages are integer and updates are coalesced by visible payload changes.
 
 Lorebook generators use durable jobs and typed results rather than direct long-running commands and the process-only staged registry (`old-code/src-tauri/src/chat_manager/lorebook_generator/state.rs:168-177`). The shell forwards library changes and affected-owner events after hard deletes; the application owns atomic reference cleanup.
+
+Provider verification uses the draft before saving, preserving the legacy editor and onboarding gates (`old-code/src/ui/pages/settings/hooks/useProvidersPageController.ts:298-331`, `old-code/src/ui/pages/onboarding/hooks/useOnboardingController.ts:349-398`). Public OpenRouter discovery still needs no account (`old-code/src-tauri/src/providers/openrouter.rs:93-112`). The shell forwards typed provider messages instead of raw provider response JSON.
+
+Provider mutation and certificate commands delegate to the composition root with revision and replay contracts. The legacy frontend read certificate bytes and rewrote settings (old-code/src/ui/pages/settings/SecurityPage.tsx:181-218); the shell now supplies only a FileSource.

@@ -17,3 +17,5 @@ pub mod speech;
 pub mod lorebooks;
 
 pub mod prompts;
+
+pub mod providers;

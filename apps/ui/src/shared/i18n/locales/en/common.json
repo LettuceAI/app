@@ -27,6 +27,8 @@
     "notFoundDescription": "This page doesn't exist in the app.",
     "code": {
       "not_found": "It no longer exists.",
+      "in_use": "It is still in use. Remove its references and try again.",
+      "malformed": "The provider returned an unreadable response.",
       "conflict": "It changed somewhere else. Reload and try again.",
       "invalid_input": "Something in the request isn't valid.",
       "unsupported": "This isn't supported here.",

@@ -54,6 +54,10 @@ Facts about how `lettuce-providers` relates to the legacy app (2.2.x). The crate
 ## Not wired yet
 
 - Generic extra-body passthrough behind `extra_body_keys` belongs to the model-parameters slice (`lettuce-models` profile config). Ollama's twelve native options and the OpenRouter pinned endpoint are implemented; duplicate legacy context, output and repetition fields map to provider-neutral settings.
-- Tauri commands for the catalog, model listing and key verification (phase (c)).
+Model listing and verification are exposed through the API. Kinds without listing return typed Unsupported instead of legacy empty lists (old-code/src-tauri/src/providers/commands.rs:21-29). Custom configured paths fall back to the generic parser of the same response; both malformed parsers return typed Malformed, while valid empty lists remain empty (commands.rs:147-152,162-278).
 
 Local runtime notice envelopes carry the inference attempt id instead of emitting global toast text (`old-code/src-tauri/src/llama_cpp/mod.rs:2598-2607,3544-3556`). This changes routing only; the engine decides when each notice is raised.
+
+## Provider control reads
+
+Key verification keeps legacy's HTTP-status judgment and extracted message (`old-code/src-tauri/src/providers/verify.rs:155-200`, `old-code/src-tauri/src/providers/util.rs:162-182`). Reflected request keys and secret headers are redacted, and raw response JSON is not returned. Public OpenRouter endpoints do not require an account, matching `old-code/src-tauri/src/providers/openrouter.rs:93-112`; endpoint context length, uptime, price strings and caching support follow `openrouter.rs:118-135`. The authenticated endpoint-pricing method remains available for billing consumers.

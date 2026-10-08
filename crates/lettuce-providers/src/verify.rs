@@ -129,12 +129,14 @@ pub(crate) async fn verify_api_key<S: SecretStore + ?Sized>(
         return Ok(KeyVerification {
             valid: true,
             status: None,
+            error: None,
         });
     }
     if credentials.api_key_ref.is_none() {
         return Ok(KeyVerification {
             valid: false,
             status: None,
+            error: Some("Missing API key".into()),
         });
     }
     if !matches!(
@@ -145,6 +147,23 @@ pub(crate) async fn verify_api_key<S: SecretStore + ?Sized>(
     }
     let auth = load_auth(auth_plan, secret_store, &credentials).await?;
     let secret_headers = load_secret_headers(secret_store, &credentials).await?;
+    let mut sensitive = Vec::new();
+    let auth_value = match &auth {
+        lettuce_network::JsonAuth::Bearer(value)
+        | lettuce_network::JsonAuth::Header { value, .. }
+        | lettuce_network::JsonAuth::Query { value, .. } => Some(value),
+        lettuce_network::JsonAuth::None => None,
+    };
+    for value in auth_value
+        .into_iter()
+        .chain(secret_headers.iter().map(|header| &header.value))
+    {
+        sensitive.push(
+            value
+                .with(|secret| lettuce_settings::SecretValue::new(secret))
+                .map_err(|_| AdapterError::Rejected)?,
+        );
+    }
     let policy = probe_policy(&credentials);
     let (response, post) = match probe {
         Probe::Get { path } => (
@@ -172,7 +191,41 @@ pub(crate) async fn verify_api_key<S: SecretStore + ?Sized>(
         }
         Probe::AlwaysValid => unreachable!("handled above"),
     };
-    Ok(judge(&response, post))
+    let mut result = judge(&response, post);
+    if let Some(message) = &mut result.error {
+        for value in sensitive {
+            value.with(|secret| redact(message, secret));
+        }
+    }
+    Ok(result)
+}
+
+fn redact(message: &mut String, secret: &str) {
+    *message = message.replace(secret, "[REDACTED]");
+    let encode = |space: &str, lower: bool| {
+        secret
+            .bytes()
+            .map(|byte| {
+                if byte.is_ascii_alphanumeric() || b"-._~".contains(&byte) {
+                    (byte as char).to_string()
+                } else if byte == b' ' {
+                    space.to_owned()
+                } else if lower {
+                    format!("%{byte:02x}")
+                } else {
+                    format!("%{byte:02X}")
+                }
+            })
+            .collect::<String>()
+    };
+    for encoded in [
+        encode("%20", false),
+        encode("%20", true),
+        encode("+", false),
+        encode("+", true),
+    ] {
+        *message = message.replace(&encoded, "[REDACTED]");
+    }
 }
 
 fn judge(response: &JsonResponse, post: bool) -> KeyVerification {
@@ -192,7 +245,26 @@ fn judge(response: &JsonResponse, post: bool) -> KeyVerification {
     KeyVerification {
         valid,
         status: Some(status),
+        error: if valid {
+            None
+        } else {
+            provider_error(&response.body)
+        },
     }
+}
+
+fn provider_error(body: &[u8]) -> Option<String> {
+    let json: serde_json::Value = serde_json::from_slice(body).ok()?;
+    let error = json.get("error");
+    let message = match error {
+        Some(serde_json::Value::String(message)) => Some(message.as_str()),
+        Some(serde_json::Value::Object(object)) => object
+            .get("message")
+            .or_else(|| object.get("type"))
+            .and_then(serde_json::Value::as_str),
+        _ => json.get("message").and_then(serde_json::Value::as_str),
+    };
+    message.map(str::to_owned)
 }
 
 #[cfg(test)]
@@ -207,6 +279,23 @@ mod tests {
             retry_after: None,
             content_type: None,
         }
+    }
+
+    #[test]
+    fn invalid_key_keeps_provider_error_text() {
+        let result = judge(
+            &response(401, r#"{"error":{"message":"Your API key was refused"}}"#),
+            false,
+        );
+        assert!(!result.valid);
+        assert!(format!("{result:?}").contains("Your API key was refused"));
+    }
+
+    #[test]
+    fn credentials_are_redacted_in_plain_and_query_encoded_errors() {
+        let mut message = "refused a+/= b and a%2B%2F%3D%20b and a%2b%2f%3d+b".to_owned();
+        redact(&mut message, "a+/= b");
+        assert_eq!(message, "refused [REDACTED] and [REDACTED] and [REDACTED]");
     }
 
     #[test]

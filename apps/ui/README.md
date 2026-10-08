@@ -55,3 +55,5 @@ oxlint enforces the import rules: `@tauri-apps/*` may only be imported inside `s
 `bun run dev` alone serves the UI in a plain browser at `http://localhost:1420` with the mock transport. `bun run check` runs the type check, the linter and the tests; `bun run build` type-checks and writes the production bundle to `dist/`. The build targets ES2023, which every webview Tauri 2 runs on (WebView2 on Windows, WKWebView on macOS and iOS, WebKitGTK on Linux, the system WebView on Android) supports.
 
 `index.html` must not contain an inline `<style>` or script, because the shell's content security policy would then drop `'unsafe-inline'` and break React style attributes.
+
+Provider control errors include `in_use` for referenced records and `malformed` for unreadable provider responses. The API client preserves these typed errors and shared failure screens render their localized copy.

@@ -18,6 +18,7 @@ mod memory;
 mod memory_models;
 mod ollama;
 mod prompts;
+mod provider_control;
 mod speech;
 mod speech_asr;
 mod speech_tts;
@@ -38,6 +39,7 @@ pub use memory::*;
 pub use memory_models::*;
 pub use ollama::*;
 pub use prompts::*;
+pub use provider_control::*;
 pub use speech::*;
 pub use speech_asr::*;
 pub use speech_tts::*;
@@ -46,6 +48,7 @@ use lettuce_types::ProviderAccountId;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderProtocolContract {
     OpenAiCompatible,
@@ -57,6 +60,7 @@ pub enum ProviderProtocolContract {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "snake_case")]
 pub enum ApiKeyRequirementContract {
     Required,
@@ -65,6 +69,7 @@ pub enum ApiKeyRequirementContract {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "snake_case")]
 pub enum ReasoningSupportContract {
     None,
@@ -74,6 +79,7 @@ pub enum ReasoningSupportContract {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "snake_case")]
 pub enum PromptCachingSupportContract {
     None,
@@ -82,6 +88,7 @@ pub enum PromptCachingSupportContract {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "snake_case")]
 pub enum PromptCacheRetentionContract {
     InMemory,
@@ -91,6 +98,7 @@ pub enum PromptCacheRetentionContract {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct ProviderParameterSupportContract {
     pub temperature: bool,
@@ -105,6 +113,7 @@ pub struct ProviderParameterSupportContract {
 
 /// One provider row rendered by the settings UI.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct ProviderDescriptorContract {
     pub kind: String,
@@ -130,23 +139,28 @@ pub struct ProviderDescriptorContract {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct ProviderCatalogContract {
     pub providers: Vec<ProviderDescriptorContract>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct ProviderAccountRequest {
+    #[cfg_attr(feature = "specta", specta(type = String))]
     pub provider_account_id: ProviderAccountId,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct RemoteModelContract {
     pub id: String,
     pub display_name: Option<String>,
     pub description: Option<String>,
+    #[cfg_attr(feature = "specta", specta(type = Option<specta_typescript::Number>))]
     pub context_length: Option<u64>,
     pub input_modalities: Option<Vec<String>>,
     pub output_modalities: Option<Vec<String>>,
@@ -156,16 +170,21 @@ pub struct RemoteModelContract {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct ProviderModelsContract {
+    #[cfg_attr(feature = "specta", specta(type = String))]
     pub provider_account_id: ProviderAccountId,
     pub models: Vec<RemoteModelContract>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct KeyVerificationContract {
+    #[cfg_attr(feature = "specta", specta(type = String))]
     pub provider_account_id: ProviderAccountId,
     pub valid: bool,
     pub status: Option<u16>,
+    pub error: Option<String>,
 }

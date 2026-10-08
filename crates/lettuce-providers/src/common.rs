@@ -1066,3 +1066,71 @@ mod tests {
         assert_eq!(lenient_tool_arguments("not json").0, serde_json::json!({}));
     }
 }
+
+#[cfg(test)]
+mod custom_listing_tests {
+    #[test]
+    fn custom_falls_back_on_the_same_response_and_distinguishes_empty_from_malformed() {
+        let config = lettuce_models::CustomProviderConfig::default();
+        let fallback = serde_json::json!({"data":[{"id":"fallback-model"}]});
+        assert_eq!(
+            super::parse_custom_listing(&config.model_list, &fallback).expect("fallback")[0].id,
+            "fallback-model"
+        );
+        assert!(
+            super::parse_custom_listing(&config.model_list, &serde_json::json!({"data":[]}))
+                .expect("empty")
+                .is_empty()
+        );
+        assert!(
+            super::parse_custom_listing(
+                &config.model_list,
+                &serde_json::json!({"error":"bad shape"})
+            )
+            .is_err()
+        );
+    }
+}
+
+pub(crate) fn parse_custom_listing(
+    list: &lettuce_models::CustomModelList,
+    payload: &serde_json::Value,
+) -> Result<Vec<RemoteModel>, AdapterError> {
+    parse_custom_listing_with(list, payload, parse_openai_model_list(payload))
+}
+
+pub(crate) fn parse_custom_listing_with(
+    list: &lettuce_models::CustomModelList,
+    payload: &serde_json::Value,
+    generic: Vec<RemoteModel>,
+) -> Result<Vec<RemoteModel>, AdapterError> {
+    let configured_valid = select_path(payload, list.list_path.as_str())
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|items| {
+            items.iter().all(|item| {
+                select_path(item, list.id_path.as_str())
+                    .and_then(value_to_string)
+                    .is_some()
+            })
+        });
+    if configured_valid {
+        if let Some(models) = parse_custom_model_list(list, payload) {
+            return Ok(models);
+        }
+    }
+    if !generic.is_empty() {
+        return Ok(generic);
+    }
+    let configured_empty = select_path(payload, list.list_path.as_str())
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(Vec::is_empty);
+    let generic_empty = payload
+        .get("data")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(Vec::is_empty);
+    if configured_empty || generic_empty {
+        Ok(Vec::new())
+    } else {
+        Err(AdapterError::MalformedResponse)
+    }
+}

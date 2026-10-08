@@ -348,7 +348,11 @@ pub(crate) async fn list_models<S: SecretStore + ?Sized>(
             generation_policy(&credentials),
         )
         .await?;
-    Ok(provider.parse_models(&decode_json(&response)?, &account.config))
+    let payload = decode_json(&response)?;
+    if let lettuce_models::ProviderConfig::Custom(config) = &account.config {
+        return crate::common::parse_custom_listing(&config.model_list, &payload);
+    }
+    Ok(provider.parse_models(&payload, &account.config))
 }
 
 fn wire_messages(
@@ -1145,6 +1149,7 @@ mod tests {
             provider_account_revision: lettuce_types::Revision::INITIAL,
             secret_owner_id: lettuce_settings::SecretOwnerId::new(),
             external_model_id: "test-model".to_owned(),
+            model_display_name: "Test model".into(),
             provider_kind: "openai".to_owned(),
             provider_protocol: ProviderProtocol::OpenAiCompatible,
             endpoint: Some("https://api.openai.com".to_owned()),

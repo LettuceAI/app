@@ -7,8 +7,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::GlobalSettingsStoreError;
 
-const MAX_TRUSTED_CERTIFICATES: usize = 64;
-const MAX_CERTIFICATE_PEM_BYTES: usize = 1024 * 1024;
 /// The longest certificate name.
 pub const MAX_CERTIFICATE_NAME_BYTES: usize = 1024;
 const MAX_PATH_BYTES: usize = 4096;
@@ -42,8 +40,7 @@ pub struct DeviceSpeechSettings {
     pub dictation_model_id: Option<String>,
 }
 
-/// A root certificate every provider request trusts; an entry the TLS stack
-/// cannot parse is skipped when clients are built.
+/// A root certificate every provider request trusts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TrustedCertificate {
@@ -87,16 +84,14 @@ impl DeviceSettings {
         let text = |value: &str, max: usize| !value.trim().is_empty() && value.len() <= max;
         let mut pems = std::collections::BTreeSet::new();
         let mut ids = std::collections::BTreeSet::new();
-        let certificates = self.trusted_certificates.len() <= MAX_TRUSTED_CERTIFICATES
-            && self.trusted_certificates.iter().all(|certificate| {
-                text(&certificate.name, MAX_CERTIFICATE_NAME_BYTES)
-                    && certificate.pem.len() <= MAX_CERTIFICATE_PEM_BYTES
-                    && certificate.pem.contains("BEGIN CERTIFICATE")
-                    && certificate.pem.contains("END CERTIFICATE")
-                    && certificate.imported_at >= 0
-                    && ids.insert(certificate.id)
-                    && pems.insert(certificate.pem.trim())
-            });
+        let certificates = self.trusted_certificates.iter().all(|certificate| {
+            text(&certificate.name, MAX_CERTIFICATE_NAME_BYTES)
+                && certificate.pem.contains("BEGIN CERTIFICATE")
+                && certificate.pem.contains("END CERTIFICATE")
+                && certificate.imported_at >= 0
+                && ids.insert(certificate.id)
+                && pems.insert(certificate.pem.trim())
+        });
         let folder = self
             .llm_models_dir
             .as_deref()

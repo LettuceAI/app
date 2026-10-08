@@ -128,6 +128,7 @@ impl ApiWorkers {
 /// feed. It downloads and loads nothing: optional models load when a chat
 /// needs them.
 pub async fn startup(context: &ApiContext) -> Result<ApiWorkers, ApiError> {
+    super::provider_mutations::cleanup_secrets(context, true).await?;
     let steps: Steps = Arc::new(Mutex::new(Vec::new()));
     let feed = JobFeed::start(context).await?;
     let conversation_feed = ConversationFeed::start(context).await?;

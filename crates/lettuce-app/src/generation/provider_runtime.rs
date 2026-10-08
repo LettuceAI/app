@@ -33,6 +33,7 @@ pub struct ProviderRuntime<S: ?Sized> {
     inference_runtime: Arc<InferenceRuntime>,
     pure_mode: Arc<PureModeGuard>,
     remote: RemoteProviders<S>,
+    pub(crate) network: Arc<JsonClient>,
 }
 
 impl<S: ?Sized> std::fmt::Debug for ProviderRuntime<S> {
@@ -80,7 +81,7 @@ impl<S: SecretStore + ?Sized> ProviderRuntime<S> {
         ));
         let remote = RemoteProviders::with_runtime_and_replay(
             secret_store,
-            network,
+            network.clone(),
             runtime_port,
             Some(database.clone()),
         );
@@ -94,6 +95,7 @@ impl<S: SecretStore + ?Sized> ProviderRuntime<S> {
             inference_runtime,
             pure_mode,
             remote,
+            network,
         })
     }
 
@@ -123,85 +125,7 @@ impl<S: SecretStore + ?Sized> ProviderRuntime<S> {
 
     #[must_use]
     pub fn catalog(&self) -> ProviderCatalogContract {
-        ProviderCatalogContract {
-            providers: provider_descriptors()
-                .iter()
-                .map(|descriptor| ProviderDescriptorContract {
-                    kind: descriptor.kind.to_owned(),
-                    display_name: descriptor.display_name.to_owned(),
-                    protocol: protocol_contract(descriptor.protocol),
-                    aliases: descriptor
-                        .aliases
-                        .iter()
-                        .map(|alias| (*alias).to_owned())
-                        .collect(),
-                    default_endpoint: descriptor.default_endpoint.map(str::to_owned),
-                    endpoint_editable: descriptor.endpoint_editable,
-                    api_key: match descriptor.api_key {
-                        ApiKeyRequirement::Required => ApiKeyRequirementContract::Required,
-                        ApiKeyRequirement::Optional => ApiKeyRequirementContract::Optional,
-                        ApiKeyRequirement::NotUsed => ApiKeyRequirementContract::NotUsed,
-                    },
-                    auth_header: descriptor.auth_header.to_owned(),
-                    streaming: descriptor.streaming,
-                    tools: descriptor.supports_tools(),
-                    structured_output: descriptor.supports_structured_output(),
-                    signed_tool_replay: descriptor.supports_signed_tool_replay(),
-                    reasoning_with_tools: descriptor.supports_reasoning_with_tools(),
-                    lists_models: descriptor.lists_models,
-                    verifies_key: descriptor.verifies_key,
-                    reasoning: match descriptor.reasoning {
-                        ReasoningSupport::None => ReasoningSupportContract::None,
-                        ReasoningSupport::Effort => ReasoningSupportContract::Effort,
-                        ReasoningSupport::BudgetOnly => ReasoningSupportContract::BudgetOnly,
-                        ReasoningSupport::Dynamic => ReasoningSupportContract::Dynamic,
-                    },
-                    prompt_caching: match descriptor.prompt_caching {
-                        PromptCachingSupport::None => PromptCachingSupportContract::None,
-                        PromptCachingSupport::Automatic => PromptCachingSupportContract::Automatic,
-                        PromptCachingSupport::CacheControl
-                        | PromptCachingSupport::ExplicitResource
-                        | PromptCachingSupport::RequestRetention => {
-                            PromptCachingSupportContract::Supported
-                        }
-                    },
-                    prompt_cache_retentions: descriptor
-                        .prompt_caching
-                        .retentions()
-                        .iter()
-                        .map(|retention| match retention {
-                            lettuce_models::PromptCacheRetention::InMemory => {
-                                PromptCacheRetentionContract::InMemory
-                            }
-                            lettuce_models::PromptCacheRetention::FiveMinutes => {
-                                PromptCacheRetentionContract::FiveMinutes
-                            }
-                            lettuce_models::PromptCacheRetention::OneHour => {
-                                PromptCacheRetentionContract::OneHour
-                            }
-                            lettuce_models::PromptCacheRetention::TwentyFourHours => {
-                                PromptCacheRetentionContract::TwentyFourHours
-                            }
-                        })
-                        .collect(),
-                    parameters: ProviderParameterSupportContract {
-                        temperature: descriptor.parameters.temperature,
-                        top_p: descriptor.parameters.top_p,
-                        max_output_tokens: descriptor.parameters.max_output_tokens,
-                        context_length: descriptor.parameters.context_length,
-                        frequency_penalty: descriptor.parameters.frequency_penalty,
-                        presence_penalty: descriptor.parameters.presence_penalty,
-                        top_k: descriptor.parameters.top_k,
-                        reasoning_budget: descriptor.parameters.reasoning_budget,
-                    },
-                    extra_body_keys: descriptor
-                        .extra_body_keys
-                        .iter()
-                        .map(|key| (*key).to_owned())
-                        .collect(),
-                })
-                .collect(),
-        }
+        provider_catalog_contract()
     }
 
     pub async fn list_models(
@@ -247,6 +171,7 @@ impl<S: SecretStore + ?Sized> ProviderRuntime<S> {
             provider_account_id: request.provider_account_id,
             valid: verification.valid,
             status: verification.status,
+            error: verification.error,
         })
     }
 
@@ -284,7 +209,7 @@ fn pure_mode_level(database: &Database) -> PureModeLevel {
     }
 }
 
-fn protocol_contract(protocol: ProviderProtocol) -> ProviderProtocolContract {
+pub(crate) fn protocol_contract(protocol: ProviderProtocol) -> ProviderProtocolContract {
     match protocol {
         ProviderProtocol::OpenAiCompatible => ProviderProtocolContract::OpenAiCompatible,
         ProviderProtocol::Anthropic => ProviderProtocolContract::Anthropic,
@@ -292,6 +217,88 @@ fn protocol_contract(protocol: ProviderProtocol) -> ProviderProtocolContract {
         ProviderProtocol::Ollama => ProviderProtocolContract::Ollama,
         ProviderProtocol::LlamaCpp => ProviderProtocolContract::LlamaCpp,
         ProviderProtocol::StableDiffusion => ProviderProtocolContract::StableDiffusion,
+    }
+}
+
+pub(crate) fn provider_catalog_contract() -> ProviderCatalogContract {
+    ProviderCatalogContract {
+        providers: provider_descriptors()
+            .iter()
+            .map(|descriptor| ProviderDescriptorContract {
+                kind: descriptor.kind.to_owned(),
+                display_name: descriptor.display_name.to_owned(),
+                protocol: protocol_contract(descriptor.protocol),
+                aliases: descriptor
+                    .aliases
+                    .iter()
+                    .map(|alias| (*alias).to_owned())
+                    .collect(),
+                default_endpoint: descriptor.default_endpoint.map(str::to_owned),
+                endpoint_editable: descriptor.endpoint_editable,
+                api_key: match descriptor.api_key {
+                    ApiKeyRequirement::Required => ApiKeyRequirementContract::Required,
+                    ApiKeyRequirement::Optional => ApiKeyRequirementContract::Optional,
+                    ApiKeyRequirement::NotUsed => ApiKeyRequirementContract::NotUsed,
+                },
+                auth_header: descriptor.auth_header.to_owned(),
+                streaming: descriptor.streaming,
+                tools: descriptor.supports_tools(),
+                structured_output: descriptor.supports_structured_output(),
+                signed_tool_replay: descriptor.supports_signed_tool_replay(),
+                reasoning_with_tools: descriptor.supports_reasoning_with_tools(),
+                lists_models: descriptor.lists_models,
+                verifies_key: descriptor.verifies_key,
+                reasoning: match descriptor.reasoning {
+                    ReasoningSupport::None => ReasoningSupportContract::None,
+                    ReasoningSupport::Effort => ReasoningSupportContract::Effort,
+                    ReasoningSupport::BudgetOnly => ReasoningSupportContract::BudgetOnly,
+                    ReasoningSupport::Dynamic => ReasoningSupportContract::Dynamic,
+                },
+                prompt_caching: match descriptor.prompt_caching {
+                    PromptCachingSupport::None => PromptCachingSupportContract::None,
+                    PromptCachingSupport::Automatic => PromptCachingSupportContract::Automatic,
+                    PromptCachingSupport::CacheControl
+                    | PromptCachingSupport::ExplicitResource
+                    | PromptCachingSupport::RequestRetention => {
+                        PromptCachingSupportContract::Supported
+                    }
+                },
+                prompt_cache_retentions: descriptor
+                    .prompt_caching
+                    .retentions()
+                    .iter()
+                    .map(|retention| match retention {
+                        lettuce_models::PromptCacheRetention::InMemory => {
+                            PromptCacheRetentionContract::InMemory
+                        }
+                        lettuce_models::PromptCacheRetention::FiveMinutes => {
+                            PromptCacheRetentionContract::FiveMinutes
+                        }
+                        lettuce_models::PromptCacheRetention::OneHour => {
+                            PromptCacheRetentionContract::OneHour
+                        }
+                        lettuce_models::PromptCacheRetention::TwentyFourHours => {
+                            PromptCacheRetentionContract::TwentyFourHours
+                        }
+                    })
+                    .collect(),
+                parameters: ProviderParameterSupportContract {
+                    temperature: descriptor.parameters.temperature,
+                    top_p: descriptor.parameters.top_p,
+                    max_output_tokens: descriptor.parameters.max_output_tokens,
+                    context_length: descriptor.parameters.context_length,
+                    frequency_penalty: descriptor.parameters.frequency_penalty,
+                    presence_penalty: descriptor.parameters.presence_penalty,
+                    top_k: descriptor.parameters.top_k,
+                    reasoning_budget: descriptor.parameters.reasoning_budget,
+                },
+                extra_body_keys: descriptor
+                    .extra_body_keys
+                    .iter()
+                    .map(|key| (*key).to_owned())
+                    .collect(),
+            })
+            .collect(),
     }
 }
 

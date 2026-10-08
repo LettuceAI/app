@@ -2,7 +2,7 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
-use std::{collections::HashSet, fmt, time::Duration};
+use std::{collections::HashSet, fmt, time::Duration, sync::{Arc, RwLock, Weak}};
 
 use lettuce_settings::{HeaderName, SecretValue};
 use reqwest::{Url, header, redirect};
@@ -607,12 +607,16 @@ impl RequestPolicy {
 }
 
 /// A concrete, purpose-scoped buffered JSON client (POST and GET).
-#[derive(Clone)]
-pub struct JsonClient {
+struct JsonTlsClients {
     strict: reqwest::Client,
     insecure: reqwest::Client,
     strict_once: reqwest::Client,
     insecure_once: reqwest::Client,
+}
+
+#[derive(Clone)]
+pub struct JsonClient {
+    tls: Arc<RwLock<JsonTlsClients>>,
     max_response_bytes: usize,
 }
 
@@ -622,20 +626,41 @@ impl fmt::Debug for JsonClient {
     }
 }
 
+pub struct WeakJsonClient { tls: Weak<RwLock<JsonTlsClients>>, max_response_bytes: usize }
+impl fmt::Debug for WeakJsonClient {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result { formatter.write_str("WeakJsonClient") }
+}
+impl WeakJsonClient {
+    pub fn upgrade(&self) -> Option<JsonClient> { self.tls.upgrade().map(|tls| JsonClient { tls, max_response_bytes: self.max_response_bytes }) }
+}
+
 impl JsonClient {
+    pub fn downgrade(&self) -> WeakJsonClient { WeakJsonClient { tls: Arc::downgrade(&self.tls), max_response_bytes: self.max_response_bytes } }
     pub fn new() -> Result<Self, JsonClientError> {
         Self::with_tls(&TlsPolicy::default())
     }
 
     pub fn with_tls(policy: &TlsPolicy) -> Result<Self, JsonClientError> {
-        let roots = trusted_roots(policy);
         Ok(Self {
+            tls: Arc::new(RwLock::new(Self::build_tls(policy)?)),
+            max_response_bytes: MAX_RESPONSE_BYTES,
+        })
+    }
+
+    fn build_tls(policy: &TlsPolicy) -> Result<JsonTlsClients, JsonClientError> {
+        let roots = trusted_roots(policy)?;
+        Ok(JsonTlsClients {
             strict: build_client(&roots, false)?,
             insecure: build_client(&roots, true)?,
             strict_once: build_client_with_redirects(&roots, false, redirect::Policy::none())?,
             insecure_once: build_client_with_redirects(&roots, true, redirect::Policy::none())?,
-            max_response_bytes: MAX_RESPONSE_BYTES,
         })
+    }
+
+    pub fn reload_tls(&self, policy: &TlsPolicy) -> Result<(), JsonClientError> {
+        let clients = Self::build_tls(policy)?;
+        *self.tls.write().map_err(|_| JsonClientError::ClientConfiguration)? = clients;
+        Ok(())
     }
 
     /// Raises (or lowers) the buffered response cap from its 8 MiB default,
@@ -647,15 +672,11 @@ impl JsonClient {
         self
     }
 
-    fn client(&self, policy: RequestPolicy) -> &reqwest::Client {
-        if policy.timeout == RequestTimeout::GenerationOnce {
-            return if policy.allow_invalid_tls { &self.insecure_once } else { &self.strict_once };
-        }
-        if policy.allow_invalid_tls {
-            &self.insecure
-        } else {
-            &self.strict
-        }
+    fn client(&self, policy: RequestPolicy) -> Result<reqwest::Client, JsonClientError> {
+        let clients = self.tls.read().map_err(|_| JsonClientError::ClientConfiguration)?;
+        Ok(if policy.timeout == RequestTimeout::GenerationOnce {
+            if policy.allow_invalid_tls { clients.insecure_once.clone() } else { clients.strict_once.clone() }
+        } else if policy.allow_invalid_tls { clients.insecure.clone() } else { clients.strict.clone() })
     }
 
     /// Sends one logical GET and buffers the JSON (or error) body.
@@ -702,7 +723,7 @@ impl JsonClient {
         }
         let (static_headers, auth, secret_headers) =
             resolve_header_collection(static_headers, auth, secret_headers)?;
-        let request = self.client(policy).get(url).timeout(timeout_for(policy));
+        let request = self.client(policy)?.get(url).timeout(timeout_for(policy));
         let request = apply_static_headers(request, &static_headers)?;
         let request = apply_auth(request, auth)?;
         self.send_with_headers(request, secret_headers, retries_for(policy))
@@ -767,7 +788,7 @@ impl JsonClient {
         let (static_headers, auth, secret_headers) =
             resolve_header_collection(static_headers, auth, secret_headers)?;
         let request = self
-            .client(policy)
+            .client(policy)?
             .post(url)
             .timeout(timeout_for(policy))
             .header(header::CONTENT_TYPE, "application/json")
@@ -801,7 +822,7 @@ impl JsonClient {
         let (static_headers, auth, secret_headers) =
             resolve_header_collection(static_headers, auth, secret_headers)?;
         let request = self
-            .client(policy)
+            .client(policy)?
             .delete(url)
             .timeout(timeout_for(policy))
             .header(header::CONTENT_TYPE, "application/json")
@@ -870,7 +891,7 @@ impl JsonClient {
         let (static_headers, auth, secret_headers) =
             resolve_header_collection(static_headers, auth, secret_headers)?;
         let request = self
-            .client(policy)
+            .client(policy)?
             .post(url)
             .timeout(timeout_for(policy))
             .header(header::CONTENT_TYPE, "application/json")
@@ -1012,11 +1033,15 @@ pub fn status_text(status: u16) -> String {
 /// images: 64 MiB requests and 256 MiB responses. The client never retries
 /// on its own, since a retry could run a paid or long generation twice;
 /// callers decide when a request is worth sending again.
-#[derive(Clone)]
-pub struct BulkHttpClient {
+struct BulkTlsClients {
     strict: reqwest::Client,
     insecure: reqwest::Client,
     fetch: reqwest::Client,
+}
+
+#[derive(Clone)]
+pub struct BulkHttpClient {
+    tls: Arc<RwLock<BulkTlsClients>>,
 }
 
 impl fmt::Debug for BulkHttpClient {
@@ -1025,31 +1050,47 @@ impl fmt::Debug for BulkHttpClient {
     }
 }
 
+pub struct WeakBulkHttpClient { tls: Weak<RwLock<BulkTlsClients>> }
+impl fmt::Debug for WeakBulkHttpClient {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result { formatter.write_str("WeakBulkHttpClient") }
+}
+impl WeakBulkHttpClient {
+    pub fn upgrade(&self) -> Option<BulkHttpClient> { self.tls.upgrade().map(|tls| BulkHttpClient { tls }) }
+}
+
 impl BulkHttpClient {
+    pub fn downgrade(&self) -> WeakBulkHttpClient { WeakBulkHttpClient { tls: Arc::downgrade(&self.tls) } }
     pub fn new() -> Result<Self, JsonClientError> {
         Self::with_tls(&TlsPolicy::default())
     }
 
     pub fn with_tls(policy: &TlsPolicy) -> Result<Self, JsonClientError> {
-        let roots = trusted_roots(policy);
-        Ok(Self {
-            strict: build_client(&roots, false)?,
-            insecure: build_client(&roots, true)?,
-            fetch: reqwest::Client::builder()
-                .redirect(redirect::Policy::limited(MAX_ARTIFACT_REDIRECTS))
-                .connect_timeout(CONNECT_TIMEOUT)
-                .timeout(GENERATION_TIMEOUT)
-                .build()
-                .map_err(|_| JsonClientError::ClientConfiguration)?,
+        Ok(Self { tls: Arc::new(RwLock::new(Self::build_tls(policy)?)) })
+    }
+
+    fn build_tls(policy: &TlsPolicy) -> Result<BulkTlsClients, JsonClientError> {
+        let roots = trusted_roots(policy)?;
+        let mut fetch = reqwest::Client::builder().redirect(redirect::Policy::limited(MAX_ARTIFACT_REDIRECTS)).connect_timeout(CONNECT_TIMEOUT).timeout(GENERATION_TIMEOUT);
+        for root in &roots { fetch = fetch.add_root_certificate(root.clone()); }
+        Ok(BulkTlsClients {
+            strict: build_client(&roots, false)?, insecure: build_client(&roots, true)?,
+            fetch: fetch.build().map_err(|_| JsonClientError::ClientConfiguration)?,
         })
     }
 
-    fn client(&self, allow_invalid_tls: bool) -> &reqwest::Client {
-        if allow_invalid_tls {
-            &self.insecure
-        } else {
-            &self.strict
-        }
+    pub fn reload_tls(&self, policy: &TlsPolicy) -> Result<(), JsonClientError> {
+        let clients = Self::build_tls(policy)?;
+        *self.tls.write().map_err(|_| JsonClientError::ClientConfiguration)? = clients;
+        Ok(())
+    }
+
+    fn client(&self, allow_invalid_tls: bool) -> Result<reqwest::Client, JsonClientError> {
+        let clients = self.tls.read().map_err(|_| JsonClientError::ClientConfiguration)?;
+        Ok(if allow_invalid_tls { clients.insecure.clone() } else { clients.strict.clone() })
+    }
+
+    fn fetch_client(&self) -> Result<reqwest::Client, JsonClientError> {
+        Ok(self.tls.read().map_err(|_| JsonClientError::ClientConfiguration)?.fetch.clone())
     }
 
     #[expect(
@@ -1075,7 +1116,7 @@ impl BulkHttpClient {
         let (static_headers, auth, secret_headers) =
             resolve_header_collection(static_headers, auth, secret_headers)?;
         let request = self
-            .client(allow_invalid_tls)
+            .client(allow_invalid_tls)?
             .get(url)
             .timeout(GENERATION_TIMEOUT);
         let request = apply_static_headers(request, &static_headers)?;
@@ -1115,7 +1156,7 @@ impl BulkHttpClient {
         let (static_headers, auth, secret_headers) =
             resolve_header_collection(static_headers, auth, secret_headers)?;
         let request = self
-            .client(allow_invalid_tls)
+            .client(allow_invalid_tls)?
             .post(url)
             .timeout(GENERATION_TIMEOUT)
             .header(header::CONTENT_TYPE, "application/json")
@@ -1178,7 +1219,7 @@ impl BulkHttpClient {
             };
         }
         let request = self
-            .client(allow_invalid_tls)
+            .client(allow_invalid_tls)?
             .post(url)
             .timeout(GENERATION_TIMEOUT)
             .multipart(form);
@@ -1200,7 +1241,7 @@ impl BulkHttpClient {
             return Err(JsonClientError::InvalidUrl);
         }
         let response = self
-            .fetch
+            .fetch_client()?
             .get(parsed)
             .send()
             .await
@@ -1241,27 +1282,19 @@ fn apply_secret_headers(
     Ok(request)
 }
 
-/// A root the TLS stack cannot parse is skipped with a warning. The rustls
-/// backend only parses roots while it builds a client, so each one is tried
-/// alone first; one bad root would otherwise fail every client.
-fn trusted_roots(policy: &TlsPolicy) -> Vec<reqwest::Certificate> {
-    policy
-        .trusted_roots_pem
-        .iter()
-        .filter_map(|pem| {
-            let root = reqwest::Certificate::from_pem(pem.as_bytes()).ok()?;
-            if reqwest::Client::builder()
-                .add_root_certificate(root.clone())
-                .build()
-                .is_ok()
-            {
-                Some(root)
-            } else {
-                tracing::warn!("Skipping invalid trusted certificate");
-                None
-            }
-        })
-        .collect()
+pub fn validate_tls_policy(policy: &TlsPolicy) -> Result<(), JsonClientError> {
+    trusted_roots(policy).map(|_| ())
+}
+
+fn trusted_roots(policy: &TlsPolicy) -> Result<Vec<reqwest::Certificate>, JsonClientError> {
+    policy.trusted_roots_pem.iter().map(|pem| {
+        let roots = reqwest::Certificate::from_pem_bundle(pem.as_bytes()).map_err(|_| JsonClientError::ClientConfiguration)?;
+        if roots.is_empty() { return Err(JsonClientError::ClientConfiguration); }
+        let mut builder = reqwest::Client::builder();
+        for root in &roots { builder = builder.add_root_certificate(root.clone()); }
+        builder.build().map_err(|_| JsonClientError::ClientConfiguration)?;
+        Ok(roots)
+    }).collect::<Result<Vec<_>, _>>().map(|bundles| bundles.into_iter().flatten().collect())
 }
 
 fn build_client(
@@ -1671,15 +1704,20 @@ mod tests {
     };
 
     #[test]
-    fn an_unparsable_trusted_root_is_skipped_instead_of_failing_every_client() {
+    fn invalid_pem_is_a_typed_client_error() {
+        assert!(JsonClient::with_tls(&TlsPolicy { trusted_roots_pem: vec!["not a PEM certificate".into()] }).is_err());
+    }
+
+    #[test]
+    fn an_unparsable_trusted_root_rejects_every_client() {
         let policy = TlsPolicy {
             trusted_roots_pem: vec![
                 "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----".to_owned(),
             ],
         };
-        assert!(trusted_roots(&policy).is_empty());
-        assert!(JsonClient::with_tls(&policy).is_ok());
-        assert!(BulkHttpClient::with_tls(&policy).is_ok());
+        assert!(trusted_roots(&policy).is_err());
+        assert!(JsonClient::with_tls(&policy).is_err());
+        assert!(BulkHttpClient::with_tls(&policy).is_err());
     }
 
     async fn test_server(response: &'static str) -> (String, oneshot::Receiver<Vec<u8>>) {

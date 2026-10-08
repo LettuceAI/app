@@ -9,8 +9,10 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 pub enum ApiErrorCode {
     NotFound,
+    InUse,
     Conflict,
     InvalidInput,
+    Malformed,
     Unsupported,
     Unavailable,
     Cancelled,
@@ -85,6 +87,13 @@ pub enum BranchDeleteRefusal {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ApiErrorDetails {
+    ProviderModelsInUse {
+        models: Vec<String>,
+    },
+    ProviderVerification {
+        status: Option<u16>,
+        provider_message: String,
+    },
     InvalidField {
         field: String,
     },
@@ -211,6 +220,10 @@ pub enum ApiEvent {
     },
     GroupChanged {
         group_id: String,
+    },
+    ModelsChanged,
+    SettingsChanged {
+        section: String,
     },
     LorebooksChanged,
     PromptsChanged,

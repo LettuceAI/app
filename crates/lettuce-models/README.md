@@ -47,7 +47,7 @@ Empty groups are not serialized. `validate_parameters` checks all groups; enum v
 
 ### Dependencies
 
-Deleting a profile that authored data still uses fails with `ModelRepositoryError::InUse`, listing typed `ModelDependencyReference`s: `CharacterDefault { character_id }` or `GroupMemberOverride { group_id, character_id }`. The vocabulary lives here so the storage adapter does not need the characters crate. Deleting an account with profiles fails with `AccountInUse`; `delete_with_profiles` clears the global default, removes the profiles and the account in one transaction, and leaves secret cleanup to a separate workflow.
+The storage adapter uses one model-delete core to clear character defaults, group member overrides and app feature selections and to promote the oldest remaining default. Owner revisions advance in the transaction. Deleting an account with profiles fails with `AccountInUse` unless its caller selects `delete_with_profiles`, which removes the account and its profiles atomically; native secret cleanup belongs to the composition root. Historical inference profiles retain frozen ids and names.
 
 `ModelLookup` finds an account by kind and label and a profile by external id, for installers that register the same account or model again. `ModelCatalog` lists everything oldest first.
 
@@ -80,3 +80,5 @@ Prompt caching is a closed policy (`Disabled` or `Enabled` with a `PromptCacheRe
 ## Model paths
 
 Local model files are stored by absolute path. `rewrite_path_prefix` maps a path under an old folder to a new one, `relocate_profile_paths` applies a mapping to every path a profile stores (the model file itself for local runtimes, the llama.cpp projector, MTP and DFlash drafts, the stable-diffusion.cpp components and base LoRAs), and `ModelPathRelocation` applies it to every profile in one transaction when the user moves the models folder.
+
+Resolved chat profiles freeze the model display name alongside its identity, parameters and connection metadata, so creation history and its backup and sync snapshots keep the name after model deletion.

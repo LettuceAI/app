@@ -277,6 +277,17 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
             commands::speech::dictation_start,
             commands::speech::dictation_stop,
             commands::speech::dictation_cancel,
+            commands::providers::certificates_list,
+            commands::providers::provider_account_save,
+            commands::providers::provider_account_delete,
+            commands::providers::provider_models,
+            commands::providers::provider_model_verify,
+            commands::providers::certificates_import,
+            commands::providers::certificates_remove,
+            commands::providers::provider_catalog,
+            commands::providers::provider_accounts_list,
+            commands::providers::provider_verify,
+            commands::providers::provider_openrouter_endpoints,
             commands::ollama::ollama_models_list,
             commands::ollama::ollama_model_delete,
             commands::ollama::ollama_pull,
@@ -288,6 +299,11 @@ pub fn specta_builder<R: Runtime>() -> tauri_specta::Builder<R> {
 pub fn export_bindings(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     specta_builder::<tauri::Wry>().export(Typescript::default(), path)?;
     let text = std::fs::read_to_string(path)?;
+    let text = text
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n");
     std::fs::write(path, format!("{}\n", text.trim_end()))?;
     Ok(())
 }

@@ -153,3 +153,5 @@ Cycle reverts and dismissed failures are new backup state (memory section versio
 Dynamic-memory backup version 6 preserves the cycle changed-item journal so restoring a backup keeps the user-edit dependency checks on cycle revert.
 
 Provider graph version 4 carries pending staged projects, frozen draft prompt documents and name-bearing staged commit receipts. These preserve source identity after deletion; legacy staged projects were held only in the process registry (`old-code/src-tauri/src/chat_manager/lorebook_generator/state.rs:168-177`).
+
+Provider graph version 5 preserves frozen creation model names alongside ids; deleting a live model no longer blocks restoring its history. Legacy model deletion did not retain a restrictive history reference (old-code/src-tauri/src/storage_manager/models.rs:301-306).

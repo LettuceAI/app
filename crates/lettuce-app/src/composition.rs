@@ -16,6 +16,8 @@ use crate::{
 #[derive(Debug)]
 pub struct AppBackend {
     database: Arc<Database>,
+    pub(crate) provider_json_clients: std::sync::Mutex<Vec<lettuce_network::WeakJsonClient>>,
+    pub(crate) provider_bulk_clients: std::sync::Mutex<Vec<lettuce_network::WeakBulkHttpClient>>,
     built_in_prompt_ids: BuiltInPromptIds,
     inference_runtime: Arc<InferenceRuntime>,
     whisper_runtime: Arc<WhisperCppRuntime<Database>>,
@@ -69,6 +71,8 @@ impl AppBackend {
         let backend = Self {
             whisper_runtime: Arc::new(WhisperCppRuntime::new(database.clone())),
             database,
+            provider_json_clients: Default::default(),
+            provider_bulk_clients: Default::default(),
             built_in_prompt_ids,
             inference_runtime: Arc::new(InferenceRuntime::default()),
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -529,6 +533,7 @@ impl AppBackend {
             lettuce_network::JsonClient::with_tls(tls_policy)?
                 .with_max_response_bytes(lettuce_speech::MAX_TTS_RESPONSE_BYTES),
         );
+        self.register_provider_json_client(network.as_ref())?;
         Ok(lettuce_speech::RemoteTtsRuntime::new(network))
     }
 
@@ -996,14 +1001,17 @@ impl AppBackend {
         secret_store: Arc<S>,
         tls_policy: &lettuce_network::TlsPolicy,
     ) -> Result<crate::ProviderRuntime<S>, crate::ProviderRuntimeInitializationError> {
-        crate::ProviderRuntime::with_inference_runtime(
+        let runtime = crate::ProviderRuntime::with_inference_runtime(
             Arc::clone(&self.database),
             secret_store,
             tls_policy,
             Arc::clone(&self.inference_runtime),
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             self.local_llama(),
-        )
+        )?;
+        self.register_provider_json_client(runtime.network.as_ref())
+            .map_err(crate::ProviderRuntimeInitializationError::Network)?;
+        Ok(runtime)
     }
 
     #[must_use]
@@ -1038,6 +1046,41 @@ pub enum AppInitializationError {
     StorageUnavailable(DatabaseError),
     #[error("built-in prompt initialization failed: {0}")]
     BuiltInPrompts(BuiltInPromptServiceError),
+}
+
+impl AppBackend {
+    pub(crate) fn register_provider_json_client(
+        &self,
+        client: &lettuce_network::JsonClient,
+    ) -> Result<(), lettuce_network::JsonClientError> {
+        let mut clients = self
+            .provider_json_clients
+            .lock()
+            .map_err(|_| lettuce_network::JsonClientError::ClientConfiguration)?;
+        let policy = self
+            .tls_policy()
+            .map_err(|_| lettuce_network::JsonClientError::ClientConfiguration)?;
+        client.reload_tls(&policy)?;
+        clients.retain(|client| client.upgrade().is_some());
+        clients.push(client.downgrade());
+        Ok(())
+    }
+    pub(crate) fn register_provider_bulk_client(
+        &self,
+        client: &lettuce_network::BulkHttpClient,
+    ) -> Result<(), lettuce_network::JsonClientError> {
+        let mut clients = self
+            .provider_bulk_clients
+            .lock()
+            .map_err(|_| lettuce_network::JsonClientError::ClientConfiguration)?;
+        let policy = self
+            .tls_policy()
+            .map_err(|_| lettuce_network::JsonClientError::ClientConfiguration)?;
+        client.reload_tls(&policy)?;
+        clients.retain(|client| client.upgrade().is_some());
+        clients.push(client.downgrade());
+        Ok(())
+    }
 }
 
 #[cfg(test)]

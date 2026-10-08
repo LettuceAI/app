@@ -235,3 +235,21 @@ mod serial_events;
 pub use jobs::LorebookHandler;
 pub use lorebook_jobs::{lorebook_entry_draft, lorebook_keywords_draft};
 pub use lorebook_projects::*;
+
+#[cfg(test)]
+mod providers_tests;
+
+mod providers;
+pub use providers::{
+    certificates_list, provider_accounts_list, provider_catalog, provider_openrouter_endpoints,
+    provider_verify,
+};
+
+#[cfg(test)]
+mod provider_mutation_tests;
+
+mod provider_mutations;
+pub use provider_mutations::{
+    certificates_import, certificates_remove, provider_account_delete, provider_account_save,
+};
+pub use providers::{provider_model_verify, provider_models};

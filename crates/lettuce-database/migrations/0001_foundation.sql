@@ -51,10 +51,10 @@ CREATE TABLE app_usage_days (
 
 CREATE TABLE device_settings (
     id INTEGER PRIMARY KEY CHECK (id = 1),
+    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision >= 1),
     settings_json TEXT NOT NULL CHECK (
         json_valid(settings_json)
         AND json_type(settings_json) = 'object'
-        AND length(CAST(settings_json AS BLOB)) <= 134217728
     ),
     updated_at INTEGER NOT NULL
 ) STRICT;
@@ -377,4 +377,10 @@ CREATE TABLE purge_notices (
     )),
     recorded_at INTEGER NOT NULL,
     dismissed_at INTEGER
+) STRICT;
+
+CREATE TABLE provider_secret_gc (
+    reference TEXT PRIMARY KEY CHECK (length(reference) = 36),
+    purpose_json TEXT NOT NULL CHECK (json_valid(purpose_json)),
+    state TEXT NOT NULL CHECK (state IN ('staged','live','retired'))
 ) STRICT;

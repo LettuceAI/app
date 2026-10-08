@@ -46,7 +46,7 @@ Images and other media never cross IPC as bytes, base64 or data URLs, in either 
 
 ## Bindings
 
-`tauri-specta` generates `apps/ui/src/api/generated/bindings.ts` from the command signatures and the `lettuce-contracts` types (their `specta` feature is enabled only here). Regenerate after changing a command or contract with `cargo run -p lettuce-tauri --bin export-bindings`. The test `committed_bindings_are_current` exports to a temporary file and fails when the committed file differs, so `cargo test --workspace` catches stale bindings.
+`tauri-specta` generates `apps/ui/src/api/generated/bindings.ts` from the command signatures and the `lettuce-contracts` types (their `specta` feature is enabled only here). Export trims trailing spaces on each line and ends with one newline. Regenerate after changing a command or contract with `cargo run -p lettuce-tauri --bin export-bindings`. The test `committed_bindings_are_current` exports to a temporary file and fails when the committed file differs, so `cargo test --workspace` catches stale bindings.
 
 ## Configuration
 
@@ -94,3 +94,7 @@ Generation and job channels also transport typed local runtime notices. Job watc
 Generation and job channels forward typed `ModelLoading` events, including retry and terminal load status, model name and GPU progress. The shell does not reconstruct load state or throttle it.
 
 Lorebook, staged project and prompt wrappers forward typed requests to the application API. Draft and stage commands return durable job identities for `job_watch`; source documents arrive as managed asset ids. Trigger and prompt previews are backend reads, and the shell performs no matching or prompt rendering.
+
+Provider control wrappers forward catalog, account listing, saved-or-draft verification, public OpenRouter endpoint discovery and certificate metadata listing to lettuce-app. Verification request credentials cross inbound IPC only; responses carry key presence or redacted typed error details. The shell owns no provider URL or authentication policy.
+
+Provider control commands forward account save/delete, model listing/verification and certificate import/remove to lettuce-app. The shell transports FileSource locations and metadata views; it never receives secret values in results.

@@ -70,6 +70,7 @@ zeroize.workspace = true
 image.workspace = true
 
 [dev-dependencies]
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
 flate2.workspace = true
 sha1_smol.workspace = true
 sha2.workspace = true

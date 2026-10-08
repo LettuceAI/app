@@ -39,7 +39,7 @@ Buffered responses (`get_json`, `post_json`, `delete_json` and their `_with_quer
 
 `GenerationOnce` returns redirects without following them, so a 307/308 cannot resend the operation. Other redirects are followed up to ten times, but only to the host the request went to and never from https down to http, so a credential never reaches another host. A cross-host redirect comes back as the response.
 
-TLS uses the OS trust store plus the webpki roots and the user's extra roots from `TlsPolicy` (the trusted certificates in device settings). The rustls backend parses roots only while building a client, so each root is first tried alone and skipped with a warning if it fails, instead of one bad certificate breaking every client. `JsonClient` holds a strict and an insecure `reqwest` client; `allow_invalid_tls` in the policy selects the insecure one and must come from an explicit per-account setting, never a provider default.
+TLS uses the OS trust store plus the webpki roots and every certificate in the user's extra PEM bundles from `TlsPolicy`. Invalid roots reject construction or reload. Clones share replaceable strict and insecure client state; `allow_invalid_tls` selects the insecure client only from an explicit per-account setting.
 
 `Debug` output of clients, responses and streams redacts bodies, request ids and retry metadata.
 
@@ -56,3 +56,5 @@ Downloads of large pinned files. It follows at most five redirects and only to h
 - `probe_https_size` learns a file's size from a one-byte ranged request. `read_hugging_face_prefix` reads the first bytes of a file, for example a GGUF header.
 
 The file URLs come from `lettuce-model-hub`'s shared Hugging Face client (`resolve_url`, `pinned_resolve_url`).
+
+JSON and bulk clients share replaceable TLS state across clones. reload_tls validates every PEM bundle and rebuilds clients before swapping that state; existing requests keep their captured client and subsequent requests use the replacement. Weak client handles allow the composition root to refresh live clients without retaining temporary runtimes. Invalid certificates reject client construction.

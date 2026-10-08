@@ -96,6 +96,7 @@ struct ApiContextInner {
     app_usage: AppActiveUsageTracker,
     legacy_database_detected: AtomicBool,
     local_models: LocalModelsState,
+    provider_writes: tokio::sync::Mutex<()>,
     image: super::image::ImageApiState,
     speech: super::speech::SpeechApiState,
 }
@@ -157,6 +158,7 @@ impl ApiContext {
                 app_usage: AppActiveUsageTracker::new(now),
                 legacy_database_detected: AtomicBool::new(false),
                 local_models: LocalModelsState::default(),
+                provider_writes: tokio::sync::Mutex::new(()),
                 image: super::image::ImageApiState::default(),
                 speech: super::speech::SpeechApiState::default(),
             }),
@@ -401,6 +403,10 @@ impl ApiContext {
 
     /// Settles what the previous process left running; call once before any
     /// worker starts.
+    pub(super) async fn provider_write_guard(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.inner.provider_writes.lock().await
+    }
+
     pub fn recover_after_restart(&self) -> Result<(), ApiError> {
         let report = self
             .backend()
@@ -424,6 +430,27 @@ impl ApiContext {
             engine.clear_upscale_scratch();
         }
         Ok(())
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_test_secrets(&self, secret_store: Arc<dyn SecretStore>) -> Self {
+        let parts = &self.inner.parts;
+        Self::new(ApiContextParts {
+            backend: parts.backend.clone(),
+            secret_store,
+            inference: parts.inference.clone(),
+            image_provider: parts.image_provider.clone(),
+            models: parts.models.clone(),
+            speech: parts.speech.clone(),
+            media: parts.media.clone(),
+            events: parts.events.clone(),
+            clock: parts.clock.clone(),
+            files: parts.files.clone(),
+            app_folder: parts.app_folder.clone(),
+            resource_dir: parts.resource_dir.clone(),
+            database_files: None,
+            asset_url_base: parts.asset_url_base.clone(),
+        })
     }
 
     /// Cancels every running generation and any job a worker starts from

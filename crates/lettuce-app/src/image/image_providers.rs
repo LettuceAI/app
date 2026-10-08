@@ -70,13 +70,12 @@ impl crate::AppBackend {
     where
         S: SecretStore + ?Sized + 'static,
     {
+        let network = BulkHttpClient::with_tls(tls_policy)?;
+        self.register_provider_bulk_client(&network)?;
         Ok(AppImageProviders {
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
             local: self.local_diffusion.clone(),
-            remote: Some(Arc::new(RemoteImageProviders::new(
-                secret_store,
-                BulkHttpClient::with_tls(tls_policy)?,
-            ))),
+            remote: Some(Arc::new(RemoteImageProviders::new(secret_store, network))),
         })
     }
 }
