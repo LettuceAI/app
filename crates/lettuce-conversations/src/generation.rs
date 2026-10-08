@@ -144,6 +144,9 @@ pub enum GenerationTransitionError {
 #[serde(deny_unknown_fields)]
 pub struct PromptAttribution {
     pub document_id: PromptDocumentId,
+    /// The document name when it was used; history keeps it after the
+    /// document is deleted.
+    pub name: String,
     pub revision: Revision,
     /// Exact entries selected from the immutable prompt snapshot for this
     /// assembly.  Keeping entry identity alongside document provenance makes
@@ -156,6 +159,9 @@ pub struct PromptAttribution {
 #[serde(deny_unknown_fields)]
 pub struct LorebookAttribution {
     pub lorebook_id: lettuce_types::LorebookId,
+    /// The book name when it was used; history keeps it after the book is
+    /// deleted.
+    pub name: String,
     pub revision: Revision,
     /// Exact entries activated from the immutable lorebook snapshot.
     #[serde(default)]

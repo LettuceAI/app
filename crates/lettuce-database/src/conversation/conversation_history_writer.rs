@@ -1173,7 +1173,7 @@ pub(crate) fn settle_turn(
     for (ordinal, lorebook) in turn.lorebooks.iter().enumerate() {
         transaction
             .execute(
-                "INSERT INTO turn_lorebooks (conversation_id, turn_id, lorebook_id, revision, ordinal, activated_entry_ids_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT INTO turn_lorebooks (conversation_id, turn_id, lorebook_id, revision, ordinal, activated_entry_ids_json, lorebook_name) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 params![
                     turn.conversation_id.to_string(),
                     turn.id.to_string(),
@@ -1181,6 +1181,7 @@ pub(crate) fn settle_turn(
                     slice::sql_revision(lorebook.revision)?,
                     i64::try_from(ordinal).map_err(|_| ConversationRepositoryError::Storage)?,
                     slice::encode(&lorebook.activated_entry_ids)?,
+                    lorebook.name,
                 ],
             )
             .map_err(kernel::map_constraint)?;
@@ -1192,7 +1193,7 @@ pub(crate) fn settle_turn(
         .transpose()?;
     transaction
         .execute(
-            "UPDATE conversation_turns SET status = ?1, selected_candidate_id = ?2, failure = ?3, resolved_model_json = ?4, prompt_document_id = ?5, prompt_revision = ?6, prompt_entry_ids_json = ?7, revision = ?8, updated_at = ?9, selected_speaker_participant_id = ?12, selected_speaker_details_json = ?13, memory_revision_id = ?14 WHERE conversation_id = ?10 AND id = ?11",
+            "UPDATE conversation_turns SET status = ?1, selected_candidate_id = ?2, failure = ?3, resolved_model_json = ?4, prompt_document_id = ?5, prompt_revision = ?6, prompt_entry_ids_json = ?7, revision = ?8, updated_at = ?9, selected_speaker_participant_id = ?12, selected_speaker_details_json = ?13, memory_revision_id = ?14, prompt_name = ?15 WHERE conversation_id = ?10 AND id = ?11",
             params![
                 kernel::generation_status_name(turn.status),
                 turn.selected_candidate_id.map(|id| id.to_string()),
@@ -1216,6 +1217,7 @@ pub(crate) fn settle_turn(
                     .map(crate::conversation::conversation_mutations::encode_speaker_details)
                     .transpose()?,
                 turn.memory.as_ref().map(|memory| memory.revision_id.to_string()),
+                turn.prompt.as_ref().map(|prompt| prompt.name.as_str()),
             ],
         )
         .map_err(kernel::map_constraint)?;

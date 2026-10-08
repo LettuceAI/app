@@ -681,6 +681,7 @@ pub struct LorebookActivationSource {
 pub struct ResolvedLorebookSource {
     pub provenance: LorebookSourceProvenance,
     pub lorebook_id: LorebookId,
+    pub name: String,
     pub book_revision: Revision,
     pub source_order: usize,
 }
@@ -985,6 +986,7 @@ pub fn resolve_lorebook_activation(
         let resolved = ResolvedLorebookSource {
             provenance: source.provenance,
             lorebook_id: source.lorebook_id,
+            name: details.book.name.clone(),
             book_revision: details.book.revision,
             source_order,
         };

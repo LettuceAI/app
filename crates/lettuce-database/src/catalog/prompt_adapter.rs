@@ -237,8 +237,15 @@ fn provenance_kind(value: &PromptProvenance) -> (&'static str, Option<String>, O
     match value {
         PromptProvenance::BuiltIn { key, .. } => ("built_in", Some(key.trim().to_owned()), None),
         PromptProvenance::User => ("user", None, None),
-        PromptProvenance::Derived { source } => ("derived", None, Some(source.to_string())),
+        PromptProvenance::Derived { source, .. } => ("derived", None, Some(source.to_string())),
         PromptProvenance::Imported => ("imported", None, None),
+    }
+}
+
+fn derived_source_name(value: &PromptProvenance) -> Option<&str> {
+    match value {
+        PromptProvenance::Derived { source_name, .. } => Some(source_name.as_str()),
+        _ => None,
     }
 }
 
@@ -602,7 +609,7 @@ fn insert_root(
     let provenance_json = encode(&document.provenance)?;
     let (kind, key, source) = provenance_kind(&document.provenance);
     tx.execute(
-        "INSERT INTO prompt_documents(id,status,name,purpose,condense,behavior_version,provenance_kind,built_in_key,derived_source_id,provenance_json,revision,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
+        "INSERT INTO prompt_documents(id,status,name,purpose,condense,behavior_version,provenance_kind,built_in_key,derived_source_id,provenance_json,revision,created_at,updated_at,derived_source_name) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
         params![
             document.id.to_string(),
             status_name(document.status),
@@ -616,7 +623,8 @@ fn insert_root(
             provenance_json,
             sql_revision(document.revision)?,
             document.created_at.get(),
-            document.updated_at.get()
+            document.updated_at.get(),
+            derived_source_name(&document.provenance)
         ],
     )
     .map_err(storage)?;
@@ -705,12 +713,12 @@ fn update_root(
     let provenance_json = encode(&document.provenance)?;
     let (kind, key, source) = provenance_kind(&document.provenance);
     let changed = tx.execute(
-        "UPDATE prompt_documents SET status=?2,name=?3,purpose=?4,condense=?5,behavior_version=?6,provenance_kind=?7,built_in_key=?8,derived_source_id=?9,provenance_json=?10,revision=?11,updated_at=?12 WHERE id=?1 AND revision=?13",
+        "UPDATE prompt_documents SET status=?2,name=?3,purpose=?4,condense=?5,behavior_version=?6,provenance_kind=?7,built_in_key=?8,derived_source_id=?9,provenance_json=?10,revision=?11,updated_at=?12,derived_source_name=?14 WHERE id=?1 AND revision=?13",
         params![
             document.id.to_string(), status_name(document.status), document.name,
             purpose_name(document.purpose), document.condense, behavior_name(document.behavior_version),
             kind, key, source, provenance_json, sql_revision(document.revision)?, document.updated_at.get(),
-            sql_revision(expected)?
+            sql_revision(expected)?, derived_source_name(&document.provenance)
         ],
     ).map_err(storage)?;
     if changed == 0 {
@@ -1268,8 +1276,15 @@ impl PromptBootstrapPort for Database {
                 let payload = encode(&canonical_provenance)
                     .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?;
                 tx.execute(
-                    "UPDATE prompt_documents SET provenance_kind=?2,built_in_key=?3,derived_source_id=?4,provenance_json=?5 WHERE id=?1",
-                    params![id.to_string(), kind, canonical_key, source, payload],
+                    "UPDATE prompt_documents SET provenance_kind=?2,built_in_key=?3,derived_source_id=?4,provenance_json=?5,derived_source_name=?6 WHERE id=?1",
+                    params![
+                        id.to_string(),
+                        kind,
+                        canonical_key,
+                        source,
+                        payload,
+                        derived_source_name(&canonical_provenance)
+                    ],
                 )
                 .map_err(bootstrap_storage)?;
                 current.provenance = canonical_provenance.clone();
@@ -1468,7 +1483,9 @@ pub(crate) fn sync_prompt_ids(connection: &Connection) -> rusqlite::Result<Vec<S
     connection
         .prepare(
             "WITH RECURSIVE depth(id, level) AS (
-               SELECT id, 0 FROM prompt_documents WHERE derived_source_id IS NULL
+               SELECT id, 0 FROM prompt_documents
+                WHERE derived_source_id IS NULL
+                   OR derived_source_id NOT IN (SELECT id FROM prompt_documents)
                UNION ALL
                SELECT document.id, depth.level + 1 FROM prompt_documents document
                JOIN depth ON document.derived_source_id = depth.id
@@ -1491,7 +1508,7 @@ pub(crate) fn sync_replace_prompt(
     document
         .validate()
         .map_err(|error| PromptRepositoryError::Failure(error.to_string()))?;
-    let (_, key, source) = provenance_kind(&document.provenance);
+    let (_, key, _) = provenance_kind(&document.provenance);
     if let Some(key) = key {
         let other: bool = tx
             .query_row(
@@ -1504,18 +1521,6 @@ pub(crate) fn sync_replace_prompt(
             return Ok(false);
         }
     }
-    if let Some(source) = source {
-        let present: bool = tx
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM prompt_documents WHERE id=?1)",
-                [source],
-                |row| row.get(0),
-            )
-            .map_err(storage)?;
-        if !present {
-            return Err(PromptRepositoryError::NotFound);
-        }
-    }
     if load_document(tx, document.id).map_err(storage)?.is_none() {
         insert_root(tx, document)?;
         return Ok(true);
@@ -1523,12 +1528,12 @@ pub(crate) fn sync_replace_prompt(
     let provenance_json = encode(&document.provenance)?;
     let (kind, key, source) = provenance_kind(&document.provenance);
     tx.execute(
-        "UPDATE prompt_documents SET status=?2,name=?3,purpose=?4,condense=?5,behavior_version=?6,provenance_kind=?7,built_in_key=?8,derived_source_id=?9,provenance_json=?10,revision=?11,created_at=?12,updated_at=?13 WHERE id=?1",
+        "UPDATE prompt_documents SET status=?2,name=?3,purpose=?4,condense=?5,behavior_version=?6,provenance_kind=?7,built_in_key=?8,derived_source_id=?9,provenance_json=?10,revision=?11,created_at=?12,updated_at=?13,derived_source_name=?14 WHERE id=?1",
         params![
             document.id.to_string(), status_name(document.status), document.name,
             purpose_name(document.purpose), document.condense, behavior_name(document.behavior_version),
             kind, key, source, provenance_json, sql_revision(document.revision)?,
-            document.created_at.get(), document.updated_at.get()
+            document.created_at.get(), document.updated_at.get(), derived_source_name(&document.provenance)
         ],
     ).map_err(storage)?;
     replace_entries(tx, document, document.updated_at, &HashSet::new())?;
@@ -2231,7 +2236,10 @@ mod tests {
             .expect("source");
         let derived_id = PromptDocumentId::new();
         let imported_id = PromptDocumentId::new();
-        let derived = PromptProvenance::Derived { source: source.id };
+        let derived = PromptProvenance::Derived {
+            source: source.id,
+            source_name: "source".into(),
+        };
         let imported = PromptProvenance::Imported;
         let connection = database.connection().expect("lock");
         for (id, kind, provenance, source_id) in [
@@ -2245,13 +2253,14 @@ mod tests {
         ] {
             connection
                 .execute(
-                    "INSERT INTO prompt_documents(id,status,name,purpose,condense,behavior_version,provenance_kind,built_in_key,derived_source_id,provenance_json,revision,created_at,updated_at) VALUES (?1,'active',?2,'direct_chat',0,'legacy_v1',?3,NULL,?4,?5,1,2,2)",
+                    "INSERT INTO prompt_documents(id,status,name,purpose,condense,behavior_version,provenance_kind,built_in_key,derived_source_id,provenance_json,revision,created_at,updated_at,derived_source_name) VALUES (?1,'active',?2,'direct_chat',0,'legacy_v1',?3,NULL,?4,?5,1,2,2,?6)",
                     params![
                         id.to_string(),
                         format!("{kind} prompt"),
                         kind,
                         source_id,
-                        encode(&provenance).expect("provenance")
+                        encode(&provenance).expect("provenance"),
+                        derived_source_name(&provenance)
                     ],
                 )
                 .expect("insert provenance");
@@ -2273,6 +2282,25 @@ mod tests {
                 .expect("present")
                 .provenance,
             imported
+        );
+        database
+            .connection()
+            .expect("lock")
+            .execute("DELETE FROM prompt_documents WHERE id=?1", [source.id.to_string()])
+            .expect("derivation history does not restrict deletion");
+        assert_eq!(
+            database
+                .get(derived_id)
+                .expect("load")
+                .expect("present")
+                .provenance,
+            derived
+        );
+        let connection = database.connection().expect("lock");
+        assert!(
+            sync_prompt_ids(&connection)
+                .expect("sync ids")
+                .contains(&derived_id.to_string())
         );
     }
 

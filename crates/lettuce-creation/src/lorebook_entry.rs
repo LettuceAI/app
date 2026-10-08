@@ -68,6 +68,7 @@ pub struct LorebookEntryGenerationRun {
     pub force: bool,
     pub profile: ResolvedInferenceProfile,
     pub prompt_id: PromptDocumentId,
+    pub prompt_name: String,
     pub prompt_revision: Revision,
     pub prompt_values: LorebookEntryPromptValues,
     pub fallback_format: LorebookEntryFallbackFormat,
@@ -123,6 +124,7 @@ impl LorebookEntryGenerationRun {
     pub fn validate(&self) -> Result<(), LorebookEntryRunRepositoryError> {
         let values = &self.prompt_values;
         if self.prompt_revision.get() == 0
+            || self.prompt_name.trim().is_empty()
             || self.created_at.get() < 0
             || values.lorebook_name.trim().is_empty()
             || values.character_name.trim().is_empty()

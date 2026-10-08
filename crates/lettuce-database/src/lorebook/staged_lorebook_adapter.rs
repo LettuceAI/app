@@ -160,8 +160,8 @@ pub(crate) fn insert_restored_in(
         .execute(
             "INSERT INTO creation_staged_lorebook_runs
              (request_id, project_id, job_id, model_profile_id, prompt_id, prompt_revision, stage,
-              revision, created_at, updated_at, run_json)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+              revision, created_at, updated_at, run_json, prompt_name)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![
                 run.request_id.to_string(),
                 run.project.id.to_string(),
@@ -176,7 +176,8 @@ pub(crate) fn insert_restored_in(
                 i64::try_from(run.project.revision.get()).map_err(failure)?,
                 run.project.created_at.get(),
                 run.project.updated_at.get(),
-                encode_versioned(run, RUN_FORMAT_VERSION).map_err(failure)?
+                encode_versioned(run, RUN_FORMAT_VERSION).map_err(failure)?,
+                run.planner_prompt_name
             ],
         )
         .map_err(failure)?;
@@ -495,8 +496,8 @@ impl StagedLorebookRepository for Database {
             .execute(
                 "INSERT OR IGNORE INTO creation_staged_lorebook_runs
              (request_id, project_id, job_id, model_profile_id, prompt_id, prompt_revision, stage,
-              revision, created_at, updated_at, run_json)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+              revision, created_at, updated_at, run_json, prompt_name)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                 params![
                     run.request_id.to_string(),
                     run.project.id.to_string(),
@@ -511,7 +512,8 @@ impl StagedLorebookRepository for Database {
                     i64::try_from(run.project.revision.get()).map_err(failure)?,
                     run.project.created_at.get(),
                     run.project.updated_at.get(),
-                    encoded
+                    encoded,
+                    run.planner_prompt_name
                 ],
             )
             .map_err(failure)?;

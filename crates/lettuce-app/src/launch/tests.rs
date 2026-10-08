@@ -4343,8 +4343,12 @@ async fn a_companion_turn_uses_its_companion_prompt_over_a_conversation_override
         .await
         .expect("assemble companion context");
     assert_eq!(
-        context.attributions.prompt.map(|prompt| prompt.document_id),
-        Some(companion_template)
+        context
+            .attributions
+            .prompt
+            .as_ref()
+            .map(|prompt| (prompt.document_id, prompt.name.as_str())),
+        Some((companion_template, "Companion template"))
     );
 
     let changed_template = seed_prompt(&database, "Changed template", PromptPurpose::CompanionChat);
@@ -4569,6 +4573,7 @@ async fn an_existing_chat_reads_lorebook_edits_bindings_and_archiving_every_turn
     assert!(text.contains("The old harbour."));
     assert_eq!(used.len(), 1);
     assert_eq!(used[0].lorebook_id, world);
+    assert_eq!(used[0].name, "World");
 
     let book = LorebookRepository::get(&database, world)
         .expect("lorebook")
@@ -8524,6 +8529,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
                 overrides: Default::default(),
                 profile: profile.clone(),
                 prompt_id: writer_prompt.id,
+                prompt_name: writer_prompt.name.clone(),
                 prompt_revision: writer_prompt.revision,
             }),
             TimestampMillis::new(NOW.get() + 9),

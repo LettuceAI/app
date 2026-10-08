@@ -4,6 +4,8 @@ Facts about how `lettuce-database` relates to the legacy app (2.2.x). The crate 
 
 ## Legacy parity
 
+- History rows name a deleted lorebook or prompt by the id and name stored at the time of use (slice 6 decision 14). Legacy hard-deleted lorebooks and templates without keeping per-turn history of them (`old-code/src-tauri/src/storage_manager/lorebook.rs:316-326`, `old-code/src-tauri/src/chat_manager/prompting/prompts.rs:1099-1120`); the per-turn and per-run records are rewrite mechanisms.
+
 - Staged lorebook commit includes unapproved non-blank drafts (`old-code/src-tauri/src/chat_manager/lorebook_generator/commands.rs:516-544`, slice 6 decision 3). Blank drafts are skipped, and the rewrite appends contiguous ordinals and commits book, project and receipt atomically.
 
 - Built-in prompt reset retains the user's name and recomputes the authored digest, while a reset batch remains atomic. Legacy individual reset passed no name update (`old-code/src-tauri/src/chat_manager/prompting/prompts.rs:1067-1081`); legacy reset-all performed separate writes (`old-code/src-tauri/src/chat_manager/prompting/prompts.rs:2521-2553`).

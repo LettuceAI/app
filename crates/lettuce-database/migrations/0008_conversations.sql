@@ -274,6 +274,7 @@ CREATE TABLE conversation_turns (
     selected_speaker_details_json TEXT CHECK (selected_speaker_details_json IS NULL OR (json_valid(selected_speaker_details_json) AND json_extract(selected_speaker_details_json, '$.format_version') = 1)),
     resolved_model_json TEXT CHECK (resolved_model_json IS NULL OR (json_valid(resolved_model_json) AND json_extract(resolved_model_json, '$.format_version') = 1)),
     prompt_document_id TEXT,
+    prompt_name TEXT CHECK (prompt_name IS NULL OR length(trim(prompt_name)) > 0),
     prompt_revision INTEGER CHECK (prompt_revision IS NULL OR prompt_revision >= 1),
     prompt_entry_ids_json TEXT CHECK (prompt_entry_ids_json IS NULL OR (
         json_valid(prompt_entry_ids_json)
@@ -299,7 +300,6 @@ CREATE TABLE conversation_turns (
     PRIMARY KEY (conversation_id, id),
     UNIQUE (conversation_id, idempotency_key),
     UNIQUE (conversation_id, id, branch_id),
-    FOREIGN KEY (prompt_document_id) REFERENCES prompt_documents(id) ON DELETE RESTRICT,
     FOREIGN KEY (conversation_id, branch_id)
         REFERENCES conversation_branches(conversation_id, id) ON DELETE RESTRICT,
     FOREIGN KEY (conversation_id, id, selected_candidate_id)
@@ -321,7 +321,8 @@ CREATE TABLE conversation_turns (
            (input_kind = 'existing_candidate' AND user_message_id IS NULL AND head_message_id IS NULL AND candidate_message_id IS NOT NULL AND candidate_id IS NOT NULL)),
     CHECK ((operation = 'send' AND input_kind = 'user_message') OR (operation = 'continue' AND input_kind = 'existing_head') OR (operation = 'regenerate' AND input_kind = 'existing_candidate')),
     CHECK ((prompt_document_id IS NULL) = (prompt_revision IS NULL) AND
-           (prompt_document_id IS NULL) = (prompt_entry_ids_json IS NULL)),
+           (prompt_document_id IS NULL) = (prompt_entry_ids_json IS NULL) AND
+           (prompt_document_id IS NULL) = (prompt_name IS NULL)),
     CHECK ((status = 'failed') = (failure IS NOT NULL)),
     CHECK ((status = 'succeeded') = (selected_candidate_id IS NOT NULL)),
     CHECK ((target_kind = 'new_assistant' AND target_parent_message_id IS NOT NULL AND target_prior_candidate_id IS NULL) OR
@@ -765,6 +766,7 @@ CREATE TABLE turn_lorebooks (
     conversation_id TEXT NOT NULL,
     turn_id TEXT NOT NULL,
     lorebook_id TEXT NOT NULL,
+    lorebook_name TEXT NOT NULL CHECK (length(trim(lorebook_name)) > 0),
     revision INTEGER NOT NULL CHECK (revision >= 1),
     ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
     activated_entry_ids_json TEXT NOT NULL CHECK (
@@ -775,8 +777,7 @@ CREATE TABLE turn_lorebooks (
     PRIMARY KEY (conversation_id, turn_id, lorebook_id),
     UNIQUE (conversation_id, turn_id, ordinal),
     FOREIGN KEY (conversation_id, turn_id)
-        REFERENCES conversation_turns(conversation_id, id) ON DELETE RESTRICT,
-    FOREIGN KEY (lorebook_id) REFERENCES lorebooks(id) ON DELETE RESTRICT
+        REFERENCES conversation_turns(conversation_id, id) ON DELETE RESTRICT
 ) STRICT;
 
 CREATE TABLE generation_checkpoints (

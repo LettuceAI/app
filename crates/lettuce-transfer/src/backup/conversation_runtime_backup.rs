@@ -7,7 +7,7 @@ use lettuce_conversations::{
 use lettuce_types::{ConversationId, TimestampMillis};
 use serde::{Deserialize, Serialize};
 
-pub const CONVERSATION_RUNTIME_BACKUP_VERSION: u32 = 1;
+pub const CONVERSATION_RUNTIME_BACKUP_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

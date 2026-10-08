@@ -567,24 +567,6 @@ fn require_references(
                 return Err(ConversationRepositoryError::NotFound);
             }
         }
-        if let Some(prompt) = &turn.prompt
-            && !exists(
-                transaction,
-                "SELECT EXISTS(SELECT 1 FROM prompt_documents WHERE id = ?1)",
-                [prompt.document_id.to_string()],
-            )?
-        {
-            return Err(ConversationRepositoryError::NotFound);
-        }
-        for lorebook in &turn.lorebooks {
-            if !exists(
-                transaction,
-                "SELECT EXISTS(SELECT 1 FROM lorebooks WHERE id = ?1)",
-                [lorebook.lorebook_id.to_string()],
-            )? {
-                return Err(ConversationRepositoryError::NotFound);
-            }
-        }
     }
     Ok(())
 }

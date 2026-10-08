@@ -2323,8 +2323,9 @@ mod tests {
             connection
                 .execute(
                     "INSERT INTO creation_staged_lorebook_runs (request_id, project_id, job_id, \
-                     model_profile_id, prompt_id, prompt_revision, stage, revision, created_at, \
-                     updated_at, run_json) VALUES ('r', 'p', ?1, 'm', 'q', 1, 'committed', 1, 1, 1, '{}')",
+                     model_profile_id, prompt_id, prompt_name, prompt_revision, stage, revision, \
+                     created_at, updated_at, run_json) VALUES ('r', 'p', ?1, 'm', 'q', 'Q', 1, \
+                     'committed', 1, 1, 1, '{}')",
                     [created.job.id.to_string()],
                 )
                 .expect("staged run");

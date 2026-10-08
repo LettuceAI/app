@@ -18,7 +18,8 @@ CREATE TABLE prompt_documents (
     behavior_version TEXT NOT NULL CHECK (behavior_version IN ('legacy_v1', 'deterministic_v2')),
     provenance_kind TEXT NOT NULL CHECK (provenance_kind IN ('built_in', 'user', 'derived', 'imported')),
     built_in_key TEXT UNIQUE,
-    derived_source_id TEXT REFERENCES prompt_documents(id) ON DELETE RESTRICT,
+    derived_source_id TEXT,
+    derived_source_name TEXT CHECK (derived_source_name IS NULL OR length(trim(derived_source_name)) > 0),
     provenance_json TEXT NOT NULL CHECK (length(trim(provenance_json)) > 0),
     revision INTEGER NOT NULL CHECK (revision >= 1),
     created_at INTEGER NOT NULL,
@@ -26,6 +27,7 @@ CREATE TABLE prompt_documents (
     CHECK (created_at <= updated_at),
     CHECK ((provenance_kind = 'built_in') = (built_in_key IS NOT NULL)),
     CHECK ((provenance_kind = 'derived') = (derived_source_id IS NOT NULL)),
+    CHECK ((derived_source_id IS NULL) = (derived_source_name IS NULL)),
     CHECK (provenance_kind <> 'built_in' OR length(trim(built_in_key)) > 0),
     CHECK (derived_source_id IS NULL OR derived_source_id <> id),
     UNIQUE (id, revision)

@@ -154,6 +154,7 @@ fn run_from_request(
         force: request.force,
         profile: request.profile.clone(),
         prompt_id: request.prompt.id,
+        prompt_name: request.prompt.name.clone(),
         prompt_revision: request.prompt.revision,
         prompt_values: request.prompt_values.clone(),
         fallback_format: request.fallback_format,

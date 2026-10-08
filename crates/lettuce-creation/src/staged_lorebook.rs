@@ -596,6 +596,7 @@ pub struct StagedLorebookPlanningRun {
     pub project: StagedLorebookProject,
     pub planner_profile: ResolvedInferenceProfile,
     pub planner_prompt_id: PromptDocumentId,
+    pub planner_prompt_name: String,
     pub planner_prompt_revision: Revision,
     #[serde(default)]
     pub planner_prompt_snapshot: Option<lettuce_context::PromptDocument>,
@@ -624,6 +625,7 @@ pub struct StagedLorebookWriterBatchInputs {
     pub overrides: lettuce_settings::LorebookGeneratorSelection,
     pub profile: ResolvedInferenceProfile,
     pub prompt_id: PromptDocumentId,
+    pub prompt_name: String,
     pub prompt_revision: Revision,
     #[serde(default)]
     pub prompt_snapshot: Option<lettuce_context::PromptDocument>,
@@ -639,6 +641,7 @@ pub struct StagedLorebookCoherenceRun {
     #[serde(default)]
     pub configured_overrides: Option<lettuce_settings::LorebookGeneratorSelection>,
     pub prompt_id: PromptDocumentId,
+    pub prompt_name: String,
     pub prompt_revision: Revision,
     #[serde(default)]
     pub prompt_snapshot: Option<lettuce_context::PromptDocument>,
@@ -794,6 +797,7 @@ pub struct StagedLorebookWriterRun {
     #[serde(default)]
     pub configured_overrides: Option<lettuce_settings::LorebookGeneratorSelection>,
     pub prompt_id: PromptDocumentId,
+    pub prompt_name: String,
     pub prompt_revision: Revision,
     #[serde(default)]
     pub prompt_snapshot: Option<lettuce_context::PromptDocument>,
@@ -1073,6 +1077,7 @@ impl StagedLorebookPlanningRun {
         }
         let mut coherence_job_ids = HashSet::with_capacity(self.coherence_runs.len());
         if self.planner_prompt_revision.get() == 0
+            || self.planner_prompt_name.trim().is_empty()
             || invalid_prompt_snapshot(
                 self.planner_prompt_snapshot.as_ref(),
                 self.planner_prompt_id,
@@ -1082,6 +1087,7 @@ impl StagedLorebookPlanningRun {
             || self.writer_batch_inputs.as_ref().is_some_and(|inputs| {
                 self.project.draft_batch.is_none()
                     || inputs.prompt_revision.get() == 0
+                    || inputs.prompt_name.trim().is_empty()
                     || invalid_prompt_snapshot(
                         inputs.prompt_snapshot.as_ref(),
                         inputs.prompt_id,
@@ -1126,6 +1132,7 @@ impl StagedLorebookCoherenceRun {
             )
             || self.project_revision > project.revision
             || self.prompt_revision.get() == 0
+            || self.prompt_name.trim().is_empty()
             || self.created_at.get() < 0
             || self.drafted_entries.is_empty()
             || serde_json::to_vec(&self.profile).is_err()
@@ -1190,6 +1197,7 @@ impl StagedLorebookWriterRun {
                 },
             )
             || self.prompt_revision.get() == 0
+            || self.prompt_name.trim().is_empty()
             || self.created_at.get() < 0
             || values.brief.trim().is_empty()
             || values.brief != values.brief.trim()

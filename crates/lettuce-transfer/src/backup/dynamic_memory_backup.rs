@@ -7,7 +7,7 @@ use lettuce_memory::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const DYNAMIC_MEMORY_BACKUP_VERSION: u32 = 6;
+pub const DYNAMIC_MEMORY_BACKUP_VERSION: u32 = 7;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

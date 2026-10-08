@@ -130,12 +130,14 @@ where
         )
         .map_err(unavailable)?;
         snapshot.persona = persona.as_ref().map(crate::launch::documents::persona_body);
-        snapshot.prompt = match &live_group {
+        let live_prompt = match &live_group {
             None => self.live_direct_prompt(&aggregate.conversation)?,
             Some(group) => {
                 self.live_group_prompt(&aggregate.conversation, group, speaker_character)?
             }
         };
+        snapshot.prompt_name = live_prompt.as_ref().map(|(_, name)| name.clone());
+        snapshot.prompt = live_prompt.map(|(prompt, _)| prompt);
         let owned_cast = live_group
             .as_ref()
             .filter(|_| {
@@ -636,6 +638,7 @@ where
         let attributions = ContextAttributions {
             prompt: prompt.map(|document| PromptAttribution {
                 document_id: document.id,
+                name: snapshot.prompt_name.clone().unwrap_or_default(),
                 revision: document.revision,
                 selected_entry_ids: rendered_prompt
                     .relative
@@ -691,7 +694,7 @@ where
     fn live_direct_prompt(
         &self,
         conversation: &lettuce_conversations::Conversation,
-    ) -> Result<Option<PromptSnapshot>, ContextAssemblyError> {
+    ) -> Result<Option<(PromptSnapshot, String)>, ContextAssemblyError> {
         let ConversationKind::Direct(details) = &conversation.kind else {
             return Ok(None);
         };
@@ -757,6 +760,7 @@ where
                     document.revision,
                     &crate::launch::documents::prompt_body(&document),
                 )
+                .map(|prompt| (prompt, document.name.clone()))
             })
             .transpose()
     }
@@ -770,7 +774,7 @@ where
         conversation: &lettuce_conversations::Conversation,
         live: &crate::generation::live_sources::LiveGroup,
         speaker: Option<CharacterId>,
-    ) -> Result<Option<PromptSnapshot>, ContextAssemblyError> {
+    ) -> Result<Option<(PromptSnapshot, String)>, ContextAssemblyError> {
         let unavailable = || ContextAssemblyError::ConversationUnavailable;
         let roleplay = live.chat_mode == lettuce_conversations::GroupChatModeSnapshot::Roleplay;
         let selected = match conversation.current_settings.as_ref().map(|settings| {
@@ -817,6 +821,7 @@ where
                     document.revision,
                     &crate::launch::documents::prompt_body(&document),
                 )
+                .map(|prompt| (prompt, document.name.clone()))
             })
             .transpose()
     }
@@ -1522,6 +1527,7 @@ struct SnapshotBundle {
     characters: Vec<(ConversationParticipant, CharacterSnapshotBodyV1)>,
     persona: Option<PersonaSnapshotBodyV1>,
     prompt: Option<PromptSnapshot>,
+    prompt_name: Option<String>,
     /// The scene's launch or override reference (which ties it to the
     /// timeline's scene message), its id and body.
     scene: Option<BundleScene>,
@@ -1613,9 +1619,11 @@ impl SnapshotBundle {
             .map(|snapshot| {
                 materialize_prompt(materializer, conversation_id, snapshot).and_then(|body| {
                     prompt_document(snapshot.source_id, snapshot.source_revision, &body)
+                        .map(|prompt| (prompt, body.name))
                 })
             })
             .transpose()?;
+        let (prompt, prompt_name) = prompt.unzip();
         let scene = settings
             .scene
             .as_ref()
@@ -1635,6 +1643,7 @@ impl SnapshotBundle {
             characters,
             persona,
             prompt,
+            prompt_name,
             scene,
             group_members,
         })
@@ -2895,6 +2904,7 @@ fn lore_attributions(entries: &[ResolvedLorebookEntry]) -> Vec<LorebookAttributi
             Some(attribution) => attribution.activated_entry_ids.push(entry.entry.id),
             None => attributions.push(LorebookAttribution {
                 lorebook_id: entry.source.lorebook_id,
+                name: entry.source.name.clone(),
                 revision: entry.source.book_revision,
                 activated_entry_ids: vec![entry.entry.id],
             }),
@@ -3372,6 +3382,7 @@ mod tests {
                     id: ConversationId::new(),
                 },
                 lorebook_id: book,
+                name: "Book".into(),
                 book_revision: lettuce_types::Revision::new(revision),
                 source_order: 0,
             },
@@ -3751,6 +3762,7 @@ mod tests {
             characters: Vec::new(),
             persona: None,
             prompt: None,
+            prompt_name: None,
             scene: Some(BundleScene {
                 reference: Some(snapshot.snapshot_ref.clone()),
                 source_id: snapshot.source_id,

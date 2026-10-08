@@ -2558,6 +2558,41 @@ mod tests {
         Database, DatabaseError, DeleteFailurePoint, Migration, apply_migrations, hex_encode,
     };
 
+    #[test]
+    fn history_tables_keep_lorebook_and_prompt_snapshots_without_foreign_keys() {
+        let database = Database::open_in_memory().expect("database");
+        let connection = database.connection().expect("connection");
+        for (table, column, name) in [
+            ("turn_lorebooks", "lorebook_id", "lorebook_name"),
+            ("conversation_turns", "prompt_document_id", "prompt_name"),
+            ("creation_lorebook_entry_runs", "lorebook_id", "lorebook_name"),
+            ("creation_lorebook_entry_runs", "prompt_id", "prompt_name"),
+            ("creation_lorebook_keyword_runs", "prompt_id", "prompt_name"),
+            ("creation_staged_lorebook_runs", "prompt_id", "prompt_name"),
+            ("creation_staged_lorebook_writer_runs", "prompt_id", "prompt_name"),
+            ("creation_lorebook_apply_receipts", "lorebook_id", "lorebook_name"),
+            ("companion_soul_writer_runs", "prompt_id", "prompt_name"),
+            ("prompt_documents", "derived_source_id", "derived_source_name"),
+        ] {
+            let foreign: i64 = connection
+                .query_row(
+                    "SELECT count(*) FROM pragma_foreign_key_list(?1) WHERE \"from\" = ?2",
+                    params![table, column],
+                    |row| row.get(0),
+                )
+                .expect("foreign key lookup");
+            assert_eq!(foreign, 0, "{table}.{column} still restricts deletion");
+            let snapshot: i64 = connection
+                .query_row(
+                    "SELECT count(*) FROM pragma_table_info(?1) WHERE name = ?2",
+                    params![table, name],
+                    |row| row.get(0),
+                )
+                .expect("name column lookup");
+            assert_eq!(snapshot, 1, "{table} has no {name} snapshot");
+        }
+    }
+
     fn sync_to(from: &Database, to: &Database, at: i64) -> usize {
         use lettuce_sync::{IncomingChangeRepository, LocalChangeJournal};
         from.journal_current_state(TimestampMillis::new(at))

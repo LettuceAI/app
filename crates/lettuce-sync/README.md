@@ -140,6 +140,8 @@ A third device replying inside a chain that later loses can leave devices with d
 
 Creation workflow payload version 2 includes its immutable lorebook apply receipt, with the destination id and name at apply time. Receiving the receipt needs no surviving lorebook. Inference attempts, rounds and the other helper apply receipts remain device-local.
 
+Conversation message payload version 4 carries each turn's prompt and lorebook names, and a peer stores them whether or not it has those books and prompts. Prompt payload version 2 carries a derived prompt's source name; a derived prompt applies without its source.
+
 | Kind | Schema | Notes |
 | --- | --- | --- |
 | provider account | `provider_account.snapshot` | secret references only |

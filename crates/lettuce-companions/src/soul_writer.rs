@@ -119,6 +119,7 @@ pub struct CompanionSoulWriterRun {
     pub primary_profile: ResolvedInferenceProfile,
     pub fallback_profile: Option<ResolvedInferenceProfile>,
     pub prompt_id: PromptDocumentId,
+    pub prompt_name: String,
     pub prompt_revision: Revision,
     pub prompt_values: SoulWriterPromptValues,
     pub starting_draft: Value,
@@ -185,6 +186,7 @@ pub trait CompanionSoulWriterRunRepository: Send + Sync {
 impl CompanionSoulWriterRun {
     pub fn validate(&self) -> Result<(), CompanionSoulWriterRunRepositoryError> {
         if self.prompt_revision.get() == 0
+            || self.prompt_name.trim().is_empty()
             || self.prompt_values.character_name.trim().is_empty()
             || !self.starting_draft.is_object()
             || normalize_soul_writer_draft(Some(&self.starting_draft)) != self.starting_draft

@@ -81,7 +81,7 @@ pub fn canonical_lorebook_bindings_payload(
 
 pub const PROMPT_SYNC_KIND: &str = "prompt";
 pub const PROMPT_SYNC_SCHEMA: &str = "prompt.snapshot";
-pub const PROMPT_SYNC_VERSION: u32 = 1;
+pub const PROMPT_SYNC_VERSION: u32 = 2;
 
 /// The complete prompt document with its ordered entries.
 pub fn canonical_prompt_payload(
@@ -118,7 +118,7 @@ pub const CONVERSATION_SYNC_VERSION: u32 = 5;
 
 pub const CONVERSATION_MESSAGE_SYNC_KIND: &str = "conversation_message";
 pub const CONVERSATION_MESSAGE_SYNC_SCHEMA: &str = "conversation.message";
-pub const CONVERSATION_MESSAGE_SYNC_VERSION: u32 = 3;
+pub const CONVERSATION_MESSAGE_SYNC_VERSION: u32 = 4;
 
 pub const CONVERSATION_BRANCH_SYNC_KIND: &str = "conversation_branch";
 pub const CONVERSATION_BRANCH_SYNC_SCHEMA: &str = "conversation.branch";

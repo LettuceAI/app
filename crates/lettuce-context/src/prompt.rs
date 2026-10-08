@@ -100,6 +100,7 @@ pub enum PromptProvenance {
     User,
     Derived {
         source: PromptDocumentId,
+        source_name: String,
     },
     Imported,
 }
@@ -683,7 +684,10 @@ impl PromptDocument {
             _ if !built_in_keys.is_empty() => {
                 return Err(PromptValidationError::BuiltInEntryKeyOnNonBuiltInPrompt);
             }
-            PromptProvenance::Derived { source } if *source == self.id => {
+            PromptProvenance::Derived {
+                source,
+                source_name,
+            } if *source == self.id || source_name.trim().is_empty() => {
                 return Err(PromptValidationError::InvalidDerivedSource);
             }
             _ => {}

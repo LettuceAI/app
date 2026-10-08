@@ -32,6 +32,7 @@ struct WriterAdmissionInput {
     plan_id: LorebookEntryId,
     profile: ResolvedInferenceProfile,
     prompt_id: lettuce_types::PromptDocumentId,
+    prompt_name: String,
     prompt_revision: Revision,
     now: TimestampMillis,
 }
@@ -121,6 +122,7 @@ where
             plan_id: request.plan_id,
             profile: request.profile,
             prompt_id: request.prompt.id,
+            prompt_name: request.prompt.name.clone(),
             prompt_revision: request.prompt.revision,
             now: request.now,
         })
@@ -193,6 +195,7 @@ where
             plan_id: request.plan_id,
             profile: request.profile,
             prompt_id: request.prompt_id,
+            prompt_name: request.prompt_name,
             prompt_revision: request.prompt_revision,
             prompt_values: values,
             refinement: None,
@@ -244,7 +247,7 @@ where
             return self.admit_batch_writers(
                 current,
                 inputs.profile,
-                inputs.prompt_id,
+                (inputs.prompt_id, inputs.prompt_name),
                 inputs.prompt_revision,
                 inputs.prompt_snapshot,
             );
@@ -263,6 +266,7 @@ where
             overrides: overrides.clone(),
             profile: profile.clone(),
             prompt_id: prompt.id,
+            prompt_name: prompt.name.clone(),
             prompt_revision: prompt.revision,
         };
         let project = self.projects.start_staged_lorebook_draft_batch(
@@ -271,7 +275,13 @@ where
             Some(inputs),
             now,
         )?;
-        self.admit_batch_writers(project, profile, prompt.id, prompt.revision, Some(prompt))
+        self.admit_batch_writers(
+            project,
+            profile,
+            (prompt.id, prompt.name.clone()),
+            prompt.revision,
+            Some(prompt),
+        )
     }
 
     pub fn start_batch(
@@ -292,7 +302,7 @@ where
         self.admit_batch_writers(
             project,
             profile,
-            prompt.id,
+            (prompt.id, prompt.name.clone()),
             prompt.revision,
             Some(prompt.clone()),
         )
@@ -302,7 +312,7 @@ where
         &self,
         project: StagedLorebookPlanningRun,
         profile: ResolvedInferenceProfile,
-        prompt_id: lettuce_types::PromptDocumentId,
+        (prompt_id, prompt_name): (lettuce_types::PromptDocumentId, String),
         prompt_revision: Revision,
         prompt_snapshot: Option<PromptDocument>,
     ) -> Result<StagedLorebookWriterBatchAdmission, StagedLorebookWriterAdmissionError> {
@@ -343,6 +353,7 @@ where
                     plan_id,
                     profile: profile.clone(),
                     prompt_id,
+                    prompt_name: prompt_name.clone(),
                     prompt_revision,
                     now: batch.started_at,
                 })?,
@@ -498,6 +509,7 @@ where
                 plan_id: request.plan_id,
                 profile: request.profile,
                 prompt_id: request.prompt.id,
+                prompt_name: request.prompt.name.clone(),
                 prompt_revision: request.prompt.revision,
                 prompt_values: values,
                 refinement: Some(refinement),

@@ -344,6 +344,7 @@ fn build_request(
             attributions: ContextAttributions {
                 prompt: Some(PromptAttribution {
                     document_id: prompt.id,
+                    name: prompt.name.clone(),
                     revision: prompt.revision,
                     selected_entry_ids: rendered
                         .relative

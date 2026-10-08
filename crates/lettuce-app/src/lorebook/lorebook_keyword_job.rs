@@ -195,6 +195,7 @@ fn run_from_request(
         job_id,
         profile: request.profile.clone(),
         prompt_id: request.prompt.id,
+        prompt_name: request.prompt.name.clone(),
         prompt_revision: request.prompt.revision,
         prompt_values,
         fallback_format: request.fallback_format,

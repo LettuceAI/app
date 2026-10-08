@@ -44,6 +44,7 @@ pub struct LorebookKeywordGenerationRun {
     pub job_id: JobId,
     pub profile: ResolvedInferenceProfile,
     pub prompt_id: PromptDocumentId,
+    pub prompt_name: String,
     pub prompt_revision: Revision,
     pub prompt_values: LorebookKeywordPromptValues,
     pub fallback_format: LorebookEntryFallbackFormat,
@@ -198,6 +199,7 @@ impl LorebookKeywordGenerationRun {
     pub fn validate(&self) -> Result<(), LorebookKeywordRunRepositoryError> {
         let values = &self.prompt_values;
         if self.prompt_revision.get() == 0
+            || self.prompt_name.trim().is_empty()
             || self.created_at.get() < 0
             || values.entry_title.trim().is_empty()
             || values.entry_title != values.entry_title.trim()

@@ -110,8 +110,8 @@ pub(crate) fn insert_restored_in(
         .execute(
             "INSERT INTO creation_lorebook_keyword_runs (
                request_id, job_id, model_profile_id, prompt_id, prompt_revision, created_at,
-               run_json, attempts_json
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+               run_json, attempts_json, prompt_name
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 run.request_id.to_string(),
                 run.job_id.to_string(),
@@ -121,6 +121,7 @@ pub(crate) fn insert_restored_in(
                 run.created_at.get(),
                 encode_versioned(run, RUN_FORMAT_VERSION).map_err(failure)?,
                 encode_versioned(&attempts, ATTEMPTS_FORMAT_VERSION).map_err(failure)?,
+                run.prompt_name,
             ],
         )
         .map_err(failure)?;
@@ -147,8 +148,8 @@ impl LorebookKeywordRunRepository for Database {
             .execute(
                 "INSERT OR IGNORE INTO creation_lorebook_keyword_runs (
                    request_id, job_id, model_profile_id, prompt_id, prompt_revision, created_at,
-                   run_json, attempts_json
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                   run_json, attempts_json, prompt_name
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 params![
                     run.request_id.to_string(),
                     run.job_id.to_string(),
@@ -158,6 +159,7 @@ impl LorebookKeywordRunRepository for Database {
                     run.created_at.get(),
                     encoded,
                     attempts,
+                    run.prompt_name,
                 ],
             )
             .map_err(failure)?;

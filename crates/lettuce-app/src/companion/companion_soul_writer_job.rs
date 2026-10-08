@@ -167,6 +167,7 @@ impl<
             primary_profile: request.primary_profile,
             fallback_profile: request.fallback_profile,
             prompt_id: request.prompt.id,
+            prompt_name: request.prompt.name.clone(),
             prompt_revision: request.prompt.revision,
             prompt_values,
             starting_draft: normalize_soul_writer_draft(request.current_soul),

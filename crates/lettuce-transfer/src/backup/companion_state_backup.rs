@@ -8,7 +8,7 @@ use lettuce_conversations::{ConversationKind, SnapshotSelection};
 use lettuce_types::{CharacterId, ContentHash, PersonaId, Revision, TimestampMillis};
 use serde::{Deserialize, Serialize};
 
-pub const COMPANION_STATE_BACKUP_VERSION: u32 = 2;
+pub const COMPANION_STATE_BACKUP_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

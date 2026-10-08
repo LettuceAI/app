@@ -83,8 +83,8 @@ pub(crate) fn insert_restored_in(
     };
     tx.execute(
         "INSERT INTO companion_soul_writer_runs (
-            request_id, job_id, prompt_id, prompt_revision, created_at, run_json, rounds_json
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            request_id, job_id, prompt_id, prompt_revision, created_at, run_json, rounds_json, prompt_name
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         params![
             run.request_id.to_string(),
             run.job_id.to_string(),
@@ -93,6 +93,7 @@ pub(crate) fn insert_restored_in(
             run.created_at.get(),
             encode_versioned(&admitted, RUN_FORMAT_VERSION).map_err(failure)?,
             encode_versioned(&run.rounds, ROUNDS_FORMAT_VERSION).map_err(failure)?,
+            run.prompt_name,
         ],
     )
     .map_err(failure)?;
@@ -206,8 +207,8 @@ pub(crate) fn admit_run_in(
     let inserted = tx
         .execute(
             "INSERT OR IGNORE INTO companion_soul_writer_runs (
-                request_id, job_id, prompt_id, prompt_revision, created_at, run_json, rounds_json
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                request_id, job_id, prompt_id, prompt_revision, created_at, run_json, rounds_json, prompt_name
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 run.request_id.to_string(),
                 run.job_id.to_string(),
@@ -216,6 +217,7 @@ pub(crate) fn admit_run_in(
                 run.created_at.get(),
                 run_json,
                 rounds_json,
+                run.prompt_name,
             ],
         )
         .map_err(failure)?;

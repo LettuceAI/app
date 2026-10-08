@@ -1802,7 +1802,7 @@ pub(crate) fn hydrate_lorebooks(
     conversation_id: ConversationId,
     turn_id: GenerationTurnId,
 ) -> Result<Vec<LorebookAttribution>, ConversationRepositoryError> {
-    let mut statement = transaction.prepare("SELECT lorebook_id, revision, activated_entry_ids_json FROM turn_lorebooks WHERE conversation_id = ?1 AND turn_id = ?2 ORDER BY ordinal, lorebook_id").map_err(slice::db)?;
+    let mut statement = transaction.prepare("SELECT lorebook_id, revision, activated_entry_ids_json, lorebook_name FROM turn_lorebooks WHERE conversation_id = ?1 AND turn_id = ?2 ORDER BY ordinal, lorebook_id").map_err(slice::db)?;
     let mut values = Vec::new();
     for row in statement
         .query_map(
@@ -1813,6 +1813,7 @@ pub(crate) fn hydrate_lorebooks(
                         .get::<_, String>(0)?
                         .parse()
                         .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    name: row.get(3)?,
                     revision: slice::rev(row.get(1)?).map_err(|_| rusqlite::Error::InvalidQuery)?,
                     activated_entry_ids: slice::decode(&row.get::<_, String>(2)?)
                         .map_err(|_| rusqlite::Error::InvalidQuery)?,
@@ -1877,21 +1878,28 @@ fn hydrate_turn_row_inner(
         .map(slice::rev)
         .transpose()?;
     let prompt_entry_ids_json = row.get::<_, Option<String>>(16).map_err(slice::db)?;
+    let prompt_name = row.get::<_, Option<String>>(33).map_err(slice::db)?;
     if prompt_id.is_some() != prompt_revision.is_some()
         || prompt_id.is_some() != prompt_entry_ids_json.is_some()
+        || prompt_id.is_some() != prompt_name.is_some()
     {
         return Err(ConversationRepositoryError::Storage);
     }
     let selected_entry_ids: Option<Vec<PromptEntryId>> = prompt_entry_ids_json
         .map(|entry_ids_json| slice::decode(&entry_ids_json))
         .transpose()?;
-    let prompt = prompt_id.zip(prompt_revision).zip(selected_entry_ids).map(
-        |((document_id, revision), selected_entry_ids)| PromptAttribution {
-            document_id,
-            revision,
-            selected_entry_ids,
-        },
-    );
+    let prompt = prompt_id
+        .zip(prompt_name)
+        .zip(prompt_revision)
+        .zip(selected_entry_ids)
+        .map(
+            |(((document_id, name), revision), selected_entry_ids)| PromptAttribution {
+                document_id,
+                name,
+                revision,
+                selected_entry_ids,
+            },
+        );
     let memory = parse_opt(row.get(17).map_err(slice::db)?)?
         .map(|revision_id| MemoryAttribution { revision_id });
     let selected_candidate_id = parse_opt(row.get(18).map_err(slice::db)?)?;
@@ -2591,7 +2599,7 @@ pub(crate) fn validate_outbox_event(
 }
 
 pub(crate) fn turn_select_sql() -> &'static str {
-    "SELECT conversation_id, id, branch_id, operation, input_kind, user_message_id, head_message_id, candidate_message_id, candidate_id, idempotency_key, status, selected_speaker_participant_id, selected_speaker_details_json, resolved_model_json, prompt_document_id, prompt_revision, prompt_entry_ids_json, memory_revision_id, selected_candidate_id, failure, revision, created_at, updated_at, correlation_id, target_kind, target_message_id, target_parent_message_id, target_prior_candidate_id, guidance, requested_model_override_json, forced_speaker_participant_id, swap_roles, retry_of_turn_id FROM conversation_turns"
+    "SELECT conversation_id, id, branch_id, operation, input_kind, user_message_id, head_message_id, candidate_message_id, candidate_id, idempotency_key, status, selected_speaker_participant_id, selected_speaker_details_json, resolved_model_json, prompt_document_id, prompt_revision, prompt_entry_ids_json, memory_revision_id, selected_candidate_id, failure, revision, created_at, updated_at, correlation_id, target_kind, target_message_id, target_parent_message_id, target_prior_candidate_id, guidance, requested_model_override_json, forced_speaker_participant_id, swap_roles, retry_of_turn_id, prompt_name FROM conversation_turns"
 }
 
 pub(crate) fn unique_message_conversation(
@@ -4301,28 +4309,42 @@ mod tests {
             .expect("lorebook");
         transaction
             .execute(
-                "UPDATE conversation_turns SET prompt_document_id = ?1, prompt_revision = 1, prompt_entry_ids_json = ?2 WHERE id = ?3",
+                "UPDATE conversation_turns SET prompt_document_id = ?1, prompt_name = 'Prompt', prompt_revision = 1, prompt_entry_ids_json = ?2 WHERE id = ?3",
                 params![prompt_id.to_string(), prompt_entry_ids, current_turn.to_string()],
             )
             .expect("prompt attribution");
         transaction
             .execute(
-                "INSERT INTO turn_lorebooks (conversation_id, turn_id, lorebook_id, revision, ordinal, activated_entry_ids_json) SELECT conversation_id, ?1, ?2, 1, 0, ?3 FROM conversation_turns WHERE id = ?1",
+                "INSERT INTO turn_lorebooks (conversation_id, turn_id, lorebook_id, lorebook_name, revision, ordinal, activated_entry_ids_json) SELECT conversation_id, ?1, ?2, 'Lorebook', 1, 0, ?3 FROM conversation_turns WHERE id = ?1",
                 params![current_turn.to_string(), lorebook_id.to_string(), activated_entry_ids],
             )
             .expect("lorebook attribution");
+        transaction
+            .execute(
+                "DELETE FROM lorebooks WHERE id = ?1",
+                params![lorebook_id.to_string()],
+            )
+            .expect("historical lorebook does not restrict deletion");
+        transaction
+            .execute(
+                "DELETE FROM prompt_documents WHERE id = ?1",
+                params![prompt_id.to_string()],
+            )
+            .expect("historical prompt does not restrict deletion");
         transaction.commit().expect("commit");
         drop(connection);
 
         let turn = database.get_turn(current_turn).expect("turn");
-        assert_eq!(
-            turn.prompt.expect("prompt attribution").selected_entry_ids,
-            vec![prompt_entry_id]
-        );
+        let prompt = turn.prompt.expect("prompt attribution");
+        assert_eq!(prompt.selected_entry_ids, vec![prompt_entry_id]);
+        assert_eq!(prompt.document_id, prompt_id);
+        assert_eq!(prompt.name, "Prompt");
         assert_eq!(
             turn.lorebooks[0].activated_entry_ids,
             vec![lorebook_entry_id]
         );
+        assert_eq!(turn.lorebooks[0].lorebook_id, lorebook_id);
+        assert_eq!(turn.lorebooks[0].name, "Lorebook");
 
         let connection = database.connection().expect("connection");
         assert!(

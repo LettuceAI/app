@@ -7,7 +7,7 @@ use lettuce_characters::{
     CharacterDetails, GroupDetails, Persona, PersonaDefaultState, Selection, VoicePreference,
 };
 use lettuce_context::{
-    LorebookBinding, LorebookDetails, PromptDocument, PromptProvenance, validate_bindings,
+    LorebookBinding, LorebookDetails, PromptDocument, validate_bindings,
 };
 use lettuce_conversations::TrustedArtifactDescriptor;
 use lettuce_media::{BlobState, MAX_MEDIA_BLOB_BYTES, MediaAsset, MediaBlob};
@@ -894,14 +894,6 @@ pub fn canonicalize_and_validate(
     let mut prompt_ids = BTreeMap::new();
     for prompt in &graph.prompts {
         if prompt.validate().is_err() || prompt_ids.insert(prompt.id, ()).is_some() {
-            return Err(ProviderBackupGraphError::InvalidGraph);
-        }
-    }
-    for prompt in &graph.prompts {
-        if matches!(
-            prompt.provenance,
-            PromptProvenance::Derived { source } if !prompt_ids.contains_key(&source)
-        ) {
             return Err(ProviderBackupGraphError::InvalidGraph);
         }
     }

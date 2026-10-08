@@ -17,6 +17,7 @@ Facts about how sync relates to the legacy app (2.2.x), and how the design got t
 ## Deliberate differences from legacy
 
 - Creation workflow payload version 2 exchanges lorebook apply receipt id and name snapshots without requiring the source book (slice 6 decision 14). Legacy hard deletion removed that row (`old-code/src-tauri/src/storage_manager/lorebook.rs:316-326`); receiving retained apply evidence is a rewrite mechanism.
+- Message turns and derived prompts no longer wait for the books and prompts they name (slice 6 decision 14).
 
 - Canonical domain changes replace legacy raw SQLite changesets and schema-position coupling. Session hello uses a fingerprint of the supported canonical payload schemas instead of legacy's positional SQLite schema equality.
 - Peers on 2.2.5 or older cannot sync with this build: their pairing handshake differs, and a current client reports the legacy host's version (see the `lettuce-app` transport).

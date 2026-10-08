@@ -4050,6 +4050,11 @@ impl ConversationRepository for Database {
                         .prompt
                         .as_ref()
                         .map(|prompt| prompt.document_id.to_string());
+                    let prompt_name = command
+                        .attributions
+                        .prompt
+                        .as_ref()
+                        .map(|prompt| prompt.name.as_str());
                     let prompt_revision = command
                         .attributions
                         .prompt
@@ -4069,9 +4074,9 @@ impl ConversationRepository for Database {
                         .as_ref()
                         .map(|memory| memory.revision_id.to_string());
                     let sql = if recorded {
-                        "UPDATE conversation_turns SET resolved_model_json = ?3, prompt_document_id = ?4, prompt_revision = ?5, prompt_entry_ids_json = ?6, memory_revision_id = ?7 WHERE conversation_id = ?1 AND id = ?2 AND resolved_model_json IS NOT NULL"
+                        "UPDATE conversation_turns SET resolved_model_json = ?3, prompt_document_id = ?4, prompt_revision = ?5, prompt_entry_ids_json = ?6, memory_revision_id = ?7, prompt_name = ?8 WHERE conversation_id = ?1 AND id = ?2 AND resolved_model_json IS NOT NULL"
                     } else {
-                        "UPDATE conversation_turns SET resolved_model_json = ?3, prompt_document_id = ?4, prompt_revision = ?5, prompt_entry_ids_json = ?6, memory_revision_id = ?7 WHERE conversation_id = ?1 AND id = ?2 AND resolved_model_json IS NULL AND prompt_document_id IS NULL AND prompt_revision IS NULL AND prompt_entry_ids_json IS NULL AND memory_revision_id IS NULL AND NOT EXISTS (SELECT 1 FROM turn_lorebooks WHERE conversation_id = ?1 AND turn_id = ?2)"
+                        "UPDATE conversation_turns SET resolved_model_json = ?3, prompt_document_id = ?4, prompt_revision = ?5, prompt_entry_ids_json = ?6, memory_revision_id = ?7, prompt_name = ?8 WHERE conversation_id = ?1 AND id = ?2 AND resolved_model_json IS NULL AND prompt_document_id IS NULL AND prompt_revision IS NULL AND prompt_entry_ids_json IS NULL AND memory_revision_id IS NULL AND NOT EXISTS (SELECT 1 FROM turn_lorebooks WHERE conversation_id = ?1 AND turn_id = ?2)"
                     };
                     let changed = transaction
                         .execute(
@@ -4084,6 +4089,7 @@ impl ConversationRepository for Database {
                                 prompt_revision,
                                 prompt_entries,
                                 memory_revision,
+                                prompt_name,
                             ],
                         )
                         .map_err(kernel::map_constraint)?;
@@ -4104,7 +4110,7 @@ impl ConversationRepository for Database {
                     for (ordinal, lorebook) in command.attributions.lorebooks.iter().enumerate() {
                         transaction
                             .execute(
-                                "INSERT INTO turn_lorebooks (conversation_id, turn_id, lorebook_id, revision, ordinal, activated_entry_ids_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                                "INSERT INTO turn_lorebooks (conversation_id, turn_id, lorebook_id, revision, ordinal, activated_entry_ids_json, lorebook_name) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                                 params![
                                     context.conversation_id.to_string(),
                                     command.turn_id.to_string(),
@@ -4114,6 +4120,7 @@ impl ConversationRepository for Database {
                                     i64::try_from(ordinal)
                                         .map_err(|_| ConversationRepositoryError::Storage)?,
                                     slice::encode(&lorebook.activated_entry_ids)?,
+                                    lorebook.name,
                                 ],
                             )
                             .map_err(kernel::map_constraint)?;
@@ -8436,6 +8443,7 @@ mod tests {
                 attributions: lettuce_conversations::ContextAttributions {
                     prompt: Some(lettuce_conversations::PromptAttribution {
                         document_id: prompt_id,
+                        name: "Prompt".into(),
                         revision: Revision::new(3),
                         selected_entry_ids: vec![
                             lettuce_types::PromptEntryId::new(),
@@ -8446,6 +8454,7 @@ mod tests {
                         .into_iter()
                         .map(|lorebook_id| lettuce_conversations::LorebookAttribution {
                             lorebook_id,
+                            name: "Lorebook".into(),
                             revision: Revision::new(2),
                             activated_entry_ids: vec![
                                 lettuce_types::LorebookEntryId::new(),
