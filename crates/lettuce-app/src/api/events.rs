@@ -10,6 +10,16 @@ pub trait ApiEventSink: Send + Sync {
 /// generation continues.
 pub trait GenerationEventSink: Send + Sync {
     fn emit(&self, event: GenerationEvent);
+
+    fn emit_if(
+        &self,
+        event: GenerationEvent,
+        valid: std::sync::Arc<dyn Fn() -> bool + Send + Sync>,
+    ) {
+        if valid() {
+            self.emit(event);
+        }
+    }
 }
 
 /// The stream of one watched job, handed in by `job_watch`. Delivery is

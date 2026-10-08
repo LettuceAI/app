@@ -352,6 +352,7 @@ fn runtime_reports_emit_only_matching_local_model_ids_after_storage() {
     routes.emit(LlamaHostEvent::RuntimeReportUpdated {
         model_path: path.into(),
     });
+    routes.flush();
     let events = super::tests::api_events(&harness);
     let ids = events
         .iter()

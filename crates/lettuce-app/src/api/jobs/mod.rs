@@ -188,12 +188,26 @@ pub async fn job_watch(
     let job_id: JobId = parse_id(&request.job_id, "job_id")?;
     context
         .blocking(move |context| {
-            context.jobs().watch(job_id, sink, || {
-                let job = load(context, job_id)?;
-                let view = job_view(context, &job)?;
-                let (event, terminal) = job_event(&job, view.clone());
-                Ok((view, event, terminal))
-            })
+            context.jobs().watch_with_load(
+                job_id,
+                sink,
+                || {
+                    let job = load(context, job_id)?;
+                    let view = job_view(context, &job)?;
+                    let (event, terminal) = job_event(&job, view.clone());
+                    Ok((view, event, terminal))
+                },
+                || {
+                    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+                    {
+                        context.backend().local_runtime_events().job_load(job_id)
+                    }
+                    #[cfg(any(target_os = "android", target_os = "ios"))]
+                    {
+                        None
+                    }
+                },
+            )
         })
         .await
 }

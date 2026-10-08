@@ -429,6 +429,8 @@ impl ApiContext {
     /// Cancels every running generation and any job a worker starts from
     /// now on; workers stop through their own shutdown signal.
     pub fn begin_shutdown(&self) {
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        self.backend().local_runtime_events().shutdown();
         self.inner.shutdown.cancel();
         self.backend().begin_shutdown();
         self.inner.jobs.wake();
@@ -600,26 +602,93 @@ impl ApiContext {
         turn_id: GenerationTurnId,
         sink: Arc<dyn GenerationEventSink>,
     ) {
-        if let Ok(mut streams) = self.inner.streams.lock() {
+        let delivery = Arc::new(super::serial_events::SerialEvents::new(move |event| {
+            sink.emit(event);
+            true
+        }));
+        struct Stream(Arc<super::serial_events::SerialEvents<GenerationEvent>>);
+        impl GenerationEventSink for Stream {
+            fn emit_if(
+                &self,
+                event: GenerationEvent,
+                valid: std::sync::Arc<dyn Fn() -> bool + Send + Sync>,
+            ) {
+                self.0.send_if(event, valid);
+            }
+            fn emit(&self, event: GenerationEvent) {
+                if matches!(
+                    event,
+                    GenerationEvent::Completed { .. }
+                        | GenerationEvent::Failed { .. }
+                        | GenerationEvent::Cancelled { .. }
+                ) {
+                    self.0.finish(event);
+                } else {
+                    self.0.send(event);
+                }
+            }
+        }
+        let replay = if let Ok(mut streams) = self.inner.streams.lock() {
+            let mut replay = Vec::new();
             if let Ok(speakers) = self.inner.speakers.lock()
                 && let Some(event) = speakers.get(&turn_id)
             {
-                sink.emit(event.clone());
+                replay.push(event.clone());
             }
-            streams.insert(turn_id, sink);
-        }
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            if let Some((load, valid)) = self
+                .backend()
+                .local_runtime_events()
+                .generation_load(turn_id)
+            {
+                delivery.send_if(load, valid);
+            }
+            streams.insert(turn_id, Arc::new(Stream(delivery.clone())));
+            replay
+        } else {
+            Vec::new()
+        };
+        delivery.initialize(replay);
     }
 
     pub(crate) fn live_generation_event(&self, turn_id: GenerationTurnId, event: GenerationEvent) {
-        if let Ok(streams) = self.inner.streams.lock() {
+        let sink = self.inner.streams.lock().ok().and_then(|streams| {
             if matches!(event, GenerationEvent::SpeakerSelected { .. })
                 && let Ok(mut speakers) = self.inner.speakers.lock()
             {
                 speakers.insert(turn_id, event.clone());
             }
-            if let Some(sink) = streams.get(&turn_id) {
-                sink.emit(event);
+            streams.get(&turn_id).cloned()
+        });
+        if let Some(sink) = sink {
+            sink.emit(event);
+        }
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    pub(crate) fn live_runtime_generation_event(
+        &self,
+        turn_id: GenerationTurnId,
+        event: GenerationEvent,
+        valid: super::serial_events::Validity,
+    ) {
+        let sink = self.inner.streams.lock().ok().and_then(|streams| {
+            if let GenerationEvent::ModelLoading { .. } = &event {
+                let current = self
+                    .backend()
+                    .local_runtime_events()
+                    .generation_load(turn_id);
+                if current
+                    .as_ref()
+                    .is_none_or(|(current, _)| current != &event)
+                {
+                    return None;
+                }
             }
+            streams.get(&turn_id).cloned()
+        });
+        if let Some(sink) = sink {
+            sink.emit_if(event, valid);
         }
     }
 

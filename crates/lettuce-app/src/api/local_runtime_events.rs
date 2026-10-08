@@ -1,6 +1,10 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex, MutexGuard},
+    sync::{
+        Arc, Mutex, MutexGuard, Weak,
+        atomic::{AtomicBool, Ordering},
+        mpsc,
+    },
 };
 
 use lettuce_conversations::{InferenceOutcome, InferencePort, InferenceRequest, PortError};
@@ -58,16 +62,91 @@ impl From<&lettuce_local_llm::engine::ModelLoadProgress> for LoadProgress {
 struct Flow {
     consumer: Consumer,
     cancellation: CancellationToken,
-    active: Mutex<bool>,
+    active: AtomicBool,
     parent: Option<Arc<Flow>>,
     load_progress: Mutex<Option<LoadProgress>>,
+    snapshot: Mutex<Option<(GenerationAttemptId, Weak<Flow>, Option<LoadProgress>)>>,
 }
 
-#[derive(Default)]
+enum Dispatch {
+    Flow(Weak<Flow>, LlamaHostEvent),
+    Global(Consumer, LlamaHostEvent),
+    Wake,
+    #[cfg(test)]
+    Barrier(mpsc::Sender<()>),
+}
+
 pub(crate) struct RuntimeEventRouter {
     flows: Mutex<HashMap<FlowId, Arc<Flow>>>,
     attempts: Mutex<HashMap<GenerationAttemptId, Arc<Flow>>>,
     global: Mutex<Option<Consumer>>,
+    sender: Option<mpsc::SyncSender<Dispatch>>,
+    active: Arc<AtomicBool>,
+}
+
+impl Default for RuntimeEventRouter {
+    fn default() -> Self {
+        let (sender, receiver) = mpsc::sync_channel::<Dispatch>(256);
+        let active = Arc::new(AtomicBool::new(true));
+        let worker_active = active.clone();
+        let worker = std::thread::Builder::new()
+            .name("lettuce-runtime-events".into())
+            .spawn(move || {
+                while let Ok(message) = receiver.recv() {
+                    if !worker_active.load(Ordering::Acquire) {
+                        break;
+                    }
+                    match message {
+                        Dispatch::Flow(flow, event) => {
+                            if let Some(flow) = flow.upgrade()
+                                && flow.is_active()
+                            {
+                                (flow.consumer)(event);
+                            }
+                        }
+                        Dispatch::Global(consumer, event) => consumer(event),
+                        Dispatch::Wake => {}
+                        #[cfg(test)]
+                        Dispatch::Barrier(done) => {
+                            let _ = done.send(());
+                        }
+                    }
+                }
+            });
+        let sender = match worker {
+            Ok(_) => Some(sender),
+            Err(error) => {
+                tracing::error!(%error, "local runtime event dispatcher could not start");
+                None
+            }
+        };
+        Self {
+            flows: Mutex::new(HashMap::new()),
+            attempts: Mutex::new(HashMap::new()),
+            global: Mutex::new(None),
+            sender,
+            active,
+        }
+    }
+}
+
+impl Flow {
+    fn is_active(&self) -> bool {
+        self.active.load(Ordering::Acquire)
+            && self.parent.as_ref().is_none_or(|parent| {
+                parent.active.load(Ordering::Acquire)
+                    && lock(&parent.snapshot)
+                        .as_ref()
+                        .is_some_and(|(_, current, _)| std::ptr::eq(current.as_ptr(), self))
+            })
+            && !self.cancellation.is_cancelled()
+    }
+}
+
+impl Drop for RuntimeEventRouter {
+    fn drop(&mut self) {
+        self.shutdown();
+    }
 }
 
 impl std::fmt::Debug for RuntimeEventRouter {
@@ -94,7 +173,8 @@ impl Drop for FlowRegistration {
         if !self.owned {
             return;
         }
-        *lock(&self.flow.active) = false;
+        self.flow.active.store(false, Ordering::Release);
+        *lock(&self.flow.snapshot) = None;
         let mut flows = lock(&self.router.flows);
         if flows
             .get(&self.id)
@@ -113,7 +193,16 @@ pub(crate) struct AttemptRegistration {
 
 impl Drop for AttemptRegistration {
     fn drop(&mut self) {
-        *lock(&self.flow.active) = false;
+        self.flow.active.store(false, Ordering::Release);
+        if let Some(parent) = &self.flow.parent {
+            let mut snapshot = lock(&parent.snapshot);
+            if snapshot
+                .as_ref()
+                .is_some_and(|(_, current, _)| current.ptr_eq(&Arc::downgrade(&self.flow)))
+            {
+                *snapshot = None;
+            }
+        }
         let mut attempts = lock(&self.router.attempts);
         if attempts
             .get(&self.id)
@@ -125,6 +214,36 @@ impl Drop for AttemptRegistration {
 }
 
 impl RuntimeEventRouter {
+    fn enqueue(&self, message: Dispatch) {
+        if self.active.load(Ordering::Acquire)
+            && let Some(sender) = &self.sender
+        {
+            let _ = sender.try_send(message);
+        }
+    }
+
+    pub(crate) fn shutdown(&self) {
+        self.active.store(false, Ordering::Release);
+        if let Some(sender) = &self.sender {
+            let _ = sender.try_send(Dispatch::Wake);
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn flush(&self) {
+        if self.active.load(Ordering::Acquire)
+            && let Some(sender) = &self.sender
+        {
+            let (done, received) = mpsc::channel();
+            sender
+                .send(Dispatch::Barrier(done))
+                .expect("event dispatcher");
+            received
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .expect("event dispatcher drain");
+        }
+    }
+
     pub(crate) fn set_global(&self, consumer: impl Fn(LlamaHostEvent) + Send + Sync + 'static) {
         *lock(&self.global) = Some(Arc::new(consumer));
     }
@@ -138,9 +257,10 @@ impl RuntimeEventRouter {
         let flow = Arc::new(Flow {
             consumer: Arc::new(consumer),
             cancellation,
-            active: Mutex::new(true),
+            active: AtomicBool::new(true),
             parent: None,
             load_progress: Mutex::new(None),
+            snapshot: Mutex::new(None),
         });
         let mut flows = lock(&self.flows);
         if let Some(existing) = flows.get(&id) {
@@ -169,10 +289,14 @@ impl RuntimeEventRouter {
         let flow = Arc::new(Flow {
             consumer: parent.consumer.clone(),
             cancellation: parent.cancellation.clone(),
-            active: Mutex::new(true),
+            active: AtomicBool::new(true),
             parent: Some(parent),
             load_progress: Mutex::new(None),
+            snapshot: Mutex::new(None),
         });
+        if let Some(parent) = &flow.parent {
+            *lock(&parent.snapshot) = Some((id, Arc::downgrade(&flow), None));
+        }
         lock(&self.attempts).insert(id, flow.clone());
         Some(AttemptRegistration {
             router: self.clone(),
@@ -191,21 +315,24 @@ impl RuntimeEventRouter {
         if let Some(id) = request_id.and_then(|id| id.parse().ok()) {
             let flow = lock(&self.attempts).get(&id).cloned();
             if let Some(flow) = flow {
-                let active = lock(&flow.active);
-                let parent_active = flow.parent.as_ref().map(|parent| lock(&parent.active));
-                if *active
-                    && parent_active.as_deref().is_none_or(|active| *active)
-                    && !flow.cancellation.is_cancelled()
-                {
+                if flow.is_active() {
                     if let LlamaHostEvent::ModelLoadProgress(progress) = &event {
                         let next = LoadProgress::from(progress);
                         let mut previous = lock(&flow.load_progress);
                         if previous.as_ref() == Some(&next) {
                             return;
                         }
-                        *previous = Some(next);
+                        *previous = Some(next.clone());
+                        if let Some(parent) = &flow.parent {
+                            let mut snapshot = lock(&parent.snapshot);
+                            if let Some((_, current, value)) = snapshot.as_mut()
+                                && current.ptr_eq(&Arc::downgrade(&flow))
+                            {
+                                *value = Some(next);
+                            }
+                        }
                     }
-                    (flow.consumer)(event);
+                    self.enqueue(Dispatch::Flow(Arc::downgrade(&flow), event));
                 }
             }
             return;
@@ -213,11 +340,85 @@ impl RuntimeEventRouter {
         if matches!(event, LlamaHostEvent::RuntimeReportUpdated { .. }) {
             let consumer = lock(&self.global).clone();
             if let Some(consumer) = consumer {
-                consumer(event);
+                self.enqueue(Dispatch::Global(consumer, event));
             }
         } else {
             tracing::debug!(?event, "unrouted local runtime event");
         }
+    }
+
+    pub(crate) fn fence(&self, id: GenerationAttemptId) -> crate::api::serial_events::Validity {
+        let flow = lock(&self.attempts).get(&id).map(Arc::downgrade);
+        let active = self.active.clone();
+        Arc::new(move || {
+            active.load(Ordering::Acquire)
+                && flow
+                    .as_ref()
+                    .and_then(Weak::upgrade)
+                    .is_some_and(|flow| flow.is_active())
+        })
+    }
+
+    fn cached_load(
+        &self,
+        id: FlowId,
+    ) -> Option<(LoadProgress, crate::api::serial_events::Validity)> {
+        if !self.active.load(Ordering::Acquire) {
+            return None;
+        }
+        let flow = lock(&self.flows).get(&id).cloned()?;
+        if !flow.is_active() {
+            return None;
+        }
+        let snapshot = lock(&flow.snapshot);
+        let (_, current, progress) = snapshot.as_ref()?;
+        let current = current.clone();
+        let active = self.active.clone();
+        let valid: crate::api::serial_events::Validity = Arc::new(move || {
+            active.load(Ordering::Acquire) && current.upgrade().is_some_and(|flow| flow.is_active())
+        });
+        Some((progress.clone()?, valid))
+    }
+
+    pub(crate) fn generation_load(
+        &self,
+        turn_id: GenerationTurnId,
+    ) -> Option<(
+        lettuce_contracts::GenerationEvent,
+        crate::api::serial_events::Validity,
+    )> {
+        let (progress, valid) = self.cached_load(FlowId::Turn(turn_id))?;
+        Some((
+            lettuce_contracts::GenerationEvent::ModelLoading {
+                turn_id: turn_id.to_string(),
+                stage: progress.stage,
+                status: progress.status,
+                percent: progress.percent,
+                model_name: progress.model_name,
+                gpus: progress.gpus,
+            },
+            valid,
+        ))
+    }
+
+    pub(crate) fn job_load(
+        &self,
+        job_id: JobId,
+    ) -> Option<(
+        lettuce_contracts::JobEvent,
+        crate::api::serial_events::Validity,
+    )> {
+        let (progress, valid) = self.cached_load(FlowId::Job(job_id))?;
+        Some((
+            lettuce_contracts::JobEvent::ModelLoading {
+                stage: progress.stage,
+                status: progress.status,
+                percent: progress.percent,
+                model_name: progress.model_name,
+                gpus: progress.gpus,
+            },
+            valid,
+        ))
     }
 
     fn owner(&self, request: &InferenceRequest) -> Option<FlowId> {
@@ -276,6 +477,16 @@ impl super::ApiContext {
                 let Some(context) = context.upgrade() else {
                     return;
                 };
+                let request_id = match &event {
+                    LlamaHostEvent::ModelLoadProgress(progress) => progress.request_id.as_deref(),
+                    LlamaHostEvent::Notice { request_id, .. }
+                    | LlamaHostEvent::Heartbeat { request_id, .. } => request_id.as_deref(),
+                    _ => None,
+                };
+                let Some(attempt) = request_id.and_then(|id| id.parse().ok()) else {
+                    return;
+                };
+                let valid = context.backend().local_runtime_events().fence(attempt);
                 let event = match event {
                     LlamaHostEvent::ModelLoadProgress(progress) => {
                         let progress = LoadProgress::from(&progress);
@@ -296,7 +507,7 @@ impl super::ApiContext {
                     }
                     _ => return,
                 };
-                context.live_generation_event(turn_id, event);
+                context.live_runtime_generation_event(turn_id, event, valid);
             },
         )
     }
@@ -314,6 +525,16 @@ impl super::ApiContext {
                 let Some(context) = context.upgrade() else {
                     return;
                 };
+                let request_id = match &event {
+                    LlamaHostEvent::ModelLoadProgress(progress) => progress.request_id.as_deref(),
+                    LlamaHostEvent::Notice { request_id, .. }
+                    | LlamaHostEvent::Heartbeat { request_id, .. } => request_id.as_deref(),
+                    _ => None,
+                };
+                let Some(attempt) = request_id.and_then(|id| id.parse().ok()) else {
+                    return;
+                };
+                let valid = context.backend().local_runtime_events().fence(attempt);
                 let event = match event {
                     LlamaHostEvent::ModelLoadProgress(progress) => {
                         let progress = LoadProgress::from(&progress);
@@ -336,7 +557,18 @@ impl super::ApiContext {
                     }
                     _ => return,
                 };
-                context.jobs().deliver(job_id, event, false);
+                let current_event = event.clone();
+                context.jobs().deliver_fenced(job_id, event, valid, || {
+                    !matches!(
+                        current_event,
+                        lettuce_contracts::JobEvent::ModelLoading { .. }
+                    ) || context
+                        .backend()
+                        .local_runtime_events()
+                        .job_load(job_id)
+                        .as_ref()
+                        .is_some_and(|(load, _)| load == &current_event)
+                });
             },
         )
     }

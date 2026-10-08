@@ -1,9 +1,6 @@
 use std::{
     collections::HashMap,
-    sync::{
-        Arc, Mutex, MutexGuard,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, Mutex, MutexGuard},
 };
 
 use lettuce_contracts::{ImageProgress, JobEvent};
@@ -15,20 +12,17 @@ use crate::api::events::JobEventSink;
 
 /// One `job_watch` stream; its terminal event is sent at most once.
 pub(crate) struct JobWatch {
-    sink: Arc<dyn JobEventSink>,
-    finished: AtomicBool,
+    delivery: crate::api::serial_events::SerialEvents<JobEvent>,
 }
 
 impl JobWatch {
     /// Whether the stream is still open afterwards.
     fn send(&self, event: JobEvent) -> bool {
-        !self.finished.load(Ordering::Acquire) && self.sink.emit(event)
+        self.delivery.send(event)
     }
 
     fn finish(&self, event: JobEvent) {
-        if !self.finished.swap(true, Ordering::AcqRel) {
-            self.sink.emit(event);
-        }
+        self.delivery.finish(event);
     }
 }
 
@@ -87,55 +81,115 @@ impl JobHostState {
     /// Runs `first` while holding the watch registry, so no delivery runs in
     /// between; `first` returns the event the new watch gets first and
     /// whether that event already ends it.
+    #[cfg(test)]
     pub(crate) fn watch<T, E>(
         &self,
         job_id: JobId,
         sink: Arc<dyn JobEventSink>,
         first: impl FnOnce() -> Result<(T, JobEvent, bool), E>,
     ) -> Result<T, E> {
-        let mut watches = lock(&self.watches);
-        let (value, event, terminal) = first()?;
-        let watch = Arc::new(JobWatch {
-            sink,
-            finished: AtomicBool::new(false),
-        });
-        if terminal {
-            watch.finish(event);
-        } else if watch.send(event) {
-            let streamed = lock(&self.streamed).get(&job_id).cloned();
-            let open = match streamed {
-                Some((text, reasoning)) => watch.send(JobEvent::TextDelta {
-                    text: (!text.is_empty()).then_some(text),
-                    reasoning: (!reasoning.is_empty()).then_some(reasoning),
+        self.watch_with_load(job_id, sink, first, || None)
+    }
+
+    pub(crate) fn watch_with_load<T, E>(
+        &self,
+        job_id: JobId,
+        sink: Arc<dyn JobEventSink>,
+        first: impl FnOnce() -> Result<(T, JobEvent, bool), E>,
+        load: impl FnOnce() -> Option<(JobEvent, crate::api::serial_events::Validity)>,
+    ) -> Result<T, E> {
+        let (value, watch, replay) = {
+            let mut watches = lock(&self.watches);
+            let (value, event, terminal) = first()?;
+            let watch = Arc::new(JobWatch {
+                delivery: crate::api::serial_events::SerialEvents::new(move |event| {
+                    sink.emit(event)
                 }),
-                None => true,
-            };
-            let open = open
-                && match lock(&self.image).get(&job_id).cloned() {
-                    Some(progress) => watch.send(JobEvent::ImageProgress { progress }),
-                    None => true,
-                };
-            if open {
-                watches.entry(job_id).or_default().push(watch);
+            });
+            let mut replay = vec![event];
+            if !terminal {
+                if let Some((text, reasoning)) = lock(&self.streamed).get(&job_id).cloned() {
+                    replay.push(JobEvent::TextDelta {
+                        text: (!text.is_empty()).then_some(text),
+                        reasoning: (!reasoning.is_empty()).then_some(reasoning),
+                    });
+                }
+                if let Some(progress) = lock(&self.image).get(&job_id).cloned() {
+                    replay.push(JobEvent::ImageProgress { progress });
+                }
+                if let Some((event, valid)) = load() {
+                    watch.delivery.send_if(event, valid);
+                }
+                watches.entry(job_id).or_default().push(watch.clone());
+            }
+            (value, watch, replay)
+        };
+        watch.delivery.initialize(replay);
+        if !watch.delivery.is_open() {
+            let mut watches = lock(&self.watches);
+            if let Some(list) = watches.get_mut(&job_id) {
+                list.retain(|existing| !Arc::ptr_eq(existing, &watch));
+                if list.is_empty() {
+                    watches.remove(&job_id);
+                }
             }
         }
         Ok(value)
     }
 
-    /// Sends a job's change to its watches; a terminal event ends them, and
-    /// a closed stream is dropped.
     pub(crate) fn deliver(&self, job_id: JobId, event: JobEvent, terminal: bool) {
-        let mut watches = lock(&self.watches);
-        if terminal {
-            for watch in watches.remove(&job_id).unwrap_or_default() {
-                watch.finish(event.clone());
+        let watches = {
+            let mut registry = lock(&self.watches);
+            if terminal {
+                registry.remove(&job_id).unwrap_or_default()
+            } else {
+                registry.get(&job_id).cloned().unwrap_or_default()
             }
-            return;
+        };
+        self.send_watches(job_id, watches, event, terminal);
+    }
+
+    pub(crate) fn deliver_fenced(
+        &self,
+        job_id: JobId,
+        event: JobEvent,
+        valid: crate::api::serial_events::Validity,
+        current: impl FnOnce() -> bool,
+    ) {
+        let watches = {
+            let watches = lock(&self.watches);
+            if !current() || !valid() {
+                return;
+            }
+            watches.get(&job_id).cloned().unwrap_or_default()
+        };
+        for watch in watches {
+            watch.delivery.send_if(event.clone(), valid.clone());
         }
-        if let Some(list) = watches.get_mut(&job_id) {
-            list.retain(|watch| watch.send(event.clone()));
-            if list.is_empty() {
-                watches.remove(&job_id);
+    }
+
+    fn send_watches(
+        &self,
+        job_id: JobId,
+        watches: Vec<Arc<JobWatch>>,
+        event: JobEvent,
+        terminal: bool,
+    ) {
+        let mut closed = Vec::new();
+        for watch in watches {
+            if terminal {
+                watch.finish(event.clone());
+            } else if !watch.send(event.clone()) {
+                closed.push(watch);
+            }
+        }
+        if !closed.is_empty() {
+            let mut registry = lock(&self.watches);
+            if let Some(watches) = registry.get_mut(&job_id) {
+                watches.retain(|watch| !closed.iter().any(|closed| Arc::ptr_eq(watch, closed)));
+                if watches.is_empty() {
+                    registry.remove(&job_id);
+                }
             }
         }
     }
@@ -160,42 +214,32 @@ impl JobHostState {
         reasoning: Option<String>,
         appended: impl FnOnce(),
     ) {
-        let mut watches = lock(&self.watches);
-        {
-            let mut streamed = lock(&self.streamed);
-            let so_far = streamed.entry(job_id).or_default();
-            so_far.0.push_str(text.as_deref().unwrap_or_default());
-            so_far.1.push_str(reasoning.as_deref().unwrap_or_default());
-        }
-        appended();
-        if let Some(list) = watches.get_mut(&job_id) {
-            list.retain(|watch| {
-                watch.send(JobEvent::TextDelta {
-                    text: text.clone(),
-                    reasoning: reasoning.clone(),
-                })
-            });
-            if list.is_empty() {
-                watches.remove(&job_id);
+        let watches = {
+            let watches = lock(&self.watches);
+            {
+                let mut streamed = lock(&self.streamed);
+                let so_far = streamed.entry(job_id).or_default();
+                so_far.0.push_str(text.as_deref().unwrap_or_default());
+                so_far.1.push_str(reasoning.as_deref().unwrap_or_default());
             }
-        }
+            appended();
+            watches.get(&job_id).cloned().unwrap_or_default()
+        };
+        self.send_watches(
+            job_id,
+            watches,
+            JobEvent::TextDelta { text, reasoning },
+            false,
+        );
     }
 
-    /// Sends a running image generation's progress to the job's watches and
-    /// keeps it for a watch that attaches later.
     pub(crate) fn image_progress(&self, job_id: JobId, progress: ImageProgress) {
-        let mut watches = lock(&self.watches);
-        lock(&self.image).insert(job_id, progress.clone());
-        if let Some(list) = watches.get_mut(&job_id) {
-            list.retain(|watch| {
-                watch.send(JobEvent::ImageProgress {
-                    progress: progress.clone(),
-                })
-            });
-            if list.is_empty() {
-                watches.remove(&job_id);
-            }
-        }
+        let watches = {
+            let watches = lock(&self.watches);
+            lock(&self.image).insert(job_id, progress.clone());
+            watches.get(&job_id).cloned().unwrap_or_default()
+        };
+        self.send_watches(job_id, watches, JobEvent::ImageProgress { progress }, false);
     }
 
     pub(crate) fn start_running(&self, job_id: JobId, cancellation: CancellationToken) {

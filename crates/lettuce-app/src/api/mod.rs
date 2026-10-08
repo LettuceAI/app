@@ -206,3 +206,8 @@ pub use memory_control::{
     memory_trigger,
 };
 pub use memory_read::memory_get;
+
+#[cfg(all(test, not(any(target_os = "android", target_os = "ios"))))]
+mod local_runtime_review_tests;
+
+mod serial_events;

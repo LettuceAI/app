@@ -53,10 +53,13 @@ fn concurrent_attempts_never_cross_routes_and_ended_attempts_drop_events() {
         scope.spawn(|| router.emit(heartbeat(Some(id_a))));
         scope.spawn(|| router.emit(heartbeat(Some(id_b))));
     });
+    router.flush();
     assert_eq!(*first.lock().expect("events"), vec![heartbeat(Some(id_a))]);
+    router.flush();
     assert_eq!(*second.lock().expect("events"), vec![heartbeat(Some(id_b))]);
     drop(attempt_a);
     router.emit(heartbeat(Some(id_a)));
+    router.flush();
     assert_eq!(first.lock().expect("events").len(), 1);
     drop((attempt_b, flow_a, flow_b));
 }
@@ -76,8 +79,10 @@ fn cancelled_attempts_and_missing_listeners_do_not_receive_or_fail() {
     let id = GenerationAttemptId::new();
     let attempt = router.register_attempt(id, Some(FlowId::Turn(turn)));
     router.emit(heartbeat(Some(id)));
+    router.flush();
     cancellation.cancel();
     router.emit(heartbeat(Some(id)));
+    router.flush();
     assert_eq!(events.lock().expect("events").len(), 1);
     drop((attempt, flow));
     router.emit(heartbeat(Some(id)));
@@ -117,7 +122,9 @@ fn notices_keep_the_request_identity_and_unassigned_events_are_not_broadcast() {
         model_path: "model.gguf".into(),
     };
     router.emit(report.clone());
+    router.flush();
     assert_eq!(*routed.lock().expect("events"), vec![notice]);
+    router.flush();
     assert_eq!(*global.lock().expect("global"), vec![report]);
     drop((attempt, flow));
 }
@@ -135,6 +142,7 @@ fn a_full_ui_channel_never_blocks_runtime_events() {
     for _ in 0..100 {
         router.emit(heartbeat(Some(id)));
     }
+    router.flush();
     assert_eq!(receiver.try_iter().count(), 1);
     drop(receiver);
     router.emit(heartbeat(Some(id)));
@@ -173,6 +181,7 @@ fn model_load_progress_is_coalesced_per_attempt_by_stage_and_integer_percent() {
     router.emit(LlamaHostEvent::ModelLoadProgress(progress.clone()));
     progress.stage = ModelLoadStage::Finalizing;
     router.emit(LlamaHostEvent::ModelLoadProgress(progress.clone()));
+    router.flush();
     assert_eq!(events.lock().expect("events").len(), 3);
     progress.status = ModelLoadStatus::Loaded;
     router.emit(LlamaHostEvent::ModelLoadProgress(progress.clone()));
@@ -189,14 +198,17 @@ fn model_load_progress_is_coalesced_per_attempt_by_stage_and_integer_percent() {
     router.emit(LlamaHostEvent::ModelLoadProgress(progress.clone()));
     progress.gpus.as_mut().expect("gpus")[0].percent = 10;
     router.emit(LlamaHostEvent::ModelLoadProgress(progress.clone()));
+    router.flush();
     assert_eq!(events.lock().expect("events").len(), 9);
     drop(attempt);
     router.emit(LlamaHostEvent::ModelLoadProgress(progress.clone()));
+    router.flush();
     assert_eq!(events.lock().expect("events").len(), 9);
     let next_id = GenerationAttemptId::new();
     let next_attempt = router.register_attempt(next_id, Some(FlowId::Turn(turn)));
     progress.request_id = Some(next_id.to_string());
     router.emit(LlamaHostEvent::ModelLoadProgress(progress));
+    router.flush();
     assert_eq!(events.lock().expect("events").len(), 10);
     drop((next_attempt, flow));
 }

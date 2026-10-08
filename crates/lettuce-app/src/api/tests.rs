@@ -164,6 +164,13 @@ impl InferencePort for FakeProvider {
                 },
             });
         }
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        if self
+            .runtime_events
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            self.events_router.flush();
+        }
         if let Some(sink) = request.stream_sink {
             for (sequence, text) in (1..).zip(["Hel", "lo."]) {
                 self.runtime
