@@ -228,7 +228,7 @@ where
         };
         let (job, created, input) = self.runs.admit_lorebook_job(
             spec,
-            lettuce_database::LorebookJobInput::Writer(run),
+            lettuce_database::LorebookJobInput::Writer(Box::new(run)),
             self.operation
                 .as_ref()
                 .map(|(key, digest)| (key.as_str(), digest.as_str())),
@@ -236,6 +236,7 @@ where
         let lettuce_database::LorebookJobInput::Writer(run) = input else {
             return Err(StagedLorebookWriterAdmissionError::InvalidInput);
         };
+        let run = *run;
         let admitted = lettuce_jobs::CreateJobResult { job, created };
         validate_job(&run, &admitted.job)?;
         Ok(StagedLorebookWriterAdmission {
@@ -327,7 +328,10 @@ where
                 created_at: now,
                 attempt: None,
             };
-            writers.push((spec, lettuce_database::LorebookJobInput::Writer(run)));
+            writers.push((
+                spec,
+                lettuce_database::LorebookJobInput::Writer(Box::new(run)),
+            ));
         }
         Ok((inputs, writers))
     }
@@ -647,7 +651,7 @@ where
         };
         let (job, created, input) = self.runs.admit_lorebook_job(
             spec,
-            lettuce_database::LorebookJobInput::Writer(run),
+            lettuce_database::LorebookJobInput::Writer(Box::new(run)),
             self.operation
                 .as_ref()
                 .map(|(key, digest)| (key.as_str(), digest.as_str())),
@@ -655,6 +659,7 @@ where
         let lettuce_database::LorebookJobInput::Writer(run) = input else {
             return Err(StagedLorebookWriterAdmissionError::InvalidInput);
         };
+        let run = *run;
         let admitted = lettuce_jobs::CreateJobResult { job, created };
         validate_job(&run, &admitted.job)?;
         Ok(StagedLorebookWriterAdmission {

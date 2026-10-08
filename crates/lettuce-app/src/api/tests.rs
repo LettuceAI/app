@@ -106,6 +106,8 @@ impl lettuce_image_generation::ImageProviderPort for NoImages {
 }
 
 pub(super) enum Reply {
+    LorebookTools,
+    LorebookToolsUntil(&'static str),
     Text(&'static str),
     UntilCancelled,
     PartialUntilCancelled(&'static str),
@@ -190,6 +192,60 @@ impl InferencePort for FakeProvider {
         }
         self.entered.notify_one();
         match self.reply {
+            Reply::LorebookTools | Reply::LorebookToolsUntil(_) => {
+                if let Reply::LorebookToolsUntil(blocked) = self.reply {
+                    if request.tools.as_ref().is_some_and(|tools| {
+                        tools.definitions.iter().any(|tool| tool.name == blocked)
+                    }) {
+                        let job = request.cancellation.ok_or(PortError::Unavailable)?;
+                        self.runtime
+                            .cancelled(job)
+                            .await
+                            .map_err(|_| PortError::Unavailable)?;
+                        return Err(PortError::Cancelled);
+                    }
+                }
+                let name = request
+                    .tools
+                    .as_ref()
+                    .and_then(|tools| tools.definitions.first())
+                    .ok_or(PortError::Unavailable)?
+                    .name
+                    .clone();
+                let arguments = match name.as_str() {
+                    "propose_lorebook_outline" => {
+                        serde_json::json!({ "entries": (0..5).map(|index| serde_json::json!({ "title": format!("District {index}"), "category": "location", "rationale": "A district of the coastal city", "proposedKeys": [format!("District {index}")], "sourceRefs": [] })).collect::<Vec<_>>() })
+                    }
+                    "write_lorebook_entry" => {
+                        serde_json::json!({ "title": "District", "content": "A coastal district.", "keywords": ["District"], "alwaysActive": false })
+                    }
+                    "propose_coherence_changes" => {
+                        serde_json::json!({ "changes": [{ "kind": "toggleAlwaysActive", "entryIdx": 0, "newValue": true, "reason": "Central setting" }] })
+                    }
+                    _ => return Err(PortError::Unavailable),
+                };
+                Ok(InferenceOutcome {
+                    provider_response_id: None,
+                    candidates: vec![InferenceCandidate {
+                        ordinal: 0,
+                        parts: vec![],
+                        tool_calls: vec![lettuce_conversations::ProposedToolCall {
+                            provider_call_id: None,
+                            name,
+                            arguments,
+                            raw_arguments: None,
+                            provider_replay: None,
+                        }],
+                        provider_replay: None,
+                        media: vec![],
+                    }],
+                    usage: None,
+                    finish_reason: lettuce_conversations::FinishReason::Stop,
+                    provider_finish_reason: None,
+                    provider_request_id: None,
+                    warning_codes: vec![],
+                })
+            }
             Reply::Text(text) => Ok(InferenceOutcome {
                 provider_response_id: Some("fake-response".into()),
                 candidates: vec![InferenceCandidate {

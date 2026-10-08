@@ -1372,6 +1372,81 @@ fn parse_list_cursor(cursor: &str) -> Result<(i64, String), StoreError> {
     Ok((created_at, id.to_string()))
 }
 
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum LorebookJobInput {
+    Entry(Box<lettuce_creation::LorebookEntryGenerationRun>),
+    Keyword(Box<lettuce_creation::LorebookKeywordGenerationRun>),
+    Planner(Box<lettuce_creation::StagedLorebookPlanningRun>),
+    Writer(Box<lettuce_creation::StagedLorebookWriterRun>),
+    Coherence { project_request_id: lettuce_types::RequestId, run: Box<lettuce_creation::StagedLorebookCoherenceRun> },
+}
+
+impl LorebookJobInput {
+    pub fn request_id(&self) -> lettuce_types::RequestId {
+        match self { Self::Entry(run) => run.request_id, Self::Keyword(run) => run.request_id, Self::Planner(run) => run.request_id, Self::Writer(run) => run.request_id, Self::Coherence { run, .. } => run.request_id }
+    }
+    fn set_job(&mut self, id: JobId) {
+        match self { Self::Entry(run) => run.job_id = id, Self::Keyword(run) => run.job_id = id, Self::Planner(run) => run.job_id = id, Self::Writer(run) => run.job_id = id, Self::Coherence { run, .. } => run.job_id = id }
+    }
+}
+
+impl Database {
+    pub fn admit_lorebook_job(&self, spec: NewJob, input: LorebookJobInput, operation: Option<(&str, &str)>) -> Result<(JobSnapshot, bool, LorebookJobInput), StoreError> {
+        let mut connection = self.connection().map_err(|_| StoreError::Storage)?;
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(|_| StoreError::Storage)?;
+        let result = admit_lorebook_job_in(&tx, spec, input, operation)?;
+        tx.commit().map_err(|_| StoreError::Storage)?;
+        Ok(result)
+    }
+}
+
+pub(crate) fn admit_lorebook_job_in(tx: &rusqlite::Transaction<'_>, spec: NewJob, mut input: LorebookJobInput, operation: Option<(&str, &str)>) -> Result<(JobSnapshot, bool, LorebookJobInput), StoreError> {
+        let key = spec.idempotency_key.as_ref().ok_or(StoreError::InvalidData)?.as_str().to_owned();
+        let id = input.request_id();
+        let detail = serde_json::to_value(&input).map_err(|_| StoreError::InvalidData)?;
+        let id_digest = id.to_string();
+        let (key, digest) = operation.unwrap_or((&key, &id_digest));
+        let (job, replay, created) = admit_job_detail_in(tx, spec, key, digest, &detail)?;
+        if replay {
+            let encoded: String = tx.query_row("SELECT detail_json FROM job_details WHERE job_id = ?1", [job.id.to_string()], |row| row.get(0)).map_err(|_| StoreError::Storage)?;
+            input = serde_json::from_str(&encoded).map_err(|_| StoreError::InvalidData)?;
+            input.set_job(job.id);
+            return Ok((job, false, input));
+        }
+        input.set_job(job.id);
+        fn invalid(_: impl std::fmt::Debug) -> StoreError { StoreError::InvalidData }
+        match &input {
+            LorebookJobInput::Entry(run) => {
+                run.validate().map_err(invalid)?;
+                crate::lorebook::lorebook_entry_run_adapter::insert_restored_in(tx, run, &[]).map_err(invalid)?;
+            }
+            LorebookJobInput::Keyword(run) => {
+                run.validate().map_err(invalid)?;
+                crate::lorebook::lorebook_keyword_run_adapter::insert_restored_in(tx, run, &[]).map_err(invalid)?;
+            }
+            LorebookJobInput::Planner(run) => {
+                run.validate().map_err(invalid)?;
+                crate::lorebook::staged_lorebook_adapter::insert_restored_in(tx, run).map_err(invalid)?;
+            }
+            LorebookJobInput::Writer(run) => {
+                run.validate().map_err(invalid)?;
+                let project = crate::lorebook::staged_lorebook_adapter::load_in(tx, run.project_request_id).map_err(invalid)?.ok_or(StoreError::InvalidData)?;
+                if project.project.revision != run.project_revision || matches!(project.project.stage, lettuce_creation::StagedLorebookStage::Committed | lettuce_creation::StagedLorebookStage::Cancelled) { return Err(StoreError::IllegalTransition); }
+                crate::lorebook::staged_lorebook_writer_adapter::insert_restored_in(tx, run).map_err(invalid)?;
+            }
+            LorebookJobInput::Coherence { project_request_id, run } => {
+                let mut project = crate::lorebook::staged_lorebook_adapter::load_in(tx, *project_request_id).map_err(invalid)?.ok_or(StoreError::InvalidData)?;
+                if project.project.stage != lettuce_creation::StagedLorebookStage::DraftsReady || project.project.revision != run.project_revision { return Err(StoreError::IllegalTransition); }
+                project.coherence_runs.push((**run).clone());
+                project.validate().map_err(invalid)?;
+                let encoded = encode_versioned(&project, 1).map_err(invalid)?;
+                tx.execute("UPDATE creation_staged_lorebook_runs SET run_json = ?2 WHERE request_id = ?1", params![project_request_id.to_string(), encoded]).map_err(|_| StoreError::Storage)?;
+            }
+        }
+        Ok((job, created, input))
+}
+
 #[cfg(test)]
 mod tests {
     use std::{fs, sync::Arc, thread};
@@ -2371,78 +2446,4 @@ mod tests {
             .expect("corrupt projection");
         assert_eq!(database.get(created.job.id), Err(StoreError::InvalidData));
     }
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub enum LorebookJobInput {
-    Entry(lettuce_creation::LorebookEntryGenerationRun),
-    Keyword(lettuce_creation::LorebookKeywordGenerationRun),
-    Planner(lettuce_creation::StagedLorebookPlanningRun),
-    Writer(lettuce_creation::StagedLorebookWriterRun),
-    Coherence { project_request_id: lettuce_types::RequestId, run: lettuce_creation::StagedLorebookCoherenceRun },
-}
-
-impl LorebookJobInput {
-    pub fn request_id(&self) -> lettuce_types::RequestId {
-        match self { Self::Entry(run) => run.request_id, Self::Keyword(run) => run.request_id, Self::Planner(run) => run.request_id, Self::Writer(run) => run.request_id, Self::Coherence { run, .. } => run.request_id }
-    }
-    fn set_job(&mut self, id: JobId) {
-        match self { Self::Entry(run) => run.job_id = id, Self::Keyword(run) => run.job_id = id, Self::Planner(run) => run.job_id = id, Self::Writer(run) => run.job_id = id, Self::Coherence { run, .. } => run.job_id = id }
-    }
-}
-
-impl Database {
-    pub fn admit_lorebook_job(&self, spec: NewJob, input: LorebookJobInput, operation: Option<(&str, &str)>) -> Result<(JobSnapshot, bool, LorebookJobInput), StoreError> {
-        let mut connection = self.connection().map_err(|_| StoreError::Storage)?;
-        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(|_| StoreError::Storage)?;
-        let result = admit_lorebook_job_in(&tx, spec, input, operation)?;
-        tx.commit().map_err(|_| StoreError::Storage)?;
-        Ok(result)
-    }
-}
-
-pub(crate) fn admit_lorebook_job_in(tx: &rusqlite::Transaction<'_>, spec: NewJob, mut input: LorebookJobInput, operation: Option<(&str, &str)>) -> Result<(JobSnapshot, bool, LorebookJobInput), StoreError> {
-        let key = spec.idempotency_key.as_ref().ok_or(StoreError::InvalidData)?.as_str().to_owned();
-        let id = input.request_id();
-        let detail = serde_json::to_value(&input).map_err(|_| StoreError::InvalidData)?;
-        let id_digest = id.to_string();
-        let (key, digest) = operation.unwrap_or((&key, &id_digest));
-        let (job, replay, created) = admit_job_detail_in(&tx, spec, key, digest, &detail)?;
-        if replay {
-            let encoded: String = tx.query_row("SELECT detail_json FROM job_details WHERE job_id = ?1", [job.id.to_string()], |row| row.get(0)).map_err(|_| StoreError::Storage)?;
-            input = serde_json::from_str(&encoded).map_err(|_| StoreError::InvalidData)?;
-            input.set_job(job.id);
-            return Ok((job, false, input));
-        }
-        input.set_job(job.id);
-        fn invalid(_: impl std::fmt::Debug) -> StoreError { StoreError::InvalidData }
-        match &input {
-            LorebookJobInput::Entry(run) => {
-                run.validate().map_err(invalid)?;
-                crate::lorebook::lorebook_entry_run_adapter::insert_restored_in(&tx, run, &[]).map_err(invalid)?;
-            }
-            LorebookJobInput::Keyword(run) => {
-                run.validate().map_err(invalid)?;
-                crate::lorebook::lorebook_keyword_run_adapter::insert_restored_in(&tx, run, &[]).map_err(invalid)?;
-            }
-            LorebookJobInput::Planner(run) => {
-                run.validate().map_err(invalid)?;
-                crate::lorebook::staged_lorebook_adapter::insert_restored_in(&tx, run).map_err(invalid)?;
-            }
-            LorebookJobInput::Writer(run) => {
-                run.validate().map_err(invalid)?;
-                let project = crate::lorebook::staged_lorebook_adapter::load_in(&tx, run.project_request_id).map_err(invalid)?.ok_or(StoreError::InvalidData)?;
-                if project.project.revision != run.project_revision || matches!(project.project.stage, lettuce_creation::StagedLorebookStage::Committed | lettuce_creation::StagedLorebookStage::Cancelled) { return Err(StoreError::IllegalTransition); }
-                crate::lorebook::staged_lorebook_writer_adapter::insert_restored_in(&tx, run).map_err(invalid)?;
-            }
-            LorebookJobInput::Coherence { project_request_id, run } => {
-                let mut project = crate::lorebook::staged_lorebook_adapter::load_in(&tx, *project_request_id).map_err(invalid)?.ok_or(StoreError::InvalidData)?;
-                if project.project.stage != lettuce_creation::StagedLorebookStage::DraftsReady || project.project.revision != run.project_revision { return Err(StoreError::IllegalTransition); }
-                project.coherence_runs.push(run.clone());
-                project.validate().map_err(invalid)?;
-                let encoded = encode_versioned(&project, 1).map_err(invalid)?;
-                tx.execute("UPDATE creation_staged_lorebook_runs SET run_json = ?2 WHERE request_id = ?1", params![project_request_id.to_string(), encoded]).map_err(|_| StoreError::Storage)?;
-            }
-        }
-        Ok((job, created, input))
 }

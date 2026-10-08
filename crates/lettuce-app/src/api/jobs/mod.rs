@@ -251,7 +251,7 @@ pub(crate) fn job_view(context: &ApiContext, job: &JobSnapshot) -> Result<dto::J
             kind: subject_kind_dto(job.subject.kind),
             id: job.subject.id.to_string(),
         },
-        subject_detail: local.detail,
+        subject_detail: local.detail.or(lorebook::subject_view(context, job)?),
         state: job_state_dto(job.state),
         progress: progress(job),
         created_at: job.created_at.get(),

@@ -480,6 +480,7 @@ pub enum LorebookCoherenceChangeView {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(deny_unknown_fields)]
 pub struct LorebookProjectCommitView {
+    pub lorebook_deleted: bool,
     pub lorebook_id: String,
     pub lorebook_name: String,
     pub entry_ids: Vec<String>,

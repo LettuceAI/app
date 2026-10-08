@@ -15,6 +15,27 @@ pub(super) fn failure(error: impl std::error::Error + 'static) -> ApiError {
     use super::error::IntoApiError;
     let mut cause: &(dyn std::error::Error + 'static) = &error;
     loop {
+        if let Some(error) = cause.downcast_ref::<lettuce_media::MediaStoreError>() {
+            return (*error).into_api_error();
+        }
+        if let Some(error) = cause.downcast_ref::<crate::StagedLorebookDocumentError>() {
+            return ApiError {
+                code: match error {
+                    crate::StagedLorebookDocumentError::Media(error) => {
+                        return (*error).into_api_error();
+                    }
+                    crate::StagedLorebookDocumentError::Read => ApiErrorCode::Unavailable,
+                    _ => ApiErrorCode::InvalidInput,
+                },
+                message: error.to_string(),
+                details: Some(ApiErrorDetails::InvalidField {
+                    field: "sources".into(),
+                }),
+            };
+        }
+        if let Some(error) = cause.downcast_ref::<lettuce_creation::StagedLorebookSourceError>() {
+            return invalid_field("sources", error.to_string());
+        }
         if let Some(error) = cause.downcast_ref::<lettuce_jobs::StoreError>() {
             return error.clone().into_api_error();
         }

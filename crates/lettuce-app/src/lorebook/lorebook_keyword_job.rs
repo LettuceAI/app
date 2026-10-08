@@ -140,7 +140,7 @@ impl<
         let run = run_from_request(&request, lettuce_types::JobId::new(), prompt_values);
         let (job, created, input) = self.repository.admit_lorebook_job(
             spec,
-            lettuce_database::LorebookJobInput::Keyword(run),
+            lettuce_database::LorebookJobInput::Keyword(Box::new(run)),
             self.operation
                 .as_ref()
                 .map(|(key, digest)| (key.as_str(), digest.as_str())),
@@ -148,6 +148,7 @@ impl<
         let lettuce_database::LorebookJobInput::Keyword(run) = input else {
             return Err(LorebookKeywordAdmissionError::InvalidInput);
         };
+        let run = *run;
         let admitted = lettuce_jobs::CreateJobResult { job, created };
         validate_job(&run, &admitted.job)?;
         Ok(LorebookKeywordAdmission {

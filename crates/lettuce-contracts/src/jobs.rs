@@ -85,6 +85,18 @@ pub struct JobSubjectDto {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum JobSubjectDetail {
+    LorebookDraft {
+        lorebook: Option<HistoricalSourceView>,
+        prompt: HistoricalSourceView,
+    },
+    LorebookProject {
+        project_id: String,
+        prompt: HistoricalSourceView,
+    },
+    CompanionSoulWriter {
+        prompt: HistoricalSourceView,
+    },
+
     ModelDownload {
         repo: String,
         file: String,
@@ -390,4 +402,13 @@ pub enum JobEvent {
     Cancelled {
         job: JobView,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct HistoricalSourceView {
+    pub id: String,
+    pub name: String,
+    pub deleted: bool,
 }

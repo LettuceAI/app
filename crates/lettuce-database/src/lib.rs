@@ -2530,6 +2530,8 @@ impl MediaSyncRepository for Database {
     }
 }
 
+pub use job_adapter::LorebookJobInput;
+
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, Barrier};
@@ -6166,5 +6168,3 @@ mod tests {
         assert!(starting.commit().is_err());
     }
 }
-
-pub use job_adapter::LorebookJobInput;

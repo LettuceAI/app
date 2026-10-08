@@ -417,7 +417,7 @@ impl<
             .repository
             .admit_lorebook_job(
                 spec,
-                lettuce_database::LorebookJobInput::Planner(run),
+                lettuce_database::LorebookJobInput::Planner(Box::new(run)),
                 self.operation
                     .as_ref()
                     .map(|(key, digest)| (key.as_str(), digest.as_str())),
@@ -431,6 +431,7 @@ impl<
         let lettuce_database::LorebookJobInput::Planner(run) = input else {
             return Err(StagedLorebookAdmissionError::InvalidInput);
         };
+        let run = *run;
         let admitted = lettuce_jobs::CreateJobResult { job, created };
         validate_job(&run, &admitted.job)?;
         Ok(StagedLorebookAdmission {
@@ -726,7 +727,7 @@ impl<
             spec,
             lettuce_database::LorebookJobInput::Coherence {
                 project_request_id: request.project_request_id,
-                run: coherence,
+                run: Box::new(coherence),
             },
             self.operation
                 .as_ref()

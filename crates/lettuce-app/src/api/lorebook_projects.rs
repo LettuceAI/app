@@ -204,15 +204,24 @@ fn view(
         commit: project
             .commit_receipt
             .as_ref()
-            .map(|receipt| dto::LorebookProjectCommitView {
-                lorebook_id: receipt.lorebook_id.to_string(),
-                lorebook_name: receipt.lorebook_name.clone(),
-                entry_ids: receipt
-                    .created_entry_ids
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect(),
-            }),
+            .map(|receipt| {
+                Ok(dto::LorebookProjectCommitView {
+                    lorebook_id: receipt.lorebook_id.to_string(),
+                    lorebook_name: receipt.lorebook_name.clone(),
+                    lorebook_deleted: lettuce_context::LorebookRepository::get(
+                        db,
+                        receipt.lorebook_id,
+                    )
+                    .map_err(failure)?
+                    .is_none(),
+                    entry_ids: receipt
+                        .created_entry_ids
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect(),
+                })
+            })
+            .transpose()?,
         active_job_ids,
         plan_failure: if failed {
             super::jobs::job_view(context, &planner)?.failure
@@ -1090,6 +1099,12 @@ pub async fn lorebook_project_commit(
             Ok(dto::LorebookProjectCommitView {
                 lorebook_id: receipt.lorebook_id.to_string(),
                 lorebook_name: receipt.lorebook_name,
+                lorebook_deleted: lettuce_context::LorebookRepository::get(
+                    context.backend().database(),
+                    receipt.lorebook_id,
+                )
+                .map_err(failure)?
+                .is_none(),
                 entry_ids: receipt
                     .created_entry_ids
                     .into_iter()

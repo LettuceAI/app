@@ -265,6 +265,17 @@ impl ClaimedJob for ClaimedWriter {
         progress: Arc<dyn JobProgressSink>,
     ) -> Result<(), ApiError> {
         let db = context.backend().database();
+        let Some(prompt) = self.0.run.prompt_snapshot.clone() else {
+            crate::StagedLorebookWriterDispatchCoordinator::new(db, db, db)
+                .settle(
+                    self.0,
+                    Err(crate::StagedLorebookWriterExecutionError::InvalidPrompt),
+                    CancellationReason::User,
+                    context.now(),
+                )
+                .map_err(internal)?;
+            return Ok(());
+        };
         let runtime = context.backend().inference_runtime();
         let sink = RequestId::new();
         let receiver = runtime.register_stream(sink).map_err(internal)?;
@@ -274,12 +285,6 @@ impl ClaimedJob for ClaimedWriter {
             Some(runtime),
             Some(sink),
         );
-        let prompt = self
-            .0
-            .run
-            .prompt_snapshot
-            .clone()
-            .ok_or_else(|| internal("the frozen lorebook prompt is missing"))?;
         let result = crate::StagedLorebookWriterExecutionCoordinator::new(db, db, &inference)
             .with_job_attempt(self.0.claim.claim.attempt.get())
             .run(
@@ -324,6 +329,17 @@ impl ClaimedJob for ClaimedCoherence {
         progress: Arc<dyn JobProgressSink>,
     ) -> Result<(), ApiError> {
         let db = context.backend().database();
+        let Some(prompt) = self.0.run.prompt_snapshot.clone() else {
+            crate::StagedLorebookCoherenceDispatchCoordinator::new(db, db)
+                .settle(
+                    self.0,
+                    Err(crate::StagedLorebookCoherenceExecutionError::InvalidPrompt),
+                    CancellationReason::User,
+                    context.now(),
+                )
+                .map_err(internal)?;
+            return Ok(());
+        };
         let runtime = context.backend().inference_runtime();
         let sink = RequestId::new();
         let receiver = runtime.register_stream(sink).map_err(internal)?;
@@ -333,12 +349,6 @@ impl ClaimedJob for ClaimedCoherence {
             Some(runtime),
             Some(sink),
         );
-        let prompt = self
-            .0
-            .run
-            .prompt_snapshot
-            .clone()
-            .ok_or_else(|| internal("the frozen lorebook prompt is missing"))?;
         let result = crate::StagedLorebookCoherenceExecutionCoordinator::new(db, &inference)
             .with_job_attempt(self.0.claim.claim.attempt.get())
             .run(
@@ -384,6 +394,17 @@ impl ClaimedJob for ClaimedPlanner {
         progress: Arc<dyn JobProgressSink>,
     ) -> Result<(), ApiError> {
         let db = context.backend().database();
+        let Some(prompt) = self.0.run.planner_prompt_snapshot.clone() else {
+            crate::StagedLorebookPlannerDispatchCoordinator::new(db, db)
+                .settle(
+                    self.0,
+                    Err(crate::StagedLorebookPlannerExecutionError::InvalidPrompt),
+                    CancellationReason::User,
+                    context.now(),
+                )
+                .map_err(internal)?;
+            return Ok(());
+        };
         let runtime = context.backend().inference_runtime();
         let sink = RequestId::new();
         let receiver = runtime.register_stream(sink).map_err(internal)?;
@@ -393,12 +414,6 @@ impl ClaimedJob for ClaimedPlanner {
             Some(runtime),
             Some(sink),
         );
-        let prompt = self
-            .0
-            .run
-            .planner_prompt_snapshot
-            .clone()
-            .ok_or_else(|| internal("the frozen lorebook prompt is missing"))?;
         let result = crate::StagedLorebookPlannerExecutionCoordinator::new(db, &inference)
             .with_job_attempt(self.0.claim.claim.attempt.get())
             .run(
@@ -440,6 +455,12 @@ pub(super) fn result_view(
         return Ok(None);
     }
     let key = job.idempotency_key.as_ref().map_or("", |key| key.as_str());
+    if !key.starts_with("staged-lorebook-")
+        && !key.starts_with("lorebook-entry-generator-")
+        && !key.starts_with("lorebook-keyword-generator-")
+    {
+        return Ok(None);
+    }
     let db = context.backend().database();
     let id = request_id(context, job)?;
     if key.starts_with("lorebook-entry-generator-") {
@@ -488,4 +509,99 @@ pub(super) fn result_view(
         }));
     }
     Ok(None)
+}
+
+pub(super) fn subject_view(
+    context: &ApiContext,
+    job: &JobSnapshot,
+) -> Result<Option<lettuce_contracts::JobSubjectDetail>, ApiError> {
+    use lettuce_companions::CompanionSoulWriterRunRepository;
+    use lettuce_contracts::{HistoricalSourceView, JobSubjectDetail};
+    use lettuce_creation::{
+        LorebookEntryRunRepository, LorebookKeywordRunRepository, StagedLorebookRepository,
+        StagedLorebookWriterRunRepository,
+    };
+    if !matches!(
+        job.kind,
+        JobKind::CreationRun | JobKind::CompanionSoulWriter
+    ) {
+        return Ok(None);
+    }
+    let key = job.idempotency_key.as_ref().map_or("", |key| key.as_str());
+    let db = context.backend().database();
+    let prompt_view = |id, name| -> Result<HistoricalSourceView, ApiError> {
+        Ok(HistoricalSourceView {
+            id: format!("{id}"),
+            name,
+            deleted: lettuce_context::PromptRepository::get(db, id)
+                .map_err(internal)?
+                .is_none(),
+        })
+    };
+    let book_view = |id, name| -> Result<HistoricalSourceView, ApiError> {
+        Ok(HistoricalSourceView {
+            id: format!("{id}"),
+            name,
+            deleted: lettuce_context::LorebookRepository::get(db, id)
+                .map_err(internal)?
+                .is_none(),
+        })
+    };
+    if job.kind == JobKind::CreationRun
+        && !key.starts_with("staged-lorebook-")
+        && !key.starts_with("lorebook-entry-generator-")
+        && !key.starts_with("lorebook-keyword-generator-")
+    {
+        return Ok(None);
+    }
+    let id = request_id(context, job)?;
+    let detail = if job.kind == JobKind::CompanionSoulWriter {
+        let run = db.load_companion_soul_writer_run(id).map_err(internal)?;
+        JobSubjectDetail::CompanionSoulWriter {
+            prompt: prompt_view(run.prompt_id, run.prompt_name)?,
+        }
+    } else if key.starts_with("lorebook-entry-generator-") {
+        let run = db.load_lorebook_entry_run(id).map_err(internal)?;
+        JobSubjectDetail::LorebookDraft {
+            lorebook: Some(book_view(run.lorebook_id, run.prompt_values.lorebook_name)?),
+            prompt: prompt_view(run.prompt_id, run.prompt_name)?,
+        }
+    } else if key.starts_with("lorebook-keyword-generator-") {
+        let run = db.load_lorebook_keyword_run(id).map_err(internal)?;
+        JobSubjectDetail::LorebookDraft {
+            lorebook: None,
+            prompt: prompt_view(run.prompt_id, run.prompt_name)?,
+        }
+    } else if key.starts_with("staged-lorebook-writer-")
+        || key.starts_with("staged-lorebook-refine-")
+    {
+        let run = db.load_staged_lorebook_writer_run(id).map_err(internal)?;
+        JobSubjectDetail::LorebookProject {
+            project_id: run.project_id.to_string(),
+            prompt: prompt_view(run.prompt_id, run.prompt_name)?,
+        }
+    } else if key.starts_with("staged-lorebook-coherence-") {
+        let project = db
+            .staged_lorebook_request_for_project(job.subject.id.as_str())
+            .map_err(internal)?;
+        let project = db.load_staged_lorebook(project).map_err(internal)?;
+        let run = project
+            .coherence_runs
+            .iter()
+            .find(|run| run.request_id == id)
+            .ok_or_else(|| internal("the coherence input is missing"))?;
+        JobSubjectDetail::LorebookProject {
+            project_id: project.project.id.to_string(),
+            prompt: prompt_view(run.prompt_id, run.prompt_name.clone())?,
+        }
+    } else if key.starts_with("staged-lorebook-") {
+        let run = db.load_staged_lorebook(id).map_err(internal)?;
+        JobSubjectDetail::LorebookProject {
+            project_id: run.project.id.to_string(),
+            prompt: prompt_view(run.planner_prompt_id, run.planner_prompt_name)?,
+        }
+    } else {
+        return Ok(None);
+    };
+    Ok(Some(detail))
 }

@@ -326,178 +326,6 @@ impl ApiOperationTransaction<'_, '_> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn receipts_survive_backup_restore_and_device_carry_without_entering_sync() {
-        use lettuce_sync::LocalChangeJournal;
-        use lettuce_transfer::{ProviderBackupRestoreWriter, ProviderBackupSource};
-        let source = Database::open_in_memory().expect("source");
-        source
-            .journal_current_state(TimestampMillis::new(1))
-            .expect("baseline");
-        let baseline: i64 = source
-            .connection()
-            .expect("connection")
-            .query_row("SELECT count(*) FROM sync_changes", [], |row| row.get(0))
-            .expect("baseline changes");
-        let result: String = source
-            .commit_api_operation(
-                "future_create",
-                "key",
-                "digest",
-                TimestampMillis::new(1),
-                |_| Ok::<_, ApiOperationError>("original".into()),
-            )
-            .expect("receipt");
-        let mut graph = source.read_provider_backup_graph().expect("backup graph");
-        lettuce_transfer::canonicalize_and_validate(&mut graph).expect("valid graph");
-        assert_eq!(graph.job_backup.api_operation_receipts.len(), 1);
-        let restored = Database::open_in_memory().expect("restored");
-        restored
-            .restore_provider_backup_graph(&graph, &[])
-            .expect("restore");
-        let replay: String = restored
-            .commit_api_operation(
-                "future_create",
-                "key",
-                "digest",
-                TimestampMillis::new(2),
-                |_| -> Result<String, ApiOperationError> {
-                    panic!("restored replay");
-                },
-            )
-            .expect("restored receipt");
-        assert_eq!(replay, result);
-        source
-            .journal_current_state(TimestampMillis::new(2))
-            .expect("journal");
-        let connection = source.connection().expect("connection");
-        let changes: i64 = connection
-            .query_row("SELECT count(*) FROM sync_changes", [], |row| row.get(0))
-            .expect("journal count");
-        assert_eq!(changes, baseline, "receipts are device-local bookkeeping");
-        drop(connection);
-        let root = std::env::temp_dir().join(format!(
-            "lettuce-receipt-carry-{}",
-            lettuce_types::OperationId::new()
-        ));
-        std::fs::create_dir_all(&root).expect("root");
-        let previous_path = root.join("previous.sqlite3");
-        let previous = Database::open(&previous_path).expect("previous");
-        previous
-            .commit_api_operation(
-                "another_future_create",
-                "old-key",
-                "old-digest",
-                TimestampMillis::new(1),
-                |_| Ok::<_, ApiOperationError>("previous".to_owned()),
-            )
-            .expect("previous receipt");
-        let next = Database::open(root.join("next.sqlite3")).expect("next");
-        next.carry_device_local_state_from(&previous_path)
-            .expect("carry receipts");
-        assert_eq!(
-            next.lookup_api_operation("another_future_create", "old-key")
-                .expect("lookup")
-                .expect("receipt")
-                .result,
-            serde_json::json!("previous")
-        );
-        std::fs::remove_dir_all(root).expect("cleanup");
-    }
-
-    #[test]
-    fn concurrent_same_key_applies_once() {
-        let database = std::sync::Arc::new(Database::open_in_memory().expect("database"));
-        let applied = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let threads = (0..8)
-            .map(|_| {
-                let database = database.clone();
-                let applied = applied.clone();
-                std::thread::spawn(move || {
-                    database
-                        .commit_api_operation(
-                            "future_create",
-                            "key",
-                            "digest",
-                            TimestampMillis::new(1),
-                            |_| {
-                                applied.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                                Ok::<_, ApiOperationError>("one result".to_owned())
-                            },
-                        )
-                        .expect("concurrent replay")
-                })
-            })
-            .collect::<Vec<_>>();
-        for thread in threads {
-            assert_eq!(thread.join().expect("thread"), "one result");
-        }
-        assert_eq!(applied.load(std::sync::atomic::Ordering::SeqCst), 1);
-    }
-
-    #[test]
-    fn receipts_replay_conflict_and_rollback_with_the_callers_changes() {
-        let database = Database::open_in_memory().expect("database");
-        let apply =
-            |transaction: &ApiOperationTransaction<'_, '_>| -> Result<String, ApiOperationError> {
-                transaction.transaction.execute("INSERT INTO app_usage_days(day,active_ms,updated_at) VALUES ('2026-10-05',1,1)", []).map_err(storage)?;
-                Ok("original".into())
-            };
-        let first: String = database
-            .commit_api_operation(
-                "future_create",
-                "key",
-                "digest",
-                TimestampMillis::new(1),
-                apply,
-            )
-            .expect("commit");
-        database
-            .connection()
-            .expect("connection")
-            .execute("DELETE FROM app_usage_days", [])
-            .expect("later deletion");
-        let replay: String = database
-            .commit_api_operation(
-                "future_create",
-                "key",
-                "digest",
-                TimestampMillis::new(2),
-                |_| -> Result<String, ApiOperationError> { panic!("replay must not apply") },
-            )
-            .expect("replay");
-        assert_eq!(first, replay);
-        let conflict = database.commit_api_operation(
-            "future_create",
-            "key",
-            "changed",
-            TimestampMillis::new(2),
-            |_| -> Result<String, ApiOperationError> { panic!("conflict must not apply") },
-        );
-        assert_eq!(conflict, Err(ApiOperationError::Conflict));
-        let failed = database.commit_api_operation("future_create", "failed", "digest", TimestampMillis::new(3), |transaction| -> Result<String, ApiOperationError> {
-            transaction.transaction.execute("INSERT INTO app_usage_days(day,active_ms,updated_at) VALUES ('2026-10-05',1,1)", []).map_err(storage)?;
-            Err(ApiOperationError::InvalidData)
-        });
-        assert_eq!(failed, Err(ApiOperationError::InvalidData));
-        assert!(
-            database
-                .lookup_api_operation("future_create", "failed")
-                .expect("lookup")
-                .is_none()
-        );
-        let count: i64 = database
-            .connection()
-            .expect("connection")
-            .query_row("SELECT count(*) FROM app_usage_days", [], |row| row.get(0))
-            .expect("count");
-        assert_eq!(count, 0);
-    }
-}
 
 impl ApiOperationTransaction<'_, '_> {
     pub fn update_lorebook_metadata(&self, id: lettuce_types::LorebookId, expected: lettuce_types::Revision, metadata: lettuce_context::LorebookMetadataDraft, now: TimestampMillis) -> Result<lettuce_context::LorebookDetails, lettuce_context::LorebookRepositoryError> {
@@ -683,8 +511,219 @@ impl ApiOperationTransaction<'_, '_> {
         let pending = crate::lorebook::staged_lorebook_adapter::pending_project_in(self.transaction, run.project.id).map_err(|_| lettuce_jobs::StoreError::InvalidData)?.ok_or(lettuce_jobs::StoreError::NotFound)?;
         if pending.revision != expected || pending.stage != lettuce_creation::StagedLorebookStage::Created || pending.start_planning(run.project.updated_at).map_err(|_| lettuce_jobs::StoreError::InvalidData)? != run.project { return Err(lettuce_jobs::StoreError::IdempotencyConflict); }
         let id = run.project.id;
-        let (job, _, _) = crate::job_adapter::admit_lorebook_job_in(self.transaction, spec, crate::LorebookJobInput::Planner(run), None)?;
+        let (job, _, _) = crate::job_adapter::admit_lorebook_job_in(self.transaction, spec, crate::LorebookJobInput::Planner(Box::new(run)), None)?;
         self.transaction.execute("DELETE FROM creation_staged_lorebook_projects WHERE project_id=?1", [id.to_string()]).map_err(|_| lettuce_jobs::StoreError::Storage)?;
         Ok(job.id)
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn receipts_survive_backup_restore_and_device_carry_without_entering_sync() {
+        use lettuce_sync::LocalChangeJournal;
+        use lettuce_transfer::{ProviderBackupRestoreWriter, ProviderBackupSource};
+        let source = Database::open_in_memory().expect("source");
+        source
+            .journal_current_state(TimestampMillis::new(1))
+            .expect("baseline");
+        let baseline: i64 = source
+            .connection()
+            .expect("connection")
+            .query_row("SELECT count(*) FROM sync_changes", [], |row| row.get(0))
+            .expect("baseline changes");
+        let result: String = source
+            .commit_api_operation(
+                "future_create",
+                "key",
+                "digest",
+                TimestampMillis::new(1),
+                |_| Ok::<_, ApiOperationError>("original".into()),
+            )
+            .expect("receipt");
+        let mut graph = source.read_provider_backup_graph().expect("backup graph");
+        lettuce_transfer::canonicalize_and_validate(&mut graph).expect("valid graph");
+        assert_eq!(graph.job_backup.api_operation_receipts.len(), 1);
+        let restored = Database::open_in_memory().expect("restored");
+        restored
+            .restore_provider_backup_graph(&graph, &[])
+            .expect("restore");
+        let replay: String = restored
+            .commit_api_operation(
+                "future_create",
+                "key",
+                "digest",
+                TimestampMillis::new(2),
+                |_| -> Result<String, ApiOperationError> {
+                    panic!("restored replay");
+                },
+            )
+            .expect("restored receipt");
+        assert_eq!(replay, result);
+        source
+            .journal_current_state(TimestampMillis::new(2))
+            .expect("journal");
+        let connection = source.connection().expect("connection");
+        let changes: i64 = connection
+            .query_row("SELECT count(*) FROM sync_changes", [], |row| row.get(0))
+            .expect("journal count");
+        assert_eq!(changes, baseline, "receipts are device-local bookkeeping");
+        drop(connection);
+        let root = std::env::temp_dir().join(format!(
+            "lettuce-receipt-carry-{}",
+            lettuce_types::OperationId::new()
+        ));
+        std::fs::create_dir_all(&root).expect("root");
+        let previous_path = root.join("previous.sqlite3");
+        let previous = Database::open(&previous_path).expect("previous");
+        previous
+            .commit_api_operation(
+                "another_future_create",
+                "old-key",
+                "old-digest",
+                TimestampMillis::new(1),
+                |_| Ok::<_, ApiOperationError>("previous".to_owned()),
+            )
+            .expect("previous receipt");
+        let next = Database::open(root.join("next.sqlite3")).expect("next");
+        next.carry_device_local_state_from(&previous_path)
+            .expect("carry receipts");
+        assert_eq!(
+            next.lookup_api_operation("another_future_create", "old-key")
+                .expect("lookup")
+                .expect("receipt")
+                .result,
+            serde_json::json!("previous")
+        );
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn concurrent_same_key_applies_once() {
+        let database = std::sync::Arc::new(Database::open_in_memory().expect("database"));
+        let applied = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let threads = (0..8)
+            .map(|_| {
+                let database = database.clone();
+                let applied = applied.clone();
+                std::thread::spawn(move || {
+                    database
+                        .commit_api_operation(
+                            "future_create",
+                            "key",
+                            "digest",
+                            TimestampMillis::new(1),
+                            |_| {
+                                applied.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                                Ok::<_, ApiOperationError>("one result".to_owned())
+                            },
+                        )
+                        .expect("concurrent replay")
+                })
+            })
+            .collect::<Vec<_>>();
+        for thread in threads {
+            assert_eq!(thread.join().expect("thread"), "one result");
+        }
+        assert_eq!(applied.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn receipts_replay_conflict_and_rollback_with_the_callers_changes() {
+        let database = Database::open_in_memory().expect("database");
+        let apply =
+            |transaction: &ApiOperationTransaction<'_, '_>| -> Result<String, ApiOperationError> {
+                transaction.transaction.execute("INSERT INTO app_usage_days(day,active_ms,updated_at) VALUES ('2026-10-05',1,1)", []).map_err(storage)?;
+                Ok("original".into())
+            };
+        let first: String = database
+            .commit_api_operation(
+                "future_create",
+                "key",
+                "digest",
+                TimestampMillis::new(1),
+                apply,
+            )
+            .expect("commit");
+        database
+            .connection()
+            .expect("connection")
+            .execute("DELETE FROM app_usage_days", [])
+            .expect("later deletion");
+        let replay: String = database
+            .commit_api_operation(
+                "future_create",
+                "key",
+                "digest",
+                TimestampMillis::new(2),
+                |_| -> Result<String, ApiOperationError> { panic!("replay must not apply") },
+            )
+            .expect("replay");
+        assert_eq!(first, replay);
+        let conflict = database.commit_api_operation(
+            "future_create",
+            "key",
+            "changed",
+            TimestampMillis::new(2),
+            |_| -> Result<String, ApiOperationError> { panic!("conflict must not apply") },
+        );
+        assert_eq!(conflict, Err(ApiOperationError::Conflict));
+        let failed = database.commit_api_operation("future_create", "failed", "digest", TimestampMillis::new(3), |transaction| -> Result<String, ApiOperationError> {
+            transaction.transaction.execute("INSERT INTO app_usage_days(day,active_ms,updated_at) VALUES ('2026-10-05',1,1)", []).map_err(storage)?;
+            Err(ApiOperationError::InvalidData)
+        });
+        assert_eq!(failed, Err(ApiOperationError::InvalidData));
+        assert!(
+            database
+                .lookup_api_operation("future_create", "failed")
+                .expect("lookup")
+                .is_none()
+        );
+        let count: i64 = database
+            .connection()
+            .expect("connection")
+            .query_row("SELECT count(*) FROM app_usage_days", [], |row| row.get(0))
+            .expect("count");
+        assert_eq!(count, 0);
+    }
+    #[test]
+    fn library_and_pending_project_mutations_roll_back_when_receipt_write_fails() {
+        use lettuce_context::*;
+        use lettuce_transfer::ProviderBackupSource;
+        let database = Database::open_in_memory().expect("database");
+        let now = TimestampMillis::new(1);
+        let metadata = LorebookMetadataDraft { name: "World".into(), detection_policy: DetectionPolicy::RecentMessageWindow, icon_asset_id: None, behavior_version: LorebookBehaviorVersion::LegacyV1 };
+        let book = LorebookRepository::create(&database, metadata.clone(), vec![], now).expect("book");
+        let prompt_metadata = PromptMetadataDraft { name: "Prompt".into(), purpose: PromptPurpose::DirectChat, condense: false, behavior_version: PromptBehaviorVersion::LegacyV1 };
+        let prompt = PromptRepository::create_user_draft(&database, prompt_metadata.clone(), vec![], now).expect("prompt");
+        let project = lettuce_creation::StagedLorebookProject::create(lettuce_types::CreationWorkflowId::new(), "World building".into(), Some("World".into()), 5, vec![], now).expect("project");
+        database.commit_api_operation("pending_seed", "seed", "seed", now, |scope| scope.create_lorebook_project(project.clone()).map_err(invalid)).expect("pending project");
+        database.connection().expect("connection").execute_batch("CREATE TEMP TRIGGER fail_slice6_receipt BEFORE INSERT ON api_operation_receipts BEGIN SELECT RAISE(ABORT,'late receipt failure'); END;").expect("fault");
+        let before = database.read_provider_backup_graph().expect("before");
+        for case in 0..11 {
+            let result: Result<String, ApiOperationError> = database.commit_api_operation("slice6_late_write", &case.to_string(), "digest", TimestampMillis::new(2), |scope| {
+                let at = TimestampMillis::new(2);
+                match case {
+                    0 => { scope.create_lorebook(metadata.clone(), vec![], at).map_err(invalid)?; }
+                    1 => { scope.update_lorebook_metadata(book.book.id, book.book.revision, LorebookMetadataDraft { name: "Changed".into(), ..metadata.clone() }, at).map_err(invalid)?; }
+                    2 => { scope.set_lorebook_status(book.book.id, book.book.revision, LifecycleStatus::Archived, at).map_err(invalid)?; }
+                    3 => { scope.delete_lorebook(book.book.id, book.book.revision, at).map_err(invalid)?; }
+                    4 => { scope.create_prompt(prompt_metadata.clone(), vec![], at).map_err(invalid)?; }
+                    5 => { scope.update_prompt(prompt.id, prompt.revision, PromptMetadataDraft { name: "Changed".into(), ..prompt_metadata.clone() }, vec![], at).map_err(invalid)?; }
+                    6 => { scope.delete_prompt(prompt.id, prompt.revision, at).map_err(invalid)?; }
+                    7 => { scope.create_lorebook_project(lettuce_creation::StagedLorebookProject::create(lettuce_types::CreationWorkflowId::new(), "New world".into(), None, 5, vec![], at).map_err(invalid)?).map_err(invalid)?; }
+                    8 => { scope.cancel_pending_lorebook_project(project.id, project.revision, at).map_err(invalid)?; }
+                    9 => { scope.reset_builtin_prompts(BuiltInReconcileRequest { mode: BuiltInReconcileMode::ResetToSeed, seeds: vec![BuiltInPromptSeed { key: "late_reset".into(), aliases: vec![], seed_version: 1, metadata: prompt_metadata.clone(), entries: vec![], required: false, protected: false }] }, None, at).map_err(invalid)?; }
+                    _ => { scope.mutate_lorebook_entries(book.book.id, book.book.revision, vec![LorebookEntryMutation::Replace { drafts: vec![LorebookEntryDraft { title: "District".into(), enabled: true, always_active: true, keywords: vec![], case_sensitive: false, match_mode: KeywordMatchMode::Literal, content: "District content".into(), priority: 0 }] }], at).map_err(invalid)?; }
+                }
+                Ok("result".into())
+            });
+            assert_eq!(result, Err(ApiOperationError::Storage), "case {case}");
+            assert_eq!(database.read_provider_backup_graph().expect("after"), before, "case {case}");
+            assert!(database.lookup_api_operation("slice6_late_write", &case.to_string()).expect("receipt").is_none());
+        }
+    }
+
 }

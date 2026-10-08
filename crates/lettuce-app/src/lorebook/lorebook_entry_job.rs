@@ -141,7 +141,7 @@ impl<R: LorebookEntryRunRepository + crate::LorebookJobAdmission + ?Sized, J: Jo
         run.validate()?;
         let (job, created, input) = self.repository.admit_lorebook_job(
             spec,
-            lettuce_database::LorebookJobInput::Entry(run),
+            lettuce_database::LorebookJobInput::Entry(Box::new(run)),
             self.operation
                 .as_ref()
                 .map(|(key, digest)| (key.as_str(), digest.as_str())),
@@ -149,6 +149,7 @@ impl<R: LorebookEntryRunRepository + crate::LorebookJobAdmission + ?Sized, J: Jo
         let lettuce_database::LorebookJobInput::Entry(run) = input else {
             return Err(LorebookEntryAdmissionError::InvalidInput);
         };
+        let run = *run;
         let admitted = lettuce_jobs::CreateJobResult { job, created };
         validate_job(&run, &admitted.job)?;
         Ok(LorebookEntryAdmission {
