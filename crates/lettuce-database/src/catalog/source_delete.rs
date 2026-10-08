@@ -533,6 +533,63 @@ mod tests {
     }
 
     #[test]
+    fn lorebook_delete_and_character_binding_edit_are_serialized() {
+        let database = std::sync::Arc::new(Database::open_in_memory().expect("database"));
+        let fixture = lorebook_fixture(&database);
+        let seen = Revision::new(
+            u64::try_from(revision(
+                &database,
+                "characters",
+                &fixture.character.to_string(),
+            ))
+            .expect("revision"),
+        );
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let deletion = {
+            let database = std::sync::Arc::clone(&database);
+            let barrier = std::sync::Arc::clone(&barrier);
+            let id = fixture.deleted.book.id;
+            let revision = fixture.deleted.book.revision;
+            std::thread::spawn(move || {
+                barrier.wait();
+                database.delete_lorebook(id, revision, NOW)
+            })
+        };
+        let edit = {
+            let database = std::sync::Arc::clone(&database);
+            let character = fixture.character;
+            let kept = fixture.kept.book.id;
+            std::thread::spawn(move || {
+                barrier.wait();
+                database.unbind_character_lorebook(character, seen, kept, NOW)
+            })
+        };
+        deletion.join().expect("deletion worker").expect("delete");
+        let edited = edit.join().expect("editor worker");
+        assert!(
+            edited.is_ok()
+                || matches!(
+                    edited,
+                    Err(lettuce_context::BindingRepositoryError::Conflict)
+                )
+        );
+        let bindings = database
+            .list_character_bindings(fixture.character)
+            .expect("bindings");
+        assert!(
+            bindings
+                .iter()
+                .all(|binding| binding.lorebook_id != fixture.deleted.book.id)
+        );
+        if edited.is_ok() {
+            assert!(bindings.is_empty());
+        } else {
+            assert_eq!(bindings.len(), 1);
+            assert_eq!(bindings[0].lorebook_id, fixture.kept.book.id);
+        }
+    }
+
+    #[test]
     fn lorebook_delete_failing_late_leaves_every_reference() {
         let database = Database::open_in_memory().expect("database");
         let fixture = lorebook_fixture(&database);

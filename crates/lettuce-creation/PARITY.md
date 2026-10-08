@@ -70,3 +70,5 @@ Facts about how `lettuce-creation` relates to the legacy app (2.2.x). The crate 
 - The previous README said protected binary and PDF extraction were still deferred, while also describing PDF extraction as done. The code extracts PDF text (`pdf_extract::extract_text_from_mem`) during source preparation; protected document reading is wired in `lettuce-app`.
 - The creation-helper slice was delivered in stages: targets, turns and proposals; the native tool contract; attempts and rounds; remote dispatch and continuation through the `lettuce-app` coordinator; persona, character and lorebook finalization; structured fallback; regenerate.
 - Staged runs gained configured input provenance, per-operation overrides and admitted prompt documents after the first slice; older run documents read these as absent.
+
+Commit is accepted during coherence review, preserving the legacy skip-coherence path (`old-code/src/ui/pages/library/LorebookGeneratorFlowPage.tsx:447-455,575-590`). Pending coherence proposals remain in the committed project as history. The staged API lifecycle regression fails at the old drafts-ready-only guard and passes with this transition.

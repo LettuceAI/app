@@ -1036,7 +1036,10 @@ pub(crate) fn commit_staged_lorebook_in(
         return Ok(receipt.clone());
     }
     if run.project.revision != request.expected_project_revision
-        || run.project.stage != StagedLorebookStage::DraftsReady
+        || !matches!(
+            run.project.stage,
+            StagedLorebookStage::DraftsReady | StagedLorebookStage::CoherenceReview
+        )
         || request.now < run.project.updated_at
     {
         return Err(StagedLorebookRepositoryError::Conflict);

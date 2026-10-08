@@ -1837,8 +1837,10 @@ impl StagedLorebookProject {
                                 | StagedLorebookDraftStatus::Drafting
                         )
                     }))
-                    || (self.stage != StagedLorebookStage::CoherenceReview
-                        && !self.coherence_proposals.is_empty())
+                    || (!matches!(
+                        self.stage,
+                        StagedLorebookStage::CoherenceReview | StagedLorebookStage::Committed
+                    ) && !self.coherence_proposals.is_empty())
                 {
                     Err(StagedLorebookError::InvalidDraft)
                 } else {

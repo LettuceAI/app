@@ -90,3 +90,5 @@ Runs keep their configured inputs for replay: explicit model and prompt override
 ## Usage evidence
 
 Entry and keyword checkpoints (primary and fallback) and the staged planner, writer, refinement and coherence checkpoints keep optional cached-input and reasoning token counts beside the totals; absent and zero stay distinct, and the application copies provider evidence without normalizing it for billing. Every actual provider dispatch is also admitted to the job-owned usage ledger before the call and records its response id and usage before the response is reduced, including invalid responses, cancellation during inference and transport failures. Replaying a checkpoint dispatches nothing. When recording that evidence fails, entry and keyword generation stop without writing a false failed checkpoint or dispatching the fallback; provider failures still follow the fallback policy.
+
+A project may commit from drafts-ready or coherence review. Committing preserves its pending coherence proposals as review history, without applying them to the drafts.
