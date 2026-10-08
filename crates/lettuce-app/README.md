@@ -606,3 +606,5 @@ The provider control API exposes the catalog, account metadata, credential verif
 Provider account writes serialize in the API, store fresh secrets behind a durable reference-only cleanup journal, and atomically commit the account with its operation receipt. Startup reconciles the journal before workers start. Provider deletion uses the database model-delete core to clear live selections while preserving historical snapshots. Certificate writes compare the device settings revision and rebuild live JSON, image and TTS clients through weak registrations after commit.
 
 Stored certificate views include validity and a typed InvalidPem reason; runtime client construction skips invalid stored roots so users can list and remove them. New imports validate strictly before writing.
+
+Provider credential cleanup is best-effort at startup and after committed writes. Failures retain journal rows, log no secret material and retry on the next save or launch.

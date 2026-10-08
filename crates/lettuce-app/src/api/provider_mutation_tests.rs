@@ -712,6 +712,7 @@ struct PausedSecrets {
     entered: tokio::sync::Notify,
     release: tokio::sync::Notify,
     fail: std::sync::atomic::AtomicBool,
+    fail_delete: std::sync::atomic::AtomicBool,
 }
 #[async_trait::async_trait]
 impl lettuce_settings::SecretStore for PausedSecrets {
@@ -751,6 +752,9 @@ impl lettuce_settings::SecretStore for PausedSecrets {
         purpose: &lettuce_settings::SecretPurpose,
         expected: Option<u64>,
     ) -> Result<lettuce_settings::SecretStatus, lettuce_settings::SecretStoreError> {
+        if self.fail_delete.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(lettuce_settings::SecretStoreError::Backend(lettuce_settings::SecretBackendError::Unavailable));
+        }
         self.store.delete(reference, purpose, expected).await
     }
 }
@@ -880,4 +884,43 @@ async fn invalid_stored_certificate_is_visible_and_removable_without_blocking_ru
         certificate_id: view.certificates[0].id.clone(), expected_revision: view.revision,
     }).await.expect("remove");
     assert!(removed.certificates.is_empty());
+}
+
+#[tokio::test]
+async fn cleanup_failure_never_blocks_startup_or_committed_save_and_delete() {
+    let harness = harness(Reply::Text("Hello."));
+    let store = std::sync::Arc::new(PausedSecrets::default());
+    let context = harness.context.with_test_secrets(store.clone());
+    store.release.notify_one();
+    let first = super::provider_account_save(&context, save(None, Some("old-key"), false, None, "cleanup-first")).await.expect("first");
+    store.fail_delete.store(true, std::sync::atomic::Ordering::SeqCst);
+    store.release.notify_one();
+    let updated = super::provider_account_save(&context, save(Some(first.id), Some("new-key"), false, Some(first.revision), "cleanup-update")).await.expect("committed save returns its view");
+    let request = dto::ProviderAccountDeleteRequest { account_id: updated.id, expected_revision: updated.revision, delete_models: false, client_operation_id: "cleanup-delete".into() };
+    super::provider_account_delete(&context, request.clone()).await.expect("committed delete succeeds");
+    super::provider_account_delete(&context, request).await.expect("replay succeeds");
+    assert_eq!(context.backend().database().provider_secret_cleanup().expect("journal").len(), 2);
+    let workers = super::startup(&context).await.expect("cleanup does not prevent startup");
+    tokio::time::timeout(std::time::Duration::from_secs(30), workers.started()).await.expect("workers start");
+    assert_eq!(context.backend().database().provider_secret_cleanup().expect("retained").len(), 2);
+    workers.stop().await;
+    store.fail_delete.store(false, std::sync::atomic::Ordering::SeqCst);
+    super::provider_mutations::cleanup_secrets(&context, true).await.expect("retry");
+    assert!(context.backend().database().provider_secret_cleanup().expect("cleared").is_empty());
+}
+
+#[tokio::test]
+async fn cleanup_failure_at_startup_preserves_staged_secret_and_starts_workers() {
+    use lettuce_settings::{SecretStore, SecretRecord, SecretRef, SecretPurpose, SecretOwnerId, SecretValue};
+    let harness = harness(Reply::Text("Hello."));
+    let store = std::sync::Arc::new(PausedSecrets::default());
+    let context = harness.context.with_test_secrets(store.clone());
+    let record = SecretRecord::new(SecretRef::new(), SecretPurpose::ProviderApiKey { owner: SecretOwnerId::new() });
+    context.backend().database().stage_provider_secret(&record).expect("stage");
+    store.store.put(record, SecretValue::new("pending-key").expect("key"), None).await.expect("put");
+    store.fail_delete.store(true, std::sync::atomic::Ordering::SeqCst);
+    let workers = super::startup(&context).await.expect("startup");
+    tokio::time::timeout(std::time::Duration::from_secs(30), workers.started()).await.expect("started");
+    assert_eq!(context.backend().database().provider_secret_cleanup().expect("journal").len(),1);
+    workers.stop().await;
 }

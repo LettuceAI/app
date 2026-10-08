@@ -95,6 +95,13 @@ async fn replay<T: DeserializeOwned + Send + 'static>(
         .await
 }
 pub(super) async fn cleanup_secrets(context: &ApiContext, staged: bool) -> Result<(), ApiError> {
+    if let Err(error) = cleanup_secrets_inner(context, staged).await {
+        tracing::warn!(code = ?error.code, "provider credential cleanup deferred");
+    }
+    Ok(())
+}
+
+async fn cleanup_secrets_inner(context: &ApiContext, staged: bool) -> Result<(), ApiError> {
     let _guard = if staged {
         Some(context.provider_write_guard().await)
     } else {
@@ -120,16 +127,10 @@ pub(super) async fn cleanup_secrets(context: &ApiContext, staged: bool) -> Resul
         })
         .await?;
     for record in records {
-        context
-            .secret_store()
-            .delete(&record.reference, &record.purpose, None)
-            .await
-            .map_err(|_| {
-                api_error(
-                    ApiErrorCode::Unavailable,
-                    "provider credential cleanup is unavailable",
-                )
-            })?;
+        if context.secret_store().delete(&record.reference, &record.purpose, None).await.is_err() {
+            tracing::warn!("provider credential deletion deferred");
+            continue;
+        }
         context
             .blocking(move |context| {
                 context
