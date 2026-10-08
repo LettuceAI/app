@@ -3661,6 +3661,8 @@ export type ModelView = {
 	display_name: string,
 	kind: ModelKindContract,
 	config: { [key in string]: unknown },
+	input_scopes: ModelModality[],
+	output_scopes: ModelModality[],
 	revision: number,
 	created_at: number,
 	updated_at: number,
@@ -4185,6 +4187,7 @@ export type ProviderModelsRequest = {
 
 export type ProviderNanoGptUsageRequest = {
 	account_id: string,
+	refresh: boolean,
 };
 
 export type ProviderOpenRouterEndpoint = {
