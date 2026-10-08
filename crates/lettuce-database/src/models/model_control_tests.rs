@@ -6,9 +6,10 @@ fn warning_levels_deduplicate_across_reopen_and_reset_for_new_window() {
     let folder = std::env::temp_dir().join(format!("s7b-quota-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&folder).expect("folder");
     let path = folder.join("quota.sqlite");
-    let account = ProviderAccountId::new();
+    let account;
     {
         let db = Database::open(&path).expect("database");
+        account = seed_account(&db);
         for level in [75, 90, 100] {
             assert!(
                 db.record_provider_quota_warning(account, "window", level)
@@ -178,5 +179,64 @@ fn failure_between_model_default_and_receipt_writes_rolls_everything_back() {
         db.lookup_api_operation("model_delete", "crash-delete")
             .expect("receipt")
             .is_none()
+    );
+}
+
+#[test]
+fn model_change_triggers_retain_one_increasing_position_and_signal_commits() {
+    use lettuce_models::ProviderAccountRepository;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    let db = Database::open_in_memory().expect("database");
+    let calls = Arc::new(AtomicUsize::new(0));
+    let observed = calls.clone();
+    db.on_model_change(move || {
+        observed.fetch_add(1, Ordering::SeqCst);
+    });
+    let id = seed_account(&db);
+    let mut previous = db.model_change_position().expect("position");
+    for _ in 0..3 {
+        let mut account = ProviderAccountRepository::get(&db, id)
+            .expect("get")
+            .expect("account");
+        let revision = account.revision;
+        account.label.push('x');
+        ProviderAccountRepository::upsert(&db, account, Some(revision)).expect("update");
+        let position = db.model_change_position().expect("position");
+        assert!(position > previous);
+        previous = position;
+        let count: i64 = db
+            .connection()
+            .expect("connection")
+            .query_row("SELECT count(*) FROM model_changes", [], |row| row.get(0))
+            .expect("count");
+        assert_eq!(count, 1);
+    }
+    assert_eq!(calls.load(Ordering::SeqCst), 4);
+}
+
+#[test]
+fn quota_warning_rows_cascade_and_missing_accounts_are_not_emitted() {
+    use lettuce_models::ProviderAccountRepository;
+    let db = Database::open_in_memory().expect("database");
+    let account = seed_account(&db);
+    assert!(
+        db.record_provider_quota_warning(account, "window", 75)
+            .expect("warning")
+    );
+    ProviderAccountRepository::delete(&db, account).expect("delete");
+    let count: i64 = db
+        .connection()
+        .expect("connection")
+        .query_row("SELECT count(*) FROM provider_quota_warnings", [], |row| {
+            row.get(0)
+        })
+        .expect("count");
+    assert_eq!(count, 0);
+    assert!(
+        !db.record_provider_quota_warning(account, "window", 90)
+            .expect("missing is not emitted")
     );
 }

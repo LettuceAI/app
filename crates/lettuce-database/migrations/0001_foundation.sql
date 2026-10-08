@@ -392,36 +392,43 @@ CREATE TABLE model_changes (
 
 CREATE TRIGGER model_profiles_insert_change AFTER INSERT ON model_profiles
 BEGIN
+    DELETE FROM model_changes;
     INSERT INTO model_changes(position) VALUES(NULL);
 END;
 CREATE TRIGGER model_profiles_update_change AFTER UPDATE ON model_profiles
 BEGIN
+    DELETE FROM model_changes;
     INSERT INTO model_changes(position) VALUES(NULL);
 END;
 CREATE TRIGGER model_profiles_delete_change AFTER DELETE ON model_profiles
 BEGIN
+    DELETE FROM model_changes;
     INSERT INTO model_changes(position) VALUES(NULL);
 END;
 CREATE TRIGGER provider_accounts_insert_model_change AFTER INSERT ON provider_accounts
 BEGIN
+    DELETE FROM model_changes;
     INSERT INTO model_changes(position) VALUES(NULL);
 END;
 CREATE TRIGGER provider_accounts_update_model_change AFTER UPDATE ON provider_accounts
 BEGIN
+    DELETE FROM model_changes;
     INSERT INTO model_changes(position) VALUES(NULL);
 END;
 CREATE TRIGGER provider_accounts_delete_model_change AFTER DELETE ON provider_accounts
 BEGIN
+    DELETE FROM model_changes;
     INSERT INTO model_changes(position) VALUES(NULL);
 END;
 CREATE TRIGGER app_default_model_change AFTER UPDATE OF default_model_profile_id ON app_settings
 WHEN OLD.default_model_profile_id IS NOT NEW.default_model_profile_id
 BEGIN
+    DELETE FROM model_changes;
     INSERT INTO model_changes(position) VALUES(NULL);
 END;
 
 CREATE TABLE provider_quota_warnings (
-    account_id TEXT PRIMARY KEY,
+    account_id TEXT PRIMARY KEY REFERENCES provider_accounts(id) ON DELETE CASCADE,
     window TEXT NOT NULL CHECK (length(trim(window)) > 0),
     level INTEGER NOT NULL CHECK (level IN (75,90,100))
 ) STRICT;

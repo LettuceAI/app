@@ -149,6 +149,17 @@ impl Database {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(crate::model_error)?;
+        let exists = transaction
+            .query_row(
+                "SELECT 1 FROM provider_accounts WHERE id=?1",
+                [id.to_string()],
+                |_| Ok(()),
+            )
+            .optional()
+            .map_err(crate::model_error)?;
+        if exists.is_none() {
+            return Ok(false);
+        }
         let previous = transaction
             .query_row(
                 "SELECT window,level FROM provider_quota_warnings WHERE account_id=?1",
