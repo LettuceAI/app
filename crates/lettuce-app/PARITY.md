@@ -65,7 +65,7 @@ Facts about how `lettuce-app` relates to the legacy app (2.2.x): what follows le
 
 ### Lorebooks and creation
 
-- Entry and keyword drafts use the configured model if it generates text, otherwise the first model that does, never the default model (`old-code/src-tauri/src/chat_manager/lorebook_entry_generator.rs:60-88`). The staged generator uses its configured model, then the default model, and fails typed when neither is a text model (`old-code/src-tauri/src/chat_manager/lorebook_generator/pipeline.rs:66-92`); it has no first-text fallback.
+- Entry drafts, keyword drafts and every staged generator job use one resolver: the configured model if it generates text (a configured model that does not is a typed error), otherwise the first model that does, never the default model (`old-code/src-tauri/src/chat_manager/lorebook_entry_generator.rs:60-88`; slice 6 decision 12). Legacy's staged generator fell back to the default model without a capability check (`old-code/src-tauri/src/chat_manager/lorebook_generator/pipeline.rs:66-92`).
 - Staged refinement admission accepts coherence review, matching the legacy review controls (`old-code/src/ui/pages/library/LorebookGeneratorFlowPage.tsx:575-599`) and stage-independent refine command (`old-code/src-tauri/src/chat_manager/lorebook_generator/commands.rs:309-337`), per slice 6 decision 4.
 
 - Single-entry and keyword preparation copy legacy formatting (chronological messages, durable memory, relative time, existing entries, `(none)`, title, content, keywords, direction). Selected memory lines are numbered contiguously over non-blank memories, as legacy did. Fillers and instructions carry legacy wording.

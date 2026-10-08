@@ -190,8 +190,17 @@ pub fn lorebook_entry_generator_model<C: ModelCatalog + ?Sized>(
     models: &C,
     settings: &GlobalSettings,
 ) -> Result<FeatureModel, ImageFeatureModelError> {
+    lorebook_text_model(models, settings.lorebook_entry_generator.model_profile_id)
+}
+
+/// The lorebook generators' model: `configured` must generate text, else the
+/// first model that does.
+pub fn lorebook_text_model<C: ModelCatalog + ?Sized>(
+    models: &C,
+    configured: Option<ModelProfileId>,
+) -> Result<FeatureModel, ImageFeatureModelError> {
     let all = catalog(models)?;
-    if let Some(id) = settings.lorebook_entry_generator.model_profile_id {
+    if let Some(id) = configured {
         let model =
             preferred(&all, Some(id)).ok_or(ImageFeatureModelError::LorebookEntryGenerator(
                 LorebookEntryModelProblem::ConfiguredMissing,

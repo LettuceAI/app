@@ -5,9 +5,7 @@ use super::{
 };
 use lettuce_context::{LifecycleStatus, LorebookRepository, PromptPurpose, PromptRepository};
 use lettuce_contracts::{self as dto, ApiError, ApiErrorCode, ApiErrorDetails};
-use lettuce_models::{
-    GlobalModelSettingsRepository, ModelProfileRepository, ProviderAccountRepository,
-};
+use lettuce_models::GlobalModelSettingsRepository;
 use lettuce_settings::GlobalSettingsStore;
 use lettuce_types::{ModelProfileId, RequestId};
 
@@ -118,66 +116,37 @@ pub(super) fn model_error(reason: dto::LorebookModelProblem) -> ApiError {
 pub(super) fn entry_text_profile(
     context: &ApiContext,
 ) -> Result<lettuce_conversations::ResolvedInferenceProfile, ApiError> {
-    use crate::image::image_feature_models::{
-        ImageFeatureModelError, LorebookEntryModelProblem, lorebook_entry_generator_model,
-    };
-    let db = context.backend().database();
-    let settings = GlobalSettingsStore::load(db).map_err(failure)?;
-    let model =
-        lorebook_entry_generator_model(db, &settings.settings).map_err(|error| match error {
-            ImageFeatureModelError::LorebookEntryGenerator(problem) => model_error(match problem {
-                LorebookEntryModelProblem::ConfiguredMissing => {
-                    dto::LorebookModelProblem::ConfiguredModelMissing
-                }
-                LorebookEntryModelProblem::ConfiguredNotText => {
-                    dto::LorebookModelProblem::ConfiguredModelNotText
-                }
-                LorebookEntryModelProblem::NoCompatible => dto::LorebookModelProblem::NoTextModel,
-            }),
-            other => api_error(ApiErrorCode::Unavailable, other.to_string()),
-        })?;
-    resolved_profile(context, &settings, model.profile, model.account, false)
+    let settings = GlobalSettingsStore::load(context.backend().database()).map_err(failure)?;
+    text_profile(
+        context,
+        settings.settings.lorebook_entry_generator.model_profile_id,
+        false,
+    )
 }
 
 pub(super) fn text_profile(
     context: &ApiContext,
-    selected: Option<ModelProfileId>,
+    configured: Option<ModelProfileId>,
+    staged: bool,
 ) -> Result<lettuce_conversations::ResolvedInferenceProfile, ApiError> {
+    use crate::image::image_feature_models::{
+        ImageFeatureModelError, LorebookEntryModelProblem, lorebook_text_model,
+    };
     let db = context.backend().database();
     let settings = GlobalSettingsStore::load(db).map_err(failure)?;
-    let text = |model: &lettuce_models::ModelProfile| {
-        model
-            .config
-            .capabilities
-            .input_modalities
-            .get(lettuce_models::Modality::Text)
-            == lettuce_models::CapabilityStatus::Supported
-            && model
-                .config
-                .capabilities
-                .output_modalities
-                .get(lettuce_models::Modality::Text)
-                == lettuce_models::CapabilityStatus::Supported
-    };
-    let chosen = selected.or(settings.default_model_profile_id);
-    let model = match chosen {
-        Some(id) => {
-            let model = ModelProfileRepository::get(db, id)
-                .map_err(failure)?
-                .ok_or_else(|| model_error(dto::LorebookModelProblem::ConfiguredModelMissing))?;
-            if !text(&model) {
-                return Err(model_error(
-                    dto::LorebookModelProblem::ConfiguredModelNotText,
-                ));
+    let model = lorebook_text_model(db, configured).map_err(|error| match error {
+        ImageFeatureModelError::LorebookEntryGenerator(problem) => model_error(match problem {
+            LorebookEntryModelProblem::ConfiguredMissing => {
+                dto::LorebookModelProblem::ConfiguredModelMissing
             }
-            model
-        }
-        None => return Err(model_error(dto::LorebookModelProblem::NoTextModel)),
-    };
-    let account = ProviderAccountRepository::get(db, model.provider_account_id)
-        .map_err(failure)?
-        .ok_or_else(|| api_error(ApiErrorCode::NotFound, "provider account not found"))?;
-    resolved_profile(context, &settings, model, account, true)
+            LorebookEntryModelProblem::ConfiguredNotText => {
+                dto::LorebookModelProblem::ConfiguredModelNotText
+            }
+            LorebookEntryModelProblem::NoCompatible => dto::LorebookModelProblem::NoTextModel,
+        }),
+        other => api_error(ApiErrorCode::Unavailable, other.to_string()),
+    })?;
+    resolved_profile(context, &settings, model.profile, model.account, staged)
 }
 
 fn resolved_profile(

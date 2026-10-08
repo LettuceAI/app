@@ -1440,3 +1440,80 @@ async fn commit_cancels_the_projects_running_coherence_job() {
     assert!(after.cancellation.requested);
     drop(work);
 }
+
+#[tokio::test]
+async fn staged_plan_and_entry_draft_share_the_first_text_model_fallback() {
+    let harness = harness(Reply::LorebookTools);
+    let db = harness.context.backend().database();
+    let text_id = lettuce_models::ModelCatalog::model_profiles(db).expect("models")[0].id;
+    let image =
+        crate::launch::tests::seed_model(db, lettuce_models::ProviderProtocol::Ollama, "ollama");
+    let mut model = lettuce_models::ModelProfileRepository::get(db, image)
+        .expect("model")
+        .expect("exists");
+    let revision = model.revision;
+    model.config.capabilities.output_modalities.text =
+        lettuce_models::CapabilityStatus::Unsupported;
+    lettuce_models::ModelProfileRepository::upsert(db, model, Some(revision)).expect("image");
+    crate::launch::tests::set_application_default_model(db, image);
+    let project = staged_project(&harness, "shared-fallback").await;
+    let plan = lorebook_project_plan(
+        &harness.context,
+        dto::LorebookProjectJobRequest {
+            client_operation_id: "shared-plan".into(),
+            project_id: project.project_id.clone(),
+            expected_revision: project.revision,
+        },
+    )
+    .await
+    .expect("plan with an unusable default");
+    execute(&harness, &plan.job_id).await;
+    let requests = harness.provider.requests.lock().expect("requests");
+    assert_eq!(requests[0].profile.chat_profile.model_profile_id, text_id);
+}
+
+#[tokio::test]
+async fn staged_plan_with_a_configured_non_text_model_is_typed() {
+    let harness = harness(Reply::LorebookTools);
+    let db = harness.context.backend().database();
+    let image =
+        crate::launch::tests::seed_model(db, lettuce_models::ProviderProtocol::Ollama, "ollama");
+    let mut model = lettuce_models::ModelProfileRepository::get(db, image)
+        .expect("model")
+        .expect("exists");
+    let revision = model.revision;
+    model.config.capabilities.output_modalities.text =
+        lettuce_models::CapabilityStatus::Unsupported;
+    lettuce_models::ModelProfileRepository::upsert(db, model, Some(revision)).expect("image");
+    let mut stored = GlobalSettingsStore::load(db).expect("settings");
+    stored
+        .settings
+        .lorebook_generator
+        .selection
+        .model_profile_id = Some(image);
+    GlobalSettingsStore::save(
+        db,
+        stored.settings,
+        stored.default_model_profile_id,
+        stored.revision,
+    )
+    .expect("selection");
+    let project = staged_project(&harness, "configured-non-text").await;
+    let error = lorebook_project_plan(
+        &harness.context,
+        dto::LorebookProjectJobRequest {
+            client_operation_id: "non-text-plan".into(),
+            project_id: project.project_id.clone(),
+            expected_revision: project.revision,
+        },
+    )
+    .await
+    .expect_err("typed");
+    assert_eq!(error.code, ApiErrorCode::ModelUnavailable);
+    assert_eq!(
+        error.details,
+        Some(dto::ApiErrorDetails::LorebookModelUnavailable {
+            reason: dto::LorebookModelProblem::ConfiguredModelNotText
+        })
+    );
+}
