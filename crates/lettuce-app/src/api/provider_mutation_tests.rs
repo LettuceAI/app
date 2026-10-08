@@ -1,6 +1,5 @@
 use super::tests::{Reply, harness};
 use lettuce_contracts::{self as dto, ApiErrorCode};
-use lettuce_models::ModelPathRelocation;
 use lettuce_settings::DeviceSettingsStore;
 
 fn save(
@@ -952,7 +951,11 @@ async fn certificate_import_replays_after_source_grant_is_gone() {
     let request = dto::CertificatesImportRequest { source: dto::FileSource { uri: file.path().to_string_lossy().into_owned() }, client_operation_id: "expired-grant".into() };
     let first = super::certificates_import(&harness.context, request.clone()).await.expect("import");
     std::fs::remove_file(file.path()).expect("expire source");
-    assert_eq!(super::certificates_import(&harness.context, request).await.expect("receipt before file access"), first);
+    let restarted = harness.context.with_test_secrets(harness.context.secret_store().clone());
+    assert_eq!(super::certificates_import(&restarted, request.clone()).await.expect("receipt before file access"), first);
+    let mut changed = request;
+    changed.source.uri = "content://expired/different-source".into();
+    assert_eq!(super::certificates_import(&restarted, changed).await.expect_err("different source").code, ApiErrorCode::Conflict);
 }
 
 #[tokio::test]
@@ -1010,5 +1013,104 @@ fn folder_selection_keeps_an_interleaved_certificate_import() {
     let after = database.load_device_settings().expect("both changes");
     assert_eq!(after.trusted_certificates.len(),1);
     assert_eq!(after.llm_models_dir.as_deref(), models.to_str());
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[tokio::test]
+async fn provider_cascade_clears_every_live_selection_and_retires_its_key() {
+    use lettuce_models::{ModelCatalog, ModelProfileRepository};
+    use lettuce_settings::{GlobalSettingsStore, SecretPurpose, SecretState};
+    use lettuce_characters::{CharacterRepository, GroupRepository, GroupProfile, GroupMember, CreateGroupPlan};
+    let harness = harness(Reply::Text("Hello."));
+    let database = harness.context.backend().database();
+    let profile = database.model_profiles().expect("models").remove(0);
+    let account = super::provider_account_save(&harness.context, save(Some(profile.provider_account_id.to_string()), Some("cascade-key"), false, Some(1), "cascade-key")).await.expect("key");
+    let stored = lettuce_models::ProviderAccountRepository::get(database, profile.provider_account_id).expect("account").expect("exists");
+    let key_ref = stored.api_key_ref.expect("reference");
+    let remaining = super::provider_account_save(&harness.context, save(None, Some("remaining-key"), false, None, "remaining-account")).await.expect("remaining account");
+    let mut remaining_profile = profile.clone();
+    remaining_profile.id = lettuce_types::ModelProfileId::new();
+    remaining_profile.provider_account_id = remaining.id.parse().expect("id");
+    remaining_profile.display_name = "Remaining".into();
+    remaining_profile.created_at = harness.context.now();
+    remaining_profile.updated_at = remaining_profile.created_at;
+    remaining_profile.revision = lettuce_types::Revision::INITIAL;
+    ModelProfileRepository::upsert(database, remaining_profile.clone(), None).expect("remaining model");
+    let character = CharacterRepository::get(database, harness.character_id).expect("character").expect("exists").character;
+    let mut defaults = character.defaults;
+    defaults.model_profile_id = Some(profile.id);
+    CharacterRepository::update_defaults(database, harness.character_id, character.revision, defaults, harness.context.now()).expect("selection");
+    let character_before = CharacterRepository::get(database, harness.character_id).expect("character").expect("exists").character;
+    let other = super::tests::create_character(database, "Grace", lettuce_characters::CharacterDefaults::default());
+    let group = GroupProfile::new(lettuce_types::GroupId::new(), "Cast".into(), vec![
+        GroupMember { character_id: harness.character_id, ordinal: 0, muted: false, model_profile_override: Some(profile.id) },
+        GroupMember { character_id: other, ordinal: 1, muted: false, model_profile_override: None },
+    ], harness.context.now()).expect("group");
+    GroupRepository::create(database, CreateGroupPlan { group: group.clone(), starting_scene: None }).expect("create group");
+    let snapshot = GlobalSettingsStore::load(database).expect("settings");
+    let mut settings = snapshot.settings;
+    for slot in [
+        &mut settings.lorebook_generator.selection.model_profile_id, &mut settings.help_me_reply.model_profile_id,
+        &mut settings.image_generation.avatar_model_profile_id, &mut settings.image_generation.scene_model_profile_id,
+        &mut settings.image_generation.scene_writer_model_profile_id, &mut settings.image_generation.creation_helper_model_profile_id,
+        &mut settings.creation_helper.model_profile_id, &mut settings.lorebook_entry_generator.model_profile_id,
+        &mut settings.companion_soul_writer.model_profile_id, &mut settings.companion_soul_writer.fallback_model_profile_id,
+    ] { *slot = Some(profile.id); }
+    let snapshot = GlobalSettingsStore::save(database, settings, Some(profile.id), snapshot.revision).expect("feature selections");
+    let snapshot = GlobalSettingsStore::set_dynamic_memory_model_profile(database, Some(profile.id), snapshot.revision).expect("memory");
+    let before = GlobalSettingsStore::set_group_speaker_model_profile(database, Some(profile.id), snapshot.revision).expect("speaker");
+    let event_start = harness.events.events().len();
+    super::provider_account_delete(&harness.context, dto::ProviderAccountDeleteRequest { account_id: account.id, expected_revision: account.revision, delete_models: true, client_operation_id: "cascade-all".into() }).await.expect("delete");
+    assert!(lettuce_models::ProviderAccountRepository::get(database, profile.provider_account_id).expect("account").is_none());
+    assert!(ModelProfileRepository::get(database, profile.id).expect("model").is_none());
+    assert_eq!(harness.context.secret_store().status(&key_ref, &SecretPurpose::ProviderApiKey { owner: stored.secret_owner_id }).await.expect("secret").state, SecretState::Missing);
+    let character_after = CharacterRepository::get(database, harness.character_id).expect("character").expect("exists").character;
+    assert_eq!(character_after.defaults.model_profile_id,None);
+    assert_eq!(character_after.revision,character_before.revision.next().expect("revision"));
+    let group_after = GroupRepository::get(database, group.id).expect("group").expect("exists").group;
+    assert_eq!(group_after.members[0].model_profile_override,None);
+    assert_eq!(group_after.revision,group.revision.next().expect("revision"));
+    let after = GlobalSettingsStore::load(database).expect("settings");
+    assert_eq!(after.default_model_profile_id,Some(remaining_profile.id));
+    assert_eq!(after.dynamic_memory_model_profile_id,None);
+    assert_eq!(after.group_speaker_model_profile_id,None);
+    assert!(after.settings.selected_model_profiles().iter().all(Option::is_none));
+    assert!(after.revision > before.revision);
+    let events = &harness.events.events()[event_start..];
+    for event in [dto::ApiEvent::CharacterChanged { character_id: harness.character_id.to_string() }, dto::ApiEvent::GroupChanged { group_id: group.id.to_string() }, dto::ApiEvent::ModelsChanged, dto::ApiEvent::SettingsChanged { section: "models".into() }] { assert!(events.contains(&event)); }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn desktop_context_reopens_with_an_invalid_stored_root_and_verifies_a_provider() {
+    let root = std::env::temp_dir().join(format!("s7a-invalid-root-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&root).expect("root");
+    let secrets = std::sync::Arc::new(lettuce_settings::InMemorySecretStore::new());
+    let events = std::sync::Arc::new(super::tests::RecordingEvents::default());
+    let open = || super::ApiContext::open_desktop(&root, None, secrets.clone(), events.clone(), std::sync::Arc::new(super::tests::StdFiles), "lettuce-asset://localhost".into(), None).expect("context opens");
+    let context = open();
+    context.backend().database().update_device_settings(&|device| {
+        device.trusted_certificates.extend([
+            lettuce_settings::TrustedCertificate { id: uuid::Uuid::new_v4(), name: "invalid.pem".into(), imported_at: 1, pem: "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----".into() },
+            lettuce_settings::TrustedCertificate { id: uuid::Uuid::new_v4(), name: "valid.pem".into(), imported_at: 1, pem: include_str!("../../tests/fixtures/provider-test-cert.pem").into() },
+        ]);
+    }).expect("stored roots");
+    let source = TestFile::new();
+    std::fs::write(source.path(), include_str!("../../tests/fixtures/provider-test-server.pem")).expect("source");
+    let import = dto::CertificatesImportRequest { source: dto::FileSource { uri: source.path().to_string_lossy().into_owned() }, client_operation_id: "desktop-replay".into() };
+    let imported = super::certificates_import(&context, import.clone()).await.expect("import before restart");
+    drop(context);
+    std::fs::remove_file(source.path()).expect("grant gone");
+    let context = open();
+    assert_eq!(super::certificates_import(&context, import).await.expect("restart replay"), imported);
+    let (url, server) = tls_fixture().await;
+    let mut request = save(None, Some("probe-key"), false, None, "probe-account");
+    request.account.base_url = Some(url);
+    let account = super::provider_account_save(&context, request).await.expect("account");
+    assert!(super::provider_verify(&context, dto::ProviderVerifyRequest::Saved { account_id: account.id }).await.expect("request works").valid);
+    let list = super::certificates_list(&context).await.expect("list");
+    assert!(!list.certificates[0].valid);
+    super::certificates_remove(&context, dto::CertificatesRemoveRequest { certificate_id: list.certificates[0].id.clone(), expected_revision: list.revision }).await.expect("remove invalid root");
+    server.abort();
+    drop(context);
     std::fs::remove_dir_all(root).expect("cleanup");
 }

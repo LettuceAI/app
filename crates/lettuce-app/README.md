@@ -620,3 +620,5 @@ Duplicate certificate imports return Conflict with CertificateAlreadyImported an
 Provider verification preserves string messages, string error types and JSON-stringified error values from old-code/src-tauri/src/providers/util.rs:162-182, with credential redaction. Missing provider text uses typed MissingApiKey or InvalidApiKey details and an absent provider_message.
 
 Device settings field updates read, modify and write under one immediate transaction. Models-folder relocation merges only folder and retained-root fields into the current record; embedding and dictation selections also use transactional field updates, preserving concurrent certificate changes.
+
+Provider regression tests exercise desktop reopen with invalid stored roots, certificate replay without file access, cleanup failures with running workers and the complete transactional model cascade, including native-secret retirement and owner events.
