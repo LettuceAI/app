@@ -136,7 +136,7 @@ pub(crate) async fn verify_api_key<S: SecretStore + ?Sized>(
         return Ok(KeyVerification {
             valid: false,
             status: None,
-            error: Some("Missing API key".into()),
+            error: None,
         });
     }
     if !matches!(
@@ -255,16 +255,16 @@ fn judge(response: &JsonResponse, post: bool) -> KeyVerification {
 
 fn provider_error(body: &[u8]) -> Option<String> {
     let json: serde_json::Value = serde_json::from_slice(body).ok()?;
-    let error = json.get("error");
-    let message = match error {
-        Some(serde_json::Value::String(message)) => Some(message.as_str()),
-        Some(serde_json::Value::Object(object)) => object
-            .get("message")
-            .or_else(|| object.get("type"))
-            .and_then(serde_json::Value::as_str),
-        _ => json.get("message").and_then(serde_json::Value::as_str),
-    };
-    message.map(str::to_owned)
+    if let Some(error) = json.get("error") {
+        return Some(match error {
+            serde_json::Value::String(message) => message.clone(),
+            serde_json::Value::Object(object) => object.get("message").and_then(serde_json::Value::as_str)
+                .or_else(|| object.get("type").and_then(serde_json::Value::as_str))
+                .map(str::to_owned).unwrap_or_else(|| error.to_string()),
+            other => other.to_string(),
+        });
+    }
+    json.get("message").and_then(serde_json::Value::as_str).map(str::to_owned)
 }
 
 #[cfg(test)]

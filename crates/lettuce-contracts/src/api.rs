@@ -83,6 +83,14 @@ pub enum BranchDeleteRefusal {
     SelectedBranch,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderVerificationReason {
+    MissingApiKey,
+    InvalidApiKey,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
@@ -93,7 +101,8 @@ pub enum ApiErrorDetails {
     },
     ProviderVerification {
         status: Option<u16>,
-        provider_message: String,
+        provider_message: Option<String>,
+        reason: Option<ProviderVerificationReason>,
     },
     InvalidField {
         field: String,

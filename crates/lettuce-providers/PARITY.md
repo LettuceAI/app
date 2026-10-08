@@ -61,3 +61,5 @@ Local runtime notice envelopes carry the inference attempt id instead of emittin
 ## Provider control reads
 
 Key verification keeps legacy's HTTP-status judgment and extracted message (`old-code/src-tauri/src/providers/verify.rs:155-200`, `old-code/src-tauri/src/providers/util.rs:162-182`). Reflected request keys and secret headers are redacted, and raw response JSON is not returned. Public OpenRouter endpoints do not require an account, matching `old-code/src-tauri/src/providers/openrouter.rs:93-112`; endpoint context length, uptime, price strings and caching support follow `openrouter.rs:118-135`. The authenticated endpoint-pricing method remains available for billing consumers.
+
+Provider verification preserves string messages, string error types and JSON-stringified error values from old-code/src-tauri/src/providers/util.rs:162-182, with credential redaction. Missing provider text uses typed MissingApiKey or InvalidApiKey details and an absent provider_message.

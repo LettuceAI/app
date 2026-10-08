@@ -69,3 +69,5 @@ Provider control requests expose draft or saved verification, revisioned account
 Stored certificate views include validity and a typed InvalidPem reason; runtime client construction skips invalid stored roots so users can list and remove them. New imports validate strictly before writing.
 
 Duplicate certificate imports return Conflict with CertificateAlreadyImported and the existing certificate id, separate from operation-id conflicts, preserving the distinct duplicate message at old-code/src/ui/pages/settings/SecurityPage.tsx:208-210.
+
+Provider verification preserves string messages, string error types and JSON-stringified error values from old-code/src-tauri/src/providers/util.rs:162-182, with credential redaction. Missing provider text uses typed MissingApiKey or InvalidApiKey details and an absent provider_message.

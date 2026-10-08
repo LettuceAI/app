@@ -130,7 +130,8 @@ async fn bad_draft_key_keeps_error_text_redacts_reflection_and_never_writes() {
         error.details,
         Some(dto::ApiErrorDetails::ProviderVerification {
             status: Some(401),
-            provider_message: "Your key [REDACTED] was refused".into(),
+            provider_message: Some("Your key [REDACTED] was refused".into()),
+            reason: None,
         })
     );
     assert!(

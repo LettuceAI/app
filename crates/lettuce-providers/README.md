@@ -211,3 +211,5 @@ ComfyUI uses the account's `ProviderConfig::ComfyUi` workflows: upload the input
 The local llama observer preserves the inference attempt id on load progress, heartbeat and notice envelopes; runtime report changes remain model-path signals raised after storage. The application owns delivery to generation and job streams.
 
 Key verification returns the provider's message when the credential is refused. The adapter removes the request's credential and secret-header values, including query-encoded forms, before returning that text. Public OpenRouter endpoint discovery uses the adapter's fixed public endpoint with no account or authorization and returns endpoint tags, names, pricing, context length, uptime and caching support; the authenticated billing reads remain separate operations.
+
+Provider verification preserves string messages, string error types and JSON-stringified error values from old-code/src-tauri/src/providers/util.rs:162-182, with credential redaction. Missing provider text uses typed MissingApiKey or InvalidApiKey details and an absent provider_message.

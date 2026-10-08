@@ -487,3 +487,5 @@ Certificate import checks the operation receipt before accessing FileSource. A m
 Certificate sources are read under a 1 MiB PEM guard, including sources with inaccurate size metadata. The foundation migration retains the 128 MiB device-settings CHECK; migration checksums derive from the edited SQL.
 
 Duplicate certificate imports return Conflict with CertificateAlreadyImported and the existing certificate id, separate from operation-id conflicts, preserving the distinct duplicate message at old-code/src/ui/pages/settings/SecurityPage.tsx:208-210.
+
+Provider verification preserves string messages, string error types and JSON-stringified error values from old-code/src-tauri/src/providers/util.rs:162-182, with credential redaction. Missing provider text uses typed MissingApiKey or InvalidApiKey details and an absent provider_message.

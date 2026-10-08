@@ -93,7 +93,8 @@ fn verified(value: lettuce_providers::KeyVerification) -> Result<dto::ProviderVe
         message: "provider verification failed".into(),
         details: Some(dto::ApiErrorDetails::ProviderVerification {
             status: value.status,
-            provider_message: value.error.unwrap_or_else(|| "Invalid API key".into()),
+            reason: value.error.is_none().then_some(if value.status.is_none() { dto::ProviderVerificationReason::MissingApiKey } else { dto::ProviderVerificationReason::InvalidApiKey }),
+            provider_message: value.error,
         }),
     })
 }
