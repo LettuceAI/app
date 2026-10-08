@@ -1649,3 +1649,53 @@ async fn lost_races_report_conflict_and_the_running_batch() {
     job_ids.sort();
     assert_eq!(job_ids, expected);
 }
+
+#[tokio::test]
+async fn project_list_is_newest_first_across_pages() {
+    let harness = harness(Reply::LorebookTools);
+    let mut created = Vec::new();
+    for key in ["first", "second", "third"] {
+        created.push(staged_project(&harness, key).await);
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    }
+    let plan = lorebook_project_plan(
+        &harness.context,
+        dto::LorebookProjectJobRequest {
+            client_operation_id: "touch-first".into(),
+            project_id: created[0].project_id.clone(),
+            expected_revision: created[0].revision,
+        },
+    )
+    .await
+    .expect("plan");
+    execute(&harness, &plan.job_id).await;
+    let mut listed = Vec::new();
+    let mut cursor = None;
+    loop {
+        let page = lorebook_projects_list(
+            &harness.context,
+            dto::LorebookProjectsListRequest {
+                cursor: cursor.clone(),
+                limit: Some(2),
+            },
+        )
+        .await
+        .expect("list");
+        listed.extend(page.items);
+        cursor = page.next_cursor;
+        if cursor.is_none() {
+            break;
+        }
+    }
+    assert_eq!(
+        listed
+            .iter()
+            .map(|item| item.project_id.clone())
+            .collect::<Vec<_>>(),
+        vec![
+            created[0].project_id.clone(),
+            created[2].project_id.clone(),
+            created[1].project_id.clone()
+        ]
+    );
+}

@@ -1484,18 +1484,40 @@ impl Database {
         page: lettuce_types::PageRequest,
     ) -> Result<lettuce_types::Page<CreationWorkflowId>, StagedLorebookRepositoryError> {
         let connection = self.connection().map_err(failure)?;
-        let ids = connection.prepare("SELECT project_id FROM (SELECT project_id FROM creation_staged_lorebook_projects UNION SELECT project_id FROM creation_staged_lorebook_runs) WHERE project_id > ?1 ORDER BY project_id LIMIT ?2").map_err(failure)?.query_map(params![page.cursor.unwrap_or_default(), i64::from(page.limit.get()) + 1], |row| row.get::<_, String>(0)).map_err(failure)?.collect::<rusqlite::Result<Vec<_>>>().map_err(failure)?;
-        let has_more = ids.len() > usize::from(page.limit.get());
-        let items = ids
-            .into_iter()
-            .take(usize::from(page.limit.get()))
-            .map(|id| id.parse().map_err(failure))
-            .collect::<Result<Vec<CreationWorkflowId>, _>>()?;
+        let (after_updated, after_id) = match page.cursor.as_deref() {
+            Some(cursor) => cursor
+                .split_once(':')
+                .and_then(|(updated, id)| Some((updated.parse::<i64>().ok()?, id.to_owned())))
+                .ok_or(StagedLorebookRepositoryError::Invalid)?,
+            None => (i64::MAX, String::new()),
+        };
+        let mut rows = connection
+            .prepare(
+                "SELECT project_id, updated_at FROM (\
+                 SELECT project_id, CAST(json_extract(project_json, '$.value.updated_at') AS INTEGER) AS updated_at FROM creation_staged_lorebook_projects \
+                 UNION SELECT project_id, updated_at FROM creation_staged_lorebook_runs) \
+                 WHERE updated_at < ?1 OR (updated_at = ?1 AND project_id < ?2) \
+                 ORDER BY updated_at DESC, project_id DESC LIMIT ?3",
+            )
+            .map_err(failure)?
+            .query_map(
+                params![after_updated, after_id, i64::from(page.limit.get()) + 1],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+            )
+            .map_err(failure)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(failure)?;
+        let has_more = rows.len() > usize::from(page.limit.get());
+        rows.truncate(usize::from(page.limit.get()));
         let next_cursor = if has_more {
-            items.last().map(ToString::to_string)
+            rows.last().map(|(id, updated)| format!("{updated}:{id}"))
         } else {
             None
         };
+        let items = rows
+            .into_iter()
+            .map(|(id, _)| id.parse().map_err(failure))
+            .collect::<Result<Vec<CreationWorkflowId>, _>>()?;
         Ok(lettuce_types::Page { items, next_cursor })
     }
 }

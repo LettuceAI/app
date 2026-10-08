@@ -65,6 +65,7 @@ Facts about how `lettuce-app` relates to the legacy app (2.2.x): what follows le
 
 ### Lorebooks and creation
 
+- `lorebook_projects_list` is new (legacy kept generator jobs in an in-memory map and registered no list command, `old-code/src-tauri/src/chat_manager/lorebook_generator/state.rs:170`, `old-code/src-tauri/src/app/commands.rs:198-211`); it lists newest update first with the project id as tie-break.
 - Entry drafts, keyword drafts and every staged generator job use one resolver: the configured model if it generates text (a configured model that does not is a typed error), otherwise the first model that does, never the default model (`old-code/src-tauri/src/chat_manager/lorebook_entry_generator.rs:60-88`; slice 6 decision 12). Legacy's staged generator fell back to the default model without a capability check (`old-code/src-tauri/src/chat_manager/lorebook_generator/pipeline.rs:66-92`).
 - Staged refinement admission accepts coherence review, matching the legacy review controls (`old-code/src/ui/pages/library/LorebookGeneratorFlowPage.tsx:575-599`) and stage-independent refine command (`old-code/src-tauri/src/chat_manager/lorebook_generator/commands.rs:309-337`), per slice 6 decision 4.
 
