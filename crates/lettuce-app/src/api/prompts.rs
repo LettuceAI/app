@@ -303,6 +303,22 @@ fn summary(
     document: &PromptDocument,
     default: PromptDocumentId,
 ) -> Result<dto::PromptSummary, ApiError> {
+    let deleted = match document.provenance {
+        PromptProvenance::Derived { source, .. } => {
+            PromptRepository::get(context.backend().database(), source)
+                .map_err(IntoApiError::into_api_error)?
+                .is_none()
+        }
+        _ => false,
+    };
+    Ok(summary_with_source(document, default, deleted))
+}
+
+fn summary_with_source(
+    document: &PromptDocument,
+    default: PromptDocumentId,
+    source_deleted: bool,
+) -> dto::PromptSummary {
     let origin = match &document.provenance {
         PromptProvenance::BuiltIn {
             key,
@@ -324,13 +340,11 @@ fn summary(
         } => dto::PromptOrigin::Derived {
             source_id: source.to_string(),
             source_name: source_name.clone(),
-            source_deleted: PromptRepository::get(context.backend().database(), *source)
-                .map_err(IntoApiError::into_api_error)?
-                .is_none(),
+            source_deleted,
         },
         PromptProvenance::Imported => dto::PromptOrigin::Imported,
     };
-    Ok(dto::PromptSummary {
+    dto::PromptSummary {
         id: document.id.to_string(),
         name: document.name.clone(),
         kind: kind(document.purpose),
@@ -340,7 +354,7 @@ fn summary(
         revision: document.revision.get(),
         created_at: document.created_at.get(),
         updated_at: document.updated_at.get(),
-    })
+    }
 }
 
 pub(super) fn view(
@@ -349,6 +363,27 @@ pub(super) fn view(
 ) -> Result<dto::PromptView, ApiError> {
     Ok(dto::PromptView {
         prompt: summary(context, document, app_default(context)?)?,
+        condense: document.condense,
+        behavior: match document.behavior_version {
+            PromptBehaviorVersion::LegacyV1 => dto::PromptBehavior::LegacyV1,
+            PromptBehaviorVersion::DeterministicV2 => dto::PromptBehavior::DeterministicV2,
+        },
+        entries: document.entries.iter().map(entry_view).collect(),
+    })
+}
+
+fn transaction_view(
+    context: &ApiContext,
+    scope: &lettuce_database::ApiOperationTransaction<'_, '_>,
+    document: &PromptDocument,
+) -> Result<dto::PromptView, Failure> {
+    let (default, deleted) = scope.prompt_view_sources(document)?;
+    Ok(dto::PromptView {
+        prompt: summary_with_source(
+            document,
+            default.unwrap_or(context.backend().built_in_prompt_ids().app_default),
+            deleted,
+        ),
         condense: document.condense,
         behavior: match document.behavior_version {
             PromptBehaviorVersion::LegacyV1 => dto::PromptBehavior::LegacyV1,
@@ -531,7 +566,6 @@ pub async fn prompt_create(
     context
         .blocking(move |context| {
             let now = context.now();
-            let default = app_default(context)?;
             context
                 .backend()
                 .database()
@@ -548,17 +582,7 @@ pub async fn prompt_create(
                                 now,
                             )
                             .map_err(|error| Failure(error.into_api_error()))?;
-                        Ok::<_, Failure>(dto::PromptView {
-                            prompt: summary(context, &document, default).map_err(Failure)?,
-                            condense: document.condense,
-                            behavior: match document.behavior_version {
-                                PromptBehaviorVersion::LegacyV1 => dto::PromptBehavior::LegacyV1,
-                                PromptBehaviorVersion::DeterministicV2 => {
-                                    dto::PromptBehavior::DeterministicV2
-                                }
-                            },
-                            entries: document.entries.iter().map(entry_view).collect(),
-                        })
+                        transaction_view(context, scope, &document)
                     },
                 )
                 .map_err(|failure| failure.0)
@@ -591,10 +615,11 @@ pub async fn prompt_update(
                         scope
                             .update_prompt(id, expected, input.metadata, input.edits, context.now())
                             .map_err(|error| Failure(error.into_api_error()))
+                            .and_then(|document| transaction_view(context, scope, &document))
                     },
                 )
                 .map_err(|error| error.0)?;
-            view(context, &document)
+            Ok(document)
         })
         .await
 }
@@ -684,22 +709,21 @@ pub async fn prompt_builtin_reset(
                                 expected,
                                 context.now(),
                             )
-                            .map(|outcomes| {
-                                outcomes
-                                    .into_iter()
-                                    .map(|outcome| outcome.document)
-                                    .collect::<Vec<_>>()
-                            })
                             .map_err(|error| Failure(error.into_api_error()))
+                            .and_then(|outcomes| {
+                                Ok(dto::PromptBuiltinResetResult {
+                                    prompts: outcomes
+                                        .iter()
+                                        .map(|outcome| {
+                                            transaction_view(context, scope, &outcome.document)
+                                        })
+                                        .collect::<Result<_, _>>()?,
+                                })
+                            })
                     },
                 )
                 .map_err(|error| error.0)?;
-            Ok(dto::PromptBuiltinResetResult {
-                prompts: documents
-                    .iter()
-                    .map(|document| view(context, document))
-                    .collect::<Result<_, _>>()?,
-            })
+            Ok(documents)
         })
         .await
 }
@@ -931,8 +955,17 @@ pub async fn prompt_preview(
                             character,
                             context.now(),
                         ))
-                        .map_err(|error| {
-                            api_error(ApiErrorCode::Unavailable, format!("{error:?}"))
+                        .map_err(|error| match error {
+                            crate::ConversationGenerationInputError::Context(
+                                lettuce_conversations::ContextAssemblyError::RuntimeTextUnavailable,
+                            ) => runtime_text_error(),
+                            crate::ConversationGenerationInputError::EmbeddingUnavailable => {
+                                super::error::model_error(
+                                    ApiErrorCode::ModelRequired,
+                                    dto::RequiredModel::Embedding,
+                                )
+                            }
+                            error => api_error(ApiErrorCode::Unavailable, format!("{error:?}")),
                         })?
                 }
                 None => (

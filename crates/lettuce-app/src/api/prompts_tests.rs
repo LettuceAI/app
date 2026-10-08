@@ -355,6 +355,44 @@ async fn delete_resets_selections_keeps_history_and_refuses_protected_prompts() 
     )
     .await
     .expect("delete");
+    let events = harness.events.events();
+    assert!(events.contains(&dto::ApiEvent::CharacterChanged {
+        character_id: character.to_string()
+    }));
+    assert!(events.contains(&dto::ApiEvent::ConversationChanged {
+        conversation_id: chat.clone()
+    }));
+    assert!(events.contains(&dto::ApiEvent::PromptsChanged));
+    let open = conversation_open(
+        &harness.context,
+        dto::ConversationOpenRequest {
+            conversation_id: chat.clone(),
+        },
+    )
+    .await
+    .expect("history chat");
+    let reply = open
+        .messages
+        .items
+        .iter()
+        .find(|message| message.role == dto::MessageRole::Assistant)
+        .expect("reply");
+    let history = message_prompt_snapshot(
+        &harness.context,
+        dto::MessagePromptSnapshotRequest {
+            message_id: reply.id.clone(),
+        },
+    )
+    .await
+    .expect("source history");
+    assert_eq!(
+        history.prompt,
+        Some(dto::HistoricalSourceView {
+            id: deleted.prompt.id.clone(),
+            name: "Doomed prompt".into(),
+            deleted: true
+        })
+    );
     assert_eq!(removed.character_ids, vec![character.to_string()]);
     assert_eq!(removed.conversation_ids, vec![chat.clone()]);
     assert!(removed.settings_changed);
@@ -510,4 +548,118 @@ async fn preview_renders_live_conversation_values_samples_and_group_values() {
     let text = &group.entries[0].text;
     assert!(text.starts_with("Ada"), "{text}");
     assert!(text.contains("Bea") && text.contains("Cleo"), "{text}");
+}
+
+#[tokio::test]
+async fn live_preview_uses_provider_and_model_conditions_without_writing_snapshots() {
+    let harness = harness(Reply::Text("ok"));
+    let chat = launch(&harness, "preview-model").await;
+    let prompt = prompt_create(
+        &harness.context,
+        dto::PromptCreateRequest {
+            client_operation_id: "provider-preview".into(),
+            prompt: dto::PromptInput {
+                entries: vec![
+                    entry(DIRECT_PLACEHOLDERS),
+                    dto::PromptEntryInput {
+                        condition: Some(dto::PromptCondition::All {
+                            conditions: vec![
+                                dto::PromptCondition::ProviderIdAny {
+                                    values: vec!["ollama".into()],
+                                },
+                                dto::PromptCondition::InputScopeAny {
+                                    values: vec!["text".into()],
+                                },
+                            ],
+                        }),
+                        ..entry("Provider-visible")
+                    },
+                ],
+                ..input("Preview conditions", DIRECT_PLACEHOLDERS)
+            },
+        },
+    )
+    .await
+    .expect("prompt");
+    let db = harness.context.backend().database();
+    let before = db.read_provider_backup_graph().expect("before");
+    let preview = prompt_preview(
+        &harness.context,
+        dto::PromptPreviewRequest {
+            prompt_id: prompt.prompt.id,
+            conversation_id: Some(chat),
+            character_id: None,
+            persona_id: None,
+        },
+    )
+    .await
+    .expect("preview");
+    assert!(
+        preview
+            .entries
+            .iter()
+            .any(|entry| entry.text == "Provider-visible")
+    );
+    assert_eq!(db.read_provider_backup_graph().expect("after"), before);
+}
+
+#[tokio::test]
+async fn prompt_update_replays_its_original_view_after_default_changes() {
+    let harness = harness(Reply::Text("ok"));
+    let prompt = create(&harness, "replay-view-create", "Original").await;
+    let request = dto::PromptUpdateRequest {
+        client_operation_id: "replay-view-update".into(),
+        prompt_id: prompt.prompt.id.clone(),
+        expected_revision: prompt.prompt.revision,
+        prompt: input("Renamed", DIRECT_PLACEHOLDERS),
+    };
+    let updated = prompt_update(&harness.context, request.clone())
+        .await
+        .expect("update");
+    let settings =
+        GlobalSettingsStore::load(harness.context.backend().database()).expect("settings");
+    prompt_app_default_set(
+        &harness.context,
+        dto::PromptAppDefaultSetRequest {
+            client_operation_id: "replay-view-default".into(),
+            prompt_id: Some(prompt.prompt.id),
+            expected_settings_revision: settings.revision.get(),
+        },
+    )
+    .await
+    .expect("default");
+    assert_eq!(
+        prompt_update(&harness.context, request)
+            .await
+            .expect("replay"),
+        updated
+    );
+}
+
+#[tokio::test]
+async fn runtime_rules_stay_loadable_because_the_runtime_text_is_protected() {
+    let harness = harness(Reply::Text("ok"));
+    let db = harness.context.backend().database();
+    let ids = harness.context.backend().built_in_prompt_ids();
+    let runtime = PromptRepository::get(db, ids.get(crate::BuiltInPromptId::ChatRuntime))
+        .expect("runtime")
+        .expect("exists");
+    assert_eq!(
+        PromptRepository::archive(
+            db,
+            runtime.id,
+            runtime.revision,
+            lettuce_types::TimestampMillis::now().expect("now"),
+        ),
+        Err(lettuce_context::PromptRepositoryError::Protected)
+    );
+    let rules = default_character_rules(
+        &harness.context,
+        dto::DefaultCharacterRulesRequest {
+            pure_mode: Some(dto::PureModeLevel::Standard),
+        },
+    )
+    .await
+    .expect("rules");
+    assert_eq!(rules.rules.len(), 10);
 }

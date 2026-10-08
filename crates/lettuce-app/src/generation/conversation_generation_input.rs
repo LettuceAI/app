@@ -858,6 +858,57 @@ where
         } else {
             None
         };
+        let settings = lettuce_conversations::resolve_effective_settings(
+            &aggregate.conversation,
+            selected_speaker
+                .as_ref()
+                .map(|speaker| speaker.participant_id),
+        )
+        .map_err(|_| ConversationGenerationInputError::InvalidTurn)?;
+        let model = self.live_chat_model(
+            &aggregate.conversation,
+            settings.model,
+            selected_speaker
+                .as_ref()
+                .map(|speaker| speaker.participant_id),
+            false,
+        )?;
+        let stored_model = ModelProfileRepository::get(self.repository, model.source_id)
+            .map_err(ConversationGenerationInputError::ModelRepository)?
+            .ok_or(ConversationGenerationInputError::MissingModel)?;
+        let account = ProviderAccountRepository::get(self.repository, model.provider_account_id)
+            .map_err(ConversationGenerationInputError::ModelRepository)?
+            .ok_or(ConversationGenerationInputError::MissingModel)?;
+        let (global_model_settings, _) =
+            lettuce_models::GlobalModelSettingsRepository::global_model_settings(self.repository)
+                .map_err(ConversationGenerationInputError::ModelRepository)?;
+        let session_layer = aggregate
+            .conversation
+            .current_settings
+            .as_ref()
+            .map(|current| &current.model_settings);
+        let parameters = ChatParameterResolutionInput {
+            session: session_layer
+                .map(|layer| layer.chat_overrides())
+                .unwrap_or_default(),
+            operation: Default::default(),
+            llama_cpp: Box::new(lettuce_models::LlamaResolutionInput {
+                global: global_model_settings.llama_cpp,
+                session: session_layer
+                    .map(|layer| layer.llama_cpp.clone())
+                    .unwrap_or_default(),
+                memory_sampler: None,
+            }),
+            global: global_model_settings.chat_parameters,
+        };
+        let profile = lettuce_models::resolve_chat_profile(
+            &model.expected_chat_identity(),
+            &stored_model,
+            &account,
+            &parameters,
+            &ChatRequirements::default(),
+        )
+        .map_err(ConversationGenerationInputError::Profile)?;
         let global_settings = lettuce_settings::GlobalSettingsStore::load(self.repository)
             .map_err(ConversationGenerationInputError::Settings)?
             .settings;
@@ -877,10 +928,6 @@ where
             None => MemoryModeSnapshot::Disabled,
         };
         let dynamic_memory = memory_mode == MemoryModeSnapshot::Dynamic;
-        let memory = match memory_mode {
-            MemoryModeSnapshot::Disabled => None,
-            _ => self.manual_memory_input(conversation_id, branch_id, group)?,
-        };
         let clock = crate::companion::companion_clock::companion_clock_context(
             self.repository,
             &aggregate.conversation,
@@ -888,8 +935,96 @@ where
         .map_err(|_| unavailable())?;
         let reference_now = clock.effective_now(now);
         let operation = lettuce_conversations::GenerationOperation::Continue;
+        let memory = match memory_mode {
+            MemoryModeSnapshot::Disabled => None,
+            MemoryModeSnapshot::Manual => {
+                self.manual_memory_input(conversation_id, branch_id, group)?
+            }
+            MemoryModeSnapshot::Dynamic => {
+                let memory =
+                    MemoryRepository::get_for_branch(self.repository, conversation_id, branch_id)
+                        .map_err(ConversationGenerationInputError::Memory)?
+                        .ok_or(ConversationGenerationInputError::MemoryInputUnavailable)?;
+                let summary = MemorySummaryRepository::get_summary_for_branch(
+                    self.repository,
+                    memory.id,
+                    conversation_id,
+                    branch_id,
+                )
+                .map_err(ConversationGenerationInputError::Memory)?
+                .map(|summary| summary.text);
+                let policy = live_memory
+                    .as_ref()
+                    .and_then(|memory| memory.dynamic_policy.as_ref())
+                    .ok_or(ConversationGenerationInputError::MemoryInputUnavailable)?;
+                let selected = self
+                    .retrieve_memories(
+                        None,
+                        &timeline.items,
+                        &memory,
+                        policy,
+                        MemoryPromptShape {
+                            operation,
+                            group,
+                            companion: clock.companion,
+                            clock,
+                            source_message_id,
+                        },
+                        now,
+                    )
+                    .await?;
+                let key_memories = selected
+                    .iter()
+                    .map(|item| {
+                        crate::memory::memory_prompt::memory_prompt_line(item, reference_now)
+                    })
+                    .collect::<Vec<_>>();
+                (summary.is_some() || !key_memories.is_empty()).then(|| MemoryContribution {
+                    attribution: MemoryAttribution {
+                        revision_id: memory_revision_id(memory.id, memory.revision),
+                    },
+                    summary,
+                    key_memories,
+                })
+            }
+        };
         let images = &global_settings.image_generation;
+        let scene_model_is_local = !group && {
+            let mut resolving = global_settings.clone();
+            resolving.image_generation.scene_enabled = true;
+            crate::image_feature_model(self.repository, &resolving, crate::ImageFeature::Scene)
+                .is_ok_and(|model| model.is_local_diffusion())
+        };
+        let scene_image_protocol = (!group && images.scene_enabled)
+            .then(|| {
+                crate::image_feature_model(
+                    self.repository,
+                    &global_settings,
+                    crate::ImageFeature::Scene,
+                )
+                .ok()
+            })
+            .flatten()
+            .map(|model| {
+                if model.is_local_diffusion() {
+                    lettuce_conversations::SceneImageProtocol::Local
+                } else {
+                    lettuce_conversations::SceneImageProtocol::Remote
+                }
+            });
         let prompt_runtime = PromptRuntimeFacts {
+            provider_id: Some(account.provider_kind),
+            provider_label: Some(account.label),
+            input_scopes: modality_scopes(profile.capabilities.input_modalities),
+            output_scopes: modality_scopes(profile.capabilities.output_modalities),
+            reasoning_enabled: if group {
+                stored_model.config.chat_parameters.reasoning_mode
+                    == Some(lettuce_models::ReasoningMode::Enabled)
+            } else {
+                profile.parameters.reasoning_mode == Some(lettuce_models::ReasoningMode::Enabled)
+            },
+            is_scene_generation_local_image_model: scene_model_is_local,
+            scene_image_protocol,
             scene_generation_enabled: images.scene_enabled,
             avatar_generation_enabled: images.avatar_enabled,
             dynamic_memory_enabled: dynamic_memory,
@@ -934,7 +1069,7 @@ where
                 guidance: None,
                 window,
                 selected_speaker,
-                capabilities: Default::default(),
+                capabilities: profile.capabilities,
                 safety: SafetyContext::Standard,
                 prompt_runtime,
                 prompt_values,
@@ -1211,7 +1346,7 @@ where
         let binding = SpeakerInferenceBinding::from_request(work.conversation_id, &request)
             .map_err(|_| ConversationGenerationInputError::InvalidTurn)?;
         let decision_model = self
-            .live_model_snapshot(conversation.id, &model, &account)
+            .live_model_snapshot(conversation.id, &model, &account, true)
             .map_err(|_| {
                 ConversationGenerationInputError::Repository(ConversationRepositoryError::Storage)
             })?;
@@ -1288,10 +1423,16 @@ where
         conversation: &lettuce_conversations::Conversation,
         effective: Option<lettuce_conversations::ModelSelectionSnapshot>,
         speaker: Option<lettuce_types::ConversationParticipantId>,
+        persist_snapshot: bool,
     ) -> Result<lettuce_conversations::ModelSelectionSnapshot, ConversationGenerationInputError>
     {
         let ConversationKind::Direct(details) = &conversation.kind else {
-            return self.live_group_member_model(conversation, effective, speaker);
+            return self.live_group_member_model(
+                conversation,
+                effective,
+                speaker,
+                persist_snapshot,
+            );
         };
         let overridden = conversation
             .current_settings
@@ -1321,7 +1462,12 @@ where
             .model_profile_id
             .or(app_default)
             .ok_or(ConversationGenerationInputError::MissingModel)?;
-        self.live_model_for(conversation.id, model_profile_id, effective)
+        self.live_model_for(
+            conversation.id,
+            model_profile_id,
+            effective,
+            persist_snapshot,
+        )
     }
 
     /// A group speaker's model (`live_sources::member_model`): a model the
@@ -1332,6 +1478,7 @@ where
         conversation: &lettuce_conversations::Conversation,
         effective: Option<lettuce_conversations::ModelSelectionSnapshot>,
         speaker: Option<lettuce_types::ConversationParticipantId>,
+        persist_snapshot: bool,
     ) -> Result<lettuce_conversations::ModelSelectionSnapshot, ConversationGenerationInputError>
     {
         let unavailable = || {
@@ -1377,7 +1524,12 @@ where
                 }
             }
         };
-        self.live_model_for(conversation.id, model_profile_id, effective)
+        self.live_model_for(
+            conversation.id,
+            model_profile_id,
+            effective,
+            persist_snapshot,
+        )
     }
 
     /// The stored snapshot when it names the live revisions of the model and
@@ -1387,6 +1539,7 @@ where
         conversation_id: lettuce_types::ConversationId,
         model_profile_id: lettuce_types::ModelProfileId,
         effective: Option<lettuce_conversations::ModelSelectionSnapshot>,
+        persist_snapshot: bool,
     ) -> Result<lettuce_conversations::ModelSelectionSnapshot, ConversationGenerationInputError>
     {
         let profile = ModelProfileRepository::get(self.repository, model_profile_id)
@@ -1403,7 +1556,7 @@ where
         }) {
             return Ok(stored);
         }
-        self.live_model_snapshot(conversation_id, &profile, &account)
+        self.live_model_snapshot(conversation_id, &profile, &account, persist_snapshot)
             .map_err(|_| ConversationGenerationInputError::MissingModel)
     }
 
@@ -1415,6 +1568,7 @@ where
         conversation_id: lettuce_types::ConversationId,
         profile: &lettuce_models::ModelProfile,
         account: &lettuce_models::ProviderAccount,
+        persist_snapshot: bool,
     ) -> Result<lettuce_conversations::ModelSelectionSnapshot, lettuce_conversations::ArtifactError>
     {
         let artifact_id = lettuce_types::SnapshotArtifactId::from_uuid(uuid::Uuid::new_v5(
@@ -1434,9 +1588,11 @@ where
             crate::launch::documents::model_body(profile, account),
         )?;
         let snapshot = crate::launch::planner::model_snapshot(profile, account, &draft);
-        self.repository
-            .artifact_store()
-            .attach_snapshot(conversation_id, draft)?;
+        if persist_snapshot {
+            self.repository
+                .artifact_store()
+                .attach_snapshot(conversation_id, draft)?;
+        }
         Ok(snapshot)
     }
 
@@ -1514,6 +1670,7 @@ where
                 selected_speaker
                     .as_ref()
                     .map(|speaker| speaker.participant_id),
+                true,
             )?,
         };
         let stored_model = ModelProfileRepository::get(self.repository, model.source_id)
@@ -1896,7 +2053,7 @@ where
             )
         } else {
             let selected = self
-                .retrieve_memories(work, timeline, &memory, settings, shape, now)
+                .retrieve_memories(Some(work), timeline, &memory, settings, shape, now)
                 .await?;
             let revision = if selected.is_empty() {
                 memory.revision
@@ -2004,7 +2161,7 @@ where
 
     async fn retrieve_memories(
         &self,
-        work: &ConversationGenerationClaimedWork,
+        work: Option<&ConversationGenerationClaimedWork>,
         timeline: &[lettuce_conversations::TimelineItem],
         memory: &MemorySpaceSnapshot,
         settings: &DynamicMemoryPolicySnapshot,
@@ -2049,19 +2206,26 @@ where
             }
             None => active,
         };
-        self.embed_pending_memories(work, memory, now)?;
+        if let Some(work) = work {
+            self.embed_pending_memories(work, memory, now)?;
+        }
+        let cancellation = work
+            .map(|work| work.handle.cancellation_token())
+            .unwrap_or_default();
         let query_embedding = match self.embedding.embed_memory(
             &EmbeddingRequest {
                 text: query.clone(),
                 dimensions: self.embedding.dimensions(),
             },
-            &work.handle.cancellation_token(),
+            &cancellation,
         ) {
             Ok(vector) => vector,
             Err(EmbeddingGenerationError::Cancelled) => {
                 return Err(ConversationGenerationInputError::Cancelled);
             }
-            Err(EmbeddingGenerationError::Unavailable) if self.embedding.requires_model() => {
+            Err(EmbeddingGenerationError::Unavailable)
+                if work.is_none() || self.embedding.requires_model() =>
+            {
                 return Err(ConversationGenerationInputError::EmbeddingUnavailable);
             }
             Err(EmbeddingGenerationError::Unavailable) => {
@@ -2069,7 +2233,7 @@ where
                 return Ok(Vec::new());
             }
         };
-        let projections = self
+        let mut projections = self
             .repository
             .list_ready(
                 memory.id,
@@ -2077,6 +2241,45 @@ where
                 self.embedding.dimensions(),
             )
             .map_err(|_| ConversationGenerationInputError::Embedding)?;
+        if work.is_none() {
+            for item in memory
+                .items
+                .iter()
+                .filter(|item| item.superseded_by.is_none())
+            {
+                if projections.iter().any(|projection| {
+                    projection.memory_id == item.id && projection.source_text == item.text
+                }) {
+                    continue;
+                }
+                let vector = self
+                    .embedding
+                    .embed_memory(
+                        &EmbeddingRequest {
+                            text: item.text.clone(),
+                            dimensions: self.embedding.dimensions(),
+                        },
+                        &cancellation,
+                    )
+                    .map_err(|error| match error {
+                        EmbeddingGenerationError::Cancelled => {
+                            ConversationGenerationInputError::Cancelled
+                        }
+                        EmbeddingGenerationError::Unavailable => {
+                            ConversationGenerationInputError::EmbeddingUnavailable
+                        }
+                    })?;
+                projections.retain(|projection| projection.memory_id != item.id);
+                projections.push(lettuce_embeddings::MemoryEmbeddingProjection {
+                    space_id: memory.id,
+                    memory_id: item.id,
+                    source_text: item.text.clone(),
+                    vector,
+                    dimensions: self.embedding.dimensions(),
+                    updated_at: now,
+                });
+            }
+        }
         let limit = usize::from(settings.retrieval_limit);
         let threshold = if temporal_range.is_some() {
             Some(-1.0)
