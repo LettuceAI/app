@@ -493,3 +493,5 @@ Provider verification preserves string messages, string error types and JSON-str
 Device settings field updates read, modify and write under one immediate transaction. Models-folder relocation merges only folder and retained-root fields into the current record; embedding and dictation selections also use transactional field updates, preserving concurrent certificate changes.
 
 Cascade coverage checks account-key removal, default promotion, every character/group/app/feature model selection, owner revision changes and emitted events. Startup coverage includes invalid stored roots and unavailable credential cleanup without preventing workers or certificate removal.
+
+Completed provider saves replay their receipt after the account or its retired credential is removed. A credential still present under the original operation reference must match the retry.

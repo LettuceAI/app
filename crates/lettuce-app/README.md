@@ -622,3 +622,5 @@ Provider verification preserves string messages, string error types and JSON-str
 Device settings field updates read, modify and write under one immediate transaction. Models-folder relocation merges only folder and retained-root fields into the current record; embedding and dictation selections also use transactional field updates, preserving concurrent certificate changes.
 
 Provider regression tests exercise desktop reopen with invalid stored roots, certificate replay without file access, cleanup failures with running workers and the complete transactional model cascade, including native-secret retirement and owner events.
+
+Completed provider saves replay their receipt after the account or its retired credential is removed. A credential still present under the original operation reference must match the retry.

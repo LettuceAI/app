@@ -167,11 +167,19 @@ pub async fn provider_account_save(
     .await?
     {
         if let Some(key) = request.api_key.as_ref().filter(|key| !key.trim().is_empty()) {
-            let account = super::providers::account(context, view.id.clone()).await?;
-            let reference = SecretRef::from_uuid(identity("key", &request.client_operation_id, &digest));
-            let stored = context.secret_store().load(&reference, &SecretPurpose::ProviderApiKey { owner: account.secret_owner_id }).await.map_err(|_| api_error(ApiErrorCode::Unavailable, "replay credential cannot be read"))?;
-            if !stored.with(|stored| stored == key.trim()) {
-                return Err(api_error(ApiErrorCode::Conflict, "operation id was already used with another credential"));
+            match super::providers::account(context, view.id.clone()).await {
+                Ok(account) => {
+                    let reference = SecretRef::from_uuid(identity("key", &request.client_operation_id, &digest));
+                    match context.secret_store().load(&reference, &SecretPurpose::ProviderApiKey { owner: account.secret_owner_id }).await {
+                        Ok(stored) if !stored.with(|stored| stored == key.trim()) => {
+                            return Err(api_error(ApiErrorCode::Conflict, "operation id was already used with another credential"));
+                        }
+                        Ok(_) | Err(lettuce_settings::SecretStoreError::Missing) => {}
+                        Err(_) => return Err(api_error(ApiErrorCode::Unavailable, "replay credential cannot be read")),
+                    }
+                }
+                Err(error) if error.code == ApiErrorCode::NotFound => {}
+                Err(error) => return Err(error),
             }
         }
         cleanup_secrets(context, false).await?;
