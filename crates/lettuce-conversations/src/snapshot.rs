@@ -28,6 +28,18 @@ pub enum SnapshotSelection<T> {
     Disabled,
 }
 
+impl SnapshotSelection<Vec<LorebookLaunchSnapshot>> {
+    /// Drops `id` from an explicit selection; reports whether it was there.
+    pub fn remove_explicit_lorebook(&mut self, id: LorebookId) -> bool {
+        let Self::Explicit(books) = self else {
+            return false;
+        };
+        let before = books.len();
+        books.retain(|book| book.source_id != id);
+        books.len() != before
+    }
+}
+
 impl<T> SnapshotSelection<T> {
     pub const fn is_explicit(&self) -> bool {
         matches!(self, Self::Explicit(_))

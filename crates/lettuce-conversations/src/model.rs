@@ -1,6 +1,6 @@
 use lettuce_types::{
     CharacterId, ConversationBranchId, ConversationId, ConversationParticipantId, GroupId,
-    Revision, TimestampMillis,
+    LorebookId, Revision, TimestampMillis,
 };
 use serde::{Deserialize, Serialize};
 
@@ -8,7 +8,7 @@ use crate::ValidationError;
 use crate::content::MessageRole;
 use crate::snapshot::{
     DirectConversationDetails, GroupConversationDetails, GroupLaunchSnapshot,
-    ModelSelectionSnapshot, SnapshotSelection,
+    ModelSelectionSnapshot, PersonaLaunchSnapshot, SnapshotSelection,
 };
 use crate::validation::{
     MAX_DISPLAY_CHARS, validate_revision_timestamps, validate_text, validate_unique,
@@ -28,6 +28,28 @@ pub enum ConversationKind {
 }
 
 impl ConversationKind {
+    /// Drops `id` from the launch lorebook selections the user made explicitly
+    /// (the chat's own, the group's and the persona's); reports whether any
+    /// held it.
+    pub fn remove_explicit_lorebook(&mut self, id: LorebookId) -> bool {
+        let persona = |persona: &mut SnapshotSelection<PersonaLaunchSnapshot>| match persona {
+            SnapshotSelection::Inherited(persona) | SnapshotSelection::Explicit(persona) => {
+                persona.lorebooks.remove_explicit_lorebook(id)
+            }
+            SnapshotSelection::Disabled => false,
+        };
+        match self {
+            Self::Direct(details) => {
+                let books = details.lorebooks.remove_explicit_lorebook(id);
+                persona(&mut details.persona) || books
+            }
+            Self::Group(details) => {
+                let books = details.group.lorebooks.remove_explicit_lorebook(id);
+                persona(&mut details.group.persona) || books
+            }
+        }
+    }
+
     pub fn validate(&self) -> Result<(), ValidationError> {
         match self {
             Self::Direct(details) => details.validate(),

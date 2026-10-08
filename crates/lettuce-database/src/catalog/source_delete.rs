@@ -116,6 +116,10 @@ pub(crate) fn delete_lorebook_in(
     deletion.conversations =
         crate::conversation::settings_references::clear_lorebook_overrides_in(transaction, id, now)
             .map_err(storage)?;
+    deletion.conversations.extend(
+        crate::conversation::settings_references::clear_launch_lorebooks_in(transaction, id, now)
+            .map_err(storage)?,
+    );
     transaction
         .execute("DELETE FROM lorebooks WHERE id=?1", [id.to_string()])
         .map_err(storage)?;

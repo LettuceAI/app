@@ -4,7 +4,7 @@
 use std::collections::BTreeSet;
 
 use lettuce_conversations::{
-    ConversationRepositoryError, LorebookLaunchSnapshot, PromptLaunchSnapshot,
+    ConversationKind, ConversationRepositoryError, LorebookLaunchSnapshot, PromptLaunchSnapshot,
 };
 use lettuce_types::{ConversationId, LorebookId, PromptDocumentId, TimestampMillis};
 use rusqlite::{Transaction, params};
@@ -46,6 +46,43 @@ pub(crate) fn clear_lorebook_overrides_in(
             .execute(
                 "UPDATE conversation_settings SET lorebooks_json = ?2, lorebooks_provenance = ?3, revision = revision + 1, updated_at = max(updated_at, ?4) WHERE conversation_id = ?1",
                 params![conversation, json, provenance, now.get()],
+            )
+            .map_err(slice::db)?;
+        changed.insert(slice::parse_id(conversation)?);
+    }
+    bump(transaction, &changed, now)?;
+    Ok(changed)
+}
+
+/// Removes `lorebook_id` from the explicit lorebook selections recorded at
+/// launch, which a chat that follows its launch values reads on every turn.
+/// Returns the conversations that changed.
+pub(crate) fn clear_launch_lorebooks_in(
+    transaction: &Transaction<'_>,
+    lorebook_id: LorebookId,
+    now: TimestampMillis,
+) -> Result<BTreeSet<ConversationId>, ConversationRepositoryError> {
+    let rows = transaction
+        .prepare(
+            "SELECT id, kind_json FROM conversations WHERE instr(kind_json, ?1) > 0 ORDER BY id",
+        )
+        .map_err(slice::db)?
+        .query_map([lorebook_id.to_string()], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(slice::db)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(slice::db)?;
+    let mut changed = BTreeSet::new();
+    for (conversation, payload) in rows {
+        let mut kind: ConversationKind = slice::decode(&payload)?;
+        if !kind.remove_explicit_lorebook(lorebook_id) {
+            continue;
+        }
+        transaction
+            .execute(
+                "UPDATE conversations SET kind_json = ?2 WHERE id = ?1",
+                params![conversation, slice::encode(&kind)?],
             )
             .map_err(slice::db)?;
         changed.insert(slice::parse_id(conversation)?);

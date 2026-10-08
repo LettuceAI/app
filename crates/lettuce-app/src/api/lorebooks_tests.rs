@@ -829,3 +829,131 @@ async fn group_trigger_preview_uses_the_speakers_books_unless_disabled() {
         vec!["Hall"]
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn hard_delete_removes_the_id_from_an_explicit_launch_selection() {
+    let harness = harness(Reply::Text("A reply."));
+    let database = harness.context.backend().database();
+    let deleted = create(
+        &harness,
+        "launch-deleted",
+        "Old harbour",
+        vec![entry("Port", "The old harbour.", None)],
+    )
+    .await;
+    let kept = create(
+        &harness,
+        "launch-kept",
+        "Kept",
+        vec![entry("Tide", "The late tide.", None)],
+    )
+    .await;
+    let starter = crate::launch::tests::starter_with(
+        harness.character_id,
+        0,
+        "Harbour",
+        vec![crate::launch::tests::message(
+            lettuce_characters::StarterRole::Assistant,
+            "Welcome.",
+        )],
+    );
+    let starter_id = starter.id;
+    let details = CharacterRepository::get(database, harness.character_id)
+        .expect("character")
+        .expect("exists");
+    lettuce_characters::StarterRepository::add_starter(
+        database,
+        harness.character_id,
+        details.character.revision,
+        starter,
+        TimestampMillis::new(2),
+    )
+    .expect("starter");
+    let details = CharacterRepository::get(database, harness.character_id)
+        .expect("character")
+        .expect("exists");
+    lettuce_characters::StarterRepository::update_starter(
+        database,
+        harness.character_id,
+        details.character.revision,
+        starter_id,
+        lettuce_characters::ConversationStarterDraftUpdate {
+            name: "Harbour".into(),
+            scene_id: None,
+            prompt_id: None,
+            lorebooks: lettuce_characters::Selection::Explicit(vec![
+                deleted.lorebook.id.parse().expect("id"),
+                kept.lorebook.id.parse().expect("id"),
+            ]),
+        },
+        TimestampMillis::new(3),
+    )
+    .expect("starter lorebooks");
+    let chat = conversation_launch_direct(
+        &harness.context,
+        dto::LaunchDirectRequest {
+            character_id: harness.character_id.to_string(),
+            title: None,
+            scene_id: None,
+            starter_id: Some(starter_id.to_string()),
+            client_operation_id: "explicit-launch".into(),
+        },
+    )
+    .await
+    .expect("launch")
+    .conversation_id;
+    let chat_id = chat.parse::<ConversationId>().expect("id");
+    let launch_books =
+        |database: &lettuce_database::Database| match ConversationReader::get(database, chat_id)
+            .expect("chat")
+            .conversation
+            .kind
+        {
+            lettuce_conversations::ConversationKind::Direct(details) => details.lorebooks,
+            _ => panic!("direct"),
+        };
+    assert!(matches!(
+        launch_books(database),
+        lettuce_conversations::SnapshotSelection::Explicit(books) if books.len() == 2
+    ));
+    let revision = ConversationReader::get(database, chat_id)
+        .expect("chat")
+        .conversation
+        .revision;
+    let removed = lorebook_delete(
+        &harness.context,
+        dto::LorebookRevisionRequest {
+            client_operation_id: "explicit-delete".into(),
+            lorebook_id: deleted.lorebook.id.clone(),
+            expected_revision: deleted.lorebook.revision,
+        },
+    )
+    .await
+    .expect("delete");
+    assert_eq!(removed.conversation_ids, vec![chat.clone()]);
+    assert!(
+        harness
+            .events
+            .events()
+            .contains(&dto::ApiEvent::ConversationChanged {
+                conversation_id: chat.clone()
+            })
+    );
+    let lettuce_conversations::SnapshotSelection::Explicit(books) = launch_books(database) else {
+        panic!("still explicit");
+    };
+    assert_eq!(
+        books
+            .iter()
+            .map(|book| book.source_id.to_string())
+            .collect::<Vec<_>>(),
+        vec![kept.lorebook.id.clone()]
+    );
+    assert!(
+        ConversationReader::get(database, chat_id)
+            .expect("chat")
+            .conversation
+            .revision
+            > revision
+    );
+}
