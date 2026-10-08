@@ -358,3 +358,12 @@ fn write_certificates_in(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod size_tests {
+    #[test]
+    fn oversized_device_settings_fail_the_foundation_constraint() {
+        let database = crate::Database::open_in_memory().expect("database");
+        assert!(database.connection().expect("connection").execute("INSERT INTO device_settings(id,settings_json,updated_at) VALUES(1,json_object('padding',hex(zeroblob(67108864))),0)", []).is_err());
+    }
+}

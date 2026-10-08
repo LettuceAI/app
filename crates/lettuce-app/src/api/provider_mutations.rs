@@ -433,13 +433,21 @@ pub async fn certificates_import(
                 .files()
                 .describe(&request.source.uri)
                 .map_err(IntoApiError::into_api_error)?;
+            let cap = lettuce_settings::MAX_CERTIFICATE_PEM_BYTES;
+            if description.size > cap as u64 {
+                return Err(invalid_field("source", "certificate exceeds the PEM size limit"));
+            }
             let mut pem = String::new();
             context
                 .files()
                 .open(&request.source.uri)
                 .map_err(IntoApiError::into_api_error)?
+                .take(cap as u64 + 1)
                 .read_to_string(&mut pem)
                 .map_err(|_| invalid_field("source", "certificate is not UTF-8 PEM"))?;
+            if pem.len() > cap {
+                return Err(invalid_field("source", "certificate exceeds the PEM size limit"));
+            }
             lettuce_network::validate_tls_policy(&lettuce_network::TlsPolicy {
                 trusted_roots_pem: vec![pem.clone()],
             })

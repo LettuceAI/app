@@ -20,7 +20,7 @@ mod secrets;
 
 pub use device::{
     DeviceEmbeddingSettings, DeviceSettings, RetainedModelRoots, DeviceSettingsStore, DeviceSpeechSettings, EmbeddingModelVersion,
-    MAX_CERTIFICATE_NAME_BYTES, TrustedCertificate,
+    MAX_CERTIFICATE_NAME_BYTES, MAX_CERTIFICATE_PEM_BYTES, TrustedCertificate,
 };
 pub use global::{
     CompanionSoulWriterSettings, CreationHelperSettings, CreationHelperToolFallback,

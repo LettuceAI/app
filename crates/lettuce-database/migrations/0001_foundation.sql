@@ -55,6 +55,7 @@ CREATE TABLE device_settings (
     settings_json TEXT NOT NULL CHECK (
         json_valid(settings_json)
         AND json_type(settings_json) = 'object'
+        AND length(CAST(settings_json AS BLOB)) <= 134217728
     ),
     updated_at INTEGER NOT NULL
 ) STRICT;

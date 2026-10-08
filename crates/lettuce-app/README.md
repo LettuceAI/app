@@ -612,3 +612,5 @@ Provider credential cleanup is best-effort at startup and after committed writes
 Provider save receipts digest metadata and key presence, never credential values or their hashes. Key-bearing retries compare the requested credential in memory with the deterministic secret reference before replay; differing values return Conflict.
 
 Certificate import checks the operation receipt before accessing FileSource. A matching request replays even when its source grant expired or the file changed after the committed import; a different source under the same operation id returns Conflict.
+
+Certificate sources are read under a 1 MiB PEM guard, including sources with inaccurate size metadata. The foundation migration retains the 128 MiB device-settings CHECK; migration checksums derive from the edited SQL.

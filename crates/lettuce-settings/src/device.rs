@@ -9,6 +9,7 @@ use crate::GlobalSettingsStoreError;
 
 /// The longest certificate name.
 pub const MAX_CERTIFICATE_NAME_BYTES: usize = 1024;
+pub const MAX_CERTIFICATE_PEM_BYTES: usize = 1024 * 1024;
 const MAX_PATH_BYTES: usize = 4096;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -86,6 +87,7 @@ impl DeviceSettings {
         let mut ids = std::collections::BTreeSet::new();
         let certificates = self.trusted_certificates.iter().all(|certificate| {
             text(&certificate.name, MAX_CERTIFICATE_NAME_BYTES)
+                && certificate.pem.len() <= MAX_CERTIFICATE_PEM_BYTES
                 && certificate.pem.contains("BEGIN CERTIFICATE")
                 && certificate.pem.contains("END CERTIFICATE")
                 && certificate.imported_at >= 0
