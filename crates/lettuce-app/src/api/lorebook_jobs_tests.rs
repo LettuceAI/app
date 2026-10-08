@@ -1410,3 +1410,33 @@ async fn keyword_draft_uses_the_first_text_model_not_the_default() {
         assert_eq!(request.profile.chat_profile.model_profile_id, models[0].id);
     }
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn commit_cancels_the_projects_running_coherence_job() {
+    let harness = harness(Reply::LorebookTools);
+    let (project_id, job_id) = prepare_stage(&harness, "coherence").await;
+    let db = harness.context.backend().database();
+    let job = JobStore::get(db, job_id.parse().expect("job id"))
+        .expect("job")
+        .expect("exists");
+    let work = LorebookHandler
+        .claim(&harness.context, &job, WorkerId::new())
+        .await
+        .expect("claim")
+        .expect("work");
+    let project = project_get(&harness, &project_id).await;
+    lorebook_project_commit(
+        &harness.context,
+        dto::LorebookProjectCommitRequest {
+            client_operation_id: "commit-running".into(),
+            project_id: project_id.clone(),
+            expected_revision: project.revision,
+            target: dto::LorebookProjectCommitTarget::NewLorebook { name: None },
+        },
+    )
+    .await
+    .expect("commit");
+    let after = JobStore::get(db, job.id).expect("job").expect("exists");
+    assert!(after.cancellation.requested);
+    drop(work);
+}

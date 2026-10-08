@@ -1138,6 +1138,8 @@ pub(crate) fn commit_staged_lorebook_in(
         lorebook_revision: details.book.revision,
         created_entry_ids,
     };
+    crate::job_adapter::cancel_creation_project_jobs(transaction, run.project.id, request.now)
+        .map_err(failure)?;
     run.project.commit_receipt = Some(receipt.clone());
     run.project.stage = StagedLorebookStage::Committed;
     run.project.revision = request
