@@ -140,13 +140,14 @@ impl<R: StagedLorebookRepository + ?Sized, J: JobStore + ?Sized>
             return Err(StagedLorebookCoherenceDispatchError::InvalidWork);
         }
         let at = now.max(work.job.updated_at);
-        let result = if self
-            .repository
-            .load_staged_lorebook(work.project_request_id)?
-            .project
-            .stage
-            == lettuce_creation::StagedLorebookStage::Cancelled
-        {
+        let result = if matches!(
+            self.repository
+                .load_staged_lorebook(work.project_request_id)?
+                .project
+                .stage,
+            lettuce_creation::StagedLorebookStage::Cancelled
+                | lettuce_creation::StagedLorebookStage::Committed
+        ) {
             Err(StagedLorebookCoherenceExecutionError::Cancelled)
         } else {
             result

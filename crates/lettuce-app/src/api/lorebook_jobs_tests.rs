@@ -1699,3 +1699,122 @@ async fn project_list_is_newest_first_across_pages() {
         ]
     );
 }
+
+async fn committed_midway_settles_cancelled(stage: &str) {
+    let harness = harness(Reply::LorebookTools);
+    let (project_id, job_id) = prepare_stage(&harness, stage).await;
+    let db = harness.context.backend().database();
+    let job = JobStore::get(db, job_id.parse().expect("job id"))
+        .expect("job")
+        .expect("exists");
+    let work = LorebookHandler
+        .claim(&harness.context, &job, WorkerId::new())
+        .await
+        .expect("claim")
+        .expect("work");
+    let project = project_get(&harness, &project_id).await;
+    lorebook_project_commit(
+        &harness.context,
+        dto::LorebookProjectCommitRequest {
+            client_operation_id: format!("commit-midway-{stage}"),
+            project_id,
+            expected_revision: project.revision,
+            target: dto::LorebookProjectCommitTarget::NewLorebook { name: None },
+        },
+    )
+    .await
+    .expect("commit");
+    work.run(harness.context.clone(), Arc::new(Progress))
+        .await
+        .expect("settle");
+    assert_eq!(
+        JobStore::get(db, job.id)
+            .expect("job")
+            .expect("exists")
+            .state,
+        lettuce_jobs::JobState::Cancelled
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn coherence_job_in_flight_at_commit_settles_cancelled() {
+    committed_midway_settles_cancelled("coherence").await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn refine_job_in_flight_at_commit_settles_cancelled() {
+    let harness = harness(Reply::LorebookTools);
+    let (project_id, coherence_job) = prepare_stage(&harness, "coherence").await;
+    execute(&harness, &coherence_job).await;
+    let project = project_get(&harness, &project_id).await;
+    let refine = lorebook_project_refine(
+        &harness.context,
+        dto::LorebookProjectRefineRequest {
+            client_operation_id: "refine-midway".into(),
+            expected_revision: project.revision,
+            project_id: project_id.clone(),
+            plan_id: project.drafts[0].plan_id.clone(),
+            feedback: "Shorter".into(),
+        },
+    )
+    .await
+    .expect("refine");
+    let db = harness.context.backend().database();
+    let job = JobStore::get(db, refine.job_id.parse().expect("job id"))
+        .expect("job")
+        .expect("exists");
+    let work = LorebookHandler
+        .claim(&harness.context, &job, WorkerId::new())
+        .await
+        .expect("claim")
+        .expect("work");
+    let project = project_get(&harness, &project_id).await;
+    lorebook_project_commit(
+        &harness.context,
+        dto::LorebookProjectCommitRequest {
+            client_operation_id: "commit-midway-refine".into(),
+            project_id,
+            expected_revision: project.revision,
+            target: dto::LorebookProjectCommitTarget::NewLorebook { name: None },
+        },
+    )
+    .await
+    .expect("commit");
+    work.run(harness.context.clone(), Arc::new(Progress))
+        .await
+        .expect("settle");
+    assert_eq!(
+        JobStore::get(db, job.id)
+            .expect("job")
+            .expect("exists")
+            .state,
+        lettuce_jobs::JobState::Cancelled
+    );
+}
+
+#[tokio::test]
+async fn staged_plan_uses_the_first_text_model_even_when_the_default_is_a_later_text_model() {
+    let harness = harness(Reply::LorebookTools);
+    let db = harness.context.backend().database();
+    crate::launch::tests::seed_model(db, lettuce_models::ProviderProtocol::Ollama, "ollama");
+    let models = lettuce_models::ModelCatalog::model_profiles(db).expect("models");
+    assert_eq!(models.len(), 2);
+    crate::launch::tests::set_application_default_model(db, models[1].id);
+    let project = staged_project(&harness, "first-text-plan").await;
+    let plan = lorebook_project_plan(
+        &harness.context,
+        dto::LorebookProjectJobRequest {
+            client_operation_id: "first-text-plan-job".into(),
+            project_id: project.project_id.clone(),
+            expected_revision: project.revision,
+        },
+    )
+    .await
+    .expect("plan");
+    execute(&harness, &plan.job_id).await;
+    let requests = harness.provider.requests.lock().expect("requests");
+    assert!(!requests.is_empty());
+    for request in requests.iter() {
+        assert_eq!(request.profile.chat_profile.model_profile_id, models[0].id);
+    }
+}

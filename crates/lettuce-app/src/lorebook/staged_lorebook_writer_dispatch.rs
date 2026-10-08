@@ -202,13 +202,14 @@ impl<
             return Err(StagedLorebookWriterDispatchError::InvalidWork);
         }
         let at = now.max(work.job.updated_at);
-        let result = if self
-            .projects
-            .load_staged_lorebook(work.run.project_request_id)?
-            .project
-            .stage
-            == lettuce_creation::StagedLorebookStage::Cancelled
-        {
+        let result = if matches!(
+            self.projects
+                .load_staged_lorebook(work.run.project_request_id)?
+                .project
+                .stage,
+            lettuce_creation::StagedLorebookStage::Cancelled
+                | lettuce_creation::StagedLorebookStage::Committed
+        ) {
             Err(StagedLorebookWriterExecutionError::Cancelled)
         } else {
             result
