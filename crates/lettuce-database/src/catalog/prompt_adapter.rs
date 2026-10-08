@@ -12,7 +12,7 @@ use lettuce_context::{
     BuiltInReconcileRequest, LifecycleFilter, LifecycleStatus, PromptBehaviorVersion,
     PromptBootstrapError, PromptBootstrapPort, PromptDependencyError, PromptDependencyReader,
     PromptDocument, PromptEntry, PromptEntryDraft, PromptEntryInsertionTarget, PromptEntryMutation,
-    PromptEntryPosition, PromptEntryRole, PromptLibraryQuery, PromptLookupResult,
+    PromptEntryEdit, PromptEntryPosition, PromptEntryRole, PromptLibraryQuery, PromptLookupResult,
     PromptMetadataDraft, PromptMutationResult, PromptProvenance, PromptPurpose, PromptReference,
     PromptReferenceOwner, PromptRepository, PromptRepositoryError, PromptValidationError,
     classify_prompt_lookup,
@@ -930,6 +930,131 @@ fn load_page(
     Ok(Page { items, next_cursor })
 }
 
+/// Creates a user prompt inside `tx`.
+pub(crate) fn create_user_draft_in(
+    tx: &Transaction<'_>,
+    metadata: PromptMetadataDraft,
+    entries: Vec<PromptEntryDraft>,
+    now: TimestampMillis,
+) -> Result<PromptDocument, PromptRepositoryError> {
+    validate_metadata(&metadata)?;
+    validate_entries(&entries)?;
+    let entries = entries
+        .into_iter()
+        .map(|draft| entry_from_draft(draft, PromptEntryId::new()))
+        .collect();
+    let document = metadata_document(
+        PromptDocumentId::new(),
+        metadata,
+        entries,
+        PromptProvenance::User,
+        now,
+    )?;
+    insert_root(tx, &document)?;
+    load_required(tx, document.id)
+}
+
+/// Replaces a prompt's metadata and entries in one revision. An entry edit
+/// naming an existing entry keeps its id and built-in key; one without an id
+/// is new; entries left out are removed.
+pub(crate) fn revise_document_in(
+    tx: &Transaction<'_>,
+    id: PromptDocumentId,
+    expected_revision: Revision,
+    metadata: PromptMetadataDraft,
+    edits: Vec<PromptEntryEdit>,
+    now: TimestampMillis,
+) -> Result<PromptDocument, PromptRepositoryError> {
+    validate_metadata(&metadata)?;
+    let current = load_required(tx, id)?;
+    check_expected(&current, expected_revision)?;
+    if let PromptProvenance::BuiltIn {
+        protected: true, ..
+    } = current.provenance
+        && (metadata.purpose != current.purpose
+            || metadata.behavior_version != current.behavior_version)
+    {
+        return Err(PromptRepositoryError::Protected);
+    }
+    let mut seen = HashSet::new();
+    let mut touched = HashSet::new();
+    let mut entries = Vec::with_capacity(edits.len());
+    for (index, edit) in edits.into_iter().enumerate() {
+        edit.draft
+            .validate()
+            .map_err(PromptRepositoryError::Invalid)?;
+        if edit.draft.built_in_entry_key.is_some() {
+            return Err(PromptRepositoryError::Invalid(
+                PromptValidationError::BuiltInEntryKeyNotAllowed,
+            ));
+        }
+        let entry = match edit.entry_id {
+            Some(entry_id) => {
+                if !seen.insert(entry_id) {
+                    return Err(PromptRepositoryError::Invalid(
+                        PromptValidationError::DuplicateEntry(entry_id),
+                    ));
+                }
+                let (position, existing) = current
+                    .entries
+                    .iter()
+                    .enumerate()
+                    .find(|(_, entry)| entry.id == entry_id)
+                    .ok_or(PromptRepositoryError::EntryNotFound)?;
+                let mut entry = entry_from_draft(edit.draft, entry_id);
+                entry.built_in_entry_key = existing.built_in_entry_key.clone();
+                if &entry != existing || position != index {
+                    touched.insert(entry_id);
+                }
+                entry
+            }
+            None => {
+                let entry = entry_from_draft(edit.draft, PromptEntryId::new());
+                touched.insert(entry.id);
+                entry
+            }
+        };
+        entries.push(entry);
+    }
+    let mut proposed = current.clone();
+    proposed.name = metadata.name;
+    proposed.purpose = metadata.purpose;
+    proposed.condense = metadata.condense;
+    proposed.behavior_version = metadata.behavior_version;
+    proposed.entries = entries;
+    proposed.revision = next_revision(expected_revision)?;
+    proposed.updated_at = now;
+    refresh_provenance(&mut proposed)?;
+    proposed
+        .validate()
+        .map_err(PromptRepositoryError::Invalid)?;
+    update_root(tx, &proposed, expected_revision)?;
+    replace_entries(tx, &proposed, now, &touched)?;
+    load_required(tx, id)
+}
+
+impl Database {
+    /// See `revise_document_in`.
+    pub fn revise_prompt_document(
+        &self,
+        id: PromptDocumentId,
+        expected_revision: Revision,
+        metadata: PromptMetadataDraft,
+        edits: Vec<PromptEntryEdit>,
+        now: TimestampMillis,
+    ) -> Result<PromptDocument, PromptRepositoryError> {
+        let mut connection = self
+            .connection()
+            .map_err(|_| PromptRepositoryError::Failure("database lock failure".into()))?;
+        let tx = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(storage)?;
+        let document = revise_document_in(&tx, id, expected_revision, metadata, edits, now)?;
+        tx.commit().map_err(storage)?;
+        Ok(document)
+    }
+}
+
 impl PromptRepository for Database {
     fn create_user_draft(
         &self,
@@ -1658,6 +1783,94 @@ mod tests {
                 .expect("lookup"),
             PromptLookupResult::Available { .. }
         ));
+    }
+
+    #[test]
+    fn whole_document_revision_keeps_entry_identity_and_built_in_keys() {
+        let database = Database::open_in_memory().expect("database");
+        let mut seed_entry = draft("one");
+        seed_entry.built_in_entry_key = Some("one".into());
+        let mut second_entry = draft("two");
+        second_entry.built_in_entry_key = Some("two".into());
+        let created = database
+            .reconcile_built_ins(
+                BuiltInReconcileRequest {
+                    seeds: vec![BuiltInPromptSeed {
+                        key: "core".into(),
+                        aliases: Vec::new(),
+                        seed_version: 1,
+                        metadata: metadata("Core"),
+                        entries: vec![seed_entry, second_entry],
+                        required: true,
+                        protected: true,
+                    }],
+                    mode: BuiltInReconcileMode::RefreshUnedited,
+                },
+                TimestampMillis::new(1),
+            )
+            .expect("seed");
+        let document = &created[0].document;
+        let edit = |entry: &PromptEntry, content: &str| PromptEntryEdit {
+            entry_id: Some(entry.id),
+            draft: PromptEntryDraft {
+                content: content.into(),
+                built_in_entry_key: None,
+                ..PromptEntryDraft::from(entry.clone())
+            },
+        };
+        let mut changed_purpose = metadata("Renamed");
+        changed_purpose.purpose = PromptPurpose::CompanionChat;
+        assert_eq!(
+            database.revise_prompt_document(
+                document.id,
+                document.revision,
+                changed_purpose,
+                Vec::new(),
+                TimestampMillis::new(2),
+            ),
+            Err(PromptRepositoryError::Protected)
+        );
+        let revised = database
+            .revise_prompt_document(
+                document.id,
+                document.revision,
+                metadata("Renamed"),
+                vec![
+                    PromptEntryEdit {
+                        entry_id: None,
+                        draft: draft("three"),
+                    },
+                    edit(&document.entries[0], "changed one"),
+                ],
+                TimestampMillis::new(2),
+            )
+            .expect("revise");
+        assert_eq!(revised.name, "Renamed");
+        assert_eq!(revised.revision.get(), document.revision.get() + 1);
+        assert_eq!(revised.entries.len(), 2);
+        assert_eq!(revised.entries[1].id, document.entries[0].id);
+        assert_eq!(revised.entries[1].built_in_entry_key.as_deref(), Some("one"));
+        assert_eq!(revised.entries[1].content, "changed one");
+        assert_eq!(
+            database.revise_prompt_document(
+                document.id,
+                revised.revision,
+                metadata("Renamed"),
+                vec![edit(&document.entries[1], "gone")],
+                TimestampMillis::new(3),
+            ),
+            Err(PromptRepositoryError::EntryNotFound)
+        );
+        assert_eq!(
+            database.revise_prompt_document(
+                document.id,
+                document.revision,
+                metadata("Stale"),
+                Vec::new(),
+                TimestampMillis::new(3),
+            ),
+            Err(PromptRepositoryError::Conflict)
+        );
     }
 
     #[test]

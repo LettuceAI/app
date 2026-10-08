@@ -1047,6 +1047,9 @@ pub struct LorebookMutationResult {
 pub struct LorebookLibraryQuery {
     pub page: PageRequest,
     pub status: LifecycleFilter,
+    /// Keeps the books whose name contains this text, ignoring ASCII case.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name_contains: Option<String>,
 }
 
 impl Default for LorebookLibraryQuery {
@@ -1054,6 +1057,7 @@ impl Default for LorebookLibraryQuery {
         Self {
             page: PageRequest::default(),
             status: LifecycleFilter::Active,
+            name_contains: None,
         }
     }
 }

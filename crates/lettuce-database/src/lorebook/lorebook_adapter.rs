@@ -507,6 +507,147 @@ pub(crate) fn replace_lorebook_details(
     load_required(tx, details.book.id)
 }
 
+/// Creates a lorebook with `entries` inside `tx`.
+pub(crate) fn create_in(
+    tx: &Transaction<'_>,
+    metadata: LorebookMetadataDraft,
+    entries: Vec<LorebookEntryDraft>,
+    now: TimestampMillis,
+) -> Result<LorebookDetails, LorebookRepositoryError> {
+    metadata.validate()?;
+    let mut details = LorebookDetails {
+        book: Lorebook {
+            id: LorebookId::new(),
+            status: LifecycleStatus::Active,
+            name: metadata.name,
+            detection_policy: metadata.detection_policy,
+            icon_asset_id: metadata.icon_asset_id,
+            behavior_version: metadata.behavior_version,
+            revision: Revision::INITIAL,
+            created_at: now,
+            updated_at: now,
+        },
+        entries: Vec::new(),
+    };
+    for (ordinal, draft) in entries.into_iter().enumerate() {
+        details
+            .entries
+            .push(initial_entry(details.book.id, draft, ordinal, now)?);
+    }
+    insert_lorebook_details(tx, &details)
+}
+
+fn apply_entry_mutation(
+    id: LorebookId,
+    entries: &mut Vec<LorebookEntry>,
+    mutation: LorebookEntryMutation,
+    now: TimestampMillis,
+) -> Result<(), LorebookRepositoryError> {
+    mutation.validate()?;
+    match mutation {
+        LorebookEntryMutation::Add { draft, target } => {
+            let index = match target {
+                LorebookEntryInsertionTarget::Append => entries.len(),
+                LorebookEntryInsertionTarget::At(index) => index,
+            };
+            if index > entries.len() {
+                return Err(LorebookRepositoryError::Invalid(
+                    LorebookValidationError::InvalidTarget,
+                ));
+            }
+            entries.insert(index, initial_entry(id, draft, index, now)?);
+        }
+        LorebookEntryMutation::Update { entry_id, draft } => {
+            let Some(index) = entries.iter().position(|entry| entry.id == entry_id) else {
+                return Err(LorebookRepositoryError::EntryNotFound);
+            };
+            entries[index] = updated_entry(&entries[index], draft, now)?;
+        }
+        LorebookEntryMutation::Remove { entry_id } => {
+            let Some(index) = entries.iter().position(|entry| entry.id == entry_id) else {
+                return Err(LorebookRepositoryError::EntryNotFound);
+            };
+            entries.remove(index);
+        }
+        LorebookEntryMutation::Replace { drafts } => {
+            *entries = drafts
+                .into_iter()
+                .enumerate()
+                .map(|(index, draft)| initial_entry(id, draft, index, now))
+                .collect::<Result<Vec<_>, _>>()?;
+        }
+        LorebookEntryMutation::Reorder {
+            entry_id,
+            target_index,
+        } => {
+            if target_index >= entries.len() {
+                return Err(LorebookRepositoryError::Invalid(
+                    LorebookValidationError::InvalidTarget,
+                ));
+            }
+            let Some(index) = entries.iter().position(|entry| entry.id == entry_id) else {
+                return Err(LorebookRepositoryError::EntryNotFound);
+            };
+            let item = entries.remove(index);
+            entries.insert(target_index, item);
+        }
+    }
+    Ok(())
+}
+
+/// Applies `mutations` in order to the book's entries under one revision
+/// check and one new revision, inside `tx`.
+pub(crate) fn mutate_entries_in(
+    tx: &Transaction<'_>,
+    id: LorebookId,
+    expected_revision: Revision,
+    mutations: Vec<LorebookEntryMutation>,
+    now: TimestampMillis,
+) -> Result<LorebookMutationResult, LorebookRepositoryError> {
+    let current = load_required(tx, id)?;
+    if current.book.revision != expected_revision {
+        return Err(LorebookRepositoryError::Conflict);
+    }
+    let mut entries = current.entries;
+    let previous_entries = entries.clone();
+    for mutation in mutations {
+        apply_entry_mutation(id, &mut entries, mutation, now)?;
+    }
+    normalize_entry_metadata(&mut entries, &previous_entries, now)?;
+    let book = Lorebook {
+        revision: bump_revision(current.book.revision)?,
+        updated_at: now,
+        ..current.book
+    };
+    let proposed = LorebookDetails { book, entries };
+    let loaded = replace_lorebook_details(tx, expected_revision, &proposed)?;
+    Ok(LorebookMutationResult {
+        book_revision: loaded.book.revision,
+        details: loaded,
+    })
+}
+
+impl Database {
+    /// Applies several entry mutations atomically; see `mutate_entries_in`.
+    pub fn mutate_lorebook_entries(
+        &self,
+        id: LorebookId,
+        expected_revision: Revision,
+        mutations: Vec<LorebookEntryMutation>,
+        now: TimestampMillis,
+    ) -> Result<LorebookMutationResult, LorebookRepositoryError> {
+        let mut connection = self
+            .connection()
+            .map_err(|_| failure("database lock unavailable"))?;
+        let tx = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(db_error)?;
+        let result = mutate_entries_in(&tx, id, expected_revision, mutations, now)?;
+        tx.commit().map_err(db_error)?;
+        Ok(result)
+    }
+}
+
 impl LorebookRepository for Database {
     fn create(
         &self,
@@ -514,34 +655,13 @@ impl LorebookRepository for Database {
         entries: Vec<LorebookEntryDraft>,
         now: TimestampMillis,
     ) -> Result<LorebookDetails, LorebookRepositoryError> {
-        metadata.validate()?;
-        let probe = LorebookDetails {
-            book: Lorebook {
-                id: LorebookId::new(),
-                status: LifecycleStatus::Active,
-                name: metadata.name.clone(),
-                detection_policy: metadata.detection_policy,
-                icon_asset_id: metadata.icon_asset_id,
-                behavior_version: metadata.behavior_version,
-                revision: Revision::INITIAL,
-                created_at: now,
-                updated_at: now,
-            },
-            entries: Vec::new(),
-        };
-        let mut child_entries = Vec::with_capacity(entries.len());
-        for (ordinal, draft) in entries.into_iter().enumerate() {
-            child_entries.push(initial_entry(probe.book.id, draft, ordinal, now)?);
-        }
-        let mut details = probe;
-        details.entries = child_entries;
         let mut connection = self
             .connection()
             .map_err(|_| failure("database lock unavailable"))?;
         let tx = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(db_error)?;
-        let loaded = insert_lorebook_details(&tx, &details)?;
+        let loaded = create_in(&tx, metadata, entries, now)?;
         tx.commit().map_err(db_error)?;
         Ok(loaded)
     }
@@ -572,19 +692,26 @@ impl LorebookRepository for Database {
             LifecycleFilter::Active => "status='active'",
             LifecycleFilter::Archived => "status='archived'",
         };
-        let mut sql = format!("SELECT id,updated_at FROM lorebooks WHERE {status_clause} ");
+        let mut sql = format!(
+            "SELECT id,updated_at FROM lorebooks WHERE {status_clause} AND (?4 IS NULL OR instr(lower(name), lower(?4)) > 0) "
+        );
         if cursor.is_some() {
             sql.push_str("AND (updated_at < ?1 OR (updated_at = ?1 AND id > ?2)) ");
         }
         sql.push_str("ORDER BY updated_at DESC,id ASC LIMIT ?3");
+        let name = query
+            .name_contains
+            .as_deref()
+            .map(str::trim)
+            .filter(|name| !name.is_empty());
         let mut statement = tx.prepare(&sql).map_err(db_error)?;
         let mut rows = if let Some((updated, id)) = cursor {
             statement
-                .query(params![updated, id.to_string(), limit + 1])
+                .query(params![updated, id.to_string(), limit + 1, name])
                 .map_err(db_error)?
         } else {
             statement
-                .query(params![0_i64, "", limit + 1])
+                .query(params![0_i64, "", limit + 1, name])
                 .map_err(db_error)?
         };
         let mut keys = Vec::new();
@@ -665,80 +792,7 @@ impl LorebookRepository for Database {
         mutation: LorebookEntryMutation,
         now: TimestampMillis,
     ) -> Result<LorebookMutationResult, LorebookRepositoryError> {
-        mutation.validate()?;
-        let mut connection = self
-            .connection()
-            .map_err(|_| failure("database lock unavailable"))?;
-        let tx = connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(db_error)?;
-        let current = load_required(&tx, id)?;
-        if current.book.revision != expected_revision {
-            return Err(LorebookRepositoryError::Conflict);
-        }
-        let mut entries = current.entries;
-        let previous_entries = entries.clone();
-        match mutation {
-            LorebookEntryMutation::Add { draft, target } => {
-                let index = match target {
-                    LorebookEntryInsertionTarget::Append => entries.len(),
-                    LorebookEntryInsertionTarget::At(index) => index,
-                };
-                if index > entries.len() {
-                    return Err(LorebookRepositoryError::Invalid(
-                        LorebookValidationError::InvalidTarget,
-                    ));
-                }
-                entries.insert(index, initial_entry(id, draft, index, now)?);
-            }
-            LorebookEntryMutation::Update { entry_id, draft } => {
-                let Some(index) = entries.iter().position(|entry| entry.id == entry_id) else {
-                    return Err(LorebookRepositoryError::EntryNotFound);
-                };
-                entries[index] = updated_entry(&entries[index], draft, now)?;
-            }
-            LorebookEntryMutation::Remove { entry_id } => {
-                let Some(index) = entries.iter().position(|entry| entry.id == entry_id) else {
-                    return Err(LorebookRepositoryError::EntryNotFound);
-                };
-                entries.remove(index);
-            }
-            LorebookEntryMutation::Replace { drafts } => {
-                entries = drafts
-                    .into_iter()
-                    .enumerate()
-                    .map(|(index, draft)| initial_entry(id, draft, index, now))
-                    .collect::<Result<Vec<_>, _>>()?;
-            }
-            LorebookEntryMutation::Reorder {
-                entry_id,
-                target_index,
-            } => {
-                if target_index >= entries.len() {
-                    return Err(LorebookRepositoryError::Invalid(
-                        LorebookValidationError::InvalidTarget,
-                    ));
-                }
-                let Some(index) = entries.iter().position(|entry| entry.id == entry_id) else {
-                    return Err(LorebookRepositoryError::EntryNotFound);
-                };
-                let item = entries.remove(index);
-                entries.insert(target_index, item);
-            }
-        }
-        normalize_entry_metadata(&mut entries, &previous_entries, now)?;
-        let book = Lorebook {
-            revision: bump_revision(current.book.revision)?,
-            updated_at: now,
-            ..current.book
-        };
-        let proposed = LorebookDetails { book, entries };
-        let loaded = replace_lorebook_details(&tx, expected_revision, &proposed)?;
-        tx.commit().map_err(db_error)?;
-        Ok(LorebookMutationResult {
-            book_revision: loaded.book.revision,
-            details: loaded,
-        })
+        self.mutate_lorebook_entries(id, expected_revision, vec![mutation], now)
     }
 
     fn archive(
@@ -1912,6 +1966,70 @@ mod tests {
     }
 
     #[test]
+    fn batched_entry_mutations_apply_under_one_revision_or_not_at_all() {
+        let database = Database::open_in_memory().expect("database");
+        let book = LorebookRepository::create(
+            &database,
+            metadata(),
+            vec![draft("A", "a"), draft("B", "b")],
+            TimestampMillis::new(1),
+        )
+        .expect("book");
+        let first = book.entries[0].id;
+        let failed = database.mutate_lorebook_entries(
+            book.book.id,
+            book.book.revision,
+            vec![
+                LorebookEntryMutation::Remove { entry_id: first },
+                LorebookEntryMutation::Remove { entry_id: first },
+            ],
+            TimestampMillis::new(2),
+        );
+        assert_eq!(failed, Err(LorebookRepositoryError::EntryNotFound));
+        assert_eq!(
+            LorebookRepository::get(&database, book.book.id).expect("read"),
+            Some(book.clone())
+        );
+        let changed = database
+            .mutate_lorebook_entries(
+                book.book.id,
+                book.book.revision,
+                vec![
+                    LorebookEntryMutation::Add {
+                        draft: draft("C", "c"),
+                        target: LorebookEntryInsertionTarget::Append,
+                    },
+                    LorebookEntryMutation::Remove { entry_id: first },
+                    LorebookEntryMutation::Reorder {
+                        entry_id: book.entries[1].id,
+                        target_index: 1,
+                    },
+                ],
+                TimestampMillis::new(3),
+            )
+            .expect("batch");
+        assert_eq!(changed.book_revision.get(), book.book.revision.get() + 1);
+        assert_eq!(
+            changed
+                .details
+                .entries
+                .iter()
+                .map(|entry| (entry.title.as_str(), entry.ordinal))
+                .collect::<Vec<_>>(),
+            vec![("C", 0), ("B", 1)]
+        );
+        assert_eq!(
+            database.mutate_lorebook_entries(
+                book.book.id,
+                book.book.revision,
+                Vec::new(),
+                TimestampMillis::new(4),
+            ),
+            Err(LorebookRepositoryError::Conflict)
+        );
+    }
+
+    #[test]
     fn page_uses_status_and_keyset_cursor_and_bad_cursor_is_rejected() {
         let database = Database::open_in_memory().expect("database");
         let first =
@@ -1935,6 +2053,7 @@ mod tests {
                     limit: lettuce_types::PageLimit::new(1),
                 },
                 status: LifecycleFilter::Active,
+                name_contains: None,
             },
         )
         .expect("page");
@@ -1948,11 +2067,25 @@ mod tests {
                     limit: lettuce_types::PageLimit::new(1),
                 },
                 status: LifecycleFilter::Active,
+                name_contains: None,
             },
         )
         .expect("next page");
         assert_eq!(next.items.len(), 1);
         assert_ne!(next.items[0].id, page.items[0].id);
+        let named = LorebookRepository::page(
+            &database,
+            LorebookLibraryQuery {
+                page: lettuce_types::PageRequest::default(),
+                status: LifecycleFilter::Active,
+                name_contains: Some(" SECOND ".into()),
+            },
+        )
+        .expect("named page");
+        assert_eq!(
+            named.items.iter().map(|book| book.id).collect::<Vec<_>>(),
+            vec![second.book.id]
+        );
         assert_eq!(vec![page.items[0].id, next.items[0].id], {
             let mut ids = vec![first.book.id, second.book.id];
             ids.sort();
@@ -1966,6 +2099,7 @@ mod tests {
                     limit: lettuce_types::PageLimit::new(1),
                 },
                 status: LifecycleFilter::All,
+                name_contains: None,
             },
         );
         assert!(bad.is_err());

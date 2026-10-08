@@ -127,6 +127,29 @@ impl Database {
 }
 
 impl ApiOperationTransaction<'_, '_> {
+    pub fn create_lorebook(
+        &self,
+        metadata: lettuce_context::LorebookMetadataDraft,
+        entries: Vec<lettuce_context::LorebookEntryDraft>,
+        now: TimestampMillis,
+    ) -> Result<lettuce_context::LorebookDetails, lettuce_context::LorebookRepositoryError> {
+        crate::lorebook::lorebook_adapter::create_in(self.transaction, metadata, entries, now)
+    }
+
+    pub fn create_prompt(
+        &self,
+        metadata: lettuce_context::PromptMetadataDraft,
+        entries: Vec<lettuce_context::PromptEntryDraft>,
+        now: TimestampMillis,
+    ) -> Result<lettuce_context::PromptDocument, lettuce_context::PromptRepositoryError> {
+        crate::catalog::prompt_adapter::create_user_draft_in(
+            self.transaction,
+            metadata,
+            entries,
+            now,
+        )
+    }
+
     pub fn edit_soul_growth(
         &self,
         owner: lettuce_companions::SoulOwner,

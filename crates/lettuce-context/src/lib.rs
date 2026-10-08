@@ -9,9 +9,13 @@
 mod bindings;
 mod lorebook;
 mod prompt;
+mod prompt_placeholders;
 mod token_count;
 
 pub use bindings::*;
 pub use lorebook::*;
 pub use prompt::*;
+pub use prompt_placeholders::{
+    PromptPlaceholders, missing_required_placeholders, prompt_placeholders,
+};
 pub use token_count::{TokenizerUnavailable, count_tokens_batch};

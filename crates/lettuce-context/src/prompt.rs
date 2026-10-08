@@ -305,6 +305,15 @@ pub struct PromptEntryDraft {
     pub payload: Option<PromptEntryPayload>,
 }
 
+/// One entry of a whole-document edit: an existing entry by id, or a new
+/// one when `entry_id` is `None`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PromptEntryEdit {
+    pub entry_id: Option<PromptEntryId>,
+    pub draft: PromptEntryDraft,
+}
+
 impl PromptEntryDraft {
     pub fn validate(&self) -> Result<(), PromptValidationError> {
         PromptEntry {
