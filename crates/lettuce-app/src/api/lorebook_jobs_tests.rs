@@ -1295,3 +1295,88 @@ async fn standard_runner_executes_entry_and_staged_planner_jobs() {
         dto::LorebookProjectStage::AwaitingOutlineApproval
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn planner_retry_job_runs_and_the_project_leaves_planning() {
+    let directory = std::env::temp_dir().join(format!("slice6-retry-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir(&directory).expect("directory");
+    let path = directory.join("retry.sqlite");
+    let backend = Arc::new(
+        crate::AppBackend::open(&path, TimestampMillis::now().expect("now")).expect("backend"),
+    );
+    let failing = super::tests::harness_over(
+        Arc::clone(&backend),
+        Reply::Text("invalid planner response"),
+        Arc::new(lettuce_jobs::SystemClock),
+        None,
+        None,
+        Arc::new(NoModels),
+        Arc::new(super::tests::NoImages),
+    );
+    let created = staged_project(&failing, "retry-project").await;
+    let plan = lorebook_project_plan(
+        &failing.context,
+        dto::LorebookProjectJobRequest {
+            client_operation_id: "first-plan".into(),
+            project_id: created.project_id.clone(),
+            expected_revision: created.revision,
+        },
+    )
+    .await
+    .expect("plan");
+    run_standard_runner(&failing).await;
+    let failed = project_get(&failing, &created.project_id).await;
+    assert_eq!(failed.stage, dto::LorebookProjectStage::PlanFailed);
+    drop(failing);
+    let working = super::tests::harness_over(
+        backend,
+        Reply::LorebookTools,
+        Arc::new(lettuce_jobs::SystemClock),
+        None,
+        None,
+        Arc::new(NoModels),
+        Arc::new(super::tests::NoImages),
+    );
+    let retry = lorebook_project_plan(
+        &working.context,
+        dto::LorebookProjectJobRequest {
+            client_operation_id: "retry-plan".into(),
+            project_id: failed.project_id,
+            expected_revision: failed.revision,
+        },
+    )
+    .await
+    .expect("retry");
+    assert_ne!(retry.job_id, plan.job_id);
+    run_standard_runner(&working).await;
+    let db = working.context.backend().database();
+    assert_eq!(
+        JobStore::get(db, retry.job_id.parse().expect("job id"))
+            .expect("job")
+            .expect("exists")
+            .state,
+        lettuce_jobs::JobState::Succeeded
+    );
+    assert_eq!(
+        project_get(&working, &created.project_id).await.stage,
+        dto::LorebookProjectStage::AwaitingOutlineApproval
+    );
+    let view = job_get(
+        &working.context,
+        dto::JobGetRequest {
+            job_id: retry.job_id,
+        },
+    )
+    .await
+    .expect("job view");
+    assert!(matches!(
+        view.subject_detail,
+        Some(dto::JobSubjectDetail::LorebookProject { .. })
+    ));
+    assert!(matches!(
+        view.result,
+        Some(dto::JobResultDto::LorebookProject { .. })
+    ));
+    drop(working);
+    std::fs::remove_dir_all(directory).expect("cleanup");
+}

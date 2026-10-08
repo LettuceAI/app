@@ -13,6 +13,20 @@ use std::{sync::Arc, time::Duration};
 #[derive(Debug, Clone, Copy)]
 pub struct LorebookHandler;
 
+const PLANNER_RETRY_PREFIX: &str = "staged-planner-retry-";
+
+fn is_planner_key(key: &str) -> bool {
+    key.starts_with(PLANNER_RETRY_PREFIX)
+        || (key.starts_with("staged-lorebook-")
+            && !key.starts_with("staged-lorebook-writer-")
+            && !key.starts_with("staged-lorebook-refine-")
+            && !key.starts_with("staged-lorebook-coherence-"))
+}
+
+fn is_staged_key(key: &str) -> bool {
+    key.starts_with("staged-lorebook-") || key.starts_with(PLANNER_RETRY_PREFIX)
+}
+
 fn request_id(context: &ApiContext, job: &JobSnapshot) -> Result<RequestId, ApiError> {
     let events = context
         .backend()
@@ -35,15 +49,11 @@ impl JobHandler for LorebookHandler {
     }
     fn lane(&self, context: &ApiContext, job: &JobSnapshot) -> Option<JobLane> {
         let key = job.idempotency_key.as_ref().map_or("", |key| key.as_str());
-        if key.starts_with("staged-lorebook-")
+        if is_staged_key(key)
             || key.starts_with("lorebook-entry-generator-")
             || key.starts_with("lorebook-keyword-generator-")
         {
-            if key.starts_with("staged-lorebook-")
-                && !key.starts_with("staged-lorebook-writer-")
-                && !key.starts_with("staged-lorebook-refine-")
-                && !key.starts_with("staged-lorebook-coherence-")
-            {
+            if is_planner_key(key) {
                 use lettuce_creation::StagedLorebookRepository;
                 let id = request_id(context, job).ok()?;
                 let run = context.backend().database().load_staged_lorebook(id).ok()?;
@@ -115,7 +125,7 @@ impl JobHandler for LorebookHandler {
                         })
                         .map_err(internal);
                 }
-                if key.starts_with("staged-lorebook-") {
+                if is_planner_key(key) {
                     return crate::StagedLorebookPlannerDispatchCoordinator::new(db, db)
                         .claim(id, worker, now, lease, &allowed)
                         .map(|work| {
@@ -455,7 +465,7 @@ pub(super) fn result_view(
         return Ok(None);
     }
     let key = job.idempotency_key.as_ref().map_or("", |key| key.as_str());
-    if !key.starts_with("staged-lorebook-")
+    if !is_staged_key(key)
         && !key.starts_with("lorebook-entry-generator-")
         && !key.starts_with("lorebook-keyword-generator-")
     {
@@ -503,7 +513,7 @@ pub(super) fn result_view(
         }
         return Err(internal("the succeeded keyword job has no result"));
     }
-    if key.starts_with("staged-lorebook-") {
+    if is_staged_key(key) {
         return Ok(Some(lettuce_contracts::JobResultDto::LorebookProject {
             project_id: job.subject.id.to_string(),
         }));
@@ -548,7 +558,7 @@ pub(super) fn subject_view(
         })
     };
     if job.kind == JobKind::CreationRun
-        && !key.starts_with("staged-lorebook-")
+        && !is_staged_key(key)
         && !key.starts_with("lorebook-entry-generator-")
         && !key.starts_with("lorebook-keyword-generator-")
     {
@@ -594,7 +604,7 @@ pub(super) fn subject_view(
             project_id: project.project.id.to_string(),
             prompt: prompt_view(run.prompt_id, run.prompt_name.clone())?,
         }
-    } else if key.starts_with("staged-lorebook-") {
+    } else if is_planner_key(key) {
         let run = db.load_staged_lorebook(id).map_err(internal)?;
         JobSubjectDetail::LorebookProject {
             project_id: run.project.id.to_string(),
