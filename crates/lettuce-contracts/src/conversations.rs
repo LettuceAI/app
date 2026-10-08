@@ -744,6 +744,14 @@ pub enum GenerationEvent {
     Started {
         turn_id: String,
     },
+    ModelLoading {
+        turn_id: String,
+        stage: crate::ModelLoadStage,
+        status: crate::ModelLoadStatus,
+        percent: u8,
+        model_name: String,
+        gpus: Option<Vec<crate::ModelLoadGpuProgress>>,
+    },
     Notice {
         turn_id: String,
         code: crate::RuntimeNoticeCode,

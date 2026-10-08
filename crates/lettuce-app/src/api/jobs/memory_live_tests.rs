@@ -51,6 +51,14 @@ async fn memory_child_inference_routes_runtime_events_and_text_to_its_watch() {
     let events = watch.0.lock().expect("events").clone();
     assert!(events.iter().any(|event| matches!(event, JobEvent::Notice { code: dto::RuntimeNoticeCode::MtpDisabledForVision })));
     assert!(events.iter().any(|event| matches!(event, JobEvent::Throughput { tokens:4, tokens_per_second } if *tokens_per_second == 400.0)));
+    let loading = events.iter().find_map(|event| {
+        let value = serde_json::to_value(event).expect("event");
+        (value["type"] == "model_loading").then_some(value)
+    }).expect("job model loading");
+    assert_eq!(loading["stage"], "cpu");
+    assert_eq!(loading["status"], "loading");
+    assert_eq!(loading["percent"], 42);
+    assert_eq!(loading["model_name"], "Local events");
     let text = events.iter().filter_map(|event| match event { JobEvent::TextDelta {text, ..} => text.clone(), _ => None }).collect::<String>();
     assert_eq!(text, "Hello.");
     harness.context.backend().local_runtime_events().emit(LlamaHostEvent::Notice {

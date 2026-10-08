@@ -127,3 +127,60 @@ fn a_full_ui_channel_never_blocks_runtime_events() {
     router.emit(heartbeat(Some(id)));
     drop((attempt, flow));
 }
+
+#[test]
+fn model_load_progress_is_coalesced_per_attempt_by_stage_and_integer_percent() {
+    use lettuce_local_llm::engine::{ModelLoadProgress, ModelLoadStage, ModelLoadStatus};
+    let router = Arc::new(RuntimeEventRouter::default());
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let turn = GenerationTurnId::new();
+    let flow = {
+        let events = events.clone();
+        router.register_flow(FlowId::Turn(turn), CancellationToken::new(), move |event| {
+            events.lock().expect("events").push(event);
+        })
+    };
+    let id = GenerationAttemptId::new();
+    let attempt = router.register_attempt(id, Some(FlowId::Turn(turn)));
+    let mut progress = ModelLoadProgress {
+        request_id: Some(id.to_string()),
+        model_path: "model.gguf".into(),
+        model_name: "Model".into(),
+        backend_path: "cpu".into(),
+        stage: ModelLoadStage::Cpu,
+        status: ModelLoadStatus::Loading,
+        progress: 0.1,
+        percent: 10,
+        gpus: None,
+    };
+    router.emit(LlamaHostEvent::ModelLoadProgress(progress.clone()));
+    progress.progress = 0.109;
+    router.emit(LlamaHostEvent::ModelLoadProgress(progress.clone()));
+    progress.percent = 11;
+    router.emit(LlamaHostEvent::ModelLoadProgress(progress.clone()));
+    progress.stage = ModelLoadStage::Finalizing;
+    router.emit(LlamaHostEvent::ModelLoadProgress(progress.clone()));
+    assert_eq!(events.lock().expect("events").len(), 3);
+    progress.status = ModelLoadStatus::Loaded;
+    router.emit(LlamaHostEvent::ModelLoadProgress(progress.clone()));
+    progress.status = ModelLoadStatus::Failed;
+    router.emit(LlamaHostEvent::ModelLoadProgress(progress.clone()));
+    progress.status = ModelLoadStatus::Retrying;
+    router.emit(LlamaHostEvent::ModelLoadProgress(progress.clone()));
+    progress.model_name = "Changed model".into();
+    router.emit(LlamaHostEvent::ModelLoadProgress(progress.clone()));
+    progress.gpus = Some(vec![lettuce_local_llm::engine::GpuLoadProgress { label: "GPU".into(), percent: 9 }]);
+    router.emit(LlamaHostEvent::ModelLoadProgress(progress.clone()));
+    progress.gpus.as_mut().expect("gpus")[0].percent = 10;
+    router.emit(LlamaHostEvent::ModelLoadProgress(progress.clone()));
+    assert_eq!(events.lock().expect("events").len(), 9);
+    drop(attempt);
+    router.emit(LlamaHostEvent::ModelLoadProgress(progress.clone()));
+    assert_eq!(events.lock().expect("events").len(), 9);
+    let next_id = GenerationAttemptId::new();
+    let next_attempt = router.register_attempt(next_id, Some(FlowId::Turn(turn)));
+    progress.request_id = Some(next_id.to_string());
+    router.emit(LlamaHostEvent::ModelLoadProgress(progress));
+    assert_eq!(events.lock().expect("events").len(), 10);
+    drop((next_attempt, flow));
+}

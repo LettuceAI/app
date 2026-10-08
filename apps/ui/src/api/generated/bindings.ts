@@ -1418,7 +1418,7 @@ export type GenerationCancelRequest = {
  *  The stream of one generation turn, delivered on the channel its send
  *  passed in.
  */
-export type GenerationEvent = { type: "started"; turn_id: string } | { type: "notice"; turn_id: string; code: RuntimeNoticeCode } | { type: "speaker_selecting"; turn_id: string } | { type: "speaker_selected"; turn_id: string; character_id: string } | { type: "delta"; turn_id: string; text: string | null; reasoning: string | null } | { type: "completed"; turn_id: string; message_id: string } | { type: "failed"; turn_id: string; code: GenerationFailureCode } | { type: "cancelled"; turn_id: string };
+export type GenerationEvent = { type: "started"; turn_id: string } | { type: "model_loading"; turn_id: string; stage: ModelLoadStage; status: ModelLoadStatus; percent: number; model_name: string; gpus: ModelLoadGpuProgress[] | null } | { type: "notice"; turn_id: string; code: RuntimeNoticeCode } | { type: "speaker_selecting"; turn_id: string } | { type: "speaker_selected"; turn_id: string; character_id: string } | { type: "delta"; turn_id: string; text: string | null; reasoning: string | null } | { type: "completed"; turn_id: string; message_id: string } | { type: "failed"; turn_id: string; code: GenerationFailureCode } | { type: "cancelled"; turn_id: string };
 
 export type GenerationFailureCode = "invalid_conversation" | "missing_model" | "context_unavailable" | "speaker_unavailable" | "provider_unavailable" | "provider_rejected" | "empty_output" | "timed_out" | "recovery_unavailable" | "embedding_unavailable" | "internal";
 
@@ -2124,7 +2124,7 @@ export type JobCancelRequest = {
  *  The stream `job_watch` attaches. It starts with the job's current state;
  *  `Completed`, `Failed` and `Cancelled` are the last event.
  */
-export type JobEvent = { type: "notice"; code: RuntimeNoticeCode } | { type: "throughput"; tokens: number; tokens_per_second: number | null } | { type: "progress"; job: JobView } | { type: "text_delta"; text: string | null; reasoning: string | null } | 
+export type JobEvent = { type: "model_loading"; stage: ModelLoadStage; status: ModelLoadStatus; percent: number; model_name: string; gpus: ModelLoadGpuProgress[] | null } | { type: "notice"; code: RuntimeNoticeCode } | { type: "throughput"; tokens: number; tokens_per_second: number | null } | { type: "progress"; job: JobView } | { type: "text_delta"; text: string | null; reasoning: string | null } | 
 /**  A running local image generation's progress. */
 { type: "image_progress"; progress: ImageProgress } | { type: "completed"; job: JobView } | { type: "failed"; job: JobView } | { type: "cancelled"; job: JobView };
 
@@ -3095,6 +3095,15 @@ export type MessagesDeleteResult = {
 	outcome: MessagesDeleteOutcome,
 	revision: number,
 };
+
+export type ModelLoadGpuProgress = {
+	label: string,
+	percent: number,
+};
+
+export type ModelLoadStage = "gpu_offload" | "cpu" | "cpu_fallback" | "finalizing";
+
+export type ModelLoadStatus = "loading" | "retrying" | "loaded" | "failed";
 
 /**
  *  Why an Ollama server request failed: it could not be reached (worth a

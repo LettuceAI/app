@@ -105,6 +105,10 @@ async fn a_local_turn_routes_notices_without_job_throughput_or_cross_turn_delive
     let accepted = send(&harness, &chat, "local-notice-send", "Hi", stream.clone()).await.expect("send");
     ConversationGenerationWorker::new(harness.context.clone()).run_once().await.expect("generation");
     assert!(stream.events().iter().any(|event| matches!(event, GenerationEvent::Notice { turn_id, code: lettuce_contracts::RuntimeNoticeCode::MtpDisabledForVision } if turn_id == &accepted.turn_id)));
+    let types = event_types(&stream);
+    let loading = types.iter().position(|kind| kind == "model_loading").expect("model loading");
+    let notice = types.iter().position(|kind| kind == "notice").expect("notice");
+    assert!(loading < notice);
     assert!(other.events().is_empty());
     let request = harness.provider.requests.lock().expect("requests")[0].clone();
     assert_eq!(request.profile.chat_profile.provider_protocol, lettuce_models::ProviderProtocol::LlamaCpp);
@@ -128,12 +132,25 @@ async fn a_cancelled_local_turn_stops_receiving_notices_while_inference_is_live(
     let running = tokio::spawn(async move { worker.run_once().await });
     harness.provider.entered.notified().await;
     let request = harness.provider.requests.lock().expect("requests")[0].clone();
-    let count = stream.events().iter().filter(|event| matches!(event, GenerationEvent::Notice { .. })).count();
+    let count = stream.events().iter().filter(|event| matches!(event, GenerationEvent::Notice { .. } | GenerationEvent::ModelLoading { .. })).count();
     super::generation_cancel(&harness.context, lettuce_contracts::GenerationCancelRequest { turn_id: accepted.turn_id }).await.expect("cancel");
     harness.context.backend().local_runtime_events().emit(lettuce_local_llm::generation::LlamaHostEvent::Notice {
         request_id: Some(request.attempt_id.to_string()), notice: lettuce_local_llm::generation::LlamaNotice::KvCacheMovedToRam,
     });
-    assert_eq!(stream.events().iter().filter(|event| matches!(event, GenerationEvent::Notice { .. })).count(), count);
+    harness.context.backend().local_runtime_events().emit(lettuce_local_llm::generation::LlamaHostEvent::ModelLoadProgress(
+        lettuce_local_llm::engine::ModelLoadProgress {
+            request_id: Some(request.attempt_id.to_string()),
+            model_path: "local-events.gguf".into(),
+            model_name: "Local events".into(),
+            backend_path: "cpu".into(),
+            stage: lettuce_local_llm::engine::ModelLoadStage::Finalizing,
+            status: lettuce_local_llm::engine::ModelLoadStatus::Loaded,
+            progress: 1.0,
+            percent: 100,
+            gpus: None,
+        },
+    ));
+    assert_eq!(stream.events().iter().filter(|event| matches!(event, GenerationEvent::Notice { .. } | GenerationEvent::ModelLoading { .. })).count(), count);
     running.await.expect("task").expect("generation");
 }
 
@@ -170,4 +187,29 @@ fn runtime_reports_emit_only_matching_local_model_ids_after_storage() {
     routes.emit(LlamaHostEvent::Heartbeat { request_id: None, heartbeat: lettuce_local_llm::generation::GenerationHeartbeat { tokens: 4, elapsed_ms: 10, tokens_per_second: 400.0, recent_text: String::new() } });
     assert_eq!(super::tests::api_events(&harness), events);
     assert!(database.model_profiles().expect("models").iter().any(|model| model.id == remote));
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[tokio::test]
+async fn a_local_turn_completes_when_the_ui_discards_every_event() {
+    struct DiscardingStream;
+    impl super::GenerationEventSink for DiscardingStream {
+        fn emit(&self, _event: lettuce_contracts::GenerationEvent) {}
+    }
+    let harness = harness(Reply::Text("Hello."));
+    harness.provider.runtime_events.store(true, std::sync::atomic::Ordering::Release);
+    let model = crate::launch::tests::seed_model(harness.context.backend().database(), lettuce_models::ProviderProtocol::LlamaCpp, "llamacpp");
+    crate::launch::tests::set_application_default_model(harness.context.backend().database(), model);
+    let chat = launch(&harness, "unwatched-local").await;
+    let accepted = super::conversation_send(
+        &harness.context,
+        lettuce_contracts::ConversationSendRequest {
+            conversation_id: chat,
+            text: "Hi".into(),
+            client_operation_id: "unwatched-local-send".into(),
+        },
+        Arc::new(DiscardingStream),
+    ).await.expect("send");
+    assert!(ConversationGenerationWorker::new(harness.context.clone()).run_once().await.expect("generation"));
+    assert!(matches!(super::worker::settled_event(harness.context.backend().database(), accepted.turn_id.parse().expect("turn")).expect("settled"), Some(lettuce_contracts::GenerationEvent::Completed { .. })));
 }

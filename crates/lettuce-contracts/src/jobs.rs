@@ -339,6 +339,13 @@ pub struct JobAccepted {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum JobEvent {
+    ModelLoading {
+        stage: crate::ModelLoadStage,
+        status: crate::ModelLoadStatus,
+        percent: u8,
+        model_name: String,
+        gpus: Option<Vec<crate::ModelLoadGpuProgress>>,
+    },
     Notice {
         code: crate::RuntimeNoticeCode,
     },

@@ -16,11 +16,46 @@ pub(crate) enum FlowId {
 
 type Consumer = Arc<dyn Fn(LlamaHostEvent) + Send + Sync>;
 
+#[derive(Clone, PartialEq, Eq)]
+struct LoadProgress {
+    stage: lettuce_contracts::ModelLoadStage,
+    status: lettuce_contracts::ModelLoadStatus,
+    percent: u8,
+    model_name: String,
+    gpus: Option<Vec<lettuce_contracts::ModelLoadGpuProgress>>,
+}
+
+impl From<&lettuce_local_llm::engine::ModelLoadProgress> for LoadProgress {
+    fn from(progress: &lettuce_local_llm::engine::ModelLoadProgress) -> Self {
+        use lettuce_local_llm::engine::{ModelLoadStage, ModelLoadStatus};
+        Self {
+            stage: match progress.stage {
+                ModelLoadStage::GpuOffload => lettuce_contracts::ModelLoadStage::GpuOffload,
+                ModelLoadStage::Cpu => lettuce_contracts::ModelLoadStage::Cpu,
+                ModelLoadStage::CpuFallback => lettuce_contracts::ModelLoadStage::CpuFallback,
+                ModelLoadStage::Finalizing => lettuce_contracts::ModelLoadStage::Finalizing,
+            },
+            status: match progress.status {
+                ModelLoadStatus::Loading => lettuce_contracts::ModelLoadStatus::Loading,
+                ModelLoadStatus::Retrying => lettuce_contracts::ModelLoadStatus::Retrying,
+                ModelLoadStatus::Loaded => lettuce_contracts::ModelLoadStatus::Loaded,
+                ModelLoadStatus::Failed => lettuce_contracts::ModelLoadStatus::Failed,
+            },
+            percent: progress.percent,
+            model_name: progress.model_name.clone(),
+            gpus: progress.gpus.as_ref().map(|gpus| gpus.iter().map(|gpu| {
+                lettuce_contracts::ModelLoadGpuProgress { label: gpu.label.clone(), percent: gpu.percent }
+            }).collect()),
+        }
+    }
+}
+
 struct Flow {
     consumer: Consumer,
     cancellation: CancellationToken,
     active: Mutex<bool>,
     parent: Option<Arc<Flow>>,
+    load_progress: Mutex<Option<LoadProgress>>,
 }
 
 #[derive(Default)]
@@ -100,6 +135,7 @@ impl RuntimeEventRouter {
             cancellation,
             active: Mutex::new(true),
             parent: None,
+            load_progress: Mutex::new(None),
         });
         let mut flows = lock(&self.flows);
         if let Some(existing) = flows.get(&id) {
@@ -130,6 +166,7 @@ impl RuntimeEventRouter {
             cancellation: parent.cancellation.clone(),
             active: Mutex::new(true),
             parent: Some(parent),
+            load_progress: Mutex::new(None),
         });
         lock(&self.attempts).insert(id, flow.clone());
         Some(AttemptRegistration {
@@ -155,6 +192,14 @@ impl RuntimeEventRouter {
                     && parent_active.as_deref().is_none_or(|active| *active)
                     && !flow.cancellation.is_cancelled()
                 {
+                    if let LlamaHostEvent::ModelLoadProgress(progress) = &event {
+                        let next = LoadProgress::from(progress);
+                        let mut previous = lock(&flow.load_progress);
+                        if previous.as_ref() == Some(&next) {
+                            return;
+                        }
+                        *previous = Some(next);
+                    }
                     (flow.consumer)(event);
                 }
             }
@@ -226,15 +271,27 @@ impl super::ApiContext {
                 let Some(context) = context.upgrade() else {
                     return;
                 };
-                if let LlamaHostEvent::Notice { notice, .. } = event {
-                    context.live_generation_event(
-                        turn_id,
+                let event = match event {
+                    LlamaHostEvent::ModelLoadProgress(progress) => {
+                        let progress = LoadProgress::from(&progress);
+                        lettuce_contracts::GenerationEvent::ModelLoading {
+                            turn_id: turn_id.to_string(),
+                            stage: progress.stage,
+                            status: progress.status,
+                            percent: progress.percent,
+                            model_name: progress.model_name,
+                            gpus: progress.gpus,
+                        }
+                    }
+                    LlamaHostEvent::Notice { notice, .. } => {
                         lettuce_contracts::GenerationEvent::Notice {
                             turn_id: turn_id.to_string(),
                             code: notice_code(notice),
-                        },
-                    );
-                }
+                        }
+                    }
+                    _ => return,
+                };
+                context.live_generation_event(turn_id, event);
             },
         )
     }
@@ -253,6 +310,16 @@ impl super::ApiContext {
                     return;
                 };
                 let event = match event {
+                    LlamaHostEvent::ModelLoadProgress(progress) => {
+                        let progress = LoadProgress::from(&progress);
+                        lettuce_contracts::JobEvent::ModelLoading {
+                            stage: progress.stage,
+                            status: progress.status,
+                            percent: progress.percent,
+                            model_name: progress.model_name,
+                            gpus: progress.gpus,
+                        }
+                    }
                     LlamaHostEvent::Notice { notice, .. } => lettuce_contracts::JobEvent::Notice {
                         code: notice_code(notice),
                     },

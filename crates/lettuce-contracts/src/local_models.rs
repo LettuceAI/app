@@ -376,3 +376,31 @@ pub enum RuntimeNoticeCode {
     MtpDisabledForVision,
     KvCacheMovedToRam,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum ModelLoadStage {
+    GpuOffload,
+    Cpu,
+    CpuFallback,
+    Finalizing,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum ModelLoadStatus {
+    Loading,
+    Retrying,
+    Loaded,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(deny_unknown_fields)]
+pub struct ModelLoadGpuProgress {
+    pub label: String,
+    pub percent: u8,
+}

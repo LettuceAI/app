@@ -90,3 +90,5 @@ The memory and companion command modules forward typed requests to lettuce-app o
 Generation channels transport typed speaker selection events along with text deltas and settlement. Late stream attachment receives the resolved speaker from the application API; the shell does not perform speaker selection.
 
 Generation and job channels also transport typed local runtime notices. Job watches carry throughput separately from text. The global application event transports local runtime report changes with model ids; the application composition performs the request routing and model resolution.
+
+Generation and job channels forward typed `ModelLoading` events, including retry and terminal load status, model name and GPU progress. The shell does not reconstruct load state or throttle it.

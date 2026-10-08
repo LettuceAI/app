@@ -137,6 +137,19 @@ impl InferencePort for FakeProvider {
             .load(std::sync::atomic::Ordering::Acquire)
         {
             use lettuce_local_llm::generation::{GenerationHeartbeat, LlamaHostEvent, LlamaNotice};
+            self.events_router.emit(LlamaHostEvent::ModelLoadProgress(
+                lettuce_local_llm::engine::ModelLoadProgress {
+                    request_id: Some(request.attempt_id.to_string()),
+                    model_path: "local-events.gguf".into(),
+                    model_name: "Local events".into(),
+                    backend_path: "cpu".into(),
+                    stage: lettuce_local_llm::engine::ModelLoadStage::Cpu,
+                    status: lettuce_local_llm::engine::ModelLoadStatus::Loading,
+                    progress: 0.42,
+                    percent: 42,
+                    gpus: None,
+                },
+            ));
             self.events_router.emit(LlamaHostEvent::Notice {
                 request_id: Some(request.attempt_id.to_string()),
                 notice: LlamaNotice::MtpDisabledForVision,
