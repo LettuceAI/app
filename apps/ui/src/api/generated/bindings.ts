@@ -288,7 +288,7 @@ export type ApiErrorDetails = { type: "invalid_field"; field: string } | { type:
  *  and `MessageSceneImageChanged` follow a message's companion effect and
  *  scene image follow-up.
  */
-export type ApiEvent = { type: "generation_settled"; conversation_id: string; turn_id: string } | { type: "job_updated"; job: JobView } | { type: "conversation_changed"; conversation_id: string } | { type: "conversation_removed"; conversation_id: string } | 
+export type ApiEvent = { type: "local_model_runtime_report_changed"; model_ids: string[] } | { type: "generation_settled"; conversation_id: string; turn_id: string } | { type: "job_updated"; job: JobView } | { type: "conversation_changed"; conversation_id: string } | { type: "conversation_removed"; conversation_id: string } | 
 /**
  *  What `memory_get` shows for the conversation changed: its items,
  *  summary, revision, cycle, approval or dismissal state. Every chat that
@@ -1418,7 +1418,7 @@ export type GenerationCancelRequest = {
  *  The stream of one generation turn, delivered on the channel its send
  *  passed in.
  */
-export type GenerationEvent = { type: "started"; turn_id: string } | { type: "delta"; turn_id: string; text: string | null; reasoning: string | null } | { type: "completed"; turn_id: string; message_id: string } | { type: "failed"; turn_id: string; code: GenerationFailureCode } | { type: "cancelled"; turn_id: string };
+export type GenerationEvent = { type: "started"; turn_id: string } | { type: "notice"; turn_id: string; code: RuntimeNoticeCode } | { type: "speaker_selecting"; turn_id: string } | { type: "speaker_selected"; turn_id: string; character_id: string } | { type: "delta"; turn_id: string; text: string | null; reasoning: string | null } | { type: "completed"; turn_id: string; message_id: string } | { type: "failed"; turn_id: string; code: GenerationFailureCode } | { type: "cancelled"; turn_id: string };
 
 export type GenerationFailureCode = "invalid_conversation" | "missing_model" | "context_unavailable" | "speaker_unavailable" | "provider_unavailable" | "provider_rejected" | "empty_output" | "timed_out" | "recovery_unavailable" | "embedding_unavailable" | "internal";
 
@@ -2124,7 +2124,7 @@ export type JobCancelRequest = {
  *  The stream `job_watch` attaches. It starts with the job's current state;
  *  `Completed`, `Failed` and `Cancelled` are the last event.
  */
-export type JobEvent = { type: "progress"; job: JobView } | { type: "text_delta"; text: string | null; reasoning: string | null } | 
+export type JobEvent = { type: "notice"; code: RuntimeNoticeCode } | { type: "throughput"; tokens: number; tokens_per_second: number | null } | { type: "progress"; job: JobView } | { type: "text_delta"; text: string | null; reasoning: string | null } | 
 /**  A running local image generation's progress. */
 { type: "image_progress"; progress: ImageProgress } | { type: "completed"; job: JobView } | { type: "failed"; job: JobView } | { type: "cancelled"; job: JobView };
 
@@ -3357,6 +3357,8 @@ export type RequiredModel = "embedding" | "emotion";
 export type RunnabilityLabel = "excellent" | "good" | "marginal" | "poor" | "unrunnable";
 
 export type RunnabilityStatus = "incompatible_runtime" | "not_installed" | "estimated_runnable" | "cpu_fallback" | "inconclusive" | "passed" | "failed";
+
+export type RuntimeNoticeCode = "mtp_disabled_for_vision" | "kv_cache_moved_to_ram";
 
 /**  Why a scene image failed, where the user can act on it. */
 export type SceneImageFailure = "media_unavailable" | "disabled" | "no_model" | "no_image" | "message_unavailable" | "interrupted" | "failed";
