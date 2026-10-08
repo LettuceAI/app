@@ -1301,15 +1301,21 @@ impl PromptBootstrapPort for Database {
             let legacy_ordinal_match = legacy_unedited;
             let (entries, touched, entries_changed) =
                 reconcile_entries(&current, &seed, legacy_ordinal_match);
-            let metadata_changed = current.name != seed.metadata.name
-                || current.purpose != seed.metadata.purpose
-                || current.condense != seed.metadata.condense
-                || current.behavior_version != seed.metadata.behavior_version;
+            let mut metadata = seed.metadata.clone();
+            if request.mode == BuiltInReconcileMode::ResetToSeed {
+                metadata.name = current.name.clone();
+            }
+            let metadata_changed = current.name != metadata.name
+                || current.purpose != metadata.purpose
+                || current.condense != metadata.condense
+                || current.behavior_version != metadata.behavior_version;
             let root_changed =
                 metadata_changed || entries_changed || current.status != LifecycleStatus::Active;
             let mut document =
-                metadata_document(id, seed.metadata.clone(), entries, seed.provenance()?, now)
+                metadata_document(id, metadata, entries, seed.provenance()?, now)
                     .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?;
+            refresh_provenance(&mut document)
+                .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?;
             document.revision = if root_changed {
                 next_revision(current.revision)
                     .map_err(|error| PromptBootstrapError::Failure(error.to_string()))?
@@ -1695,7 +1701,8 @@ mod tests {
             )
             .expect("reset");
         assert_eq!(reset[0].action, BuiltInReconcileAction::ResetEdited);
-        assert_eq!(reset[0].document.name, "Core");
+        assert_eq!(reset[0].document.name, "Edited");
+        assert_eq!(reset[0].document.entries[0].content, "content one");
         assert_eq!(
             reset[0].document.entries[0].id,
             created[0].document.entries[0].id

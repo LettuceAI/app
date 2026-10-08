@@ -53,6 +53,8 @@ A `BuiltInPromptSeed` has a stable unique key (plus optional aliases), a seed ve
 
 `reconcile_built_ins` runs in one of two modes. `RefreshUnedited` updates a document only while it is unedited; `ResetToSeed` overwrites it. Each seed reports `Created`, `RefreshedUnedited`, `PreservedEdited` or `ResetEdited`. Identity, revisions and timestamps belong to the adapter.
 
+An explicit reset restores the seed content and entries while keeping the user's document name. Resetting several documents uses one transaction.
+
 A protected built-in can still have its entries, name and condense flag edited, but changing its purpose or provenance, or archiving it, fails with `Protected`. A required built-in is recreated or restored at bootstrap and cannot be archived (`Required`). `required` without `protected` is valid: the prompt is editable but can never stay missing or archived.
 
 ## Prompt library
