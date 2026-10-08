@@ -20,7 +20,8 @@ Facts about how `lettuce-context` relates to the legacy app (2.2.x). The crate R
 
 ## Fixed bugs
 
-- Earlier explicit 256 KiB regex limits and raw-keyword validation rejected patterns legacy matched (`\w{100}`, a case-insensitive `hero\Z`) and accepted ones the matcher could never compile. Validation now compiles the keyword the way the matcher does.
+- Earlier explicit 256 KiB regex limits rejected patterns legacy matched (`\w{100}`). Validation and matching use the same compiler with its default limits.
+- Case-insensitive regex matching preserves the original trimmed pattern and text and uses the compiler's case-insensitive flag. Legacy lowercased both before compilation (`old-code/src-tauri/src/chat_manager/prompting/lorebook_matcher.rs:60-71`), changing `\S`, `\W`, `\D`, `\B` and named groups. Save validation already compiled the original pattern (`old-code/src-tauri/src/storage_manager/lorebook.rs:518-525`). Invalid `\Z` is now refused consistently rather than silently becoming `\z` (slice 6 decision 2).
 
 ## Not in this crate
 

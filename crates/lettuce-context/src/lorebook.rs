@@ -372,6 +372,9 @@ pub(crate) fn keyword_matches_with_mode(
     if keyword.is_empty() {
         return Ok(false);
     }
+    if mode == KeywordMatchMode::Regex {
+        return Ok(compile_regex(keyword, case_sensitive)?.is_match(text));
+    }
     let search_keyword = if case_sensitive {
         keyword.to_owned()
     } else {
@@ -382,10 +385,6 @@ pub(crate) fn keyword_matches_with_mode(
     } else {
         text.to_lowercase()
     };
-
-    if mode == KeywordMatchMode::Regex {
-        return Ok(compile_regex(&search_keyword, case_sensitive)?.is_match(&search_text));
-    }
 
     if let Some(prefix) = search_keyword.strip_suffix('*') {
         if prefix.is_empty() {
@@ -419,13 +418,7 @@ pub fn validate_regex_keyword(
     keyword: &str,
     case_sensitive: bool,
 ) -> Result<(), LorebookValidationError> {
-    let keyword = keyword.trim();
-    let pattern = if case_sensitive {
-        keyword.to_owned()
-    } else {
-        keyword.to_lowercase()
-    };
-    compile_regex(&pattern, case_sensitive).map(|_| ())
+    compile_regex(keyword.trim(), case_sensitive).map(|_| ())
 }
 
 fn compile_regex(
@@ -1534,13 +1527,37 @@ mod tests {
     }
 
     #[test]
+    fn case_insensitive_regex_preserves_escape_classes_and_validation() {
+        for (pattern, matching, nonmatching) in [
+            (r"^\S+$", "HERO", " "),
+            (r"^\W+$", "!", "HERO"),
+            (r"^\D+$", "HERO", "123"),
+            (r"a\Bb", "ab", "a b"),
+            (r"(?P<HERO>hero)", "HERO", "villain"),
+        ] {
+            validate_regex_keyword(pattern, false).expect("original pattern compiles");
+            assert!(
+                keyword_matches_with_mode(pattern, matching, false, KeywordMatchMode::Regex)
+                    .expect("valid pattern"),
+                "{pattern}"
+            );
+            assert!(
+                !keyword_matches_with_mode(pattern, nonmatching, false, KeywordMatchMode::Regex)
+                    .expect("valid pattern"),
+                "{pattern}"
+            );
+        }
+        assert!(validate_regex_keyword(r"hero\Z", false).is_err());
+    }
+
+    #[test]
     fn regex_keywords_validate_in_the_form_the_matcher_compiles() {
-        assert!(validate_regex_keyword(r"hero\Z", false).is_ok());
+        assert!(validate_regex_keyword(r"hero\Z", false).is_err());
         assert!(validate_regex_keyword(r"hero\Z", true).is_err());
         assert!(validate_regex_keyword(r"\w{100}", false).is_ok());
         assert!(validate_regex_keyword("[", false).is_err());
         let book = book(DetectionPolicy::LatestUserMessage);
-        let mut upper = entry(&book, 0, r"HERO\Z");
+        let mut upper = entry(&book, 0, r"HERO\z");
         upper.match_mode = KeywordMatchMode::Regex;
         assert!(upper.validate().is_ok());
         assert_eq!(

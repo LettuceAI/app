@@ -80,7 +80,7 @@ Literal keywords are matched after normalizing punctuation to spaces and, unless
 - a trailing `*` makes the keyword a word prefix;
 - text in scripts written without spaces (CJK, Thai, Lao, Myanmar, Khmer, Hangul) always matches as a substring.
 
-Regex keywords are trimmed, lowercased unless case-sensitive and compiled with the `regex` crate's default size limits. `validate_regex_keyword` validates a keyword in exactly the form the matcher compiles, so a keyword that saves is a keyword that runs.
+Regex keywords are trimmed and compiled without changing the pattern, using a case-insensitive flag unless the entry is case-sensitive and the `regex` crate's default size limits. Save validation and runtime matching use the same compiler, preserving escape classes and named groups.
 
 ### Activation across books
 
