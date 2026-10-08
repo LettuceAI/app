@@ -1738,8 +1738,7 @@ impl StagedLorebookProject {
                 .drafts
                 .iter()
                 .filter(|draft| {
-                    draft.status == StagedLorebookDraftStatus::Approved
-                        && !(draft.title.trim().is_empty() && draft.content.trim().is_empty())
+                    !(draft.title.trim().is_empty() && draft.content.trim().is_empty())
                 })
                 .map(|draft| draft.plan_id)
                 .collect();

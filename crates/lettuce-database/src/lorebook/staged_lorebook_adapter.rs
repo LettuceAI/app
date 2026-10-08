@@ -345,7 +345,7 @@ impl StagedLorebookRepository for Database {
             LorebookDetails, LorebookEntry,
         };
         use lettuce_creation::{
-            StagedLorebookCommitReceipt, StagedLorebookCommitTarget, StagedLorebookDraftStatus,
+            StagedLorebookCommitReceipt, StagedLorebookCommitTarget,
         };
         let mut connection = self.connection().map_err(failure)?;
         let transaction = connection
@@ -414,12 +414,7 @@ impl StagedLorebookRepository for Database {
             }
         };
         let mut created_entry_ids = Vec::new();
-        for draft in run
-            .project
-            .drafts
-            .iter()
-            .filter(|draft| draft.status == StagedLorebookDraftStatus::Approved)
-        {
+        for draft in &run.project.drafts {
             if draft.title.trim().is_empty() && draft.content.trim().is_empty() {
                 continue;
             }

@@ -4,6 +4,8 @@ Facts about how `lettuce-database` relates to the legacy app (2.2.x). The crate 
 
 ## Legacy parity
 
+- Staged lorebook commit includes unapproved non-blank drafts (`old-code/src-tauri/src/chat_manager/lorebook_generator/commands.rs:516-544`, slice 6 decision 3). Blank drafts are skipped, and the rewrite appends contiguous ordinals and commits book, project and receipt atomically.
+
 - Built-in prompt reset retains the user's name and recomputes the authored digest, while a reset batch remains atomic. Legacy individual reset passed no name update (`old-code/src-tauri/src/chat_manager/prompting/prompts.rs:1067-1081`); legacy reset-all performed separate writes (`old-code/src-tauri/src/chat_manager/prompting/prompts.rs:2521-2553`).
 
 - Memory items keep legacy `turn` precision beside their source-message attribution and `user` precision for manually chosen dates (`old-code/src-tauri/src/storage_manager/sessions.rs:4561-4568`). A copied item keeps its user date even when its source message was not copied.

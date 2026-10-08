@@ -33,7 +33,7 @@ Facts about how `lettuce-creation` relates to the legacy app (2.2.x). The crate 
 - In the structured fallback, a call whose name is not a valid tool name is dropped instead of answered, and an envelope with neither calls nor reply keeps its raw text instead of an empty reply.
 - Legacy's helper preloaded only the root name of an existing lorebook and silently discarded every reviewed entry at final apply. Existing-lorebook apply now applies the complete reviewed entry graph.
 - Process-local job state, permissive free-text tool inference, positional draft identity, partial commit and cancel-by-deletion are not preserved.
-- Per the pinned scenario correction, only approved staged drafts are committed.
+- The earlier approved-only interpretation was incorrect. Commit includes every draft with a non-blank title or content, regardless of approval (`old-code/src-tauri/src/chat_manager/lorebook_generator/commands.rs:516-544`), as required by slice 6 decision 3. The legacy UI's completion gate accepted both drafted and approved entries (`old-code/src/ui/pages/library/LorebookGeneratorFlowPage.tsx:1163-1165`).
 - Staged commit appends with contiguous ordinals; legacy left ordinal gaps and collided with existing entries.
 - Legacy's staged `pipeline.rs` called the provider without recording usage; the dispatches are now recorded. Legacy keyword generation also omitted usage recording. Legacy single-entry generation recorded both primary and fallback requests before checking response success.
 
@@ -56,7 +56,7 @@ Facts about how `lettuce-creation` relates to the legacy app (2.2.x). The crate 
 | Planner outline, required tool, approval and edits | Reducer and domain tests and the app staged SQLite scenario cover non-empty plans, stable ids and review CAS. |
 | Three-entry batches, failure, retry and partial recovery | Batch checkpoint plus per-entry runs keep completed drafts, retry failed ids under new jobs and reject stale batch writes. |
 | Draft edits, refinement history and coherence acceptance | Domain transitions and the SQLite execution scenario. |
-| Explicit accepted-draft commit | The SQLite repository applies the book, accepted entries and receipt in one transaction; stale requests and duplicate commit intent are checked. |
+| Explicit draft commit | The SQLite repository applies the book, all non-blank drafts and receipt in one transaction; stale requests and duplicate commit intent are checked. |
 | Cancellation and durable replay | The app scenario covers job settlement, kept review state, late response cancellation, frozen inputs and replay without redispatch. |
 
 - The staged scenario uses scripted inference and repository reloads, not a process-kill test or a live provider. Backend scenario coverage does not mean the user-facing rewrite is complete.

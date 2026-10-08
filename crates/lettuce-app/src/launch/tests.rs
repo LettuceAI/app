@@ -9631,7 +9631,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         let saved = coordinator
             .commit(request.clone())
             .expect("staged commit fixture");
-        assert_eq!(saved.created_entry_ids, vec![run.project.drafts[0].plan_id]);
+        assert_eq!(saved.created_entry_ids, vec![run.project.drafts[0].plan_id, run.project.drafts[2].plan_id]);
         assert_eq!(
             coordinator.commit(request).expect("staged commit fixture"),
             saved
@@ -9643,7 +9643,7 @@ async fn staged_lorebook_admission_and_planning_are_restart_safe() {
         assert_eq!(entry.title, " Kept title ");
         assert_eq!(entry.content, " Kept content ");
         assert!(entry.always_active);
-        assert_eq!(entry.ordinal, u32::from(case == "existing"));
+        assert_eq!(entry.ordinal, u32::from(case == "existing") + 1);
         if case == "existing" {
             assert_eq!(details.entries[0], book.entries[0]);
             assert_eq!(details.book.name, book.book.name);
