@@ -343,6 +343,8 @@ Re-embedding is lazy (`memory_embedding_backfill`): when retrieval needs a space
 
 ## Lorebook generation (`lorebook/`)
 
+Staged draft edits, approval toggles and refinement are available during coherence review. They retain the review stage and proposals, and refinement uses the same frozen inputs and revision checks as drafting review.
+
 All lorebook generators share one shape: preparation freezes every input into an immutable run bound to one generic creation job before any provider call; the claimed-job executor renders the frozen prompt, tries the native tool contract and uses exactly one same-profile JSON/XML fallback only when no usable native result exists; each decision, usage and provider diagnostics are checkpointed before the job settles; restart replays the checkpoint without redispatch; a changed admission replay conflicts. None of them mutates a lorebook until an explicit apply.
 
 - Single entry: preparation resolves the direct conversation's character and persona, reads the selected branch messages, memory, summary and target lorebook, and freezes the chronological message, memory, relative-time, existing-entry and `(none)` formatting. Missing or foreign selected message and memory ids fail closed. Selected memory lines are numbered contiguously over non-blank memories.

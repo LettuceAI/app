@@ -65,6 +65,8 @@ Facts about how `lettuce-app` relates to the legacy app (2.2.x): what follows le
 
 ### Lorebooks and creation
 
+- Staged refinement admission accepts coherence review, matching the legacy review controls (`old-code/src/ui/pages/library/LorebookGeneratorFlowPage.tsx:575-599`) and stage-independent refine command (`old-code/src-tauri/src/chat_manager/lorebook_generator/commands.rs:309-337`), per slice 6 decision 4.
+
 - Single-entry and keyword preparation copy legacy formatting (chronological messages, durable memory, relative time, existing entries, `(none)`, title, content, keywords, direction). Selected memory lines are numbered contiguously over non-blank memories, as legacy did. Fillers and instructions carry legacy wording.
 - Staged lorebooks: legacy per-source and total byte limits and excerpt truncation; unset temperature and top_p are legacy's 0.3 and 1.0; reasoning is disabled as in legacy feature requests; target-count defaults and bounds, the brief, excerpt formatting, final instructions and drafted-entry rendering are legacy's.
 - Legacy single-entry primary and fallback requests recorded usage before checking response success, as the rewrite does.

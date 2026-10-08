@@ -1515,7 +1515,9 @@ impl StagedLorebookProject {
     ) -> Result<Self, StagedLorebookError> {
         if !matches!(
             self.stage,
-            StagedLorebookStage::Drafting | StagedLorebookStage::DraftsReady
+            StagedLorebookStage::Drafting
+                | StagedLorebookStage::DraftsReady
+                | StagedLorebookStage::CoherenceReview
         ) || now < self.updated_at
         {
             return Err(StagedLorebookError::InvalidTransition);
@@ -1559,7 +1561,9 @@ impl StagedLorebookProject {
     ) -> Result<Self, StagedLorebookError> {
         if !matches!(
             self.stage,
-            StagedLorebookStage::Drafting | StagedLorebookStage::DraftsReady
+            StagedLorebookStage::Drafting
+                | StagedLorebookStage::DraftsReady
+                | StagedLorebookStage::CoherenceReview
         ) || now < self.updated_at
         {
             return Err(StagedLorebookError::InvalidTransition);
@@ -1591,7 +1595,9 @@ impl StagedLorebookProject {
     ) -> Result<Self, StagedLorebookError> {
         if !matches!(
             self.stage,
-            StagedLorebookStage::Drafting | StagedLorebookStage::DraftsReady
+            StagedLorebookStage::Drafting
+                | StagedLorebookStage::DraftsReady
+                | StagedLorebookStage::CoherenceReview
         ) || now < self.updated_at
         {
             return Err(StagedLorebookError::InvalidTransition);
@@ -2420,6 +2426,111 @@ mod tests {
         assert!(project.drafts[0].always_active);
         assert_eq!(project.drafts[0].content, "Body");
         assert_eq!(project.drafts[1].content, "Canon");
+    }
+
+    #[test]
+    fn coherence_review_allows_draft_edit() {
+        let project = coherence_review_project();
+        let plan_id = project.drafts[0].plan_id;
+        let edited = project
+            .edit_draft(
+                StagedLorebookDraftEdit {
+                    plan_id,
+                    title: "Edited".into(),
+                    keywords: vec![" key ".into()],
+                    content: "Edited body".into(),
+                    always_active: true,
+                },
+                TimestampMillis::new(7),
+            )
+            .expect("edit during coherence review");
+        assert_eq!(edited.stage, StagedLorebookStage::CoherenceReview);
+        assert_eq!(edited.drafts[0].content, "Edited body");
+        assert_eq!(edited.drafts[0].keywords, ["key"]);
+        assert_eq!(edited.revision.get(), project.revision.get() + 1);
+    }
+
+    #[test]
+    fn coherence_review_allows_draft_approval() {
+        let project = coherence_review_project();
+        let approved = project
+            .set_draft_approved(project.drafts[0].plan_id, true, TimestampMillis::new(7))
+            .expect("approve during coherence review");
+        assert_eq!(approved.stage, StagedLorebookStage::CoherenceReview);
+        assert_eq!(
+            approved.drafts[0].status,
+            StagedLorebookDraftStatus::Approved
+        );
+        let unapproved = approved
+            .set_draft_approved(approved.drafts[0].plan_id, false, TimestampMillis::new(8))
+            .expect("unapprove during coherence review");
+        assert_eq!(
+            unapproved.drafts[0].status,
+            StagedLorebookDraftStatus::Drafted
+        );
+    }
+
+    #[test]
+    fn coherence_review_allows_draft_refinement() {
+        let project = coherence_review_project();
+        let mut draft = project.drafts[0].clone();
+        draft.content = "Refined body".into();
+        draft.revisions.push(StagedLorebookDraftRevision {
+            feedback: "Clarify".into(),
+            content: draft.content.clone(),
+            timestamp: TimestampMillis::new(7),
+        });
+        let refined = project
+            .settle_refinement(draft, TimestampMillis::new(7))
+            .expect("refine during coherence review");
+        assert_eq!(refined.stage, StagedLorebookStage::CoherenceReview);
+        assert_eq!(refined.drafts[0].content, "Refined body");
+        assert_eq!(refined.drafts[0].revisions.len(), 1);
+    }
+
+    fn coherence_review_project() -> StagedLorebookProject {
+        let id = LorebookEntryId::new();
+        StagedLorebookProject::create(
+            CreationWorkflowId::new(),
+            "World".into(),
+            None,
+            5,
+            Vec::new(),
+            TimestampMillis::new(1),
+        )
+        .expect("create")
+        .start_planning(TimestampMillis::new(2))
+        .expect("plan")
+        .submit_outline(
+            vec![StagedLorebookEntryPlan {
+                id,
+                ordinal: 0,
+                title: "Entry".into(),
+                category: "fact".into(),
+                proposed_keys: Vec::new(),
+                rationale: String::new(),
+                source_refs: Vec::new(),
+            }],
+            TimestampMillis::new(3),
+        )
+        .expect("outline")
+        .approve_outline(TimestampMillis::new(4))
+        .expect("approve")
+        .edit_draft(
+            StagedLorebookDraftEdit {
+                plan_id: id,
+                title: "Entry".into(),
+                keywords: Vec::new(),
+                content: "Body".into(),
+                always_active: true,
+            },
+            TimestampMillis::new(5),
+        )
+        .expect("edit")
+        .start_draft_batch(TimestampMillis::new(5))
+        .expect("finish drafting")
+        .submit_coherence_proposals(Vec::new(), TimestampMillis::new(6))
+        .expect("coherence")
     }
 
     #[test]

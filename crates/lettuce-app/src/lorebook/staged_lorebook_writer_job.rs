@@ -645,7 +645,9 @@ fn prepare_refine_values(
 > {
     if !matches!(
         run.project.stage,
-        StagedLorebookStage::Drafting | StagedLorebookStage::DraftsReady
+        StagedLorebookStage::Drafting
+            | StagedLorebookStage::DraftsReady
+            | StagedLorebookStage::CoherenceReview
     ) {
         return Err(StagedLorebookWriterAdmissionError::InvalidInput);
     }

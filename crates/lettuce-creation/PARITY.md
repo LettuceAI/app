@@ -4,6 +4,8 @@ Facts about how `lettuce-creation` relates to the legacy app (2.2.x). The crate 
 
 ## Legacy parity
 
+- Draft edits, approval toggles and refinement remain available during coherence review (slice 6 decision 4), as exposed by `old-code/src/ui/pages/library/LorebookGeneratorFlowPage.tsx:575-599` and accepted without stage checks by `old-code/src-tauri/src/chat_manager/lorebook_generator/commands.rs:309-400`.
+
 - The creation-helper progressive-edit and finalization behavior is pinned in `fixtures/legacy-import/creation-helper-tool-scenarios-v1.json`.
 - The helper's tool names and schemas are legacy's creation-agent tools (`old-code/.../creation_helper/agent/tool_defs.rs`, `verbs.rs`) for every operation the proposal supports. As in legacy, the same tools are offered at every stage and the user can keep chatting after a confirmation request. Tool names match case-insensitively (names with spaces never pass provider validation), and the lenient argument reading is legacy's.
 - Undeclared tools are answered with legacy's `unknown tool: NAME`.
