@@ -45,3 +45,14 @@ fn negative_remaining_and_unparseable_optional_numbers_are_preserved_or_ignored(
     assert!(parse_usage(&json!({"weekly":{"used":"invalid"}})).is_err());
     assert!(parse_usage(&json!({"currentPeriodEnd":"period"})).is_ok());
 }
+
+#[test]
+fn provider_message_uses_only_legacy_json_paths() {
+    use super::nanogpt_usage::provider_message;
+    assert_eq!(
+        provider_message(br#"{"detail":"detail"}"#).as_deref(),
+        Some("detail")
+    );
+    assert_eq!(provider_message(br#"{"error":{"type":"internal"}}"#), None);
+    assert_eq!(provider_message(b"<html>Bad Gateway</html>"), None);
+}

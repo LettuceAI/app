@@ -107,16 +107,13 @@ pub(crate) async fn fetch<S: SecretStore + ?Sized>(
         .await
         .map_err(|_| NanoGptUsageError::Transport)?;
     if !(200..300).contains(&response.status) {
-        let mut message = crate::verify::provider_error(&response.body).or_else(|| {
-            String::from_utf8(response.body)
-                .ok()
-                .filter(|body| !body.trim().is_empty())
-        });
+        let mut message = provider_message(&response.body);
         if let Some(message) = &mut message {
             for value in sensitive {
                 value.with(|secret| crate::verify::redact(message, secret));
             }
         }
+        message = message.map(|message| message.chars().take(300).collect());
         return Err(NanoGptUsageError::ProviderRejected {
             status: response.status,
             message,
@@ -125,6 +122,19 @@ pub(crate) async fn fetch<S: SecretStore + ?Sized>(
     let payload =
         serde_json::from_slice(&response.body).map_err(|_| NanoGptUsageError::Malformed)?;
     parse_usage(&payload)
+}
+
+pub(crate) fn provider_message(body: &[u8]) -> Option<String> {
+    let json: Value = serde_json::from_slice(body).ok()?;
+    [
+        json.get("error").and_then(|error| error.get("message")),
+        json.get("message"),
+        json.get("detail"),
+    ]
+    .into_iter()
+    .flatten()
+    .find_map(Value::as_str)
+    .map(str::to_owned)
 }
 
 pub(crate) fn parse_usage(payload: &Value) -> Result<NanoGptUsage, NanoGptUsageError> {

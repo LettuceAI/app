@@ -219,3 +219,5 @@ Verification error redaction also covers JSON-escaped credentials in stringified
 NanoGPT subscription usage reads normalize the account endpoint and use its bearer credential and secret headers with the 30-second, single-request browse policy. The adapter returns neutral quota windows and subscription state. Wrong account kind, missing or unavailable credentials, transport failure, non-success status with redacted provider text, and malformed usage are separate errors. The adapter owns no scheduler or warning state; the composition root triggers checks after completed requests and persists deduplication.
 
 Quota parsing ignores non-object window aliases and unparseable optional numbers, retaining negative overage values; a response must contain a usable window or subscription field.
+
+Quota failures expose only recognized JSON message fields, redacted and limited to 300 characters; other bodies expose the status alone.
