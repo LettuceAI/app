@@ -161,28 +161,13 @@ pub(crate) fn parse_usage(payload: &Value) -> Result<NanoGptUsage, NanoGptUsageE
         .and_then(value_to_string),
         grace_until: find_value(payload, &["graceUntil", "grace_until"]).and_then(value_to_string),
     };
-    let windows = [&usage.weekly, &usage.daily, &usage.monthly];
-    if windows
+    if [&usage.weekly, &usage.daily, &usage.monthly]
         .iter()
-        .filter_map(|window| window.as_ref())
-        .any(|window| {
-            window.used.is_none()
-                && window.remaining.is_none()
-                && window.limit.is_none()
-                && window.percent_used.is_none()
-                || [
-                    window.used,
-                    window.remaining,
-                    window.limit,
-                    window.percent_used,
-                ]
-                .into_iter()
-                .flatten()
-                .any(|value| !value.is_finite() || value < 0.0)
-        })
-        || windows.iter().all(|window| window.is_none())
-            && usage.active.is_none()
-            && usage.state.is_none()
+        .all(|window| window.is_none())
+        && usage.active.is_none()
+        && usage.state.is_none()
+        && usage.current_period_end.is_none()
+        && usage.grace_until.is_none()
     {
         return Err(NanoGptUsageError::Malformed);
     }
@@ -211,41 +196,6 @@ fn parse_window(
     payload: &Value,
     aliases: &[&str],
 ) -> Result<Option<QuotaWindow>, NanoGptUsageError> {
-    if let Some(node) = find_value(payload, aliases) {
-        if !node.is_object() {
-            return Err(NanoGptUsageError::Malformed);
-        }
-        for name in [
-            "used",
-            "usage",
-            "consumed",
-            "tokensUsed",
-            "tokens_used",
-            "remaining",
-            "left",
-            "tokensRemaining",
-            "tokens_remaining",
-            "limit",
-            "quota",
-            "total",
-            "allowance",
-            "tokensLimit",
-            "tokens_limit",
-            "percentUsed",
-            "percent_used",
-            "percentage",
-            "usagePercent",
-        ] {
-            if let Some(value) = node.get(name).filter(|value| !value.is_null()) {
-                let number = value
-                    .as_f64()
-                    .or_else(|| value.as_str()?.parse::<f64>().ok());
-                if number.is_none_or(|number| !number.is_finite() || number < 0.0) {
-                    return Err(NanoGptUsageError::Malformed);
-                }
-            }
-        }
-    }
     Ok(parse_window_value(payload, aliases))
 }
 
@@ -291,11 +241,9 @@ fn parse_window_value(payload: &Value, aliases: &[&str]) -> Option<QuotaWindow> 
             .get("limits")
             .and_then(|limits| value_in(limits, aliases))
             .and_then(|value| {
-                value.as_f64().or_else(|| {
-                    value
-                        .as_str()
-                        .and_then(|text| text.parse::<f64>().ok().filter(|value| value.is_finite()))
-                })
+                value
+                    .as_f64()
+                    .or_else(|| value.as_str().and_then(|text| text.parse::<f64>().ok()))
             });
         if window.limit.is_none() {
             if let (Some(used), Some(remaining)) = (window.used, window.remaining) {
@@ -327,7 +275,17 @@ fn parse_window_value(payload: &Value, aliases: &[&str]) -> Option<QuotaWindow> 
         }),
     };
 
-    Some(window)
+    if window.used.is_none()
+        && window.remaining.is_none()
+        && window.limit.is_none()
+        && window.percent_used.is_none()
+        && window.reset_at.is_none()
+        && window.unit.is_none()
+    {
+        None
+    } else {
+        Some(window)
+    }
 }
 
 fn find_value<'a>(value: &'a Value, aliases: &[&str]) -> Option<&'a Value> {
@@ -356,11 +314,9 @@ fn value_in<'a>(value: &'a Value, aliases: &[&str]) -> Option<&'a Value> {
 
 fn number_in(value: &Value, aliases: &[&str]) -> Option<f64> {
     value_in(value, aliases).and_then(|value| {
-        value.as_f64().or_else(|| {
-            value
-                .as_str()
-                .and_then(|text| text.parse::<f64>().ok().filter(|value| value.is_finite()))
-        })
+        value
+            .as_f64()
+            .or_else(|| value.as_str().and_then(|text| text.parse::<f64>().ok()))
     })
 }
 

@@ -21,3 +21,27 @@ fn nano_url_shapes_and_weekly_daily_monthly_normalization() {
     assert!(parse_usage(&json!({})).is_err());
     assert!(parse_usage(&json!({"weekly":{"used":"invalid"}})).is_err());
 }
+
+#[test]
+fn numeric_limit_alias_does_not_invalidate_other_windows() {
+    let usage = parse_usage(&json!({"weekly":{"used":75,"limit":100},"limits":{"daily":5000}}))
+        .expect("weekly remains usable");
+    assert!(usage.daily.is_none());
+    assert_eq!(usage.weekly.expect("weekly").used, Some(75.0));
+}
+
+#[test]
+fn null_window_does_not_invalidate_other_windows() {
+    let usage = parse_usage(&json!({"weekly":{"used":75,"limit":100},"daily":null}))
+        .expect("weekly remains usable");
+    assert!(usage.daily.is_none());
+}
+
+#[test]
+fn negative_remaining_and_unparseable_optional_numbers_are_preserved_or_ignored() {
+    let usage = parse_usage(&json!({"weekly":{"used":118252,"limit":100000,"remaining":-18252},"daily":{"used":"invalid","limit":5000}})).expect("overage");
+    assert_eq!(usage.weekly.expect("weekly").remaining, Some(-18252.0));
+    assert_eq!(usage.daily.expect("daily").used, None);
+    assert!(parse_usage(&json!({"weekly":{"used":"invalid"}})).is_err());
+    assert!(parse_usage(&json!({"currentPeriodEnd":"period"})).is_ok());
+}
